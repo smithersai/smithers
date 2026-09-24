@@ -131,3 +131,52 @@ it("records nothing while the reader the host declared answers nothing", async (
   expect(pages.length).toBeGreaterThan(0)
   expect(pages).toEqual(pages.map(() => undefined))
 }, 120_000)
+
+/*
+ * `layerHost` is the native host composition embedders use. It carries the
+ * same declaration `layer` does; a host built through it that names its
+ * revision records it on every page too.
+ */
+it("records the revision a layerHost host declares", async () => {
+  const revision = "f".repeat(40)
+  const Sealed = Action.make("source-revision/host-step", {
+    payload: { label: Schema.String },
+    success: Schema.String,
+    tier: "sealed"
+  })
+  const HostFlow = Flow.make("source-revision/host-flow", {
+    payload: { label: Schema.String },
+    success: Schema.String,
+    body: ({ label }) => Sealed.call({ label })
+  })
+  const flows = Interpreter.layer(HostFlow).pipe(
+    Layer.provideMerge(Sealed.toLayer(({ label }: { readonly label: string }) => Effect.succeed(`host:${label}`))),
+    Layer.provideMerge(Action.layerImplementations)
+  )
+  const root = join(directory, "host")
+  const pages = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const context = yield* Layer.build(NodeRuntime.layerHost(
+      {
+        filename: join(root, "engine.sqlite"),
+        workspaceRoot: root,
+        owner: { hostId: "host" },
+        signals: [],
+        sourceRevision: revision
+      },
+      flows
+    ))
+    yield* HostFlow.execute({ label: "one" }, { executionId: "host-run" }).pipe(Effect.provide(context))
+    const journal = yield* Journal.Journal.pipe(Effect.provide(context))
+    const page = yield* journal.entries({ runId: JournalEvent.RunId.make("host-run"), limit: 1000 })
+    return page.entries
+      .filter((entry) =>
+        entry.eventType === "flows.engine.plan-recorded" || entry.eventType === "flows.engine.subgraph-appended"
+      )
+      .map((entry) =>
+        ((entry.payload as Record<string, unknown>)["graph"] as Record<string, unknown> | undefined)?.["sourceRevision"]
+      )
+  })))
+
+  expect(pages.length).toBeGreaterThan(0)
+  expect(pages).toEqual(pages.map(() => revision))
+}, 120_000)

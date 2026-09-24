@@ -204,12 +204,13 @@ and settle. `DelegationChain.bound(bounds)` is the flow-call count that
 declaration contains:
 
 ```text
-4 + 2 * maxDeriskRounds + maxDepth * (3 + 2 * tierOrder.length)
+4 + 2 * maxDeriskRounds + maxDepth * (2 + maxAttempts * (1 + 2 * tierOrder.length))
 ```
 
 Four calls are fixed (refine, the derisk loop, the chain review, settle). Each
-depth slot contributes a retry decorator, a retry declaration, a tier ladder,
-and one execute plus one review call per tier. A supplied flow whose own body
+depth slot contributes a retry decorator and a retry declaration, and each of
+the `maxAttempts` attempts that declaration makes contributes a tier ladder and
+one execute plus one review call per tier. A supplied flow whose own body
 calls other flows adds those on top.
 
 Every declared call carries the payload `run` sends. Two values a declaration

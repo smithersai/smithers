@@ -62,6 +62,27 @@ describe("ConflictAnnotation.annotate", () => {
       expect([...found.ordering]).toEqual([["b", ["a"]], ["reader", ["a"]]])
     }))
 
+  it.effect("treats a wildcard string as a pattern on both the write/write and reader-after-writer passes", () =>
+    Effect.gen(function*() {
+      const found = yield* Conflicts.annotate(
+        [
+          node("a", { writes: ["out/*.js"] }),
+          node("b", { writes: ["out/a.js"] }),
+          node("gen", { writes: ["src/gen.ts"] }),
+          node("reader", { reads: ["src/*.ts"] })
+        ],
+        0,
+        false
+      )
+      expect([...found.conflicts]).toEqual([
+        ["a", [serialized("b", ["out/*.js"])]],
+        ["b", [serialized("a", ["out/*.js"])]]
+      ])
+      // Two wildcard strings overlap conservatively, as two Globs do, so the
+      // reader also waits for `a`.
+      expect([...found.ordering]).toEqual([["b", ["a"]], ["reader", ["a", "gen"]]])
+    }))
+
   it.effect("never annotates the frozen prefix, and lands every edge on a new node", () =>
     Effect.gen(function*() {
       const found = yield* Conflicts.annotate(

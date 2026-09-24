@@ -555,6 +555,17 @@ code points; `allowed-tools` and `license` are scalars; `compatibility` is 1 to
 absent reports a `missing` code, and a field that is present but malformed
 reports its own `invalid` code without echoing the offending value.
 
+### Markdown.isSkillName
+
+```ts
+const isSkillName: (name: string) => boolean
+```
+
+Whether `name` is a valid Agent Skills name: 1 to 64 lowercase ASCII letters,
+digits, or single hyphens, not starting or ending with a hyphen.
+`validateSkillFrontmatter` applies this rule, and `@smthrs/registry` reads the
+same predicate when it warns about a discovered skill's name.
+
 ### Markdown.lowerSkill
 
 ```ts

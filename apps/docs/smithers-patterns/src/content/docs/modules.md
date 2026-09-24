@@ -84,10 +84,10 @@ Plans a model writes, admitted against bounds it cannot widen.
 
 Wrappers around one flow, and the pieces the patterns are built from.
 
-| Module                                  | Import specifier                | What it does                                                              |
-| --------------------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
-| [`Pattern`](/reference/api/#pattern)           | `@smthrs/patterns/Pattern`      | Flow-valued slots and the decorator combinator every wrapper applies      |
-| [`WithRetry`](/reference/api/#withretry)       | `@smthrs/patterns/WithRetry`    | Declare an attempt budget and a backoff ladder, and perform it on Effects |
-| [`WithCache`](/reference/api/#withcache)       | `@smthrs/patterns/WithCache`    | Declare how long a recorded result stays servable and how far it travels  |
-| [`WithApproval`](/reference/api/#withapproval) | `@smthrs/patterns/WithApproval` | Run a typed approval flow ahead of the flow it gates                      |
-| [`PatternError`](/reference/api/#patternerror) | `@smthrs/patterns/PatternError` | The tagged failure most of these modules report a refusal through         |
+| Module                                  | Import specifier                | What it does                                                             |
+| --------------------------------------- | ------------------------------- | ------------------------------------------------------------------------ |
+| [`Pattern`](/reference/api/#pattern)           | `@smthrs/patterns/Pattern`      | Flow-valued slots and the decorator combinator every wrapper applies     |
+| [`WithRetry`](/reference/api/#withretry)       | `@smthrs/patterns/WithRetry`    | Retry a flow or an Effect within an attempt budget and a backoff ladder  |
+| [`WithCache`](/reference/api/#withcache)       | `@smthrs/patterns/WithCache`    | Declare how long a recorded result stays servable and how far it travels |
+| [`WithApproval`](/reference/api/#withapproval) | `@smthrs/patterns/WithApproval` | Run a typed approval flow ahead of the flow it gates                     |
+| [`PatternError`](/reference/api/#patternerror) | `@smthrs/patterns/PatternError` | The tagged failure most of these modules report a refusal through        |

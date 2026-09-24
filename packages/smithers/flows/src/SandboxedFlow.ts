@@ -34,8 +34,8 @@
  * 4. The host reads the result back, refuses a non-zero exit, an unparseable
  *    file, or a result the limits reject, decodes `output` through the same
  *    codec, and, when {@link ExecuteOptions.collectDiff} is set, reads the
- *    files the guest created or resized in the workspace and returns them as
- *    data beside the output.
+ *    files the guest created or changed in the workspace and returns them,
+ *    with the paths it deleted, as data beside the output.
  *
  * What the guest image must contain is a statement, not code: the runtime the
  * bundle is started with, `node` (22 or later) or `bun`, has to be on the
@@ -58,6 +58,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import type * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
@@ -121,7 +122,7 @@ export interface Limits {
   readonly resultBytes?: number | undefined
   /** The most workspace-diff bytes collected. Default 100 MiB. */
   readonly diffBytes?: number | undefined
-  /** The most created-or-resized files collected. Default 1,000. */
+  /** The most created or changed files collected. Default 1,000. */
   readonly files?: number | undefined
 }
 
@@ -186,7 +187,7 @@ export interface ExecuteOptions {
    * as one shell word; use a wrapper script for runtime flags.
    */
   readonly runtime?: string | undefined
-  /** Whether to collect the files the guest created or resized. Default `false`. */
+  /** Whether to collect the files the guest created, changed, or deleted. Default `false`. */
   readonly collectDiff?: boolean | undefined
   /** Bounds on the result and the diff; see {@link defaultLimits}. */
   readonly limits?: Limits | undefined
@@ -200,7 +201,7 @@ export interface ExecuteOptions {
 }
 
 /**
- * One file the guest created or resized, as it stood when the guest exited.
+ * One file the guest created or changed, as it stood when the guest exited.
  *
  * @category models
  * @since 1.0.0
@@ -221,6 +222,8 @@ export interface DiffEntry {
 export interface Result<A> {
   readonly output: A
   readonly diff: ReadonlyArray<DiffEntry>
+  /** Workspace-relative paths that existed before the guest ran and were gone after. */
+  readonly deleted: ReadonlyArray<string>
 }
 
 /**
@@ -241,6 +244,15 @@ export const DiffEntry = Schema.Struct({ path: Schema.String, bytes: Schema.Uint
 export const Diff = Schema.Array(DiffEntry)
 
 /**
+ * The schema of a {@link Result}'s `deleted` paths. A result recorded before
+ * the field existed decodes with none.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Deleted = Schema.Array(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed([])))
+
+/**
  * The schema of a {@link Result} over a flow's success schema.
  *
  * @category schemas
@@ -249,6 +261,7 @@ export const Diff = Schema.Array(DiffEntry)
 export type ResultSchema<Success extends Schema.Top> = Schema.Struct<{
   readonly output: Success
   readonly diff: typeof Diff
+  readonly deleted: typeof Deleted
 }>
 
 /**
@@ -258,7 +271,7 @@ export type ResultSchema<Success extends Schema.Top> = Schema.Struct<{
  * @since 1.0.0
  */
 export const resultSchema = <Success extends Schema.Top>(success: Success): ResultSchema<Success> =>
-  Schema.Struct({ output: success, diff: Diff })
+  Schema.Struct({ output: success, diff: Diff, deleted: Deleted })
 
 /** The workspace-relative directory the runner protocol's files live in. */
 const controlDirectory = ".smithers-sandbox"
@@ -513,9 +526,23 @@ const expired = (deadline: Duration.Input): Effect.Effect<never, SandboxedFlowEr
  */
 const statConcurrency = 16
 
+/**
+ * What a snapshot records per file: its size and, where the provider's `stat`
+ * reports one, its modification time. A file counts as changed when either
+ * differs, so a same-size rewrite is caught wherever the provider knows the
+ * time; the portable probe dialect reports none and falls back to size alone.
+ */
+interface Fingerprint {
+  readonly size: number
+  readonly mtimeMs: number | undefined
+}
+
+const differs = (before: Fingerprint | undefined, after: Fingerprint): boolean =>
+  before === undefined || before.size !== after.size || before.mtimeMs !== after.mtimeMs
+
 /** The changed-file count limit an after-walk enforces while it walks. */
 interface ChangeBudget {
-  readonly before: ReadonlyMap<string, number>
+  readonly before: ReadonlyMap<string, Fingerprint>
   readonly limit: number
 }
 
@@ -523,15 +550,15 @@ const unlistable = (cause: PlatformError.PlatformError): SandboxedFlowError =>
   failure("session_failed", `the workspace could not be listed: ${cause.message}`, cause)
 
 /**
- * Sizes by workspace-relative path of every regular file outside the control
- * directory.
+ * Fingerprints by workspace-relative path of every regular file outside the
+ * control directory.
  *
  * One listing, then the stats with bounded concurrency. The results keep the
  * listing's order, so the diff a caller receives does not depend on which
  * stat answered first.
  *
- * `changed` makes this the AFTER walk of a diff: an entry whose size differs
- * from `changed.before` counts, and the walk fails as soon as more than
+ * `changed` makes this the AFTER walk of a diff: an entry whose fingerprint
+ * differs from `changed.before` counts, and the walk fails as soon as more than
  * `changed.limit` of them have been seen rather than statting the rest of a
  * workspace whose diff is already refused.
  */
@@ -539,16 +566,19 @@ const snapshot = (
   files: FileSystem.FileSystem,
   workdir: string,
   changed?: ChangeBudget
-): Effect.Effect<ReadonlyMap<string, number>, SandboxedFlowError> =>
+): Effect.Effect<ReadonlyMap<string, Fingerprint>, SandboxedFlowError> =>
   Effect.gen(function*() {
     const listed = yield* files.readDirectory(workdir, { recursive: true }).pipe(Effect.mapError(unlistable))
     const entries = listed.filter((entry) => entry !== controlDirectory && !entry.startsWith(`${controlDirectory}/`))
     let over = 0
-    const measure = (entry: string): Effect.Effect<number | undefined, SandboxedFlowError> =>
+    const measure = (entry: string): Effect.Effect<Fingerprint | undefined, SandboxedFlowError> =>
       Effect.flatMap(files.stat(entry).pipe(Effect.mapError(unlistable)), (info) => {
         if (info.type !== "File") return Effect.succeed(undefined)
-        const size = Number(info.size)
-        if (changed !== undefined && changed.before.get(entry) !== size && ++over > changed.limit) {
+        const fingerprint: Fingerprint = {
+          size: Number(info.size),
+          mtimeMs: Option.match(info.mtime, { onNone: () => undefined, onSome: (mtime) => mtime.getTime() })
+        }
+        if (changed !== undefined && differs(changed.before.get(entry), fingerprint) && ++over > changed.limit) {
           return Effect.fail(
             failure(
               "diff_overflow",
@@ -556,14 +586,14 @@ const snapshot = (
             )
           )
         }
-        return Effect.succeed(size)
+        return Effect.succeed(fingerprint)
       })
     const measured = yield* Effect.forEach(entries, measure, { concurrency: statConcurrency })
-    const sizes = new Map<string, number>()
-    for (const [index, size] of measured.entries()) {
-      if (size !== undefined) sizes.set(entries[index]!, size)
+    const fingerprints = new Map<string, Fingerprint>()
+    for (const [index, fingerprint] of measured.entries()) {
+      if (fingerprint !== undefined) fingerprints.set(entries[index]!, fingerprint)
     }
-    return sizes
+    return fingerprints
   })
 
 /** Read at most the budget plus one byte, without the unbounded readFile transport. */
@@ -617,7 +647,8 @@ const readBounded = (
   }))
 
 /**
- * Reads every file the guest created or resized, within the limits.
+ * Reads every file the guest created or changed, within the limits, and lists
+ * the files it deleted.
  *
  * The reads stay sequential on purpose, unlike the stats the walk overlaps.
  * Each one is bounded by the budget the reads before it did NOT spend, which
@@ -629,15 +660,19 @@ const readBounded = (
 const collect = (
   session: Sandbox.Session,
   workdir: string,
-  before: ReadonlyMap<string, number>,
-  after: ReadonlyMap<string, number>,
+  before: ReadonlyMap<string, Fingerprint>,
+  after: ReadonlyMap<string, Fingerprint>,
   limits: ResolvedLimits
-): Effect.Effect<ReadonlyArray<DiffEntry>, SandboxedFlowError> =>
+): Effect.Effect<
+  { readonly diff: ReadonlyArray<DiffEntry>; readonly deleted: ReadonlyArray<string> },
+  SandboxedFlowError
+> =>
   Effect.gen(function*() {
     // The count limit is spent during the after walk, which refuses an
     // oversized diff without statting the workspace to its end.
-    const changed = [...after].filter(([path, size]) => before.get(path) !== size)
-    const total = changed.reduce((sum, [, size]) => sum + size, 0)
+    const changed = [...after].filter(([path, fingerprint]) => differs(before.get(path), fingerprint))
+    const deleted = [...before.keys()].filter((path) => !after.has(path))
+    const total = changed.reduce((sum, [, fingerprint]) => sum + fingerprint.size, 0)
     if (total > limits.diffBytes) {
       return yield* Effect.fail(
         failure("diff_overflow", `the changed files hold ${total} bytes; the limit is ${limits.diffBytes}`)
@@ -657,7 +692,7 @@ const collect = (
       // readBounded owns these plain bytes; the diff is data the caller keeps.
       diff.push({ path, bytes })
     }
-    return diff
+    return { diff, deleted }
   })
 
 /** The result file, checked against the size limit and the protocol's shape. */
@@ -715,12 +750,15 @@ const readResult = (
  * payload schema for the wire. A value the schema's own JSON codec refuses
  * is a programmer error and dies, the same posture `Flow.executionId` takes.
  *
- * Change detection for the diff compares sizes by path against a snapshot
- * taken before the guest ran: a created file and a file whose size changed
- * are collected, and a file rewritten in place at its previous size on a
- * REATTACHED workspace is the one edit this misses. A fresh workspace holds
- * nothing but the protocol's own files, so every file the child writes there
- * is a creation.
+ * Change detection for the diff compares each file's size and modification
+ * time by path against a snapshot taken before the guest ran: a created file
+ * and a changed file are collected, and a file present before and absent
+ * after is listed in `deleted`. A provider whose `stat` reports no
+ * modification time, such as the portable probe dialect, falls back to size
+ * alone, so on it a same-size rewrite of a file that existed before the guest
+ * ran, which only a REATTACHED workspace holds, is missed. A fresh workspace
+ * holds nothing but the protocol's own files, so every file the child writes
+ * there is a creation.
  *
  * @category constructors
  * @since 1.0.0
@@ -780,7 +818,9 @@ export const execute = <
               failure("session_failed", `the previous result could not be removed: ${cause.message}`, cause)
             )
           )
-          const before = options.collectDiff === true ? yield* snapshot(files, workdir) : new Map<string, number>()
+          const before = options.collectDiff === true
+            ? yield* snapshot(files, workdir)
+            : new Map<string, Fingerprint>()
           const command = `${CommandLine.quote(runtime)} ${CommandLine.quote(bundlePath)}`
           const run = yield* Effect.scoped(
             Effect.gen(function*() {
@@ -831,7 +871,7 @@ export const execute = <
               )
             )
           )
-          const diff = options.collectDiff === true
+          const changes = options.collectDiff === true
             ? yield* collect(
               session,
               workdir,
@@ -839,8 +879,8 @@ export const execute = <
               yield* snapshot(files, workdir, { before, limit: limits.files }),
               limits
             )
-            : []
-          return { output, diff }
+            : { diff: [], deleted: [] }
+          return { output, diff: changes.diff, deleted: changes.deleted }
         })
       ),
       expired(options.timeout ?? Duration.minutes(10))

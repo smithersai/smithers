@@ -1,11 +1,13 @@
 import { describe, it } from "@effect/vitest"
 import { Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
+import * as Glob from "@smthrs/std/Glob"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
+import { execute } from "./Execute.ts"
 import { callsTo } from "./Graphs.ts"
 
 // One stage flow per role, tagged with its own name. Core named a stage by the
@@ -281,4 +283,117 @@ describe("ScanFixVerify", () => {
       )
       expect(scanned).toBe(0)
     }))
+
+  describe("executed declaration matches run", () => {
+    // Every stage calls the real `@smthrs/std` glob action, so the scripted
+    // implementation below records exactly the stage calls a run made.
+    const glob = Glob.flow.action!
+    const called: Array<string> = []
+    let rounds: ReadonlyArray<ReadonlyArray<string>> = []
+    const globLayer = glob.toLayer((payload) =>
+      Effect.sync(() => {
+        const pattern = (payload as { readonly pattern: string }).pattern
+        called.push(pattern)
+        const round = /^scan\/(\d+)$/.exec(pattern)
+        const paths = round === null ? [] : rounds[Number(round[1]) - 1] ?? []
+        return { paths, total: paths.length, truncated: false }
+      })
+    )
+    const stage = <F extends Schema.Struct.Fields>(
+      tag: string,
+      payload: F,
+      pattern: (input: any) => string,
+      answer: (input: any, paths: ReadonlyArray<string>) => unknown
+    ) =>
+      Flow.make(tag, {
+        payload,
+        success: Schema.Unknown,
+        error: Schema.Unknown,
+        body: Node.capture({ tag }, (input: any) =>
+          Node.map(
+            Node.all({ found: glob.call({ pattern: pattern(input) }), input: Node.succeed(input) }),
+            Node.capture({ tag, answer: true }, (settled: any) => answer(settled.input, settled.found.paths))
+          ))
+      })
+    const scanStage = stage(
+      "sfv/exec-scan",
+      { input: Schema.Unknown, iteration: Schema.Number },
+      ({ iteration }) => `scan/${iteration}`,
+      (_, paths) => paths
+    )
+    const fixStage = stage(
+      "sfv/exec-fix",
+      { issue: Schema.Unknown, index: Schema.Number, iteration: Schema.Number },
+      ({ index, iteration }) => `fix/${iteration}/${index}`,
+      ({ issue }) => `fixed ${issue}`
+    )
+    const verifyStage = stage(
+      "sfv/exec-verify",
+      { input: Schema.Unknown, issues: Schema.Unknown, fixes: Schema.Unknown, iteration: Schema.Number },
+      ({ iteration }) => `verify/${iteration}`,
+      ({ fixes, iteration }) => ({ fixes, iteration })
+    )
+    const executed = async (script: ReadonlyArray<ReadonlyArray<string>>, executionId: string) => {
+      called.length = 0
+      rounds = script
+      const pattern = ScanFixVerify.make({
+        scan: scanStage,
+        fix: fixStage,
+        verify: verifyStage,
+        maxRetries: 2,
+        maxIssues: 3,
+        concurrency: 3
+      })
+      return { report: await execute(pattern, { input: "repo" }, executionId, globLayer), calls: [...called] }
+    }
+    const ran = (script: ReadonlyArray<ReadonlyArray<string>>) =>
+      Effect.runPromise(ScanFixVerify.run("repo", {
+        maxRetries: 2,
+        concurrency: 3,
+        scan: ({ iteration }) => Effect.succeed(script[iteration - 1] ?? []),
+        fix: ({ issue }) => Effect.succeed(`fixed ${issue}`),
+        verify: ({ fixes, iteration }) => Effect.succeed({ fixes, iteration })
+      }))
+
+    it("fixes only the issues the scan returned and stops on a clean rescan", async () => {
+      const script = [["issue-a"], []]
+      const { report, calls } = await executed(script, "sfv-clean-rescan")
+
+      expect(calls).toEqual(["scan/1", "fix/1/0", "verify/1", "scan/2"])
+      expect(report).toEqual({
+        iterations: 2,
+        remaining: [],
+        resolved: true,
+        verifications: [{ fixes: ["fixed issue-a"], iteration: 1 }]
+      })
+      expect(report).toEqual(await ran(script))
+    })
+
+    it("never fixes or verifies when the first scan is clean", async () => {
+      const { report, calls } = await executed([], "sfv-clean-first")
+
+      expect(calls).toEqual(["scan/1"])
+      expect(report).toEqual({ iterations: 1, remaining: [], resolved: true, verifications: [] })
+      expect(report).toEqual(await ran([]))
+    })
+
+    it("reports the remaining issues and every verification at the retry bound", async () => {
+      const script = [["issue-a", "issue-b"], ["issue-b"]]
+      const { report, calls } = await executed(script, "sfv-bound")
+
+      expect([...calls].sort()).toEqual(
+        ["fix/1/0", "fix/1/1", "fix/2/0", "scan/1", "scan/2", "verify/1", "verify/2"]
+      )
+      expect(report).toEqual({
+        iterations: 2,
+        remaining: ["issue-b"],
+        resolved: false,
+        verifications: [
+          { fixes: ["fixed issue-a", "fixed issue-b"], iteration: 1 },
+          { fixes: ["fixed issue-b"], iteration: 2 }
+        ]
+      })
+      expect(report).toEqual(await ran(script))
+    })
+  })
 })

@@ -69,13 +69,13 @@ outside this package can satisfy every constraint and still fail to decode.
 Rows this package wrote always decode. Suspect a schema version older or newer
 than the running code, or a database written by something else.
 
-### persistence_failed and unknown
+### persistence_failed
 
 **What happened.** The SQL layer failed for a reason that is not a constraint
 violation: the file is locked, the disk is full, the connection dropped.
 
-**What to change.** Read `cause`, which carries the underlying error. These are
-infrastructure failures, not contract violations.
+**What to change.** Read `cause`, which carries the underlying error. This is an
+infrastructure failure, not a contract violation.
 
 ## SQLite raises "a plan only grows"
 

@@ -175,8 +175,45 @@ export type OptimizerFlow<R = never> = Flow.Flow<
   R
 >
 
+// What the declared ledger step computes on real values after each evaluation:
+// the standing best, whether it reached the target, and the refusal a
+// non-finite score earns. `run` makes the same three decisions inline.
+interface Ledger<C> {
+  readonly best: Attempt<C>
+  readonly converged: boolean
+  readonly invalid: PatternError | undefined
+}
+
+const nonFinite = (iteration: number, score: unknown): PatternError =>
+  new PatternError({
+    code: "invalid_input",
+    message: `Optimizer evaluation score at iteration ${iteration} must be a finite number, received ${score}`
+  })
+
+const exhausted = (maxIterations: number, targetScore: number | undefined): PatternError =>
+  new PatternError({
+    code: "exhausted",
+    message: `Optimizer reached its bound of ${maxIterations} iterations below ${targetScore}`
+  })
+
+// A later attempt has to beat the standing best rather than match it, so
+// equal scores keep the earliest attempt wherever the tie falls.
+const ledger = <C>(
+  attempt: Attempt<C>,
+  standing: Attempt<C> | undefined,
+  targetScore: number | undefined
+): Ledger<C> => {
+  // A refused attempt settles as a failure, so the best it carries is never read.
+  if (!Number.isFinite(attempt.score)) {
+    return { best: attempt, converged: false, invalid: nonFinite(attempt.iteration, attempt.score) }
+  }
+  const best = standing === undefined || attempt.score > standing.score ? attempt : standing
+  return { best, converged: targetScore !== undefined && attempt.score >= targetScore, invalid: undefined }
+}
+
 /**
- * Declares the bounded search as its conservative topology.
+ * Declares the bounded search as its conservative topology, with a real
+ * run-time decision after every evaluation.
  *
  * Every iteration the bound allows is declared as a `generate` call followed
  * by an `evaluate` call. The search is not {@link Loop.make} with `evaluate`
@@ -187,9 +224,13 @@ export type OptimizerFlow<R = never> = Flow.Flow<
  * the same edge the search actually depends on and dependency analysis sees
  * `evaluate` feeding the generation that follows it.
  *
- * The target score never enters the topology, because comparing a score is a
- * runtime decision; it enters declaration identity instead, so two searches
- * that differ only in their target do not share a step key.
+ * After each evaluation a `Node.map` folds the attempt into the standing best
+ * on the real score, and a `Node.branch` settles the search when that attempt
+ * reached the target or scored a non-finite number, exactly as {@link run}
+ * does. Reaching the declared bound is a plan-time fact, so the last FALSE arm
+ * is declared as `onMaxReached` says. The target score enters declaration
+ * identity, so two searches that differ only in their target do not share a
+ * step key.
  *
  * @category constructors
  * @since 0.1.0
@@ -201,19 +242,23 @@ export const make = <R = never>(options: MakeOptions<R>): OptimizerFlow<R> => {
   // these snapshots and never the caller's options again.
   const stages = { generate: options.generate, evaluate: options.evaluate }
   const maxIterations = options.maxIterations
+  const targetScore = options.targetScore
   const onMaxReached = options.onMaxReached ?? defaultOnMaxReached
+  // Each iteration nests the generate bind, the evaluate bind, and the branch.
+  const tooDeep = Compose.sequencedBoundRefusal("Optimizer", "maxIterations", maxIterations, 3)
+  if (tooDeep !== undefined) throw tooDeep
   const captures = {
-    ...options.targetScore === undefined ? {} : { targetScore: options.targetScore },
+    ...targetScore === undefined ? {} : { targetScore },
     maxIterations,
     onMaxReached
   }
   const { name, description } = Compose.label("optimizer", {
     maxIterations,
-    targetScore: options.targetScore,
+    targetScore,
     onMaxReached
   }, options)
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
-    const visit = (previous: unknown, iteration: number): Node.Node<unknown, unknown, R> =>
+    const visit = (previous: unknown, standing: unknown, iteration: number): Node.Node<unknown, unknown, R> =>
       Node.bindPlanned(
         callMember(stages.generate, { input, previous, iteration }),
         Node.capture({ ...captures, iteration }, (candidate: Planned.Planned<unknown>) =>
@@ -224,7 +269,7 @@ export const make = <R = never>(options: MakeOptions<R>): OptimizerFlow<R> => {
               // FIELD references, which is a reference path rather than a
               // computation, so the next generation is handed the same attempt
               // record the run produces. The cast names the shape an evaluator
-              // answers with; `run` refuses a non-finite score at run time.
+              // answers with.
               const scored = evaluation as Planned.Planned<Evaluation>
               const attempt = {
                 candidate,
@@ -232,16 +277,46 @@ export const make = <R = never>(options: MakeOptions<R>): OptimizerFlow<R> => {
                 feedback: scored.feedback,
                 iteration
               }
-              // Comparing a score against the target is a run-time decision
-              // `run` makes; reaching the declared bound is not, so the
-              // declared terminal is the exhausted one.
-              return iteration >= maxIterations
-                ? Node.succeed({ best: attempt, iterations: iteration, converged: false })
-                : visit(attempt, iteration + 1)
+              // The fold runs on real values, so the best and the target check
+              // are the run's own decisions, not plan-time guesses.
+              const folded = Node.map(
+                Node.succeed({ attempt, standing }),
+                Node.capture(
+                  { ...captures, iteration, ledger: true },
+                  // `standing` is absent before the first attempt and the
+                  // previous fold's best after it.
+                  (state: { readonly attempt: Attempt<unknown>; readonly standing: unknown }) =>
+                    ledger(state.attempt, state.standing as Attempt<unknown> | undefined, targetScore)
+                )
+              )
+              const settles = Node.capture(
+                { ...captures, iteration, settles: true },
+                (state: Ledger<unknown>) => state.invalid !== undefined || state.converged
+              )
+              const refused = Node.capture(
+                { ...captures, iteration, refused: true },
+                (state: Ledger<unknown>) => state.invalid !== undefined
+              )
+              return Node.branch(folded, {
+                if: settles,
+                then: (state: Planned.Planned<Ledger<unknown>>) =>
+                  Node.branch(Node.succeed(state), {
+                    if: refused,
+                    then: (settled: Planned.Planned<Ledger<unknown>>) => Node.fail(settled.invalid),
+                    else: (settled: Planned.Planned<Ledger<unknown>>) =>
+                      Node.succeed({ best: settled.best, iterations: iteration, converged: true })
+                  }),
+                else: (state: Planned.Planned<Ledger<unknown>>): Node.Node<unknown, unknown, R> =>
+                  iteration < maxIterations
+                    ? visit(attempt, state.best, iteration + 1)
+                    : onMaxReached === "fail"
+                    ? Node.fail(exhausted(maxIterations, targetScore))
+                    : Node.succeed({ best: state.best, iterations: iteration, converged: false })
+              })
             })
           ))
       )
-    return visit(undefined, 1)
+    return visit(undefined, undefined, 1)
   }
   return Flow.make(name, {
     ...(description === undefined ? {} : { description }),
@@ -290,15 +365,7 @@ export const run = <I, C, E, R, E2, R2>(
         Effect.gen(function*() {
           const candidate = yield* stages.generate({ input, previous: previous?.attempt, iteration })
           const evaluation = yield* stages.evaluate({ value: candidate, iteration })
-          if (!Number.isFinite(evaluation.score)) {
-            return yield* Effect.fail(
-              new PatternError({
-                code: "invalid_input",
-                message:
-                  `Optimizer evaluation score at iteration ${iteration} must be a finite number, received ${evaluation.score}`
-              })
-            )
-          }
+          if (!Number.isFinite(evaluation.score)) return yield* Effect.fail(nonFinite(iteration, evaluation.score))
           const attempt: Attempt<C> = {
             candidate,
             score: evaluation.score,
@@ -320,12 +387,7 @@ export const run = <I, C, E, R, E2, R2>(
     const best = loop.value.best
     const converged = targetScore !== undefined && best.score >= targetScore
     if (!converged && onMaxReached === "fail") {
-      return yield* Effect.fail(
-        new PatternError({
-          code: "exhausted",
-          message: `Optimizer reached its bound of ${maxIterations} iterations below ${targetScore}`
-        })
-      )
+      return yield* Effect.fail(exhausted(maxIterations, targetScore))
     }
     return { best, iterations: loop.iterations, converged }
   })

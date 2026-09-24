@@ -81,7 +81,7 @@ Compiling a plan without persisting one needs none of those services.
 
 `append` advances the plan row with a compare-and-swap on the previous generation, the flow, the approved base digest, and the approval digest of the append's already-verified prefix, and it refuses an append that adds no nodes. Matching the prefix digest proves the recorded prefix is the caller's without re-reading the stored rows. The refusal matters because of the append-only triggers: without it the node rows would land while the plan-row update matched nothing or skipped a generation, leaving rows whose dependencies are missing and that nothing is allowed to delete. The whole append is one transaction, so the refusal takes the rows back with it. New ordinals continue the recorded prefix, whose length the matched digest proves equal to the caller's prefix.
 
-Every failure is a `PlanStoreError` whose `code` is one of `invalid_plan`, `constraint`, `decode_failed`, `persistence_failed`, or `unknown`.
+Every failure is a `PlanStoreError` whose `code` is one of `invalid_plan`, `constraint`, `decode_failed`, or `persistence_failed`.
 
 ### PlanStore.Service
 
@@ -149,7 +149,6 @@ class PlanStoreError extends Schema.TaggedError<PlanStoreError>()("@smthrs/plan-
 | `constraint`         | the compare-and-swap matched nothing, the persisted prefix diverged, or SQL refused a row |
 | `decode_failed`      | a stored row did not decode                                                               |
 | `persistence_failed` | the SQL layer failed for a reason that is not a constraint violation                      |
-| `unknown`            | anything else, with `cause` carrying the original                                         |
 
 `PlanStoreErrorCode` is exported as both a schema and a type.
 

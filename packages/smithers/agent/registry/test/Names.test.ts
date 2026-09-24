@@ -1,3 +1,4 @@
+import * as Markdown from "@smthrs/core/Markdown"
 import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
 import * as Names from "../src/internal/Names.ts"
@@ -67,5 +68,29 @@ describe("Names", () => {
 
     expect(result.name).toBe("review-pr")
     expect(result.warnings).toContainEqual(expect.objectContaining({ code: "directory_name_mismatch" }))
+  })
+
+  it("judges a frontmatter name by the one Agent Skills rule @smthrs/core validates", () => {
+    const names = [
+      "pdf",
+      "pdf-processing",
+      "a1-b2",
+      "-pdf",
+      "pdf-",
+      "pdf--x",
+      "PDF",
+      "p_df",
+      "x".repeat(64),
+      "x".repeat(65)
+    ]
+    for (const name of names) {
+      const { warnings } = Names.deriveFromFrontmatter({
+        fields: { name },
+        dirBasename: name,
+        path: `${name}/SKILL.md`
+      })
+      const flagged = warnings.some((warning) => warning.code === "invalid_name")
+      expect([name, flagged]).toEqual([name, !Markdown.isSkillName(name)])
+    }
   })
 })

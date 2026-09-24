@@ -168,6 +168,17 @@ describe("WithCache policy", () => {
     }
   })
 
+  it("refuses a scope outside run, flow, and shared", () => {
+    for (const scope of ["global", "workflow", ""]) {
+      expect(() => WithCache.withCache(sealedRead(), { scope: scope as WithCache.Scope })).toThrow(
+        expect.objectContaining({
+          code: "invalid_decorator",
+          message: `withCache scope must be run, flow, or shared, received ${scope}`
+        })
+      )
+    }
+  })
+
   it("refuses a blank version", () => {
     expect(() => WithCache.withCache(sealedRead(), { version: " " })).toThrow(
       expect.objectContaining({

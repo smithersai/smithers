@@ -1,6 +1,6 @@
 ---
 title: "Collect the files a sandboxed child wrote"
-description: "Turn on collectDiff to read back the files a guest created or resized, understand the size-based change detection and the one edit it misses, and set the limits that bound it."
+description: "Turn on collectDiff to read back the files a guest created, changed, or deleted, understand how changes are detected and the one edit a timeless provider misses, and set the limits that bound it."
 sidebar:
   order: 5
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/docs/guides/collect-a-workspace-diff.md"
@@ -13,7 +13,8 @@ want what it wrote.
 ## Ask for the diff
 
 `collectDiff` is off by default. Turn it on and `result.diff` carries every file
-the guest created or resized, path relative to the session workdir.
+the guest created or changed, and `result.deleted` lists every file it removed,
+paths relative to the session workdir.
 
 ```ts
 import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
@@ -38,17 +39,19 @@ Each entry is a `DiffEntry`: a `path` and the file's `bytes` as a
 
 ## The diff is data, not an applied change
 
-Nothing on the host is modified. `result.diff` is a value you decide what to do
-with: write it into a workspace, attach it to a review, or throw it away.
+Nothing on the host is modified. `result.diff` and `result.deleted` are values
+you decide what to do with: apply them to a workspace, attach them to a review,
+or throw them away.
 
 Nothing holds the diff for a person to accept first. A host that wants review
 builds it around this value: hold `result.diff`, show it, and apply it when
 someone accepts.
 
-## Change detection compares sizes
+## Change detection compares sizes and modification times
 
-The host lists the workspace before the guest runs and again after, and collects
-every path that is new or whose size changed.
+The host lists the workspace before the guest runs and again after. It collects
+every path that is new or whose size or modification time changed, and lists
+every path that was there before and is gone after in `result.deleted`.
 
 Each walk is one directory listing followed by the stats, and the stats run
 sixteen at a time. It matters because a provider with no native filesystem
@@ -58,12 +61,14 @@ there for the other direction: an unbounded walk would open one guest process
 per file at once. Results keep the listing's order, so the order of
 `result.diff` does not depend on which stat answered first.
 
-That has one blind spot, and it is worth stating plainly: **a file rewritten in
-place at exactly its previous size is missed.** It can only happen on a
-reattached workspace, because a fresh workspace holds nothing but the protocol's
-own files, which makes every file the child writes a creation. If your child
-edits files it did not create, either have it write to new paths or compute the
-change inside the child and return it as part of `output`.
+A provider whose `stat` reports no modification time, such as the portable
+shell probes a session with no native filesystem falls back to, compares sizes
+alone. On such a provider **a file rewritten in place at exactly its previous
+size is missed.** It can only happen on a reattached workspace, because a fresh
+workspace holds nothing but the protocol's own files, which makes every file the
+child writes a creation. If your child edits files it did not create on such a
+provider, either have it write to new paths or compute the change inside the
+child and return it as part of `output`.
 
 Directories the guest creates are listed through, not read as files, so a
 nested path arrives as its files.
@@ -80,7 +85,7 @@ limits count encoded bytes, including multibyte UTF-8 and the result envelope.
 | ------------- | ------- | ------------------------------------------------- |
 | `resultBytes` | 5 MiB   | The result JSON the guest wrote.                  |
 | `diffBytes`   | 100 MiB | The total bytes collected across the diff.        |
-| `files`       | 1,000   | The number of created or resized files collected. |
+| `files`       | 1,000   | The number of created or changed files collected. |
 
 ```ts
 const bounded = SandboxedFlow.execute(Writer, { count: 3 }, {
@@ -112,7 +117,9 @@ read need not discover the full size of an oversized file.
 ## Journal the diff
 
 `resultSchema(success)` builds the action's success schema as
-`{ output, diff }`, and `Diff` and `DiffEntry` are the schemas underneath it.
+`{ output, diff, deleted }`, and `Diff`, `DiffEntry`, and `Deleted` are the
+schemas underneath it. A result journaled before `deleted` existed decodes with
+an empty list.
 The bytes serialize as base64, so a sandboxed action's whole result is
 JSON-encodable and replays out of the journal unchanged.
 

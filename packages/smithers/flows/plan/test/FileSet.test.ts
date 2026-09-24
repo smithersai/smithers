@@ -162,6 +162,20 @@ describe("FileSet", () => {
     expect(FileSet.overlaps(tree, glob)).toBe(true)
     expect(FileSet.overlaps(glob, tree)).toBe(true)
   })
+
+  it("reads a plain string holding * as a pattern, as the runtime boundary does", () => {
+    expect(FileSet.overlaps("src/*.ts", "src/a.ts")).toBe(true)
+    expect(FileSet.overlaps("src/a.ts", "src/*.ts")).toBe(true)
+    expect(FileSet.overlaps("**", "src/a.ts")).toBe(true)
+    expect(FileSet.overlaps("src\\*.ts", "src/a.ts")).toBe(true)
+    expect(FileSet.overlaps("src/*.ts", "src/deep/a.ts")).toBe(false)
+    expect(FileSet.overlaps("src/*.ts", "lib/a.ts")).toBe(false)
+    expect(FileSet.overlaps("src/*.ts", "lib/*.js")).toBe(true)
+    expect(FileSet.overlaps({ _tag: "TreeArtifact", path: "src" }, "*")).toBe(true)
+    expect(FileSet.overlaps("*", { _tag: "TreeArtifact", path: "src" })).toBe(true)
+    expect(FileSet.overlaps("out/*.js", glob)).toBe(true)
+    expect(FileSet.overlaps(glob, "out/*.js")).toBe(true)
+  })
 })
 
 describe("FileSet.workspaceRelative", () => {

@@ -135,6 +135,10 @@ export type ScanFixVerifyFlow<R = never> = Flow.Flow<
   R
 >
 
+// How many issues a scan returned. A scan answers with an array, exactly as
+// `run` reads it.
+const issueCount = (issues: unknown): number => (issues as ReadonlyArray<unknown>).length
+
 const positive = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
 const validate = (options: {
@@ -151,13 +155,17 @@ const validate = (options: {
     })
 
 /**
- * Declares the bounded scan-fix-verify topology.
+ * Declares the bounded scan-fix-verify topology, with the run-time decisions
+ * {@link run} makes.
  *
- * Every retry is unrolled, and every retry declares `maxIssues` fix calls in
- * `concurrency`-sized batches, so the declaration already shows the confirming
- * rescan that follows a verified round. Which issues exist, and therefore which
- * fixes run, is a runtime fact that {@link run} settles.
- * Very large retry and issue bounds build a very large graph before anything runs.
+ * Every retry is unrolled, and every retry declares `maxIssues` fix slots in
+ * `concurrency`-sized batches, so the plan shows the worst case. Each scan is
+ * the subject of a `Node.branch`: an empty scan settles `resolved: true`, as
+ * `run` does. Each fix slot is its own `Node.branch` on whether the scan
+ * returned an issue at that index, so a run pays for exactly the fixes the
+ * scan asked for, and `verify` is handed the fixes of the issues that exist.
+ * Issues past `maxIssues` wait for the next round's rescan. Very large retry
+ * and issue bounds build a very large graph before anything runs.
  *
  * @category constructors
  * @since 0.1.0
@@ -173,67 +181,98 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
   const concurrency = options.concurrency
   const captures = { maxRetries, maxIssues, concurrency }
   const { name, description } = Compose.label("scanFixVerify", { maxRetries, maxIssues, concurrency }, options)
+  const clean = Node.capture({ ...captures, clean: true }, (issues: unknown) => issueCount(issues) === 0)
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
-    const visit = (iteration: number): Node.Node<unknown, unknown, R> =>
-      Node.bindPlanned(
-        callMember(stages.scan, { input, iteration }),
-        Node.capture({ ...captures, iteration }, (issues) => {
-          const found = issues as unknown as Readonly<Record<number, unknown>>
-          const batches: Array<{
-            readonly names: ReadonlyArray<string>
-            readonly members: Readonly<Record<string, Node.Node<unknown, unknown, R>>>
-          }> = []
-          for (let offset = 0; offset < maxIssues; offset += concurrency) {
-            const members: Record<string, Node.Node<unknown, unknown, R>> = {}
-            const names: Array<string> = []
-            const last = Math.min(offset + concurrency, maxIssues)
-            for (let index = offset; index < last; index++) {
-              names.push(`fix-${index}`)
-              members[`fix-${index}`] = callMember(stages.fix, { issue: found[index], index, iteration })
-            }
-            batches.push({ names, members })
-          }
-          const verified = (fixes: ReadonlyArray<Planned.Planned<unknown>>): Node.Node<unknown, unknown, R> =>
+    const visit = (
+      iteration: number,
+      verifications: ReadonlyArray<Planned.Planned<unknown>>
+    ): Node.Node<unknown, unknown, R> =>
+      Node.branch(callMember(stages.scan, { input, iteration }), {
+        if: clean,
+        then: () => Node.succeed({ iterations: iteration, remaining: [], resolved: true, verifications }),
+        else: (issues) => fixAll(iteration, issues, verifications)
+      })
+    const fixAll = (
+      iteration: number,
+      issues: Planned.Planned<unknown>,
+      verifications: ReadonlyArray<Planned.Planned<unknown>>
+    ): Node.Node<unknown, unknown, R> => {
+      const found = issues as unknown as Readonly<Record<number, unknown>>
+      const batches: Array<{
+        readonly names: ReadonlyArray<string>
+        readonly members: Readonly<Record<string, Node.Node<unknown, unknown, R>>>
+      }> = []
+      for (let offset = 0; offset < maxIssues; offset += concurrency) {
+        const members: Record<string, Node.Node<unknown, unknown, R>> = {}
+        const names: Array<string> = []
+        const last = Math.min(offset + concurrency, maxIssues)
+        for (let index = offset; index < last; index++) {
+          names.push(`fix-${index}`)
+          // A slot the scan left empty runs nothing: the predicate reads the
+          // real issue list, so no fix is paid for an issue that is not there.
+          members[`fix-${index}`] = Node.branch(Node.succeed(issues), {
+            if: Node.capture({ ...captures, iteration, index }, (list: unknown) => index < issueCount(list)),
+            then: () => callMember(stages.fix, { issue: found[index], index, iteration }),
+            else: () => Node.succeed(null)
+          })
+        }
+        batches.push({ names, members })
+      }
+      const verified = (slots: ReadonlyArray<Planned.Planned<unknown>>): Node.Node<unknown, unknown, R> => {
+        // The slots past the scan's length hold nothing; verify is handed the
+        // fixes of the issues that exist, as `run` hands it.
+        const fixes = Node.map(
+          Node.succeed({ issues, slots }),
+          Node.capture(
+            { ...captures, iteration, fixes: true },
+            (state: { readonly issues: unknown; readonly slots: ReadonlyArray<unknown> }) =>
+              state.slots.slice(0, issueCount(state.issues))
+          )
+        )
+        return Node.bindPlanned(
+          fixes,
+          Node.capture({ ...captures, iteration }, (fixed) =>
             Node.bindPlanned(
-              callMember(stages.verify, { input, issues, fixes, iteration }),
+              callMember(stages.verify, { input, issues, fixes: fixed, iteration }),
               Node.capture({ ...captures, iteration }, (verification) =>
                 iteration >= maxRetries
                   ? Node.succeed({
                     iterations: iteration,
                     remaining: issues,
                     resolved: false,
-                    verifications: [verification]
+                    verifications: [...verifications, verification]
                   })
-                  : visit(iteration + 1))
-            )
-          // Each batch gates the next one, so the plan carries the width bound
-          // as dependency edges, and the fix list is assembled from every
-          // member's planned reference: a planned result may be read by field
-          // and passed into a payload, never spread into a new array.
-          const fanOut = (
-            batch: number,
-            fixed: ReadonlyArray<Planned.Planned<unknown>>
-          ): Node.Node<unknown, unknown, R> => {
-            const declared = batches[batch]
-            if (declared === undefined) return verified(fixed)
-            return Node.bindPlanned(
-              Node.all(declared.members),
-              Node.capture({ ...captures, iteration, batch }, (reference) =>
-                Node.andThen(
-                  Node.succeed(reference),
-                  fanOut(batch + 1, [
-                    ...fixed,
-                    ...declared.names.map((member) =>
-                      (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[member]!
-                    )
-                  ])
-                ))
-            )
-          }
-          return fanOut(0, [])
-        })
-      )
-    return visit(1)
+                  : visit(iteration + 1, [...verifications, verification]))
+            ))
+        )
+      }
+      // Each batch gates the next one, so the plan carries the width bound
+      // as dependency edges, and the slot list is assembled from every
+      // member's planned reference: a planned result may be read by field
+      // and passed into a payload, never spread into a new array.
+      const fanOut = (
+        batch: number,
+        fixed: ReadonlyArray<Planned.Planned<unknown>>
+      ): Node.Node<unknown, unknown, R> => {
+        const declared = batches[batch]
+        if (declared === undefined) return verified(fixed)
+        return Node.bindPlanned(
+          Node.all(declared.members),
+          Node.capture({ ...captures, iteration, batch }, (reference) =>
+            Node.andThen(
+              Node.succeed(reference),
+              fanOut(batch + 1, [
+                ...fixed,
+                ...declared.names.map((member) =>
+                  (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[member]!
+                )
+              ])
+            ))
+        )
+      }
+      return fanOut(0, [])
+    }
+    return visit(1, [])
   }
   return Flow.make(name, {
     ...(description === undefined ? {} : { description }),

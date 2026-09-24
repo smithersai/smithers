@@ -214,13 +214,17 @@ The three `With*` modules are this combinator with a policy attached.
 ## `WithRetry`
 
 `WithRetry.withRetry(flow, { attempts, backoff?, nonRetryable? })` wraps a flow
-in a retry declaration, and `WithRetry.make(options)` is the same thing as a
-decorator you can pass to `Pattern.decorateAll`. The wrapper preserves the
-wrapped flow's graph and records the policy as declaration identity, so two
-plans that differ only in an attempt budget are different declarations.
-`WithRetry.retryEffect(effect, options)` performs the retry at the Effect
-boundary, because a retry has no truthful form as a success-only `Node.andThen`
-chain.
+in a retry, and `WithRetry.make(options)` is the same thing as a decorator you
+can pass to `Pattern.decorateAll`. The wrapper declares one call of the wrapped
+flow per attempt the budget allows. Every attempt but the last is a
+`Node.catch` whose failure arm runs the next attempt, so a success settles
+without running the rest and the last attempt's failure is the wrapper's. A
+declared `backoff` is a durable `Sleep.action` wait between attempts, so a host
+that executes a backoff retry provides `Sleep.layer`. The policy is also
+declaration identity, so two plans that differ only in an attempt budget are
+different declarations. A budget whose nested attempts would pass the plan
+depth limit is refused `invalid_decorator`. `WithRetry.retryEffect(effect,
+options)` performs the same policy on a hand-written Effect.
 
 `attempts` is the total attempt count and must be a positive safe integer.
 `backoff` is `{ initialMs, factor, maxMs }`, and the delay before attempt
@@ -259,7 +263,7 @@ rejected. Every option is optional:
 | `scope`   | `"run"`, `"flow"`, or `"shared"`. Omit to retain the composition's reach.                                 |
 | `version` | Nonblank string naming the body revision. Omit for no extra revision in the key.                          |
 
-Invalid effects, TTL, or version throw `PatternError` with code
+Invalid effects, TTL, scope, or version throw `PatternError` with code
 `invalid_decorator` synchronously when the decorator is applied.
 `make` snapshots its options at construction and validates them on application.
 

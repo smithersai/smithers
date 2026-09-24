@@ -9,7 +9,7 @@
  * `@smthrs/flow` flow's body IS its declaration.
  */
 import { describe, it } from "@effect/vitest"
-import { Action, Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, Graph, Sleep } from "@smthrs/flow"
 import * as Effects from "@smthrs/plan/Effects"
 import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
@@ -20,6 +20,8 @@ import * as TestClock from "effect/testing/TestClock"
 import { expect, expectTypeOf } from "vitest"
 import type * as Pattern from "../src/Pattern.ts"
 import * as WithRetry from "../src/WithRetry.ts"
+import { type Executable, execute } from "./Execute.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
 const sealed = Effects.make({
   reads: [],
@@ -60,19 +62,130 @@ const keyMaterial = (flow: Flow.Any): ReadonlyArray<unknown> =>
 const identity = (flow: Flow.Any): unknown => Node.functionIdentity(flow.body)
 
 describe("WithRetry", () => {
-  it("does not encode retries as success continuations", () => {
+  it("declares one guarded call per attempt the budget allows", () => {
     const inner = flowOf("search", { effects: sealed })
     const retried = WithRetry.withRetry(inner, { attempts: 3 })
     const graph = Graph.build(retried, { query: "query" })
 
     expect(retried._tag).toBe("withRetry(search, attempts=3)")
-    // One step, whatever the attempt count says, and exactly one `AndThen`:
-    // the decorator marker `Pattern.decorate` records. A retry encoded as a
-    // success chain would add one node per attempt.
-    expect(Graph.nodes(graph).filter((node) => node.kind === "ActionCall")).toHaveLength(1)
-    expect(Graph.nodes(graph).filter((node) => node.kind === "AndThen")).toHaveLength(1)
-    expect(Graph.nodes(Graph.build(WithRetry.withRetry(inner, { attempts: 9 }), { query: "query" })))
-      .toHaveLength(Graph.nodes(graph).length)
+    // Every attempt is declared, and every attempt but the last is a
+    // `Node.catch` whose failure arm is the next attempt, so the plan carries
+    // the worst case and a success settles without running the rest.
+    expect(callsTo(graph, "search")).toHaveLength(3)
+    expect(Graph.nodes(graph).filter((node) => node.kind === "Catch")).toHaveLength(2)
+    expect(callsTo(Graph.build(WithRetry.withRetry(inner, { attempts: 1 }), { query: "query" }), "search"))
+      .toHaveLength(1)
+  })
+
+  it("declares the backoff ladder as durable sleeps between attempts", () => {
+    const inner = flowOf("search", { effects: sealed })
+    const graph = Graph.build(
+      WithRetry.withRetry(inner, { attempts: 4, backoff: { initialMs: 100, factor: 2, maxMs: 250 } }),
+      { query: "query" }
+    )
+
+    expect(callsTo(graph, Sleep.tag).map((node) => payloadOf(node)["millis"])).toEqual([100, 200, 250])
+  })
+
+  it("refuses an attempt budget past the plan depth limit", () => {
+    const inner = flowOf("deep", { effects: sealed })
+
+    expect(callsTo(Graph.build(WithRetry.withRetry(inner, { attempts: 332 }), { query: "q" }), "deep"))
+      .toHaveLength(332)
+    expect(() => WithRetry.withRetry(inner, { attempts: 333 })).toThrow(
+      expect.objectContaining({
+        code: "invalid_decorator",
+        message: "Retry attempts must be at most 332 to stay inside the plan depth limit, received 333"
+      })
+    )
+  })
+
+  describe("executed", () => {
+    class Transient extends Schema.TaggedError<Transient>()("patterns/Transient", {}) {}
+    class Fatal extends Schema.TaggedError<Fatal>()("patterns/Fatal", {}) {}
+    const flaky = Action.make("withRetry/flaky", {
+      payload: { query: Schema.String },
+      success: Schema.String,
+      error: Schema.Union([Transient, Fatal])
+    })
+    const Flaky = Flow.make("flaky", {
+      payload: { query: Schema.String },
+      success: Schema.String,
+      error: Schema.Union([Transient, Fatal]),
+      body: Node.capture({ tag: "flaky" }, ({ query }: { readonly query: string }) => flaky.call({ query }))
+    }) as unknown as Flow.Any
+    let calls = 0
+    const failing = (failures: number, error: () => Transient | Fatal) =>
+      flaky.toLayer(({ query }) =>
+        Effect.suspend(() => {
+          calls++
+          return calls <= failures ? Effect.fail(error()) : Effect.succeed(`found ${query}`)
+        })
+      )
+    // `withRetry` erases to `Flow.Any`; the executed declaration is a flow.
+    const retried = (options: WithRetry.Options): Executable =>
+      WithRetry.withRetry(Flaky, options) as unknown as Executable
+    const settle = (promise: Promise<unknown>) => promise.then((ok) => ok, (error: unknown) => ({ failed: error }))
+
+    it("retries a failing flow until an attempt succeeds", async () => {
+      calls = 0
+      const result = await settle(
+        execute(
+          retried({ attempts: 3 }),
+          { query: "q" },
+          "retry-succeeds",
+          failing(2, () => new Transient())
+        )
+      )
+
+      expect(result).toBe("found q")
+      expect(calls).toBe(3)
+    })
+
+    it("fails with the last error once every attempt failed", async () => {
+      calls = 0
+      const result = await settle(
+        execute(
+          retried({ attempts: 2 }),
+          { query: "q" },
+          "retry-exhausts",
+          failing(5, () => new Transient())
+        )
+      )
+
+      expect(result).toMatchObject({ failed: { _tag: "patterns/Transient" } })
+      expect(calls).toBe(2)
+    })
+
+    it("stops at the first non-retryable failure", async () => {
+      calls = 0
+      const result = await settle(
+        execute(
+          retried({ attempts: 4, nonRetryable: ["patterns/Fatal"] }),
+          { query: "q" },
+          "retry-fatal",
+          failing(5, () => new Fatal())
+        )
+      )
+
+      expect(result).toMatchObject({ failed: { _tag: "patterns/Fatal" } })
+      expect(calls).toBe(1)
+    })
+
+    it("still retries a failure whose tag is not listed", async () => {
+      calls = 0
+      const result = await settle(
+        execute(
+          retried({ attempts: 4, nonRetryable: ["patterns/Fatal"] }),
+          { query: "q" },
+          "retry-transient",
+          failing(2, () => new Transient())
+        )
+      )
+
+      expect(result).toBe("found q")
+      expect(calls).toBe(3)
+    })
   })
 
   it("folds attempts into stable declaration identity", () => {

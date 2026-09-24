@@ -143,6 +143,12 @@ export const done = (value: unknown): boolean =>
 
 const defaultOnMaxReached: OnMaxReached = "return-last"
 
+const exhausted = (maxIterations: number): PatternError =>
+  new PatternError({
+    code: "exhausted",
+    message: `Loop reached its bound of ${maxIterations} iterations unsatisfied`
+  })
+
 const bound = (maxIterations: number): PatternError | undefined =>
   Number.isSafeInteger(maxIterations) && maxIterations >= 1 ? undefined : new PatternError({
     code: "invalid_decorator",
@@ -172,8 +178,9 @@ export type LoopFlow<R = never> = Flow.Flow<
  * settle now or go round again, are `Node.branch` arms, so the plan carries
  * the exit condition and both arms before anything runs and the predicate is
  * evaluated at run time on the value the body really produced. Reaching the
- * bound is a value, not a declared failure, so the `"fail"` policy is applied
- * by {@link run}.
+ * bound is a plan-time fact, so the last FALSE arm is declared as the policy
+ * says: `"return-last"` settles `exhausted: true`, and `"fail"` fails
+ * `PatternError` `exhausted`.
  *
  * A very large `maxIterations` builds a very large graph before anything runs,
  * and a bound whose chain nests past the plan depth limit is refused here
@@ -219,7 +226,11 @@ export const make = <R = never>(options: MakeOptions<R>): LoopFlow<R> => {
       // exhausted. That test reads the declared bound, not a run value, so it
       // is the one decision that stays at plan time.
       const continued = (value: Planned.Planned<unknown>): Node.Node<unknown, unknown, R> =>
-        iteration >= maxIterations ? settled(value, iteration, true) : visit(value, iteration + 1)
+        iteration < maxIterations
+          ? visit(value, iteration + 1)
+          : onMaxReached === "fail"
+          ? Node.fail(exhausted(maxIterations))
+          : settled(value, iteration, true)
       const predicate = declared.until
       if (predicate === undefined) {
         return Node.branch(produced, {
@@ -302,14 +313,7 @@ export const run = <I, A, E, R, E2, R2>(
       const verdict = declared.until === undefined ? value : yield* declared.until({ value, iteration })
       if (done(verdict)) return { value, iterations: iteration, exhausted: false }
       if (iteration >= maxIterations) {
-        if (onMaxReached === "fail") {
-          return yield* Effect.fail(
-            new PatternError({
-              code: "exhausted",
-              message: `Loop reached its bound of ${maxIterations} iterations unsatisfied`
-            })
-          )
-        }
+        if (onMaxReached === "fail") return yield* Effect.fail(exhausted(maxIterations))
         return { value, iterations: iteration, exhausted: true }
       }
     }

@@ -5,6 +5,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
+import { Action } from "@smthrs/flow"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import type * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -43,6 +44,9 @@ export interface HostOptions {
   }
   readonly isAlive?: Ownership.LivenessCheck | undefined
   readonly requestResume?: Runtime.Options["requestResume"]
+  readonly canExecute?: Runtime.Options["canExecute"]
+  readonly cacheEnvironment?: Runtime.Options["cacheEnvironment"]
+  readonly sourceRevision?: Runtime.Options["sourceRevision"]
   readonly rules?: GrantStore.MakeOptions["rules"]
   readonly signals?: ReadonlyArray<NodeJS.Signals> | undefined
   readonly shutdownTimeoutMs?: number | undefined
@@ -281,7 +285,10 @@ export const makeNative = (platform: NativePlatform) => {
       workspaceRoot: options.workspaceRoot,
       owner: { hostId },
       isAlive: configuredLiveness ?? HostLiveness.isAlive({ hostId }),
-      requestResume: options.requestResume
+      requestResume: options.requestResume,
+      canExecute: options.canExecute,
+      cacheEnvironment: options.cacheEnvironment,
+      sourceRevision: options.sourceRevision
     })
     return Object.freeze({
       ...validated,
@@ -378,13 +385,23 @@ export const makeNative = (platform: NativePlatform) => {
         owner: validated.owner,
         journalSource: `${validated.owner.hostId}-engine`,
         isAlive: validated.isAlive,
+        canExecute: validated.canExecute,
         requestResume: validated.requestResume,
         // The same declaration `Runtime.layer` passes: the tree this host
         // read its flows out of, or nothing (D-068).
         sourceRevision: validated.sourceRevision
       },
       privilegedJj
-    ).pipe(Layer.provideMerge(guarded))
+    ).pipe(
+      Layer.provideMerge(guarded),
+      // Under the engine, as in `Runtime.layer`: dispatch reads the cache
+      // environment off the context the engine captures for an action.
+      Layer.provideMerge(
+        validated.cacheEnvironment === undefined
+          ? Layer.empty
+          : Action.layerCacheEnvironment(validated.cacheEnvironment)
+      )
+    )
     // Registration stays the final startup phase, exactly as in `layer`: no
     // persisted run can resume through this composition before its flow is
     // registered. The registry sits directly beneath it, so a registration built

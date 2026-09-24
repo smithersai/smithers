@@ -325,6 +325,25 @@ describe("Loop", () => {
     expect(globbed).toEqual(["round-1/*.ts", "round-2/*.ts"])
   })
 
+  it("fails exhausted when the FALSE arm is taken at the bound under onMaxReached fail", async () => {
+    const loop = Loop.ralph({ body, maxIterations: 2, onMaxReached: "fail" })
+    globbed.length = 0
+    answers = () => []
+    const failure = await Effect.runPromise(
+      loop.execute({ input: "seed" }, { executionId: "loop-exhausted-fail" }).pipe(
+        Effect.provide(services(loop)),
+        Effect.scoped,
+        Effect.flip
+      ) as Effect.Effect<unknown, never, never>
+    )
+
+    expect(failure).toMatchObject({
+      code: "exhausted",
+      message: "Loop reached its bound of 2 iterations unsatisfied"
+    })
+    expect(globbed).toEqual(["round-1/*.ts", "round-2/*.ts"])
+  })
+
   it("runs the separate predicate member and stops on its real answer", async () => {
     const loop = Loop.make({ body, until, maxIterations: 3 })
     const settled = await execute(loop, "seed", "loop-until", (pattern) => pattern === "round-2/*.ts" ? ["b.ts"] : [])

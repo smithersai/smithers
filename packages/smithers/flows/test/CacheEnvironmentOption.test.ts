@@ -127,3 +127,30 @@ it("serves a cacheable step from the step cache on the second run once the host 
   expect(settled).toEqual({ first: "summary:report", second: "summary:report" })
   expect(dispatches.summarize).toBe(1)
 }, 120_000)
+
+it("serves a cacheable step from the step cache when a layerHost host declares one", async () => {
+  dispatches.summarize = 0
+  const root = join(directory, "host")
+  const settled = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const context = yield* Layer.build(NodeRuntime.layerHost(
+      {
+        filename: join(root, "engine.sqlite"),
+        workspaceRoot: root,
+        owner: { hostId: "host" },
+        signals: [],
+        cacheEnvironment: { layers: ["flows/cache-environment-test/v1"], capabilities: {} }
+      },
+      registerFlows
+    ))
+    const first = yield* Summary.execute({ label: "report" }, { executionId: "host-first" }).pipe(
+      Effect.provide(context)
+    )
+    const second = yield* Summary.execute({ label: "report" }, { executionId: "host-second" }).pipe(
+      Effect.provide(context)
+    )
+    return { first, second }
+  })))
+
+  expect(settled).toEqual({ first: "summary:report", second: "summary:report" })
+  expect(dispatches.summarize).toBe(1)
+}, 120_000)

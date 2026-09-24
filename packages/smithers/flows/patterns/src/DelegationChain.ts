@@ -311,15 +311,16 @@ export const accepted = Compose.accepted
  *
  * Four calls are fixed: refine, the derisk loop, the chain review, and settle.
  * The derisk loop adds two calls per round minus the revision the last round
- * never makes, and each of the `maxDepth` leaf slots adds a retry decorator, a
- * retry declaration, a tier ladder, and one execute plus one review call per
- * tier. A supplied flow whose own body calls other flows adds those on top.
+ * never makes, and each of the `maxDepth` leaf slots adds a retry decorator and
+ * a retry declaration, then, for each of the `maxAttempts` attempts the retry
+ * declares, a tier ladder and one execute plus one review call per tier. A
+ * supplied flow whose own body calls other flows adds those on top.
  *
  * @category introspection
  * @since 0.1.0
  */
 export const bound = (options: Bounds): number =>
-  4 + 2 * options.maxDeriskRounds + options.maxDepth * (3 + 2 * options.tierOrder.length)
+  4 + 2 * options.maxDeriskRounds + options.maxDepth * (2 + options.maxAttempts * (1 + 2 * options.tierOrder.length))
 
 /**
  * The declared form of a delegation chain.

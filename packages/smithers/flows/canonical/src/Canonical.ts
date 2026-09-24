@@ -65,11 +65,10 @@ export const Canonical = Schema.Unknown.pipe(
   Schema.decodeTo(CanonicalString, {
     decode: SchemaGetter.transformEffect((value, parseOptions) =>
       Effect.try({
-        try: () => {
-          const result = canonicalize(value)
-          JSON.parse(result)
-          return result
-        },
+        // The serializer refuses every value it cannot emit canonically, so
+        // what it returns is a JSON document by construction; parsing it back
+        // would cost a full pass per digest and could refuse nothing.
+        try: () => canonicalize(value),
         catch: (cause) =>
           new SchemaIssue.InvalidValue(
             { message: describe(cause) },

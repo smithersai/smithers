@@ -131,7 +131,7 @@ history.
 ## Failures
 
 Every failure is a `PlanStoreError` whose `code` is one of `invalid_plan`,
-`constraint`, `decode_failed`, `persistence_failed`, or `unknown`.
+`constraint`, `decode_failed`, or `persistence_failed`.
 [Troubleshooting](../troubleshooting.md) states what causes each and what to
 change.
 

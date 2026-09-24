@@ -396,8 +396,9 @@ describe("DelegationChain", () => {
     const graph = Graph.build(chain, { input: "ship it" })
     expect(Flow.isFlow(chain)).toBe(true)
     expect(memberCalls(graph)).toHaveLength(DelegationChain.bound(makeOptions))
-    // 4 fixed calls + 2 per derisk round + one escalation ladder per depth slot.
-    expect(DelegationChain.bound(makeOptions)).toBe(22)
+    // 4 fixed calls + 2 per derisk round + one retried escalation ladder per
+    // depth slot: 2 + maxAttempts * (1 + 2 * tiers).
+    expect(DelegationChain.bound(makeOptions)).toBe(42)
   })
 
   it.effect("settles with deriskExhausted when derisk never approves", () =>
@@ -443,20 +444,29 @@ describe("DelegationChain", () => {
       const declaredReviews = callsTo(graph, "review").map(payloadOf)
       const declaredSettle = payloadOf(callsTo(graph, "settle")[0] as Graph.GraphNode)
 
-      // One tier call per slot, each carrying the tier it is and the run budget.
-      expect(declaredWork).toHaveLength(makeOptions.maxDepth)
+      // One tier call per slot per declared attempt, each carrying the tier it
+      // is and the run budget.
+      const attempts = makeOptions.maxAttempts
+      const perSlot = <A>(slot0: A, slot1: A): ReadonlyArray<A> => [
+        ...Array.from({ length: attempts }, () => slot0),
+        ...Array.from({ length: attempts }, () => slot1)
+      ]
+      expect(declaredWork).toHaveLength(makeOptions.maxDepth * attempts)
       expect(declaredWork.map(keys)).toEqual(declaredWork.map(() => executed[0]))
-      expect(declaredWork.map((work) => work.tier)).toEqual(["weak", "weak"])
-      expect(declaredWork.map((work) => work.budget)).toEqual([budget, budget])
-      expect(declaredWork.map((work) => keys(work.leaf as Record<string, unknown>))).toEqual([
-        ["goal", "path"],
-        ["goal", "path"]
-      ])
-      expect(declaredWork.map((work) => (work.leaf as { readonly path: string }).path)).toEqual(["slot-0", "slot-1"])
+      expect(declaredWork.map((work) => work.tier)).toEqual(declaredWork.map(() => "weak"))
+      expect(declaredWork.map((work) => work.budget)).toEqual(declaredWork.map(() => budget))
+      expect(declaredWork.map((work) => keys(work.leaf as Record<string, unknown>))).toEqual(
+        declaredWork.map(() => ["goal", "path"])
+      )
+      expect(declaredWork.map((work) => (work.leaf as { readonly path: string }).path)).toEqual(
+        perSlot("slot-0", "slot-1")
+      )
       // The leaf review names the tier that produced the output, as run does.
       const leafReviews = declaredReviews.filter((request) => request.stage === "leaf")
       expect(leafReviews.map(keys)).toEqual(leafReviews.map(() => reviewed[0]))
-      expect(leafReviews.map((request) => request.tier)).toEqual(["weak", "strong", "weak", "strong"])
+      expect(leafReviews.map((request) => request.tier)).toEqual(
+        Array.from({ length: makeOptions.maxDepth * attempts }, () => ["weak", "strong"]).flat()
+      )
       // Settle is declared with the keys run settles with.
       expect(keys(declaredSettle)).toEqual(settlement)
     }))

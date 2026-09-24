@@ -105,6 +105,13 @@ describe("Markdown", () => {
     expect(markdown.capabilities).toEqual(handwritten.capabilities)
   })
 
+  it("accepts exactly the Agent Skills name grammar", () => {
+    for (const name of ["pdf", "pdf-processing", "a1-b2", "x".repeat(64)]) expect(Markdown.isSkillName(name)).toBe(true)
+    for (const name of ["", "-pdf", "pdf-", "pdf--x", "PDF", "p_df", "x".repeat(65)]) {
+      expect(Markdown.isSkillName(name)).toBe(false)
+    }
+  })
+
   it("returns a stable code when SKILL.md frontmatter is incomplete", () => {
     const result = Markdown.parseSkill("---\nname: example\n---\n")
 

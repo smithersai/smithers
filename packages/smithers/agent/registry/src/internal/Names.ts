@@ -4,6 +4,7 @@
  *
  * @since 0.1.0
  */
+import * as Markdown from "@smthrs/core/Markdown"
 import * as Option from "effect/Option"
 import type { DiscoveryWarning } from "../Descriptor.ts"
 
@@ -42,7 +43,7 @@ export const deriveFromFrontmatter = (
   if (typeof value === "string" && value.trim().length > 0) {
     const name = value.trim()
     const warnings: Array<DiscoveryWarning> = []
-    if (name.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+    if (!Markdown.isSkillName(name)) {
       warnings.push({
         code: "invalid_name",
         path: options.path,

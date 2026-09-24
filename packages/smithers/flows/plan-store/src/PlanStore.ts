@@ -36,8 +36,7 @@ export const PlanStoreErrorCode = Schema.Literals([
   "invalid_plan",
   "constraint",
   "decode_failed",
-  "persistence_failed",
-  "unknown"
+  "persistence_failed"
 ])
 
 /**

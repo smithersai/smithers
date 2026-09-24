@@ -1,9 +1,11 @@
 /**
  * Bounded retry helpers.
  *
- * Retry is an execution concern, so the declaration side records the policy
- * (attempt count, backoff ladder, non-retryable tags) as identity while
- * {@link retryEffect} performs it. The ladder IS `@smthrs/flow`
+ * The declared decorator performs the retry: every attempt the budget allows
+ * is a call of the wrapped flow, each attempt but the last is guarded by a
+ * `Node.catch` whose failure arm runs the next one, and a declared backoff is a
+ * durable `Sleep.action` wait between them. {@link retryEffect} performs the
+ * same policy on a hand-written Effect. The ladder IS `@smthrs/flow`
  * `RetryPolicy`'s, so a pattern policy and an engine policy are the same three
  * numbers rather than two spellings of them.
  *
@@ -15,10 +17,12 @@
  */
 import * as Flow from "@smthrs/flow/Flow"
 import type * as RetryPolicy from "@smthrs/flow/RetryPolicy"
+import * as Sleep from "@smthrs/flow/Sleep"
 import * as Node from "@smthrs/plan/Node"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
+import * as Compose from "./internal/Compose.ts"
 import * as Decorate from "./internal/Decorate.ts"
 import * as Pattern from "./Pattern.ts"
 import { PatternError } from "./PatternError.ts"
@@ -123,9 +127,49 @@ const label = (options: Options): string => {
   return parts.join(", ")
 }
 
+/** The wait before attempt `attempt + 1`: `min(initialMs * factor^(attempt - 1), maxMs)`. */
+const delayMillis = (backoff: Backoff, attempt: number): number =>
+  Math.min(backoff.initialMs * backoff.factor ** (attempt - 1), backoff.maxMs)
+
+const tagOf = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "_tag" in error && typeof error._tag === "string"
+    ? error._tag
+    : undefined
+
 const declaration = (inner: Flow.Any, options: Options): Flow.Any => {
   validate(options)
+  // Each attempt nests the catch, the non-retryable branch, and the wait.
+  const tooDeep = Compose.sequencedBoundRefusal("Retry", "attempts", options.attempts, 3)
+  if (tooDeep !== undefined) throw tooDeep
   const envelope = Decorate.envelopeOf(inner)
+  const identity = captures(options)
+  const fatal = options.nonRetryable === undefined ? undefined : new Set(tags(options.nonRetryable))
+  const backoff = options.backoff
+  const attempt = (payload: unknown, index: number): Node.Node<unknown, unknown, never> => {
+    const call = Decorate.call<never>(inner, payload)
+    if (index >= options.attempts) return call
+    const next = backoff === undefined
+      ? attempt(payload, index + 1)
+      : Node.andThen(Sleep.action.call({ millis: delayMillis(backoff, index) }), attempt(payload, index + 1))
+    return Node.catch(call, {
+      onFailure: Node.capture(
+        { ...identity, attempt: index },
+        (error: unknown): Node.Node<unknown, unknown, never> =>
+          fatal === undefined ? next : Node.branch(Node.succeed(error), {
+            // The tag is read off the real failure at run time.
+            if: Node.capture(
+              { ...identity, attempt: index, fatal: true },
+              (failure: unknown) => {
+                const tag = tagOf(failure)
+                return tag !== undefined && fatal.has(tag)
+              }
+            ),
+            then: (failure) => Node.fail(failure),
+            else: () => next
+          })
+      )
+    })
+  }
   return Flow.make(`withRetry(${Decorate.displayName(inner)}, ${label(options)})`, {
     ...(inner.description === undefined ? {} : { description: inner.description }),
     payload: inner.payloadSchema,
@@ -133,16 +177,20 @@ const declaration = (inner: Flow.Any, options: Options): Flow.Any => {
     error: inner.errorSchema,
     capabilities: Decorate.capabilitiesOf(inner),
     ...(envelope === undefined ? {} : { effects: envelope }),
-    body: Node.capture(captures(options), (payload: unknown) => Decorate.call(inner, payload))
+    body: Node.capture(identity, (payload: unknown) => attempt(payload, 1))
   })
 }
 
 /**
  * Builds a bounded retry decorator.
  *
- * The returned declaration preserves the wrapped flow's graph. Use
- * {@link retryEffect} at the Effect execution boundary; retry cannot be
- * truthfully encoded as a success-only `Node.andThen` chain.
+ * The returned declaration calls the wrapped flow once per attempt the budget
+ * allows. Every attempt but the last is a `Node.catch`, so a typed failure
+ * runs the next attempt and a success settles without running the rest; a
+ * failure whose `_tag` is listed in `nonRetryable` is re-raised at once.
+ * A declared `backoff` is a durable `Sleep.action` wait between attempts, so a
+ * host executing a backoff retry provides `Sleep.layer`. Fiber interruption is
+ * not a typed failure and is never retried.
  *
  * `make` snapshots the options at the call, so a later edit to the caller's
  * object does not change the decorator it returned.
@@ -168,11 +216,6 @@ const ladder = (backoff: Backoff): Schedule.Schedule<Duration.Duration> =>
     Schedule.exponential(Duration.millis(backoff.initialMs), backoff.factor),
     ({ duration }) => Effect.succeed(Duration.millis(Math.min(Duration.toMillis(duration), backoff.maxMs)))
   )
-
-const tagOf = (error: unknown): string | undefined =>
-  typeof error === "object" && error !== null && "_tag" in error && typeof error._tag === "string"
-    ? error._tag
-    : undefined
 
 /**
  * Retries typed Effect failures up to the declared total attempt count,

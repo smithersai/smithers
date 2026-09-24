@@ -33,12 +33,24 @@ describe("Canonical", () => {
     })
     let error: Schema.SchemaError
     try {
-      error = failure(null)
+      // Only the encode direction parses: decoding serializes and trusts the
+      // serializer's own refusals.
+      error = Effect.runSync(Effect.flip(Schema.encodeUnknownEffect(Canonical)("{}")))
     } finally {
       parser.mockRestore()
     }
     expect(error).toBeInstanceOf(Schema.SchemaError)
     expect(error.message).toContain(message)
+  })
+
+  it("serializes without parsing its own output back", () => {
+    const parser = vi.spyOn(JSON, "parse")
+    try {
+      serialize({ b: 2, a: [true, null] })
+      expect(parser).not.toHaveBeenCalled()
+    } finally {
+      parser.mockRestore()
+    }
   })
 
   it("produces valid JSON", () => {

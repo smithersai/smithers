@@ -3,10 +3,10 @@
  *
  * The declaration assertions are the same observable facts as before: one
  * generate and one evaluate call per declared iteration, and the next
- * generation reading the previous attempt by field. Comparing a score against
- * the target is a decision {@link Optimizer.run} makes on a real value; the
- * declaration's one test, reaching the bound, reads the declared bound and so
- * stays at plan time.
+ * generation reading the previous attempt by field. The executed cases run
+ * the declaration and {@link Optimizer.run} on the same scripted scores and
+ * require the same outcome: the target check and the best-so-far fold happen
+ * on real values in both.
  */
 import { describe, it } from "@effect/vitest"
 import { Flow, Graph } from "@smthrs/flow"
@@ -16,6 +16,7 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Optimizer from "../src/Optimizer.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { execute, member } from "./Execute.ts"
 import { callsTo } from "./Graphs.ts"
 
 /** The generate member: it is handed `{ input, previous, iteration }`. */
@@ -434,4 +435,86 @@ describe("Optimizer", () => {
       expect(result.iterations).toBe(2)
       expect(result.best.candidate).toBe("draft 2")
     }))
+
+  it("builds the deepest bound it accepts and refuses the next one", () => {
+    // Each iteration nests three levels (the generate bind, the evaluate bind,
+    // and the branch), so `Graph.maximumGraphDepth` (1000) admits 332.
+    expect(
+      callsTo(
+        Graph.build(Optimizer.make({ generate, evaluate, maxIterations: 332 }), { input: "p" }),
+        "optimizer/generate"
+      )
+    )
+      .toHaveLength(332)
+    expect(() => Optimizer.make({ generate, evaluate, maxIterations: 333 })).toThrow(
+      new PatternError({
+        code: "invalid_decorator",
+        message: "Optimizer maxIterations must be at most 332 to stay inside the plan depth limit, received 333"
+      })
+    )
+  })
+
+  describe("executed declaration matches run on the same scripted scores", () => {
+    // Members answer from the literal iteration a declaration hands them, so a
+    // scripted score is a real value by the time the ledger folds it.
+    const declared = (scores: ReadonlyArray<number>) => ({
+      generate: member(
+        "optimizer/scripted-generate",
+        ({ iteration }) => `candidate-${iteration}`,
+        { input: Schema.Unknown, previous: Schema.Unknown, iteration: Schema.Number }
+      ),
+      evaluate: member(
+        "optimizer/scripted-evaluate",
+        ({ iteration }) => ({ score: scores[iteration - 1]!, feedback: `feedback-${iteration}` }),
+        { value: Schema.Unknown, iteration: Schema.Number }
+      )
+    })
+    const settle = (effect: Effect.Effect<unknown, unknown, never>) =>
+      Effect.runPromise(Effect.match(effect, { onFailure: (error) => ({ failed: error }), onSuccess: (ok) => ok }))
+    const both = async (
+      scores: ReadonlyArray<number>,
+      options: { readonly targetScore?: number; readonly maxIterations: number; readonly onMaxReached?: "fail" }
+    ) => {
+      const flow = Optimizer.make({ ...declared(scores), ...options })
+      const executed = await execute(flow, { input: "prompt" }, `optimizer-${scores.join("-")}-${options.onMaxReached}`)
+        .then((ok) => ok, (error: unknown) => ({ failed: error }))
+      const ran = await settle(Optimizer.run("prompt", { ...scripted(scores), ...options }))
+      return { executed, ran }
+    }
+
+    it("stops at the first candidate that reaches the target", async () => {
+      const { executed, ran } = await both([1, 0, 0], { targetScore: 0.9, maxIterations: 3, onMaxReached: "fail" })
+      expect(executed).toEqual({
+        best: { candidate: "candidate-1", score: 1, feedback: "feedback-1", iteration: 1 },
+        iterations: 1,
+        converged: true
+      })
+      expect(executed).toEqual(ran)
+    })
+
+    it("reports the best attempt, not the last, when the bound is reached", async () => {
+      const { executed, ran } = await both([0.2, 0.7, 0.4], { maxIterations: 3 })
+      expect(executed).toEqual({
+        best: { candidate: "candidate-2", score: 0.7, feedback: "feedback-2", iteration: 2 },
+        iterations: 3,
+        converged: false
+      })
+      expect(executed).toEqual(ran)
+    })
+
+    it("fails exhausted at the bound under onMaxReached fail", async () => {
+      const { executed, ran } = await both([0.2, 0.7], { targetScore: 0.9, maxIterations: 2, onMaxReached: "fail" })
+      expect(executed).toMatchObject({
+        failed: { code: "exhausted", message: "Optimizer reached its bound of 2 iterations below 0.9" }
+      })
+      expect(ran).toMatchObject({ failed: { code: "exhausted" } })
+    })
+
+    it("refuses a non-finite score", async () => {
+      const { executed, ran } = await both([0.2, Number.POSITIVE_INFINITY, 1], { maxIterations: 3 })
+      const message = "Optimizer evaluation score at iteration 2 must be a finite number, received Infinity"
+      expect(executed).toMatchObject({ failed: { code: "invalid_input", message } })
+      expect(ran).toMatchObject({ failed: { code: "invalid_input", message } })
+    })
+  })
 })

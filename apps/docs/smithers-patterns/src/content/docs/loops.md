@@ -30,9 +30,11 @@ none of these patterns carry a cancellation flag.
 One consequence follows from core's node vocabulary, and it is deliberate:
 
 - **A builder cannot READ a value; a declaration can still DECIDE on one.**
-  Graph planning evaluates a builder once against a planned placeholder, so
-  `onMaxReached: "fail"` is applied by `run` and `make` declares the exhausted
-  value instead. What a declaration does carry is both continuations:
+  Graph planning evaluates a builder once against a planned placeholder, so a
+  builder never inspects a result. Reaching the bound is a plan-time fact, so
+  `make` declares the last iteration's continuation as `onMaxReached` says:
+  the exhausted value under `"return-last"`, and a `PatternError` `exhausted`
+  failure under `"fail"`. What a declaration does carry is both continuations:
   `Node.branch` states the exit condition and the two arms before anything
   runs, and the predicate is evaluated at run time on the value the body really
   produced, which is how `Loop` stops. Recovery is the same idea for failure:
@@ -156,14 +158,16 @@ for the search to fall short of, so `make` throws and `run` fails
 `invalid_decorator` before generating anything. With a target, exhausting the
 bound below it fails `exhausted`.
 
-The target score never enters the declared topology, because comparing a score
-is a runtime decision. It enters declaration identity instead, so two searches
-that differ only in their target do not share a step key.
-
 `Optimizer.make` declares each iteration as a `generate` call followed by an
 `evaluate` call, and declares the next `generate` call as reading the previous
 attempt. Dependency analysis therefore sees `evaluate` feeding the generation
-that follows it, which is the edge the search actually depends on.
+that follows it, which is the edge the search actually depends on. After each
+evaluation a `Node.map` folds the real score into the standing best and a
+`Node.branch` settles the search when the attempt reaches `targetScore` or
+scores a non-finite number, so an executed declaration stops, reports `best`,
+and fails exactly where `run` does. The target score also enters declaration
+identity, so two searches that differ only in their target do not share a step
+key.
 
 ## ScanFixVerify
 
@@ -209,8 +213,12 @@ each one.
 issues a scan will find, so the declaration carries the largest fan-out the
 author will admit, batched at `concurrency`. The declared topology is therefore
 `maxRetries` scans, `maxRetries * maxIssues` fixes, and `maxRetries` verifies.
-Keep `maxIssues` at or above what the scanner can produce, or the declaration
-understates the work a run performs.
+An executed declaration makes the decisions `run` makes: each scan is a
+`Node.branch` that settles `resolved: true` when it comes back empty, each fix
+slot runs only when the scan returned an issue at its index, and `verify` is
+handed the fixes of the issues that exist. Keep `maxIssues` at or above what
+the scanner can produce: issues past it wait for the next round's rescan, and
+the declaration understates the work a run performs.
 
 ```ts
 const pattern = ScanFixVerify.make({

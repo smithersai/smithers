@@ -350,8 +350,19 @@ const beneath = (tree: string, path: string): boolean => {
 }
 
 /**
+ * Whether a plain-string entry is a pattern rather than an exact path. The
+ * runtime boundary (`engine-store` `WorkspaceSandbox`) honors `*` and `**` in a
+ * string entry, so static overlap must read it the same way.
+ */
+const wildcard = (entry: string): boolean => entry.includes("*")
+
+/**
  * Conservative static overlap. `true` may over-serialize; `false` proves that
  * no path can belong to both declarations.
+ *
+ * A plain string containing `*` is a pattern, matched with
+ * {@link matchesPattern}; two patterns, or a pattern against a Glob or
+ * TreeArtifact, overlap conservatively.
  *
  * Exact paths compare in their {@link canonical} separator and NFC form, so
  * separator aliases and canonically equivalent Unicode spellings overlap. A
@@ -364,7 +375,18 @@ const beneath = (tree: string, path: string): boolean => {
  * @slop
  */
 export const overlaps = (left: Entry, right: Entry): boolean => {
-  if (typeof left === "string" && typeof right === "string") return canonical(left) === canonical(right)
+  if (typeof left === "string" && typeof right === "string") {
+    const leftWild = wildcard(left)
+    const rightWild = wildcard(right)
+    if (leftWild && rightWild) return true
+    if (leftWild) return matchesPattern(canonical(left), canonical(right))
+    if (rightWild) return matchesPattern(canonical(right), canonical(left))
+    return canonical(left) === canonical(right)
+  }
+  // A string holding `*` is a pattern (see {@link wildcard}); against a Glob or
+  // a TreeArtifact it answers as conservatively as glob against glob.
+  if (typeof left === "string" && wildcard(left) && !(typeof right === "string")) return true
+  if (typeof right === "string" && wildcard(right) && !(typeof left === "string")) return true
   if (typeof left === "string" && isGlob(right)) return matchesGlob(right, canonical(left))
   if (isGlob(left) && typeof right === "string") return matchesGlob(left, canonical(right))
   if (isGlob(left) && isGlob(right)) return true

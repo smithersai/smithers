@@ -193,6 +193,19 @@ const fail = (code: MarkdownErrorCode, message: string): Result.Result<never, Ma
 // by single hyphens, so a leading, trailing, or doubled hyphen fails here.
 const skillNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+/**
+ * Whether `name` is a valid Agent Skills name: 1 to 64 lowercase ASCII
+ * letters, digits, or single hyphens, not starting or ending with a hyphen.
+ *
+ * {@link validateSkillFrontmatter} applies this rule, and `@smthrs/registry`
+ * reads the same predicate when it warns about a discovered skill's name, so
+ * the rule has one definition.
+ *
+ * @category validation
+ * @since 1.0.0-rc.1
+ */
+export const isSkillName = (name: string): boolean => name.length <= 64 && skillNamePattern.test(name)
+
 // The specification measures a field in characters. Counting UTF-16 units
 // would reject a 600-emoji description the specification accepts, so the
 // count walks code points.
@@ -229,7 +242,7 @@ export const validateSkillFrontmatter = (
   if (name === undefined || (typeof name === "string" && isBlank(name))) {
     return fail("skill_missing_name", "SKILL.md requires a non-empty frontmatter name")
   }
-  if (typeof name !== "string" || name.length > 64 || !skillNamePattern.test(name)) {
+  if (typeof name !== "string" || !isSkillName(name)) {
     return fail(
       "skill_invalid_name",
       "SKILL.md name must be 1 to 64 lowercase ASCII letters, digits, or single hyphens, and cannot start or end with a hyphen"

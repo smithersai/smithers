@@ -60,17 +60,24 @@ describe("Plan.compile", () => {
     }
   })
 
-  it.effect("completes 400 overlapping writers with the existing conflict and edge order", () =>
-    Effect.gen(function*() {
-      const plan = yield* withCrypto(compile(
-        Array.from({ length: 400 }, (_, index) => draft(`dense-${index}`, { writes: ["shared"] }))
-      ))
-      // Approval digest captured from the original ascending conflict pass.
-      expect(plan.digest).toBe("key1_5b86940214d53ada9bcc937b4c346610b5e458f2d967534b8f2bb01b32ea50d0")
-      expect(plan.nodes.reduce((total, node) => total + node.dependsOn.length, 0)).toBe(79_800)
-      expect(plan.nodes[399]!.dependsOn).toEqual(plan.nodes.slice(0, 399).map((node) => node.id))
-      expect(plan.nodes.every((node) => node.conflicts.length === 399)).toBe(true)
-    }))
+  // The edge and conflict counts pin the work; the wall clock is only a hang
+  // guard. About 2.6 s of CPU stretches past the package's 30 s default on a
+  // saturated runner, so this case gets its own ceiling.
+  it.effect(
+    "completes 400 overlapping writers with the existing conflict and edge order",
+    () =>
+      Effect.gen(function*() {
+        const plan = yield* withCrypto(compile(
+          Array.from({ length: 400 }, (_, index) => draft(`dense-${index}`, { writes: ["shared"] }))
+        ))
+        // Approval digest captured from the original ascending conflict pass.
+        expect(plan.digest).toBe("key1_5b86940214d53ada9bcc937b4c346610b5e458f2d967534b8f2bb01b32ea50d0")
+        expect(plan.nodes.reduce((total, node) => total + node.dependsOn.length, 0)).toBe(79_800)
+        expect(plan.nodes[399]!.dependsOn).toEqual(plan.nodes.slice(0, 399).map((node) => node.id))
+        expect(plan.nodes.every((node) => node.conflicts.length === 399)).toBe(true)
+      }),
+    120_000
+  )
 
   it.effect("refuses dense lane annotations at the candidate-pair budget", () =>
     Effect.gen(function*() {

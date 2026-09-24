@@ -15,7 +15,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { existsSync } from "node:fs"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 export const AddEleven = Action.make("flows/SandboxedFlow/fixtures/AddEleven", {
@@ -82,6 +82,18 @@ export const Inspector = Flow.make("flows/SandboxedFlow/fixtures/Inspector", {
   payload: { marker: Schema.String },
   success: Inspection,
   body: (payload) => Inspect.call(payload)
+})
+
+export const Edit = Action.make("flows/SandboxedFlow/fixtures/Edit", {
+  payload: { path: Schema.String, text: Schema.String, remove: Schema.String },
+  success: Schema.Void
+})
+
+/** Rewrites `path` with `text` and deletes `remove`, both in the workspace. */
+export const Editor = Flow.make("flows/SandboxedFlow/fixtures/Editor", {
+  payload: { path: Schema.String, text: Schema.String, remove: Schema.String },
+  success: Schema.Void,
+  body: (payload) => Edit.call(payload)
 })
 
 export const Sleep = Action.make("flows/SandboxedFlow/fixtures/Sleep", {
@@ -218,6 +230,12 @@ export const layer = Layer.mergeAll(
         runtime: "Bun" in globalThis ? "bun" : `node ${process.version}`,
         cwd: process.cwd()
       }
+    })
+  ),
+  Edit.toLayer(({ path, remove, text }) =>
+    Effect.promise(async () => {
+      await writeFile(path, text)
+      await rm(remove)
     })
   ),
   Sleep.toLayer(({ ms }) => Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, ms)))),

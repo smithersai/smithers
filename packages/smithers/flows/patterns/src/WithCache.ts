@@ -9,6 +9,7 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as CachePolicy from "@smthrs/plan/CachePolicy"
 import * as Node from "@smthrs/plan/Node"
+import * as Schema from "effect/Schema"
 import * as Decorate from "./internal/Decorate.ts"
 import * as Pattern from "./Pattern.ts"
 import { PatternError } from "./PatternError.ts"
@@ -152,6 +153,12 @@ const validate = (options: Options): void => {
       message: `withCache ttlMs must be a positive safe integer, received ${options.ttlMs}`
     })
   }
+  if (options.scope !== undefined && !Schema.is(CachePolicy.CacheScope)(options.scope)) {
+    throw new PatternError({
+      code: "invalid_decorator",
+      message: `withCache scope must be run, flow, or shared, received ${String(options.scope)}`
+    })
+  }
   if (options.version !== undefined && options.version.trim() === "") {
     throw new PatternError({
       code: "invalid_decorator",
@@ -199,7 +206,7 @@ const declaration = (inner: Flow.Any, options: Options): Flow.Any => {
  *
  * All options are optional. `ttlMs` must be a positive safe integer and
  * `version` a nonblank string; `scope` is `run`, `flow`, or `shared`. Invalid
- * effects, TTL, or version throw {@link PatternError} with code
+ * effects, TTL, scope, or version throw {@link PatternError} with code
  * `invalid_decorator` synchronously when the returned decorator is applied.
  * `make` snapshots options at construction and validates them on application.
  *
@@ -227,7 +234,7 @@ export const make = (options: Options = {}): Pattern.Decorator => {
  * The input must declare hermetic effects with a sealed or omitted tier, even
  * for a pure body. Every option is optional; `ttlMs` must be a positive safe
  * integer, `version` a nonblank string, and `scope` `run`, `flow`, or `shared`.
- * Invalid effects, TTL, or version throw {@link PatternError} with code
+ * Invalid effects, TTL, scope, or version throw {@link PatternError} with code
  * `invalid_decorator` synchronously.
  *
  * Declared fields enter identity. The {@link CachePolicyAnnotation} bag also

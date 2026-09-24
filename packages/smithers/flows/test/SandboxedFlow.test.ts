@@ -44,7 +44,7 @@ import * as pureEntry from "./fixtures/sandboxed-pure.ts"
 vi.mock("effect/Stream", { spy: true })
 
 const { ProviderError } = RemoteChildProcessSpawner
-const { Failing, Filler, Inspector, Sleeper, Sum, Writer } = childEntry
+const { Editor, Failing, Filler, Inspector, Sleeper, Sum, Writer } = childEntry
 
 const root = mkdtempSync(join(tmpdir(), "flows-sandboxed-flow-"))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -179,7 +179,7 @@ describe("SandboxedFlow.execute on a scratch machine", () => {
         session: "sum",
         entry
       })
-      expect(result).toEqual({ output: 42, diff: [] })
+      expect(result).toEqual({ output: 42, diff: [], deleted: [] })
       // A normal completion releases the session, which removes the workspace.
       expect(readdirSync(root)).toEqual([])
     }), 60_000)
@@ -239,6 +239,27 @@ describe("SandboxedFlow.execute on a scratch machine", () => {
       expect(result.output.runtime).toMatch(/^node v/)
       // The seed kept its size, so only the guest's own file is a change.
       expect(result.diff).toEqual([{ path: "marker.txt", bytes: new TextEncoder().encode("left by the guest") }])
+    }), 60_000)
+
+  it.live("reports a same-size rewrite and a deletion on a reattached workspace", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const result = yield* Effect.scoped(
+        Effect.gen(function*() {
+          const earlier = yield* directory.acquire("edited")
+          yield* earlier.writeFile(`${earlier.workdir}/version.txt`, new TextEncoder().encode("1.2.3"))
+          yield* earlier.writeFile(`${earlier.workdir}/gone.txt`, new TextEncoder().encode("delete me"))
+          return yield* SandboxedFlow.execute(Editor, { path: "version.txt", text: "1.2.4", remove: "gone.txt" }, {
+            provider: directory,
+            session: "edited",
+            entry,
+            collectDiff: true,
+            timeout: Duration.seconds(30)
+          })
+        })
+      )
+      expect(result.diff).toEqual([{ path: "version.txt", bytes: new TextEncoder().encode("1.2.4") }])
+      expect(result.deleted).toEqual(["gone.txt"])
     }), 60_000)
 
   it.live("refuses a stale result when a reattached guest exits zero without writing", () =>
@@ -1192,8 +1213,8 @@ describe("SandboxedFlow.action on an engine", () => {
       error: SandboxedFlow.SandboxedFlowError,
       body: (payload) => Node.all({ first: RunSum.call(payload), second: Other.call(payload) })
     })
-    const first = RunSum.toLayer(() => Effect.succeed({ output: 1, diff: [] }))
-    const second = Other.toLayer(() => Effect.succeed({ output: 2, diff: [] }))
+    const first = RunSum.toLayer(() => Effect.succeed({ output: 1, diff: [], deleted: [] }))
+    const second = Other.toLayer(() => Effect.succeed({ output: 2, diff: [], deleted: [] }))
     const partial = Layer.mergeAll(first, Interpreter.layer(Both)).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(Engine.FlowEngine.layerMemory),
@@ -1274,8 +1295,8 @@ describe("SandboxedFlow.action on an engine", () => {
         expect(peakPerKey).toBe(1)
         expect([...active.values()]).toEqual([0, 0])
         expect(Exit.isSuccess(exit) && exit.value).toEqual({
-          first: { output: 16, diff: [] },
-          second: { output: 16, diff: [] }
+          first: { output: 16, diff: [], deleted: [] },
+          second: { output: 16, diff: [], deleted: [] }
         })
       }),
     60_000
@@ -1336,7 +1357,7 @@ describe("SandboxedFlow.action on an engine", () => {
           }
           return yield* Recovering.execute({ n: 5 }, { executionId })
         }).pipe(Effect.provide(layers))
-        expect(result).toEqual({ output: 16, diff: [] })
+        expect(result).toEqual({ output: 16, diff: [], deleted: [] })
         expect(callIds).toHaveLength(2)
         expect(callIds[0]).toEqual(expect.any(String))
         expect(callIds[0]!.length).toBeGreaterThan(0)
@@ -1382,7 +1403,7 @@ describe("SandboxedFlow.action on an engine", () => {
           engine(SandboxedFlow.toLayer(RunSum, Sum, { provider: directory, session: "action-static", entry }))
         )
       )
-      expect(result).toEqual({ output: 42, diff: [] })
+      expect(result).toEqual({ output: 42, diff: [], deleted: [] })
     }), 60_000)
 
   it.live("derives the placement from the call and the parent execution", () =>
@@ -1427,9 +1448,18 @@ describe("the result schema", () => {
   it("encodes a result with its bytes as base64 for the journal", () => {
     const encoded = Schema.encodeSync(Schema.toCodecJson(SandboxedFlow.resultSchema(Schema.Number)))({
       output: 42,
-      diff: [{ path: "a.bin", bytes: new Uint8Array([1, 2, 3]) }]
+      diff: [{ path: "a.bin", bytes: new Uint8Array([1, 2, 3]) }],
+      deleted: ["gone.txt"]
     })
-    expect(encoded).toEqual({ output: 42, diff: [{ path: "a.bin", bytes: "AQID" }] })
+    expect(encoded).toEqual({ output: 42, diff: [{ path: "a.bin", bytes: "AQID" }], deleted: ["gone.txt"] })
+  })
+
+  it("decodes a result journaled before deleted existed with no deletions", () => {
+    const decoded = Schema.decodeUnknownSync(Schema.toCodecJson(SandboxedFlow.resultSchema(Schema.Number)))({
+      output: 42,
+      diff: []
+    })
+    expect(decoded).toEqual({ output: 42, diff: [], deleted: [] })
   })
 
   it("carries the 0.x bundle limits as its defaults", () => {
