@@ -8,6 +8,7 @@
  * cannot decide says so with the exact reason (missing env, no browser, or a
  * fact the rendered page does not expose), never with a blanket deferral.
  */
+import { ZERO_BALANCE_EXHAUSTED_TEXT } from "../../src/mainview/state/controller/failures.ts"
 import {
   type Affordance,
   asRecord,
@@ -37,8 +38,7 @@ import {
   unnamedAffordances,
   verdict,
   VISIBLE_AFFORDANCES,
-  waitForText,
-  ZERO_BALANCE_PAUSE_COPY
+  waitForText
 } from "./Probes.ts"
 import type { ChecklistRow, ProbeContext, ProbePage, ProbeResult } from "./Types.ts"
 
@@ -629,17 +629,16 @@ export const ROWS: ReadonlyArray<ChecklistRow> = [
       const chatWorks = turn.status === 200 && turnText.includes("\"type\":\"done\"")
       /*
        * Half two — non-complimentary work pauses. The pause is the client's
-       * zeroBalanceGuard (AppController.ts): a workflow launch at $0 is
-       * refused into the transcript with ZERO_BALANCE_EXHAUSTED_TEXT
-       * ("workflow runs pause until more balance is added") instead of
-       * starting a run. That is a rendered fact, so it is asserted on a
+       * zeroBalanceGuard (controller/workflows.ts): a flow launch at $0 is
+       * refused into the transcript with ZERO_BALANCE_EXHAUSTED_TEXT instead
+       * of starting a run. That is a rendered fact, so it is asserted on a
        * headless page carrying the $0 session, not inferred.
        */
       const page = await zeroBalancePage(ctx)
       const before = await sendPrompt(page, "/flow.create add a regression test for the balance seam")
       const paused = await waitForText(
         page,
-        (text) => ZERO_BALANCE_PAUSE_COPY.test(replyRegion(before, text)),
+        (text) => replyRegion(before, text).includes(ZERO_BALANCE_EXHAUSTED_TEXT),
         30_000,
         ctx.now,
         ctx.sleep
@@ -649,7 +648,7 @@ export const ROWS: ReadonlyArray<ChecklistRow> = [
         chatWorks && paused.ok && !started,
         `interactive turn at $0: HTTP ${turn.status} (done frame: ${
           turnText.includes("\"type\":\"done\"")
-        }); workflow launch at $0 refused with the pause statement=${paused.ok} after ${paused.elapsedMs}ms; a run started anyway=${started}; transcript: ${
+        }); flow launch at $0 refused with the pause statement=${paused.ok} after ${paused.elapsedMs}ms; a run started anyway=${started}; transcript: ${
           replyRegion(before, paused.text).trim().slice(0, 240)
         }`
       )

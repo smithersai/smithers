@@ -175,8 +175,6 @@ export const FAKE_SUCCESS_COPY =
 export const HONEST_REFUSAL_COPY =
   /\b(can'?t (yet|do that)|cannot (yet|do that)|not (yet )?(able|connected|wired)|no (connector|access) for)\b/i
 export const INTRO_GRANT_LINE = "$500 of usage on us"
-/** The client-side pause the D-4 row is about (AppController's ZERO_BALANCE_EXHAUSTED_TEXT). */
-export const ZERO_BALANCE_PAUSE_COPY = /workflow runs pause/i
 
 /** A visible affordance whose command name is missing or unregistered. */
 export interface Affordance {

@@ -8,6 +8,7 @@
  */
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, describe, expect, test } from "bun:test"
+import { ZERO_BALANCE_EXHAUSTED_TEXT } from "../../src/mainview/state/controller/failures.ts"
 import { ROWS } from "./Rows.ts"
 import { runChecklist } from "./Runner.ts"
 import { BrowserUnavailableError, type ChecklistRow, type ProbeContext, type ProbePage } from "./Types.ts"
@@ -354,25 +355,26 @@ describe("D-4 (at $0, chat keeps working and non-complimentary work pauses)", ()
   const evaluate = (expression: string): unknown => (expression.includes("textarea") ? true : null)
   const env = { CHECKLIST_ZERO_BALANCE_BEARER: "smithers_session=zero" }
 
-  test("passes only when the workflow launch is refused with the pause statement", async () => {
+  test("passes only when the flow launch is refused with the pause statement", async () => {
     const track = recorder()
-    const page = fakePage(
-      {
-        texts: [
-          "transcript",
-          "transcript\nBalance is at $0 — workflow runs pause until more balance is added."
-        ],
-        evaluate
-      },
-      track
-    )
+    const page = fakePage({ texts: ["transcript", `transcript\n${ZERO_BALANCE_EXHAUSTED_TEXT}`], evaluate }, track)
     const result = await rowById("D-4").probe(contextFor({ page, env, fetch: turnOk }))
     expect(result.status).toBe("pass")
     expect(track.typed.join(" ")).toContain("/flow.create")
     expect(result.detail).toContain("pause statement=true")
   })
 
-  test("fails when a workflow launch at $0 does not pause", async () => {
+  test("fails on pause copy the product no longer dispatches", async () => {
+    const page = fakePage(
+      { texts: ["transcript", "transcript\nBalance is at $0 — workflow runs pause until more balance is added."], evaluate },
+      recorder()
+    )
+    const result = await rowById("D-4").probe(contextFor({ page, env, fetch: turnOk }))
+    expect(result.status).toBe("fail")
+    expect(result.detail).toContain("pause statement=false")
+  })
+
+  test("fails when a flow launch at $0 does not pause", async () => {
     const page = fakePage({ texts: ["transcript", "transcript\nRun started."], evaluate }, recorder())
     const result = await rowById("D-4").probe(contextFor({ page, env, fetch: turnOk }))
     expect(result.status).toBe("fail")
@@ -381,7 +383,7 @@ describe("D-4 (at $0, chat keeps working and non-complimentary work pauses)", ()
 
   test("fails when interactive chat itself stops working at $0", async () => {
     const page = fakePage(
-      { texts: ["transcript", "transcript\nworkflow runs pause until more balance is added."], evaluate },
+      { texts: ["transcript", `transcript\n${ZERO_BALANCE_EXHAUSTED_TEXT}`], evaluate },
       recorder()
     )
     const result = await rowById("D-4").probe(

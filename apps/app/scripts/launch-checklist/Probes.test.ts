@@ -12,8 +12,7 @@ import {
   SCORE_COPY,
   SETUP_COPY,
   unnamedAffordances,
-  waitForText,
-  ZERO_BALANCE_PAUSE_COPY
+  waitForText
 } from "./Probes.ts"
 import type { ProbePage } from "./Types.ts"
 
@@ -102,13 +101,5 @@ describe("the copy bars", () => {
     expect(RATING_COPY.test("Was this helpful?")).toBe(true)
     expect(SCORE_COPY.test("Confidence: 8/10")).toBe(true)
     expect(SCORE_COPY.test("Opened pull request 12 in will/flows")).toBe(false)
-  })
-
-  test("recognise the zero-balance pause statement the client dispatches", () => {
-    expect(
-      ZERO_BALANCE_PAUSE_COPY.test(
-        "Balance is at $0 — workflow runs pause until more balance is added. Run /billing.upgrade to add balance; chat stays free in the meantime."
-      )
-    ).toBe(true)
   })
 })
