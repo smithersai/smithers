@@ -245,7 +245,7 @@ func (h *WorkspaceHandler) ProxyWorkspacePreview(w http.ResponseWriter, r *http.
 	}
 	target, parseTargetErr := url.Parse(access.URL)
 	if parseTargetErr != nil || target.Scheme != "http" || !previewLoopbackHost(target.Hostname()) ||
-		target.User != nil || target.Port() != rawPort || (target.Path != "" && target.Path != "/") ||
+		target.User != nil || target.Port() != strconv.FormatUint(parsedPort, 10) || (target.Path != "" && target.Path != "/") ||
 		target.RawQuery != "" || target.Fragment != "" {
 		pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodePreviewUnavailable, "workspace preview unavailable"))
 		return

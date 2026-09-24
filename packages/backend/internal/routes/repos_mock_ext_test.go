@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 func (m mockRepoRouteService) GetRepoTopics(ctx context.Context, viewer *db.User, owner, repo string) ([]string, error) {

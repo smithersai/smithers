@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	apierrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type reposHAuditQueries struct {
@@ -141,7 +141,6 @@ func TestRepos_H_ErrorBranches(t *testing.T) {
 	reposHStatus(t, h, h.GetRepoContents, reposHReq(http.MethodGet, "/contents/missing", ``, map[string]string{"owner": "alice", "repo": "demo", "*": "missing"}, false), http.StatusNotFound)
 	reposHStatus(t, h, h.ListGitRefs, reposHReq(http.MethodGet, "/refs", ``, noOwner, false), http.StatusBadRequest)
 	reposHStatus(t, h, h.ListGitRefs, reposHReq(http.MethodGet, "/refs", ``, params, false), http.StatusForbidden)
-
 
 	reposHStatus(t, h, h.PatchRepo, reposHReq(http.MethodPatch, "/repo", `{"archived":true}`, params, true), http.StatusForbidden)
 	reposHStatus(t, h, h.PatchRepo, reposHReq(http.MethodPatch, "/repo", `{"archived":false}`, params, true), http.StatusForbidden)

@@ -15,9 +15,9 @@ import (
 	"github.com/coder/websocket"
 	gossh "golang.org/x/crypto/ssh"
 
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 const (
@@ -192,11 +192,9 @@ func (m *LSPSessionManager) open(ctx context.Context, sessionID string, info ser
 		exitWait:  m.exitWait,
 		exited:    make(chan struct{}),
 		done:      make(chan struct{}),
-		onDone: func() {
-			// Identity-checked removal, like the terminal manager: a replaced
-			// relay's teardown must not evict the newer one under the same id.
-		},
 	}
+	// Identity-checked removal, like the terminal manager: a replaced
+	// relay's teardown must not evict the newer one under the same id.
 	sess.onDone = func() { m.removeSession(sessionID, sess) }
 	sess.touch()
 	go sess.drainStderr(stderr)

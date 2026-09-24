@@ -16,10 +16,10 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // ---- mock service ----
@@ -44,6 +44,9 @@ func (m *mockAgentSessionStreamService) ListMessagesAfterID(ctx context.Context,
 }
 
 // ---- helpers ----
+
+// testAgentSessionID is a valid agent session UUID for route tests.
+const testAgentSessionID = "0b8f5f7e-2c1a-4d3e-9f10-1a2b3c4d5e6f"
 
 func withRepoCtx(req *http.Request, repoID int64, owner, name string) *http.Request {
 	repository := &db.Repository{ID: repoID, Name: name, LowerName: name}
@@ -83,7 +86,7 @@ func TestAgentSessionStream_MissingRepoContext(t *testing.T) {
 
 	h := &AgentSessionStreamHandler{Service: &mockAgentSessionStreamService{}}
 	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
-	req = withRouteParams(req, map[string]string{"id": "abc-123"})
+	req = withRouteParams(req, map[string]string{"id": testAgentSessionID})
 	req = withAuth(req, 1, "alice")
 	rec := httptest.NewRecorder()
 	h.AgentSessionStream(rec, req)
@@ -100,7 +103,7 @@ func TestAgentSessionStream_SessionNotFound(t *testing.T) {
 	}
 	h := &AgentSessionStreamHandler{Service: svc}
 	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
-	req = withRouteParams(req, map[string]string{"id": "abc-123"})
+	req = withRouteParams(req, map[string]string{"id": testAgentSessionID})
 	req = withAuth(req, 1, "alice")
 	req = withRepoCtx(req, 101, "owner", "repo")
 	rec := httptest.NewRecorder()
@@ -116,7 +119,7 @@ func TestAgentSessionStream_NilBroker_Returns500(t *testing.T) {
 		Broker:  nil,
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
-	req = withRouteParams(req, map[string]string{"id": "abc-123"})
+	req = withRouteParams(req, map[string]string{"id": testAgentSessionID})
 	req = withAuth(req, 1, "alice")
 	req = withRepoCtx(req, 101, "owner", "repo")
 	rec := httptest.NewRecorder()
@@ -129,7 +132,7 @@ func TestAgentSessionStream_NonFlusher_Returns500(t *testing.T) {
 
 	h := &AgentSessionStreamHandler{Service: &mockAgentSessionStreamService{}}
 	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
-	req = withRouteParams(req, map[string]string{"id": "abc-123"})
+	req = withRouteParams(req, map[string]string{"id": testAgentSessionID})
 	req = withAuth(req, 1, "alice")
 	req = withRepoCtx(req, 101, "owner", "repo")
 	rec := &nonFlusherWriter{ResponseWriter: httptest.NewRecorder()}
@@ -137,29 +140,65 @@ func TestAgentSessionStream_NonFlusher_Returns500(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rec.ResponseWriter.(*httptest.ResponseRecorder).Code)
 }
 
-func TestAgentSessionStream_NilService_SkipsValidation(t *testing.T) {
+func TestAgentSessionStream_NilService_Returns500(t *testing.T) {
 	t.Parallel()
 
-	// When Service is nil, the handler skips session validation and proceeds
-	// to the Broker nil check.
-	h := &AgentSessionStreamHandler{
-		Service: nil,
-		Broker:  nil,
-	}
-	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
-	req = withRouteParams(req, map[string]string{"id": "abc-123"})
+	// A handler wired without Service must fail closed: it cannot prove the
+	// session belongs to the repository, so it must not open a stream.
+	h := &AgentSessionStreamHandler{Broker: &sse.Broker{}}
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/x/stream", nil)
+	req = withRouteParams(req, map[string]string{"id": testAgentSessionID})
 	req = withAuth(req, 1, "alice")
 	req = withRepoCtx(req, 101, "owner", "repo")
 	rec := httptest.NewRecorder()
 	h.AgentSessionStream(rec, req)
-	// Broker==nil -> 500 (session validation was skipped)
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+func TestAgentSessionStream_InvalidSessionID_Returns400(t *testing.T) {
+	t.Parallel()
+
+	svc := &mockAgentSessionStreamService{
+		getSessionForRepoFn: func(context.Context, string, int64) error {
+			t.Error("GetSessionForRepo must not run for a non-UUID session id")
+			return nil
+		},
+	}
+	h := &AgentSessionStreamHandler{Service: svc, Broker: &sse.Broker{}}
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/x/stream", nil)
+	req = withRouteParams(req, map[string]string{"id": "abc; drop"})
+	req = withAuth(req, 1, "alice")
+	req = withRepoCtx(req, 101, "owner", "repo")
+	rec := httptest.NewRecorder()
+	h.AgentSessionStream(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 // ---- Replay / Last-Event-ID Tests ----
 
+// serveAgentSessionReplay runs AgentSessionStream with the broker seam
+// replaced by the durable catch-up the real broker performs on connect.
+// It swaps a package variable, so callers must not run in parallel.
+func serveAgentSessionReplay(t *testing.T, svc AgentSessionStreamService, lastEventID string) *httptest.ResponseRecorder {
+	t.Helper()
+	oldServe := serveAgentSessionBrokerSSE
+	t.Cleanup(func() { serveAgentSessionBrokerSSE = oldServe })
+	serveAgentSessionBrokerSSE = func(w http.ResponseWriter, r *http.Request, cfg sse.BrokerStreamConfig) {
+		cfg.OnConnect(w, r, w.(http.Flusher))
+	}
+
+	h := &AgentSessionStreamHandler{Service: svc, Broker: &sse.Broker{}}
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/x/stream", nil)
+	req.Header.Set("Last-Event-ID", lastEventID)
+	req = withRouteParams(req, map[string]string{"id": testAgentSessionID})
+	req = withAuth(req, 1, "alice")
+	req = withRepoCtx(req, 101, "owner", "repo")
+	rec := httptest.NewRecorder()
+	h.AgentSessionStream(rec, req)
+	return rec
+}
+
 func TestAgentSessionStream_ReplayCallsListMessagesAfterID(t *testing.T) {
-	t.Parallel()
 
 	var capturedSessionID string
 	var capturedAfterID int64
@@ -191,17 +230,9 @@ func TestAgentSessionStream_ReplayCallsListMessagesAfterID(t *testing.T) {
 		},
 	}
 
-	h := &AgentSessionStreamHandler{
-		Service: svc,
-	}
+	rec := serveAgentSessionReplay(t, svc, "100")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
-	req.Header.Set("Last-Event-ID", "100")
-	rec := httptest.NewRecorder()
-
-	h.replayAgentSessionEvents(rec, req, rec, "abc-123")
-
-	assert.Equal(t, "abc-123", capturedSessionID)
+	assert.Equal(t, testAgentSessionID, capturedSessionID)
 	assert.Equal(t, int64(100), capturedAfterID)
 	assert.Equal(t, 1000, capturedLimit)
 	assert.True(t, rec.Flushed)
@@ -213,65 +244,6 @@ func TestAgentSessionStream_ReplayCallsListMessagesAfterID(t *testing.T) {
 	assert.Contains(t, body, `"hello"`)
 	assert.Contains(t, body, "id: 102\n")
 	assert.Contains(t, body, `"world"`)
-}
-
-func TestAgentSessionStream_ReplayParsesLastEventID(t *testing.T) {
-	t.Parallel()
-
-	// Verify that non-numeric Last-Event-ID is silently ignored (no replay).
-	svc := &mockAgentSessionStreamService{
-		listMessagesAfterIDFn: func(_ context.Context, _ string, _ int64, _ int) ([]services.AgentMessageResponse, error) {
-			t.Error("ListMessagesAfterID should not be called for non-numeric Last-Event-ID")
-			return nil, nil
-		},
-	}
-
-	h := &AgentSessionStreamHandler{Service: svc}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
-	req.Header.Set("Last-Event-ID", "not-a-number")
-	rec := httptest.NewRecorder()
-
-	h.replayAgentSessionEvents(rec, req, rec, "abc-123")
-	assert.Empty(t, rec.Body.String())
-}
-
-func TestAgentSessionStream_ReplayZeroLastEventIDIgnored(t *testing.T) {
-	t.Parallel()
-
-	svc := &mockAgentSessionStreamService{
-		listMessagesAfterIDFn: func(_ context.Context, _ string, _ int64, _ int) ([]services.AgentMessageResponse, error) {
-			t.Error("ListMessagesAfterID should not be called for zero Last-Event-ID")
-			return nil, nil
-		},
-	}
-
-	h := &AgentSessionStreamHandler{Service: svc}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
-	req.Header.Set("Last-Event-ID", "0")
-	rec := httptest.NewRecorder()
-
-	h.replayAgentSessionEvents(rec, req, rec, "abc-123")
-	assert.Empty(t, rec.Body.String())
-}
-
-func TestAgentSessionStream_ReplayEmptyLastEventIDIgnored(t *testing.T) {
-	t.Parallel()
-
-	svc := &mockAgentSessionStreamService{
-		listMessagesAfterIDFn: func(_ context.Context, _ string, _ int64, _ int) ([]services.AgentMessageResponse, error) {
-			t.Error("ListMessagesAfterID should not be called for empty Last-Event-ID")
-			return nil, nil
-		},
-	}
-
-	h := &AgentSessionStreamHandler{Service: svc}
-	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
-	rec := httptest.NewRecorder()
-
-	h.replayAgentSessionEvents(rec, req, rec, "abc-123")
-	assert.Empty(t, rec.Body.String())
 }
 
 // ---- extractAgentEventID tests ----
@@ -557,7 +529,7 @@ func TestAgentSessionStream_PrincipalCarriesRepositoryOrganization(t *testing.T)
 
 	h := &AgentSessionStreamHandler{Service: &mockAgentSessionStreamService{}, Broker: &sse.Broker{}}
 	req := httptest.NewRequest(http.MethodGet, "/api/repos/acme/repo/agent/sessions/abc-123/stream", nil)
-	req = withRouteParams(req, map[string]string{"id": "abc-123"})
+	req = withRouteParams(req, map[string]string{"id": testAgentSessionID})
 	req = withAuth(req, 7, "alice")
 	req = withOrgRepoCtx(req, 101, 55)
 	rec := httptest.NewRecorder()
@@ -570,7 +542,7 @@ func TestAgentSessionStream_PrincipalCarriesRepositoryOrganization(t *testing.T)
 		UserID:         7,
 		RepositoryID:   101,
 		OrganizationID: 55,
-		SessionID:      "abc-123",
+		SessionID:      testAgentSessionID,
 	}, gotCfg.Principal)
 }
 

@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type reposCovService struct {
@@ -272,7 +272,6 @@ func TestRepos_Cov_ArchiveUnarchiveForkAndGitRoutes(t *testing.T) {
 	require.Len(t, refs, 1)
 	assert.Equal(t, "refs/heads/main", refs[0].Ref)
 
-
 }
 
 func TestRepos_Cov_ContentsFallbackAndServiceErrors(t *testing.T) {
@@ -307,7 +306,5 @@ func TestRepos_Cov_ContentsFallbackAndServiceErrors(t *testing.T) {
 	rootRec := httptest.NewRecorder()
 	h.GetRepoContents(rootRec, rootReq)
 	require.Equal(t, http.StatusForbidden, rootRec.Code)
-
-
 
 }

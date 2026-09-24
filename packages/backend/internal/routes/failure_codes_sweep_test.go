@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/sse"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/sse"
 )
 
 // decodeAPIError reads what actually went on the wire, not what the handler
@@ -39,7 +39,7 @@ func TestMissingTableDegradesToFeatureNotEnabled(t *testing.T) {
 	undefinedTable := &pgconn.PgError{Code: "42P01", Message: "relation does not exist"}
 
 	for name, write := range map[string]func(http.ResponseWriter, error){
-		"share listings":    shareListingErr,
+		"share listings": shareListingErr,
 		"anonymous sandbox": func(w http.ResponseWriter, err error) {
 			anonSandboxErr(w, httptest.NewRequest(http.MethodPost, "/api/public/sandboxes", nil), err)
 		},

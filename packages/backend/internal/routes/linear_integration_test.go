@@ -15,8 +15,8 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	smitherscrypto "github.com/smithersai/smithers/packages/backend/internal/pkg/crypto"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type mockRouteLinearQuerier struct {

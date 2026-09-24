@@ -237,5 +237,4 @@ func TestRepoHandlerMissingEndpoints_ContentsAndGitRefs(t *testing.T) {
 	h.ListGitRefs(refsRec, refsReq)
 	require.Equal(t, http.StatusOK, refsRec.Code)
 
-
 }

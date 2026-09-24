@@ -248,7 +248,7 @@ const backendGoModules = Smithers.Go.ModDownload({
 const backendGo = Smithers.Shell.Test({
   // Services TestMain prepares the shared cluster fixture before clusterservices
   // attaches. Only Plue-owned Terraform/monitoring source tests live in infra.
-  shell: "export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; go build ./packages/backend/... ./apps/backend/... ./distribution/... || exit $?; go test -count=1 ./packages/backend/internal/services || exit $?; packages=$(go list ./packages/backend/...) || exit $?; shared=$(printf '%s\\n' \"$packages\" | grep -vE '/internal/infra(/alerts)?$|/internal/services$') || exit $?; test -n \"$shared\" || exit 1; go vet $shared ./apps/backend/... ./distribution/... || exit $?; go test -count=1 $shared ./apps/backend/... ./distribution/...",
+  shell: "export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; unformatted=$(gofmt -l packages/backend apps/backend distribution) || exit $?; test -z \"$unformatted\" || { printf 'gofmt -w needed:\\n%s\\n' \"$unformatted\"; exit 1; }; go build ./packages/backend/... ./apps/backend/... ./distribution/... || exit $?; go test -count=1 ./packages/backend/internal/services || exit $?; packages=$(go list ./packages/backend/...) || exit $?; shared=$(printf '%s\\n' \"$packages\" | grep -vE '/internal/infra(/alerts)?$|/internal/services$') || exit $?; test -n \"$shared\" || exit 1; go vet $shared ./apps/backend/... ./distribution/... || exit $?; go test -count=1 $shared ./apps/backend/... ./distribution/...",
   env: {
     GOFLAGS: "-p=1 -buildvcs=false -mod=readonly",
     GOMAXPROCS: "2",

@@ -16,9 +16,9 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // authFAuditQuerier is a minimal AuditQueries fake that records how many audit
@@ -453,6 +453,16 @@ func TestAuth_F_PostLogout(t *testing.T) {
 		rec := httptest.NewRecorder()
 		h.PostLogout(rec, req)
 		require.Equal(t, http.StatusInternalServerError, rec.Code)
+		// The browser credential must be cleared even when the server row
+		// could not be deleted; session expiry cleans the row later.
+		cleared := map[string]bool{}
+		for _, c := range rec.Result().Cookies() {
+			if c.MaxAge < 0 {
+				cleared[c.Name] = true
+			}
+		}
+		assert.True(t, cleared["smithers_session"], "session cookie cleared")
+		assert.Len(t, cleared, 2, "session and CSRF cookies cleared")
 	})
 
 	t.Run("success with audit and user context", func(t *testing.T) {

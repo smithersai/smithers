@@ -13,8 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 // --- mock service ---
@@ -402,6 +403,26 @@ func TestWebhook_RejectInvalidSignature(t *testing.T) {
 	h.ReceiveWebhook(rec, req)
 
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestWebhook_OversizePayloadReturns413(t *testing.T) {
+	t.Parallel()
+
+	h := WebhookHandler{Service: &mockWebhookRouteService{
+		verifyInboundSigFn: func(context.Context, string, string, int64, []byte, string) error {
+			t.Error("signature verification must not run on a truncated payload")
+			return nil
+		},
+	}}
+	body := strings.Repeat("x", int(middleware.MaxRequestBodySize)+1)
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/alice/demo/hooks/1", strings.NewReader(body))
+	req.Header.Set(webhookSignatureHeader, "sha256=deadbeef")
+	req = withRouteParams(req, map[string]string{"owner": "alice", "repo": "demo", "id": "1"})
+	rec := httptest.NewRecorder()
+
+	h.ReceiveWebhook(rec, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 }
 
 // --- List Webhook Deliveries ---

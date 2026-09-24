@@ -1,12 +1,13 @@
 package routes_test
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"

@@ -291,39 +291,6 @@ func TestParseWebhookDeliveryPagination_LimitMatrix(t *testing.T) {
 	assert.Equal(t, 51, caseCount)
 }
 
-func TestParseInt_Matrix(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		input   string
-		want    int
-		wantErr bool
-	}{
-		{input: "0", want: 0},
-		{input: "1", want: 1},
-		{input: "42", want: 42},
-		{input: "-7", want: -7},
-		{input: " 8 ", want: 8},
-		{input: "+9", want: 9},
-		{input: "1.5", want: 1},
-		{input: "", wantErr: true},
-		{input: "abc", wantErr: true},
-	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(fmt.Sprintf("parse_%q", tc.input), func(t *testing.T) {
-			got, err := parseInt(tc.input)
-			if tc.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
 func TestParseTaskID_Matrix(t *testing.T) {
 	t.Parallel()
 

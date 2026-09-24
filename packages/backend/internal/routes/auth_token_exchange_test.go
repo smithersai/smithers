@@ -14,8 +14,8 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 func newTokenExchangeHandler(exchangeFn func(ctx context.Context, githubAccessToken, tokenName, githubRefreshToken string, ttlSeconds *int64) (services.ExchangeGitHubTokenResult, error)) http.Handler {

@@ -411,9 +411,6 @@ func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Requ
 	redirectURL := result.RedirectURL
 	if redirectURL == "" || redirectURL == "/" {
 		redirectURL = strings.TrimRight(strings.TrimSpace(h.PublicOrigin), "/") + "/"
-		if redirectURL == "/" {
-			redirectURL = "/"
-		}
 	}
 
 	// If the user was mid-way through an OAuth2 authorize flow (ticket 0106),
@@ -521,9 +518,6 @@ func (h *AuthHandler) GetAuth0Callback(w http.ResponseWriter, r *http.Request) {
 	redirectTarget := result.RedirectURL
 	if redirectTarget == "" || redirectTarget == "/" {
 		redirectTarget = strings.TrimRight(strings.TrimSpace(h.PublicOrigin), "/") + "/"
-		if redirectTarget == "/" {
-			redirectTarget = "/"
-		}
 	}
 
 	// If the user was mid-way through an OAuth2 authorize flow (ticket 0106),
@@ -676,7 +670,23 @@ func (h *AuthHandler) PostGitHubTokenExchange(w http.ResponseWriter, r *http.Req
 
 func (h *AuthHandler) PostLogout(w http.ResponseWriter, r *http.Request) {
 	cookieName := sessionCookieName(h.AuthConfig.SessionCookieName)
-	if sessionCookie, err := r.Cookie(cookieName); err == nil && sessionCookie.Value != "" {
+	sessionCookie, cookieErr := r.Cookie(cookieName)
+
+	// Clear the client credential first: a failed server-side revoke must not
+	// leave the browser signed in. Session expiry removes an orphaned row.
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   h.AuthConfig.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+	})
+	clearCSRFCookie(w, h.AuthConfig.CookieSecure)
+
+	if cookieErr == nil && sessionCookie.Value != "" {
 		if err := h.Service.Logout(r.Context(), sessionCookie.Value); err != nil {
 			writeRouteError(w, r, err)
 			return
@@ -698,17 +708,6 @@ func (h *AuthHandler) PostLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     cookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   h.AuthConfig.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Unix(0, 0).UTC(),
-		MaxAge:   -1,
-	})
-	clearCSRFCookie(w, h.AuthConfig.CookieSecure)
 	w.WriteHeader(http.StatusNoContent)
 }
 

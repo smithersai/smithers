@@ -1,13 +1,14 @@
 package routes
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 
 	"github.com/go-chi/chi/v5"
 

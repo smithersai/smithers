@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -168,4 +169,25 @@ func TestProxyWorkspacePreview_EndToEndStripsCredentialsAndSandboxes(t *testing.
 	assert.True(t, strings.HasPrefix(workspacePreviewSandboxPolicy, "sandbox "))
 	assert.NotContains(t, workspacePreviewSandboxPolicy, "allow-same-origin")
 	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+}
+
+// The route port is compared by value, so a zero-padded port that resolves to
+// the same loopback target is proxied instead of refused.
+func TestProxyWorkspacePreview_ZeroPaddedPortMatchesTarget(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(upstream.Close)
+	target, err := url.Parse(upstream.URL)
+	require.NoError(t, err)
+
+	svc := &previewRouteService{access: services.WorkspacePreviewAccess{URL: upstream.URL, Proxy: true}}
+	h := &WorkspaceHandler{Service: svc}
+	rec := httptest.NewRecorder()
+	h.ProxyWorkspacePreview(rec, previewRequest(t, "0"+target.Port(), ""))
+
+	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, target.Port(), strconv.FormatUint(uint64(svc.port), 10))
 }

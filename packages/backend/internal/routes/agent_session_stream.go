@@ -7,11 +7,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // AgentSessionStreamService is the minimal interface required by AgentSessionStreamHandler
@@ -82,12 +84,21 @@ func (h *AgentSessionStreamHandler) AgentSessionStream(w http.ResponseWriter, r 
 		return
 	}
 
-	// Verify the session exists and belongs to this repository.
-	if h.Service != nil {
-		if svcErr := h.Service.GetSessionForRepo(r.Context(), sessionID, repo.ID); svcErr != nil {
-			writeRouteError(w, r, svcErr)
-			return
-		}
+	// The session id becomes a LISTEN channel name, so accept only UUIDs.
+	if _, parseErr := uuid.Parse(sessionID); parseErr != nil {
+		pkgerrors.WriteError(w, pkgerrors.BadRequest("invalid session id"))
+		return
+	}
+
+	// Verify the session exists and belongs to this repository. Without a
+	// service the ownership check cannot run, so fail closed.
+	if h.Service == nil {
+		pkgerrors.WriteError(w, pkgerrors.Internal("agent service unavailable"))
+		return
+	}
+	if svcErr := h.Service.GetSessionForRepo(r.Context(), sessionID, repo.ID); svcErr != nil {
+		writeRouteError(w, r, svcErr)
+		return
 	}
 
 	// Build the LISTEN channel name: agent_session_{uuid_without_dashes}
@@ -121,15 +132,6 @@ func (h *AgentSessionStreamHandler) AgentSessionStream(w http.ResponseWriter, r 
 
 // Ensure AgentService satisfies AgentSessionStreamService at compile time.
 var _ AgentSessionStreamService = (*services.AgentService)(nil)
-
-func (h *AgentSessionStreamHandler) replayAgentSessionEvents(w http.ResponseWriter, r *http.Request, flusher http.Flusher, sessionID string) {
-	if h.Service == nil {
-		return
-	}
-	stream := h.durableAgentMessages(sessionID)
-	stream.Head = nil // This helper only replays an explicit reconnect cursor.
-	stream.OnConnect(w, r, flusher)
-}
 
 // extractAgentEventID extracts an "id" or "sequence" field from a JSON agent event payload.
 // Returns the stringified value, or "" if extraction fails.

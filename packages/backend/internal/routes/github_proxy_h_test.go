@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 func TestGithubProxy_H_RemainingBranches(t *testing.T) {
@@ -64,15 +64,12 @@ func TestGithubProxy_H_RemainingBranches(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 	})
 
-	t.Run("nil response body and bearer assertion", func(t *testing.T) {
+	t.Run("nil response body", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		writeGitHubProxyResponse(rec, &services.GitHubProxyResponse{StatusCode: http.StatusAccepted, Body: nil, Headers: http.Header{"X-Test": []string{"yes"}}})
 		require.Equal(t, http.StatusAccepted, rec.Code)
 		require.Equal(t, "yes", rec.Header().Get("X-Test"))
 		require.Empty(t, rec.Body.String())
-
-		require.Equal(t, "token", mustNonEmptyGitHubProxyBearerToken("token"))
-		require.Panics(t, func() { mustNonEmptyGitHubProxyBearerToken("") })
 
 		resp := &services.GitHubProxyResponse{Body: io.NopCloser(strings.NewReader("ok"))}
 		rec = httptest.NewRecorder()

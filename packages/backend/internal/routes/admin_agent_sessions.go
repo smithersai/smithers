@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"

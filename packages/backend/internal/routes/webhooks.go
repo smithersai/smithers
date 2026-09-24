@@ -2,15 +2,14 @@ package routes
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type WebhookRouteService interface {
@@ -208,8 +207,12 @@ func (h *WebhookHandler) ReceiveWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	payload, readErr := io.ReadAll(io.LimitReader(r.Body, middleware.MaxRequestBodySize))
+	payload, readErr := io.ReadAll(http.MaxBytesReader(w, r.Body, middleware.MaxRequestBodySize))
 	if readErr != nil {
+		if middleware.IsMaxBytesError(readErr) {
+			errors.WriteError(w, errors.RequestEntityTooLarge("webhook payload too large"))
+			return
+		}
 		errors.WriteError(w, errors.BadRequest("invalid webhook payload"))
 		return
 	}
@@ -290,10 +293,4 @@ func parseWebhookDeliveryPagination(r *http.Request) (cursor string, limit int) 
 		return strings.TrimSpace(r.URL.Query().Get("cursor")), 30
 	}
 	return cursor, limit
-}
-
-func parseInt(s string) (int, error) {
-	var n int
-	_, err := fmt.Sscan(s, &n)
-	return n, err
 }

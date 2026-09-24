@@ -6,9 +6,9 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
-	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // IssueEventRouteService is the subset of IssueEventService consumed by the route layer.

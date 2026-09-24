@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type GitHubProxyRouteService interface {
@@ -144,14 +144,7 @@ func extractBearerToken(r *http.Request) (string, *pkgerrors.APIError) {
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return "", pkgerrors.Unauthorized("Authorization header must use Bearer scheme")
 	}
-	return mustNonEmptyGitHubProxyBearerToken(strings.TrimSpace(parts[1])), nil
-}
-
-func mustNonEmptyGitHubProxyBearerToken(token string) string {
-	if token == "" {
-		panic("bearer token should be non-empty after strings.Fields validation")
-	}
-	return token
+	return parts[1], nil
 }
 
 func isRestrictedGitHubProxyResponseHeader(headerName string) bool {

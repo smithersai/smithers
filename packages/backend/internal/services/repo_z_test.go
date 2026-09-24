@@ -259,7 +259,6 @@ func TestRepo_Z_ContentRefsAndHelpers(t *testing.T) {
 	_, err = NewRepoService(q, rh, "s1").ListGitRefs(ctx, nil, "alice", "demo")
 	assert.Equal(t, http.StatusInternalServerError, apiStatus(t, err))
 
-
 	permission, owner, err := repoZServiceForRepo(repository).repoPermissionForUser(ctx, repository, repository.UserID.Int64)
 	require.NoError(t, err)
 	assert.True(t, owner)
