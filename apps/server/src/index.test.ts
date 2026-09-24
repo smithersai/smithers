@@ -3400,7 +3400,7 @@ describe("the /api/cloud bridge", () => {
     // here proves the bridge reuses the direct proxy instead of forking it:
     // same status, same body, same upstream URL, for every row and method.
     for (const rule of PLATFORM_PROXY_RULES) {
-      const inner = rule.exact ?? `${rule.prefix}x`
+      const inner = rule.exact ?? (rule.prefix?.endsWith("/") ? `${rule.prefix}x` : `${rule.prefix}/x`)
       for (const method of rule.methods) {
         await withUpstreams(() => jsonAnswer({ ok: true }), async (calls) => {
           const direct = await worker.fetch(new Request(`https://mvp.test${inner}`, { method }), signedInEnv)
@@ -3431,6 +3431,11 @@ describe("the /api/cloud bridge", () => {
       ["GET", "/api/cloud/api/billing/checkout"],
       /* One character short of the prefix. */
       ["GET", "/api/cloud/api/user/repo"],
+      /* A prefix opens its family only at a segment boundary. */
+      ["GET", "/api/cloud/api/user/repos-admin"],
+      ["GET", "/api/cloud/api/github/importfoo"],
+      ["GET", "/api/user/repos-admin"],
+      ["POST", "/api/github/importfoo"],
       /* An empty inner path. */
       ["GET", "/api/cloud/"]
     ]

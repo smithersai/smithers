@@ -52,7 +52,8 @@ import {
   handleCloudProxy,
   handlePlatformProxy,
   PLATFORM_PROXY_RULES,
-  platformProxyMatch
+  platformProxyMatch,
+  platformProxyRuleCovers
 } from "./proxies"
 import { AVAILABLE_REPOS, PUBLIC_REPOS_PATH } from "./publicRepoCatalog"
 import { handlePublicRepoActivity, parsePublicRepoActivityPath } from "./publicRepoActivity"
@@ -104,7 +105,7 @@ import { handleRepositorySetup } from "./repositorySetup"
 /* The five Durable Object classes wrangler binds, under their frozen names. */
 export { AccountModelVault, ClientErrorLog, GatewaySessionRegistry, RecommendLog, TurnCancelRegistry, TurnRateLimiter }
 /* The route tables the host parity matrix and the identity test read. */
-export { PLATFORM_PROXY_RULES }
+export { PLATFORM_PROXY_RULES, platformProxyRuleCovers }
 export type { WorkerEnv }
 export type { TurnCancelNamespace, TurnCancelStorage } from "./turns"
 

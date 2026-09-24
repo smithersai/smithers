@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url"
 import { createElement } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { PLATFORM_PROXY_RULES } from "smithers-server/index"
+import { PLATFORM_PROXY_RULES, platformProxyRuleCovers } from "smithers-server/index"
 import { INSTALLATIONS_PATH } from "smithers-server/githubAppInstall"
 import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
 import type { AppBootstrap, RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
@@ -296,8 +296,7 @@ const SEAM_FILES: ReadonlyArray<string> = readdirSync(fileURLToPath(new URL("../
 const proxied = (path: string, method?: string): boolean =>
   ((method === undefined || method === "GET") && (path === INSTALLATIONS_PATH || path.startsWith(`${INSTALLATIONS_PATH}/`))) ||
   PLATFORM_PROXY_RULES.some((rule) =>
-    (method === undefined || rule.methods.includes(method)) &&
-    (rule.prefix !== undefined ? path.startsWith(rule.prefix) : rule.exact !== undefined && path === rule.exact)
+    (method === undefined || rule.methods.includes(method)) && platformProxyRuleCovers(rule, path)
   )
 
 /*
@@ -463,9 +462,7 @@ describe("host parity — the web and native catalogs against the servers' own c
     const built = new Set(SEAM_FILES.flatMap((seam) => [...upstreamPaths(seam)]))
     expect(SEAM_FILES.length).toBeGreaterThan(10)
     const unreached = PLATFORM_PROXY_RULES.filter((rule) =>
-      ![...built].some((path) =>
-        rule.prefix !== undefined ? path.startsWith(rule.prefix) : rule.exact !== undefined && path === rule.exact
-      )
+      ![...built].some((path) => platformProxyRuleCovers(rule, path))
     ).map((rule) => `${rule.methods.join("|")} ${rule.exact ?? rule.prefix}`)
     expect(unreached).toEqual([])
     // The two rows the W0 hunk opened for lanes that had not landed are gone.

@@ -108,16 +108,27 @@ const platformFailureMessage = (status: number, body: string): string => {
   return `Smithers Cloud refused that request (HTTP ${status}).`
 }
 
+/**
+ * Whether `pathname` falls under one rule's path. A prefix opens its family
+ * only at a segment boundary: `/api/user/repos` answers itself and
+ * `/api/user/repos/...`, never `/api/user/repos-admin`, which would otherwise
+ * leave with the user's Cloud bearer.
+ */
+export const platformProxyRuleCovers = (
+  rule: (typeof PLATFORM_PROXY_RULES)[number],
+  pathname: string
+): boolean => {
+  if (rule.exact !== undefined) return pathname === rule.exact
+  if (rule.prefix === undefined) return false
+  if (rule.prefix.endsWith("/")) return pathname.startsWith(rule.prefix)
+  return pathname === rule.prefix || pathname.startsWith(`${rule.prefix}/`)
+}
+
 export const platformProxyMatch = (pathname: string, method: string): boolean =>
   !/\/issues\/[^/]+\/linear-link(?:\/|$)/.test(pathname) &&
   (!pathname.startsWith("/api/user/provider-connections/") ||
-    (method === "DELETE" && /^\/api\/user\/provider-connections\/[A-Za-z0-9-]{1,100}$/.test(pathname))) && PLATFORM_PROXY_RULES.some(
-    (rule) =>
-      rule.methods.includes(method) &&
-      (rule.exact !== undefined
-        ? pathname === rule.exact
-        : rule.prefix !== undefined && pathname.startsWith(rule.prefix))
-  )
+    (method === "DELETE" && /^\/api\/user\/provider-connections\/[A-Za-z0-9-]{1,100}$/.test(pathname))) &&
+  PLATFORM_PROXY_RULES.some((rule) => rule.methods.includes(method) && platformProxyRuleCovers(rule, pathname))
 
 /** An anonymous catalog read, restated in the seam's envelope when the mirror refuses. */
 const publicAnswer = (url: URL): Effect.Effect<Response, never, Transport | ServerConfig> =>

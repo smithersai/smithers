@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { PLATFORM_PROXY_RULES } from "smithers-server/index"
+import { PLATFORM_PROXY_RULES, platformProxyRuleCovers } from "smithers-server/index"
 import { rankTutorialRepositories } from "./RepositoriesSeam"
 const now = Date.parse("2026-09-09T00:00:00Z")
 /** plue serves the inventory at exactly /user/github-repos and no per-repo commits route: anything else is a 404. */
@@ -17,7 +17,7 @@ test("ranks the inventory by pushed_at through the allowlisted path only", async
   expect(result.error).toBeNull()
   expect(result.repositories.map(r => [r.fullName, r.latest])).toEqual([["org/recent", "2026-09-08T00:00:00.000Z"], ["org/old", "2020-01-01T00:00:00.000Z"], ["org/unknown", null]])
   expect(urls.every(url => url.startsWith("https://local.test/api/user/github-repos?"))).toBe(true)
-  for (const url of urls) expect(PLATFORM_PROXY_RULES.some(rule => rule.prefix !== undefined && new URL(url).pathname.startsWith(rule.prefix) && rule.methods.includes("GET"))).toBe(true)
+  for (const url of urls) expect(PLATFORM_PROXY_RULES.some(rule => rule.prefix !== undefined && platformProxyRuleCovers(rule, new URL(url).pathname) && rule.methods.includes("GET"))).toBe(true)
 })
 test("paginates with the link header and reports a refused inventory", async () => {
   const paged = await rankTutorialRepositories(async url => new URL(url).searchParams.get("page") === "1"
