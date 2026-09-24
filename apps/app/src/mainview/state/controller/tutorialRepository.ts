@@ -26,7 +26,7 @@ export function createTutorialRepositoryController(ctx: ControllerContext, ports
       const login = identity()?.state === "signed-in" ? identity()?.login : null
       const ranking = login ? await rankTutorialRepositories(ctx.boundedFetch, ctx.baseUrl) : {
         cutoff: new Date(Date.now() - 90 * 86400000).toISOString(), repositories: [], partial: true,
-        error: "Sign in to list GitHub repositories, or Skip to create one."
+        error: "Sign in to list GitHub repositories."
       }
       if (!current(before)) return "The account or tutorial changed; choose the repository again."
       if (repo === undefined) {

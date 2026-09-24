@@ -4,6 +4,8 @@ import type { RepositoryChoicePayload } from "../state/controller/tutorialReposi
 
 /** The recently pushed repositories a person sees at once; the rest wait behind a disclosure. */
 export const RECENT_REPOSITORIES = 8
+/** The one repository this card creates, a private auto-initialised GitHub repository (RepositoriesSeam.createRepository). */
+const PLAYGROUND = "smithers-playground"
 
 /** Native buttons keep Tab/Shift-Tab, Enter and Space; every act uses the shared flow dispatcher. */
 export function RepositoryChoiceCard({ payload, onRunCommand }: {
@@ -25,7 +27,7 @@ export function RepositoryChoiceCard({ payload, onRunCommand }: {
         <summary>All repositories ({payload.repositories.length})</summary>
         <ol>{payload.repositories.slice(RECENT_REPOSITORIES).map(row)}</ol>
       </details>}
-      <button type="button"  {...flowAction(onRunCommand, "repo.create", "smithers-playground")}>Skip</button>
+      <button type="button" {...flowAction(onRunCommand, "repo.create", PLAYGROUND)}>Create {PLAYGROUND}</button>
     </>}
   </div>
 }
