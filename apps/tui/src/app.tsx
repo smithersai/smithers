@@ -285,8 +285,14 @@ export function App(props: AppProps) {
   const arming = useRef(Approvals.idle)
   const entries = useRef<Array<Context.Entry>>(restored.current?.entries ?? [])
   const history = useRef(new Editor.History(restored.current?.prompts ?? []))
+  // A record the disk refused never stops the screen: the row says what went unsaved.
+  const unsaved = useCallback((failure: Session.WriteFailed) => {
+    const text = `Session not saved: ${failure.message}`
+    setToast({ text, tone: "danger" })
+    setTranscript((current) => Transcript.alert(current, text, Date.now()))
+  }, [])
   const writer = useRef<Session.Writer>(
-    restored.file === undefined ? Session.create(props.host.cwd) : Session.reopen(restored.file)
+    Session.guarded(restored.file === undefined ? Session.create(props.host.cwd) : Session.reopen(restored.file), unsaved)
   )
   // Agents read the current session's flow runs: their listing, and a fresh one at launch.
   const runsRef = useRef<FlowRuns | undefined>(undefined)
@@ -889,7 +895,7 @@ export function App(props: AppProps) {
    */
   const adopt = useCallback((next: Session.Writer, records: ReadonlyArray<Session.Record>) => {
     const state = Session.restore(records)
-    writer.current = next
+    writer.current = Session.guarded(next, unsaved)
     entries.current = state.entries
     if (records.length > 0) history.current = new Editor.History(state.prompts)
     const nextRuns = new FlowRuns({ port: props.flows, persist: writer.current.append, restored: state.flows })
@@ -913,7 +919,7 @@ export function App(props: AppProps) {
     setName(state.name)
     setTranscript(state.transcript)
     return state
-  }, [props.flows, changeForm])
+  }, [props.flows, changeForm, unsaved])
 
   const newSession = useCallback(() => {
     adopt(Session.create(props.host.cwd), [])

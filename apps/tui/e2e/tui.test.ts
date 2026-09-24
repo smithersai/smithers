@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
@@ -298,6 +298,26 @@ describe("turns", () => {
     await tui.until((screen) => screen.includes("output to a specific file"), 5_000, "expanded output")
     expect(tui.screen()).not.toMatch(/… \d+ more lines/)
   }, 180_000)
+
+  it("settles a turn and keeps working when the session file stops accepting writes", async () => {
+    const { tui, sessions } = await start({ holdMs: 1_000 })
+    await tui.type("node check.mjs fails. Fix it and show it passes.")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("esc Interrupt"), 10_000, "running turn")
+    const folder = join(sessions, readdirSync(sessions)[0]!)
+    chmodSync(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!), 0o444)
+    await tui.until((screen) => screen.includes("Session not saved: EACCES"), 10_000, "unsaved record")
+    await tui.until((screen) => idle(screen) && /Fixed/.test(screen), 90_000, "answer")
+    await tui.type("second prompt after the failed write")
+    await tui.press(key.enter)
+    await tui.until(
+      (screen) => screen.includes("esc Interrupt") && screen.includes("second prompt after the failed write"),
+      10_000,
+      "second turn"
+    )
+    await tui.press(key.escape)
+    await tui.until((screen) => screen.includes("✗ Stopped") && idle(screen), 10_000, "second turn stopped")
+  }, 120_000)
 
   it("recalls the previous prompt with up", async () => {
     const { tui } = await start()

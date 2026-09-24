@@ -164,6 +164,36 @@ export const reopen = (file: string): Writer => {
   }
 }
 
+/** The disk refused a session record: a full disk, a removed folder, lost permission. */
+export interface WriteFailed {
+  readonly _tag: "SessionWriteFailed"
+  readonly file: string
+  readonly message: string
+}
+
+/**
+ * `writer`, whose appends never throw: a turn, shell or undo settles on screen
+ * even when its record cannot be saved. `report` hears the first failure of
+ * each run of failures; a write that succeeds again ends the run.
+ */
+export const guarded = (writer: Writer, report: (failure: WriteFailed) => void): Writer => {
+  let failing = false
+  return {
+    file: writer.file,
+    append: (record) => {
+      try {
+        writer.append(record)
+        failing = false
+      } catch (error) {
+        if (!failing) {
+          report({ _tag: "SessionWriteFailed", file: writer.file, message: error instanceof Error ? error.message : String(error) })
+        }
+        failing = true
+      }
+    }
+  }
+}
+
 /** Thrown for a record damaged before the file's last line; a torn last line (a crash mid-append) is dropped. */
 export class Corrupt extends Error {
   constructor(readonly file: string, readonly line: number) {

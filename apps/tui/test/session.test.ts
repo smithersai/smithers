@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test"
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs"
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Session from "../src/session.ts"
@@ -87,5 +87,28 @@ describe("session files", () => {
     writer.append({ type: "user", at: 2, text: "two" })
     writer.append({ type: "name", name: "second name" })
     expect(Session.list("/work/repo")).toMatchObject([{ name: "second name", firstPrompt: "one" }])
+  })
+})
+
+describe("Session.guarded", () => {
+  it("reports the first refused write of each run of failures instead of throwing, and keeps saving once the disk accepts again", () => {
+    const file = join(mkdtempSync(join(tmpdir(), "tui-session-")), "chat.jsonl")
+    writeFileSync(file, "")
+    const reports: Array<Session.WriteFailed> = []
+    const writer = Session.guarded(Session.reopen(file), (failure) => reports.push(failure))
+    const record = (text: string): Session.Record => ({ type: "user", at: 1, text })
+
+    writer.append(record("saved"))
+    chmodSync(file, 0o444)
+    expect(() => writer.append(record("refused"))).not.toThrow()
+    writer.append(record("refused again"))
+    expect(reports).toEqual([{ _tag: "SessionWriteFailed", file, message: expect.stringContaining("EACCES") }])
+
+    chmodSync(file, 0o600)
+    writer.append(record("saved again"))
+    chmodSync(file, 0o444)
+    writer.append(record("refused after recovery"))
+    expect(reports).toHaveLength(2)
+    expect(Session.load(file).map((each) => (each.type === "user" ? each.text : each.type))).toEqual(["saved", "saved again"])
   })
 })
