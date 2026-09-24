@@ -18,6 +18,18 @@ function readSteps(): ActionStep[] {
 }
 
 describe("review action manifest", () => {
+  test("pins every external action to an immutable commit", () => {
+    for (const step of readSteps().filter((step) => step.uses)) {
+      expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
+    }
+  });
+
+  test("installs only review and its dependency closure", () => {
+    const install = readSteps().find((step) => step.name === "Install smithers dependencies");
+    expect(install?.run).toContain('--filter @smthrs/review...');
+    expect(install?.run).toContain('--frozen-lockfile');
+  });
+
   test("pins pnpm to the workspace's own version", () => {
     const setup = readSteps().find((step) => step.uses?.startsWith("pnpm/action-setup"));
     // The action installs this repository's workspace with --frozen-lockfile.

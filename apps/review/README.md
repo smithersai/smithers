@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: smithersai/smithers/apps/review/action@main
+      - uses: smithersai/smithers/apps/review/action@v1.0.0-rc.0
 ```
 
 Keep the workflow on `pull_request`. Never switch it to
@@ -109,7 +109,7 @@ Set one of these as a repo secret and pass it through in the job:
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
-      - uses: smithersai/smithers/apps/review/action@main
+      - uses: smithersai/smithers/apps/review/action@v1.0.0-rc.0
 ```
 
 `OPENAI_API_KEY` works the same way and moves both seats onto the `openai:`
