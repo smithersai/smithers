@@ -259,7 +259,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
                       flows: [memorySource(services, policy)],
                       limits: { calls: 8 },
                       capabilityEnvelope: [],
-                      maxFrames: 2
+                      maxFrames: 4
                     }),
                     seats,
                     Agent.layer
