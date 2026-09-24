@@ -68,8 +68,7 @@ const serve = async (): Promise<never> => {
 /*
  * The named model credentials of e2e/real/models.spec.ts, and the loopback
  * provider they are pinned to. The runner declares two environment credentials
- * for the model scenarios, and the enrollment scenario enters the same random
- * values through the write-only UI under a new name. The provider's port must
+ * for the model scenarios. The provider's port must
  * be known before the host boots. E2E_LOOPBACK is accepted; E2E_REVOKED gets 401.
  */
 const launchModelProvider = async (): Promise<() => Promise<void>> => {

@@ -2,8 +2,10 @@ import { flowAction } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
 import { refusalFromStored } from "@smthrs/rpc/Refusal"
 import { refusalLead } from "@smthrs/rpc/RefusalCopy"
+import { useCallback, useSyncExternalStore } from "react"
+import { creditDollars } from "../state/seams/BillingSeam"
 import { UpgradeDoor } from "./WorkspaceCard"
-import type { RunCommand } from "./CardFamily"
+import type { CardProjectionAuthority, RunCommand } from "./CardFamily"
 
 /*
  * The billing cards: the balance readout and the admin's promotional grant
@@ -16,8 +18,10 @@ import type { CardFamily } from "./CardFamily"
 const quantity = (value: number) => value === -1 ? "Unlimited" : String(value)
 const idle = (seconds: number) => seconds === 0 ? "Never sleeps" : seconds < 3600 ? `${seconds / 60} min` : `${seconds / 3600} h`
 
-export const BillingPlansCardBody = ({ card, onRunCommand }: {
-  readonly card: Extract<Card, { kind: "billing-plans" }>; readonly onRunCommand: RunCommand
+type BillingPlansCard = Extract<Card, { kind: "billing-plans" }>
+
+export const BillingPlansCardBody = ({ card, onRunCommand, creditBalanceCents = null }: {
+  readonly card: BillingPlansCard; readonly onRunCommand: RunCommand; readonly creditBalanceCents?: number | null
 }) => {
   const { plans, planKey, sandbox, checkout } = card.payload
   const refusal = card.payload.refusal ? refusalFromStored(card.payload.refusal) : null
@@ -34,6 +38,7 @@ export const BillingPlansCardBody = ({ card, onRunCommand }: {
         style={plan.key === planKey ? { background: "var(--surface)", outline: "2px solid currentColor", outlineOffset: "-2px" } : undefined}>
         {plan.display_name} ${plan.price_cents / 100}{plan.price_cents === 0 ? "" : " per month"}
         {plan.key === planKey ? " · Current plan" : ""}
+        {plan.key === planKey && creditBalanceCents !== null ? <> · <span data-testid="billing-credit">{creditDollars(creditBalanceCents)}</span></> : null}
       </th>)}</tr></thead>
       <tbody>
         <tr><th scope="row">Running sandboxes</th>{columns.map(plan => <td key={plan.key}>{quantity(plan.limits.concurrent_sandboxes)}</td>)}</tr>
@@ -50,8 +55,20 @@ export const BillingPlansCardBody = ({ card, onRunCommand }: {
     {sandbox === null ? null : <p>
       In use: {sandbox.concurrentInUse} / {quantity(sandbox.concurrentSandboxes)} · Hours today: {Number((sandbox.secondsUsedToday / 3600).toFixed(2))} / {quantity(sandbox.hoursPerDay)} · Resets at {sandbox.dayResetsAt}
     </p>}
-    {columns.length === 0 ? null : <p>Model tokens are bring-your-own-key.</p>}
   </div>
+}
+
+/** The account's credit is the billing row's live fact, read beside the card's plans. */
+const ObservedBillingPlans = ({ card, accounts, onRunCommand }: {
+  readonly card: BillingPlansCard; readonly onRunCommand: RunCommand
+  readonly accounts: NonNullable<CardProjectionAuthority["collections"]["billingAccounts"]>
+}) => {
+  const subscribe = useCallback((notify: () => void) => {
+    const subscription = accounts.subscribeChanges(notify)
+    return () => subscription.unsubscribe()
+  }, [accounts])
+  const read = () => accounts.get("billing")?.creditBalanceCents ?? null
+  return <BillingPlansCardBody card={card} onRunCommand={onRunCommand} creditBalanceCents={useSyncExternalStore(subscribe, read, read)} />
 }
 
 const BalanceCardBody = ({ card }: { readonly card: Extract<Card, { kind: "balance" }> }) => (
@@ -129,7 +146,9 @@ const GrantConfirmCardBody = ({
 
 export const billingCardFamily: CardFamily<"balance" | "grant-confirm" | "billing-plans"> = {
   "billing-plans": {
-    render: (card, actions) => <BillingPlansCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    render: (card, actions) => actions.projectionStore?.collections.billingAccounts === undefined
+      ? <BillingPlansCardBody card={card} onRunCommand={actions.onRunCommand} />
+      : <ObservedBillingPlans card={card} accounts={actions.projectionStore.collections.billingAccounts} onRunCommand={actions.onRunCommand} />,
     pill: () => "done"
   },
   balance: {

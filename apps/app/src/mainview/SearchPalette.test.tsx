@@ -307,18 +307,19 @@ describe("§3 the keyboard contract", () => {
   })
 
   /*
-   * Will typed `/model` on production and got the Models card AND an Add
-   * credential form: the menu for "model" led with `/model.credential.new`
-   * and Enter ran that row. A whole name typed outright is that flow.
+   * Will typed `/model` on production and got the Models card AND a form: the
+   * menu for "model" led with another `model.*` row and Enter ran that row.
+   * A whole name typed outright is that flow.
    */
   test("/model named outright runs the bare door, never the row the menu led with", async () => {
     const view = await mount()
     await press(view, "k", { meta: true })
     await view.act(() => view.controller.changeDraft("/model"))
-    expect(highlighted(view.host)?.getAttribute("data-flow")).toBe("model.credential.new")
+    const led = highlighted(view.host)?.getAttribute("data-flow")
+    expect(led).toStartWith("model.")
     await press(view, "Enter")
     expect(invoked(view.store).map(row => row.name)).toContain("model")
-    expect(invoked(view.store).some(row => row.name.startsWith("model.credential"))).toBe(false)
+    expect(invoked(view.store).some(row => row.name === led)).toBe(false)
   })
 
   test("a highlight the person moved is their choice: Enter runs that row, not the outright name", async () => {
@@ -327,7 +328,7 @@ describe("§3 the keyboard contract", () => {
     await view.act(() => view.controller.changeDraft("/model"))
     await press(view, "ArrowDown")
     const chosen = highlighted(view.host)?.getAttribute("data-flow")
-    expect(chosen).toBe("model.credential.enroll")
+    expect(chosen).toStartWith("model.")
     await press(view, "Enter")
     expect(invoked(view.store).map(row => row.name)).toContain(chosen!)
     expect(invoked(view.store).some(row => row.name === "model")).toBe(false)

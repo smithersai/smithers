@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises"
-import { takeDatabaseControl } from "./navigation-frames/storage"
-import { MODEL_CREDENTIAL_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { MODEL_TEST_DEADLINE_MS } from "@smthrs/rpc/ConfiguredModel"
 import { scenario } from "./coverage/types"
 import { PROVIDER_CONFIDENCE, PROVIDER_ECHO_LEAD, PROVIDER_MODEL, PROVIDER_REPLY } from "./support/model-provider-behaviors"
@@ -14,7 +11,7 @@ import {
 
 /*
  * Every scenario here is host:local. The runner host reaches the real loopback
- * provider using operator credentials or credentials enrolled through its UI.
+ * provider using operator credentials.
  */
 test.setTimeout(120_000)
 
@@ -50,7 +47,7 @@ test("the bare /model door opens the models card", scenario("models.bare-door", 
   const before = await forms.count()
   const card = await listModels(page, "/model")
   await expect(card.getByTestId("model-new")).toBeVisible()
-  // The whole name is the act: the menu led with `/model.credential.new`, and Enter must not open its form.
+  // The whole name is the act: Enter on `/model` must not open a form.
   await expect(forms).toHaveCount(before)
 })
 
@@ -633,92 +630,3 @@ test("the composer prefills from the model's last Test, and Last test brings it 
   expect(journal.map((entry) => entry.questions)).toEqual([["ok"], ["ok"]])
 })
 
-test("models credentials enroll in the UI, pin once, rotate and remove without persisting a value", scenario("models.credential-enrollment", {
-  capabilities: [],
-  coverage: ["action:model.credential.new", "action:model.credential.enroll", "action:model.credential.rotate", "action:model.credential.remove", "action:form.submit", "host:local", "path:success", "path:error", "path:persistence", "door:button", "door:slash", "dimension:keyboard", "dimension:credential-value-absent", "evidence:provider-request-journal", "evidence:persisted-state-after-reload"]
-}), async ({ page, context }) => {
-  await boot(page)
-  await listModels(page)
-  const name = uniqueName("enrolled").toUpperCase().replace(/-/g, "_")
-  const model = uniqueName("enrolled-model")
-  const accepted = runnerCredential(ACCEPTED_CREDENTIAL)
-  const revoked = runnerCredential(REJECTED_CREDENTIAL)
-  const before = (await providerJournal()).length
-  const form = (action = "enroll") => page.locator(`.flow-form[data-flow-name="model.credential.${action}"]`)
-  const submitKey = async (value: string, expected: boolean, action = "enroll") => {
-    const current = form(action)
-    await current.getByTestId("flow-form-value").fill(value)
-    const submitted = page.waitForResponse(response => new URL(response.url()).pathname === MODEL_CREDENTIAL_PATH)
-    await expect(current.getByTestId("flow-form-submit")).toBeEnabled()
-    await current.getByTestId("flow-form-submit").focus()
-    await page.keyboard.press("Enter")
-    await expect.poll(() => current.getByTestId("flow-form-value").evaluate(input => (input as HTMLInputElement).value === "")).toBe(true)
-    expect((await submitted).status()).toBe(200)
-    await expect(modelsCard(page).locator("[data-credential-state]")).toHaveAttribute("data-credential-state", expected ? "completed" : "failed")
-    if (!expected) await expect(modelsCard(page).getByTestId("credential-failure")).toContainText("exists")
-    expect((await pageText(page)).includes(value)).toBe(false)
-    expect(await page.locator('input[type="password"]').evaluateAll(inputs => inputs.every(input => (input as HTMLInputElement).value === ""))).toBe(true)
-    return { ok: expected, ...(expected ? {} : { failure: { code: "exists" } }) }
-  }
-  // Enrollment is where someone with no usable name would look: the credential picker.
-  await modelsCard(page).getByTestId("model-new").click()
-  await page.getByTestId("flow-form-credential").selectOption("__enroll")
-  await form().getByTestId("flow-form-name").fill(name)
-  await form().getByTestId("flow-form-origin").fill(providerOrigin())
-  await submitKey(accepted, true)
-  await expect(page.getByTestId("flow-form-credential").locator(`option[value="${name}"]`)).toBeEnabled()
-  await fillModelForm(page, chat(model, { credential: name }))
-  expect((await testModel(page, modelRow(page, model))).ok).toBe(true)
-  // Finish the durable card refresh before reload; interrupted probes replay by design.
-  await listModels(page)
-  await page.reload(); await boot(page); await listModels(page); await maximize(page)
-  const credential = () => modelsCard(page).locator(`[data-credential-name="${name}"]`).first()
-  await expect(credential()).toHaveAttribute("data-present", "true")
-  // A second Add can neither overwrite the key nor repin the name.
-  await modelsCard(page).getByTestId("model-credential-new").click()
-  await form().getByTestId("flow-form-name").fill(name)
-  await form().getByTestId("flow-form-origin").fill("https://attacker.example")
-  expect((await submitKey(revoked, false)).failure?.code).toBe("exists")
-  await expect(modelsCard(page).getByTestId("credential-failure")).toContainText("exists")
-  await maximize(page)
-  await expect(credential()).toContainText(providerOrigin())
-  await credential().getByRole("button", { name: "Rotate", exact: true }).click()
-  await submitKey(revoked, true, "rotate")
-  await listModels(page)
-  expect(await testModel(page, modelRow(page, model))).toMatchObject({ ok: false, failure: { code: "refused", status: 401 } })
-  await listModels(page); await maximize(page)
-  await credential().getByRole("button", { name: "Rotate", exact: true }).click()
-  await submitKey(accepted, true, "rotate")
-  await listModels(page)
-  expect((await testModel(page, modelRow(page, model))).ok).toBe(true)
-  await maximize(page)
-  const removed = page.waitForResponse(response => new URL(response.url()).pathname === MODEL_CREDENTIAL_PATH)
-  await credential().getByRole("button", { name: "Remove", exact: true }).click()
-  expect((await removed).status()).toBe(200)
-  await expect(credential()).toHaveAttribute("data-present", "false")
-  expect(await testModel(page, modelRow(page, model))).toMatchObject({ ok: false, failure: { code: "credential_missing" } })
-  const journal = (await providerJournal()).slice(before)
-  expect(journal.map(entry => entry.credentialSha256)).toEqual([credentialSha256(ACCEPTED_CREDENTIAL), credentialSha256(REJECTED_CREDENTIAL), credentialSha256(ACCEPTED_CREDENTIAL)])
-  const logs = await readFile("test-results/real-host.log", "utf8")
-  expect(logs).toContain("POST /api/model/credential -> 200")
-  const browserStorage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }))
-  for (const value of [accepted, revoked]) {
-    expect(logs.includes(value)).toBe(false)
-    expect(JSON.stringify(journal).includes(value)).toBe(false)
-    expect((await pageText(page)).includes(value)).toBe(false)
-    expect(browserStorage.includes(value)).toBe(false)
-  }
-  // Read every physical SQLite table, including transcript, form history and event log.
-  const database = await takeDatabaseControl(page, context)
-  const tables = await database.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-  expect(tables.length).toBeGreaterThan(0)
-  let foundName = false
-  for (const table of tables) {
-    const tableName = String(table.name).replace(/"/g, '""')
-    const rows = JSON.stringify(await database.execute(`SELECT * FROM "${tableName}"`))
-    foundName ||= rows.includes(name)
-    for (const value of [accepted, revoked]) expect(rows.includes(value)).toBe(false)
-  }
-  expect(foundName).toBe(true)
-  await database.page.close()
-})

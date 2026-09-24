@@ -15,7 +15,7 @@ export const namespace: Namespace = { id: "repos", label: "Repositories", summar
 export const reposImportFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   /*
    * The multi-parity domain flows (MULTI-ACTIONS-GAP.md): issues, PRs
-   * (landings — a land QUEUES, it never "merges"), billing checkout, BYOK keys,
+   * (landings — a land QUEUES, it never "merges"), billing checkout,
    * notifications, the agent environment, and repo import. Repo-scoped flows
    * take an optional `repo` target; absent one, a single watched repository is
    * the target and several are an honest choice (RepoContext.ts). They require

@@ -346,8 +346,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly submitForm: FormsController["submitForm"]
   readonly dismissCard: FormsController["dismissCard"]
   /* Configured models and the seats they fill; see controller/models.ts. */
-  readonly newModelCredential: ModelsController["newModelCredential"]
-  readonly mutateModelCredential: ModelsController["mutateModelCredential"]
   readonly listModels: ModelsController["listModels"]
   readonly showModel: ModelsController["showModel"]
   readonly newModel: ModelsController["newModel"]
@@ -1072,8 +1070,6 @@ export const createAppController = (
   } = actors.pair(ctx, (context) => createTabsController(context))
   const { renderFlowForm, setFormField, submitForm, dismissCard, focusHandoff: formFocus } = actors.pair(ctx, (context) => createFormsController(context, { nextOrdinal: store.nextOrdinal, minimizeCard }))
   const {
-    newModelCredential,
-    mutateModelCredential,
     listModels,
     showModel,
     newModel,
@@ -1745,8 +1741,6 @@ export const createAppController = (
     setFormField,
     submitForm,
     dismissCard,
-    newModelCredential,
-    mutateModelCredential,
     listModels,
     showModel,
     newModel,

@@ -62,7 +62,6 @@ export interface FieldOption {
   /** The human cannot pick it; `reason` says why (not installed, no credential). */
   readonly disabled?: boolean
   readonly reason?: string
-  readonly flow?: "model.credential.new"
 }
 
 /** What a flow may say about one of its fields beyond what the schema already says. */

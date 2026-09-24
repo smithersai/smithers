@@ -8,7 +8,7 @@
 
 - [Welcome to Smithers](https://smithers.sh/docs/): Smithers is an orchestration agent, primarily used to orchestrate maintaining a codebase, but it can be used for orchestration in general. Agents plan, run, and review changes through flows declared beside the code.
 - [Quickstart](https://smithers.sh/docs/quickstart/): Open Smithers, explore a repository, find a flow, and make your first contribution through the app.
-- [Pricing](https://smithers.sh/docs/pricing/): Free, Pro, and Max plans with sandbox capacity for your work. Model tokens are bring-your-own-key.
+- [Pricing](https://smithers.sh/docs/pricing/): Free, Pro, and Max plans with sandbox capacity for your work. Model usage draws on your account credit.
 - [CLI and libraries](https://smithers.sh/docs/developers/): Use Smithers from your terminal, define flows beside your code, and build on the TypeScript libraries.
 - [Installation](https://smithers.sh/docs/installation/): Install the Smithers CLI or library, keep Effect pinned, and verify the install.
 - [CLI quickstart](https://smithers.sh/docs/cli-quickstart/): Install the CLI, scaffold a flow, choose its model, and run it in your project.

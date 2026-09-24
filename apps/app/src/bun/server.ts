@@ -23,8 +23,6 @@ import {
   HEALTH_PATH,
   IDENTITY_ROUTE_PREFIX,
   MODEL_CATALOG_PATH,
-  MODEL_CREDENTIAL_PATH,
-  MODEL_CREDENTIAL_RECEIPT_PATH,
   MODEL_TEST_PATH,
   TURN_PATH,
   TURN_REPLAY_PATH,
@@ -918,12 +916,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     ...(options.modelTestDeadlineMs === undefined ? {} : { deadlineMs: options.modelTestDeadlineMs }),
     ...(options.modelFetch === undefined ? {} : { fetch: options.modelFetch })
   })
-  router.add("POST", MODEL_CREDENTIAL_PATH, async ({ request }) => {
-    const parsed = await readJson(request, 16 * 1024)
-    if ("error" in parsed) return parsed.error
-    return json(await modelCredentials.mutate(parsed.body))
-  })
-  router.add("GET", MODEL_CREDENTIAL_RECEIPT_PATH, async ({ url }) => json(await modelCredentials.receipt(url.searchParams.get("id") ?? "")))
   router.add("GET", MODEL_CATALOG_PATH, async () => { await modelCredentials.refresh(); return json(modelProbe.catalog()) })
   router.add("POST", MODEL_TEST_PATH, async ({ request }) => {
     const parsed = await readJson(request, MODEL_TEST_BODY_MAX_BYTES)

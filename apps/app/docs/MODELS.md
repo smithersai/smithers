@@ -128,75 +128,9 @@ card body through `CardActions.presentation`. Follow the app's existing CSS/card
 do not introduce `@smthrs/ui` form components apps/app has never imported.
 
 
-## R11. In-app credential enrollment
+## R11. In-app credential enrollment (removed)
 
-Use `model.credential.*`, because these are model-host credentials, independent
-of repository secrets. New opens the enrollment form; Enroll, Rotate and Remove
-are consequential agent acts through the existing confirm path. Agent forms
-collect public fields first, then confirmation opens the human's key field.
-
-`write-only` is a general form kind. Its optional input-schema string names a
-required password control; its value never enters `form.set`, draft, given,
-command payloads or display arguments. The uncontrolled control clears on submit
-and cancel. A one-shot `CommandGesture` accessor passes the value through the
-normal form flow. Card decoding rejects persisted write-only values. HTTP tracing
-records method, URL, status and duration, never headers or bodies. Mutation
-failures contain only typed codes, fields and fault classes.
-
-Bun uses a versioned macOS keychain vault containing multiple credentials and
-safe receipts. The service is `smithers-model-credentials`; the account is the
-SHA-256 of the resolved state-directory path. This reuses CloudAuth's existing
-service/account seam without a plaintext index or an application encryption key.
-Strict operations check exit status and verify writes by reading back: CloudAuth's
-best-effort behavior cannot claim enrollment success. Values reach `security -i`
-through stdin as hex, never argv. Non-macOS hosts advertise Keychain unavailable.
-An empty SQLite file in the state directory holds the OS writer lock while a
-mutation rereads and replaces the vault. It contains no rows or credentials;
-closing or crashing releases the lock. Two hosts cannot overwrite a pin using
-stale snapshots. A competing mutation fails typed and can be retried.
-
-A new custom name declares one origin. Missing built-in keys may be enrolled on
-their predefined origin only. Environment-declared credentials remain read-only.
-Repeat enrollment fails `exists`; rotation accepts no origin field. Removal erases
-the value and retains the pin, so even a removed name cannot be repinned. Rotate
-can restore a removed credential on that same origin. Catalog, Test and Explainer
-read the same host store; no value is sent back to the app.
-Each catalog, test and configured turn refreshes that snapshot from Keychain, so
-rotation/removal by another live host is observed by the next request.
-
-The Worker uses the authenticated login's `AccountModelVault` Durable Object.
-The optional `MODEL_VAULT_KEY` binding is base64 of 32 random bytes; absent or
-malformed, enrollment reports `vault_unavailable` while deployment models keep
-working. Signed-out catalogs report `sign_in_required` and contain deployment
-rows alone. Values are AES-GCM ciphertext before the object receives them, with
-a fresh nonce and AAD binding login/name/origin. Only metadata and safe receipts
-reach the browser; rotation and removal preserve the pin. Test, Ask and bound
-Explainer share the account resolver; front-door and recommend remain on the
-deployment decision allowlist. Identity is rechecked before writes and spending,
-and stale results are discarded. Browser account retirement clears model/seat
-records and catalog caches along with the account's other private state.
-
-| Route | Bun | Worker | Owner |
-| --- | --- | --- | --- |
-| POST `/api/model/credential` | enroll/rotate/remove in keychain | account-scoped encrypted vault | `AgentApiRoutes.ts` |
-| GET `/api/model/credential/receipt?id=…` | safe completion receipt | same account's safe receipt | `AgentApiRoutes.ts` |
-
-Both routes retain their host's session gate; Bun also enforces Origin. A mutation
-persists metadata, acknowledges Requested, and runs under the shared 300 ms toast
-through keychain completion and catalog reconciliation. Duplicate pending names
-join one flight. Reload reads the host receipt; an unknown request fails
-`interrupted`, and Retry asks for a fresh key instead of retaining or replaying
-one. Old account responses do not settle the current account's request.
-
-The maximized Models pane offers Add credential, Rotate and Remove. The model
-form's credential list offers Add credential and refreshes when enrollment
-finishes. Only public form drafts survive. No collection or projector-version
-change is required: the new card metadata is optional.
-
-The exact amended contract is [models/CONTRACT.md](models/CONTRACT.md); the
-pre-implementation design is [models/ENROLLMENT.md](models/ENROLLMENT.md). This
-supersedes R2's route-count limit and R4's environment-only enrollment. It keeps
-R4's immutable pins, R6's consumers, R7's background semantics and R8's gates.
+> Superseded 2026-09-23: Smithers Cloud has no bring-your-own-key. Smithers runs models on platform keys and charges the account's credit. The `model.credential.*` flows, the Models card's Add credential / Rotate / Remove, and the local `/api/model/credential` routes are removed. The local host still reads operator env credentials and any keychain entries enrolled earlier.
 
 ## R12. The composer: the request is edited, the response is generated
 

@@ -146,7 +146,7 @@ Prefer a terminal? Follow the separate [CLI quickstart](/docs/cli-quickstart/).
 # Pricing
 https://smithers.sh/docs/pricing/
 
-Choose a plan by the sandbox capacity you need. Model tokens are bring-your-own-key.
+Choose a plan by the sandbox capacity you need. Smithers picks and runs the models; model usage draws on your account credit. New accounts start with $10.
 
 ## Plans
 
@@ -163,7 +163,7 @@ Subscriptions are flat rates for sandbox capacity. There is no per-VM-hour charg
 
 ## Choose or manage a plan
 
-Sign in to [Smithers](https://smithers.sh/smithersai/smithers) and run `/billing.plans` to see your current plan, sandbox usage, and available upgrades in the conversation. `/billing.portal` opens subscription management when billing is available.
+Sign in to [Smithers](https://smithers.sh/smithersai/smithers) and run `/billing.plans` to see your current plan, credit balance, sandbox usage, and available upgrades in the conversation. `/billing.portal` opens subscription management when billing is available.
 
 Checkout is not open yet on deployments where payments are disabled. The plans card shows availability before you choose an upgrade.
 

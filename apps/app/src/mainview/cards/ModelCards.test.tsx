@@ -8,6 +8,7 @@ import type { Card } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
 import { memoryStorage } from "../state/TestFixtures"
 import type { CardActions } from "./CardFamily"
+import { FLOW_NAMES } from "../flows/FlowName"
 import { modelCardFamily, ModelsCardBody } from "./ModelCards"
 
 /*
@@ -299,12 +300,12 @@ describe("the Models card, surfaced unasked", () => {
     expect(acts(host)).toEqual([["Assign", "model.assign", "explainer"]])
   })
 
-  test("a Chat seat with an unenrolled credential offers Add credential", () => {
+  test("a Chat seat with a missing credential offers Assign", () => {
     const model = { ...user, credential: "OWNER_E2E" }
     const { host } = attentionActs({ models: [model], seats: [{ id: "chat", recordId: model.id, resolvable: false }],
       attention: { kind: "seat-unresolved", seat: "chat" } })
-    expect(host.querySelector('[data-testid="models-attention"]')?.textContent).toBe("Chatcredential_missing · OWNER_E2EAdd credential")
-    expect(acts(host)).toEqual([["Add credential", "model.credential.new", null]])
+    expect(host.querySelector('[data-testid="models-attention"]')?.textContent).toBe("Chatcredential_missing · OWNER_E2EAssign")
+    expect(acts(host)).toEqual([["Assign", "model.assign", "chat"]])
   })
 
   test("attention on a model that is gone falls back to the list", () => {
@@ -471,6 +472,25 @@ describe("the composer card, bound to the store", () => {
     } finally {
       await store.settled?.()
       await store.dispose?.()
+    }
+  })
+})
+
+/* Smithers Cloud runs models on platform keys and charges credit: there is no bring-your-own-key door. */
+describe("no model credential enrollment", () => {
+  test("no model.credential flow exists", () => {
+    expect(FLOW_NAMES.filter(name => name.startsWith("model.credential"))).toEqual([])
+  })
+
+  test("a host that still lists enrollment gets no Add credential, Rotate or Remove", () => {
+    for (const presentation of ["embedded", "maximized"] as const) {
+      const managed = { name: "MINE", origins: ["https://provider.example"], present: true, managed: true }
+      const payload = { credentials: [...credentials, managed], enrollment: { available: true as const }, selected: "fast-kimi",
+        tests: [failed("fast-kimi", { code: "credential_missing", credential: "MINE" })], attention: { kind: "test-failed" as const, recordId: "fast-kimi" } }
+      const host = mount(<ModelsCardBody card={modelsCard({ models: [user], ...payload })} onRunCommand={() => {}} presentation={presentation} />)
+      expect(host.textContent).not.toContain("Add credential")
+      expect([...host.querySelectorAll("button")].map(button => button.textContent)).not.toContain("Rotate")
+      expect(host.querySelector('[data-flow^="model.credential"], [data-testid="model-credentials"]')).toBeNull()
     }
   })
 })

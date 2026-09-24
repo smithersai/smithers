@@ -42,6 +42,8 @@ See: `401`
 
 ## 2. Terminal B: the app, without model environment keys
 
+> Enrollment steps below are removed (2026-09-23, no bring-your-own-key). Declare keys as operator env pairs instead.
+
 ```sh
 cd ~/smithers/apps/app
 SMITHERS_LOCAL_PORT=47400 SMITHERS_LOCAL_MODE=hybrid \
@@ -288,6 +290,8 @@ and the Worker's route tests.
 
 ## 12. Rotate, remove, and use your own endpoint
 
+> Superseded 2026-09-23: Smithers Cloud has no bring-your-own-key. Smithers runs models on platform keys and charges the account's credit. The `model.credential.*` flows, the Models card's Add credential / Rotate / Remove, and the local `/api/model/credential` routes are removed. The local host still reads operator env credentials and any keychain entries enrolled earlier.
+
 1. `/model.list`, Maximize card. In Credentials, press Rotate for LOOPBACK.
    The embedded form has its name and a blank API key, with no editable origin.
    Enter the revoked fixture from step 2 and press Rotate. Test `loopback-chat`:
@@ -431,6 +435,8 @@ Playwright tracing remains off for credential entry.
 
 
 ## PRODUCTION — smithers.sh
+
+> Superseded 2026-09-23: Smithers Cloud has no bring-your-own-key. Smithers runs models on platform keys and charges the account's credit. The `model.credential.*` flows, the Models card's Add credential / Rotate / Remove, and the local `/api/model/credential` routes are removed. The local host still reads operator env credentials and any keychain entries enrolled earlier.
 
 Prerequisite: the operator has installed optional `MODEL_VAULT_KEY` (DEPLOY.md).
 Until then, Vault unavailable is expected; deployment models still work.

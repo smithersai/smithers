@@ -1,5 +1,7 @@
 # Credential enrollment design
 
+> Superseded 2026-09-23: Smithers Cloud has no bring-your-own-key. Smithers runs models on platform keys and charges the account's credit. The `model.credential.*` flows, the Models card's Add credential / Rotate / Remove, and the local `/api/model/credential` routes are removed. The local host still reads operator env credentials and any keychain entries enrolled earlier.
+
 This decision precedes implementation (2026-09-19). The feature brief supersedes
 R2's two-route limit and R4's environment-only enrollment. All other rulings stand.
 The updated CONTRACT.md lives here because the supplied original is outside the

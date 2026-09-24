@@ -182,11 +182,7 @@ export const FlowFormCardBody = ({
                   value={text}
                   required={field.required}
                   disabled={settled || busy}
-                  onChange={(event) => {
-                    const option = options.find(option => option.value === event.currentTarget.value)
-                    if (option?.flow) { event.currentTarget.value = text; onRunCommand(option.flow) }
-                    else commit(field.name, event.currentTarget.value)
-                  }}
+                  onChange={(event) => commit(field.name, event.currentTarget.value)}
                 >
                   {/* The unpicked state: a select must be able to say "nothing yet" without inventing a default. */}
                   {options.some((option) => option.value === text) ? null : <option value="">{""}</option>}

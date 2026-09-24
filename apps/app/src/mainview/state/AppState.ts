@@ -1143,6 +1143,8 @@ export const BillingAccountSchema = z.object({
   planKey: z.string().nullable().default(null),
   sandbox: SandboxEntitlementSchema.nullable().default(null),
   plans: z.array(BillingPlanSchema).default([]),
+  /** Model credit (`credit_balance_cents`), integer cents. */
+  creditBalanceCents: z.number().int().nullable().default(null),
   id: z.literal("billing"),
   state: z.enum(["unknown", "ok", "low", "empty", "unavailable"]),
   totalUsd: z.string().nullable(),
@@ -1571,7 +1573,7 @@ export type AppTransition =
     lifetimeChargedUsd: string
     chargeCount: number
   }
-  | { type: "billing.plans.loaded"; actor: Actor; planKey: string; sandbox: NonNullable<BillingAccount["sandbox"]>; plans: BillingAccount["plans"] }
+  | { type: "billing.plans.loaded"; actor: Actor; planKey: string; sandbox: NonNullable<BillingAccount["sandbox"]>; plans: BillingAccount["plans"]; creditBalanceCents?: number | null }
   | { type: "billing.unavailable"; actor: "system" }
   | {
     /* The 300ms toast law: slow background work states what is running. */
@@ -1865,7 +1867,7 @@ export const initialIdentitySession = (createdAt = Date.now()): IdentitySession 
 })
 
 export const initialBillingAccount = (): BillingAccount => ({
-  planKey: null, sandbox: null, plans: [],
+  planKey: null, sandbox: null, plans: [], creditBalanceCents: null,
   id: "billing",
   state: "unknown",
   totalUsd: null,

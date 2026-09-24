@@ -18,7 +18,7 @@ test("a write-only input stays outside form.set, clears before submit, and trave
     return { status: "executed" }
   } } as unknown as AppController
   const host = mount(<ControllerContext value={controller}><FlowFormCardBody card={formCard({
-    flow: "model.credential.enroll", via: "user", fields: [{ name: "value", label: "API key", kind: "write-only", required: true }], draft: {}, given: {}
+    flow: "secrets.connect", via: "user", fields: [{ name: "value", label: "Claude setup token", kind: "write-only", required: true }], draft: {}, given: {}
   })} onRunCommand={name => calls.push(name)} /></ControllerContext>)
   input(host, "flow-form-value", "dom-private-fixture")
   expect(calls).toEqual([])
@@ -31,18 +31,13 @@ test("a write-only input stays outside form.set, clears before submit, and trave
   expect(requests[0]?.gesture?.takeWriteOnly?.("value")).toBeUndefined()
 })
 
-test("an available cloud enrollment has an enabled Add control; unavailable keeps the disabled reason", () => {
-  for (const disabledReason of [undefined, "Vault unavailable", "Sign in required"]) {
-    const card = formCard({ flow: "model.credential.enroll", via: "user", fields: [
-      { name: "value", label: "API key", kind: "write-only", required: true, ...(disabledReason ? { disabledReason } : {}) }
-    ], draft: { name: "CLOUD", origin: "https://provider.example" }, given: {} })
-    const host = mount(<FlowFormCardBody card={card} onRunCommand={() => {}} />)
-    if (disabledReason === undefined) input(host, "flow-form-value", "cloud-dom-fixture")
-    const submit = host.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")!
-    expect(submit.disabled).toBe(disabledReason !== undefined)
-    expect(host.innerHTML).not.toContain("cloud-dom-fixture")
-    if (disabledReason) expect(host.textContent).toContain(disabledReason)
-  }
+test("a disabled write-only field keeps Submit disabled and shows its reason", () => {
+  const card = formCard({ flow: "secrets.connect", via: "user", fields: [
+    { name: "value", label: "Claude setup token", kind: "write-only", required: true, disabledReason: "Sign in required" }
+  ], draft: {}, given: {} })
+  const host = mount(<FlowFormCardBody card={card} onRunCommand={() => {}} />)
+  expect(host.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")!.disabled).toBe(true)
+  expect(host.textContent).toContain("Sign in required")
 })
 
 /*

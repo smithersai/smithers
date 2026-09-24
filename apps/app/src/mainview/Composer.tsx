@@ -1022,7 +1022,7 @@ export function Composer({
     }
     /*
      * `/model` names a hidden door outright while the menu lists its namespace,
-     * so the first row is another flow (`/model.credential.new`); Enter used
+     * so the first row is another flow; Enter used
      * to run that row and open a form nobody asked for. The whole name wins
      * unless the person moved the highlight to a row of their own.
      */

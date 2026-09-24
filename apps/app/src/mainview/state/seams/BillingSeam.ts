@@ -1,5 +1,6 @@
 import { BILLING_OVERVIEW_PATH, BILLING_PLANS_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { BillingOverviewSchema, BillingPlansResponseSchema } from "@smthrs/rpc/BillingPlans"
+import { z } from "zod"
 import { storedRefusal, type Refusal } from "@smthrs/rpc/Refusal"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import type { AppStore } from "../AppStore"
@@ -12,6 +13,13 @@ import type { AppStore } from "../AppStore"
  */
 import type { SeamContext } from "./SeamContext"
 import { readErrorMessage, readResult } from "./SeamContext"
+
+/** The overview plus the account's model credit, integer cents. */
+const OverviewSchema = BillingOverviewSchema.extend({ credit_balance_cents: z.number().int().optional() })
+
+/** Integer cents as dollars: 1000 is "$10.00". */
+export const creditDollars = (cents: number): string =>
+  `${cents < 0 ? "-" : ""}$${(Math.abs(cents) / 100).toFixed(2)}`
 
 export interface BillingSeam {
   readonly showBillingPlans: () => Promise<string | { readonly value: string }>
@@ -90,7 +98,7 @@ export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: (
         ctx.http(`${ctx.baseUrl}${BILLING_OVERVIEW_PATH}`), ctx.http(`${ctx.baseUrl}${BILLING_PLANS_PATH}`)
       ])
       if (!overviewResponse.ok || !plansResponse.ok) return "Your plans couldn't be refreshed right now."
-      const overview = BillingOverviewSchema.safeParse(await overviewResponse.json())
+      const overview = OverviewSchema.safeParse(await overviewResponse.json())
       const catalog = BillingPlansResponseSchema.safeParse(await plansResponse.json())
       if (!current()) return { value: "The account changed while plans were loading." }
       if (!overview.success || !catalog.success) return "Your plans couldn't be refreshed right now."
@@ -102,14 +110,15 @@ export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: (
       }
       const planKey = wire.plan_key
       const plans = catalog.data.plans
-      await ctx.dispatch({ type: "billing.plans.loaded", actor: ctx.actor(), planKey, sandbox, plans }).isPersisted.promise
+      const creditBalanceCents = overview.data.credit_balance_cents ?? null
+      await ctx.dispatch({ type: "billing.plans.loaded", actor: ctx.actor(), planKey, sandbox, plans, creditBalanceCents }).isPersisted.promise
       if (!current()) return "The account changed while plans were loading."
       await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
         id: "billing-plans", kind: "billing-plans", title: "Plans", status: "active",
         createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { planKey, sandbox, plans, checkout }
       } }).isPersisted.promise
       if (!current()) return "The account changed while plans were loading."
-      return readResult(`Current plan: ${planKey}. Running sandboxes: ${sandbox.concurrentInUse} / ${sandbox.concurrentSandboxes}. Sandbox-hours today: ${sandbox.secondsUsedToday / 3600} / ${sandbox.hoursPerDay === -1 ? "unlimited" : sandbox.hoursPerDay}. Resets at ${sandbox.dayResetsAt}. Plans: ${plans.map(plan => `${plan.display_name} $${plan.price_cents / 100}`).join(", ")}.${checkout ? "" : " Checkout is not open yet."}`)
+      return readResult(`Current plan: ${planKey}.${creditBalanceCents === null ? "" : ` Credit: ${creditDollars(creditBalanceCents)}.`} Running sandboxes: ${sandbox.concurrentInUse} / ${sandbox.concurrentSandboxes}. Sandbox-hours today: ${sandbox.secondsUsedToday / 3600} / ${sandbox.hoursPerDay === -1 ? "unlimited" : sandbox.hoursPerDay}. Resets at ${sandbox.dayResetsAt}. Plans: ${plans.map(plan => `${plan.display_name} $${plan.price_cents / 100}`).join(", ")}.${checkout ? "" : " Checkout is not open yet."}`)
     } catch {
       return "Your plans couldn't be refreshed and saved right now."
     }

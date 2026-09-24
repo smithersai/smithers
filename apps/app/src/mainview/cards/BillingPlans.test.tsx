@@ -3,7 +3,7 @@ import { afterAll, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { CardSchema } from "@smthrs/rpc/Cards"
-import { createBillingSeam } from "../state/seams/BillingSeam"
+import { createBillingSeam, creditDollars } from "../state/seams/BillingSeam"
 import { createAppStore } from "../state/AppStore"
 import type { Card } from "../state/AppState"
 import { BillingPlansCardBody } from "./BillingCards"
@@ -28,11 +28,11 @@ const fixture = (checkout = true): Extract<Card, { kind: "billing-plans" }> => C
     hoursPerDay: 4, secondsUsedToday: 5400, dayResetsAt: "2026-09-16T00:00:00Z"
   } }
 }) as Extract<Card, { kind: "billing-plans" }>
-const render = (card = fixture()) => {
+const render = (card = fixture(), creditBalanceCents: number | null = null) => {
   const host = document.createElement("div")
   const calls: unknown[] = []
   const root = createRoot(host)
-  flushSync(() => root.render(<BillingPlansCardBody card={card} onRunCommand={(...args) => { calls.push(args) }} />))
+  flushSync(() => root.render(<BillingPlansCardBody card={card} creditBalanceCents={creditBalanceCents} onRunCommand={(...args) => { calls.push(args) }} />))
   return { host, calls, close: () => flushSync(() => root.unmount()) }
 }
 test("fixture renders plan columns, current plan, usage, and typed paid-plan buttons", () => {
@@ -72,16 +72,28 @@ test("billing read loads both endpoints and dispatches the account and embedded 
   } })
   const paths: string[] = []
   const seam = createBillingSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: store.nextOrdinal,
-    http: async path => { paths.push(path); return Response.json(path === "/api/billing/plans" ? { plans, current_plan_key: "free" } : { sandbox: {
+    http: async path => { paths.push(path); return Response.json(path === "/api/billing/plans" ? { plans, current_plan_key: "free" } : { credit_balance_cents: 1000, sandbox: {
       plan_key: "free", concurrent_sandboxes: 1, concurrent_in_use: 1, idle_timeout_secs: 1800,
       hours_per_day: 4, seconds_used_today: 5400, day_resets_at: "2026-09-16T00:00:00Z"
     } }) }
   }, false)
-  expect(await seam.showBillingPlans()).toHaveProperty("value")
+  expect(await seam.showBillingPlans()).toMatchObject({ value: expect.stringContaining("Credit: $10.00.") })
   expect(paths).toEqual(["/api/billing", "/api/billing/plans"])
-  expect(store.collections.billingAccounts.get("billing")).toMatchObject({ planKey: "free", sandbox: { secondsUsedToday: 5400 } })
+  expect(store.collections.billingAccounts.get("billing")).toMatchObject({ planKey: "free", creditBalanceCents: 1000, sandbox: { secondsUsedToday: 5400 } })
   expect(store.collections.cards.get("billing-plans")?.kind).toBe("billing-plans")
   expect(await seam.startCheckout("pro")).toBeUndefined()
   expect(paths).toHaveLength(2)
   await store.dispose?.()
+})
+test("credit cents render as dollars", () => {
+  expect([1000, 0, 5, 123456, -250].map(creditDollars)).toEqual(["$10.00", "$0.00", "$0.05", "$1234.56", "-$2.50"])
+})
+test("the credit balance sits beside the current plan, and no plan offers bring-your-own-key", () => {
+  const { host, close } = render(fixture(), 1000)
+  expect(host.querySelector('[aria-current="true"] [data-testid="billing-credit"]')?.textContent).toBe("$10.00")
+  expect(host.textContent).not.toMatch(/bring-your-own-key/i)
+  close()
+  const unknown = render(fixture(), null)
+  expect(unknown.host.querySelector('[data-testid="billing-credit"]')).toBeNull()
+  unknown.close()
 })

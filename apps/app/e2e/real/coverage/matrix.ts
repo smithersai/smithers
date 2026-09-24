@@ -74,7 +74,7 @@ export const MATRIX_OBLIGATIONS: readonly MatrixObligation[] = [
   { id: "local-git-push", scenarios: [{ id: "repositories.local-git-push-file-readback", capabilities: ["identity"] }], tier: "local-infrastructure" },
   { id: "github-import", scenarios: [{ id: "repositories.github-import-direct-readback", capabilities: ["identity", "github"] }], tier: "live-provider" },
   { id: "chat", scenarios: [
-    { id: "chat.owner-credential-ui", capabilities: ["identity", "model.turn"] }
+    { id: "chat.owner-model", capabilities: ["identity", "model.turn"] }
   ], tier: "local-infrastructure" },
   { id: "workspace", scenarios: [{ id: "workspaces.product-lifecycle", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
   { id: "terminal", scenarios: [{ id: "workspaces.product-terminal-keyboard-output", capabilities: ["identity", "cloud", "cloud.terminal"] }], tier: "local-infrastructure" },

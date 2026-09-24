@@ -17,7 +17,7 @@ import type { Card } from "../AppState"
 import { knownRepositories } from "../RepoContext"
 import { fileOptions,fileTargetKey } from "../seams/FilesSeam"
 import type { ControllerContext } from "./context"
-import { MODELS_CARD_ID, credentialOptions, enrollmentReason } from "./models"
+import { MODELS_CARD_ID, credentialOptions } from "./models"
 import { setupQuestionCardId } from "./repositorySetup"
 import { setupGuideQuestions } from "./repositorySetupGuide"
 import { claimedSpokenLines,claimSpokenLine, forgetVanishedClaims,latestOrdinal } from "./spokenLines"
@@ -373,11 +373,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const nestedPayload = request.payloadField === undefined ? {} : {
       payloadField: request.payloadField, inputSchema: Schema.toJsonSchemaDocument(input)
     }
-    const host = collections.cards.get(MODELS_CARD_ID)
-    const enrollment = (host?.kind === "models" ? host.payload.enrollment : undefined) ??
-      (ctx.services?.bootstrap?.host === "cloud" ? { available: false as const, reason: "local_host_required" as const } : undefined)
-    const resolved = withOptions(fields, draft).map(field => request.name.startsWith("model.credential.") && field.kind === "write-only" && enrollment?.available === false
-      ? { ...field, disabledReason: enrollmentReason(enrollment.reason) } : field)
+    const resolved = withOptions(fields, draft)
     /*
      * THE FORM LAW's one sentence, and the two rules allowed to write it.
      *
