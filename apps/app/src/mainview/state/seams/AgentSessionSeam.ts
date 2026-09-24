@@ -50,7 +50,8 @@ import { refuseCloudSignIn, SIGN_OUT_REFUSAL } from "./CloudSignIn"
 import { actorSharedState } from "../ActorBindings"
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
-import { createCloudClient } from "./CloudClient"
+import { cloudFailure, cloudUnreachable, createCloudClient } from "./CloudClient"
+import type { CloudFailure } from "./CloudClient"
 import { readResult } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
@@ -326,13 +327,15 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
   }
 
   /** The refusal rides the card too, so it stays visible beside the transcript. */
-  const failOnCard = async (sessionId: string, error: string): Promise<void> => {
+  const failOnCard = async (sessionId: string, error: string | undefined, actor: "user" | "smithers" | "system" = ctx.actor()): Promise<void> => {
     const existing = ctx.store.collections.cards.get(cardIdOf(sessionId))
     if (existing?.kind !== "agent" || !("cloud" in existing.payload)) return
+    const { error: priorError, ...payload } = existing.payload
+    if (priorError === error) return
     await ctx.dispatch({
       type: "card.upsert",
-      actor: ctx.actor(),
-      card: { ...existing, payload: { ...existing.payload, error } }
+      actor,
+      card: { ...existing, payload: { ...payload, ...(error === undefined ? {} : { error }) } }
     }).isPersisted.promise
   }
 
@@ -408,6 +411,8 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     shared.streams.set(sessionId, controller)
     const current = (): boolean => authorized() && !controller.signal.aborted && shared.streams.get(sessionId) === controller
     const interval = options.repairIntervalMs ?? 15_000
+    let failures = 0
+    let retryDelay = interval
     let queued = Promise.resolve()
     const detach = (): void => {
       if (shared.streams.get(sessionId) === controller) shared.streams.delete(sessionId)
@@ -419,9 +424,22 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       queued = next.catch(detach)
       return next
     }
+    const refused = async (failure: CloudFailure): Promise<void> => {
+      await failOnCard(sessionId, failure.error, "system")
+      if (failure.status !== null && failure.status >= 400 && failure.status < 500
+        && failure.status !== 408 && failure.status !== 429) {
+        detach()
+        return
+      }
+      retryDelay = Math.max(
+        Math.min(Math.max(interval, 120_000), interval * 2 ** Math.min(failures++, 10)),
+        (failure.retryAfterSeconds ?? 0) * 1_000
+      )
+    }
     const refresh = async (): Promise<void> => {
       const answer = await get(sessionsPath(repo, `/${encodeURIComponent(sessionId)}`), undefined, controller.signal)
-      if (!current() || "error" in answer) return
+      if (!current()) return
+      if ("error" in answer) { await refused(answer); return }
       const session = parseSession(answer.body)
       if (session === null || session.id !== sessionId) return
       const rows = await readWindow(repo, session, current, controller.signal)
@@ -438,7 +456,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const pause = (): Promise<void> => new Promise(resolve => {
       if (!current()) { resolve(); return }
       const finish = (): void => { clearTimeout(timer); controller.signal.removeEventListener("abort", finish); resolve() }
-      const timer = setTimeout(finish, interval)
+      const timer = setTimeout(finish, retryDelay)
       timer.unref?.()
       controller.signal.addEventListener("abort", finish, { once: true })
     })
@@ -452,17 +470,27 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       const card = ctx.store.collections.cards.get(cardIdOf(sessionId))
       const rows = card?.kind === "agent" && "cloud" in card.payload ? card.payload.transcript : []
       const cursor = Math.max(0, ...rows.map(row => row.id))
-      let response: Response
-      try {
-        response = await streamFetch(cloud(sessionsPath(repo, `/${encodeURIComponent(sessionId)}/stream`)), {
-          headers: { accept: "text/event-stream", "Last-Event-ID": String(cursor) }, signal: controller.signal
-        })
-      } catch { return }
+      const response = await streamFetch(cloud(sessionsPath(repo, `/${encodeURIComponent(sessionId)}/stream`)), {
+        headers: { accept: "text/event-stream", "Last-Event-ID": String(cursor) }, signal: controller.signal
+      })
       const contentType = response.headers.get("content-type") ?? ""
-      if (!current() || !response.ok || response.body === null || !contentType.includes("text/event-stream")) {
+      if (!current()) {
         await response.body?.cancel().catch(() => {})
         return
       }
+      if (!response.ok) {
+        const failure = await cloudFailure(response, `Smithers Cloud could not open the session stream (HTTP ${response.status}).`)
+        await observe(() => refused(failure))
+        return
+      }
+      if (response.body === null || !contentType.includes("text/event-stream")) {
+        await response.body?.cancel().catch(() => {})
+        await observe(() => refused(cloudUnreachable(new Error("Smithers Cloud did not provide a session stream."))))
+        return
+      }
+      failures = 0
+      retryDelay = interval
+      await observe(() => failOnCard(sessionId, undefined, "system"))
       const reader = response.body.getReader()
       const cancel = (): void => { void reader.cancel().catch(() => {}) }
       controller.signal.addEventListener("abort", cancel, { once: true })
@@ -494,7 +522,9 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       void repairs().catch(detach)
       try {
         while (current()) {
-          await connection()
+          try { await connection() } catch (error) {
+            if (current()) await observe(() => refused(cloudUnreachable(error)))
+          }
           if (current()) await pause()
         }
       } finally { detach() }

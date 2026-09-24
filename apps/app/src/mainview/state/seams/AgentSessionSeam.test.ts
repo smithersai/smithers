@@ -1,5 +1,5 @@
 import type { StorageApi } from "@tanstack/db"
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
@@ -459,7 +459,9 @@ describe("the transcript stream", () => {
   const seed = async () => {
     const rig = await harness({
       [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
-      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message())
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, AGENT_SESSION_WIRE.session()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, [AGENT_SESSION_WIRE.message()])
     })
     await rig.seam.newSession(REPO, "codex", "Fix the retry loop")
     return rig
@@ -749,4 +751,45 @@ test("a disposed session seam refuses every act", async () => {
   expect(await seam.sayToSession(SESSION_ID, "follow-up")).toBe(SIGN_OUT_REFUSAL)
   expect(await seam.stopSession(SESSION_ID, REPO)).toBe(SIGN_OUT_REFUSAL)
   expect(requests).toEqual([])
+})
+
+
+for (const status of [401, 403, 404]) {
+  test(`a refused session stream (${status}) records the failure and detaches`, async () => {
+    const { seam, store, streamCalls, requests } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, AGENT_SESSION_WIRE.session()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, [])
+    }, { repairIntervalMs: 10, stream: () => json(status, { message: "Session stream unavailable" }) })
+    await seam.viewSession(SESSION_ID, REPO)
+    await until(() => streamCalls[0]?.signal?.aborted === true)
+    expect(payloadOf(store)?.error).toContain("Session stream unavailable")
+    const reads = requests.length
+    await new Promise(resolve => setTimeout(resolve, 35))
+    expect(streamCalls).toHaveLength(1)
+    expect(requests).toHaveLength(reads)
+  })
+}
+
+test("stream server failures remain visible and back off until recovery", async () => {
+  const waits: number[] = []
+  const realTimeout = globalThis.setTimeout
+  const timer = spyOn(globalThis, "setTimeout").mockImplementation(((...args: Parameters<typeof setTimeout>) => {
+    waits.push(Number(args[1]))
+    return realTimeout(...args)
+  }) as typeof setTimeout)
+  let attempts = 0
+  const recovered = liveStream()
+  try {
+    const { seam, store, streamCalls } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, AGENT_SESSION_WIRE.session()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, [])
+    }, { repairIntervalMs: 31, stream: () => ++attempts <= 3 ? json(503, { message: "Session stream unavailable" }) : recovered.response })
+    await seam.viewSession(SESSION_ID, REPO)
+    await until(() => attempts === 3 && waits.includes(124))
+    expect(payloadOf(store)?.error).toContain("Session stream unavailable")
+    expect(streamCalls[0]?.signal?.aborted).toBe(false)
+    expect(waits).toContain(62)
+    await until(() => attempts === 4 && payloadOf(store)?.error === undefined)
+    expect(streamCalls[3]?.signal?.aborted).toBe(false)
+  } finally { timer.mockRestore() }
 })
