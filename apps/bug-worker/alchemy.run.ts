@@ -17,8 +17,9 @@
  *
  * Required env: CLOUDFLARE_API_TOKEN, ALCHEMY_PASSWORD, BUG_ADMIN_TOKEN,
  * RESEND_API_KEY, NOTIFICATION_FROM (a verified sender) and GITHUB_FORK_TOKEN
- * (forks nominated repositories into smithers-community). A deploy without one
- * fails instead of removing the live binding.
+ * (authenticates the nomination's GitHub lookup and forks nominated
+ * repositories into smithers-community). A deploy without one fails instead of
+ * removing the live binding.
  */
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -41,6 +42,8 @@ export const workerProps = {
   compatibility: { date: "2025-05-01" },
   workersDev: false,
   crons: ["*/10 * * * *"],
+  // Workers Logs keeps the `logFailure` JSON lines queryable by event and route.
+  observability: { enabled: true, logs: { enabled: true, invocationLogs: true, persist: true } },
   env: {
     BUGS: bugs,
     REPO_COMPLETIONS: Cloudflare.DurableObject("RepoCompletion"),

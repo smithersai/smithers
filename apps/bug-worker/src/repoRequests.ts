@@ -1,10 +1,17 @@
+import { parseAppUrl } from "./appUrl.ts";
 import { checkRateLimit } from "./checkRateLimit.ts";
 import type { BugWorkerDeps } from "./deps.ts";
 import type { BugWorkerEnv } from "./env.ts";
 import { isOperator } from "./isOperator.ts";
+import { logFailure } from "./logFailure.ts";
+import { publicBaseUrl } from "./publicBaseUrl.ts";
 import { readBodyBounded } from "./readBodyBounded.ts";
+import type { Ready } from "./RepoCompletion.ts";
+import { queueDelivery } from "./repoDelivery.ts";
 import { forkRepo } from "./repoForks.ts";
 import { repoName } from "./repoName.ts";
+import { sendMail } from "./sendMail.ts";
+import { sha256 } from "./sha256.ts";
 
 const prefix = "repo-request:";
 const cors = {
@@ -14,7 +21,6 @@ const cors = {
 };
 const json = (status: number, body: unknown, headers = cors) => new Response(JSON.stringify(body), { status, headers });
 type Repo = { name: string; url: string };
-type Ready = { appUrl: string; completedAt: string };
 /**
  * A leaderboard entry carries the app URL published for it (null while
  * smithering), so the public list is one read. Entries written before readiness
@@ -27,40 +33,19 @@ const listTop = 20;
 /** Browsers reuse a list for this long; KV is eventually consistent over the same window. */
 const listCache = { ...cors, "cache-control": "public, max-age=60" };
 /**
- * Public reads per IP per hour, separate from the nomination budget. A browser
- * that honours max-age needs at most 60 list reads an hour plus one uncached
- * read per submission, so a well-behaved visitor never meets this bound.
+ * Public reads per IP per hour. A browser that honours max-age needs at most
+ * 60 list reads an hour plus one uncached read per submission, so a
+ * well-behaved visitor never meets this bound.
  */
 const readsPerIpPerHour = 100;
 
-async function hash(value: string) {
-  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))))
-    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
 /** Single-use confirmation and cancellation tokens; 128 bits, hex encoded. */
 function newToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
-/** Links in transactional email point back at this worker. */
-function baseUrl(env: BugWorkerEnv) {
-  return (env.PUBLIC_BASE_URL ?? "https://bug.smithers.sh").replace(/\/$/, "");
-}
 async function read<T>(env: BugWorkerEnv, key: string): Promise<T | null> {
   const value = await env.BUGS.get(key);
   return value === null ? null : JSON.parse(value) as T;
-}
-/** Persisted readiness must satisfy the publication contract before sending mail. */
-function parseReady(value: string): Ready {
-  const ready: unknown = JSON.parse(value);
-  if (!ready || typeof ready !== "object" || !("appUrl" in ready) || typeof ready.appUrl !== "string"
-    || !("completedAt" in ready) || typeof ready.completedAt !== "string" || !Number.isFinite(Date.parse(ready.completedAt))) {
-    throw new Error("Invalid readiness record");
-  }
-  const url = new URL(ready.appUrl);
-  if (url.protocol !== "https:" || !["smithers.sh", "app.smithers.sh", "canary.smithers.sh"].includes(url.hostname) || url.username || url.password || url.port) {
-    throw new Error("Invalid readiness app URL");
-  }
-  return { appUrl: ready.appUrl, completedAt: ready.completedAt };
 }
 /** Distinct nominations recorded for a repository; one accepted POST is one nomination. */
 async function nominations(env: BugWorkerEnv, name: string) {
@@ -74,6 +59,17 @@ async function publicRepo(env: BugWorkerEnv, repo: Repo, count?: number) {
     appUrl: ready?.appUrl ?? null,
     nominations: count ?? await nominations(env, repo.name),
   };
+}
+/**
+ * The committed publication for a repository, committing `candidate` first when
+ * nothing is published. The Durable Object is the only authority; KV mirrors it.
+ */
+async function publication(env: BugWorkerEnv, name: string, candidate?: Ready): Promise<Ready | null> {
+  const answer = await env.REPO_COMPLETIONS.getByName(name).fetch(new Request("https://repo-completion/",
+    candidate ? { method: "POST", body: JSON.stringify(candidate) } : {}));
+  if (answer.status === 404) return null;
+  if (!answer.ok) throw new Error(`Repository completion answered ${answer.status}`);
+  return await answer.json() as Ready;
 }
 /** Rewrite the leaderboard with one repository's new count and readiness; ties break on name. */
 async function rank(env: BugWorkerEnv, name: string, count: number, appUrl: string | null) {
@@ -99,67 +95,72 @@ async function mostNominated(env: BugWorkerEnv) {
     return { ...repo, status: leader.appUrl ? "ready" : "smithering", appUrl: leader.appUrl, nominations: leader.count };
   }));
 }
-async function list(env: BugWorkerEnv, keyPrefix: string, cursor?: string, limit = 50) {
-  if (!env.BUGS.list) throw new Error("KV listing unavailable");
-  return env.BUGS.list({ prefix: keyPrefix, limit, ...(cursor ? { cursor } : {}) });
-}
-
-const maxNotificationAttempts = 3;
-/**
- * Repositories that still owe subscriber work: a further page, a retryable
- * failure, or a signup that arrived after completion. The cron spends its
- * budget here first so a pending delivery never waits behind completed
- * repositories with nothing left to send.
- */
-const pendingPrefix = "repo-pending:";
-/** Repositories visited per scheduled invocation, per pass. */
-const sweepBatch = 2;
 /** Pending confirmations live for a day; the KV TTL and the stored expiry agree. */
 const confirmationTtlMs = 24 * 3_600_000;
-/** Confirmation sends per recipient per hour, across all repositories. */
+/** Confirmation attempts per recipient per hour, across all repositories. */
 const confirmationsPerRecipientPerHour = 3;
-/** One transactional send through the provider seam; returns the error message on failure. */
-async function sendMail(env: BugWorkerEnv, deps: BugWorkerDeps, message: { to: string; subject: string; text: string; idempotencyKey: string }): Promise<string | undefined> {
-  try {
-    const response = await deps.fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json",
-        "idempotency-key": message.idempotencyKey,
-      },
-      body: JSON.stringify({ from: env.NOTIFICATION_FROM, to: [message.to], subject: message.subject, text: message.text }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    return response.ok ? undefined : `Email provider returned HTTP ${response.status}`;
-  } catch (cause) { return cause instanceof Error ? cause.message : String(cause); }
-}
+/**
+ * The receipt for one confirmation attempt. A failed attempt names its fault:
+ * `failed` stored nothing and sent nothing, `unavailable` may have delivered,
+ * `rejected` was refused by the provider.
+ */
+type Confirmation =
+  | { outcome: "sent" | "rate_limited" | "email_not_configured" }
+  | { outcome: "send_failed"; event: "repo_confirmation.failed" | "repo_confirmation.unavailable" | "repo_confirmation.rejected"; error: string };
 /**
  * Consent gate: a submitted address becomes a pending confirmation token, never
- * a subscriber. Only the recipient clicking the emailed link creates the
- * deliverable record, so a caller cannot enroll a third party. The per-recipient
- * throttle bounds confirmation mail a victim can be sent; the per-IP submission
- * throttle bounds the sender side.
+ * a subscriber. Only the recipient pressing the button on the emailed link's
+ * page creates the deliverable record, so a caller cannot enroll a third party.
+ * The attempt is charged and the token stored before the send, so every link
+ * that leaves has a record and the throttle bounds the mail a victim can be
+ * sent even when the provider fails. Only an operator can submit. Never throws.
  */
-async function subscribe(env: BugWorkerEnv, deps: BugWorkerDeps, name: string, email: string): Promise<"sent" | "rate_limited" | "send_failed" | "email_not_configured"> {
-  if (!env.RESEND_API_KEY || !env.NOTIFICATION_FROM) return "email_not_configured";
+async function subscribe(env: BugWorkerEnv, deps: BugWorkerDeps, name: string, email: string): Promise<Confirmation> {
+  if (!env.RESEND_API_KEY || !env.NOTIFICATION_FROM) return { outcome: "email_not_configured" };
   const now = deps.now();
-  const throttleKey = `repo-confirm-throttle:${await hash(email)}:${Math.floor(now / 3_600_000)}`;
-  const sent = Number(await env.BUGS.get(throttleKey)) || 0;
-  if (sent >= confirmationsPerRecipientPerHour) return "rate_limited";
   const confirmToken = newToken();
-  const error = await sendMail(env, deps, {
+  try {
+    const throttleKey = `repo-confirm-throttle:${await sha256(email)}:${Math.floor(now / 3_600_000)}`;
+    const attempts = Number(await env.BUGS.get(throttleKey)) || 0;
+    if (attempts >= confirmationsPerRecipientPerHour) return { outcome: "rate_limited" };
+    await env.BUGS.put(throttleKey, String(attempts + 1), { expirationTtl: 3600 });
+    await env.BUGS.put(`repo-confirm:${confirmToken}`, JSON.stringify({ name, email, expiresAt: now + confirmationTtlMs }), { expirationTtl: confirmationTtlMs / 1000 });
+  } catch (error) {
+    return { outcome: "send_failed", event: "repo_confirmation.failed", error: error instanceof Error ? error.message : String(error) };
+  }
+  // A failed send keeps the token: an `unavailable` message may still arrive
+  // and must confirm, and a `rejected` one is held by nobody until the TTL.
+  const sent = await sendMail(env, deps, {
     to: email,
     subject: `Confirm your Smithers notification for ${name}`,
-    text: `Someone asked Smithers to email this address once ${name} is smithered and available to everyone.\n\nIf that was you, confirm within 24 hours: ${baseUrl(env)}/api/repo-requests/confirm?token=${confirmToken}\n\nIf it was not you, ignore this email and nothing more will be sent. To cancel the request: ${baseUrl(env)}/api/repo-requests/cancel?token=${confirmToken}`,
-    idempotencyKey: `smithers-confirm-${await hash(confirmToken)}`,
+    text: `Someone asked Smithers to email this address once ${name} is smithered and available to everyone.\n\nIf that was you, confirm within 24 hours: ${publicBaseUrl(env)}/api/repo-requests/confirm?token=${confirmToken}\n\nIf it was not you, ignore this email and nothing more will be sent. To cancel the request: ${publicBaseUrl(env)}/api/repo-requests/cancel?token=${confirmToken}`,
+    idempotencyKey: `smithers-confirm-${await sha256(confirmToken)}`,
   });
-  if (error !== undefined) return "send_failed";
-  await env.BUGS.put(throttleKey, String(sent + 1), { expirationTtl: 3600 });
-  await env.BUGS.put(`repo-confirm:${confirmToken}`, JSON.stringify({ name, email, expiresAt: now + confirmationTtlMs }), { expirationTtl: confirmationTtlMs / 1000 });
-  return "sent";
+  if (sent.ok) return { outcome: "sent" };
+  return { outcome: "send_failed", event: `repo_confirmation.${sent.kind}`, error: sent.error };
 }
 const tokenPattern = /^[0-9a-f]{32}$/;
-/** Move a pending address into the deliverable set. The token is single-use. */
+/**
+ * Emailed links only open this page. Mail scanners prefetch every link in an
+ * inbound message, so a GET that confirmed or cancelled would act without the
+ * recipient; only the POST from this page's button touches the token.
+ */
+function tokenPage(route: "/confirm" | "/cancel", token: string): Response {
+  if (!tokenPattern.test(token)) return json(400, { error: "A valid link token is required." });
+  const label = route === "/confirm" ? "Confirm notification" : "Cancel notification";
+  return new Response(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${label}</title>`
+      + `<form method="post" action="/api/repo-requests${route}?token=${token}"><button type="submit">${label}</button></form>`,
+    { status: 200, headers: {
+      "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer",
+      "content-security-policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'",
+    } },
+  );
+}
+/**
+ * Move a pending address into the deliverable set. The token is single-use and
+ * consumed last, so a storage failure answers 503 and the same link retries.
+ */
 async function confirmSubscription(env: BugWorkerEnv, deps: BugWorkerDeps, token: string): Promise<Response> {
   if (!tokenPattern.test(token)) return json(400, { error: "A confirmation token is required." });
   const key = `repo-confirm:${token}`;
@@ -169,17 +170,20 @@ async function confirmSubscription(env: BugWorkerEnv, deps: BugWorkerDeps, token
     await env.BUGS.delete(key);
     return json(410, { error: "This confirmation link has expired." });
   }
-  await env.BUGS.delete(key);
   const cancelToken = newToken();
-  const subscriberKey = `repo-subscriber:${pending.name}:${await hash(pending.email)}`;
+  const subscriberKey = `repo-subscriber:${pending.name}:${await sha256(pending.email)}`;
   await env.BUGS.put(subscriberKey, JSON.stringify({ email: pending.email, cancel: cancelToken }));
   await env.BUGS.put(`repo-cancel:${cancelToken}`, JSON.stringify({ key: subscriberKey }));
   // A signup that confirms after completion has nothing else to wake it, so the
   // repository joins the queue instead of waiting for the scan to reach it.
-  if (await env.BUGS.get(`repo-ready:${pending.name}`) !== null) await env.BUGS.put(`${pendingPrefix}${pending.name}`, "");
-  return json(200, { repo: pending.name, subscribed: true, cancel: `${baseUrl(env)}/api/repo-requests/cancel?token=${cancelToken}` });
+  if (await env.BUGS.get(`repo-ready:${pending.name}`) !== null) await queueDelivery(env, pending.name);
+  await env.BUGS.delete(key);
+  return json(200, { repo: pending.name, subscribed: true, cancel: `${publicBaseUrl(env)}/api/repo-requests/cancel?token=${cancelToken}` });
 }
-/** Remove a pending confirmation or a confirmed subscription. */
+/**
+ * Remove a pending confirmation or a confirmed subscription. The subscriber
+ * goes before its token, so a storage failure answers 503 and the link retries.
+ */
 async function cancelSubscription(env: BugWorkerEnv, token: string): Promise<Response> {
   if (!tokenPattern.test(token)) return json(400, { error: "A cancellation token is required." });
   const pendingKey = `repo-confirm:${token}`;
@@ -190,57 +194,10 @@ async function cancelSubscription(env: BugWorkerEnv, token: string): Promise<Res
   const cancelKey = `repo-cancel:${token}`;
   const cancel = await read<{ key: unknown }>(env, cancelKey);
   if (!cancel || typeof cancel.key !== "string") return json(404, { error: "This cancellation link is invalid or has already been used." });
-  await env.BUGS.delete(cancelKey);
   await env.BUGS.delete(cancel.key);
+  await env.BUGS.delete(cancelKey);
   return json(200, { cancelled: true });
 }
-/** Bounded delivery, with receipts, a failure budget, and provider deduplication. */
-async function notify(env: BugWorkerEnv, deps: BugWorkerDeps, name: string, ready: Ready, cursor?: string) {
-  if (!env.RESEND_API_KEY || !env.NOTIFICATION_FROM) return { pending: true, reason: "email_not_configured" };
-  const page = await list(env, `repo-subscriber:${name}:`, cursor);
-  let sent = 0;
-  let failed = 0;
-  for (const key of page.keys) {
-    try {
-      if (await env.BUGS.get(`repo-notified:${key.name}`)) continue;
-      const failureKey = `repo-notification-failure:${key.name}`;
-      const failure = await read<{ attempts: number }>(env, failureKey);
-      if (failure && failure.attempts >= maxNotificationAttempts) continue;
-      const stored = await env.BUGS.get(key.name);
-      if (!stored) continue;
-      // Confirmed subscribers are JSON with a cancellation token; plain
-      // addresses predate the confirmation flow and stay deliverable.
-      let email = stored;
-      let cancel: string | undefined;
-      try {
-        const parsed: unknown = JSON.parse(stored);
-        if (parsed && typeof parsed === "object" && "email" in parsed && typeof parsed.email === "string") {
-          email = parsed.email;
-          if ("cancel" in parsed && typeof parsed.cancel === "string") cancel = parsed.cancel;
-        }
-      } catch { /* A plain address is a legacy confirmed subscriber. */ }
-      const error = await sendMail(env, deps, {
-        to: email,
-        subject: `${name} is ready in Smithers`,
-        text: `You asked to be notified when ${name} was smithered. It is now supported in Smithers and available to everyone.\n\nOpen in Smithers: ${ready.appUrl}\n\nThis is the one-time notification you requested at smithers.sh.${cancel ? `\n\nUnsubscribe: ${baseUrl(env)}/api/repo-requests/cancel?token=${cancel}` : ""}`,
-        idempotencyKey: `smithers-ready-${await hash(key.name)}`,
-      });
-      if (error === undefined) {
-        await env.BUGS.put(`repo-notified:${key.name}`, ready.completedAt);
-        sent++;
-      } else {
-        const attempts = (failure?.attempts ?? 0) + 1;
-        await env.BUGS.put(failureKey, JSON.stringify({ attempts, terminal: attempts >= maxNotificationAttempts, failedAt: new Date(deps.now()).toISOString(), error }));
-        failed++;
-      }
-    } catch (error) {
-      failed++;
-      console.error(`repo-notification ${key.name} failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  return { sent, failed, pending: failed > 0 || !page.list_complete, cursor: page.list_complete ? null : page.cursor };
-}
-
 export async function handleRepoRequests(request: Request, env: BugWorkerEnv, deps: BugWorkerDeps): Promise<Response> {
   try {
     const url = new URL(request.url);
@@ -259,16 +216,18 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
       if (!repo) return json(404, { error: "Repository has not been requested." });
       return json(200, { repo: await publicRepo(env, repo) });
     }
-    if (request.method === "GET" && route === "/confirm") return confirmSubscription(env, deps, url.searchParams.get("token") ?? "");
-    if (request.method === "GET" && route === "/cancel") return cancelSubscription(env, url.searchParams.get("token") ?? "");
+    if (route === "/confirm" || route === "/cancel") {
+      const token = url.searchParams.get("token") ?? "";
+      if (request.method === "GET") return tokenPage(route, token);
+      if (request.method !== "POST") return json(404, { error: "Not found." });
+      // Awaited so a storage failure reaches the catch below, never an unhandled rejection.
+      return await (route === "/confirm" ? confirmSubscription(env, deps, token) : cancelSubscription(env, token));
+    }
     const admin = route === "/complete" || route === "/notify";
     if (request.method !== "POST" || (route !== "" && !admin)) return json(404, { error: "Not found." });
-    if (admin && !(await isOperator(request, env))) {
-      return json(401, { error: "Admin authentication required." });
-    }
-    if (!admin && !(await checkRateLimit(env, `repos:${request.headers.get("cf-connecting-ip") ?? "unknown"}`, deps.now()))) {
-      return json(429, { error: "Too many requests. Please try again later." });
-    }
+    // Every write is operator-only: a nomination forks into smithers-community and
+    // mails the submitted address, and no product surface submits one.
+    if (!(await isOperator(request, env))) return json(401, { error: "Admin authentication required." });
     const raw = await readBodyBounded(request, 4096);
     if (raw === null) return json(413, { error: "Request is too large." });
     let body: Record<string, unknown>;
@@ -281,35 +240,25 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
     let repo = await read<Repo>(env, `${prefix}${name}`);
     if (admin) {
       if (!repo) return json(404, { error: "Repository has not been requested." });
-      let ready = await read<Ready>(env, `repo-ready:${name}`);
+      let candidate: Ready | undefined;
       if (route === "/complete") {
-        let appUrl: URL;
-        try { appUrl = new URL(String(body.appUrl)); } catch { return json(400, { error: "A public Smithers app URL is required." }); }
-        if (appUrl.protocol !== "https:" || !["smithers.sh", "app.smithers.sh", "canary.smithers.sh"].includes(appUrl.hostname) || appUrl.username || appUrl.password || appUrl.port) {
-          return json(400, { error: "Use an HTTPS URL on a Smithers app domain." });
-        }
-        if (!env.REPO_COMPLETIONS) return json(503, { error: "Repository completion is unavailable." });
-        const committed = await env.REPO_COMPLETIONS.getByName(name).fetch(new Request("https://repo-completion/", {
-          method: "POST",
-          body: JSON.stringify({ name, candidate: { appUrl: appUrl.href, completedAt: new Date(deps.now()).toISOString() } }),
-        }));
-        if (!committed.ok) throw new Error("Repository completion failed");
-        const winner = await committed.json() as Ready;
-        if (winner.appUrl !== appUrl.href) return json(409, { error: "This repository already has a published app URL." });
-        // Mirror only the durable winner for public reads and scheduled delivery.
-        // A failed mirror is repaired by retrying the same completion.
-        if (!ready || ready.appUrl !== winner.appUrl || ready.completedAt !== winner.completedAt) {
-          await env.BUGS.put(`repo-ready:${name}`, JSON.stringify(winner));
-        }
-        ready = winner;
-        await rankReady(env, name, winner.appUrl);
+        const appUrl = parseAppUrl(String(body.appUrl));
+        if (!appUrl) return json(400, { error: "Use an HTTPS URL on a Smithers app domain." });
+        candidate = { appUrl: appUrl.href, completedAt: new Date(deps.now()).toISOString() };
       }
+      const ready = await publication(env, name, candidate);
       if (!ready) return json(409, { error: "Repository is still smithering." });
-      // Publishing and delivery are separate: notification failure cannot undo readiness.
-      const notifications = await notify(env, deps, name, ready, typeof body.cursor === "string" ? body.cursor : undefined);
-      // Anything left owing goes on the queue, so the next cron retries it first.
-      if (notifications.pending) await env.BUGS.put(`${pendingPrefix}${name}`, "");
-      return json(200, { repo: { ...repo, status: "ready", appUrl: ready.appUrl }, notifications });
+      if (candidate && ready.appUrl !== candidate.appUrl) return json(409, { error: "This repository already has a published app URL." });
+      // Mirror the committed record for public reads and scheduled delivery on
+      // every success, so a retry or /notify repairs a lost or corrupt mirror.
+      await env.BUGS.put(`repo-ready:${name}`, JSON.stringify(ready));
+      await rankReady(env, name, ready.appUrl);
+      // Publishing and delivery are separate: the request only queues the
+      // repository and the scheduled sweep sends, so provider latency or
+      // failure never reaches this response or undoes readiness.
+      await queueDelivery(env, name);
+      const delivery = env.RESEND_API_KEY && env.NOTIFICATION_FROM ? "queued" : "email_not_configured";
+      return json(200, { repo: { ...repo, status: "ready", appUrl: ready.appUrl }, delivery });
     }
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     if ((body.email !== undefined && typeof body.email !== "string") || (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))) {
@@ -319,10 +268,18 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
       let response: Response;
       try {
         response = await deps.fetch(`https://api.github.com/repos/${name}`, {
-          headers: { accept: "application/vnd.github+json", "user-agent": "Smithers-repo-requests" },
+          // Authenticated: the anonymous 60/hour quota is per source IP, and Workers share egress IPs.
+          headers: {
+            accept: "application/vnd.github+json",
+            "user-agent": "Smithers-repo-requests",
+            ...(env.GITHUB_FORK_TOKEN ? { authorization: `Bearer ${env.GITHUB_FORK_TOKEN}` } : {}),
+          },
           signal: AbortSignal.timeout(10_000), redirect: "manual",
         });
-      } catch { return json(503, { error: "Could not check GitHub. Please try again." }); }
+      } catch (error) {
+        logFailure("github_check.failed", request, error);
+        return json(503, { error: "Could not check GitHub. Please try again." });
+      }
       // workerd refuses redirect: "error" (it throws before the request is sent, so every
       // new nomination failed with 503 in production while Bun accepted the option locally).
       // The redirect is requested manually and a 3xx answer means the repository has moved,
@@ -330,7 +287,10 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
       if (response.status === 404 || (response.status >= 300 && response.status < 400)) {
         return json(400, { error: "That repository was not found. Please use a public GitHub repository." });
       }
-      if (!response.ok) return json(503, { error: "GitHub is unavailable or rate limited. Please try again later." });
+      if (!response.ok) {
+        logFailure("github_check.failed", request, `GitHub answered ${response.status}`);
+        return json(503, { error: "GitHub is unavailable or rate limited. Please try again later." });
+      }
       const github = await response.json() as { private?: boolean; disabled?: boolean; license?: { spdx_id?: string } };
       if (github.private !== false || github.disabled || !github.license?.spdx_id || github.license.spdx_id === "NOASSERTION") {
         return json(400, { error: "Please use a public repository with a recognized open-source license." });
@@ -351,61 +311,19 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
     // Consent first: the address stays a pending token, and `subscribed` only
     // means the confirmation email left; delivery starts after the recipient
     // confirms. Without provider configuration no consent email can be sent,
-    // so nothing is stored.
+    // so nothing is stored. A failed confirmation never fails the nomination;
+    // its fault goes to the log.
     let subscribed = false;
-    let confirmation: string | undefined;
+    let confirmation: Confirmation["outcome"] | undefined;
     if (email && result.status !== "ready") {
-      const outcome = await subscribe(env, deps, name, email);
-      if (outcome === "sent") subscribed = true;
-      else confirmation = outcome;
+      const attempt = await subscribe(env, deps, name, email);
+      if (attempt.outcome === "sent") subscribed = true;
+      else confirmation = attempt.outcome;
+      if (attempt.outcome === "send_failed") logFailure(attempt.event, request, attempt.error);
     }
     return json(200, { repo: result, subscribed, ...(confirmation ? { confirmation } : {}) });
-  } catch {
+  } catch (error) {
+    logFailure("repo_request.failed", request, error);
     return json(503, { error: "Repository requests are temporarily unavailable. Please try again." });
   }
-}
-
-/** One bounded delivery step for a repository; reports whether work remains. */
-async function sweepRepo(env: BugWorkerEnv, deps: BugWorkerDeps, name: string, ready: Ready) {
-  const cursorKey = `repo-notification-cursor:${name}`;
-  const result = await notify(env, deps, name, ready, await env.BUGS.get(cursorKey) || undefined);
-  // Failed recipients are revisited after the scan wraps, never by pinning a page.
-  if ("cursor" in result) await env.BUGS.put(cursorKey, result.cursor || "");
-  return result.pending === true;
-}
-
-/**
- * Drain outstanding deliveries first, then reconcile.
- *
- * The queue holds only repositories that still owe subscriber work, so a bounded
- * invocation spends its budget on pending recipients rather than on idle
- * completed history. The full scan stays as a slower reconciliation pass: it
- * finds subscribers written outside the confirmation flow, and enqueues work
- * whose enqueue was lost to a KV failure. Both passes leave the queue accurate,
- * so an entry survives a failed or unfinished page and is removed once the
- * repository's subscribers are drained.
- */
-export async function retryRepoNotifications(env: BugWorkerEnv, deps: BugWorkerDeps): Promise<void> {
-  if (!env.RESEND_API_KEY || !env.NOTIFICATION_FROM) return;
-  const queued = await list(env, pendingPrefix, undefined, sweepBatch);
-  // A cursor bounds each invocation; repeated scheduled runs visit every repo.
-  const cursor = await env.BUGS.get("repo-notification-sweep") || undefined;
-  const page = await list(env, "repo-ready:", cursor, sweepBatch);
-  const names = new Set([
-    ...queued.keys.map((key) => key.name.slice(pendingPrefix.length)),
-    ...page.keys.map((key) => key.name.slice("repo-ready:".length)),
-  ]);
-  for (const name of names) {
-    try {
-      const value = await env.BUGS.get(`repo-ready:${name}`);
-      // Only completed repositories are queued, so a missing record is a stale
-      // read: keep the entry rather than dropping a pending delivery.
-      if (value === null) continue;
-      if (await sweepRepo(env, deps, name, parseReady(value))) await env.BUGS.put(`${pendingPrefix}${name}`, "");
-      else await env.BUGS.delete(`${pendingPrefix}${name}`);
-    } catch (error) {
-      console.error(`repo-notification repo-ready:${name} failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  await env.BUGS.put("repo-notification-sweep", page.list_complete ? "" : page.cursor || "");
 }

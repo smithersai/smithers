@@ -2,7 +2,7 @@ import { RepoCompletion } from "../../src/RepoCompletion.ts";
 import type { BugWorkerEnv } from "../../src/env.ts";
 
 /** Runs the deployed class against isolated, atomic, rollback-capable storage. */
-export function memoryRepoCompletions(env: BugWorkerEnv): NonNullable<BugWorkerEnv["REPO_COMPLETIONS"]> {
+export function memoryRepoCompletions(): BugWorkerEnv["REPO_COMPLETIONS"] {
   const stores = new Map<string, { values: Map<string, unknown>; tail: Promise<unknown> }>();
   return {
     getByName(name) {
@@ -27,7 +27,7 @@ export function memoryRepoCompletions(env: BugWorkerEnv): NonNullable<BugWorkerE
           state.tail = result.catch(() => {});
           return result;
         },
-      } }, env);
+      } });
     },
   };
 }

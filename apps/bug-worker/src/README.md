@@ -10,10 +10,17 @@ deploy instructions live in `../README.md`).
 - `repoRequests.ts`, `repoClaims.ts` — route handlers.
   Only `worker.ts` imports them; they import the leaf modules below and never
   `worker.ts` or each other. `tests/moduleGraph.test.ts` pins this.
+- `repoDelivery.ts` — readiness email delivery: `queueDelivery` for routes
+  and `sweepDeliveries`, the scheduled sweep that is the only sender, bounded
+  by a five-minute budget.
+- `sendMail.ts` — one Resend send, typed `rejected` (the recipient's message)
+  or `unavailable` (provider, network, or configuration).
+- `sha256.ts`, `publicBaseUrl.ts`, `appUrl.ts` — hashing, the Worker's public
+  origin, and the allowed app-URL check shared by routes and the sweep.
 - `repoForks.ts` — forks a newly nominated repository into the community
   organization and records the outcome.
-- `RepoCompletion.ts` — Durable Object that commits one published app URL per
-  repository.
+- `RepoCompletion.ts` — Durable Object that is the only authority for a
+  repository's published app URL; KV `repo-ready:` mirrors it.
 - `deps.ts` — `BugWorkerDeps`, the clock and fetch every route takes as
   arguments.
 - `checkRateLimit.ts` — per-IP hourly KV counter, one bucket per route.

@@ -1,6 +1,5 @@
-import type { BugWorkerEnv } from "./env.ts";
-
-type Ready = { appUrl: string; completedAt: string };
+/** A repository's published app URL and when it was committed. */
+export type Ready = { appUrl: string; completedAt: string };
 interface Transaction {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
@@ -9,22 +8,23 @@ interface State {
   storage: { transaction<T>(callback: (txn: Transaction) => Promise<T>): Promise<T> };
 }
 
-/** One Durable Object per normalized repository; storage outlives worker instances. */
+/**
+ * The only authority for one normalized repository's published app URL.
+ * Reachable only through the Worker's binding, which validates the URL first;
+ * KV `repo-ready:` mirrors the committed record and never flows back in.
+ */
 export class RepoCompletion {
-  constructor(private readonly ctx: State, private readonly env: BugWorkerEnv) {}
+  constructor(private readonly ctx: State) {}
 
+  /** GET: the committed record or 404. POST {appUrl, completedAt}: commit the first candidate; answer the committed record. */
   async fetch(request: Request): Promise<Response> {
-    const { name, candidate } = await request.json() as { name: string; candidate: Ready };
-    // Adopt publications made before this coordinator existed. KV is only a
-    // migration source; once committed, the transaction's record always wins.
-    const legacy = await this.env.BUGS.get(`repo-ready:${name}`);
+    const candidate = request.method === "POST" ? await request.json() as Ready : undefined;
     const ready = await this.ctx.storage.transaction(async (txn) => {
       const existing = await txn.get<Ready>("ready");
-      if (existing) return existing;
-      const winner = legacy === null ? candidate : JSON.parse(legacy) as Ready;
-      await txn.put("ready", winner);
-      return winner;
+      if (existing || !candidate) return existing ?? null;
+      await txn.put("ready", candidate);
+      return candidate;
     });
-    return Response.json(ready);
+    return ready ? Response.json(ready) : new Response(null, { status: 404 });
   }
 }

@@ -3,10 +3,13 @@ import type { BugWorkerEnv } from "./env.ts";
 import { bugReportSchema } from "./bugReportSchema.ts";
 import { checkRateLimit, RATE_LIMIT_PER_HOUR } from "./checkRateLimit.ts";
 import { isOperator } from "./isOperator.ts";
+import { logFailure } from "./logFailure.ts";
 import { newBugId } from "./newBugId.ts";
+import { publicBaseUrl } from "./publicBaseUrl.ts";
 import { readBodyBounded } from "./readBodyBounded.ts";
 import { handleRepoClaims } from "./repoClaims.ts";
-import { handleRepoRequests, retryRepoNotifications } from "./repoRequests.ts";
+import { sweepDeliveries } from "./repoDelivery.ts";
+import { handleRepoRequests } from "./repoRequests.ts";
 
 export type { BugWorkerDeps } from "./deps.ts";
 export type { BugWorkerEnv, BugKv } from "./env.ts";
@@ -58,7 +61,8 @@ async function handlePostBug(request: Request, env: BugWorkerEnv, now: number): 
   let allowed: boolean;
   try {
     allowed = await checkRateLimit(env, ip, now);
-  } catch {
+  } catch (error) {
+    logFailure("bug_report.failed", request, error);
     return json(503, { error: "storage unavailable" });
   }
   if (!allowed) {
@@ -69,12 +73,12 @@ async function handlePostBug(request: Request, env: BugWorkerEnv, now: number): 
   const record = { id, receivedAt: new Date(now).toISOString(), report: result.data };
   try {
     await env.BUGS.put(`bug:${id}`, JSON.stringify(record));
-  } catch {
+  } catch (error) {
+    logFailure("bug_report.failed", request, error);
     return json(503, { error: "storage unavailable" });
   }
 
-  const base = (env.PUBLIC_BASE_URL ?? "https://bug.smithers.sh").replace(/\/$/, "");
-  return json(201, { id, url: `${base}/api/bugs/${id}` });
+  return json(201, { id, url: `${publicBaseUrl(env)}/api/bugs/${id}` });
 }
 
 async function handleGetBug(request: Request, env: BugWorkerEnv, id: string): Promise<Response> {
@@ -84,7 +88,8 @@ async function handleGetBug(request: Request, env: BugWorkerEnv, id: string): Pr
   let stored: string | null;
   try {
     stored = await env.BUGS.get(`bug:${id}`);
-  } catch {
+  } catch (error) {
+    logFailure("bug_report.failed", request, error);
     return json(503, { error: "storage unavailable" });
   }
   if (stored === null) return json(404, { error: "not found" });
@@ -110,7 +115,13 @@ export function createBugWorker(overrides?: Partial<BugWorkerDeps>) {
   const deps: BugWorkerDeps = { ...defaultBugWorkerDeps(), ...overrides };
   return {
     async scheduled(_event: unknown, env: BugWorkerEnv): Promise<void> {
-      await retryRepoNotifications(env, deps);
+      // Per-repository failures are isolated inside the sweep; a KV failure on
+      // the shared queue or cursor is logged here, and the next run retries.
+      try {
+        await sweepDeliveries(env, deps);
+      } catch (error) {
+        console.error(JSON.stringify({ event: "repo_notification.failed", route: "scheduled", error: error instanceof Error ? error.message : String(error) }));
+      }
     },
     async fetch(request: Request, env: BugWorkerEnv): Promise<Response> {
       const url = new URL(request.url);

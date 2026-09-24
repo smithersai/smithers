@@ -17,8 +17,8 @@ export interface BugKv {
  */
 export interface BugWorkerEnv {
   BUGS: BugKv;
-  /** Atomic repository publication. Missing binding disables completion. */
-  REPO_COMPLETIONS?: {
+  /** `RepoCompletion` Durable Objects: the publication authority, one per normalized repository. */
+  REPO_COMPLETIONS: {
     getByName(name: string): { fetch(request: Request): Promise<Response> };
   };
   /** Shared secret required in the x-bug-admin header for GET /api/bugs/:id. */
@@ -28,6 +28,10 @@ export interface BugWorkerEnv {
   /** Transactional completion emails. Missing configuration keeps them pending. */
   RESEND_API_KEY?: string;
   NOTIFICATION_FROM?: string;
-  /** GitHub token that forks nominated repositories into smithers-community. Missing token records "skipped". */
+  /**
+   * GitHub token that authenticates the nomination's repository lookup and forks nominated
+   * repositories into smithers-community. Missing token records "skipped" forks and leaves
+   * the lookup on the shared egress IP's anonymous quota.
+   */
   GITHUB_FORK_TOKEN?: string;
 }

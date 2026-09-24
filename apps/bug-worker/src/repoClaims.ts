@@ -2,6 +2,7 @@ import { checkRateLimit } from "./checkRateLimit.ts";
 import type { BugWorkerDeps } from "./deps.ts";
 import type { BugWorkerEnv } from "./env.ts";
 import { isOperator } from "./isOperator.ts";
+import { logFailure } from "./logFailure.ts";
 import { readBodyBounded } from "./readBodyBounded.ts";
 import { repoName } from "./repoName.ts";
 
@@ -67,7 +68,8 @@ export async function handleRepoClaims(request: Request, env: BugWorkerEnv, deps
     const claim: Claim = { login, ...(email ? { email } : {}), claimedAt: new Date(deps.now()).toISOString() };
     await env.BUGS.put(`repo-claim:${name}`, JSON.stringify(claim));
     return json(200, { repo: name, login: claim.login, claimedAt: claim.claimedAt });
-  } catch {
+  } catch (error) {
+    logFailure("repo_claim.failed", request, error);
     return json(503, { error: "Repository claims are temporarily unavailable. Please try again." });
   }
 }

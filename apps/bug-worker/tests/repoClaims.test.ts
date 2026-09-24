@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { createBugWorker } from "../src/worker.ts";
 import { memoryKv } from "./helpers/memoryKv.ts";
+import { memoryRepoCompletions } from "./helpers/memoryRepoCompletions.ts";
 import type { BugWorkerEnv } from "../src/env.ts";
 
 function fixture(token = "test-admin") {
   const kv = memoryKv();
-  const env: BugWorkerEnv = { BUGS: kv, BUG_ADMIN_TOKEN: token };
+  const env: BugWorkerEnv = { BUGS: kv, REPO_COMPLETIONS: memoryRepoCompletions(), BUG_ADMIN_TOKEN: token };
   const worker = createBugWorker({ now: () => 1788500000000, fetch: (async (_input: string | URL | Request, _init?: RequestInit) => Response.json({ private: false, license: { spdx_id: "MIT" } })) as typeof fetch });
   const nominate = (repo = "owner/repo") => worker.fetch(new Request("https://bug.smithers.sh/api/repo-requests", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ repo }),
+    method: "POST", headers: { "content-type": "application/json", "x-bug-admin": token }, body: JSON.stringify({ repo }),
   }), env);
   const claim = (body: unknown, headers: Record<string, string> = { "x-bug-admin": "test-admin" }) => worker.fetch(new Request("https://bug.smithers.sh/api/repo-claims", {
     method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body),

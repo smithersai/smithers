@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createBugWorker } from "../src/worker.ts";
 import { memoryKv } from "./helpers/memoryKv.ts";
+import { memoryRepoCompletions } from "./helpers/memoryRepoCompletions.ts";
 import type { BugWorkerEnv } from "../src/env.ts";
 
 function fixture(token: string | null = "fork-token") {
-  const env: BugWorkerEnv = { BUGS: memoryKv(), BUG_ADMIN_TOKEN: "test-admin", ...(token ? { GITHUB_FORK_TOKEN: token } : {}) };
+  const env: BugWorkerEnv = { BUGS: memoryKv(), REPO_COMPLETIONS: memoryRepoCompletions(), BUG_ADMIN_TOKEN: "test-admin", ...(token ? { GITHUB_FORK_TOKEN: token } : {}) };
   const calls: { url: string; init?: RequestInit }[] = [];
   let forkStatus = 202;
   let forkThrows = false;
@@ -18,11 +19,12 @@ function fixture(token: string | null = "fork-token") {
     return Response.json({ private: false, license: { spdx_id: "MIT" } });
   }) as typeof fetch });
   const nominate = (repo = "owner/repo") => worker.fetch(new Request("https://bug.smithers.sh/api/repo-requests", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ repo }),
+    method: "POST", headers: { "content-type": "application/json", "x-bug-admin": "test-admin" }, body: JSON.stringify({ repo }),
   }), env);
   const forks = () => calls.filter((call) => call.url.endsWith("/forks"));
+  const lookups = () => calls.filter((call) => !call.url.endsWith("/forks"));
   const record = async (repo = "owner/repo") => JSON.parse((await env.BUGS.get(`repo-fork:${repo}`))!);
-  return { env, nominate, forks, record, forkStatus: (value: number) => { forkStatus = value; }, forkThrows: () => { forkThrows = true; } };
+  return { env, nominate, forks, lookups, record, forkStatus: (value: number) => { forkStatus = value; }, forkThrows: () => { forkThrows = true; } };
 }
 
 describe("community forks", () => {
@@ -55,5 +57,13 @@ describe("community forks", () => {
     expect((await f.nominate()).status).toBe(200);
     expect(f.forks()).toHaveLength(0);
     expect(await f.record()).toEqual({ status: "skipped" });
+    expect((f.lookups()[0]!.init!.headers as Record<string, string>).authorization).toBeUndefined();
+  });
+  test("the repository lookup is authenticated with the token, not the shared egress IP's anonymous quota", async () => {
+    const f = fixture();
+    expect((await f.nominate()).status).toBe(200);
+    const lookups = f.lookups();
+    expect(lookups.map((call) => call.url)).toEqual(["https://api.github.com/repos/owner/repo"]);
+    expect((lookups[0]!.init!.headers as Record<string, string>).authorization).toBe("Bearer fork-token");
   });
 });
