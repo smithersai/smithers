@@ -83,7 +83,10 @@ describe("process output retention", () => {
               "-e",
               [
                 "const fs=require('node:fs')",
-                `const output=${fd === 1 ? "process.stdout" : "fs.createWriteStream('',{fd:3})"}`,
+                // process.stdout is synchronous for Windows pipes: it blocks
+                // before the child can publish its backpressure marker. Use
+                // the same async writer for both actual output descriptors.
+                `const output=fs.createWriteStream('',{fd:${fd}})`,
                 `const chunk=Buffer.alloc(${chunkBytes},0xa5);let count=0`,
                 `function pump(){while(count<${chunks}){count++;if(!output.write(chunk)){fs.writeFileSync(${
                   JSON.stringify(blocked)
