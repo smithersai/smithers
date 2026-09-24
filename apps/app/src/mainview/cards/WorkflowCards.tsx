@@ -10,7 +10,7 @@ import { workflowLaunchOf } from "../state/WorkflowLaunch"
  */
 import { runSourceCommand } from "../flows/RunCommand"
 import { Button, Input, Markdown } from "@smthrs/ui"
-import { useState } from "react"
+import { useId, useState } from "react"
 import type { KeyboardEvent } from "react"
 import type { Card, FlowDurationsRow } from "../state/AppState"
 import { timeLabel as clockLabel } from "../Timestamps"
@@ -358,6 +358,7 @@ const WorkflowRepoCardBody = ({
   readonly card: Extract<Card, { kind: "workflow-repo" }>
   readonly onChooseWorkflowRepo: (fullName: string) => void
 }) => {
+  const optionId = useId()
   const { repos, chosen, description } = card.payload
   const [highlighted, setHighlighted] = useState(0)
   const index = Math.min(highlighted, Math.max(repos.length - 1, 0))
@@ -384,6 +385,7 @@ const WorkflowRepoCardBody = ({
         className="workflow-repo-list"
         role="listbox"
         aria-label="Your loaded repositories"
+        aria-activedescendant={repos.length ? `${optionId}-${index}` : undefined}
         tabIndex={0}
         onKeyDown={onKeyDown}
       >
@@ -392,6 +394,8 @@ const WorkflowRepoCardBody = ({
             <button
               type="button"
               role="option"
+              id={`${optionId}-${position}`}
+              tabIndex={-1}
               aria-selected={position === index}
               data-highlighted={position === index}
               className="workflow-repo-row"

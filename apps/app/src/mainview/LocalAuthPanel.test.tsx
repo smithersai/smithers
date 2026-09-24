@@ -124,3 +124,23 @@ test("Escape closes owner sign-in and restores the sign-in door", () => {
   expect(closed).toBe(1)
   expect(document.activeElement).toBe(trigger)
 })
+
+test("sign-in traps Tab in both directions, including while all inputs are disabled", () => {
+  for (const pending of [false, true]) {
+    const snapshot: LocalAuthSnapshot = { open: true, pending, status: { enabled: true, initialized: true }, error: null }
+    const auth: LocalAuthController = { requiresBootstrapTokenInput: false, subscribe: () => () => {}, snapshot: () => snapshot, open: () => {}, close: () => {}, submit: async () => {}, dispose: () => {} }
+    const host = document.createElement("div"); document.body.append(host)
+    const root = createRoot(host); roots.add(root)
+    flushSync(() => root.render(<><button>Outside</button><LocalAuthPanel auth={auth} /></>))
+    const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!
+    const controls = [...dialog.querySelectorAll<HTMLElement>("input:not(:disabled), button:not(:disabled)")]
+    const first = controls[0] ?? dialog, last = controls.at(-1) ?? dialog
+    for (const [from, to, shiftKey] of [[first, last, true], [last, first, false]] as const) {
+      from.focus()
+      const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true })
+      from.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+      expect(document.activeElement).toBe(to)
+    }
+  }
+})

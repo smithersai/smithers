@@ -237,3 +237,24 @@ describe("CardRenderers", () => {
     }
   })
 })
+
+test("repository chooser exposes one keyboard stop and the highlighted repository", async () => {
+  GlobalRegistrator.register()
+  const host = document.createElement("div"); document.body.append(host)
+  const root = createRoot(host)
+  const selected: string[] = []
+  const card: Card = { ...base, kind: "workflow-repo", status: "active", payload: { intent: "create", repos: ["a/one", "b/two"], chosen: null, description: "Choose a repository" } }
+  try {
+    await act(async () => root.render(<CardView card={card} {...handlers} onChooseWorkflowRepo={repo => selected.push(repo)} />))
+    const list = host.querySelector<HTMLElement>('[role="listbox"]')!
+    const options = [...host.querySelectorAll<HTMLElement>('[role="option"]')]
+    expect(options.map(option => option.tabIndex)).toEqual([-1, -1])
+    list.focus()
+    expect(list.getAttribute("aria-activedescendant")).toBe(options[0]!.id)
+    await act(async () => { list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })) })
+    expect(document.activeElement).toBe(list)
+    expect(list.getAttribute("aria-activedescendant")).toBe(options[1]!.id)
+    await act(async () => { list.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })) })
+    expect(selected).toEqual(["b/two"])
+  } finally { await act(async () => root.unmount()); host.remove(); await GlobalRegistrator.unregister() }
+})

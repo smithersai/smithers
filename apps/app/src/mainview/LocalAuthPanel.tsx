@@ -40,8 +40,24 @@ export const LocalAuthPanel = ({ auth }: { readonly auth: LocalAuthController })
   }
 
   return (
-    <section className="local-auth-dialog" role="dialog" aria-modal="true" aria-label="Sign in"
+    <section className="local-auth-dialog" role="dialog" aria-modal="true" aria-label="Sign in" tabIndex={-1}
+      ref={node => {
+        if (node && !node.contains(node.ownerDocument.activeElement)) {
+          (node.querySelector<HTMLElement>("input:not(:disabled), button:not(:disabled)") ?? node).focus()
+        }
+      }}
       onKeyDown={(event) => {
+        if (event.key === "Tab") {
+          const dialog = event.currentTarget
+          const controls = [...dialog.querySelectorAll<HTMLElement>("input:not(:disabled), button:not(:disabled)")]
+          event.preventDefault()
+          if (controls.length === 0) { dialog.focus(); return }
+          const current = controls.indexOf(dialog.ownerDocument.activeElement as HTMLElement)
+          const next = current < 0 ? (event.shiftKey ? controls.length - 1 : 0)
+            : (current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length
+          controls[next]!.focus()
+          return
+        }
         if (event.key !== "Escape") return
         event.preventDefault()
         event.stopPropagation()
