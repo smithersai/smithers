@@ -1,3 +1,4 @@
+import * as Log from "./log.ts"
 /** Capture actual before/after file contents at the executable flow boundary. */
 import type * as Cell from "@smthrs/harness/Cell"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -153,7 +154,8 @@ const command = async (
     } finally {
       clearTimeout(timer)
     }
-  } catch {
+  } catch (error) {
+    Log.write("changes.command", error)
     return undefined
   }
 }

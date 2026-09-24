@@ -1,3 +1,4 @@
+import * as Log from "./log.ts"
 /**
  * The files `@` offers: tracked and untracked-but-not-ignored files from git,
  * else `rg --files`, which also honors `.gitignore`. Read again at most once
@@ -11,6 +12,7 @@ const freshMs = 5_000
 const run = (command: string, args: ReadonlyArray<string>, cwd: string, timeout: number): Promise<Array<string> | undefined> =>
   new Promise((resolve) => {
     execFile(command, args, { cwd, encoding: "utf8", timeout, killSignal: "SIGKILL", maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => {
+      if (error) Log.write(`files.${command}`, error)
       resolve(error ? undefined : stdout.split("\n").filter((line) => line !== "").slice(0, maxFiles))
     })
   })

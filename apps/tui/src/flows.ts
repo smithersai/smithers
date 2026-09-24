@@ -1,3 +1,4 @@
+import * as Log from "./log.ts"
 /**
  * The user's own file flows (`flows/<name>/flow.ts`), run in background tabs.
  *
@@ -70,6 +71,11 @@ export interface Port {
   readonly cancel: (runId: string) => Promise<void>
   readonly dispose: () => Promise<void>
 }
+/** Registry infrastructure failed; the last successful catalog remains available. */
+export class FlowDiscoveryFailed extends Error {
+  readonly _tag = "FlowDiscoveryFailed"
+  constructor(readonly cause: unknown) { super("Flow discovery unavailable") }
+}
 export class FlowError extends Error {
   constructor(
     readonly code: "unknown_flow" | "refused" | "invalid_input" | "launch" | "control",
@@ -129,7 +135,7 @@ export class FlowRuns {
   private attempts = new Map<string, number>()
   private loaded = new Set<string>()
   private cache: ReadonlyArray<Listed> = []
-  private discoveryFailure: string | undefined
+  private discoveryFailure: FlowDiscoveryFailed | undefined
   private discovered = false
   /** Runs in the store this session did not start (`smthrs flow start`); read-only. */
   private recorded: ReadonlyArray<Recorded> = []
@@ -172,7 +178,7 @@ export class FlowRuns {
   /** The last discovery; `refresh` updates it in the background. */
   listed = (): ReadonlyArray<Listed> => this.cache
   /** Why the newest discovery failed; cleared by the next one that succeeds. */
-  failure = (): string | undefined => this.discoveryFailure
+  failure = (): FlowDiscoveryFailed | undefined => this.discoveryFailure
   private async discover() {
     const version = ++this.discovery
     let listed: ReadonlyArray<Listed>
@@ -180,7 +186,8 @@ export class FlowRuns {
       listed = await this.options.port!.discover()
     } catch (error) {
       if (version === this.discovery && !this.closed) {
-        this.discoveryFailure = error instanceof Error ? error.message : String(error)
+        this.discoveryFailure = new FlowDiscoveryFailed(error)
+        Log.write("flow.discovery", error)
         this.changed()
       }
       throw error
@@ -225,7 +232,7 @@ export class FlowRuns {
       if (this.closed) return
       this.recorded = recorded
       this.changed()
-    }, () => { /* The store may not exist yet; nothing ran here. */ })
+    }, (error) => Log.write("flow.runs", error))
   }
   private save(run: Run) {
     this.options.persist({ type: "flow", run })
@@ -255,6 +262,7 @@ export class FlowRuns {
     return next
   }
   private fail(id: string, attempt: number, error: unknown) {
+    Log.write("flow.run", error)
     this.update(id, attempt, {
       status: "failed",
       endedAt: Date.now(),

@@ -1,3 +1,4 @@
+import * as Log from "./log.ts"
 /** Background work outlives a chat turn. Each tab has its own durable transcript. */
 import * as Agents from "./agents.ts"
 import type * as Context from "./context.ts"
@@ -331,7 +332,7 @@ export class Workspace {
   }
   private priorRecords(tab: Tab): ReadonlyArray<Session.Record> {
     try { return Session.load(tab.file).filter((record) => record.type !== "session") }
-    catch { return [] }
+    catch (error) { Log.write("worker.history", error); return [] }
   }
   private boundedHistory(entries: ReadonlyArray<Context.Entry>): ReadonlyArray<Context.Entry> {
     const kept: Context.Entry[] = []
@@ -419,7 +420,7 @@ export class Workspace {
       try {
         const generated = await this.options.host.describe?.({ title: tab.title, prompt: tab.prompt, seat: tab.seat })
         description = generated?.replace(/\s+/g, " ").trim().slice(0, 80) || description
-      } catch { /* Keep the title when the seat cannot describe it. */ }
+      } catch (error) { Log.write("worker.describe", error) }
     }
     const current = this.tabs.get(tab.id)
     if (current === undefined || current.file !== tab.file || this.closed) return
@@ -531,7 +532,7 @@ export class Workspace {
     const failure = FailureCopy.describe(error, this.tabs.get(tab.id)?.activeSeat ?? tab.seat)
     try {
       writer.append({ type: "outcome", at, prompt: tab.prompt, outcome: { _tag: "failed", message, headline: failure.headline } })
-    } catch { /* The tab row still settles when the worker file cannot be written. */ }
+    } catch (error) { Log.write("worker.persist", error) }
     this.transcripts.set(tab.id, Transcript.failure(this.transcript(tab.id), failure.headline, at))
     this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "failed", endedAt: at, message, failure, detail: error instanceof Error ? error.stack : undefined })
   }

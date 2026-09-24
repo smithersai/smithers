@@ -1,3 +1,4 @@
+import * as Log from "./log.ts"
 /**
  * The agent host: one in-process Smithers cell harness bound to a directory.
  *
@@ -206,7 +207,8 @@ export const make = (options: {
       }))
       const answers = await Effect.runPromise(Classifier.decodeAnswers(questions, response.answers))
       return Math.round(used * Number(answers.amount.value) / 100)
-    } catch {
+    } catch (error) {
+      Log.write("host.compaction", error)
       return undefined
     }
   }
@@ -349,7 +351,9 @@ export const make = (options: {
       fiber.addObserver((exit) => {
         if (Exit.isSuccess(exit)) return resolve({ _tag: "done", answer: exit.value })
         if (Cause.hasInterruptsOnly(exit.cause)) return resolve({ _tag: "cancelled" })
-        resolve({ _tag: "failed", message: describe(exit.cause), detail: Cause.pretty(exit.cause), error: Cause.squash(exit.cause) })
+        const detail = Cause.pretty(exit.cause)
+        Log.write("host.turn", detail)
+        resolve({ _tag: "failed", message: describe(exit.cause), detail, error: Cause.squash(exit.cause) })
       })
     })
     return { done, cancel: () => void runtime.runFork(Fiber.interrupt(fiber)) }

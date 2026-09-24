@@ -1,3 +1,4 @@
+import * as Log from "./log.ts"
 /**
  * The terminal UI: a transcript of cells above a composer.
  *
@@ -686,6 +687,11 @@ export function App(props: AppProps) {
   const parkedDraft = useRef<string | undefined>(undefined)
   const dimensions = useTerminalDimensions()
   const setStatus = useCallback((text: string, tone: Toast["tone"] = "info") => setToast({ text, tone }), [])
+  useEffect(() => Log.subscribe((message) => setStatus(message, "danger")), [setStatus])
+  const discoveryFailure = runs.failure()
+  useEffect(() => {
+    if (discoveryFailure !== undefined) setStatus(discoveryFailure.message, "danger")
+  }, [discoveryFailure, setStatus])
   deliver.current = (delivery) => {
     const text = `${delivery.title}: ${delivery._tag === "update" ? delivery.text : Monitors.message(delivery.failure)}`
     setStatus(text, delivery._tag === "update" ? "info" : "danger")
@@ -1264,7 +1270,7 @@ export function App(props: AppProps) {
         setTranscript((current) =>
           Transcript.note(
             current,
-            `${writer.current.file}\n${entries.current.length} exchanges · ↑${Editor.tokens(usage.input)} ↓${
+            `${writer.current.file}\n${Log.path()}\n${entries.current.length} exchanges · ↑${Editor.tokens(usage.input)} ↓${
               Editor.tokens(usage.output)
             } R${Editor.tokens(usage.cached)}`,
             Date.now()
@@ -2336,7 +2342,7 @@ export function App(props: AppProps) {
               empty={picker.kind === "resume"
                 ? "No sessions in this directory"
                 : picker.kind === "flows"
-                ? runs.failure() ?? "No flows"
+                ? runs.failure()?.message ?? "No flows"
                 : picker.kind === "agents"
                 ? "No agents"
                 : picker.kind === "palette"

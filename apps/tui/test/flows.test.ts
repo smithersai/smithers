@@ -377,7 +377,7 @@ describe("flow runs", () => {
     })
     f.runs.refresh()
     await tick()
-    expect(f.runs.failure()).toBe("Registry unreadable: flows/x/flow.ts")
+    expect(f.runs.failure()).toMatchObject({ _tag: "FlowDiscoveryFailed", cause: new Error("Registry unreadable: flows/x/flow.ts") })
     fail = false
     f.runs.refresh()
     await tick()
@@ -523,4 +523,20 @@ describe("flow runs", () => {
     expect(context.find((run) => run.id === "cli-7")).toEqual({ id: "cli-7", flow: "deploy", status: "completed", by: "cli" })
     expect(f.runs.snapshot().map((run) => run.id)).toEqual(["mine"])
   })
+})
+
+it("reports a typed discovery failure and clears it after recovery", async () => {
+  const f = fake()
+  let broken = true
+  const runs = new FlowRuns({ port: { ...f.port, discover: async () => {
+    if (broken) throw new Error("registry unavailable")
+    return [flow("review", "Review")]
+  } }, persist: () => {} })
+  runs.refresh()
+  await tick()
+  expect(runs.failure()).toMatchObject({ _tag: "FlowDiscoveryFailed", message: "Flow discovery unavailable" })
+  broken = false
+  await runs.listing()
+  expect(runs.failure()).toBeUndefined()
+  expect(runs.listed()).toHaveLength(1)
 })
