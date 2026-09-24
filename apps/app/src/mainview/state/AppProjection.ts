@@ -2699,10 +2699,34 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.toasts.delete(transition.id)
           break
 
-        case "card.removed":
+        case "card.removed": {
           if (collections.cards.get(transition.id) === undefined) return
           collections.cards.delete(transition.id)
+          if (collections.cardHistories.has(transition.id)) collections.cardHistories.delete(transition.id)
+          const removedFrames = new Set<string>()
+          for (const frame of collections.frames.values()) {
+            if (frame.branchId === activeBranchId && frame.cardId === transition.id) {
+              removedFrames.add(frame.id)
+              collections.frames.delete(frame.id)
+            }
+          }
+          for (const frame of collections.frames.values()) {
+            if (frame.branchId !== activeBranchId) continue
+            if (removedFrames.has(frame.parentFrameId ?? "") || frame.snapshot?.cards.some(card => card.id === transition.id)) {
+              collections.frames.update(frame.id, draft => {
+                if (removedFrames.has(draft.parentFrameId ?? "")) draft.parentFrameId = rootFrameId(activeBranchId)
+                if (draft.snapshot) draft.snapshot.cards = draft.snapshot.cards.filter(card => card.id !== transition.id)
+              })
+            }
+          }
+          if (current.maximizedCardId === transition.id || removedFrames.has(current.activeFrameId ?? "")) {
+            collections.sessions.update(SESSION_ID, draft => {
+              draft.maximizedCardId = null
+              draft.activeFrameId = rootFrameId(activeBranchId)
+            })
+          }
           break
+        }
 
         case "message.steered": {
           const steered = transition.text.trim()

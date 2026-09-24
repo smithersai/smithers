@@ -23,8 +23,8 @@ export const APP_EVENT_FORMAT_VERSION = 1
  * every stored row still parses to the same bytes and the same hash, which
  * AppStore.events.test.ts pins per field.
  */
-// v14 associates tool-act messages with their turn and removes them on retry.
-export const APP_PROJECTOR_VERSION = 14
+// v14 associates tool acts with their turn; v15 clears dismissed card navigation.
+export const APP_PROJECTOR_VERSION = 15
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)

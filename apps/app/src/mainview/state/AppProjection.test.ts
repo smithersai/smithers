@@ -44,6 +44,19 @@ const workspace: CloudWorkspaceInput = {
 }
 
 describe("pure app event projection", () => {
+  test("removing a maximized card clears its navigation and retained live views", () => {
+    let state = apply(boot(), { type: "card.upsert", actor: "user", card: fileCard })
+    state = apply(state, { type: "card.maximized", actor: "user", id: fileCard.id })
+    const frame = state.frames.find(frame => frame.cardId === fileCard.id)!
+    expect(state.sessions[0]!.activeFrameId).toBe(frame.id)
+    state = apply(state, { type: "card.removed", actor: "user", id: fileCard.id })
+    expect(state.sessions[0]!.maximizedCardId).toBeNull()
+    expect(state.sessions[0]!.activeFrameId).not.toBe(frame.id)
+    expect(state.frames.some(frame => frame.cardId === fileCard.id)).toBe(false)
+    expect(state.cardHistories.some(history => history.id === fileCard.id)).toBe(false)
+    expect(state.frames.some(frame => frame.snapshot?.cards.some(card => card.id === fileCard.id))).toBe(false)
+  })
+
   test("retry removes only the retried turn's tool acts", () => {
     let state = boot()
     for (const turnId of ["earlier", "retry"]) {
