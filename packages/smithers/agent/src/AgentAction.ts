@@ -703,7 +703,7 @@ export const make = <
               modelRetryPolicy: host.modelRetryPolicy,
               capabilityEnvelope: host.capabilityEnvelope,
               limits: host.limits,
-              maxFrames: options.maxFrames ?? host.maxFrames
+              maxFrames: options.maxFrames ?? host.maxFrames,
               claimCap: host.claimCap
             }).pipe(
               Stream.provideService(AgentEvent.Observer, atSource ? observe : () => Effect.void),
