@@ -182,7 +182,6 @@ const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
   "../cards/WorkflowCards.tsx": ["sendRunCommand("], // the original onRunCommand prop, before the frame wrapper
   "../cards/FlowFormCards.tsx": ["cancel.onClick()"], // card.dismiss after the keyboard focus handoff; the full submit handler is inspected
-  "../cards/RepositorySetupCard.tsx": ["run(", "set(", "view("], // typed setup.run/configure/view wrappers, pinned below
   "../cards/ApprovalAnswer.tsx": ["onAnswer(", "onClick={send}"], // the answer is a value, not a flow argument; both mounts bind onAnswer to the controller
 }
 
@@ -244,7 +243,7 @@ describe("launch-law parity: every affordance is a command", () => {
     expect(form).toContain('const cancel = flowAction(onRunCommand, "card.dismiss", card.id)')
     const setup = files["../cards/RepositorySetupCard.tsx"]!
     expect(setup).toContain('=> onRunCommand("setup.configure", flowArgs("setup.configure", { cardId: card.id, field, value }))')
-    expect(setup).toContain('=> onRunCommand("setup.run", flowArgs("setup.run", { cardId: card.id, operation }))')
+    expect(setup).toContain('data-flow="setup.run"')
     expect(setup).toContain('=> onRunCommand("setup.view", flowArgs("setup.view", { cardId: card.id, view: next,')
     // Visibility is a host lifecycle observation, not a button or a command.
   })

@@ -579,3 +579,21 @@ test("a card applied before the discard door existed finds it once recovery reco
     expect(t.calls).toEqual([])
   } finally { t.close() }
 })
+
+test("every setup button identifies the flow its click dispatches", () => {
+  for (const view of ["flows", "prompts", "checks", "evals", "test"] as const) {
+    const card = makeCard(); card.payload.view = view
+    const t = mount(card)
+    try {
+      const buttons = [...t.host.querySelectorAll<HTMLButtonElement>("button")]
+      expect(buttons.length).toBeGreaterThan(0)
+      for (const button of buttons) {
+        expect(button.dataset.flow, button.textContent ?? "button").toBeTruthy()
+        if (button.disabled) continue
+        const before = t.calls.length
+        button.click()
+        expect(t.calls[before]?.[0]).toBe(button.dataset.flow!)
+      }
+    } finally { t.close() }
+  }
+})
