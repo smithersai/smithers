@@ -123,7 +123,7 @@ test("every app test belongs to an executable runner", () => {
   // A Bun test that launches Chromium belongs to the tier that installs it,
   // never to the hermetic unit gate.
   expect(owners("e2e/probes/app-interactive-styles.test.ts")).toEqual(["probe helpers"])
-  expect(owners("scripts/canary-restoration.test.ts")).toContain("unit")
+  expect(owners("scripts/canary-browser.test.ts")).toContain("unit")
   expect(owners("scripts/headless-page.test.ts")).toContain("unit")
   // The literal pin is a lint target with its own runner, never the unit gate.
   expect(owners("lint/conformance/LiteralPin.test.ts")).toEqual(["conformance lint"])
@@ -207,7 +207,7 @@ test("unit inputs include inspected sources, harnesses and configs", () => {
     console.log(JSON.stringify(paths))
   `)
   for (const path of [
-    "scripts/canary-restoration.ts", "scripts/run-pr-e2e.mjs", "scripts/run-real-e2e.ts", "scripts/README.md", "e2e/native/Probe.ts",
+    "scripts/canary-browser.ts", "scripts/run-pr-e2e.mjs", "scripts/run-real-e2e.ts", "scripts/README.md", "e2e/native/Probe.ts",
     "PACKAGE.ts", "package.json", "tsconfig.json", "vite.config.ts", "playwright.config.ts", "playwright.site.config.ts", "playwright.real.config.ts",
     "electrobun.config.ts", "hutch.config.ts", "postcss.config.js", "tailwind.config.js"
   ]) expect(inputs).toContain(`apps/app/${path}`)
@@ -226,7 +226,7 @@ test("a script-only edit changes the unit gate's digested inputs", () => {
     const workspace = await mkdtemp(join(tmpdir(), "ui-unit-inputs-"))
     try {
       await mkdir(join(workspace, "apps/app/scripts"), { recursive: true })
-      const script = join(workspace, "apps/app/scripts/canary-restoration.ts")
+      const script = join(workspace, "apps/app/scripts/canary-browser.ts")
       await writeFile(script, "export const revision = 1")
       const digest = async () => {
         const paths = []
