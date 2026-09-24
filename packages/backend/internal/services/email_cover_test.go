@@ -172,6 +172,9 @@ func TestEmail_Cov_VerifyEmailSuccessAndFailures(t *testing.T) {
 		consumeEmailVerificationTokenFn: func(context.Context, string) (int64, error) {
 			return 0, nil
 		},
+		listUserEmailsFn: func(context.Context, int64) ([]db.EmailAddress, error) {
+			return []db.EmailAddress{{ID: 7, UserID: 42, Email: "verify@example.com"}}, nil
+		},
 	}).VerifyEmail(ctx, rawToken)
 	require.Error(t, err)
 	assert.Equal(t, 400, apiStatus(t, err))

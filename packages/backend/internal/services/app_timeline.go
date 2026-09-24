@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -156,6 +157,16 @@ type AppTimelineResolution struct {
 // withPairSessionMutation: a direct *db.Queries store is rebound to the lock
 // transaction so truncate + inserts + head update commit atomically.
 func (s *AppTimelineService) withAppTimelineMutation(ctx context.Context, timelineID string, fn func(*AppTimelineService) error) error {
+	return s.withAppTimelineLock(ctx, "app-timeline:"+timelineID, fn)
+}
+
+// withAppTimelineOwnerLock serializes timeline creation for one owner so the
+// MaxAppTimelinesPerOwner count and the insert commit as one step.
+func (s *AppTimelineService) withAppTimelineOwnerLock(ctx context.Context, ownerUserID int64, fn func(*AppTimelineService) error) error {
+	return s.withAppTimelineLock(ctx, "app-timeline-owner:"+strconv.FormatInt(ownerUserID, 10), fn)
+}
+
+func (s *AppTimelineService) withAppTimelineLock(ctx context.Context, lockKey string, fn func(*AppTimelineService) error) error {
 	if s.txBeginner == nil {
 		return fn(s)
 	}
@@ -164,7 +175,7 @@ func (s *AppTimelineService) withAppTimelineMutation(ctx context.Context, timeli
 		return pkgerrors.Internal("begin app timeline mutation: " + err.Error())
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtext($1))", "app-timeline:"+timelineID); err != nil {
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtext($1))", lockKey); err != nil {
 		return pkgerrors.Internal("lock app timeline mutation: " + err.Error())
 	}
 	txService := *s
@@ -248,15 +259,36 @@ func (s *AppTimelineService) FindOrCreate(ctx context.Context, ownerUserID int64
 		return AppTimelineResolution{}, pkgerrors.Internal("load timeline: " + err.Error())
 	}
 
+	var resolution AppTimelineResolution
+	err = s.withAppTimelineOwnerLock(ctx, ownerUserID, func(tx *AppTimelineService) error {
+		resolution, err = tx.createAppTimelineUnderOwnerLock(ctx, ownerUserID, byKey)
+		return err
+	})
+	if err != nil {
+		return AppTimelineResolution{}, err
+	}
+	return resolution, nil
+}
+
+// createAppTimelineUnderOwnerLock counts and inserts while the caller holds
+// the owner lock, so concurrent creates for different client keys cannot
+// both pass the cap check.
+func (s *AppTimelineService) createAppTimelineUnderOwnerLock(ctx context.Context, ownerUserID int64, byKey db.GetAppTimelineByOwnerClientKeyParams) (AppTimelineResolution, error) {
 	count, err := s.store.CountAppTimelinesForOwner(ctx, ownerUserID)
 	if err != nil {
 		return AppTimelineResolution{}, pkgerrors.Internal("count timelines: " + err.Error())
 	}
 	if count >= MaxAppTimelinesPerOwner {
+		// A concurrent request may have created this client key while we
+		// waited for the lock; that row is the caller's, not a new one.
+		if timeline, getErr := s.store.GetAppTimelineByOwnerClientKey(ctx, byKey); getErr == nil {
+			s.ensureOwnerMember(ctx, timeline)
+			return AppTimelineResolution{Timeline: timeline, Role: AppTimelineRoleOwner}, nil
+		}
 		return AppTimelineResolution{}, pkgerrors.QuotaExceeded("too many timelines; delete unused client keys first")
 	}
 
-	timeline, err = s.store.CreateAppTimeline(ctx, db.CreateAppTimelineParams{OwnerUserID: ownerUserID, ClientKey: clientKey})
+	timeline, err := s.store.CreateAppTimeline(ctx, db.CreateAppTimelineParams{OwnerUserID: ownerUserID, ClientKey: byKey.ClientKey})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Lost the create race: the conflict target swallowed the insert.

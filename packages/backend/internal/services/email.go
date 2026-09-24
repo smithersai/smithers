@@ -292,7 +292,7 @@ type VerifyEmailResult struct {
 	Email  string
 }
 
-// VerifyEmail consumes a verification token and activates the corresponding email address.
+// VerifyEmail activates the email address a verification token names, then consumes the token.
 func (s *EmailService) VerifyEmail(ctx context.Context, rawToken string) (VerifyEmailResult, error) {
 	if rawToken == "" {
 		return VerifyEmailResult{}, pkgerrors.BadRequest("invalid token")
@@ -308,14 +308,6 @@ func (s *EmailService) VerifyEmail(ctx context.Context, rawToken string) (Verify
 	}
 
 	if token.ExpiresAt.Before(time.Now()) || token.UsedAt.Valid {
-		return VerifyEmailResult{}, pkgerrors.BadRequest("invalid or expired token")
-	}
-
-	rows, err := s.queries.ConsumeEmailVerificationToken(ctx, tokenHash)
-	if err != nil {
-		return VerifyEmailResult{}, pkgerrors.Internal("failed to consume token")
-	}
-	if rows == 0 {
 		return VerifyEmailResult{}, pkgerrors.BadRequest("invalid or expired token")
 	}
 
@@ -342,6 +334,17 @@ func (s *EmailService) VerifyEmail(ctx context.Context, rawToken string) (Verify
 		UserID: token.UserID,
 	}); err != nil {
 		return VerifyEmailResult{}, pkgerrors.Internal("failed to activate email")
+	}
+
+	// Consume only after activation succeeds, so a failed activation leaves the
+	// link retryable. Activation is idempotent; the conditional used_at update
+	// still lets exactly one concurrent verification report success.
+	rows, err := s.queries.ConsumeEmailVerificationToken(ctx, tokenHash)
+	if err != nil {
+		return VerifyEmailResult{}, pkgerrors.Internal("failed to consume token")
+	}
+	if rows == 0 {
+		return VerifyEmailResult{}, pkgerrors.BadRequest("invalid or expired token")
 	}
 
 	return VerifyEmailResult{UserID: token.UserID, Email: token.Email}, nil

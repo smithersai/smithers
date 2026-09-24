@@ -143,6 +143,9 @@ func TestEmail_H_VerifyEmailBranches(t *testing.T) {
 			q: mockEmailQuerier{
 				getEmailVerificationTokenByHashFn: func(context.Context, string) (db.EmailVerificationToken, error) { return token, nil },
 				consumeEmailVerificationTokenFn:   func(context.Context, string) (int64, error) { return 0, errors.New("consume failed") },
+				listUserEmailsFn: func(context.Context, int64) ([]db.EmailAddress, error) {
+					return []db.EmailAddress{{ID: 9, Email: "user@example.com"}}, nil
+				},
 			},
 			want: http.StatusInternalServerError,
 		},
@@ -151,6 +154,9 @@ func TestEmail_H_VerifyEmailBranches(t *testing.T) {
 			q: mockEmailQuerier{
 				getEmailVerificationTokenByHashFn: func(context.Context, string) (db.EmailVerificationToken, error) { return token, nil },
 				consumeEmailVerificationTokenFn:   func(context.Context, string) (int64, error) { return 0, nil },
+				listUserEmailsFn: func(context.Context, int64) ([]db.EmailAddress, error) {
+					return []db.EmailAddress{{ID: 9, Email: "user@example.com"}}, nil
+				},
 			},
 			want: http.StatusBadRequest,
 		},
@@ -220,4 +226,37 @@ func TestEmail_H_ValidationAndUniqueHelpers(t *testing.T) {
 	assert.False(t, isEmailUniqueViolation(nil))
 	assert.True(t, isEmailUniqueViolation(errors.New("duplicate key violates unique index")))
 	assert.False(t, isEmailUniqueViolation(io.ErrUnexpectedEOF))
+}
+
+func TestEmail_H_VerifyEmailKeepsTokenWhenActivationFails(t *testing.T) {
+	token := db.EmailVerificationToken{UserID: 7, Email: "user@example.com", ExpiresAt: time.Now().Add(time.Hour)}
+	activationFailures := map[string]mockEmailQuerier{
+		"list emails error": {
+			listUserEmailsFn: func(context.Context, int64) ([]db.EmailAddress, error) { return nil, errors.New("list failed") },
+		},
+		"email missing": {
+			listUserEmailsFn: func(context.Context, int64) ([]db.EmailAddress, error) {
+				return []db.EmailAddress{{ID: 1, Email: "other@example.com"}}, nil
+			},
+		},
+		"activate error": {
+			listUserEmailsFn: func(context.Context, int64) ([]db.EmailAddress, error) {
+				return []db.EmailAddress{{ID: 9, Email: "user@example.com"}}, nil
+			},
+			activateEmailFn: func(context.Context, db.ActivateEmailParams) error { return errors.New("activate failed") },
+		},
+	}
+	for name, q := range activationFailures {
+		t.Run(name, func(t *testing.T) {
+			consumed := false
+			q.getEmailVerificationTokenByHashFn = func(context.Context, string) (db.EmailVerificationToken, error) { return token, nil }
+			q.consumeEmailVerificationTokenFn = func(context.Context, string) (int64, error) {
+				consumed = true
+				return 1, nil
+			}
+			_, err := newTestEmailService(q).VerifyEmail(context.Background(), "raw-token")
+			require.Error(t, err)
+			assert.False(t, consumed, "a failed activation must leave the token usable for a retry")
+		})
+	}
 }
