@@ -31,7 +31,7 @@ const deployed = "b".repeat(40)
 const receipt = (mode: "local-own" | "local-plue" | "native-own" | "native-plue" | "web-plue", startedRoles: readonly ProcessRole[], receiptRevision = revision) => ({
   mode,
   revision: receiptRevision,
-  origin: "https://example.test",
+  origin: "https://example.test", endpoint: "https://example.test",
   ready: true,
   startedRoles,
   freshLaunch: true,
@@ -106,7 +106,7 @@ describe("deployment mode matrix", () => {
   })
 
   test("a Plue mode owes GitHub import and fails it while its host does not advertise github", () => {
-    const readiness = { mode: "web-plue" as const, status: "passed" as const, tier: "plue-production" as const, origin: "https://example.test",
+    const readiness = { mode: "web-plue" as const, status: "passed" as const, tier: "plue-production" as const, origin: "https://example.test", endpoint: "https://example.test",
       capabilities: cloudBootstrap(deployed).capabilities, buildSha: deployed, reasons: [] }
     const rows = scenarioReceipts(readiness, revision, [])
     expect(rows.find(({ obligation }) => obligation === "github-import")).toMatchObject({
@@ -137,30 +137,39 @@ describe("deployment mode matrix", () => {
       revision,
       modes: [{
         mode: "native-own",
-        origin: "https://example.test",
+        origin: "https://example.test", endpoint: "https://example.test",
         auth: { kind: "owner-session", environment: "SMITHERS_OWNER_SESSION" },
         executionReceipt: "/tmp/native-own.json"
       }]
     }).modes[0]).toEqual({
       mode: "native-own",
-      origin: "https://example.test",
+      origin: "https://example.test", endpoint: "https://example.test",
       auth: { kind: "owner-session", environment: "SMITHERS_OWNER_SESSION" },
       executionReceipt: "/tmp/native-own.json"
     })
     expect(() => parseMatrixConfig({ revision, modes: [{
-      mode: "web-plue", origin: "https://secret@example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: "x"
+      mode: "web-plue", origin: "https://secret@example.test", endpoint: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: "x"
     }] })).toThrow("credential-free")
+  })
+
+  test("requires the selected endpoint and binds the launcher to it", () => {
+    const config = { mode: "local-plue", origin: "http://127.0.0.1:5173", endpoint: "https://example.test", auth: { kind: "application-token", environment: "TOKEN" }, executionReceipt: "x" }
+    expect(() => parseMatrixConfig({ revision, modes: [{ ...config, endpoint: undefined }] })).toThrow()
+    expect(() => parseMatrixConfig({ revision, modes: [{ ...config, endpoint: "https://secret@example.test" }] })).toThrow("credential-free")
+    const parsed = parseMatrixConfig({ revision, modes: [config] }).modes[0]!
+    expect(validateExecutionReceipt(parsed, revision, { ...receipt("local-plue", ["local-ui"]), origin: config.origin })).toEqual([])
+    expect(validateExecutionReceipt(parsed, revision, { ...receipt("local-plue", ["local-ui"]), origin: config.origin, endpoint: "https://foreign.test" })).toContain("launcher endpoint differs from selected backend")
   })
 
   test("requires native own supervision and proves remote native starts neither backend nor postgres", () => {
     const ownConfig = parseMatrixConfig({ revision, modes: [{
-      mode: "native-own", origin: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" }, executionReceipt: "x"
+      mode: "native-own", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" }, executionReceipt: "x"
     }] }).modes[0]!
     expect(validateExecutionReceipt(ownConfig, revision, receipt("native-own", ["native-ui", "app", "postgres"]))).toContain("launcher did not prove supervisor started")
     expect(validateExecutionReceipt(ownConfig, revision, receipt("native-own", ["native-ui", "supervisor", "app", "postgres"]))).toEqual([])
 
     const remoteConfig = parseMatrixConfig({ revision, modes: [{
-      mode: "native-plue", origin: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: "x"
+      mode: "native-plue", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: "x"
     }] }).modes[0]!
     expect(validateExecutionReceipt(remoteConfig, revision, receipt("native-plue", ["native-ui", "app"]))).toContain("remote mode unexpectedly started app")
     expect(validateExecutionReceipt(remoteConfig, revision, receipt("native-plue", ["native-ui"]))).toEqual([])
@@ -175,7 +184,7 @@ describe("deployment mode matrix", () => {
   })
 
   test("a failed attempt prevents a later pass from satisfying an obligation", () => {
-    const readiness = { mode: "local-own" as const, status: "passed" as const, tier: "local-infrastructure" as const, origin: "https://example.test", capabilities: ["identity", "model.turn"], reasons: [] }
+    const readiness = { mode: "local-own" as const, status: "passed" as const, tier: "local-infrastructure" as const, origin: "https://example.test", endpoint: "https://example.test", capabilities: ["identity", "model.turn"], reasons: [] }
     const base = { scenarioId: "chat.owner-model", host: "local" as const, mode: "local-own" as const, revision, startedAt: "2026-09-21T00:00:00Z", finishedAt: "2026-09-21T00:00:01Z" }
     const rows = scenarioReceipts(readiness, revision, [{ ...base, status: "failed" as const }, { ...base, status: "passed" as const }])
     expect(rows.find(({ scenarioId }) => scenarioId === "chat.owner-model")?.status).toBe("failed")
@@ -187,7 +196,7 @@ describe("deployment mode matrix", () => {
     const path = join(root, "receipt.json")
     writeFileSync(path, JSON.stringify(receipt("local-plue", ["local-ui"])))
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "local-plue", origin: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: path
+      mode: "local-plue", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: path
     }] }).modes[0]!
     const { fetcher } = recordingOrigin(cloudBootstrap(deployed))
     expect((await probeMode(config, revision, { PROFILE: "configured" }, fetcher)).status).toBe("passed")
@@ -199,7 +208,7 @@ describe("deployment mode matrix", () => {
     const path = join(root, "receipt.json")
     writeFileSync(path, JSON.stringify(receipt("local-plue", ["local-ui"])))
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "local-plue", origin: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: path
+      mode: "local-plue", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: path
     }] }).modes[0]!
     const result = await probeMode(config, revision, { PROFILE: "configured" }, async () => Response.json({
       apiVersion: 1, host: "local", version: "test", buildSha: "b".repeat(40),
@@ -215,7 +224,7 @@ describe("deployment mode matrix", () => {
     const path = join(root, "receipt.json")
     writeFileSync(path, JSON.stringify(receipt("local-own", ["local-ui", "app", "postgres"])))
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "local-own", origin: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" }, executionReceipt: path
+      mode: "local-own", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" }, executionReceipt: path
     }] }).modes[0]!
     const fetcher = (async () => Response.json({
       apiVersion: 1, host: "local", version: "test", buildSha: revision,
@@ -232,7 +241,7 @@ describe("deployment mode matrix", () => {
     const path = join(root, "receipt.json")
     writeFileSync(path, JSON.stringify(receipt("native-own", ["native-ui", "supervisor", "app", "postgres"])))
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "native-own", origin: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" }, executionReceipt: path
+      mode: "native-own", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" }, executionReceipt: path
     }] }).modes[0]!
     const result = await probeMode(config, revision, { OWNER: "configured" }, async () => Response.json({
       apiVersion: 1, host: "local", version: "test", buildSha: revision,
@@ -249,7 +258,7 @@ describe("deployment mode matrix", () => {
     writeFileSync(path, JSON.stringify(receipt("native-plue", ["native-ui"])))
     const config = parseMatrixConfig({ revision, modes: [{
       mode: "native-plue",
-      origin: "https://example.test",
+      origin: "https://example.test", endpoint: "https://example.test",
       auth: { kind: "application-token", environment: "PLUE_TOKEN" },
       executionReceipt: path,
       surfaceDriver: { kind: "electrobun-cdp", environment: "NATIVE_PLUE_DRIVER" }
@@ -269,7 +278,7 @@ describe("deployment mode matrix", () => {
     writeFileSync(path, JSON.stringify(receipt("native-plue", ["native-ui"])))
     const config = parseMatrixConfig({ revision, modes: [{
       mode: "native-plue",
-      origin: "https://example.test",
+      origin: "https://example.test", endpoint: "https://example.test",
       auth: { kind: "browser-profile", environment: "PROFILE" },
       executionReceipt: path,
       surfaceDriver: { kind: "electrobun-cdp", environment: "NATIVE_DRIVER" }
@@ -296,7 +305,7 @@ describe("deployment mode matrix", () => {
     const path = join(root, "receipt.json")
     writeFileSync(path, JSON.stringify(receipt("local-plue", ["local-ui"])))
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "local-plue", origin: "https://example.test",
+      mode: "local-plue", origin: "https://example.test", endpoint: "https://example.test",
       auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: path
     }] }).modes[0]!
     const result = await probeMode(config, revision, { PROFILE: "configured" }, recordingOrigin(cloudBootstrap(deployed, { terminal: false })).fetcher)
@@ -375,7 +384,7 @@ describe("deployment mode matrix", () => {
 
   test("web-plue readiness certifies the deployed Worker build without a health route or the checkout revision", async () => {
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "web-plue", origin: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" },
+      mode: "web-plue", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" },
       executionReceipt: writeReceipt(receipt("web-plue", ["web"], deployed))
     }] }).modes[0]!
     const origin = recordingOrigin(cloudBootstrap(deployed))
@@ -388,7 +397,7 @@ describe("deployment mode matrix", () => {
 
   test("a web-plue receipt must name the deployed build it observed", async () => {
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "web-plue", origin: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" },
+      mode: "web-plue", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" },
       executionReceipt: writeReceipt(receipt("web-plue", ["web"], revision))
     }] }).modes[0]!
     const result = await probeMode(config, revision, { PROFILE: "configured" }, recordingOrigin(cloudBootstrap(deployed)).fetcher)
@@ -398,7 +407,7 @@ describe("deployment mode matrix", () => {
 
   test("Plue readiness refuses a deployment with no sign-in door or no exact build", async () => {
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "web-plue", origin: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" },
+      mode: "web-plue", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" },
       executionReceipt: writeReceipt(receipt("web-plue", ["web"], deployed))
     }] }).modes[0]!
     const closed = await probeMode(config, revision, { PROFILE: "configured" }, recordingOrigin(cloudBootstrap(deployed, { authFlow: "none" })).fetcher)
@@ -409,7 +418,7 @@ describe("deployment mode matrix", () => {
 
   test("selfhost readiness still requires health and the checkout build", async () => {
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "local-own", origin: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" },
+      mode: "local-own", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" },
       executionReceipt: writeReceipt(receipt("local-own", ["local-ui", "app", "postgres"]))
     }] }).modes[0]!
     const bootstrap = (buildSha: string) => ({
@@ -425,7 +434,7 @@ describe("deployment mode matrix", () => {
   })
 
   test("a Plue attempt against a different deployment fails its obligation", () => {
-    const readiness = { mode: "web-plue" as const, status: "passed" as const, tier: "plue-production" as const, origin: "https://example.test",
+    const readiness = { mode: "web-plue" as const, status: "passed" as const, tier: "plue-production" as const, origin: "https://example.test", endpoint: "https://example.test",
       capabilities: ["identity", "cloud", "cloud.terminal"], buildSha: deployed, reasons: [] }
     const base = { scenarioId: "issues.product-create-readback", host: "production" as const, mode: "web-plue" as const, revision,
       startedAt: "2026-09-21T00:00:00Z", finishedAt: "2026-09-21T00:00:01Z", status: "passed" as const }

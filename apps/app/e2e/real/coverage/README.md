@@ -123,6 +123,7 @@ one exact source revision and an array of mode records:
   "modes": [{
     "mode": "native-own",
     "origin": "http://127.0.0.1:47321",
+    "endpoint": "http://127.0.0.1:47321",
     "auth": { "kind": "owner-session", "environment": "SMITHERS_OWNER_SESSION" },
     "executionReceipt": "/absolute/path/to/native-own.json"
   }]
@@ -132,7 +133,7 @@ one exact source revision and an array of mode records:
 The auth field names an environment variable; its value is never copied into
 the report. `browser-profile` is wired to the current real fixture;
 `owner-session` remains explicitly unavailable until issue 05 supplies its
-real injection seam. The launcher receipt binds mode, origin, revision, readiness, and
+real injection seam. The launcher receipt binds mode, origin, backend endpoint, revision, readiness, and
 started process roles. Own modes must prove fresh launch and data-preserving
 restart. `native-own` must prove its supervisor, app, and PostgreSQL;
 Plue-backed local/native modes fail if they started any of those processes.
@@ -143,6 +144,22 @@ A mode owes each scenario whose capabilities its host type opens, read from
 modes also owe `github`: Plue serves GitHub import behind the Worker's
 `/api/github/import` proxy. The report has one row per owed scenario, and
 every obligation is owed by at least one mode.
+
+Each invocation creates an execution UUID and a directory beside its report:
+`<report-name>.evidence/<executionID>/`. It retains the exact launcher and raw
+child receipt bytes, SHA-256 references, isolated Playwright/native artifacts,
+and its own immutable `report.json`. Failed raw receipts are retained too.
+The requested report path points at the same evidence directory; repeating a
+run does not replace an earlier run's artifacts.
+
+`coverage/evidence.ts` is the shared verifier. `readEvidenceReference` checks
+safe relative paths and hashes; `validateRawMatrixEvidence` requires the exact
+invocation UUID, mode, origin, selected endpoint, source, deployment, time
+window and one successful raw receipt per owed scenario. Reporter errors fail
+validation. Raw execution metadata also records the actual renderer origin
+and native CDP/window target when applicable. Summary rows cannot substitute
+for this evidence. The `origin` is the launcher's readiness origin; `endpoint`
+is the selected backend (different from the local renderer for `local-plue`).
 
 | Provider | Also requires | Build check |
 | --- | --- | --- |

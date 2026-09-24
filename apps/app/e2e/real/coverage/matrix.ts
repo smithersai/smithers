@@ -123,6 +123,7 @@ export const MANDATORY_DETERMINISTIC_BROWSER_SPECS = [
 export interface ModeConfig {
   readonly mode: DeploymentMode
   readonly origin: string
+  readonly endpoint: string
   readonly auth: { readonly kind: "browser-profile" | "owner-session" | "application-token"; readonly environment: string }
   readonly executionReceipt: string
   /** Secret-free reference to a JSON launch envelope held only in the runner environment. */
@@ -138,6 +139,7 @@ export interface ExecutionReceipt {
   readonly mode: DeploymentMode
   readonly revision: string
   readonly origin: string
+  readonly endpoint: string
   readonly ready: boolean
   readonly startedRoles: readonly ProcessRole[]
   readonly freshLaunch: boolean
@@ -155,6 +157,7 @@ export interface ModeReadiness {
   readonly status: MatrixStatus
   readonly tier: MatrixTier
   readonly origin?: string
+  readonly endpoint?: string
   readonly capabilities: readonly string[]
   /** The build the mode's backend reported: the checkout for selfhost, the deployed Worker for Plue. */
   readonly buildSha?: string
@@ -212,6 +215,7 @@ export const parseMatrixConfig = (value: unknown): MatrixConfig => {
     return {
       mode: entry.mode,
       origin: httpOrigin(entry.origin),
+      endpoint: httpOrigin(entry.endpoint),
       auth: { kind: entry.auth.kind, environment: entry.auth.environment },
       executionReceipt: entry.executionReceipt,
       ...(surfaceDriver ? { surfaceDriver } : {})
@@ -223,7 +227,7 @@ export const parseMatrixConfig = (value: unknown): MatrixConfig => {
 export const readExecutionReceipt = (path: string): ExecutionReceipt => {
   if (!existsSync(path)) throw new Error(`execution receipt does not exist: ${path}`)
   const value = JSON.parse(readFileSync(path, "utf8")) as unknown
-  if (!isObject(value) || !deploymentMode(value.mode) || !exactRevision(value.revision) || typeof value.origin !== "string" || typeof value.ready !== "boolean" ||
+  if (!isObject(value) || !deploymentMode(value.mode) || !exactRevision(value.revision) || typeof value.origin !== "string" || typeof value.endpoint !== "string" || typeof value.ready !== "boolean" ||
       !Array.isArray(value.startedRoles) || value.startedRoles.some((role) => typeof role !== "string" || !(PROCESS_ROLES as readonly string[]).includes(role)) || typeof value.freshLaunch !== "boolean" ||
       typeof value.restarted !== "boolean" || typeof value.dataPreserved !== "boolean" ||
       (value.persistenceProof !== undefined && (!isObject(value.persistenceProof) || !isObject(value.persistenceProof.database) || !isObject(value.persistenceProof.dataVolume) ||
@@ -241,6 +245,7 @@ export const validateExecutionReceipt = (config: ModeConfig, revision: string, r
   if (receipt.mode !== config.mode) reasons.push(`receipt mode ${receipt.mode} does not match ${config.mode}`)
   if (receipt.revision !== revision) reasons.push(`receipt revision ${receipt.revision} does not match ${revision}`)
   if (httpOrigin(receipt.origin) !== config.origin) reasons.push(`receipt origin ${receipt.origin} does not match ${config.origin}`)
+  if (httpOrigin(receipt.endpoint) !== config.endpoint) reasons.push("launcher endpoint differs from selected backend")
   if (!receipt.ready) reasons.push("launcher did not report actual readiness")
   for (const role of descriptor.requiredProcessRoles) if (!receipt.startedRoles.includes(role)) reasons.push(`launcher did not prove ${role} started`)
   for (const role of descriptor.forbiddenProcessRoles) if (receipt.startedRoles.includes(role)) reasons.push(`remote mode unexpectedly started ${role}`)
@@ -326,6 +331,7 @@ export const probeMode = async (
     status: reasons.length === 0 ? "passed" : "failed",
     tier: descriptor.provider === "plue" ? "plue-production" : "local-infrastructure",
     origin: config.origin,
+    endpoint: config.endpoint,
     capabilities,
     ...(buildSha === undefined ? {} : { buildSha }),
     reasons

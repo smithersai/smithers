@@ -35,9 +35,9 @@ export default defineConfig({
   workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI
-    ? [["github"], ["json", { outputFile: "test-results/real-e2e-results.json" }], ["./e2e/real/coverage/reporter.ts"]]
-    : [["list"], ["json", { outputFile: "test-results/real-e2e-results.json" }], ["./e2e/real/coverage/reporter.ts"]],
-  outputDir: "test-results/real-e2e-artifacts",
+    ? [["github"], ["json", { outputFile: process.env.SMITHERS_REAL_E2E_REPORT ?? "test-results/real-e2e-results.json" }], ["./e2e/real/coverage/reporter.ts"]]
+    : [["list"], ["json", { outputFile: process.env.SMITHERS_REAL_E2E_REPORT ?? "test-results/real-e2e-results.json" }], ["./e2e/real/coverage/reporter.ts"]],
+  outputDir: process.env.SMITHERS_REAL_E2E_ARTIFACTS ?? "test-results/real-e2e-artifacts",
   timeout: 90_000,
   expect: { timeout: 15_000 },
   use: {

@@ -124,7 +124,7 @@ export const startNativeOwn = async (
     const targetId = await existingNativeWindowTargetId(cdpEndpoint, state.window.url)
     const receiptPath = join(outputDir, "native-own.execution.json")
     const receipt: ExecutionReceipt = {
-      mode: "native-own", revision, origin, ready: true,
+      mode: "native-own", revision, origin, endpoint: origin, ready: true,
       startedRoles: ["native-ui", "supervisor", "app", "postgres"],
       freshLaunch: true, restarted: true, dataPreserved: true,
       persistenceProof: {
@@ -137,7 +137,7 @@ export const startNativeOwn = async (
     const authEnvironment = "SMITHERS_NATIVE_OWNER_SESSION"
     const driverEnvironment = "SMITHERS_NATIVE_OWN_DRIVER"
     const modeConfig: ModeConfig = {
-      mode: "native-own", origin,
+      mode: "native-own", origin, endpoint: origin,
       auth: { kind: "owner-session", environment: authEnvironment },
       executionReceipt: receiptPath,
       surfaceDriver: { kind: "electrobun-cdp", environment: driverEnvironment }

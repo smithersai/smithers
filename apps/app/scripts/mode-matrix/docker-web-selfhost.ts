@@ -378,7 +378,7 @@ export const startPackagedWebSelfhost = async (options: WebSelfhostLaunchOptions
     const receipt: ExecutionReceipt = {
       mode: "web-selfhost",
       revision: options.revision,
-      origin,
+      origin, endpoint: origin,
       ready: true,
       startedRoles: ["docker-app", "postgres"],
       freshLaunch: fresh,
@@ -399,7 +399,7 @@ export const startPackagedWebSelfhost = async (options: WebSelfhostLaunchOptions
       reportPath,
       modeConfig: {
         mode: "web-selfhost",
-        origin,
+        origin, endpoint: origin,
         auth: { kind: "owner-session", environment: authEnvironment },
         executionReceipt: receiptPath
       },

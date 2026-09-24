@@ -183,7 +183,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
     await waitFor(`${origin}/api/bootstrap`, vite)
     const receiptPath = join(outputDir, "local-own.execution.json")
     const receipt: ExecutionReceipt = {
-      mode: "local-own", revision, origin, ready: true, startedRoles: ["local-ui", "app", "postgres"],
+      mode: "local-own", revision, origin, endpoint: origin, ready: true, startedRoles: ["local-ui", "app", "postgres"],
       freshLaunch: true, restarted: true, dataPreserved: true,
       persistenceProof: {
         database: { before: `${username}/${repository}`, after: String(restored.full_name) },
@@ -194,7 +194,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
     writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 })
     const authEnvironment = "SMITHERS_LOCAL_OWNER_SESSION"
     return {
-      modeConfig: { mode: "local-own", origin, auth: { kind: "owner-session", environment: authEnvironment }, executionReceipt: receiptPath },
+      modeConfig: { mode: "local-own", origin, endpoint: origin, auth: { kind: "owner-session", environment: authEnvironment }, executionReceipt: receiptPath },
       runtimeEnvironment: { [authEnvironment]: JSON.stringify({ username, password, bootstrapToken }), SMITHERS_LOCAL_GIT_ORIGIN: backendOrigin }, close
     }
   } catch (error) {

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import { basename, dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
   MANDATORY_DETERMINISTIC_BROWSER_SPECS,
@@ -12,11 +13,14 @@ import {
   parseMatrixConfig,
   probeMode,
   scenarioReceipts,
-  selectMatrixModes
+  selectMatrixModes,
+  readExecutionReceipt,
+  validateExecutionReceipt
 } from "../e2e/real/coverage/matrix"
 import type { MatrixConfig, MatrixScenarioReceipt, ModeReadiness } from "../e2e/real/coverage/matrix"
-import type { DeploymentMode, RealE2EEvidenceFile, RealScenarioRunEvidence } from "../e2e/real/coverage/types"
+import type { RealScenarioRunEvidence } from "../e2e/real/coverage/types"
 import { sourceRevision } from "./mode-matrix/source-revision"
+import { archiveEvidence, rawEvidence, readEvidenceReference, validateRawMatrixEvidence, type EvidenceReference } from "../e2e/real/coverage/evidence"
 
 const appDir = fileURLToPath(new URL("../", import.meta.url))
 const args = process.argv.slice(2)
@@ -32,6 +36,11 @@ const option = (name: string): string | undefined => {
 }
 const selection = selectMatrixModes(option("--modes"))
 const selectedModes = selection.modes
+const executionID = randomUUID()
+const reportPath = resolve(option("--report") ?? process.env.SMITHERS_MODE_MATRIX_REPORT ?? `${appDir}/test-results/mode-matrix/report.json`)
+const evidenceDirectory = `${basename(reportPath)}.evidence/${executionID}`
+const outputDirectory = resolve(dirname(reportPath), evidenceDirectory)
+mkdirSync(outputDirectory, { recursive: true })
 
 const detectedRevision = await sourceRevision(resolve(appDir, "../.."))
 const configPath = option("--config") ?? process.env.SMITHERS_MODE_MATRIX_CONFIG
@@ -51,7 +60,7 @@ if (command === "run") {
   const unitCode = await unitRun.exited
   commands.push({ tier: "deterministic", command: unit, status: unitCode === 0 ? "passed" : "failed", exitCode: unitCode })
 
-  const browser = ["pnpm", "exec", "playwright", "test", "--config", "playwright.config.ts", ...MANDATORY_DETERMINISTIC_BROWSER_SPECS]
+  const browser = ["pnpm", "exec", "playwright", "test", "--config", "playwright.config.ts", "--output", resolve(outputDirectory, "deterministic-browser"), ...MANDATORY_DETERMINISTIC_BROWSER_SPECS]
   const browserRun = Bun.spawn(browser, { cwd: appDir, env: process.env, stdin: "inherit", stdout: "inherit", stderr: "inherit" })
   const browserCode = await browserRun.exited
   commands.push({ tier: "deterministic", command: browser, status: browserCode === 0 ? "passed" : "failed", exitCode: browserCode })
@@ -60,17 +69,28 @@ if (command === "run") {
 
 const readiness: ModeReadiness[] = []
 const runs: RealScenarioRunEvidence[] = []
+const evidence: Array<{ mode: string; origin: string; endpoint: string; startedAt?: string; finishedAt?: string; raw?: EvidenceReference; launcher?: EvidenceReference; errors: string[] }> = []
 for (const mode of selectedModes) {
   const modeConfig = config.modes.find((entry) => entry.mode === mode)
   const state = configFailure ? missingModeReadiness(mode, configFailure)
     : modeConfig === undefined ? missingModeReadiness(mode, `configuration for ${mode} is unavailable`)
       : await probeMode(modeConfig, config.revision)
   readiness.push(state)
+  const record = modeConfig ? { mode, origin: modeConfig.origin, endpoint: modeConfig.endpoint, errors: [] as string[] } as typeof evidence[number] : undefined
+  if (record && modeConfig) {
+    evidence.push(record)
+    try {
+      record.launcher = archiveEvidence(outputDirectory, `${mode}/launcher.json`, readFileSync(modeConfig.executionReceipt))
+      readEvidenceReference(outputDirectory, record.launcher)
+      const launcherRevision = mode === "web-plue" ? state.buildSha : config.revision
+      if (!launcherRevision) record.errors.push("launcher deployment revision is unavailable")
+      else record.errors.push(...validateExecutionReceipt(modeConfig, launcherRevision, readExecutionReceipt(resolve(outputDirectory, record.launcher.path))))
+    } catch (error) { record.errors.push(error instanceof Error ? error.message : String(error)) }
+  }
   if (command !== "run" || state.status !== "passed" || modeConfig === undefined || !deterministicPassed) continue
 
-  const evidence = resolve(appDir, "test-results", "mode-matrix", `${mode}.real-e2e.json`)
-  const ownerProfile = resolve(appDir, "test-results", "mode-matrix", `${mode}.owner-profile`)
-  if (modeConfig.auth.kind === "owner-session") rmSync(ownerProfile, { recursive: true, force: true })
+  const childEvidence = resolve(outputDirectory, mode, "child.real-e2e.json")
+  const ownerProfile = resolve(outputDirectory, mode, "owner-profile")
   const selectedScenarios = applicableScenarioIds(state.capabilities)
   if (selectedScenarios.length === 0) continue
   const nativeDriver = modeConfig.surfaceDriver
@@ -87,6 +107,7 @@ for (const mode of selectedModes) {
     delete childEnvironment.SMITHERS_REAL_NATIVE_TARGET_ID
     delete childEnvironment.SMITHERS_NATIVE_MATRIX_PRELAUNCHED
   }
+  record!.startedAt = new Date().toISOString()
   const child = Bun.spawn(invocation, {
     cwd: appDir,
     env: {
@@ -104,7 +125,13 @@ for (const mode of selectedModes) {
       // Every Plue scenario must run against the deployment readiness certified.
       ...(MODE_DESCRIPTORS[mode].provider === "plue" && state.buildSha ? { SMITHERS_REAL_E2E_BUILD_SHA: state.buildSha } : {}),
       SMITHERS_REAL_E2E_REVISION: config.revision,
-      SMITHERS_REAL_E2E_RESULTS: evidence,
+      SMITHERS_REAL_E2E_RESULTS: childEvidence,
+      SMITHERS_REAL_E2E_REPORT: resolve(outputDirectory, mode, "playwright-report.json"),
+      SMITHERS_REAL_E2E_ARTIFACTS: resolve(outputDirectory, mode, "playwright"),
+      SMITHERS_REAL_NATIVE_ARTIFACTS: resolve(outputDirectory, mode, "native"),
+      SMITHERS_REAL_MATRIX_EXECUTION_ID: executionID,
+      SMITHERS_REAL_MATRIX_ORIGIN: modeConfig.origin,
+      SMITHERS_REAL_MATRIX_ENDPOINT: modeConfig.endpoint,
       SMITHERS_REAL_MATRIX_SCENARIOS: JSON.stringify(selectedScenarios),
       SMITHERS_REAL_AUTH_KIND: modeConfig.auth.kind,
       SMITHERS_REAL_AUTH_ENVIRONMENT: modeConfig.auth.environment,
@@ -116,10 +143,16 @@ for (const mode of selectedModes) {
     stderr: "inherit"
   })
   const code = await child.exited
+  record!.finishedAt = new Date().toISOString()
   commands.push({ tier: state.tier, command: invocation, status: code === 0 ? "passed" : "failed", exitCode: code })
-  if (!existsSync(evidence)) continue
-  const value = JSON.parse(readFileSync(evidence, "utf8")) as RealE2EEvidenceFile
-  runs.push(...value.runs.map((run) => ({ ...run, mode: mode as DeploymentMode })))
+  try {
+    if (!existsSync(childEvidence)) throw new Error("raw child evidence is missing")
+    record!.raw = archiveEvidence(outputDirectory, `${mode}/raw.json`, readFileSync(childEvidence))
+    const value = rawEvidence(outputDirectory, record!.raw)
+    record!.errors.push(...validateRawMatrixEvidence(value, { executionID, mode, origin: modeConfig.origin, endpoint: modeConfig.endpoint,
+      revision: config.revision, buildSha: state.buildSha, startedAt: record!.startedAt!, finishedAt: record!.finishedAt! }))
+    if (record!.errors.length === 0) runs.push(...value.runs)
+  } catch (error) { record!.errors.push(error instanceof Error ? error.message : String(error)) }
 }
 
 const scenarios: MatrixScenarioReceipt[] = readiness.flatMap((state) => scenarioReceipts(state, config.revision, runs))
@@ -128,12 +161,15 @@ const report = {
   generatedAt: new Date().toISOString(),
   revision: config.revision,
   command,
+  executionID,
+  evidenceDirectory,
+  evidence,
   commands,
   readiness,
   scenarios
 }
-const reportPath = resolve(option("--report") ?? process.env.SMITHERS_MODE_MATRIX_REPORT ?? `${appDir}/test-results/mode-matrix/report.json`)
 mkdirSync(dirname(reportPath), { recursive: true })
+writeFileSync(resolve(outputDirectory, "report.json"), JSON.stringify({ ...report, evidenceDirectory: "." }, null, 2) + "\n", { mode: 0o600, flag: "wx" })
 writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n")
 
 for (const state of readiness) console.log(`${state.status.toUpperCase()} ${state.mode}${state.reasons.length ? `: ${state.reasons.join("; ")}` : ""}`)

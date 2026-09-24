@@ -65,9 +65,21 @@ export interface RealScenarioRunEvidence {
 }
 
 export interface RealE2EEvidenceFile {
+  readonly execution?: MatrixExecutionEvidence
   readonly suiteStatus: "passed" | "failed" | "timedout" | "interrupted"
   readonly reporterErrors: readonly string[]
   readonly runs: readonly RealScenarioRunEvidence[]
+}
+
+export interface MatrixExecutionEvidence {
+  readonly executionID: string
+  readonly mode: DeploymentMode
+  readonly origin: string
+  readonly endpoint: string
+  readonly surfaceOrigin: string
+  readonly startedAt: string
+  readonly finishedAt: string
+  readonly native?: { readonly cdpEndpoint: string; readonly targetID: string; readonly windowURL: string }
 }
 
 export interface CoverageGap {

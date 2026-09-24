@@ -63,14 +63,14 @@ export const startNativePlue = async (
     const targetId = await existingNativeWindowTargetId(cdpEndpoint, state.window.url)
     const receiptPath = join(outputDir, "native-plue.execution.json")
     const receipt: ExecutionReceipt = {
-      mode: "native-plue", revision, origin: origin.origin, ready: true,
+      mode: "native-plue", revision, origin: origin.origin, endpoint: origin.origin, ready: true,
       startedRoles: ["native-ui"], freshLaunch: true, restarted: false, dataPreserved: false,
       observedAt: new Date().toISOString()
     }
     writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 })
     const driverEnvironment = "SMITHERS_NATIVE_PLUE_DRIVER"
     const modeConfig: ModeConfig = {
-      mode: "native-plue", origin: origin.origin,
+      mode: "native-plue", origin: origin.origin, endpoint: origin.origin,
       auth: { kind: "application-token", environment: tokenEnvironment },
       executionReceipt: receiptPath,
       surfaceDriver: { kind: "electrobun-cdp", environment: driverEnvironment }

@@ -49,7 +49,7 @@ const observeDocument = async (origin: string, path: string): Promise<void> => {
 const writeReceipt = (outputDir: string, receipt: Omit<ExecutionReceipt, "observedAt">, tokenEnvironment: string): ModeConfig => {
   const path = join(outputDir, `${receipt.mode}.execution.json`)
   writeFileSync(path, `${JSON.stringify({ ...receipt, observedAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 })
-  return { mode: receipt.mode, origin: receipt.origin, auth: { kind: "application-token", environment: tokenEnvironment }, executionReceipt: path }
+  return { mode: receipt.mode, origin: receipt.origin, endpoint: receipt.endpoint, auth: { kind: "application-token", environment: tokenEnvironment }, executionReceipt: path }
 }
 
 /** web-plue runs nothing from this checkout: the receipt records the deployed build and page the Worker served. */
@@ -59,7 +59,7 @@ export const startWebPlue = async (outputDir: string, target: string, tokenEnvir
   await observeDocument(origin, appEntryPath("production"))
   return {
     modeConfig: writeReceipt(outputDir, {
-      mode: "web-plue", revision: buildSha, origin, ready: true, startedRoles: ["web"],
+      mode: "web-plue", revision: buildSha, origin, endpoint: origin, ready: true, startedRoles: ["web"],
       freshLaunch: false, restarted: false, dataPreserved: false
     }, tokenEnvironment),
     close: async () => undefined
@@ -92,7 +92,7 @@ export const startLocalPlue = async (appDir: string, revision: string, outputDir
     }
     return {
       modeConfig: writeReceipt(outputDir, {
-        mode: "local-plue", revision, origin: localOrigin, ready: true, startedRoles: ["local-ui"],
+        mode: "local-plue", revision, origin: localOrigin, endpoint: origin, ready: true, startedRoles: ["local-ui"],
         freshLaunch: false, restarted: false, dataPreserved: false
       }, tokenEnvironment),
       close: async () => { if (vite.exitCode === null) vite.kill("SIGTERM"); await vite.exited }
