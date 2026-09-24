@@ -121,3 +121,20 @@ test("the deploy reads the sha back from the build it publishes", () => {
   expect(stripComments(deploy)).toContain("__build.json")
   expect(stripComments(deploy)).toContain("Current Version ID")
 })
+
+/*
+ * One deploy path: every push to main, through the production environment.
+ * A local hook published unpushed and rewritten commits for ten days while the
+ * guide named a tag nobody cut; the refusal in scripts/deployRevision.ts and
+ * this description now say the same thing.
+ */
+test("the deploy tags the version with its sha and the guide names the one deploy path", () => {
+  expect(stripComments(deploy)).toContain("wranglerDeployArgs")
+  expect(stripComments(deploy)).toContain("judgeRevision")
+  expect(readFileSync(new URL("./deployRevision.ts", import.meta.url), "utf8")).toContain('"--tag"')
+  const section = guide.split("\n## CI (every push to main)")[1]!.split("\n## ")[0]!
+  expect(section).toContain("push to `main`")
+  expect(section).toContain("`production` environment")
+  expect(section).toContain("origin/main")
+  expect(guide).not.toContain("apps-v")
+})

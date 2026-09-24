@@ -11,10 +11,12 @@
  *     published. Receipt lands in deploy-receipts/dry-run/.
  *
  *   bun scripts/deploy.ts
- *     Real deploy. Requires CLOUDFLARE_API_TOKEN; CLOUDFLARE_ACCOUNT_ID
- *     defaults to the frozen account. Runs scripts/adopt-durable-objects.ts
- *     first and stops on a red report, then `wrangler deploy`. Receipt lands
- *     in deploy-receipts/.
+ *     Real deploy. Requires CLOUDFLARE_API_TOKEN and a clean commit already
+ *     on origin/main; CLOUDFLARE_ACCOUNT_ID defaults to the frozen account.
+ *     Runs scripts/adopt-durable-objects.ts first and stops on a red report,
+ *     then `wrangler deploy --tag <sha12> --message "<sha> <subject>"`.
+ *     Receipt lands in deploy-receipts/. The Deploy apps workflow runs this
+ *     on every push to main; see DEPLOY.md.
  *
  * The Worker identity (name `smithers-mvp-web`, the canary.smithers.sh domain,
  * the apex route, the five Durable Objects) is frozen in src/workerIdentity.ts
@@ -38,6 +40,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { WORKER_IDENTITY } from "../src/workerIdentity"
+import { judgeRevision, readRevisionFacts, wranglerDeployArgs } from "./deployRevision"
 
 const dryRun = process.argv.includes("--dry-run")
 
@@ -80,18 +83,21 @@ const run = async (
  * receipt can be compared byte for byte; that comparison is CN-1, and
  * scripts/canary/build-probe.ts runs it.
  *
- * A dirty tree is recorded rather than hidden. The sha alone would claim the
- * artifact is that commit, which is not true when uncommitted work went into
- * the build.
+ * A real deploy ships only a clean commit already on origin/main
+ * (scripts/deployRevision.ts); a dry run may be dirty or unpushed and records
+ * the dirty tree rather than hiding it.
  */
-// Select the checkout's own VCS before probing. A native jj workspace has no
-// .git directory, and a colocated checkout's Git HEAD may lag its jj state.
-const jjWorkspace = existsSync(join(serverDir, "../..", ".jj"))
-const head = await run(jjWorkspace ? ["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"] : ["git", "rev-parse", "HEAD"], { cwd: serverDir, capture: true })
-const status = await run(jjWorkspace ? ["jj", "diff", "--summary"] : ["git", "status", "--porcelain"], { cwd: serverDir, capture: true })
-const gitSha = head.output.trim()
-if (head.exitCode !== 0 || status.exitCode !== 0 || !/^[0-9a-f]{40}$/.test(gitSha)) throw new Error("Cannot determine the deployment revision and working-tree state")
-const gitDirty = status.output.trim() !== ""
+const facts = await readRevisionFacts({ cwd: serverDir, vcs: existsSync(join(serverDir, "../..", ".jj")) ? "jj" : "git" })
+const verdict = judgeRevision(facts, dryRun ? "dry-run" : "real")
+if (!verdict.ok) {
+  console.error(`[deploy] refusing to deploy: ${verdict.detail}`)
+  process.exit(1)
+}
+const gitSha = verdict.sha
+const gitDirty = facts.dirty.length > 0
+const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } = process.env
+const runUrl =
+  GITHUB_SERVER_URL && GITHUB_REPOSITORY && GITHUB_RUN_ID ? `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}` : null
 
 /*
  * The island's sources are transformed under apps/app/tsconfig.json, which
@@ -153,8 +159,8 @@ if (dryRun) {
     console.error("[deploy] the preflight is red; not deploying. A Durable Object mismatch is data loss.")
     process.exit(preflight.exitCode)
   }
-  console.log("[deploy] wrangler deploy ...")
-  const deploy = await run(wrangler("deploy"), { cwd: serverDir, env: wranglerEnv, capture: true })
+  console.log(`[deploy] wrangler deploy --tag ${verdict.tag} ...`)
+  const deploy = await run(wrangler(...wranglerDeployArgs(verdict)), { cwd: serverDir, env: wranglerEnv, capture: true })
   if (deploy.exitCode !== 0) {
     console.error("[deploy] wrangler deploy failed.")
     process.exit(deploy.exitCode)
@@ -189,7 +195,10 @@ const receipt = {
   gitSha,
   gitDirty,
   timestamp: new Date().toISOString(),
-  wranglerVersionId: versionId
+  wranglerVersionId: versionId,
+  versionTag: verdict.tag,
+  versionMessage: verdict.message,
+  runUrl
 }
 
 const receiptDir = dryRun ? `${serverDir}deploy-receipts/dry-run` : `${serverDir}deploy-receipts`

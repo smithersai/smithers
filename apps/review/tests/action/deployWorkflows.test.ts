@@ -42,69 +42,29 @@ describe("canary.yml probes the owning repository", () => {
   });
 });
 
-describe("apps-deploy.yml names apps this workspace still has", () => {
-  /**
-   * The `name` -> declared scripts of every manifest the deploy may gate on:
-   * the apps, plus the contract package they share (`@smthrs/rpc`, which
-   * moved from `apps/shared` to `packages/rpc` and still guards the deploy).
-   */
-  function appScripts(): Map<string, Set<string>> {
-    const apps = new Map<string, Set<string>>();
-    const roots = [appsDir, fileURLToPath(new URL("../../../../packages/", import.meta.url))];
-    for (const root of roots) {
-      for (const entry of readdirSync(root, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        let manifest: { name?: string; scripts?: Record<string, string> };
-        try {
-          manifest = JSON.parse(readFileSync(`${root}${entry.name}/package.json`, "utf8"));
-        } catch {
-          continue; // Not a package directory.
-        }
-        if (manifest.name) apps.set(manifest.name, new Set(Object.keys(manifest.scripts ?? {})));
-      }
-    }
-    return apps;
+describe("apps-deploy.yml calls what this workspace still has", () => {
+  /** The declared scripts of one manifest, by its `name`. */
+  function scripts(dir: string): Set<string> {
+    const manifest = JSON.parse(readFileSync(`${appsDir}${dir}/package.json`, "utf8")) as { scripts?: Record<string, string> };
+    return new Set(Object.keys(manifest.scripts ?? {}));
   }
 
-  /** Every `<app>:<script>` pair the workflow's gate loops run. */
-  function gatedPairs(): string[] {
+  test("every gated target names a package directory that still exists", () => {
+    // A label on a directory that left the tree would gate on nothing. The
+    // superset over ci.yml's apps-e2e targets is graded in
+    // apps/server/scripts/canary/workflow-wiring.test.ts.
     const text = readFileSync(`${workflowsDir}apps-deploy.yml`, "utf8");
-    const pairs: string[] = [];
-    for (const [, apps, script] of text.matchAll(/for app in ([^\n;]+); do\s*\n\s+pnpm --filter "\$app" run (\S+)/g)) {
-      for (const app of apps.trim().split(/\s+/)) pairs.push(`${app}:${script}`);
-    }
-    return pairs;
-  }
-
-  test("every app the deploy gates on exists and declares the script it runs", () => {
-    // The rename pass gave four apps `@smthrs/` names. `pnpm --filter` on a
-    // name nothing matches is a no-op that exits 0, so a stale filter here
-    // would let the deploy skip the gate it believes it ran and ship anyway.
-    const pairs = gatedPairs();
-    // The exact roster, not a floor: a floor let the gate silently shrink when
-    // apps left the tree, and it read as "eight or more" long after only three
-    // remained. Dropping or adding a gated app is a decision this line records.
-    expect(pairs).toEqual([
-      "smithers-app:typecheck",
-      "smithers-server:typecheck",
-      "@smthrs/rpc:typecheck",
-      "smithers-app:test",
-      "smithers-server:test",
-      "@smthrs/rpc:test"
-    ]);
-    const apps = appScripts();
-    const broken = pairs.filter((pair) => {
-      const [name, script] = pair.split(":");
-      return !apps.get(name!)?.has(script!);
-    });
-    expect(broken).toEqual([]);
+    const dirs = [...text.matchAll(/smthrs (?:build|test|ci) '\/\/apps\/([^/:']+)/g)].map((match) => match[1]!);
+    expect([...new Set(dirs)].sort()).toEqual(["app", "server", "site"]);
+    const missing = dirs.filter((dir) => !readdirSync(appsDir).includes(dir) || !readdirSync(`${appsDir}${dir}`).includes("PACKAGE.ts"));
+    expect(missing).toEqual([]);
   });
 
   test("the deploy still calls the server app's own deploy scripts", () => {
     const text = readFileSync(`${workflowsDir}apps-deploy.yml`, "utf8");
-    const server = appScripts().get("smithers-server");
-    expect(server?.has("deploy")).toBe(true);
-    expect(server?.has("deploy:dry")).toBe(true);
+    const server = scripts("server");
+    expect(server.has("deploy")).toBe(true);
+    expect(server.has("deploy:dry")).toBe(true);
     expect(text).toContain("pnpm --filter smithers-server run deploy:dry");
     expect(text).toContain("pnpm --filter smithers-server run deploy");
   });

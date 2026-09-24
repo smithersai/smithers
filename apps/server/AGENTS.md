@@ -25,10 +25,12 @@
   (`keep_bindings`); a deploying shell never carries a value, and no script,
   test or workflow may ask for one. Never print a secret value, in code or in
   a report.
-- Deploys go through `scripts/deploy.ts` (site build, preflight, then
-  `wrangler deploy`). Never deploy or mutate Cloudflare from an agent session;
-  the dry run and the preflight are read-only and are the most an agent may
-  run. `wrangler deploy --dry-run` bundles and reads no live script, so it is
+- Deploys are the Deploy apps workflow on a push to `main`: landing on `main`
+  is the deploy. It runs `scripts/deploy.ts` (site build, preflight, then
+  `wrangler deploy`), which refuses a real deploy of a dirty tree or of a
+  commit not on origin/main. Never run it for real or mutate Cloudflare from
+  an agent session; the dry run and the preflight are read-only and are the
+  most an agent may run. `wrangler deploy --dry-run` bundles and reads no live script, so it is
   never the identity verdict — `bun scripts/adopt-durable-objects.ts` is.
 - A Durable Object's in-memory state is made once by the object (the native
   class's field), never a Layer built per request: the client-error throttle

@@ -187,11 +187,11 @@ the new build by matching its `Current Version ID` against the receipt.
 receipt>"` from `apps/server`, same token. Durable Object state is unaffected
 either way.
 
-**CI alternative:** `.github/workflows/apps-deploy.yml` runs the same script on
-a pushed `apps-v*` tag. It only attempts a real deploy when the
-`CLOUDFLARE_API_TOKEN` repository secret is set; otherwise it runs the dry
-path. Set the secret in Settings → Secrets and variables → Actions before
-cutting a tag that should actually publish.
+**CI path:** `.github/workflows/apps-deploy.yml` runs the same script on every
+push to `main`, after the apps gates. It attempts a real deploy only when the
+`production` environment holds `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`; otherwise it runs the dry path. See
+`apps/server/DEPLOY.md` "CI (every push to main)".
 
 ---
 

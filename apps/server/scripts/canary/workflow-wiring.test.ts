@@ -42,6 +42,22 @@ interface CiWorkflow {
   readonly jobs: Record<string, CiJob>
 }
 
+interface DeployJob {
+  readonly needs?: string | ReadonlyArray<string>
+  readonly environment?: string
+  readonly steps: ReadonlyArray<WorkflowStep & { readonly with?: Record<string, unknown> }>
+}
+
+interface DeployWorkflow {
+  readonly on: { readonly push?: { readonly branches?: ReadonlyArray<string>; readonly tags?: ReadonlyArray<string> } }
+  readonly concurrency?: unknown
+  readonly jobs: Record<string, DeployJob> & { readonly gate: DeployJob; readonly deploy: DeployJob }
+}
+
+/** Every `smthrs build|test|ci '<label>'` a job runs, as the label. */
+const appTargets = (job: DeployJob): ReadonlyArray<string> =>
+  job.steps.flatMap((step) => [...(step.run ?? "").matchAll(/smthrs (?:build|test|ci) '([^']+)'/g)].map((match) => match[1]!))
+
 /*
  * The one job-level `if:` that is not a skipped gate: the cache publisher's
  * push guard. `cache-publish` is the only job handed the cache write
@@ -123,14 +139,40 @@ describe("canary probes are wired into a gate", () => {
     // Without an expected sha the probe skips its comparison checks and
     // still prints PASS, having verified only that the deployment can state
     // what it is. The sha has to reach the probe for the verdict to move.
-    const deploy = readWorkflow("apps-deploy.yml")
-    expect(deploy).toContain("scripts/canary/build-probe.ts")
-    expect(deploy).toMatch(/--sha\s/)
-    expect(deploy).toContain("github.sha")
-    // Drift needs both halves: the flag, and a checkout deep enough for
-    // `git rev-list <sha>..origin/main` to resolve origin/main.
-    expect(deploy).toMatch(/--max-drift\s+\d/)
-    expect(deploy).toMatch(/^\s*fetch-depth: 0$/m)
+    const deploy = Bun.YAML.parse(readWorkflow("apps-deploy.yml")) as DeployWorkflow
+    const cn1 = deploy.jobs.deploy.steps.find((step) => step.run?.includes("scripts/canary/build-probe.ts") === true)
+    expect(cn1?.run).toContain('--sha "$DEPLOYED_SHA"')
+    expect(cn1?.env?.DEPLOYED_SHA).toBe("${{ github.sha }}")
+    // No drift bound: supersession makes a newer main routine during a deploy,
+    // and the newer sha is the next queued deploy, not a defect of this one.
+    expect(readWorkflow("apps-deploy.yml")).not.toContain("--max-drift")
+  })
+
+  /*
+   * The deploy was tag-triggered and nobody cut a tag, so the gated path never
+   * ran while a laptop hook published every local commit ungated. Every push to
+   * main deploys now, behind the same apps targets CI runs, and only the
+   * deploy job holds the production credential.
+   */
+  it("deploys every push to main behind the apps gates CI runs", () => {
+    const deploy = Bun.YAML.parse(readWorkflow("apps-deploy.yml")) as DeployWorkflow
+    expect(deploy.on.push?.branches).toEqual(["main"])
+    expect(deploy.on.push?.tags).toBeUndefined()
+    expect(deploy.concurrency).toEqual({ group: "apps-deploy", "cancel-in-progress": false })
+    expect([deploy.jobs.deploy.needs].flat()).toContain("gate")
+    expect(deploy.jobs.deploy.environment).toBe("production")
+    expect(deploy.jobs.gate.environment).toBeUndefined()
+    // The ancestry check in scripts/deploy.ts needs origin/main's history.
+    expect(deploy.jobs.deploy.steps[0]?.with?.["fetch-depth"]).toBe(0)
+    expect(JSON.stringify(deploy.jobs.gate)).not.toContain("CLOUDFLARE_API_TOKEN")
+
+    const ci = Bun.YAML.parse(readWorkflow("ci.yml")) as DeployWorkflow
+    const appsE2e = appTargets(ci.jobs["apps-e2e"]!)
+    expect(appsE2e.length).toBeGreaterThanOrEqual(4)
+    const gate = appTargets(deploy.jobs.gate)
+    expect(appsE2e.filter((target) => !gate.includes(target))).toEqual([])
+    for (const target of ["//apps/server/...", "//apps/site/..."]) expect(gate).toContain(target)
+    expect(JSON.stringify(deploy)).not.toContain("continue-on-error")
   })
 
   it("reports every post-deploy probe in one run", () => {

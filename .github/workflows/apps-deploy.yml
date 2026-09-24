@@ -1,77 +1,102 @@
 name: Deploy apps
 
+# Every push to main deploys smithers.sh, after the apps gates pass on that
+# exact sha. This is the one deploy path (apps/server/DEPLOY.md "CI (every
+# push to main)"). scripts/deploy.ts refuses a real deploy of any commit that
+# is dirty or not on origin/main, whoever runs it.
 on:
   push:
-    tags:
-      - 'apps-v*'
+    branches: [main]
+  # A manual run is a credential-free rehearsal: the gates, then the dry-run
+  # deploy.
   workflow_dispatch: {}
 
 permissions:
   contents: read
 
+# One deploy at a time, never cancelled mid-publish. GitHub keeps one pending
+# run per group and replaces it on each push, so under load the newest main
+# deploys next and the shas between are skipped, never published out of order.
+concurrency:
+  group: apps-deploy
+  cancel-in-progress: false
+
 jobs:
-  deploy:
-    name: build + wrangler deploy
+  # The apps gates ci.yml's apps-e2e job runs, by the same target labels, on
+  # the sha this run deploys. ci.yml on main is superseded before most runs
+  # start, so the deploy cannot wait on it. This job never sees the Cloudflare
+  # credential: environment secrets reach only the job that names the
+  # environment. apps/server/scripts/canary/workflow-wiring.test.ts holds
+  # these targets to a superset of apps-e2e's.
+  gate:
+    name: apps gates
     runs-on: ubuntu-latest
-    # The e2e tier below builds the SPA and drives a real Chromium, so the job
-    # is minutes long even when everything passes.
-    timeout-minutes: 45
+    timeout-minutes: 40
+    env:
+      SMITHERS_CACHE_URL: ${{ secrets.SMITHERS_CACHE_URL }}
+      SMITHERS_CACHE_READ_TOKEN: ${{ secrets.SMITHERS_CACHE_READ_TOKEN }}
     steps:
-      # Full history, not the default shallow one. The CN-1 probe measures how
-      # far the deployed commit sits behind origin/main with
-      # `git rev-list --count <sha>..origin/main`, and a shallow clone has
-      # neither origin/main nor the commits between. Without this the probe
-      # reports that it could not measure, which is honest and useless.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          fetch-depth: 0
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 26.4.0
+          node-version-file: .node-version
           cache: pnpm
+      - name: Install certified npm
+        shell: bash
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: 1.4.1
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      # A deploy is the one moment this code reaches a user, so it does not
-      # ship what it has not checked. These are the apps gates only: the
-      # workspace gates (packages, rust, wasm, browser contract) are CI's job
-      # on the same commit, and duplicating them here would put 20 minutes
-      # between a green tag and a live fix.
-      #
-      # Every step below fails the job, so a red tag never reaches the
-      # deploy step — including the dry-run one, which is the whole proof
-      # this pipeline offers when no credential is configured.
-      - name: Typecheck apps
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Install native smithers-jj-export
+        shell: bash
         run: |
-          for app in smithers-app smithers-server @smthrs/rpc; do
-            pnpm --filter "$app" run typecheck
-          done
-      - name: Test apps
+          rustup toolchain install '1.98.0' --profile minimal
+          cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+          mkdir -p "$RUNNER_TEMP/smithers-native"
+          install -m 755 'target/debug/smithers-jj-export' "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+          printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
+      - name: Install jj
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+        with:
+          tool: jj-cli@0.39.0
+      - name: Initialize colocated jj repository
+        run: jj git init --colocate
+      - name: Install ripgrep
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+        with:
+          tool: ripgrep@14.1.1
+      - name: Install system packages
+        shell: bash
         run: |
-          for app in smithers-app smithers-server @smthrs/rpc; do
-            pnpm --filter "$app" run test
-          done
-      # Issue I-4: the deploy is gated on end-to-end behaviour, not only on
-      # unit suites. The UI gate is the Playwright T1 tier
-      # (apps/app/docs/LOCAL-APP.md "Test tiers"): the local origin in
-      # headless Chromium with the chat stub on, so this needs no Cloudflare
-      # credential and spends nothing on a model.
-      #
-      # These run as steps of the deploy job rather than as a separate job on
-      # purpose: the deploy has to wait for them either way, and a second job
-      # would only pay for a second `pnpm install`.
-      - name: Install the Playwright browser
-        run: pnpm --filter smithers-app exec playwright install --with-deps chromium
-      - name: Browser e2e (Playwright T1)
-        run: pnpm --filter smithers-app run test:e2e
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: UI typecheck
+        run: pnpm exec smthrs build '//apps/app:check' --verbose
+      - name: UI unit tests
+        run: pnpm exec smthrs test '//apps/app:unitTests' --verbose
+      - name: UI conformance lint
+        run: pnpm exec smthrs test '//apps/app:conformance' --verbose
+      - name: UI browser end-to-end suite
+        run: pnpm exec smthrs test '//apps/app:browserE2e' --verbose
+      - name: Server typecheck and tests
+        run: pnpm exec smthrs ci '//apps/server/...' --verbose
+      - name: Site build and tests
+        run: pnpm exec smthrs ci '//apps/site/...' --verbose
       - name: Collect e2e artifacts
         if: failure()
         run: |
           mkdir -p "$RUNNER_TEMP/e2e-artifacts"
           cp /tmp/smithers-*.png "$RUNNER_TEMP/e2e-artifacts/" 2>/dev/null || true
           cp -R apps/reports "$RUNNER_TEMP/e2e-artifacts/reports" 2>/dev/null || true
+          cp -R apps/app/test-results "$RUNNER_TEMP/e2e-artifacts/playwright-test-results" 2>/dev/null || true
+          cp -R apps/app/playwright-report "$RUNNER_TEMP/e2e-artifacts/playwright-report" 2>/dev/null || true
       - name: Upload e2e artifacts
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -79,13 +104,33 @@ jobs:
           name: apps-deploy-e2e-artifacts
           path: ${{ runner.temp }}/e2e-artifacts
           if-no-files-found: ignore
-      # Real deploy runs only on a tag push AND only when the Cloudflare
-      # credential is configured; every other trigger (workflow_dispatch, or
-      # a tag push without the secret) proves the pipeline in --dry-run mode
-      # instead. The Worker identity (smithers-mvp-web / canary.smithers.sh)
-      # is frozen (apps/server/DEPLOY.md, apps/server/wrangler.jsonc:1-9) —
-      # this workflow never edits wrangler.jsonc, only builds and deploys
-      # what's already there.
+
+  deploy:
+    name: build + wrangler deploy
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      # Full history: scripts/deploy.ts checks that HEAD is an ancestor of
+      # origin/main, and a shallow clone has no origin/main history.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.1
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      # A real deploy needs a push AND the production environment's
+      # Cloudflare credential; a manual run, or a push before the credential
+      # exists, proves the pipeline with --dry-run instead. The Worker
+      # identity (smithers-mvp-web) is frozen (apps/server/DEPLOY.md); this
+      # workflow never edits wrangler.jsonc.
       - name: Decide dry-run mode
         id: mode
         env:
@@ -116,42 +161,19 @@ jobs:
         run: pnpm --filter smithers-server run deploy
       # --- Post-deploy verification ---------------------------------------
       #
-      # E2E-CANARY-CHECKLIST CN-1, CN-18, CN-23 and CN-24. Every one of these
-      # probes shipped with unit tests and no caller, so no verdict any of them
-      # produced could move with the deployment it grades.
+      # E2E-CANARY-CHECKLIST CN-1, CN-18, CN-23 and CN-24.
       # apps/server/scripts/canary/workflow-wiring.test.ts fails if a probe
-      # loses its caller again.
+      # loses its caller.
       #
-      # WHY HERE AND NOT ON THE CANARY SCHEDULE. Each of these grades a
-      # property of this job's outcome: the sha just published, the upstreams
-      # the new Worker proxies, the entry path the release opens, and the
-      # rollback target the release leaves behind. canary.yml is the scheduled
-      # home for continuous liveness (CN-19/20/21) and it turns a failure into
-      # one GitHub issue, so a third-party blip there would file and re-file
-      # that issue every fifteen minutes. The same blip here reds one attended
-      # deploy run, which is the audience that can act on it.
+      # These grade this job's outcome (the sha just published, the upstreams
+      # the new Worker proxies, the entry path, the rollback target), so a red
+      # one reds this run, which is the audience that can act on it. canary.yml
+      # is the scheduled home for continuous liveness. They verify what
+      # shipped; they cannot prevent it.
       #
-      # WHY AFTER THE DEPLOY AND NOT BEFORE. These verify what shipped. A red
-      # here reports a bad or unverifiable deployment; it cannot prevent one,
-      # and pretending otherwise would just move the deploy behind checks that
-      # have nothing to read yet.
-      #
-      # WHY EVERY PROBE CARRIES `!cancelled()`. GitHub's default step condition
-      # is "every previous step succeeded", which would let one red probe skip
-      # the other three. The operator would then fix CN-1, cut another tag, and
-      # only then learn CN-18 was also broken — one verdict per production
-      # deploy. Each probe instead runs whenever the deploy it grades succeeded,
-      # so a single run reports all four. A red probe still fails the job: a
-      # failed step does that regardless of what later steps are conditioned on.
-      #
-      # The conditions key off the deploy steps' `outcome`, not off dry_run
-      # alone, so a probe never runs against a deploy that failed or was
-      # skipped. A skipped step's outcome is 'skipped', which matches neither
-      # comparison.
-      #
-      # The steps below carry `if:` conditions. That is allowed in this file:
-      # the issue-#176 pin in packages/smithers/flows/test/vitestCoverageIsolation.test.ts
-      # forbids `if:` in ci.yml only.
+      # Every probe carries `!cancelled()` so one red probe does not skip the
+      # others, and keys off the deploy steps' `outcome` so none runs against a
+      # deploy that failed or was skipped. A red probe still fails the job.
       - name: CN-1 — the deployment serves the sha it just published
         if: ${{ !cancelled() && steps.deploy_real.outcome == 'success' }}
         working-directory: apps/server
@@ -160,20 +182,16 @@ jobs:
           REPORT: ${{ runner.temp }}/canary-build.json
         run: |
           set -uo pipefail
-          # --sha is what makes the comparison real. Without an expected sha the
-          # probe skips both comparison checks and still prints PASS, having
-          # verified only that the deployment can state what it is. --max-drift 0
-          # adds the other half: a tag whose commit main has already moved past
-          # deploys a canary that is stale the moment it goes live.
+          # --sha is what makes the comparison real: without it the probe
+          # verifies only that the deployment can state what it is. There is
+          # no drift bound: a newer push is the next queued deploy, not a
+          # defect of this one.
           #
           # Cloudflare returns from the deploy call before every edge serves the
-          # new asset, so a single read can lose a race the deployment did not.
-          # Three reads over 40 seconds; a real regression still fails, 40
-          # seconds later.
+          # new asset, so three reads over 40 seconds.
           for attempt in 1 2 3; do
             if bun scripts/canary/build-probe.ts https://canary.smithers.sh \
               --sha "$DEPLOYED_SHA" \
-              --max-drift 0 \
               --json "$REPORT"; then
               exit 0
             fi
@@ -184,35 +202,26 @@ jobs:
           done
           echo "CN-1: canary.smithers.sh is not serving $DEPLOYED_SHA." >&2
           exit 1
-      # A skipped check has to say so out loud. A dry-run job deploys nothing,
-      # so the live sha is not this run's to assert — but a silently absent step
-      # and a passing one look identical in the Actions list.
+      # A skipped check has to say so out loud: a silently absent step and a
+      # passing one look identical in the Actions list.
       - name: CN-1 not run (dry-run deploy)
         if: ${{ !cancelled() && steps.deploy_dry.outcome == 'success' }}
         run: |
           set -euo pipefail
           echo "::warning title=CN-1 not run::This job deployed nothing, so canary.smithers.sh still serves an earlier commit and its sha is not this run's to assert."
-          echo "- CN-1 build-stamp probe: NOT RUN — dry-run deploy (not a tag push, or CLOUDFLARE_API_TOKEN is unset)." >> "$GITHUB_STEP_SUMMARY"
-      # The Worker serves the smithers.sh Astro build as its assets and the
-      # product app inside it (apps/server/DEPLOY.md, the second deliberate
-      # identity change). This grades the routing that change depends on: the
-      # site's pages and its 404 page, the app document with its isolation
-      # headers, a frame path reload, the Worker answering /api/* before the
-      # assets layer, and every path the former Mintlify site indexed. Anonymous
-      # GETs only; nothing is spent. It reads the deployment this job published,
-      # so it runs on the real-deploy path only.
+          echo "- CN-1 build-stamp probe: NOT RUN — dry-run deploy (a manual run, or CLOUDFLARE_API_TOKEN is unset in the production environment)." >> "$GITHUB_STEP_SUMMARY"
+      # The site's pages and 404, the app document with its isolation headers,
+      # a frame path reload, the Worker answering /api/* before the assets
+      # layer, and every legacy Mintlify path. Anonymous GETs only.
       - name: Site probe (the deployment serves the site, the app document, and the legacy aliases)
         if: ${{ !cancelled() && steps.deploy_real.outcome == 'success' }}
         working-directory: apps/server
         env:
           REPORT: ${{ runner.temp }}/canary-site.json
         run: bun scripts/canary/site-probe.ts canary.smithers.sh --json "$REPORT"
-      # No credential. The nine origins are committed in workers-manifest.ts on
-      # purpose: an origin hidden in a secret cannot be diffed, so a wrong one
-      # would probe nothing and report PASS. The probe exits 1 when a Worker is
-      # unhealthy and also when nothing was configured, so an emptied manifest
-      # cannot read as green. It runs on the dry-run path too, because upstream
-      # health does not depend on whether this job deployed.
+      # No credential; the origins are committed in workers-manifest.ts so a
+      # wrong one cannot hide in a secret. Upstream health does not depend on
+      # whether this job deployed, so it runs on the dry-run path too.
       - name: CN-18 — the backing Workers answer
         if: ${{ !cancelled() && (steps.deploy_real.outcome == 'success' || steps.deploy_dry.outcome == 'success') }}
         working-directory: apps/server
@@ -239,13 +248,9 @@ jobs:
           IDENTITY_SERVICE_TOKEN: ${{ secrets.IDENTITY_SERVICE_TOKEN }}
           CANARY_ALLOWLIST_LOGINS: ${{ vars.CANARY_ALLOWLIST_LOGINS }}
         run: bun scripts/canary/invite-probe.ts
-      # Rollback readiness reads the receipt the deploy step just wrote, so it
-      # only means anything on the real-deploy path: dry runs write their
-      # receipts to deploy-receipts/dry-run/ and the probe reads
-      # deploy-receipts/latest.json.
-      #
-      # The probe exits 0 when it verified nothing, so this step turns that into
-      # a warning rather than letting an uncredentialed run read as a pass.
+      # Reads the receipt the deploy step just wrote (deploy-receipts/latest.json),
+      # so it means something only on the real-deploy path. The probe exits 0
+      # when it verified nothing, so that becomes a warning here.
       - name: CN-24 — a rollback target still exists
         if: ${{ !cancelled() && steps.deploy_real.outcome == 'success' }}
         working-directory: apps/server

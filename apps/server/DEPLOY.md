@@ -82,6 +82,18 @@ restores the previous build without a rebuild.
 
 ### Cutover log
 
+- **2026-09-23 — deploys move to the Deploy apps workflow.** From 2026-09-13
+  to 2026-09-23 a Stop hook on one laptop (outside this repository) ran
+  `scripts/deploy.ts` for every local `main` commit with no test gate: about
+  520 versions, each `Source: Unknown` with no message, seven of them commits
+  that exist on no branch. `.github/workflows/apps-deploy.yml` now deploys
+  every push to `main` after the apps gates, and `scripts/deploy.ts` refuses a
+  real deploy of a dirty tree or of a commit not on origin/main, so the hook
+  can no longer ship an unpushed or rewritten commit. Each version is tagged
+  with its sha's first 12 characters and its message starts with the full sha.
+  No Worker identity, binding or storage change. Rollback of the path: none
+  needed; a version rolls back with `bun x wrangler rollback <id>`.
+
 - **2026-09-21 — frontend telemetry export (configuration/deployment pending).**
   Declare `PLUE_WORKER_EXCHANGE_TOKEN` on this Worker with the same value as
   the API's `SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN`. No value was read or set
@@ -114,17 +126,16 @@ restores the previous build without a rebuild.
   Rollback: disable the optional secret or roll back the Worker version;
   retain the namespace and `v5`, never delete stored pins to roll back code.
 
-- Worker routing and headers (2026-09-14, pending release-owner deployment):
+- Worker routing and headers (2026-09-14, deployed 2026-09-14):
   `run_worker_first` now claims `/*` so any GitHub repository slug, case
   normalization, HTML security headers, HTTPS, and www redirects reach the
   Worker before asset navigation. Existing site assets and legacy redirects
   still resolve through ASSETS; valid repository paths missing an asset use
   the shared app document. Coming-soon documents are emitted at lowercase
-  paths. `www.smithers.sh/*` joins the apex route; the release owner must add
-  its DNS record and enable Always Use HTTPS on the zone. No Durable Object
-  identity or storage changes. Rollback: restore the prior owner-prefix list
-  and remove the www route together in wrangler.jsonc and workerIdentity.ts,
-  then rebuild and deploy through the release owner.
+  paths. `www.smithers.sh/*` joins the apex route and answers 301 to the
+  apex. No Durable Object identity or storage changes. Rollback: restore the
+  prior owner-prefix list and remove the www route together in wrangler.jsonc
+  and workerIdentity.ts, then land on `main`.
 
 Every deliberate change to the frozen identity, newest last, with its
 rollback. `src/workerIdentity.test.ts` and `src/index.test.ts` pin the current
@@ -292,7 +303,7 @@ registry mints the Cloud token and provisions the workspace inside the object
 gateway record: each one logs a `worker_seam_failure` line with seam
 `gateway record` and re-provisions on next use.
 
-## Scripted deploy (this repo's one repeatable path)
+## Scripted deploy (`scripts/deploy.ts`)
 
 The app's loading shell says that the session is starting until identity has
 actually answered. The browser startup watchdog allows 60 seconds for cold
@@ -305,8 +316,10 @@ deadline and checks recovery without resetting saved data.
 sources are typed against (`node scripts/ensure-devkit.mjs` in `apps/app`),
 builds the site (`pnpm run build` in `apps/site`, stamped with the sha it
 records, and read back from `/__build.json` before anything is published),
-runs the preflight, then `wrangler deploy`, and writes a receipt (git sha +
-UTC timestamp + Cloudflare version id) to `deploy-receipts/`.
+runs the preflight, then `wrangler deploy --tag <sha12> --message "<sha>
+<subject>"`, and writes a receipt (git sha, UTC timestamp, Cloudflare version
+id, version tag and message, and the workflow run URL) to `deploy-receipts/`.
+The Deploy apps workflow runs it; see "CI (every push to main)".
 
 ```sh
 # Dry run: real site build, then `wrangler deploy --dry-run`. Bundles the
@@ -316,12 +329,48 @@ pnpm run deploy:dry            # from the repo root
 # or, equivalently:
 pnpm --filter smithers-server run deploy:dry
 
-# Real deploy — requires a Cloudflare credential (see below). Receipt lands
-# in deploy-receipts/.
+# Real deploy — requires a Cloudflare credential and a clean commit already
+# on origin/main (see below). Receipt lands in deploy-receipts/.
 pnpm --filter smithers-server run deploy
 ```
 
-## Credentialed human run
+## CI (every push to main)
+
+`.github/workflows/apps-deploy.yml` ("Deploy apps") is the one deploy path.
+Landing on `main` is the deploy. Every push to `main` runs two jobs:
+
+1. `gate` runs the apps targets CI's `apps-e2e` job runs, by the same labels
+   (`//apps/app:check`, `:unitTests`, `:conformance`, `:browserE2e`), plus
+   `smthrs ci` over `//apps/server/...` and `//apps/site/...`, on the exact
+   sha. It never sees a Cloudflare credential.
+   `scripts/canary/workflow-wiring.test.ts` fails if its targets fall behind
+   `apps-e2e`'s.
+2. `deploy` needs `gate` and runs in the `production` environment, whose
+   secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are the only
+   deploy credentials; the Worker's own secrets live on the script and are
+   kept.
+   It runs `scripts/deploy.ts`, then CN-1 (the sha it published), the site
+   probe, CN-18, CN-23 and CN-24, and uploads the receipt as the
+   `deploy-receipt` artifact.
+
+A manual `workflow_dispatch` run, or a push while the `production`
+environment has no token, runs the gates and the dry-run deploy.
+
+Deploys run one at a time and are never cancelled mid-publish. GitHub keeps
+one pending run and replaces it on each push, so under load the newest `main`
+deploys next and the shas between are skipped, never published out of order.
+Production trails `main` by one run, about 30 minutes, more under load.
+
+`scripts/deploy.ts` refuses a real deploy of a dirty tree or of any commit
+not on origin/main ("push main first, deploys ship only commits on
+origin/main"), whatever runs it. The version it publishes is tagged with the
+sha's first 12 characters and its message starts with the full sha, so
+`bun x wrangler deployments list` names every version's commit.
+
+### Break-glass human run
+
+Only when the workflow cannot run. The same refusal applies: the checkout
+must be clean and its commit already pushed to `main`.
 
 1. **Secret required:** `CLOUDFLARE_API_TOKEN` (a Cloudflare API token scoped
    to the `dd3525a4132493566aeb38de533c8827` account, Workers Scripts + Workers
@@ -338,15 +387,6 @@ pnpm --filter smithers-server run deploy
    `https://canary.smithers.sh` serves the new build
    (`bun scripts/canary/build-probe.ts https://canary.smithers.sh --sha <gitSha>`,
    or the receipt's version id against `bun scripts/canary/rollback-probe.ts`).
-
-### CI (tag-triggered)
-
-`.github/workflows/apps-deploy.yml` runs the same script on push of a tag
-matching `apps-v*` (e.g. `apps-v0.1.0`). It only attempts a real deploy when
-the `CLOUDFLARE_API_TOKEN` repository secret is configured; otherwise (and
-always for a manual `workflow_dispatch` run) it runs the dry-run path. The two
-Cloudflare values are the only repository secrets the deploy reads; the
-Worker's own secrets live on the script and are kept.
 
 ## The seams this Worker proxies
 
@@ -548,8 +588,11 @@ named credential and an honest skip, never a shared privileged session.
 
 ## Rollback
 
-Cloudflare Workers keep prior versions. To roll back to the version recorded
-in an older receipt:
+Cloudflare Workers keep prior versions. Nothing rolls back automatically:
+the Deploy apps workflow reports a bad deployment by failing, and an operator
+rolls back from a credentialed shell. Every version's message starts with its
+sha, so `bun x wrangler deployments list` finds the version to return to. To
+roll back to the immediately prior version:
 
 ```sh
 bun x wrangler rollback --message "rollback to <git sha from receipt>"
@@ -624,9 +667,9 @@ has no public URL; nothing can HTTP it. The probe never claims otherwise.
 It skips (exit 0, `skip:` lines) when `CLOUDFLARE_API_TOKEN` is unset or no
 receipt is on disk, and reports `INCONCLUSIVE` rather than `PASS` when it
 verified nothing. It fails when a receipt exists but cannot support a
-rollback. Receipts are gitignored and exist only on the machine that deployed,
-so this belongs in the deploy workflow after a real deploy, not in a scheduled
-canary that has no receipt to read.
+rollback. Receipts are gitignored; the deploy workflow keeps each one as its
+run's `deploy-receipt` artifact, so this belongs in the deploy workflow after a
+real deploy, not in a scheduled canary that has no receipt to read.
 
 ### The drill — do this once, by hand, and keep the receipt
 
@@ -634,11 +677,11 @@ A rollback plan nobody has ever exercised is not a rollback plan. Rolling back
 and forward swaps the live deployment, so it is a human drill and is
 deliberately not automated.
 
-1. Deploy for real, so a receipt names a version:
-   `CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=dd3525a4132493566aeb38de533c8827 pnpm --filter smithers-server run deploy`.
-   Record `deploy-receipts/latest.json` — call this version **N**.
-2. Run `bun scripts/canary/rollback-probe.ts`. It must pass and must name the
-   prior version, **N-1**.
+1. Take the receipt of the newest green Deploy apps run:
+   `gh run download <run id> -R smithersai/smithers -n deploy-receipt`. Its
+   `wranglerVersionId` is version **N**.
+2. Run `bun scripts/canary/rollback-probe.ts --receipt <path to latest.json>`.
+   It must pass and must name the prior version, **N-1**.
 3. `bun x wrangler@4.124.0 rollback <N-1 id> --message "CN-24 drill"` from
    `apps/server`.
 4. Confirm `https://canary.smithers.sh` serves the older build, and that
