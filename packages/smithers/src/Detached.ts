@@ -7,12 +7,17 @@
  * for a process that may already have died on a missing credential, and the
  * operator finds out minutes later from an empty `ps`.
  *
- * The proof is one line the child writes to its own log the moment the control
- * plane hands back an `Accepted` receipt (see {@link admissionLine}). The
- * parent polls the log for it, and only then renames the log onto the run id
- * and prints the receipt. A child that exits before writing the line, or that
- * is still silent at the deadline, is reported as a failed launch with the
- * log's tail attached.
+ * The child writes one line to its own log the moment the control plane hands
+ * back an `Accepted` receipt (see {@link admissionLine}). The line is the
+ * wake-up; the proof is the run row. The log is the child's whole
+ * stdout/stderr, which every tool, agent and shell the run spawns shares, and
+ * those processes inherit the nonce, so any id in the log is a claim, not a
+ * fact. The parent asks its own control store, through
+ * {@link Options.admission}, whether each announced id is a run row that
+ * belongs to this launch, and only then renames the log onto the run id and
+ * prints the receipt. A child that exits before an announced id is confirmed,
+ * or that is still unconfirmed at the deadline, is reported as a failed launch
+ * with the log's tail attached.
  *
  * @since 1.0.0
  */
@@ -89,20 +94,28 @@ export const admissionLine = (nonce: string, runId: string): string =>
 const filenameSafeRunId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
 /**
- * Reads the run id out of a log tail that contains this nonce's admission
- * line, or `undefined` when it does not.
+ * Every distinct filename-safe run id announced in a log tail under this
+ * nonce's admission line, in order of first appearance.
+ *
+ * Each id is a candidate only: the log is untrusted, so a forged line can
+ * appear before, after, or instead of the honest one. {@link launch} confirms
+ * a candidate against the control store before it trusts it.
  *
  * @category getters
  * @since 1.0.0
  */
-export const admittedRunId = (tail: string, nonce: string): string | undefined => {
+export const announcedRunIds = (tail: string, nonce: string): ReadonlyArray<string> => {
   const marker = `SMITHERS_DETACHED_ADMISSION=run:${nonce} runId=`
-  const start = tail.indexOf(marker)
-  if (start < 0) return undefined
-  const rest = tail.slice(start + marker.length)
-  const end = rest.search(/\s/)
-  const runId = end < 0 ? rest : rest.slice(0, end)
-  return filenameSafeRunId.test(runId) ? runId : undefined
+  const found: Array<string> = []
+  let start = tail.indexOf(marker)
+  while (start >= 0) {
+    const rest = tail.slice(start + marker.length)
+    const end = rest.search(/\s/)
+    const runId = end < 0 ? rest : rest.slice(0, end)
+    if (filenameSafeRunId.test(runId) && !found.includes(runId)) found.push(runId)
+    start = tail.indexOf(marker, start + marker.length)
+  }
+  return found
 }
 
 /**
@@ -127,6 +140,30 @@ export const logTail = (file: string, maxBytes: number = tailBytes): string => {
     if (descriptor !== undefined) closeSync(descriptor)
   }
 }
+
+/**
+ * Reads a log from `offset` to its current end. The bytes are decoded as
+ * latin1 so a read that splits a multi-byte character cannot corrupt the
+ * ASCII admission line around it.
+ */
+const readFrom = (file: string, offset: number): { readonly text: string; readonly next: number } => {
+  let descriptor: number | undefined
+  try {
+    descriptor = openSync(file, "r")
+    const size = fstatSync(descriptor).size
+    if (size <= offset) return { text: "", next: offset }
+    const buffer = Buffer.alloc(size - offset)
+    const read = readSync(descriptor, buffer, 0, buffer.length, offset)
+    return { text: buffer.toString("latin1", 0, read), next: offset + read }
+  } catch {
+    return { text: "", next: offset }
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor)
+  }
+}
+
+/** The longest unterminated line kept between reads; an admission line is far shorter. */
+const carryBytes = 4 * 1024
 
 /** Whether a POSIX process group still has a member. */
 const processGroupAlive = (pid: number): boolean => {
@@ -278,6 +315,15 @@ export interface Options {
   readonly execPath?: string | undefined
   readonly entry?: string | undefined
   readonly intervalMs?: number | undefined
+  /**
+   * Whether `runId` names a durable run row that belongs to this launch, read
+   * from the parent's own control store. The log only nominates candidates;
+   * this is the proof. `false` refuses the candidate for good: the child
+   * announces only after the row commits, so an honest id is visible on its
+   * first check. A rejected promise means the store could not answer, and the
+   * candidate is asked again on the next poll.
+   */
+  readonly admission: (runId: string) => Promise<boolean>
   /** Grace given to each cleanup signal before admission ownership transfers. */
   readonly terminationGraceMs?: number | undefined
   /** Where a slow-boot notice goes; stderr in production. */
@@ -287,8 +333,8 @@ export interface Options {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
- * Launches an approved plan in a detached process and waits for its admission
- * line.
+ * Launches an approved plan in a detached process and waits until an id it
+ * announces is confirmed by {@link Options.admission}.
  *
  * @category constructors
  * @since 1.0.0
@@ -340,14 +386,62 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
 
   const startedAt = Date.now()
   let notified = false
+  // The log is scanned forward from the last offset, not re-read as a tail:
+  // a chatty run can push the honest line out of any bounded tail between
+  // two polls, and a forged line written after it must not be all that is
+  // left to see. Refused ids stay refused; the store, not the log, decides.
+  let scanned = 0
+  let carry = ""
+  const candidates: Array<string> = []
+  const refused = new Set<string>()
+  let lastVerifyError: unknown
+  const refusal = (): string => {
+    const named = [...refused].slice(0, 8).join(", ")
+    const refusedText = refused.size === 0
+      ? ""
+      : ` The engine announced ${named}${
+        refused.size > 8 ? ` and ${refused.size - 8} more` : ""
+      }, but the control store holds no run for this launch's plan under ${
+        refused.size === 1 ? "that id" : "those ids"
+      }.`
+    const errorText = lastVerifyError === undefined
+      ? ""
+      : ` The control store could not confirm admission: ${String(lastVerifyError)}.`
+    return `${refusedText}${errorText}`
+  }
+  const nominate = (final: boolean) => {
+    const read = readFrom(pending, scanned)
+    scanned = read.next
+    const text = carry + read.text
+    // Only whole lines are parsed until the child is gone, so an id split
+    // across two reads is never nominated by its prefix.
+    const cut = final ? text.length : text.lastIndexOf("\n") + 1
+    carry = text.slice(cut).slice(-carryBytes)
+    for (const runId of announcedRunIds(text.slice(0, cut), nonce)) {
+      if (!candidates.includes(runId)) candidates.push(runId)
+    }
+  }
+  const confirmed = async (final: boolean): Promise<string | undefined> => {
+    nominate(final)
+    for (const runId of candidates) {
+      if (refused.has(runId)) continue
+      try {
+        if (await options.admission(runId)) return runId
+        refused.add(runId)
+      } catch (error) {
+        lastVerifyError = error
+      }
+    }
+    return undefined
+  }
   try {
     for (;;) {
       if (options.signal?.aborted) {
         return { reason: "Detached launch interrupted before admission.", tail: logTail(pending), logFile: pending }
       }
       if (spawnError !== undefined) throw spawnError
-      const tail = logTail(pending)
-      const runId = admittedRunId(tail, nonce)
+      const exited = child.exitCode !== null || child.signalCode !== null
+      const runId = await confirmed(exited)
       // The readiness proof wins over a later child exit: once the run row is
       // durable, a child that dies afterwards is the stale-run sweep's
       // problem, not the launcher's.
@@ -365,10 +459,11 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
         child.unref()
         return { runId, logFile: file, pid: child.pid }
       }
-      if (child.exitCode !== null || child.signalCode !== null) {
+      const tail = logTail(pending)
+      if (exited) {
         const status = child.signalCode === null ? `exit ${child.exitCode}` : `signal ${child.signalCode}`
         return {
-          reason: `Detached engine exited before admission (${status}).`,
+          reason: `Detached engine exited before admission (${status}).${refusal()}`,
           tail,
           logFile: pending
         }
@@ -381,7 +476,7 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
             child.pid ?? "unknown"
           }) was still alive and ${
             terminated ? "was terminated" : "could not be confirmed terminated"
-          }. Set SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS to raise the window.`,
+          }.${refusal()} Set SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS to raise the window.`,
           tail,
           logFile: pending
         }

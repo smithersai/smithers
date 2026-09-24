@@ -160,7 +160,11 @@ describe("one project, from init to gc", processBudget, () => {
     // because a timer expired: the admission line names this run.
     const log = readFileSync(launched.logFile, "utf8")
     const nonce = log.split("=run:")[1]?.split(" ")[0] ?? ""
-    expect(Detached.admittedRunId(log, nonce)).toBe(runId)
+    expect(Detached.announcedRunIds(log, nonce)).toEqual([runId])
+    // The receipt names a run the parent confirmed in its own store, under
+    // the plan this `up` approved.
+    const listed = json("ps").items.find((entry: { readonly runId: string }) => entry.runId === runId)
+    expect(listed?.planId).toMatch(/^plan-/)
   })
 
   it("lists the run, filtered by a status from the pinned vocabulary", () => {

@@ -446,12 +446,24 @@ const up = Command.make("up", upFlags, (config) =>
         : ["--mcp-config", resolve(process.cwd(), globals.mcpConfig.value)]),
       ...(Option.isNone(globals.root) ? [] : ["--root", projectRoot])
     ]
+    // Each `up` plans afresh, so the plan id is this launch's alone. An id the
+    // child's log announces is trusted only when this process's own control
+    // store holds that run under this plan: the log is shared with every tool
+    // the run spawns, and they inherit the admission nonce.
+    const planId = card.approval.target._tag === "Plan" ? card.approval.target.planId : undefined
+    const admission = (runId: string) =>
+      Effect.runPromise(
+        RunReads.summary(control, runId).pipe(
+          Effect.map((summary) => planId !== undefined && summary !== undefined && summary.planId === planId)
+        )
+      )
     const launched = yield* Effect.callback<Detached.Launched | Detached.Rejected>((resume, signal) => {
       const pending = Detached.launch({
         root: projectRoot,
         payload: JSON.stringify({ ...card.approval, scope: "run" }),
         passthrough,
         signal,
+        admission,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       })
       pending.then((result) => resume(Effect.succeed(result)), (error) => resume(Effect.die(error)))

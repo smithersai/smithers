@@ -598,20 +598,26 @@ describe("up", () => {
       process.argv = [process.execPath, entry]
       process.env["SMITHERS_TEST_DETACHED_ARGV"] = marker
 
-      await run(
-        json([
-          "--json",
-          "--mcp-config",
-          mcpConfig,
-          "--root",
-          root,
-          "up",
-          "demo/ship",
-          "-d"
-        ]).pipe(Effect.provide(Project.layer(root, Project.legacyRoot(undefined, root)))),
+      const error = await run(
+        Effect.flip(
+          json([
+            "--json",
+            "--mcp-config",
+            mcpConfig,
+            "--root",
+            root,
+            "up",
+            "demo/ship",
+            "-d"
+          ]).pipe(Effect.provide(Project.layer(root, Project.legacyRoot(undefined, root))))
+        ),
         testControl
       )
 
+      // The fake child only announces an id; the parent's control store holds
+      // no such run for this plan, so the launch is refused, not receipted.
+      expect(error).toBeInstanceOf(CliError.UnsupportedError)
+      expect((error as CliError.UnsupportedError).message).toContain("announced run-detached-test")
       const argv = JSON.parse(readFileSync(marker, "utf8")) as ReadonlyArray<string>
       expect(argv[0]).toBe("run")
       expect(argv.slice(2)).toEqual(["--mcp-config", mcpConfig, "--root", root])

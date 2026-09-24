@@ -58,6 +58,19 @@ const until = async (predicate: () => boolean, timeoutMs: number): Promise<boole
   return predicate()
 }
 
+/** A control store that holds every announced run; the child is under test. */
+const admitAll = async (): Promise<boolean> => true
+
+/** A child that announces each id, in order, then optionally lingers. */
+const announcing = (runIds: ReadonlyArray<string>, after = ""): string =>
+  child(
+    `const nonce = process.env.SMITHERS_INTERNAL_DETACHED_ADMISSION
+     for (const id of ${
+      JSON.stringify(runIds)
+    }) process.stderr.write("SMITHERS_DETACHED_ADMISSION=run:" + nonce + " runId=" + id + "\\n")
+     ${after}`
+  )
+
 afterEach(() => {
   while (staged.length > 0) rmSync(staged.pop()!, { recursive: true, force: true })
 })
@@ -67,20 +80,35 @@ describe("the admission line", () => {
     const line = Detached.admissionLine("nonce-1", "run-42")
 
     expect(line).toBe("SMITHERS_DETACHED_ADMISSION=run:nonce-1 runId=run-42")
-    expect(Detached.admittedRunId(`noise\n${line}\nmore`, "nonce-1")).toBe("run-42")
+    expect(Detached.announcedRunIds(`noise\n${line}\nmore`, "nonce-1")).toEqual(["run-42"])
   })
 
   it("ignores a line stamped with another launcher's nonce", () => {
-    expect(Detached.admittedRunId(Detached.admissionLine("other", "run-42"), "nonce-1")).toBeUndefined()
-    expect(Detached.admittedRunId("", "nonce-1")).toBeUndefined()
+    expect(Detached.announcedRunIds(Detached.admissionLine("other", "run-42"), "nonce-1")).toEqual([])
+    expect(Detached.announcedRunIds("", "nonce-1")).toEqual([])
   })
 
   it("ignores a truncated line with no run id", () => {
-    expect(Detached.admittedRunId("SMITHERS_DETACHED_ADMISSION=run:nonce-1 runId=", "nonce-1")).toBeUndefined()
+    expect(Detached.announcedRunIds("SMITHERS_DETACHED_ADMISSION=run:nonce-1 runId=", "nonce-1")).toEqual([])
   })
 
   it("reads a run id at the very end of the log", () => {
-    expect(Detached.admittedRunId("SMITHERS_DETACHED_ADMISSION=run:n runId=run-9", "n")).toBe("run-9")
+    expect(Detached.announcedRunIds("SMITHERS_DETACHED_ADMISSION=run:n runId=run-9", "n")).toEqual(["run-9"])
+  })
+
+  it("nominates every announced id in order, not just the first", () => {
+    // A forged line can land before the honest one; stopping at the first
+    // marker would hand the forger the receipt.
+    const tail = [
+      Detached.admissionLine("n", "run-forged"),
+      Detached.admissionLine("other", "run-other"),
+      "tool output",
+      Detached.admissionLine("n", "run-7"),
+      Detached.admissionLine("n", "run-forged"),
+      Detached.admissionLine("n", "../escape")
+    ].join("\n")
+
+    expect(Detached.announcedRunIds(tail, "n")).toEqual(["run-forged", "run-7"])
   })
 
   it("refuses a run id that is not one safe filename component", () => {
@@ -90,19 +118,19 @@ describe("the admission line", () => {
     // where it would move the log — and any file already at the target —
     // outside the log directory.
     const forged = (runId: string) => `SMITHERS_DETACHED_ADMISSION=run:n runId=${runId}`
-    expect(Detached.admittedRunId(forged("../escape"), "n")).toBeUndefined()
-    expect(Detached.admittedRunId(forged("../../etc/passwd"), "n")).toBeUndefined()
-    expect(Detached.admittedRunId(forged("/absolute"), "n")).toBeUndefined()
-    expect(Detached.admittedRunId(forged(".."), "n")).toBeUndefined()
-    expect(Detached.admittedRunId(forged("nested/name"), "n")).toBeUndefined()
-    expect(Detached.admittedRunId(forged("back\\slash"), "n")).toBeUndefined()
-    expect(Detached.admittedRunId(forged(`.hidden`), "n")).toBeUndefined()
-    expect(Detached.admittedRunId(forged(`a${"x".repeat(128)}`), "n")).toBeUndefined()
+    expect(Detached.announcedRunIds(forged("../escape"), "n")).toEqual([])
+    expect(Detached.announcedRunIds(forged("../../etc/passwd"), "n")).toEqual([])
+    expect(Detached.announcedRunIds(forged("/absolute"), "n")).toEqual([])
+    expect(Detached.announcedRunIds(forged(".."), "n")).toEqual([])
+    expect(Detached.announcedRunIds(forged("nested/name"), "n")).toEqual([])
+    expect(Detached.announcedRunIds(forged("back\\slash"), "n")).toEqual([])
+    expect(Detached.announcedRunIds(forged(`.hidden`), "n")).toEqual([])
+    expect(Detached.announcedRunIds(forged(`a${"x".repeat(128)}`), "n")).toEqual([])
     // The shapes real control planes mint still pass.
-    expect(Detached.admittedRunId(forged("run-42"), "n")).toBe("run-42")
-    expect(Detached.admittedRunId(forged("018f3c9e-7b2a-7f3e-9c4d-2a1b0e5f6a7d"), "n")).toBe(
+    expect(Detached.announcedRunIds(forged("run-42"), "n")).toEqual(["run-42"])
+    expect(Detached.announcedRunIds(forged("018f3c9e-7b2a-7f3e-9c4d-2a1b0e5f6a7d"), "n")).toEqual([
       "018f3c9e-7b2a-7f3e-9c4d-2a1b0e5f6a7d"
-    )
+    ])
   })
 })
 
@@ -128,7 +156,7 @@ describe("launching", () => {
        setTimeout(() => {}, 200)`
     )
 
-    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10 })
+    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10, admission: admitAll })
 
     expect(Detached.isLaunched(result)).toBe(true)
     const launched = result as Detached.Launched
@@ -142,7 +170,7 @@ describe("launching", () => {
     const root = project()
     const entry = child(`process.stderr.write("no seat configured\\n"); process.exit(3)`)
 
-    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10 })
+    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10, admission: admitAll })
 
     // A launcher that returned a run id here would report a run for a process
     // that is already dead, and the operator would find out from an empty `ps`.
@@ -169,7 +197,7 @@ describe("launching", () => {
        process.exit(0)`
     )
 
-    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10 })
+    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10, admission: admitAll })
 
     expect(Detached.isLaunched(result)).toBe(false)
     expect((result as Detached.Rejected).reason).toContain("exited before admission")
@@ -185,6 +213,7 @@ describe("launching", () => {
       root,
       payload: "{}",
       entry,
+      admission: admitAll,
       timeoutMs: 150,
       intervalMs: 10,
       onSlowBoot: (message) => notices.push(message)
@@ -215,6 +244,7 @@ describe("launching", () => {
       root,
       payload: "{}",
       entry,
+      admission: admitAll,
       timeoutMs: 500,
       intervalMs: 10,
       terminationGraceMs: 150
@@ -259,6 +289,7 @@ describe("launching", () => {
       root,
       payload: "{}",
       entry,
+      admission: admitAll,
       signal: controller.signal,
       timeoutMs: 10_000,
       intervalMs: 5_000,
@@ -292,7 +323,7 @@ describe("launching", () => {
       `process.stderr.write("SMITHERS_DETACHED_ADMISSION=run:" + process.env.SMITHERS_INTERNAL_DETACHED_ADMISSION + " runId=run-owned\\n")
        setInterval(() => {}, 1000)`
     )
-    const options = { root, payload: "{}", entry, signal: controller.signal, intervalMs: 10 }
+    const options = { root, payload: "{}", entry, signal: controller.signal, intervalMs: 10, admission: admitAll }
     const result = await Detached.launch(options)
     expect(Detached.isLaunched(result)).toBe(true)
     const pid = (result as Detached.Launched).pid!
@@ -310,7 +341,7 @@ describe("launching", () => {
     const root = project()
     const controller = new AbortController()
     controller.abort()
-    const options = { root, payload: "{}", entry: child(""), signal: controller.signal }
+    const options = { root, payload: "{}", entry: child(""), signal: controller.signal, admission: admitAll }
     await expect(Detached.launch(options)).rejects.toMatchObject({ name: "AbortError" })
     expect(existsSync(Project.logDirectory(root))).toBe(false)
   })
@@ -329,6 +360,7 @@ describe("launching", () => {
         root,
         payload: "{}",
         entry,
+        admission: admitAll,
         timeoutMs: 5_000,
         intervalMs: 10,
         onSlowBoot: () => {
@@ -355,6 +387,7 @@ describe("launching", () => {
     const result = await Detached.launch({
       root,
       payload: "{\"plan\":1}",
+      admission: admitAll,
       passthrough: ["--remote", "https://control.test"],
       entry,
       intervalMs: 10
@@ -375,7 +408,7 @@ describe("launching", () => {
        process.stderr.write("SMITHERS_DETACHED_ADMISSION=run:" + process.env.SMITHERS_INTERNAL_DETACHED_ADMISSION + " runId=run-collision\\n")`
     )
 
-    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10 })
+    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10, admission: admitAll })
 
     expect(Detached.isLaunched(result)).toBe(true)
     // The receipt still names the canonical path, so `up -d` reports the same
@@ -390,6 +423,127 @@ describe("launching", () => {
     const superseded = readdirSync(directory).filter((name) => name.startsWith("run-collision.superseded-"))
     expect(superseded).toHaveLength(1)
     expect(readFileSync(join(directory, superseded[0]!), "utf8")).toContain("previous run output")
+  }, 30_000)
+
+  it("skips a forged id announced before the honest one", async () => {
+    const root = project()
+    const asked: Array<string> = []
+    const entry = announcing(["run-forged", "run-7"], "setTimeout(() => {}, 200)")
+
+    const result = await Detached.launch({
+      root,
+      payload: "{}",
+      entry,
+      intervalMs: 10,
+      admission: async (runId) => {
+        asked.push(runId)
+        return runId === "run-7"
+      }
+    })
+
+    expect(result).toMatchObject({ runId: "run-7", logFile: Project.logFile(root, "run-7") })
+    expect(existsSync(Project.logFile(root, "run-forged"))).toBe(false)
+    // A refused id is asked once, not on every poll.
+    expect(asked.filter((id) => id === "run-forged")).toHaveLength(1)
+  }, 30_000)
+
+  it("refuses a launch whose only announced id the store does not hold, touching no log", async () => {
+    const root = project()
+    const directory = Project.logDirectory(root)
+    mkdirSync(directory, { recursive: true })
+    const victim = Project.logFile(root, "run-forged")
+    writeFileSync(victim, "a real run's output\n", "utf8")
+    const entry = announcing(["run-forged"], "process.exit(0)")
+
+    const result = await Detached.launch({
+      root,
+      payload: "{}",
+      entry,
+      intervalMs: 10,
+      admission: async () => false
+    })
+
+    expect(Detached.isLaunched(result)).toBe(false)
+    const rejected = result as Detached.Rejected
+    expect(rejected.reason).toContain("exited before admission (exit 0)")
+    expect(rejected.reason).toContain("announced run-forged")
+    expect(rejected.reason).toContain("holds no run for this launch's plan")
+    // The forged id moved nothing: the real run's log is intact and no
+    // superseded copy was parked beside it.
+    expect(readFileSync(victim, "utf8")).toBe("a real run's output\n")
+    expect(readdirSync(directory).filter((name) => name.includes(".superseded-"))).toEqual([])
+    expect(existsSync(rejected.logFile)).toBe(true)
+  }, 30_000)
+
+  it("admits the honest id after a chatty run pushes it out of any tail, ignoring a later forgery", async () => {
+    const root = project()
+    // Honest line, then more output than the reported tail holds, then a
+    // forged line, all before the parent's first poll.
+    const entry = announcing(
+      ["run-7"],
+      `process.stderr.write("x".repeat(64 * 1024) + "\\n")
+       process.stderr.write("SMITHERS_DETACHED_ADMISSION=run:" + nonce + " runId=run-forged\\n")
+       setTimeout(() => {}, 1000)`
+    )
+
+    const result = await Detached.launch({
+      root,
+      payload: "{}",
+      entry,
+      intervalMs: 200,
+      admission: async (runId) => runId === "run-7"
+    })
+
+    expect(result).toMatchObject({ runId: "run-7", logFile: Project.logFile(root, "run-7") })
+    expect(existsSync(Project.logFile(root, "run-forged"))).toBe(false)
+  }, 30_000)
+
+  it("asks again after the store fails, and reports the failure at the deadline", async () => {
+    const root = project()
+    const entry = announcing(["run-7"], "setInterval(() => {}, 1000)")
+    let calls = 0
+
+    const result = await Detached.launch({
+      root,
+      payload: "{}",
+      entry,
+      timeoutMs: 1_500,
+      intervalMs: 10,
+      terminationGraceMs: 200,
+      onSlowBoot: () => {},
+      admission: async () => {
+        calls += 1
+        throw new Error("database is locked")
+      }
+    })
+
+    expect(Detached.isLaunched(result)).toBe(false)
+    const rejected = result as Detached.Rejected
+    expect(rejected.reason).toContain("did not reach admission within 6000ms")
+    expect(rejected.reason).toContain("database is locked")
+    expect(rejected.reason).toContain("was terminated")
+    expect(calls).toBeGreaterThan(1)
+  }, 30_000)
+
+  it("admits the honest id once the store answers after transient failures", async () => {
+    const root = project()
+    const entry = announcing(["run-7"], "setTimeout(() => {}, 2000)")
+    let calls = 0
+
+    const result = await Detached.launch({
+      root,
+      payload: "{}",
+      entry,
+      intervalMs: 10,
+      admission: async () => {
+        calls += 1
+        if (calls <= 3) throw new Error("database is locked")
+        return true
+      }
+    })
+
+    expect(result).toMatchObject({ runId: "run-7" })
+    expect(calls).toBe(4)
   }, 30_000)
 
   it("defaults the admission window to thirty seconds", () => {
