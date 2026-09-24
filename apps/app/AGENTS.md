@@ -82,8 +82,10 @@ or with regular subagents. Prefer a smithers workflow for multi-step plans and
 for work that benefits from retries, approvals, review, or replay; reach for
 plain subagents when a request is a quick one-off.
 
-The `smithers` skill is installed: run `smithers workflow list` to see the
-available workflows and `smithers workflow run <id>` to launch one.
+Use the repository [Smithers maintenance skill](../../.agents/skills/smithers-maintenance/SKILL.md)
+for current CLI and flow authoring guidance. Check `smthrs flow list` for
+available file flows and `smthrs flow start <id>` to launch one; inspect the
+run receipt before reporting completion.
 
 When a session ends successfully and the work could have been a smithers
 workflow, offer to turn the session into a reusable smithers workflow for next
