@@ -435,6 +435,7 @@ const graphDigest = async (discovery: Discovery, scannedFiles: ReadonlyArray<str
   for (const repository of discovery.repositories) {
     digests.push(`repo\0${repository.name}\0${repository.path}`)
   }
+  for (const pruned of discovery.pruned) digests.push(`pruned\0${pruned}`)
   for (const file of [...files].sort(byCodeUnit)) {
     const digest = await SafeFs.digestFile(NodePath.join(discovery.root, file), { what: file })
     digests.push(`${file}\0${digest ?? "absent"}`)
@@ -629,7 +630,9 @@ export const loadWorkspaceDeclaration = async (
       workspaceFile,
       packageFiles: [],
       cacheDirectory: "",
-      repositories: []
+      repositories: [],
+      pruned: [],
+      directories: 0
     })
     assertDeclarationDependencies(scan.files.map((file) => NodePath.join(canonicalRoot, file)), { bootstrap: true })
     namespace = await importDeclarationModule(

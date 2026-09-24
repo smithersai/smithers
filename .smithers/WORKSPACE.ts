@@ -69,5 +69,9 @@ export const Workspace = S.Workspace("smithers", {
     "template-aomi": S.LocalRepository("packages/smithers/create-app/template/aomi"),
     "template-default": S.LocalRepository("packages/smithers/create-app/template/default"),
     "ui-e2e-repo-plugin": S.LocalRepository("apps/app/e2e/fixtures/repo-plugin")
-  }
+  },
+  // Gitignored caches with no CACHEDIR.TAG: run evidence, the Go module
+  // cache, the pnpm store, and scratch. Discovery is ignore-blind, so each one
+  // costs its full size on every `smthrs` verb until it is named here.
+  discovery: { prune: [".artifacts", ".backend-go-modcache", ".pnpm-store", "tmp"] }
 })

@@ -348,8 +348,9 @@ export const openPackageIndex = async (
   if (root === undefined) {
     throw new Error("not a workspace; create .smithers/WORKSPACE.ts")
   }
-  // Evaluate the one root declaration before walking: both its cache and its
-  // opaque child repositories are discovery boundaries. The full graph load
+  // Evaluate the one root declaration before walking: its cache, its opaque
+  // child repositories, and its `discovery.prune` paths are discovery
+  // boundaries. The full graph load
   // imports the same module instance together with the admitted Packages.
   const workspaceFile = await PackageDiscovery.workspaceFileOf(root)
   if (workspaceFile === undefined) throw new Error("not a workspace; create .smithers/WORKSPACE.ts")
@@ -360,6 +361,7 @@ export const openPackageIndex = async (
   const discovery = await PackageDiscovery.discover(root, {
     cacheDirectory,
     repositories: workspace.repos,
+    prune: workspace.discovery?.prune,
     signal: runtime.signal
   })
   const loaded = await PackageLoader.load(discovery)

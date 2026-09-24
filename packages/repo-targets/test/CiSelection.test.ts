@@ -8,21 +8,13 @@ import { Package } from "../PACKAGE.ts"
 import { plannedCalls } from "./plan.ts"
 import { packageManager } from "./toolchain.ts"
 
-it("CI's package pattern discovers the actual coverage-enabled test target and runner", () => {
-  const root = resolve(import.meta.dirname, "../../..")
+const root = resolve(import.meta.dirname, "../../..")
+
+it("CI runs the package pattern that holds the coverage-enabled test target and runner", () => {
   const ci = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8")
   // The generator quotes every `run:` scalar, so the gate matches the quoted form.
   expect(ci).toMatch(/^\s*run: "pnpm exec smthrs ci '\/\/packages\/\.\.\.' --jobs 2 --verbose"$/m)
   expect(ci).toMatch(/^\s*run: "pnpm exec smthrs test '\/\/packages\/\.\.\.' --jobs 2 --verbose"$/m)
-  const result = JSON.parse(execFileSync(process.execPath, [
-    resolve(root, "packages/smithers/src/bin.ts"),
-    "targets",
-    "//packages/...",
-    "--json"
-  ], { cwd: root, encoding: "utf8", timeout: 25_000, stdio: ["ignore", "pipe", "pipe"] }))
-  expect(result.query).toBe("//packages/...")
-  expect(result.targets.filter((row: { readonly label: string }) => row.label === "//packages/repo-targets:test"))
-    .toEqual([{ label: "//packages/repo-targets:test", target: "Vitest", kinds: ["test"] }])
 
   const attrs = Target.metadata(Package.test).attrs as Vitest.Attrs
   expect(attrs).toMatchObject({
@@ -41,3 +33,18 @@ it("CI's package pattern discovers the actual coverage-enabled test target and r
     argv: ["pnpm", "exec", "vitest", "run", "--config", "vitest.config.ts", "--environment", "node"]
   })
 })
+
+// Spawns the real CLI against this checkout, so it pays the whole workspace
+// walk. Discovery prunes nested checkouts, CACHEDIR.TAG caches, and the
+// WORKSPACE.ts `discovery.prune` paths; an unpruned cache shows up here first.
+it("CI's package pattern discovers the repo-targets test target", () => {
+  const result = JSON.parse(execFileSync(process.execPath, [
+    resolve(root, "packages/smithers/src/bin.ts"),
+    "targets",
+    "//packages/...",
+    "--json"
+  ], { cwd: root, encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] }))
+  expect(result.query).toBe("//packages/...")
+  expect(result.targets.filter((row: { readonly label: string }) => row.label === "//packages/repo-targets:test"))
+    .toEqual([{ label: "//packages/repo-targets:test", target: "Vitest", kinds: ["test"] }])
+}, 90_000)

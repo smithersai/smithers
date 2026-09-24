@@ -5,7 +5,9 @@
  * consults git: gitignore status is irrelevant, so a gitignored or generated
  * PACKAGE.ts participates like any other. The walk prunes `.git`,
  * `node_modules`, distribution output (`dist`), nested checkouts (any directory
- * carrying its own `.git`), and the resolved cache directory, admits declaration files
+ * whose listing holds `.git` or `.jj`), caches tagged with `CACHEDIR.TAG`, the
+ * resolved cache directory, declared child repositories, and the workspace's
+ * declared `discovery.prune` paths, admits declaration files
  * through the shared SafeFs policy, and rejects a symlinked declaration file
  * outright.
  *
@@ -48,6 +50,13 @@ export interface Discovery {
   readonly cacheDirectory: string
   /** Declared opaque child repositories, sorted by name. */
   readonly repositories: ReadonlyArray<RepositoryBoundary>
+  /**
+   * Directories the walk skipped whole: declared `discovery.prune` paths
+   * that exist, nested checkouts, and `CACHEDIR.TAG` caches.
+   */
+  readonly pruned: ReadonlyArray<string>
+  /** How many directories the walk listed. */
+  readonly directories: number
 }
 
 /**
@@ -118,45 +127,50 @@ export const workspaceFileOf = async (root: string): Promise<string | undefined>
 
 interface Walk {
   readonly root: string
-  readonly cacheDirectory: string
-  /** This workspace's own descriptor, which never marks a nested workspace. */
-  readonly workspaceFile: string
+  readonly io: SafeFs.Io | undefined
   readonly signal: AbortSignal | undefined
   readonly found: Array<string>
-  readonly repositories: ReadonlySet<string>
+  /**
+   * Workspace-relative paths the walk never enters: the cache directory, the
+   * fixed store, declared child repositories, and declared `discovery.prune`
+   * paths.
+   */
+  readonly boundaries: ReadonlySet<string>
+  /** The declared `discovery.prune` paths, recorded in {@link Discovery.pruned} when present. */
+  readonly declaredPrune: ReadonlySet<string>
+  /** Directories the walk skipped by a declared prune path or by a marker in their own listing. */
+  readonly pruned: Array<string>
   directories: number
   entries: number
 }
 
-const pruned = (walk: Walk, child: string): boolean =>
-  child === walk.cacheDirectory ||
-  child.startsWith(`${walk.cacheDirectory}/`) ||
-  child === fixedStoreDirectory ||
-  child.startsWith(`${fixedStoreDirectory}/`)
+/** Directory names skipped at any depth before any I/O on them. */
+const skippedNames: ReadonlySet<string> = new Set([".git", "node_modules", "dist"])
 
 /**
- * Whether a child directory starts a nested package workspace.
- *
- * The workspace's own descriptor is excluded: a repository whose root
- * declaration is `.smithers/WORKSPACE.ts` would otherwise see its own
- * `.smithers/` directory as a nested workspace and prune it from the walk.
+ * Entries whose presence in a directory's own listing marks the whole
+ * directory as something no declaration can live in: another checkout (a
+ * clone's `.git` directory, the `.git` file a linked worktree carries, or a jj
+ * workspace's `.jj`), or a cache that follows the Cache Directory Tagging
+ * convention (`CACHEDIR.TAG`, which Cargo writes into `target/`).
  */
-const nestedWorkspace = async (walk: Walk, child: string): Promise<boolean> => {
-  const probes = ["WORKSPACE.ts", ".smithers/WORKSPACE.ts"]
-    .filter((relative) => `${child}/${relative}` !== walk.workspaceFile)
-    .map((relative) => declarationAt(NodePath.join(walk.root, child, relative)))
-  return (await Promise.all(probes)).some((found) => found)
-}
+const prunedMarkers: ReadonlySet<string> = new Set([".git", ".jj", "CACHEDIR.TAG"])
+
+const undeclaredNestedWorkspace = (repositoryPath: string, marker: string): PackageError =>
+  new PackageError(
+    "nested_workspace_undeclared",
+    `nested workspace ${marker} is not declared; add repos: { ${
+      (NodePath.posix.basename(repositoryPath) || "repo").replace(/[^A-Za-z0-9._-]/g, "-")
+    }: S.LocalRepository(${JSON.stringify(repositoryPath)}) } to the root Workspace declaration`,
+    { path: marker }
+  )
 
 /**
- * Whether a child directory is another checkout: a clone's `.git` directory
- * or the `.git` file a linked worktree carries. Git never lists such a tree
- * as part of this repository, and neither does discovery, so the stale
- * declarations an agent worktree or a vendored clone holds are never read.
+ * Walks one directory. Each directory costs one confined resolve and one
+ * confined listing and nothing else: every classification of a child, the
+ * nested-checkout and nested-workspace checks included, is answered from a
+ * listing the walk already holds.
  */
-const nestedCheckout = (walk: Walk, child: string): Promise<boolean> =>
-  Fs.lstat(NodePath.join(walk.root, child, ".git")).then(() => true, () => false)
-
 const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
   walk.signal?.throwIfAborted()
   const depth = relative === "" ? 0 : relative.split("/").length
@@ -166,24 +180,39 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
     })
   }
   const absolute = NodePath.join(walk.root, relative)
-  const entry = await SafeFs.resolveDirectory(absolute, { root: walk.root, what: "workspace directory" })
+  const entry = await SafeFs.resolveDirectory(absolute, { root: walk.root, io: walk.io, what: "workspace directory" })
   if (entry === undefined) return
   walk.directories += 1
   if (walk.directories > limits.directories) {
     throw new PackageError("inventory_limit_exceeded", `discovery exceeds its directory limit of ${limits.directories}`)
   }
-  const entries = await SafeFs.listDirectory(absolute, entry, { root: walk.root, what: "workspace directory" })
+  const entries = await SafeFs.listDirectory(absolute, entry, {
+    root: walk.root,
+    io: walk.io,
+    what: "workspace directory"
+  })
   walk.entries += entries.length
   if (walk.entries > limits.entries) {
     throw new PackageError("inventory_limit_exceeded", `discovery exceeds its entry limit of ${limits.entries}`)
   }
-  // Classify this listing without I/O, then descend into every child
-  // directory concurrently. The walk is latency-bound on per-directory stat
-  // calls rather than CPU-bound, so a serial descent costs seconds on a
-  // workspace with thousands of directories. Concurrency cannot change the
-  // inventory: `walk.found` is sorted by the caller, so discovery order never
-  // escapes this function.
-  const directories: Array<string> = []
+  if (relative !== "") {
+    // Another checkout or a tagged cache: nothing below it is this
+    // workspace's declaration, including a WORKSPACE.ts or an old BUILD.ts.
+    if (entries.some((child) => prunedMarkers.has(child.name))) {
+      walk.pruned.push(relative)
+      return
+    }
+    // A nested workspace this root did not declare. The root's own
+    // `.smithers/` holds this workspace's descriptor and is never one.
+    if (relative !== ".smithers") {
+      const smithers = entries.some((child) => child.name === ".smithers" && child.isDirectory()) &&
+        await declarationAt(NodePath.join(absolute, ".smithers", "WORKSPACE.ts"))
+      if (smithers) throw undeclaredNestedWorkspace(relative, `${relative}/.smithers/WORKSPACE.ts`)
+      if (entries.some((child) => child.name === "WORKSPACE.ts" && !child.isDirectory())) {
+        throw undeclaredNestedWorkspace(relative, `${relative}/WORKSPACE.ts`)
+      }
+    }
+  }
   if (entries.some((child) => child.name === "BUILD.ts")) {
     const path = relative === "" ? "BUILD.ts" : `${relative}/BUILD.ts`
     throw new PackageError(
@@ -192,33 +221,24 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
       { path }
     )
   }
-  const nestedMarker = entries.find((child) =>
-    child.name === "WORKSPACE.ts" && !child.isDirectory() &&
-    (relative !== "" && (relative !== ".smithers" || NodePath.posix.dirname(relative) !== "."))
-  )
-  if (nestedMarker !== undefined) {
-    const marker = relative === "" ? nestedMarker.name : `${relative}/${nestedMarker.name}`
-    const repositoryPath = relative.endsWith("/.smithers")
-      ? NodePath.posix.dirname(relative)
-      : relative
-    const suggested = (NodePath.posix.basename(repositoryPath) || "repo").replace(/[^A-Za-z0-9._-]/g, "-")
-    throw new PackageError(
-      "nested_workspace_undeclared",
-      `nested workspace ${marker} is not declared; add repos: { ${suggested}: S.LocalRepository(${
-        JSON.stringify(repositoryPath)
-      }) } to the root Workspace declaration`,
-      { path: marker }
-    )
-  }
+  // Classify this listing without I/O, then descend into every child
+  // directory concurrently. The walk is latency-bound on per-directory stat
+  // calls rather than CPU-bound, so a serial descent costs seconds on a
+  // workspace with thousands of directories. Concurrency cannot change the
+  // inventory: `walk.found` is sorted by the caller, so discovery order never
+  // escapes this function.
+  const directories: Array<string> = []
   for (const child of entries) {
     walk.signal?.throwIfAborted()
     // Distribution trees are build products, never package declarations.
     // Prune before any probes: a concurrent release build can replace them
     // while unrelated targets are being planned.
-    if (child.name === ".git" || child.name === "node_modules" || child.name === "dist") continue
+    if (skippedNames.has(child.name)) continue
     const childRelative = relative === "" ? child.name : `${relative}/${child.name}`
-    if (walk.repositories.has(childRelative)) continue
-    if (pruned(walk, childRelative)) continue
+    if (walk.boundaries.has(childRelative)) {
+      if (walk.declaredPrune.has(childRelative)) walk.pruned.push(childRelative)
+      continue
+    }
     if (child.name === "PACKAGE.ts" && !child.isDirectory()) {
       if (child.isSymbolicLink()) {
         throw new PackageError(
@@ -237,22 +257,7 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
     }
     if (child.isDirectory()) directories.push(childRelative)
   }
-  await Promise.all(directories.map(async (childRelative) => {
-    if (walk.repositories.has(childRelative)) return
-    if (await nestedCheckout(walk, childRelative)) return
-    if (await nestedWorkspace(walk, childRelative)) {
-      const marker = `${childRelative}/WORKSPACE.ts`
-      const nested = await workspaceFileOf(NodePath.join(walk.root, childRelative))
-      throw new PackageError(
-        "nested_workspace_undeclared",
-        `nested workspace ${nested === undefined ? marker : `${childRelative}/${nested}`} is not declared; ` +
-          `add repos: { ${NodePath.posix.basename(childRelative).replace(/[^A-Za-z0-9._-]/g, "-")}: ` +
-          `S.LocalRepository(${JSON.stringify(childRelative)}) } to the root Workspace declaration`,
-        { path: nested === undefined ? marker : `${childRelative}/${nested}` }
-      )
-    }
-    await walkDirectory(walk, childRelative)
-  }))
+  await Promise.all(directories.map((childRelative) => walkDirectory(walk, childRelative)))
 }
 
 /** Admits one declaration file: regular, contained, and never a symlink. */
@@ -281,7 +286,11 @@ export const discover = async (
   options: {
     readonly cacheDirectory?: string | undefined
     readonly repositories?: Readonly<Record<string, { readonly path: string }>> | undefined
+    /** Workspace-relative posix directories the walk never enters (`discovery.prune`). */
+    readonly prune?: ReadonlyArray<string> | undefined
     readonly signal?: AbortSignal | undefined
+    /** The filesystem seam the walk lists through; tests count its calls. */
+    readonly io?: SafeFs.Io | undefined
   } = {}
 ): Promise<Discovery> => {
   const canonical = await SafeFs.canonicalRoot(root)
@@ -349,13 +358,20 @@ export const discover = async (
       )
     }
   }
+  const declaredPrune = new Set(options.prune ?? [])
   const walk: Walk = {
     root: canonical,
-    cacheDirectory,
-    workspaceFile,
+    io: options.io,
     signal: options.signal,
     found: [],
-    repositories: new Set(repositories.map((repository) => repository.path)),
+    boundaries: new Set([
+      cacheDirectory,
+      fixedStoreDirectory,
+      ...repositories.map((repository) => repository.path),
+      ...declaredPrune
+    ]),
+    declaredPrune,
+    pruned: [],
     directories: 0,
     entries: 0
   }
@@ -384,5 +400,14 @@ export const discover = async (
     }
     folded.set(key, file)
   }
-  return { root: canonical, workspaceFile, factoryFile, packageFiles, cacheDirectory, repositories }
+  return {
+    root: canonical,
+    workspaceFile,
+    factoryFile,
+    packageFiles,
+    cacheDirectory,
+    repositories,
+    pruned: [...walk.pruned].sort(byCodeUnit),
+    directories: walk.directories
+  }
 }

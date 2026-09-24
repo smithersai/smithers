@@ -173,7 +173,9 @@ describe("declaration dependency preflight", () => {
       workspaceFile: "WORKSPACE.ts",
       packageFiles: ["child/PACKAGE.ts"],
       cacheDirectory: ".flows",
-      repositories: []
+      repositories: [],
+      pruned: [],
+      directories: 0
     })).rejects.toMatchObject({ code: "declaration_dependency_mismatch", path: Path.join(child, "PACKAGE.ts") })
   })
 })

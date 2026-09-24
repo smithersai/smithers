@@ -26,9 +26,10 @@ conflicting runtime installations. It then evaluates the workspace declaration
 before walking the package tree. The declaration names
 the shared facts of the tree: the runtime, the package manager, the toolchains,
 the sandbox mechanisms, the cache directory and its remote, the git hook
-bindings, and the opaque child repositories. Two of those, the cache directory
-and the child repositories, are discovery boundaries, which is why they cannot
-be read from the same walk they bound.
+bindings, the opaque child repositories, and the `discovery.prune` paths.
+Three of those, the cache directory, the child repositories, and the prune
+paths, are discovery boundaries, which is why they cannot be read from the
+same walk they bound.
 
 ## Finding the packages
 
@@ -41,9 +42,28 @@ The walk prunes these boundaries and never descends into them:
 - `.git`
 - `node_modules`
 - `dist`, the distribution output directory at any depth
-- any directory carrying its own `.git`, that is, a nested checkout
+- any directory whose own listing holds `.git` or `.jj`, that is, a nested
+  checkout, a linked worktree, or a jj workspace
+- any directory whose own listing holds `CACHEDIR.TAG`, the Cache Directory
+  Tagging convention Cargo writes into `target/`
 - the resolved cache directory
 - the fixed `.flows/store` subtree
+- every workspace-relative path in the declaration's `discovery.prune`
+
+Because the walk is ignore-blind, a gitignored cache with no `CACHEDIR.TAG`
+costs its full size on every command. Name it in `discovery.prune`:
+
+```ts
+export const Workspace = S.Workspace("app", {
+  // ...
+  discovery: { prune: [".pnpm-store", ".artifacts", "tmp"] }
+})
+```
+
+A prune path must be relative and stay inside the workspace. Each walked
+directory costs one confined resolve and one confined listing, about five
+filesystem calls, and every child is classified from that listing without
+further probes.
 
 Distribution output can contain copied fixture declarations and can be replaced
 by a concurrent release build. It is never a declaration source, so discovery

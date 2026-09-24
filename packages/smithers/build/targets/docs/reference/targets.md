@@ -78,7 +78,7 @@ Creates a declared glob without reading the filesystem. In the array form an ent
 - **Signature:** `Workspace(name: string, options: WorkspaceOptions): WorkspaceDeclaration`
 - **Since:** `0.1.0`
 
-Declares the workspace: its name plus the typed host and toolchain services every target resolves against. The name comes first and must be a portable identifier. `options` requires `repository` and `cache`; `runtime`, `packageManager`, `nodeModules`, `environment`, `toolchains`, `flags`, `host`, `memory`, `sandboxes`, `agents`, `gitHooks`, `repos`, `owners`, and `teams` are optional. An unknown option raises `TypeError`, and the options object passed where the name belongs raises `TypeError` naming the argument order. The call validates and performs no I/O.
+Declares the workspace: its name plus the typed host and toolchain services every target resolves against. The name comes first and must be a portable identifier. `options` requires `repository` and `cache`; `runtime`, `packageManager`, `nodeModules`, `environment`, `toolchains`, `flags`, `host`, `memory`, `sandboxes`, `agents`, `gitHooks`, `repos`, `discovery`, `owners`, and `teams` are optional. `discovery: { prune }` lists workspace-relative directories the package walk never enters; a prune path that is absolute or leaves the workspace raises `TypeError`. An unknown option raises `TypeError`, and the options object passed where the name belongs raises `TypeError` naming the argument order. The call validates and performs no I/O.
 
 ### `Smithers.Cache`
 

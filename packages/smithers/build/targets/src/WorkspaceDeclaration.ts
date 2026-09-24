@@ -466,6 +466,8 @@ export interface WorkspaceDeclaration {
   readonly agents: AgentsDeclaration | undefined
   readonly gitHooks: GitHooks | undefined
   readonly repos: Readonly<Record<string, LocalRepository.Declaration>> | undefined
+  /** Bounds on the package walk; see {@link DiscoveryDeclaration}. */
+  readonly discovery: DiscoveryDeclaration | undefined
   /** Workspace-wide default owners: what a package with no owning ancestor resolves to. */
   readonly owners: Owners.Declaration | undefined
   /** The team roster `team:<name>` references resolve against. */
@@ -487,6 +489,22 @@ export const isWorkspaceDeclaration = (value: unknown): value is WorkspaceDeclar
     return false
   }
   return descriptor !== undefined && "value" in descriptor && descriptor.value === WorkspaceTypeId
+}
+
+/**
+ * Bounds on the package walk.
+ *
+ * `prune` names workspace-relative directories the walk never enters, for
+ * trees no declaration lives in and nothing else can recognise: a toolchain
+ * cache without a `CACHEDIR.TAG`, a package store, run evidence. The walk is
+ * ignore-blind, so a gitignored tree costs its full size on every command
+ * until it is named here.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface DiscoveryDeclaration {
+  readonly prune: ReadonlyArray<string>
 }
 
 /**
@@ -514,6 +532,7 @@ export interface WorkspaceOptions {
   readonly agents?: AgentsDeclaration | undefined
   readonly gitHooks?: GitHooks | undefined
   readonly repos?: Readonly<Record<string, LocalRepository.Declaration>> | undefined
+  readonly discovery?: { readonly prune?: ReadonlyArray<string> | undefined } | undefined
   readonly owners?: Owners.Options | Owners.Declaration | undefined
   readonly teams?: Owners.TeamsDeclaration | Readonly<Record<string, ReadonlyArray<string>>> | undefined
 }
@@ -533,6 +552,7 @@ const knownOptions: ReadonlySet<string> = new Set([
   "agents",
   "gitHooks",
   "repos",
+  "discovery",
   "owners",
   "teams"
 ])
@@ -547,14 +567,14 @@ const workspaceName = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
  */
 const maximumRejectedNameCodeUnits = 256
 
-/** Normalizes one portable workspace-relative repository path. */
-const repositoryPath = (value: string): string => {
+/** Normalizes one portable workspace-relative path; `what` names it in diagnostics. */
+const workspacePath = (what: string, value: string): string => {
   if (value === "" || value.includes("\0") || /^[\\/]|^[A-Za-z]:/.test(value)) {
-    throw new TypeError(`Workspace repo path must be relative: ${JSON.stringify(value)}`)
+    throw new TypeError(`Workspace ${what} path must be relative: ${JSON.stringify(value)}`)
   }
   const segments = value.split(/[\\/]/).filter((segment) => segment !== "" && segment !== ".")
   if (segments.length === 0 || segments.includes("..")) {
-    throw new TypeError(`Workspace repo path must remain inside the workspace: ${JSON.stringify(value)}`)
+    throw new TypeError(`Workspace ${what} path must remain inside the workspace: ${JSON.stringify(value)}`)
   }
   return segments.join("/")
 }
@@ -692,7 +712,7 @@ export const Workspace = (name: string, options: WorkspaceOptions): WorkspaceDec
       if (!LocalRepository.isDeclaration(repo)) {
         throw new TypeError(`Workspace repo ${repoName} must be an S.LocalRepository declaration`)
       }
-      const normalized = repositoryPath(repo.path)
+      const normalized = workspacePath("repo", repo.path)
       if (paths.has(normalized)) {
         throw new TypeError(`Workspace repo paths must be distinct: ${JSON.stringify(normalized)}`)
       }
@@ -700,6 +720,28 @@ export const Workspace = (name: string, options: WorkspaceOptions): WorkspaceDec
       validated[repoName] = LocalRepository.Declaration.make({ path: normalized, branch: repo.branch })
     }
     repos = Object.freeze(validated)
+  }
+  let discovery: DiscoveryDeclaration | undefined
+  if (options.discovery !== undefined) {
+    if (typeof options.discovery !== "object" || options.discovery === null) {
+      throw new TypeError("Workspace discovery must be an object")
+    }
+    for (const key of Object.getOwnPropertyNames(options.discovery)) {
+      if (key !== "prune") throw new TypeError(`Workspace discovery received unknown option ${JSON.stringify(key)}`)
+    }
+    const prune = options.discovery.prune ?? []
+    if (!Array.isArray(prune) || prune.some((path) => typeof path !== "string")) {
+      throw new TypeError("Workspace discovery prune must be an array of workspace-relative paths")
+    }
+    const paths = new Set<string>()
+    for (const path of prune) {
+      const normalized = workspacePath("discovery prune", path)
+      if (paths.has(normalized)) {
+        throw new TypeError(`Workspace discovery prune paths must be distinct: ${JSON.stringify(normalized)}`)
+      }
+      paths.add(normalized)
+    }
+    discovery = Object.freeze({ prune: Object.freeze([...paths]) })
   }
   let gitHooks: GitHooks | undefined
   if (options.gitHooks !== undefined) {
@@ -743,6 +785,7 @@ export const Workspace = (name: string, options: WorkspaceOptions): WorkspaceDec
   value["agents"] = options.agents
   value["gitHooks"] = gitHooks
   value["repos"] = repos
+  value["discovery"] = discovery
   value["owners"] = owners
   value["teams"] = teams
   return Object.freeze(value) as unknown as WorkspaceDeclaration

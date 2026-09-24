@@ -429,6 +429,28 @@ export const resolveDirectory = async (
 }
 
 /**
+ * Re-checks that `path` still names the directory `expected` recorded.
+ *
+ * The happy path is one `lstat`: `expected` was confined when it was
+ * resolved, and the same device and inode is the same directory, so an
+ * unchanged identity needs no second `realpath`. Only a changed identity pays
+ * for the full re-resolution, which names a directory that now resolves
+ * outside the workspace as exactly that.
+ */
+const unchangedDirectory = async (path: string, expected: Entry, options: Options, what: string): Promise<void> => {
+  const io = options.io ?? defaultIo
+  let stats: Stats | undefined
+  try {
+    stats = await io.lstat(path)
+  } catch (cause) {
+    if (!absent(cause)) throw cause
+  }
+  if (stats !== undefined && stats.isDirectory() && identity(stats) === identity(expected.stats)) return
+  await resolveDirectory(path, options)
+  throw new Error(`${what} was replaced while it was being read: ${path}`)
+}
+
+/**
  * Lists one confined directory, refusing an entry that was replaced while it
  * was being read.
  *
@@ -456,17 +478,11 @@ export const listDirectory = async (
       }`
     )
   }
-  const current = await resolveDirectory(path, options)
-  if (current === undefined || identity(current.stats) !== identity(expected.stats)) {
-    throw new Error(`${what} was replaced while it was being read: ${path}`)
-  }
+  await unchangedDirectory(path, expected, options, what)
   checkCancelled(options)
   const entries = await io.readdir(path, limit)
   checkCancelled(options)
-  const after = await resolveDirectory(path, options)
-  if (after === undefined || identity(after.stats) !== identity(expected.stats)) {
-    throw new Error(`${what} was replaced while it was being read: ${path}`)
-  }
+  await unchangedDirectory(path, expected, options, what)
   checkCancelled(options)
   if (entries.length > limit) {
     throw new Error(`${what} contains more than ${limit} entries: ${path}`)
