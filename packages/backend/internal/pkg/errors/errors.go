@@ -50,6 +50,10 @@ type APIError struct {
 	// NOT_ON_WAITLIST rejection (the OAuth callback redirects to a waitlist UI
 	// carrying this number instead of dumping the JSON error to the browser).
 	WaitlistPosition *int `json:"waitlist_position,omitempty"`
+	// cause is the underlying error, kept for the server log only. It is
+	// unexported so encoding/json never serializes it and the wire body
+	// above is unchanged. Set it with WithCause; read it with Cause.
+	cause error
 }
 
 // FieldError describes a validation error on a specific field.
@@ -61,6 +65,24 @@ type FieldError struct {
 
 func (e *APIError) Error() string {
 	return e.Message
+}
+
+// WithCause attaches the underlying error for the server log and returns e,
+// so a return site reads Internal("failed to x").WithCause(err). Message
+// stays the human sentence and Error() is unchanged. A nil err is ignored.
+//
+// There is deliberately no Unwrap: adding one would change what errors.Is
+// reports for every service that inspects another service's error.
+func (e *APIError) WithCause(err error) *APIError {
+	if err != nil {
+		e.cause = err
+	}
+	return e
+}
+
+// Cause returns the error attached with WithCause, or nil.
+func (e *APIError) Cause() error {
+	return e.cause
 }
 
 func NotFound(msg string) *APIError { return New(CodeNotFound, msg) }

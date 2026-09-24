@@ -496,7 +496,7 @@ func (s *GitHubUserReposService) listLiveGitHubRepos(ctx context.Context, userID
 func (s *GitHubUserReposService) resolveUserGitHubAccessToken(ctx context.Context, userID int64) (string, db.OauthAccount, error) {
 	accounts, err := s.queries.ListUserOAuthAccounts(ctx, userID)
 	if err != nil {
-		return "", db.OauthAccount{}, pkgerrors.Internal("failed to load github oauth account")
+		return "", db.OauthAccount{}, pkgerrors.Internal("failed to load github oauth account").WithCause(err)
 	}
 
 	// Prefer a real provider="github" account. Fall back to "workos" ONLY
@@ -618,7 +618,7 @@ func (s *GitHubUserReposService) requestGitHubRepoPushPermission(ctx context.Con
 	endpoint := strings.TrimRight(githubAPIBaseURL(), "/") + "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return false, pkgerrors.Internal("failed to build github repository request")
+		return false, pkgerrors.Internal("failed to build github repository request").WithCause(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -627,7 +627,7 @@ func (s *GitHubUserReposService) requestGitHubRepoPushPermission(ctx context.Con
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return false, pkgerrors.Internal("github repository request failed")
+		return false, pkgerrors.Internal("github repository request failed").WithCause(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -653,7 +653,7 @@ func (s *GitHubUserReposService) requestGitHubRepoPushPermission(ctx context.Con
 		} `json:"permissions"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return false, pkgerrors.Internal("failed to decode github repository response")
+		return false, pkgerrors.Internal("failed to decode github repository response").WithCause(err)
 	}
 	return payload.Permissions.Push || payload.Permissions.Maintain || payload.Permissions.Admin, nil
 }
@@ -668,7 +668,7 @@ func (s *GitHubUserReposService) requestGitHubUserRepos(ctx context.Context, acc
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
 	if err != nil {
-		return nil, "", pkgerrors.Internal("failed to build github user repositories request")
+		return nil, "", pkgerrors.Internal("failed to build github user repositories request").WithCause(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -677,7 +677,7 @@ func (s *GitHubUserReposService) requestGitHubUserRepos(ctx context.Context, acc
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return nil, "", pkgerrors.Internal("github user repositories request failed")
+		return nil, "", pkgerrors.Internal("github user repositories request failed").WithCause(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -699,7 +699,7 @@ func (s *GitHubUserReposService) requestGitHubUserRepos(ctx context.Context, acc
 
 	var repos []GitHubRepoListItem
 	if err := json.Unmarshal(body, &repos); err != nil {
-		return nil, "", pkgerrors.Internal("failed to decode github user repositories response")
+		return nil, "", pkgerrors.Internal("failed to decode github user repositories response").WithCause(err)
 	}
 
 	return repos, resp.Header.Get("Link"), nil

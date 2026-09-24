@@ -107,7 +107,7 @@ func (s *WebhookService) ListWebhooks(ctx context.Context, actor *db.User, owner
 		Repo:  repo,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list webhooks")
+		return nil, pkgerrors.Internal("failed to list webhooks").WithCause(err)
 	}
 
 	redacted := make([]db.Webhook, 0, len(hooks))
@@ -139,7 +139,7 @@ func (s *WebhookService) GetWebhook(ctx context.Context, actor *db.User, owner, 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Webhook{}, pkgerrors.NotFound("webhook not found")
 		}
-		return db.Webhook{}, pkgerrors.Internal("failed to load webhook")
+		return db.Webhook{}, pkgerrors.Internal("failed to load webhook").WithCause(err)
 	}
 	return s.decryptWebhookSecret(hook)
 }
@@ -167,7 +167,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, actor *db.User, owne
 
 	webhookCount, err := s.queries.CountWebhooksByRepo(ctx, repository.ID)
 	if err != nil {
-		return db.Webhook{}, pkgerrors.Internal("failed to count webhooks")
+		return db.Webhook{}, pkgerrors.Internal("failed to count webhooks").WithCause(err)
 	}
 	if webhookCount >= maxWebhooksPerRepo {
 		return db.Webhook{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{
@@ -187,7 +187,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, actor *db.User, owne
 
 	encryptedSecret, err := s.secretCodec.EncryptString(req.Secret)
 	if err != nil {
-		return db.Webhook{}, pkgerrors.Internal("failed to encrypt webhook secret")
+		return db.Webhook{}, pkgerrors.Internal("failed to encrypt webhook secret").WithCause(err)
 	}
 
 	var created db.Webhook
@@ -212,7 +212,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, actor *db.User, owne
 					Code:     "invalid",
 				})
 			}
-			return pkgerrors.Internal("failed to create webhook")
+			return pkgerrors.Internal("failed to create webhook").WithCause(werr)
 		}
 		return nil
 	}); err != nil {
@@ -246,7 +246,7 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, actor *db.User, owne
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Webhook{}, pkgerrors.NotFound("webhook not found")
 		}
-		return db.Webhook{}, pkgerrors.Internal("failed to load webhook")
+		return db.Webhook{}, pkgerrors.Internal("failed to load webhook").WithCause(err)
 	}
 
 	url := current.Url
@@ -264,7 +264,7 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, actor *db.User, owne
 	if req.Secret != nil {
 		secret, err = s.secretCodec.EncryptString(*req.Secret)
 		if err != nil {
-			return db.Webhook{}, pkgerrors.Internal("failed to encrypt webhook secret")
+			return db.Webhook{}, pkgerrors.Internal("failed to encrypt webhook secret").WithCause(err)
 		}
 	}
 
@@ -294,7 +294,7 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, actor *db.User, owne
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Webhook{}, pkgerrors.NotFound("webhook not found")
 		}
-		return db.Webhook{}, pkgerrors.Internal("failed to update webhook")
+		return db.Webhook{}, pkgerrors.Internal("failed to update webhook").WithCause(err)
 	}
 	return s.decryptWebhookSecret(updated)
 }
@@ -321,7 +321,7 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, actor *db.User, owne
 		Repo:      repo,
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to delete webhook")
+		return pkgerrors.Internal("failed to delete webhook").WithCause(err)
 	}
 	if rowsAffected == 0 {
 		return pkgerrors.NotFound("webhook not found")
@@ -352,7 +352,7 @@ func (s *WebhookService) ListWebhookDeliveries(ctx context.Context, actor *db.Us
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, pkgerrors.NotFound("webhook not found")
 		}
-		return nil, pkgerrors.Internal("failed to load webhook")
+		return nil, pkgerrors.Internal("failed to load webhook").WithCause(err)
 	}
 
 	pageSize, pageOffset, _, _ := normalizeWebhookPage(page, perPage)
@@ -364,7 +364,7 @@ func (s *WebhookService) ListWebhookDeliveries(ctx context.Context, actor *db.Us
 		PageSize:   int32(pageSize),
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list webhook deliveries")
+		return nil, pkgerrors.Internal("failed to list webhook deliveries").WithCause(err)
 	}
 	return deliveries, nil
 }
@@ -398,7 +398,7 @@ func (s *WebhookService) RedeliverWebhookDelivery(ctx context.Context, actor *db
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.WebhookDelivery{}, pkgerrors.NotFound("webhook delivery not found")
 		}
-		return db.WebhookDelivery{}, pkgerrors.Internal("failed to load webhook delivery")
+		return db.WebhookDelivery{}, pkgerrors.Internal("failed to load webhook delivery").WithCause(err)
 	}
 
 	created, err := s.queries.CreateWebhookDelivery(ctx, db.CreateWebhookDeliveryParams{
@@ -408,7 +408,7 @@ func (s *WebhookService) RedeliverWebhookDelivery(ctx context.Context, actor *db
 		Status:    "pending",
 	})
 	if err != nil {
-		return db.WebhookDelivery{}, pkgerrors.Internal("failed to queue webhook redelivery")
+		return db.WebhookDelivery{}, pkgerrors.Internal("failed to queue webhook redelivery").WithCause(err)
 	}
 	return created, nil
 }
@@ -431,7 +431,7 @@ func normalizeWebhookPage(page, perPage int) (size, offset, pageNum, pages int) 
 func (s *WebhookService) decryptWebhookSecret(h db.Webhook) (db.Webhook, error) {
 	secret, err := s.secretCodec.DecryptString(h.Secret)
 	if err != nil {
-		return db.Webhook{}, pkgerrors.Internal("failed to decrypt webhook secret")
+		return db.Webhook{}, pkgerrors.Internal("failed to decrypt webhook secret").WithCause(err)
 	}
 	h.Secret = secret
 	return h, nil
@@ -478,12 +478,12 @@ func (s *WebhookService) TestWebhook(ctx context.Context, actor *db.User, owner,
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, pkgerrors.NotFound("webhook not found")
 		}
-		return nil, pkgerrors.Internal("failed to load webhook")
+		return nil, pkgerrors.Internal("failed to load webhook").WithCause(err)
 	}
 
 	decryptedSecret, err := s.secretCodec.DecryptString(hook.Secret)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to decrypt webhook secret")
+		return nil, pkgerrors.Internal("failed to decrypt webhook secret").WithCause(err)
 	}
 
 	pingPayload, _ := json.Marshal(map[string]any{
@@ -499,7 +499,7 @@ func (s *WebhookService) TestWebhook(ctx context.Context, actor *db.User, owner,
 		Status:    "pending",
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to create ping delivery")
+		return nil, pkgerrors.Internal("failed to create ping delivery").WithCause(err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -566,7 +566,7 @@ func (s *WebhookService) VerifyInboundWebhookSignature(ctx context.Context, owne
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("webhook not found")
 		}
-		return pkgerrors.Internal("failed to load webhook")
+		return pkgerrors.Internal("failed to load webhook").WithCause(err)
 	}
 
 	hook, err = s.decryptWebhookSecret(hook)
@@ -601,7 +601,7 @@ func (s *WebhookService) resolveRepoByOwnerAndName(ctx context.Context, owner, r
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }

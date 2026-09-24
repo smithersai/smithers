@@ -402,7 +402,7 @@ func (h *OAuth2Handler) PostAuthorizeDecision(w http.ResponseWriter, r *http.Req
 		// (already validated) redirect_uri, state echoed.
 		redirectURL, parseErr := url.Parse(req.RedirectURI)
 		if parseErr != nil {
-			writeRouteError(w, r, errors.Internal("failed to parse redirect_uri"))
+			writeRouteError(w, r, errors.Internal("failed to parse redirect_uri").WithCause(parseErr))
 			return
 		}
 		q := redirectURL.Query()
@@ -498,7 +498,7 @@ func (h *OAuth2Handler) issueAuthorizeCodeAndRedirect(w http.ResponseWriter, r *
 
 	redirectURL, parseErr := url.Parse(result.RedirectURI)
 	if parseErr != nil {
-		writeRouteError(w, r, errors.Internal("failed to parse redirect_uri"))
+		writeRouteError(w, r, errors.Internal("failed to parse redirect_uri").WithCause(parseErr))
 		return
 	}
 	q := redirectURL.Query()
@@ -584,7 +584,7 @@ func (h *OAuth2Handler) renderAuthorizeConsent(w http.ResponseWriter, r *http.Re
 
 	nonce, err := randomHex(32)
 	if err != nil {
-		writeRouteError(w, r, errors.Internal("failed to generate authorize csrf token"))
+		writeRouteError(w, r, errors.Internal("failed to generate authorize csrf token").WithCause(err))
 		return
 	}
 	expiry := time.Now().UTC().Add(oauth2AuthorizeCSRFTTL)
@@ -667,7 +667,7 @@ func (h *OAuth2Handler) checkFirstPartyAccess(ctx context.Context, user *db.User
 	allowed, err := h.AlphaAccess.IsUserWhitelisted(ctx, user)
 	if err != nil {
 		middleware.LoggerFromContext(ctx).Error("alpha whitelist lookup failed", "user_id", user.ID, "error", err)
-		return errors.Internal("failed to check alpha whitelist")
+		return errors.Internal("failed to check alpha whitelist").WithCause(err)
 	}
 	if !allowed {
 		return &errors.APIError{

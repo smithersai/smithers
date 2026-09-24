@@ -404,7 +404,7 @@ func (s *GitHubUserReposService) requestGitHubRepoObject(ctx context.Context, ac
 func (s *GitHubUserReposService) requestGitHubRepoRaw(ctx context.Context, accessToken string, upstreamURL string, expectedTopLevel byte) (GitHubRepoMetadataResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
 	if err != nil {
-		return GitHubRepoMetadataResult{}, pkgerrors.Internal("failed to build github repository metadata request")
+		return GitHubRepoMetadataResult{}, pkgerrors.Internal("failed to build github repository metadata request").WithCause(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github+json")

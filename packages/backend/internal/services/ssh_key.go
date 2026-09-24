@@ -58,7 +58,7 @@ func (s *SSHKeyService) ListKeys(ctx context.Context, userID int64) ([]SSHKeyRes
 
 	keys, err := s.queries.ListUserSSHKeys(ctx, userID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list ssh keys")
+		return nil, pkgerrors.Internal("failed to list ssh keys").WithCause(err)
 	}
 
 	result := make([]SSHKeyResponse, 0, len(keys))
@@ -85,7 +85,7 @@ func (s *SSHKeyService) GetKeyByID(ctx context.Context, userID int64, keyID int6
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return SSHKeyResponse{}, pkgerrors.NotFound("ssh key not found")
 		}
-		return SSHKeyResponse{}, pkgerrors.Internal("failed to load ssh key")
+		return SSHKeyResponse{}, pkgerrors.Internal("failed to load ssh key").WithCause(err)
 	}
 
 	if key.UserID != userID {
@@ -143,7 +143,7 @@ func (s *SSHKeyService) CreateKey(ctx context.Context, userID int64, req CreateS
 		if isSSHKeyUniqueViolation(err) {
 			return SSHKeyResponse{}, pkgerrors.Conflict("ssh key already registered")
 		}
-		return SSHKeyResponse{}, pkgerrors.Internal("failed to create ssh key")
+		return SSHKeyResponse{}, pkgerrors.Internal("failed to create ssh key").WithCause(err)
 	}
 
 	return mapSSHKeyResponse(created), nil
@@ -162,14 +162,14 @@ func (s *SSHKeyService) DeleteKey(ctx context.Context, userID int64, keyID int64
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("ssh key not found")
 		}
-		return pkgerrors.Internal("failed to load ssh key")
+		return pkgerrors.Internal("failed to load ssh key").WithCause(err)
 	}
 	if key.UserID != userID {
 		return pkgerrors.NotFound("ssh key not found")
 	}
 
 	if err := s.queries.DeleteSSHKey(ctx, db.DeleteSSHKeyParams{ID: keyID, UserID: userID}); err != nil {
-		return pkgerrors.Internal("failed to delete ssh key")
+		return pkgerrors.Internal("failed to delete ssh key").WithCause(err)
 	}
 
 	// End every live SSH session this key authenticated.

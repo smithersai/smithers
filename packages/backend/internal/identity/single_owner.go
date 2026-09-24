@@ -48,7 +48,7 @@ func (b *SingleOwnerBoundary) AuthorizeOwner(ctx context.Context, userID int64) 
 			if errors.Is(err, pgx.ErrNoRows) {
 				return pkgerrors.Unauthorized("installation owner is not initialized")
 			}
-			return pkgerrors.Internal("failed to authorize installation owner")
+			return pkgerrors.Internal("failed to authorize installation owner").WithCause(err)
 		}
 		ownerID = owner.ID
 		if ownerID <= 0 {

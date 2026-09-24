@@ -174,7 +174,7 @@ func (s *GitMirrorSyncService) startMirrorSync(ctx context.Context, userID, repo
 		if isGitMirrorActiveRunConflict(err) {
 			return db.GithubMirrorSyncRun{}, pkgerrors.Conflict("git mirror sync already running")
 		}
-		return db.GithubMirrorSyncRun{}, pkgerrors.Internal("failed to create git mirror sync run")
+		return db.GithubMirrorSyncRun{}, pkgerrors.Internal("failed to create git mirror sync run").WithCause(err)
 	}
 
 	s.launch("git-mirror-sync", func() {
@@ -203,11 +203,11 @@ func (s *GitMirrorSyncService) GetMirrorSyncRun(ctx context.Context, repositoryI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GitMirrorSyncRunResult{}, pkgerrors.NotFound("mirror sync run not found")
 		}
-		return GitMirrorSyncRunResult{}, pkgerrors.Internal("failed to get git mirror sync run")
+		return GitMirrorSyncRunResult{}, pkgerrors.Internal("failed to get git mirror sync run").WithCause(err)
 	}
 	refs, err := s.queries.ListGithubMirrorSyncRefResults(ctx, run.ID)
 	if err != nil {
-		return GitMirrorSyncRunResult{}, pkgerrors.Internal("failed to list git mirror sync ref results")
+		return GitMirrorSyncRunResult{}, pkgerrors.Internal("failed to list git mirror sync ref results").WithCause(err)
 	}
 
 	return gitMirrorSyncRunResult(run, refs), nil
@@ -286,7 +286,7 @@ func (s *GitMirrorSyncService) RetryMirrorRef(ctx context.Context, userID, repos
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, pkgerrors.NotFound("mirror ref result not found")
 		}
-		return 0, pkgerrors.Internal("failed to get mirror ref result")
+		return 0, pkgerrors.Internal("failed to get mirror ref result").WithCause(err)
 	}
 	if latest.Status != gitMirrorRefFailed {
 		return 0, pkgerrors.Conflict("mirror ref is not failed")
@@ -301,7 +301,7 @@ func (s *GitMirrorSyncService) RetryMirrorRef(ctx context.Context, userID, repos
 	})
 	if err != nil {
 		remotes.close()
-		return 0, pkgerrors.Internal("failed to create git mirror sync run")
+		return 0, pkgerrors.Internal("failed to create git mirror sync run").WithCause(err)
 	}
 	s.launch("git-mirror-ref-retry", func() {
 		defer remotes.close()

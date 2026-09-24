@@ -333,7 +333,7 @@ func (s *AuthService) CreateKeyAuthNonce(ctx context.Context) (string, error) {
 		ExpiresAt: s.now().Add(10 * time.Minute),
 	})
 	if err != nil {
-		return "", pkgerrors.Internal("failed to create auth nonce")
+		return "", pkgerrors.Internal("failed to create auth nonce").WithCause(err)
 	}
 	return nonce, nil
 }
@@ -362,7 +362,7 @@ func (s *AuthService) VerifyKeyAuth(ctx context.Context, message, signature stri
 		WalletAddress: pgtype.Text{String: walletAddress, Valid: walletAddress != ""},
 	})
 	if err != nil {
-		return VerifyKeyAuthResult{}, pkgerrors.Internal("failed to consume auth nonce")
+		return VerifyKeyAuthResult{}, pkgerrors.Internal("failed to consume auth nonce").WithCause(err)
 	}
 	if rows == 0 {
 		return VerifyKeyAuthResult{}, pkgerrors.Unauthorized("invalid or expired nonce")
@@ -380,7 +380,7 @@ func (s *AuthService) VerifyKeyAuth(ctx context.Context, message, signature stri
 				{identityType: WhitelistIdentityWallet, identityValue: walletAddress},
 			})
 			if allowErr != nil {
-				return VerifyKeyAuthResult{}, pkgerrors.Internal("failed to validate closed alpha access")
+				return VerifyKeyAuthResult{}, pkgerrors.Internal("failed to validate closed alpha access").WithCause(allowErr)
 			}
 			if !allowed {
 				return VerifyKeyAuthResult{}, pkgerrors.Forbidden("closed alpha access requires a whitelist invite")
@@ -410,7 +410,7 @@ func (s *AuthService) VerifyKeyAuth(ctx context.Context, message, signature stri
 				}
 				return VerifyKeyAuthResult{}, pkgerrors.Conflict("wallet address is already in use")
 			}
-			return VerifyKeyAuthResult{}, pkgerrors.Internal("failed to create wallet user")
+			return VerifyKeyAuthResult{}, pkgerrors.Internal("failed to create wallet user").WithCause(err)
 		}
 	}
 
@@ -426,7 +426,7 @@ func (s *AuthService) VerifyKeyAuth(ctx context.Context, message, signature stri
 
 	rawSessionKey, session, err := s.createSession(ctx, user)
 	if err != nil {
-		return VerifyKeyAuthResult{}, pkgerrors.Internal("failed to create session")
+		return VerifyKeyAuthResult{}, pkgerrors.Internal("failed to create session").WithCause(err)
 	}
 
 	return VerifyKeyAuthResult{
@@ -471,7 +471,7 @@ func (s *AuthService) startGitHubOAuthDirect(ctx context.Context, stateVerifier 
 		ExpiresAt:       s.now().Add(10 * time.Minute),
 	})
 	if err != nil {
-		return "", pkgerrors.Internal("failed to create oauth state")
+		return "", pkgerrors.Internal("failed to create oauth state").WithCause(err)
 	}
 
 	return githubAuthClient.AuthorizationURL(state), nil
@@ -494,7 +494,7 @@ func (s *AuthService) StartAuth0OAuth(ctx context.Context, stateVerifier string)
 		ExpiresAt:   s.now().Add(10 * time.Minute),
 	})
 	if err != nil {
-		return "", pkgerrors.Internal("failed to create oauth state")
+		return "", pkgerrors.Internal("failed to create oauth state").WithCause(err)
 	}
 
 	authURL := s.auth0Client.AuthorizationURL(state)
@@ -549,7 +549,7 @@ func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHub
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return OAuthCallbackResult{}, pkgerrors.Unauthorized("invalid oauth state")
 		}
-		return OAuthCallbackResult{}, pkgerrors.Internal("failed to consume oauth state")
+		return OAuthCallbackResult{}, pkgerrors.Internal("failed to consume oauth state").WithCause(err)
 	}
 	if len(requestedScopes) == 0 {
 		requestedScopes = defaultCLIOAuthScopes()
@@ -575,7 +575,7 @@ func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHub
 
 	rawSessionKey, session, err := s.createSession(ctx, user)
 	if err != nil {
-		return OAuthCallbackResult{}, pkgerrors.Internal("failed to create session")
+		return OAuthCallbackResult{}, pkgerrors.Internal("failed to create session").WithCause(err)
 	}
 
 	return OAuthCallbackResult{
@@ -640,12 +640,12 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 		// silently overwriting with the new token — this surfaces key-rotation issues early.
 		if len(account.AccessTokenEncrypted) > 0 {
 			if _, decryptErr := s.DecryptOAuthAccessToken(account.AccessTokenEncrypted); decryptErr != nil {
-				return db.User{}, pkgerrors.Internal("failed to decrypt existing oauth access token")
+				return db.User{}, pkgerrors.Internal("failed to decrypt existing oauth access token").WithCause(decryptErr)
 			}
 		}
 		user, err = s.queries.GetUserByID(ctx, account.UserID)
 		if err != nil {
-			return db.User{}, pkgerrors.Internal("failed to load oauth user")
+			return db.User{}, pkgerrors.Internal("failed to load oauth user").WithCause(err)
 		}
 		if config.IsSingleOwner(s.cfg) {
 			localQueries, localErr := s.localIdentityQueries()
@@ -696,7 +696,7 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 					}
 					return db.User{}, pkgerrors.Conflict("email address is already in use")
 				}
-				return db.User{}, pkgerrors.Internal("failed to create oauth user")
+				return db.User{}, pkgerrors.Internal("failed to create oauth user").WithCause(err)
 			}
 		}
 	}
@@ -713,7 +713,7 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 
 	profileData, err := authJSONMarshal(profile)
 	if err != nil {
-		return db.User{}, pkgerrors.Internal("failed to encode oauth profile")
+		return db.User{}, pkgerrors.Internal("failed to encode oauth profile").WithCause(err)
 	}
 
 	secret := strings.TrimSpace(s.cfg.SessionSecret)
@@ -758,7 +758,7 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 		})
 	}
 	if err != nil {
-		return db.User{}, pkgerrors.Internal("failed to upsert oauth account")
+		return db.User{}, pkgerrors.Internal("failed to upsert oauth account").WithCause(err)
 	}
 
 	if email := pickVerifiedEmail(emails); email != "" {
@@ -880,7 +880,7 @@ func (s *AuthService) ExchangeGitHubToken(ctx context.Context, githubAccessToken
 
 	existing, err := s.queries.ListAccessTokensByUserID(ctx, user.ID)
 	if err != nil {
-		return ExchangeGitHubTokenResult{}, pkgerrors.Internal("failed to list access tokens")
+		return ExchangeGitHubTokenResult{}, pkgerrors.Internal("failed to list access tokens").WithCause(err)
 	}
 	// Delete only same-name tokens STRICTLY OLDER than the one just minted.
 	// Because IDs are BIGSERIAL, two concurrent exchanges (a retried request,
@@ -897,7 +897,7 @@ func (s *AuthService) ExchangeGitHubToken(ctx context.Context, githubAccessToken
 			UserID: user.ID,
 		})
 		if err != nil {
-			return ExchangeGitHubTokenResult{}, pkgerrors.Internal("failed to rotate access token")
+			return ExchangeGitHubTokenResult{}, pkgerrors.Internal("failed to rotate access token").WithCause(err)
 		}
 		if rows == 0 {
 			continue
@@ -1040,7 +1040,7 @@ func (s *AuthService) CreateToken(ctx context.Context, userID int64, req CreateT
 	if containsPrivilegedScope(normalizedScopes) {
 		user, err := s.queries.GetUserByID(ctx, userID)
 		if err != nil {
-			return CreateTokenResult{}, pkgerrors.Internal("failed to resolve user")
+			return CreateTokenResult{}, pkgerrors.Internal("failed to resolve user").WithCause(err)
 		}
 		if !user.IsAdmin {
 			return CreateTokenResult{}, pkgerrors.Forbidden("insufficient privileges for requested token scopes")
@@ -1162,7 +1162,7 @@ func (s *AuthService) enforceWorkOSWaitlistAccess(ctx context.Context, profile G
 
 	allowed, err := s.isAnyClosedBetaIdentityWhitelisted(ctx, identities)
 	if err != nil {
-		return pkgerrors.Internal("failed to validate closed alpha access")
+		return pkgerrors.Internal("failed to validate closed alpha access").WithCause(err)
 	}
 	if allowed {
 		return nil
@@ -1193,7 +1193,7 @@ func (s *AuthService) enforceWorkOSWaitlistAccess(ctx context.Context, profile G
 			Source:          authWaitlistSource,
 		})
 		if upsertErr != nil {
-			return pkgerrors.Internal("failed to create waitlist entry")
+			return pkgerrors.Internal("failed to create waitlist entry").WithCause(upsertErr)
 		}
 		return notOnWaitlistError(s.waitlistPosition(ctx, lowerEmail))
 	}
@@ -1212,7 +1212,7 @@ func (s *AuthService) enforceWorkOSWaitlistAccess(ctx context.Context, profile G
 func (s *AuthService) promoteApprovedWorkOSWaitlistEntry(ctx context.Context, email, username string) error {
 	emailType, emailValue, lowerEmail, emailErr := NormalizeWhitelistIdentity(WhitelistIdentityEmail, email)
 	if emailErr != nil {
-		return pkgerrors.Internal("failed to promote approved waitlist entry")
+		return pkgerrors.Internal("failed to promote approved waitlist entry").WithCause(emailErr)
 	}
 	_, err := s.queries.AddWhitelistEntry(ctx, db.AddWhitelistEntryParams{
 		IdentityType:       emailType,
@@ -1221,7 +1221,7 @@ func (s *AuthService) promoteApprovedWorkOSWaitlistEntry(ctx context.Context, em
 		CreatedBy:          pgtype.Int8{},
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to promote approved waitlist entry")
+		return pkgerrors.Internal("failed to promote approved waitlist entry").WithCause(err)
 	}
 
 	usernameType, usernameValue, lowerUsername, usernameErr := NormalizeWhitelistIdentity(WhitelistIdentityUsername, username)
@@ -1235,7 +1235,7 @@ func (s *AuthService) promoteApprovedWorkOSWaitlistEntry(ctx context.Context, em
 		CreatedBy:          pgtype.Int8{},
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to promote approved waitlist entry")
+		return pkgerrors.Internal("failed to promote approved waitlist entry").WithCause(err)
 	}
 
 	return nil
@@ -1270,7 +1270,7 @@ func (s *AuthService) enforceClosedBetaForUser(ctx context.Context, user db.User
 
 	allowed, err := s.isAnyClosedBetaIdentityWhitelisted(ctx, identities)
 	if err != nil {
-		return pkgerrors.Internal("failed to validate closed alpha access")
+		return pkgerrors.Internal("failed to validate closed alpha access").WithCause(err)
 	}
 	if !allowed {
 		return pkgerrors.Forbidden("closed alpha access requires a whitelist invite")
@@ -1535,7 +1535,7 @@ func (s *AuthService) DecryptOAuthAccessToken(ciphertext []byte) (string, error)
 	key := smitherscrypto.DeriveKey(strings.TrimSpace(s.cfg.SessionSecret))
 	plaintext, err := smitherscrypto.Decrypt(key, ciphertext)
 	if err != nil {
-		return "", pkgerrors.Internal("failed to decrypt oauth access token")
+		return "", pkgerrors.Internal("failed to decrypt oauth access token").WithCause(err)
 	}
 
 	return string(plaintext), nil
@@ -1566,7 +1566,7 @@ func (s *AuthService) currentOAuthAccessToken(ctx context.Context, account db.Oa
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return "", pkgerrors.Unauthorized("github oauth token was rejected")
 		}
-		return "", pkgerrors.Internal("failed to query oauth account")
+		return "", pkgerrors.Internal("failed to query oauth account").WithCause(err)
 	}
 	return s.oauthAccessTokenFromAccount(current)
 }
@@ -1671,7 +1671,7 @@ func (s *AuthService) refreshUserGitHubTokenLocked(
 				if stdErrors.Is(rerr, pgx.ErrNoRows) {
 					return "", pkgerrors.Unauthorized("github oauth token was rejected")
 				}
-				return "", pkgerrors.Internal("failed to query oauth account")
+				return "", pkgerrors.Internal("failed to query oauth account").WithCause(rerr)
 			}
 			if oauthAccountTokensChanged(current, account) {
 				return s.oauthAccessTokenFromAccount(current)

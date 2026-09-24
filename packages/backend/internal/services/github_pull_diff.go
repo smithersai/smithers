@@ -89,7 +89,7 @@ func (s *GitHubUserReposService) requestGitHubPullDiff(
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
 	if err != nil {
-		return GitHubPullDiffResult{}, pkgerrors.Internal("failed to build github pull diff request")
+		return GitHubPullDiffResult{}, pkgerrors.Internal("failed to build github pull diff request").WithCause(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github.diff")

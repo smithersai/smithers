@@ -135,14 +135,14 @@ func NewOAuth2ServiceWithPool(q OAuth2Querier, pool *pgxpool.Pool) *OAuth2Servic
 	s.inTx = func(ctx context.Context, fn func(q OAuth2Querier) error) error {
 		tx, err := pool.Begin(ctx)
 		if err != nil {
-			return pkgerrors.Internal("failed to begin token transaction")
+			return pkgerrors.Internal("failed to begin token transaction").WithCause(err)
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 		if err := fn(db.New(tx)); err != nil {
 			return err
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return pkgerrors.Internal("failed to commit token transaction")
+			return pkgerrors.Internal("failed to commit token transaction").WithCause(err)
 		}
 		return nil
 	}
@@ -220,7 +220,7 @@ func (s *OAuth2Service) CreateApplication(ctx context.Context, ownerID int64, re
 		Confidential:     confidential,
 	})
 	if err != nil {
-		return CreateOAuth2ApplicationResult{}, pkgerrors.Internal("failed to create oauth2 application")
+		return CreateOAuth2ApplicationResult{}, pkgerrors.Internal("failed to create oauth2 application").WithCause(err)
 	}
 
 	return CreateOAuth2ApplicationResult{
@@ -233,7 +233,7 @@ func (s *OAuth2Service) CreateApplication(ctx context.Context, ownerID int64, re
 func (s *OAuth2Service) ListApplications(ctx context.Context, ownerID int64) ([]OAuth2ApplicationResponse, error) {
 	apps, err := s.queries.ListOAuth2ApplicationsByOwner(ctx, ownerID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list oauth2 applications")
+		return nil, pkgerrors.Internal("failed to list oauth2 applications").WithCause(err)
 	}
 
 	result := make([]OAuth2ApplicationResponse, 0, len(apps))
@@ -250,7 +250,7 @@ func (s *OAuth2Service) GetApplication(ctx context.Context, appID, ownerID int64
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OAuth2ApplicationResponse{}, pkgerrors.NotFound("oauth2 application not found")
 		}
-		return OAuth2ApplicationResponse{}, pkgerrors.Internal("failed to get oauth2 application")
+		return OAuth2ApplicationResponse{}, pkgerrors.Internal("failed to get oauth2 application").WithCause(err)
 	}
 	if app.OwnerID != ownerID {
 		return OAuth2ApplicationResponse{}, pkgerrors.NotFound("oauth2 application not found")
@@ -270,7 +270,7 @@ func (s *OAuth2Service) GetApplicationByClientID(ctx context.Context, clientID s
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OAuth2ApplicationResponse{}, pkgerrors.NotFound("oauth2 application not found")
 		}
-		return OAuth2ApplicationResponse{}, pkgerrors.Internal("failed to get oauth2 application")
+		return OAuth2ApplicationResponse{}, pkgerrors.Internal("failed to get oauth2 application").WithCause(err)
 	}
 	return toOAuth2ApplicationResponse(app), nil
 }
@@ -285,7 +285,7 @@ func (s *OAuth2Service) IsValidRegisteredRedirectURI(ctx context.Context, client
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, pkgerrors.NotFound("oauth2 application not found")
 		}
-		return false, pkgerrors.Internal("failed to get oauth2 application")
+		return false, pkgerrors.Internal("failed to get oauth2 application").WithCause(err)
 	}
 	return isValidRedirectURI(app.RedirectUris, redirectURI), nil
 }
@@ -297,7 +297,7 @@ func (s *OAuth2Service) DeleteApplication(ctx context.Context, appID, ownerID in
 		OwnerID: ownerID,
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to delete oauth2 application")
+		return pkgerrors.Internal("failed to delete oauth2 application").WithCause(err)
 	}
 	if rows == 0 {
 		return pkgerrors.NotFound("oauth2 application not found")
@@ -320,7 +320,7 @@ func (s *OAuth2Service) Authorize(ctx context.Context, userID int64, clientID, r
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OAuth2AuthorizeResult{}, pkgerrors.NotFound("oauth2 application not found")
 		}
-		return OAuth2AuthorizeResult{}, pkgerrors.Internal("failed to get oauth2 application")
+		return OAuth2AuthorizeResult{}, pkgerrors.Internal("failed to get oauth2 application").WithCause(err)
 	}
 
 	// Validate redirect_uri is registered.
@@ -412,7 +412,7 @@ func (s *OAuth2Service) Authorize(ctx context.Context, userID int64, clientID, r
 		ExpiresAt:           s.now().Add(oauth2AuthCodeTTL),
 	})
 	if err != nil {
-		return OAuth2AuthorizeResult{}, pkgerrors.Internal("failed to create authorization code")
+		return OAuth2AuthorizeResult{}, pkgerrors.Internal("failed to create authorization code").WithCause(err)
 	}
 
 	return OAuth2AuthorizeResult{
@@ -429,7 +429,7 @@ func (s *OAuth2Service) ExchangeCode(ctx context.Context, clientID, clientSecret
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OAuth2TokenResponse{}, pkgerrors.Unauthorized("invalid client_id")
 		}
-		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to get oauth2 application")
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to get oauth2 application").WithCause(err)
 	}
 
 	// Verify client secret for confidential clients.
@@ -451,7 +451,7 @@ func (s *OAuth2Service) ExchangeCode(ctx context.Context, clientID, clientSecret
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OAuth2TokenResponse{}, pkgerrors.BadRequest("invalid or expired authorization code")
 		}
-		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to validate authorization code")
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to validate authorization code").WithCause(err)
 	}
 
 	// Validate the code belongs to this application.
@@ -493,7 +493,7 @@ func (s *OAuth2Service) ExchangeCode(ctx context.Context, clientID, clientSecret
 			if errors.Is(err, pgx.ErrNoRows) {
 				return pkgerrors.BadRequest("invalid or expired authorization code")
 			}
-			return pkgerrors.Internal("failed to consume authorization code")
+			return pkgerrors.Internal("failed to consume authorization code").WithCause(err)
 		}
 		resp, err = s.issueTokenPair(ctx, q, app.ID, consumed.UserID, consumed.Scopes)
 		return err
@@ -512,7 +512,7 @@ func (s *OAuth2Service) RefreshToken(ctx context.Context, clientID, clientSecret
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OAuth2TokenResponse{}, pkgerrors.Unauthorized("invalid client_id")
 		}
-		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to get oauth2 application")
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to get oauth2 application").WithCause(err)
 	}
 
 	// Verify client secret for confidential clients.
@@ -531,7 +531,7 @@ func (s *OAuth2Service) RefreshToken(ctx context.Context, clientID, clientSecret
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OAuth2TokenResponse{}, pkgerrors.BadRequest("invalid or expired refresh token")
 		}
-		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to validate refresh token")
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to validate refresh token").WithCause(err)
 	}
 	if token.AppID != app.ID {
 		return OAuth2TokenResponse{}, pkgerrors.BadRequest("refresh token does not belong to this application")
@@ -547,7 +547,7 @@ func (s *OAuth2Service) RefreshToken(ctx context.Context, clientID, clientSecret
 			if errors.Is(err, pgx.ErrNoRows) {
 				return pkgerrors.BadRequest("invalid or expired refresh token")
 			}
-			return pkgerrors.Internal("failed to validate refresh token")
+			return pkgerrors.Internal("failed to validate refresh token").WithCause(err)
 		}
 		if oldToken.Scopes == nil {
 			return pkgerrors.BadRequest("refresh token must be reauthorized")
@@ -602,7 +602,7 @@ func (s *OAuth2Service) RevokeToken(ctx context.Context, clientID, clientSecret,
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.Unauthorized("invalid client_id")
 		}
-		return pkgerrors.Internal("failed to revoke token")
+		return pkgerrors.Internal("failed to revoke token").WithCause(err)
 	}
 	if requestingApp.Confidential {
 		expectedHash := hashOAuth2Secret(clientSecret)
@@ -621,7 +621,7 @@ func (s *OAuth2Service) RevokeToken(ctx context.Context, clientID, clientSecret,
 			return nil
 		}
 		if _, delErr := s.queries.DeleteOAuth2AccessTokenByHash(ctx, tokenHash); delErr != nil {
-			return pkgerrors.Internal("failed to revoke token")
+			return pkgerrors.Internal("failed to revoke token").WithCause(delErr)
 		}
 		revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
 			Kind:      revocation.KindTokenRevoked,
@@ -643,7 +643,7 @@ func (s *OAuth2Service) RevokeToken(ctx context.Context, clientID, clientSecret,
 			return nil
 		}
 		if _, delErr := s.queries.DeleteOAuth2RefreshTokenByHash(ctx, tokenHash); delErr != nil {
-			return pkgerrors.Internal("failed to revoke token")
+			return pkgerrors.Internal("failed to revoke token").WithCause(delErr)
 		}
 		return nil
 	}
@@ -662,14 +662,14 @@ func (s *OAuth2Service) RevokeAllByAppAndUser(ctx context.Context, appID, userID
 		AppID:  appID,
 		UserID: userID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to revoke tokens")
+		return pkgerrors.Internal("failed to revoke tokens").WithCause(err)
 	}
 
 	if err := s.queries.DeleteOAuth2AccessTokensByAppAndUser(ctx, db.DeleteOAuth2AccessTokensByAppAndUserParams{
 		AppID:  appID,
 		UserID: userID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to revoke tokens")
+		return pkgerrors.Internal("failed to revoke tokens").WithCause(err)
 	}
 
 	return nil
@@ -695,7 +695,7 @@ func (s *OAuth2Service) issueTokenPair(ctx context.Context, q OAuth2Querier, app
 		ExpiresAt: now.Add(oauth2AccessTokenTTL),
 	})
 	if err != nil {
-		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to create access token")
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to create access token").WithCause(err)
 	}
 
 	// Generate refresh token.
@@ -711,7 +711,7 @@ func (s *OAuth2Service) issueTokenPair(ctx context.Context, q OAuth2Querier, app
 		ExpiresAt: now.Add(oauth2RefreshTokenTTL),
 	})
 	if err != nil {
-		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to create refresh token")
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to create refresh token").WithCause(err)
 	}
 
 	return OAuth2TokenResponse{

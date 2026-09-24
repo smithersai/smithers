@@ -154,7 +154,7 @@ func (h *RepoHandler) CreateRepo(w http.ResponseWriter, r *http.Request) {
 			errors.WriteError(w, apiErr)
 			return
 		}
-		errors.WriteError(w, errors.Internal("unexpected error"))
+		errors.WriteError(w, errors.Internal("unexpected error").WithCause(err))
 		return
 	}
 

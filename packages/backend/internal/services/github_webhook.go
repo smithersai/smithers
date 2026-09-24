@@ -237,7 +237,7 @@ func (s *GitHubWebhookService) HandleGitHubWebhook(ctx context.Context, delivery
 			string(payload),
 		)
 		if err != nil {
-			return false, pkgerrors.Internal("failed to enqueue github webhook event")
+			return false, pkgerrors.Internal("failed to enqueue github webhook event").WithCause(err)
 		}
 		if tag.RowsAffected() == 0 {
 			// Duplicate/replayed delivery: already processed, skip side effects.
@@ -269,7 +269,7 @@ func (s *GitHubWebhookService) HandleGitHubWebhook(ctx context.Context, delivery
 
 	tx, err := beginner.Begin(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin github webhook transaction")
+		return pkgerrors.Internal("failed to begin github webhook transaction").WithCause(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -281,7 +281,7 @@ func (s *GitHubWebhookService) HandleGitHubWebhook(ctx context.Context, delivery
 		return nil
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to commit github webhook transaction")
+		return pkgerrors.Internal("failed to commit github webhook transaction").WithCause(err)
 	}
 	// Metadata-store updates run AFTER the commit, outside the delivery
 	// transaction: they must never roll back the installation bookkeeping (or
@@ -404,7 +404,7 @@ func (s *GitHubWebhookService) handleInstallationEvent(ctx context.Context, exec
 		return s.replaceInstallationRepositories(ctx, execer, installationID, envelope)
 	case "deleted":
 		if _, err := execer.Exec(ctx, deleteGitHubAppInstallationSQL, installationID); err != nil {
-			return pkgerrors.Internal("failed to delete installation mapping")
+			return pkgerrors.Internal("failed to delete installation mapping").WithCause(err)
 		}
 	default:
 		// Other installation actions are acknowledged and only enqueued.
@@ -422,7 +422,7 @@ func (s *GitHubWebhookService) replaceInstallationRepositories(ctx context.Conte
 		return err
 	}
 	if _, err := execer.Exec(ctx, deleteGitHubAppInstallationRepositoriesSQL, installationID); err != nil {
-		return pkgerrors.Internal("failed to reset installation repositories")
+		return pkgerrors.Internal("failed to reset installation repositories").WithCause(err)
 	}
 	for _, repository := range envelope.Repositories {
 		if err := s.upsertInstallationRepository(ctx, execer, installationID, repository); err != nil {
@@ -462,7 +462,7 @@ func (s *GitHubWebhookService) handleInstallationRepositoriesEvent(ctx context.C
 				continue
 			}
 			if _, err := execer.Exec(ctx, deleteGitHubAppInstallationRepositorySQL, installationID, repository.ID); err != nil {
-				return pkgerrors.Internal("failed to remove installation repository mapping")
+				return pkgerrors.Internal("failed to remove installation repository mapping").WithCause(err)
 			}
 		}
 	default:
@@ -485,7 +485,7 @@ func (s *GitHubWebhookService) upsertInstallation(ctx context.Context, execer gi
 		strings.TrimSpace(installation.Account.Type),
 		strings.TrimSpace(installation.RepositorySelection),
 	); err != nil {
-		return pkgerrors.Internal("failed to persist installation mapping")
+		return pkgerrors.Internal("failed to persist installation mapping").WithCause(err)
 	}
 	return nil
 }
@@ -521,7 +521,7 @@ func (s *GitHubWebhookService) upsertInstallationRepository(ctx context.Context,
 		strings.ToLower(repoName),
 		repository.Private,
 	); err != nil {
-		return pkgerrors.Internal("failed to persist installation repository mapping")
+		return pkgerrors.Internal("failed to persist installation repository mapping").WithCause(err)
 	}
 	return nil
 }

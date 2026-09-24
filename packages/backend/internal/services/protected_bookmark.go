@@ -26,12 +26,12 @@ type BookmarkProtectionQuerier interface {
 func RequireBookmarkNotProtected(ctx context.Context, q BookmarkProtectionQuerier, repositoryID int64, bookmark string) error {
 	rules, err := q.ListAllProtectedBookmarksByRepo(ctx, repositoryID)
 	if err != nil {
-		return pkgerrors.Internal("failed to list protected bookmarks")
+		return pkgerrors.Internal("failed to list protected bookmarks").WithCause(err)
 	}
 	for _, rule := range rules {
 		matches, err := path.Match(rule.Pattern, bookmark)
 		if err != nil {
-			return pkgerrors.Internal("invalid protected bookmark pattern")
+			return pkgerrors.Internal("invalid protected bookmark pattern").WithCause(err)
 		}
 		if matches {
 			return pkgerrors.Forbidden(fmt.Sprintf("bookmark %q is protected; changes must go through a landing request", bookmark))
@@ -132,7 +132,7 @@ func (s *ProtectedBookmarkService) UpsertProtectedBookmark(ctx context.Context, 
 		RequiredStatusContexts: contexts,
 	})
 	if err != nil {
-		return ProtectedBookmarkResponse{}, pkgerrors.Internal("failed to upsert protected bookmark")
+		return ProtectedBookmarkResponse{}, pkgerrors.Internal("failed to upsert protected bookmark").WithCause(err)
 	}
 
 	return mapProtectedBookmark(row), nil
@@ -162,7 +162,7 @@ func (s *ProtectedBookmarkService) ListProtectedBookmarks(ctx context.Context, v
 		PageSize:     pageSize,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list protected bookmarks")
+		return nil, pkgerrors.Internal("failed to list protected bookmarks").WithCause(err)
 	}
 
 	results := make([]ProtectedBookmarkResponse, 0, len(rows))
@@ -189,7 +189,7 @@ func (s *ProtectedBookmarkService) DeleteProtectedBookmark(ctx context.Context, 
 		Pattern:      pattern,
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to delete protected bookmark")
+		return pkgerrors.Internal("failed to delete protected bookmark").WithCause(err)
 	}
 	if affected == 0 {
 		return pkgerrors.NotFound("protected bookmark not found")

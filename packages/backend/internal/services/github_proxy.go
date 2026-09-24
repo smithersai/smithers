@@ -197,7 +197,7 @@ func (s *GitHubProxyService) proxyRequest(ctx context.Context, resolved gitHubPr
 	upstreamResp, err := s.httpClient.Do(upstreamReq) //nolint:bodyclose // Body ownership transfers to GitHubProxyResponse and its caller.
 	if err != nil {
 		logGitHubProxyRequest(method, requestPath, http.StatusBadGateway, "deny", "github proxy request failed")
-		return nil, pkgerrors.Internal("failed to proxy github request")
+		return nil, pkgerrors.Internal("failed to proxy github request").WithCause(err)
 	}
 
 	// A 401 means the cached installation token was revoked upstream — evict it
@@ -259,7 +259,7 @@ func (s *GitHubProxyService) buildUpstreamRequest(
 
 	req, err := http.NewRequestWithContext(ctx, method, upstreamURL, bodyReader)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to build github proxy request")
+		return nil, pkgerrors.Internal("failed to build github proxy request").WithCause(err)
 	}
 
 	for key, value := range requestHeaders {

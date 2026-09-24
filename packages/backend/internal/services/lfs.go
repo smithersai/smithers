@@ -290,7 +290,7 @@ func (s *LFSService) Batch(ctx context.Context, actor *db.User, owner, repo stri
 				for _, candidateKey := range candidateKeys {
 					exists, e := s.blobs.Exists(ctx, candidateKey)
 					if e != nil {
-						return LFSBatchResponse{}, pkgerrors.Internal("failed to check blob existence")
+						return LFSBatchResponse{}, pkgerrors.Internal("failed to check blob existence").WithCause(e)
 					}
 					if !exists {
 						continue
@@ -316,7 +316,7 @@ func (s *LFSService) Batch(ctx context.Context, actor *db.User, owner, repo stri
 				uploadKey := s.lfsUploadObjectKey(repository.ID, oid)
 				signedUpload, signErr := blob.SignedCreateOnlyUpload(ctx, s.blobs, uploadKey, "application/octet-stream", size, s.signedURLExpiry)
 				if signErr != nil {
-					return LFSBatchResponse{}, pkgerrors.Internal("failed to create upload url")
+					return LFSBatchResponse{}, pkgerrors.Internal("failed to create upload url").WithCause(signErr)
 				}
 				upload = signedUpload
 			}
@@ -334,7 +334,7 @@ func (s *LFSService) Batch(ctx context.Context, actor *db.User, owner, repo stri
 		row := state.row
 		exists, err := s.blobs.Exists(ctx, row.GcsPath)
 		if err != nil {
-			return LFSBatchResponse{}, pkgerrors.Internal("failed to check blob existence")
+			return LFSBatchResponse{}, pkgerrors.Internal("failed to check blob existence").WithCause(err)
 		}
 		if op == "upload" {
 			if exists {
@@ -347,7 +347,7 @@ func (s *LFSService) Batch(ctx context.Context, actor *db.User, owner, repo stri
 				pendingKey := lfsPendingObjectKey(repository.ID, oid)
 				pendingExists, e := s.blobs.Exists(ctx, pendingKey)
 				if e != nil {
-					return LFSBatchResponse{}, pkgerrors.Internal("failed to check staged lfs upload")
+					return LFSBatchResponse{}, pkgerrors.Internal("failed to check staged lfs upload").WithCause(e)
 				}
 				if pendingExists {
 					// A prior repair upload may have completed while its verify
@@ -368,7 +368,7 @@ func (s *LFSService) Batch(ctx context.Context, actor *db.User, owner, repo stri
 			}
 			u, e := blob.SignedCreateOnlyUpload(ctx, s.blobs, s.lfsUploadObjectKey(repository.ID, oid), "application/octet-stream", row.Size, s.signedURLExpiry)
 			if e != nil {
-				return LFSBatchResponse{}, pkgerrors.Internal("failed to create upload url")
+				return LFSBatchResponse{}, pkgerrors.Internal("failed to create upload url").WithCause(e)
 			}
 			actions, e := s.lfsUploadActions(ctx, repository.ID, owner, repo, oid, row.Size, u)
 			if e != nil {
@@ -391,7 +391,7 @@ func (s *LFSService) Batch(ctx context.Context, actor *db.User, owner, repo stri
 		}
 		d, e := s.blobs.SignedDownloadURL(ctx, row.GcsPath, s.signedURLExpiry)
 		if e != nil {
-			return LFSBatchResponse{}, pkgerrors.Internal("failed to create download url")
+			return LFSBatchResponse{}, pkgerrors.Internal("failed to create download url").WithCause(e)
 		}
 		out = append(out, LFSBatchObjectResponse{
 			Oid:     oid,
@@ -454,7 +454,7 @@ func (s *LFSService) confirmUploadForRepository(ctx context.Context, repository 
 		}
 		exists, err := s.blobs.Exists(ctx, existing.GcsPath)
 		if err != nil {
-			return db.LfsObject{}, pkgerrors.Internal("failed to check blob existence")
+			return db.LfsObject{}, pkgerrors.Internal("failed to check blob existence").WithCause(err)
 		}
 		if exists {
 			if err := s.validateUploadedBlob(ctx, existing.GcsPath, oid, existing.Size); err != nil {
@@ -493,7 +493,7 @@ func (s *LFSService) confirmUploadForRepository(ctx context.Context, repository 
 			// A transient read does not prove the promoted object is orphaned. The
 			// original row may still be live, so preserve both authoritative bytes
 			// and metadata for a later idempotent retry.
-			return db.LfsObject{}, pkgerrors.Internal("failed to recheck lfs object")
+			return db.LfsObject{}, pkgerrors.Internal("failed to recheck lfs object").WithCause(err)
 		}
 		if current.ID != existing.ID {
 			// LFS uses a deterministic final key per repository/OID. A replacement
@@ -525,7 +525,7 @@ func (s *LFSService) confirmUploadForRepository(ctx context.Context, repository 
 	if stagedUploads {
 		finalExists, err := s.blobs.Exists(ctx, key)
 		if err != nil {
-			return db.LfsObject{}, pkgerrors.Internal("failed to check blob existence")
+			return db.LfsObject{}, pkgerrors.Internal("failed to check blob existence").WithCause(err)
 		}
 		if !finalExists {
 			uploadKey = pendingKey
@@ -539,7 +539,7 @@ func (s *LFSService) confirmUploadForRepository(ctx context.Context, repository 
 				// the invalid generation is actually gone. Preserve the metered
 				// reservation and surface cleanup failure instead of returning a 422
 				// that makes Batch sign an unusable replacement URL.
-				return db.LfsObject{}, pkgerrors.Internal("failed to remove invalid lfs upload")
+				return db.LfsObject{}, pkgerrors.Internal("failed to remove invalid lfs upload").WithCause(deleteErr)
 			}
 			// Keep the reservation: Batch already admitted these bytes and will
 			// issue a replacement capability without another reservation pass.
@@ -606,7 +606,7 @@ func (s *LFSService) confirmUploadForRepository(ctx context.Context, repository 
 					return pkgerrors.Conflict("lfs object changed during upload verification")
 				}
 				if currentErr != nil {
-					return pkgerrors.Internal("failed to recheck lfs object")
+					return pkgerrors.Internal("failed to recheck lfs object").WithCause(currentErr)
 				}
 				if current.ID != created.ID {
 					return pkgerrors.Conflict("lfs object changed during upload verification")
@@ -625,7 +625,7 @@ func (s *LFSService) confirmUploadForRepository(ctx context.Context, repository 
 			exists, ee := s.blobs.Exists(ctx, key)
 			if ee != nil {
 				_, _ = s.queries.DeleteLFSObject(ctx, db.DeleteLFSObjectParams{ID: created.ID, RepositoryID: repository.ID, Oid: oid})
-				return pkgerrors.Internal("failed to verify uploaded blob")
+				return pkgerrors.Internal("failed to verify uploaded blob").WithCause(ee)
 			}
 			if !exists {
 				_, _ = s.queries.DeleteLFSObject(ctx, db.DeleteLFSObjectParams{ID: created.ID, RepositoryID: repository.ID, Oid: oid})
@@ -719,7 +719,7 @@ func (s *LFSService) reserveLFSUploadCapacity(ctx context.Context, repositoryID 
 					AllocationKey: lfsStorageAllocationKey(repositoryID, oid),
 				})
 				if queueErr != nil {
-					return 0, pkgerrors.Internal("failed to load lfs deletion allocation")
+					return 0, pkgerrors.Internal("failed to load lfs deletion allocation").WithCause(queueErr)
 				}
 				if queued {
 					// The tombstone already accounts for these exact bytes. The
@@ -744,7 +744,7 @@ func (s *LFSService) reserveLFSUploadCapacity(ctx context.Context, repositoryID 
 				ExpiresAt:    expiresAt,
 			})
 			if err != nil {
-				return pkgerrors.Internal("failed to reserve lfs upload storage")
+				return pkgerrors.Internal("failed to reserve lfs upload storage").WithCause(err)
 			}
 			reservationRows[oid] = reservation
 		}
@@ -759,11 +759,11 @@ func (s *LFSService) reserveLFSUploadCapacity(ctx context.Context, repositoryID 
 			}
 			finalExists, existsErr := s.blobs.Exists(ctx, lfsObjectKey(repositoryID, oid))
 			if existsErr != nil {
-				return pkgerrors.Internal("failed to check lfs object before signing")
+				return pkgerrors.Internal("failed to check lfs object before signing").WithCause(existsErr)
 			}
 			pendingExists, existsErr := s.blobs.Exists(ctx, lfsPendingObjectKey(repositoryID, oid))
 			if existsErr != nil {
-				return pkgerrors.Internal("failed to check staged lfs object before signing")
+				return pkgerrors.Internal("failed to check staged lfs object before signing").WithCause(existsErr)
 			}
 			if !finalExists && !pendingExists {
 				eligible = append(eligible, oid)
@@ -781,7 +781,7 @@ func (s *LFSService) reserveLFSUploadCapacity(ctx context.Context, repositoryID 
 			)
 			if signErr != nil {
 				s.rollbackUnissuedLFSReservations(ctx, repositoryID, eligible, reservationRows)
-				return pkgerrors.Internal("failed to create upload url")
+				return pkgerrors.Internal("failed to create upload url").WithCause(signErr)
 			}
 			preSigned[oid] = upload
 		}
@@ -858,7 +858,7 @@ func (s *LFSService) rollbackUnissuedLFSReservations(
 func (s *LFSService) cleanupExpiredLFSUploadReservations(ctx context.Context, repositoryID int64, requestedObjectSizes map[string]int64) error {
 	reservations, err := s.queries.ListExpiredLFSUploadReservationsByOwner(ctx, repositoryID)
 	if err != nil {
-		return pkgerrors.Internal("failed to list expired lfs upload reservations")
+		return pkgerrors.Internal("failed to list expired lfs upload reservations").WithCause(err)
 	}
 	for _, reservation := range reservations {
 		if reservation.RepositoryID == repositoryID {
@@ -916,7 +916,7 @@ func (s *LFSService) promoteLFSUpload(ctx context.Context, sourceKey, destinatio
 		if stdErrors.Is(err, blob.ErrObjectNotFound) {
 			return pkgerrors.BadRequest("blob does not exist")
 		}
-		return pkgerrors.Internal("failed to promote lfs upload")
+		return pkgerrors.Internal("failed to promote lfs upload").WithCause(err)
 	}
 	if err := s.validateUploadedBlob(ctx, destinationKey, oid, size); err != nil {
 		if isLFSIntegrityError(err) {
@@ -1008,7 +1008,7 @@ func (s *LFSService) lfsUploadActions(ctx context.Context, repositoryID int64, o
 			Principal:    claims.Principal,
 		}, s.verifyTokenTTL)
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to issue lfs verify credential")
+			return nil, pkgerrors.Internal("failed to issue lfs verify credential").WithCause(err)
 		}
 		verify.Header = map[string]string{"Authorization": lfsauth.AuthorizationValue(token)}
 	}
@@ -1041,14 +1041,14 @@ func (s *LFSService) validateUploadedBlob(ctx context.Context, key, oid string, 
 		return pkgerrors.BadRequest("blob does not exist")
 	}
 	if err != nil {
-		return pkgerrors.Internal("failed to verify uploaded blob")
+		return pkgerrors.Internal("failed to verify uploaded blob").WithCause(err)
 	}
 	defer func() { _ = r.Close() }()
 
 	h := sha256.New()
 	n, err := io.Copy(h, r)
 	if err != nil {
-		return pkgerrors.Internal("failed to read blob for verification")
+		return pkgerrors.Internal("failed to read blob for verification").WithCause(err)
 	}
 	if n != declaredSize {
 		return pkgerrors.UnprocessableEntity(fmt.Sprintf(
@@ -1084,7 +1084,7 @@ func (s *LFSService) DeleteObject(ctx context.Context, actor *db.User, owner, re
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("lfs object not found")
 		}
-		return pkgerrors.Internal("failed to load lfs object")
+		return pkgerrors.Internal("failed to load lfs object").WithCause(err)
 	}
 	// Serialize deletion with Batch reservations and verify finalization under
 	// the owner's storage lock. Without this fence, a verifier can create a new
@@ -1099,7 +1099,7 @@ func (s *LFSService) DeleteObject(ctx context.Context, actor *db.User, owner, re
 			if stdErrors.Is(getErr, pgx.ErrNoRows) {
 				return 0, pkgerrors.NotFound("lfs object not found")
 			}
-			return 0, pkgerrors.Internal("failed to load lfs object")
+			return 0, pkgerrors.Internal("failed to load lfs object").WithCause(getErr)
 		}
 		if current.ID != obj.ID || current.GcsPath != obj.GcsPath || current.Size != obj.Size {
 			return 0, pkgerrors.Conflict("lfs object changed during deletion")
@@ -1108,7 +1108,7 @@ func (s *LFSService) DeleteObject(ctx context.Context, actor *db.User, owner, re
 	}
 	deleteObject := func(lockCtx context.Context) error {
 		if err := s.blobs.Delete(lockCtx, obj.GcsPath); err != nil && !isDeferredOrMissingLFSBlobDelete(err) {
-			return pkgerrors.Internal("failed to delete lfs object blob")
+			return pkgerrors.Internal("failed to delete lfs object blob").WithCause(err)
 		}
 		deleted, err := s.queries.DeleteLFSObject(lockCtx, db.DeleteLFSObjectParams{
 			ID:           obj.ID,
@@ -1116,7 +1116,7 @@ func (s *LFSService) DeleteObject(ctx context.Context, actor *db.User, owner, re
 			Oid:          norm,
 		})
 		if err != nil {
-			return pkgerrors.Internal("failed to delete lfs object")
+			return pkgerrors.Internal("failed to delete lfs object").WithCause(err)
 		}
 		if deleted != 1 {
 			return pkgerrors.Conflict("lfs object changed during deletion")
@@ -1127,7 +1127,7 @@ func (s *LFSService) DeleteObject(ctx context.Context, actor *db.User, owner, re
 		if err := s.blobs.Delete(lockCtx, obj.GcsPath); err != nil && !isDeferredOrMissingLFSBlobDelete(err) {
 			// Retain any reservation on failure so a physical orphan remains
 			// conservatively metered until a later cleanup attempt.
-			return pkgerrors.Internal("failed to finalize lfs object blob deletion")
+			return pkgerrors.Internal("failed to finalize lfs object blob deletion").WithCause(err)
 		}
 		s.consumeLFSUploadReservation(lockCtx, repository.ID, norm)
 		return nil
@@ -1159,11 +1159,11 @@ func (s *LFSService) ListObjects(ctx context.Context, viewer *db.User, owner, re
 	pageSize, pageOffset, _, _ := normalizePage(page, perPage)
 	total, err := s.queries.CountLFSObjects(ctx, repository.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count lfs objects")
+		return nil, 0, pkgerrors.Internal("failed to count lfs objects").WithCause(err)
 	}
 	rows, err := s.queries.ListLFSObjects(ctx, db.ListLFSObjectsParams{RepositoryID: repository.ID, PageOffset: pageOffset, PageSize: pageSize})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list lfs objects")
+		return nil, 0, pkgerrors.Internal("failed to list lfs objects").WithCause(err)
 	}
 	return rows, total, nil
 }
@@ -1193,7 +1193,7 @@ func (s *LFSService) resolveRepoByOwnerAndName(ctx context.Context, owner, repo 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }

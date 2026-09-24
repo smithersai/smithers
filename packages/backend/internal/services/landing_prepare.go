@@ -81,7 +81,7 @@ func (s *LandingService) projectPreparedAppend(ctx context.Context, repositoryID
 	}
 	tx, err := s.createTxManager.BeginCreateTx(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to start native revision projection")
+		return pkgerrors.Internal("failed to start native revision projection").WithCause(err)
 	}
 	defer rollbackLandingTx(ctx, tx)
 	q, ok := tx.(landingAppendProjection)
@@ -96,15 +96,15 @@ func (s *LandingService) projectPreparedAppend(ctx context.Context, repositoryID
 		raw, _ := json.Marshal(parents)
 		_, err = q.UpsertChange(ctx, db.UpsertChangeParams{RepositoryID: repositoryID, ChangeID: change.ChangeID, CommitID: change.CommitID, Description: change.Description, AuthorName: change.AuthorName, AuthorEmail: change.AuthorEmail, HasConflict: change.HasConflict, IsEmpty: change.IsEmpty, ParentChangeIds: raw})
 		if err != nil {
-			return pkgerrors.Internal("failed to project native change")
+			return pkgerrors.Internal("failed to project native change").WithCause(err)
 		}
 		_, err = q.RecordChangeRevision(ctx, db.RecordChangeRevisionParams{RepositoryID: repositoryID, ChangeID: change.ChangeID, CommitID: change.CommitID, ParentCommitID: change.ParentCommitID, Source: "push", OperationIds: []string{}})
 		if err != nil {
-			return pkgerrors.Internal("failed to project immutable change revision")
+			return pkgerrors.Internal("failed to project immutable change revision").WithCause(err)
 		}
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to commit native revision projection")
+		return pkgerrors.Internal("failed to commit native revision projection").WithCause(err)
 	}
 	return nil
 }

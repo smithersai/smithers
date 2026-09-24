@@ -130,7 +130,7 @@ func (s *LinearIntegrationService) StartLinearOAuth(ctx context.Context, stateVe
 
 	stateKey, err := randomLinearHex(16)
 	if err != nil {
-		return "", pkgerrors.Internal("failed to generate linear oauth state")
+		return "", pkgerrors.Internal("failed to generate linear oauth state").WithCause(err)
 	}
 	contextHash := hashSHA256(stateVerifier)
 
@@ -200,18 +200,18 @@ func (s *LinearIntegrationService) CompleteLinearOAuth(ctx context.Context, code
 func (s *LinearIntegrationService) CreateOAuthSetup(ctx context.Context, userID int64, result LinearOAuthCallbackResult) (string, error) {
 	payload, err := linearIntegrationJSONMarshal(result)
 	if err != nil {
-		return "", pkgerrors.Internal("failed to encode linear oauth setup")
+		return "", pkgerrors.Internal("failed to encode linear oauth setup").WithCause(err)
 	}
 
 	key := smitherscrypto.DeriveKey(s.sessionSecret)
 	encryptedPayload, err := linearIntegrationEncrypt(key, payload)
 	if err != nil {
-		return "", pkgerrors.Internal("failed to encrypt linear oauth setup")
+		return "", pkgerrors.Internal("failed to encrypt linear oauth setup").WithCause(err)
 	}
 
 	setupKey, err := s.generateSetupKey()
 	if err != nil {
-		return "", pkgerrors.Internal("failed to generate linear oauth setup key")
+		return "", pkgerrors.Internal("failed to generate linear oauth setup key").WithCause(err)
 	}
 	if err := s.queries.DeleteLinearOAuthSetupsByUser(ctx, userID); err != nil {
 		return "", pkgerrors.Internal("failed to clear prior linear oauth setups: " + err.Error())
@@ -389,7 +389,7 @@ func (s *LinearIntegrationService) resolveLinearIntegrationRepository(ctx contex
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return db.Repository{}, pkgerrors.NotFound("repository not found")
 			}
-			return db.Repository{}, pkgerrors.Internal("failed to resolve repository")
+			return db.Repository{}, pkgerrors.Internal("failed to resolve repository").WithCause(err)
 		}
 		return repo, nil
 	}
@@ -414,7 +414,7 @@ func (s *LinearIntegrationService) canAdminLinearIntegrationRepository(ctx conte
 			UserID:       userID,
 		})
 		if err != nil {
-			return false, pkgerrors.Internal("failed to resolve repository permissions")
+			return false, pkgerrors.Internal("failed to resolve repository permissions").WithCause(err)
 		}
 		if isOwner {
 			return true, nil
@@ -424,7 +424,7 @@ func (s *LinearIntegrationService) canAdminLinearIntegrationRepository(ctx conte
 			UserID:       userID,
 		})
 		if err != nil {
-			return false, pkgerrors.Internal("failed to resolve repository permissions")
+			return false, pkgerrors.Internal("failed to resolve repository permissions").WithCause(err)
 		}
 		if strings.EqualFold(strings.TrimSpace(permission), "admin") {
 			return true, nil
@@ -436,7 +436,7 @@ func (s *LinearIntegrationService) canAdminLinearIntegrationRepository(ctx conte
 		UserID:       pgtype.Int8{Int64: userID, Valid: true},
 	})
 	if err != nil {
-		return false, pkgerrors.Internal("failed to resolve repository permissions")
+		return false, pkgerrors.Internal("failed to resolve repository permissions").WithCause(err)
 	}
 	return strings.EqualFold(strings.TrimSpace(permission), "admin"), nil
 }
@@ -446,13 +446,13 @@ func (s *LinearIntegrationService) canonicalLinearIntegrationRepositoryName(ctx 
 	case repo.OrgID.Valid:
 		org, err := s.repositoryQueries.GetOrgByID(ctx, repo.OrgID.Int64)
 		if err != nil {
-			return "", "", pkgerrors.Internal("failed to resolve repository owner")
+			return "", "", pkgerrors.Internal("failed to resolve repository owner").WithCause(err)
 		}
 		return org.Name, repo.Name, nil
 	case repo.UserID.Valid:
 		user, err := s.repositoryQueries.GetUserByID(ctx, repo.UserID.Int64)
 		if err != nil {
-			return "", "", pkgerrors.Internal("failed to resolve repository owner")
+			return "", "", pkgerrors.Internal("failed to resolve repository owner").WithCause(err)
 		}
 		return user.Username, repo.Name, nil
 	default:
@@ -465,24 +465,24 @@ func (s *LinearIntegrationService) ConfigureIntegration(ctx context.Context, use
 
 	encryptedAccess, err := linearIntegrationEncrypt(key, []byte(req.AccessToken))
 	if err != nil {
-		return db.LinearIntegration{}, pkgerrors.Internal("failed to encrypt linear access token")
+		return db.LinearIntegration{}, pkgerrors.Internal("failed to encrypt linear access token").WithCause(err)
 	}
 
 	var encryptedRefresh []byte
 	if req.RefreshToken != "" {
 		encryptedRefresh, err = linearIntegrationEncrypt(key, []byte(req.RefreshToken))
 		if err != nil {
-			return db.LinearIntegration{}, pkgerrors.Internal("failed to encrypt linear refresh token")
+			return db.LinearIntegration{}, pkgerrors.Internal("failed to encrypt linear refresh token").WithCause(err)
 		}
 	}
 
 	webhookSecret, err := randomLinearHex(32)
 	if err != nil {
-		return db.LinearIntegration{}, pkgerrors.Internal("failed to generate linear webhook secret")
+		return db.LinearIntegration{}, pkgerrors.Internal("failed to generate linear webhook secret").WithCause(err)
 	}
 	encryptedWebhookSecret, err := linearIntegrationEncrypt(key, []byte(webhookSecret))
 	if err != nil {
-		return db.LinearIntegration{}, pkgerrors.Internal("failed to encrypt linear webhook secret")
+		return db.LinearIntegration{}, pkgerrors.Internal("failed to encrypt linear webhook secret").WithCause(err)
 	}
 
 	var tokenExpiresAt pgtype.Timestamptz
@@ -539,7 +539,7 @@ func (s *LinearIntegrationService) GetDecryptedAccessToken(ctx context.Context, 
 	key := smitherscrypto.DeriveKey(s.sessionSecret)
 	plaintext, err := linearIntegrationDecrypt(key, integration.AccessTokenEncrypted)
 	if err != nil {
-		return "", pkgerrors.Internal("failed to decrypt linear access token")
+		return "", pkgerrors.Internal("failed to decrypt linear access token").WithCause(err)
 	}
 	return string(plaintext), nil
 }
@@ -551,12 +551,12 @@ func (s *LinearIntegrationService) GetDecryptedWebhookSecret(integration db.Line
 	}
 	ciphertext, err := base64.StdEncoding.DecodeString(integration.WebhookSecret)
 	if err != nil {
-		return "", pkgerrors.Internal("failed to decode linear webhook secret")
+		return "", pkgerrors.Internal("failed to decode linear webhook secret").WithCause(err)
 	}
 	key := smitherscrypto.DeriveKey(s.sessionSecret)
 	plaintext, err := linearIntegrationDecrypt(key, ciphertext)
 	if err != nil {
-		return "", pkgerrors.Internal("failed to decrypt linear webhook secret")
+		return "", pkgerrors.Internal("failed to decrypt linear webhook secret").WithCause(err)
 	}
 	return string(plaintext), nil
 }
@@ -575,7 +575,7 @@ func (s *LinearIntegrationService) RefreshTokenIfNeeded(ctx context.Context, int
 	key := smitherscrypto.DeriveKey(s.sessionSecret)
 	refreshPlain, err := linearIntegrationDecrypt(key, integration.RefreshTokenEncrypted)
 	if err != nil {
-		return integration, pkgerrors.Internal("failed to decrypt linear refresh token")
+		return integration, pkgerrors.Internal("failed to decrypt linear refresh token").WithCause(err)
 	}
 
 	tokenResult, err := s.linearClient.RefreshToken(ctx, string(refreshPlain))
@@ -585,14 +585,14 @@ func (s *LinearIntegrationService) RefreshTokenIfNeeded(ctx context.Context, int
 
 	encryptedAccess, err := linearIntegrationEncrypt(key, []byte(tokenResult.AccessToken))
 	if err != nil {
-		return integration, pkgerrors.Internal("failed to encrypt refreshed access token")
+		return integration, pkgerrors.Internal("failed to encrypt refreshed access token").WithCause(err)
 	}
 
 	var encryptedRefresh []byte
 	if tokenResult.RefreshToken != "" {
 		encryptedRefresh, err = linearIntegrationEncrypt(key, []byte(tokenResult.RefreshToken))
 		if err != nil {
-			return integration, pkgerrors.Internal("failed to encrypt refreshed refresh token")
+			return integration, pkgerrors.Internal("failed to encrypt refreshed refresh token").WithCause(err)
 		}
 	}
 
@@ -607,7 +607,7 @@ func (s *LinearIntegrationService) RefreshTokenIfNeeded(ctx context.Context, int
 		RefreshTokenEncrypted: encryptedRefresh,
 		TokenExpiresAt:        tokenExpiresAt,
 	}); err != nil {
-		return integration, pkgerrors.Internal("failed to store refreshed tokens")
+		return integration, pkgerrors.Internal("failed to store refreshed tokens").WithCause(err)
 	}
 
 	integration.AccessTokenEncrypted = encryptedAccess
@@ -628,12 +628,12 @@ func (s *LinearIntegrationService) decodeOAuthSetup(payloadEncrypted []byte) (Li
 	key := smitherscrypto.DeriveKey(s.sessionSecret)
 	payload, err := linearIntegrationDecrypt(key, payloadEncrypted)
 	if err != nil {
-		return LinearOAuthCallbackResult{}, pkgerrors.Internal("failed to decrypt linear oauth setup")
+		return LinearOAuthCallbackResult{}, pkgerrors.Internal("failed to decrypt linear oauth setup").WithCause(err)
 	}
 
 	var result LinearOAuthCallbackResult
 	if err := json.Unmarshal(payload, &result); err != nil {
-		return LinearOAuthCallbackResult{}, pkgerrors.Internal("failed to decode linear oauth setup")
+		return LinearOAuthCallbackResult{}, pkgerrors.Internal("failed to decode linear oauth setup").WithCause(err)
 	}
 
 	return result, nil

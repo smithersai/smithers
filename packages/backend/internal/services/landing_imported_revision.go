@@ -28,7 +28,7 @@ func (s *LandingService) recoverImportedLandingRevision(ctx context.Context, rep
 		LandingRequestID: landingID, PageSize: maxLandingStackChanges + 1,
 	})
 	if err != nil {
-		return db.ChangeRevision{}, pkgerrors.Internal("failed to load landing changes")
+		return db.ChangeRevision{}, pkgerrors.Internal("failed to load landing changes").WithCause(err)
 	}
 	if len(members) == 0 || len(members) > maxLandingStackChanges {
 		return invalid()
@@ -46,21 +46,21 @@ func (s *LandingService) recoverImportedLandingRevision(ctx context.Context, rep
 		}
 		parents, err := json.Marshal(change.ParentChangeIDs)
 		if err != nil {
-			return db.ChangeRevision{}, pkgerrors.Internal("failed to encode landing change parents")
+			return db.ChangeRevision{}, pkgerrors.Internal("failed to encode landing change parents").WithCause(err)
 		}
 		if _, err := q.UpsertChange(ctx, db.UpsertChangeParams{
 			RepositoryID: repositoryID, ChangeID: change.ChangeID, CommitID: change.CommitID,
 			Description: change.Description, AuthorName: change.AuthorName, AuthorEmail: change.AuthorEmail,
 			HasConflict: change.HasConflict, IsEmpty: change.IsEmpty, ParentChangeIds: parents,
 		}); err != nil {
-			return db.ChangeRevision{}, pkgerrors.Internal("failed to store imported landing change")
+			return db.ChangeRevision{}, pkgerrors.Internal("failed to store imported landing change").WithCause(err)
 		}
 		revision, err := q.RecordChangeRevision(ctx, db.RecordChangeRevisionParams{
 			RepositoryID: repositoryID, ChangeID: change.ChangeID, CommitID: change.CommitID,
 			ParentCommitID: change.ParentCommitID, Source: "push", OperationIds: []string{},
 		})
 		if err != nil {
-			return db.ChangeRevision{}, pkgerrors.Internal("failed to store imported landing revision")
+			return db.ChangeRevision{}, pkgerrors.Internal("failed to store imported landing revision").WithCause(err)
 		}
 		return revision, nil
 	}

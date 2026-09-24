@@ -107,10 +107,10 @@ func (s *RepoSyncService) SyncRepo(
 
 	repoPath := filepath.Join(s.root, normalizedOwner, normalizedRepo+".git")
 	if err := os.MkdirAll(filepath.Dir(repoPath), 0o755); err != nil {
-		return pkgerrors.Internal("failed to create repo sync directory")
+		return pkgerrors.Internal("failed to create repo sync directory").WithCause(err)
 	}
 	if err := ensureBareRepoExists(ctx, s.runGit, repoPath); err != nil {
-		return pkgerrors.Internal("failed to initialize bare repository")
+		return pkgerrors.Internal("failed to initialize bare repository").WithCause(err)
 	}
 
 	metadataPath := filepath.Join(repoPath, "jj", "metadata.json")
@@ -123,7 +123,7 @@ func (s *RepoSyncService) SyncRepo(
 		WorkingCopyParent: req.WorkingCopyParent,
 	}
 	if err := writeJSONAtomically(metadataPath, metadata); err != nil {
-		return pkgerrors.Internal("failed to persist repository metadata")
+		return pkgerrors.Internal("failed to persist repository metadata").WithCause(err)
 	}
 
 	return nil

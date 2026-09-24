@@ -77,12 +77,12 @@ func (s *CanaryReportService) ReportResults(ctx context.Context, input CanaryRep
 	record := func(q CanaryResultStore) error {
 		for _, row := range rows {
 			if _, err := q.UpsertCanaryResult(ctx, row); err != nil {
-				return pkgerrors.Internal("failed to persist canary result")
+				return pkgerrors.Internal("failed to persist canary result").WithCause(err)
 			}
 		}
 		if condition := CanaryIncidentCondition(suite); failures == 0 && condition != "" {
 			if _, err := q.ResolveCanaryAlertIncidents(ctx, clusterdb.ResolveCanaryAlertIncidentsParams{ConditionName: condition, ResolvedBy: pgtype.Text{String: "canary:" + runID, Valid: true}}); err != nil {
-				return pkgerrors.Internal("failed to resolve canary incidents")
+				return pkgerrors.Internal("failed to resolve canary incidents").WithCause(err)
 			}
 		}
 		return nil
@@ -90,14 +90,14 @@ func (s *CanaryReportService) ReportResults(ctx context.Context, input CanaryRep
 	if txq, ok := s.queries.(incidentTransactionalQuerier); ok {
 		tx, err := txq.BeginTx(ctx)
 		if err != nil {
-			return pkgerrors.Internal("failed to begin canary report")
+			return pkgerrors.Internal("failed to begin canary report").WithCause(err)
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 		if err := record(txq.WithTx(tx)); err != nil {
 			return err
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return pkgerrors.Internal("failed to commit canary report")
+			return pkgerrors.Internal("failed to commit canary report").WithCause(err)
 		}
 		return nil
 	}

@@ -37,7 +37,7 @@ func (s *LandingService) ObserveLandingAppend(ctx context.Context, viewer *db.Us
 		return LandingAppendObservation{}, pkgerrors.New(pkgerrors.CodeAppendTaskMissing, "append has not been queued")
 	}
 	if err != nil {
-		return LandingAppendObservation{}, pkgerrors.Internal("failed to load append task")
+		return LandingAppendObservation{}, pkgerrors.Internal("failed to load append task").WithCause(err)
 	}
 	request, err := decodeLandingAppend(task, landingRecordFromRow(row))
 	if err != nil {

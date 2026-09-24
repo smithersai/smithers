@@ -116,7 +116,7 @@ func (s *workflowAPIService) GetWorkflowDefinition(ctx context.Context, reposito
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.WorkflowDefinition{}, pkgerrors.NotFound("workflow definition not found")
 		}
-		return db.WorkflowDefinition{}, pkgerrors.Internal("failed to fetch workflow definition")
+		return db.WorkflowDefinition{}, pkgerrors.Internal("failed to fetch workflow definition").WithCause(err)
 	}
 	return def, nil
 }
@@ -170,7 +170,7 @@ func (s *workflowAPIService) GetWorkflowRun(ctx context.Context, repositoryID, r
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.WorkflowRun{}, pkgerrors.NotFound("workflow run not found")
 		}
-		return db.WorkflowRun{}, pkgerrors.Internal("failed to fetch workflow run")
+		return db.WorkflowRun{}, pkgerrors.Internal("failed to fetch workflow run").WithCause(err)
 	}
 	return run, nil
 }
@@ -238,7 +238,7 @@ func ValidateDispatchInputs(configJSON json.RawMessage, userInputs map[string]in
 
 	var cfg WorkflowTriggerConfig
 	if err := json.Unmarshal(configJSON, &cfg); err != nil {
-		return nil, pkgerrors.Internal("failed to parse workflow config")
+		return nil, pkgerrors.Internal("failed to parse workflow config").WithCause(err)
 	}
 
 	if cfg.On.WorkflowDispatch == nil {

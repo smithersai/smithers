@@ -728,7 +728,7 @@ func parseDesktopObservationLines(workspaceID string, lines []string) (DesktopOb
 	if trimmed := strings.TrimSpace(text); trimmed != "-" {
 		decoded, decodeErr := base64.StdEncoding.DecodeString(trimmed)
 		if decodeErr != nil {
-			return DesktopObservation{}, pkgerrors.Internal("desktop helper returned invalid screen text")
+			return DesktopObservation{}, pkgerrors.Internal("desktop helper returned invalid screen text").WithCause(decodeErr)
 		}
 		screen := boundDesktopText(string(decoded))
 		source := "chrome-cdp"

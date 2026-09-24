@@ -146,7 +146,7 @@ func (s *SearchService) SearchRepositories(ctx context.Context, viewer *db.User,
 		ViewerID: viewerID,
 	})
 	if err != nil {
-		return RepositorySearchResultPage{}, pkgerrors.Internal("failed to count repositories")
+		return RepositorySearchResultPage{}, pkgerrors.Internal("failed to count repositories").WithCause(err)
 	}
 	if total == 0 {
 		return RepositorySearchResultPage{
@@ -164,7 +164,7 @@ func (s *SearchService) SearchRepositories(ctx context.Context, viewer *db.User,
 		PageSize:   int32(perPage),
 	})
 	if err != nil {
-		return RepositorySearchResultPage{}, pkgerrors.Internal("failed to search repositories")
+		return RepositorySearchResultPage{}, pkgerrors.Internal("failed to search repositories").WithCause(err)
 	}
 
 	items := make([]RepositorySearchResult, 0, len(rows))
@@ -218,7 +218,7 @@ func (s *SearchService) SearchIssues(ctx context.Context, viewer *db.User, input
 		ViewerID:        viewerID,
 	})
 	if err != nil {
-		return IssueSearchResultPage{}, pkgerrors.Internal("failed to count issues")
+		return IssueSearchResultPage{}, pkgerrors.Internal("failed to count issues").WithCause(err)
 	}
 	if total == 0 {
 		return IssueSearchResultPage{
@@ -240,7 +240,7 @@ func (s *SearchService) SearchIssues(ctx context.Context, viewer *db.User, input
 		PageSize:        int32(perPage),
 	})
 	if err != nil {
-		return IssueSearchResultPage{}, pkgerrors.Internal("failed to search issues")
+		return IssueSearchResultPage{}, pkgerrors.Internal("failed to search issues").WithCause(err)
 	}
 
 	items := make([]IssueSearchResult, 0, len(rows))
@@ -278,7 +278,7 @@ func (s *SearchService) SearchUsers(ctx context.Context, input SearchUsersInput)
 
 	total, err := s.queries.CountSearchUsersFTS(ctx, query)
 	if err != nil {
-		return UserSearchResultPage{}, pkgerrors.Internal("failed to count users")
+		return UserSearchResultPage{}, pkgerrors.Internal("failed to count users").WithCause(err)
 	}
 	if total == 0 {
 		return UserSearchResultPage{
@@ -295,7 +295,7 @@ func (s *SearchService) SearchUsers(ctx context.Context, input SearchUsersInput)
 		PageSize:   int32(perPage),
 	})
 	if err != nil {
-		return UserSearchResultPage{}, pkgerrors.Internal("failed to search users")
+		return UserSearchResultPage{}, pkgerrors.Internal("failed to search users").WithCause(err)
 	}
 
 	items := make([]UserSearchResult, 0, len(rows))
@@ -334,7 +334,7 @@ func (s *SearchService) SearchCode(ctx context.Context, viewer *db.User, input S
 		ViewerID: viewerID,
 	})
 	if err != nil {
-		return CodeSearchResultPage{}, pkgerrors.Internal("failed to count code results")
+		return CodeSearchResultPage{}, pkgerrors.Internal("failed to count code results").WithCause(err)
 	}
 	if total == 0 {
 		return CodeSearchResultPage{
@@ -352,7 +352,7 @@ func (s *SearchService) SearchCode(ctx context.Context, viewer *db.User, input S
 		PageSize:   int32(perPage),
 	})
 	if err != nil {
-		return CodeSearchResultPage{}, pkgerrors.Internal("failed to search code")
+		return CodeSearchResultPage{}, pkgerrors.Internal("failed to search code").WithCause(err)
 	}
 
 	items := make([]CodeSearchResult, 0, len(rows))

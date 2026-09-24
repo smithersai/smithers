@@ -607,7 +607,7 @@ func (s *BillingService) ReconcileOrgSeats(ctx context.Context, orgID int64) err
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
-		return pkgerrors.Internal("failed to load billing subscription")
+		return pkgerrors.Internal("failed to load billing subscription").WithCause(err)
 	}
 	if strings.TrimSpace(subscriptionRow.StripeSubscriptionID) == "" {
 		return nil
@@ -621,7 +621,7 @@ func (s *BillingService) ReconcileOrgSeats(ctx context.Context, orgID int64) err
 		return nil
 	}
 	if err := s.stripe.UpdateSubscriptionQuantity(ctx, subscriptionRow.StripeSubscriptionID, seats); err != nil {
-		return pkgerrors.Internal("failed to update stripe subscription seat quantity")
+		return pkgerrors.Internal("failed to update stripe subscription seat quantity").WithCause(err)
 	}
 	// Refresh the local projection immediately so the DB row reflects the new
 	// quantity; the customer.subscription.updated webhook confirms it later.
@@ -715,7 +715,7 @@ func (s *BillingService) inTransaction(conn db.DBTX) (*BillingService, error) {
 func (s *BillingService) processStripeEventTx(ctx context.Context, txq billingTxQuerier, eventID, eventType string, raw json.RawMessage) error {
 	tx, err := txq.BeginTx(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin stripe webhook transaction")
+		return pkgerrors.Internal("failed to begin stripe webhook transaction").WithCause(err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	txService, err := s.inTransaction(tx)
@@ -733,7 +733,7 @@ func (s *BillingService) processStripeEventTx(ctx context.Context, txq billingTx
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to commit stripe webhook transaction")
+		return pkgerrors.Internal("failed to commit stripe webhook transaction").WithCause(err)
 	}
 	return nil
 }
@@ -838,11 +838,11 @@ func (s *BillingService) AuthorizePrivateRepoCommitted(
 
 	tx, err := txq.BeginTx(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin private repository authorization transaction")
+		return pkgerrors.Internal("failed to begin private repository authorization transaction").WithCause(err)
 	}
 	defer releaseBillingAdvisoryLockTransaction(ctx, tx, "private repository authorization")
 	if _, err := tx.Exec(ctx, storageAuthorizationLockSQL, ownerType, ownerID); err != nil {
-		return pkgerrors.Internal("failed to lock private repository usage")
+		return pkgerrors.Internal("failed to lock private repository usage").WithCause(err)
 	}
 
 	txService, err := s.inTransaction(tx)
@@ -937,7 +937,7 @@ func (s *BillingService) resolvePlan(ctx context.Context, owner billingOwnerRef)
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return plan, nil
 		}
-		return billingPlanDefinition{}, pkgerrors.Internal("failed to load billing subscription")
+		return billingPlanDefinition{}, pkgerrors.Internal("failed to load billing subscription").WithCause(err)
 	}
 	return s.planForSubscription(owner.OwnerType, &row), nil
 }
@@ -1044,7 +1044,7 @@ func (s *BillingService) AuthorizeStorageIncreaseCommittedDynamic(
 
 	tx, err := txq.BeginTx(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin storage authorization transaction")
+		return pkgerrors.Internal("failed to begin storage authorization transaction").WithCause(err)
 	}
 	defer releaseBillingAdvisoryLockTransaction(ctx, tx, "storage authorization")
 
@@ -1053,7 +1053,7 @@ func (s *BillingService) AuthorizeStorageIncreaseCommittedDynamic(
 	// otherwise it can read the old owner, wait behind a transfer on that stale
 	// owner's quota lock, and commit bytes after ownership changed.
 	if _, err := tx.Exec(ctx, repoOwnershipSharedLockSQL, repositoryID); err != nil {
-		return pkgerrors.Internal("failed to lock repository ownership")
+		return pkgerrors.Internal("failed to lock repository ownership").WithCause(err)
 	}
 	txService, err := s.inTransaction(tx)
 	if err != nil {
@@ -1064,7 +1064,7 @@ func (s *BillingService) AuthorizeStorageIncreaseCommittedDynamic(
 		return err
 	}
 	if _, err := tx.Exec(ctx, storageAuthorizationLockSQL, owner.OwnerType, owner.OwnerID); err != nil {
-		return pkgerrors.Internal("failed to lock storage usage")
+		return pkgerrors.Internal("failed to lock storage usage").WithCause(err)
 	}
 	additionalBytes, err := resolveAdditionalBytes(ctx)
 	if err != nil {
@@ -1128,11 +1128,11 @@ func (s *BillingService) AuthorizeRepositoryTransferCommitted(
 
 	tx, err := txq.BeginTx(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin repository transfer authorization transaction")
+		return pkgerrors.Internal("failed to begin repository transfer authorization transaction").WithCause(err)
 	}
 	defer releaseBillingAdvisoryLockTransaction(ctx, tx, "repository transfer authorization")
 	if _, err := tx.Exec(ctx, storageAuthorizationLockSQL, target.OwnerType, target.OwnerID); err != nil {
-		return pkgerrors.Internal("failed to lock target owner storage usage")
+		return pkgerrors.Internal("failed to lock target owner storage usage").WithCause(err)
 	}
 
 	txService, err := s.inTransaction(tx)
@@ -1172,7 +1172,7 @@ func (s *BillingService) AuthorizeRepositoryTransferCommittedInTransaction(
 	}
 	target := billingOwnerRef{OwnerType: targetOwnerType, OwnerID: targetOwnerID}
 	if _, err := tx.Exec(ctx, storageAuthorizationLockSQL, target.OwnerType, target.OwnerID); err != nil {
-		return pkgerrors.Internal("failed to lock target owner storage usage")
+		return pkgerrors.Internal("failed to lock target owner storage usage").WithCause(err)
 	}
 
 	txService, err := s.inTransaction(tx)
@@ -1199,7 +1199,7 @@ func releaseBillingAdvisoryLockTransaction(parent context.Context, tx pgx.Tx, op
 func (s *BillingService) authorizeRepositoryTransferUsage(ctx context.Context, repositoryID int64, target billingOwnerRef, privateRepository bool) error {
 	footprint, err := s.queries.SumStorageBytesByRepository(ctx, repositoryID)
 	if err != nil {
-		return pkgerrors.Internal("failed to measure repository storage")
+		return pkgerrors.Internal("failed to measure repository storage").WithCause(err)
 	}
 	if footprint < 0 {
 		return pkgerrors.Internal("repository storage footprint cannot be negative")
@@ -1410,7 +1410,7 @@ func (s *BillingService) ownerOverview(ctx context.Context, owner billingOwnerRe
 	if account != nil {
 		rows, err := s.queries.ListBillingEntitlementsByAccount(ctx, account.ID)
 		if err != nil {
-			return BillingOverview{}, pkgerrors.Internal("failed to load billing entitlements")
+			return BillingOverview{}, pkgerrors.Internal("failed to load billing entitlements").WithCause(err)
 		}
 		entitlements = make([]BillingEntitlementSummary, 0, len(rows))
 		for _, row := range rows {
@@ -1495,7 +1495,7 @@ func (s *BillingService) resolveLocalState(ctx context.Context, owner billingOwn
 		}
 		row, err := s.queries.GetLatestLiveBillingSubscriptionByAccount(ctx, account.ID)
 		if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
-			return billingPlanDefinition{}, nil, nil, nil, pkgerrors.Internal("failed to load billing subscription")
+			return billingPlanDefinition{}, nil, nil, nil, pkgerrors.Internal("failed to load billing subscription").WithCause(err)
 		}
 		if err == nil {
 			subscription = &row
@@ -1518,14 +1518,14 @@ func (s *BillingService) computeAndPersistUsage(ctx context.Context, owner billi
 		OwnerID:   owner.OwnerID,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to count private repositories")
+		return nil, pkgerrors.Internal("failed to count private repositories").WithCause(err)
 	}
 	storageBytes, err := s.queries.SumStorageBytesByOwner(ctx, db.SumStorageBytesByOwnerParams{
 		OwnerType: owner.OwnerType,
 		OwnerID:   owner.OwnerID,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to measure storage usage")
+		return nil, pkgerrors.Internal("failed to measure storage usage").WithCause(err)
 	}
 	ciMinutes, err := s.queries.SumWorkflowMinutesByOwner(ctx, db.SumWorkflowMinutesByOwnerParams{
 		PeriodStart: periodStart,
@@ -1534,7 +1534,7 @@ func (s *BillingService) computeAndPersistUsage(ctx context.Context, owner billi
 		OwnerID:     owner.OwnerID,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to measure workflow usage")
+		return nil, pkgerrors.Internal("failed to measure workflow usage").WithCause(err)
 	}
 	agentRuns, err := s.queries.CountAgentRunsByOwner(ctx, db.CountAgentRunsByOwnerParams{
 		PeriodStart: periodStart,
@@ -1543,7 +1543,7 @@ func (s *BillingService) computeAndPersistUsage(ctx context.Context, owner billi
 		OwnerID:     owner.OwnerID,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to measure agent usage")
+		return nil, pkgerrors.Internal("failed to measure agent usage").WithCause(err)
 	}
 	seats, err := s.currentSeatCount(ctx, owner)
 	if err != nil {
@@ -1593,7 +1593,7 @@ func (s *BillingService) computeAndPersistUsage(ctx context.Context, owner billi
 			LastReportedMeterEventID: "",
 			LastSyncedAt:             s.now(),
 		}); err != nil {
-			return nil, pkgerrors.Internal("failed to persist billing usage counters")
+			return nil, pkgerrors.Internal("failed to persist billing usage counters").WithCause(err)
 		}
 	}
 
@@ -1604,7 +1604,7 @@ func (s *BillingService) computeAndPersistUsage(ctx context.Context, owner billi
 		PeriodEnd:   periodEnd,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load billing usage counters")
+		return nil, pkgerrors.Internal("failed to load billing usage counters").WithCause(err)
 	}
 
 	out := map[string]BillingUsageSummary{}
@@ -1635,7 +1635,7 @@ func (s *BillingService) createCheckoutSession(ctx context.Context, owner billin
 	// plan changes go through the Stripe customer portal (proration included).
 	existing, err := s.queries.GetLatestLiveBillingSubscriptionByAccount(ctx, account.ID)
 	if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
-		return BillingSessionResult{}, pkgerrors.Internal("failed to load billing subscription")
+		return BillingSessionResult{}, pkgerrors.Internal("failed to load billing subscription").WithCause(err)
 	}
 	if err == nil && paidSubscriptionStatus(existing.Status) {
 		return BillingSessionResult{}, pkgerrors.BadRequest("a subscription is already active — change plans in the billing portal instead")
@@ -1647,7 +1647,7 @@ func (s *BillingService) createCheckoutSession(ctx context.Context, owner billin
 	// session blocks another charge while its webhook catches up.
 	latest, found, err := s.stripe.GetLatestCheckoutSession(ctx, account.StripeCustomerID)
 	if err != nil {
-		return BillingSessionResult{}, pkgerrors.Internal("failed to inspect stripe checkout sessions")
+		return BillingSessionResult{}, pkgerrors.Internal("failed to inspect stripe checkout sessions").WithCause(err)
 	}
 	checkoutGeneration := "initial"
 	if found {
@@ -1664,7 +1664,7 @@ func (s *BillingService) createCheckoutSession(ctx context.Context, owner billin
 				return BillingSessionResult{URL: latest.URL}, nil
 			}
 			if err := s.stripe.ExpireCheckoutSession(ctx, latest.ID); err != nil {
-				return BillingSessionResult{}, pkgerrors.Internal("failed to expire stale stripe checkout session")
+				return BillingSessionResult{}, pkgerrors.Internal("failed to expire stale stripe checkout session").WithCause(err)
 			}
 		case "complete":
 			// A completed session whose subscription has not reached the local
@@ -1701,7 +1701,7 @@ func (s *BillingService) createCheckoutSession(ctx context.Context, owner billin
 		},
 	})
 	if err != nil {
-		return BillingSessionResult{}, pkgerrors.Internal("failed to create stripe checkout session")
+		return BillingSessionResult{}, pkgerrors.Internal("failed to create stripe checkout session").WithCause(err)
 	}
 	return BillingSessionResult{URL: result.URL}, nil
 }
@@ -1721,7 +1721,7 @@ func (s *BillingService) checkoutSubscriptionProjection(ctx context.Context, acc
 	}
 	rows, listErr := s.queries.ListBillingSubscriptionsByAccount(ctx, accountID)
 	if listErr != nil {
-		return false, false, pkgerrors.Internal("failed to inspect billing subscriptions")
+		return false, false, pkgerrors.Internal("failed to inspect billing subscriptions").WithCause(listErr)
 	}
 	for _, row := range rows {
 		if strings.TrimSpace(row.StripeSubscriptionID) == subscriptionID {
@@ -1747,7 +1747,7 @@ func (s *BillingService) createPortalSession(ctx context.Context, owner billingO
 		ReturnURL:  s.portalReturnURL(owner),
 	})
 	if err != nil {
-		return BillingSessionResult{}, pkgerrors.Internal("failed to create stripe customer portal session")
+		return BillingSessionResult{}, pkgerrors.Internal("failed to create stripe customer portal session").WithCause(err)
 	}
 	return BillingSessionResult{URL: url}, nil
 }
@@ -1766,12 +1766,12 @@ func (s *BillingService) refreshRemoteProjection(ctx context.Context, owner bill
 
 	subscription, err := s.queries.GetLatestBillingSubscriptionByAccount(ctx, account.ID)
 	if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
-		return pkgerrors.Internal("failed to load billing subscription")
+		return pkgerrors.Internal("failed to load billing subscription").WithCause(err)
 	}
 	if err == nil && strings.TrimSpace(subscription.StripeSubscriptionID) != "" {
 		snapshot, err := s.stripe.GetSubscription(ctx, subscription.StripeSubscriptionID)
 		if err != nil {
-			return pkgerrors.Internal("failed to refresh stripe subscription")
+			return pkgerrors.Internal("failed to refresh stripe subscription").WithCause(err)
 		}
 		if err := s.upsertSubscriptionSnapshot(ctx, *account, snapshot); err != nil {
 			return err
@@ -1780,7 +1780,7 @@ func (s *BillingService) refreshRemoteProjection(ctx context.Context, owner bill
 
 	entitlements, err := s.stripe.ListActiveEntitlements(ctx, account.StripeCustomerID)
 	if err != nil {
-		return pkgerrors.Internal("failed to refresh stripe entitlements")
+		return pkgerrors.Internal("failed to refresh stripe entitlements").WithCause(err)
 	}
 	if err := s.replaceEntitlements(ctx, account.ID, entitlements); err != nil {
 		return err
@@ -1885,7 +1885,7 @@ func (s *BillingService) handleInvoicePaymentFailed(ctx context.Context, payload
 	if s.stripe != nil && strings.TrimSpace(payload.Subscription) != "" {
 		snapshot, err := s.stripe.GetSubscription(ctx, payload.Subscription)
 		if err != nil {
-			return pkgerrors.Internal("failed to refresh stripe subscription after payment failure")
+			return pkgerrors.Internal("failed to refresh stripe subscription after payment failure").WithCause(err)
 		}
 		if err := s.upsertSubscriptionSnapshot(ctx, *account, snapshot); err != nil {
 			return err
@@ -1928,7 +1928,7 @@ func (s *BillingService) handleChargeRefunded(ctx context.Context, eventID strin
 	if customerID == "" && s.stripe != nil && strings.TrimSpace(payload.ID) != "" {
 		charge, err := s.stripe.GetCharge(ctx, payload.ID)
 		if err != nil {
-			return pkgerrors.Internal("failed to refresh stripe charge after refund")
+			return pkgerrors.Internal("failed to refresh stripe charge after refund").WithCause(err)
 		}
 		customerID = charge.CustomerID
 		if payload.AmountRefunded <= 0 {
@@ -1951,7 +1951,7 @@ func (s *BillingService) handleChargeDisputeCreated(ctx context.Context, eventID
 	if s.stripe != nil && strings.TrimSpace(payload.Charge) != "" {
 		charge, err := s.stripe.GetCharge(ctx, payload.Charge)
 		if err != nil {
-			return pkgerrors.Internal("failed to refresh stripe charge after dispute")
+			return pkgerrors.Internal("failed to refresh stripe charge after dispute").WithCause(err)
 		}
 		customerID = charge.CustomerID
 	}
@@ -1994,7 +1994,7 @@ func (s *BillingService) handleEntitlementEvent(ctx context.Context, payload str
 
 func (s *BillingService) replaceEntitlements(ctx context.Context, billingAccountID int64, featureKeys []string) error {
 	if err := s.queries.DeactivateBillingEntitlementsByAccount(ctx, billingAccountID); err != nil {
-		return pkgerrors.Internal("failed to reset billing entitlements")
+		return pkgerrors.Internal("failed to reset billing entitlements").WithCause(err)
 	}
 	deduped := dedupeStrings(featureKeys)
 	now := s.now()
@@ -2005,7 +2005,7 @@ func (s *BillingService) replaceEntitlements(ctx context.Context, billingAccount
 			Active:           true,
 			LastSyncedAt:     now,
 		}); err != nil {
-			return pkgerrors.Internal("failed to persist billing entitlements")
+			return pkgerrors.Internal("failed to persist billing entitlements").WithCause(err)
 		}
 	}
 	return nil
@@ -2087,7 +2087,7 @@ func (s *BillingService) upsertSubscriptionSnapshot(ctx context.Context, account
 		RawPayload:           snapshot.RawPayload,
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to persist billing subscription")
+		return pkgerrors.Internal("failed to persist billing subscription").WithCause(err)
 	}
 	return nil
 }
@@ -2109,7 +2109,7 @@ func (s *BillingService) ensureBillingAccount(ctx context.Context, owner billing
 		},
 	})
 	if err != nil {
-		return db.BillingAccount{}, pkgerrors.Internal("failed to create stripe customer")
+		return db.BillingAccount{}, pkgerrors.Internal("failed to create stripe customer").WithCause(err)
 	}
 	return s.upsertBillingAccount(ctx, owner, customerID, customerName, customerEmail)
 }
@@ -2123,7 +2123,7 @@ func (s *BillingService) upsertBillingAccount(ctx context.Context, owner billing
 		StripeCustomerName:  strings.TrimSpace(customerName),
 	})
 	if err != nil {
-		return db.BillingAccount{}, pkgerrors.Internal("failed to persist billing account")
+		return db.BillingAccount{}, pkgerrors.Internal("failed to persist billing account").WithCause(err)
 	}
 	return account, nil
 }
@@ -2141,7 +2141,7 @@ func (s *BillingService) resolveOrgOwner(ctx context.Context, actor *db.User, or
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return billingOwnerRef{}, pkgerrors.NotFound("organization not found")
 		}
-		return billingOwnerRef{}, pkgerrors.Internal("failed to load organization")
+		return billingOwnerRef{}, pkgerrors.Internal("failed to load organization").WithCause(err)
 	}
 	member, err := s.queries.GetOrgMember(ctx, db.GetOrgMemberParams{
 		OrganizationID: org.ID,
@@ -2151,7 +2151,7 @@ func (s *BillingService) resolveOrgOwner(ctx context.Context, actor *db.User, or
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return billingOwnerRef{}, pkgerrors.Forbidden("insufficient organization permissions")
 		}
-		return billingOwnerRef{}, pkgerrors.Internal("failed to load organization membership")
+		return billingOwnerRef{}, pkgerrors.Internal("failed to load organization membership").WithCause(err)
 	}
 	if strings.ToLower(strings.TrimSpace(member.Role)) != "owner" {
 		return billingOwnerRef{}, pkgerrors.Forbidden("insufficient organization permissions")
@@ -2169,12 +2169,12 @@ func (s *BillingService) resolveRepoOwner(ctx context.Context, repositoryID int6
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return billingOwnerRef{}, db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return billingOwnerRef{}, db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return billingOwnerRef{}, db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	if repo.UserID.Valid {
 		user, err := s.queries.GetUserByID(ctx, repo.UserID.Int64)
 		if err != nil {
-			return billingOwnerRef{}, db.Repository{}, pkgerrors.Internal("failed to load repository owner")
+			return billingOwnerRef{}, db.Repository{}, pkgerrors.Internal("failed to load repository owner").WithCause(err)
 		}
 		return billingOwnerRef{
 			OwnerType: BillingOwnerTypeUser,
@@ -2185,7 +2185,7 @@ func (s *BillingService) resolveRepoOwner(ctx context.Context, repositoryID int6
 	if repo.OrgID.Valid {
 		org, err := s.queries.GetOrgByID(ctx, repo.OrgID.Int64)
 		if err != nil {
-			return billingOwnerRef{}, db.Repository{}, pkgerrors.Internal("failed to load repository owner")
+			return billingOwnerRef{}, db.Repository{}, pkgerrors.Internal("failed to load repository owner").WithCause(err)
 		}
 		return billingOwnerRef{
 			OwnerType: BillingOwnerTypeOrg,
@@ -2202,7 +2202,7 @@ func (s *BillingService) currentSeatCount(ctx context.Context, owner billingOwne
 	}
 	count, err := s.queries.CountOrgMembers(ctx, owner.OwnerID)
 	if err != nil {
-		return 0, pkgerrors.Internal("failed to count organization seats")
+		return 0, pkgerrors.Internal("failed to count organization seats").WithCause(err)
 	}
 	if count <= 0 {
 		return 1, nil
@@ -2328,7 +2328,7 @@ func (s *BillingService) findBillingAccountByOwner(ctx context.Context, ownerTyp
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, pkgerrors.Internal("failed to load billing account")
+		return nil, pkgerrors.Internal("failed to load billing account").WithCause(err)
 	}
 	return &account, nil
 }
@@ -2343,7 +2343,7 @@ func (s *BillingService) findBillingAccountByCustomerID(ctx context.Context, cus
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, pkgerrors.Internal("failed to load billing account")
+		return nil, pkgerrors.Internal("failed to load billing account").WithCause(err)
 	}
 	return &account, nil
 }
@@ -2357,7 +2357,7 @@ func (s *BillingService) claimStripeProcessedEvent(ctx context.Context, eventID,
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
-		return false, pkgerrors.Internal("failed to record stripe webhook event")
+		return false, pkgerrors.Internal("failed to record stripe webhook event").WithCause(err)
 	}
 	return true, nil
 }
@@ -2414,7 +2414,7 @@ func (s *BillingService) ensureMonthlyCreditGrant(ctx context.Context, account d
 			BalanceCents:     entry.BalanceAfterCents,
 			LastGrantAt:      pgtype.Timestamptz{Time: entry.CreatedAt, Valid: true},
 		}); err != nil {
-			return pkgerrors.Internal("failed to repair billing credit balance")
+			return pkgerrors.Internal("failed to repair billing credit balance").WithCause(err)
 		}
 		return nil
 	} else if !stdErrors.Is(err, pgx.ErrNoRows) {
@@ -2430,14 +2430,14 @@ func (s *BillingService) ensureMonthlyCreditGrant(ctx context.Context, account d
 		MetricKey:         "",
 		IdempotencyKey:    idempotencyKey,
 	}); err != nil {
-		return pkgerrors.Internal("failed to record monthly credit grant")
+		return pkgerrors.Internal("failed to record monthly credit grant").WithCause(err)
 	}
 	if _, err := s.queries.UpsertCreditBalance(ctx, db.UpsertCreditBalanceParams{
 		BillingAccountID: account.ID,
 		BalanceCents:     nextBalance,
 		LastGrantAt:      pgtype.Timestamptz{Time: s.now(), Valid: true},
 	}); err != nil {
-		return pkgerrors.Internal("failed to update billing credit balance")
+		return pkgerrors.Internal("failed to update billing credit balance").WithCause(err)
 	}
 	return nil
 }
@@ -2475,7 +2475,7 @@ func (s *BillingService) recordStripeCreditAudit(ctx context.Context, account db
 		MetricKey:         strings.TrimSpace(metricKey),
 		IdempotencyKey:    idempotencyKey,
 	}); err != nil {
-		return pkgerrors.Internal("failed to record billing credit ledger")
+		return pkgerrors.Internal("failed to record billing credit ledger").WithCause(err)
 	}
 	if _, err := s.queries.UpsertCreditBalance(ctx, db.UpsertCreditBalanceParams{
 		BillingAccountID: account.ID,
@@ -2485,7 +2485,7 @@ func (s *BillingService) recordStripeCreditAudit(ctx context.Context, account db
 		// the ledger on every resolution.
 		LastGrantAt: lastGrantAt,
 	}); err != nil {
-		return pkgerrors.Internal("failed to update billing credit balance")
+		return pkgerrors.Internal("failed to update billing credit balance").WithCause(err)
 	}
 	return nil
 }

@@ -157,7 +157,7 @@ func (s *adminSystemIncidentsService) ListIncidents(ctx context.Context, input A
 		PageLimit: services.ClampInt32(limit),
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list alert incidents")
+		return nil, pkgerrors.Internal("failed to list alert incidents").WithCause(err)
 	}
 	if len(incidents) == 0 {
 		return []AdminSystemIncident{}, nil
@@ -170,7 +170,7 @@ func (s *adminSystemIncidentsService) ListIncidents(ctx context.Context, input A
 
 	jobs, err := s.queries.ListAlertRemediationJobsForIncidents(ctx, ids)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list alert remediation jobs")
+		return nil, pkgerrors.Internal("failed to list alert remediation jobs").WithCause(err)
 	}
 
 	byIncident := groupAdminSystemRemediations(jobs)

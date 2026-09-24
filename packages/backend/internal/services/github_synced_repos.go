@@ -262,7 +262,7 @@ func (s *GitHubSyncedRepoService) RecordMirrorStatus(ctx context.Context, mirror
 		FailedRefs:   report.FailedRefs,
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to record github mirror status")
+		return pkgerrors.Internal("failed to record github mirror status").WithCause(err)
 	}
 	if rows == 0 {
 		return pkgerrors.NotFound("configured github mirror not found")
@@ -278,7 +278,7 @@ func (s *GitHubSyncedRepoService) ListSyncedRepos(ctx context.Context, refsOnly 
 	}
 	rows, err := s.store.ListGitHubSyncedRepos(ctx, refsOnly)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list synced github repositories")
+		return nil, pkgerrors.Internal("failed to list synced github repositories").WithCause(err)
 	}
 	summaries := make([]GitHubSyncedRepoSummary, 0, len(rows))
 	for _, row := range rows {
@@ -358,7 +358,7 @@ func (s *GitHubSyncedRepoService) EnrollGitHubRepo(ctx context.Context, input En
 		EnrolledVia:        via,
 	})
 	if err != nil {
-		return db.GithubSyncedRepo{}, pkgerrors.Internal("failed to enroll github repository for sync")
+		return db.GithubSyncedRepo{}, pkgerrors.Internal("failed to enroll github repository for sync").WithCause(err)
 	}
 	return row, nil
 }

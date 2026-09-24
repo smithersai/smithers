@@ -352,7 +352,7 @@ func (s *RepositoryJobService) Register(ctx context.Context, gatewayID, bearer, 
 		return empty, pkgerrors.Conflict("registration was paused, replaced, or changed; apply a newer reviewed revision")
 	}
 	if err != nil {
-		return empty, pkgerrors.Internal("could not save repository job registration")
+		return empty, pkgerrors.Internal("could not save repository job registration").WithCause(err)
 	}
 	if tx != nil {
 		if err := tx.Commit(ctx); err != nil {

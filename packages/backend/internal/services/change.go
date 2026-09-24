@@ -444,7 +444,7 @@ func (s *ChangeService) recordChange(ctx context.Context, repositoryID int64, ch
 	}
 	parentChangeIDs, err := json.Marshal(change.ParentChangeIDs)
 	if err != nil {
-		return pkgerrors.Internal("failed to encode change parents")
+		return pkgerrors.Internal("failed to encode change parents").WithCause(err)
 	}
 
 	upsert := db.UpsertChangeParams{
@@ -472,10 +472,10 @@ func (s *ChangeService) recordChange(ctx context.Context, repositoryID int64, ch
 
 	if s.pool == nil {
 		if _, err := s.queries.UpsertChange(ctx, upsert); err != nil {
-			return pkgerrors.Internal("failed to store pushed change")
+			return pkgerrors.Internal("failed to store pushed change").WithCause(err)
 		}
 		if _, err := s.queries.RecordChangeRevision(ctx, revision); err != nil {
-			return pkgerrors.Internal("failed to store change revision")
+			return pkgerrors.Internal("failed to store change revision").WithCause(err)
 		}
 		if syncIssueLinks {
 			if err := replaceIssueChangeLinks(ctx, s.queries, repositoryID, change.ChangeID, issueLinks); err != nil {
@@ -490,15 +490,15 @@ func (s *ChangeService) recordChange(ctx context.Context, repositoryID int64, ch
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin change revision transaction")
+		return pkgerrors.Internal("failed to begin change revision transaction").WithCause(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	txQueries := db.New(tx)
 	if _, err := txQueries.UpsertChange(ctx, upsert); err != nil {
-		return pkgerrors.Internal("failed to store pushed change")
+		return pkgerrors.Internal("failed to store pushed change").WithCause(err)
 	}
 	if _, err := txQueries.RecordChangeRevision(ctx, revision); err != nil {
-		return pkgerrors.Internal("failed to store change revision")
+		return pkgerrors.Internal("failed to store change revision").WithCause(err)
 	}
 	if syncIssueLinks {
 		if err := replaceIssueChangeLinks(ctx, txQueries, repositoryID, change.ChangeID, issueLinks); err != nil {
@@ -512,7 +512,7 @@ func (s *ChangeService) recordChange(ctx context.Context, repositoryID int64, ch
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to commit change revision")
+		return pkgerrors.Internal("failed to commit change revision").WithCause(err)
 	}
 	return nil
 }
@@ -574,7 +574,7 @@ func replaceIssueChangeLinks(ctx context.Context, writer issueChangeLinkWriter, 
 		RepositoryID: repositoryID,
 		ChangeID:     changeID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to refresh change issue links")
+		return pkgerrors.Internal("failed to refresh change issue links").WithCause(err)
 	}
 	for _, link := range links {
 		if err := writer.CreateIssueChangeLink(ctx, db.CreateIssueChangeLinkParams{
@@ -583,7 +583,7 @@ func replaceIssueChangeLinks(ctx context.Context, writer issueChangeLinkWriter, 
 			LinkType:     link.LinkType,
 			IssueNumber:  link.Number,
 		}); err != nil {
-			return pkgerrors.Internal("failed to refresh change issue links")
+			return pkgerrors.Internal("failed to refresh change issue links").WithCause(err)
 		}
 	}
 	return nil
@@ -603,7 +603,7 @@ func updateLandingTurnsForRevision(ctx context.Context, queries landingRevisionT
 		ChangeID:     revision.ChangeID,
 		CommitID:     revision.CommitID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to update landing request turn")
+		return pkgerrors.Internal("failed to update landing request turn").WithCause(err)
 	}
 	return nil
 }
@@ -643,12 +643,12 @@ func replaceChangeConflicts(ctx context.Context, writer changeConflictWriter, re
 		RepositoryID: repositoryID,
 		ChangeID:     changeID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to refresh change conflicts")
+		return pkgerrors.Internal("failed to refresh change conflicts").WithCause(err)
 	}
 
 	for _, conflict := range normalized {
 		if _, err := writer.UpsertConflict(ctx, conflict); err != nil {
-			return pkgerrors.Internal("failed to refresh change conflicts")
+			return pkgerrors.Internal("failed to refresh change conflicts").WithCause(err)
 		}
 	}
 	return nil
@@ -660,14 +660,14 @@ func (s *ChangeService) refreshChangeConflicts(ctx context.Context, repositoryID
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin change conflict transaction")
+		return pkgerrors.Internal("failed to begin change conflict transaction").WithCause(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if err := replaceChangeConflicts(ctx, db.New(tx), repositoryID, changeID, conflicts); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to commit change conflicts")
+		return pkgerrors.Internal("failed to commit change conflicts").WithCause(err)
 	}
 	return nil
 }
@@ -748,14 +748,14 @@ func (s *ChangeService) GetChange(ctx context.Context, repositoryID int64, owner
 		ChangeID:     change.ChangeID,
 	})
 	if err != nil {
-		return ChangeDetailResponse{}, pkgerrors.Internal("failed to list change revisions")
+		return ChangeDetailResponse{}, pkgerrors.Internal("failed to list change revisions").WithCause(err)
 	}
 	reviews, err := s.queries.ListChangeReviews(ctx, db.ListChangeReviewsParams{
 		RepositoryID: repositoryID,
 		ChangeID:     change.ChangeID,
 	})
 	if err != nil {
-		return ChangeDetailResponse{}, pkgerrors.Internal("failed to list change reviews")
+		return ChangeDetailResponse{}, pkgerrors.Internal("failed to list change reviews").WithCause(err)
 	}
 	conflicts, err := s.repoHost.GetChangeConflicts(ctx, owner, repo, change.ChangeID)
 	if err != nil {
@@ -783,7 +783,7 @@ func (s *ChangeService) GetChange(ctx context.Context, repositoryID int64, owner
 		ChangeID:     change.ChangeID,
 	})
 	if err != nil {
-		return ChangeDetailResponse{}, pkgerrors.Internal("failed to list linked issues")
+		return ChangeDetailResponse{}, pkgerrors.Internal("failed to list linked issues").WithCause(err)
 	}
 	for _, linked := range linkedIssues {
 		response.LinkedIssues = append(response.LinkedIssues, ChangeLinkedIssue{
@@ -853,7 +853,7 @@ func (s *ChangeService) GetChange(ctx context.Context, repositoryID int64, owner
 			ChangeID:         change.ChangeID,
 		})
 		if approvalsErr != nil {
-			return ChangeDetailResponse{}, pkgerrors.Internal("failed to load change landing approvers")
+			return ChangeDetailResponse{}, pkgerrors.Internal("failed to load change landing approvers").WithCause(approvalsErr)
 		}
 		response.Landed = &ChangeLandingProvenance{
 			LandingRequestID:     landed.LandingRequestID,
@@ -899,7 +899,7 @@ func (s *ChangeService) GetChange(ctx context.Context, repositoryID int64, owner
 	}
 	parentIDs, err := json.Marshal(change.ParentChangeIDs)
 	if err != nil {
-		return ChangeDetailResponse{}, pkgerrors.Internal("failed to encode change parents")
+		return ChangeDetailResponse{}, pkgerrors.Internal("failed to encode change parents").WithCause(err)
 	}
 	persisted, err := s.queries.UpsertChange(ctx, db.UpsertChangeParams{
 		RepositoryID: repositoryID, ChangeID: change.ChangeID, CommitID: change.CommitID,
@@ -907,14 +907,14 @@ func (s *ChangeService) GetChange(ctx context.Context, repositoryID int64, owner
 		HasConflict: change.HasConflict, IsEmpty: change.IsEmpty, ParentChangeIds: parentIDs,
 	})
 	if err != nil {
-		return ChangeDetailResponse{}, pkgerrors.Internal("failed to record change revision")
+		return ChangeDetailResponse{}, pkgerrors.Internal("failed to record change revision").WithCause(err)
 	}
 	if err := s.refreshChangeConflicts(ctx, repositoryID, change.ChangeID, conflicts); err != nil {
 		return ChangeDetailResponse{}, err
 	}
 	landingID, err := latestLandingID(ctx, s.queries, repositoryID, change.ChangeID)
 	if err != nil {
-		return ChangeDetailResponse{}, pkgerrors.Internal("failed to load change landing request")
+		return ChangeDetailResponse{}, pkgerrors.Internal("failed to load change landing request").WithCause(err)
 	}
 	touched := make([]OwnershipTouchedFile, 0, len(files))
 	for _, file := range files {
@@ -995,7 +995,7 @@ func (s *ChangeService) GetChangeDiff(
 		ChangeID:     change.ChangeID,
 	})
 	if err != nil {
-		return repohost.ChangeDiff{}, pkgerrors.Internal("failed to list change revisions")
+		return repohost.ChangeDiff{}, pkgerrors.Internal("failed to list change revisions").WithCause(err)
 	}
 
 	var toRevision *db.ChangeRevision
@@ -1071,7 +1071,7 @@ func (s *ChangeService) GetFindings(ctx context.Context, repositoryID int64, own
 		ChangeID:     change.ChangeID,
 	})
 	if err != nil {
-		return ChangeFindingsResponse{}, pkgerrors.Internal("failed to list change revisions")
+		return ChangeFindingsResponse{}, pkgerrors.Internal("failed to list change revisions").WithCause(err)
 	}
 
 	commitBySeq := make(map[int64]string, len(revisions))
@@ -1097,7 +1097,7 @@ func (s *ChangeService) GetFindings(ctx context.Context, repositoryID int64, own
 		RevisionSeq:  revisionFilter,
 	})
 	if err != nil {
-		return ChangeFindingsResponse{}, pkgerrors.Internal("failed to list change findings")
+		return ChangeFindingsResponse{}, pkgerrors.Internal("failed to list change findings").WithCause(err)
 	}
 	feedbackRows, err := s.queries.ListFindingFeedbackForChange(ctx, db.ListFindingFeedbackForChangeParams{
 		RepositoryID: repositoryID,
@@ -1106,7 +1106,7 @@ func (s *ChangeService) GetFindings(ctx context.Context, repositoryID int64, own
 		UserID:       pgtype.Int8{Int64: userID, Valid: userID > 0},
 	})
 	if err != nil {
-		return ChangeFindingsResponse{}, pkgerrors.Internal("failed to list finding feedback")
+		return ChangeFindingsResponse{}, pkgerrors.Internal("failed to list finding feedback").WithCause(err)
 	}
 	feedbackByFinding := make(map[int64]db.ListFindingFeedbackForChangeRow, len(feedbackRows))
 	for _, row := range feedbackRows {
@@ -1118,7 +1118,7 @@ func (s *ChangeService) GetFindings(ctx context.Context, repositoryID int64, own
 		RevisionSeq:  revisionFilter,
 	})
 	if err != nil {
-		return ChangeFindingsResponse{}, pkgerrors.Internal("failed to list analyzer runs")
+		return ChangeFindingsResponse{}, pkgerrors.Internal("failed to list analyzer runs").WithCause(err)
 	}
 
 	response := ChangeFindingsResponse{
@@ -1180,7 +1180,7 @@ func (s *ChangeService) SubmitFindingFeedback(ctx context.Context, input SubmitF
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return FindingFeedbackResponse{}, pkgerrors.NotFound("finding not found")
 		}
-		return FindingFeedbackResponse{}, pkgerrors.Internal("failed to load change finding")
+		return FindingFeedbackResponse{}, pkgerrors.Internal("failed to load change finding").WithCause(err)
 	}
 
 	note := pgtype.Text{}
@@ -1194,7 +1194,7 @@ func (s *ChangeService) SubmitFindingFeedback(ctx context.Context, input SubmitF
 		Note:      note,
 	})
 	if err != nil {
-		return FindingFeedbackResponse{}, pkgerrors.Internal("failed to store finding feedback")
+		return FindingFeedbackResponse{}, pkgerrors.Internal("failed to store finding feedback").WithCause(err)
 	}
 	return FindingFeedbackResponse{Useful: stored.Useful, Note: optionalText(stored.Note), ByUserID: stored.UserID}, nil
 }
@@ -1219,7 +1219,7 @@ func (s *ChangeService) DispatchFinding(ctx context.Context, input DispatchFindi
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return AgentSessionResponse{}, pkgerrors.NotFound("finding not found")
 		}
-		return AgentSessionResponse{}, pkgerrors.Internal("failed to load change finding")
+		return AgentSessionResponse{}, pkgerrors.Internal("failed to load change finding").WithCause(err)
 	}
 	if _, err := s.queries.GetActiveFindingDispatch(ctx, db.GetActiveFindingDispatchParams{
 		RepositoryID: input.RepositoryID, FindingID: input.FindingID,
@@ -1231,7 +1231,7 @@ func (s *ChangeService) DispatchFinding(ctx context.Context, input DispatchFindi
 
 	metadata, err := json.Marshal(map[string]int64{"finding_id": input.FindingID})
 	if err != nil {
-		return AgentSessionResponse{}, pkgerrors.Internal("failed to encode finding dispatch metadata")
+		return AgentSessionResponse{}, pkgerrors.Internal("failed to encode finding dispatch metadata").WithCause(err)
 	}
 	session, err := s.agent.CreateSession(ctx, CreateAgentSessionInput{
 		RepositoryID: input.RepositoryID,
@@ -1244,7 +1244,7 @@ func (s *ChangeService) DispatchFinding(ctx context.Context, input DispatchFindi
 	}
 	content, err := json.Marshal(map[string]string{"value": finding.Text})
 	if err != nil {
-		return AgentSessionResponse{}, pkgerrors.Internal("failed to encode finding task")
+		return AgentSessionResponse{}, pkgerrors.Internal("failed to encode finding task").WithCause(err)
 	}
 	message, err := s.agent.AppendMessage(ctx, session.ID, "user", []db.CreateAgentPartParams{{PartType: "text", Content: content}})
 	if err != nil {
@@ -1261,7 +1261,7 @@ func (s *ChangeService) DispatchFinding(ctx context.Context, input DispatchFindi
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		_ = s.agent.DeleteSession(cleanupCtx, session.ID, input.UserID)
-		return AgentSessionResponse{}, pkgerrors.Internal("failed to resolve change workspace")
+		return AgentSessionResponse{}, pkgerrors.Internal("failed to resolve change workspace").WithCause(bookmarkErr)
 	}
 
 	dispatchInput := DispatchAgentRunInput{
@@ -1317,7 +1317,7 @@ func (s *ChangeService) ResolveConflict(ctx context.Context, input ResolveChange
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return ResolveChangeConflictResponse{}, pkgerrors.NotFound("conflict not found")
 		}
-		return ResolveChangeConflictResponse{}, pkgerrors.Internal("failed to load change conflict")
+		return ResolveChangeConflictResponse{}, pkgerrors.Internal("failed to load change conflict").WithCause(err)
 	}
 	if conflict.Resolved {
 		return ResolveChangeConflictResponse{}, pkgerrors.Conflict("conflict is already resolved")
@@ -1342,7 +1342,7 @@ func (s *ChangeService) ResolveConflict(ctx context.Context, input ResolveChange
 	)
 	content, err := json.Marshal(map[string]string{"value": prompt})
 	if err != nil {
-		return ResolveChangeConflictResponse{}, pkgerrors.Internal("failed to encode conflict resolution task")
+		return ResolveChangeConflictResponse{}, pkgerrors.Internal("failed to encode conflict resolution task").WithCause(err)
 	}
 	message, err := s.agent.AppendMessage(ctx, session.ID, "user", []db.CreateAgentPartParams{{
 		PartType: "text",

@@ -50,7 +50,7 @@ func (s *AdminRepoService) ListAllRepos(ctx context.Context, input AdminRepoList
 
 	total, err := s.queries.CountAllRepos(ctx)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count repos")
+		return nil, 0, pkgerrors.Internal("failed to count repos").WithCause(err)
 	}
 
 	repos, err := s.queries.ListAllRepos(ctx, db.ListAllReposParams{
@@ -58,7 +58,7 @@ func (s *AdminRepoService) ListAllRepos(ctx context.Context, input AdminRepoList
 		PageSize:   int32(perPage),
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list repos")
+		return nil, 0, pkgerrors.Internal("failed to list repos").WithCause(err)
 	}
 
 	responses := make([]AdminRepoResponse, len(repos))

@@ -196,7 +196,7 @@ func (s *RepoConnectionService) GetGitHubAppStatus(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return status, nil
 		}
-		return GitHubAppStatus{}, pkgerrors.Internal("failed to load github app installation")
+		return GitHubAppStatus{}, pkgerrors.Internal("failed to load github app installation").WithCause(err)
 	}
 	status.GitHubAppInstalled = installedPublic
 	return status, nil
@@ -337,7 +337,7 @@ func (s *RepoConnectionService) createGitHubInstallationTokenForInstallationID(
 
 	jwt, err := createGitHubAppJWTFunc(appID, privateKey, time.Now().UTC())
 	if err != nil {
-		return GitHubInstallationToken{}, pkgerrors.Internal("failed to create github app jwt")
+		return GitHubInstallationToken{}, pkgerrors.Internal("failed to create github app jwt").WithCause(err)
 	}
 
 	endpoint := fmt.Sprintf(
@@ -347,7 +347,7 @@ func (s *RepoConnectionService) createGitHubInstallationTokenForInstallationID(
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader("{}"))
 	if err != nil {
-		return GitHubInstallationToken{}, pkgerrors.Internal("failed to build github token request")
+		return GitHubInstallationToken{}, pkgerrors.Internal("failed to build github token request").WithCause(err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+jwt)
@@ -358,7 +358,7 @@ func (s *RepoConnectionService) createGitHubInstallationTokenForInstallationID(
 	httpClient := observability.NewHTTPClient(10 * time.Second)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return GitHubInstallationToken{}, pkgerrors.Internal("github installation token request failed")
+		return GitHubInstallationToken{}, pkgerrors.Internal("github installation token request failed").WithCause(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -389,7 +389,7 @@ func (s *RepoConnectionService) createGitHubInstallationTokenForInstallationID(
 
 	expiresAt, err := time.Parse(time.RFC3339, strings.TrimSpace(payload.ExpiresAt))
 	if err != nil {
-		return GitHubInstallationToken{}, pkgerrors.Internal("github installation token response had invalid expiry")
+		return GitHubInstallationToken{}, pkgerrors.Internal("github installation token response had invalid expiry").WithCause(err)
 	}
 
 	storeCachedInstallationToken(installationID, token, expiresAt)
@@ -566,7 +566,7 @@ func (s *RepoConnectionService) GetGitHubInstallationIDForRepositoryOwner(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return 0, nil
 		}
-		return 0, pkgerrors.Internal("failed to load github app installation")
+		return 0, pkgerrors.Internal("failed to load github app installation").WithCause(err)
 	}
 	return installationID, nil
 }
@@ -621,7 +621,7 @@ func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Cont
 
 	jwt, err := createGitHubAppJWTFunc(appID, privateKey, time.Now().UTC())
 	if err != nil {
-		return pkgerrors.Internal("failed to create github app jwt")
+		return pkgerrors.Internal("failed to create github app jwt").WithCause(err)
 	}
 
 	installations, err := s.listGitHubAppInstallations(ctx, jwt)
@@ -646,7 +646,7 @@ func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Cont
 			strings.TrimSpace(installation.Account.Type),
 			strings.TrimSpace(installation.RepositorySelection),
 		); err != nil {
-			return pkgerrors.Internal("failed to upsert github app installation")
+			return pkgerrors.Internal("failed to upsert github app installation").WithCause(err)
 		}
 
 		token, err := s.createGitHubInstallationTokenForInstallationID(ctx, installation.ID)
@@ -680,7 +680,7 @@ func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Cont
 				strings.ToLower(repoName),
 				repo.Private,
 			); err != nil {
-				return pkgerrors.Internal("failed to upsert github app installation repository")
+				return pkgerrors.Internal("failed to upsert github app installation repository").WithCause(err)
 			}
 		}
 
@@ -691,7 +691,7 @@ func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Cont
 			installation.ID,
 			seenRepoIDs,
 		); err != nil {
-			return pkgerrors.Internal("failed to prune github app installation repositories")
+			return pkgerrors.Internal("failed to prune github app installation repositories").WithCause(err)
 		}
 	}
 
@@ -702,7 +702,7 @@ func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Cont
 		pruneGitHubAppInstallationsSQL,
 		seenInstallationIDs,
 	); err != nil {
-		return pkgerrors.Internal("failed to prune github app installations")
+		return pkgerrors.Internal("failed to prune github app installations").WithCause(err)
 	}
 
 	slog.Info("github_app.reconcile.ok", "installations", len(seenInstallationIDs))
@@ -729,7 +729,7 @@ func (s *RepoConnectionService) listGitHubAppInstallations(ctx context.Context, 
 	for endpoint != "" {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to build github installations request")
+			return nil, pkgerrors.Internal("failed to build github installations request").WithCause(err)
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("Authorization", "Bearer "+jwt)
@@ -738,7 +738,7 @@ func (s *RepoConnectionService) listGitHubAppInstallations(ctx context.Context, 
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			return nil, pkgerrors.Internal("github installations request failed")
+			return nil, pkgerrors.Internal("github installations request failed").WithCause(err)
 		}
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		nextURL := parseGitHubNextLink(resp.Header.Get("Link"))
@@ -750,7 +750,7 @@ func (s *RepoConnectionService) listGitHubAppInstallations(ctx context.Context, 
 
 		var page []reconcileInstallation
 		if err := json.Unmarshal(bodyBytes, &page); err != nil {
-			return nil, pkgerrors.Internal("github installations response was invalid")
+			return nil, pkgerrors.Internal("github installations response was invalid").WithCause(err)
 		}
 		all = append(all, page...)
 		endpoint = nextURL
@@ -767,7 +767,7 @@ func (s *RepoConnectionService) listGitHubInstallationRepositories(ctx context.C
 	for endpoint != "" {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to build github repositories request")
+			return nil, pkgerrors.Internal("failed to build github repositories request").WithCause(err)
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -776,7 +776,7 @@ func (s *RepoConnectionService) listGitHubInstallationRepositories(ctx context.C
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			return nil, pkgerrors.Internal("github repositories request failed")
+			return nil, pkgerrors.Internal("github repositories request failed").WithCause(err)
 		}
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		nextURL := parseGitHubNextLink(resp.Header.Get("Link"))
@@ -790,7 +790,7 @@ func (s *RepoConnectionService) listGitHubInstallationRepositories(ctx context.C
 			Repositories []reconcileRepository `json:"repositories"`
 		}
 		if err := json.Unmarshal(bodyBytes, &page); err != nil {
-			return nil, pkgerrors.Internal("github repositories response was invalid")
+			return nil, pkgerrors.Internal("github repositories response was invalid").WithCause(err)
 		}
 		all = append(all, page.Repositories...)
 		endpoint = nextURL

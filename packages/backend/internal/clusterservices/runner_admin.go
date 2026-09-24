@@ -63,7 +63,7 @@ func (s *runnerAdminService) ListRunners(ctx context.Context, input RunnerAdminL
 
 	total, err := s.queries.CountRunners(ctx, input.StatusFilter)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count runners")
+		return nil, 0, pkgerrors.Internal("failed to count runners").WithCause(err)
 	}
 
 	rows, err := s.queries.ListRunners(ctx, clusterdb.ListRunnersParams{
@@ -72,7 +72,7 @@ func (s *runnerAdminService) ListRunners(ctx context.Context, input RunnerAdminL
 		PageSize:     int32(perPage),
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list runners")
+		return nil, 0, pkgerrors.Internal("failed to list runners").WithCause(err)
 	}
 
 	return rows, total, nil

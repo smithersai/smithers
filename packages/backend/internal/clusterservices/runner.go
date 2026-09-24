@@ -91,7 +91,7 @@ func (s *runnerService) GetTaskStatus(ctx context.Context, taskID, runnerID int6
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return "", pkgerrors.NotFound("task not found")
 		}
-		return "", pkgerrors.Internal("failed to fetch runner task status")
+		return "", pkgerrors.Internal("failed to fetch runner task status").WithCause(err)
 	}
 	return status, nil
 }
@@ -274,7 +274,7 @@ func (s *runnerService) Register(ctx context.Context, input RunnerRegisterInput)
 		Metadata: input.Metadata,
 	})
 	if err != nil {
-		return RunnerRegisterResult{}, pkgerrors.Internal("failed to register runner")
+		return RunnerRegisterResult{}, pkgerrors.Internal("failed to register runner").WithCause(err)
 	}
 
 	return RunnerRegisterResult{RunnerID: runnerRow.ID, Task: nil}, nil
@@ -298,14 +298,14 @@ func (s *runnerService) ClaimTask(ctx context.Context, runnerID int64) (*RunnerA
 					if stdErrors.Is(statusErr, pgx.ErrNoRows) {
 						return nil, pkgerrors.Conflict("runner not available for claim")
 					}
-					return nil, pkgerrors.Internal("failed to inspect runner")
+					return nil, pkgerrors.Internal("failed to inspect runner").WithCause(statusErr)
 				}
 				if status != "idle" {
 					return nil, pkgerrors.Conflict("runner not available for claim")
 				}
 				return nil, nil
 			}
-			return nil, pkgerrors.Internal("failed to claim task")
+			return nil, pkgerrors.Internal("failed to claim task").WithCause(err)
 		}
 		return runnerAssignedAtomicTask(task), nil
 	}
@@ -314,19 +314,19 @@ func (s *runnerService) ClaimTask(ctx context.Context, runnerID int64) (*RunnerA
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, pkgerrors.Conflict("runner not available for claim")
 		}
-		return nil, pkgerrors.Internal("failed to claim runner")
+		return nil, pkgerrors.Internal("failed to claim runner").WithCause(err)
 	}
 
 	task, err := s.queries.ClaimPendingTask(ctx, pgtype.Int8{Int64: runnerID, Valid: true})
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			if _, releaseErr := s.queries.ReleaseRunner(ctx, runnerID); releaseErr != nil {
-				return nil, pkgerrors.Internal("failed to release idle runner")
+				return nil, pkgerrors.Internal("failed to release idle runner").WithCause(releaseErr)
 			}
 			return nil, nil
 		}
 		_, _ = s.queries.ReleaseRunner(ctx, runnerID)
-		return nil, pkgerrors.Internal("failed to claim task")
+		return nil, pkgerrors.Internal("failed to claim task").WithCause(err)
 	}
 
 	if err := s.markTaskRunning(ctx, task.ID, runnerID); err != nil {
@@ -372,7 +372,7 @@ func (s *runnerService) Heartbeat(ctx context.Context, runnerID int64) error {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("runner not found")
 		}
-		return pkgerrors.Internal("failed to update runner heartbeat")
+		return pkgerrors.Internal("failed to update runner heartbeat").WithCause(err)
 	}
 
 	return nil
@@ -401,33 +401,33 @@ func (s *runnerService) Terminate(ctx context.Context, runnerID int64) error {
 	}
 	if tx, txQueries, transactional, txErr := deploymentdb.BeginTx(ctx, s.queries); transactional {
 		if txErr != nil {
-			return pkgerrors.Internal("failed to begin runner termination transaction")
+			return pkgerrors.Internal("failed to begin runner termination transaction").WithCause(txErr)
 		}
 		defer func() { _ = tx.Rollback(context.Background()) }()
 
 		if _, err := txQueries.RequeueTasksForRunner(ctx, pgtype.Int8{Int64: runnerID, Valid: true}); err != nil {
-			return pkgerrors.Internal("failed to requeue runner tasks")
+			return pkgerrors.Internal("failed to requeue runner tasks").WithCause(err)
 		}
 		if _, err := txQueries.TerminateRunner(ctx, runnerID); err != nil {
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return pkgerrors.NotFound("runner not found")
 			}
-			return pkgerrors.Internal("failed to terminate runner")
+			return pkgerrors.Internal("failed to terminate runner").WithCause(err)
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return pkgerrors.Internal("failed to commit runner termination")
+			return pkgerrors.Internal("failed to commit runner termination").WithCause(err)
 		}
 		return nil
 	}
 
 	if _, err := s.queries.RequeueTasksForRunner(ctx, pgtype.Int8{Int64: runnerID, Valid: true}); err != nil {
-		return pkgerrors.Internal("failed to requeue runner tasks")
+		return pkgerrors.Internal("failed to requeue runner tasks").WithCause(err)
 	}
 	if _, err := s.queries.TerminateRunner(ctx, runnerID); err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("runner not found")
 		}
-		return pkgerrors.Internal("failed to terminate runner")
+		return pkgerrors.Internal("failed to terminate runner").WithCause(err)
 	}
 
 	return nil
@@ -457,7 +457,7 @@ func (s *runnerService) GetTaskRuntimeEnvironment(ctx context.Context, taskID in
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return nil, pkgerrors.NotFound("task not found")
 			}
-			return nil, pkgerrors.Internal("failed to fetch task")
+			return nil, pkgerrors.Internal("failed to fetch task").WithCause(err)
 		}
 		repositoryID = task.RepositoryID
 		taskPayload = task.Payload
@@ -473,7 +473,7 @@ func (s *runnerService) GetTaskRuntimeEnvironment(ctx context.Context, taskID in
 			ExpiresAtUnix: time.Now().Add(middleware.RunnerTaskTokenTTL).Unix(),
 		})
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to issue runner task credential")
+			return nil, pkgerrors.Internal("failed to issue runner task credential").WithCause(err)
 		}
 	} else {
 		// Workflow-run credentials remain strictly bound to their run. Do not
@@ -491,7 +491,7 @@ func (s *runnerService) GetTaskRuntimeEnvironment(ctx context.Context, taskID in
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return nil, pkgerrors.NotFound("task not found")
 			}
-			return nil, pkgerrors.Internal("failed to fetch task")
+			return nil, pkgerrors.Internal("failed to fetch task").WithCause(err)
 		}
 		repositoryID = task.RepositoryID
 		taskPayload = task.Payload
@@ -503,13 +503,13 @@ func (s *runnerService) GetTaskRuntimeEnvironment(ctx context.Context, taskID in
 	if s.secretInjector != nil {
 		allowlist, restricted, parseErr := workflowTaskSecretAllowlist(taskPayload)
 		if parseErr != nil {
-			return nil, pkgerrors.Internal("invalid workflow task secret policy")
+			return nil, pkgerrors.Internal("invalid workflow task secret policy").WithCause(parseErr)
 		}
 		if !restricted || len(allowlist) > 0 {
 			var secrets map[string]string
 			env, secrets, err = s.secretInjector.RepositoryEnvironmentAndSecrets(ctx, repositoryID)
 			if err != nil {
-				return nil, pkgerrors.Internal("failed to resolve repository secrets")
+				return nil, pkgerrors.Internal("failed to resolve repository secrets").WithCause(err)
 			}
 			if restricted {
 				env = filterWorkflowTaskEnvironment(env, allowlist)
@@ -607,7 +607,7 @@ func (s *runnerService) StreamEvents(ctx context.Context, input RunnerStreamEven
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("task not found")
 		}
-		return pkgerrors.Internal("failed to fetch task")
+		return pkgerrors.Internal("failed to fetch task").WithCause(err)
 	}
 
 	// Enforce callback token scope: the task must belong to the workflow run
@@ -653,7 +653,7 @@ func (s *runnerService) StreamEvents(ctx context.Context, input RunnerStreamEven
 	if s.secretInjector != nil {
 		redactionEnv, err = s.secretInjector.RepositorySecrets(ctx, task.RepositoryID)
 		if err != nil {
-			return pkgerrors.Internal("failed to resolve repository secrets")
+			return pkgerrors.Internal("failed to resolve repository secrets").WithCause(err)
 		}
 	}
 	if token := strings.TrimSpace(middleware.AgentTokenFromContext(ctx)); token != "" {
@@ -693,7 +693,7 @@ func (s *runnerService) notifyWorkflowLogPayloads(
 			StepID:  task.WorkflowStepID,
 			Payload: payload,
 		}); err != nil {
-			return pkgerrors.Internal("failed to notify log")
+			return pkgerrors.Internal("failed to notify log").WithCause(err)
 		}
 		if !hasRunNotifier {
 			continue
@@ -702,7 +702,7 @@ func (s *runnerService) notifyWorkflowLogPayloads(
 			RunID:   task.WorkflowRunID,
 			Payload: payload,
 		}); err != nil {
-			return pkgerrors.Internal("failed to notify log")
+			return pkgerrors.Internal("failed to notify log").WithCause(err)
 		}
 	}
 
@@ -717,7 +717,7 @@ func (s *runnerService) streamLogEventsWithTx(
 ) error {
 	tx, err := starter.BeginTx(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin log stream transaction")
+		return pkgerrors.Internal("failed to begin log stream transaction").WithCause(err)
 	}
 	defer func() {
 		_ = tx.Rollback(ctx)
@@ -727,10 +727,10 @@ func (s *runnerService) streamLogEventsWithTx(
 	// an ID (and before their sequence lock). IDs need not be contiguous,
 	// but a committed ID must never overtake an uncommitted ID in this run.
 	if _, err := tx.Exec(ctx, `SELECT id FROM workflow_runs WHERE id = $1 FOR UPDATE`, task.WorkflowRunID); err != nil {
-		return pkgerrors.Internal("failed to lock workflow run log stream")
+		return pkgerrors.Internal("failed to lock workflow run log stream").WithCause(err)
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, task.WorkflowStepID); err != nil {
-		return pkgerrors.Internal("failed to lock workflow log stream")
+		return pkgerrors.Internal("failed to lock workflow log stream").WithCause(err)
 	}
 
 	txQueries := deploymentdb.New(tx)
@@ -744,7 +744,7 @@ func (s *runnerService) streamLogEventsWithTx(
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to commit log stream transaction")
+		return pkgerrors.Internal("failed to commit log stream transaction").WithCause(err)
 	}
 	return s.notifyWorkflowLogPayloads(ctx, task, payloads)
 }
@@ -809,7 +809,7 @@ func (s *runnerService) markTaskRunning(ctx context.Context, taskID, runnerID in
 		RunnerID: pgtype.Int8{Int64: runnerID, Valid: true},
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to mark task running")
+		return pkgerrors.Internal("failed to mark task running").WithCause(err)
 	}
 	if rows == 0 {
 		return pkgerrors.Conflict("task not assigned to this runner")
@@ -817,10 +817,10 @@ func (s *runnerService) markTaskRunning(ctx context.Context, taskID, runnerID in
 
 	stepID, err := s.queries.GetWorkflowTaskStepID(ctx, taskID)
 	if err != nil {
-		return pkgerrors.Internal("failed to load task step")
+		return pkgerrors.Internal("failed to load task step").WithCause(err)
 	}
 	if _, err := s.queries.UpdateWorkflowStepStatusRunning(ctx, stepID); err != nil {
-		return pkgerrors.Internal("failed to update workflow step")
+		return pkgerrors.Internal("failed to update workflow step").WithCause(err)
 	}
 
 	return nil
@@ -873,7 +873,7 @@ func (s *runnerService) CompleteTask(ctx context.Context, input RunnerCompleteTa
 	}
 	if tx, txQueries, transactional, txErr := deploymentdb.BeginTx(ctx, s.queries); transactional {
 		if txErr != nil {
-			return pkgerrors.Internal("failed to begin task completion transaction")
+			return pkgerrors.Internal("failed to begin task completion transaction").WithCause(txErr)
 		}
 		return s.completeTaskWithTransaction(ctx, tx, txQueries, input, status)
 	}
@@ -891,7 +891,7 @@ func (s *runnerService) CompleteTask(ctx context.Context, input RunnerCompleteTa
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return acknowledgeTerminalRunnerTask(ctx, s.queries, input)
 		}
-		return pkgerrors.Internal("failed to complete task")
+		return pkgerrors.Internal("failed to complete task").WithCause(err)
 	}
 	finalizeTaskStep(ctx, s.queries, workflowRunID, input.TaskID, status)
 	if err := clearTerminalRunnerOwnershipAndRelease(ctx, s.queries, input); err != nil {
@@ -905,7 +905,7 @@ func (s *runnerService) CompleteTask(ctx context.Context, input RunnerCompleteTa
 	}
 	// Progress downstream dependency-blocked tasks.
 	if err := s.progressDependencies(ctx, workflowRunID); err != nil {
-		return pkgerrors.Internal("failed to progress dependencies")
+		return pkgerrors.Internal("failed to progress dependencies").WithCause(err)
 	}
 
 	// Update aggregate run status based on all tasks for this run.
@@ -915,7 +915,7 @@ func (s *runnerService) CompleteTask(ctx context.Context, input RunnerCompleteTa
 			// Run was deleted; ignore.
 			return nil
 		}
-		return pkgerrors.Internal("failed to update workflow run status")
+		return pkgerrors.Internal("failed to update workflow run status").WithCause(err)
 	}
 	if runErr == nil {
 		services.ObserveWorkflowRunCompletion(s.metrics, run, runStatus)
@@ -991,13 +991,13 @@ func clearTerminalRunnerOwnershipAndRelease(ctx context.Context, queries RunnerQ
 		RunnerID: pgtype.Int8{Int64: input.RunnerID, Valid: true},
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to settle runner task ownership")
+		return pkgerrors.Internal("failed to settle runner task ownership").WithCause(err)
 	}
 	if cleared == 0 {
 		return pkgerrors.Conflict("task not running or not assigned to this runner")
 	}
 	if _, err := queries.ReleaseRunner(ctx, input.RunnerID); err != nil {
-		return pkgerrors.Internal("failed to release runner")
+		return pkgerrors.Internal("failed to release runner").WithCause(err)
 	}
 	return nil
 }
@@ -1007,7 +1007,7 @@ func acknowledgeTerminalRunnerTask(ctx context.Context, queries RunnerQuerier, i
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.Conflict("task not running or not assigned to this runner")
 		}
-		return pkgerrors.Internal("failed to fetch task")
+		return pkgerrors.Internal("failed to fetch task").WithCause(err)
 	}
 	return clearTerminalRunnerOwnershipAndRelease(ctx, queries, input)
 }
@@ -1026,7 +1026,7 @@ func (s *runnerService) completeTaskWithTransaction(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return acknowledgeTerminalRunnerTaskWithTransaction(ctx, tx, queries, input)
 		}
-		return pkgerrors.Internal("failed to fetch task")
+		return pkgerrors.Internal("failed to fetch task").WithCause(err)
 	}
 	if task.RunnerID.Valid && task.RunnerID.Int64 != input.RunnerID {
 		return pkgerrors.Conflict("task not running or not assigned to this runner")
@@ -1035,7 +1035,7 @@ func (s *runnerService) completeTaskWithTransaction(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.Conflict("workflow run not found")
 		}
-		return pkgerrors.Internal("failed to lock workflow run")
+		return pkgerrors.Internal("failed to lock workflow run").WithCause(err)
 	}
 
 	workflowRunID, err := queries.MarkWorkflowTaskDone(ctx, db.MarkWorkflowTaskDoneParams{
@@ -1051,14 +1051,14 @@ func (s *runnerService) completeTaskWithTransaction(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return acknowledgeTerminalRunnerTaskWithTransaction(ctx, tx, queries, input)
 		}
-		return pkgerrors.Internal("failed to complete task")
+		return pkgerrors.Internal("failed to complete task").WithCause(err)
 	}
 	finalizeTaskStep(ctx, queries, workflowRunID, input.TaskID, status)
 	if err := clearTerminalRunnerOwnershipAndRelease(ctx, queries, input); err != nil {
 		return err
 	}
 	if err := s.progressDependenciesWith(ctx, queries, workflowRunID); err != nil {
-		return pkgerrors.Internal("failed to progress dependencies")
+		return pkgerrors.Internal("failed to progress dependencies").WithCause(err)
 	}
 
 	run, err := queries.GetWorkflowRunByRunID(ctx, workflowRunID)
@@ -1066,11 +1066,11 @@ func (s *runnerService) completeTaskWithTransaction(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.Internal("workflow run not found")
 		}
-		return pkgerrors.Internal("failed to load workflow run")
+		return pkgerrors.Internal("failed to load workflow run").WithCause(err)
 	}
 	if services.IsTerminalWorkflowRunStatus(run.Status) {
 		if err := tx.Commit(ctx); err != nil {
-			return pkgerrors.Internal("failed to commit task completion transaction")
+			return pkgerrors.Internal("failed to commit task completion transaction").WithCause(err)
 		}
 		return nil
 	}
@@ -1079,14 +1079,14 @@ func (s *runnerService) completeTaskWithTransaction(
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			if err := tx.Commit(ctx); err != nil {
-				return pkgerrors.Internal("failed to commit task completion transaction")
+				return pkgerrors.Internal("failed to commit task completion transaction").WithCause(err)
 			}
 			return nil
 		}
-		return pkgerrors.Internal("failed to update workflow run status")
+		return pkgerrors.Internal("failed to update workflow run status").WithCause(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to commit task completion transaction")
+		return pkgerrors.Internal("failed to commit task completion transaction").WithCause(err)
 	}
 
 	if services.IsTerminalWorkflowRunStatus(runStatus) {
@@ -1126,13 +1126,13 @@ func acknowledgeTerminalRunnerTaskWithTransaction(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.Conflict("task not running or not assigned to this runner")
 		}
-		return pkgerrors.Internal("failed to fetch task")
+		return pkgerrors.Internal("failed to fetch task").WithCause(err)
 	}
 	if err := services.LockWorkflowRun(ctx, tx, workflowRunID); err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.Conflict("workflow run not found")
 		}
-		return pkgerrors.Internal("failed to lock workflow run")
+		return pkgerrors.Internal("failed to lock workflow run").WithCause(err)
 	}
 
 	// Revalidate after taking the workflow-run lock. Resume takes the same lock,
@@ -1148,7 +1148,7 @@ func acknowledgeTerminalRunnerTaskWithTransaction(
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to commit task completion transaction")
+		return pkgerrors.Internal("failed to commit task completion transaction").WithCause(err)
 	}
 	return nil
 }

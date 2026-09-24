@@ -442,7 +442,7 @@ func (s *workflowRunService) DispatchForEvent(ctx context.Context, input Dispatc
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return nil, pkgerrors.NotFound("workflow definition not found")
 			}
-			return nil, pkgerrors.Internal("failed to fetch workflow definition")
+			return nil, pkgerrors.Internal("failed to fetch workflow definition").WithCause(err)
 		}
 		defs = []dispatchDefinition{{definition: def, config: def.Config, enforceActive: true}}
 	} else if input.UseLoadedDefinitions {
@@ -454,7 +454,7 @@ func (s *workflowRunService) DispatchForEvent(ctx context.Context, input Dispatc
 				Config:       loaded.Config,
 			})
 			if err != nil {
-				return nil, pkgerrors.Internal("failed to ensure workflow definition reference")
+				return nil, pkgerrors.Internal("failed to ensure workflow definition reference").WithCause(err)
 			}
 			defs = append(defs, dispatchDefinition{
 				definition:    ref,
@@ -471,7 +471,7 @@ func (s *workflowRunService) DispatchForEvent(ctx context.Context, input Dispatc
 			PageOffset:   int32(0),
 		})
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to list workflow definitions")
+			return nil, pkgerrors.Internal("failed to list workflow definitions").WithCause(err)
 		}
 		for _, def := range rows {
 			defs = append(defs, dispatchDefinition{definition: def, config: def.Config, enforceActive: true})
@@ -563,7 +563,7 @@ func (s *workflowRunService) createRunForDefinition(
 			commitSHA, resolveErr = s.bookmarkResolver.ResolveBookmarkCommit(ctx, input.RepositoryID, triggerRef)
 			commitSHA = strings.TrimSpace(commitSHA)
 			if resolveErr != nil {
-				return WorkflowRunResult{}, pkgerrors.Internal("failed to resolve immutable alert remediation base revision")
+				return WorkflowRunResult{}, pkgerrors.Internal("failed to resolve immutable alert remediation base revision").WithCause(resolveErr)
 			}
 		}
 		if !isImmutableGitObjectID(commitSHA) {
@@ -609,7 +609,7 @@ func (s *workflowRunService) createRunForDefinition(
 
 	plaintextAgentToken, tokenHash, err := generateAgentToken()
 	if err != nil {
-		return WorkflowRunResult{}, pkgerrors.Internal("failed to generate workflow run agent token")
+		return WorkflowRunResult{}, pkgerrors.Internal("failed to generate workflow run agent token").WithCause(err)
 	}
 
 	executionPlane := ResolveCIExecutionPlane(ctx, s.repoFileProbe, s.environmentImages, CIExecutionPlaneInput{
@@ -621,7 +621,7 @@ func (s *workflowRunService) createRunForDefinition(
 
 	tx, txQueries, transactional, err := BeginWorkflowQueryTx(ctx, s.queries)
 	if err != nil {
-		return WorkflowRunResult{}, pkgerrors.Internal("failed to begin workflow run transaction")
+		return WorkflowRunResult{}, pkgerrors.Internal("failed to begin workflow run transaction").WithCause(err)
 	}
 
 	var run db.WorkflowRun
@@ -632,7 +632,7 @@ func (s *workflowRunService) createRunForDefinition(
 			return WorkflowRunResult{}, err
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return WorkflowRunResult{}, pkgerrors.Internal("failed to commit workflow run")
+			return WorkflowRunResult{}, pkgerrors.Internal("failed to commit workflow run").WithCause(err)
 		}
 	} else {
 		result, run, err = createWorkflowRunRows(ctx, s.queries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, tokenHash, plaintextAgentToken, s.commitStatusWriter != nil, executionPlane)
@@ -677,7 +677,7 @@ func (s *workflowRunService) loadAlertRemediationDefinitionAtCommit(
 
 	loaded, err := s.definitionLoader.LoadDefinitionsFromCommit(ctx, repositoryID, commitSHA)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load alert remediation workflow at immutable base revision")
+		return nil, pkgerrors.Internal("failed to load alert remediation workflow at immutable base revision").WithCause(err)
 	}
 
 	for _, fileErr := range loaded.FileErrors {
@@ -1097,7 +1097,7 @@ func (s *workflowRunService) resolveRunRepository(ctx context.Context, repositor
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }
@@ -1195,14 +1195,14 @@ func (s *workflowRunService) CancelRun(ctx context.Context, repositoryID, runID 
 
 	if tx, txQueries, transactional, err := BeginWorkflowQueryTx(ctx, s.queries); transactional {
 		if err != nil {
-			return pkgerrors.Internal("failed to begin workflow run transaction")
+			return pkgerrors.Internal("failed to begin workflow run transaction").WithCause(err)
 		}
 		defer func() { _ = tx.Rollback(context.Background()) }()
 		if err := lockWorkflowRunForRepository(ctx, tx, runID, repositoryID); err != nil {
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return pkgerrors.NotFound("workflow run not found")
 			}
-			return pkgerrors.Internal("failed to lock workflow run")
+			return pkgerrors.Internal("failed to lock workflow run").WithCause(err)
 		}
 		run, err := txQueries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
 			ID:           runID,
@@ -1212,22 +1212,22 @@ func (s *workflowRunService) CancelRun(ctx context.Context, repositoryID, runID 
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return pkgerrors.NotFound("workflow run not found")
 			}
-			return pkgerrors.Internal("failed to fetch workflow run")
+			return pkgerrors.Internal("failed to fetch workflow run").WithCause(err)
 		}
 		if IsTerminalWorkflowRunStatus(run.Status) {
 			if err := tx.Commit(ctx); err != nil {
-				return pkgerrors.Internal("failed to commit workflow run transaction")
+				return pkgerrors.Internal("failed to commit workflow run transaction").WithCause(err)
 			}
 			return nil
 		}
 		if err := txQueries.CancelWorkflowTasks(ctx, run.ID); err != nil {
-			return pkgerrors.Internal("failed to cancel workflow tasks")
+			return pkgerrors.Internal("failed to cancel workflow tasks").WithCause(err)
 		}
 		if err := txQueries.CancelWorkflowRun(ctx, run.ID); err != nil {
-			return pkgerrors.Internal("failed to cancel workflow run")
+			return pkgerrors.Internal("failed to cancel workflow run").WithCause(err)
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return pkgerrors.Internal("failed to commit workflow run transaction")
+			return pkgerrors.Internal("failed to commit workflow run transaction").WithCause(err)
 		}
 		RevokeWorkflowRunCredentials(ctx, s.queries, run.ID, repositoryID)
 		s.publishCancelledWorkflowRun(ctx, repositoryID, run)
@@ -1242,17 +1242,17 @@ func (s *workflowRunService) CancelRun(ctx context.Context, repositoryID, runID 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("workflow run not found")
 		}
-		return pkgerrors.Internal("failed to fetch workflow run")
+		return pkgerrors.Internal("failed to fetch workflow run").WithCause(err)
 	}
 	if IsTerminalWorkflowRunStatus(run.Status) {
 		return nil
 	}
 
 	if err := s.queries.CancelWorkflowRun(ctx, run.ID); err != nil {
-		return pkgerrors.Internal("failed to cancel workflow run")
+		return pkgerrors.Internal("failed to cancel workflow run").WithCause(err)
 	}
 	if err := s.queries.CancelWorkflowTasks(ctx, run.ID); err != nil {
-		return pkgerrors.Internal("failed to cancel workflow tasks")
+		return pkgerrors.Internal("failed to cancel workflow tasks").WithCause(err)
 	}
 	RevokeWorkflowRunCredentials(ctx, s.queries, run.ID, repositoryID)
 	s.publishCancelledWorkflowRun(ctx, repositoryID, run)
@@ -1329,14 +1329,14 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 
 	if tx, txQueries, transactional, err := BeginWorkflowQueryTx(ctx, s.queries); transactional {
 		if err != nil {
-			return pkgerrors.Internal("failed to begin workflow run transaction")
+			return pkgerrors.Internal("failed to begin workflow run transaction").WithCause(err)
 		}
 		defer func() { _ = tx.Rollback(context.Background()) }()
 		if err := lockWorkflowRunForRepository(ctx, tx, runID, repositoryID); err != nil {
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return pkgerrors.NotFound("workflow run not found")
 			}
-			return pkgerrors.Internal("failed to lock workflow run")
+			return pkgerrors.Internal("failed to lock workflow run").WithCause(err)
 		}
 		run, err := txQueries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
 			ID:           runID,
@@ -1346,7 +1346,7 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return pkgerrors.NotFound("workflow run not found")
 			}
-			return pkgerrors.Internal("failed to fetch workflow run")
+			return pkgerrors.Internal("failed to fetch workflow run").WithCause(err)
 		}
 		if err := rejectInternalAlertRemediationReplay(run); err != nil {
 			return err
@@ -1356,22 +1356,22 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 		}
 		unsettled, err := txQueries.HasUnsettledRunnerOwnershipForWorkflowRun(ctx, run.ID)
 		if err != nil {
-			return pkgerrors.Internal("failed to check workflow runner ownership")
+			return pkgerrors.Internal("failed to check workflow runner ownership").WithCause(err)
 		}
 		if unsettled {
 			return pkgerrors.Conflict("cannot resume workflow run while its previous runner is still settling a task")
 		}
 		if err := txQueries.ResumeWorkflowTasks(ctx, run.ID); err != nil {
-			return pkgerrors.Internal("failed to resume workflow tasks")
+			return pkgerrors.Internal("failed to resume workflow tasks").WithCause(err)
 		}
 		if err := txQueries.ResumeWorkflowSteps(ctx, run.ID); err != nil {
-			return pkgerrors.Internal("failed to resume workflow steps")
+			return pkgerrors.Internal("failed to resume workflow steps").WithCause(err)
 		}
 		if err := txQueries.ResumeWorkflowRun(ctx, run.ID); err != nil {
-			return pkgerrors.Internal("failed to resume workflow run")
+			return pkgerrors.Internal("failed to resume workflow run").WithCause(err)
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return pkgerrors.Internal("failed to commit workflow run transaction")
+			return pkgerrors.Internal("failed to commit workflow run transaction").WithCause(err)
 		}
 		NotifyWorkflowRunEvent(ctx, s.queries, run.ID, "workflow.resume")
 		return nil
@@ -1384,7 +1384,7 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("workflow run not found")
 		}
-		return pkgerrors.Internal("failed to fetch workflow run")
+		return pkgerrors.Internal("failed to fetch workflow run").WithCause(err)
 	}
 	if err := rejectInternalAlertRemediationReplay(run); err != nil {
 		return err
@@ -1395,20 +1395,20 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 	}
 	unsettled, err := s.queries.HasUnsettledRunnerOwnershipForWorkflowRun(ctx, run.ID)
 	if err != nil {
-		return pkgerrors.Internal("failed to check workflow runner ownership")
+		return pkgerrors.Internal("failed to check workflow runner ownership").WithCause(err)
 	}
 	if unsettled {
 		return pkgerrors.Conflict("cannot resume workflow run while its previous runner is still settling a task")
 	}
 
 	if err := s.queries.ResumeWorkflowTasks(ctx, run.ID); err != nil {
-		return pkgerrors.Internal("failed to resume workflow tasks")
+		return pkgerrors.Internal("failed to resume workflow tasks").WithCause(err)
 	}
 	if err := s.queries.ResumeWorkflowSteps(ctx, run.ID); err != nil {
-		return pkgerrors.Internal("failed to resume workflow steps")
+		return pkgerrors.Internal("failed to resume workflow steps").WithCause(err)
 	}
 	if err := s.queries.ResumeWorkflowRun(ctx, run.ID); err != nil {
-		return pkgerrors.Internal("failed to resume workflow run")
+		return pkgerrors.Internal("failed to resume workflow run").WithCause(err)
 	}
 
 	NotifyWorkflowRunEvent(ctx, s.queries, run.ID, "workflow.resume")
@@ -1432,7 +1432,7 @@ func (s *workflowRunService) RerunRun(ctx context.Context, input RerunInput) (*W
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, pkgerrors.NotFound("workflow run not found")
 		}
-		return nil, pkgerrors.Internal("failed to fetch workflow run")
+		return nil, pkgerrors.Internal("failed to fetch workflow run").WithCause(err)
 	}
 	if err := rejectInternalAlertRemediationReplay(originalRun); err != nil {
 		return nil, err
@@ -1447,7 +1447,7 @@ func (s *workflowRunService) RerunRun(ctx context.Context, input RerunInput) (*W
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, pkgerrors.NotFound("workflow definition not found")
 		}
-		return nil, pkgerrors.Internal("failed to fetch workflow definition")
+		return nil, pkgerrors.Internal("failed to fetch workflow definition").WithCause(err)
 	}
 
 	// Reconstruct dispatch inputs from the original run.

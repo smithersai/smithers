@@ -159,7 +159,7 @@ func (s *AgentEnvironmentService) PutAgentEnvironment(ctx context.Context, actor
 
 	existingSecrets, err := s.queries.ListRepositoryAgentEnvironmentSecrets(ctx, repository.ID)
 	if err != nil {
-		return AgentEnvironmentResponse{}, pkgerrors.Internal("failed to load agent environment")
+		return AgentEnvironmentResponse{}, pkgerrors.Internal("failed to load agent environment").WithCause(err)
 	}
 	for _, secret := range existingSecrets {
 		if _, conflict := envNames[secret.Name]; conflict {
@@ -193,7 +193,7 @@ func (s *AgentEnvironmentService) PutAgentEnvironment(ctx context.Context, actor
 		secretNames[name] = struct{}{}
 		ciphertext, err := s.secretCodec.EncryptString(secret.Value)
 		if err != nil {
-			return AgentEnvironmentResponse{}, pkgerrors.Internal("failed to encrypt agent environment secret")
+			return AgentEnvironmentResponse{}, pkgerrors.Internal("failed to encrypt agent environment secret").WithCause(err)
 		}
 		encrypted = append(encrypted, encryptedSecret{name: name, value: []byte(ciphertext), hosts: hosts, matchHeaders: matchHeaders})
 	}
@@ -203,7 +203,7 @@ func (s *AgentEnvironmentService) PutAgentEnvironment(ctx context.Context, actor
 
 	envJSON, err := json.Marshal(normalizedEnv)
 	if err != nil {
-		return AgentEnvironmentResponse{}, pkgerrors.Internal("failed to encode agent environment")
+		return AgentEnvironmentResponse{}, pkgerrors.Internal("failed to encode agent environment").WithCause(err)
 	}
 	err = guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
 		if _, err := s.queries.UpsertRepositoryAgentEnvironment(ctx, db.UpsertRepositoryAgentEnvironmentParams{
@@ -211,7 +211,7 @@ func (s *AgentEnvironmentService) PutAgentEnvironment(ctx context.Context, actor
 			SetupScript:          input.SetupScript,
 			EnvironmentVariables: envJSON,
 		}); err != nil {
-			return pkgerrors.Internal("failed to update agent environment")
+			return pkgerrors.Internal("failed to update agent environment").WithCause(err)
 		}
 		for _, secret := range encrypted {
 			if _, err := s.queries.UpsertRepositoryAgentEnvironmentSecret(ctx, db.UpsertRepositoryAgentEnvironmentSecretParams{
@@ -221,7 +221,7 @@ func (s *AgentEnvironmentService) PutAgentEnvironment(ctx context.Context, actor
 				Hosts:          secret.hosts,
 				MatchHeaders:   secret.matchHeaders,
 			}); err != nil {
-				return pkgerrors.Internal("failed to update agent environment secret")
+				return pkgerrors.Internal("failed to update agent environment secret").WithCause(err)
 			}
 		}
 		return nil
@@ -261,14 +261,14 @@ func (s *AgentEnvironmentService) PutAgentEnvironmentSecret(ctx context.Context,
 	}
 	rows, err := s.queries.ListRepositoryAgentEnvironmentSecrets(ctx, repository.ID)
 	if err != nil {
-		return AgentEnvironmentSecretMetadata{}, pkgerrors.Internal("failed to load agent environment")
+		return AgentEnvironmentSecretMetadata{}, pkgerrors.Internal("failed to load agent environment").WithCause(err)
 	}
 	if !containsAgentEnvironmentSecret(rows, name) && len(rows) >= maxAgentEnvironmentEntries {
 		return AgentEnvironmentSecretMetadata{}, pkgerrors.QuotaExceeded("agent environment secret limit reached (100)")
 	}
 	ciphertext, err := s.secretCodec.EncryptString(value)
 	if err != nil {
-		return AgentEnvironmentSecretMetadata{}, pkgerrors.Internal("failed to encrypt agent environment secret")
+		return AgentEnvironmentSecretMetadata{}, pkgerrors.Internal("failed to encrypt agent environment secret").WithCause(err)
 	}
 
 	var saved db.UpsertRepositoryAgentEnvironmentSecretRow
@@ -282,7 +282,7 @@ func (s *AgentEnvironmentService) PutAgentEnvironmentSecret(ctx context.Context,
 			MatchHeaders:   matchHeaders,
 		})
 		if writeErr != nil {
-			return pkgerrors.Internal("failed to update agent environment secret")
+			return pkgerrors.Internal("failed to update agent environment secret").WithCause(writeErr)
 		}
 		return nil
 	})
@@ -304,7 +304,7 @@ func (s *AgentEnvironmentService) LoadProxyBoundSecrets(ctx context.Context, rep
 	}
 	rows, err := s.queries.ListRepositoryAgentEnvironmentSecretValues(ctx, repositoryID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load agent environment secrets")
+		return nil, pkgerrors.Internal("failed to load agent environment secrets").WithCause(err)
 	}
 	var bound []sandbox.EgressProxySecret
 	for _, row := range rows {
@@ -316,14 +316,14 @@ func (s *AgentEnvironmentService) LoadProxyBoundSecrets(ctx context.Context, rep
 		}
 		plaintext, err := s.secretCodec.DecryptString(string(row.ValueEncrypted))
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to decrypt agent environment secret")
+			return nil, pkgerrors.Internal("failed to decrypt agent environment secret").WithCause(err)
 		}
 		secret := sandbox.EgressProxySecret{
 			Name: row.Name, Value: plaintext,
 			Hosts: append([]string(nil), row.Hosts...), MatchHeaders: append([]string(nil), row.MatchHeaders...),
 		}
 		if err := secret.Validate(); err != nil {
-			return nil, pkgerrors.Internal("invalid agent environment secret binding")
+			return nil, pkgerrors.Internal("invalid agent environment secret binding").WithCause(err)
 		}
 		bound = append(bound, secret)
 	}
@@ -347,7 +347,7 @@ func (s *AgentEnvironmentService) DeleteAgentEnvironmentSecret(ctx context.Conte
 			RepositoryID: repository.ID,
 			Name:         name,
 		}); err != nil {
-			return pkgerrors.Internal("failed to delete agent environment secret")
+			return pkgerrors.Internal("failed to delete agent environment secret").WithCause(err)
 		}
 		return nil
 	})
@@ -379,7 +379,7 @@ func (s *AgentEnvironmentService) LoadForProvisioning(ctx context.Context, repos
 	result := AgentEnvironmentProvisioningConfig{SetupScript: config.SetupScript, Env: config.Env}
 	rows, err := s.queries.ListRepositoryAgentEnvironmentSecretValues(ctx, repositoryID)
 	if err != nil {
-		return AgentEnvironmentProvisioningConfig{}, pkgerrors.Internal("failed to load agent environment secrets")
+		return AgentEnvironmentProvisioningConfig{}, pkgerrors.Internal("failed to load agent environment secrets").WithCause(err)
 	}
 	loadUnbound := strings.TrimSpace(config.SetupScript) != ""
 	if loadUnbound {
@@ -403,7 +403,7 @@ func (s *AgentEnvironmentService) LoadForProvisioning(ctx context.Context, repos
 		}
 		plaintext, err := s.secretCodec.DecryptString(string(row.ValueEncrypted))
 		if err != nil {
-			return AgentEnvironmentProvisioningConfig{}, pkgerrors.Internal("failed to decrypt agent environment secret")
+			return AgentEnvironmentProvisioningConfig{}, pkgerrors.Internal("failed to decrypt agent environment secret").WithCause(err)
 		}
 		result.Secrets[row.Name] = plaintext
 	}
@@ -423,15 +423,15 @@ func (s *AgentEnvironmentService) loadAgentEnvironmentRow(ctx context.Context, r
 		return agentEnvironmentConfigRow{Env: []AgentEnvironmentVariable{}}, nil
 	}
 	if err != nil {
-		return agentEnvironmentConfigRow{}, pkgerrors.Internal("failed to load agent environment")
+		return agentEnvironmentConfigRow{}, pkgerrors.Internal("failed to load agent environment").WithCause(err)
 	}
 	var variables []AgentEnvironmentVariable
 	if err := json.Unmarshal(row.EnvironmentVariables, &variables); err != nil {
-		return agentEnvironmentConfigRow{}, pkgerrors.Internal("invalid stored agent environment")
+		return agentEnvironmentConfigRow{}, pkgerrors.Internal("invalid stored agent environment").WithCause(err)
 	}
 	normalized, _, err := validateAgentEnvironment(row.SetupScript, variables)
 	if err != nil {
-		return agentEnvironmentConfigRow{}, pkgerrors.Internal("invalid stored agent environment")
+		return agentEnvironmentConfigRow{}, pkgerrors.Internal("invalid stored agent environment").WithCause(err)
 	}
 	updatedAt := row.UpdatedAt
 	return agentEnvironmentConfigRow{SetupScript: row.SetupScript, Env: normalized, UpdatedAt: &updatedAt}, nil
@@ -444,7 +444,7 @@ func (s *AgentEnvironmentService) agentEnvironmentResponse(ctx context.Context, 
 	}
 	rows, err := s.queries.ListRepositoryAgentEnvironmentSecrets(ctx, repositoryID)
 	if err != nil {
-		return AgentEnvironmentResponse{}, pkgerrors.Internal("failed to load agent environment")
+		return AgentEnvironmentResponse{}, pkgerrors.Internal("failed to load agent environment").WithCause(err)
 	}
 	secrets := make([]AgentEnvironmentSecretMetadata, 0, len(rows))
 	for _, row := range rows {
@@ -580,7 +580,7 @@ func (s *AgentEnvironmentService) resolveAgentEnvironmentRepo(ctx context.Contex
 		return db.Repository{}, pkgerrors.NotFound("repository not found")
 	}
 	if err != nil {
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }

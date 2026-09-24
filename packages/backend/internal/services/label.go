@@ -108,7 +108,7 @@ func (s *LabelService) CreateLabel(ctx context.Context, actor *db.User, owner, r
 		if isUniqueViolation(err) {
 			return db.Label{}, pkgerrors.Conflict("label already exists")
 		}
-		return db.Label{}, pkgerrors.Internal("failed to create label")
+		return db.Label{}, pkgerrors.Internal("failed to create label").WithCause(err)
 	}
 	return created, nil
 }
@@ -125,7 +125,7 @@ func (s *LabelService) ListLabels(ctx context.Context, viewer *db.User, owner, r
 	pageSize, pageOffset, _, _ := normalizePage(page, perPage)
 	total, err := s.queries.CountLabelsByRepo(ctx, repository.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count labels")
+		return nil, 0, pkgerrors.Internal("failed to count labels").WithCause(err)
 	}
 
 	labels, err := s.queries.ListLabelsByRepo(ctx, db.ListLabelsByRepoParams{
@@ -134,7 +134,7 @@ func (s *LabelService) ListLabels(ctx context.Context, viewer *db.User, owner, r
 		PageSize:     pageSize,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list labels")
+		return nil, 0, pkgerrors.Internal("failed to list labels").WithCause(err)
 	}
 	return labels, total, nil
 }
@@ -157,7 +157,7 @@ func (s *LabelService) GetLabel(ctx context.Context, viewer *db.User, owner, rep
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Label{}, pkgerrors.NotFound("label not found")
 		}
-		return db.Label{}, pkgerrors.Internal("failed to get label")
+		return db.Label{}, pkgerrors.Internal("failed to get label").WithCause(err)
 	}
 	return label, nil
 }
@@ -180,7 +180,7 @@ func (s *LabelService) UpdateLabel(ctx context.Context, actor *db.User, owner, r
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Label{}, pkgerrors.NotFound("label not found")
 		}
-		return db.Label{}, pkgerrors.Internal("failed to load label")
+		return db.Label{}, pkgerrors.Internal("failed to load label").WithCause(err)
 	}
 
 	name := existing.Name
@@ -221,7 +221,7 @@ func (s *LabelService) UpdateLabel(ctx context.Context, actor *db.User, owner, r
 		if isUniqueViolation(err) {
 			return db.Label{}, pkgerrors.Conflict("label already exists")
 		}
-		return db.Label{}, pkgerrors.Internal("failed to update label")
+		return db.Label{}, pkgerrors.Internal("failed to update label").WithCause(err)
 	}
 	return updated, nil
 }
@@ -244,11 +244,11 @@ func (s *LabelService) DeleteLabel(ctx context.Context, actor *db.User, owner, r
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("label not found")
 		}
-		return pkgerrors.Internal("failed to load label")
+		return pkgerrors.Internal("failed to load label").WithCause(err)
 	}
 
 	if err := s.queries.DeleteLabel(ctx, db.DeleteLabelParams{RepositoryID: repository.ID, ID: id}); err != nil {
-		return pkgerrors.Internal("failed to delete label")
+		return pkgerrors.Internal("failed to delete label").WithCause(err)
 	}
 	return nil
 }
@@ -278,7 +278,7 @@ func (s *LabelService) AddLabelsToIssue(ctx context.Context, actor *db.User, own
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, pkgerrors.NotFound("issue not found")
 		}
-		return nil, pkgerrors.Internal("failed to load issue")
+		return nil, pkgerrors.Internal("failed to load issue").WithCause(err)
 	}
 
 	labelsByName, err := s.queries.ListLabelsByNames(ctx, db.ListLabelsByNamesParams{
@@ -286,7 +286,7 @@ func (s *LabelService) AddLabelsToIssue(ctx context.Context, actor *db.User, own
 		Names:        labelNames,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load label")
+		return nil, pkgerrors.Internal("failed to load label").WithCause(err)
 	}
 	if len(labelsByName) != len(labelNames) {
 		return nil, pkgerrors.NotFound("label not found")
@@ -303,7 +303,7 @@ func (s *LabelService) AddLabelsToIssue(ctx context.Context, actor *db.User, own
 		if isUniqueViolation(err) {
 			return nil, pkgerrors.Conflict("label already attached to issue")
 		}
-		return nil, pkgerrors.Internal("failed to attach label")
+		return nil, pkgerrors.Internal("failed to attach label").WithCause(err)
 	}
 
 	labels, err := s.listAllLabelsForIssue(ctx, issue.ID)
@@ -332,13 +332,13 @@ func (s *LabelService) ListIssueLabels(ctx context.Context, viewer *db.User, own
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, 0, pkgerrors.NotFound("issue not found")
 		}
-		return nil, 0, pkgerrors.Internal("failed to load issue")
+		return nil, 0, pkgerrors.Internal("failed to load issue").WithCause(err)
 	}
 
 	pageSize, pageOffset, _, _ := normalizePage(page, perPage)
 	total, err := s.queries.CountLabelsForIssue(ctx, issue.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count issue labels")
+		return nil, 0, pkgerrors.Internal("failed to count issue labels").WithCause(err)
 	}
 
 	labels, err := s.queries.ListLabelsForIssue(ctx, db.ListLabelsForIssueParams{
@@ -347,7 +347,7 @@ func (s *LabelService) ListIssueLabels(ctx context.Context, viewer *db.User, own
 		PageSize:   pageSize,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list issue labels")
+		return nil, 0, pkgerrors.Internal("failed to list issue labels").WithCause(err)
 	}
 	return labels, total, nil
 }
@@ -377,7 +377,7 @@ func (s *LabelService) RemoveIssueLabelByName(ctx context.Context, actor *db.Use
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("issue not found")
 		}
-		return pkgerrors.Internal("failed to load issue")
+		return pkgerrors.Internal("failed to load issue").WithCause(err)
 	}
 
 	removed, err := s.queries.RemoveIssueLabelByName(ctx, db.RemoveIssueLabelByNameParams{
@@ -386,7 +386,7 @@ func (s *LabelService) RemoveIssueLabelByName(ctx context.Context, actor *db.Use
 		LabelName:    trimmedLabelName,
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to remove issue label")
+		return pkgerrors.Internal("failed to remove issue label").WithCause(err)
 	}
 	if removed == 0 {
 		return pkgerrors.NotFound("label not found on issue")
@@ -445,7 +445,7 @@ func (s *LabelService) resolveRepoByOwnerAndName(ctx context.Context, owner, rep
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }
@@ -548,7 +548,7 @@ func normalizeLabelNames(names []string) ([]string, error) {
 func (s *LabelService) listAllLabelsForIssue(ctx context.Context, issueID int64) ([]db.Label, error) {
 	total, err := s.queries.CountLabelsForIssue(ctx, issueID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to count issue labels")
+		return nil, pkgerrors.Internal("failed to count issue labels").WithCause(err)
 	}
 	if total == 0 {
 		return []db.Label{}, nil
@@ -568,7 +568,7 @@ func (s *LabelService) listAllLabelsForIssue(ctx context.Context, issueID int64)
 			PageSize:   pageSize,
 		})
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to load issue labels")
+			return nil, pkgerrors.Internal("failed to load issue labels").WithCause(err)
 		}
 		if len(page) == 0 {
 			break

@@ -77,7 +77,7 @@ func (s *IssueEventService) ListIssueEvents(ctx context.Context, viewer *db.User
 		PageSize:   int32(perPage),
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list issue events")
+		return nil, pkgerrors.Internal("failed to list issue events").WithCause(err)
 	}
 
 	logins := s.resolveActorLogins(ctx, rows)
@@ -135,7 +135,7 @@ func (s *IssueEventService) resolveRepo(ctx context.Context, owner, repo string)
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }
@@ -173,7 +173,7 @@ func (s *IssueEventService) getIssueByNumber(ctx context.Context, repositoryID, 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Issue{}, pkgerrors.NotFound("issue not found")
 		}
-		return db.Issue{}, pkgerrors.Internal("failed to load issue")
+		return db.Issue{}, pkgerrors.Internal("failed to load issue").WithCause(err)
 	}
 	return issue, nil
 }

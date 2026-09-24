@@ -326,7 +326,7 @@ func (s *LinearSyncService) ListSyncOps(ctx context.Context, userID, integration
 		PageSize:        limit + 1,
 	})
 	if err != nil {
-		return LinearSyncOpsPage{}, pkgerrors.Internal("failed to list linear sync operations")
+		return LinearSyncOpsPage{}, pkgerrors.Internal("failed to list linear sync operations").WithCause(err)
 	}
 	hasMore := len(rows) > int(limit)
 	if hasMore {
@@ -364,7 +364,7 @@ func (s *LinearSyncService) StartInitialSyncRun(ctx context.Context, userID, int
 	run, err := s.operations.CreateLinearSyncRun(ctx, integration.ID)
 	if err != nil {
 		s.initialSyncInFlight.Delete(integration.ID)
-		return 0, pkgerrors.Internal("failed to create linear sync run")
+		return 0, pkgerrors.Internal("failed to create linear sync run").WithCause(err)
 	}
 	s.initialSyncInFlight.Store(integration.ID, run.ID)
 	SafeGo("linear-initial-sync", func() {
@@ -388,7 +388,7 @@ func (s *LinearSyncService) GetInitialSyncRun(ctx context.Context, userID, integ
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return LinearSyncRunStatus{}, pkgerrors.NotFound("linear sync run not found")
 		}
-		return LinearSyncRunStatus{}, pkgerrors.Internal("failed to load linear sync run")
+		return LinearSyncRunStatus{}, pkgerrors.Internal("failed to load linear sync run").WithCause(err)
 	}
 	return linearSyncRunStatus(run), nil
 }
@@ -406,7 +406,7 @@ func (s *LinearSyncService) RetrySyncOp(ctx context.Context, userID, integration
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return LinearSyncOp{}, pkgerrors.NotFound("linear sync operation not found")
 		}
-		return LinearSyncOp{}, pkgerrors.Internal("failed to load linear sync operation")
+		return LinearSyncOp{}, pkgerrors.Internal("failed to load linear sync operation").WithCause(err)
 	}
 	if original.Status != "failed" {
 		return LinearSyncOp{}, pkgerrors.Conflict("only failed linear sync operations can be retried")
@@ -419,7 +419,7 @@ func (s *LinearSyncService) RetrySyncOp(ctx context.Context, userID, integration
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return LinearSyncOp{}, pkgerrors.Conflict("linear sync operation is no longer retryable")
 		}
-		return LinearSyncOp{}, pkgerrors.Internal("failed to enqueue linear sync retry")
+		return LinearSyncOp{}, pkgerrors.Internal("failed to enqueue linear sync retry").WithCause(err)
 	}
 	SafeGo("linear-sync-op-retry", func() {
 		retryCtx, cancel := context.WithTimeout(context.Background(), linearInitialSyncTimeout)

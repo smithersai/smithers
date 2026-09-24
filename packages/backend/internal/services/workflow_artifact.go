@@ -184,7 +184,7 @@ func (s *workflowArtifactService) IssueUploadURL(ctx context.Context, run db.Wor
 		if stdErrors.Is(lookupErr, pgx.ErrNoRows) {
 			artifacts, listErr := s.queries.ListWorkflowArtifactsByRun(lockCtx, run.ID)
 			if listErr != nil {
-				return 0, pkgerrors.Internal("failed to count workflow artifacts")
+				return 0, pkgerrors.Internal("failed to count workflow artifacts").WithCause(listErr)
 			}
 			if len(artifacts) >= maxWorkflowArtifactsPerRun {
 				return 0, pkgerrors.ValidationFailed(pkgerrors.FieldError{
@@ -196,7 +196,7 @@ func (s *workflowArtifactService) IssueUploadURL(ctx context.Context, run db.Wor
 			return input.Size, nil
 		}
 		if lookupErr != nil {
-			return 0, pkgerrors.Internal("failed to load existing workflow artifact")
+			return 0, pkgerrors.Internal("failed to load existing workflow artifact").WithCause(lookupErr)
 		}
 		if current.RepositoryID != run.RepositoryID || current.WorkflowRunID != run.ID || current.Name != name {
 			return 0, pkgerrors.Conflict("workflow artifact changed during upload reservation")
@@ -246,7 +246,7 @@ func (s *workflowArtifactService) IssueUploadURL(ctx context.Context, run db.Wor
 			if isUniqueViolation(createErr) {
 				return pkgerrors.Conflict("workflow artifact already exists")
 			}
-			return pkgerrors.Internal("failed to create workflow artifact")
+			return pkgerrors.Internal("failed to create workflow artifact").WithCause(createErr)
 		}
 		artifact = created
 		return nil
@@ -276,7 +276,7 @@ func (s *workflowArtifactService) IssueUploadURL(ctx context.Context, run db.Wor
 				slog.Warn("workflow artifact purged deletion fence cleanup failed", "artifact_id", artifact.ID, "repository_id", artifact.RepositoryID, "error", clearErr)
 			}
 		}
-		return WorkflowArtifactUploadResult{}, pkgerrors.Internal("failed to create workflow artifact upload url")
+		return WorkflowArtifactUploadResult{}, pkgerrors.Internal("failed to create workflow artifact upload url").WithCause(err)
 	}
 
 	return WorkflowArtifactUploadResult{
@@ -372,10 +372,10 @@ func (s *workflowArtifactService) ConfirmUpload(ctx context.Context, run db.Work
 		// final object is orphaned. A concurrent confirmer may have won the CAS;
 		// deleting here would destroy its immutable artifact.
 		if lookupErr != nil && !stdErrors.Is(lookupErr, pgx.ErrNoRows) {
-			return pkgerrors.Internal("failed to load workflow artifact after confirmation race")
+			return pkgerrors.Internal("failed to load workflow artifact after confirmation race").WithCause(lookupErr)
 		}
 		if cleanupErr := s.deleteWorkflowArtifactBlobSet(ctx, artifact); cleanupErr != nil {
-			return pkgerrors.Internal("failed to clean up unclaimed workflow artifact upload")
+			return pkgerrors.Internal("failed to clean up unclaimed workflow artifact upload").WithCause(cleanupErr)
 		}
 		if stdErrors.Is(lookupErr, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("workflow artifact not found")
@@ -416,7 +416,7 @@ func (s *workflowArtifactService) validateWorkflowArtifactUpload(ctx context.Con
 		return validatedWorkflowArtifactUpload{}, pkgerrors.BadRequest("artifact blob does not exist")
 	}
 	if err != nil {
-		return validatedWorkflowArtifactUpload{}, pkgerrors.Internal("failed to verify workflow artifact upload")
+		return validatedWorkflowArtifactUpload{}, pkgerrors.Internal("failed to verify workflow artifact upload").WithCause(err)
 	}
 
 	isMemoryStore := false
@@ -446,7 +446,7 @@ func (s *workflowArtifactService) validateWorkflowArtifactUpload(ctx context.Con
 			return validatedWorkflowArtifactUpload{}, pkgerrors.BadRequest("artifact blob does not exist")
 		}
 		if digestErr != nil {
-			return validatedWorkflowArtifactUpload{}, pkgerrors.Internal("failed to compute workflow artifact digest")
+			return validatedWorkflowArtifactUpload{}, pkgerrors.Internal("failed to compute workflow artifact digest").WithCause(digestErr)
 		}
 		if actualSHA256 != declaredSHA256 {
 			validationErr := pkgerrors.BadRequest("artifact blob sha256 did not match declared hash")
@@ -471,12 +471,12 @@ func (s *workflowArtifactService) prepareWorkflowArtifactFinalBlob(ctx context.C
 	attrs, err := s.blobs.Stat(ctx, artifact.GcsKey)
 	if stdErrors.Is(err, blob.ErrObjectNotFound) {
 		if promotionErr != nil && !stdErrors.Is(promotionErr, blob.ErrObjectNotFound) {
-			return pkgerrors.Internal("failed to promote workflow artifact upload")
+			return pkgerrors.Internal("failed to promote workflow artifact upload").WithCause(promotionErr)
 		}
 		return pkgerrors.BadRequest("artifact blob does not exist")
 	}
 	if err != nil {
-		return pkgerrors.Internal("failed to verify promoted workflow artifact")
+		return pkgerrors.Internal("failed to verify promoted workflow artifact").WithCause(err)
 	}
 	if validationErr := s.validateWorkflowArtifactObject(artifact, attrs); validationErr != nil {
 		if !createdDestination {
@@ -488,7 +488,7 @@ func (s *workflowArtifactService) prepareWorkflowArtifactFinalBlob(ctx context.C
 		if _, ok := s.blobs.(*blob.MemoryStore); !ok {
 			actualSHA256, digestErr := blob.ComputeSHA256(ctx, s.blobs, artifact.GcsKey)
 			if digestErr != nil {
-				return pkgerrors.Internal("failed to compute promoted workflow artifact digest")
+				return pkgerrors.Internal("failed to compute promoted workflow artifact digest").WithCause(digestErr)
 			}
 			if actualSHA256 != validated.sha256 {
 				if !createdDestination {
@@ -500,7 +500,7 @@ func (s *workflowArtifactService) prepareWorkflowArtifactFinalBlob(ctx context.C
 		}
 	}
 	if err := s.purgePendingWorkflowArtifactUpload(ctx, artifact); err != nil {
-		return pkgerrors.Internal("failed to clean up workflow artifact staging upload")
+		return pkgerrors.Internal("failed to clean up workflow artifact staging upload").WithCause(err)
 	}
 	return nil
 }
@@ -535,7 +535,7 @@ func (s *workflowArtifactService) cleanupInvalidWorkflowArtifactObject(ctx conte
 		return validationErr
 	}
 	if err := blob.PurgeAllGenerations(ctx, s.blobs, key); err != nil && !stdErrors.Is(err, blob.ErrObjectNotFound) {
-		return pkgerrors.Internal("failed to clean up invalid workflow artifact upload")
+		return pkgerrors.Internal("failed to clean up invalid workflow artifact upload").WithCause(err)
 	}
 	return validationErr
 }
@@ -559,7 +559,7 @@ func (s *workflowArtifactService) ListArtifacts(ctx context.Context, repositoryI
 
 	rows, err := s.queries.ListWorkflowArtifactsByRun(ctx, runID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list workflow artifacts")
+		return nil, pkgerrors.Internal("failed to list workflow artifacts").WithCause(err)
 	}
 
 	artifacts := make([]db.WorkflowArtifact, 0, len(rows))
@@ -590,7 +590,7 @@ func (s *workflowArtifactService) GetDownloadURL(ctx context.Context, repository
 
 	exists, err := s.blobs.Exists(ctx, artifact.GcsKey)
 	if err != nil {
-		return WorkflowArtifactDownloadResult{}, pkgerrors.Internal("failed to verify workflow artifact blob")
+		return WorkflowArtifactDownloadResult{}, pkgerrors.Internal("failed to verify workflow artifact blob").WithCause(err)
 	}
 	if !exists {
 		return WorkflowArtifactDownloadResult{}, pkgerrors.NotFound("workflow artifact blob not found")
@@ -598,7 +598,7 @@ func (s *workflowArtifactService) GetDownloadURL(ctx context.Context, repository
 
 	downloadURL, err := s.blobs.SignedDownloadURL(ctx, artifact.GcsKey, s.signedURLExpiry)
 	if err != nil {
-		return WorkflowArtifactDownloadResult{}, pkgerrors.Internal("failed to create workflow artifact download url")
+		return WorkflowArtifactDownloadResult{}, pkgerrors.Internal("failed to create workflow artifact download url").WithCause(err)
 	}
 
 	return WorkflowArtifactDownloadResult{
@@ -672,7 +672,7 @@ func (s *workflowArtifactService) AttachToRelease(ctx context.Context, repositor
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.WorkflowArtifact{}, pkgerrors.NotFound("workflow artifact not found")
 		}
-		return db.WorkflowArtifact{}, pkgerrors.Internal("failed to attach workflow artifact to release")
+		return db.WorkflowArtifact{}, pkgerrors.Internal("failed to attach workflow artifact to release").WithCause(err)
 	}
 	return attached, nil
 }
@@ -703,7 +703,7 @@ func (s *workflowArtifactService) PruneExpired(ctx context.Context, batchSize in
 			if firstErr != nil {
 				return deletedCount, firstErr
 			}
-			return deletedCount, pkgerrors.Internal("failed to list prunable workflow artifacts")
+			return deletedCount, pkgerrors.Internal("failed to list prunable workflow artifacts").WithCause(err)
 		}
 		unseen := 0
 		for _, artifact := range rows {
@@ -756,7 +756,7 @@ func (s *workflowArtifactService) deleteWorkflowArtifactWithOwnerLockIf(
 			return 0, nil
 		}
 		if err != nil {
-			return 0, pkgerrors.Internal("failed to load workflow artifact for deletion")
+			return 0, pkgerrors.Internal("failed to load workflow artifact for deletion").WithCause(err)
 		}
 		stillCurrent = sameWorkflowArtifactReservation(current, captured) && (eligible == nil || eligible(current))
 		if stillCurrent {
@@ -829,7 +829,7 @@ func (s *workflowArtifactService) deleteWorkflowArtifactReservation(ctx context.
 		return false, nil
 	}
 	if err != nil {
-		return false, pkgerrors.Internal("failed to claim workflow artifact deletion")
+		return false, pkgerrors.Internal("failed to claim workflow artifact deletion").WithCause(err)
 	}
 
 	deleteCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workflowArtifactDeleteTimeout)
@@ -837,7 +837,7 @@ func (s *workflowArtifactService) deleteWorkflowArtifactReservation(ctx context.
 	cancel()
 	if deleteErr != nil {
 		s.releaseWorkflowArtifactDeletionClaim(ctx, claimed, tokenValue)
-		return false, pkgerrors.Internal("failed to delete workflow artifact blob")
+		return false, pkgerrors.Internal("failed to delete workflow artifact blob").WithCause(deleteErr)
 	}
 
 	_, err = s.queries.DeleteClaimedWorkflowArtifact(ctx, db.DeleteClaimedWorkflowArtifactParams{
@@ -853,7 +853,7 @@ func (s *workflowArtifactService) deleteWorkflowArtifactReservation(ctx context.
 	}
 	if err != nil {
 		s.releaseWorkflowArtifactDeletionClaim(ctx, claimed, tokenValue)
-		return false, pkgerrors.Internal("failed to delete workflow artifact metadata")
+		return false, pkgerrors.Internal("failed to delete workflow artifact metadata").WithCause(err)
 	}
 	return true, nil
 }
@@ -908,7 +908,7 @@ func (s *workflowArtifactService) requireRun(ctx context.Context, repositoryID, 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.WorkflowRun{}, pkgerrors.NotFound("workflow run not found")
 		}
-		return db.WorkflowRun{}, pkgerrors.Internal("failed to load workflow run")
+		return db.WorkflowRun{}, pkgerrors.Internal("failed to load workflow run").WithCause(err)
 	}
 	return run, nil
 }
@@ -927,7 +927,7 @@ func (s *workflowArtifactService) lookupArtifact(ctx context.Context, runID int6
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.WorkflowArtifact{}, pkgerrors.NotFound("workflow artifact not found")
 		}
-		return db.WorkflowArtifact{}, pkgerrors.Internal("failed to load workflow artifact")
+		return db.WorkflowArtifact{}, pkgerrors.Internal("failed to load workflow artifact").WithCause(err)
 	}
 	return artifact, nil
 }

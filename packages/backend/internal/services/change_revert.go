@@ -115,7 +115,7 @@ func (s *ChangeRevertService) RevertChange(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return ChangeRevertResponse{}, pkgerrors.Conflict("change is not landed")
 		}
-		return ChangeRevertResponse{}, pkgerrors.Internal("failed to load landed change")
+		return ChangeRevertResponse{}, pkgerrors.Internal("failed to load landed change").WithCause(err)
 	}
 	if strings.TrimSpace(landing.LandedRevision) == "" {
 		return ChangeRevertResponse{}, pkgerrors.Internal("landed change revision is unavailable")
@@ -146,7 +146,7 @@ func (s *ChangeRevertService) RevertChange(
 		Number:       created.Number,
 	})
 	if err != nil {
-		return ChangeRevertResponse{}, pkgerrors.Internal("failed to load reverting landing request")
+		return ChangeRevertResponse{}, pkgerrors.Internal("failed to load reverting landing request").WithCause(err)
 	}
 	return ChangeRevertResponse{
 		ChangeID:             reverting.ChangeID,
@@ -161,11 +161,11 @@ func (s *ChangeRevertService) revertChangeset(ctx context.Context, actor *db.Use
 	}
 	org, err := s.queries.GetOrgByID(ctx, original.OrganizationID)
 	if err != nil {
-		return ChangeRevertResponse{}, pkgerrors.Internal("failed to load changeset organization")
+		return ChangeRevertResponse{}, pkgerrors.Internal("failed to load changeset organization").WithCause(err)
 	}
 	members, err := s.queries.ListChangesetMembers(ctx, original.ID)
 	if err != nil {
-		return ChangeRevertResponse{}, pkgerrors.Internal("failed to load changeset members")
+		return ChangeRevertResponse{}, pkgerrors.Internal("failed to load changeset members").WithCause(err)
 	}
 	if len(members) == 0 {
 		return ChangeRevertResponse{}, pkgerrors.Conflict("landed changeset has no members")
@@ -175,7 +175,7 @@ func (s *ChangeRevertService) revertChangeset(ctx context.Context, actor *db.Use
 	for _, member := range members {
 		repository, err := s.queries.GetRepoByID(ctx, member.RepositoryID)
 		if err != nil {
-			return ChangeRevertResponse{}, pkgerrors.Internal("failed to load changeset member repository")
+			return ChangeRevertResponse{}, pkgerrors.Internal("failed to load changeset member repository").WithCause(err)
 		}
 		reverting, err := s.repoHost.BackoutChange(ctx, org.Name, repository.Name, member.ChangeID, repohost.BackoutChangeRequest{
 			// CommitID is the exact revision pinned into the changeset. The

@@ -103,7 +103,7 @@ func (s *WikiService) initializedWikiDocument(ctx context.Context, owner, repo s
 			return row, pkgerrors.NotFound("wiki page not found")
 		}
 		if err != nil {
-			return row, pkgerrors.Internal("failed to read wiki document")
+			return row, pkgerrors.Internal("failed to read wiki document").WithCause(err)
 		}
 		if row.CrdtState != nil {
 			return row, nil
@@ -124,7 +124,7 @@ func (s *WikiService) initializedWikiDocument(ctx context.Context, owner, repo s
 			continue
 		}
 		if err != nil {
-			return row, pkgerrors.Internal("failed to initialize wiki document")
+			return row, pkgerrors.Internal("failed to initialize wiki document").WithCause(err)
 		}
 		// Read back the winning state. A concurrent seed must never produce two
 		// independent copies of the original text in different clients.
@@ -198,7 +198,7 @@ func (s *WikiService) ApplyWikiUpdate(ctx context.Context, actor *db.User, owner
 			continue
 		}
 		if err != nil {
-			return WikiUpdateResponse{}, pkgerrors.Internal("failed to store wiki update")
+			return WikiUpdateResponse{}, pkgerrors.Internal("failed to store wiki update").WithCause(err)
 		}
 		response := WikiDocumentResponse{Page: mapWikiPageRecord(written, actor.Username), State: merged.State, StateVector: merged.StateVector}
 		s.dispatchWikiEvent(ctx, currentRepo, actor, "updated", response.Page)
@@ -249,7 +249,7 @@ func (s *WikiService) replaceCollaborativeWikiPage(ctx context.Context, actor *d
 		return WikiPageResponse{}, true, pkgerrors.NotFound("wiki page not found")
 	}
 	if err != nil {
-		return WikiPageResponse{}, true, pkgerrors.Internal("failed to read wiki document")
+		return WikiPageResponse{}, true, pkgerrors.Internal("failed to read wiki document").WithCause(err)
 	}
 	if row.ID != pageID {
 		return WikiPageResponse{}, true, pkgerrors.Conflict("wiki page was replaced")
@@ -290,7 +290,7 @@ func (s *WikiService) replaceCollaborativeWikiPage(ctx context.Context, actor *d
 		return WikiPageResponse{}, true, pkgerrors.Conflict("wiki changed; reopen before replacing content")
 	}
 	if err != nil {
-		return WikiPageResponse{}, true, pkgerrors.Internal("failed to store wiki document")
+		return WikiPageResponse{}, true, pkgerrors.Internal("failed to store wiki document").WithCause(err)
 	}
 	return mapWikiPageRecord(written, actor.Username), true, nil
 }
@@ -335,14 +335,14 @@ func (s *WikiService) ListWikiUpdates(ctx context.Context, viewer *db.User, owne
 		return nil, pkgerrors.NotFound("wiki page not found")
 	}
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to read wiki page identity")
+		return nil, pkgerrors.Internal("failed to read wiki page identity").WithCause(err)
 	}
 
 	// An established stream can replay the tombstone after the page is gone.
 	// Repository scoping in the query prevents another repo's IDs leaking.
 	rows, err := s.documents.ListWikiUpdatesAfter(ctx, db.ListWikiUpdatesAfterParams{RepositoryID: repository.ID, PageID: pageID, Revision: afterID, Limit: WikiUpdatePageSize})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to read wiki updates")
+		return nil, pkgerrors.Internal("failed to read wiki updates").WithCause(err)
 	}
 	out := make([]WikiUpdateEvent, 0, len(rows))
 	for _, row := range rows {

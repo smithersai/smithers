@@ -88,7 +88,7 @@ func (s *EmailService) ListEmails(ctx context.Context, userID int64) ([]EmailRes
 
 	emails, err := s.queries.ListUserEmails(ctx, userID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list emails")
+		return nil, pkgerrors.Internal("failed to list emails").WithCause(err)
 	}
 
 	result := make([]EmailResponse, 0, len(emails))
@@ -125,7 +125,7 @@ func (s *EmailService) AddEmail(ctx context.Context, userID int64, req AddEmailR
 		if isEmailUniqueViolation(err) {
 			return EmailResponse{}, pkgerrors.Conflict("email already exists")
 		}
-		return EmailResponse{}, pkgerrors.Internal("failed to add email")
+		return EmailResponse{}, pkgerrors.Internal("failed to add email").WithCause(err)
 	}
 
 	return EmailResponse{
@@ -151,14 +151,14 @@ func (s *EmailService) DeleteEmail(ctx context.Context, userID, emailID int64) e
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("email not found")
 		}
-		return pkgerrors.Internal("failed to load email")
+		return pkgerrors.Internal("failed to load email").WithCause(err)
 	}
 	if email.UserID != userID {
 		return pkgerrors.NotFound("email not found")
 	}
 
 	if err := s.queries.DeleteEmail(ctx, db.DeleteEmailParams{ID: emailID, UserID: userID}); err != nil {
-		return pkgerrors.Internal("failed to delete email")
+		return pkgerrors.Internal("failed to delete email").WithCause(err)
 	}
 
 	return nil
@@ -183,7 +183,7 @@ func (s *EmailService) RequestVerification(ctx context.Context, userID, emailID 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("email not found")
 		}
-		return pkgerrors.Internal("failed to load email")
+		return pkgerrors.Internal("failed to load email").WithCause(err)
 	}
 	if emailAddr.UserID != userID {
 		return pkgerrors.NotFound("email not found")
@@ -191,7 +191,7 @@ func (s *EmailService) RequestVerification(ctx context.Context, userID, emailID 
 
 	tokenBytes := make([]byte, 32)
 	if _, err := emailRandRead(tokenBytes); err != nil {
-		return pkgerrors.Internal("failed to generate token")
+		return pkgerrors.Internal("failed to generate token").WithCause(err)
 	}
 	rawToken := hex.EncodeToString(tokenBytes)
 	tokenHash := sha256Hex(rawToken)
@@ -204,7 +204,7 @@ func (s *EmailService) RequestVerification(ctx context.Context, userID, emailID 
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to create verification token")
+		return pkgerrors.Internal("failed to create verification token").WithCause(err)
 	}
 
 	// Build verification URL and send email asynchronously.
@@ -304,7 +304,7 @@ func (s *EmailService) VerifyEmail(ctx context.Context, rawToken string) (Verify
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return VerifyEmailResult{}, pkgerrors.BadRequest("invalid or expired token")
 		}
-		return VerifyEmailResult{}, pkgerrors.Internal("failed to load token")
+		return VerifyEmailResult{}, pkgerrors.Internal("failed to load token").WithCause(err)
 	}
 
 	if token.ExpiresAt.Before(time.Now()) || token.UsedAt.Valid {
@@ -314,7 +314,7 @@ func (s *EmailService) VerifyEmail(ctx context.Context, rawToken string) (Verify
 	// Find the email ID by address to activate it
 	emails, err := s.queries.ListUserEmails(ctx, token.UserID)
 	if err != nil {
-		return VerifyEmailResult{}, pkgerrors.Internal("failed to load emails for activation")
+		return VerifyEmailResult{}, pkgerrors.Internal("failed to load emails for activation").WithCause(err)
 	}
 
 	var emailID int64
@@ -336,7 +336,7 @@ func (s *EmailService) VerifyEmail(ctx context.Context, rawToken string) (Verify
 		if isEmailUniqueViolation(err) {
 			return VerifyEmailResult{}, pkgerrors.Conflict("email address is already verified by another account")
 		}
-		return VerifyEmailResult{}, pkgerrors.Internal("failed to activate email")
+		return VerifyEmailResult{}, pkgerrors.Internal("failed to activate email").WithCause(err)
 	}
 
 	// Consume only after activation succeeds, so a failed activation leaves the
@@ -344,7 +344,7 @@ func (s *EmailService) VerifyEmail(ctx context.Context, rawToken string) (Verify
 	// still lets exactly one concurrent verification report success.
 	rows, err := s.queries.ConsumeEmailVerificationToken(ctx, tokenHash)
 	if err != nil {
-		return VerifyEmailResult{}, pkgerrors.Internal("failed to consume token")
+		return VerifyEmailResult{}, pkgerrors.Internal("failed to consume token").WithCause(err)
 	}
 	if rows == 0 {
 		return VerifyEmailResult{}, pkgerrors.BadRequest("invalid or expired token")

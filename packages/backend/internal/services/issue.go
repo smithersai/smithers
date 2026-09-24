@@ -249,7 +249,7 @@ func (s *IssueService) ListIssues(ctx context.Context, viewer *db.User, owner, r
 		State:        normalizedState,
 	})
 	if err != nil {
-		return nil, "", 0, pkgerrors.Internal("failed to count issues")
+		return nil, "", 0, pkgerrors.Internal("failed to count issues").WithCause(err)
 	}
 
 	rows, err := s.queries.ListIssuesByRepoFilteredKeyset(ctx, db.ListIssuesByRepoFilteredKeysetParams{
@@ -259,7 +259,7 @@ func (s *IssueService) ListIssues(ctx context.Context, viewer *db.User, owner, r
 		PageSize:     int32(limit),
 	})
 	if err != nil {
-		return nil, "", 0, pkgerrors.Internal("failed to list issues")
+		return nil, "", 0, pkgerrors.Internal("failed to list issues").WithCause(err)
 	}
 
 	items := make([]IssueResponse, 0, len(rows))
@@ -383,7 +383,7 @@ func (s *IssueService) CreateIssue(ctx context.Context, actor *db.User, owner, r
 				MilestoneID:  milestoneID,
 			})
 			if werr != nil {
-				return pkgerrors.Internal("failed to create issue")
+				return pkgerrors.Internal("failed to create issue").WithCause(werr)
 			}
 			return replaceIssueAssociations(ctx, tx, created.ID, assigneeSet, labelSet)
 		})
@@ -599,7 +599,7 @@ func (s *IssueService) UpdateIssue(ctx context.Context, actor *db.User, owner, r
 			VerifiedAt:               verifiedAt,
 		})
 		if werr != nil {
-			return pkgerrors.Internal("failed to update issue")
+			return pkgerrors.Internal("failed to update issue").WithCause(werr)
 		}
 		return replaceIssueAssociations(ctx, tx, updated.ID, assigneeSet, labelSet)
 	}); err != nil {
@@ -703,7 +703,7 @@ func (s *IssueService) GetIssueComment(ctx context.Context, viewer *db.User, own
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return IssueCommentResponse{}, pkgerrors.NotFound("comment not found")
 		}
-		return IssueCommentResponse{}, pkgerrors.Internal("failed to get comment")
+		return IssueCommentResponse{}, pkgerrors.Internal("failed to get comment").WithCause(err)
 	}
 	if issue.RepositoryID != repository.ID {
 		return IssueCommentResponse{}, pkgerrors.NotFound("comment not found")
@@ -714,7 +714,7 @@ func (s *IssueService) GetIssueComment(ctx context.Context, viewer *db.User, own
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return IssueCommentResponse{}, pkgerrors.NotFound("comment not found")
 		}
-		return IssueCommentResponse{}, pkgerrors.Internal("failed to get comment")
+		return IssueCommentResponse{}, pkgerrors.Internal("failed to get comment").WithCause(err)
 	}
 	return mapIssueComment(comment), nil
 }
@@ -743,7 +743,7 @@ func (s *IssueService) CreateIssueComment(ctx context.Context, actor *db.User, o
 		Commenter: actor.Username,
 	})
 	if err != nil {
-		return IssueCommentResponse{}, pkgerrors.Internal("failed to create issue comment")
+		return IssueCommentResponse{}, pkgerrors.Internal("failed to create issue comment").WithCause(err)
 	}
 
 	// issues.comment_count is maintained by trg_issue_comments_count_ins.
@@ -788,7 +788,7 @@ func (s *IssueService) ListIssueComments(ctx context.Context, viewer *db.User, o
 
 	total, err := s.queries.CountIssueCommentsByIssue(ctx, issue.ID)
 	if err != nil {
-		return nil, "", 0, pkgerrors.Internal("failed to count issue comments")
+		return nil, "", 0, pkgerrors.Internal("failed to count issue comments").WithCause(err)
 	}
 
 	rows, err := s.queries.ListIssueCommentsByIssueKeyset(ctx, db.ListIssueCommentsByIssueKeysetParams{
@@ -797,7 +797,7 @@ func (s *IssueService) ListIssueComments(ctx context.Context, viewer *db.User, o
 		PageSize: int32(limit),
 	})
 	if err != nil {
-		return nil, "", 0, pkgerrors.Internal("failed to list issue comments")
+		return nil, "", 0, pkgerrors.Internal("failed to list issue comments").WithCause(err)
 	}
 
 	items := make([]IssueCommentResponse, 0, len(rows))
@@ -845,7 +845,7 @@ func (s *IssueService) UpdateIssueComment(ctx context.Context, actor *db.User, o
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return IssueCommentResponse{}, pkgerrors.NotFound("issue comment not found")
 		}
-		return IssueCommentResponse{}, pkgerrors.Internal("failed to load issue comment")
+		return IssueCommentResponse{}, pkgerrors.Internal("failed to load issue comment").WithCause(err)
 	}
 	if issue.RepositoryID != repository.ID {
 		return IssueCommentResponse{}, pkgerrors.NotFound("issue comment not found")
@@ -856,7 +856,7 @@ func (s *IssueService) UpdateIssueComment(ctx context.Context, actor *db.User, o
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return IssueCommentResponse{}, pkgerrors.NotFound("issue comment not found")
 		}
-		return IssueCommentResponse{}, pkgerrors.Internal("failed to update issue comment")
+		return IssueCommentResponse{}, pkgerrors.Internal("failed to update issue comment").WithCause(err)
 	}
 
 	mapped := mapIssueComment(updated)
@@ -885,7 +885,7 @@ func (s *IssueService) DeleteIssueComment(ctx context.Context, actor *db.User, o
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("issue comment not found")
 		}
-		return pkgerrors.Internal("failed to load issue comment")
+		return pkgerrors.Internal("failed to load issue comment").WithCause(err)
 	}
 	if issue.RepositoryID != repository.ID {
 		return pkgerrors.NotFound("issue comment not found")
@@ -893,7 +893,7 @@ func (s *IssueService) DeleteIssueComment(ctx context.Context, actor *db.User, o
 
 	comment, fetchErr := s.queries.GetIssueCommentByID(ctx, commentID)
 	if fetchErr != nil && !stdErrors.Is(fetchErr, pgx.ErrNoRows) {
-		return pkgerrors.Internal("failed to load issue comment for webhook dispatch")
+		return pkgerrors.Internal("failed to load issue comment for webhook dispatch").WithCause(fetchErr)
 	}
 
 	// issues.comment_count is maintained by trg_issue_comments_count_del,
@@ -901,7 +901,7 @@ func (s *IssueService) DeleteIssueComment(ctx context.Context, actor *db.User, o
 	// the same comment decrement once, not twice. Reactions on the comment are
 	// removed by trg_issue_comments_delete_reactions.
 	if err := s.queries.DeleteIssueComment(ctx, commentID); err != nil {
-		return pkgerrors.Internal("failed to delete issue comment")
+		return pkgerrors.Internal("failed to delete issue comment").WithCause(err)
 	}
 
 	// Dispatch issue_comment webhook with action "deleted" (non-fatal).
@@ -951,7 +951,7 @@ func (s *IssueService) getIssueByNumber(ctx context.Context, repositoryID, numbe
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Issue{}, pkgerrors.NotFound("issue not found")
 		}
-		return db.Issue{}, pkgerrors.Internal("failed to load issue")
+		return db.Issue{}, pkgerrors.Internal("failed to load issue").WithCause(err)
 	}
 	return issue, nil
 }
@@ -959,12 +959,12 @@ func (s *IssueService) getIssueByNumber(ctx context.Context, repositoryID, numbe
 func (s *IssueService) mapIssue(ctx context.Context, issue db.Issue) (IssueResponse, error) {
 	author, err := s.queries.GetUserByID(ctx, issue.AuthorID)
 	if err != nil {
-		return IssueResponse{}, pkgerrors.Internal("failed to load issue author")
+		return IssueResponse{}, pkgerrors.Internal("failed to load issue author").WithCause(err)
 	}
 
 	assigneeRows, err := s.queries.ListIssueAssignees(ctx, issue.ID)
 	if err != nil {
-		return IssueResponse{}, pkgerrors.Internal("failed to load issue assignees")
+		return IssueResponse{}, pkgerrors.Internal("failed to load issue assignees").WithCause(err)
 	}
 	assignees := make([]IssueUserSummary, 0, len(assigneeRows))
 	for _, assignee := range assigneeRows {
@@ -999,7 +999,7 @@ func (s *IssueService) mapIssue(ctx context.Context, issue db.Issue) (IssueRespo
 	if issue.FixedByID.Valid {
 		user, userErr := s.queries.GetUserByID(ctx, issue.FixedByID.Int64)
 		if userErr != nil {
-			return IssueResponse{}, pkgerrors.Internal("failed to load issue fixer")
+			return IssueResponse{}, pkgerrors.Internal("failed to load issue fixer").WithCause(userErr)
 		}
 		fixedBy = &IssueUserSummary{ID: user.ID, Login: user.Username, AgentSessionID: uuidString(issue.FixedByAgentSessionID)}
 	}
@@ -1007,7 +1007,7 @@ func (s *IssueService) mapIssue(ctx context.Context, issue db.Issue) (IssueRespo
 	if issue.VerifiedByID.Valid {
 		user, userErr := s.queries.GetUserByID(ctx, issue.VerifiedByID.Int64)
 		if userErr != nil {
-			return IssueResponse{}, pkgerrors.Internal("failed to load issue verifier")
+			return IssueResponse{}, pkgerrors.Internal("failed to load issue verifier").WithCause(userErr)
 		}
 		verifiedBy = &IssueUserSummary{ID: user.ID, Login: user.Username, AgentSessionID: uuidString(issue.VerifiedByAgentSessionID)}
 	}
@@ -1015,7 +1015,7 @@ func (s *IssueService) mapIssue(ctx context.Context, issue db.Issue) (IssueRespo
 	if q, ok := s.queries.(issueLinkedChangesQuerier); ok {
 		rows, linkErr := q.ListLinkedChangesForIssue(ctx, issue.ID)
 		if linkErr != nil {
-			return IssueResponse{}, pkgerrors.Internal("failed to load linked changes")
+			return IssueResponse{}, pkgerrors.Internal("failed to load linked changes").WithCause(linkErr)
 		}
 		for _, row := range rows {
 			linkedChanges = append(linkedChanges, IssueLinkedChange{
@@ -1074,7 +1074,7 @@ func (s *IssueService) dispatchIssueEvent(ctx context.Context, owner string, rep
 
 	if s.dispatcher != nil {
 		if err := s.dispatcher.DispatchEvent(ctx, repository.ID, webhooks.EventTypeIssues, payload); err != nil {
-			return pkgerrors.Internal("failed to enqueue webhook delivery")
+			return pkgerrors.Internal("failed to enqueue webhook delivery").WithCause(err)
 		}
 	}
 
@@ -1160,7 +1160,7 @@ func (s *IssueService) dispatchIssueCommentEvent(ctx context.Context, owner stri
 
 	if s.dispatcher != nil {
 		if err := s.dispatcher.DispatchEvent(ctx, repository.ID, webhooks.EventTypeIssueComment, payload); err != nil {
-			return pkgerrors.Internal("failed to enqueue issue comment webhook delivery")
+			return pkgerrors.Internal("failed to enqueue issue comment webhook delivery").WithCause(err)
 		}
 	}
 
@@ -1362,7 +1362,7 @@ func (s *IssueService) resolveAssigneeUserIDs(ctx context.Context, usernames []s
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return nil, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Issue", Field: "assignees", Code: "invalid"})
 			}
-			return nil, pkgerrors.Internal("failed to load assignee")
+			return nil, pkgerrors.Internal("failed to load assignee").WithCause(err)
 		}
 		userIDs = append(userIDs, user.ID)
 	}
@@ -1387,7 +1387,7 @@ func (s *IssueService) resolveLabelIDs(ctx context.Context, repositoryID int64, 
 		Names:        normalized,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load labels")
+		return nil, pkgerrors.Internal("failed to load labels").WithCause(err)
 	}
 	if len(labels) != len(normalized) {
 		return nil, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Issue", Field: "labels", Code: "invalid"})
@@ -1436,7 +1436,7 @@ func (s *IssueService) recordIssueEvent(ctx context.Context, issueID int64, acto
 func (s *IssueService) listAllLabelsForIssue(ctx context.Context, issueID int64) ([]LabelSummary, error) {
 	total, err := s.queries.CountLabelsForIssue(ctx, issueID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to count issue labels")
+		return nil, pkgerrors.Internal("failed to count issue labels").WithCause(err)
 	}
 	if total == 0 {
 		return []LabelSummary{}, nil
@@ -1457,7 +1457,7 @@ func (s *IssueService) listAllLabelsForIssue(ctx context.Context, issueID int64)
 			PageSize:   pageSize,
 		})
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to load issue labels")
+			return nil, pkgerrors.Internal("failed to load issue labels").WithCause(err)
 		}
 		if len(rows) == 0 {
 			break
@@ -1492,7 +1492,7 @@ func (s *IssueService) resolveIssueMilestone(ctx context.Context, repositoryID i
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pgtype.Int8{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Issue", Field: "milestone", Code: "invalid"})
 		}
-		return pgtype.Int8{}, pkgerrors.Internal("failed to load milestone")
+		return pgtype.Int8{}, pkgerrors.Internal("failed to load milestone").WithCause(err)
 	}
 	return pgtype.Int8{Int64: *milestone, Valid: true}, nil
 }
@@ -1552,7 +1552,7 @@ func (s *IssueService) resolveRepoByOwnerAndName(ctx context.Context, owner, rep
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }

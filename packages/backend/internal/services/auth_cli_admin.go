@@ -125,7 +125,7 @@ func (s *AuthService) PrepareAdminCLIConsent(ctx context.Context, result OAuthCa
 		RequestedScopes: []string{string(payload)}, ExpiresAt: s.now().Add(10 * time.Minute),
 	})
 	if err != nil {
-		return AdminCLIConsent{}, pkgerrors.Internal("failed to store admin CLI consent")
+		return AdminCLIConsent{}, pkgerrors.Internal("failed to store admin CLI consent").WithCause(err)
 	}
 	return AdminCLIConsent{State: state, CSRF: csrf, Scopes: adminCLIScopes(), TTL: result.AdminCLI.TTL.String(), CallbackPort: result.AdminCLI.CallbackPort, ExpiresAt: s.now().UTC().Add(result.AdminCLI.TTL)}, nil
 }
@@ -156,7 +156,7 @@ func (s *AuthService) ApproveAdminCLILogin(ctx context.Context, state, verifier,
 	}
 	user, err := s.queries.GetUserByID(ctx, grant.UserID)
 	if err != nil {
-		return AdminCLILoginResult{}, pkgerrors.Internal("failed to load admin user")
+		return AdminCLILoginResult{}, pkgerrors.Internal("failed to load admin user").WithCause(err)
 	}
 	if !user.IsAdmin || user.ProhibitLogin {
 		return AdminCLILoginResult{}, pkgerrors.Forbidden("administrator access required")
@@ -185,7 +185,7 @@ func (s *AuthService) ApproveAdminCLILogin(ctx context.Context, state, verifier,
 		ActorName: user.Username, Metadata: metadata, IpAddress: ip,
 	})
 	if err != nil {
-		return AdminCLILoginResult{}, pkgerrors.Internal("failed to create audited admin CLI token")
+		return AdminCLILoginResult{}, pkgerrors.Internal("failed to create audited admin CLI token").WithCause(err)
 	}
 	token := CreateTokenResult{Token: rawToken, TokenSummary: TokenSummary{ID: created.ID, Name: created.Name, Scopes: splitScopes(created.Scopes), TokenLastEight: created.TokenLastEight, ExpiresAt: timePtrFromTimestamptz(created.ExpiresAt)}}
 	return AdminCLILoginResult{User: user, Token: token, Request: grant.Request}, nil

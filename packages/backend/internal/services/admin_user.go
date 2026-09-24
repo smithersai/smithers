@@ -111,7 +111,7 @@ func (s *AdminUserService) ListUsers(ctx context.Context, input AdminUserListInp
 
 	total, err := s.queries.CountUsers(ctx)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count users")
+		return nil, 0, pkgerrors.Internal("failed to count users").WithCause(err)
 	}
 
 	users, err := s.queries.ListUsers(ctx, db.ListUsersParams{
@@ -119,7 +119,7 @@ func (s *AdminUserService) ListUsers(ctx context.Context, input AdminUserListInp
 		PageSize:   int32(perPage),
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list users")
+		return nil, 0, pkgerrors.Internal("failed to list users").WithCause(err)
 	}
 
 	profiles := make([]AdminUserProfile, len(users))
@@ -189,7 +189,7 @@ func (s *AdminUserService) CreateUser(ctx context.Context, input AdminCreateUser
 		if isUniqueViolation(err) {
 			return UserProfile{}, pkgerrors.Conflict("username or email already in use")
 		}
-		return UserProfile{}, pkgerrors.Internal("failed to create user")
+		return UserProfile{}, pkgerrors.Internal("failed to create user").WithCause(err)
 	}
 
 	createdID := user.ID
@@ -220,12 +220,12 @@ func (s *AdminUserService) DeleteUser(ctx context.Context, username string) erro
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("user not found")
 		}
-		return pkgerrors.Internal("failed to look up user")
+		return pkgerrors.Internal("failed to look up user").WithCause(err)
 	}
 
 	err = s.queries.SuspendUser(ctx, user.ID)
 	if err != nil {
-		return pkgerrors.Internal("failed to suspend user")
+		return pkgerrors.Internal("failed to suspend user").WithCause(err)
 	}
 
 	targetID := user.ID
@@ -253,14 +253,14 @@ func (s *AdminUserService) SetUserAdmin(ctx context.Context, username string, is
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return UserProfile{}, pkgerrors.NotFound("user not found")
 		}
-		return UserProfile{}, pkgerrors.Internal("failed to look up user")
+		return UserProfile{}, pkgerrors.Internal("failed to look up user").WithCause(err)
 	}
 
 	if err := s.queries.SetUserAdmin(ctx, db.SetUserAdminParams{
 		UserID:  user.ID,
 		IsAdmin: isAdmin,
 	}); err != nil {
-		return UserProfile{}, pkgerrors.Internal("failed to update admin status")
+		return UserProfile{}, pkgerrors.Internal("failed to update admin status").WithCause(err)
 	}
 
 	targetID := user.ID
@@ -297,7 +297,7 @@ func (s *AdminUserService) CreateTokenForUser(ctx context.Context, username stri
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return CreateTokenResult{}, pkgerrors.NotFound("user not found")
 		}
-		return CreateTokenResult{}, pkgerrors.Internal("failed to look up user")
+		return CreateTokenResult{}, pkgerrors.Internal("failed to look up user").WithCause(err)
 	}
 
 	result, err := s.tokenCreator.CreateToken(ctx, user.ID, req)
@@ -331,7 +331,7 @@ func (s *AdminUserService) SetSuspended(ctx context.Context, username string, su
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return UserProfile{}, pkgerrors.NotFound("user not found")
 		}
-		return UserProfile{}, pkgerrors.Internal("failed to look up user")
+		return UserProfile{}, pkgerrors.Internal("failed to look up user").WithCause(err)
 	}
 
 	updated, err := s.queries.SetUserSuspended(ctx, db.SetUserSuspendedParams{
@@ -339,7 +339,7 @@ func (s *AdminUserService) SetSuspended(ctx context.Context, username string, su
 		Suspended: suspended,
 	})
 	if err != nil {
-		return UserProfile{}, pkgerrors.Internal("failed to update suspension status")
+		return UserProfile{}, pkgerrors.Internal("failed to update suspension status").WithCause(err)
 	}
 
 	targetID := user.ID
@@ -374,7 +374,7 @@ func (s *AdminUserService) RevokeToken(ctx context.Context, username string, tok
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("user not found")
 		}
-		return pkgerrors.Internal("failed to look up user")
+		return pkgerrors.Internal("failed to look up user").WithCause(err)
 	}
 
 	// Fetch token to validate ownership and capture metadata for audit log
@@ -384,7 +384,7 @@ func (s *AdminUserService) RevokeToken(ctx context.Context, username string, tok
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("token not found")
 		}
-		return pkgerrors.Internal("failed to look up token")
+		return pkgerrors.Internal("failed to look up token").WithCause(err)
 	}
 	if token.UserID != user.ID {
 		// Return 404 rather than 403 to avoid leaking token existence.
@@ -396,7 +396,7 @@ func (s *AdminUserService) RevokeToken(ctx context.Context, username string, tok
 		UserID: user.ID,
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to revoke token")
+		return pkgerrors.Internal("failed to revoke token").WithCause(err)
 	}
 	if rows == 0 {
 		return pkgerrors.NotFound("token not found")

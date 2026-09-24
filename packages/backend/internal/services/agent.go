@@ -1540,7 +1540,7 @@ func (s *AgentService) CancelSession(ctx context.Context, sessionID string, user
 	}
 	cancelled, err := s.cancelAgentFlowRun(ctx, session)
 	if err != nil {
-		return pkgerrors.Internal("cancel canonical agent Flow run")
+		return pkgerrors.Internal("cancel canonical agent Flow run").WithCause(err)
 	}
 	if cancelled {
 		// Product state stays active until the canonical runtime receipt
@@ -1549,7 +1549,7 @@ func (s *AgentService) CancelSession(ctx context.Context, sessionID string, user
 	}
 	terminal, updated, err := s.transitionAgentSessionTerminalStatus(ctx, sessionID, "cancelled")
 	if err != nil {
-		return pkgerrors.Internal("cancel agent session")
+		return pkgerrors.Internal("cancel agent session").WithCause(err)
 	}
 	if !updated {
 		return pkgerrors.Conflict("agent session is not active")

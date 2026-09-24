@@ -28,7 +28,7 @@ func (r gitMirrorRemotes) close() {
 func legacyMirrorRemotes(_ context.Context, _, _ int64, owner, repo string) (gitMirrorRemotes, error) {
 	source, target, err := mirrorRemoteURLs(owner, repo)
 	if err != nil {
-		return gitMirrorRemotes{}, pkgerrors.Internal("failed to build mirror repository URLs")
+		return gitMirrorRemotes{}, pkgerrors.Internal("failed to build mirror repository URLs").WithCause(err)
 	}
 	return gitMirrorRemotes{sourceURL: source, targetURL: target}, nil
 }
@@ -54,13 +54,13 @@ func WithGitMirrorCredentials(q GitMirrorCredentialStore, github GitMirrorGitHub
 			}
 			repository, err := q.GetRepoByID(ctx, repositoryID)
 			if err != nil {
-				return gitMirrorRemotes{}, pkgerrors.Internal("load mirror repository")
+				return gitMirrorRemotes{}, pkgerrors.Internal("load mirror repository").WithCause(err)
 			}
 			destination := strings.TrimSpace(repository.MirrorDestination)
 			if destination == "" {
 				sources, err := q.ListRepositoryGitHubSources(ctx, repositoryID)
 				if err != nil {
-					return gitMirrorRemotes{}, pkgerrors.Internal("load GitHub mirror destination")
+					return gitMirrorRemotes{}, pkgerrors.Internal("load GitHub mirror destination").WithCause(err)
 				}
 				if len(sources) == 1 {
 					destination = sources[0].GithubOwner + "/" + sources[0].GithubRepo
@@ -92,23 +92,23 @@ func WithGitMirrorCredentials(q GitMirrorCredentialStore, github GitMirrorGitHub
 			}
 			// Validate trusted source configuration before minting a disposable token.
 			if _, err := gitMirrorURL(sourceBaseURL, "", owner, repo); err != nil {
-				return gitMirrorRemotes{}, pkgerrors.Internal("mirror source URL is not configured")
+				return gitMirrorRemotes{}, pkgerrors.Internal("mirror source URL is not configured").WithCause(err)
 			}
 			scopes := string(middleware.ScopeReadRepository) + "," + middleware.RepositoryRestrictionScope(repositoryID)
 			token, err := issueTemporaryRepoTokenWithTTL(ctx, q, userID, "github-mirror-read", scopes, gitMirrorSyncTimeout+5*time.Minute)
 			if err != nil {
-				return gitMirrorRemotes{}, pkgerrors.Internal("create mirror source credential")
+				return gitMirrorRemotes{}, pkgerrors.Internal("create mirror source credential").WithCause(err)
 			}
 			cleanup := func() { revokeTemporaryRepoCloneToken(context.Background(), q, userID, token.ID) }
 			source, err := gitMirrorURL(sourceBaseURL, token.Plaintext, owner, repo)
 			if err != nil {
 				cleanup()
-				return gitMirrorRemotes{}, pkgerrors.Internal("build mirror source URL")
+				return gitMirrorRemotes{}, pkgerrors.Internal("build mirror source URL").WithCause(err)
 			}
 			target, err := gitMirrorURL(defaultGitHubGitBaseURL, githubToken, targetOwner, targetRepo)
 			if err != nil {
 				cleanup()
-				return gitMirrorRemotes{}, pkgerrors.Internal("build GitHub mirror destination URL")
+				return gitMirrorRemotes{}, pkgerrors.Internal("build GitHub mirror destination URL").WithCause(err)
 			}
 			return gitMirrorRemotes{sourceURL: source, targetURL: target, cleanup: cleanup}, nil
 		}

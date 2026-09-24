@@ -37,7 +37,7 @@ func ResetSearchRateLimits(queries SearchRateLimitResetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Use a far-future cutoff to delete all records regardless of age.
 		if err := queries.DeleteExpiredSearchRateLimits(r.Context(), time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC)); err != nil {
-			pkgerrors.WriteError(w, pkgerrors.Internal("failed to reset rate limits"))
+			pkgerrors.WriteError(w, pkgerrors.Internal("failed to reset rate limits").WithCause(err))
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -49,7 +49,7 @@ func ResetSearchRateLimits(queries SearchRateLimitResetter) http.HandlerFunc {
 func ResetAuthRateLimits(queries SearchRateLimitResetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := queries.DeleteAllRateLimits(r.Context()); err != nil {
-			pkgerrors.WriteError(w, pkgerrors.Internal("failed to reset auth rate limits"))
+			pkgerrors.WriteError(w, pkgerrors.Internal("failed to reset auth rate limits").WithCause(err))
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

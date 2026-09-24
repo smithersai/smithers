@@ -241,7 +241,7 @@ func (s *GitHTTPProxyService) rejectProtectedBookmarkPush(ctx context.Context, o
 				if stdErrors.Is(err, pgx.ErrNoRows) {
 					return errors.NotFound("repository not found")
 				}
-				return errors.Internal("failed to resolve repository")
+				return errors.Internal("failed to resolve repository").WithCause(err)
 			}
 			repoResolved = true
 		}
@@ -284,7 +284,7 @@ func (s *GitHTTPProxyService) authenticateTokenWithPaths(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil, nil, "", errors.Unauthorized("invalid or expired token")
 		}
-		return nil, nil, nil, "", errors.Internal("failed to authenticate token")
+		return nil, nil, nil, "", errors.Internal("failed to authenticate token").WithCause(err)
 	}
 
 	user := db.User{
@@ -311,7 +311,7 @@ func (s *GitHTTPProxyService) authenticateTokenWithPaths(
 		}
 	}
 	if err := s.queries.UpdateAccessTokenLastUsed(ctx, authRow.TokenID); err != nil {
-		return nil, nil, nil, "", errors.Internal("failed to update token last used timestamp")
+		return nil, nil, nil, "", errors.Internal("failed to update token last used timestamp").WithCause(err)
 	}
 
 	if restriction := middleware.ParseTokenRepositoryRestriction(authRow.TokenScopes); restriction != 0 &&
@@ -438,7 +438,7 @@ func (s *GitHTTPProxyService) authorizeRunnerTaskRead(
 		return true, errors.Unauthorized("invalid or expired runner task token")
 	}
 	if err != nil {
-		return true, errors.Internal("failed to authorize runner task token")
+		return true, errors.Internal("failed to authorize runner task token").WithCause(err)
 	}
 	if run.ID != claims.WorkflowRunID || run.RepositoryID != claims.RepositoryID || gitHTTPRunIsTerminal(run.Status) {
 		return true, errors.Unauthorized("invalid or expired runner task token")
@@ -449,7 +449,7 @@ func (s *GitHTTPProxyService) authorizeRunnerTaskRead(
 		return true, errors.Unauthorized("invalid or expired runner task token")
 	}
 	if err != nil {
-		return true, errors.Internal("failed to authorize runner task token")
+		return true, errors.Internal("failed to authorize runner task token").WithCause(err)
 	}
 	if task.ID != claims.TaskID || task.WorkflowRunID != claims.WorkflowRunID || task.RepositoryID != claims.RepositoryID ||
 		task.Attempt != claims.Attempt || !task.RunnerID.Valid || task.RunnerID.Int64 != claims.RunnerID || task.Status != "running" {
@@ -464,7 +464,7 @@ func (s *GitHTTPProxyService) authorizeRunnerTaskRead(
 		return true, errors.Unauthorized("runner task token is not authorized for repository")
 	}
 	if err != nil {
-		return true, errors.Internal("failed to resolve repository")
+		return true, errors.Internal("failed to resolve repository").WithCause(err)
 	}
 	if repository.ID != claims.RepositoryID {
 		return true, errors.Unauthorized("runner task token is not authorized for repository")

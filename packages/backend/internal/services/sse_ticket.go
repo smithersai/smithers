@@ -77,7 +77,7 @@ func (s *SSETicketService) CreateTicket(ctx context.Context, userID int64, token
 	}
 	raw := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, raw); err != nil {
-		return SSETicketResult{}, pkgerrors.Internal("failed to generate SSE ticket")
+		return SSETicketResult{}, pkgerrors.Internal("failed to generate SSE ticket").WithCause(err)
 	}
 
 	ticket := hex.EncodeToString(raw)
@@ -88,7 +88,7 @@ func (s *SSETicketService) CreateTicket(ctx context.Context, userID int64, token
 			TokenHash: tokenHash,
 		})
 		if err != nil {
-			return SSETicketResult{}, pkgerrors.Internal("failed to generate SSE ticket")
+			return SSETicketResult{}, pkgerrors.Internal("failed to generate SSE ticket").WithCause(err)
 		}
 		ticket += "." + base64.RawURLEncoding.EncodeToString(grant)
 	}
@@ -107,7 +107,7 @@ func (s *SSETicketService) CreateTicket(ctx context.Context, userID int64, token
 		ExpiresAt:  time.Now().UTC().Add(ttl),
 	})
 	if err != nil {
-		return SSETicketResult{}, pkgerrors.Internal("failed to create SSE ticket")
+		return SSETicketResult{}, pkgerrors.Internal("failed to create SSE ticket").WithCause(err)
 	}
 
 	return SSETicketResult{Ticket: ticket, ExpiresAt: row.ExpiresAt}, nil
@@ -130,7 +130,7 @@ func (s *SSETicketService) ValidateTicket(ctx context.Context, rawTicket string)
 		if err == pgx.ErrNoRows {
 			return nil, pkgerrors.Unauthorized("invalid or expired SSE ticket")
 		}
-		return nil, pkgerrors.Internal("failed to validate SSE ticket")
+		return nil, pkgerrors.Internal("failed to validate SSE ticket").WithCause(err)
 	}
 
 	principal := &middleware.SSETicketPrincipal{}
@@ -193,7 +193,7 @@ func (s *SSETicketService) validateSourceToken(ctx context.Context, userID int64
 		return pkgerrors.Unauthorized("SSE ticket source token was revoked or expired")
 	}
 	if err != nil {
-		return pkgerrors.Internal("failed to validate SSE ticket source token")
+		return pkgerrors.Internal("failed to validate SSE ticket source token").WithCause(err)
 	}
 	if oauth.UserID != userID || strings.Join(oauth.Scopes, ",") != scopes {
 		return pkgerrors.Unauthorized("SSE ticket source token grant changed")

@@ -29,7 +29,7 @@ func (s *ChangesetService) requireMembersAccess(ctx context.Context, userID int6
 	for _, member := range members {
 		repo, err := s.queries.GetRepoByID(ctx, member.RepositoryID)
 		if err != nil {
-			return pkgerrors.Internal("failed to load member repository")
+			return pkgerrors.Internal("failed to load member repository").WithCause(err)
 		}
 		if err := s.requireRepoAccess(ctx, repo, userID, write); err != nil {
 			return err
@@ -41,13 +41,13 @@ func (s *ChangesetService) requireMembersAccess(ctx context.Context, userID int6
 func (s *ChangesetService) checkLandingPolicy(ctx context.Context, repo db.Repository, owner, changeID, commitID, target string) error {
 	rules, err := s.queries.ListAllProtectedBookmarksByRepo(ctx, repo.ID)
 	if err != nil {
-		return pkgerrors.Internal("failed to load protected bookmarks")
+		return pkgerrors.Internal("failed to load protected bookmarks").WithCause(err)
 	}
 	protected := len(repo.LandingQueueRequiredChecks) > 0
 	for _, rule := range rules {
 		match, err := path.Match(rule.Pattern, target)
 		if err != nil {
-			return pkgerrors.Internal("invalid protected bookmark pattern")
+			return pkgerrors.Internal("invalid protected bookmark pattern").WithCause(err)
 		}
 		protected = protected || match
 	}
@@ -73,7 +73,7 @@ func (s *ChangesetService) checkLandingPolicy(ctx context.Context, repo db.Repos
 	}
 	row, err := s.queries.GetLandingRequestWithChangeIDsByNumber(ctx, db.GetLandingRequestWithChangeIDsByNumberParams{RepositoryID: repo.ID, Number: lr.Number})
 	if err != nil {
-		return pkgerrors.Internal("failed to load member landing request")
+		return pkgerrors.Internal("failed to load member landing request").WithCause(err)
 	}
 	if len(row.ChangeIds) != 1 || row.ChangeIds[0] != changeID {
 		return pkgerrors.Conflict("changeset member must have its own landing request")

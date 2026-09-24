@@ -118,7 +118,7 @@ func (s *WikiService) ListWikiPages(ctx context.Context, viewer *db.User, owner,
 	if query == "" {
 		total, err := s.queries.CountWikiPagesByRepo(ctx, repository.ID)
 		if err != nil {
-			return nil, 0, pkgerrors.Internal("failed to count wiki pages")
+			return nil, 0, pkgerrors.Internal("failed to count wiki pages").WithCause(err)
 		}
 		rows, err := s.queries.ListWikiPagesByRepo(ctx, db.ListWikiPagesByRepoParams{
 			RepositoryID: repository.ID,
@@ -126,7 +126,7 @@ func (s *WikiService) ListWikiPages(ctx context.Context, viewer *db.User, owner,
 			Offset:       pageOffset,
 		})
 		if err != nil {
-			return nil, 0, pkgerrors.Internal("failed to list wiki pages")
+			return nil, 0, pkgerrors.Internal("failed to list wiki pages").WithCause(err)
 		}
 		return mapListedWikiPages(rows), total, nil
 	}
@@ -136,7 +136,7 @@ func (s *WikiService) ListWikiPages(ctx context.Context, viewer *db.User, owner,
 		Query:        query,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count wiki pages")
+		return nil, 0, pkgerrors.Internal("failed to count wiki pages").WithCause(err)
 	}
 	rows, err := s.queries.SearchWikiPagesByRepo(ctx, db.SearchWikiPagesByRepoParams{
 		RepositoryID: repository.ID,
@@ -145,7 +145,7 @@ func (s *WikiService) ListWikiPages(ctx context.Context, viewer *db.User, owner,
 		PageOffset:   pageOffset,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to search wiki pages")
+		return nil, 0, pkgerrors.Internal("failed to search wiki pages").WithCause(err)
 	}
 	return mapSearchedWikiPages(rows), total, nil
 }
@@ -172,7 +172,7 @@ func (s *WikiService) GetWikiPage(ctx context.Context, viewer *db.User, owner, r
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return WikiPageResponse{}, pkgerrors.NotFound("wiki page not found")
 		}
-		return WikiPageResponse{}, pkgerrors.Internal("failed to load wiki page")
+		return WikiPageResponse{}, pkgerrors.Internal("failed to load wiki page").WithCause(err)
 	}
 	return mapWikiPage(page), nil
 }
@@ -218,7 +218,7 @@ func (s *WikiService) CreateWikiPage(ctx context.Context, actor *db.User, owner,
 		if isWikiPageConflict(err) {
 			return WikiPageResponse{}, pkgerrors.Conflict("wiki page already exists")
 		}
-		return WikiPageResponse{}, pkgerrors.Internal("failed to create wiki page")
+		return WikiPageResponse{}, pkgerrors.Internal("failed to create wiki page").WithCause(err)
 	}
 
 	response := mapWikiPageRecord(created, actor.Username)
@@ -248,7 +248,7 @@ func (s *WikiService) UpdateWikiPage(ctx context.Context, actor *db.User, owner,
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return WikiPageResponse{}, pkgerrors.NotFound("wiki page not found")
 		}
-		return WikiPageResponse{}, pkgerrors.Internal("failed to load wiki page")
+		return WikiPageResponse{}, pkgerrors.Internal("failed to load wiki page").WithCause(err)
 	}
 
 	if input.ExpectedRevision != nil && *input.ExpectedRevision != existing.Revision {
@@ -310,7 +310,7 @@ func (s *WikiService) UpdateWikiPage(ctx context.Context, actor *db.User, owner,
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return WikiPageResponse{}, pkgerrors.Conflict("wiki changed; reopen it before replacing content")
 		}
-		return WikiPageResponse{}, pkgerrors.Internal("failed to update wiki page")
+		return WikiPageResponse{}, pkgerrors.Internal("failed to update wiki page").WithCause(err)
 	}
 
 	response := mapWikiPageRecord(updated, actor.Username)
@@ -340,7 +340,7 @@ func (s *WikiService) DeleteWikiPage(ctx context.Context, actor *db.User, owner,
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("wiki page not found")
 		}
-		return pkgerrors.Internal("failed to load wiki page")
+		return pkgerrors.Internal("failed to load wiki page").WithCause(err)
 	}
 
 	if s.documents != nil {
@@ -349,7 +349,7 @@ func (s *WikiService) DeleteWikiPage(ctx context.Context, actor *db.User, owner,
 		err = s.queries.DeleteWikiPage(ctx, existing.ID)
 	}
 	if err != nil {
-		return pkgerrors.Internal("failed to delete wiki page")
+		return pkgerrors.Internal("failed to delete wiki page").WithCause(err)
 	}
 
 	s.dispatchWikiEvent(ctx, repository, actor, "deleted", mapWikiPage(existing))
@@ -471,7 +471,7 @@ func (s *WikiService) resolveRepoByOwnerAndName(ctx context.Context, owner, repo
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }
@@ -611,7 +611,7 @@ func (s *WikiService) ListWikiRevisions(ctx context.Context, viewer *db.User, ow
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, 0, pkgerrors.NotFound("wiki page not found")
 		}
-		return nil, 0, pkgerrors.Internal("failed to load wiki page")
+		return nil, 0, pkgerrors.Internal("failed to load wiki page").WithCause(err)
 	}
 
 	if s.documents == nil {
@@ -620,11 +620,11 @@ func (s *WikiService) ListWikiRevisions(ctx context.Context, viewer *db.User, ow
 	size, offset, _, _ := normalizePage(page, perPage)
 	total, err := s.documents.CountWikiRevisions(ctx, db.CountWikiRevisionsParams{RepositoryID: repository.ID, PageID: current.ID})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count wiki revisions")
+		return nil, 0, pkgerrors.Internal("failed to count wiki revisions").WithCause(err)
 	}
 	rows, err := s.documents.ListWikiRevisions(ctx, db.ListWikiRevisionsParams{RepositoryID: repository.ID, PageID: current.ID, Limit: size, Offset: offset})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list wiki revisions")
+		return nil, 0, pkgerrors.Internal("failed to list wiki revisions").WithCause(err)
 	}
 	revisions := make([]WikiRevisionResponse, 0, len(rows))
 	for _, row := range rows {

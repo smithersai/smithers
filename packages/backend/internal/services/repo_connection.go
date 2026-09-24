@@ -150,7 +150,7 @@ func (s *RepoConnectionService) ConnectRepo(
 		&connection.LastSyncedAt,
 	)
 	if scanErr != nil {
-		return RepoConnection{}, pkgerrors.Internal("failed to persist repo connection")
+		return RepoConnection{}, pkgerrors.Internal("failed to persist repo connection").WithCause(scanErr)
 	}
 
 	return connection, nil
@@ -173,7 +173,7 @@ func (s *RepoConnectionService) DisconnectRepo(
 
 	tag, execErr := s.db.Exec(ctx, deleteRepoConnectionSQL, userID, normalizedOwner, normalizedRepo)
 	if execErr != nil {
-		return false, pkgerrors.Internal("failed to remove repo connection")
+		return false, pkgerrors.Internal("failed to remove repo connection").WithCause(execErr)
 	}
 
 	return tag.RowsAffected() > 0, nil
@@ -217,7 +217,7 @@ func (s *RepoConnectionService) GetRepoConnectionStatus(
 				Repo:      strings.TrimSpace(repo),
 			}, nil
 		}
-		return RepoConnectionStatus{}, pkgerrors.Internal("failed to load repo connection")
+		return RepoConnectionStatus{}, pkgerrors.Internal("failed to load repo connection").WithCause(scanErr)
 	}
 
 	return RepoConnectionStatus{

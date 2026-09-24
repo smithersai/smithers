@@ -222,7 +222,7 @@ func relayToPreviewGateway(w http.ResponseWriter, r *http.Request, relayServiceU
 	}
 	upstream, parseErr := url.Parse(relayURL)
 	if parseErr != nil {
-		pkgerrors.WriteError(w, pkgerrors.Internal("gateway relay is misconfigured"))
+		pkgerrors.WriteError(w, pkgerrors.Internal("gateway relay is misconfigured").WithCause(parseErr))
 		return
 	}
 	stripped := strings.TrimPrefix(r.URL.Path, target.Prefix)

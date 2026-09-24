@@ -150,7 +150,7 @@ func (h *JJVCSHandler) resolveRepository(ctx context.Context, owner, repoName st
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.GetRepoByOwnerAndNameRow{}, errors.NotFound("repository not found")
 		}
-		return db.GetRepoByOwnerAndNameRow{}, errors.Internal("failed to resolve repository")
+		return db.GetRepoByOwnerAndNameRow{}, errors.Internal("failed to resolve repository").WithCause(err)
 	}
 
 	return repo, nil

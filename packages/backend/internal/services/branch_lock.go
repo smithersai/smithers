@@ -179,7 +179,7 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 			// released): the caller may retry the acquire.
 			return BranchLockResponse{}, pkgerrors.Conflict("branch lock was just released; retry")
 		}
-		return BranchLockResponse{}, pkgerrors.Internal("failed to load branch lock")
+		return BranchLockResponse{}, pkgerrors.Internal("failed to load branch lock").WithCause(err)
 	}
 
 	if lock.UserID == input.UserID {
@@ -188,7 +188,7 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 			Branch:       input.Branch,
 			UserID:       input.UserID,
 		}); err != nil {
-			return BranchLockResponse{}, pkgerrors.Internal("failed to renew branch lock")
+			return BranchLockResponse{}, pkgerrors.Internal("failed to renew branch lock").WithCause(err)
 		}
 		return BranchLockResponse{
 			RepositoryID:   lock.RepositoryID,
@@ -231,7 +231,7 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 		LockGeneration: lock.Generation,
 	})
 	if err != nil {
-		return BranchLockResponse{}, pkgerrors.Internal("failed to check branch-lock membership")
+		return BranchLockResponse{}, pkgerrors.Internal("failed to check branch-lock membership").WithCause(err)
 	}
 	if approved {
 		return BranchLockResponse{
@@ -287,7 +287,7 @@ func (s *BranchLockService) HeartbeatBranchLock(ctx context.Context, input Acqui
 		UserID:       input.UserID,
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to heartbeat branch lock")
+		return pkgerrors.Internal("failed to heartbeat branch lock").WithCause(err)
 	}
 	if rows == 0 {
 		return pkgerrors.NotFound("branch lock not held")
@@ -303,7 +303,7 @@ func (s *BranchLockService) ReleaseBranchLock(ctx context.Context, input Acquire
 		Branch:       input.Branch,
 		UserID:       input.UserID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to release branch lock")
+		return pkgerrors.Internal("failed to release branch lock").WithCause(err)
 	}
 	return nil
 }
@@ -329,7 +329,7 @@ func (s *BranchLockService) RequestBranchLockJoin(ctx context.Context, input Req
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return BranchLockJoinRequestResponse{}, pkgerrors.Conflict("branch is not locked; acquire it directly")
 		}
-		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to load branch lock")
+		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to load branch lock").WithCause(err)
 	}
 	if lock.UserID == input.UserID {
 		return BranchLockJoinRequestResponse{}, pkgerrors.BadRequest("you already hold this branch lock")
@@ -376,7 +376,7 @@ func (s *BranchLockService) RequestBranchLockJoin(ctx context.Context, input Req
 				return mapBranchLockJoinRequest(latest, input.Username), nil
 			}
 		}
-		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to create join request")
+		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to create join request").WithCause(err)
 	}
 
 	if s.notifier != nil {
@@ -403,7 +403,7 @@ func (s *BranchLockService) ListPendingBranchLockJoinRequests(ctx context.Contex
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return []BranchLockJoinRequestResponse{}, nil
 		}
-		return nil, pkgerrors.Internal("failed to load branch lock")
+		return nil, pkgerrors.Internal("failed to load branch lock").WithCause(err)
 	}
 	if lock.UserID != input.UserID {
 		return nil, pkgerrors.Forbidden("only the branch holder can list join requests")
@@ -414,7 +414,7 @@ func (s *BranchLockService) ListPendingBranchLockJoinRequests(ctx context.Contex
 		LockGeneration: lock.Generation,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list join requests")
+		return nil, pkgerrors.Internal("failed to list join requests").WithCause(err)
 	}
 	responses := make([]BranchLockJoinRequestResponse, 0, len(rows))
 	for _, row := range rows {
@@ -437,7 +437,7 @@ func (s *BranchLockService) DecideBranchLockJoin(ctx context.Context, input Deci
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return BranchLockJoinRequestResponse{}, pkgerrors.NotFound("join request not found")
 		}
-		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to load join request")
+		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to load join request").WithCause(err)
 	}
 	lock, err := s.queries.GetBranchLock(ctx, db.GetBranchLockParams{
 		RepositoryID: request.RepositoryID,
@@ -447,7 +447,7 @@ func (s *BranchLockService) DecideBranchLockJoin(ctx context.Context, input Deci
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return BranchLockJoinRequestResponse{}, pkgerrors.Conflict("branch lock is gone; the request is moot")
 		}
-		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to load branch lock")
+		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to load branch lock").WithCause(err)
 	}
 	if lock.UserID != input.ResolverID {
 		return BranchLockJoinRequestResponse{}, pkgerrors.Forbidden("only the branch holder can decide join requests")
@@ -472,7 +472,7 @@ func (s *BranchLockService) DecideBranchLockJoin(ctx context.Context, input Deci
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return BranchLockJoinRequestResponse{}, pkgerrors.Conflict("join request was already resolved")
 		}
-		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to resolve join request")
+		return BranchLockJoinRequestResponse{}, pkgerrors.Internal("failed to resolve join request").WithCause(err)
 	}
 
 	if s.notifier != nil {

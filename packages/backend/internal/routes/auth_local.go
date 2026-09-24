@@ -143,7 +143,7 @@ func (h *AuthHandler) PostLocalPassword(w http.ResponseWriter, r *http.Request) 
 func (h *AuthHandler) completeLocalBrowserLogin(w http.ResponseWriter, r *http.Request, result services.LocalLoginResult, method string) {
 	csrfToken, err := randomHex(32)
 	if err != nil {
-		writeRouteError(w, r, pkgerrors.Internal("failed to generate csrf token"))
+		writeRouteError(w, r, pkgerrors.Internal("failed to generate csrf token").WithCause(err))
 		return
 	}
 	setSessionCookie(w, h.AuthConfig.SessionCookieName, result.SessionKey, result.ExpiresAt, h.AuthConfig.CookieSecure)

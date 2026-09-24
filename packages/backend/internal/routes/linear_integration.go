@@ -103,7 +103,7 @@ func (h *LinearIntegrationHandler) listAllUserRepos(ctx context.Context, userID 
 			PageSize:   linearRepoListPageSize,
 		})
 		if err != nil {
-			return nil, errors.Internal("failed to list user repositories")
+			return nil, errors.Internal("failed to list user repositories").WithCause(err)
 		}
 		repos = append(repos, page...)
 		if len(page) < int(linearRepoListPageSize) {
@@ -121,7 +121,7 @@ func (h *LinearIntegrationHandler) listAllUserOrgs(ctx context.Context, userID i
 			PageSize:   linearRepoListPageSize,
 		})
 		if err != nil {
-			return nil, errors.Internal("failed to list organizations")
+			return nil, errors.Internal("failed to list organizations").WithCause(err)
 		}
 		orgs = append(orgs, page...)
 		if len(page) < int(linearRepoListPageSize) {
@@ -139,7 +139,7 @@ func (h *LinearIntegrationHandler) listAllOrgRepos(ctx context.Context, orgID in
 			PageSize:   linearRepoListPageSize,
 		})
 		if err != nil {
-			return nil, errors.Internal("failed to list organization repositories")
+			return nil, errors.Internal("failed to list organization repositories").WithCause(err)
 		}
 		repos = append(repos, page...)
 		if len(page) < int(linearRepoListPageSize) {
@@ -242,7 +242,7 @@ func (h *LinearIntegrationHandler) GetLinearOAuthStart(w http.ResponseWriter, r 
 
 	stateVerifier, err := randomHex(16)
 	if err != nil {
-		writeRouteError(w, r, errors.Internal("failed to generate oauth state"))
+		writeRouteError(w, r, errors.Internal("failed to generate oauth state").WithCause(err))
 		return
 	}
 

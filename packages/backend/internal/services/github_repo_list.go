@@ -111,7 +111,7 @@ func (s *GitHubRepoListService) ListInstallationRepositories(ctx context.Context
 		if err == pgx.ErrNoRows {
 			return GitHubRepoListResult{}, pkgerrors.Unauthorized("github app is not installed for this user")
 		}
-		return GitHubRepoListResult{}, pkgerrors.Internal("failed to resolve github installation")
+		return GitHubRepoListResult{}, pkgerrors.Internal("failed to resolve github installation").WithCause(err)
 	}
 
 	token, err := s.tokenIssuer.CreateGitHubInstallationToken(ctx, userID, owner, repo)
@@ -135,7 +135,7 @@ func (s *GitHubRepoListService) ListInstallationRepositories(ctx context.Context
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
 	if err != nil {
-		return GitHubRepoListResult{}, pkgerrors.Internal("failed to build github repositories request")
+		return GitHubRepoListResult{}, pkgerrors.Internal("failed to build github repositories request").WithCause(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token.Token))
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -144,7 +144,7 @@ func (s *GitHubRepoListService) ListInstallationRepositories(ctx context.Context
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return GitHubRepoListResult{}, pkgerrors.Internal("github repositories request failed")
+		return GitHubRepoListResult{}, pkgerrors.Internal("github repositories request failed").WithCause(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -164,7 +164,7 @@ func (s *GitHubRepoListService) ListInstallationRepositories(ctx context.Context
 		Repositories []GitHubRepoListItem `json:"repositories"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return GitHubRepoListResult{}, pkgerrors.Internal("failed to decode github repositories response")
+		return GitHubRepoListResult{}, pkgerrors.Internal("failed to decode github repositories response").WithCause(err)
 	}
 
 	// The installation token grants visibility over EVERY repository in the
@@ -174,7 +174,7 @@ func (s *GitHubRepoListService) ListInstallationRepositories(ctx context.Context
 	// (private) repos sharing the installation.
 	var connectedKeys []string
 	if err := s.db.QueryRow(ctx, userConnectedRepoKeysSQL, userID).Scan(&connectedKeys); err != nil {
-		return GitHubRepoListResult{}, pkgerrors.Internal("failed to load repo connections")
+		return GitHubRepoListResult{}, pkgerrors.Internal("failed to load repo connections").WithCause(err)
 	}
 	connected := make(map[string]struct{}, len(connectedKeys))
 	for _, key := range connectedKeys {

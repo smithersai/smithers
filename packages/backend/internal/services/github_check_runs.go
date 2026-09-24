@@ -276,14 +276,14 @@ func (s *githubCheckRunService) doGitHubJSON(
 	if payload != nil {
 		bodyBytes, err := json.Marshal(payload)
 		if err != nil {
-			return pkgerrors.Internal("failed to encode github check run request")
+			return pkgerrors.Internal("failed to encode github check run request").WithCause(err)
 		}
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, bodyReader)
 	if err != nil {
-		return pkgerrors.Internal("failed to build github check run request")
+		return pkgerrors.Internal("failed to build github check run request").WithCause(err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
@@ -293,7 +293,7 @@ func (s *githubCheckRunService) doGitHubJSON(
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return pkgerrors.Internal("github check run request failed")
+		return pkgerrors.Internal("github check run request failed").WithCause(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -326,7 +326,7 @@ func (s *githubCheckRunService) doGitHubJSON(
 		return nil
 	}
 	if err := json.Unmarshal(bodyBytes, out); err != nil {
-		return pkgerrors.Internal("failed to decode github check run response")
+		return pkgerrors.Internal("failed to decode github check run response").WithCause(err)
 	}
 	return nil
 }

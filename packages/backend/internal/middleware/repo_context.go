@@ -163,7 +163,7 @@ func LoadRepoContext(queries RepoContextQuerier) func(http.Handler) http.Handler
 				// visibility/permission gate below still runs on the result.
 				resolved, ok, provErr := resolveRepoBySourceProvenance(r.Context(), queries, owner, repoName)
 				if provErr != nil {
-					apierrors.WriteError(w, apierrors.Internal("failed to resolve repository"))
+					apierrors.WriteError(w, apierrors.Internal("failed to resolve repository").WithCause(provErr))
 					return
 				}
 				if !ok {
@@ -340,7 +340,7 @@ func resolveRepoPermission(ctx context.Context, queries RepoPermissionQuerier, r
 			UserID:       user.ID,
 		})
 		if err != nil {
-			return PermissionNone, apierrors.Internal("failed to resolve repository permission")
+			return PermissionNone, apierrors.Internal("failed to resolve repository permission").WithCause(err)
 		}
 		if isOrgOwner {
 			permission = maxPermission(permission, PermissionOwner)
@@ -351,12 +351,12 @@ func resolveRepoPermission(ctx context.Context, queries RepoPermissionQuerier, r
 			UserID:       user.ID,
 		})
 		if err != nil {
-			return PermissionNone, apierrors.Internal("failed to resolve repository permission")
+			return PermissionNone, apierrors.Internal("failed to resolve repository permission").WithCause(err)
 		}
 		if strings.TrimSpace(teamPermissionRaw) != "" {
 			teamPermission, parseErr := ParsePermissionLevel(teamPermissionRaw)
 			if parseErr != nil {
-				return PermissionNone, apierrors.Internal("failed to parse repository permission")
+				return PermissionNone, apierrors.Internal("failed to parse repository permission").WithCause(parseErr)
 			}
 			permission = maxPermission(permission, teamPermission)
 		}
@@ -367,12 +367,12 @@ func resolveRepoPermission(ctx context.Context, queries RepoPermissionQuerier, r
 		UserID:       pgtype.Int8{Int64: user.ID, Valid: true},
 	})
 	if err != nil {
-		return PermissionNone, apierrors.Internal("failed to resolve repository permission")
+		return PermissionNone, apierrors.Internal("failed to resolve repository permission").WithCause(err)
 	}
 	if strings.TrimSpace(collabPermissionRaw) != "" {
 		collabPermission, parseErr := ParsePermissionLevel(collabPermissionRaw)
 		if parseErr != nil {
-			return PermissionNone, apierrors.Internal("failed to parse repository permission")
+			return PermissionNone, apierrors.Internal("failed to parse repository permission").WithCause(parseErr)
 		}
 		permission = maxPermission(permission, collabPermission)
 	}

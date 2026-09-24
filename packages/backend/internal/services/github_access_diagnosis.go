@@ -265,14 +265,14 @@ func (s *GitHubUserReposService) lookupRepoInstallation(
 	}
 	jwt, err := createGitHubAppJWTFunc(appID, privateKey, s.now().UTC())
 	if err != nil {
-		return githubRepoInstallation{}, false, pkgerrors.Internal("failed to create github app jwt")
+		return githubRepoInstallation{}, false, pkgerrors.Internal("failed to create github app jwt").WithCause(err)
 	}
 
 	endpoint := strings.TrimRight(githubAPIBaseURL(), "/") +
 		"/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/installation"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return githubRepoInstallation{}, false, pkgerrors.Internal("failed to build github installation lookup request")
+		return githubRepoInstallation{}, false, pkgerrors.Internal("failed to build github installation lookup request").WithCause(err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+jwt)

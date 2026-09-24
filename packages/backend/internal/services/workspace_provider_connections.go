@@ -29,7 +29,7 @@ func (s *WorkspaceService) resolveWorkspaceProviderBindings(ctx context.Context,
 	if s.agentEnvironment != nil {
 		binding.environment, err = s.agentEnvironment.LoadForProvisioning(ctx, workspace.RepositoryID)
 		if err != nil {
-			return nil, pkgerrors.Internal("load agent environment for workspace setup")
+			return nil, pkgerrors.Internal("load agent environment for workspace setup").WithCause(err)
 		}
 	}
 	// Copy slices before adding runtime values; providers may cache their config.
@@ -53,7 +53,7 @@ func (s *WorkspaceService) resolveWorkspaceProviderBindings(ctx context.Context,
 			}
 			resolved, err := s.providerConnections.ResolveForRun(ctx, workspace.UserID, workspace.RepositoryID, provider)
 			if err != nil {
-				return nil, pkgerrors.Internal("resolve workspace provider connection")
+				return nil, pkgerrors.Internal("resolve workspace provider connection").WithCause(err)
 			}
 			if resolved == nil {
 				continue
@@ -97,7 +97,7 @@ func (s *WorkspaceService) resolveWorkspaceProviderBindings(ctx context.Context,
 		}
 	}
 	if err := binding.egress.Validate(); err != nil {
-		return nil, pkgerrors.Internal("invalid workspace provider binding")
+		return nil, pkgerrors.Internal("invalid workspace provider binding").WithCause(err)
 	}
 	return binding, nil
 }

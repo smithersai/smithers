@@ -145,7 +145,7 @@ func (s *AlphaAccessService) IsUserWhitelisted(ctx context.Context, user *db.Use
 			LowerIdentityValue: lowerIdentityValue,
 		})
 		if qErr != nil {
-			return false, pkgerrors.Internal("failed to query whitelist")
+			return false, pkgerrors.Internal("failed to query whitelist").WithCause(qErr)
 		}
 		if allowed {
 			return true, nil
@@ -211,7 +211,7 @@ func (s *AlphaAccessService) JoinWaitlist(ctx context.Context, input WaitlistJoi
 		Source:          source,
 	})
 	if queryErr != nil {
-		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to join waitlist")
+		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to join waitlist").WithCause(queryErr)
 	}
 
 	return mapWaitlistEntry(row), nil
@@ -243,12 +243,12 @@ func (s *AlphaAccessService) ListWaitlistEntries(ctx context.Context, input List
 		PageSize:     int32(perPage),
 	})
 	if err != nil {
-		return AlphaWaitlistListResult{}, pkgerrors.Internal("failed to list waitlist entries")
+		return AlphaWaitlistListResult{}, pkgerrors.Internal("failed to list waitlist entries").WithCause(err)
 	}
 
 	total, err := s.queries.CountWaitlistEntries(ctx, status)
 	if err != nil {
-		return AlphaWaitlistListResult{}, pkgerrors.Internal("failed to count waitlist entries")
+		return AlphaWaitlistListResult{}, pkgerrors.Internal("failed to count waitlist entries").WithCause(err)
 	}
 
 	items := make([]AlphaWaitlistEntry, 0, len(rows))
@@ -286,7 +286,7 @@ func addWhitelistEntryWithQueries(ctx context.Context, queries AlphaAccessQuerie
 		CreatedBy:          createdBy,
 	})
 	if queryErr != nil {
-		return AlphaWhitelistEntry{}, pkgerrors.Internal("failed to add whitelist entry")
+		return AlphaWhitelistEntry{}, pkgerrors.Internal("failed to add whitelist entry").WithCause(queryErr)
 	}
 
 	return mapWhitelistEntry(row), nil
@@ -303,7 +303,7 @@ func (s *AlphaAccessService) RemoveWhitelistEntry(ctx context.Context, input Rem
 		LowerIdentityValue: lowerIdentityValue,
 	})
 	if queryErr != nil {
-		return pkgerrors.Internal("failed to remove whitelist entry")
+		return pkgerrors.Internal("failed to remove whitelist entry").WithCause(queryErr)
 	}
 	if rows == 0 {
 		return pkgerrors.NotFound("whitelist entry not found")
@@ -315,7 +315,7 @@ func (s *AlphaAccessService) RemoveWhitelistEntry(ctx context.Context, input Rem
 func (s *AlphaAccessService) ListWhitelistEntries(ctx context.Context) ([]AlphaWhitelistEntry, error) {
 	rows, err := s.queries.ListWhitelistEntries(ctx)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list whitelist entries")
+		return nil, pkgerrors.Internal("failed to list whitelist entries").WithCause(err)
 	}
 
 	result := make([]AlphaWhitelistEntry, 0, len(rows))
@@ -341,7 +341,7 @@ func (s *AlphaAccessService) ApproveWaitlistEntry(ctx context.Context, actor *db
 
 	tx, err := s.txQueries.BeginTx(ctx)
 	if err != nil {
-		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to approve waitlist entry")
+		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to approve waitlist entry").WithCause(err)
 	}
 	defer func() {
 		_ = tx.Rollback(ctx)
@@ -352,7 +352,7 @@ func (s *AlphaAccessService) ApproveWaitlistEntry(ctx context.Context, actor *db
 		return AlphaWaitlistEntry{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to approve waitlist entry")
+		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to approve waitlist entry").WithCause(err)
 	}
 	return row, nil
 }
@@ -363,7 +363,7 @@ func approveWaitlistEntryWithQueries(ctx context.Context, queries AlphaAccessQue
 		if err == pgx.ErrNoRows {
 			return AlphaWaitlistEntry{}, pkgerrors.NotFound("waitlist entry not found")
 		}
-		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to load waitlist entry")
+		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to load waitlist entry").WithCause(err)
 	}
 
 	_, err = addWhitelistEntryWithQueries(ctx, queries, actor, AddWhitelistEntryInput{
@@ -379,7 +379,7 @@ func approveWaitlistEntryWithQueries(ctx context.Context, queries AlphaAccessQue
 		LowerEmail: lowerEmail,
 	})
 	if err != nil {
-		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to approve waitlist entry")
+		return AlphaWaitlistEntry{}, pkgerrors.Internal("failed to approve waitlist entry").WithCause(err)
 	}
 
 	// Keep stable shape for already-approved rows.

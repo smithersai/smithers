@@ -62,7 +62,7 @@ func (s *SSHAuthorizationService) Authorize(ctx context.Context, userID int64, o
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return errors.NotFound("repository not found")
 		}
-		return errors.Internal("failed to resolve repository")
+		return errors.Internal("failed to resolve repository").WithCause(err)
 	}
 
 	// The archived check runs only after an access grant: a caller with no
@@ -82,7 +82,7 @@ func (s *SSHAuthorizationService) Authorize(ctx context.Context, userID int64, o
 		OrgID:  repoRow.OrgID,
 	}, userID)
 	if err != nil {
-		return errors.Internal("failed to resolve repository access")
+		return errors.Internal("failed to resolve repository access").WithCause(err)
 	}
 	if isOwner || permissionAllows(permission, mode) {
 		return grant()

@@ -326,14 +326,14 @@ func (s *RepoService) canonicalRepositoryOwner(ctx context.Context, repository d
 	if repository.UserID.Valid && !repository.OrgID.Valid {
 		user, err := loader.GetUserByID(ctx, repository.UserID.Int64)
 		if err != nil {
-			return "", errors.Internal("failed to resolve repository owner")
+			return "", errors.Internal("failed to resolve repository owner").WithCause(err)
 		}
 		return user.Username, nil
 	}
 	if repository.OrgID.Valid && !repository.UserID.Valid {
 		org, err := loader.GetOrgByID(ctx, repository.OrgID.Int64)
 		if err != nil {
-			return "", errors.Internal("failed to resolve repository owner")
+			return "", errors.Internal("failed to resolve repository owner").WithCause(err)
 		}
 		return org.Name, nil
 	}
@@ -675,7 +675,7 @@ func (s *RepoService) finishDurableRepositoryProvision(
 		if stdErrors.Is(claimErr, errRepositoryProvisionInProgress) {
 			return db.Repository{}, errors.Conflict("repository provisioning is already in progress")
 		}
-		return db.Repository{}, errors.Internal("failed to claim repository provisioning operation")
+		return db.Repository{}, errors.Internal("failed to claim repository provisioning operation").WithCause(claimErr)
 	}
 	operation.ClaimToken = pgtype.Text{String: claimToken, Valid: true}
 	settled := false
@@ -689,7 +689,7 @@ func (s *RepoService) finishDurableRepositoryProvision(
 	}()
 	staged := operation.staged()
 	if repository, published, lookupErr := s.provisioning.GetPublished(consistencyCtx, operation); lookupErr != nil {
-		return db.Repository{}, errors.Internal("failed to reconcile reserved repository")
+		return db.Repository{}, errors.Internal("failed to reconcile reserved repository").WithCause(lookupErr)
 	} else if published {
 		if renewErr := s.provisioning.RenewClaim(consistencyCtx, operation.RepositoryID, operation.Token, claimToken); renewErr != nil {
 			return db.Repository{}, errors.Conflict("repository provisioning claim changed")
@@ -723,7 +723,7 @@ func (s *RepoService) finishDurableRepositoryProvision(
 			slog.Error("failed to abort definitive repository provisioning conflict",
 				"repo_id", operation.RepositoryID, "error", abortErr)
 		}
-		return db.Repository{}, errors.Internal("failed to stage repository storage")
+		return db.Repository{}, errors.Internal("failed to stage repository storage").WithCause(err)
 	}
 	if renewErr := s.provisioning.RenewClaim(consistencyCtx, operation.RepositoryID, operation.Token, claimToken); renewErr != nil {
 		return db.Repository{}, errors.Conflict("repository provisioning claim changed")
@@ -739,19 +739,19 @@ func (s *RepoService) finishDurableRepositoryProvision(
 			}
 			slog.Error("failed to abort repository publish conflict", "repo_id", operation.RepositoryID, "error", abortErr)
 		}
-		return db.Repository{}, errors.Internal("failed to publish repository storage")
+		return db.Repository{}, errors.Internal("failed to publish repository storage").WithCause(err)
 	}
 	if err := s.provisioning.RenewClaim(consistencyCtx, operation.RepositoryID, operation.Token, claimToken); err != nil {
 		return db.Repository{}, errors.Conflict("repository provisioning claim changed")
 	}
 	if err := s.provisioning.MarkPublishReady(consistencyCtx, operation.RepositoryID, operation.Token, claimToken); err != nil {
-		return db.Repository{}, errors.Internal("failed to record published repository storage")
+		return db.Repository{}, errors.Internal("failed to record published repository storage").WithCause(err)
 	}
 	operation.PublishReady = true
 	repository, err := s.provisioning.Publish(consistencyCtx, operation, claimToken)
 	if err != nil {
 		slog.Error("failed to publish reserved repository row", "repo_id", operation.RepositoryID, "error", err)
-		return db.Repository{}, errors.Internal("failed to publish repository")
+		return db.Repository{}, errors.Internal("failed to publish repository").WithCause(err)
 	}
 	if err := s.provisioner.FinalizeStagedProvision(consistencyCtx, staged); err != nil {
 		// The stable row and live storage are already exact. Leave the operation
@@ -833,7 +833,7 @@ func (s *RepoService) CreateRepo(
 		staged, prepareErr := s.provisioner.PrepareStagedInit(
 			ctx, s.activeStorageSetID, user.Username, name, defaultBookmark, autoInit)
 		if prepareErr != nil {
-			return db.Repository{}, errors.Internal("failed to prepare repository storage")
+			return db.Repository{}, errors.Internal("failed to prepare repository storage").WithCause(prepareErr)
 		}
 		wanted := newInitProvisioningOperation(
 			user.ID,
@@ -871,7 +871,7 @@ func (s *RepoService) CreateRepo(
 				return errors.Conflict(fmt.Sprintf("repository '%s' already exists", name))
 			case repositoryCreateErrorDefinitive:
 				slog.Error("failed to create repository record", "repo_name", name, "error", createErr)
-				return errors.Internal("failed to create repository")
+				return errors.Internal("failed to create repository").WithCause(createErr)
 			case repositoryCreateErrorAmbiguous:
 				recovered, state, lookupErr := reconcileAmbiguousRepositoryCreate(commitCtx, s.queries.GetRepoByOwnerAndLowerName, user.Username, expected)
 				if state == repositoryCreateConflicting {
@@ -902,7 +902,7 @@ func (s *RepoService) CreateRepo(
 				return errors.Internal("failed to initialize repository")
 			}
 			s.rollbackProvisionedRepo(commitCtx, repo.ID, user.Username, name)
-			return errors.Internal("failed to initialize repository")
+			return errors.Internal("failed to initialize repository").WithCause(initErr)
 		}
 		return nil
 	})
@@ -948,7 +948,7 @@ func (s *RepoService) CreateOrgRepo(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, errors.NotFound("organization not found")
 		}
-		return db.Repository{}, errors.Internal("failed to load organization")
+		return db.Repository{}, errors.Internal("failed to load organization").WithCause(err)
 	}
 
 	member, err := s.queries.GetOrgMember(ctx, db.GetOrgMemberParams{
@@ -959,7 +959,7 @@ func (s *RepoService) CreateOrgRepo(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, errors.Forbidden("insufficient organization permissions")
 		}
-		return db.Repository{}, errors.Internal("failed to load organization membership")
+		return db.Repository{}, errors.Internal("failed to load organization membership").WithCause(err)
 	}
 	if strings.ToLower(strings.TrimSpace(member.Role)) != "owner" {
 		return db.Repository{}, errors.Forbidden("insufficient organization permissions")
@@ -993,7 +993,7 @@ func (s *RepoService) CreateOrgRepo(
 		staged, prepareErr := s.provisioner.PrepareStagedInit(
 			ctx, s.activeStorageSetID, org.Name, name, defaultBookmark, autoInit)
 		if prepareErr != nil {
-			return db.Repository{}, errors.Internal("failed to prepare repository storage")
+			return db.Repository{}, errors.Internal("failed to prepare repository storage").WithCause(prepareErr)
 		}
 		wanted := newInitProvisioningOperation(
 			actor.ID,
@@ -1031,7 +1031,7 @@ func (s *RepoService) CreateOrgRepo(
 				return errors.Conflict(fmt.Sprintf("repository '%s' already exists", name))
 			case repositoryCreateErrorDefinitive:
 				slog.Error("failed to create org repository record", "org", orgName, "repo_name", name, "error", createErr)
-				return errors.Internal("failed to create repository")
+				return errors.Internal("failed to create repository").WithCause(createErr)
 			case repositoryCreateErrorAmbiguous:
 				recovered, state, lookupErr := reconcileAmbiguousRepositoryCreate(commitCtx, s.queries.GetRepoByOwnerAndLowerName, org.Name, expected)
 				if state == repositoryCreateConflicting {
@@ -1058,7 +1058,7 @@ func (s *RepoService) CreateOrgRepo(
 				return errors.Internal("failed to initialize repository")
 			}
 			s.rollbackProvisionedRepo(commitCtx, repo.ID, org.Name, name)
-			return errors.Internal("failed to initialize repository")
+			return errors.Internal("failed to initialize repository").WithCause(initErr)
 		}
 		return nil
 	})
@@ -1184,7 +1184,7 @@ func (s *RepoService) ForkRepo(ctx context.Context, actor *db.User, owner, repo 
 		staged, prepareErr := s.provisioner.PrepareStagedFork(
 			ctx, sourceStorageSet, sourceOwner, sourceRepo.Name, actor.Username, forkName)
 		if prepareErr != nil {
-			return ForkOutcome{}, errors.Internal("failed to prepare fork storage")
+			return ForkOutcome{}, errors.Internal("failed to prepare fork storage").WithCause(prepareErr)
 		}
 		wanted := newForkProvisioningOperation(
 			actor, actor.Username,
@@ -1227,7 +1227,7 @@ func (s *RepoService) ForkRepo(ctx context.Context, actor *db.User, owner, repo 
 				return errors.Conflict(fmt.Sprintf("repository '%s' already exists", forkName))
 			case repositoryCreateErrorDefinitive:
 				slog.Error("failed to create fork repository record", "owner", actor.Username, "repo_name", forkName, "error", createErr)
-				return errors.Internal("failed to create fork")
+				return errors.Internal("failed to create fork").WithCause(createErr)
 			case repositoryCreateErrorAmbiguous:
 				recovered, state, lookupErr := reconcileAmbiguousRepositoryCreate(commitCtx, s.queries.GetRepoByOwnerAndLowerName, actor.Username, expected)
 				if state == repositoryCreateConflicting {
@@ -1254,7 +1254,7 @@ func (s *RepoService) ForkRepo(ctx context.Context, actor *db.User, owner, repo 
 				return errors.Internal("failed to copy repository data for fork")
 			}
 			s.rollbackProvisionedRepo(commitCtx, forkedRepo.ID, actor.Username, forkName)
-			return errors.Internal("failed to copy repository data for fork")
+			return errors.Internal("failed to copy repository data for fork").WithCause(forkErr)
 		}
 		return nil
 	})
@@ -1370,7 +1370,7 @@ func (s *RepoService) ReplaceRepoTopics(ctx context.Context, actor *db.User, own
 		if isRepositoryStorageOperationConflict(err) {
 			return nil, errors.Conflict("repository storage operation is already in progress")
 		}
-		return nil, errors.Internal("failed to update repository topics")
+		return nil, errors.Internal("failed to update repository topics").WithCause(err)
 	}
 	if updated.Topics == nil {
 		return []string{}, nil
@@ -1423,7 +1423,7 @@ func (s *RepoService) resolveChangeRef(ctx context.Context, owner, repoName, ref
 		return true
 	})
 	if err != nil {
-		return "", errors.Internal("failed to resolve bookmark")
+		return "", errors.Internal("failed to resolve bookmark").WithCause(err)
 	}
 	if resolved != "" {
 		return resolved, nil
@@ -1465,7 +1465,7 @@ func (s *RepoService) resolveContentsCommit(ctx context.Context, owner, repo, re
 		return true
 	})
 	if err != nil {
-		return "", errors.Internal("failed to resolve bookmark")
+		return "", errors.Internal("failed to resolve bookmark").WithCause(err)
 	}
 	if commit != "" {
 		if !immutableCommitSHA(commit) {
@@ -1490,7 +1490,7 @@ func (s *RepoService) resolveContentsCommit(ctx context.Context, owner, repo, re
 		if isRepoHostStatus(err, 400) {
 			return "", errors.BadRequest("invalid content revision")
 		}
-		return "", errors.Internal("failed to resolve change commit")
+		return "", errors.Internal("failed to resolve change commit").WithCause(err)
 	}
 	if !immutableCommitSHA(resolved.CommitID) {
 		return "", errors.Internal("invalid change commit")
@@ -1542,7 +1542,7 @@ func (s *RepoService) ListRepoContentsPage(ctx context.Context, viewer *db.User,
 		if isRepoHostStatus(err, 400) {
 			return nil, "", "", errors.BadRequest("invalid directory page")
 		}
-		return nil, "", "", errors.Internal("failed to list repository contents")
+		return nil, "", "", errors.Internal("failed to list repository contents").WithCause(err)
 	}
 	if len(page) > limit+1 {
 		return nil, "", "", errors.Internal("oversized directory page")
@@ -1596,7 +1596,7 @@ func (s *RepoService) ListRepoContents(ctx context.Context, viewer *db.User, own
 				if isRepoHostStatus(err, 404) {
 					return nil, errors.NotFound("content not found")
 				}
-				return nil, errors.Internal("failed to list repository contents")
+				return nil, errors.Internal("failed to list repository contents").WithCause(err)
 			}
 			for _, entry := range page {
 				name := strings.TrimPrefix(entry.Path, strings.TrimSuffix(prefix, "/")+"/")
@@ -1620,7 +1620,7 @@ func (s *RepoService) ListRepoContents(ctx context.Context, viewer *db.User, own
 		if isRepoHostStatus(err, 404) {
 			return nil, errors.NotFound("content not found")
 		}
-		return nil, errors.Internal("failed to list repository contents")
+		return nil, errors.Internal("failed to list repository contents").WithCause(err)
 	}
 
 	// Build immediate children only (filter to one level deep).
@@ -1689,7 +1689,7 @@ func (s *RepoService) GetRepoContents(ctx context.Context, viewer *db.User, owne
 		if isRepoHostStatus(err, 404) {
 			return RepoContent{}, errors.NotFound("content not found")
 		}
-		return RepoContent{}, errors.Internal("failed to load repository content")
+		return RepoContent{}, errors.Internal("failed to load repository content").WithCause(err)
 	}
 
 	fileName := path.Base(requestPath)
@@ -1723,7 +1723,7 @@ func (s *RepoService) ListGitRefs(ctx context.Context, viewer *db.User, owner, r
 		return len(bookmarks) < bookmarkPageSize*bookmarkMaxPages
 	})
 	if err != nil {
-		return nil, errors.Internal("failed to list git refs")
+		return nil, errors.Internal("failed to list git refs").WithCause(err)
 	}
 
 	notesReader, ok := s.repoHost.(repoHostNotesReader)
@@ -1863,7 +1863,7 @@ func (s *RepoService) UpdateRepo(ctx context.Context, actor *db.User, owner, rep
 				return errors.Internal("repository host cannot update the default bookmark")
 			}
 			if err := setter.SetDefaultBookmark(workCtx, owner, repository.Name, defaultBookmark); err != nil {
-				return errors.Internal("failed to update repository default bookmark")
+				return errors.Internal("failed to update repository default bookmark").WithCause(err)
 			}
 			repoHostBookmarkUpdated = true
 		}
@@ -1912,7 +1912,7 @@ func (s *RepoService) UpdateRepo(ctx context.Context, actor *db.User, owner, rep
 		if bookmarkChanged {
 			workCtx, cancelWork, err = beginRepoHostMutationConsistency(ctx, repoHostMutationConsistencyTimeout)
 			if err != nil {
-				return db.Repository{}, errors.Internal("failed to update repository")
+				return db.Repository{}, errors.Internal("failed to update repository").WithCause(err)
 			}
 		}
 		defer cancelWork()
@@ -1929,7 +1929,7 @@ func (s *RepoService) UpdateRepo(ctx context.Context, actor *db.User, owner, rep
 			cancel()
 			if compensateErr != nil {
 				slog.Error("failed to restore repository default bookmark after database update failure", "repo_id", repository.ID, "error", compensateErr)
-				return db.Repository{}, errors.Internal("failed to update repository default bookmark")
+				return db.Repository{}, errors.Internal("failed to update repository default bookmark").WithCause(compensateErr)
 			}
 		}
 		if apiErr := (*errors.APIError)(nil); stdErrors.As(err, &apiErr) {
@@ -1941,7 +1941,7 @@ func (s *RepoService) UpdateRepo(ctx context.Context, actor *db.User, owner, rep
 		if isRepositoryStorageOperationConflict(err) {
 			return db.Repository{}, errors.Conflict("repository storage operation is already in progress")
 		}
-		return db.Repository{}, errors.Internal("failed to update repository")
+		return db.Repository{}, errors.Internal("failed to update repository").WithCause(err)
 	}
 
 	return updated, nil
@@ -2079,7 +2079,7 @@ func (s *RepoService) DeleteRepo(ctx context.Context, actor *db.User, owner, rep
 		staged, prepareErr := preparedRepoHost.PrepareStagedDelete(ctx, canonicalOwner, repository.Name)
 		if prepareErr != nil {
 			slog.Error("failed to prepare repository deletion", "repo_id", repository.ID, "error", prepareErr)
-			return errors.Internal("failed to delete repository")
+			return errors.Internal("failed to delete repository").WithCause(prepareErr)
 		}
 		if createErr := s.storageOperations.Create(ctx, newDeleteStorageOperation(repository, canonicalOwner, staged)); createErr != nil {
 			if stdErrors.Is(createErr, errRepositoryStorageOperationExists) {
@@ -2089,7 +2089,7 @@ func (s *RepoService) DeleteRepo(ctx context.Context, actor *db.User, owner, rep
 				return errors.Conflict("repository ownership changed concurrently")
 			}
 			slog.Error("failed to persist repository deletion intent", "repo_id", repository.ID, "error", createErr)
-			return errors.Internal("failed to delete repository")
+			return errors.Internal("failed to delete repository").WithCause(createErr)
 		}
 		prepared = &staged
 	}
@@ -2129,7 +2129,7 @@ func (s *RepoService) deleteRepoSerialized(
 	tx, err := s.ownershipTx.BeginOwnershipTx(ctx, repository.ID)
 	if err != nil {
 		slog.Error("failed to begin repository ownership transaction", "repo_id", repository.ID, "error", err)
-		return errors.Internal("failed to delete repository")
+		return errors.Internal("failed to delete repository").WithCause(err)
 	}
 	committed := false
 	rollbackParent := ctx
@@ -2146,7 +2146,7 @@ func (s *RepoService) deleteRepoSerialized(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return errors.NotFound("repository not found")
 		}
-		return errors.Internal("failed to delete repository")
+		return errors.Internal("failed to delete repository").WithCause(err)
 	}
 	if !repoOwnershipUnchanged(fresh, repository) {
 		return errors.Conflict("repository ownership changed concurrently")
@@ -2155,27 +2155,27 @@ func (s *RepoService) deleteRepoSerialized(
 		active, verifyErr := s.storageOperations.Verify(ctx, repository.ID, prepared.Token)
 		if verifyErr != nil {
 			slog.Error("failed to verify repository deletion intent", "repo_id", repository.ID, "error", verifyErr)
-			return errors.Internal("failed to delete repository")
+			return errors.Internal("failed to delete repository").WithCause(verifyErr)
 		}
 		if !active {
 			return errors.Conflict("repository storage operation changed concurrently")
 		}
 		if authorizeErr := tx.AuthorizeStorageOperation(ctx, prepared.Token); authorizeErr != nil {
 			slog.Error("failed to authorize repository deletion transaction", "repo_id", repository.ID, "error", authorizeErr)
-			return errors.Internal("failed to delete repository")
+			return errors.Internal("failed to delete repository").WithCause(authorizeErr)
 		}
 	}
 
 	workCtx, cancelWork, err := beginRepoHostMutationConsistency(ctx, repoHostMutationConsistencyTimeout)
 	if err != nil {
-		return errors.Internal("failed to delete repository")
+		return errors.Internal("failed to delete repository").WithCause(err)
 	}
 	defer cancelWork()
 	rollbackParent = workCtx
 
 	if err := tx.DeleteRepo(workCtx, repository.ID); err != nil {
 		slog.Error("failed to delete repository row", "repo_id", repository.ID, "error", err)
-		return errors.Internal("failed to delete repository")
+		return errors.Internal("failed to delete repository").WithCause(err)
 	}
 	var staged repohost.StagedDelete
 	if prepared != nil {
@@ -2193,7 +2193,7 @@ func (s *RepoService) deleteRepoSerialized(
 			slog.Error("failed to restore repository storage after stage-delete error",
 				"repo_id", repository.ID, "owner", owner, "repo_name", repository.Name, "error", restoreErr)
 		}
-		return errors.Internal("failed to delete repository data")
+		return errors.Internal("failed to delete repository data").WithCause(err)
 	}
 
 	if err := tx.Commit(workCtx); err != nil {
@@ -2233,7 +2233,7 @@ func (s *RepoService) deleteRepoSerialized(
 			slog.Error("failed to restore repository storage after delete commit failure",
 				"repo_id", repository.ID, "owner", owner, "repo_name", repository.Name, "error", restoreErr)
 		}
-		return errors.Internal("failed to delete repository")
+		return errors.Internal("failed to delete repository").WithCause(err)
 	}
 	committed = true
 	retainIntent = true
@@ -2277,7 +2277,7 @@ func (s *RepoService) repoDeleteCommitState(ctx context.Context, repository db.R
 func (s *RepoService) deleteRepoCompensating(ctx context.Context, repository db.Repository, owner string, repoHost repoHostStagedDeleteClient) error {
 	workCtx, cancelWork, err := beginRepoHostMutationConsistency(ctx, repoHostMutationConsistencyTimeout)
 	if err != nil {
-		return errors.Internal("failed to delete repository")
+		return errors.Internal("failed to delete repository").WithCause(err)
 	}
 	defer cancelWork()
 
@@ -2291,7 +2291,7 @@ func (s *RepoService) deleteRepoCompensating(ctx context.Context, repository db.
 			slog.Error("failed to restore repository storage after stage-delete error",
 				"repo_id", repository.ID, "owner", owner, "repo_name", repository.Name, "error", restoreErr)
 		}
-		return errors.Internal("failed to delete repository data")
+		return errors.Internal("failed to delete repository data").WithCause(err)
 	}
 	if err := s.queries.DeleteRepo(workCtx, repository.ID); err != nil {
 		reconcileCtx, cancelReconcile := repoHostCompensationContext(workCtx)
@@ -2315,7 +2315,7 @@ func (s *RepoService) deleteRepoCompensating(ctx context.Context, repository db.
 			slog.Error("failed to restore repository storage after DB delete failure",
 				"repo_id", repository.ID, "owner", owner, "repo_name", repository.Name, "error", restoreErr)
 		}
-		return errors.Internal("failed to delete repository")
+		return errors.Internal("failed to delete repository").WithCause(err)
 	}
 	_ = s.finalizeRepoDelete(workCtx, repository, staged, repoHost)
 	return nil
@@ -2412,7 +2412,7 @@ func (s *RepoService) ArchiveRepo(ctx context.Context, actor *db.User, owner, re
 		if isRepositoryStorageOperationConflict(err) {
 			return db.Repository{}, errors.Conflict("repository storage operation is already in progress")
 		}
-		return db.Repository{}, errors.Internal("failed to archive repository")
+		return db.Repository{}, errors.Internal("failed to archive repository").WithCause(err)
 	}
 
 	return updated, nil
@@ -2446,7 +2446,7 @@ func (s *RepoService) UnarchiveRepo(ctx context.Context, actor *db.User, owner, 
 		if isRepositoryStorageOperationConflict(err) {
 			return db.Repository{}, errors.Conflict("repository storage operation is already in progress")
 		}
-		return db.Repository{}, errors.Internal("failed to unarchive repository")
+		return db.Repository{}, errors.Internal("failed to unarchive repository").WithCause(err)
 	}
 
 	return updated, nil
@@ -2471,7 +2471,7 @@ func (s *RepoService) resolveRepoByOwnerAndName(ctx context.Context, owner, repo
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, errors.NotFound("repository not found")
 		}
-		return db.Repository{}, errors.Internal("failed to load repository")
+		return db.Repository{}, errors.Internal("failed to load repository").WithCause(err)
 	}
 
 	return repository, nil
@@ -2617,7 +2617,7 @@ func (s *RepoService) dispatchRepositoryEvent(
 	}
 
 	if err := s.dispatcher.DispatchEvent(ctx, repository.ID, eventType, payload); err != nil {
-		return errors.Internal("failed to enqueue webhook delivery")
+		return errors.Internal("failed to enqueue webhook delivery").WithCause(err)
 	}
 	return nil
 }

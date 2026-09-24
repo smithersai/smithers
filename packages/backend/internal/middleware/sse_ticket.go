@@ -105,7 +105,7 @@ func (v *SSETicketManagerValidator) ValidateTicket(ctx context.Context, rawTicke
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, errors.Unauthorized("invalid or expired SSE ticket")
 		}
-		return nil, errors.Internal("failed to load SSE ticket user")
+		return nil, errors.Internal("failed to load SSE ticket user").WithCause(err)
 	}
 	if user.ProhibitLogin {
 		return nil, errors.Forbidden("account is suspended")

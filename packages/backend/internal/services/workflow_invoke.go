@@ -120,7 +120,7 @@ func (s *workflowAPIService) InvokeWorkflow(ctx context.Context, input InvokeWor
 		ExecutionPlane:       WorkflowRunPlaneSandbox,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to create workflow run")
+		return nil, pkgerrors.Internal("failed to create workflow run").WithCause(err)
 	}
 	return &InvokeWorkflowResult{Run: run, Definition: *matched}, nil
 }

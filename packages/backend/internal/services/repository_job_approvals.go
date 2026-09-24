@@ -56,7 +56,7 @@ func (s *RepositoryJobService) RecordApproval(ctx context.Context, repoID, userI
 		FlowID: input.FlowID, Envelope: input.Envelope, ApprovedBy: userID,
 	})
 	if err != nil {
-		return empty, pkgerrors.Internal("could not record the approved plan")
+		return empty, pkgerrors.Internal("could not record the approved plan").WithCause(err)
 	}
 	return repositoryJobApprovalOf(row), nil
 }

@@ -200,7 +200,7 @@ func (s *CommitStatusService) CreateCommitStatus(
 			if errors.Is(err, pgx.ErrNoRows) {
 				return db.CommitStatus{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "CommitStatus", Field: "workflow_run_id", Code: "invalid"})
 			}
-			return db.CommitStatus{}, pkgerrors.Internal("failed to validate workflow run")
+			return db.CommitStatus{}, pkgerrors.Internal("failed to validate workflow run").WithCause(err)
 		}
 		workflowRunID = pgtype.Int8{Int64: *input.WorkflowRunID, Valid: true}
 	}
@@ -234,7 +234,7 @@ func (s *CommitStatusService) CreateCommitStatus(
 			if errors.Is(err, pgx.ErrNoRows) {
 				return db.CommitStatus{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "CommitStatus", Field: "workspace_id", Code: "invalid"})
 			}
-			return db.CommitStatus{}, pkgerrors.Internal("failed to validate workspace")
+			return db.CommitStatus{}, pkgerrors.Internal("failed to validate workspace").WithCause(err)
 		}
 		if workspace.RepositoryID != repositoryID {
 			return db.CommitStatus{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "CommitStatus", Field: "workspace_id", Code: "invalid"})
@@ -257,7 +257,7 @@ func (s *CommitStatusService) CreateCommitStatus(
 		WorkspaceID:     workspaceID,
 	})
 	if err != nil {
-		return db.CommitStatus{}, pkgerrors.Internal("failed to create commit status")
+		return db.CommitStatus{}, pkgerrors.Internal("failed to create commit status").WithCause(err)
 	}
 
 	// Dispatch "status" webhook event (non-fatal).
@@ -305,7 +305,7 @@ func (s *CommitStatusService) dispatchCommitStatusEvent(ctx context.Context, rep
 		Sender: sender,
 	}
 	if err := s.dispatcher.DispatchEvent(ctx, repositoryID, webhooks.EventTypeStatus, payload); err != nil {
-		return pkgerrors.Internal("failed to enqueue commit status webhook delivery")
+		return pkgerrors.Internal("failed to enqueue commit status webhook delivery").WithCause(err)
 	}
 	return nil
 }
@@ -323,7 +323,7 @@ func (s *CommitStatusService) ListCommitStatuses(
 		Ref:          refText,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count commit statuses")
+		return nil, 0, pkgerrors.Internal("failed to count commit statuses").WithCause(err)
 	}
 
 	pageOffset := (page - 1) * perPage
@@ -334,7 +334,7 @@ func (s *CommitStatusService) ListCommitStatuses(
 		PageOffset:   ClampInt32(pageOffset),
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list commit statuses")
+		return nil, 0, pkgerrors.Internal("failed to list commit statuses").WithCause(err)
 	}
 	if statuses == nil {
 		return []db.CommitStatus{}, total, nil
@@ -378,7 +378,7 @@ func (s *CommitStatusService) UpdateCommitStatusForWorkflowRun(
 		if err == pgx.ErrNoRows {
 			return db.CommitStatus{}, pkgerrors.NotFound("commit status not found")
 		}
-		return db.CommitStatus{}, pkgerrors.Internal("failed to update commit status")
+		return db.CommitStatus{}, pkgerrors.Internal("failed to update commit status").WithCause(err)
 	}
 
 	_ = s.dispatchCommitStatusEvent(ctx, updated.RepositoryID, s.resolveRepoName(ctx, updated.RepositoryID, ""), updated, nil)

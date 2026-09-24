@@ -107,14 +107,14 @@ func (s *ChangeOperationService) ListOperations(ctx context.Context, repositoryI
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return nil, pkgerrors.NotFound("change revision not found")
 			}
-			return nil, pkgerrors.Internal("failed to load change revision")
+			return nil, pkgerrors.Internal("failed to load change revision").WithCause(err)
 		}
 		revision = pgtype.Int8{Int64: *revisionSeq, Valid: true}
 	} else if _, err := s.queries.GetChangeByChangeID(ctx, db.GetChangeByChangeIDParams{RepositoryID: repositoryID, ChangeID: changeID}); err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, pkgerrors.NotFound("change not found")
 		}
-		return nil, pkgerrors.Internal("failed to load change")
+		return nil, pkgerrors.Internal("failed to load change").WithCause(err)
 	}
 
 	rows, err := s.queries.ListJjOperationsForChange(ctx, db.ListJjOperationsForChangeParams{
@@ -123,7 +123,7 @@ func (s *ChangeOperationService) ListOperations(ctx context.Context, repositoryI
 		ChangeID:     changeID,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list change operations")
+		return nil, pkgerrors.Internal("failed to list change operations").WithCause(err)
 	}
 	result := make([]ChangeOperationResponse, 0, len(rows))
 	for _, row := range rows {
@@ -226,7 +226,7 @@ func (s *ChangeOperationService) loadUndoOperation(ctx context.Context, reposito
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.JjOperation{}, 0, pkgerrors.NotFound("undoable workspace operation not found")
 		}
-		return db.JjOperation{}, 0, pkgerrors.Internal("failed to load workspace operation")
+		return db.JjOperation{}, 0, pkgerrors.Internal("failed to load workspace operation").WithCause(err)
 	}
 	if len(operation.ChangeIds) == 0 {
 		return db.JjOperation{}, 0, pkgerrors.Conflict("operation has no server-visible changes to undo")
@@ -238,7 +238,7 @@ func (s *ChangeOperationService) loadUndoOperation(ctx context.Context, reposito
 		ID:           operation.ID,
 	})
 	if err != nil {
-		return db.JjOperation{}, 0, pkgerrors.Internal("failed to count later workspace operations")
+		return db.JjOperation{}, 0, pkgerrors.Internal("failed to count later workspace operations").WithCause(err)
 	}
 	return operation, later, nil
 }
@@ -261,7 +261,7 @@ func (s *ChangeOperationService) persistUndo(ctx context.Context, repositoryID, 
 			WorkspaceID:       workspaceID,
 			ChangeIds:         operationStrings(original.ChangeIds),
 		}); err != nil {
-			return nil, pkgerrors.Internal("failed to record undo operation")
+			return nil, pkgerrors.Internal("failed to record undo operation").WithCause(err)
 		}
 		revisions := make([]ChangeRevisionResponse, 0, len(changes))
 		for _, change := range changes {
@@ -271,21 +271,21 @@ func (s *ChangeOperationService) persistUndo(ctx context.Context, repositoryID, 
 			}
 			parentJSON, err := json.Marshal(parents)
 			if err != nil {
-				return nil, pkgerrors.Internal("failed to encode undo change parents")
+				return nil, pkgerrors.Internal("failed to encode undo change parents").WithCause(err)
 			}
 			if _, err := writer.UpsertChange(ctx, db.UpsertChangeParams{
 				RepositoryID: repositoryID, ChangeID: change.ChangeID, CommitID: change.CommitID,
 				Description: change.Description, AuthorName: change.AuthorName, AuthorEmail: change.AuthorEmail,
 				HasConflict: change.HasConflict, IsEmpty: change.IsEmpty, ParentChangeIds: parentJSON,
 			}); err != nil {
-				return nil, pkgerrors.Internal("failed to store change after undo")
+				return nil, pkgerrors.Internal("failed to store change after undo").WithCause(err)
 			}
 			revision, err := writer.RecordChangeRevision(ctx, db.RecordChangeRevisionParams{
 				RepositoryID: repositoryID, ChangeID: change.ChangeID, CommitID: change.CommitID,
 				ParentCommitID: change.ParentCommitID, Source: "undo", OperationIds: []string{undo.OperationID},
 			})
 			if err != nil {
-				return nil, pkgerrors.Internal("failed to record undo change revision")
+				return nil, pkgerrors.Internal("failed to record undo change revision").WithCause(err)
 			}
 			revisions = append(revisions, ChangeRevisionResponse{
 				Seq: revision.Seq, CommitID: revision.CommitID, ParentCommitID: revision.ParentCommitID,
@@ -300,7 +300,7 @@ func (s *ChangeOperationService) persistUndo(ctx context.Context, repositoryID, 
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to begin undo transaction")
+		return nil, pkgerrors.Internal("failed to begin undo transaction").WithCause(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	revisions, err := persist(db.New(tx))
@@ -308,7 +308,7 @@ func (s *ChangeOperationService) persistUndo(ctx context.Context, repositoryID, 
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, pkgerrors.Internal("failed to commit undo transaction")
+		return nil, pkgerrors.Internal("failed to commit undo transaction").WithCause(err)
 	}
 	return revisions, nil
 }
@@ -339,7 +339,7 @@ func (s *WorkspaceService) PreviewOperationUndo(ctx context.Context, workspaceID
 	command := buildWorkspaceUndoPreviewCommand(operationID, changeIDs)
 	response, err := client.Execute(ctx, workspace.VmID, sandbox.ExecRequest{Command: command, TimeoutMS: workspaceOperationTimeoutPtr()})
 	if err != nil {
-		return "", pkgerrors.Internal("preview workspace operation undo")
+		return "", pkgerrors.Internal("preview workspace operation undo").WithCause(err)
 	}
 	if !successfulExecStatus(response) {
 		return "", pkgerrors.Conflict("operation can no longer be undone in this workspace")
@@ -361,7 +361,7 @@ func (s *WorkspaceService) UndoOperation(ctx context.Context, workspaceID string
 	}
 	response, err := client.Execute(ctx, workspace.VmID, sandbox.ExecRequest{Command: buildWorkspaceUndoCommand(operationID), TimeoutMS: workspaceOperationTimeoutPtr()})
 	if err != nil {
-		return WorkspaceUndoResult{}, pkgerrors.Internal("undo workspace operation")
+		return WorkspaceUndoResult{}, pkgerrors.Internal("undo workspace operation").WithCause(err)
 	}
 	if !successfulExecStatus(response) {
 		return WorkspaceUndoResult{}, pkgerrors.Conflict("workspace operation undo failed")

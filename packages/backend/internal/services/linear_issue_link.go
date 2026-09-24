@@ -90,7 +90,7 @@ func (s *LinearIssueLinkService) LinkIssue(ctx context.Context, actor *db.User, 
 
 	integrations, err := s.queries.ListLinearIntegrationsByRepo(ctx, repository.ID)
 	if err != nil {
-		return LinearIssueReference{}, pkgerrors.Internal("failed to load Linear integration")
+		return LinearIssueReference{}, pkgerrors.Internal("failed to load Linear integration").WithCause(err)
 	}
 	integration, ok := matchingLinearIntegration(integrations, identifier)
 	if !ok {
@@ -133,7 +133,7 @@ func (s *LinearIssueLinkService) LinkIssue(ctx context.Context, actor *db.User, 
 		if isUniqueViolation(err) {
 			return LinearIssueReference{}, linearIdentifierValidationError("already_exists")
 		}
-		return LinearIssueReference{}, pkgerrors.Internal("failed to create Linear issue link")
+		return LinearIssueReference{}, pkgerrors.Internal("failed to create Linear issue link").WithCause(err)
 	}
 
 	return linearIssueReference(created.LinearIdentifier), nil
@@ -154,11 +154,11 @@ func (s *LinearIssueLinkService) UnlinkIssue(ctx context.Context, actor *db.User
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("Linear issue link not found")
 		}
-		return pkgerrors.Internal("failed to load Linear issue link")
+		return pkgerrors.Internal("failed to load Linear issue link").WithCause(err)
 	}
 	deleted, err := s.queries.DeleteLinearIssueMapByID(ctx, issueMap.ID)
 	if err != nil {
-		return pkgerrors.Internal("failed to delete Linear issue link")
+		return pkgerrors.Internal("failed to delete Linear issue link").WithCause(err)
 	}
 	if deleted == 0 {
 		return pkgerrors.NotFound("Linear issue link not found")
@@ -181,7 +181,7 @@ func (s *LinearIssueLinkService) resolveWritableIssue(ctx context.Context, actor
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, db.Issue{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, db.Issue{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, db.Issue{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	permission, isOwner, err := repoPermissionForUser(ctx, s.queries, repository, actor.ID)
 	if err != nil {
@@ -198,7 +198,7 @@ func (s *LinearIssueLinkService) resolveWritableIssue(ctx context.Context, actor
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, db.Issue{}, pkgerrors.NotFound("issue not found")
 		}
-		return db.Repository{}, db.Issue{}, pkgerrors.Internal("failed to load issue")
+		return db.Repository{}, db.Issue{}, pkgerrors.Internal("failed to load issue").WithCause(err)
 	}
 	return repository, issue, nil
 }

@@ -59,7 +59,7 @@ func (f *RepoOwnershipFence) WithRepoOwnershipShared(ctx context.Context, snapsh
 	tx, err := f.pool.Begin(ctx)
 	if err != nil {
 		slog.Error("failed to begin repository ownership guard transaction", "repo_id", snapshot.ID, "error", err)
-		return pkgerrors.Internal("failed to serialize repository write")
+		return pkgerrors.Internal("failed to serialize repository write").WithCause(err)
 	}
 	// The transaction only holds the shared lock; rolling it back releases the
 	// lock after the write completes and never discards data.
@@ -67,7 +67,7 @@ func (f *RepoOwnershipFence) WithRepoOwnershipShared(ctx context.Context, snapsh
 
 	if _, err := tx.Exec(ctx, repoOwnershipSharedLockSQL, snapshot.ID); err != nil {
 		slog.Error("failed to acquire repository ownership shared lock", "repo_id", snapshot.ID, "error", err)
-		return pkgerrors.Internal("failed to serialize repository write")
+		return pkgerrors.Internal("failed to serialize repository write").WithCause(err)
 	}
 
 	fresh, err := db.New(tx).GetRepoByID(ctx, snapshot.ID)
@@ -76,7 +76,7 @@ func (f *RepoOwnershipFence) WithRepoOwnershipShared(ctx context.Context, snapsh
 			return pkgerrors.NotFound("repository not found")
 		}
 		slog.Error("failed to re-validate repository ownership", "repo_id", snapshot.ID, "error", err)
-		return pkgerrors.Internal("failed to serialize repository write")
+		return pkgerrors.Internal("failed to serialize repository write").WithCause(err)
 	}
 	if !repoOwnershipUnchanged(fresh, snapshot) {
 		return pkgerrors.Conflict("repository ownership changed concurrently")
@@ -122,7 +122,7 @@ func repoPermissionForUser(ctx context.Context, q RepoPermQuerier, repository db
 			UserID:       userID,
 		})
 		if err != nil {
-			return "", false, pkgerrors.Internal("failed to resolve repository permissions")
+			return "", false, pkgerrors.Internal("failed to resolve repository permissions").WithCause(err)
 		}
 		if orgOwner {
 			return "", true, nil
@@ -133,7 +133,7 @@ func repoPermissionForUser(ctx context.Context, q RepoPermQuerier, repository db
 			UserID:       userID,
 		})
 		if err != nil {
-			return "", false, pkgerrors.Internal("failed to resolve repository permissions")
+			return "", false, pkgerrors.Internal("failed to resolve repository permissions").WithCause(err)
 		}
 	}
 
@@ -142,7 +142,7 @@ func repoPermissionForUser(ctx context.Context, q RepoPermQuerier, repository db
 		UserID:       pgtype.Int8{Int64: userID, Valid: true},
 	})
 	if err != nil {
-		return "", false, pkgerrors.Internal("failed to resolve repository permissions")
+		return "", false, pkgerrors.Internal("failed to resolve repository permissions").WithCause(err)
 	}
 
 	return highestRepoPermission(teamPermission, collabPermission), false, nil

@@ -106,7 +106,7 @@ func (s *RepoService) TransferRepo(ctx context.Context, actor *db.User, owner, r
 			if stdErrors.Is(orgErr, pgx.ErrNoRows) {
 				return db.Repository{}, errors.NotFound(fmt.Sprintf("user or organization '%s' not found", newOwner))
 			}
-			return db.Repository{}, errors.Internal("failed to resolve new owner")
+			return db.Repository{}, errors.Internal("failed to resolve new owner").WithCause(orgErr)
 		}
 
 		// Verify the actor is an owner of the target organization.
@@ -118,7 +118,7 @@ func (s *RepoService) TransferRepo(ctx context.Context, actor *db.User, owner, r
 			if stdErrors.Is(memErr, pgx.ErrNoRows) {
 				return db.Repository{}, errors.Forbidden("must be an owner of the target organization")
 			}
-			return db.Repository{}, errors.Internal("failed to check organization membership")
+			return db.Repository{}, errors.Internal("failed to check organization membership").WithCause(memErr)
 		}
 		if strings.ToLower(strings.TrimSpace(member.Role)) != "owner" {
 			return db.Repository{}, errors.Forbidden("must be an owner of the target organization")
@@ -187,11 +187,11 @@ func (target repoTransferTarget) applyTransfer(ctx context.Context, q interface 
 }, repositoryID int64) (db.Repository, error) {
 	if err := q.DeleteCollaboratorsByRepo(ctx, repositoryID); err != nil {
 		slog.Error("failed to delete collaborators during transfer", "repo_id", repositoryID, "error", err)
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 	if err := q.DeleteTeamReposByRepo(ctx, repositoryID); err != nil {
 		slog.Error("failed to delete team repos during transfer", "repo_id", repositoryID, "error", err)
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 
 	var updated db.Repository
@@ -212,7 +212,7 @@ func (target repoTransferTarget) applyTransfer(ctx context.Context, q interface 
 			return db.Repository{}, errors.Conflict(target.conflictMsg)
 		}
 		slog.Error("failed to transfer repository", "repo_id", repositoryID, "new_owner", target.ownerName, "error", err)
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 	return updated, nil
 }
@@ -238,7 +238,7 @@ func (s *RepoService) transferRepoSerialized(ctx context.Context, repository db.
 		staged, prepareErr := preparedRepoHost.PrepareStagedMove(ctx, owner, repository.Name, target.ownerName, repository.Name)
 		if prepareErr != nil {
 			slog.Error("failed to prepare repository move", "repo_id", repository.ID, "error", prepareErr)
-			return db.Repository{}, errors.Internal("failed to transfer repository")
+			return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(prepareErr)
 		}
 		createErr := s.storageOperations.Create(ctx, newMoveStorageOperation(repository, owner, target, staged))
 		if createErr != nil {
@@ -251,7 +251,7 @@ func (s *RepoService) transferRepoSerialized(ctx context.Context, repository db.
 				return db.Repository{}, errors.Conflict("repository transfer destination changed concurrently")
 			default:
 				slog.Error("failed to persist repository move intent", "repo_id", repository.ID, "error", createErr)
-				return db.Repository{}, errors.Internal("failed to transfer repository")
+				return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(createErr)
 			}
 		}
 		prepared = &staged
@@ -264,7 +264,7 @@ func (s *RepoService) transferRepoSerialized(ctx context.Context, repository db.
 	tx, err := s.ownershipTx.BeginOwnershipTx(ctx, repository.ID)
 	if err != nil {
 		slog.Error("failed to begin repository ownership transaction", "repo_id", repository.ID, "error", err)
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 	committed := false
 	rollbackParent := ctx
@@ -283,7 +283,7 @@ func (s *RepoService) transferRepoSerialized(ctx context.Context, repository db.
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, errors.NotFound("repository not found")
 		}
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 	if !repoOwnershipUnchanged(fresh, repository) {
 		return db.Repository{}, errors.Conflict("repository ownership changed concurrently")
@@ -292,20 +292,20 @@ func (s *RepoService) transferRepoSerialized(ctx context.Context, repository db.
 		active, verifyErr := s.storageOperations.Verify(ctx, repository.ID, prepared.Token)
 		if verifyErr != nil {
 			slog.Error("failed to verify repository move intent", "repo_id", repository.ID, "error", verifyErr)
-			return db.Repository{}, errors.Internal("failed to transfer repository")
+			return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(verifyErr)
 		}
 		if !active {
 			return db.Repository{}, errors.Conflict("repository storage operation changed concurrently")
 		}
 		if authorizeErr := tx.AuthorizeStorageOperation(ctx, prepared.Token); authorizeErr != nil {
 			slog.Error("failed to authorize repository move transaction", "repo_id", repository.ID, "error", authorizeErr)
-			return db.Repository{}, errors.Internal("failed to transfer repository")
+			return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(authorizeErr)
 		}
 	}
 
 	workCtx, cancelWork, err := beginRepoHostMutationConsistency(ctx, repoHostMutationConsistencyTimeout)
 	if err != nil {
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 	defer cancelWork()
 	rollbackParent = workCtx
@@ -443,7 +443,7 @@ func (s *RepoService) applyAndCommitRepoTransfer(
 			slog.Error("failed to roll back ambiguous repository storage move",
 				"repo_id", repository.ID, "owner", owner, "new_owner", target.ownerName, "error", rollbackErr)
 		}
-		return db.Repository{}, errors.Internal("failed to move repository storage")
+		return db.Repository{}, errors.Internal("failed to move repository storage").WithCause(err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -483,7 +483,7 @@ func (s *RepoService) applyAndCommitRepoTransfer(
 			slog.Error("failed to move repository storage back after commit failure",
 				"repo_id", repository.ID, "owner", owner, "new_owner", target.ownerName, "error", moveBackErr)
 		}
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 	*committed = true
 	*retainIntent = true
@@ -597,12 +597,12 @@ func (s *RepoService) transferRepoCompensating(ctx context.Context, repository d
 	collaborators, err := s.queries.ListCollaboratorsByRepo(ctx, repository.ID)
 	if err != nil {
 		slog.Error("failed to snapshot collaborators before transfer", "repo_id", repository.ID, "error", err)
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 	teamRepos, err := s.queries.ListTeamReposByRepo(ctx, repository.ID)
 	if err != nil {
 		slog.Error("failed to snapshot team repos before transfer", "repo_id", repository.ID, "error", err)
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 
 	// restoreGrants re-inserts collaborator/team grants that were deleted.
@@ -631,7 +631,7 @@ func (s *RepoService) transferRepoCompensating(ctx context.Context, repository d
 
 	workCtx, cancelWork, err := beginRepoHostMutationConsistency(ctx, repoHostMutationConsistencyTimeout)
 	if err != nil {
-		return db.Repository{}, errors.Internal("failed to transfer repository")
+		return db.Repository{}, errors.Internal("failed to transfer repository").WithCause(err)
 	}
 	defer cancelWork()
 
@@ -671,10 +671,10 @@ func (s *RepoService) transferRepoCompensating(ctx context.Context, repository d
 			// would attach the previous owner's collaborators/teams to the new
 			// owner's repository (a cross-tenant access leak), so skip it.
 			slog.Error("failed to revert DB ownership after storage move failure", "repo_id", repository.ID, "error", revertErr)
-			return db.Repository{}, errors.Internal("failed to move repository storage")
+			return db.Repository{}, errors.Internal("failed to move repository storage").WithCause(revertErr)
 		}
 		restoreGrants(compensationCtx)
-		return db.Repository{}, errors.Internal("failed to move repository storage")
+		return db.Repository{}, errors.Internal("failed to move repository storage").WithCause(err)
 	}
 
 	return updated, nil

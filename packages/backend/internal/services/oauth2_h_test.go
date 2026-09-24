@@ -559,3 +559,31 @@ func TestOAuth2_H_IssueTokenPairUsesServiceClock(t *testing.T) {
 	assert.Equal(t, now.Add(oauth2RefreshTokenTTL), refreshExpires)
 	assert.Empty(t, resp.Scope)
 }
+
+// A failed insert reaches the route as a 500 whose sentence is human and whose
+// cause is the driver error, so the request log names the SQLSTATE.
+func TestOAuth2CreateApplicationAttachesTheDriverError(t *testing.T) {
+	driverErr := &stubDriverError{"ERROR: duplicate key value violates unique constraint (SQLSTATE 23505)"}
+	svc := NewOAuth2Service(&oauth2HQuerier{
+		createApplicationFn: func(context.Context, db.CreateOAuth2ApplicationParams) (db.Oauth2Application, error) {
+			return db.Oauth2Application{}, driverErr
+		},
+	})
+	confidential := true
+
+	_, err := svc.CreateApplication(context.Background(), 1, CreateOAuth2ApplicationRequest{
+		Name:         "app",
+		RedirectURIs: []string{"https://example.com/cb"},
+		Confidential: &confidential,
+	})
+
+	var apiErr *pkgerrors.APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, pkgerrors.CodeInternal, apiErr.Code)
+	assert.Equal(t, "failed to create oauth2 application", apiErr.Message)
+	assert.Same(t, driverErr, apiErr.Cause())
+}
+
+type stubDriverError struct{ msg string }
+
+func (e *stubDriverError) Error() string { return e.msg }

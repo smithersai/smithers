@@ -2,6 +2,7 @@ package errors
 
 import (
 	"encoding/json"
+	stderrors "errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -306,4 +307,27 @@ func TestWriteError_WithFieldErrors(t *testing.T) {
 	assert.Equal(t, "invalid", body.Errors[0].Code)
 	assert.Equal(t, "username", body.Errors[1].Field)
 	assert.Equal(t, "already_exists", body.Errors[1].Code)
+}
+
+func TestWithCauseKeepsTheCauseOffTheWire(t *testing.T) {
+	cause := stderrors.New("ERROR: canceling statement due to statement timeout (SQLSTATE 57014)")
+	err := Internal("failed to set secret")
+
+	got := err.WithCause(cause)
+
+	assert.Same(t, err, got, "WithCause returns the receiver so it chains at the return site")
+	assert.Equal(t, cause, got.Cause())
+	assert.Equal(t, "failed to set secret", got.Error(), "Error() stays the human sentence")
+
+	rec := httptest.NewRecorder()
+	WriteError(rec, got)
+	assert.NotContains(t, rec.Body.String(), "SQLSTATE")
+	assert.Contains(t, rec.Body.String(), "failed to set secret")
+}
+
+func TestWithCauseNilKeepsAnEarlierCause(t *testing.T) {
+	cause := stderrors.New("first")
+	err := Internal("boom").WithCause(cause).WithCause(nil)
+	assert.Equal(t, cause, err.Cause())
+	assert.Nil(t, Internal("boom").Cause())
 }

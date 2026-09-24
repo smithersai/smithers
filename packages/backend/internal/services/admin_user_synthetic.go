@@ -38,7 +38,7 @@ func (s *AdminUserService) SetSynthetic(ctx context.Context, username string, sy
 	}
 	tx, err := beginner.BeginTx(ctx)
 	if err != nil {
-		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to begin synthetic update")
+		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to begin synthetic update").WithCause(err)
 	}
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -51,11 +51,11 @@ func (s *AdminUserService) SetSynthetic(ctx context.Context, username string, sy
 		return AdminSyntheticUserProfile{}, pkgerrors.NotFound("user not found")
 	}
 	if err != nil {
-		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to update synthetic status")
+		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to update synthetic status").WithCause(err)
 	}
 	metadata, err := json.Marshal(map[string]bool{"synthetic": synthetic})
 	if err != nil {
-		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to encode synthetic audit metadata")
+		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to encode synthetic audit metadata").WithCause(err)
 	}
 	if err := queries.InsertAuditLog(ctx, db.InsertAuditLogParams{
 		EventType:  "admin.user.set_synthetic",
@@ -68,10 +68,10 @@ func (s *AdminUserService) SetSynthetic(ctx context.Context, username string, sy
 		Action:     "set_synthetic",
 		Metadata:   metadata,
 	}); err != nil {
-		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to audit synthetic update")
+		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to audit synthetic update").WithCause(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to commit synthetic update")
+		return AdminSyntheticUserProfile{}, pkgerrors.Internal("failed to commit synthetic update").WithCause(err)
 	}
 	return AdminSyntheticUserProfile{UserProfile: mapUserProfile(user), Synthetic: user.IsSynthetic}, nil
 }

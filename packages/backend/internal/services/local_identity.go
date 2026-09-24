@@ -111,7 +111,7 @@ func (s *AuthService) LocalIdentityStatus(ctx context.Context) (LocalIdentitySta
 		if err == pgx.ErrNoRows {
 			return LocalIdentityStatus{Enabled: true}, nil
 		}
-		return LocalIdentityStatus{}, pkgerrors.Internal("failed to load installation owner")
+		return LocalIdentityStatus{}, pkgerrors.Internal("failed to load installation owner").WithCause(err)
 	}
 	return LocalIdentityStatus{Enabled: true, Initialized: true}, nil
 }
@@ -153,7 +153,7 @@ func (s *AuthService) BootstrapLocalOwner(ctx context.Context, req LocalBootstra
 		if err == pgx.ErrNoRows || isUniqueViolation(err) {
 			return LocalLoginResult{}, pkgerrors.Conflict("installation owner is already initialized")
 		}
-		return LocalLoginResult{}, pkgerrors.Internal("failed to initialize installation owner")
+		return LocalLoginResult{}, pkgerrors.Internal("failed to initialize installation owner").WithCause(err)
 	}
 	user := userFromBootstrapRow(userRow)
 	return s.issueLocalSession(ctx, user)
@@ -213,7 +213,7 @@ func (s *AuthService) ChangeLocalOwnerPassword(ctx context.Context, userID int64
 	// session for the caller. Existing PATs deliberately remain valid: they are
 	// independently scoped credentials revoked through the existing token API.
 	if err := queries.DeleteUserSessions(ctx, userID); err != nil {
-		return LocalLoginResult{}, pkgerrors.Internal("failed to revoke old sessions")
+		return LocalLoginResult{}, pkgerrors.Internal("failed to revoke old sessions").WithCause(err)
 	}
 	return s.issueLocalSession(ctx, userFromLocalCredential(credential))
 }
@@ -229,7 +229,7 @@ func (s *AuthService) verifyLocalOwner(ctx context.Context, username, password s
 			burnLocalPassword(password)
 			return db.User{}, pkgerrors.Unauthorized("invalid username or password")
 		}
-		return db.User{}, pkgerrors.Internal("failed to load local credential")
+		return db.User{}, pkgerrors.Internal("failed to load local credential").WithCause(err)
 	}
 	passwordOK := verifyLocalPassword(credential.PasswordHash, password)
 	usernameOK := subtle.ConstantTimeCompare([]byte(strings.ToLower(strings.TrimSpace(username))), []byte(credential.LowerUsername)) == 1
@@ -245,7 +245,7 @@ func (s *AuthService) verifyLocalOwner(ctx context.Context, username, password s
 func (s *AuthService) issueLocalSession(ctx context.Context, user db.User) (LocalLoginResult, error) {
 	raw, session, err := s.createSession(ctx, user)
 	if err != nil {
-		return LocalLoginResult{}, pkgerrors.Internal("failed to create session")
+		return LocalLoginResult{}, pkgerrors.Internal("failed to create session").WithCause(err)
 	}
 	return LocalLoginResult{User: user, SessionKey: raw, ExpiresAt: session.ExpiresAt}, nil
 }
@@ -262,7 +262,7 @@ func hashLocalPassword(password string) (string, error) {
 	}
 	salt := make([]byte, argonSaltBytes)
 	if _, err := rand.Read(salt); err != nil {
-		return "", pkgerrors.Internal("failed to initialize password credential")
+		return "", pkgerrors.Internal("failed to initialize password credential").WithCause(err)
 	}
 	key := deriveLocalPasswordKey(password, salt, argonIterations, argonMemoryKiB, argonParallelism, argonKeyBytes)
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",

@@ -46,7 +46,7 @@ func (s *AdminOrgService) ListAllOrgs(ctx context.Context, input AdminOrgListInp
 
 	total, err := s.queries.CountAllOrgs(ctx)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count orgs")
+		return nil, 0, pkgerrors.Internal("failed to count orgs").WithCause(err)
 	}
 
 	orgs, err := s.queries.ListAllOrgs(ctx, db.ListAllOrgsParams{
@@ -54,7 +54,7 @@ func (s *AdminOrgService) ListAllOrgs(ctx context.Context, input AdminOrgListInp
 		PageSize:   int32(perPage),
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list orgs")
+		return nil, 0, pkgerrors.Internal("failed to list orgs").WithCause(err)
 	}
 
 	responses := make([]OrgResponse, len(orgs))

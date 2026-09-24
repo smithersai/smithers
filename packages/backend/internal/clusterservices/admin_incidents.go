@@ -108,14 +108,14 @@ func (s *AdminIncidentsService) transaction(ctx context.Context, fn func(AdminIn
 	if txq, ok := s.queries.(incidentTransactionalQuerier); ok {
 		tx, err := txq.BeginTx(ctx)
 		if err != nil {
-			return pkgerrors.Internal("failed to begin incident mutation")
+			return pkgerrors.Internal("failed to begin incident mutation").WithCause(err)
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 		if err := fn(txq.WithTx(tx)); err != nil {
 			return err
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return pkgerrors.Internal("failed to commit incident mutation")
+			return pkgerrors.Internal("failed to commit incident mutation").WithCause(err)
 		}
 		return nil
 	}
@@ -141,7 +141,7 @@ func (s *AdminIncidentsService) single(ctx context.Context, id int64, input Admi
 			return pkgerrors.NotFound("alert incident not found")
 		}
 		if err != nil {
-			return pkgerrors.Internal("failed to load alert incident")
+			return pkgerrors.Internal("failed to load alert incident").WithCause(err)
 		}
 		if !(input.Action == "resolve" && row.State == "resolved") {
 			if row.State == "resolved" || (row.State == "failed" && input.Action != "resolve") {
@@ -149,7 +149,7 @@ func (s *AdminIncidentsService) single(ctx context.Context, id int64, input Admi
 			}
 			rows, err := q.AdminMutateAlertIncidents(ctx, incidentMutationParams(input, actor))
 			if err != nil {
-				return pkgerrors.Internal("failed to update alert incident")
+				return pkgerrors.Internal("failed to update alert incident").WithCause(err)
 			}
 			if len(rows) != 1 {
 				return pkgerrors.Conflict("incident is no longer active")
@@ -158,7 +158,7 @@ func (s *AdminIncidentsService) single(ctx context.Context, id int64, input Admi
 		}
 		jobs, err := q.ListAlertRemediationJobsForIncidents(ctx, []int64{id})
 		if err != nil {
-			return pkgerrors.Internal("failed to list alert remediation jobs")
+			return pkgerrors.Internal("failed to list alert remediation jobs").WithCause(err)
 		}
 		mapped := make([]AdminSystemRemediationJobRow, len(jobs))
 		for i, j := range jobs {
@@ -182,7 +182,7 @@ func (s *AdminIncidentsService) Bulk(ctx context.Context, input AdminIncidentBul
 	err := s.transaction(ctx, func(q AdminIncidentsQuerier) error {
 		rows, err := q.AdminMutateAlertIncidents(ctx, incidentMutationParams(input, actor))
 		if err != nil {
-			return pkgerrors.Internal("failed to update alert incidents")
+			return pkgerrors.Internal("failed to update alert incidents").WithCause(err)
 		}
 		affected = int64(len(rows))
 		return logIncidentAudit(ctx, q, actor, input, nil, true, affected)

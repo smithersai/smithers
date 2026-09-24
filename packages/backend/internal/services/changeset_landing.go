@@ -46,7 +46,7 @@ func (s *ChangesetService) LandChangeset(ctx context.Context, actor *db.User, or
 	}
 	unlock, err := s.locker.LockOrganization(ctx, org.ID)
 	if err != nil {
-		return ChangesetResponse{}, pkgerrors.Internal("failed to serialize changeset landing")
+		return ChangesetResponse{}, pkgerrors.Internal("failed to serialize changeset landing").WithCause(err)
 	}
 	defer unlock()
 	cs, members, super, err := s.loadChangeset(ctx, org, id)
@@ -65,7 +65,7 @@ func (s *ChangesetService) LandChangeset(ctx context.Context, actor *db.User, or
 	var plan changesetLandingPlan
 	if len(cs.LandingPlan) > 0 {
 		if err = json.Unmarshal(cs.LandingPlan, &plan); err != nil {
-			return ChangesetResponse{}, pkgerrors.Internal("invalid changeset recovery plan")
+			return ChangesetResponse{}, pkgerrors.Internal("invalid changeset recovery plan").WithCause(err)
 		}
 	}
 	if cs.State == changesetStateLanding && plan.Attempt == "" {
@@ -89,7 +89,7 @@ func (s *ChangesetService) LandChangeset(ctx context.Context, actor *db.User, or
 		}
 		for _, member := range plan.Members {
 			if err = s.queries.RecordChangesetMemberPreviousCommit(ctx, db.RecordChangesetMemberPreviousCommitParams{ID: member.ID, PreviousCommitID: member.Previous}); err != nil {
-				return ChangesetResponse{}, pkgerrors.Internal("failed to record previous head; retry is safe")
+				return ChangesetResponse{}, pkgerrors.Internal("failed to record previous head; retry is safe").WithCause(err)
 			}
 		}
 	}
@@ -107,7 +107,7 @@ func (s *ChangesetService) LandChangeset(ctx context.Context, actor *db.User, or
 		for _, member := range members {
 			repo, err := s.queries.GetRepoByID(ctx, member.RepositoryID)
 			if err != nil {
-				return ChangesetResponse{}, pkgerrors.Internal("failed to load member repository")
+				return ChangesetResponse{}, pkgerrors.Internal("failed to load member repository").WithCause(err)
 			}
 			if err = s.checkLandingPolicy(ctx, repo, org.Name, member.ChangeID, member.CommitID, member.TargetBookmark); err != nil {
 				return ChangesetResponse{}, s.failChangesetLanding(ctx, org, cs.ID, &plan, err)
@@ -124,14 +124,14 @@ func (s *ChangesetService) LandChangeset(ctx context.Context, actor *db.User, or
 			if definiteLandingFailure(err) {
 				return ChangesetResponse{}, s.failChangesetLanding(ctx, org, cs.ID, &plan, err)
 			}
-			return ChangesetResponse{}, pkgerrors.Internal("landing outcome is pending; retry will recover its storage receipt")
+			return ChangesetResponse{}, pkgerrors.Internal("landing outcome is pending; retry will recover its storage receipt").WithCause(err)
 		}
 		member.Landed = result.TargetCommitID
 		if err = s.saveChangesetPlan(ctx, cs.ID, changesetStateLanding, &plan); err != nil {
 			return ChangesetResponse{}, err
 		}
 		if err = s.queries.RecordChangesetMemberLanded(ctx, db.RecordChangesetMemberLandedParams{ID: member.ID, LandedCommitID: member.Landed}); err != nil {
-			return ChangesetResponse{}, pkgerrors.Internal("failed to record landed member; retry is safe")
+			return ChangesetResponse{}, pkgerrors.Internal("failed to record landed member; retry is safe").WithCause(err)
 		}
 	}
 	// Persist the composed superproject input before landing it. Recomposition
@@ -169,25 +169,25 @@ func (s *ChangesetService) LandChangeset(ctx context.Context, actor *db.User, or
 		if definiteLandingFailure(err) {
 			return ChangesetResponse{}, s.failChangesetLanding(ctx, org, cs.ID, &plan, err)
 		}
-		return ChangesetResponse{}, pkgerrors.Internal("superproject landing outcome is pending; retry will recover its storage receipt")
+		return ChangesetResponse{}, pkgerrors.Internal("superproject landing outcome is pending; retry will recover its storage receipt").WithCause(err)
 	}
 	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer cancel()
 	for _, member := range plan.Members {
 		if err = s.queries.RecordChangesetMemberPreviousCommit(finalizeCtx, db.RecordChangesetMemberPreviousCommitParams{ID: member.ID, PreviousCommitID: member.Previous}); err != nil {
-			return ChangesetResponse{}, pkgerrors.Internal("failed to finalize previous head; retry is safe")
+			return ChangesetResponse{}, pkgerrors.Internal("failed to finalize previous head; retry is safe").WithCause(err)
 		}
 		if err = s.queries.RecordChangesetMemberLanded(finalizeCtx, db.RecordChangesetMemberLandedParams{ID: member.ID, LandedCommitID: member.Landed}); err != nil {
-			return ChangesetResponse{}, pkgerrors.Internal("failed to finalize member; retry is safe")
+			return ChangesetResponse{}, pkgerrors.Internal("failed to finalize member; retry is safe").WithCause(err)
 		}
 	}
 	updated, err := s.queries.MarkChangesetLanded(finalizeCtx, db.MarkChangesetLandedParams{ID: cs.ID, LandedCommitID: result.TargetCommitID})
 	if err != nil {
-		return ChangesetResponse{}, pkgerrors.Internal("changeset landed; retry will finalize its record")
+		return ChangesetResponse{}, pkgerrors.Internal("changeset landed; retry will finalize its record").WithCause(err)
 	}
 	finalMembers, err := s.queries.ListChangesetMembers(finalizeCtx, cs.ID)
 	if err != nil {
-		return ChangesetResponse{}, pkgerrors.Internal("failed to reload changeset members")
+		return ChangesetResponse{}, pkgerrors.Internal("failed to reload changeset members").WithCause(err)
 	}
 	return s.buildResponse(finalizeCtx, org, super, updated, finalMembers)
 }
@@ -197,7 +197,7 @@ func (s *ChangesetService) prepareChangesetLanding(ctx context.Context, org db.O
 	for _, member := range members {
 		repo, err := s.queries.GetRepoByID(ctx, member.RepositoryID)
 		if err != nil {
-			return plan, pkgerrors.Internal("failed to load member repository")
+			return plan, pkgerrors.Internal("failed to load member repository").WithCause(err)
 		}
 		if err = s.checkLandingPolicy(ctx, repo, org.Name, member.ChangeID, member.CommitID, member.TargetBookmark); err != nil {
 			return plan, err
@@ -211,7 +211,7 @@ func (s *ChangesetService) prepareChangesetLanding(ctx context.Context, org db.O
 		}
 		bookmark, _, err := s.findBookmark(ctx, org.Name, repo.Name, member.TargetBookmark)
 		if err != nil {
-			return plan, pkgerrors.Internal("failed to read member bookmark")
+			return plan, pkgerrors.Internal("failed to read member bookmark").WithCause(err)
 		}
 		plan.Members = append(plan.Members, changesetLandingMember{ID: member.ID, Repo: repo.Name, Target: member.TargetBookmark, Commit: member.CommitID, Previous: bookmark.TargetCommitID})
 	}
@@ -220,7 +220,7 @@ func (s *ChangesetService) prepareChangesetLanding(ctx context.Context, org db.O
 	}
 	bookmark, _, err := s.findBookmark(ctx, org.Name, super.Name, cs.TargetBookmark)
 	if err != nil {
-		return plan, pkgerrors.Internal("failed to read superproject bookmark")
+		return plan, pkgerrors.Internal("failed to read superproject bookmark").WithCause(err)
 	}
 	plan.Super = changesetLandingMember{Repo: super.Name, Target: cs.TargetBookmark, Commit: cs.CommitID, Previous: bookmark.TargetCommitID}
 	return plan, nil
@@ -241,7 +241,7 @@ func (s *ChangesetService) saveChangesetPlan(ctx context.Context, id int64, stat
 	defer cancel()
 	_, err = s.queries.SaveChangesetLandingPlan(saveCtx, db.SaveChangesetLandingPlanParams{ID: id, State: state, LandingPlan: body, FailureReason: plan.Failure})
 	if err != nil {
-		return pkgerrors.Internal("failed to persist changeset recovery plan; retry is safe")
+		return pkgerrors.Internal("failed to persist changeset recovery plan; retry is safe").WithCause(err)
 	}
 	return nil
 }
@@ -310,7 +310,7 @@ func (s *ChangesetService) recoverChangesetReceipts(ctx context.Context, owner s
 			return nil
 		}
 		if err != nil {
-			return pkgerrors.Internal("could not recover storage receipt; retry is safe")
+			return pkgerrors.Internal("could not recover storage receipt; retry is safe").WithCause(err)
 		}
 		member.Landed = result.TargetCommitID
 		return nil

@@ -293,7 +293,7 @@ func (s *OrgService) resolveOrg(ctx context.Context, orgName string) (db.Organiz
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Organization{}, pkgerrors.NotFound("organization not found")
 		}
-		return db.Organization{}, pkgerrors.Internal("failed to load organization")
+		return db.Organization{}, pkgerrors.Internal("failed to load organization").WithCause(err)
 	}
 	return org, nil
 }
@@ -311,7 +311,7 @@ func (s *OrgService) resolveTeam(ctx context.Context, organizationID int64, team
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Team{}, pkgerrors.NotFound("team not found")
 		}
-		return db.Team{}, pkgerrors.Internal("failed to load team")
+		return db.Team{}, pkgerrors.Internal("failed to load team").WithCause(err)
 	}
 	return team, nil
 }
@@ -325,7 +325,7 @@ func (s *OrgService) requireOrgRole(ctx context.Context, organizationID, userID 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.Forbidden("insufficient organization permissions")
 		}
-		return pkgerrors.Internal("failed to load organization membership")
+		return pkgerrors.Internal("failed to load organization membership").WithCause(err)
 	}
 	if len(roles) == 0 {
 		return nil
@@ -347,7 +347,7 @@ func (s *OrgService) isOrgMember(ctx context.Context, organizationID, userID int
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
-		return false, pkgerrors.Internal("failed to load organization membership")
+		return false, pkgerrors.Internal("failed to load organization membership").WithCause(err)
 	}
 	return true, nil
 }
@@ -379,7 +379,7 @@ func (s *OrgService) CreateOrg(ctx context.Context, actor *db.User, req CreateOr
 	if s.txManager != nil {
 		tx, err := s.txManager.BeginCreateTx(ctx)
 		if err != nil {
-			return db.Organization{}, pkgerrors.Internal("failed to begin transaction")
+			return db.Organization{}, pkgerrors.Internal("failed to begin transaction").WithCause(err)
 		}
 		defer rollbackOrgTx(ctx, tx)
 
@@ -393,7 +393,7 @@ func (s *OrgService) CreateOrg(ctx context.Context, actor *db.User, req CreateOr
 			if isUniqueViolation(err) {
 				return db.Organization{}, pkgerrors.Conflict("organization name already exists")
 			}
-			return db.Organization{}, pkgerrors.Internal("failed to create organization")
+			return db.Organization{}, pkgerrors.Internal("failed to create organization").WithCause(err)
 		}
 
 		_, err = tx.AddOrgMember(ctx, db.AddOrgMemberParams{
@@ -402,11 +402,11 @@ func (s *OrgService) CreateOrg(ctx context.Context, actor *db.User, req CreateOr
 			Role:           "owner",
 		})
 		if err != nil {
-			return db.Organization{}, pkgerrors.Internal("failed to add creator as organization owner")
+			return db.Organization{}, pkgerrors.Internal("failed to add creator as organization owner").WithCause(err)
 		}
 
 		if err := tx.Commit(ctx); err != nil {
-			return db.Organization{}, pkgerrors.Internal("failed to commit organization creation")
+			return db.Organization{}, pkgerrors.Internal("failed to commit organization creation").WithCause(err)
 		}
 		s.dispatchOrganizationEvent(ctx, org.ID, actor, "created")
 		return org, nil
@@ -422,7 +422,7 @@ func (s *OrgService) CreateOrg(ctx context.Context, actor *db.User, req CreateOr
 		if isUniqueViolation(err) {
 			return db.Organization{}, pkgerrors.Conflict("organization name already exists")
 		}
-		return db.Organization{}, pkgerrors.Internal("failed to create organization")
+		return db.Organization{}, pkgerrors.Internal("failed to create organization").WithCause(err)
 	}
 
 	_, err = s.queries.AddOrgMember(ctx, db.AddOrgMemberParams{
@@ -431,7 +431,7 @@ func (s *OrgService) CreateOrg(ctx context.Context, actor *db.User, req CreateOr
 		Role:           "owner",
 	})
 	if err != nil {
-		return db.Organization{}, pkgerrors.Internal("failed to add creator as organization owner")
+		return db.Organization{}, pkgerrors.Internal("failed to add creator as organization owner").WithCause(err)
 	}
 
 	s.dispatchOrganizationEvent(ctx, org.ID, actor, "created")
@@ -522,7 +522,7 @@ func (s *OrgService) UpdateOrg(ctx context.Context, actor *db.User, orgName stri
 		if isUniqueViolation(err) {
 			return db.Organization{}, pkgerrors.Conflict("organization name already exists")
 		}
-		return db.Organization{}, pkgerrors.Internal("failed to update organization")
+		return db.Organization{}, pkgerrors.Internal("failed to update organization").WithCause(err)
 	}
 	return updated, nil
 }
@@ -553,11 +553,11 @@ func (s *OrgService) ListOrgRepos(ctx context.Context, viewer *db.User, orgName 
 			PageOffset: pageOffset,
 		})
 		if err != nil {
-			return nil, 0, pkgerrors.Internal("failed to list organization repositories")
+			return nil, 0, pkgerrors.Internal("failed to list organization repositories").WithCause(err)
 		}
 		total, err := s.queries.CountOrgRepos(ctx, pgtype.Int8{Int64: org.ID, Valid: true})
 		if err != nil {
-			return nil, 0, pkgerrors.Internal("failed to count organization repositories")
+			return nil, 0, pkgerrors.Internal("failed to count organization repositories").WithCause(err)
 		}
 		return repos, total, nil
 	}
@@ -568,11 +568,11 @@ func (s *OrgService) ListOrgRepos(ctx context.Context, viewer *db.User, orgName 
 		PageOffset: pageOffset,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list organization repositories")
+		return nil, 0, pkgerrors.Internal("failed to list organization repositories").WithCause(err)
 	}
 	total, err := s.queries.CountPublicOrgRepos(ctx, pgtype.Int8{Int64: org.ID, Valid: true})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count organization repositories")
+		return nil, 0, pkgerrors.Internal("failed to count organization repositories").WithCause(err)
 	}
 	return repos, total, nil
 }
@@ -596,11 +596,11 @@ func (s *OrgService) ListOrgMembers(ctx context.Context, viewer *db.User, orgNam
 		PageOffset:     pageOffset,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list organization members")
+		return nil, 0, pkgerrors.Internal("failed to list organization members").WithCause(err)
 	}
 	total, err := s.queries.CountOrgMembers(ctx, org.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count organization members")
+		return nil, 0, pkgerrors.Internal("failed to count organization members").WithCause(err)
 	}
 	return members, total, nil
 }
@@ -640,7 +640,7 @@ func (s *OrgService) AddOrgMember(ctx context.Context, actor *db.User, orgName s
 		if stdErrors.As(err, &pgErr) && pgErr.Code == "23503" {
 			return pkgerrors.NotFound("user not found")
 		}
-		return pkgerrors.Internal("failed to add organization member")
+		return pkgerrors.Internal("failed to add organization member").WithCause(err)
 	}
 
 	s.dispatchOrganizationEvent(ctx, org.ID, actor, "member_added")
@@ -667,11 +667,11 @@ func (s *OrgService) ListOrgTeams(ctx context.Context, viewer *db.User, orgName 
 		PageOffset:     pageOffset,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list organization teams")
+		return nil, 0, pkgerrors.Internal("failed to list organization teams").WithCause(err)
 	}
 	total, err := s.queries.CountOrgTeams(ctx, org.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count organization teams")
+		return nil, 0, pkgerrors.Internal("failed to count organization teams").WithCause(err)
 	}
 	return teams, total, nil
 }
@@ -718,7 +718,7 @@ func (s *OrgService) CreateTeam(ctx context.Context, actor *db.User, orgName str
 		if isUniqueViolation(err) {
 			return db.Team{}, pkgerrors.Conflict("team already exists")
 		}
-		return db.Team{}, pkgerrors.Internal("failed to create team")
+		return db.Team{}, pkgerrors.Internal("failed to create team").WithCause(err)
 	}
 	s.dispatchTeamLifecycleEvent(ctx, org.ID, actor, "created")
 	return team, nil
@@ -790,7 +790,7 @@ func (s *OrgService) UpdateTeam(ctx context.Context, actor *db.User, orgName, te
 		if isUniqueViolation(err) {
 			return db.Team{}, pkgerrors.Conflict("team already exists")
 		}
-		return db.Team{}, pkgerrors.Internal("failed to update team")
+		return db.Team{}, pkgerrors.Internal("failed to update team").WithCause(err)
 	}
 	s.dispatchTeamLifecycleEvent(ctx, org.ID, actor, "edited")
 	s.publishTeamAccessLost(ctx, grants, actor.ID, "team "+team.Name+" permission lowered")
@@ -814,7 +814,7 @@ func (s *OrgService) DeleteTeam(ctx context.Context, actor *db.User, orgName, te
 	}
 	grants := s.teamGrantsOf(ctx, team, nil, nil)
 	if err := s.queries.DeleteTeam(ctx, team.ID); err != nil {
-		return pkgerrors.Internal("failed to delete team")
+		return pkgerrors.Internal("failed to delete team").WithCause(err)
 	}
 	s.dispatchTeamLifecycleEvent(ctx, org.ID, actor, "deleted")
 	s.publishTeamAccessLost(ctx, grants, actor.ID, "team "+team.Name+" deleted")
@@ -844,11 +844,11 @@ func (s *OrgService) ListTeamMembers(ctx context.Context, viewer *db.User, orgNa
 		PageOffset: pageOffset,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list team members")
+		return nil, 0, pkgerrors.Internal("failed to list team members").WithCause(err)
 	}
 	total, err := s.queries.CountTeamMembers(ctx, team.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count team members")
+		return nil, 0, pkgerrors.Internal("failed to count team members").WithCause(err)
 	}
 	return members, total, nil
 }
@@ -878,7 +878,7 @@ func (s *OrgService) AddTeamMember(ctx context.Context, actor *db.User, orgName,
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("user not found")
 		}
-		return pkgerrors.Internal("failed to load user")
+		return pkgerrors.Internal("failed to load user").WithCause(err)
 	}
 
 	_, err = s.queries.AddTeamMemberIfOrgMember(ctx, db.AddTeamMemberIfOrgMemberParams{TeamID: team.ID, UserID: user.ID})
@@ -889,7 +889,7 @@ func (s *OrgService) AddTeamMember(ctx context.Context, actor *db.User, orgName,
 		if isUniqueViolation(err) {
 			return pkgerrors.Conflict("user is already a team member")
 		}
-		return pkgerrors.Internal("failed to add team member")
+		return pkgerrors.Internal("failed to add team member").WithCause(err)
 	}
 	s.dispatchTeamLifecycleEvent(ctx, org.ID, actor, "member_added")
 	return nil
@@ -920,12 +920,12 @@ func (s *OrgService) RemoveTeamMember(ctx context.Context, actor *db.User, orgNa
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("user not found")
 		}
-		return pkgerrors.Internal("failed to load user")
+		return pkgerrors.Internal("failed to load user").WithCause(err)
 	}
 
 	grants := s.teamGrantsOf(ctx, team, []int64{user.ID}, nil)
 	if err := s.queries.RemoveTeamMember(ctx, db.RemoveTeamMemberParams{TeamID: team.ID, UserID: user.ID}); err != nil {
-		return pkgerrors.Internal("failed to remove team member")
+		return pkgerrors.Internal("failed to remove team member").WithCause(err)
 	}
 	s.dispatchTeamLifecycleEvent(ctx, org.ID, actor, "member_removed")
 	s.publishTeamAccessLost(ctx, grants, actor.ID, "removed from team "+team.Name)
@@ -955,11 +955,11 @@ func (s *OrgService) ListTeamRepos(ctx context.Context, viewer *db.User, orgName
 		PageOffset: pageOffset,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list team repositories")
+		return nil, 0, pkgerrors.Internal("failed to list team repositories").WithCause(err)
 	}
 	total, err := s.queries.CountTeamRepos(ctx, team.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count team repositories")
+		return nil, 0, pkgerrors.Internal("failed to count team repositories").WithCause(err)
 	}
 	return repos, total, nil
 }
@@ -988,7 +988,7 @@ func (s *OrgService) AddTeamRepo(ctx context.Context, actor *db.User, orgName, t
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("repository not found")
 		}
-		return pkgerrors.Internal("failed to load repository")
+		return pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	_, err = s.queries.AddTeamRepoIfOrgRepo(ctx, db.AddTeamRepoIfOrgRepoParams{TeamID: team.ID, RepositoryID: repository.ID})
 	if err != nil {
@@ -998,7 +998,7 @@ func (s *OrgService) AddTeamRepo(ctx context.Context, actor *db.User, orgName, t
 		if isUniqueViolation(err) {
 			return pkgerrors.Conflict("repository is already assigned to team")
 		}
-		return pkgerrors.Internal("failed to add team repository")
+		return pkgerrors.Internal("failed to add team repository").WithCause(err)
 	}
 	s.dispatchTeamRepositoryEvent(ctx, repository, owner, actor, "repo_added")
 	return nil
@@ -1028,7 +1028,7 @@ func (s *OrgService) RemoveTeamRepo(ctx context.Context, actor *db.User, orgName
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("repository not found")
 		}
-		return pkgerrors.Internal("failed to load repository")
+		return pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	if !repository.OrgID.Valid || repository.OrgID.Int64 != org.ID {
 		return pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "TeamRepo", Field: "repository", Code: "invalid"})
@@ -1036,7 +1036,7 @@ func (s *OrgService) RemoveTeamRepo(ctx context.Context, actor *db.User, orgName
 
 	grants := s.teamGrantsOf(ctx, team, nil, []db.Repository{repository})
 	if err := s.queries.RemoveTeamRepo(ctx, db.RemoveTeamRepoParams{TeamID: team.ID, RepositoryID: repository.ID}); err != nil {
-		return pkgerrors.Internal("failed to remove team repository")
+		return pkgerrors.Internal("failed to remove team repository").WithCause(err)
 	}
 	s.publishTeamAccessLost(ctx, grants, actor.ID, "repository removed from team "+team.Name)
 	s.dispatchTeamRepositoryEvent(ctx, repository, owner, actor, "repo_removed")
@@ -1065,7 +1065,7 @@ func (s *OrgService) RemoveOrgMember(ctx context.Context, actor *db.User, orgNam
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("user not found")
 		}
-		return pkgerrors.Internal("failed to load user")
+		return pkgerrors.Internal("failed to load user").WithCause(err)
 	}
 
 	if s.txManager != nil {
@@ -1080,13 +1080,13 @@ func (s *OrgService) RemoveOrgMember(ctx context.Context, actor *db.User, orgNam
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("organization member not found")
 		}
-		return pkgerrors.Internal("failed to load target organization membership")
+		return pkgerrors.Internal("failed to load target organization membership").WithCause(err)
 	}
 
 	if targetMember.Role == "owner" {
 		ownerCount, err := s.queries.CountOrgOwners(ctx, org.ID)
 		if err != nil {
-			return pkgerrors.Internal("failed to count organization owners")
+			return pkgerrors.Internal("failed to count organization owners").WithCause(err)
 		}
 		if ownerCount <= 1 {
 			return pkgerrors.Conflict("cannot remove the last organization owner")
@@ -1103,14 +1103,14 @@ func (s *OrgService) RemoveOrgMember(ctx context.Context, actor *db.User, orgNam
 		OrganizationID: org.ID,
 		UserID:         user.ID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to remove organization team memberships")
+		return pkgerrors.Internal("failed to remove organization team memberships").WithCause(err)
 	}
 
 	if err := s.queries.RemoveOrgMember(ctx, db.RemoveOrgMemberParams{
 		OrganizationID: org.ID,
 		UserID:         user.ID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to remove organization member")
+		return pkgerrors.Internal("failed to remove organization member").WithCause(err)
 	}
 	s.dispatchOrganizationEvent(ctx, org.ID, actor, "member_removed")
 	revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
@@ -1139,7 +1139,7 @@ func (s *OrgService) RemoveOrgMember(ctx context.Context, actor *db.User, orgNam
 func (s *OrgService) removeOrgMemberTx(ctx context.Context, org db.Organization, actor *db.User, user db.User) error {
 	tx, err := s.txManager.BeginMemberRemovalTx(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin transaction")
+		return pkgerrors.Internal("failed to begin transaction").WithCause(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -1147,7 +1147,7 @@ func (s *OrgService) removeOrgMemberTx(ctx context.Context, org db.Organization,
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("organization not found")
 		}
-		return pkgerrors.Internal("failed to lock organization")
+		return pkgerrors.Internal("failed to lock organization").WithCause(err)
 	}
 
 	targetMember, err := tx.GetOrgMemberForUpdate(ctx, db.GetOrgMemberForUpdateParams{
@@ -1158,13 +1158,13 @@ func (s *OrgService) removeOrgMemberTx(ctx context.Context, org db.Organization,
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("organization member not found")
 		}
-		return pkgerrors.Internal("failed to load target organization membership")
+		return pkgerrors.Internal("failed to load target organization membership").WithCause(err)
 	}
 
 	if targetMember.Role == "owner" {
 		ownerCount, err := tx.CountOrgOwners(ctx, org.ID)
 		if err != nil {
-			return pkgerrors.Internal("failed to count organization owners")
+			return pkgerrors.Internal("failed to count organization owners").WithCause(err)
 		}
 		if ownerCount <= 1 {
 			return pkgerrors.Conflict("cannot remove the last organization owner")
@@ -1176,18 +1176,18 @@ func (s *OrgService) removeOrgMemberTx(ctx context.Context, org db.Organization,
 		OrganizationID: org.ID,
 		UserID:         user.ID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to remove organization team memberships")
+		return pkgerrors.Internal("failed to remove organization team memberships").WithCause(err)
 	}
 
 	if err := tx.RemoveOrgMember(ctx, db.RemoveOrgMemberParams{
 		OrganizationID: org.ID,
 		UserID:         user.ID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to remove organization member")
+		return pkgerrors.Internal("failed to remove organization member").WithCause(err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to remove organization member")
+		return pkgerrors.Internal("failed to remove organization member").WithCause(err)
 	}
 	s.dispatchOrganizationEvent(ctx, org.ID, actor, "member_removed")
 	revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{

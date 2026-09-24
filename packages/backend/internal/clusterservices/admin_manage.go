@@ -251,12 +251,12 @@ func (s *AdminManageService) audit(ctx context.Context, target, id, action strin
 	a, _ := services.AdminAuditActorFromContext(ctx)
 	body, err := json.Marshal(metadata)
 	if err != nil {
-		return pkgerrors.Internal("encode admin audit")
+		return pkgerrors.Internal("encode admin audit").WithCause(err)
 	}
 	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err = s.q.InsertAuditLog(auditCtx, db.InsertAuditLogParams{EventType: "admin." + target + "." + action, ActorID: pgtype.Int8{Int64: a.UserID, Valid: true}, ActorName: a.Username, TargetType: target, TargetName: id, Action: action, Metadata: body, IpAddress: a.IPAddress}); err != nil {
-		return pkgerrors.Internal("record admin audit")
+		return pkgerrors.Internal("record admin audit").WithCause(err)
 	}
 	return nil
 }
@@ -395,7 +395,7 @@ func (s *AdminManageService) PruneStaleSandboxHosts(ctx context.Context, hours i
 		OlderThanHours: hours, ActorID: pgtype.Int8{Int64: actor.UserID, Valid: true}, ActorName: actor.Username, IpAddress: actor.IPAddress,
 	})
 	if err != nil {
-		return AdminPruneResult{}, pkgerrors.Internal("prune stale sandbox hosts and record audit")
+		return AdminPruneResult{}, pkgerrors.Internal("prune stale sandbox hosts and record audit").WithCause(err)
 	}
 	return AdminPruneResult{Pruned: n}, nil
 }

@@ -299,7 +299,7 @@ func (s *ChangesetService) CreateChangeset(ctx context.Context, actor *db.User, 
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return ChangesetResponse{}, pkgerrors.NotFound(fmt.Sprintf("repository %s/%s not found", org.Name, name))
 			}
-			return ChangesetResponse{}, pkgerrors.Internal("failed to load member repository")
+			return ChangesetResponse{}, pkgerrors.Internal("failed to load member repository").WithCause(err)
 		}
 		if !repo.OrgID.Valid || repo.OrgID.Int64 != org.ID {
 			return ChangesetResponse{}, pkgerrors.BadRequest(fmt.Sprintf("repository %s does not belong to organization %s", name, org.Name))
@@ -348,7 +348,7 @@ func (s *ChangesetService) CreateChangeset(ctx context.Context, actor *db.User, 
 	}
 	membersJSON, err := json.Marshal(memberParams)
 	if err != nil {
-		return ChangesetResponse{}, pkgerrors.Internal("failed to encode changeset members")
+		return ChangesetResponse{}, pkgerrors.Internal("failed to encode changeset members").WithCause(err)
 	}
 	row, err := s.queries.CreateChangesetWithMembers(ctx, db.CreateChangesetWithMembersParams{
 		OrganizationID: org.ID, SuperprojectRepositoryID: superproject.ID,
@@ -357,12 +357,12 @@ func (s *ChangesetService) CreateChangeset(ctx context.Context, actor *db.User, 
 		CreatedBy: pgtype.Int8{Int64: actor.ID, Valid: true}, Members: membersJSON,
 	})
 	if err != nil {
-		return ChangesetResponse{}, pkgerrors.Internal("failed to record changeset and members")
+		return ChangesetResponse{}, pkgerrors.Internal("failed to record changeset and members").WithCause(err)
 	}
 	created := db.Changeset(row)
 	members, err := s.queries.ListChangesetMembers(ctx, created.ID)
 	if err != nil {
-		return ChangesetResponse{}, pkgerrors.Internal("failed to reload changeset members")
+		return ChangesetResponse{}, pkgerrors.Internal("failed to reload changeset members").WithCause(err)
 	}
 	return s.buildResponse(ctx, org, superproject, created, members)
 }
@@ -407,13 +407,13 @@ func (s *ChangesetService) ListChangesets(ctx context.Context, viewer *db.User, 
 		PageOffset:     int32((page - 1) * perPage),
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list changesets")
+		return nil, pkgerrors.Internal("failed to list changesets").WithCause(err)
 	}
 	out := make([]ChangesetResponse, 0, len(rows))
 	for _, cs := range rows {
 		members, err := s.queries.ListChangesetMembers(ctx, cs.ID)
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to list changeset members")
+			return nil, pkgerrors.Internal("failed to list changeset members").WithCause(err)
 		}
 		if err := s.requireMembersAccess(ctx, viewer.ID, members, false); err != nil {
 			var apiErr *pkgerrors.APIError
@@ -424,7 +424,7 @@ func (s *ChangesetService) ListChangesets(ctx context.Context, viewer *db.User, 
 		}
 		superproject, err := s.queries.GetRepoByID(ctx, cs.SuperprojectRepositoryID)
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to load superproject repository")
+			return nil, pkgerrors.Internal("failed to load superproject repository").WithCause(err)
 		}
 		resp, err := s.buildResponse(ctx, org, superproject, cs, members)
 		if err != nil {
@@ -444,27 +444,27 @@ func (s *ChangesetService) MaterializeChangeset(ctx context.Context, userID, cha
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, pkgerrors.NotFound("changeset not found")
 		}
-		return nil, pkgerrors.Internal("failed to load changeset")
+		return nil, pkgerrors.Internal("failed to load changeset").WithCause(err)
 	}
 	if _, err := s.queries.GetOrgMember(ctx, db.GetOrgMemberParams{OrganizationID: cs.OrganizationID, UserID: userID}); err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil, pkgerrors.Forbidden("insufficient organization permissions")
 		}
-		return nil, pkgerrors.Internal("failed to load organization membership")
+		return nil, pkgerrors.Internal("failed to load organization membership").WithCause(err)
 	}
 	org, err := s.queries.GetOrgByID(ctx, cs.OrganizationID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load organization")
+		return nil, pkgerrors.Internal("failed to load organization").WithCause(err)
 	}
 	members, err := s.queries.ListChangesetMembers(ctx, cs.ID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load changeset members")
+		return nil, pkgerrors.Internal("failed to load changeset members").WithCause(err)
 	}
 	out := make([]ChangesetMaterializedMember, 0, len(members))
 	for _, m := range members {
 		repo, err := s.queries.GetRepoByID(ctx, m.RepositoryID)
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to load changeset member repository")
+			return nil, pkgerrors.Internal("failed to load changeset member repository").WithCause(err)
 		}
 		if err := s.requireRepoAccess(ctx, repo, userID, false); err != nil {
 			return nil, err
@@ -488,13 +488,13 @@ func (s *ChangesetService) requireOrgMember(ctx context.Context, user *db.User, 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Organization{}, pkgerrors.NotFound("organization not found")
 		}
-		return db.Organization{}, pkgerrors.Internal("failed to load organization")
+		return db.Organization{}, pkgerrors.Internal("failed to load organization").WithCause(err)
 	}
 	if _, err := s.queries.GetOrgMember(ctx, db.GetOrgMemberParams{OrganizationID: org.ID, UserID: user.ID}); err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Organization{}, pkgerrors.Forbidden("insufficient organization permissions")
 		}
-		return db.Organization{}, pkgerrors.Internal("failed to load organization membership")
+		return db.Organization{}, pkgerrors.Internal("failed to load organization membership").WithCause(err)
 	}
 	return org, nil
 }
@@ -532,15 +532,15 @@ func (s *ChangesetService) loadChangeset(ctx context.Context, org db.Organizatio
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Changeset{}, nil, db.Repository{}, pkgerrors.NotFound("changeset not found")
 		}
-		return db.Changeset{}, nil, db.Repository{}, pkgerrors.Internal("failed to load changeset")
+		return db.Changeset{}, nil, db.Repository{}, pkgerrors.Internal("failed to load changeset").WithCause(err)
 	}
 	members, err := s.queries.ListChangesetMembers(ctx, cs.ID)
 	if err != nil {
-		return db.Changeset{}, nil, db.Repository{}, pkgerrors.Internal("failed to load changeset members")
+		return db.Changeset{}, nil, db.Repository{}, pkgerrors.Internal("failed to load changeset members").WithCause(err)
 	}
 	superproject, err := s.queries.GetRepoByID(ctx, cs.SuperprojectRepositoryID)
 	if err != nil {
-		return db.Changeset{}, nil, db.Repository{}, pkgerrors.Internal("failed to load organization superproject")
+		return db.Changeset{}, nil, db.Repository{}, pkgerrors.Internal("failed to load organization superproject").WithCause(err)
 	}
 	return cs, members, superproject, nil
 }

@@ -57,7 +57,7 @@ func (s *WorkspaceService) runWorkspaceAgentEnvironmentSetup(ctx context.Context
 	}
 	if err != nil {
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
-		return pkgerrors.Internal("load agent environment for workspace setup")
+		return pkgerrors.Internal("load agent environment for workspace setup").WithCause(err)
 	}
 
 	client, ok := s.sandbox.(workspaceAgentEnvironmentVMClient)
@@ -75,11 +75,11 @@ func (s *WorkspaceService) runWorkspaceAgentEnvironmentSetup(ctx context.Context
 	profile, err := renderWorkspaceAgentEnvironmentProfile(config.Env, config.ProxyBound)
 	if err != nil {
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
-		return pkgerrors.Internal("invalid agent environment for workspace setup")
+		return pkgerrors.Internal("invalid agent environment for workspace setup").WithCause(err)
 	}
 	if err := client.WriteFile(ctx, vmID, workspaceAgentEnvironmentProfilePath, sandbox.WriteFileRequest{Content: profile}); err != nil {
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
-		return pkgerrors.Internal("write agent environment variables")
+		return pkgerrors.Internal("write agent environment variables").WithCause(err)
 	}
 
 	if strings.TrimSpace(config.SetupScript) == "" {
@@ -92,7 +92,7 @@ func (s *WorkspaceService) runWorkspaceAgentEnvironmentSetup(ctx context.Context
 	wrapper, err := renderWorkspaceAgentEnvironmentSetupWrapper(config)
 	if err != nil {
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
-		return pkgerrors.Internal("invalid agent environment for workspace setup")
+		return pkgerrors.Internal("invalid agent environment for workspace setup").WithCause(err)
 	}
 	prepareResponse, prepareErr := client.Execute(ctx, vmID, sandbox.ExecRequest{
 		Command: "PATH=/run/current-system/sw/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; mkdir -p -- " + shellQuote(workspaceAgentEnvironmentSecretDir) +
@@ -107,13 +107,13 @@ func (s *WorkspaceService) runWorkspaceAgentEnvironmentSetup(ctx context.Context
 	if err := client.WriteFile(ctx, vmID, workspaceAgentEnvironmentSetupPath, sandbox.WriteFileRequest{Content: setupScript}); err != nil {
 		s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID)
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
-		return pkgerrors.Internal("stage agent environment setup")
+		return pkgerrors.Internal("stage agent environment setup").WithCause(err)
 	}
 	if err := client.WriteFile(ctx, vmID, workspaceAgentEnvironmentWrapperPath, sandbox.WriteFileRequest{Content: wrapper}); err != nil {
 		// No secret-bearing file was successfully staged when WriteFile fails.
 		s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID)
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
-		return pkgerrors.Internal("stage agent environment secrets")
+		return pkgerrors.Internal("stage agent environment secrets").WithCause(err)
 	}
 
 	setupResponse, setupErr := client.Execute(ctx, vmID, sandbox.ExecRequest{
@@ -255,7 +255,7 @@ func (s *WorkspaceService) setWorkspaceProvisioningStage(ctx context.Context, wo
 		ID:                workspaceID,
 		ProvisioningStage: stage,
 	}); err != nil {
-		return pkgerrors.Internal("update workspace provisioning stage")
+		return pkgerrors.Internal("update workspace provisioning stage").WithCause(err)
 	}
 	return nil
 }

@@ -123,14 +123,14 @@ func newIssueWriteTxManager(q IssueQuerier) issueWriteTxManager {
 func (s *IssueService) withIssueWriteTx(ctx context.Context, fn func(tx issueWriteTx) error) error {
 	tx, err := s.txManager.BeginIssueWriteTx(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to begin issue write")
+		return pkgerrors.Internal("failed to begin issue write").WithCause(err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	if err := fn(tx); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return pkgerrors.Internal("failed to commit issue write")
+		return pkgerrors.Internal("failed to commit issue write").WithCause(err)
 	}
 	return nil
 }
@@ -140,12 +140,12 @@ func (s *IssueService) withIssueWriteTx(ctx context.Context, fn func(tx issueWri
 func replaceIssueAssociations(ctx context.Context, tx issueWriteTx, issueID int64, assigneeIDs, labelIDs *[]int64) error {
 	if assigneeIDs != nil {
 		if err := tx.ReplaceIssueAssignees(ctx, db.ReplaceIssueAssigneesParams{IssueID: issueID, UserIds: *assigneeIDs}); err != nil {
-			return pkgerrors.Internal("failed to update issue assignees")
+			return pkgerrors.Internal("failed to update issue assignees").WithCause(err)
 		}
 	}
 	if labelIDs != nil {
 		if err := tx.ReplaceIssueLabels(ctx, db.ReplaceIssueLabelsParams{IssueID: issueID, LabelIds: *labelIDs}); err != nil {
-			return pkgerrors.Internal("failed to update issue labels")
+			return pkgerrors.Internal("failed to update issue labels").WithCause(err)
 		}
 	}
 	return nil

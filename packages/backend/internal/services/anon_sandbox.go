@@ -292,7 +292,7 @@ func (s *AnonSandboxService) Delete(ctx context.Context, id, token string) error
 	}
 	if err := s.deleteVM(ctx, row.VmID); err != nil {
 		slog.Warn("anon sandbox vm delete failed; keeping row live for the reaper", "vm_id", row.VmID, "error", err)
-		return pkgerrors.Internal("sandbox teardown failed; it will be reaped automatically")
+		return pkgerrors.Internal("sandbox teardown failed; it will be reaped automatically").WithCause(err)
 	}
 	if _, err := s.q.SoftDeleteAnonSandbox(ctx, row.ID); err != nil && !pgxNoRows(err) {
 		return err

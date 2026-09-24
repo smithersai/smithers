@@ -219,12 +219,12 @@ func (s *StackService) GetActiveStack(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return StackResponse{}, pkgerrors.NotFound("active stack not found")
 		}
-		return StackResponse{}, pkgerrors.Internal("failed to load active stack")
+		return StackResponse{}, pkgerrors.Internal("failed to load active stack").WithCause(err)
 	}
 
 	changes, err := s.queries.ListStackChangesByStack(ctx, stack.ID)
 	if err != nil {
-		return StackResponse{}, pkgerrors.Internal("failed to load stack changes")
+		return StackResponse{}, pkgerrors.Internal("failed to load stack changes").WithCause(err)
 	}
 
 	response := mapStackResponse(stack, changes)
@@ -266,7 +266,7 @@ func (s *StackService) UpsertActiveStack(
 
 	persistedChanges, err := s.queries.ListStackChangesByStack(ctx, stack.ID)
 	if err != nil {
-		return StackResponse{}, pkgerrors.Internal("failed to load stack changes")
+		return StackResponse{}, pkgerrors.Internal("failed to load stack changes").WithCause(err)
 	}
 	s.dispatchStackSubmitEvent(ctx, repository.ID, actor.ID, targetRef, persistedChanges)
 
@@ -301,7 +301,7 @@ func (s *StackService) replaceStackChanges(
 
 	tx, err := s.submitTxManager.BeginSubmitTx(ctx)
 	if err != nil {
-		return db.Stack{}, pkgerrors.Internal("failed to begin stack transaction")
+		return db.Stack{}, pkgerrors.Internal("failed to begin stack transaction").WithCause(err)
 	}
 	stack, err := applyStackChanges(ctx, tx, repositoryID, userID, targetRef, changes)
 	if err != nil {
@@ -367,7 +367,7 @@ func applyStackChanges(
 		StackID:   stack.ID,
 		ChangeIds: changeIDs,
 	}); err != nil {
-		return db.Stack{}, pkgerrors.Internal("failed to prune stack changes")
+		return db.Stack{}, pkgerrors.Internal("failed to prune stack changes").WithCause(err)
 	}
 
 	return stack, nil
@@ -402,14 +402,14 @@ func (s *StackService) DeleteActiveStack(
 			// Idempotent behavior: deleting an already-missing stack succeeds.
 			return nil
 		}
-		return pkgerrors.Internal("failed to load active stack")
+		return pkgerrors.Internal("failed to load active stack").WithCause(err)
 	}
 
 	if err := s.queries.DeleteAllStackChanges(ctx, stack.ID); err != nil {
-		return pkgerrors.Internal("failed to delete stack changes")
+		return pkgerrors.Internal("failed to delete stack changes").WithCause(err)
 	}
 	if err := s.queries.DeleteStackByID(ctx, stack.ID); err != nil {
-		return pkgerrors.Internal("failed to delete active stack")
+		return pkgerrors.Internal("failed to delete active stack").WithCause(err)
 	}
 
 	return nil
@@ -433,7 +433,7 @@ func (s *StackService) resolveRepo(ctx context.Context, owner, repo string) (db.
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }
@@ -692,7 +692,7 @@ func (s *StackService) enrichStackResponseWithGitHub(
 
 	installationID, err := s.githubInstallations.GetGitHubInstallationIDForUserRepo(ctx, viewerID, normalizedOwner, normalizedRepo)
 	if err != nil {
-		return pkgerrors.Internal("failed to load github app installation")
+		return pkgerrors.Internal("failed to load github app installation").WithCause(err)
 	}
 	if installationID <= 0 {
 		for index := range response.Changes {

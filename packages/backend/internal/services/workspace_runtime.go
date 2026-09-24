@@ -113,7 +113,7 @@ func (s *WorkspaceService) workspaceRuntimeContext(ctx context.Context, row db.W
 	if s.runtimeIdentity != nil {
 		resolved, err := s.runtimeIdentity(ctx, row, requesterID)
 		if err != nil {
-			return nil, pkgerrors.Internal("resolve workspace runtime identity")
+			return nil, pkgerrors.Internal("resolve workspace runtime identity").WithCause(err)
 		}
 		operation.TenantID = strings.TrimSpace(resolved.TenantID)
 		operation.PrincipalID = strings.TrimSpace(resolved.PrincipalID)
@@ -829,7 +829,7 @@ func (s *WorkspaceService) OpenWorkspaceTerminal(ctx context.Context, sessionID 
 	}
 	if err := terminal.Resize(ctx, columns, rows); err != nil {
 		_ = terminal.Close()
-		return nil, pkgerrors.Internal("resize workspace terminal")
+		return nil, pkgerrors.Internal("resize workspace terminal").WithCause(err)
 	}
 	return terminal, nil
 }

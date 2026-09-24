@@ -64,7 +64,7 @@ func (s *ChangeService) GetWalkthrough(ctx context.Context, repositoryID int64, 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return ChangeWalkthroughResponse{}, pkgerrors.NotFound("walkthrough not found")
 		}
-		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to load change walkthrough")
+		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to load change walkthrough").WithCause(err)
 	}
 
 	return decodeChangeWalkthrough(row)
@@ -110,7 +110,7 @@ func (s *ChangeService) StoreWalkthrough(ctx context.Context, repositoryID int64
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return ChangeWalkthroughResponse{}, pkgerrors.NotFound("change revision not found")
 		}
-		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to load change revision")
+		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to load change revision").WithCause(err)
 	}
 
 	params := db.UpsertChangeWalkthroughParams{
@@ -124,7 +124,7 @@ func (s *ChangeService) StoreWalkthrough(ctx context.Context, repositoryID int64
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to begin change walkthrough transaction")
+		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to begin change walkthrough transaction").WithCause(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -133,7 +133,7 @@ func (s *ChangeService) StoreWalkthrough(ctx context.Context, repositoryID int64
 		return ChangeWalkthroughResponse{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to commit change walkthrough")
+		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to commit change walkthrough").WithCause(err)
 	}
 	return result, nil
 }
@@ -141,7 +141,7 @@ func (s *ChangeService) StoreWalkthrough(ctx context.Context, repositoryID int64
 func storeChangeWalkthrough(ctx context.Context, store changeWalkthroughStore, params db.UpsertChangeWalkthroughParams, repositoryID int64, changeID string, revisionSeq int64) (ChangeWalkthroughResponse, error) {
 	row, err := store.UpsertChangeWalkthrough(ctx, params)
 	if err != nil {
-		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to store change walkthrough")
+		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to store change walkthrough").WithCause(err)
 	}
 
 	eventJSON, err := json.Marshal(changeWalkthroughAvailableEvent{
@@ -151,13 +151,13 @@ func storeChangeWalkthrough(ctx context.Context, store changeWalkthroughStore, p
 		RevisionSeq: revisionSeq,
 	})
 	if err != nil {
-		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to encode change walkthrough event")
+		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to encode change walkthrough event").WithCause(err)
 	}
 	if err := store.NotifyChangeEvent(ctx, db.NotifyChangeEventParams{
 		RepositoryID: repositoryID,
 		Payload:      string(eventJSON),
 	}); err != nil {
-		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to publish change walkthrough event")
+		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to publish change walkthrough event").WithCause(err)
 	}
 
 	return decodeChangeWalkthrough(row)
@@ -169,10 +169,10 @@ func decodeChangeWalkthrough(row db.ChangeWalkthrough) (ChangeWalkthroughRespons
 		Quiz:     []json.RawMessage{},
 	}
 	if err := json.Unmarshal(row.Sections, &response.Sections); err != nil {
-		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to decode change walkthrough sections")
+		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to decode change walkthrough sections").WithCause(err)
 	}
 	if err := json.Unmarshal(row.Quiz, &response.Quiz); err != nil {
-		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to decode change walkthrough quiz")
+		return ChangeWalkthroughResponse{}, pkgerrors.Internal("failed to decode change walkthrough quiz").WithCause(err)
 	}
 	if response.Sections == nil {
 		response.Sections = []ChangeWalkthroughSection{}

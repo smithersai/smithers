@@ -579,7 +579,7 @@ func (s *LandingService) ListLandingRequests(ctx context.Context, viewer *db.Use
 		State:        normalizedState,
 	})
 	if err != nil {
-		return nil, "", 0, pkgerrors.Internal("failed to count landing requests")
+		return nil, "", 0, pkgerrors.Internal("failed to count landing requests").WithCause(err)
 	}
 
 	rows, err := s.queries.ListLandingRequestsByRepoFilteredKeyset(ctx, db.ListLandingRequestsByRepoFilteredKeysetParams{
@@ -589,7 +589,7 @@ func (s *LandingService) ListLandingRequests(ctx context.Context, viewer *db.Use
 		PageSize:     int32(limit),
 	})
 	if err != nil {
-		return nil, "", 0, pkgerrors.Internal("failed to list landing requests")
+		return nil, "", 0, pkgerrors.Internal("failed to list landing requests").WithCause(err)
 	}
 
 	authors := make(map[int64]LandingRequestAuthor, len(rows))
@@ -809,7 +809,7 @@ func rollbackLandingTx(ctx context.Context, tx landingCreateTx) {
 func (s *LandingService) buildCreateResponse(ctx context.Context, repository db.Repository, owner string, created db.LandingRequest, changeIDs []string) (LandingRequestResponse, error) {
 	author, err := s.queries.GetUserByID(ctx, created.AuthorID)
 	if err != nil {
-		return LandingRequestResponse{}, pkgerrors.Internal("failed to load landing request author")
+		return LandingRequestResponse{}, pkgerrors.Internal("failed to load landing request author").WithCause(err)
 	}
 
 	response := LandingRequestResponse{
@@ -894,7 +894,7 @@ func (s *LandingService) SetLandingRequestAutoLand(ctx context.Context, actor *d
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return LandingRequestResponse{}, pkgerrors.Conflict("landing request changed; retry enabling auto-land")
 		}
-		return LandingRequestResponse{}, pkgerrors.Internal("failed to enable auto-land")
+		return LandingRequestResponse{}, pkgerrors.Internal("failed to enable auto-land").WithCause(err)
 	}
 	row := landingRecordWithChangeIDs(updated, current.ChangeIds)
 	response, err := s.mapLandingRow(ctx, repository, owner, row)
@@ -927,7 +927,7 @@ func (s *LandingService) ClearLandingRequestAutoLand(ctx context.Context, actor 
 		return pkgerrors.Internal("auto-land store unavailable")
 	}
 	if _, err := q.ClearLandingRequestAutoLand(ctx, current.ID); err != nil {
-		return pkgerrors.Internal("failed to clear auto-land")
+		return pkgerrors.Internal("failed to clear auto-land").WithCause(err)
 	}
 	return nil
 }
@@ -1044,7 +1044,7 @@ func (s *LandingService) UpdateLandingRequest(ctx context.Context, actor *db.Use
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return LandingRequestResponse{}, pkgerrors.Conflict("landing request changed; retry the update")
 			}
-			return LandingRequestResponse{}, pkgerrors.Internal("failed to update landing request")
+			return LandingRequestResponse{}, pkgerrors.Internal("failed to update landing request").WithCause(err)
 		}
 		persisted = updatedRow
 	}
@@ -1106,7 +1106,7 @@ func (s *LandingService) LandLandingRequest(ctx context.Context, actor *db.User,
 	if !appendRecovered {
 		unresolvedThreads, err := s.queries.CountUnresolvedLandingRequestThreads(ctx, landingRow.ID)
 		if err != nil {
-			return LandLandingRequestAccepted{}, pkgerrors.Internal("failed to count unresolved review threads")
+			return LandLandingRequestAccepted{}, pkgerrors.Internal("failed to count unresolved review threads").WithCause(err)
 		}
 		if unresolvedThreads > 0 {
 			return LandLandingRequestAccepted{}, landingBlocked(
@@ -1169,7 +1169,7 @@ func (s *LandingService) LandLandingRequest(ctx context.Context, actor *db.User,
 
 	position, err := s.queries.GetLandingQueuePositionByTaskID(ctx, task.ID)
 	if err != nil {
-		return LandLandingRequestAccepted{}, pkgerrors.Internal("failed to determine queue position")
+		return LandLandingRequestAccepted{}, pkgerrors.Internal("failed to determine queue position").WithCause(err)
 	}
 
 	resp, err := s.mapLandingRecord(ctx, repository, owner, enqueuedRow, landingRow.ChangeIds)
@@ -1193,11 +1193,11 @@ func (s *LandingService) LandLandingRequest(ctx context.Context, actor *db.User,
 func (s *LandingService) landingBlockers(ctx context.Context, repository db.Repository, owner, repo string, landingRow db.GetLandingRequestWithChangeIDsByNumberRow) ([]LandingBlock, error) {
 	rules, err := s.queries.ListAllProtectedBookmarksByRepo(ctx, repository.ID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list protected bookmarks")
+		return nil, pkgerrors.Internal("failed to list protected bookmarks").WithCause(err)
 	}
 	requiredHumanApprovals, requireAgentLGTM, protectedContexts, err := landingProtectionRequirements(rules, landingRow.TargetBookmark)
 	if err != nil {
-		return nil, pkgerrors.Internal("invalid protected bookmark pattern")
+		return nil, pkgerrors.Internal("invalid protected bookmark pattern").WithCause(err)
 	}
 	touched, revisions, err := s.syncLandingChangeRevisions(ctx, repository.ID, owner, repo, landingRow.ChangeIds)
 	if err != nil {
@@ -1205,7 +1205,7 @@ func (s *LandingService) landingBlockers(ctx context.Context, repository db.Repo
 	}
 	dismissStale, err := landingDismissStaleReviews(rules, landingRow.TargetBookmark)
 	if err != nil {
-		return nil, pkgerrors.Internal("invalid protected bookmark pattern")
+		return nil, pkgerrors.Internal("invalid protected bookmark pattern").WithCause(err)
 	}
 
 	blocks := make([]LandingBlock, 0)
@@ -1221,7 +1221,7 @@ func (s *LandingService) landingBlockers(ctx context.Context, repository db.Repo
 			approvedCount, err = s.queries.CountApprovedLandingRequestReviews(ctx, landingRow.ID)
 		}
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to count approved landing reviews")
+			return nil, pkgerrors.Internal("failed to count approved landing reviews").WithCause(err)
 		}
 		if approvedCount < requiredHumanApprovals {
 			blocks = append(blocks, LandingBlock{Kind: "review", Missing: "human_approval", Count: requiredHumanApprovals - approvedCount})
@@ -1230,7 +1230,7 @@ func (s *LandingService) landingBlockers(ctx context.Context, repository db.Repo
 	if requireAgentLGTM {
 		commitIDs, err := landingRevisionCommitIDs(revisions)
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to decode landing revision snapshot")
+			return nil, pkgerrors.Internal("failed to decode landing revision snapshot").WithCause(err)
 		}
 		q, ok := s.queries.(landingAgentReviewQuerier)
 		if !ok {
@@ -1241,7 +1241,7 @@ func (s *LandingService) landingBlockers(ctx context.Context, repository db.Repo
 			CommitIds:        commitIDs,
 		})
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to count current agent reviews")
+			return nil, pkgerrors.Internal("failed to count current agent reviews").WithCause(err)
 		}
 		if len(commitIDs) == 0 || approvedCommits < int64(len(commitIDs)) {
 			blocks = append(blocks, LandingBlock{Kind: "review", Missing: "agent_lgtm"})
@@ -1258,11 +1258,11 @@ func (s *LandingService) landingBlockers(ctx context.Context, repository db.Repo
 	if len(requiredContexts) > 0 {
 		pins, err := landingRevisionPins(revisions)
 		if err != nil {
-			return nil, pkgerrors.Internal("invalid landing revision snapshot")
+			return nil, pkgerrors.Internal("invalid landing revision snapshot").WithCause(err)
 		}
 		failing, err := failingLandingStatusContexts(ctx, s.queries, repository.ID, landingRow.ChangeIds, requiredContexts, pins)
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to load commit statuses for required checks")
+			return nil, pkgerrors.Internal("failed to load commit statuses for required checks").WithCause(err)
 		}
 		for _, contextName := range failing {
 			blocks = append(blocks, LandingBlock{Kind: "check", Name: contextName, Repo: repository.Name})
@@ -1424,7 +1424,7 @@ func (s *LandingService) updateLandingTurn(
 		TurnReason:  reason,
 	})
 	if err != nil {
-		return pkgerrors.Internal("failed to update landing request turn")
+		return pkgerrors.Internal("failed to update landing request turn").WithCause(err)
 	}
 	if party != "author" || !updated.AgentAuthored || s.agentTurn == nil {
 		return nil
@@ -1443,7 +1443,7 @@ func (s *LandingService) updateLandingTurn(
 		Number:       updated.Number,
 		Feedback:     feedback,
 	}); err != nil {
-		return pkgerrors.Internal("failed to dispatch agent author turn")
+		return pkgerrors.Internal("failed to dispatch agent author turn").WithCause(err)
 	}
 	return nil
 }
@@ -1459,7 +1459,7 @@ func (s *LandingService) syncLandingChangeRevisions(ctx context.Context, reposit
 		}
 		parents, err := json.Marshal(change.ParentChangeIDs)
 		if err != nil {
-			return nil, nil, pkgerrors.Internal("failed to encode landing change parents")
+			return nil, nil, pkgerrors.Internal("failed to encode landing change parents").WithCause(err)
 		}
 		stored := db.Change{RevisionSeq: 1}
 		if ok {
@@ -1469,7 +1469,7 @@ func (s *LandingService) syncLandingChangeRevisions(ctx context.Context, reposit
 				HasConflict: change.HasConflict, IsEmpty: change.IsEmpty, ParentChangeIds: parents,
 			})
 			if err != nil {
-				return nil, nil, pkgerrors.Internal("failed to record landing change revision")
+				return nil, nil, pkgerrors.Internal("failed to record landing change revision").WithCause(err)
 			}
 		}
 		revisions[changeID] = approvalRevision{CommitID: change.CommitID, Seq: stored.RevisionSeq}
@@ -1483,7 +1483,7 @@ func (s *LandingService) syncLandingChangeRevisions(ctx context.Context, reposit
 	}
 	encoded, err := json.Marshal(revisions)
 	if err != nil {
-		return nil, nil, pkgerrors.Internal("failed to encode landing revision snapshot")
+		return nil, nil, pkgerrors.Internal("failed to encode landing revision snapshot").WithCause(err)
 	}
 	return touched, encoded, nil
 }
@@ -1551,7 +1551,7 @@ func (s *LandingService) ownershipLandingBlockers(ctx context.Context, repositor
 	var blocks []LandingBlock
 	approvals, err := loadOwnershipApprovals(ctx, q, repository.ID, landing.ID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load ownership approvals")
+		return nil, pkgerrors.Internal("failed to load ownership approvals").WithCause(err)
 	}
 	for _, item := range resolved.TouchedPaths {
 		candidates := approvingCandidates(item.Owners)
@@ -1568,7 +1568,7 @@ func (s *LandingService) ownershipLandingBlockers(ctx context.Context, repositor
 		if landing.AgentAuthored && item.AgentPolicy == ownership.PolicyAutoLand {
 			ok, err := s.hasCurrentAgentApproval(ctx, repository.ID, landing.ID, touched)
 			if err != nil {
-				return nil, pkgerrors.Internal("failed to evaluate agent approval")
+				return nil, pkgerrors.Internal("failed to evaluate agent approval").WithCause(err)
 			}
 			if ok {
 				continue
@@ -1677,7 +1677,7 @@ func (s *LandingService) enqueueLanding(
 	if len(appendRequest) == 0 {
 		previous, err := s.queries.GetLandingTaskByLandingRequestID(ctx, landingRow.ID)
 		if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
-			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to read existing landing task")
+			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to read existing landing task").WithCause(err)
 		}
 		if err == nil && len(previous.AppendRequest) != 0 {
 			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Conflict("an append landing cannot be converted to ordinary landing")
@@ -1699,7 +1699,7 @@ func (s *LandingService) enqueueLanding(
 	if s.landTxManager != nil {
 		tx, err := s.landTxManager.BeginLandTx(ctx)
 		if err != nil {
-			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to begin landing transaction")
+			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to begin landing transaction").WithCause(err)
 		}
 		var enqueuedRow db.LandingRequest
 		if requireAutoLand {
@@ -1712,7 +1712,7 @@ func (s *LandingService) enqueueLanding(
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Conflict("landing request changed; retry landing")
 			}
-			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to enqueue landing request")
+			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to enqueue landing request").WithCause(err)
 		}
 		task, err := tx.ResetOrCreateLandingTask(ctx, taskParams)
 		if err != nil {
@@ -1720,11 +1720,11 @@ func (s *LandingService) enqueueLanding(
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Conflict("landing request already has an active task")
 			}
-			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to create landing task")
+			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to create landing task").WithCause(err)
 		}
 		if err := tx.Commit(ctx); err != nil {
 			_ = tx.Rollback(ctx)
-			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to commit landing transaction")
+			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to commit landing transaction").WithCause(err)
 		}
 		s.observeLanding("queue")
 		return enqueuedRow, task, nil
@@ -1745,7 +1745,7 @@ func (s *LandingService) enqueueLanding(
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Conflict("landing request changed; retry landing")
 		}
-		return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to enqueue landing request")
+		return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to enqueue landing request").WithCause(err)
 	}
 	task, err := s.queries.CreateLandingTask(ctx, taskParams)
 	if err != nil {
@@ -1753,7 +1753,7 @@ func (s *LandingService) enqueueLanding(
 			slog.Error("failed to revert landing request after task creation failure",
 				"landing_request_id", landingRow.ID, "error", revertErr)
 		}
-		return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to create landing task")
+		return db.LandingRequest{}, db.LandingTask{}, pkgerrors.Internal("failed to create landing task").WithCause(err)
 	}
 	s.observeLanding("queue")
 	return enqueuedRow, task, nil
@@ -1834,13 +1834,13 @@ func (s *LandingService) populateLandingReadiness(
 
 	rules, err := s.queries.ListAllProtectedBookmarksByRepo(ctx, repository.ID)
 	if err != nil {
-		return pkgerrors.Internal("failed to list protected bookmarks for landing readiness")
+		return pkgerrors.Internal("failed to list protected bookmarks for landing readiness").WithCause(err)
 	}
 	// Readiness is a read-only view: resolve the live commits below, but leave
 	// revision persistence to the push and landing paths.
 	requiredApprovals, requireAgentLGTM, protectedContexts, err := landingProtectionRequirements(rules, targetBookmark)
 	if err != nil {
-		return pkgerrors.Internal("invalid protected bookmark pattern")
+		return pkgerrors.Internal("invalid protected bookmark pattern").WithCause(err)
 	}
 	requiredContexts := unionLandingStatusContexts(protectedContexts, repository.LandingQueueRequiredChecks)
 
@@ -1852,7 +1852,7 @@ func (s *LandingService) populateLandingReadiness(
 			Contexts:     requiredContexts,
 		})
 		if err != nil {
-			return pkgerrors.Internal("failed to load commit statuses for landing readiness")
+			return pkgerrors.Internal("failed to load commit statuses for landing readiness").WithCause(err)
 		}
 		for _, status := range statuses {
 			byContext := statusByChange[status.ChangeID]
@@ -1868,7 +1868,7 @@ func (s *LandingService) populateLandingReadiness(
 	if requiredApprovals > 0 {
 		dismissStale, err := landingDismissStaleReviews(rules, targetBookmark)
 		if err != nil {
-			return pkgerrors.Internal("invalid protected bookmark pattern")
+			return pkgerrors.Internal("invalid protected bookmark pattern").WithCause(err)
 		}
 		var approvedCount int64
 		if dismissStale {
@@ -1884,7 +1884,7 @@ func (s *LandingService) populateLandingReadiness(
 			approvedCount, err = s.queries.CountApprovedLandingRequestReviews(ctx, landingRequestID)
 		}
 		if err != nil {
-			return pkgerrors.Internal("failed to count approved landing reviews for landing readiness")
+			return pkgerrors.Internal("failed to count approved landing reviews for landing readiness").WithCause(err)
 		}
 		reviewBlocked = approvedCount < requiredApprovals
 	}
@@ -1910,7 +1910,7 @@ func (s *LandingService) populateLandingReadiness(
 				CommitIds:        []string{commitID},
 			})
 			if err != nil {
-				return pkgerrors.Internal("failed to count current agent reviews for landing readiness")
+				return pkgerrors.Internal("failed to count current agent reviews for landing readiness").WithCause(err)
 			}
 			agentReviewBlocked[changeID] = approvedCommits < 1
 		}
@@ -2016,11 +2016,11 @@ func (s *LandingService) CreateLandingReviewRequest(ctx context.Context, actor *
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return LandingReviewRequestResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "LandingReviewRequest", Field: "reviewer", Code: "invalid"})
 			}
-			return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to load landing reviewer")
+			return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to load landing reviewer").WithCause(err)
 		}
 		canRead, err := s.canReadRepo(ctx, repository, resolved.ID)
 		if err != nil {
-			return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to validate landing reviewer access")
+			return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to validate landing reviewer access").WithCause(err)
 		}
 		if !canRead {
 			return LandingReviewRequestResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "LandingReviewRequest", Field: "reviewer", Code: "invalid"})
@@ -2043,7 +2043,7 @@ func (s *LandingService) CreateLandingReviewRequest(ctx context.Context, actor *
 		if isUniqueViolation(err) {
 			return LandingReviewRequestResponse{}, pkgerrors.Conflict("review has already been requested from this reviewer")
 		}
-		return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to create landing review request")
+		return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to create landing review request").WithCause(err)
 	}
 
 	if err := s.updateLandingTurn(ctx, repository, owner, landingRow, actor, "reviewer", "request", ""); err != nil {
@@ -2105,7 +2105,7 @@ func (s *LandingService) DismissLandingReviewRequest(ctx context.Context, actor 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("landing review request not found")
 		}
-		return pkgerrors.Internal("failed to dismiss landing review request")
+		return pkgerrors.Internal("failed to dismiss landing review request").WithCause(err)
 	}
 	return nil
 }
@@ -2124,11 +2124,11 @@ func (s *LandingService) ListLandingReviews(ctx context.Context, viewer *db.User
 		PageSize:         pageSize,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list landing reviews")
+		return nil, 0, pkgerrors.Internal("failed to list landing reviews").WithCause(err)
 	}
 	total, err := s.queries.CountLandingRequestReviews(ctx, landingRow.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count landing reviews")
+		return nil, 0, pkgerrors.Internal("failed to count landing reviews").WithCause(err)
 	}
 	return reviews, total, nil
 }
@@ -2229,7 +2229,7 @@ func (s *LandingService) CreateLandingReview(ctx context.Context, actor *db.User
 		// never vouch for a commit that is no longer a current revision.
 		selected, found, err := landingReviewRevisionForCommit(revisions, commitID)
 		if err != nil {
-			return db.LandingRequestReview{}, pkgerrors.Internal("failed to decode landing revision snapshot")
+			return db.LandingRequestReview{}, pkgerrors.Internal("failed to decode landing revision snapshot").WithCause(err)
 		}
 		if !found {
 			return db.LandingRequestReview{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "LandingReview", Field: "commit_id", Code: "invalid"})
@@ -2238,7 +2238,7 @@ func (s *LandingService) CreateLandingReview(ctx context.Context, actor *db.User
 	} else {
 		var snapshot map[string]approvalRevision
 		if err = json.Unmarshal(revisions, &snapshot); err != nil {
-			return db.LandingRequestReview{}, pkgerrors.Internal("failed to decode landing revision snapshot")
+			return db.LandingRequestReview{}, pkgerrors.Internal("failed to decode landing revision snapshot").WithCause(err)
 		}
 		// The review request pins the revision visible to the client. Keep the
 		// complete stack snapshot used by protection rules, but never replace
@@ -2246,7 +2246,7 @@ func (s *LandingService) CreateLandingReview(ctx context.Context, actor *db.User
 		snapshot[revision.ChangeID] = approvalRevision{CommitID: revision.CommitID, Seq: revision.Seq}
 		revisions, err = json.Marshal(snapshot)
 		if err != nil {
-			return db.LandingRequestReview{}, pkgerrors.Internal("failed to encode landing revision snapshot")
+			return db.LandingRequestReview{}, pkgerrors.Internal("failed to encode landing revision snapshot").WithCause(err)
 		}
 	}
 	review, err := s.queries.CreateLandingRequestReview(ctx, db.CreateLandingRequestReviewParams{
@@ -2262,7 +2262,7 @@ func (s *LandingService) CreateLandingReview(ctx context.Context, actor *db.User
 		ChangeRevisions:  revisions,
 	})
 	if err != nil {
-		return db.LandingRequestReview{}, pkgerrors.Internal("failed to create landing review")
+		return db.LandingRequestReview{}, pkgerrors.Internal("failed to create landing review").WithCause(err)
 	}
 	if reviewType != "pending" {
 		if q, ok := s.queries.(landingReviewRequestQuerier); ok {
@@ -2271,7 +2271,7 @@ func (s *LandingService) CreateLandingReview(ctx context.Context, actor *db.User
 				ReviewerID:       pgtype.Int8{Int64: actor.ID, Valid: true},
 			})
 			if err != nil {
-				return db.LandingRequestReview{}, pkgerrors.Internal("failed to fulfill landing review request")
+				return db.LandingRequestReview{}, pkgerrors.Internal("failed to fulfill landing review request").WithCause(err)
 			}
 			// Agents are authenticated users too. Fulfill user-targeted requests
 			// above as well as requests addressed to their agent name.
@@ -2280,7 +2280,7 @@ func (s *LandingService) CreateLandingReview(ctx context.Context, actor *db.User
 					LandingRequestID: landingRow.ID,
 					AgentName:        actor.Username,
 				}); err != nil {
-					return db.LandingRequestReview{}, pkgerrors.Internal("failed to fulfill landing review request")
+					return db.LandingRequestReview{}, pkgerrors.Internal("failed to fulfill landing review request").WithCause(err)
 				}
 			}
 		}
@@ -2313,11 +2313,11 @@ func (s *LandingService) ListLandingComments(ctx context.Context, viewer *db.Use
 		PageSize:         pageSize,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list landing comments")
+		return nil, 0, pkgerrors.Internal("failed to list landing comments").WithCause(err)
 	}
 	total, err := s.queries.CountLandingRequestComments(ctx, landingRow.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count landing comments")
+		return nil, 0, pkgerrors.Internal("failed to count landing comments").WithCause(err)
 	}
 	userLogins := s.resolveLandingCommentUserLogins(ctx, comments)
 	responses := make([]LandingCommentResponse, 0, len(comments))
@@ -2394,7 +2394,7 @@ func (s *LandingService) CreateLandingComment(ctx context.Context, actor *db.Use
 		AnchorHash:       anchorHash,
 	})
 	if err != nil {
-		return LandingCommentResponse{}, pkgerrors.Internal("failed to create landing comment")
+		return LandingCommentResponse{}, pkgerrors.Internal("failed to create landing comment").WithCause(err)
 	}
 	if !landingActionIsFromAuthor(ctx, landingRow, actor) {
 		if err := s.updateLandingTurn(ctx, repository, owner, landingRow, actor, "author", "comment", req.Body); err != nil {
@@ -2458,7 +2458,7 @@ func (s *LandingService) resolveLandingRevision(ctx context.Context, repositoryI
 		return s.recoverImportedLandingRevision(ctx, repositoryID, owner, repo, landingRequestID, commitID, resource)
 	}
 	if err != nil {
-		return db.ChangeRevision{}, pkgerrors.Internal("failed to resolve landing revision")
+		return db.ChangeRevision{}, pkgerrors.Internal("failed to resolve landing revision").WithCause(err)
 	}
 	return revision, nil
 }
@@ -2689,7 +2689,7 @@ func (s *LandingService) MarkLandingThreadDone(ctx context.Context, actor *db.Us
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.LandingRequestComment{}, pkgerrors.Conflict("review thread is not open")
 		}
-		return db.LandingRequestComment{}, pkgerrors.Internal("failed to mark review thread done")
+		return db.LandingRequestComment{}, pkgerrors.Internal("failed to mark review thread done").WithCause(err)
 	}
 	if err := s.dispatchLandingCommentEventAction(ctx, repository, landingRow, actor, updated, "done"); err != nil {
 		return db.LandingRequestComment{}, err
@@ -2716,7 +2716,7 @@ func (s *LandingService) AckLandingThread(ctx context.Context, actor *db.User, o
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.LandingRequestComment{}, pkgerrors.Conflict("review thread is not done")
 		}
-		return db.LandingRequestComment{}, pkgerrors.Internal("failed to acknowledge review thread")
+		return db.LandingRequestComment{}, pkgerrors.Internal("failed to acknowledge review thread").WithCause(err)
 	}
 	if err := s.dispatchLandingCommentEventAction(ctx, repository, landingRow, actor, updated, "resolved"); err != nil {
 		return db.LandingRequestComment{}, err
@@ -2744,7 +2744,7 @@ func (s *LandingService) ReopenLandingThread(ctx context.Context, actor *db.User
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.LandingRequestComment{}, pkgerrors.Conflict("review thread is already open")
 		}
-		return db.LandingRequestComment{}, pkgerrors.Internal("failed to reopen review thread")
+		return db.LandingRequestComment{}, pkgerrors.Internal("failed to reopen review thread").WithCause(err)
 	}
 	if err := s.dispatchLandingCommentEventAction(ctx, repository, landingRow, actor, updated, "reopened"); err != nil {
 		return db.LandingRequestComment{}, err
@@ -2775,7 +2775,7 @@ func (s *LandingService) resolveWritableLandingThread(ctx context.Context, actor
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, db.GetLandingRequestWithChangeIDsByNumberRow{}, db.LandingRequestComment{}, pkgerrors.NotFound("review thread not found")
 		}
-		return db.Repository{}, db.GetLandingRequestWithChangeIDsByNumberRow{}, db.LandingRequestComment{}, pkgerrors.Internal("failed to load review thread")
+		return db.Repository{}, db.GetLandingRequestWithChangeIDsByNumberRow{}, db.LandingRequestComment{}, pkgerrors.Internal("failed to load review thread").WithCause(err)
 	}
 	return repository, landingRow, thread, nil
 }
@@ -2788,7 +2788,7 @@ func (s *LandingService) currentLandingTipRevision(ctx context.Context, reposito
 	if q, ok := s.queries.(landingRevisionQuerier); ok {
 		revisions, err := q.ListChangeRevisions(ctx, db.ListChangeRevisionsParams{RepositoryID: repositoryID, ChangeID: changeID})
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to load current landing revision")
+			return nil, pkgerrors.Internal("failed to load current landing revision").WithCause(err)
 		}
 		if len(revisions) == 0 {
 			return nil, pkgerrors.Conflict("current landing revision has not been recorded")
@@ -2796,7 +2796,7 @@ func (s *LandingService) currentLandingTipRevision(ctx context.Context, reposito
 		current := revisions[len(revisions)-1]
 		revision, err := json.Marshal(approvalRevision{CommitID: current.CommitID, Seq: current.Seq})
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to encode current landing revision")
+			return nil, pkgerrors.Internal("failed to encode current landing revision").WithCause(err)
 		}
 		return revision, nil
 	}
@@ -2810,7 +2810,7 @@ func (s *LandingService) currentLandingTipRevision(ctx context.Context, reposito
 	}
 	revision, err := json.Marshal(approvalRevision{CommitID: change.CommitID, Seq: 1})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to encode current landing revision")
+		return nil, pkgerrors.Internal("failed to encode current landing revision").WithCause(err)
 	}
 	return revision, nil
 }
@@ -2829,11 +2829,11 @@ func (s *LandingService) ListLandingChanges(ctx context.Context, viewer *db.User
 		PageSize:         pageSize,
 	})
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to list landing changes")
+		return nil, 0, pkgerrors.Internal("failed to list landing changes").WithCause(err)
 	}
 	total, err := s.queries.CountLandingRequestChanges(ctx, landingRow.ID)
 	if err != nil {
-		return nil, 0, pkgerrors.Internal("failed to count landing changes")
+		return nil, 0, pkgerrors.Internal("failed to count landing changes").WithCause(err)
 	}
 	items := make([]LandingChangeResponse, 0, len(changes))
 	for _, ref := range changes {
@@ -2852,7 +2852,7 @@ func (s *LandingService) ListLandingChanges(ctx context.Context, viewer *db.User
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return nil, 0, pkgerrors.NotFound("landing change not found")
 			}
-			return nil, 0, pkgerrors.Internal("failed to load landing change")
+			return nil, 0, pkgerrors.Internal("failed to load landing change").WithCause(err)
 		}
 		revision, err := s.landingDisplayRevision(ctx, repository.ID, landingRow, ref.ChangeID)
 		if err != nil {
@@ -2945,7 +2945,7 @@ func (s *LandingService) DismissLandingReview(ctx context.Context, actor *db.Use
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.LandingRequestReview{}, pkgerrors.NotFound("review not found")
 		}
-		return db.LandingRequestReview{}, pkgerrors.Internal("failed to load review")
+		return db.LandingRequestReview{}, pkgerrors.Internal("failed to load review").WithCause(err)
 	}
 	if review.LandingRequestID != landingRow.ID {
 		return db.LandingRequestReview{}, pkgerrors.NotFound("review not found")
@@ -2959,7 +2959,7 @@ func (s *LandingService) DismissLandingReview(ctx context.Context, actor *db.Use
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.LandingRequestReview{}, pkgerrors.NotFound("review not found")
 		}
-		return db.LandingRequestReview{}, pkgerrors.Internal("failed to dismiss review")
+		return db.LandingRequestReview{}, pkgerrors.Internal("failed to dismiss review").WithCause(err)
 	}
 	return updated, nil
 }
@@ -3014,7 +3014,7 @@ func (s *LandingService) landingDisplayRevision(ctx context.Context, repositoryI
 	}
 	revisions, err := q.ListChangeRevisions(ctx, db.ListChangeRevisionsParams{RepositoryID: repositoryID, ChangeID: changeID})
 	if err != nil {
-		return db.ChangeRevision{}, pkgerrors.Internal("failed to load landing revision")
+		return db.ChangeRevision{}, pkgerrors.Internal("failed to load landing revision").WithCause(err)
 	}
 	wanted := ""
 	if landing.State == landingStateMerged {
@@ -3023,7 +3023,7 @@ func (s *LandingService) landingDisplayRevision(ctx context.Context, repositoryI
 		}
 		var pins map[string]approvalRevision
 		if err := json.Unmarshal(landing.LandedRevisions, &pins); err != nil {
-			return db.ChangeRevision{}, pkgerrors.Internal("failed to decode landed revisions")
+			return db.ChangeRevision{}, pkgerrors.Internal("failed to decode landed revisions").WithCause(err)
 		}
 		wanted = pins[changeID].CommitID
 		if wanted == "" {
@@ -3100,7 +3100,7 @@ func (s *LandingService) resolveRepoByOwnerAndName(ctx context.Context, owner, r
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }
@@ -3118,7 +3118,7 @@ func (s *LandingService) getLandingByNumber(ctx context.Context, repoID, number 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.GetLandingRequestWithChangeIDsByNumberRow{}, pkgerrors.NotFound("landing request not found")
 		}
-		return db.GetLandingRequestWithChangeIDsByNumberRow{}, pkgerrors.Internal("failed to load landing request")
+		return db.GetLandingRequestWithChangeIDsByNumberRow{}, pkgerrors.Internal("failed to load landing request").WithCause(err)
 	}
 	return row, nil
 }
@@ -3131,7 +3131,7 @@ func (s *LandingService) mapLandingRow(ctx context.Context, repository db.Reposi
 func (s *LandingService) mapLandingRecord(ctx context.Context, repository db.Repository, owner string, row db.LandingRequest, changeIDs []string) (LandingRequestResponse, error) {
 	author, err := s.queries.GetUserByID(ctx, row.AuthorID)
 	if err != nil {
-		return LandingRequestResponse{}, pkgerrors.Internal("failed to load landing request author")
+		return LandingRequestResponse{}, pkgerrors.Internal("failed to load landing request author").WithCause(err)
 	}
 	response := LandingRequestResponse{
 		Number:         row.Number,
@@ -3214,7 +3214,7 @@ func (s *LandingService) populateLandingReviewRequests(ctx context.Context, land
 	}
 	rows, err := q.ListLandingReviewRequests(ctx, landingRequestID)
 	if err != nil {
-		return pkgerrors.Internal("failed to list landing review requests")
+		return pkgerrors.Internal("failed to list landing review requests").WithCause(err)
 	}
 	for _, row := range rows {
 		mapped, err := s.mapLandingReviewRequest(ctx, row)
@@ -3229,7 +3229,7 @@ func (s *LandingService) populateLandingReviewRequests(ctx context.Context, land
 func (s *LandingService) mapLandingReviewRequest(ctx context.Context, row db.LandingReviewRequest) (LandingReviewRequestResponse, error) {
 	requester, err := s.queries.GetUserByID(ctx, row.RequestedBy)
 	if err != nil {
-		return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to load landing review requester")
+		return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to load landing review requester").WithCause(err)
 	}
 	response := LandingReviewRequestResponse{
 		ID:          row.ID,
@@ -3240,7 +3240,7 @@ func (s *LandingService) mapLandingReviewRequest(ctx context.Context, row db.Lan
 	if row.ReviewerID.Valid {
 		reviewer, err := s.queries.GetUserByID(ctx, row.ReviewerID.Int64)
 		if err != nil {
-			return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to load landing reviewer")
+			return LandingReviewRequestResponse{}, pkgerrors.Internal("failed to load landing reviewer").WithCause(err)
 		}
 		mapped := LandingRequestAuthor{ID: reviewer.ID, Login: reviewer.Username}
 		response.Reviewer = &mapped
@@ -3262,7 +3262,7 @@ func (s *LandingService) populateAutoLandMetadata(ctx context.Context, row db.La
 	}
 	setter, err := s.queries.GetUserByID(ctx, row.AutoLandSetBy.Int64)
 	if err != nil {
-		return LandingRequestResponse{}, pkgerrors.Internal("failed to load auto-land setter")
+		return LandingRequestResponse{}, pkgerrors.Internal("failed to load auto-land setter").WithCause(err)
 	}
 	setBy := LandingRequestAuthor{ID: setter.ID, Login: setter.Username}
 	setAt := row.AutoLandSetAt.Time
@@ -3335,7 +3335,7 @@ func (s *LandingService) resolveLandingAuthor(ctx context.Context, cache map[int
 	}
 	user, err := s.queries.GetUserByID(ctx, userID)
 	if err != nil {
-		return LandingRequestAuthor{}, pkgerrors.Internal("failed to load landing request author")
+		return LandingRequestAuthor{}, pkgerrors.Internal("failed to load landing request author").WithCause(err)
 	}
 	author := LandingRequestAuthor{
 		ID:    user.ID,
@@ -3358,7 +3358,7 @@ func (s *LandingService) dispatchLandingRequestEvent(ctx context.Context, reposi
 		}
 
 		if err := s.dispatcher.DispatchEvent(ctx, repository.ID, webhooks.EventTypeLandingRequest, payload); err != nil {
-			return pkgerrors.Internal("failed to enqueue webhook delivery")
+			return pkgerrors.Internal("failed to enqueue webhook delivery").WithCause(err)
 		}
 	}
 
@@ -3415,7 +3415,7 @@ func (s *LandingService) dispatchLandingConflictEvent(
 	}
 
 	if err := s.dispatcher.DispatchEvent(ctx, repository.ID, webhooks.EventTypeLandingConflict, payload); err != nil {
-		return pkgerrors.Internal("failed to enqueue webhook delivery")
+		return pkgerrors.Internal("failed to enqueue webhook delivery").WithCause(err)
 	}
 	return nil
 }
@@ -3433,7 +3433,7 @@ func (s *LandingService) dispatchLandingReviewEvent(
 
 	author, err := s.queries.GetUserByID(ctx, landingRow.AuthorID)
 	if err != nil {
-		return pkgerrors.Internal("failed to load landing request author")
+		return pkgerrors.Internal("failed to load landing request author").WithCause(err)
 	}
 
 	payload := webhooks.LandingRequestReviewEventPayload{
@@ -3472,7 +3472,7 @@ func (s *LandingService) dispatchLandingReviewEvent(
 	}
 
 	if err := s.dispatcher.DispatchEvent(ctx, repository.ID, webhooks.EventTypeLandingRequestReview, payload); err != nil {
-		return pkgerrors.Internal("failed to enqueue webhook delivery")
+		return pkgerrors.Internal("failed to enqueue webhook delivery").WithCause(err)
 	}
 	return nil
 }
@@ -3501,7 +3501,7 @@ func (s *LandingService) dispatchLandingCommentEventAction(
 
 	author, err := s.queries.GetUserByID(ctx, landingRow.AuthorID)
 	if err != nil {
-		return pkgerrors.Internal("failed to load landing request author")
+		return pkgerrors.Internal("failed to load landing request author").WithCause(err)
 	}
 
 	payload := webhooks.LandingRequestCommentEventPayload{
@@ -3540,7 +3540,7 @@ func (s *LandingService) dispatchLandingCommentEventAction(
 	}
 
 	if err := s.dispatcher.DispatchEvent(ctx, repository.ID, webhooks.EventTypeLandingRequestComment, payload); err != nil {
-		return pkgerrors.Internal("failed to enqueue webhook delivery")
+		return pkgerrors.Internal("failed to enqueue webhook delivery").WithCause(err)
 	}
 	return nil
 }

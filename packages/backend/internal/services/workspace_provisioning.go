@@ -446,7 +446,7 @@ func (s *WorkspaceService) workspaceEgressProxy(ctx context.Context, repositoryI
 		// Fail closed: a workspace must not boot with fewer bindings than the
 		// repository declared, or the setup run would see a placeholder the
 		// proxy never swaps.
-		return nil, pkgerrors.Internal("load repository secrets for workspace egress proxy")
+		return nil, pkgerrors.Internal("load repository secrets for workspace egress proxy").WithCause(err)
 	}
 	policy.Secrets = bound
 	if err := policy.Validate(); err != nil {

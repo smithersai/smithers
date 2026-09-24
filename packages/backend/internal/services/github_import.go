@@ -2333,7 +2333,7 @@ func (s *GitHubImportService) fetchGitHubRepoMetadata(ctx context.Context, token
 	reqURL := strings.TrimRight(githubAPIBaseURL(), "/") + "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return githubRepoMetadata{}, 0, nil, pkgerrors.Internal("failed to build github repository request")
+		return githubRepoMetadata{}, 0, nil, pkgerrors.Internal("failed to build github repository request").WithCause(err)
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -2344,7 +2344,7 @@ func (s *GitHubImportService) fetchGitHubRepoMetadata(ctx context.Context, token
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return githubRepoMetadata{}, 0, nil, pkgerrors.Internal("github repository request failed")
+		return githubRepoMetadata{}, 0, nil, pkgerrors.Internal("github repository request failed").WithCause(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	responseHeader := resp.Header.Clone()
@@ -2356,7 +2356,7 @@ func (s *GitHubImportService) fetchGitHubRepoMetadata(ctx context.Context, token
 
 	var metadata githubRepoMetadata
 	if err := json.Unmarshal(body, &metadata); err != nil {
-		return githubRepoMetadata{}, resp.StatusCode, responseHeader, pkgerrors.Internal("failed to decode github repository response")
+		return githubRepoMetadata{}, resp.StatusCode, responseHeader, pkgerrors.Internal("failed to decode github repository response").WithCause(err)
 	}
 	return metadata, resp.StatusCode, responseHeader, nil
 }

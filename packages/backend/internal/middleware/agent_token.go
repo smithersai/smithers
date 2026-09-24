@@ -76,7 +76,7 @@ func RequireAgentToken(queries AgentTokenQuerier) func(http.Handler) http.Handle
 					smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or expired runner task token"))
 					return
 				} else if err != nil {
-					smitherserrors.WriteError(w, smitherserrors.Internal("internal server error"))
+					smitherserrors.WriteError(w, smitherserrors.Internal("internal server error").WithCause(err))
 					return
 				}
 				if run.ID != claims.WorkflowRunID || run.RepositoryID != claims.RepositoryID || isTerminalAgentTokenRunStatus(run.Status) {
@@ -93,7 +93,7 @@ func RequireAgentToken(queries AgentTokenQuerier) func(http.Handler) http.Handle
 					smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or expired runner task token"))
 					return
 				} else if err != nil {
-					smitherserrors.WriteError(w, smitherserrors.Internal("internal server error"))
+					smitherserrors.WriteError(w, smitherserrors.Internal("internal server error").WithCause(err))
 					return
 				}
 				if task.ID != claims.TaskID || task.WorkflowRunID != claims.WorkflowRunID || task.RepositoryID != claims.RepositoryID ||
@@ -139,7 +139,7 @@ func RequireAgentToken(queries AgentTokenQuerier) func(http.Handler) http.Handle
 				smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or expired agent token"))
 				return
 			} else if err != nil {
-				smitherserrors.WriteError(w, smitherserrors.Internal("internal server error"))
+				smitherserrors.WriteError(w, smitherserrors.Internal("internal server error").WithCause(err))
 				return
 			}
 

@@ -179,11 +179,11 @@ func (s *AdminAnalyticsService) Summary(ctx context.Context, rangeName string, i
 			defer cancel()
 			summary, err := s.load(queryCtx, rangeName, days, includeSynthetic)
 			if err != nil {
-				return nil, pkgerrors.Internal("failed to load analytics summary")
+				return nil, pkgerrors.Internal("failed to load analytics summary").WithCause(err)
 			}
 			data, err := json.Marshal(summary)
 			if err != nil {
-				return nil, pkgerrors.Internal("failed to encode analytics summary")
+				return nil, pkgerrors.Internal("failed to encode analytics summary").WithCause(err)
 			}
 			s.mu.Lock()
 			s.cache[key] = analyticsCacheEntry{data: data, expiresAt: s.now().Add(60 * time.Second)}
@@ -202,7 +202,7 @@ func (s *AdminAnalyticsService) Summary(ctx context.Context, rangeName string, i
 	}
 	var summary AnalyticsSummary
 	if err := json.Unmarshal(data, &summary); err != nil {
-		return AnalyticsSummary{}, pkgerrors.Internal("failed to decode analytics summary")
+		return AnalyticsSummary{}, pkgerrors.Internal("failed to decode analytics summary").WithCause(err)
 	}
 	return summary, nil
 }

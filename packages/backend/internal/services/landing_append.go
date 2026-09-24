@@ -83,7 +83,7 @@ func (s *LandingService) prepareLandingAppend(ctx context.Context, repository db
 	// current bookmark value participates after it has been durably enqueued.
 	canonical, err := json.Marshal(request)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to encode append request")
+		return nil, pkgerrors.Internal("failed to encode append request").WithCause(err)
 	}
 	request.OperationKey = fmt.Sprintf("landing/%d/%d/append/%x", repository.ID, landing.ID, sha256.Sum256(canonical))
 	if err := validateLandingAppend(request); err != nil {
@@ -91,7 +91,7 @@ func (s *LandingService) prepareLandingAppend(ctx context.Context, repository db
 	}
 	encoded, err := json.Marshal(request)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to encode append request")
+		return nil, pkgerrors.Internal("failed to encode append request").WithCause(err)
 	}
 	return encoded, nil
 }
@@ -146,7 +146,7 @@ func (s *LandingService) recoverLandingAppend(ctx context.Context, repository db
 		return nil, false, nil
 	}
 	if err != nil {
-		return nil, false, pkgerrors.Internal("failed to read append task")
+		return nil, false, pkgerrors.Internal("failed to read append task").WithCause(err)
 	}
 	if len(task.AppendRequest) == 0 || (task.Status != "failed" && task.Status != "done") {
 		return nil, false, nil
@@ -157,7 +157,7 @@ func (s *LandingService) recoverLandingAppend(ctx context.Context, repository db
 	}
 	recovered, err := lookupLandingAppend(ctx, s.repoHost, owner, repo, request)
 	if err != nil {
-		return nil, false, pkgerrors.Internal("could not recover append receipt; retry is safe")
+		return nil, false, pkgerrors.Internal("could not recover append receipt; retry is safe").WithCause(err)
 	}
 	if !recovered {
 		return nil, false, nil

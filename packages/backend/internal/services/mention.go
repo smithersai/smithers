@@ -127,7 +127,7 @@ func (s *MentionService) ProcessMentions(ctx context.Context, body string, mctx 
 
 	repository, err := s.q.GetRepoByID(ctx, mctx.RepositoryID)
 	if err != nil {
-		return pkgerrors.Internal("failed to load repository")
+		return pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 
 	var firstErr error

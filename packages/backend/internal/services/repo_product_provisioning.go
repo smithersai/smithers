@@ -75,7 +75,7 @@ func (s *RepoService) createProductRepository(ctx context.Context, wanted produc
 			wanted.OwnerName, wanted.Name, wanted.DefaultBookmark, wanted.AutoInit)
 	}
 	if err != nil {
-		return db.Repository{}, errors.Internal("failed to prepare repository storage")
+		return db.Repository{}, errors.Internal("failed to prepare repository storage").WithCause(err)
 	}
 	wanted.Token = staged.Token
 	var repository db.Repository
@@ -116,7 +116,7 @@ func (s *RepoService) createProductRepository(ctx context.Context, wanted produc
 			return db.Repository{}, errors.Conflict("repository creation is already in progress")
 		}
 		slog.Error("product repository creation did not settle", "owner", wanted.OwnerName, "repo", wanted.Name, "error", err)
-		return db.Repository{}, errors.Internal("failed to create repository")
+		return db.Repository{}, errors.Internal("failed to create repository").WithCause(err)
 	}
 	return repository, nil
 }

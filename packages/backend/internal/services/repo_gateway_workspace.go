@@ -182,14 +182,14 @@ func (s *RepoGatewayService) ensureWorkspaceGatewayLandingToken(ctx context.Cont
 	token, err := issueTemporaryRepoTokenWithTTL(ctx, s.q, gateway.UserID, "workspace-gateway-landing-"+gateway.ID,
 		workspaceGatewayLandingTokenScopes(gateway.RepositoryID), workspaceGatewayLandingTokenTTL)
 	if err != nil {
-		return "", pkgerrors.Internal("mint workspace gateway landing token")
+		return "", pkgerrors.Internal("mint workspace gateway landing token").WithCause(err)
 	}
 	if err := store.SetRepoGatewayLandingTokenID(ctx, clusterdb.SetRepoGatewayLandingTokenIDParams{
 		ID: gateway.ID, LandingTokenID: pgtype.Int8{Int64: token.ID, Valid: true},
 	}); err != nil {
 		// An unrecorded credential could never be revoked; drop it now.
 		revokeTemporaryRepoCloneToken(ctx, s.q, gateway.UserID, token.ID)
-		return "", pkgerrors.Internal("record workspace gateway landing token")
+		return "", pkgerrors.Internal("record workspace gateway landing token").WithCause(err)
 	}
 	gateway.LandingTokenID = pgtype.Int8{Int64: token.ID, Valid: true}
 	return token.Plaintext, nil
@@ -234,7 +234,7 @@ func (s *RepoGatewayService) loadGatewayWorkspace(ctx context.Context, id string
 	}
 	shared, err := q.HasWritableWorkspaceShares(ctx, id)
 	if err != nil {
-		return db.Workspace{}, pkgerrors.Internal("check workspace gateway sharing")
+		return db.Workspace{}, pkgerrors.Internal("check workspace gateway sharing").WithCause(err)
 	}
 	if shared {
 		return db.Workspace{}, pkgerrors.Forbidden("coding gateways require a workspace without write shares until shared execution has actor-bound credentials")
@@ -279,7 +279,7 @@ func (s *RepoGatewayService) provisionWorkspaceGateway(ctx context.Context, inpu
 	token, hash, err := generateRepoGatewayToken()
 	if err != nil {
 		s.markGatewayFailed(ctx, gateway.ID)
-		return RepoGatewayConnectionInfo{}, pkgerrors.Internal("mint workspace gateway token")
+		return RepoGatewayConnectionInfo{}, pkgerrors.Internal("mint workspace gateway token").WithCause(err)
 	}
 	encrypted, err := s.secretCodec.EncryptString(token)
 	if err != nil {

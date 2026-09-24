@@ -413,7 +413,7 @@ func (s *ProviderConnectionService) createConnection(ctx context.Context, actor 
 	}
 	accessCipher, err := s.codec.EncryptString(in.AccessToken)
 	if err != nil {
-		return ProviderConnectionResponse{}, pkgerrors.Internal("failed to encrypt access token")
+		return ProviderConnectionResponse{}, pkgerrors.Internal("failed to encrypt access token").WithCause(err)
 	}
 	params := db.CreateProviderConnectionParams{
 		OwnerType:            ownerType,
@@ -434,7 +434,7 @@ func (s *ProviderConnectionService) createConnection(ctx context.Context, actor 
 	if in.RefreshToken != "" {
 		refreshCipher, err := s.codec.EncryptString(in.RefreshToken)
 		if err != nil {
-			return ProviderConnectionResponse{}, pkgerrors.Internal("failed to encrypt refresh token")
+			return ProviderConnectionResponse{}, pkgerrors.Internal("failed to encrypt refresh token").WithCause(err)
 		}
 		params.RefreshTokenEncrypted = []byte(refreshCipher)
 		params.NextRefreshAt = pgtype.Timestamptz{Time: s.now(), Valid: true}
@@ -444,7 +444,7 @@ func (s *ProviderConnectionService) createConnection(ctx context.Context, actor 
 	}
 	row, err := s.q.CreateProviderConnection(ctx, params)
 	if err != nil {
-		return ProviderConnectionResponse{}, pkgerrors.Internal("failed to store provider connection")
+		return ProviderConnectionResponse{}, pkgerrors.Internal("failed to store provider connection").WithCause(err)
 	}
 	s.logAudit(ctx, actor, row, "provider_connection.connected", nil)
 	return s.toResponse(ctx, row), nil
@@ -478,7 +478,7 @@ func (s *ProviderConnectionService) ConnectForUser(ctx context.Context, actor *d
 	}
 	if strings.HasPrefix(in.Label, "web-") {
 		if found, err := find(); err != nil {
-			return ProviderConnectionResponse{}, pkgerrors.Internal("failed to check connection request")
+			return ProviderConnectionResponse{}, pkgerrors.Internal("failed to check connection request").WithCause(err)
 		} else if found != nil {
 			return *found, nil
 		}
@@ -510,14 +510,14 @@ func (s *ProviderConnectionService) requireOrgRole(ctx context.Context, actor *d
 		if errors.Is(err, pgx.ErrNoRows) {
 			return db.Organization{}, pkgerrors.NotFound("organization not found")
 		}
-		return db.Organization{}, pkgerrors.Internal("failed to load organization")
+		return db.Organization{}, pkgerrors.Internal("failed to load organization").WithCause(err)
 	}
 	member, err := s.q.GetOrgMember(ctx, db.GetOrgMemberParams{OrganizationID: org.ID, UserID: actor.ID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return db.Organization{}, pkgerrors.Forbidden("not a member of this organization")
 		}
-		return db.Organization{}, pkgerrors.Internal("failed to load organization membership")
+		return db.Organization{}, pkgerrors.Internal("failed to load organization membership").WithCause(err)
 	}
 	if ownerOnly && member.Role != "owner" {
 		return db.Organization{}, pkgerrors.Forbidden("organization owner required")
@@ -531,7 +531,7 @@ func (s *ProviderConnectionService) ListForUser(ctx context.Context, actor *db.U
 	}
 	rows, err := s.q.ListUserProviderConnections(ctx, pgtype.Int8{Int64: actor.ID, Valid: true})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list provider connections")
+		return nil, pkgerrors.Internal("failed to list provider connections").WithCause(err)
 	}
 	out := make([]ProviderConnectionResponse, 0, len(rows))
 	for _, row := range rows {
@@ -547,7 +547,7 @@ func (s *ProviderConnectionService) ListForOrg(ctx context.Context, actor *db.Us
 	}
 	rows, err := s.q.ListOrgProviderConnections(ctx, pgtype.Int8{Int64: org.ID, Valid: true})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list provider connections")
+		return nil, pkgerrors.Internal("failed to list provider connections").WithCause(err)
 	}
 	out := make([]ProviderConnectionResponse, 0, len(rows))
 	for _, row := range rows {
@@ -567,7 +567,7 @@ func (s *ProviderConnectionService) loadOwned(ctx context.Context, actor *db.Use
 		if errors.Is(err, pgx.ErrNoRows) {
 			return db.ProviderConnection{}, pkgerrors.NotFound("provider connection not found")
 		}
-		return db.ProviderConnection{}, pkgerrors.Internal("failed to load provider connection")
+		return db.ProviderConnection{}, pkgerrors.Internal("failed to load provider connection").WithCause(err)
 	}
 	switch row.OwnerType {
 	case "user":
@@ -599,7 +599,7 @@ func (s *ProviderConnectionService) Revoke(ctx context.Context, actor *db.User, 
 		return err
 	}
 	if _, err := s.q.RevokeProviderConnection(ctx, db.RevokeProviderConnectionParams{ID: row.ID, LastError: "revoked by " + actor.Username}); err != nil {
-		return pkgerrors.Internal("failed to revoke provider connection")
+		return pkgerrors.Internal("failed to revoke provider connection").WithCause(err)
 	}
 	s.logAudit(ctx, actor, row, "provider_connection.revoked", nil)
 	return nil
@@ -622,7 +622,7 @@ func (s *ProviderConnectionService) RefreshNow(ctx context.Context, actor *db.Us
 	}
 	updated, err := s.q.GetProviderConnection(ctx, row.ID)
 	if err != nil {
-		return ProviderConnectionResponse{}, pkgerrors.Internal("failed to reload provider connection")
+		return ProviderConnectionResponse{}, pkgerrors.Internal("failed to reload provider connection").WithCause(err)
 	}
 	return s.toResponse(ctx, updated), nil
 }
@@ -660,7 +660,7 @@ func (s *ProviderConnectionService) DeleteGrant(ctx context.Context, actor *db.U
 	}
 	n, err := s.q.DeleteProviderConnectionGrant(ctx, db.DeleteProviderConnectionGrantParams{ID: grantID, ConnectionID: row.ID})
 	if err != nil {
-		return pkgerrors.Internal("failed to delete grant")
+		return pkgerrors.Internal("failed to delete grant").WithCause(err)
 	}
 	if n == 0 {
 		return pkgerrors.NotFound("grant not found")
@@ -678,7 +678,7 @@ func (s *ProviderConnectionService) SetRepositoryPreference(ctx context.Context,
 		return pkgerrors.BadRequest("preference must be org_first, user_first, org_only, user_only, or platform_only")
 	}
 	if err := s.q.UpsertRepositoryProviderConnectionPreference(ctx, db.UpsertRepositoryProviderConnectionPreferenceParams{RepositoryID: repositoryID, Preference: preference}); err != nil {
-		return pkgerrors.Internal("failed to store provider connection preference")
+		return pkgerrors.Internal("failed to store provider connection preference").WithCause(err)
 	}
 	return nil
 }

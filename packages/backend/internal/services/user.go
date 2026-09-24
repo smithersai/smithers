@@ -215,7 +215,7 @@ func (s *UserService) GetAuthenticatedUser(ctx context.Context, userID int64) (U
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return UserProfile{}, pkgerrors.NotFound("user not found")
 		}
-		return UserProfile{}, pkgerrors.Internal("failed to load user")
+		return UserProfile{}, pkgerrors.Internal("failed to load user").WithCause(err)
 	}
 
 	if !user.IsActive {
@@ -236,7 +236,7 @@ func (s *UserService) GetUserByUsername(ctx context.Context, username string) (P
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return PublicUserProfile{}, pkgerrors.NotFound("user not found")
 		}
-		return PublicUserProfile{}, pkgerrors.Internal("failed to load user")
+		return PublicUserProfile{}, pkgerrors.Internal("failed to load user").WithCause(err)
 	}
 
 	return mapPublicUserProfile(user), nil
@@ -251,7 +251,7 @@ func (s *UserService) UpdateAuthenticatedUser(ctx context.Context, userID int64,
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return UserProfile{}, pkgerrors.NotFound("user not found")
 		}
-		return UserProfile{}, pkgerrors.Internal("failed to load user")
+		return UserProfile{}, pkgerrors.Internal("failed to load user").WithCause(err)
 	}
 
 	displayName := current.DisplayName
@@ -301,7 +301,7 @@ func (s *UserService) UpdateAuthenticatedUser(ctx context.Context, userID int64,
 		if isUniqueViolation(err) {
 			return UserProfile{}, pkgerrors.Conflict("email address is already in use")
 		}
-		return UserProfile{}, pkgerrors.Internal("failed to update user")
+		return UserProfile{}, pkgerrors.Internal("failed to update user").WithCause(err)
 	}
 
 	return mapUserProfile(updated), nil
@@ -313,7 +313,7 @@ func (s *UserService) ListAuthenticatedUserRepos(ctx context.Context, userID int
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return RepoListResult{}, pkgerrors.NotFound("user not found")
 		}
-		return RepoListResult{}, pkgerrors.Internal("failed to load user")
+		return RepoListResult{}, pkgerrors.Internal("failed to load user").WithCause(err)
 	}
 
 	page, perPage = normalizePagination(page, perPage)
@@ -321,7 +321,7 @@ func (s *UserService) ListAuthenticatedUserRepos(ctx context.Context, userID int
 
 	total, err := s.queries.CountUserRepos(ctx, pgtype.Int8{Int64: userID, Valid: true})
 	if err != nil {
-		return RepoListResult{}, pkgerrors.Internal("failed to count user repositories")
+		return RepoListResult{}, pkgerrors.Internal("failed to count user repositories").WithCause(err)
 	}
 
 	repos, err := s.queries.ListUserRepos(ctx, db.ListUserReposParams{
@@ -330,7 +330,7 @@ func (s *UserService) ListAuthenticatedUserRepos(ctx context.Context, userID int
 		PageOffset: offset,
 	})
 	if err != nil {
-		return RepoListResult{}, pkgerrors.Internal("failed to list user repositories")
+		return RepoListResult{}, pkgerrors.Internal("failed to list user repositories").WithCause(err)
 	}
 
 	headsByRepoID, err := s.listDefaultBookmarkHeads(ctx, repos)
@@ -381,12 +381,12 @@ func (s *UserService) ListReadableReposForAuthenticatedUser(ctx context.Context,
 		PageSize:   int32(perPage),
 	})
 	if err != nil {
-		return ReadableRepoListResult{}, pkgerrors.Internal("failed to list readable repositories")
+		return ReadableRepoListResult{}, pkgerrors.Internal("failed to list readable repositories").WithCause(err)
 	}
 
 	total, err := s.queries.CountReadableReposForUser(ctx, userID)
 	if err != nil {
-		return ReadableRepoListResult{}, pkgerrors.Internal("failed to count readable repositories")
+		return ReadableRepoListResult{}, pkgerrors.Internal("failed to count readable repositories").WithCause(err)
 	}
 
 	items := make([]ReadableRepoRow, 0, len(rows))
@@ -412,7 +412,7 @@ func (s *UserService) ListAuthenticatedUserOrgs(ctx context.Context, userID int6
 
 	total, err := s.queries.CountUserOrgs(ctx, userID)
 	if err != nil {
-		return OrgListResult{}, pkgerrors.Internal("failed to count user organizations")
+		return OrgListResult{}, pkgerrors.Internal("failed to count user organizations").WithCause(err)
 	}
 
 	orgs, err := s.queries.ListUserOrgs(ctx, db.ListUserOrgsParams{
@@ -421,7 +421,7 @@ func (s *UserService) ListAuthenticatedUserOrgs(ctx context.Context, userID int6
 		PageOffset: offset,
 	})
 	if err != nil {
-		return OrgListResult{}, pkgerrors.Internal("failed to list user organizations")
+		return OrgListResult{}, pkgerrors.Internal("failed to list user organizations").WithCause(err)
 	}
 
 	items := make([]OrgSummary, 0, len(orgs))
@@ -448,7 +448,7 @@ func (s *UserService) ListUserReposByUsername(ctx context.Context, username stri
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return RepoListResult{}, pkgerrors.NotFound("user not found")
 		}
-		return RepoListResult{}, pkgerrors.Internal("failed to load user")
+		return RepoListResult{}, pkgerrors.Internal("failed to load user").WithCause(err)
 	}
 
 	page, perPage = normalizePagination(page, perPage)
@@ -458,7 +458,7 @@ func (s *UserService) ListUserReposByUsername(ctx context.Context, username stri
 
 	total, err := s.queries.CountPublicUserRepos(ctx, userID)
 	if err != nil {
-		return RepoListResult{}, pkgerrors.Internal("failed to count user repositories")
+		return RepoListResult{}, pkgerrors.Internal("failed to count user repositories").WithCause(err)
 	}
 
 	repos, err := s.queries.ListPublicUserRepos(ctx, db.ListPublicUserReposParams{
@@ -467,7 +467,7 @@ func (s *UserService) ListUserReposByUsername(ctx context.Context, username stri
 		PageOffset: offset,
 	})
 	if err != nil {
-		return RepoListResult{}, pkgerrors.Internal("failed to list user repositories")
+		return RepoListResult{}, pkgerrors.Internal("failed to list user repositories").WithCause(err)
 	}
 
 	items := make([]RepoSummary, 0, len(repos))
@@ -494,7 +494,7 @@ func (s *UserService) ListUserActivityByUsername(ctx context.Context, username s
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return ActivityListResult{}, pkgerrors.NotFound("user not found")
 		}
-		return ActivityListResult{}, pkgerrors.Internal("failed to load user")
+		return ActivityListResult{}, pkgerrors.Internal("failed to load user").WithCause(err)
 	}
 
 	page, perPage = normalizePagination(page, perPage)
@@ -505,7 +505,7 @@ func (s *UserService) ListUserActivityByUsername(ctx context.Context, username s
 		Since:   time.Time{},
 	})
 	if err != nil {
-		return ActivityListResult{}, pkgerrors.Internal("failed to count user activity")
+		return ActivityListResult{}, pkgerrors.Internal("failed to count user activity").WithCause(err)
 	}
 
 	logs, err := s.queries.ListPublicAuditLogsByActor(ctx, db.ListPublicAuditLogsByActorParams{
@@ -515,7 +515,7 @@ func (s *UserService) ListUserActivityByUsername(ctx context.Context, username s
 		PageOffset: offset,
 	})
 	if err != nil {
-		return ActivityListResult{}, pkgerrors.Internal("failed to list user activity")
+		return ActivityListResult{}, pkgerrors.Internal("failed to list user activity").WithCause(err)
 	}
 
 	items := make([]ActivitySummary, 0, len(logs))
@@ -537,7 +537,7 @@ func (s *UserService) GetNotificationPreferences(ctx context.Context, userID int
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return NotificationPreferences{}, pkgerrors.NotFound("user not found")
 		}
-		return NotificationPreferences{}, pkgerrors.Internal("failed to load notification preferences")
+		return NotificationPreferences{}, pkgerrors.Internal("failed to load notification preferences").WithCause(err)
 	}
 	return NotificationPreferences{
 		EmailNotificationsEnabled: row.EmailNotificationsEnabled,
@@ -550,7 +550,7 @@ func (s *UserService) UpdateNotificationPreferences(ctx context.Context, userID 
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return NotificationPreferences{}, pkgerrors.NotFound("user not found")
 		}
-		return NotificationPreferences{}, pkgerrors.Internal("failed to load notification preferences")
+		return NotificationPreferences{}, pkgerrors.Internal("failed to load notification preferences").WithCause(err)
 	}
 
 	emailEnabled := current.EmailNotificationsEnabled
@@ -563,7 +563,7 @@ func (s *UserService) UpdateNotificationPreferences(ctx context.Context, userID 
 		EmailNotificationsEnabled: emailEnabled,
 	})
 	if err != nil {
-		return NotificationPreferences{}, pkgerrors.Internal("failed to update notification preferences")
+		return NotificationPreferences{}, pkgerrors.Internal("failed to update notification preferences").WithCause(err)
 	}
 	return NotificationPreferences{
 		EmailNotificationsEnabled: updated.EmailNotificationsEnabled,
@@ -573,7 +573,7 @@ func (s *UserService) UpdateNotificationPreferences(ctx context.Context, userID 
 func (s *UserService) ListConnectedAccounts(ctx context.Context, userID int64) ([]ConnectedAccountResponse, error) {
 	accounts, err := s.queries.ListUserOAuthAccounts(ctx, userID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list connected accounts")
+		return nil, pkgerrors.Internal("failed to list connected accounts").WithCause(err)
 	}
 
 	result := make([]ConnectedAccountResponse, 0, len(accounts))
@@ -598,12 +598,12 @@ func (s *UserService) DeleteConnectedAccount(ctx context.Context, userID, accoun
 		ID:     accountID,
 		UserID: userID,
 	}); err != nil {
-		return pkgerrors.Internal("failed to delete connected account")
+		return pkgerrors.Internal("failed to delete connected account").WithCause(err)
 	}
 	// Read grants were proved by a linked credential; after an unlink the
 	// shared GitHub metadata store must re-prove access through a live read.
 	if err := s.queries.DeleteGitHubSyncedRepoReadGrantsForUser(ctx, userID); err != nil {
-		return pkgerrors.Internal("failed to revoke github repository read grants")
+		return pkgerrors.Internal("failed to revoke github repository read grants").WithCause(err)
 	}
 	return nil
 }
@@ -698,7 +698,7 @@ func (s *UserService) listDefaultBookmarkHeads(ctx context.Context, repos []db.R
 
 	rows, err := s.queries.ListDefaultBookmarkHeadsByRepoIDs(ctx, repositoryIDs)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load default bookmark heads")
+		return nil, pkgerrors.Internal("failed to load default bookmark heads").WithCause(err)
 	}
 	for _, row := range rows {
 		headsByRepoID[row.RepositoryID] = DefaultBookmarkHead{
@@ -792,7 +792,7 @@ func (s *UserService) resolveRepoOwnerName(ctx context.Context, repo db.Reposito
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return "", pkgerrors.NotFound("repository owner not found")
 			}
-			return "", pkgerrors.Internal("failed to load repository owner")
+			return "", pkgerrors.Internal("failed to load repository owner").WithCause(err)
 		}
 
 		cache.users[repo.UserID.Int64] = user.Username
@@ -807,7 +807,7 @@ func (s *UserService) resolveRepoOwnerName(ctx context.Context, repo db.Reposito
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return "", pkgerrors.NotFound("repository owner not found")
 			}
-			return "", pkgerrors.Internal("failed to load repository owner")
+			return "", pkgerrors.Internal("failed to load repository owner").WithCause(err)
 		}
 
 		cache.orgs[repo.OrgID.Int64] = org.Name

@@ -198,12 +198,12 @@ func (s *workflowCacheService) Restore(ctx context.Context, run db.WorkflowRun, 
 			s.observeRunnerCacheHit("miss")
 			return WorkflowCacheRestoreResult{CacheHit: false}, nil
 		}
-		return WorkflowCacheRestoreResult{}, pkgerrors.Internal("failed to resolve workflow cache")
+		return WorkflowCacheRestoreResult{}, pkgerrors.Internal("failed to resolve workflow cache").WithCause(err)
 	}
 
 	exists, err := s.store.Exists(ctx, cache.ObjectKey)
 	if err != nil {
-		return WorkflowCacheRestoreResult{}, pkgerrors.Internal("failed to verify cache archive")
+		return WorkflowCacheRestoreResult{}, pkgerrors.Internal("failed to verify cache archive").WithCause(err)
 	}
 	if !exists {
 		if _, cleanupErr := s.deleteCacheRow(ctx, cache); cleanupErr != nil {
@@ -215,7 +215,7 @@ func (s *workflowCacheService) Restore(ctx context.Context, run db.WorkflowRun, 
 
 	downloadURL, err := s.store.SignedDownloadURL(ctx, cache.ObjectKey, s.config.SignedURLExpiry)
 	if err != nil {
-		return WorkflowCacheRestoreResult{}, pkgerrors.Internal("failed to create cache download url")
+		return WorkflowCacheRestoreResult{}, pkgerrors.Internal("failed to create cache download url").WithCause(err)
 	}
 	if err := s.queries.TouchWorkflowCacheHit(ctx, cache.ID); err != nil {
 		// Hit-stat bookkeeping is best-effort: the cache archive itself is
@@ -285,7 +285,7 @@ func (s *workflowCacheService) BeginSave(ctx context.Context, run db.WorkflowRun
 			CacheVersion: cacheVersion,
 		})
 		if getErr != nil && !stdErrors.Is(getErr, pgx.ErrNoRows) {
-			return 0, pkgerrors.Internal("failed to load workflow cache reservation")
+			return 0, pkgerrors.Internal("failed to load workflow cache reservation").WithCause(getErr)
 		}
 		if getErr == nil {
 			now := time.Now().UTC()
@@ -294,7 +294,7 @@ func (s *workflowCacheService) BeginSave(ctx context.Context, run db.WorkflowRun
 				if !workflowCacheExpired(existing.ExpiresAt, now) {
 					exists, existsErr := s.store.Exists(lockCtx, existing.ObjectKey)
 					if existsErr != nil {
-						return 0, pkgerrors.Internal("failed to verify cache archive")
+						return 0, pkgerrors.Internal("failed to verify cache archive").WithCause(existsErr)
 					}
 					if exists {
 						cache = existing
@@ -322,7 +322,7 @@ func (s *workflowCacheService) BeginSave(ctx context.Context, run db.WorkflowRun
 
 		usage, usageErr := s.queries.GetWorkflowCacheRepoUsage(lockCtx, repository.ID)
 		if usageErr != nil {
-			return 0, pkgerrors.Internal("failed to load workflow cache usage")
+			return 0, pkgerrors.Internal("failed to load workflow cache usage").WithCause(usageErr)
 		}
 		if usage < 0 || usage > s.config.RepoQuotaBytes || objectSizeBytes > s.config.RepoQuotaBytes-usage {
 			return 0, pkgerrors.Forbidden("workflow cache repository quota exceeded")
@@ -358,7 +358,7 @@ func (s *workflowCacheService) BeginSave(ctx context.Context, run db.WorkflowRun
 			ExpiresAt:       pendingExpiresAt,
 		})
 		if reserveErr != nil {
-			return pkgerrors.Internal("failed to reserve workflow cache upload")
+			return pkgerrors.Internal("failed to reserve workflow cache upload").WithCause(reserveErr)
 		}
 		if cache.Status != "pending" || cache.ObjectKey != objectKey ||
 			!cache.WorkflowRunID.Valid || cache.WorkflowRunID.Int64 != run.ID ||
@@ -401,7 +401,7 @@ func (s *workflowCacheService) BeginSave(ctx context.Context, run db.WorkflowRun
 				slog.Warn("workflow cache purged deletion fence cleanup failed", "cache_id", cache.ID, "repository_id", cache.RepositoryID, "error", clearErr)
 			}
 		}
-		return WorkflowCacheSaveReservation{}, pkgerrors.Internal("failed to create cache upload url")
+		return WorkflowCacheSaveReservation{}, pkgerrors.Internal("failed to create cache upload url").WithCause(err)
 	}
 
 	return WorkflowCacheSaveReservation{
@@ -432,7 +432,7 @@ func (s *workflowCacheService) FinalizeSave(ctx context.Context, run db.Workflow
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.WorkflowCache{}, pkgerrors.NotFound("workflow cache not found")
 		}
-		return db.WorkflowCache{}, pkgerrors.Internal("failed to load workflow cache")
+		return db.WorkflowCache{}, pkgerrors.Internal("failed to load workflow cache").WithCause(err)
 	}
 	if cache.RepositoryID != run.RepositoryID {
 		return db.WorkflowCache{}, pkgerrors.Forbidden("cache does not belong to this workflow run")
@@ -470,7 +470,7 @@ func (s *workflowCacheService) FinalizeSave(ctx context.Context, run db.Workflow
 			if stdErrors.Is(getErr, pgx.ErrNoRows) {
 				return 0, pkgerrors.NotFound("workflow cache not found")
 			}
-			return 0, pkgerrors.Internal("failed to load workflow cache")
+			return 0, pkgerrors.Internal("failed to load workflow cache").WithCause(getErr)
 		}
 		if !sameWorkflowCacheReservation(current, cache) {
 			return 0, pkgerrors.Conflict("workflow cache reservation changed during finalization")
@@ -493,7 +493,7 @@ func (s *workflowCacheService) FinalizeSave(ctx context.Context, run db.Workflow
 	finalize := func(ctx context.Context) error {
 		if finalized.Status == "finalized" {
 			if err := s.purgePendingWorkflowCacheUpload(ctx, cache); err != nil {
-				return pkgerrors.Internal("failed to clean up workflow cache staging upload")
+				return pkgerrors.Internal("failed to clean up workflow cache staging upload").WithCause(err)
 			}
 			return nil
 		}
@@ -522,14 +522,14 @@ func (s *workflowCacheService) FinalizeSave(ctx context.Context, run db.Workflow
 				current.Status == "finalized" && current.ObjectSizeBytes == objectSizeBytes {
 				finalized = current
 				if cleanupErr := s.purgePendingWorkflowCacheUpload(ctx, cache); cleanupErr != nil {
-					return pkgerrors.Internal("failed to clean up workflow cache staging upload")
+					return pkgerrors.Internal("failed to clean up workflow cache staging upload").WithCause(cleanupErr)
 				}
 				return nil
 			}
 			if getErr != nil && !stdErrors.Is(getErr, pgx.ErrNoRows) {
 				// Ownership is ambiguous. Keep the final object and the metered row;
 				// a retry can safely reconcile them.
-				return pkgerrors.Internal("failed to finalize workflow cache")
+				return pkgerrors.Internal("failed to finalize workflow cache").WithCause(getErr)
 			}
 			if getErr == nil && sameWorkflowCacheReservation(current, cache) &&
 				current.Status == "pending" && !stdErrors.Is(err, pgx.ErrNoRows) {
@@ -542,7 +542,7 @@ func (s *workflowCacheService) FinalizeSave(ctx context.Context, run db.Workflow
 			// No exact finalized reservation owns the unique object key. Remove
 			// both locations so a delete/replacement race cannot strand bytes.
 			if cleanupErr := s.deleteWorkflowCacheBlobSet(ctx, cache); cleanupErr != nil {
-				return pkgerrors.Internal("failed to clean up unclaimed workflow cache upload")
+				return pkgerrors.Internal("failed to clean up unclaimed workflow cache upload").WithCause(cleanupErr)
 			}
 			if stdErrors.Is(getErr, pgx.ErrNoRows) {
 				return pkgerrors.NotFound("workflow cache not found")
@@ -553,11 +553,11 @@ func (s *workflowCacheService) FinalizeSave(ctx context.Context, run db.Workflow
 			if stdErrors.Is(err, pgx.ErrNoRows) {
 				return pkgerrors.Conflict("workflow cache is no longer pending")
 			}
-			return pkgerrors.Internal("failed to finalize workflow cache")
+			return pkgerrors.Internal("failed to finalize workflow cache").WithCause(err)
 		}
 		if !sameWorkflowCacheReservation(row, cache) || row.Status != "finalized" || row.ObjectSizeBytes != objectSizeBytes {
 			if cleanupErr := s.deleteWorkflowCacheBlobSet(ctx, cache); cleanupErr != nil {
-				return pkgerrors.Internal("failed to clean up unclaimed workflow cache upload")
+				return pkgerrors.Internal("failed to clean up unclaimed workflow cache upload").WithCause(cleanupErr)
 			}
 			return pkgerrors.Conflict("workflow cache reservation changed during finalization")
 		}
@@ -583,7 +583,7 @@ func (s *workflowCacheService) AbortSave(ctx context.Context, run db.WorkflowRun
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
-		return pkgerrors.Internal("failed to load workflow cache")
+		return pkgerrors.Internal("failed to load workflow cache").WithCause(err)
 	}
 	if cache.RepositoryID != run.RepositoryID {
 		return pkgerrors.Forbidden("cache does not belong to this workflow run")
@@ -601,7 +601,7 @@ func (s *workflowCacheService) AbortSave(ctx context.Context, run db.WorkflowRun
 func (s *workflowCacheService) Cleanup(ctx context.Context) error {
 	repositoryIDs, err := s.queries.ListWorkflowCacheRepositoryIDs(ctx)
 	if err != nil {
-		return pkgerrors.Internal("failed to list workflow cache repositories")
+		return pkgerrors.Internal("failed to list workflow cache repositories").WithCause(err)
 	}
 
 	for _, repositoryID := range repositoryIDs {
@@ -630,7 +630,7 @@ func (s *workflowCacheService) List(ctx context.Context, repositoryID int64, fil
 		PageOffset:   pageOffset,
 	})
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list workflow caches")
+		return nil, pkgerrors.Internal("failed to list workflow caches").WithCause(err)
 	}
 	return rows, nil
 }
@@ -645,7 +645,7 @@ func (s *workflowCacheService) Clear(ctx context.Context, repositoryID int64, fi
 		CacheKey:     strings.TrimSpace(filter.CacheKey),
 	})
 	if err != nil {
-		return WorkflowCacheClearResult{}, pkgerrors.Internal("failed to clear workflow caches")
+		return WorkflowCacheClearResult{}, pkgerrors.Internal("failed to clear workflow caches").WithCause(err)
 	}
 
 	result := WorkflowCacheClearResult{}
@@ -669,7 +669,7 @@ func (s *workflowCacheService) Stats(ctx context.Context, repositoryID int64) (W
 	}
 	row, err := s.queries.GetWorkflowCacheStats(ctx, repositoryID)
 	if err != nil {
-		return WorkflowCacheStats{}, pkgerrors.Internal("failed to load workflow cache stats")
+		return WorkflowCacheStats{}, pkgerrors.Internal("failed to load workflow cache stats").WithCause(err)
 	}
 
 	stats := WorkflowCacheStats{
@@ -694,7 +694,7 @@ func (s *workflowCacheService) resolveWorkflowCacheScope(ctx context.Context, re
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, "", pkgerrors.NotFound("repository not found")
 		}
-		return db.Repository{}, "", pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, "", pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, normalizeWorkflowCacheBookmark(rawRef, repository.DefaultBookmark), nil
 }
@@ -702,7 +702,7 @@ func (s *workflowCacheService) resolveWorkflowCacheScope(ctx context.Context, re
 func (s *workflowCacheService) enforceRepositoryCachePolicy(ctx context.Context, repositoryID, protectedCacheID int64) error {
 	usage, err := s.queries.GetWorkflowCacheRepoUsage(ctx, repositoryID)
 	if err != nil {
-		return pkgerrors.Internal("failed to load workflow cache usage")
+		return pkgerrors.Internal("failed to load workflow cache usage").WithCause(err)
 	}
 
 	now := time.Now().UTC()
@@ -712,7 +712,7 @@ func (s *workflowCacheService) enforceRepositoryCachePolicy(ctx context.Context,
 			LimitCount:   workflowCacheEvictionBatchSize,
 		})
 		if err != nil {
-			return pkgerrors.Internal("failed to select workflow cache eviction candidates")
+			return pkgerrors.Internal("failed to select workflow cache eviction candidates").WithCause(err)
 		}
 		if len(candidates) == 0 {
 			return nil
@@ -819,7 +819,7 @@ func (s *workflowCacheService) validateWorkflowCacheUpload(ctx context.Context, 
 		return validatedWorkflowCacheUpload{}, pkgerrors.BadRequest("cache archive upload not found")
 	}
 	if err != nil {
-		return validatedWorkflowCacheUpload{}, pkgerrors.Internal("failed to verify uploaded cache archive")
+		return validatedWorkflowCacheUpload{}, pkgerrors.Internal("failed to verify uploaded cache archive").WithCause(err)
 	}
 	if validationErr := s.validateWorkflowCacheObject(cache, attrs); validationErr != nil {
 		if _, cleanupErr := s.deleteCacheRow(ctx, cache); cleanupErr != nil {
@@ -866,18 +866,18 @@ func (s *workflowCacheService) prepareWorkflowCacheFinalBlob(ctx context.Context
 	attrs, err := s.store.Stat(ctx, cache.ObjectKey)
 	if stdErrors.Is(err, blob.ErrObjectNotFound) {
 		if promotionErr != nil && !stdErrors.Is(promotionErr, blob.ErrObjectNotFound) {
-			return pkgerrors.Internal("failed to promote workflow cache upload")
+			return pkgerrors.Internal("failed to promote workflow cache upload").WithCause(promotionErr)
 		}
 		return pkgerrors.BadRequest("cache archive upload not found")
 	}
 	if err != nil {
-		return pkgerrors.Internal("failed to verify promoted cache archive")
+		return pkgerrors.Internal("failed to verify promoted cache archive").WithCause(err)
 	}
 	if validationErr := s.validateWorkflowCacheObject(cache, attrs); validationErr != nil {
 		return validationErr
 	}
 	if err := s.purgePendingWorkflowCacheUpload(ctx, cache); err != nil {
-		return pkgerrors.Internal("failed to clean up workflow cache staging upload")
+		return pkgerrors.Internal("failed to clean up workflow cache staging upload").WithCause(err)
 	}
 	return nil
 }
@@ -936,7 +936,7 @@ func (s *workflowCacheService) deleteCacheRow(ctx context.Context, cache db.Work
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
-		return false, pkgerrors.Internal("failed to claim workflow cache deletion")
+		return false, pkgerrors.Internal("failed to claim workflow cache deletion").WithCause(err)
 	}
 	if strings.TrimSpace(claimed.ObjectKey) != "" {
 		// Retry leases are five minutes (see SQL), so bound the production blob
@@ -947,7 +947,7 @@ func (s *workflowCacheService) deleteCacheRow(ctx context.Context, cache db.Work
 		cancelDelete()
 		if deleteErr != nil && !stdErrors.Is(deleteErr, blob.ErrObjectNotFound) {
 			s.releaseCacheDeletionClaim(ctx, claimed, token)
-			return false, pkgerrors.Internal("failed to delete workflow cache archive")
+			return false, pkgerrors.Internal("failed to delete workflow cache archive").WithCause(deleteErr)
 		}
 	}
 	_, err = s.queries.DeleteClaimedWorkflowCache(ctx, db.DeleteClaimedWorkflowCacheParams{
@@ -962,7 +962,7 @@ func (s *workflowCacheService) deleteCacheRow(ctx context.Context, cache db.Work
 			return false, nil
 		}
 		s.releaseCacheDeletionClaim(ctx, claimed, token)
-		return false, pkgerrors.Internal("failed to delete workflow cache metadata")
+		return false, pkgerrors.Internal("failed to delete workflow cache metadata").WithCause(err)
 	}
 	return true, nil
 }

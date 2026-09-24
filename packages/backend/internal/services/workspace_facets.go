@@ -136,7 +136,7 @@ func (s *WorkspaceService) ListWorkspaceFiles(ctx context.Context, workspaceID s
 find "$resolved" -mindepth 1 -maxdepth 1 -printf '%f\0%y\0%s\0'`
 	response, err := client.Execute(ctx, workspace.VmID, sandbox.ExecRequest{Command: command, TimeoutMS: workspaceFacetTimeoutPtr()})
 	if err != nil {
-		return nil, pkgerrors.Internal("list workspace files")
+		return nil, pkgerrors.Internal("list workspace files").WithCause(err)
 	}
 	if err := mapWorkspaceFileExecError(response, "directory"); err != nil {
 		return nil, err
@@ -217,7 +217,7 @@ printf '%%s\0' "$size"
 base64 -w0 -- "$resolved"`, workspaceExecNotFound, MaxWorkspaceFileBytes, workspaceExecFileTooLarge)
 	response, err := client.Execute(ctx, workspace.VmID, sandbox.ExecRequest{Command: command, TimeoutMS: workspaceFacetTimeoutPtr()})
 	if err != nil {
-		return WorkspaceFileContent{}, pkgerrors.Internal("read workspace file")
+		return WorkspaceFileContent{}, pkgerrors.Internal("read workspace file").WithCause(err)
 	}
 	if err := mapWorkspaceFileExecError(response, "file"); err != nil {
 		return WorkspaceFileContent{}, err
@@ -275,7 +275,7 @@ resolved=$(realpath -m -- "$target") || exit %d
 case "$resolved" in "$root"|"$root"/*) ;; *) exit %d ;; esac`, shellQuote(defaultWorkspaceClonePath), shellQuote(absolutePath), workspaceExecNotFound, workspaceExecOutsideRoot)
 	guardResponse, err := client.Execute(ctx, workspace.VmID, sandbox.ExecRequest{Command: guard, TimeoutMS: workspaceFacetTimeoutPtr()})
 	if err != nil {
-		return WorkspaceFileContent{}, pkgerrors.Internal("validate workspace file path")
+		return WorkspaceFileContent{}, pkgerrors.Internal("validate workspace file path").WithCause(err)
 	}
 	if err := mapWorkspaceFileExecError(guardResponse, "file"); err != nil {
 		return WorkspaceFileContent{}, err
@@ -285,7 +285,7 @@ case "$resolved" in "$root"|"$root"/*) ;; *) exit %d ;; esac`, shellQuote(defaul
 		return WorkspaceFileContent{}, pkgerrors.Internal("workspace file writes unavailable")
 	}
 	if err := writeClient.WriteFile(ctx, workspace.VmID, absolutePath, sandbox.WriteFileRequest{Content: content}); err != nil {
-		return WorkspaceFileContent{}, pkgerrors.Internal("write workspace file")
+		return WorkspaceFileContent{}, pkgerrors.Internal("write workspace file").WithCause(err)
 	}
 
 	s.touchWorkspaceEntryRecency(ctx, workspace.ID, "file-content-write")
@@ -315,7 +315,7 @@ func (s *WorkspaceService) ListWorkspaceServices(ctx context.Context, workspaceI
 
 	response, err := client.Execute(ctx, workspace.VmID, sandbox.ExecRequest{Command: workspaceServiceListCommand(), TimeoutMS: workspaceFacetTimeoutPtr()})
 	if err != nil {
-		return nil, pkgerrors.Internal("list workspace services")
+		return nil, pkgerrors.Internal("list workspace services").WithCause(err)
 	}
 	if !workspaceExecSucceeded(response) {
 		return nil, pkgerrors.Internal("list workspace services")

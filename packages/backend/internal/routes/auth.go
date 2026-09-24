@@ -95,7 +95,7 @@ func (h *AuthHandler) PostKeyAuthVerify(w http.ResponseWriter, r *http.Request) 
 
 	csrfToken, err := randomHex(32)
 	if err != nil {
-		writeRouteError(w, r, errors.Internal("failed to generate csrf token"))
+		writeRouteError(w, r, errors.Internal("failed to generate csrf token").WithCause(err))
 		return
 	}
 
@@ -207,7 +207,7 @@ func (h *AuthHandler) PostSSETicket(w http.ResponseWriter, r *http.Request) {
 				"too many active sse tickets"))
 			return
 		}
-		errors.WriteError(w, errors.Internal("failed to create sse ticket"))
+		errors.WriteError(w, errors.Internal("failed to create sse ticket").WithCause(err))
 		return
 	}
 
@@ -260,7 +260,7 @@ func consumeOAuth2PendingAuthorizeCookie(w http.ResponseWriter, r *http.Request,
 func (h *AuthHandler) GetGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
 	stateVerifier, err := randomHex(16)
 	if err != nil {
-		writeRouteError(w, r, errors.Internal("failed to generate oauth state"))
+		writeRouteError(w, r, errors.Internal("failed to generate oauth state").WithCause(err))
 		return
 	}
 	redirectURL, err := h.Service.StartGitHubOAuth(r.Context(), stateVerifier)
@@ -297,7 +297,7 @@ func (h *AuthHandler) GetGitHubOAuthCLIStart(w http.ResponseWriter, r *http.Requ
 
 	stateVerifier, err := randomHex(16)
 	if err != nil {
-		writeRouteError(w, r, errors.Internal("failed to generate oauth state"))
+		writeRouteError(w, r, errors.Internal("failed to generate oauth state").WithCause(err))
 		return
 	}
 	var redirectURL string
@@ -386,7 +386,7 @@ func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Requ
 	csrfToken, err := randomHex(32)
 	if err != nil {
 		clearOAuthStateCookie(w, h.AuthConfig.CookieSecure)
-		writeRouteError(w, r, errors.Internal("failed to generate csrf token"))
+		writeRouteError(w, r, errors.Internal("failed to generate csrf token").WithCause(err))
 		return
 	}
 
@@ -439,7 +439,7 @@ func (h *AuthHandler) GetAuth0Authorize(w http.ResponseWriter, r *http.Request) 
 
 	stateVerifier, err := randomHex(16)
 	if err != nil {
-		writeRouteError(w, r, errors.Internal("failed to generate oauth state"))
+		writeRouteError(w, r, errors.Internal("failed to generate oauth state").WithCause(err))
 		return
 	}
 
@@ -493,7 +493,7 @@ func (h *AuthHandler) GetAuth0Callback(w http.ResponseWriter, r *http.Request) {
 	csrfToken, err := randomHex(32)
 	if err != nil {
 		clearOAuthStateCookie(w, h.AuthConfig.CookieSecure)
-		writeRouteError(w, r, errors.Internal("failed to generate csrf token"))
+		writeRouteError(w, r, errors.Internal("failed to generate csrf token").WithCause(err))
 		return
 	}
 
@@ -902,14 +902,19 @@ func writeRouteError(w http.ResponseWriter, r *http.Request, err error) {
 		// so the ~1200 handlers that call it directly pace their clients the
 		// same way the routed ones do.
 		//
-		// 5xx APIErrors often embed raw driver/internal error text (e.g.
-		// service code building Internal("...: "+err.Error())). Log the
-		// detailed message server-side and return the generic status text
-		// unless the code belongs to the closed safe-message set. Non-5xx
-		// APIErrors (validation, 429, etc.) pass through unchanged.
+		// A 5xx APIError carries its underlying error structurally, attached
+		// with WithCause, and keeps Message a human sentence; older call
+		// sites still embed raw driver text in Message
+		// (Internal("...: "+err.Error())). Log the message, the code and the
+		// cause server-side and return the generic status text unless the
+		// code belongs to the closed safe-message set. Non-5xx APIErrors
+		// (validation, 429, etc.) pass through unchanged.
 		if apiErr.Status >= http.StatusInternalServerError {
-			middleware.LoggerFromContext(r.Context()).Error("internal server error",
-				"status", apiErr.Status, "error", apiErr.Message)
+			attrs := []any{"status", apiErr.Status, "code", apiErr.Code, "error", apiErr.Message}
+			if cause := apiErr.Cause(); cause != nil {
+				attrs = append(attrs, "cause", cause)
+			}
+			middleware.LoggerFromContext(r.Context()).Error("internal server error", attrs...)
 			message := strings.ToLower(http.StatusText(apiErr.Status))
 			if isSafe5xxMessageCode(apiErr.Code) {
 				message = apiErr.Message

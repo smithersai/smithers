@@ -121,7 +121,7 @@ func (s *SecretService) SetSecret(ctx context.Context, actor *db.User, owner, re
 	// Encrypt the secret value before storing.
 	encrypted, err := s.secretCodec.EncryptString(value)
 	if err != nil {
-		return SecretResponse{}, pkgerrors.Internal("failed to encrypt secret")
+		return SecretResponse{}, pkgerrors.Internal("failed to encrypt secret").WithCause(err)
 	}
 
 	var created db.RepositorySecret
@@ -136,7 +136,7 @@ func (s *SecretService) SetSecret(ctx context.Context, actor *db.User, owner, re
 			return repoSecretQuotaExceeded()
 		}
 		if werr != nil {
-			return pkgerrors.Internal("failed to set secret")
+			return pkgerrors.Internal("failed to set secret").WithCause(werr)
 		}
 		return nil
 	}); err != nil {
@@ -165,7 +165,7 @@ func (s *SecretService) ListSecrets(ctx context.Context, actor *db.User, owner, 
 
 	rows, err := s.queries.ListSecrets(ctx, repository.ID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list secrets")
+		return nil, pkgerrors.Internal("failed to list secrets").WithCause(err)
 	}
 
 	result := make([]SecretResponse, len(rows))
@@ -186,7 +186,7 @@ func (s *SecretService) ListDecryptedSecretsForRepo(ctx context.Context, reposit
 
 	rows, err := s.queries.ListSecretValuesForRepo(ctx, repositoryID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list secret values")
+		return nil, pkgerrors.Internal("failed to list secret values").WithCause(err)
 	}
 
 	secrets := make(map[string]string, len(rows))
@@ -198,7 +198,7 @@ func (s *SecretService) ListDecryptedSecretsForRepo(ctx context.Context, reposit
 
 		value, err := s.secretCodec.DecryptString(string(row.ValueEncrypted))
 		if err != nil {
-			return nil, pkgerrors.Internal("failed to decrypt secret")
+			return nil, pkgerrors.Internal("failed to decrypt secret").WithCause(err)
 		}
 		secrets[name] = value
 	}
@@ -229,7 +229,7 @@ func (s *SecretService) DeleteSecret(ctx context.Context, actor *db.User, owner,
 			RepositoryID: repository.ID,
 			Name:         trimmedName,
 		}); err != nil {
-			return pkgerrors.Internal("failed to delete secret")
+			return pkgerrors.Internal("failed to delete secret").WithCause(err)
 		}
 		return nil
 	})
@@ -270,7 +270,7 @@ func (s *SecretService) SetOrgSecret(ctx context.Context, actor *db.User, orgNam
 
 	encrypted, err := s.secretCodec.EncryptString(value)
 	if err != nil {
-		return SecretResponse{}, pkgerrors.Internal("failed to encrypt secret")
+		return SecretResponse{}, pkgerrors.Internal("failed to encrypt secret").WithCause(err)
 	}
 	created, err := s.queries.CreateOrUpdateOrgSecret(ctx, db.CreateOrUpdateOrgSecretParams{
 		OrganizationID: org.ID,
@@ -281,7 +281,7 @@ func (s *SecretService) SetOrgSecret(ctx context.Context, actor *db.User, orgNam
 		return SecretResponse{}, orgSecretQuotaExceeded()
 	}
 	if err != nil {
-		return SecretResponse{}, pkgerrors.Internal("failed to set organization secret")
+		return SecretResponse{}, pkgerrors.Internal("failed to set organization secret").WithCause(err)
 	}
 	return SecretResponse{
 		Name:      created.Name,
@@ -300,7 +300,7 @@ func (s *SecretService) ListOrgSecrets(ctx context.Context, actor *db.User, orgN
 	}
 	rows, err := s.queries.ListOrgSecrets(ctx, org.ID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list organization secrets")
+		return nil, pkgerrors.Internal("failed to list organization secrets").WithCause(err)
 	}
 	result := make([]SecretResponse, len(rows))
 	for i, row := range rows {
@@ -332,7 +332,7 @@ func (s *SecretService) DeleteOrgSecret(ctx context.Context, actor *db.User, org
 		OrganizationID: org.ID,
 		Name:           trimmedName,
 	}); err != nil {
-		return pkgerrors.Internal("failed to delete organization secret")
+		return pkgerrors.Internal("failed to delete organization secret").WithCause(err)
 	}
 	return nil
 }
@@ -343,7 +343,7 @@ func (s *SecretService) DeleteOrgSecret(ctx context.Context, actor *db.User, org
 func (s *SecretService) enforceSecretQuota(ctx context.Context, repositoryID int64, name string) error {
 	rows, err := s.queries.ListSecrets(ctx, repositoryID)
 	if err != nil {
-		return pkgerrors.Internal("failed to set secret")
+		return pkgerrors.Internal("failed to set secret").WithCause(err)
 	}
 	for _, row := range rows {
 		if row.Name == name {
@@ -361,7 +361,7 @@ func (s *SecretService) enforceSecretQuota(ctx context.Context, repositoryID int
 func (s *SecretService) enforceOrgSecretQuota(ctx context.Context, organizationID int64, name string) error {
 	rows, err := s.queries.ListOrgSecrets(ctx, organizationID)
 	if err != nil {
-		return pkgerrors.Internal("failed to set organization secret")
+		return pkgerrors.Internal("failed to set organization secret").WithCause(err)
 	}
 	for _, row := range rows {
 		if row.Name == name {
@@ -410,7 +410,7 @@ func (s *SecretService) resolveRepoByOwnerAndName(ctx context.Context, owner, re
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
 		slog.Error("load repository failed", "owner", lowerOwner, "repo", lowerRepo, "error", err)
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }
@@ -426,7 +426,7 @@ func (s *SecretService) resolveOrgByName(ctx context.Context, orgName string) (d
 			return db.Organization{}, pkgerrors.NotFound("organization not found")
 		}
 		slog.Error("load organization failed", "org", lowerOrg, "error", err)
-		return db.Organization{}, pkgerrors.Internal("failed to load organization")
+		return db.Organization{}, pkgerrors.Internal("failed to load organization").WithCause(err)
 	}
 	return org, nil
 }
@@ -444,7 +444,7 @@ func (s *SecretService) requireOrgOwnerAccess(ctx context.Context, org db.Organi
 	})
 	if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
 		slog.Error("load organization membership failed", "org_id", org.ID, "user_id", actor.ID, "error", err)
-		return pkgerrors.Internal("failed to load organization membership")
+		return pkgerrors.Internal("failed to load organization membership").WithCause(err)
 	}
 	if err != nil || strings.ToLower(strings.TrimSpace(member.Role)) != "owner" {
 		return pkgerrors.Forbidden("permission denied")

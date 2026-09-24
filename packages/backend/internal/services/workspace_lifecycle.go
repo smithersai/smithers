@@ -585,7 +585,7 @@ func (s *WorkspaceService) resumeWorkspaceVM(ctx context.Context, workspace db.W
 		}
 		for path, file := range binding.files {
 			if err := client.WriteFile(resumeCtx, workspace.VmID, path, sandbox.WriteFileRequest{Content: file.Content}); err != nil {
-				return workspace, pkgerrors.Internal("stage workspace provider authentication")
+				return workspace, pkgerrors.Internal("stage workspace provider authentication").WithCause(err)
 			}
 		}
 		// Refresh persistent auth settings without repeating the repository setup script.

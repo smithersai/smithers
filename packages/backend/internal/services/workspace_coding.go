@@ -297,7 +297,7 @@ func (s *WorkspaceService) executeCoding(ctx context.Context, workspaceID string
 	}
 	command, err := buildWorkspaceCodingCommand(defaultWorkspaceClonePath, user, request)
 	if err != nil {
-		return WorkspaceCodingResult{}, pkgerrors.Internal("encode workspace coding request")
+		return WorkspaceCodingResult{}, pkgerrors.Internal("encode workspace coding request").WithCause(err)
 	}
 	ctx = sandbox.WithIdempotencyKey(ctx, "coding-exec-"+uuid.NewString())
 	response, err := client.Execute(ctx, workspace.VmID, sandbox.ExecRequest{Command: command, TimeoutMS: workspaceOperationTimeoutPtr()})

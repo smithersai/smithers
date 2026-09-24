@@ -57,7 +57,7 @@ func (s *DeployKeyService) ListDeployKeys(ctx context.Context, owner, repo strin
 
 	keys, err := s.queries.ListDeployKeysByRepo(ctx, repository.ID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list deploy keys")
+		return nil, pkgerrors.Internal("failed to list deploy keys").WithCause(err)
 	}
 
 	result := make([]DeployKeyResponse, 0, len(keys))
@@ -115,7 +115,7 @@ func (s *DeployKeyService) CreateDeployKey(ctx context.Context, owner, repo stri
 		if isDeployKeyUniqueViolation(err) {
 			return DeployKeyResponse{}, pkgerrors.Conflict("deploy key already registered")
 		}
-		return DeployKeyResponse{}, pkgerrors.Internal("failed to create deploy key")
+		return DeployKeyResponse{}, pkgerrors.Internal("failed to create deploy key").WithCause(err)
 	}
 
 	return mapDeployKeyResponse(created), nil
@@ -136,14 +136,14 @@ func (s *DeployKeyService) DeleteDeployKey(ctx context.Context, owner, repo stri
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("deploy key not found")
 		}
-		return pkgerrors.Internal("failed to load deploy key")
+		return pkgerrors.Internal("failed to load deploy key").WithCause(err)
 	}
 	if key.RepositoryID != repository.ID {
 		return pkgerrors.NotFound("deploy key not found")
 	}
 
 	if err := s.queries.DeleteDeployKey(ctx, keyID); err != nil {
-		return pkgerrors.Internal("failed to delete deploy key")
+		return pkgerrors.Internal("failed to delete deploy key").WithCause(err)
 	}
 
 	// End every live SSH git session this deploy key authenticated.
@@ -165,7 +165,7 @@ func (s *DeployKeyService) loadRepository(ctx context.Context, owner, repo strin
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.Repository{}, pkgerrors.NotFound("repository")
 		}
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }

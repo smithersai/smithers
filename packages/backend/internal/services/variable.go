@@ -110,7 +110,7 @@ func (s *VariableService) SetVariable(ctx context.Context, actor *db.User, owner
 		Value:        value,
 	})
 	if err != nil {
-		return VariableResponse{}, pkgerrors.Internal("failed to set variable")
+		return VariableResponse{}, pkgerrors.Internal("failed to set variable").WithCause(err)
 	}
 
 	return toVariableResponse(created), nil
@@ -138,7 +138,7 @@ func (s *VariableService) GetVariable(ctx context.Context, actor *db.User, owner
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return VariableResponse{}, pkgerrors.NotFound("variable not found")
 		}
-		return VariableResponse{}, pkgerrors.Internal("failed to get variable")
+		return VariableResponse{}, pkgerrors.Internal("failed to get variable").WithCause(err)
 	}
 
 	return toVariableResponse(variable), nil
@@ -155,7 +155,7 @@ func (s *VariableService) ListVariables(ctx context.Context, actor *db.User, own
 
 	variables, err := s.queries.ListVariables(ctx, repository.ID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list variables")
+		return nil, pkgerrors.Internal("failed to list variables").WithCause(err)
 	}
 
 	result := make([]VariableResponse, len(variables))
@@ -187,7 +187,7 @@ func (s *VariableService) DeleteVariable(ctx context.Context, actor *db.User, ow
 		RepositoryID: repository.ID,
 		Name:         trimmedName,
 	}); err != nil {
-		return pkgerrors.Internal("failed to delete variable")
+		return pkgerrors.Internal("failed to delete variable").WithCause(err)
 	}
 	return nil
 }
@@ -225,7 +225,7 @@ func (s *VariableService) SetOrgVariable(ctx context.Context, actor *db.User, or
 		Value:          value,
 	})
 	if err != nil {
-		return VariableResponse{}, pkgerrors.Internal("failed to set organization variable")
+		return VariableResponse{}, pkgerrors.Internal("failed to set organization variable").WithCause(err)
 	}
 	return orgVariableToResponse(created), nil
 }
@@ -240,7 +240,7 @@ func (s *VariableService) ListOrgVariables(ctx context.Context, actor *db.User, 
 	}
 	variables, err := s.queries.ListOrgVariables(ctx, org.ID)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to list organization variables")
+		return nil, pkgerrors.Internal("failed to list organization variables").WithCause(err)
 	}
 	result := make([]VariableResponse, len(variables))
 	for i, v := range variables {
@@ -268,7 +268,7 @@ func (s *VariableService) DeleteOrgVariable(ctx context.Context, actor *db.User,
 		OrganizationID: org.ID,
 		Name:           trimmedName,
 	}); err != nil {
-		return pkgerrors.Internal("failed to delete organization variable")
+		return pkgerrors.Internal("failed to delete organization variable").WithCause(err)
 	}
 	return nil
 }
@@ -281,7 +281,7 @@ func (s *VariableService) DeleteOrgVariable(ctx context.Context, actor *db.User,
 func (s *VariableService) enforceVariableQuota(ctx context.Context, repositoryID int64, name string) error {
 	rows, err := s.queries.ListVariables(ctx, repositoryID)
 	if err != nil {
-		return pkgerrors.Internal("failed to set variable")
+		return pkgerrors.Internal("failed to set variable").WithCause(err)
 	}
 	for _, row := range rows {
 		if row.Name == name {
@@ -299,7 +299,7 @@ func (s *VariableService) enforceVariableQuota(ctx context.Context, repositoryID
 func (s *VariableService) enforceOrgVariableQuota(ctx context.Context, organizationID int64, name string) error {
 	rows, err := s.queries.ListOrgVariables(ctx, organizationID)
 	if err != nil {
-		return pkgerrors.Internal("failed to set organization variable")
+		return pkgerrors.Internal("failed to set organization variable").WithCause(err)
 	}
 	for _, row := range rows {
 		if row.Name == name {
@@ -333,7 +333,7 @@ func (s *VariableService) resolveRepoByOwnerAndName(ctx context.Context, owner, 
 			return db.Repository{}, pkgerrors.NotFound("repository not found")
 		}
 		slog.Error("load repository failed", "owner", lowerOwner, "repo", lowerRepo, "error", err)
-		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	return repository, nil
 }
@@ -349,7 +349,7 @@ func (s *VariableService) resolveOrgByName(ctx context.Context, orgName string) 
 			return db.Organization{}, pkgerrors.NotFound("organization not found")
 		}
 		slog.Error("load organization failed", "org", lowerOrg, "error", err)
-		return db.Organization{}, pkgerrors.Internal("failed to load organization")
+		return db.Organization{}, pkgerrors.Internal("failed to load organization").WithCause(err)
 	}
 	return org, nil
 }
@@ -367,7 +367,7 @@ func (s *VariableService) requireOrgOwnerAccess(ctx context.Context, org db.Orga
 	})
 	if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
 		slog.Error("load organization membership failed", "org_id", org.ID, "user_id", actor.ID, "error", err)
-		return pkgerrors.Internal("failed to load organization membership")
+		return pkgerrors.Internal("failed to load organization membership").WithCause(err)
 	}
 	if err != nil || strings.ToLower(strings.TrimSpace(member.Role)) != "owner" {
 		return pkgerrors.Forbidden("permission denied")

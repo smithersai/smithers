@@ -140,3 +140,32 @@ func TestGitHubAppReconcile_WrappedAPIErrorKeepsItsStatus(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, rec.Code)
 }
+
+// A service that attaches its driver error with WithCause gets that error in
+// the request log line, while the client still sees only the status text.
+func TestWriteRouteError_LogsTheAttachedCause(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("ERROR: canceling statement due to statement timeout (SQLSTATE 57014)")
+	cases := map[string]error{
+		"direct":  pkgerrors.Internal("failed to set secret").WithCause(cause),
+		"wrapped": fmt.Errorf("authorize: %w", pkgerrors.Internal("failed to set secret").WithCause(cause)),
+	}
+	for name, routeErr := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodPut, "/api/secrets/x", nil)
+			rec, logs := serveWithCapturedLog(t, func(w http.ResponseWriter, r *http.Request) {
+				writeRouteError(w, r, routeErr)
+			}, req)
+
+			require.Equal(t, http.StatusInternalServerError, rec.Code)
+			assert.Contains(t, rec.Body.String(), "internal server error")
+			assert.NotContains(t, rec.Body.String(), "SQLSTATE")
+			assert.NotContains(t, rec.Body.String(), "failed to set secret")
+			assert.Contains(t, logs, "SQLSTATE 57014")
+			assert.Contains(t, logs, "failed to set secret")
+			assert.Contains(t, logs, "code=internal")
+		})
+	}
+}

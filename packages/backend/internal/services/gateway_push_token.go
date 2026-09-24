@@ -73,7 +73,7 @@ func (s *GatewayPushTokenService) Mint(ctx context.Context, gatewayID, bearer st
 		return refused, pkgerrors.NotFound("repository not found")
 	}
 	if err != nil {
-		return refused, pkgerrors.Internal("failed to load repository")
+		return refused, pkgerrors.Internal("failed to load repository").WithCause(err)
 	}
 	if repository.ID <= 0 || repository.ID != target.RepositoryID {
 		return refused, pkgerrors.Forbidden("gateway cannot mint credentials for another repository")
@@ -112,7 +112,7 @@ func (s *GatewayPushTokenService) Mint(ctx context.Context, gatewayID, bearer st
 	scopes := string(middleware.ScopeWriteRepository) + "," + middleware.RepositoryRestrictionScope(repository.ID)
 	token, err := issueTemporaryRepoTokenWithTTL(ctx, s.q, actor.ID, "sandbox-gateway-push-"+gatewayID, scopes, gatewayPushTokenTTL)
 	if err != nil {
-		return refused, pkgerrors.Internal("failed to mint gateway push credential")
+		return refused, pkgerrors.Internal("failed to mint gateway push credential").WithCause(err)
 	}
 	middleware.LoggerFromContext(ctx).Info("gateway push credential minted",
 		"gateway_id", gatewayID, "user_id", actor.ID, "repository_id", repository.ID,
