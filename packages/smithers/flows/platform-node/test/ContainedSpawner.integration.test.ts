@@ -17,7 +17,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import { ContainedSpawner, ProcessLedger } from "@smthrs/kernel"
-import { Deferred, Effect, Fiber } from "effect"
+import { Deferred, Effect, Fiber, Stream } from "effect"
 import type * as Scope from "effect/Scope"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -64,9 +64,14 @@ describe("ContainedSpawner", () => {
   it.live("kills the whole process group a cancelled child leads", () =>
     Effect.gen(function*() {
       const pidFile = join(directory, "grandchild.pid")
-      const command = ChildProcess.make("sh", [
-        "-c",
-        `sleep 30 & echo $! > ${pidFile}; sleep 30`
+      const follower = "process.send('ready');setInterval(()=>{},1000)"
+      const command = ChildProcess.make(process.execPath, [
+        "-e",
+        `
+        const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(follower)}],
+          {stdio:['ignore','ignore','ignore','ipc']});
+        child.once('message',()=>require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(child.pid)));
+        setInterval(()=>{},1000);`
       ])
       const started = yield* Deferred.make<number>()
       const fiber = yield* withLedger(() =>
@@ -91,9 +96,12 @@ describe("ContainedSpawner", () => {
   it.live("escalates to SIGKILL when the child ignores SIGTERM", () =>
     Effect.gen(function*() {
       const readyFile = join(directory, "stubborn.ready")
-      const command = ChildProcess.make("sh", [
-        "-c",
-        `trap "" TERM; echo ready > ${readyFile}; while true; do sleep 0.2; done`
+      const command = ChildProcess.make(process.execPath, [
+        "-e",
+        `
+        process.on('SIGTERM',()=>{});
+        require('node:fs').writeFileSync(${JSON.stringify(readyFile)},'ready');
+        setInterval(()=>{},1000);`
       ])
       const started = yield* Deferred.make<number>()
       const fiber = yield* withLedger(() =>
@@ -115,7 +123,7 @@ describe("ContainedSpawner", () => {
 
   it.live("records a live process against its group and releases it on scope close", () =>
     Effect.gen(function*() {
-      const command = ChildProcess.make("sleep", ["30"])
+      const command = ChildProcess.make(process.execPath, ["-e", "setInterval(()=>{},1000)"])
       const observed = yield* withLedger((ledger) =>
         Effect.gen(function*() {
           const spawner = yield* ChildProcessSpawner
@@ -131,17 +139,17 @@ describe("ContainedSpawner", () => {
       expect(observed.live).toHaveLength(1)
       expect(observed.live[0]).toMatchObject({
         pid: observed.pid,
-        // A detached child leads its own group, so the group id is its pid.
-        pgid: observed.pid,
+        // Windows has process trees; detached POSIX children lead groups.
+        pgid: process.platform === "win32" ? null : observed.pid,
         hostId: "contained",
         // The executable, never the arguments a journal would keep forever.
-        commandDigest: "sleep"
+        commandDigest: process.execPath
       })
     }))
 
   it.live("records no process group for a child that shares the host's", () =>
     Effect.gen(function*() {
-      const command = ChildProcess.make("sleep", ["5"], { detached: false })
+      const command = ChildProcess.make(process.execPath, ["-e", "setInterval(()=>{},1000)"], { detached: false })
       const live = yield* withLedger((ledger) =>
         Effect.gen(function*() {
           const spawner = yield* ChildProcessSpawner
@@ -171,22 +179,34 @@ describe("ContainedSpawner", () => {
   it.live("records every leg of a spawned pipeline", () =>
     Effect.gen(function*() {
       const pipeline = ChildProcess.pipeTo(
-        ChildProcess.make("printf", ["a\\nb\\n"]),
-        ChildProcess.make("wc", ["-l"])
+        ChildProcess.make(process.execPath, ["-e", "process.stdout.write('a\\nb\\n')"]),
+        ChildProcess.make(process.execPath, [
+          "-e",
+          "let text='';process.stdin.on('data',x=>text+=x);process.stdin.on('end',()=>process.stdout.write(String(text.split('\\n').length-1)))"
+        ])
       )
       const observed = yield* withLedger((ledger) =>
         Effect.gen(function*() {
           const spawner = yield* ChildProcessSpawner
           const handle = yield* spawner.spawn(pipeline)
-          return { pid: handle.pid as number, live: yield* ledger.live }
+          const live = yield* ledger.live
+          const output = yield* handle.stdout.pipe(Stream.decodeText(), Stream.mkString)
+          expect(yield* handle.exitCode).toBe(0)
+          return { pid: handle.pid as number, live, output }
         })
       ).pipe(Effect.scoped)
 
+      expect(observed.output).toBe("2")
       expect(observed.live).toHaveLength(2)
+      expect(observed.live[0]!.pid).not.toBe(observed.live[1]!.pid)
       // Each leg is recorded by the program it runs; its arguments stay out of
       // the durable record.
-      expect(observed.live[0]?.commandDigest).toBe("printf")
-      expect(observed.live[1]).toMatchObject({ pid: observed.pid, pgid: observed.pid, commandDigest: "wc" })
+      expect(observed.live[0]?.commandDigest).toBe(process.execPath)
+      expect(observed.live[1]).toMatchObject({
+        pid: observed.pid,
+        pgid: process.platform === "win32" ? null : observed.pid,
+        commandDigest: process.execPath
+      })
     }))
 
   it("gives every leg of a pipeline the same kill policy", () => {
