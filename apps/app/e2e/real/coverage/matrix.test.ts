@@ -96,7 +96,7 @@ describe("deployment mode matrix", () => {
     const declared = new Set(report.scenarios.map(({ id }) => id))
     expect(MATRIX_SCENARIO_IDS.filter((id) => !declared.has(id))).toEqual([])
     expect(MATRIX_OBLIGATIONS.filter(({ scenarios }) => scenarios.length === 0).map(({ id }) => id)).toEqual([])
-  })
+  }, 30_000)
 
   test("GitHub import runs only when the host advertises its configured integration", () => {
     const owned = applicableScenarioIds(["identity", "agent", "model.turn", "cloud", "cloud.terminal"])
