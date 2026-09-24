@@ -173,6 +173,15 @@ fn git(
     Ok(Some(text))
 }
 
+#[cfg(windows)]
+fn managed_transport() -> Result<Vec<(&'static str, String)>> {
+    Err(Failure::new(
+        "source_import_unavailable",
+        "Managed guest transport requires protected Unix provisioning",
+    ))
+}
+
+#[cfg(unix)]
 fn managed_transport() -> Result<Vec<(&'static str, String)>> {
     let path = Path::new("/etc/smithers/egress.env");
     if !path.exists() {

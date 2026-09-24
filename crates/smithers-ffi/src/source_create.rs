@@ -76,6 +76,7 @@ struct Config {
 }
 
 /// Check the fixed root-owned binding without following a replaceable symlink.
+#[cfg(unix)]
 pub fn read_provisioned_config<T: serde::de::DeserializeOwned>() -> Result<T> {
     use std::os::unix::fs::MetadataExt;
     let directory = Path::new("/etc/smithers");
@@ -105,6 +106,13 @@ pub fn read_provisioned_config<T: serde::de::DeserializeOwned>() -> Result<T> {
         return Err(invalid());
     }
     Ok(config)
+}
+
+/// Managed guests use a root-owned Unix binding and credential socket. A local
+/// Windows host cannot acquire that authority from a similarly named file.
+#[cfg(windows)]
+pub fn read_provisioned_config<T: serde::de::DeserializeOwned>() -> Result<T> {
+    Err(unavailable())
 }
 pub fn provisioned_owner(path: &Path) -> Result<Owner> {
     let config: Config = read_provisioned_config()?;

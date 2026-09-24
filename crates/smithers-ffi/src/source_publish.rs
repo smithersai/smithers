@@ -459,6 +459,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn credential_uses_the_reporters_existing_cache_with_repository_path_scope() {
         let (temp, mut config, _) = fixture();
         use std::os::unix::fs::PermissionsExt;
@@ -487,6 +488,12 @@ mod tests {
             &gix::credentials::helper::Action::Erase(entry.into()),
         )
         .unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn local_windows_host_cannot_acquire_managed_unix_guest_credentials() {
+        assert!(crate::source_create::read_provisioned_config::<Config>().is_err());
     }
 
     fn receipt(config: &Config, source: &Source) -> serde_json::Value {

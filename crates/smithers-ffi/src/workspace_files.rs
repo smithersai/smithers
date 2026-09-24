@@ -1,6 +1,9 @@
 //! Retain file preimages outside the working tree before a native JJ snapshot.
-use std::fs::{self, OpenOptions};
+use std::fs;
+#[cfg(unix)]
+use std::fs::OpenOptions;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +13,77 @@ use serde_json::{json, Value};
 use super::workspace_engine::Failure;
 
 type Result<T> = std::result::Result<T, Failure>;
+
+fn mode(metadata: &fs::Metadata) -> u32 {
+    #[cfg(unix)]
+    {
+        metadata.permissions().mode() & 0o777
+    }
+    #[cfg(windows)]
+    {
+        if metadata.permissions().readonly() {
+            0o444
+        } else {
+            0o666
+        }
+    }
+}
+
+fn set_mode(file: &fs::File, mode: u32) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        file.set_permissions(fs::Permissions::from_mode(mode))
+    }
+    #[cfg(windows)]
+    {
+        let mut permissions = file.metadata()?.permissions();
+        permissions.set_readonly(mode & 0o200 == 0);
+        file.set_permissions(permissions)
+    }
+}
+
+fn private_recovery_directory(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        fs::create_dir_all(path)?;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+    }
+    #[cfg(windows)]
+    {
+        use super::atomic_windows_handle::Directory;
+        // FilePatch::new derives exactly three levels below the repository parent.
+        let parent = path
+            .ancestors()
+            .nth(3)
+            .ok_or(std::io::ErrorKind::InvalidInput)?;
+        let mut directory = Directory::root(parent)?;
+        for part in path
+            .strip_prefix(parent)
+            .map_err(|_| std::io::ErrorKind::InvalidInput)?
+            .components()
+        {
+            let std::path::Component::Normal(name) = part else {
+                return Err(std::io::ErrorKind::InvalidInput.into());
+            };
+            directory = directory.private_child(name)?;
+        }
+        Ok(())
+    }
+}
+
+fn create_staged_file(path: &Path) -> std::io::Result<fs::File> {
+    #[cfg(unix)]
+    {
+        OpenOptions::new().write(true).create_new(true).open(path)
+    }
+    #[cfg(windows)]
+    {
+        use super::atomic_windows_handle::Directory;
+        let parent = path.parent().ok_or(std::io::ErrorKind::InvalidInput)?;
+        Directory::root(parent)?
+            .create_private_file(path.file_name().ok_or(std::io::ErrorKind::InvalidInput)?)
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -81,7 +155,7 @@ fn regular(root: &Path, path: &str) -> Result<Option<(Vec<u8>, u32)>> {
             if after.len() != metadata.len() || after.modified().ok() != metadata.modified().ok() {
                 return Err(Failure::new("file_conflict", "file changed while reading"));
             }
-            return Ok(Some((bytes, metadata.permissions().mode() & 0o777)));
+            return Ok(Some((bytes, mode(&metadata))));
         }
     }
     Ok(None)
@@ -208,15 +282,12 @@ impl FilePatch {
 
     fn save(&self, phase: &str) -> Result<()> {
         let staged = self.directory.join("manifest.next");
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&staged)
-            .map_err(|_| io_error())?;
+        let mut file = create_staged_file(&staged).map_err(|_| io_error())?;
         let data = json!({"version":1, "digest":self.digest, "phase":phase});
         file.write_all(data.to_string().as_bytes())
             .map_err(|_| io_error())?;
         file.sync_all().map_err(|_| io_error())?;
+        drop(file);
         fs::rename(&staged, self.directory.join("manifest.json")).map_err(|_| io_error())
     }
 
@@ -252,23 +323,15 @@ impl FilePatch {
                 ));
             }
             if index == 0 {
-                fs::create_dir_all(&self.directory).map_err(|_| io_error())?;
-                fs::set_permissions(&self.directory, fs::Permissions::from_mode(0o700))
-                    .map_err(|_| io_error())?;
+                private_recovery_directory(&self.directory).map_err(|_| io_error())?;
                 self.save("preparing")?;
             }
             if let Some(content) = &edit.content {
                 let staged = self.directory.join(format!("{index}.after"));
-                let mut file = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&staged)
-                    .map_err(|_| io_error())?;
+                let mut file = create_staged_file(&staged).map_err(|_| io_error())?;
                 file.write_all(content.as_bytes()).map_err(|_| io_error())?;
-                file.set_permissions(fs::Permissions::from_mode(
-                    current.map(|(_, mode)| mode).unwrap_or(0o644),
-                ))
-                .map_err(|_| io_error())?;
+                set_mode(&file, current.map(|(_, mode)| mode).unwrap_or(0o644))
+                    .map_err(|_| io_error())?;
                 file.sync_all().map_err(|_| io_error())?;
             }
         }
@@ -334,5 +397,77 @@ impl FilePatch {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::OpenOptions;
+
+    #[test]
+    fn retains_preimages_and_readonly_mode_across_install_and_reopen() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repository");
+        fs::create_dir(&root).unwrap();
+        let original = root.join("original.txt");
+        fs::write(&original, "before").unwrap();
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&original)
+            .unwrap();
+        set_mode(&file, 0o444).unwrap();
+        drop(file);
+        let request = json!({"files":[
+            {"path":"original.txt", "beforeDigest":hash(b"before"), "content":"after"},
+            {"path":"nested/new.txt", "content":"new"}
+        ]});
+        let patch = FilePatch::new(&root, "request-1", "digest-1", &request).unwrap();
+        assert!(patch.prepare().unwrap());
+        assert_eq!(fs::read(&original).unwrap(), b"before");
+        patch.install().unwrap();
+        assert_eq!(fs::read(&original).unwrap(), b"after");
+        assert_eq!(mode(&fs::metadata(&original).unwrap()) & 0o200, 0);
+        assert_eq!(fs::read(root.join("nested/new.txt")).unwrap(), b"new");
+        assert_eq!(
+            fs::read(patch.directory.join("0.before")).unwrap(),
+            b"before"
+        );
+        let reopened = FilePatch::new(&root, "request-1", "digest-1", &request).unwrap();
+        assert!(!reopened.prepare().unwrap());
+        reopened.verify().unwrap();
+    }
+
+    #[test]
+    fn refuses_changed_preimage_before_creating_recovery_and_preserves_unrelated_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repository");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("original.txt"), "concurrent edit").unwrap();
+        let request = json!({"files":[
+            {"path":"original.txt", "beforeDigest":hash(b"before"), "content":"after"}
+        ]});
+        let patch = FilePatch::new(&root, "request-2", "digest-2", &request).unwrap();
+        assert!(patch.prepare().is_err());
+        assert!(!patch.directory.exists());
+        assert_eq!(
+            fs::read(root.join("original.txt")).unwrap(),
+            b"concurrent edit"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn refuses_a_recovery_parent_without_the_private_acl() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repository");
+        fs::create_dir(&root).unwrap();
+        let request = json!({"files":[{"path":"new.txt", "content":"private"}]});
+        let patch = FilePatch::new(&root, "request-3", "digest-3", &request).unwrap();
+        fs::create_dir(temp.path().join(".smithers-coding-recovery")).unwrap();
+        assert!(patch.prepare().is_err());
+        assert!(!root.join("new.txt").exists());
+        assert!(!patch.directory.exists());
     }
 }

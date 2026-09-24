@@ -1,9 +1,15 @@
 use std::io::Read as _;
 use std::path::Path;
 
+#[cfg(unix)]
+mod atomic_fs;
+#[cfg(windows)]
+#[path = "atomic_windows_fs.rs"]
 mod atomic_fs;
 mod atomic_glob;
 mod atomic_protocol;
+#[cfg(windows)]
+mod atomic_windows_handle;
 mod file_eligibility;
 mod source_create;
 mod source_import;

@@ -162,6 +162,8 @@ pub(crate) fn materialize(
         }
         match resolved {
             Some(TreeValue::File { id, executable, .. }) => {
+                #[cfg(not(unix))]
+                let _ = executable;
                 write_new_file_content_to(store.as_ref(), &path, id, &target).map_err(|err| {
                     JjError::Internal(format!("failed to write snapshot file: {err}"))
                 })?;
@@ -234,7 +236,9 @@ mod tests {
         repo_path::RepoPathBuf,
         tree_builder::TreeBuilder,
     };
-    use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+    #[cfg(unix)]
+    use std::collections::BTreeMap;
+    use std::{path::PathBuf, sync::Arc};
 
     fn fixture() -> (tempfile::TempDir, PathBuf, Arc<ReadonlyRepo>) {
         let directory = tempfile::tempdir().unwrap();
@@ -277,6 +281,7 @@ mod tests {
         commit
     }
 
+    #[cfg(unix)]
     fn disk_state(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
         fn visit(root: &Path, directory: &Path, state: &mut BTreeMap<PathBuf, Vec<u8>>) {
             for entry in std::fs::read_dir(directory).unwrap() {

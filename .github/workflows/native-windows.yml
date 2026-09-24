@@ -4,15 +4,15 @@ on:
     branches: [main]
     paths:
       - .github/workflows/native-windows.yml
-      - "crates/smithers-ffi/src/atomic_*.rs"
-      - crates/smithers-ffi/src/lib.rs
+      - "crates/smithers-ffi/src/**/*.rs"
+      - "crates/smithers-ffi/tests/**/*.rs"
       - crates/smithers-ffi/Cargo.toml
       - Cargo.lock
   pull_request:
     paths:
       - .github/workflows/native-windows.yml
-      - "crates/smithers-ffi/src/atomic_*.rs"
-      - crates/smithers-ffi/src/lib.rs
+      - "crates/smithers-ffi/src/**/*.rs"
+      - "crates/smithers-ffi/tests/**/*.rs"
       - crates/smithers-ffi/Cargo.toml
       - Cargo.lock
   workflow_dispatch:
@@ -37,3 +37,13 @@ jobs:
           shared-key: windows-filesystem
       - name: Test native filesystem boundaries
         run: cargo +1.98.0 test --locked -p smithers-ffi --lib atomic_windows_ -- --nocapture
+      - name: Build Windows helper
+        run: cargo +1.98.0 build --locked -p smithers-ffi --bin smithers-jj-export
+      - name: Test filesystem through the helper modules
+        run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export atomic_ -- --nocapture
+      - name: Test workspace file recovery
+        run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export workspace_files::tests -- --nocapture
+      - name: Verify managed guest authority is unavailable locally
+        run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export local_windows_host_cannot_acquire_managed_unix_guest_credentials
+      - name: Test executable filesystem protocol
+        run: cargo +1.98.0 test --locked -p smithers-ffi --test atomic_fs_cli -- --nocapture

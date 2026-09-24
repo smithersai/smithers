@@ -461,6 +461,27 @@ fn reparse_target(bytes: &[u8]) -> io::Result<OsString> {
 pub(super) struct Directory(File);
 
 impl Directory {
+    /// Recovery directories may be reused only with the exact private ACL we
+    /// create. A pre-existing broadly accessible directory is not a private slot.
+    pub(super) fn private_child(&self, name: &OsStr) -> io::Result<Self> {
+        match self.create_private_directory(name) {
+            Ok(directory) => Ok(directory),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                let file = open(
+                    Some(&self.0),
+                    name_units(name)?,
+                    FILE_LIST_DIRECTORY | FILE_TRAVERSE | 0x0002_0000, // READ_CONTROL
+                    true,
+                    false,
+                )?;
+                no_reparse(&file)?;
+                verify_private(&file)?;
+                Ok(Self(file))
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     pub(super) fn root(path: &Path) -> io::Result<Self> {
         let mut components = path.components();
         let Some(Component::Prefix(prefix)) = components.next() else {
@@ -780,6 +801,76 @@ impl Directory {
     }
 }
 
+fn verify_private(file: &File) -> io::Result<()> {
+    use windows_sys::Win32::Security::Authorization::{GetSecurityInfo, SE_FILE_OBJECT};
+    use windows_sys::Win32::Security::{
+        GetAce, GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE, DACL_SECURITY_INFORMATION,
+        OWNER_SECURITY_INFORMATION, SE_DACL_PROTECTED,
+    };
+    let mut owner = ptr::null_mut();
+    let mut dacl = ptr::null_mut();
+    let mut descriptor = ptr::null_mut();
+    // SAFETY: returned pointers belong to the allocated descriptor.
+    let status = unsafe {
+        GetSecurityInfo(
+            file.as_raw_handle(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            ptr::null_mut(),
+            &mut dacl,
+            ptr::null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != 0 {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    let _allocation = LocalAllocation(descriptor);
+    let user = current_user_sid()?;
+    let refusal = || io::Error::from(io::ErrorKind::PermissionDenied);
+    if owner.is_null() || sid_string(owner)? != user || dacl.is_null() {
+        return Err(refusal());
+    }
+    let mut control = 0;
+    let mut revision = 0;
+    // SAFETY: the successful security query supplied a valid descriptor/ACL.
+    unsafe {
+        if GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if control & SE_DACL_PROTECTED == 0 || (*dacl).AceCount != 2 {
+            return Err(refusal());
+        }
+        let mut trustees = Vec::new();
+        for index in 0..2 {
+            let mut ace = ptr::null_mut();
+            if GetAce(dacl, index, &mut ace) == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let header = &*ace.cast::<windows_sys::Win32::Security::ACE_HEADER>();
+            if header.AceType != 0
+                || header.AceFlags != 0
+                || usize::from(header.AceSize) < size_of::<ACCESS_ALLOWED_ACE>()
+            {
+                return Err(refusal());
+            }
+            let ace = &*ace.cast::<ACCESS_ALLOWED_ACE>();
+            if ace.Mask != 0x1f01ff {
+                return Err(refusal());
+            }
+            trustees.push(sid_string(ptr::addr_of!(ace.SidStart).cast_mut().cast())?);
+        }
+        trustees.sort();
+        let mut expected = vec![user, "S-1-5-18".to_owned()];
+        expected.sort();
+        if trustees != expected {
+            return Err(refusal());
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -953,6 +1044,16 @@ mod tests {
         assert_private(&child.0);
         let mut file = child.create_private_file(OsStr::new("secret")).unwrap();
         assert_private(&file);
+        verify_private(&file).unwrap();
+        root.private_child(OsStr::new("private")).unwrap();
+        fs::create_dir(temp.path().join("broad")).unwrap();
+        assert_eq!(
+            root.private_child(OsStr::new("broad"))
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
         file.write_all(b"private content").unwrap();
         file.sync_all().unwrap();
         // Neither another writer nor a rename can invalidate a checked write.

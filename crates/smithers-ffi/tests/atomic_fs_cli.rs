@@ -2,9 +2,39 @@ use base64::Engine as _;
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::symlink;
-use std::os::unix::fs::MetadataExt;
+#[cfg(unix)]
+use std::os::unix::fs::{symlink, MetadataExt};
+#[cfg(windows)]
+use std::os::windows::fs::symlink_dir as symlink;
 use std::process::{Command, Stdio};
+
+fn identity(path: &std::path::Path) -> String {
+    #[cfg(unix)]
+    {
+        let info = fs::metadata(path).unwrap();
+        format!("{}:{}", info.dev(), info.ino())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+        use windows_sys::Win32::Storage::FileSystem::{
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS,
+        };
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+            .unwrap();
+        let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: the live file handle and output structure are valid.
+        assert_ne!(
+            unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) },
+            0
+        );
+        let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+        format!("{}:{index}", info.dwVolumeSerialNumber)
+    }
+}
 
 fn invoke(request: Value) -> Value {
     let body = serde_json::to_vec(&request).unwrap();
@@ -44,10 +74,10 @@ fn invoke(request: Value) -> Value {
 fn packaged_helper_writes_and_reads_without_an_interpreter() {
     let dir = tempfile::tempdir().unwrap();
     let root = fs::canonicalize(dir.path()).unwrap();
-    let info = fs::metadata(&root).unwrap();
+    let root_identity = identity(&root);
     let target = root.join("proof.txt");
     let common = json!({"boundaryRoot":root,"logicalRoot":root,
-        "rootIdentity":format!("{}:{}", info.dev(), info.ino()),"path":target});
+        "rootIdentity":root_identity,"path":target});
     let mut write = common.clone();
     write["operation"] = json!("writeFileString");
     write["data"] = json!("written by packaged Rust helper\n");
@@ -72,7 +102,7 @@ fn packaged_helper_writes_and_reads_without_an_interpreter() {
 fn packaged_stat_preserves_creation_time_for_roots_directories_and_files() {
     let dir = tempfile::tempdir().unwrap();
     let root = fs::canonicalize(dir.path()).unwrap();
-    let info = fs::metadata(&root).unwrap();
+    let root_identity = identity(&root);
     let nested = root.join("nested");
     fs::create_dir(&nested).unwrap();
     let file = nested.join("proof.txt");
@@ -81,7 +111,7 @@ fn packaged_stat_preserves_creation_time_for_roots_directories_and_files() {
         let expected = fs::metadata(path).unwrap().created();
         let actual = invoke(json!({
             "operation":"stat", "boundaryRoot":root, "logicalRoot":root,
-            "rootIdentity":format!("{}:{}", info.dev(), info.ino()), "path":path
+            "rootIdentity":root_identity, "path":path
         }));
         assert_eq!(actual["ok"], true, "{actual}");
         match expected {
@@ -103,11 +133,11 @@ fn packaged_stat_preserves_creation_time_for_roots_directories_and_files() {
 fn packaged_exists_handles_missing_paths_without_hiding_refusals() {
     let dir = tempfile::tempdir().unwrap();
     let root = fs::canonicalize(dir.path()).unwrap();
-    let info = fs::metadata(&root).unwrap();
+    let root_identity = identity(&root);
     let request = |path: &std::path::Path| {
         json!({
             "operation":"exists", "boundaryRoot":root, "logicalRoot":root,
-            "rootIdentity":format!("{}:{}", info.dev(), info.ino()), "path":path
+            "rootIdentity":root_identity, "path":path
         })
     };
 
