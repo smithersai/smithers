@@ -78,8 +78,8 @@ if (values.print !== undefined) {
 const flows = FlowControl.make({ cwd, environment: available.environment, approvals: host.approvals! })
 const resumeFile = values.continue === true ? Session.latest(cwd) : undefined
 const branch = spawnSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).stdout?.trim()
-Log.install()
 const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })
+Log.install()
 createRoot(renderer).render(
   <App
     host={host}
