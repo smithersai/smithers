@@ -44,6 +44,19 @@ const workspace: CloudWorkspaceInput = {
 }
 
 describe("pure app event projection", () => {
+  test("retry removes only the retried turn's tool acts", () => {
+    let state = boot()
+    for (const turnId of ["earlier", "retry"]) {
+      state = apply(state, { type: "message.submitted", actor: "user", turnId, text: turnId })
+      state = apply(state, { type: "message.tool.executed", actor: "smithers", turnId, text: `act ${turnId}`, answersTurn: true })
+      state = apply(state, { type: "message.response.failed", actor: "system", turnId, message: "upstream unavailable" })
+    }
+    expect(state.messages.filter(message => message.act)).toHaveLength(2)
+    state = apply(state, { type: "message.retried", actor: "user", turnId: "retry" })
+    expect(state.messages.filter(message => message.act).map(message => message.text)).toEqual(["act earlier"])
+    expect(state.messages.filter(message => message.role === "user").map(message => message.text)).toEqual(["earlier", "retry"])
+  })
+
   test("owns exactly the domain roster and its stable keys", () => {
     expect(APP_PROJECTION_COLLECTION_NAMES).toHaveLength(44)
     expect(Object.keys(emptyAppProjection())).toEqual(Object.keys(APP_PROJECTION_SCHEMAS))

@@ -1518,6 +1518,9 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           if (collections.messages.get(answerId) !== undefined) {
             collections.messages.delete(answerId)
           }
+          for (const message of collections.messages.values()) {
+            if (message.act !== undefined && message.turnId === transition.turnId) collections.messages.delete(message.id)
+          }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "responding"
             draft.turnId = transition.turnId
@@ -2741,6 +2744,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         case "message.tool.executed": {
           insertMessage({
             id: `message-act-${recordId}`,
+            turnId: transition.turnId,
             role: "smithers",
             text: transition.text,
             act: transition.text,
