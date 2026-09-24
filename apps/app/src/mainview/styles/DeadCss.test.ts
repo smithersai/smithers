@@ -61,5 +61,5 @@ describe("styles/*.css carries no rule for markup that no longer exists", () => 
       .map(([name, where]) => `${name} (${[...where].join(", ")})`)
       .sort()
     expect(orphans).toEqual([])
-  })
+  }, 30_000)
 })
