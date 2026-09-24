@@ -387,7 +387,17 @@ export const account = (options: {
       workspace: closed,
       // A frame is read-only when it changed nothing; see
       // `State.readOnlyFrames` for why that is measured and not declared.
-      readOnlyFrames: mutated ? 0 : state.readOnlyFrames + 1,
+      // Once the run has written something, a read-only frame that settled a
+      // call this run had not issued before holds the streak where it was: it
+      // asked a new question about work that exists, which is debugging, not a
+      // stall. Before the first write every read-only frame counts, because a
+      // run that only ever reads new things is the failure the cap was built
+      // for. Zero-call and repeat-only frames always advance it.
+      readOnlyFrames: mutated
+        ? 0
+        : novel && state.mutations > 0
+        ? state.readOnlyFrames
+        : state.readOnlyFrames + 1,
       repeatFrames,
       callSignatures: remember(state.callSignatures, signatures),
       // Ids this frame pinned: a checkpoint a frame minted before it raised is
@@ -1042,7 +1052,11 @@ export const discipline = (
   const graceLeft = readOnly ? state.readOnlyGrace : 0
   const justified = readOnly && state.pendingReadOnlyDemand !== undefined &&
     (justification ?? "").trim().length > 0
-  const demanded = cap > 0 && readOnly && facts.readOnlyFrames >= cap && graceLeft === 0 && !justified
+  // Only a frame that advanced the streak earns the demand: a probing frame
+  // holds the streak where it was, and repeating the demand to it every frame
+  // would nag a run the cap has already decided is working.
+  const advanced = readOnly && facts.readOnlyFrames > state.readOnlyFrames
+  const demanded = cap > 0 && advanced && facts.readOnlyFrames >= cap && graceLeft === 0 && !justified
   const repeated = state.repeatCap > 0 && facts.repeatFrames >= state.repeatCap
   const sufficient = state.sufficiencyStated
     ? undefined

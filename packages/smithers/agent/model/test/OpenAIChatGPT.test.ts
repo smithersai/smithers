@@ -82,8 +82,16 @@ describe("OpenAIChatGPT.make", () => {
     expect(body.store).toBe(false)
     expect(body.stream).toBe(true)
     expect(body.include).toEqual(["reasoning.encrypted_content"])
-    expect(body.reasoning).toEqual({ effort: "high" })
+    // Summaries are what keep a long think streaming: live on gpt-6-sol
+    // (2026-09-24) they arrived at least every 10 s, which is the liveness the
+    // model call's idle timeout reads. Stock Codex asks for them the same way.
+    expect(body.reasoning).toEqual({ effort: "high", summary: "auto" })
     expect(body).not.toHaveProperty("max_output_tokens")
+  })
+
+  it("asks for no reasoning at all when the request names no effort", async () => {
+    const body = JSON.parse((await prepared(request())).bodyText)
+    expect(body).not.toHaveProperty("reasoning")
   })
 
   it("refuses params.maxTokens before signing: the backend rejects max_output_tokens", () => {

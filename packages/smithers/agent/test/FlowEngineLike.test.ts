@@ -10,6 +10,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
+import * as CellTurn from "@smthrs/harness/CellTurn"
 import * as ContextWindow from "@smthrs/harness/ContextWindow"
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import { HarnessError } from "@smthrs/harness/HarnessError"
@@ -1939,6 +1940,94 @@ describe("FlowEngineLike model-call budget", () => {
       budgetMillis + FlowEngineLike.defaultModelRetryBaseMillis * 1.2
     )
     expect(opened).toBeGreaterThanOrEqual(budgetMillis)
+  })
+
+  /** A thinking delta, the event a long think streams on the ChatGPT route. */
+  const thought = ModelEvent.ModelEvent.ThinkingDelta({ type: "thinking-delta", id: "r", text: "…" })
+
+  /**
+   * A model that streams one thought every `everyMillis` for `forMillis`,
+   * then answers; after `silentAfter` attempts it goes quiet forever instead.
+   */
+  const thinking = (
+    everyMillis: number,
+    forMillis: number,
+    seen: Seen,
+    silentAttempts = 0
+  ): Model.Model =>
+    Model.make({
+      stream: (issued) =>
+        Stream.unwrap(
+          Effect.gen(function*() {
+            const index = seen.requests.length
+            seen.requests.push(issued)
+            seen.startedAt.push(yield* Clock.currentTimeMillis)
+            if (index < silentAttempts) {
+              return Stream.concat(Stream.make(thought), Stream.fromEffect(Effect.never))
+            }
+            const ticks = Math.floor(forMillis / everyMillis)
+            return Stream.range(1, ticks).pipe(
+              Stream.mapEffect(() => Effect.as(Effect.sleep(everyMillis), thought)),
+              Stream.concat(Stream.fromEffect(Effect.sync(() => seen.completed.push(index))).pipe(Stream.drain)),
+              Stream.concat(Stream.fromIterable(settlement))
+            )
+          })
+        )
+    })
+
+  /**
+   * `drive`, with the clock advanced a minute at a time. A stall's timer is
+   * armed on a fiber the re-issued attempt forks, and one large adjustment can
+   * finish before that fiber has armed it.
+   */
+  const driveStepped = (model: Model.Model, budget: number): Promise<typeof FlowEngineLike.RecordedModelStep.Type> =>
+    Effect.gen(function*() {
+      const fiber = yield* InternalFlowEngineLike.recordModelStep(
+        model,
+        request("hello"),
+        FlowEngineLike.defaultModelRetryPolicy,
+        budget
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      for (let minute = 0; minute < 60; minute++) yield* TestClock.adjust("1 minute")
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
+
+  it("lets a max-effort call that keeps streaming run past the old 300 s ceiling", async () => {
+    // photonic-waveguide-routing, 2026-09-24: Codex's decisive turn took 735 s.
+    const seen: Seen = { requests: [], completed: [], startedAt: [] }
+    const recorded = await drive(thinking(10_000, 735_000, seen), CellTurn.modelCallMsFor("max"))
+
+    expect(retriesOf(recorded)).toEqual([])
+    expect(seen.completed).toEqual([0])
+    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+  })
+
+  it("cuts off a stream that goes silent and re-issues it without the overrun teaching", async () => {
+    const seen: Seen = { requests: [], completed: [], startedAt: [] }
+    const recorded = await driveStepped(thinking(10_000, 20_000, seen, 1), CellTurn.modelCallMsFor("max"))
+
+    // A silent stream is a dead socket, not a model that talked too long: it
+    // is re-issued on the transport ladder after the idle window, not after
+    // the whole 30-minute ceiling, and the model is not told to hurry.
+    expect(retriesOf(recorded).map((retry) => retry.code)).toEqual(["transport"])
+    expect(seen.requests).toHaveLength(2)
+    expect(seen.requests[1]!.system).toEqual([])
+    const reopened = seen.startedAt[1]! - seen.startedAt[0]!
+    expect(reopened).toBeGreaterThanOrEqual(FlowEngineLike.defaultModelIdleMs)
+    expect(reopened).toBeLessThan(FlowEngineLike.defaultModelIdleMs + 5_000)
+    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+  })
+
+  it("names the silence when every attempt stalls", async () => {
+    const seen: Seen = { requests: [], completed: [], startedAt: [] }
+    const recorded = await driveStepped(thinking(10_000, 20_000, seen, 10), CellTurn.modelCallMsFor("max"))
+
+    // Like an overrun, a stall costs a whole window, so it is re-issued once
+    // and not on the transport ladder's five rungs.
+    expect(seen.requests).toHaveLength(FlowEngineLike.defaultModelOverruns + 1)
+    const error = InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error
+    expect(error).toMatchObject({ code: "transport" })
+    expect((error as ModelError).message).toContain("sent nothing for 300 seconds")
   })
 })
 

@@ -107,6 +107,43 @@ export const defaultReadOnlyFrames = 12
 export const defaultModelCallMs = 300_000
 
 /**
+ * The absolute ceiling one model call gets at a given reasoning effort.
+ *
+ * {@link defaultModelCallMs} was read off a wave that did not think for
+ * long. A model asked for `xhigh` or `max` effort can spend most of a quarter
+ * hour on one decisive turn and still be working: on Terminal-Bench 4.0
+ * `photonic-waveguide-routing` (2026-09-24) stock Codex's design turn took
+ * 735 s on `gpt-6-sol` at `max`, and three of three harness attempts died at
+ * that turn on the 300 s ceiling and its one re-issue. A ceiling is no longer
+ * the only bound on a call: `recordModelStep` also cuts off a stream that goes
+ * silent, which is the stall a long ceiling would otherwise wait out. So the
+ * ceiling only has to stop a call that keeps producing and never ends, and it
+ * scales with the effort the call was asked for:
+ *
+ * | effort                                    | ceiling |
+ * | ----------------------------------------- | ------- |
+ * | unset, `none`, `minimal`, `low`, `medium` | 300 s   |
+ * | `high`                                    | 900 s   |
+ * | `xhigh`, `max`                            | 1,800 s |
+ *
+ * 1,800 s is 2.4x the 735 s turn. The lower efforts keep the wave 7 number.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const modelCallMsFor = (effort: ModelRequest.ReasoningEffort | undefined): number => {
+  switch (effort) {
+    case "xhigh":
+    case "max":
+      return 1_800_000
+    case "high":
+      return 900_000
+    default:
+      return defaultModelCallMs
+  }
+}
+
+/**
  * Default number of consecutive repeat-observation frames a run may spend.
  *
  * A repeat-observation frame is one that issued at least one call, issued no
@@ -382,7 +419,18 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     Schema.withDecodingDefaultKey(Effect.succeed(defaultModelCallMs))
   ),
   /**
-   * Frames settled since the last frame that changed the workspace.
+   * Stalled frames settled since the last frame that changed the workspace.
+   *
+   * Before the run's first write every read-only frame counts: the instance
+   * the cap was built for read for 100 frames, made 132 calls and edited
+   * nothing. After it, a read-only frame counts only when it stalls, settling
+   * no call this run had not already issued: a cell that only printed what the
+   * realm holds, a raise, a rejected cell, or a frame that re-asked old
+   * questions. A frame that settled a new call holds the count where it was,
+   * because a probe of work that exists is debugging. Terminal-Bench 4.0's
+   * mp-checkpoint-consolidation needed 36 read-only probes in a row after its
+   * first write, and counting them stopped the run at 24 (2026-09-24).
+   * Re-asking is still bounded, by {@link State.repeatFrames}.
    *
    * Changed-ness is measured as well as declared: the controller compares the
    * observation the previous frame closed on ({@link State.workspace}) against
@@ -908,7 +956,7 @@ export const make = (options: {
     contextWindow: options.contextWindow,
     contextWindowTokens: options.contextWindowTokens ?? 0,
     readOnlyCap: options.readOnlyCap ?? 0,
-    modelCallMs: options.modelCallMs ?? defaultModelCallMs,
+    modelCallMs: options.modelCallMs ?? modelCallMsFor(options.modelParams.reasoningEffort),
     readOnlyFrames: 0,
     readOnlyGrace: 0,
     pendingReadOnlyDemand: undefined,
@@ -1212,6 +1260,7 @@ const steered = (
   readonly seat: string
   readonly modelParams: ModelRequest.GenerationParams
   readonly contextWindowTokens: number
+  readonly modelCallMs: number
 }, HarnessError> =>
   Effect.gen(function*() {
     let seat = state.seat
@@ -1230,9 +1279,13 @@ const steered = (
         })
       }
     }
+    // A ceiling the host chose stays; one that is the old effort's default
+    // follows the effort, so a run steered up to `max` gets `max`'s ceiling.
+    const defaulted = state.modelCallMs === modelCallMsFor(state.modelParams.reasoningEffort)
     return {
       seat,
       modelParams,
+      modelCallMs: defaulted ? modelCallMsFor(modelParams.reasoningEffort) : state.modelCallMs,
       contextWindowTokens: seat === state.seat
         ? state.contextWindowTokens
         : resolve === undefined
@@ -3046,7 +3099,7 @@ const frame = (
       return { _tag: "Done" }
     }
     yield* close(exit, "continue")
-    const { contextWindowTokens, modelParams, seat } = yield* steered(
+    const { contextWindowTokens, modelCallMs, modelParams, seat } = yield* steered(
       state,
       drained.seatChanges,
       input.contextWindowTokensFor
@@ -3068,6 +3121,7 @@ const frame = (
     return continuing(exit, {
       seat,
       modelParams,
+      modelCallMs,
       contextWindowTokens,
       contextWindow: windowOn(state, seat, context),
       // Whatever this frame earned is what the next one answers, so the run's

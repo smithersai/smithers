@@ -156,11 +156,11 @@ persisted failure retains the schema tag but not the class prototype.
 **What happened.** A body could not execute inside an isolated workspace, or its
 result could not be moved through one. The `code` says which:
 
-| Code                     | Meaning                                                                                                   |
-| ------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `invalid_path`           | A path was absolute, outside the workspace, or contained `..`.                                            |
-| `not_found`              | A path the transaction needed was absent.                                                                 |
-| `host_unavailable`       | The host filesystem or artifact store refused, or the host cannot make descriptor-relative requests.     |
+| Code                     | Meaning                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `invalid_path`           | A path was absolute, outside the workspace, or contained `..`.                                          |
+| `not_found`              | A path the transaction needed was absent.                                                               |
+| `host_unavailable`       | The host filesystem or artifact store refused, or the host cannot make descriptor-relative requests.    |
 | `path_escapes_workspace` | A change's path crosses a symlink or a hard-linked file, or the workspace root was replaced mid-commit. |
 
 **What to change.** For `path_escapes_workspace`, replace the symlink with the

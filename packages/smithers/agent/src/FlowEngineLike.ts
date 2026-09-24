@@ -87,7 +87,7 @@ import * as QuotaPolicy from "./QuotaPolicy.ts"
 import * as WorkspaceObservation from "./WorkspaceObservation.ts"
 import type * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
 
-export { defaultModelOverruns } from "./internal/FlowEngineLike.ts"
+export { defaultModelIdleMs, defaultModelOverruns } from "./internal/FlowEngineLike.ts"
 
 /**
  * Route resolution for one sealed model request.

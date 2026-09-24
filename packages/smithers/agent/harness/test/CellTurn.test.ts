@@ -243,6 +243,63 @@ describe("CellTurn", () => {
     expect(of(events, "discipline-armed")[0]?.modelCallMs).toBe(45_000)
   })
 
+  it("arms a ceiling of at least 20 minutes for a max-effort run", () => {
+    // Terminal-Bench 4.0 photonic-waveguide-routing, 2026-09-24: the decisive
+    // design turn on gpt-6-sol at max effort took 735 s under stock Codex, and
+    // the 300 s ceiling with its one re-issue killed it three times out of
+    // three. The ceiling follows the effort the run asked for.
+    const armed = (reasoningEffort?: ModelRequest.ReasoningEffort, modelCallMs?: number) =>
+      CellTurn.make({
+        session: "session-1",
+        seat: "openai:test-model",
+        modelParams: ModelRequest.GenerationParams.make(reasoningEffort === undefined ? {} : { reasoningEffort }),
+        layers: [],
+        capabilityEnvelope: [],
+        placement: Option.none(),
+        contextWindow: window,
+        ...(modelCallMs === undefined ? {} : { modelCallMs })
+      }).modelCallMs
+    expect(armed("max")).toBeGreaterThanOrEqual(1_200_000)
+    expect(armed("xhigh")).toBeGreaterThanOrEqual(1_200_000)
+    expect(armed("high")).toBeGreaterThan(CellTurn.defaultModelCallMs)
+    expect(armed("low")).toBe(CellTurn.defaultModelCallMs)
+    expect(armed()).toBe(CellTurn.defaultModelCallMs)
+    // A host's own number is the number, whatever the effort.
+    expect(armed("max", 45_000)).toBe(45_000)
+    expect(armed("max", 0)).toBe(0)
+  })
+
+  it("raises a defaulted ceiling when steering raises the effort, and keeps a host's own", async () => {
+    const steeredTo = async (modelCallMs?: number) => {
+      const model = ScriptedModel.make([emits(`console.log("kept")`), emits(`ctx.done("done")`)])
+      const engine = ScriptedEngine.make(model.model, [])
+      let drained = false
+      const steering = Steering.layer({
+        read: () => Effect.succeed(Steering.empty()),
+        drain: () =>
+          Effect.sync(() => {
+            const seatChanges = drained
+              ? []
+              : [{ _tag: "ThinkingChange", delivery: "steer", admittedAt: 1, thinking: "max" } as const]
+            drained = true
+            return { inserts: [], seatChanges, remaining: Steering.empty(), queued: false, duplicate: false }
+          })
+      })
+      await CellTurn.run({ state: state(modelCallMs === undefined ? {} : { modelCallMs }), flows: [] }).pipe(
+        Stream.runDrain,
+        Effect.provide(engine.layer),
+        Effect.provide(QuickJSSandbox.layer),
+        Effect.provide(steering),
+        Effect.provide(confidentEvaluator),
+        Effect.runPromise
+      )
+      return engine.recorder.sealStep.map((step) => step.modelCallMs)
+    }
+
+    expect(await steeredTo()).toEqual([CellTurn.defaultModelCallMs, CellTurn.modelCallMsFor("max")])
+    expect(await steeredTo(45_000)).toEqual([45_000, 45_000])
+  })
+
   it("runs two data-dependent calls in one frame and completes the returned transition", async () => {
     const { engine, events, model } = await run({
       script: [
@@ -891,6 +948,88 @@ describe("CellTurn invalid probes", () => {
 })
 
 describe("CellTurn read-only cap", () => {
+  /** Read-only cells that each ask a question no earlier frame asked. */
+  const probeCells = (count: number): ReadonlyArray<ScriptedModel.Step> =>
+    Array.from(
+      { length: count },
+      (_, index) =>
+        emits(
+          `await ctx.call("fs/list", { path: "probe-${index}" })
+           console.log("probed ${index}")`
+        )
+    )
+
+  /** The run's first write, after which probing is debugging work that exists. */
+  const wrote = emits(
+    `await ctx.call("edit", { path: "a.py", text: "first attempt" })
+     console.log("edited")`
+  )
+
+  it("a run whose frames each issue a new settled call is never stopped by read_only_cap", async () => {
+    // Measured 2026-09-24 on Terminal-Bench 4.0 mp-checkpoint-consolidation:
+    // after its last write the run spent its frames probing hypotheses, one
+    // new command each, and the cap ended it at 24 read-only frames. Stock
+    // Codex needed 36 read-only commands in a row at the same point to find
+    // the bug. A frame that ran a new question is investigation, not a
+    // stall; `repeatCap` is what watches a run re-asking old ones.
+    const { events, failure } = await run({
+      state: capped(1, 9),
+      flows: [descriptor("fs/list", { capabilities: ["fs:read:**"] }), editor],
+      script: [wrote, ...probeCells(6), emits(`ctx.done("found it by probing")`)],
+      calls: successes(7)
+    })
+
+    expect(failure).toBeUndefined()
+    expect(of(events, "read-only-demand-issued")).toEqual([])
+  })
+
+  it("still stops a run that re-issues one call at twice the cap", async () => {
+    // The control: the same shape, but every frame after the write asks the
+    // question the first read asked. The streak advances and the cap fires.
+    const { events, failure } = await run({
+      state: capped(1, 9),
+      flows: [descriptor("fs/list", { capabilities: ["fs:read:**"] }), editor],
+      script: [wrote, ...readCells(6), emits(`ctx.done("never reached")`)],
+      calls: successes(7)
+    })
+
+    expect(failure).toMatchObject({ code: "read_only_cap" })
+    expect(of(events, "read-only-demand-issued")).toHaveLength(1)
+  })
+
+  it("still stops a run whose frames make no calls at twice the cap", async () => {
+    // The control for the mp-checkpoint paging frames: cells that only print
+    // what the realm already holds call nothing, so each one advances the
+    // streak even though the run is between probes.
+    const { failure } = await run({
+      state: capped(1, 9),
+      flows: [descriptor("fs/list", { capabilities: ["fs:read:**"] }), editor],
+      script: [
+        wrote,
+        ...probeCells(1),
+        emits(`console.log("re-reading what I hold")`),
+        emits(`console.log("re-reading it again")`),
+        emits(`ctx.done("never reached")`)
+      ],
+      calls: successes(2)
+    })
+
+    expect(failure).toMatchObject({ code: "read_only_cap" })
+  })
+
+  it("still stops a run that reads new things and never writes", async () => {
+    // The instance the cap was built for read for 100 frames, made 132 calls
+    // and edited nothing. New questions buy nothing before the first write.
+    const { failure } = await run({
+      state: capped(1, 9),
+      flows: [descriptor("fs/list", { capabilities: ["fs:read:**"] }), editor],
+      script: [...probeCells(6), emits(`ctx.done("never reached")`)],
+      calls: successes(6)
+    })
+
+    expect(failure).toMatchObject({ code: "read_only_cap" })
+  })
+
   /** A command routed into a container, which the host's workspace walk never sees. */
   const containerCells = (count: number): ReadonlyArray<ScriptedModel.Step> =>
     Array.from(
@@ -1209,10 +1348,14 @@ describe("CellTurn read-only cap", () => {
           `await ctx.call("bash", { command: "pytest", writes: [] })
            console.log("ran tests")`
         ),
-        emits(``),
+        emits(
+          `await ctx.call("bash", { command: "pytest", writes: [] })
+           console.log("ran tests again")`
+        ),
         emits(``)
       ],
       calls: [
+        { _tag: "Success", value: { exitCode: 0 } },
         { _tag: "Success", value: { exitCode: 0 } },
         { _tag: "Success", value: { exitCode: 0 } }
       ]
@@ -1220,10 +1363,12 @@ describe("CellTurn read-only cap", () => {
 
     // The registry-time envelope of a shell flow is the conservative empty
     // set, so classification reads what the invocation declared: the frame
-    // that wrote a file cleared the streak, and the frame that only ran tests
-    // did not.
+    // that wrote a file cleared the streak, and the frames that only ran tests
+    // did not. The first test run is a new question after a write, so it holds
+    // the streak; the second re-asks it and is the one that advances it.
     expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Read-only discipline")
-    expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Read-only discipline")
+    expect(JSON.stringify(model.recorder.requests[2]?.messages)).not.toContain("Read-only discipline")
+    expect(JSON.stringify(model.recorder.requests[3]?.messages)).toContain("Read-only discipline")
   })
 
   it("lets a justification buy quiet frames without stopping the run's clock", async () => {
@@ -1416,27 +1561,29 @@ console.log("still reading")`
     // and spent frames four through sixteen reading, diagnosing, and finally
     // destroying the edit it had made, with no controller pressure at any
     // point. The cap is only worth arming if the twelfth quiet frame is heard.
+    // The first read after the edit asks a new question and holds the streak,
+    // so the twelve quiet frames are the twelve re-reads after it.
     const { events, model } = await run({
-      state: capped(CellTurn.defaultReadOnlyFrames, 16),
+      state: capped(CellTurn.defaultReadOnlyFrames, 17),
       flows: [descriptor("fs/list", { capabilities: ["fs:read:**"] }), editor],
       script: [
         emits(
           `await ctx.call("edit", { path: "a.py", text: "fixed" })
            `
         ),
-        ...readCells(13),
+        ...readCells(14),
         emits(`ctx.done("done")`)
       ],
-      calls: successes(14)
+      calls: successes(15)
     })
 
     expect(of(events, "read-only-demanded")[0]).toMatchObject({
       streak: CellTurn.defaultReadOnlyFrames,
       cap: CellTurn.defaultReadOnlyFrames,
-      nextFrame: 13,
+      nextFrame: 14,
       nextAction: "read-only"
     })
-    expect(JSON.stringify(model.recorder.requests[13]?.messages)).toContain("Read-only discipline")
+    expect(JSON.stringify(model.recorder.requests[14]?.messages)).toContain("Read-only discipline")
   })
 
   it("asks a demanded frame for evidence, not for a keystroke", async () => {

@@ -149,8 +149,8 @@ the stock arm). The stock arm is
   `codex-*` login, then raises `NoSeatLeft`. `pool.json` carries `paused`.
 - The model's own failures (`claim_unproven`, `read_only_cap`, a wrong
   answer) are scored as the verifier says. So is `call_timeout`: the
-  harness's per-call budget (`modelCallMs`, 300 s by default) is the arm's
-  own limit.
+  harness's per-call ceiling (`modelCallMs`, 1,800 s at the prompt's
+  `effort: max`) is the arm's own limit.
 
 The full benchmark drops the `-i` filters and raises `-n`. Use an absolute
 `-o`: Harbor resolves a relative jobs directory against the task's `tests/`

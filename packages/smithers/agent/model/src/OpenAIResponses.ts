@@ -85,7 +85,10 @@ export const Body = Schema.Struct({
   instructions: Schema.optional(Schema.String),
   input: Schema.Array(InputItem),
   tools: Schema.optional(Schema.Array(FunctionTool)),
-  reasoning: Schema.optional(Schema.Struct({ effort: ReasoningEffort })),
+  reasoning: Schema.optional(Schema.Struct({
+    effort: ReasoningEffort,
+    summary: Schema.optional(Schema.Literals(["auto", "concise", "detailed"]))
+  })),
   max_output_tokens: Schema.optional(Schema.Finite),
   temperature: Schema.optional(Schema.Finite),
   top_p: Schema.optional(Schema.Finite),
@@ -352,6 +355,11 @@ const chatgptBody = (request: ModelRequest, options: { readonly native: boolean 
     // `item_reference` names a stored response, and this backend stores none:
     // a reference would 400 where the encrypted reasoning item replays whole.
     input: base.input.filter((item) => !("type" in item && item.type === "item_reference")),
+    // Summaries stream while the model thinks, so a long think is a live
+    // stream rather than minutes of silence; the model call's idle timeout
+    // reads that liveness. Only here: the API-key surface refuses summaries
+    // to an unverified organization.
+    ...(base.reasoning === undefined ? {} : { reasoning: { ...base.reasoning, summary: "auto" as const } }),
     store: false,
     include: ["reasoning.encrypted_content"]
   }

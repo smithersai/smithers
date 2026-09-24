@@ -110,6 +110,34 @@ const combineUsage = (usages: ReadonlyArray<ModelEvent.Usage>): ModelEvent.Usage
 export const defaultModelOverruns = 1
 
 /**
+ * Milliseconds a model stream may go without one event before it is cut off.
+ *
+ * A call's ceiling bounds how long it may take; this bounds how long it may
+ * say nothing. The two fail differently. A long call that keeps streaming is
+ * a model at work: Terminal-Bench 4.0's photonic-waveguide-routing
+ * (2026-09-24) needed a 735 s design turn at `max` effort, and a total
+ * ceiling short enough to catch a stall killed it. A stream that goes silent
+ * is a dead socket or a stuck backend, and waiting out a 30-minute ceiling on
+ * one is the cost this bound removes.
+ *
+ * 300,000 ms is stock Codex's `stream_idle_timeout_ms` default. The ChatGPT
+ * route asks for reasoning summaries, so a long think streams summary deltas
+ * and reasoning items: one live `gpt-6-sol` call at `high` effort on
+ * 2026-09-24 streamed an event at least every 10 s. A stall is a transport
+ * failure, re-issued without the overrun teaching, because the model did
+ * nothing that needs correcting, and at most {@link defaultModelOverruns}
+ * times, because each stall costs a whole window.
+ *
+ * Armed only when it is shorter than the call's ceiling, so a ceiling at or
+ * below it is the only bound, as it was before this existed; a disarmed
+ * ceiling disarms it too.
+ *
+ * @category policies
+ * @since 1.0.0-rc.0
+ */
+export const defaultModelIdleMs = 300_000
+
+/**
  * What a re-issued call tells the model about the attempt that was cut off.
  *
  * A transport failure is repaired by waiting; an overrun is not. The provider
@@ -223,13 +251,20 @@ export const recordModelStep = (
     let attempt = 0
     /** How many attempts this step has already had cut off at the budget. */
     let overruns = 0
+    /**
+     * The stalls this step has cut off. Each one cost a whole idle window, so
+     * like an overrun a stall is re-issued {@link defaultModelOverruns} times,
+     * not the transport ladder's five.
+     */
+    const stalls = new Set<ModelError.ModelError>()
     const schedule = policy.pipe(
       Schedule.while(({ input }) =>
         input instanceof ModelError.ModelError && retryableModelCodes.has(input.code) &&
         // The overrun's own bound. `overruns` was incremented by the attempt
         // this failure came from, so the first cut-off call reads 1 and is
         // re-issued, and the re-issue's own cut-off reads 2 and is not.
-        (input.code !== "call_timeout" || overruns <= defaultModelOverruns)
+        (input.code !== "call_timeout" || overruns <= defaultModelOverruns) &&
+        (!stalls.has(input) || stalls.size <= defaultModelOverruns)
       ),
       Schedule.tap(({ duration, input }) =>
         Effect.gen(function*() {
@@ -251,11 +286,25 @@ export const recordModelStep = (
       )
     )
     const budget = budgetMillis === undefined || budgetMillis <= 0 ? undefined : budgetMillis
+    const idle = budget !== undefined && defaultModelIdleMs < budget ? defaultModelIdleMs : undefined
+    const silent = <A>(stream: Stream.Stream<A, Model.ModelFailure>): Stream.Stream<A, Model.ModelFailure> =>
+      idle === undefined ? stream : stream.pipe(Stream.timeoutOrElse({
+        duration: idle,
+        orElse: () =>
+          Stream.fromEffect(Effect.suspend(() => {
+            const error = new ModelError.ModelError({
+              code: "transport",
+              message: `The model stream sent nothing for ${seconds(idle)} seconds and was cut off`
+            })
+            stalls.add(error)
+            return Effect.fail(error)
+          }))
+      }))
     const collect = (input: ModelRequest.ModelRequest) =>
       Effect.suspend(() => {
         attemptUsage = {}
         return Stream.runCollect(
-          model.stream(input).pipe(Stream.tap((event) =>
+          silent(model.stream(input)).pipe(Stream.tap((event) =>
             Effect.sync(() => {
               if (event.type !== "usage") return
               const { type: _type, ...usage } = event

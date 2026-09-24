@@ -236,18 +236,31 @@ export const make: (options: {
 
 Every omitted budget takes its module-level default, and zero disarms it:
 
-| Constant                   | Value   | Budget it defaults                                 |
-| -------------------------- | ------- | -------------------------------------------------- |
-| `defaultMaxFrames`         | 100     | Frames one admitted task may spend.                |
-| `defaultReadOnlyFrames`    | 12      | Consecutive read-only frames before intervention.  |
-| `defaultModelCallMs`       | 300,000 | Wall-clock milliseconds one model call may spend.  |
-| `defaultRepeatFrames`      | 4       | Consecutive repeat-observation frames.             |
-| `defaultNarrowingDemands`  | 1       | Completions bounced for narrowed evidence.         |
-| `defaultUnmovedDemands`    | 1       | Completions bounced for an unmoved tree.           |
-| `defaultUnresolvedDemands` | 1       | Completions bounced for a displaced failing check. |
-| `defaultClaimDemands`      | 3       | Frames given to answer an unrecorded claim.        |
-| `defaultRevalidations`     | 1       | In-frame answers to an unparseable cell.           |
-| `defaultMaxCheckpoints`    | 8       | Trees one run may pin with `ctx.checkpoint()`.     |
+| Constant                   | Value   | Budget it defaults                                                                                      |
+| -------------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
+| `defaultMaxFrames`         | 100     | Frames one admitted task may spend.                                                                     |
+| `defaultReadOnlyFrames`    | 12      | Consecutive stalled read-only frames before intervention.                                               |
+| `defaultModelCallMs`       | 300,000 | Wall-clock milliseconds one model call may spend at unset, `none`, `minimal`, `low` or `medium` effort. |
+| `defaultRepeatFrames`      | 4       | Consecutive repeat-observation frames.                                                                  |
+| `defaultNarrowingDemands`  | 1       | Completions bounced for narrowed evidence.                                                              |
+| `defaultUnmovedDemands`    | 1       | Completions bounced for an unmoved tree.                                                                |
+| `defaultUnresolvedDemands` | 1       | Completions bounced for a displaced failing check.                                                      |
+| `defaultClaimDemands`      | 3       | Frames given to answer an unrecorded claim.                                                             |
+| `defaultRevalidations`     | 1       | In-frame answers to an unparseable cell.                                                                |
+| `defaultMaxCheckpoints`    | 8       | Trees one run may pin with `ctx.checkpoint()`.                                                          |
+
+An omitted `modelCallMs` follows the run's reasoning effort through
+`modelCallMsFor(effort)`: 300,000 ms up to `medium`, 900,000 ms at `high`, and
+1,800,000 ms at `xhigh` or `max`. A steering change of effort moves a defaulted
+ceiling with it; a host's own number stays. The engine also cuts off a stream
+that sends nothing for `defaultModelIdleMs` (300,000 ms), so a long ceiling
+never waits out a stall.
+
+A read-only frame counts toward `readOnlyCap` unless the run has already
+written something and the frame settled a call the run had not issued before.
+Such a frame is debugging work that exists, so it holds the streak. Frames that
+call nothing, raise, or re-ask old questions still count, and every read-only
+frame counts before the first write.
 
 `readOnlyCap` is the one budget that defaults to disarmed (0), because a run
 that is only meant to read, a question or a review, has nothing to be capped
