@@ -3,10 +3,13 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { claim } from "../test/scratch.ts"
 import { key, Tui } from "./zmux.ts"
 
 const out = resolve(process.argv[2] ?? join(homedir(), "Desktop", "tui-custom-ui"))
 mkdirSync(out, { recursive: true })
+// Scratch repos, session folders, Chrome profiles and daemons go when the script exits.
+claim()
 const app = resolve(import.meta.dir, "..")
 const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 const shoot = (tui: Tui, name: string) => {

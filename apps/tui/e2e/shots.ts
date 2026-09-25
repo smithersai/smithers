@@ -3,10 +3,13 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { claim } from "../test/scratch.ts"
 import { key, Tui } from "./zmux.ts"
 
 const out = resolve(process.argv[2] ?? join(tmpdir(), "tui-shots"))
 mkdirSync(out, { recursive: true })
+// Scratch repos, session folders, Chrome profiles and daemons go when the script exits.
+claim()
 const app = resolve(import.meta.dir, "..")
 const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 /** Each capture is taken now and rendered once the TUIs stop, so Chrome never stalls a live session. */

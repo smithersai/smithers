@@ -31,8 +31,21 @@ export const zmuxd = (): string | undefined => {
  */
 const passthrough = (): Record<string, string> => {
   const helper = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
-  return helper === undefined || helper === "" ? {} : { SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: helper }
+  return {
+    // The TUI's own temporary files stay inside the suite's private root.
+    TMPDIR: tmpdir(),
+    ...(helper === undefined || helper === "" ? {} : { SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: helper })
+  }
 }
+
+/**
+ * Every daemon not yet stopped. A case that times out never reaches
+ * `stop()`, so the process kills what is left when it exits.
+ */
+const live = new Set<ChildProcess>()
+process.once("exit", () => {
+  for (const daemon of live) daemon.kill("SIGKILL")
+})
 
 export const key = {
   enter: "\r",
@@ -88,7 +101,14 @@ export class Tui {
     if (binary === undefined) throw new Error("zmuxd not found: set ZMUXD or build ~/zmux (zig build)")
     const directory = mkdtempSync(join(tmpdir(), "tui-zmux-"))
     const path = join(directory, "z.sock")
+    // macOS caps a socket path at 104 bytes; past it zmuxd never listens.
+    if (Buffer.byteLength(path) > 103) {
+      rmSync(directory, { recursive: true, force: true })
+      throw new Error(`zmuxd socket path is ${Buffer.byteLength(path)} bytes, over the 103 macOS allows: ${path}`)
+    }
     const daemon = spawn(binary, ["--socket", path, "--idle-seconds", "0"], { stdio: "ignore" })
+    live.add(daemon)
+    daemon.once("exit", () => live.delete(daemon))
     await waitFor(() => existsSync(path), 5_000, "zmuxd socket")
     // The socket path can precede listen(); wait for a connection, not just stat().
     let socket: Socket
@@ -103,6 +123,7 @@ export class Tui {
       } catch (error) {
         if (Date.now() >= deadline) {
           daemon.kill()
+          live.delete(daemon)
           rmSync(directory, { recursive: true, force: true })
           throw error
         }
@@ -235,6 +256,7 @@ export class Tui {
     await this.call("daemon.shutdown", {}).catch(() => undefined)
     this.socket.destroy()
     this.daemon.kill()
+    live.delete(this.daemon)
     this.terminal.dispose()
     rmSync(this.directory, { recursive: true, force: true })
   }
