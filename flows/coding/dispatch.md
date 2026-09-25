@@ -8,9 +8,9 @@ the workspace while doing so. Its module IS the `coding/Dispatch` flow, in
 
 It exists because every other door in this package runs a programme.
 `coding/ImplementPlan` implements a validated plan. `coding/Request` plans, then
-implements with required checks, and it is registered only when the host was
-launched with a project JSON (`SMITHERS_CODING_PROJECT`), so on an ordinary
-repository it is not in the catalog at all. `repository/Job` investigates an
+implements with required checks, and it is registered when the host loads a
+project JSON from `.smithers/coding-project.json` or `SMITHERS_CODING_PROJECT`.
+`repository/Job` investigates an
 event. All three answer with receipts rather than with what the agent said,
 and `validatePlan` requires a fast and a slow check per change, so a plain
 question has no legal shape in any of them.

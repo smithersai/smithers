@@ -25,6 +25,13 @@ The executable accepts the existing command shape:
 smithers-coding-host serve --root /home/developer/workspace --host 0.0.0.0 --port 7331 --listen
 ```
 
+The host reads `<root>/.smithers/coding-project.json` by default for
+`coding/request`; `SMITHERS_CODING_PROJECT` overrides that path. Cloud uses
+this host-side lookup, so the backend does not pass a project path. With the
+provisioned landing binding and reserved `SMITHERS_JJHUB_TOKEN` and
+`SMITHERS_JJHUB_API_URL`, the same launch also registers `coding/vibe`.
+See [project-config.md](project-config.md) for missing and invalid file behavior.
+
 `--help` and `--version` work before opening the repository or resolving provider credentials. The same `Serve.refuse` policy requires a credential and explicit `--listen` for a non-loopback bind. The Plue service owns its workspace lifetime lock and process scope.
 
 ## Host state directory

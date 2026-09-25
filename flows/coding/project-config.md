@@ -4,12 +4,13 @@ This is private deployment configuration for `smithers-coding-host`, the separat
 workspace executable. The ordinary Smithers CLI keeps its existing commands.
 The host uses the same Effect composition and durable engine on Node and Bun.
 
-Set `SMITHERS_CODING_PROJECT` to an explicit UTF-8 JSON file to enable the prompt
-route's owning implementation and check configuration. There is no filename
-discovery. An unset variable leaves the manual plan route available; an empty,
-missing, malformed or invalid explicit file refuses startup. The file is read
-once before host construction through the injected Effect filesystem. Restart
-the host to adopt a changed configuration or catalog.
+The host loads `<root>/.smithers/coding-project.json` when it exists and
+`SMITHERS_CODING_PROJECT` is unset. Set that variable to an explicit UTF-8 JSON
+file to override the default. An absent default leaves the manual plan route
+available; an empty, missing, malformed or invalid explicit file refuses
+startup. An invalid default also refuses startup and names its path. The file
+is read once before host construction through the injected Effect filesystem.
+Restart the host to adopt a changed configuration or catalog.
 
 Both the config filename and optional `wikiOutput` resolve relative to `--root`; absolute
 paths are accepted. The output may point at the separate wiki repository. JSON

@@ -18,57 +18,59 @@ const Project = Schema.Struct({
   reviewer: Schema.optionalKey(text)
 })
 export type ProjectConfig = Omit<MemoryOptions, "repositoryPath"> & { readonly reviewer?: string }
-const invalid = (message: string) => new Error(`Invalid SMITHERS_CODING_PROJECT: ${message}`)
+const invalid = (message: string, filename?: string) => new Error(`Invalid SMITHERS_CODING_PROJECT${filename === undefined ? "" : ` at ${filename}`}: ${message}`)
 const maximumBytes = 256 * 1024
 
-/** No discovery, writes or extra connection. Relative paths are repository-relative. */
+/** The repository default is optional; an explicit filename always takes precedence. */
 export const loadProject = (repositoryPath: string, filename: string | undefined): Effect.Effect<
   ProjectConfig | undefined, Error, FileSystem.FileSystem | Path.Path
 > => Effect.gen(function*() {
-  if (filename === undefined) return undefined
-  if (!filename.trim() || filename.includes("\0")) return yield* Effect.fail(invalid("the explicit filename must be nonempty"))
+  if (filename !== undefined && (!filename.trim() || filename.includes("\0"))) return yield* Effect.fail(invalid("the explicit filename must be nonempty"))
   const fs = yield* FileSystem.FileSystem, path = yield* Path.Path
+  const selected = path.resolve(repositoryPath, filename ?? ".smithers/coding-project.json")
+  const fail = (message: string) => invalid(message, selected)
+  if (filename === undefined && !(yield* fs.exists(selected))) return undefined
   // bytesToRead bounds even a growing file; the extra byte distinguishes an
   // exact-bound document from a truncated one. Check emitted bytes as well.
-  const data = yield* Stream.runFoldEffect(fs.stream(path.resolve(repositoryPath, filename), {
+  const data = yield* Stream.runFoldEffect(fs.stream(selected, {
     bytesToRead: maximumBytes + 1, chunkSize: 16 * 1024
   }), () => ({ chunks: [] as Uint8Array[], bytes: 0 }), (state, chunk) => {
-    if (state.bytes + chunk.length > maximumBytes) return Effect.fail(invalid("JSON exceeds 256 KiB"))
+    if (state.bytes + chunk.length > maximumBytes) return Effect.fail(fail("JSON exceeds 256 KiB"))
     state.chunks.push(chunk)
     state.bytes += chunk.length
     return Effect.succeed(state)
-  }).pipe(Effect.mapError(error => error instanceof Error && error.message.startsWith("Invalid SMITHERS_CODING_PROJECT:")
-    ? error : invalid("cannot read the explicit file")))
+  }).pipe(Effect.mapError(error => error instanceof Error && error.message.startsWith("Invalid SMITHERS_CODING_PROJECT")
+    ? error : fail("cannot read the file")))
   const bytes = new Uint8Array(data.bytes)
   let offset = 0
   for (const chunk of data.chunks) { bytes.set(chunk, offset); offset += chunk.length }
   const input = yield* Effect.try({
     try: () => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown,
-    catch: () => invalid("expected UTF-8 JSON")
+    catch: () => fail("expected UTF-8 JSON")
   })
   const project = yield* Schema.decodeUnknownEffect(Project, { onExcessProperty: "error" })(input).pipe(
     // Do not print operator configuration contents in startup diagnostics.
-    Effect.mapError(() => invalid("fields must match the project schema; unknown fields are refused"))
+    Effect.mapError(() => fail("fields must match the project schema; unknown fields are refused"))
   )
   const pages = project.pages ?? []
   if (project.wiki === true && (!pages.length || project.wikiOutput === undefined || project.reviewer === undefined)) {
-    return yield* Effect.fail(invalid("enabled Wiki requires pages, wikiOutput and reviewer"))
+    return yield* Effect.fail(fail("enabled Wiki requires pages, wikiOutput and reviewer"))
   }
   const pageIds = new Set(pages.map(page => page.id))
   if (pageIds.size !== pages.length || pages.some(page => !/^[a-z][a-z0-9-]{0,80}$/.test(page.id))) {
-    return yield* Effect.fail(invalid("wiki page IDs must be valid and unique"))
+    return yield* Effect.fail(fail("wiki page IDs must be valid and unique"))
   }
   if (pages.some(page => page.related.some(id => !pageIds.has(id)))) {
-    return yield* Effect.fail(invalid("related wiki pages must exist in this configuration"))
+    return yield* Effect.fail(fail("related wiki pages must exist in this configuration"))
   }
   if (new Set(project.checks.map(check => check.id)).size !== project.checks.length) {
-    return yield* Effect.fail(invalid("check IDs must be unique"))
+    return yield* Effect.fail(fail("check IDs must be unique"))
   }
   if ((project.wikiOutput !== undefined && (!project.wikiOutput.trim() || project.wikiOutput.includes("\0"))) ||
       (project.reviewer !== undefined && !project.reviewer.trim()) || !project.implementation.trim()) {
-    return yield* Effect.fail(invalid("output, reviewer and implementation must be nonempty"))
+    return yield* Effect.fail(fail("output, reviewer and implementation must be nonempty"))
   }
   const wikiOutput = project.wikiOutput === undefined ? undefined : yield* separateWikiOutput(repositoryPath, project.wikiOutput).pipe(
-    Effect.mapError(() => invalid("wikiOutput must resolve outside the source workspace, including .flows")))
+    Effect.mapError(() => fail("wikiOutput must resolve outside the source workspace, including .flows")))
   return { ...project, wiki: project.wiki ?? false, ...(wikiOutput === undefined ? {} : { wikiOutput }) }
 })

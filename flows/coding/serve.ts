@@ -29,7 +29,7 @@ if (parsed.values.version) {
     `--state-dir, or ${CodingState.directoryVariable}, holds control.db and engine.db; it defaults to a sibling of the root and may never be inside it.\n` +
     `Set ${CodingState.inRootVariable}=1 only for a local single-repository run that wants the old <root>/.flows layout.\n` +
     "Requires SMITHERS_GATEWAY_ID and SMITHERS_CODING_IMPLEMENT_MODEL; SMITHERS_API_KEY authenticates the existing gateway.\n" +
-    "SMITHERS_CODING_PROJECT explicitly selects project JSON for the prompt route.\n" +
+    "Loads <root>/.smithers/coding-project.json when present; SMITHERS_CODING_PROJECT overrides it.\n" +
     "SMITHERS_FLOW_ARTIFACT_SHA256, SMITHERS_SOURCE_REVISION and SMITHERS_OWNER_GENERATION bind the runtime bridge.\n" +
     "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY selects the packaged native workspace helper.\n" +
     "Optional SMITHERS_CODING_PLAN_MODEL, SMITHERS_CODING_POC_MODEL and SMITHERS_CODING_WIKI_MODEL select provider:model roles.\n" +

@@ -90,6 +90,12 @@ export interface Options extends NativeOptions {
   readonly stateRoot?: string | undefined
 }
 
+/** The optional routes advertised by this configured host. */
+export const configuredCodingRoutes = (options: Pick<Options, "planning" | "landing">) => [
+  ...(options.planning === undefined ? [] : [{ name: "coding/request", capability: "coding-request/v1" }]),
+  ...(options.planning === undefined || options.landing === undefined ? [] : [{ name: "coding/vibe", capability: "coding-vibe/v1" }])
+]
+
 const configured = (options: Options) => {
   if (!/^[a-z0-9-]+:[^\s:]+$/.test(options.implementationModel)) {
     throw new Error("Set SMITHERS_CODING_IMPLEMENT_MODEL to an explicit provider:model for coding/implement")
@@ -227,8 +233,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       // the whole of what this host requires of it. A flow that regressed into
       // delegating reports a name here and fails the same check.
       const required: ReadonlyArray<readonly [string, string | undefined]> = [["coding", undefined], ["coding/dispatch", undefined], ["coding/implementation", undefined],
-        ...(options.planning === undefined ? [] : [["coding/request", undefined] as const]),
-        ...(options.landing === undefined || options.planning === undefined ? [] : [["coding/vibe", undefined] as const]),
+        ...configuredCodingRoutes(options).map(route => [route.name, undefined] as const),
         ["repository/setup", RunSetup._tag], ["repository/trigger", RunTrigger._tag], ["repository-jobs/issues", RunJob._tag]]
       for (const [name, delegate] of required) {
         if (!built.executables.some(entry => entry.descriptor.name === name && entry.delegate === delegate)) {
@@ -254,8 +259,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
           sourceRevision: options.runtimeSourceRevision!,
           ownerGeneration: options.ownerGeneration ?? 1
         } }),
-        capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", "coding-dispatch/v1", "repository-jobs/v1", "repository-source/v1", ...(options.planning === undefined ? [] : ["coding-request/v1"]),
-          ...(options.landing === undefined || options.planning === undefined ? [] : ["coding-vibe/v1"]),
+        capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", "coding-dispatch/v1", "repository-jobs/v1", "repository-source/v1", ...configuredCodingRoutes(options).map(route => route.capability),
           ...(options.runtimeArtifactDigest === undefined ? [] : ["flow-runtime-bridge/v1"])])] }, {
         ...bind,
         ...(options.runtimeArtifactDigest === undefined ? {} : { runtimeBridge: {

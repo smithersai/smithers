@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { access, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { test } from "node:test"
@@ -21,7 +21,7 @@ test("repository coding project decodes with registered flows, real source paths
   const root = await realpath(fileURLToPath(new URL("../../", import.meta.url)))
   const platform = process.versions.bun
     ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
-  const project = await Effect.runPromise(loadProject(root, ".smithers/coding-project.json").pipe(Effect.provide(platform)))
+  const project = await Effect.runPromise(loadProject(root, undefined).pipe(Effect.provide(platform)))
   assert.ok(project)
   assert.equal(project.wiki, false)
   assert.ok(project.pages)
@@ -63,22 +63,30 @@ test("repository coding project decodes with registered flows, real source paths
     "wikiOutput must resolve outside the repository")
 })
 
-test("explicit operator JSON uses existing schemas and the injected Node/Bun filesystem", async t => {
+test("default project lookup, explicit override and absent default use the injected Node/Bun filesystem", async t => {
   const directory = await mkdtemp(join(tmpdir(), "coding-project-config-"))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const platform = process.versions.bun
     ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
   const load = (filename: string | undefined) => Effect.runPromise(loadProject(directory, filename).pipe(Effect.provide(platform)))
   assert.equal(await load(undefined), undefined)
-  // An invalid conventionally named file is never discovered implicitly.
-  await writeFile(join(directory, "smithers.json"), "not json")
-  assert.equal(await load(undefined), undefined)
+  await mkdir(join(directory, ".smithers"))
+  const defaultFile = join(directory, ".smithers/coding-project.json")
+  const minimal = { implementation: valid().implementation, checks: valid().checks }
+  await writeFile(defaultFile, JSON.stringify(minimal))
+  assert.deepEqual(await load(undefined), { ...minimal, wiki: false })
   await writeFile(join(directory, "project.json"), JSON.stringify(valid()))
   const expected = { ...valid(), wiki: false, wikiOutput: join(await realpath(directory), "../wiki") }
   assert.deepEqual(await load("project.json"), expected)
   assert.deepEqual(await load(join(directory, "project.json")), expected)
+  await writeFile(defaultFile, "{invalid-default")
+  assert.deepEqual(await load("project.json"), expected, "explicit configuration wins over the invalid default")
+  await assert.rejects(load(undefined), error => {
+    assert.match(String(error), /Invalid SMITHERS_CODING_PROJECT/)
+    assert.match(String(error), /\.smithers\/coding-project\.json/)
+    return true
+  })
   // Core requests need ordinary checks, never a generated publication catalog.
-  const minimal = { implementation: valid().implementation, checks: valid().checks }
   await writeFile(join(directory, "project.json"), JSON.stringify(minimal))
   assert.deepEqual(await load("project.json"), { ...minimal, wiki: false })
   await writeFile(join(directory, "project.json"), JSON.stringify({ ...minimal, wiki: true }))
@@ -116,10 +124,11 @@ test("explicit operator JSON uses existing schemas and the injected Node/Bun fil
   await assert.rejects(load("project.json"), /256 KiB/)
 })
 
-test("project reads enforce emitted byte bounds and do not open or stat an implicit file", async () => {
+test("project reads enforce emitted byte bounds and skip an absent default", async () => {
   const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
   let reads = 0
   const injected: FileSystem.FileSystem = { ...fs,
+    exists: () => Effect.succeed(false),
     stat: () => Effect.die(new Error("No stat-before-read size assumption")),
     readFile: () => Effect.die(new Error("No unbounded read")),
     stream: (_filename, options) => {
@@ -141,10 +150,11 @@ test("configured entry loads explicit project data before host initialization; h
   t.after(() => rm(directory, { recursive: true, force: true }))
   await writeFile(join(directory, "invalid.json"), JSON.stringify({ ...valid(), password: "do-not-print-this-value" }))
   const entry = process.env.SMITHERS_CODING_HOST_BINARY ?? fileURLToPath(new URL("../coding/serve.ts", import.meta.url))
-  const run = (args: string[]) => spawnSync(process.execPath, [
+  const run = (args: string[], projectFilename: string | null = "invalid.json") => spawnSync(process.execPath, [
     ...(process.versions.bun ? [] : ["--experimental-strip-types"]), entry, ...args
   ], { cwd: directory, encoding: "utf8", timeout: 75_000, maxBuffer: 64 * 1024,
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, SMITHERS_CODING_PROJECT: "invalid.json" } })
+    env: { PATH: process.env.PATH, HOME: process.env.HOME,
+      ...(projectFilename === null ? {} : { SMITHERS_CODING_PROJECT: projectFilename }) } })
   const help = run(["--help"])
   assert.equal(help.status, 0, help.stderr)
   assert.match(help.stdout, /SMITHERS_CODING_PROJECT/)
@@ -153,4 +163,9 @@ test("configured entry loads explicit project data before host initialization; h
   const diagnostic = refusal.stdout + refusal.stderr
   assert.match(diagnostic, /Invalid SMITHERS_CODING_PROJECT/)
   assert.doesNotMatch(diagnostic, /do-not-print-this-value|Set SMITHERS_CODING_IMPLEMENT_MODEL/)
+  await mkdir(join(directory, ".smithers"))
+  await writeFile(join(directory, ".smithers/coding-project.json"), "{invalid-default")
+  const defaultRefusal = run(["serve", "--root", directory], null)
+  assert.equal(defaultRefusal.status, 1, defaultRefusal.stderr)
+  assert.match(defaultRefusal.stdout + defaultRefusal.stderr, /Invalid SMITHERS_CODING_PROJECT.*\.smithers\/coding-project\.json/)
 })

@@ -1,18 +1,36 @@
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import assert from "node:assert/strict"
+import { realpath } from "node:fs/promises"
 import { test } from "node:test"
+import { fileURLToPath } from "node:url"
 import { Effect, Layer } from "effect"
+import { NodeServices } from "@effect/platform-node"
 import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
 import * as Model from "@smthrs/model/Model"
 import type * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { platform } from "../../packages/smithers/src/internal/NodeControlHost.ts"
 import { Landing } from "../coding/landing.ts"
-import { layer, roleResolver } from "../coding/host.ts"
+import { configuredCodingRoutes, layer, roleResolver } from "../coding/host.ts"
+import { loadProject } from "../coding/project-config.ts"
 
 /** Configuration never calls the adapter; every method refuses if a layer is built. */
 const refused = Effect.die("host configuration must not reach the landing adapter")
 const landing = Layer.succeed(Landing, { binding: { repositoryId: 1, workspaceId: "22222222-2222-4222-8222-222222222222" },
   readMain: refused, prepare: () => refused, create: () => refused, queue: () => refused, observe: () => refused })
+
+test("the repository default and a landing binding select both coding routes", async () => {
+  const root = await realpath(fileURLToPath(new URL("../../", import.meta.url)))
+  const planning = await Effect.runPromise(loadProject(root, undefined).pipe(Effect.provide(NodeServices.layer)))
+  assert.ok(planning)
+  assert.deepEqual(configuredCodingRoutes({ planning, landing }), [
+    { name: "coding/request", capability: "coding-request/v1" },
+    { name: "coding/vibe", capability: "coding-vibe/v1" }
+  ])
+  assert.deepEqual(configuredCodingRoutes({ planning }), [
+    { name: "coding/request", capability: "coding-request/v1" }
+  ])
+  assert.deepEqual(configuredCodingRoutes({ landing }), [])
+})
 
 test("coding deployment requires an explicit model and owning gateway before opening services", () => {
   const options = { repositoryPath: "/unused", gatewayId: "11111111-1111-4111-8111-111111111111", implementationModel: "" }
