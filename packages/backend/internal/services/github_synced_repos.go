@@ -422,6 +422,9 @@ func (s *GitHubSyncedRepoService) EnrollGitHubRepo(ctx context.Context, input En
 		via = GitHubSyncedRepoEnrolledViaLazy
 	}
 
+	if err := s.adoptSlugForKnownRepo(ctx, owner, repo, input.GitHubRepositoryID); err != nil {
+		return db.GithubSyncedRepo{}, err
+	}
 	row, err := s.store.EnrollGitHubSyncedRepo(ctx, db.EnrollGitHubSyncedRepoParams{
 		OwnerLogin:         owner,
 		RepoName:           repo,
@@ -435,6 +438,43 @@ func (s *GitHubSyncedRepoService) EnrollGitHubRepo(ctx context.Context, input En
 		return db.GithubSyncedRepo{}, pkgerrors.Internal("failed to enroll github repository for sync").WithCause(err)
 	}
 	return row, nil
+}
+
+// adoptSlugForKnownRepo keys enrollment on GitHub's immutable repo id when the
+// source knows it: a row already holding the id under another slug is the same
+// repository after a rename or transfer, so it adopts the incoming slug before
+// the slug upsert runs. Without this the upsert would insert a second row for
+// the id and violate uq_github_synced_repos_github_id. A different row still
+// holding the incoming slug fails the adoption; an operator untangles, as in
+// lookupEnrolled.
+func (s *GitHubSyncedRepoService) adoptSlugForKnownRepo(ctx context.Context, owner, repo string, githubRepoID int64) error {
+	if githubRepoID <= 0 {
+		return nil
+	}
+	existing, err := s.store.GetGitHubSyncedRepoByGitHubID(ctx, nullableSyncedRepoInt64(githubRepoID))
+	if stdErrors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return pkgerrors.Internal("failed to enroll github repository for sync").WithCause(err)
+	}
+	if existing.OwnerLoginLower == strings.ToLower(owner) && existing.RepoNameLower == strings.ToLower(repo) {
+		return nil
+	}
+	if _, err := s.store.AdoptGitHubSyncedRepoSlug(ctx, db.AdoptGitHubSyncedRepoSlugParams{
+		OwnerLogin: owner,
+		RepoName:   repo,
+		ID:         existing.ID,
+	}); err != nil {
+		slog.Warn("github synced repo rename detected at enrollment but slug not adopted",
+			"old_owner", existing.OwnerLogin, "old_repo", existing.RepoName,
+			"new_owner", owner, "new_repo", repo, "error", err)
+		return pkgerrors.Internal("failed to enroll github repository for sync").WithCause(err)
+	}
+	slog.Info("github synced repo slug adopted at enrollment after rename/transfer",
+		"old_owner", existing.OwnerLogin, "old_repo", existing.RepoName,
+		"new_owner", owner, "new_repo", repo)
+	return nil
 }
 
 // MirrorEnrolledRepo creates or refreshes the jjhub-side git mirror for an

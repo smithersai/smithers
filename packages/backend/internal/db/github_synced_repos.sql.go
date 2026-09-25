@@ -168,6 +168,21 @@ func (q *Queries) DeleteGitHubSyncedRepoReadGrantsForUser(ctx context.Context, u
 }
 
 const enrollGitHubSyncedRepo = `-- name: EnrollGitHubSyncedRepo :one
+WITH rebound AS (
+    SELECT g.id
+    FROM github_synced_repos g
+    WHERE g.owner_login_lower = LOWER($1::text)
+      AND g.repo_name_lower = LOWER($2::text)
+      AND g.github_repository_id <> $4::bigint
+),
+dropped_issues AS (
+    DELETE FROM github_synced_issues
+    WHERE synced_repo_id IN (SELECT id FROM rebound)
+),
+dropped_comments AS (
+    DELETE FROM github_synced_issue_comments
+    WHERE synced_repo_id IN (SELECT id FROM rebound)
+)
 INSERT INTO github_synced_repos (
     owner_login, owner_login_lower, repo_name, repo_name_lower,
     installation_id, github_repository_id, sync_refs, sync_metadata, enrolled_via
@@ -190,6 +205,30 @@ SET owner_login     = EXCLUDED.owner_login,
     github_repository_id = COALESCE(EXCLUDED.github_repository_id, github_synced_repos.github_repository_id),
     sync_refs       = github_synced_repos.sync_refs OR EXCLUDED.sync_refs,
     sync_metadata   = github_synced_repos.sync_metadata OR EXCLUDED.sync_metadata,
+    -- A rebind restarts sync bookkeeping. An operator-disabled row stays
+    -- disabled, and an in-flight claim keeps its singleflight until release.
+    sync_state = CASE
+        WHEN github_synced_repos.github_repository_id <> EXCLUDED.github_repository_id
+             AND github_synced_repos.sync_state NOT IN ('disabled', 'syncing')
+        THEN 'pending'
+        ELSE github_synced_repos.sync_state
+    END,
+    last_synced_at = CASE
+        WHEN github_synced_repos.github_repository_id <> EXCLUDED.github_repository_id THEN NULL
+        ELSE github_synced_repos.last_synced_at
+    END,
+    last_webhook_at = CASE
+        WHEN github_synced_repos.github_repository_id <> EXCLUDED.github_repository_id THEN NULL
+        ELSE github_synced_repos.last_webhook_at
+    END,
+    sync_error = CASE
+        WHEN github_synced_repos.github_repository_id <> EXCLUDED.github_repository_id THEN NULL
+        ELSE github_synced_repos.sync_error
+    END,
+    consecutive_failures = CASE
+        WHEN github_synced_repos.github_repository_id <> EXCLUDED.github_repository_id THEN 0
+        ELSE github_synced_repos.consecutive_failures
+    END,
     updated_at      = NOW()
 RETURNING id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at
 `
@@ -208,6 +247,14 @@ type EnrollGitHubSyncedRepoParams struct {
 // kinds are OR-ed on, a known installation id is not overwritten with NULL, and
 // enrolled_via keeps the FIRST (strongest) provenance so a lazy read cannot
 // relabel a repo that was enrolled by import.
+//
+// A slug row bound to a DIFFERENT GitHub repo id is a different repository
+// that previously held the slug (renamed or transferred away, then the name
+// was reused). It is rebound to the incoming id, its synced issues and
+// comments are dropped, and its sync bookkeeping restarts, so the old repo's
+// metadata is never served as the new repo's. A row that already holds the
+// incoming id under another slug is the service's to adopt first; see
+// GitHubSyncedRepoService.EnrollGitHubRepo.
 func (q *Queries) EnrollGitHubSyncedRepo(ctx context.Context, arg EnrollGitHubSyncedRepoParams) (GithubSyncedRepo, error) {
 	row := q.db.QueryRow(ctx, enrollGitHubSyncedRepo,
 		arg.OwnerLogin,
