@@ -1,8 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"github.com/jackc/pgx/v5/pgtype"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -411,4 +416,83 @@ func TestCronSchedulerWorker_ClaimError_ReturnsError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "database connection lost")
 	assert.Empty(t, dispatcher.dispatchCalls)
+}
+
+func TestCronSchedulerWorker_PollOnce_RefusedDispatch_SkipsOccurrence(t *testing.T) {
+	refusals := map[string]error{
+		"billing cap":        pkgerrors.Forbidden("CI minutes quota exceeded for the current billing plan"),
+		"invalid trigger":    pkgerrors.UnprocessableEntity("invalid workflow trigger configuration: bad"),
+		"missing def":        pkgerrors.NotFound("workflow definition not found"),
+		"wrapped refusal":    fmt.Errorf("dispatch: %w", pkgerrors.Forbidden("CI minutes quota exceeded")),
+		"plan limit (402)":   pkgerrors.New(pkgerrors.CodePlanLimitExceeded, "plan limit"),
+		"per-resource (429)": pkgerrors.QuotaExceeded("at cap"),
+	}
+	for name, refusal := range refusals {
+		t.Run(name, func(t *testing.T) {
+			now := time.Date(2026, 9, 24, 12, 7, 30, 0, time.UTC)
+			queries := &mockCronSchedulerQuerier{
+				claimDueSpecsFn: func(ctx context.Context, limitCount int32) ([]db.WorkflowScheduleSpec, error) {
+					return []db.WorkflowScheduleSpec{
+						{ID: 1, WorkflowDefinitionID: 10, RepositoryID: 100, CronExpression: "0 * * * *"},
+					}, nil
+				},
+			}
+			dispatcher := &mockCronSchedulerRunDispatcher{
+				dispatchFn: func(ctx context.Context, input DispatchForEventInput) ([]WorkflowRunResult, error) {
+					return nil, refusal
+				},
+			}
+			var logs bytes.Buffer
+			worker := NewCronSchedulerWorker(queries, dispatcher)
+			worker.logger = slog.New(slog.NewTextHandler(&logs, nil))
+
+			require.NoError(t, worker.pollOnce(context.Background(), now))
+
+			require.Len(t, queries.updateFireTimesCalls, 1)
+			update := queries.updateFireTimesCalls[0]
+			assert.Equal(t, int64(1), update.ID)
+			assert.Equal(t, pgtype.Timestamptz{Time: now, Valid: true}, update.PrevFireAt)
+			assert.Equal(t, time.Date(2026, 9, 24, 13, 0, 0, 0, time.UTC), update.NextFireAt)
+
+			assert.Contains(t, logs.String(), "spec_id=1")
+			assert.Contains(t, logs.String(), "repository_id=100")
+			assert.Contains(t, logs.String(), "workflow_definition_id=10")
+		})
+	}
+}
+
+// Transient failures (plue's own infra, a bug, a wrapped non-API error) keep
+// the claim lease so the same occurrence is retried, and the log names the
+// repository and definition so an operator can find the schedule.
+func TestCronSchedulerWorker_PollOnce_TransientDispatchError_KeepsLeaseAndLogsIDs(t *testing.T) {
+	transients := map[string]error{
+		"internal":    pkgerrors.Internal("failed to fetch workflow definition"),
+		"unavailable": pkgerrors.New(pkgerrors.CodeServiceUnavailable, "down"),
+		"plain":       errors.New("connection reset"),
+	}
+	for name, transient := range transients {
+		t.Run(name, func(t *testing.T) {
+			queries := &mockCronSchedulerQuerier{
+				claimDueSpecsFn: func(ctx context.Context, limitCount int32) ([]db.WorkflowScheduleSpec, error) {
+					return []db.WorkflowScheduleSpec{
+						{ID: 1, WorkflowDefinitionID: 10, RepositoryID: 100, CronExpression: "0 * * * *"},
+					}, nil
+				},
+			}
+			dispatcher := &mockCronSchedulerRunDispatcher{
+				dispatchFn: func(ctx context.Context, input DispatchForEventInput) ([]WorkflowRunResult, error) {
+					return nil, transient
+				},
+			}
+			var logs bytes.Buffer
+			worker := NewCronSchedulerWorker(queries, dispatcher)
+			worker.logger = slog.New(slog.NewTextHandler(&logs, nil))
+
+			require.NoError(t, worker.PollOnce(context.Background()))
+
+			assert.Empty(t, queries.updateFireTimesCalls)
+			assert.Contains(t, logs.String(), "repository_id=100")
+			assert.Contains(t, logs.String(), "workflow_definition_id=10")
+		})
+	}
 }

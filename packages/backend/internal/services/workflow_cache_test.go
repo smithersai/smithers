@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1151,4 +1152,55 @@ func TestWorkflowCacheService_Cleanup_ConcurrentDeletionOfSameEntry_IdempotentOn
 	for i, err := range errs {
 		assert.NoError(t, err, "Cleanup goroutine %d should not error on concurrent deletion", i)
 	}
+}
+
+func TestWorkflowCacheService_Cleanup_ContinuesPastFailingRepository(t *testing.T) {
+	t.Parallel()
+
+	// Repository 40 holds an expired archive whose blob delete keeps failing
+	// (for example a retention hold). The sweep must still expire repository
+	// 41's archive and then report repository 40's failure.
+	now := time.Now().UTC()
+	var mu sync.Mutex
+	listed := map[int64]bool{}
+	var finalDeletes []int64
+
+	service := NewWorkflowCacheService(&mockWorkflowCacheQuerier{
+		listWorkflowCacheRepositoryIDsFn: func(_ context.Context) ([]int64, error) {
+			return []int64{40, 41}, nil
+		},
+		listWorkflowCacheEvictionCandidatesFn: func(_ context.Context, arg db.ListWorkflowCacheEvictionCandidatesParams) ([]db.WorkflowCache, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if listed[arg.RepositoryID] {
+				return nil, nil
+			}
+			listed[arg.RepositoryID] = true
+			return []db.WorkflowCache{{
+				ID:           arg.RepositoryID * 100,
+				RepositoryID: arg.RepositoryID,
+				ObjectKey:    "workflow-cache/repos/" + strconv.FormatInt(arg.RepositoryID, 10) + "/old.tgz",
+				Status:       "finalized",
+				ExpiresAt:    now.Add(-time.Hour),
+			}}, nil
+		},
+		deleteClaimedWorkflowCacheFn: func(_ context.Context, arg db.DeleteClaimedWorkflowCacheParams) (db.WorkflowCache, error) {
+			mu.Lock()
+			finalDeletes = append(finalDeletes, arg.RepositoryID)
+			mu.Unlock()
+			return db.WorkflowCache{ID: arg.ID, RepositoryID: arg.RepositoryID}, nil
+		},
+	}, &mockBlobStore{
+		deleteFn: func(_ context.Context, key string) error {
+			if strings.Contains(key, "repos/40/") {
+				return errors.New("object is under a retention hold")
+			}
+			return nil
+		},
+	}, WorkflowCacheConfig{RepoQuotaBytes: 10 * 1024 * 1024})
+
+	err := service.Cleanup(context.Background())
+	require.Error(t, err, "the failing repository must still be reported")
+	assert.Contains(t, err.Error(), "repository 40")
+	assert.Equal(t, []int64{41}, finalDeletes, "a failing repository must not starve later repositories")
 }

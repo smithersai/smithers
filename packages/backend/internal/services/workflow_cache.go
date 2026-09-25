@@ -604,13 +604,30 @@ func (s *workflowCacheService) Cleanup(ctx context.Context) error {
 		return pkgerrors.Internal("failed to list workflow cache repositories").WithCause(err)
 	}
 
+	var errs []error
+	var failedRepositoryIDs []int64
 	for _, repositoryID := range repositoryIDs {
 		if repositoryID <= 0 {
 			continue
 		}
-		if err := s.enforceRepositoryCachePolicy(ctx, repositoryID, 0); err != nil {
-			return err
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
 		}
+		if err := s.enforceRepositoryCachePolicy(ctx, repositoryID, 0); err != nil {
+			slog.Warn("workflow cache cleanup failed for repository", "repository_id", repositoryID, "error", err)
+			errs = append(errs, err)
+			failedRepositoryIDs = append(failedRepositoryIDs, repositoryID)
+		}
+	}
+	if len(errs) == 1 {
+		if len(failedRepositoryIDs) == 1 {
+			return pkgerrors.Internal(fmt.Sprintf("workflow cache cleanup failed for repository %d", failedRepositoryIDs[0])).WithCause(errs[0])
+		}
+		return errs[0]
+	}
+	if len(errs) > 1 {
+		return pkgerrors.Internal("workflow cache cleanup failed").WithCause(stdErrors.Join(errs...))
 	}
 	return nil
 }

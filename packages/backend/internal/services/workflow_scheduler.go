@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // CronSchedulerQuerier contains the database methods needed by the cron scheduler.
@@ -104,12 +106,16 @@ func (w *CronSchedulerWorker) pollOnce(ctx context.Context, now time.Time) error
 			},
 		})
 		if err != nil {
-			w.logger.Error("failed to dispatch scheduled workflow run", "spec_id", spec.ID, "error", err)
-			// Do not acknowledge this occurrence: leave the claim lease in
-			// place so the spec becomes due again at lease expiry and this
-			// occurrence is retried instead of being silently dropped by
-			// advancing next_fire_at past it.
-			continue
+			attrs := []any{"spec_id", spec.ID, "repository_id", spec.RepositoryID,
+				"workflow_definition_id", spec.WorkflowDefinitionID, "error", err}
+			if !isRefusedScheduleDispatch(err) {
+				// Leave the lease in place so a transient failure retries.
+				w.logger.Error("failed to dispatch scheduled workflow run", attrs...)
+				continue
+			}
+			// A user-state refusal must consume this occurrence. Retrying it
+			// after the lease expires can run stale work when the state clears.
+			w.logger.Warn("skipped refused scheduled workflow run", attrs...)
 		}
 
 		// Compute and write the real next fire time (claim set it to a lease).
@@ -137,6 +143,11 @@ func (w *CronSchedulerWorker) pollOnce(ctx context.Context, now time.Time) error
 	}
 
 	return nil
+}
+
+func isRefusedScheduleDispatch(err error) bool {
+	var apiErr *pkgerrors.APIError
+	return errors.As(err, &apiErr) && apiErr.Fault == pkgerrors.FaultUser
 }
 
 // nextFireTime computes the next fire time from a cron expression.
