@@ -9,7 +9,7 @@ import (
 
 func TestAgentDocs_F_URLDefault(t *testing.T) {
 	t.Setenv("SMITHERS_AGENT_DOCS_URL", "")
-	if got := agentDocsURL(); got != agentSummaryDocsURL {
+	if got := agentDocsURL(); got != "https://smithers.sh/llms-full.txt" {
 		t.Fatalf("agentDocsURL default = %q", got)
 	}
 }

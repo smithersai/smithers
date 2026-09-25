@@ -51,19 +51,10 @@ func agentFSetConfig(t *testing.T, apiURL, token string) {
 
 type agentFServer struct {
 	failSuffix string
-	failCreate bool
-	listBody   string
-	createBody string
 }
 
 func (s *agentFServer) start(t *testing.T) string {
 	t.Helper()
-	if s.listBody == "" {
-		s.listBody = `[{"status":"running","id":"ws1"}]`
-	}
-	if s.createBody == "" {
-		s.createBody = `{"id":"ws2"}`
-	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		if s.failSuffix != "" && strings.HasSuffix(p, s.failSuffix) {
@@ -75,23 +66,12 @@ func (s *agentFServer) start(t *testing.T) string {
 		switch {
 		case p == "/api/user":
 			fmt.Fprint(w, `{"login":"alice","email":"a@b.com"}`)
-		case strings.HasSuffix(p, "/ssh"):
-			fmt.Fprint(w, `{"ok":true}`)
 		case strings.HasSuffix(p, "/messages"):
 			fmt.Fprint(w, `{"id":"m1"}`)
 		case strings.HasSuffix(p, "/sessions") && r.Method == http.MethodPost:
 			fmt.Fprint(w, `{"id":"s1"}`)
 		case strings.HasSuffix(p, "/sessions"):
 			fmt.Fprint(w, `[]`)
-		case strings.HasSuffix(p, "/workspaces") && r.Method == http.MethodPost:
-			if s.failCreate {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprint(w, `{"message":"forced"}`)
-				return
-			}
-			fmt.Fprint(w, s.createBody)
-		case strings.HasSuffix(p, "/workspaces"):
-			fmt.Fprint(w, s.listBody)
 		default:
 			fmt.Fprint(w, `{}`)
 		}
@@ -178,46 +158,12 @@ func TestCommandsAgent_F_CollectRepoContext(t *testing.T) {
 func TestCommandsAgent_F_CollectRepoContextNoJj(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	agentFSetConfig(t, "https://api.example.test", "")
-	if _, err := collectAgentRepoContext(""); err == nil {
-		t.Fatal("collectAgentRepoContext without jj should error")
+	ctx, err := collectAgentRepoContext("")
+	if err != nil {
+		t.Fatalf("collectAgentRepoContext without jj = %v", err)
 	}
-}
-
-func TestCommandsAgent_F_ResolveWorkspaceBackend(t *testing.T) {
-	// parseOwnerRepoRefOrThrow error
-	if _, err := resolveAgentWorkspaceBackend(map[string]any{"repoRoot": "/r", "repoSlug": "badslug", "auth": map[string]any{"loggedIn": true}}); err == nil {
-		t.Fatal("resolveAgentWorkspaceBackend bad slug expected")
-	}
-
-	ctxFor := func(url string) map[string]any {
-		return map[string]any{"repoRoot": "/r", "repoSlug": "alice/demo", "auth": map[string]any{"loggedIn": true}}
-	}
-
-	// workspaces GET error (unreachable)
-	agentFSetConfig(t, "http://127.0.0.1:1", "tok")
-	if _, err := resolveAgentWorkspaceBackend(ctxFor("")); err == nil {
-		t.Fatal("resolveAgentWorkspaceBackend GET error expected")
-	}
-
-	// create error
-	srvCreate := &agentFServer{listBody: `[]`, failCreate: true}
-	agentFSetConfig(t, srvCreate.start(t), "tok")
-	if _, err := resolveAgentWorkspaceBackend(ctxFor("")); err == nil {
-		t.Fatal("resolveAgentWorkspaceBackend create error expected")
-	}
-
-	// create returns no id -> workspaceID empty
-	srvNoID := &agentFServer{listBody: `[]`, createBody: `{}`}
-	agentFSetConfig(t, srvNoID.start(t), "tok")
-	if _, err := resolveAgentWorkspaceBackend(ctxFor("")); err == nil {
-		t.Fatal("resolveAgentWorkspaceBackend no-id expected")
-	}
-
-	// ssh error
-	srvSSH := &agentFServer{failSuffix: "/ssh"}
-	agentFSetConfig(t, srvSSH.start(t), "tok")
-	if _, err := resolveAgentWorkspaceBackend(ctxFor("")); err == nil {
-		t.Fatal("resolveAgentWorkspaceBackend ssh error expected")
+	if ctx["repoRoot"] != nil || len(arrayValue(ctx["warnings"])) == 0 {
+		t.Fatalf("collectAgentRepoContext without jj should degrade to warnings: %#v", ctx)
 	}
 }
 
@@ -231,31 +177,23 @@ func TestCommandsAgent_F_LocalPromptAndSummary(t *testing.T) {
 	t.Setenv("AGENTF_STATUS", "clean")
 
 	// collect error path
-	if _, err := runLocalAgentPrompt(&incur.CommandContext{}, "p", "badformat", false); err == nil {
+	if _, err := runLocalAgentPrompt(&incur.CommandContext{}, "p", "badformat"); err == nil {
 		t.Fatal("runLocalAgentPrompt collect error expected")
 	}
-	if _, err := agentSummary("p", "badformat", false); err == nil {
+	if _, err := agentSummary("p", "badformat"); err == nil {
 		t.Fatal("agentSummary collect error expected")
 	}
 
 	// non-explicit, no repo slug -> plain response
-	if _, err := runLocalAgentPrompt(&incur.CommandContext{}, "p", "", false); err != nil {
+	if _, err := runLocalAgentPrompt(&incur.CommandContext{}, "p", ""); err != nil {
 		t.Fatalf("runLocalAgentPrompt no-slug = %v", err)
 	}
 	// non-explicit, with repo slug -> "Repo:" prefix
-	if _, err := runLocalAgentPrompt(&incur.CommandContext{}, "p", "alice/demo", false); err != nil {
+	if _, err := runLocalAgentPrompt(&incur.CommandContext{}, "p", "alice/demo"); err != nil {
 		t.Fatalf("runLocalAgentPrompt slug = %v", err)
 	}
 
-	// sandbox path (reaches resolveAgentWorkspaceBackend)
-	if _, err := runLocalAgentPrompt(&incur.CommandContext{}, "p", "alice/demo", true); err != nil {
-		t.Fatalf("runLocalAgentPrompt sandbox = %v", err)
-	}
-	if _, err := agentSummary("p", "alice/demo", true); err != nil {
-		t.Fatalf("agentSummary sandbox = %v", err)
-	}
-	// summary non-sandbox
-	if _, err := agentSummary("p", "alice/demo", false); err != nil {
+	if _, err := agentSummary("p", "alice/demo"); err != nil {
 		t.Fatalf("agentSummary = %v", err)
 	}
 }

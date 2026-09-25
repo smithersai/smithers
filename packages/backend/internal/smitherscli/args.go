@@ -87,8 +87,7 @@ func rewriteAgentArgv(argv []string) []string {
 			strings.HasPrefix(token, "--format=") ||
 			strings.HasPrefix(token, "--repo=") ||
 			strings.HasPrefix(token, "--token-limit=") ||
-			strings.HasPrefix(token, "--token-offset=") ||
-			token == "--sandbox" {
+			strings.HasPrefix(token, "--token-offset=") {
 			continue
 		}
 		if !strings.HasPrefix(token, "-") {

@@ -56,7 +56,7 @@ func TestArgs_Cov_CommandDetectionAndAgentDefaults(t *testing.T) {
 	argsCovRequireSlice(t, rewriteAgentArgv([]string{"repo", "list"}), []string{"repo", "list"})
 	argsCovRequireSlice(t, rewriteAgentArgv([]string{"agent", "hello"}), []string{"agent", "ask", "hello"})
 	argsCovRequireSlice(t, rewriteAgentArgv([]string{"agent", "run", "hello"}), []string{"agent", "run", "hello"})
-	argsCovRequireSlice(t, rewriteAgentArgv([]string{"agent", "--repo", "alice/demo", "--sandbox", "hello"}), []string{"agent", "ask", "--repo", "alice/demo", "--sandbox", "hello"})
+	argsCovRequireSlice(t, rewriteAgentArgv([]string{"agent", "--repo", "alice/demo", "hello"}), []string{"agent", "ask", "--repo", "alice/demo", "hello"})
 	argsCovRequireSlice(t, rewriteAgentArgv([]string{"agent", "--", "literal"}), []string{"agent", "ask", "--", "literal"})
 }
 

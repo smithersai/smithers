@@ -158,7 +158,7 @@ func TestCommandsAgent_Cov_LocalHelpersAndRepoContext(t *testing.T) {
 		t.Fatalf("remote repo should not be checked without auth: %#v", context["remoteRepo"])
 	}
 
-	summary, err := agentSummary("explain login", "alice/override", false)
+	summary, err := agentSummary("explain login", "alice/override")
 	if err != nil {
 		t.Fatalf("agentSummary returned error: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestCommandsAgent_Cov_LocalHelpersAndRepoContext(t *testing.T) {
 	}))
 	defer docsServer.Close()
 	t.Setenv("SMITHERS_AGENT_DOCS_URL", docsServer.URL)
-	response, err := runLocalAgentPrompt(&incur.CommandContext{FormatExplicit: true}, "browser login", "alice/override", false)
+	response, err := runLocalAgentPrompt(&incur.CommandContext{FormatExplicit: true}, "browser login", "alice/override")
 	if err != nil {
 		t.Fatalf("runLocalAgentPrompt returned error: %v", err)
 	}
@@ -256,8 +256,7 @@ func TestCommandsAgent_Cov_RemoteSessionCommandsAndMessages(t *testing.T) {
 	}
 }
 
-func TestCommandsAgent_Cov_RemoteRepoAndWorkspaceBackend(t *testing.T) {
-	workspaceListCalls := 0
+func TestCommandsAgent_Cov_RemoteRepo(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "token commands_agent_cov_token" {
 			t.Fatalf("Authorization = %q", got)
@@ -269,19 +268,8 @@ func TestCommandsAgent_Cov_RemoteRepoAndWorkspaceBackend(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/repos/alice/missing":
 			w.WriteHeader(http.StatusNotFound)
 			fmt.Fprint(w, `{"message":"missing"}`)
-		case r.Method == http.MethodGet && r.URL.Path == "/api/repos/alice/demo/workspaces":
-			workspaceListCalls++
-			if workspaceListCalls == 1 {
-				fmt.Fprint(w, `[{"id":"ignored","status":"pending"},{"id":"ws_pending","status":"pending","vm_id":"vm_1"}]`)
-				return
-			}
-			fmt.Fprint(w, `[]`)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/repos/alice/demo/workspaces":
-			fmt.Fprint(w, `{"id":"ws_created"}`)
-		case r.Method == http.MethodGet && (r.URL.Path == "/api/repos/alice/demo/workspaces/ws_pending/ssh" || r.URL.Path == "/api/repos/alice/demo/workspaces/ws_created/ssh"):
-			fmt.Fprint(w, `{"host":"example.test"}`)
 		default:
-			t.Fatalf("unexpected workspace request: %s %s", r.Method, r.URL.RequestURI())
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.RequestURI())
 		}
 	}))
 	defer server.Close()
@@ -306,43 +294,5 @@ func TestCommandsAgent_Cov_RemoteRepoAndWorkspaceBackend(t *testing.T) {
 	missing := checkAgentRemoteRepo("alice/missing", AuthStatusResult{LoggedIn: true})
 	if missing["checked"] != true || missing["available"] != false || !strings.Contains(stringValue(missing["message"]), "missing") {
 		t.Fatalf("checkAgentRemoteRepo missing = %#v", missing)
-	}
-
-	if _, err := resolveAgentWorkspaceBackend(map[string]any{"repoSlug": "alice/demo", "auth": map[string]any{"loggedIn": true}}); err == nil || !strings.Contains(err.Error(), "local jj repository") {
-		t.Fatalf("missing repoRoot error = %v", err)
-	}
-	if _, err := resolveAgentWorkspaceBackend(map[string]any{"repoRoot": "/repo", "auth": map[string]any{"loggedIn": true}}); err == nil || !strings.Contains(err.Error(), "repository slug") {
-		t.Fatalf("missing repoSlug error = %v", err)
-	}
-	if _, err := resolveAgentWorkspaceBackend(map[string]any{"repoRoot": "/repo", "repoSlug": "alice/demo"}); err == nil || !strings.Contains(err.Error(), "auth") {
-		t.Fatalf("missing auth error = %v", err)
-	}
-
-	context := map[string]any{"repoRoot": "/repo", "repoSlug": "alice/demo", "auth": map[string]any{"loggedIn": true}}
-	backend, err := resolveAgentWorkspaceBackend(context)
-	if err != nil {
-		t.Fatalf("resolveAgentWorkspaceBackend reusable returned error: %v", err)
-	}
-	if backend["workspaceId"] != "ws_pending" || backend["remoteRoot"] != agentWorkspaceRemoteRoot {
-		t.Fatalf("reusable workspace backend = %#v", backend)
-	}
-	backend, err = resolveAgentWorkspaceBackend(context)
-	if err != nil {
-		t.Fatalf("resolveAgentWorkspaceBackend create returned error: %v", err)
-	}
-	if backend["workspaceId"] != "ws_created" {
-		t.Fatalf("created workspace backend = %#v", backend)
-	}
-
-	workspaces := []any{
-		map[string]any{"id": "pending-no-vm", "status": "pending"},
-		map[string]any{"id": "suspended", "status": "suspended"},
-		map[string]any{"id": "running", "status": "running"},
-	}
-	if got := reusableAgentWorkspaceID(workspaces); got != "running" {
-		t.Fatalf("reusableAgentWorkspaceID priority = %q", got)
-	}
-	if got := reusableAgentWorkspaceID([]any{map[string]any{"id": "pending-no-vm", "status": "pending"}}); got != "" {
-		t.Fatalf("reusableAgentWorkspaceID pending without vm = %q", got)
 	}
 }

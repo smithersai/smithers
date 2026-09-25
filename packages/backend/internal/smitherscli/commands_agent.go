@@ -13,8 +13,7 @@ import (
 	incur "github.com/smithersai/incur"
 )
 
-const agentSummaryDocsURL = "https://docs.smithers.sh/llms-full.txt"
-const agentWorkspaceRemoteRoot = "/home/developer/workspace"
+const agentSummaryDocsURL = "https://smithers.sh/llms-full.txt"
 
 // agentGetwd is a seam so the defensive os.Getwd error branch in
 // collectAgentRepoContext can be exercised.
@@ -26,13 +25,12 @@ func agentCommand() *incur.Cli {
 		Description: "Talk to the local Smithers usage helper",
 		ArgsSchema:  objectSchema(nil, map[string]*incur.JSONSchema{"prompt": stringSchema("Optional one-shot prompt for the local Smithers helper")}),
 		OptionsSchema: objectSchema(nil, map[string]*incur.JSONSchema{
-			"sandbox": booleanSchema("Run the helper with a workspace-backed sandbox backend", false),
-			"repo":    stringSchema("Repository (OWNER/REPO)"),
+			"repo": stringSchema("Repository (OWNER/REPO)"),
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			prompt := stringValue(ctx.Args["prompt"])
 			if os.Getenv("SMITHERS_AGENT_TEST_MODE") == "summary" {
-				return agentSummary(prompt, stringValue(ctx.Options["repo"]), ctx.Options["sandbox"] == true)
+				return agentSummary(prompt, stringValue(ctx.Options["repo"]))
 			}
 			if prompt == "" {
 				return map[string]any{
@@ -40,7 +38,7 @@ func agentCommand() *incur.Cli {
 					"message": "Local Smithers helper is ready for one-shot prompts. Pass a prompt, or use `smithers agent run <prompt>` for a remote agent session.",
 				}, nil
 			}
-			return runLocalAgentPrompt(ctx, prompt, stringValue(ctx.Options["repo"]), ctx.Options["sandbox"] == true)
+			return runLocalAgentPrompt(ctx, prompt, stringValue(ctx.Options["repo"]))
 		},
 	})
 	cmd.Group("session", agentSessionCommand())
@@ -166,25 +164,15 @@ func sendAgentMessage(owner, repo, sessionID, content, provider, transport strin
 	}, nil)
 }
 
-func runLocalAgentPrompt(ctx *incur.CommandContext, prompt, repoOverride string, sandbox bool) (any, error) {
+func runLocalAgentPrompt(ctx *incur.CommandContext, prompt, repoOverride string) (any, error) {
 	repoContext, err := collectAgentRepoContext(repoOverride)
 	if err != nil {
 		return nil, err
 	}
-	backendKind := "local"
-	backendContext := map[string]any{
+	repoContext["backend"] = map[string]any{
 		"backend": "local",
 		"cwd":     firstNonEmpty(stringValue(repoContext["repoRoot"]), stringValue(repoContext["cwd"])),
 	}
-	if sandbox {
-		workspaceContext, err := resolveAgentWorkspaceBackend(repoContext)
-		if err != nil {
-			return nil, err
-		}
-		backendKind = "workspace"
-		backendContext = workspaceContext
-	}
-	repoContext["backend"] = backendContext
 
 	docsEntry := refreshAgentDocsCache("")
 	docsIndex := prepareAgentDocsIndex(docsEntry)
@@ -193,7 +181,7 @@ func runLocalAgentPrompt(ctx *incur.CommandContext, prompt, repoOverride string,
 
 	if ctx.FormatExplicit {
 		return map[string]any{
-			"backend":      backendKind,
+			"backend":      "local",
 			"repo_context": repoContext,
 			"docs_status":  docsEntry.Status,
 			"docs_results": results,
@@ -206,28 +194,18 @@ func runLocalAgentPrompt(ctx *incur.CommandContext, prompt, repoOverride string,
 	return response, nil
 }
 
-func agentSummary(prompt, repoOverride string, sandbox bool) (any, error) {
+func agentSummary(prompt, repoOverride string) (any, error) {
 	repoContext, err := collectAgentRepoContext(repoOverride)
 	if err != nil {
 		return nil, err
 	}
-	backendKind := "local"
-	backendContext := map[string]any{
+	repoContext["backend"] = map[string]any{
 		"backend": "local",
 		"cwd":     firstNonEmpty(stringValue(repoContext["repoRoot"]), stringValue(repoContext["cwd"])),
 	}
-	if sandbox {
-		workspaceContext, err := resolveAgentWorkspaceBackend(repoContext)
-		if err != nil {
-			return nil, err
-		}
-		backendKind = "workspace"
-		backendContext = workspaceContext
-	}
-	repoContext["backend"] = backendContext
 
 	result := map[string]any{
-		"backend":      backendKind,
+		"backend":      "local",
 		"repo_context": repoContext,
 		"docs_status": map[string]any{
 			"url":     firstNonEmpty(strings.TrimSpace(os.Getenv("SMITHERS_AGENT_DOCS_URL")), agentSummaryDocsURL),
@@ -243,9 +221,6 @@ func agentSummary(prompt, repoOverride string, sandbox bool) (any, error) {
 }
 
 func collectAgentRepoContext(repoOverride string) (map[string]any, error) {
-	if err := RequireJj(); err != nil {
-		return nil, err
-	}
 	cwd, err := agentGetwd()
 	if err != nil {
 		cwd = "."
@@ -407,68 +382,6 @@ func checkAgentRemoteRepo(repoSlug string, auth AuthStatusResult) map[string]any
 		return map[string]any{"checked": true, "available": false, "message": err.Error()}
 	}
 	return map[string]any{"checked": true, "available": true}
-}
-
-func resolveAgentWorkspaceBackend(repoContext map[string]any) (map[string]any, error) {
-	repoRoot := stringValue(repoContext["repoRoot"])
-	if repoRoot == "" {
-		return nil, fmt.Errorf("Sandbox mode requires a local jj repository. Run `smithers agent` from inside a repo.")
-	}
-	repoSlug := stringValue(repoContext["repoSlug"])
-	if repoSlug == "" {
-		return nil, fmt.Errorf("Sandbox mode requires a Smithers repository slug. Use `--repo OWNER/REPO` or add a Smithers remote.")
-	}
-	auth := objectValue(repoContext["auth"])
-	if auth == nil || auth["loggedIn"] != true {
-		return nil, fmt.Errorf("Sandbox mode requires Smithers auth. Run `smithers auth login` first.")
-	}
-	owner, repo, err := parseOwnerRepoRefOrThrow(repoSlug)
-	if err != nil {
-		return nil, err
-	}
-	workspaces, err := APIRequest("GET", fmt.Sprintf("/api/repos/%s/%s/workspaces", url.PathEscape(owner), url.PathEscape(repo)), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	workspaceID := reusableAgentWorkspaceID(workspaces)
-	if workspaceID == "" {
-		created, err := APIRequest("POST", fmt.Sprintf("/api/repos/%s/%s/workspaces", url.PathEscape(owner), url.PathEscape(repo)), map[string]any{"name": ""}, nil)
-		if err != nil {
-			return nil, err
-		}
-		workspaceID = stringValue(objectValue(created)["id"])
-	}
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace response did not include id")
-	}
-	if _, err := APIRequest("GET", fmt.Sprintf("/api/repos/%s/%s/workspaces/%s/ssh", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(workspaceID)), nil, nil); err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"backend":     "workspace",
-		"workspaceId": workspaceID,
-		"remoteRoot":  agentWorkspaceRemoteRoot,
-		"repoSlug":    repoSlug,
-	}, nil
-}
-
-func reusableAgentWorkspaceID(workspaces any) string {
-	items := arrayValue(workspaces)
-	for _, desired := range []string{"running", "starting", "suspended", "pending"} {
-		for _, item := range items {
-			workspace := objectValue(item)
-			if workspace == nil || stringValue(workspace["status"]) != desired {
-				continue
-			}
-			if desired == "pending" && strings.TrimSpace(stringValue(workspace["vm_id"])) == "" {
-				continue
-			}
-			if id := stringValue(workspace["id"]); id != "" {
-				return id
-			}
-		}
-	}
-	return ""
 }
 
 func nilIfEmpty(value string) any {
