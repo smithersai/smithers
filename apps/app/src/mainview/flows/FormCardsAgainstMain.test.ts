@@ -303,6 +303,10 @@ interface DeclaredMove {
 
 const DECLARED: ReadonlyArray<DeclaredMove> = [
   {
+    flow: "change.split", kind: "sentence", rows: 1,
+    because: "A quoted change id without a path now receives the same missing-path refusal as every other incomplete split. The parser preserves the quoted token instead of treating its space as a second argument. No existing sentence is removed."
+  },
+  {
     flow: "triggers.pause", kind: "card", rows: 6,
     because: "An optional repository slot is skipped while the required slots behind it need every token left, so `/triggers.pause canary-w1-not-registered` fills Slug and the form asks for the repository instead of for the name the person just typed (walk W1, W1-d-doors.json pauseFormFields)."
   },
@@ -403,7 +407,7 @@ describe("the card every slash line opens, against main@origin", () => {
       return at !== undefined && at[0] !== -1 && row.error === null
     })
     expect(lost.map((row) => `/${row.flow} ${row.args ?? ""}`)).toEqual([])
-    expect({ atMain, here }).toEqual({ atMain: 1437, here: 1441 })
+    expect({ atMain, here }).toEqual({ atMain: 1437, here: 1442 })
     /*
      * Two doors throw when the one token they are given is a number: the
      * render dispatches a card whose payload the event schema rejects. It is

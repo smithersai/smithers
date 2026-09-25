@@ -381,7 +381,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/FileCards.tsx": 3,
       /* A row's Test, Edit, Remove and select; New; and the attention row's Assign, Test or Edit. */
       "../cards/ModelCallCard.tsx": 10,
-      "../cards/ModelCards.tsx": 17,
+      "../cards/ModelCards.tsx": 11,
       /* Mark-all-read. */
       "../cards/NotificationsCard.tsx": 1,
       "../cards/EnvCard.tsx": 2,

@@ -59,7 +59,9 @@ test("the native browser route is session-gated and enabled only in hybrid mode"
     const body = JSON.stringify({ url: "https://127.0.0.1/" })
     expect((await fetch(path, { method: "POST", body })).status).toBe(401)
     const headers = { [LOCAL_SESSION_HEADER]: server.sessionToken, "content-type": "application/json" }
-    expect((await fetch(path, { method: "POST", headers, body })).status).toBe(cloudMode === "hybrid" ? 422 : 501)
+    const response = await fetch(path, { method: "POST", headers, body })
+    expect(response.status).toBe(cloudMode === "hybrid" ? 400 : 501)
+    expect(await response.json()).toMatchObject({ code: cloudMode === "hybrid" ? "request_invalid" : "feature_unavailable_here" })
     const bootstrap = await (await fetch(`${server.origin}/api/bootstrap`, { headers })).json() as { capabilities: Array<string> }
     expect(bootstrap.capabilities.includes("browser.read")).toBe(cloudMode === "hybrid")
   }
