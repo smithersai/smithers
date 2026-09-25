@@ -29,7 +29,7 @@ func agentCommand() *incur.Cli {
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			prompt := stringValue(ctx.Args["prompt"])
-			if os.Getenv("SMITHERS_AGENT_TEST_MODE") == "summary" {
+			if testSeamEnv("SMITHERS_AGENT_TEST_MODE") == "summary" {
 				return agentSummary(prompt, stringValue(ctx.Options["repo"]))
 			}
 			if prompt == "" {
