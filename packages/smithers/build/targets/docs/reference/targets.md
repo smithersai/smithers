@@ -131,6 +131,8 @@ Declares one secret source, read lazily at a host-owned request boundary. The de
 Returns a plan-time token naming one declared audience. When an exec target spawns, each token in its argv or env becomes a loopback `http://127.0.0.1:<port>` origin. That origin forwards every request to the audience over TLS, substitutes the placeholders bound to that audience, and rewrites the audience origin in responses back to the loopback origin. The proxy cannot substitute inside an HTTPS `CONNECT` tunnel, so an exec target that declares an HTTPS audience must name it with `SecretOrigin`, or the plan and the exec boundary refuse it with `invalid_payload`. A loopback HTTP audience also works through `HTTP_PROXY` for clients that proxy loopback, such as curl and Bun; Node and Go clients skip the proxy for loopback and need the token. A token naming an origin no declared secret is bound to is refused. A tool that hardcodes its host, such as `gh`, cannot be pointed at the origin and needs a host-owned adapter.
 
 ```ts
+import { Smithers } from "@smthrs/targets"
+
 const whoami = Smithers.Shell.Run({
   shell: "curl -fsS -H \"authorization: token $GITHUB_TOKEN\" \"$GITHUB_API/user\"",
   env: { GITHUB_API: Smithers.SecretOrigin("https://api.github.com") },

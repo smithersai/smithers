@@ -101,7 +101,7 @@ describe("hosted and self-hosted cache protocols", () => {
       // Two call sites: the action-cache hit and the artifact download. A
       // handler that releases on return bounds the store lookup, not the
       // transfer, so the cap it advertises binds nothing.
-      expect([...source.matchAll(/heldWhileStreaming\(response,/g)], `${label} holds one body kind`)
+      expect([...source.matchAll(/heldWhileStreaming\(\s*response,/g)], `${label} holds one body kind`)
         .toHaveLength(2)
     }
   })

@@ -86,7 +86,7 @@ Creates a declared glob without reading the filesystem. In the array form an ent
 - **Signature:** `Workspace(name: string, options: WorkspaceOptions): WorkspaceDeclaration`
 - **Since:** `0.1.0`
 
-Declares the workspace: its name plus the typed host and toolchain services every target resolves against. The name comes first and must be a portable identifier. `options` requires `repository` and `cache`; `runtime`, `packageManager`, `nodeModules`, `environment`, `toolchains`, `flags`, `host`, `memory`, `sandboxes`, `agents`, `gitHooks`, `repos`, `owners`, and `teams` are optional. An unknown option raises `TypeError`, and the options object passed where the name belongs raises `TypeError` naming the argument order. The call validates and performs no I/O.
+Declares the workspace: its name plus the typed host and toolchain services every target resolves against. The name comes first and must be a portable identifier. `options` requires `repository` and `cache`; `runtime`, `packageManager`, `nodeModules`, `environment`, `toolchains`, `flags`, `host`, `memory`, `sandboxes`, `agents`, `gitHooks`, `repos`, `discovery`, `owners`, and `teams` are optional. `discovery: { prune }` lists workspace-relative directories the package walk never enters; a prune path that is absolute or leaves the workspace raises `TypeError`. An unknown option raises `TypeError`, and the options object passed where the name belongs raises `TypeError` naming the argument order. The call validates and performs no I/O.
 
 ### `Smithers.Cache`
 
@@ -131,6 +131,23 @@ Names a set of files under one label. `srcs` is an array of files, globs, and ot
 
 Declares one secret source, read lazily at a host-owned request boundary. The declaration names the environment variable and never the value. The name is bounded at `Secret.maximumNameLength`, 256 code units, and a `fallback` at `Secret.maximumFallbackLength`, 16384. A source alone is not egress authority: `Smithers.HttpSecret(source, origins)` binds it to exact origins, at most `Secret.maximumAudiences`, 32, each bounded at `Secret.maximumAudienceLength`, 2048.
 
+### `Smithers.SecretOrigin`
+
+- **Signature:** `SecretOrigin(audience: string): string`
+- **Since:** `0.1.0`
+
+Returns a plan-time token naming one declared audience. When an exec target spawns, each token in its argv or env becomes a loopback `http://127.0.0.1:<port>` origin. That origin forwards every request to the audience over TLS, substitutes the placeholders bound to that audience, and rewrites the audience origin in responses back to the loopback origin. The proxy cannot substitute inside an HTTPS `CONNECT` tunnel, so an exec target that declares an HTTPS audience must name it with `SecretOrigin`, or the plan and the exec boundary refuse it with `invalid_payload`. A loopback HTTP audience also works through `HTTP_PROXY` for clients that proxy loopback, such as curl and Bun; Node and Go clients skip the proxy for loopback and need the token. A token naming an origin no declared secret is bound to is refused. A tool that hardcodes its host, such as `gh`, cannot be pointed at the origin and needs a host-owned adapter.
+
+```ts
+import { Smithers } from "@smthrs/targets"
+
+const whoami = Smithers.Shell.Run({
+  shell: "curl -fsS -H \"authorization: token $GITHUB_TOKEN\" \"$GITHUB_API/user\"",
+  env: { GITHUB_API: Smithers.SecretOrigin("https://api.github.com") },
+  secrets: [Smithers.HttpSecret(Smithers.Secret("GITHUB_TOKEN"), ["https://api.github.com"])]
+})
+```
+
 ### `Smithers.Runtime`
 
 - **Type:** the `Runtime` module, and `type Runtime = Runtime.Runtime`
@@ -151,7 +168,7 @@ Use `Runtime.npx(spec)` as the `bin` of a `Shell` target or `Generate`. Under No
 - **Type:** the `PackageManager` module, and `type PackageManager = PackageManager.PackageManager`
 - **Since:** `0.1.0`
 
-Declared package managers, their argv spellings, and the lockfile each one writes. `PackageManager.Pnpm` takes either the workspace form `{ manifest, lockfile, version?, audit?, workspaces? }` or the legacy form `{ version: "11.21.0", runtime }`; `PackageManager.BunPackages({ runtime })` and `PackageManager.Yarn` are the other two constructors. `PackageManager.exec`, `.dlx`, `.install`, `.publish`, `.under`, `.lockfileName`, `.bin`, and `.required` build the argv every tool-running rule asks for, so no rule spells `pnpm` or `node` into an argv of its own.
+Declared package managers, their argv spellings, and the lockfile each one writes. `PackageManager.Pnpm` takes either the workspace form `{ manifest, lockfile, version?, audit?, workspaces? }` or the legacy form `{ version: "11.21.0", runtime }`; `PackageManager.BunPackages({ runtime })` and `PackageManager.Yarn` are the other two constructors. A Bun manager runs tools but cannot install: `Install` refuses it as `unsupported`. `PackageManager.exec`, `.dlx`, `.install`, `.publish`, `.under`, `.lockfileName`, `.bin`, and `.required` build the argv every tool-running rule asks for, so no rule spells `pnpm` or `node` into an argv of its own.
 
 The manifest form reads `packageManager: "pnpm@<version>"`. An explicit `version` selects the requirement instead, while the manifest is still parsed and measured. Resolution never invents a pin or installs a tool. With a resolved Node/Bun toolchain, `PackageManager.bin` honors the declared executable, and version mismatches refuse execution. Yarn's native behavior is unchanged. Action-backed targets also verify the runtime and manager they use before their body runs; configuration-only generators such as `PnpmWorkspace` and `GithubCiGen` do not run tool probes.
 
@@ -227,21 +244,21 @@ An agent whose accepted candidate becomes a pull request. The attrs match `Agent
 - **Type:** the `GitTarget` module
 - **Since:** `0.1.0`
 
-The git target flavors: `Git.Commit`, `Git.Pr`, `Git.Submodules`, and `Git.Submodule`. The package executor handles these declarations; `Git.Pr` is unsupported in this RC and refuses even after its preconditions pass. `Git.Submodule` and `Git.Submodules` join the `build` verb and are cacheable; `Git.Commit` and `Git.Pr` join `run` and are not.
+The git target flavors: `Git.Commit`, `Git.Pr`, `Git.Submodules`, and `Git.Submodule`. The package executor handles these declarations; `Git.Pr` is unsupported in this RC: the plan refuses it before any gate runs. `Git.Submodule` and `Git.Submodules` join the `build` verb and are cacheable; `Git.Commit` and `Git.Pr` join `run` and are not. `Git.Commit` gates run against a scratch copy holding the exact tree the commit records, not against the working tree.
 
 ### `Smithers.Github`
 
 - **Type:** the `GithubTarget` module
 - **Since:** `0.1.0`
 
-The GitHub target flavors: `Github.Setup`, `Github.Workflow`, `Github.CiGen`, `Github.Pr`, `Github.Pages`, `Github.Release`, and `Github.Ci`. The package executor handles these declarations and none is cacheable. `Github.Pr`, `Github.Pages`, and `Github.Release` are unsupported in this RC: their precondition checks do not implement the outward action, and execution always refuses. `Github.Pr` is gated like every outward rule: an invocation whose declaration names no `HttpSecret` over `GITHUB_TOKEN`, or that declares `approval: "required"` without a granted approval, is refused with `Refused` before any provider call.
+The GitHub target flavors: `Github.Setup`, `Github.Workflow`, `Github.CiGen`, `Github.Pr`, `Github.Pages`, `Github.Release`, and `Github.Ci`. The package executor handles these declarations and none is cacheable. `Github.Pr`, `Github.Pages`, and `Github.Release` are unsupported in this RC: the plan refuses each one as `not implemented by this executor` before any gate or provider call. `Github.Pr` shares the outward gate `Outward.refuse`: a declaration that names no `HttpSecret` over `GITHUB_TOKEN`, or that declares `approval: "required"` without a granted approval, yields `Refused`.
 
 ### `Smithers.Npm`
 
 - **Type:** `{ NodeModules, Pack, Publish, Published, Downstream }`
 - **Since:** `0.1.0`
 
-The npm-facing surface. `Npm.NodeModules({ packageJson })` is the workspace declaration for the installed module tree; `Npm.Pack`, `Npm.Publish`, `Npm.Published`, and `Npm.Downstream` are rules that run under the package executor. `Npm.Pack` and `Npm.Published` are supported and cacheable. `Npm.Publish` is unsupported and refuses after checking its outward preconditions; `Npm.Downstream` is unsupported because the isolated remote checkout runner is not implemented.
+The npm-facing surface. `Npm.NodeModules({ packageJson })` is the workspace declaration for the installed module tree; `Npm.Pack`, `Npm.Publish`, `Npm.Published`, and `Npm.Downstream` are rules that run under the package executor. `Npm.Pack` and `Npm.Published` are supported and cacheable. `Npm.Publish` is unsupported and the plan refuses it before any gate runs; `Npm.Downstream` is unsupported because the isolated remote checkout runner is not implemented, so the plan refuses it before it runs.
 
 ### `Smithers.Markdown`
 
@@ -307,6 +324,7 @@ Every other export of `Smithers.ts`, in source order:
 | `Smithers.PnpmWorkspace`          | rule               | Generates and drift-checks `pnpm-workspace.yaml`.                                                                                                                                 |
 | `Smithers.Tsconfig`               | rule               | Generates and drift-checks a `tsconfig.json`.                                                                                                                                     |
 | `Smithers.HttpSecret`             | constructor        | Binds a declared secret to one or more exact HTTP origins.                                                                                                                        |
+| `Smithers.SecretOrigin`           | constructor        | Names a declared audience as the loopback origin that forwards to it and substitutes its secret.                                                                                  |
 | `Smithers.TsBuild`                | rule               | Builds a JavaScript distribution with `tsc -p`, `tsup`, or the package's own build program.                                                                                       |
 | `Smithers.DtsBuild`               | rule               | Emits type declarations with `tsc --emitDeclarationOnly` or `tsup --dts-only`.                                                                                                    |
 | `Smithers.Typecheck`              | rule               | Checks a package with `tsc --noEmit` or TypeScript build mode.                                                                                                                    |
@@ -379,7 +397,7 @@ Every other export of `Smithers.ts`, in source order:
 | `Smithers.Go`                     | namespace          | Go toolchain and package rules.                                                                                                                                                   |
 | `Smithers.Stamp`                  | namespace          | Late-bound build stamps.                                                                                                                                                          |
 | `Smithers.Nix`                    | namespace          | Nix dev-shell version authority and tools.                                                                                                                                        |
-| `Smithers.Changesets`             | namespace          | Changesets versioning and publication declarations; `Changesets.Publish` is unsupported in this RC and always refuses execution.                                                  |
+| `Smithers.Changesets`             | namespace          | Changesets versioning and publication declarations; `Changesets.Publish` is unsupported in this RC and the plan refuses it.                                                       |
 | `Smithers.Api`                    | namespace          | API-surface checks, `Api.Compat`.                                                                                                                                                 |
 | `Smithers.Size`                   | namespace          | Artifact-size checks, `Size.Budgets`.                                                                                                                                             |
 
