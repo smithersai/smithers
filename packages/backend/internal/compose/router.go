@@ -31,6 +31,7 @@ type routerExtras struct {
 	Recommender         *routes.RecommendationHandler
 	ModelStream         *routes.ModelStreamHandler
 	Catalog             *routes.PublicRepositoryCatalogHandler
+	Mythical            *routes.MythicalHandler
 }
 
 func buildRouter(
@@ -756,6 +757,9 @@ func buildRouter(
 			}
 			readRepo = append(readRepo, repoAPIQuota)
 			r.With(readRepo...).Get("/api/repos/{owner}/{repo}/changes/events", jjVCSHandler.ChangeStream)
+			if extras.Mythical != nil {
+				r.With(readRepo...).Get("/api/repos/{owner}/{repo}/mythical/events", extras.Mythical.Events)
+			}
 		})
 	}
 
@@ -1178,6 +1182,12 @@ func buildRouter(
 				if mirrorSyncHandler != nil && mirrorSyncHandler.MainPull != nil {
 					r.With(writeRepo...).Post("/github/main-pull", mirrorSyncHandler.MainPull.RequestMainPull)
 					r.With(readRepo...).Get("/github/main-pull", mirrorSyncHandler.MainPull.GetMainPull)
+				}
+				// The mythical stack: its snapshot, and the admin's bootstrap
+				// request. The event stream is mounted outside the JSON timeout.
+				if extras.Mythical != nil {
+					r.With(readRepo...).Get("/mythical", extras.Mythical.GetStack)
+					r.With(adminRepo...).Post("/mythical/bootstrap", extras.Mythical.Bootstrap)
 				}
 
 				r.With(writeRepo...).Post("/statuses/{sha}", commitStatusHandler.CreateCommitStatus)

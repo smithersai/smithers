@@ -867,7 +867,8 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 	if peekErr != nil {
 		return badRequest("malformed receive-pack command list")
 	}
-	if msg := repohost.ReservedRefViolation(commands, r.Header.Get("X-Smithers-Workspace-Id")); msg != "" {
+	if msg := repohost.ControlPlaneRefViolation(commands, r.Header.Get("X-Smithers-Workspace-Id"),
+		r.Header.Get("X-Smithers-Control-Plane") == "mythical"); msg != "" {
 		return forbidden(msg)
 	}
 	// receive-pack responses are small (sideband status lines only), so we

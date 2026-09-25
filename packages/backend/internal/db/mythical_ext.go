@@ -1,0 +1,391 @@
+package db
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// MythicalStack is one repository's mythical stack worker state.
+type MythicalStack struct {
+	RepositoryID        int64              `json:"repository_id"`
+	ActorUserID         int64              `json:"actor_user_id"`
+	State               string             `json:"state"`
+	Reason              string             `json:"reason"`
+	ResetRequested      bool               `json:"reset_requested"`
+	BootstrapDepth      int32              `json:"bootstrap_depth"`
+	MaxParallel         int32              `json:"max_parallel"`
+	TipCommit           string             `json:"tip_commit"`
+	TipChange           string             `json:"tip_change"`
+	NotesCommit         string             `json:"notes_commit"`
+	LandedMain          string             `json:"landed_main"`
+	Generation          int64              `json:"generation"`
+	RequestedGeneration int64              `json:"requested_generation"`
+	ProcessedGeneration int64              `json:"processed_generation"`
+	ClaimedGeneration   int64              `json:"claimed_generation"`
+	Claim               int64              `json:"claim"`
+	Running             bool               `json:"running"`
+	LeaseExpiresAt      pgtype.Timestamptz `json:"lease_expires_at"`
+	NextAttemptAt       pgtype.Timestamptz `json:"next_attempt_at"`
+	Attempts            int32              `json:"attempts"`
+	PendingOp           json.RawMessage    `json:"pending_op"`
+	LastError           string             `json:"last_error"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+const mythicalStackColumns = `s.repository_id, s.actor_user_id, s.state, s.reason, s.reset_requested, s.bootstrap_depth, s.max_parallel, s.tip_commit,
+s.tip_change, s.notes_commit, s.landed_main, s.generation, s.requested_generation, s.processed_generation, s.claimed_generation,
+s.claim, s.running, s.lease_expires_at, s.next_attempt_at, s.attempts, s.pending_op, s.last_error, s.created_at, s.updated_at`
+
+func scanMythicalStack(row interface{ Scan(...any) error }) (MythicalStack, error) {
+	var s MythicalStack
+	var pending []byte
+	err := row.Scan(&s.RepositoryID, &s.ActorUserID, &s.State, &s.Reason, &s.ResetRequested, &s.BootstrapDepth, &s.MaxParallel, &s.TipCommit,
+		&s.TipChange, &s.NotesCommit, &s.LandedMain, &s.Generation, &s.RequestedGeneration, &s.ProcessedGeneration, &s.ClaimedGeneration,
+		&s.Claim, &s.Running, &s.LeaseExpiresAt, &s.NextAttemptAt, &s.Attempts, &pending, &s.LastError, &s.CreatedAt, &s.UpdatedAt)
+	if len(pending) > 0 {
+		s.PendingOp = json.RawMessage(pending)
+	}
+	return s, err
+}
+
+// Bootstrapping an absent stack creates its row; bootstrapping a frozen stack
+// asks the worker to try again. An active stack is left alone.
+// Bootstrapping an absent stack creates its row. Bootstrapping an existing
+// one is a no-op unless reset is set: then the worker rebuilds the stack from
+// main and replaces whatever the bookmark holds (an operator's repair of a
+// frozen stack).
+const requestMythicalBootstrap = `
+INSERT INTO mythical_stacks AS s (repository_id, actor_user_id, bootstrap_depth, reset_requested)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (repository_id) DO UPDATE
+SET requested_generation = s.requested_generation + 1,
+    actor_user_id = CASE WHEN $4 THEN $2 ELSE s.actor_user_id END,
+    bootstrap_depth = CASE WHEN $4 THEN $3 ELSE s.bootstrap_depth END,
+    reset_requested = s.reset_requested OR $4,
+    state = CASE WHEN $4 THEN 'bootstrapping' ELSE s.state END,
+    reason = CASE WHEN $4 THEN '' ELSE s.reason END,
+    next_attempt_at = NOW(),
+    updated_at = NOW()
+RETURNING ` + mythicalStackColumns
+
+// RequestMythicalBootstrap records a request to create a repository's stack,
+// or with reset to rebuild it from main.
+func (q *Queries) RequestMythicalBootstrap(ctx context.Context, repositoryID, actorUserID int64, depth int32, reset bool) (MythicalStack, error) {
+	return scanMythicalStack(q.db.QueryRow(ctx, requestMythicalBootstrap, repositoryID, actorUserID, depth, reset))
+}
+
+const getMythicalStack = `SELECT ` + mythicalStackColumns + ` FROM mythical_stacks s WHERE s.repository_id = $1`
+
+// GetMythicalStack returns a repository's stack row.
+func (q *Queries) GetMythicalStack(ctx context.Context, repositoryID int64) (MythicalStack, error) {
+	return scanMythicalStack(q.db.QueryRow(ctx, getMythicalStack, repositoryID))
+}
+
+const requestMythicalStack = `
+UPDATE mythical_stacks
+SET requested_generation = requested_generation + 1,
+    next_attempt_at = LEAST(next_attempt_at, NOW()),
+    updated_at = NOW()
+WHERE repository_id = $1
+`
+
+// RequestMythicalStack asks an existing stack's worker to run again (main
+// moved, a lane submitted). It returns 0 when the repository has no stack.
+func (q *Queries) RequestMythicalStack(ctx context.Context, repositoryID int64) (int64, error) {
+	tag, err := q.db.Exec(ctx, requestMythicalStack, repositoryID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+const requestStaleMythicalStacks = `
+UPDATE mythical_stacks
+SET requested_generation = requested_generation + 1,
+    updated_at = NOW()
+WHERE requested_generation = processed_generation
+  AND state = 'active'
+  AND updated_at < NOW() - make_interval(secs => $1)
+`
+
+// RequestStaleMythicalStacks re-requests active stacks not run recently, so a
+// missed main-moved signal is still folded.
+func (q *Queries) RequestStaleMythicalStacks(ctx context.Context, olderThanSeconds float64) (int64, error) {
+	tag, err := q.db.Exec(ctx, requestStaleMythicalStacks, olderThanSeconds)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+const claimMythicalStacks = `
+WITH due AS (
+	SELECT repository_id
+	FROM mythical_stacks
+	WHERE requested_generation > processed_generation
+	  AND next_attempt_at <= NOW()
+	  AND (NOT running OR lease_expires_at IS NULL OR lease_expires_at < NOW())
+	ORDER BY next_attempt_at, repository_id
+	FOR UPDATE SKIP LOCKED
+	LIMIT $1
+)
+UPDATE mythical_stacks s
+SET running = true,
+    claim = s.claim + 1,
+    claimed_generation = s.requested_generation,
+    attempts = s.attempts + 1,
+    lease_expires_at = NOW() + make_interval(secs => $2),
+    updated_at = NOW()
+FROM due
+WHERE s.repository_id = due.repository_id
+RETURNING ` + mythicalStackColumns
+
+// ClaimMythicalStacks leases due stacks. A crashed worker's stack becomes due
+// again when its lease expires.
+func (q *Queries) ClaimMythicalStacks(ctx context.Context, limit int32, leaseSeconds float64) ([]MythicalStack, error) {
+	rows, err := q.db.Query(ctx, claimMythicalStacks, limit, leaseSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []MythicalStack{}
+	for rows.Next() {
+		stack, err := scanMythicalStack(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, stack)
+	}
+	return out, rows.Err()
+}
+
+const setMythicalPendingOp = `
+UPDATE mythical_stacks
+SET pending_op = $3, updated_at = NOW()
+WHERE repository_id = $1 AND claim = $2 AND running
+`
+
+// SetMythicalPendingOp persists (or, with nil, clears) the prepared ref
+// update before it is pushed. It returns 0 when the claim was lost.
+func (q *Queries) SetMythicalPendingOp(ctx context.Context, repositoryID, claim int64, op json.RawMessage) (int64, error) {
+	var value any
+	if len(op) > 0 {
+		value = []byte(op)
+	}
+	tag, err := q.db.Exec(ctx, setMythicalPendingOp, repositoryID, claim, value)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// FinishMythicalStackParams closes one claim. Failed keeps the generation
+// due after BackoffSeconds; every other outcome marks it processed. Empty
+// ref fields keep their previous values. Changed bumps the event generation.
+type FinishMythicalStackParams struct {
+	RepositoryID   int64
+	Claim          int64
+	State          string
+	Reason         string
+	TipCommit      string
+	TipChange      string
+	NotesCommit    string
+	LandedMain     string
+	Failed         bool
+	Error          string
+	BackoffSeconds float64
+	Changed        bool
+	// KeepPendingOp leaves the prepared write in place for the next claim
+	// (its push landed but the repository has not confirmed it yet).
+	KeepPendingOp bool
+	// ResetDone clears a completed reset request.
+	ResetDone bool
+}
+
+const finishMythicalStack = `
+UPDATE mythical_stacks
+SET processed_generation = CASE WHEN $9 THEN processed_generation ELSE GREATEST(processed_generation, claimed_generation) END,
+    state = CASE WHEN $3 = '' THEN state ELSE $3 END,
+    reason = $4,
+    tip_commit = CASE WHEN $5 = '' THEN tip_commit ELSE $5 END,
+    tip_change = CASE WHEN $6 = '' THEN tip_change ELSE $6 END,
+    notes_commit = CASE WHEN $7 = '' THEN notes_commit ELSE $7 END,
+    landed_main = CASE WHEN $8 = '' THEN landed_main ELSE $8 END,
+    attempts = CASE WHEN $9 THEN attempts ELSE 0 END,
+    next_attempt_at = CASE WHEN $9 THEN NOW() + make_interval(secs => $11) ELSE NOW() END,
+    last_error = $10,
+    generation = generation + CASE WHEN $12 THEN 1 ELSE 0 END,
+    pending_op = CASE WHEN $13 THEN pending_op ELSE NULL END,
+    reset_requested = CASE WHEN $14 THEN false ELSE reset_requested END,
+    running = false,
+    lease_expires_at = NULL,
+    updated_at = NOW()
+WHERE repository_id = $1 AND claim = $2 AND running
+RETURNING generation
+`
+
+// FinishMythicalStack returns the stack's event generation, or pgx.ErrNoRows
+// when the claim was lost to a newer claimant.
+func (q *Queries) FinishMythicalStack(ctx context.Context, arg FinishMythicalStackParams) (int64, error) {
+	var generation int64
+	err := q.db.QueryRow(ctx, finishMythicalStack, arg.RepositoryID, arg.Claim, arg.State, strings.TrimSpace(arg.Reason), arg.TipCommit,
+		arg.TipChange, arg.NotesCommit, arg.LandedMain, arg.Failed, strings.TrimSpace(arg.Error), arg.BackoffSeconds, arg.Changed,
+		arg.KeepPendingOp, arg.ResetDone).Scan(&generation)
+	return generation, err
+}
+
+// MythicalChange is one change of a stack, root first by position.
+type MythicalChange struct {
+	RepositoryID int64       `json:"repository_id"`
+	Position     int32       `json:"position"`
+	ChangeID     string      `json:"change_id"`
+	CommitID     string      `json:"commit_id"`
+	Title        string      `json:"title"`
+	Kind         string      `json:"kind"`
+	ItemID       pgtype.UUID `json:"item_id"`
+	IssueNumber  pgtype.Int8 `json:"issue_number"`
+	Predecessor  string      `json:"predecessor"`
+	FoldedFrom   string      `json:"folded_from"`
+}
+
+// ReplaceMythicalChanges removes a stack's changes from position on and
+// inserts rows (whose positions start there).
+func (q *Queries) ReplaceMythicalChanges(ctx context.Context, repositoryID int64, from int32, rows []MythicalChange) error {
+	if _, err := q.db.Exec(ctx, `DELETE FROM mythical_changes WHERE repository_id = $1 AND position >= $2`, repositoryID, from); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if _, err := q.db.Exec(ctx, `INSERT INTO mythical_changes
+			(repository_id, position, change_id, commit_id, title, kind, item_id, issue_number, predecessor, folded_from)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			repositoryID, row.Position, row.ChangeID, row.CommitID, row.Title, row.Kind, row.ItemID, row.IssueNumber,
+			row.Predecessor, row.FoldedFrom); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const mythicalChangeColumns = `repository_id, position, change_id, commit_id, title, kind, item_id, issue_number, predecessor, folded_from`
+
+func scanMythicalChanges(rows pgx.Rows) ([]MythicalChange, error) {
+	defer rows.Close()
+	out := []MythicalChange{}
+	for rows.Next() {
+		var c MythicalChange
+		if err := rows.Scan(&c.RepositoryID, &c.Position, &c.ChangeID, &c.CommitID, &c.Title, &c.Kind, &c.ItemID, &c.IssueNumber,
+			&c.Predecessor, &c.FoldedFrom); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ListMythicalChanges returns a stack's changes, root first.
+func (q *Queries) ListMythicalChanges(ctx context.Context, repositoryID int64) ([]MythicalChange, error) {
+	rows, err := q.db.Query(ctx, `SELECT `+mythicalChangeColumns+` FROM mythical_changes WHERE repository_id = $1 ORDER BY position`, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	return scanMythicalChanges(rows)
+}
+
+// ListRecentMythicalChanges returns a stack's newest changes, tip first.
+func (q *Queries) ListRecentMythicalChanges(ctx context.Context, repositoryID int64, limit int32) ([]MythicalChange, error) {
+	rows, err := q.db.Query(ctx, `SELECT `+mythicalChangeColumns+` FROM mythical_changes WHERE repository_id = $1 ORDER BY position DESC LIMIT $2`,
+		repositoryID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return scanMythicalChanges(rows)
+}
+
+// MythicalItem is one issue (or chat request) moving through a stack.
+type MythicalItem struct {
+	ID                pgtype.UUID        `json:"id"`
+	RepositoryID      int64              `json:"repository_id"`
+	IssueNumber       pgtype.Int8        `json:"issue_number"`
+	IssueTitle        string             `json:"issue_title"`
+	IssueURL          string             `json:"issue_url"`
+	IssueDigest       string             `json:"issue_digest"`
+	State             string             `json:"state"`
+	Reason            string             `json:"reason"`
+	Attempt           int32              `json:"attempt"`
+	Generation        int64              `json:"generation"`
+	Lane              pgtype.Int4        `json:"lane"`
+	WorkspaceID       string             `json:"workspace_id"`
+	BaseCommit        string             `json:"base_commit"`
+	CandidateBase     string             `json:"candidate_base"`
+	CandidateHead     string             `json:"candidate_head"`
+	CandidateVerified bool               `json:"candidate_verified"`
+	RequestRunID      string             `json:"request_run_id"`
+	VibeRunID         string             `json:"vibe_run_id"`
+	VerifyRunID       string             `json:"verify_run_id"`
+	Plan              json.RawMessage    `json:"plan"`
+	Integration       json.RawMessage    `json:"integration"`
+	Checks            json.RawMessage    `json:"checks"`
+	PRNumber          pgtype.Int8        `json:"pr_number"`
+	PRURL             string             `json:"pr_url"`
+	PRState           string             `json:"pr_state"`
+	PRHead            string             `json:"pr_head"`
+	PRMergeCommit     string             `json:"pr_merge_commit"`
+	PendingOp         json.RawMessage    `json:"pending_op"`
+	NextAttemptAt     pgtype.Timestamptz `json:"next_attempt_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+const mythicalItemColumns = `id, repository_id, issue_number, issue_title, issue_url, issue_digest, state, reason, attempt, generation,
+lane, workspace_id, base_commit, candidate_base, candidate_head, candidate_verified, request_run_id, vibe_run_id, verify_run_id,
+plan, integration, checks, pr_number, pr_url, pr_state, pr_head, pr_merge_commit, pending_op, next_attempt_at, created_at, updated_at`
+
+func scanMythicalItem(row interface{ Scan(...any) error }) (MythicalItem, error) {
+	var i MythicalItem
+	var plan, integration, checks, pending []byte
+	err := row.Scan(&i.ID, &i.RepositoryID, &i.IssueNumber, &i.IssueTitle, &i.IssueURL, &i.IssueDigest, &i.State, &i.Reason, &i.Attempt,
+		&i.Generation, &i.Lane, &i.WorkspaceID, &i.BaseCommit, &i.CandidateBase, &i.CandidateHead, &i.CandidateVerified, &i.RequestRunID,
+		&i.VibeRunID, &i.VerifyRunID, &plan, &integration, &checks, &i.PRNumber, &i.PRURL, &i.PRState, &i.PRHead, &i.PRMergeCommit,
+		&pending, &i.NextAttemptAt, &i.CreatedAt, &i.UpdatedAt)
+	i.Plan, i.Integration, i.Checks, i.PendingOp = rawJSON(plan), rawJSON(integration), rawJSON(checks), rawJSON(pending)
+	return i, err
+}
+
+func rawJSON(value []byte) json.RawMessage {
+	if len(value) == 0 {
+		return nil
+	}
+	return json.RawMessage(value)
+}
+
+// ListMythicalItems returns a repository's items, oldest issue first, with
+// settled ones after the ones still moving.
+func (q *Queries) ListMythicalItems(ctx context.Context, repositoryID int64, limit int32) ([]MythicalItem, error) {
+	rows, err := q.db.Query(ctx, `SELECT `+mythicalItemColumns+` FROM mythical_items WHERE repository_id = $1
+		ORDER BY (state IN ('skipped', 'cancelled', 'landed', 'rejected', 'blocked')), issue_number NULLS LAST, created_at
+		LIMIT $2`, repositoryID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []MythicalItem{}
+	for rows.Next() {
+		item, err := scanMythicalItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// NotifyMythical wakes the repository's `mythical` event stream with a hint.
+func (q *Queries) NotifyMythical(ctx context.Context, repositoryID int64, payload string) error {
+	_, err := q.db.Exec(ctx, `SELECT pg_notify('mythical_' || $1::text, $2)`, repositoryID, payload)
+	return err
+}

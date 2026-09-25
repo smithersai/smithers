@@ -1685,6 +1685,9 @@ type ReceivePackMetadata struct {
 	// head ref under refs/smithers/workspaces/.
 	WorkspaceID  string
 	AllowedPaths []string
+	// ControlPlane marks the API's own write of the mythical stack refs. It
+	// is set only in-process, never from a client request.
+	ControlPlane bool
 }
 
 // ProxyReceivePack streams a git receive-pack RPC to repo-host,
@@ -1857,6 +1860,9 @@ func (c *Client) proxyGitRPCWithMeta(
 	}
 	if meta.WorkspaceID != "" {
 		req.Header.Set("X-Smithers-Workspace-Id", meta.WorkspaceID)
+	}
+	if meta.ControlPlane {
+		req.Header.Set("X-Smithers-Control-Plane", "mythical")
 	}
 	if len(meta.AllowedPaths) > 0 {
 		encoded, err := json.Marshal(meta.AllowedPaths)

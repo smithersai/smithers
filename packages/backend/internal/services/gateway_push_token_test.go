@@ -132,9 +132,14 @@ func TestGatewayPushToken_MintRefusalsAndGitLifecycle(t *testing.T) {
 		return nil
 	}}, host)
 	push := func(repo string) error {
-		return proxy.ProxyReceivePack(ctx, "alice", repo, result.Token, receivePackBody("refs/heads/mythical", "refs/notes/mythical"), io.Discard)
+		return proxy.ProxyReceivePack(ctx, "alice", repo, result.Token, receivePackBody("refs/heads/feature", "refs/notes/review"), io.Discard)
 	}
 	require.NoError(t, push("demo"))
+	require.Equal(t, 1, host.receivePackCall)
+	// The mythical stack's refs are the stack service's alone, even for a
+	// repository writer's gateway credential.
+	require.Equal(t, 403, apiStatus(t, proxy.ProxyReceivePack(ctx, "alice", "demo", result.Token,
+		receivePackBody("refs/heads/mythical", "refs/notes/mythical"), io.Discard)))
 	require.Equal(t, 1, host.receivePackCall)
 	require.Equal(t, 401, apiStatus(t, push("other")))
 	now = result.ExpiresAt

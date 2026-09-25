@@ -1,0 +1,615 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+)
+
+// The mythical stack service is the only writer of a repository's
+// refs/heads/mythical: one linear history of logical changes whose tree
+// always equals the last folded main commit. It never writes main.
+//
+// One worker claim per repository (the github_main_pulls pattern: requested
+// and processed generations, a lease, claim fencing, execution bounded inside
+// the lease). Each write is prepared deterministically, persisted as
+// pending_op, pushed in one atomic receive-pack with exact old values through
+// a loopback bridge that accepts only that command set, confirmed on the
+// repository's jj bookmark, and only then finalized.
+
+const (
+	mythicalLease         = 10 * time.Minute
+	mythicalLeaseMargin   = time.Minute
+	mythicalMinimumRun    = 30 * time.Second
+	mythicalPollInterval  = 3 * time.Second
+	mythicalSweepInterval = 5 * time.Minute
+	mythicalClaimLimit    = 8
+	mythicalFoldLimit     = 500
+	mythicalChainLimit    = 5000
+	mythicalBootstrapMax  = 500
+	mythicalRecentChanges = 200
+)
+
+// MythicalStore is the database the service writes through: queries plus
+// transactions for the finalize step.
+type MythicalStore interface {
+	db.DBTX
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
+type MythicalService struct {
+	store       MythicalStore
+	host        gitHubMainPullRepoHost
+	scratchRoot string
+	logger      *slog.Logger
+	now         func() time.Time
+}
+
+func NewMythicalService(store MythicalStore, host gitHubMainPullRepoHost) *MythicalService {
+	return &MythicalService{store: store, host: host, scratchRoot: filepath.Join(os.TempDir(), "smithers-mythical"),
+		logger: slog.Default(), now: time.Now}
+}
+
+func (s *MythicalService) queries() *db.Queries { return db.New(s.store) }
+
+// RequestBootstrap asks the worker to create the repository's stack, or with
+// reset to rebuild it from main. It returns at once; the worker does the work.
+func (s *MythicalService) RequestBootstrap(ctx context.Context, repositoryID, actorUserID int64, depth int32, reset bool) (db.MythicalStack, error) {
+	if depth <= 0 {
+		depth = 100
+	}
+	if depth > mythicalBootstrapMax {
+		depth = mythicalBootstrapMax
+	}
+	row, err := s.queries().RequestMythicalBootstrap(ctx, repositoryID, actorUserID, depth, reset)
+	if err == nil {
+		s.notify(ctx, s.queries(), repositoryID, row.Generation, "stack", "")
+	}
+	return row, err
+}
+
+// MainMoved asks an existing stack to fold main. It is a no-op for a
+// repository without a stack.
+func (s *MythicalService) MainMoved(ctx context.Context, repositoryID int64) {
+	if s == nil {
+		return
+	}
+	if _, err := s.queries().RequestMythicalStack(ctx, repositoryID); err != nil && ctx.Err() == nil {
+		s.logger.Warn("mythical.request_failed", "repository_id", repositoryID, "error", err)
+	}
+}
+
+func (s *MythicalService) notify(ctx context.Context, q *db.Queries, repositoryID, generation int64, kind, itemID string) {
+	payload, _ := json.Marshal(map[string]any{"generation": generation, "kind": kind, "itemId": itemID, "event_id": strconv.FormatInt(generation, 10)})
+	if err := q.NotifyMythical(ctx, repositoryID, string(payload)); err != nil && ctx.Err() == nil {
+		s.logger.Warn("mythical.notify_failed", "repository_id", repositoryID, "error", err)
+	}
+}
+
+// Start runs the worker until ctx ends.
+func (s *MythicalService) Start(ctx context.Context) {
+	lastSweep := time.Time{}
+	for {
+		if s.now().Sub(lastSweep) >= mythicalSweepInterval {
+			if _, err := s.queries().RequestStaleMythicalStacks(ctx, mythicalSweepInterval.Seconds()); err != nil && ctx.Err() == nil {
+				s.logger.Error("mythical.sweep_failed", "error", err)
+			}
+			lastSweep = s.now()
+		}
+		if err := s.PollOnce(ctx); err != nil && ctx.Err() == nil {
+			s.logger.Error("mythical.claim_failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(mythicalPollInterval):
+		}
+	}
+}
+
+// PollOnce claims and runs due stacks one at a time.
+func (s *MythicalService) PollOnce(ctx context.Context) error {
+	for range mythicalClaimLimit {
+		if ctx.Err() != nil {
+			return nil
+		}
+		rows, err := s.queries().ClaimMythicalStacks(ctx, 1, mythicalLease.Seconds())
+		if err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		s.runClaimed(ctx, rows[0])
+	}
+	return nil
+}
+
+// mythicalOp is a prepared stack write. It is persisted before the push, so
+// a restarted worker can tell whether the push happened.
+type mythicalOp struct {
+	Kind       string              `json:"kind"`
+	OldTip     string              `json:"oldTip"`
+	NewTip     string              `json:"newTip"`
+	NewChange  string              `json:"newChange"`
+	OldNotes   string              `json:"oldNotes"`
+	NewNotes   string              `json:"newNotes"`
+	LandedMain string              `json:"landedMain"`
+	From       int32               `json:"from"`
+	Changes    []db.MythicalChange `json:"changes"`
+	Reset      bool                `json:"reset,omitempty"`
+}
+
+// mythicalOutcome is what one run records.
+type mythicalOutcome struct {
+	state, reason, err  string
+	failed, keepPending bool
+	op                  *mythicalOp // a confirmed write to finalize
+}
+
+func (s *MythicalService) runClaimed(parent context.Context, row db.MythicalStack) {
+	deadline := s.now().Add(mythicalLease - mythicalLeaseMargin)
+	if row.LeaseExpiresAt.Valid {
+		if leaseEnd := row.LeaseExpiresAt.Time.Add(-mythicalLeaseMargin); leaseEnd.Before(deadline) {
+			deadline = leaseEnd
+		}
+	}
+	if !deadline.After(s.now().Add(mythicalMinimumRun)) {
+		s.logger.Warn("mythical.claim_expired", "repository_id", row.RepositoryID, "claim", row.Claim)
+		return
+	}
+	ctx, cancel := context.WithDeadline(parent, deadline)
+	defer cancel()
+	var outcome mythicalOutcome
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				outcome = mythicalOutcome{failed: true, err: "internal error"}
+				s.logger.Error("mythical.panic", "repository_id", row.RepositoryID, "panic", recovered)
+			}
+		}()
+		outcome = s.run(ctx, row)
+	}()
+	finishCtx, finishCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer finishCancel()
+	if err := s.finish(finishCtx, row, outcome); err != nil {
+		s.logger.Error("mythical.finish_failed", "repository_id", row.RepositoryID, "error", err)
+	}
+	attrs := []any{"repository_id", row.RepositoryID, "state", outcome.state}
+	if outcome.op != nil {
+		attrs = append(attrs, "kind", outcome.op.Kind, "tip", outcome.op.NewTip, "landed_main", outcome.op.LandedMain)
+	}
+	if outcome.failed {
+		s.logger.Warn("mythical.failed", append(attrs, "attempts", row.Attempts, "error", outcome.err)...)
+	} else {
+		s.logger.Info("mythical.run", attrs...)
+	}
+}
+
+func (s *MythicalService) finish(ctx context.Context, row db.MythicalStack, outcome mythicalOutcome) error {
+	tx, err := s.store.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	q := db.New(tx)
+	params := db.FinishMythicalStackParams{RepositoryID: row.RepositoryID, Claim: row.Claim, State: outcome.state,
+		Reason: outcome.reason, Failed: outcome.failed, Error: outcome.err, BackoffSeconds: gitHubMainPullBackoff(row.Attempts).Seconds(),
+		KeepPendingOp: outcome.keepPending, Changed: outcome.state != "" && outcome.state != row.State}
+	if op := outcome.op; op != nil {
+		if err := q.ReplaceMythicalChanges(ctx, row.RepositoryID, op.From, op.Changes); err != nil {
+			return err
+		}
+		params.TipCommit, params.TipChange, params.NotesCommit, params.LandedMain = op.NewTip, op.NewChange, op.NewNotes, op.LandedMain
+		params.Changed, params.ResetDone = true, op.Reset
+	}
+	generation, err := q.FinishMythicalStack(ctx, params)
+	if errors.Is(err, pgx.ErrNoRows) {
+		s.logger.Warn("mythical.claim_lost", "repository_id", row.RepositoryID, "claim", row.Claim)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if params.Changed {
+		s.notify(ctx, q, row.RepositoryID, generation, "stack", "")
+	}
+	return tx.Commit(ctx)
+}
+
+func mythicalFrozen(format string, args ...any) mythicalOutcome {
+	return mythicalOutcome{state: "frozen", reason: fmt.Sprintf(format, args...)}
+}
+
+func mythicalFailed(format string, args ...any) mythicalOutcome {
+	return mythicalOutcome{failed: true, err: fmt.Sprintf(format, args...)}
+}
+
+// run decides and performs at most one stack write.
+func (s *MythicalService) run(ctx context.Context, row db.MythicalStack) mythicalOutcome {
+	q := s.queries()
+	repository, err := q.GetRepoByID(ctx, row.RepositoryID)
+	if err != nil {
+		return mythicalFailed("load repository: %v", err)
+	}
+	owner, err := mythicalRepositoryOwner(ctx, q, repository)
+	if err != nil {
+		return mythicalFailed("%v", err)
+	}
+	branch := strings.TrimSpace(repository.DefaultBookmark)
+	if branch == "" {
+		branch = "main"
+	}
+	g := mythicalGit{dir: filepath.Join(s.scratchRoot, "repo-"+strconv.FormatInt(row.RepositoryID, 10)+".git")}
+	if err := os.MkdirAll(s.scratchRoot, 0o700); err != nil {
+		return mythicalFailed("create scratch directory: %v", err)
+	}
+	if err := g.init(ctx); err != nil {
+		return mythicalFailed("%v", err)
+	}
+	bridge, err := startMythicalBridge(ctx, s.host, owner, repository.Name)
+	if err != nil {
+		return mythicalFailed("%v", err)
+	}
+	defer bridge.Close()
+	remote := bridge.URL()
+	refs, err := g.lsRemote(ctx, remote)
+	if err != nil {
+		return mythicalFailed("read repository refs: %v", sanitizeMirrorError(err, remote))
+	}
+	mainTip, tip, notes := refs["refs/heads/"+branch], refs[repohost.MythicalBookmarkRef], refs[repohost.MythicalNotesRef]
+	if mainTip == "" {
+		return mythicalFailed("the repository has no %s bookmark", branch)
+	}
+
+	// A prepared write from an earlier claim is settled before anything else.
+	if len(row.PendingOp) > 0 {
+		var op mythicalOp
+		if err := json.Unmarshal(row.PendingOp, &op); err != nil {
+			return mythicalFrozen("the prepared stack write is unreadable")
+		}
+		switch {
+		case tip == op.NewTip && notes == op.NewNotes:
+			return s.confirm(ctx, owner, repository.Name, op)
+		case tip == op.OldTip && notes == op.OldNotes:
+			// The push never landed; plan again from what is there now.
+		default:
+			return mythicalFrozen("the mythical refs moved outside the stack service (bookmark %s, notes %s; expected %s or %s)",
+				short(tip), short(notes), short(op.OldTip), short(op.NewTip))
+		}
+	}
+
+	switch {
+	case row.ResetRequested || row.State == "bootstrapping":
+		return s.bootstrap(ctx, g, bridge, row, branch, mainTip, tip, notes, owner, repository.Name)
+	case row.State == "frozen":
+		return mythicalOutcome{state: "frozen", reason: row.Reason}
+	}
+	if tip != row.TipCommit || notes != row.NotesCommit {
+		return mythicalFrozen("the mythical bookmark or its notes moved outside the stack service (bookmark %s, recorded %s)",
+			short(tip), short(row.TipCommit))
+	}
+	if mainTip == row.LandedMain {
+		return mythicalOutcome{state: "active"}
+	}
+	return s.fold(ctx, g, bridge, row, branch, mainTip, owner, repository.Name)
+}
+
+func short(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	if id == "" {
+		return "(none)"
+	}
+	return id
+}
+
+func mythicalRepositoryOwner(ctx context.Context, q *db.Queries, repository db.Repository) (string, error) {
+	switch {
+	case repository.UserID.Valid:
+		user, err := q.GetUserByID(ctx, repository.UserID.Int64)
+		if err != nil {
+			return "", fmt.Errorf("load repository owner: %w", err)
+		}
+		return user.Username, nil
+	case repository.OrgID.Valid:
+		org, err := q.GetOrgByID(ctx, repository.OrgID.Int64)
+		if err != nil {
+			return "", fmt.Errorf("load repository owner: %w", err)
+		}
+		return org.Name, nil
+	}
+	return "", fmt.Errorf("repository %d has no owner", repository.ID)
+}
+
+// lsRemote lists the repository's refs through the bridge.
+func (g mythicalGit) lsRemote(ctx context.Context, remote string) (map[string]string, error) {
+	out, err := gitHubMainPullCommand(ctx, "ls-remote", remote).CombinedOutput()
+	if err != nil {
+		return nil, gitHubMainPullCommandError("git ls-remote", err, out)
+	}
+	refs := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		sha, ref, ok := strings.Cut(line, "\t")
+		if ok && mythicalSHA.MatchString(sha) {
+			refs[ref] = sha
+		}
+	}
+	return refs, nil
+}
+
+// fetch brings refs into the scratch repository under refs/mythical-scratch/.
+// A scratch repository left inconsistent by a crash is discarded once.
+func (g mythicalGit) fetch(ctx context.Context, remote string, depth, deepen int, refs ...string) error {
+	args := []string{"fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-auto-maintenance"}
+	if depth > 0 {
+		args = append(args, "--depth="+strconv.Itoa(depth))
+	}
+	if deepen > 0 {
+		args = append(args, "--deepen="+strconv.Itoa(deepen))
+	}
+	args = append(args, remote)
+	for _, ref := range refs {
+		args = append(args, "+"+ref+":refs/mythical-scratch/"+strings.TrimPrefix(ref, "refs/"))
+	}
+	if _, err := g.git(ctx, args...); err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		if removeErr := os.RemoveAll(g.dir); removeErr != nil {
+			return err
+		}
+		if initErr := g.init(ctx); initErr != nil {
+			return err
+		}
+		_, err = g.git(ctx, args...)
+		return err
+	}
+	return nil
+}
+
+func (g mythicalGit) has(ctx context.Context, commit string) bool {
+	_, err := g.git(ctx, "cat-file", "-e", commit+"^{commit}")
+	return err == nil
+}
+
+func (s *MythicalService) bootstrap(ctx context.Context, g mythicalGit, bridge *mythicalBridge, row db.MythicalStack, branch, mainTip, tip, notes, owner, repo string) mythicalOutcome {
+	depth := int(row.BootstrapDepth)
+	remote := bridge.URL()
+	if err := g.fetch(ctx, remote, depth+1, 0, "refs/heads/"+branch); err != nil {
+		return mythicalFailed("fetch %s: %v", branch, sanitizeMirrorError(err, remote))
+	}
+	commits, err := g.bootstrap(ctx, mainTip, depth)
+	if err != nil {
+		return mythicalFailed("build the stack: %v", err)
+	}
+	newTip := commits[len(commits)-1]
+	if tip != "" && tip != newTip.ID && !row.ResetRequested {
+		return mythicalFrozen("a mythical bookmark already exists at %s; bootstrap with reset to replace it", short(tip))
+	}
+	changes := make([]db.MythicalChange, len(commits))
+	notesByCommit := make(map[string]string, len(commits))
+	for i, commit := range commits {
+		changes[i] = mythicalChangeRow(row.RepositoryID, int32(i), commit)
+		notesByCommit[commit.ID] = mythicalNote(commit)
+	}
+	newNotes, err := g.writeNotes(ctx, notesByCommit, mythicalNotesStamp)
+	if err != nil {
+		return mythicalFailed("write notes: %v", err)
+	}
+	op := mythicalOp{Kind: "bootstrap", OldTip: tip, NewTip: newTip.ID, NewChange: newTip.ChangeID, OldNotes: notes, NewNotes: newNotes,
+		LandedMain: mainTip, From: 0, Changes: changes, Reset: row.ResetRequested}
+	return s.apply(ctx, g, bridge, row, owner, repo, op)
+}
+
+func (s *MythicalService) fold(ctx context.Context, g mythicalGit, bridge *mythicalBridge, row db.MythicalStack, branch, mainTip, owner, repo string) mythicalOutcome {
+	remote := bridge.URL()
+	if err := g.fetch(ctx, remote, 0, 0, repohost.MythicalBookmarkRef, repohost.MythicalNotesRef); err != nil {
+		return mythicalFailed("fetch the stack: %v", sanitizeMirrorError(err, remote))
+	}
+	depth := 64
+	if !g.has(ctx, mainTip) {
+		if err := g.fetch(ctx, remote, depth, 0, "refs/heads/"+branch); err != nil {
+			return mythicalFailed("fetch %s: %v", branch, sanitizeMirrorError(err, remote))
+		}
+	}
+	// Deepen until the folded commit is connected to main's tip.
+	for round := 0; ; round++ {
+		if g.has(ctx, row.LandedMain) {
+			if ancestor, err := g.isAncestor(ctx, row.LandedMain, mainTip); err == nil && ancestor {
+				break
+			}
+		}
+		if round == 4 {
+			return mythicalFrozen("main (%s) does not descend from the last folded commit %s within %d commits",
+				short(mainTip), short(row.LandedMain), depth+4*512)
+		}
+		if err := g.fetch(ctx, remote, 0, 512, "refs/heads/"+branch); err != nil {
+			return mythicalFailed("deepen %s: %v", branch, sanitizeMirrorError(err, remote))
+		}
+	}
+	landed, err := g.readCommit(ctx, row.LandedMain)
+	if err != nil {
+		return mythicalFailed("%v", err)
+	}
+	current, err := g.readCommit(ctx, row.TipCommit)
+	if err != nil {
+		return mythicalFailed("%v", err)
+	}
+	if current.Tree != landed.Tree {
+		return mythicalFrozen("the stack tip %s no longer has the folded main's tree", short(row.TipCommit))
+	}
+	commits, onLine, err := g.firstParentsSince(ctx, row.LandedMain, mainTip, mythicalFoldLimit)
+	if err != nil {
+		return mythicalFailed("%v", err)
+	}
+	if !onLine {
+		return mythicalFrozen("the folded commit %s is not on main's first-parent line", short(row.LandedMain))
+	}
+	existing, err := s.queries().ListMythicalChanges(ctx, row.RepositoryID)
+	if err != nil {
+		return mythicalFailed("load the stack: %v", err)
+	}
+	from := int32(len(existing))
+	parent, written := row.TipCommit, make([]mythicalStackCommit, 0, len(commits))
+	for _, m := range commits {
+		step, err := g.flatFold(ctx, parent, m, "fold")
+		if err != nil {
+			return mythicalFailed("fold %s: %v", short(m.ID), err)
+		}
+		written, parent = append(written, step), step.ID
+	}
+	if len(written) == 0 {
+		return mythicalOutcome{state: "active"}
+	}
+	changes := make([]db.MythicalChange, len(written))
+	notesByCommit, err := g.readNotes(ctx, row.NotesCommit)
+	if err != nil {
+		return mythicalFailed("read notes: %v", err)
+	}
+	for i, commit := range written {
+		changes[i] = mythicalChangeRow(row.RepositoryID, from+int32(i), commit)
+		notesByCommit[commit.ID] = mythicalNote(commit)
+	}
+	newNotes, err := g.writeNotes(ctx, notesByCommit, mythicalNotesStamp)
+	if err != nil {
+		return mythicalFailed("write notes: %v", err)
+	}
+	last := written[len(written)-1]
+	op := mythicalOp{Kind: "fold", OldTip: row.TipCommit, NewTip: last.ID, NewChange: last.ChangeID, OldNotes: row.NotesCommit,
+		NewNotes: newNotes, LandedMain: commits[len(commits)-1].ID, From: from, Changes: changes}
+	return s.apply(ctx, g, bridge, row, owner, repo, op)
+}
+
+// readNotes returns the notes of a notes commit, keyed by annotated commit.
+func (g mythicalGit) readNotes(ctx context.Context, notesCommit string) (map[string]string, error) {
+	notes := map[string]string{}
+	if notesCommit == "" {
+		return notes, nil
+	}
+	out, err := g.git(ctx, "ls-tree", "-r", notesCommit)
+	if err != nil {
+		return nil, err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		meta, path, ok := strings.Cut(line, "\t")
+		fields := strings.Fields(meta)
+		if !ok || len(fields) != 3 || fields[1] != "blob" {
+			continue
+		}
+		id := strings.ReplaceAll(path, "/", "")
+		if !mythicalSHA.MatchString(id) {
+			continue
+		}
+		body, err := g.git(ctx, "cat-file", "blob", fields[2])
+		if err != nil {
+			return nil, err
+		}
+		notes[id] = body + "\n"
+	}
+	return notes, nil
+}
+
+// mythicalNotesStamp dates every notes commit identically, so a notes
+// commit is a pure function of its notes.
+const mythicalNotesStamp = "0 +0000"
+
+func mythicalChangeRow(repositoryID int64, position int32, commit mythicalStackCommit) db.MythicalChange {
+	row := db.MythicalChange{RepositoryID: repositoryID, Position: position, ChangeID: commit.ChangeID, CommitID: commit.ID,
+		Title: commit.Title, Kind: commit.Kind, Predecessor: commit.Predecessor, FoldedFrom: commit.FoldedFrom}
+	if commit.Issue > 0 {
+		row.IssueNumber = pgtype.Int8{Int64: commit.Issue, Valid: true}
+	}
+	if commit.ItemID != "" {
+		_ = row.ItemID.Scan(commit.ItemID)
+	}
+	return row
+}
+
+// apply persists op, pushes it atomically through the bridge and confirms it.
+func (s *MythicalService) apply(ctx context.Context, g mythicalGit, bridge *mythicalBridge, row db.MythicalStack, owner, repo string, op mythicalOp) mythicalOutcome {
+	encoded, err := json.Marshal(op)
+	if err != nil {
+		return mythicalFailed("encode the prepared write: %v", err)
+	}
+	written, err := s.queries().SetMythicalPendingOp(ctx, row.RepositoryID, row.Claim, encoded)
+	if err != nil {
+		return mythicalFailed("record the prepared write: %v", err)
+	}
+	if written == 0 {
+		return mythicalFailed("the stack claim was lost before the write")
+	}
+	zero := strings.Repeat("0", 40)
+	orZero := func(id string) string {
+		if id == "" {
+			return zero
+		}
+		return id
+	}
+	bridge.permit([]mythicalRefUpdate{
+		{Ref: repohost.MythicalBookmarkRef, Old: orZero(op.OldTip), New: op.NewTip},
+		{Ref: repohost.MythicalNotesRef, Old: orZero(op.OldNotes), New: op.NewNotes},
+	}, repohost.ReceivePackMetadata{ControlPlane: true, PusherLogin: "smithers"})
+	remote := bridge.URL()
+	if _, err := g.git(ctx, "push", "--atomic", "--porcelain", "--no-verify", remote,
+		"+"+op.NewTip+":"+repohost.MythicalBookmarkRef, "+"+op.NewNotes+":"+repohost.MythicalNotesRef); err != nil {
+		// Whether it landed is settled from the refs on the next claim.
+		return mythicalOutcome{failed: true, keepPending: true, err: "push the stack: " + sanitizeMirrorError(err, remote)}
+	}
+	return s.confirm(ctx, owner, repo, op)
+}
+
+// confirm finalizes op once the repository's jj bookmark shows the new tip.
+func (s *MythicalService) confirm(ctx context.Context, owner, repo string, op mythicalOp) mythicalOutcome {
+	target, err := s.bookmarkCommit(ctx, owner, repo, MythicalBookmark)
+	if err != nil {
+		return mythicalOutcome{failed: true, keepPending: true, err: "confirm the stack: " + err.Error()}
+	}
+	if target != op.NewTip {
+		return mythicalOutcome{failed: true, keepPending: true, err: "the repository has not imported the new stack tip yet"}
+	}
+	confirmed := op
+	return mythicalOutcome{state: "active", op: &confirmed}
+}
+
+func (s *MythicalService) bookmarkCommit(ctx context.Context, owner, repo, name string) (string, error) {
+	const pageSize, maxPages = 100, 100
+	cursor := ""
+	for range maxPages {
+		bookmarks, next, err := s.host.ListBookmarks(ctx, owner, repo, cursor, pageSize)
+		if err != nil {
+			return "", err
+		}
+		for _, bookmark := range bookmarks {
+			if bookmark.Name == name {
+				return strings.TrimSpace(bookmark.TargetCommitID), nil
+			}
+		}
+		if next == "" || next == cursor || len(bookmarks) == 0 {
+			return "", nil
+		}
+		cursor = next
+	}
+	return "", fmt.Errorf("bookmark listing exceeded %d pages", maxPages)
+}
+
+// MainHead reads a bookmark's commit for the snapshot's behind flag.
+func (s *MythicalService) MainHead(ctx context.Context, owner, repo, bookmark string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return s.bookmarkCommit(ctx, owner, repo, bookmark)
+}

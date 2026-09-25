@@ -59,6 +59,7 @@ var migrationRegistry = []migrationSpec{
 	{23, "migrations/0023_chat_turn_erasure_proofs.sql"},
 	{24, "migrations/0024_github_main_pulls.sql"},
 	{25, "migrations/0025_provider_account_pool.sql"},
+	{26, "migrations/0026_mythical_stacks.sql"},
 }
 
 type migration struct {

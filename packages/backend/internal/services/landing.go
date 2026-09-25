@@ -661,6 +661,9 @@ func (s *LandingService) CreateLandingRequest(ctx context.Context, actor *db.Use
 	if targetBookmark == "" {
 		return LandingRequestResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "LandingRequest", Field: "target_bookmark", Code: "missing_field"})
 	}
+	if targetBookmark == MythicalBookmark {
+		return LandingRequestResponse{}, errMythicalBookmarkOwned
+	}
 	sourceBookmark := strings.TrimSpace(req.SourceBookmark)
 	changeIDs, err := normalizeChangeIDs(req.ChangeIDs)
 	if err != nil {
@@ -957,6 +960,9 @@ func (s *LandingService) UpdateLandingRequest(ctx context.Context, actor *db.Use
 	// would redirect an approved land onto a protected bookmark that never
 	// received the required approvals — a check-time/use-time (TOCTOU) authz
 	// bypass. Only block actual changes so idempotent re-sends still succeed.
+	if req.TargetBookmark != nil && strings.TrimSpace(*req.TargetBookmark) == MythicalBookmark {
+		return LandingRequestResponse{}, errMythicalBookmarkOwned
+	}
 	switch current.State {
 	case landingStateQueued, landingStateLanding, landingStateMerged:
 		if req.TargetBookmark != nil && strings.TrimSpace(*req.TargetBookmark) != current.TargetBookmark {

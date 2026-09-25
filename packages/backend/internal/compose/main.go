@@ -895,6 +895,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	gitHubMainPullService := services.NewGitHubMainPullService(queries, repoHostClient, repoConnectionService, repoConnectionService)
 	gitHubSyncedRepoService.SetPullMirror(gitHubMainPullService.PullMirror)
 	gitHubWebhookEventWorker.SetMainPull(gitHubMainPullService)
+	// The mythical stack folds every main the pull brings in.
+	mythicalService := services.NewMythicalService(pool, repoHostClient)
+	gitHubMainPullService.SetMainMoved(mythicalService.MainMoved)
+	mythicalHandler := &routes.MythicalHandler{Service: mythicalService, Broker: sseBroker,
+		MainHead: func(ctx context.Context, owner, repo, bookmark string) (string, error) {
+			return mythicalService.MainHead(ctx, owner, repo, bookmark)
+		}}
 	gitMirrorSyncService := services.NewGitMirrorSyncService(queries, services.WithGitMirrorCredentials(queries, gitHubUserReposService, publicBaseURL, repoConnectionService),
 		services.WithGitMirrorPullPolicy(gitHubMainPullService.PullPolicyRecorded))
 
@@ -1380,7 +1387,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		linearHandler,
 		gitHubWebhookHandler,
 		smithersMetrics,
-		routerExtras{Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler},
+		routerExtras{Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler,
+			Mythical: mythicalHandler},
 	)
 	if flow != nil && options.topology.servesHTTP() {
 		browser := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries, dispatcher: flow.dispatcher}
@@ -1519,6 +1527,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if options.topology.workers() {
 		// The poll catches missed webhooks even where workflows are off.
 		launchWorker(func() { gitHubMainPullService.Start(workerCtx) })
+		launchWorker(func() { mythicalService.Start(workerCtx) })
 	}
 	if options.topology.workers() && cfg.FeatureFlags.Workflows {
 		launchWorker(func() { cronSchedulerWorker.Start(workerCtx) })

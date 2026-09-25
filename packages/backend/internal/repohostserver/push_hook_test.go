@@ -31,6 +31,9 @@ func TestPushHookPayloadsFromRefDiff(t *testing.T) {
 		"refs/heads/dev":   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		"refs/heads/main":  "cccccccccccccccccccccccccccccccccccccccc",
 		"refs/jj/keep/new": "ffffffffffffffffffffffffffffffffffffffff",
+		// The stack service's own writes are not user pushes.
+		"refs/heads/mythical": "1111111111111111111111111111111111111111",
+		"refs/notes/mythical": "2222222222222222222222222222222222222222",
 	}
 
 	payloads := pushHookPayloadsFromRefDiff(beforeRefs, afterRefs, "alice", "demo", PushHookSender{

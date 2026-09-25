@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/observability"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 // pushHookDeliveryTimeout bounds each individual push-hook callback. Every
@@ -137,6 +138,11 @@ func pushHookPayloadsFromRefDiff(beforeRefs, afterRefs map[string]string, owner,
 		// must not trigger webhooks or workflows. Match Git hosting semantics by
 		// publishing only branch and tag updates.
 		if !strings.HasPrefix(refName, "refs/heads/") && !strings.HasPrefix(refName, "refs/tags/") {
+			continue
+		}
+		// The mythical stack is the stack service's own bookkeeping, rewritten
+		// on every fold; it is not a user push and starts no workflow.
+		if repohost.IsMythicalRef(refName) {
 			continue
 		}
 		beforeSHA, hadBefore := beforeRefs[refName]

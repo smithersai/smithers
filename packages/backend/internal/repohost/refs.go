@@ -65,6 +65,19 @@ func WorkspaceIDFromHeadRef(ref string) (string, bool) {
 	return parsed.String(), true
 }
 
+// The mythical stack's refs are written only by the stack service (RFD-004
+// control plane): its bookmark, its provenance notes, and its retention pins.
+const (
+	MythicalBookmarkRef   = "refs/heads/mythical"
+	MythicalNotesRef      = "refs/notes/mythical"
+	MythicalReservedRefNS = ReservedRefPrefix + "mythical/"
+)
+
+// IsMythicalRef reports whether ref belongs to the mythical stack service.
+func IsMythicalRef(ref string) bool {
+	return ref == MythicalBookmarkRef || ref == MythicalNotesRef || strings.HasPrefix(ref, MythicalReservedRefNS)
+}
+
 // ReservedRefViolation applies the reserved-namespace push policy to a
 // receive-pack command list and returns an empty string when the push is
 // allowed, or the reason it must be refused.
@@ -77,11 +90,27 @@ func WorkspaceIDFromHeadRef(ref string) (string, bool) {
 //     owning workspace's credential may update it;
 //   - a workspace credential may update nothing but its own head ref.
 func ReservedRefViolation(commands []ReceivePackCommand, workspaceID string) string {
+	return ControlPlaneRefViolation(commands, workspaceID, false)
+}
+
+// ControlPlaneRefViolation is ReservedRefViolation for a push the API made
+// on its own behalf. Only such a push (controlPlane, never set from a
+// client) may write the mythical stack's refs, and it may write nothing else.
+func ControlPlaneRefViolation(commands []ReceivePackCommand, workspaceID string, controlPlane bool) string {
 	workspaceID = strings.ToLower(strings.TrimSpace(workspaceID))
 	for _, command := range commands {
 		ref := strings.TrimSpace(command.RefName)
 		if strings.HasPrefix(ref, JJRefPrefix) {
 			return "refs/jj/ is managed by jj and cannot be pushed"
+		}
+		if IsMythicalRef(ref) {
+			if !controlPlane || workspaceID != "" {
+				return "the mythical stack is written only by the stack service"
+			}
+			continue
+		}
+		if controlPlane {
+			return "a control-plane push may write only the mythical stack"
 		}
 		if !strings.HasPrefix(ref, ReservedRefPrefix) {
 			if workspaceID != "" {

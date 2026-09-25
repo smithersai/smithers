@@ -22,6 +22,9 @@ type BookmarkProtectionQuerier interface {
 // landing queue, where review/status-check policy is enforced; every other
 // mutation path would bypass that policy.
 func RequireBookmarkNotProtected(ctx context.Context, q BookmarkProtectionQuerier, repositoryID int64, bookmark string) error {
+	if bookmark == MythicalBookmark {
+		return errMythicalBookmarkOwned
+	}
 	rules, err := q.ListAllProtectedBookmarksByRepo(ctx, repositoryID)
 	if err != nil {
 		return pkgerrors.Internal("failed to list protected bookmarks").WithCause(err)

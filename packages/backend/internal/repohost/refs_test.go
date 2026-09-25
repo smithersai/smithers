@@ -91,3 +91,43 @@ func TestReservedRefViolation(t *testing.T) {
 		})
 	}
 }
+
+// The mythical stack's refs belong to the stack service: only a control-plane
+// push writes them, and a control-plane push writes nothing else.
+func TestControlPlaneRefViolation(t *testing.T) {
+	mine := "0f8fad5b-d9cb-469f-a165-70867728950e"
+	cases := []struct {
+		name         string
+		refs         []string
+		workspace    string
+		controlPlane bool
+		denied       bool
+	}{
+		{"user pushes the mythical bookmark", []string{MythicalBookmarkRef}, "", false, true},
+		{"user deletes the mythical notes", []string{MythicalNotesRef}, "", false, true},
+		{"user plants a mythical pin", []string{MythicalReservedRefNS + "keep/abc"}, "", false, true},
+		{"workspace pushes the mythical bookmark", []string{MythicalBookmarkRef}, mine, false, true},
+		{"workspace claims to be the control plane", []string{MythicalBookmarkRef}, mine, true, true},
+		{"control plane writes the stack", []string{MythicalBookmarkRef, MythicalNotesRef}, "", true, false},
+		{"control plane writes a pin", []string{MythicalReservedRefNS + "keep/abc"}, "", true, false},
+		{"control plane cannot write main", []string{MythicalBookmarkRef, "refs/heads/main"}, "", true, true},
+		{"control plane cannot write a workspace head", []string{WorkspaceHeadRef(mine)}, "", true, true},
+		{"control plane cannot write jj refs", []string{"refs/jj/keep/x"}, "", true, true},
+		{"user pushes other bookmarks as before", []string{"refs/heads/mythical-notes", "refs/heads/myth"}, "", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			commands := make([]ReceivePackCommand, 0, len(tc.refs))
+			for _, ref := range tc.refs {
+				commands = append(commands, ReceivePackCommand{RefName: ref, OldOID: "0", NewOID: "1"})
+			}
+			msg := ControlPlaneRefViolation(commands, tc.workspace, tc.controlPlane)
+			if (msg != "") != tc.denied {
+				t.Fatalf("violation=%q denied=%v", msg, tc.denied)
+			}
+		})
+	}
+	if ReservedRefViolation([]ReceivePackCommand{{RefName: MythicalBookmarkRef}}, "") == "" {
+		t.Fatal("the ordinary policy must refuse the mythical bookmark")
+	}
+}

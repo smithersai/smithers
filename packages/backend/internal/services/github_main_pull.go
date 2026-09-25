@@ -108,6 +108,14 @@ type GitHubMainPullService struct {
 	readPolicy       func(ctx context.Context, token, owner, repo, commit string) (string, error)
 	git              gitHubMainPullGit
 	now              func() time.Time
+	// mainMoved hears every pull that moved Smithers main (the mythical
+	// stack folds it).
+	mainMoved func(ctx context.Context, repositoryID int64)
+}
+
+// SetMainMoved registers the listener for pulls that moved main.
+func (s *GitHubMainPullService) SetMainMoved(listener func(ctx context.Context, repositoryID int64)) {
+	s.mainMoved = listener
 }
 
 // gitHubMainPullGit is the transfer, in a disposable bare repository.
@@ -327,6 +335,8 @@ func (s *GitHubMainPullService) runClaimed(parent context.Context, row db.Github
 		s.logger.Error("github.main_pull.finish_failed", "repository_id", row.RepositoryID, "error", err)
 	case written == 0:
 		s.logger.Warn("github.main_pull.claim_lost", "repository_id", row.RepositoryID, "claim", row.Claim)
+	case s.mainMoved != nil && outcome.state == gitHubMainPullStateSynced && outcome.smithersHead != "" && outcome.smithersHead != row.SmithersHead:
+		s.mainMoved(finishCtx, row.RepositoryID)
 	}
 	attrs := []any{"repository_id", row.RepositoryID, "github", outcome.githubRepository, "state", outcome.state,
 		"policy", outcome.policy, "github_head", outcome.githubHead, "smithers_head", outcome.smithersHead}
