@@ -148,13 +148,15 @@ test("a real signed-out browser never dials Smithers Cloud, and the proxy refuse
 
 const refuseAnonymousHistoryWrite = async (page: Page, action: "history.amend" | "history.fold"): Promise<void> => {
   await boot(page)
+  const identity = await realApi(page, page.context().request, "GET", "/api/user")
+  expect(identity.status(), "the real host must distinguish signed-out from unavailable identity").toBe(401)
   const step = page.locator(".smithers-chat-message")
     .filter({ has: page.getByRole("button", { name: "Sign in with GitHub" }) })
   const before = await step.count()
   const dialled: string[] = []
   page.on("request", (sent) => {
     const path = new URL(sent.url()).pathname
-    if (path.startsWith("/api/cloud/") || path.startsWith("/api/mirror/")) {
+    if (/^\/api\/(?:repos?|user\/repos|cloud|mirror)(?:\/|$)/.test(path)) {
       dialled.push(`${sent.method()} ${path}`)
     }
   })
