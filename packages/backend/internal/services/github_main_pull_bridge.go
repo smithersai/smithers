@@ -41,6 +41,8 @@ type gitHubMainPullUpdate struct {
 // one git-sync run. Its credential is random per run and never leaves the
 // process environment of that run.
 type gitHubMainPullBridge struct {
+	ctx      context.Context
+	identity func(context.Context) error
 	host     gitHubMainPullRepoHost
 	owner    string
 	repo     string
@@ -53,7 +55,10 @@ type gitHubMainPullBridge struct {
 
 const gitHubMainPullBridgePath = "/repository.git"
 
-func startGitHubMainPullBridge(host gitHubMainPullRepoHost, owner, repo string, update gitHubMainPullUpdate) (*gitHubMainPullBridge, error) {
+// Every request is bound to the run's context, so nothing it started can
+// outlive the run. identity, when set, is re-checked immediately before the
+// write is forwarded.
+func startGitHubMainPullBridge(ctx context.Context, host gitHubMainPullRepoHost, owner, repo string, update gitHubMainPullUpdate, identity func(context.Context) error) (*gitHubMainPullBridge, error) {
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return nil, fmt.Errorf("create bridge credential: %w", err)
@@ -62,8 +67,10 @@ func startGitHubMainPullBridge(host gitHubMainPullRepoHost, owner, repo string, 
 	if err != nil {
 		return nil, fmt.Errorf("listen on loopback: %w", err)
 	}
-	bridge := &gitHubMainPullBridge{host: host, owner: owner, repo: repo, update: update, secret: hex.EncodeToString(raw[:]), listener: listener}
-	bridge.server = &http.Server{Handler: bridge, ReadHeaderTimeout: 10 * time.Second}
+	bridge := &gitHubMainPullBridge{ctx: ctx, identity: identity, host: host, owner: owner, repo: repo, update: update,
+		secret: hex.EncodeToString(raw[:]), listener: listener}
+	bridge.server = &http.Server{Handler: bridge, ReadHeaderTimeout: 10 * time.Second,
+		BaseContext: func(net.Listener) context.Context { return ctx }}
 	go func() { _ = bridge.server.Serve(listener) }()
 	return bridge, nil
 }
@@ -83,10 +90,14 @@ func (b *gitHubMainPullBridge) URL() string {
 		User: url.UserPassword("x-access-token", b.secret)}).String()
 }
 
+// Close stops accepting, waits briefly for in-flight requests, then closes
+// every connection.
 func (b *gitHubMainPullBridge) Close() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = b.server.Shutdown(ctx)
+	if err := b.server.Shutdown(ctx); err != nil {
+		_ = b.server.Close()
+	}
 }
 
 func (b *gitHubMainPullBridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +158,12 @@ func (b *gitHubMainPullBridge) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		if err := update.permits(commands); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
+		}
+		if b.identity != nil {
+			if err := b.identity(ctx); err != nil {
+				http.Error(w, "repository changed during the pull", http.StatusConflict)
+				return
+			}
 		}
 		meta := repohost.ReceivePackMetadata{RefName: update.ref, CommitSHA: update.new, PusherLogin: "github"}
 		b.proxy(w, "application/x-git-receive-pack-result", func(out io.Writer) error {

@@ -39,12 +39,13 @@ type fakeMainPullStore struct {
 	bySource  map[string][]int64
 	requests  int
 	finishErr error
+	renamed   bool
 }
 
 func newFakeMainPullStore() *fakeMainPullStore {
 	return &fakeMainPullStore{
 		rows: map[int64]*db.GithubMainPull{},
-		repos: map[int64]db.Repository{19: {ID: 19, Name: "smithers", DefaultBookmark: "main",
+		repos: map[int64]db.Repository{19: {ID: 19, Name: "smithers", LowerName: "smithers", DefaultBookmark: "main",
 			UserID: pgtype.Int8{Int64: 1, Valid: true}}},
 		sources:  map[int64][]db.ListRepositoryGitHubSourcesRow{19: {{GithubOwner: "smithersai", GithubRepo: "smithers"}}},
 		bySource: map[string][]int64{"smithersai/smithers": {19}},
@@ -61,6 +62,20 @@ func (f *fakeMainPullStore) GetRepoByID(_ context.Context, id int64) (db.Reposit
 
 func (f *fakeMainPullStore) ListRepositoryGitHubSources(_ context.Context, id int64) ([]db.ListRepositoryGitHubSourcesRow, error) {
 	return f.sources[id], nil
+}
+
+func (f *fakeMainPullStore) GetRepoByOwnerAndLowerName(_ context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.renamed {
+		return db.Repository{ID: 99}, nil
+	}
+	for _, repo := range f.repos {
+		if arg.Owner == "smithers-canary" && repo.LowerName == arg.LowerName {
+			return repo, nil
+		}
+	}
+	return db.Repository{}, pgx.ErrNoRows
 }
 
 func (f *fakeMainPullStore) GetUserByID(context.Context, int64) (db.User, error) {
@@ -136,6 +151,9 @@ func (f *fakeMainPullStore) FinishGithubMainPull(_ context.Context, arg db.Finis
 			row.State = "pending"
 		}
 		row.Attempts = 0
+	}
+	if arg.ResetPolicy {
+		row.Policy, row.PolicyCommit, row.GithubRepository = "", "", ""
 	}
 	if arg.Policy != "" {
 		row.Policy = arg.Policy
@@ -404,15 +422,33 @@ func TestGitHubMainPullCoalescesDuplicateAndOutOfOrderRequests(t *testing.T) {
 
 func TestGitHubMainPullRequestDuringRunRunsAgain(t *testing.T) {
 	h := newPullHarness(t)
+	h.service.store = &pausingClaims{fakeMainPullStore: h.store, stopAfter: 1}
 	h.service.git = &requestingGit{fakeMainPullGit: h.git, store: h.store}
 	_, err := h.service.Request(context.Background(), 19)
 	require.NoError(t, err)
 	require.NoError(t, h.service.PollOnce(context.Background()))
 	assert.Equal(t, "pending", h.row(t).State, "a request that arrived mid-run keeps the row due")
 	h.github = "3333333333333333333333333333333333333333"
+	h.service.store = h.store
 	require.NoError(t, h.service.PollOnce(context.Background()))
 	assert.Equal(t, "synced", h.row(t).State)
 	assert.Equal(t, h.github, h.host.bookmarks["main"])
+}
+
+// pausingClaims stops claiming after stopAfter claims, so a test can look
+// between runs.
+type pausingClaims struct {
+	*fakeMainPullStore
+	stopAfter int
+	claims    int
+}
+
+func (p *pausingClaims) ClaimGithubMainPulls(ctx context.Context, limit int32, lease float64) ([]db.GithubMainPull, error) {
+	if p.claims >= p.stopAfter {
+		return nil, nil
+	}
+	p.claims++
+	return p.fakeMainPullStore.ClaimGithubMainPulls(ctx, limit, lease)
 }
 
 func TestGitHubMainPullSkipsWhenPolicyIsNotPull(t *testing.T) {
@@ -427,6 +463,7 @@ func TestGitHubMainPullSkipsWhenPolicyIsNotPull(t *testing.T) {
 			assert.Equal(t, "skipped", row.State)
 			assert.Equal(t, policy, row.Policy)
 			assert.Zero(t, h.git.pushes)
+			assert.Zero(t, h.git.fetches, "a repository that does not follow GitHub costs no transfer")
 			assert.Equal(t, pullOld, h.host.bookmarks["main"])
 			// The poll only re-checks pull repositories.
 			n, err := h.store.RequestStaleGithubMainPulls(context.Background(), 0, gitHubMainPullSkippedRecheck.Seconds())
@@ -530,7 +567,7 @@ func TestGitHubMainPullPollRechecksPullRepositories(t *testing.T) {
 
 func TestGitHubMainPullBridgeAcceptsOnlyTheObservedFastForward(t *testing.T) {
 	host := &fakeMainPullHost{bookmarks: map[string]string{"main": pullOld}}
-	bridge, err := startGitHubMainPullBridge(host, "smithers-canary", "smithers", gitHubMainPullUpdate{ref: "refs/heads/main", old: pullOld, new: pullNew})
+	bridge, err := startGitHubMainPullBridge(context.Background(), host, "smithers-canary", "smithers", gitHubMainPullUpdate{ref: "refs/heads/main", old: pullOld, new: pullNew}, nil)
 	require.NoError(t, err)
 	defer bridge.Close()
 	ctx := context.Background()
@@ -795,4 +832,99 @@ func TestSyncedReposWithholdsPullRepositoriesFromTheRefPushFeed(t *testing.T) {
 	refsOnly, err = service.ListSyncedRepos(context.Background(), true)
 	require.NoError(t, err)
 	assert.Len(t, refsOnly, 1)
+}
+
+func TestGitHubMainPullRefusesAReusedRepositoryName(t *testing.T) {
+	h := newPullHarness(t)
+	h.service.git = &renamingGit{fakeMainPullGit: h.git, store: h.store}
+	_, err := h.service.Request(context.Background(), 19)
+	require.NoError(t, err)
+	require.NoError(t, h.service.PollOnce(context.Background()))
+	assert.Equal(t, "failed", h.row(t).State)
+	assert.Empty(t, h.host.received, "nothing is forwarded to a repository that took over the name")
+	assert.Equal(t, pullOld, h.host.bookmarks["main"])
+}
+
+// renamingGit deletes the repository and reuses its name during the fetch.
+type renamingGit struct {
+	*fakeMainPullGit
+	store *fakeMainPullStore
+}
+
+func (g *renamingGit) Fetch(ctx context.Context, dir, smithersURL, githubURL, ref string) (string, string, error) {
+	g.store.mu.Lock()
+	g.store.renamed = true
+	g.store.mu.Unlock()
+	return g.fakeMainPullGit.Fetch(ctx, dir, smithersURL, githubURL, ref)
+}
+
+func TestGitHubMainPullForgetsThePolicyWhenTheSourceIsLost(t *testing.T) {
+	h := newPullHarness(t)
+	_, err := h.service.Request(context.Background(), 19)
+	require.NoError(t, err)
+	require.NoError(t, h.service.PollOnce(context.Background()))
+	require.Equal(t, "pull", h.row(t).Policy)
+
+	// The GitHub source is disconnected: the recorded policy is forgotten,
+	// so neither the outbound guard nor the policy cache reuses it.
+	sources := h.store.sources[19]
+	h.store.sources[19] = nil
+	_, err = h.service.Request(context.Background(), 19)
+	require.NoError(t, err)
+	require.NoError(t, h.service.PollOnce(context.Background()))
+	row := h.row(t)
+	assert.Equal(t, "skipped", row.State)
+	assert.Empty(t, row.Policy)
+	assert.Empty(t, row.PolicyCommit)
+	recorded, err := h.service.PullPolicyRecorded(context.Background(), 19)
+	require.NoError(t, err)
+	assert.False(t, recorded)
+	status, err := h.service.Status(context.Background(), 19)
+	require.NoError(t, err)
+	assert.False(t, status.Fresh)
+
+	// Reconnected at the same GitHub tip: the policy is read again.
+	h.store.sources[19] = sources
+	reads := h.policyReads
+	_, err = h.service.Request(context.Background(), 19)
+	require.NoError(t, err)
+	require.NoError(t, h.service.PollOnce(context.Background()))
+	assert.Equal(t, reads+1, h.policyReads)
+	assert.Equal(t, "pull", h.row(t).Policy)
+}
+
+func TestGitHubMainPullEqualHeadsWithAnotherPolicyStaySkipped(t *testing.T) {
+	h := newPullHarness(t)
+	h.github, h.policy = pullOld, "push"
+	_, err := h.service.Request(context.Background(), 19)
+	require.NoError(t, err)
+	require.NoError(t, h.service.PollOnce(context.Background()))
+	assert.Equal(t, "skipped", h.row(t).State, "so the six-hour re-evaluation keeps checking it")
+	status, err := h.service.Status(context.Background(), 19)
+	require.NoError(t, err)
+	assert.False(t, status.Fresh)
+}
+
+func TestGitHubMainPullClaimsOneRowPerRun(t *testing.T) {
+	h := newPullHarness(t)
+	h.store.repos[20] = db.Repository{ID: 20, Name: "other", LowerName: "other", DefaultBookmark: "main", UserID: pgtype.Int8{Int64: 1, Valid: true}}
+	h.store.sources[20] = []db.ListRepositoryGitHubSourcesRow{{GithubOwner: "smithersai", GithubRepo: "smithers"}}
+	counting := &countingClaims{fakeMainPullStore: h.store}
+	h.service.store = counting
+	for _, id := range []int64{19, 20} {
+		_, err := h.service.Request(context.Background(), id)
+		require.NoError(t, err)
+	}
+	require.NoError(t, h.service.PollOnce(context.Background()))
+	assert.Equal(t, []int32{1, 1, 1}, counting.limits, "each claim is taken immediately before its run")
+}
+
+type countingClaims struct {
+	*fakeMainPullStore
+	limits []int32
+}
+
+func (c *countingClaims) ClaimGithubMainPulls(ctx context.Context, limit int32, lease float64) ([]db.GithubMainPull, error) {
+	c.limits = append(c.limits, limit)
+	return c.fakeMainPullStore.ClaimGithubMainPulls(ctx, limit, lease)
 }

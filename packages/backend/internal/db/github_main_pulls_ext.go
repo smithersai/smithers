@@ -122,6 +122,8 @@ type FinishGithubMainPullParams struct {
 	SmithersHead     string
 	Error            string
 	BackoffSeconds   float64
+	// ResetPolicy clears the source/policy tuple instead of keeping it.
+	ResetPolicy bool
 }
 
 const finishGithubMainPull = `
@@ -134,10 +136,10 @@ SET synced_generation = CASE WHEN $3 = 'failed' THEN synced_generation ELSE GREA
     attempts = CASE WHEN $3 = 'failed' THEN attempts ELSE 0 END,
     next_attempt_at = CASE WHEN $3 = 'failed' THEN NOW() + make_interval(secs => $11) ELSE NOW() END,
     lease_expires_at = NULL,
-    github_repository = CASE WHEN $4 = '' THEN github_repository ELSE $4 END,
+    github_repository = CASE WHEN $12 THEN '' WHEN $4 = '' THEN github_repository ELSE $4 END,
     branch = CASE WHEN $5 = '' THEN branch ELSE $5 END,
-    policy = CASE WHEN $6 = '' THEN policy ELSE $6 END,
-    policy_commit = CASE WHEN $7 = '' THEN policy_commit ELSE $7 END,
+    policy = CASE WHEN $12 THEN '' WHEN $6 = '' THEN policy ELSE $6 END,
+    policy_commit = CASE WHEN $12 THEN '' WHEN $7 = '' THEN policy_commit ELSE $7 END,
     github_head = CASE WHEN $8 = '' THEN github_head ELSE $8 END,
     smithers_head = CASE WHEN $9 = '' THEN smithers_head ELSE $9 END,
     last_error = $10,
@@ -152,7 +154,7 @@ WHERE repository_id = $1
 // FinishGithubMainPull returns 0 when the claim was lost to a newer claimant.
 func (q *Queries) FinishGithubMainPull(ctx context.Context, arg FinishGithubMainPullParams) (int64, error) {
 	tag, err := q.db.Exec(ctx, finishGithubMainPull, arg.RepositoryID, arg.Claim, arg.State, arg.GithubRepository, arg.Branch,
-		arg.Policy, arg.PolicyCommit, arg.GithubHead, arg.SmithersHead, strings.TrimSpace(arg.Error), arg.BackoffSeconds)
+		arg.Policy, arg.PolicyCommit, arg.GithubHead, arg.SmithersHead, strings.TrimSpace(arg.Error), arg.BackoffSeconds, arg.ResetPolicy)
 	if err != nil {
 		return 0, err
 	}

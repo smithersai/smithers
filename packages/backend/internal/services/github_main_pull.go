@@ -63,6 +63,7 @@ type GitHubMainPullStore interface {
 	IsGithubMainPullMirror(ctx context.Context, owner, repo string) (bool, error)
 	GetUserByID(ctx context.Context, id int64) (db.User, error)
 	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
+	GetRepoByOwnerAndLowerName(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error)
 }
 
 // GitHubMainPullTokens mints the repository owner's GitHub App installation
@@ -208,7 +209,8 @@ func gitHubMainPullStatus(row db.GithubMainPull) GitHubMainPullStatus {
 	status := GitHubMainPullStatus{State: row.State, GitHubRepository: row.GithubRepository, Branch: row.Branch, Policy: row.Policy,
 		PolicyCommit: row.PolicyCommit, GitHubHead: row.GithubHead, SmithersHead: row.SmithersHead,
 		Pending: row.RequestedGeneration > row.SyncedGeneration, Attempts: row.Attempts, LastError: row.LastError}
-	status.Fresh = !status.Pending && row.State == gitHubMainPullStateSynced && row.GithubHead != "" && row.GithubHead == row.SmithersHead
+	status.Fresh = !status.Pending && row.State == gitHubMainPullStateSynced && row.Policy == gitHubMainPullPolicyPull &&
+		row.GithubHead != "" && row.GithubHead == row.SmithersHead
 	if row.NextAttemptAt.Valid && status.Pending {
 		at := row.NextAttemptAt.Time
 		status.NextAttemptAt = &at
@@ -255,14 +257,22 @@ func (s *GitHubMainPullService) Sweep(ctx context.Context) {
 	}
 }
 
-// PollOnce claims and runs due pulls, one at a time.
+// PollOnce claims and runs due pulls one at a time. Each claim is taken
+// immediately before its run, so the run deadline always ends inside its
+// lease.
 func (s *GitHubMainPullService) PollOnce(ctx context.Context) error {
-	rows, err := s.store.ClaimGithubMainPulls(ctx, gitHubMainPullClaimLimit, gitHubMainPullLease.Seconds())
-	if err != nil {
-		return err
-	}
-	for _, row := range rows {
-		s.runClaimed(ctx, row)
+	for range gitHubMainPullClaimLimit {
+		if ctx.Err() != nil {
+			return nil
+		}
+		rows, err := s.store.ClaimGithubMainPulls(ctx, 1, gitHubMainPullLease.Seconds())
+		if err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		s.runClaimed(ctx, rows[0])
 	}
 	return nil
 }
@@ -270,6 +280,9 @@ func (s *GitHubMainPullService) PollOnce(ctx context.Context) error {
 // gitHubMainPullOutcome is what one run records.
 type gitHubMainPullOutcome struct {
 	state, githubRepository, branch, policy, policyCommit, githubHead, smithersHead, err string
+	// resetPolicy forgets the recorded source/policy tuple, so a policy is
+	// never reused for a source it was not read from.
+	resetPolicy bool
 }
 
 func (s *GitHubMainPullService) runClaimed(parent context.Context, row db.GithubMainPull) {
@@ -291,7 +304,7 @@ func (s *GitHubMainPullService) runClaimed(parent context.Context, row db.Github
 	written, err := s.store.FinishGithubMainPull(finishCtx, db.FinishGithubMainPullParams{
 		RepositoryID: row.RepositoryID, Claim: row.Claim, State: outcome.state, GithubRepository: outcome.githubRepository,
 		Branch: outcome.branch, Policy: outcome.policy, PolicyCommit: outcome.policyCommit, GithubHead: outcome.githubHead,
-		SmithersHead: outcome.smithersHead, Error: outcome.err, BackoffSeconds: backoff.Seconds(),
+		SmithersHead: outcome.smithersHead, Error: outcome.err, BackoffSeconds: backoff.Seconds(), ResetPolicy: outcome.resetPolicy,
 	})
 	switch {
 	case err != nil:
@@ -342,7 +355,7 @@ func (s *GitHubMainPullService) pull(ctx context.Context, row db.GithubMainPull)
 	if err != nil {
 		var apiErr *pkgerrors.APIError
 		if errors.As(err, &apiErr) && apiErr.Status < 500 {
-			out.state, out.policy, out.err = gitHubMainPullStateSkipped, gitHubMainPullPolicyUndeclared, apiErr.Message
+			out.state, out.err, out.resetPolicy = gitHubMainPullStateSkipped, apiErr.Message, true
 			return out
 		}
 		return fail("resolve GitHub source: " + err.Error())
@@ -389,12 +402,18 @@ func (s *GitHubMainPullService) pull(ctx context.Context, row db.GithubMainPull)
 		out.policy, out.policyCommit = value, commit
 		return value, true
 	}
+	// The policy is evaluated once per GitHub tip, before any transfer, so a
+	// first request or a policy change is recorded even when nothing moves,
+	// and a repository that does not follow GitHub costs no fetch.
+	declared, ok := policy(githubHead)
+	if !ok {
+		return out
+	}
+	if declared != gitHubMainPullPolicyPull {
+		out.state = gitHubMainPullStateSkipped
+		return out
+	}
 	if githubHead == smithersHead {
-		// Nothing to write; the policy is still evaluated once per GitHub tip,
-		// so a first request or a policy change is recorded.
-		if _, ok := policy(githubHead); !ok {
-			return out
-		}
 		out.state = gitHubMainPullStateSynced
 		return out
 	}
@@ -404,7 +423,19 @@ func (s *GitHubMainPullService) pull(ctx context.Context, row db.GithubMainPull)
 		return fail("create pull directory: " + err.Error())
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	bridge, err := startGitHubMainPullBridge(s.host, owner, repository.Name, gitHubMainPullUpdate{ref: ref, old: smithersHead})
+	// Immediately before any write, the name must still be this repository:
+	// a deleted or transferred repository's name can be reused.
+	identity := func(ctx context.Context) error {
+		current, err := s.store.GetRepoByOwnerAndLowerName(ctx, db.GetRepoByOwnerAndLowerNameParams{Owner: strings.ToLower(owner), LowerName: repository.LowerName})
+		if err != nil {
+			return fmt.Errorf("resolve repository: %w", err)
+		}
+		if current.ID != repository.ID {
+			return errors.New("the repository name now belongs to another repository")
+		}
+		return nil
+	}
+	bridge, err := startGitHubMainPullBridge(ctx, s.host, owner, repository.Name, gitHubMainPullUpdate{ref: ref, old: smithersHead}, identity)
 	if err != nil {
 		return fail(err.Error())
 	}
@@ -421,14 +452,15 @@ func (s *GitHubMainPullService) pull(ctx context.Context, row db.GithubMainPull)
 	}
 	// The tip actually fetched is what is pulled; GitHub may have moved
 	// since ls-remote.
-	out.githubHead = tip
-	value, ok := policy(tip)
-	if !ok {
-		return out
-	}
-	if value != gitHubMainPullPolicyPull {
-		out.state = gitHubMainPullStateSkipped
-		return out
+	if tip != githubHead {
+		out.githubHead = tip
+		if declared, ok = policy(tip); !ok {
+			return out
+		}
+		if declared != gitHubMainPullPolicyPull {
+			out.state = gitHubMainPullStateSkipped
+			return out
+		}
 	}
 	ancestor, err := s.git.IsAncestor(ctx, dir, smithersHead, tip)
 	if err != nil {
@@ -505,8 +537,17 @@ func (s *GitHubMainPullService) bookmarkCommit(ctx context.Context, owner, repo,
 	return "", fmt.Errorf("bookmark listing exceeded %d pages", maxPages)
 }
 
+// gitHubMainPullCommand bounds a git command by the run: after cancellation
+// its pipes are closed within WaitDelay even if a transport helper lingers.
+func gitHubMainPullCommand(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := mirrorCommand(ctx, "git", args...)
+	cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+	cmd.WaitDelay = 5 * time.Second
+	return cmd
+}
+
 func defaultLsRemoteRef(ctx context.Context, remote, ref string) (string, error) {
-	out, err := mirrorCommand(ctx, "git", "ls-remote", "--refs", remote, ref).CombinedOutput()
+	out, err := gitHubMainPullCommand(ctx, "ls-remote", "--refs", remote, ref).CombinedOutput()
 	if err != nil {
 		return "", gitHubMainPullCommandError("git ls-remote", err, out)
 	}
@@ -535,9 +576,7 @@ func gitHubMainPullCommandError(what string, err error, out []byte) error {
 type cliGitHubMainPullGit struct{}
 
 func (cliGitHubMainPullGit) run(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := mirrorCommand(ctx, "git", append([]string{"--git-dir", dir}, args...)...)
-	cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
-	out, err := cmd.CombinedOutput()
+	out, err := gitHubMainPullCommand(ctx, append([]string{"--git-dir", dir}, args...)...).CombinedOutput()
 	if err != nil {
 		return out, gitHubMainPullCommandError("git "+args[0], err, out)
 	}
@@ -545,7 +584,7 @@ func (cliGitHubMainPullGit) run(ctx context.Context, dir string, args ...string)
 }
 
 func (g cliGitHubMainPullGit) Fetch(ctx context.Context, dir, smithersURL, githubURL, ref string) (string, string, error) {
-	if out, err := exec.CommandContext(ctx, "git", "init", "--quiet", "--bare", dir).CombinedOutput(); err != nil {
+	if out, err := gitHubMainPullCommand(ctx, "init", "--quiet", "--bare", dir).CombinedOutput(); err != nil {
 		return "", "", gitHubMainPullCommandError("git init", err, out)
 	}
 	if _, err := g.run(ctx, dir, "fetch", "--quiet", "--no-tags", "--depth=1", smithersURL, "+"+ref+":refs/pull/base"); err != nil {
@@ -568,8 +607,7 @@ func (g cliGitHubMainPullGit) Fetch(ctx context.Context, dir, smithersURL, githu
 }
 
 func (g cliGitHubMainPullGit) IsAncestor(ctx context.Context, dir, ancestor, descendant string) (bool, error) {
-	cmd := mirrorCommand(ctx, "git", "--git-dir", dir, "merge-base", "--is-ancestor", ancestor, descendant)
-	out, err := cmd.CombinedOutput()
+	out, err := gitHubMainPullCommand(ctx, "--git-dir", dir, "merge-base", "--is-ancestor", ancestor, descendant).CombinedOutput()
 	if err == nil {
 		return true, nil
 	}

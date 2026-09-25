@@ -140,4 +140,22 @@ func TestGitHubMainPullQueriesOnProductSchema(t *testing.T) {
 	pull, err = q.IsGithubMainPullMirror(ctx, "other", "copy")
 	require.NoError(t, err)
 	assert.False(t, pull)
+
+	// A lost source forgets the whole policy tuple.
+	claimed, err = q.ClaimGithubMainPulls(ctx, 1, 900)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.Equal(t, canary, claimed[0].RepositoryID)
+	_, err = q.FinishGithubMainPull(ctx, db.FinishGithubMainPullParams{RepositoryID: canary, Claim: claimed[0].Claim, State: "skipped",
+		Error: "no GitHub source", ResetPolicy: true})
+	require.NoError(t, err)
+	row, err = q.GetGithubMainPull(ctx, canary)
+	require.NoError(t, err)
+	assert.Equal(t, "skipped", row.State)
+	assert.Empty(t, row.Policy)
+	assert.Empty(t, row.PolicyCommit)
+	assert.Empty(t, row.GithubRepository)
+	pull, err = q.IsGithubMainPullMirror(ctx, "smithers-canary", "smithers")
+	require.NoError(t, err)
+	assert.False(t, pull)
 }
