@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { stable } from "./deployment"
-import { CLOUDFLARE_PRODUCERS, privateArtifact } from "./fence"
+import { CLOUDFLARE_PRODUCERS, collectCloudflareFence, privateArtifact } from "./fence"
 import { FakeCloudflare } from "./install-fake"
 import { applyPhase, installStatus, loadPlan, MAINTENANCE_SECRETS, prepareInstall, readJournal, restoreAll } from "./install"
 
@@ -174,6 +174,30 @@ test("isolated rehearsal: every production binding type round-trips through admi
   expect(fake.mutations.every(m => m.endsWith(scratch))).toBe(true) // no production authority touched
   expect((await restoreAll(root, planSHA256)).map(r => r.outcome)).toEqual(["restored"])
   expect(fake.live(scratch).id).toBe(original.id)
+  // As on the live provider: the rollback leaves the fence as the newest upload, and restore still proves the original.
+  expect(fake.latest(scratch).entry).toBe("cutover-fence-entry.js")
+  expect(fake.workers.get(scratch)!.subdomain.previews_enabled).toBe(true)
+  expect(await installStatus(root, planSHA256)).toEqual([{ worker: scratch, state: "original", liveVersion: original.id }])
+})
+
+test("prepare refuses when the newest upload is not the deployed version: script-level settings and content would describe the wrong version", async () => {
+  const { root, fake } = await setup()
+  const scratch = "smithers-cutover-rehearsal-t2"
+  fake.addRehearsal(scratch).uploadOnly(scratch)
+  await expect(prepareInstall(root, { rehearsalWorker: scratch })).rejects.toThrow("CF_INSTALL_LATEST_NOT_DEPLOYED")
+})
+
+test("fence collection refuses an undeployed upload before treating script content as serving evidence", async () => {
+  const { root, expected, planSHA256, fake } = await setup()
+  hook(root)
+  await applyPhase(root, planSHA256, "admission")
+  await applyPhase(root, planSHA256, "fence")
+  const worker = CLOUDFLARE_PRODUCERS[0]!
+  const deployed = fake.live(worker).id
+  fake.uploadOnly(worker)
+  expect(fake.live(worker).id).toBe(deployed)
+  expect(fake.latest(worker).id).not.toBe(deployed)
+  await expect(collectCloudflareFence({ ...expected, privateDirectory: root })).rejects.toThrow("CF_FENCE_CONTENT_NOT_DEPLOYED")
 })
 
 test("a KV-backed Durable Object class is refused: the alarm marker needs SQLite", async () => {

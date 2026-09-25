@@ -75,6 +75,12 @@ const observeAuthority = async (root: string, plan: Plan, expected: FenceExpecte
   const current = async () => (await api<{ deployments: Array<{ id: string; versions: Array<{ version_id: string; percentage: number }> }> }>(base + "/deployments")).result.deployments[0]
   const before = await current()
   requireExportVersion(before, plan.version)
+  // Script content/settings describe the newest upload, which may never have served.
+  const requireDeployedContent = async () => {
+    const newest = (await api<{ items: Array<{ id: string }> }>(base + "/versions?per_page=1")).result.items[0]?.id
+    if (newest !== plan.version) throw new Error("CF_FENCE_CONTENT_NOT_DEPLOYED")
+  }
+  await requireDeployedContent()
   const settings = (await api<Settings>(base + "/settings")).result
   if (hash(stable(settings)) !== plan.settingsSHA256) throw new Error("CF_FENCE_SETTINGS_CHANGED")
   const objects = (s: Settings) => s.bindings.filter(b => b.type === "durable_object_namespace").sort((a,b) => a.name.localeCompare(b.name))
@@ -105,6 +111,7 @@ const observeAuthority = async (root: string, plan: Plan, expected: FenceExpecte
   }
   const after = await current()
   requireExportVersion(after, plan.version)
+  await requireDeployedContent()
   if (before?.id !== after?.id) throw new Error("CF_FENCE_DEPLOYMENT_CHANGED")
   const observedAt = new Date().toISOString()
   const evidence = save(root, `${plan.identity.worker}-${randomUUID()}.json`, { observedAt, before, after, settings, modules, refusals })

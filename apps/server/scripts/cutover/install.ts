@@ -40,6 +40,8 @@ export interface Generated { entry: ModuleRef; helper: ModuleRef; metadata: Arti
 export interface WorkerPlan {
   worker: string; originalVersion: string; originalDeployment: string; settingsSHA256: string; originalSettings: ArtifactReference
   entry: string; originalModules: ModuleRef[]; sourceArtifactSHA256: string
+  /** Provider etag of the exact original version; version ids and their content are immutable. */
+  originalEtag: string
   objects: Array<{ binding: string; className: string }>; namespaces: Array<{ binding: string; className: string; namespaceId: string }>
   secretNames: string[]; surface: AuthoritySurface; schedules: string[]
   admission: Generated | null; fence: Generated
@@ -89,7 +91,13 @@ const liveVersion = async (worker: string): Promise<{ deployment: string; versio
   if (!d || d.versions.length !== 1 || d.versions[0]!.percentage !== 100) fail("CF_INSTALL_SPLIT_DEPLOYMENT")
   return { deployment: d!.id, version: d!.versions[0]!.version_id }
 }
+// Live shape (observed 2026-09-24): script-level /settings and /content/v2 describe the NEWEST UPLOAD,
+// not the deployed version (`?version=` is ignored). After a rollback they still show the fence.
+// Read them only while the newest upload is the deployed version; judge any other version by /versions/{id}.
 const liveSettings = async (worker: string) => (await api<Settings>(`/workers/scripts/${worker}/settings`)).result
+interface VersionDetail { id: string; resources: { script: { etag: string }; script_runtime: { compatibility_date?: string; compatibility_flags?: string[]; usage_model?: string }; bindings: Binding[] } }
+const versionDetail = async (worker: string, version: string) => (await api<VersionDetail>(`/workers/scripts/${worker}/versions/${version}`)).result
+const newestUpload = async (worker: string) => (await api<{ items: Array<{ id: string; number: number }> }>(`/workers/scripts/${worker}/versions?per_page=1`)).result.items[0]?.id ?? fail("CF_INSTALL_VERSIONS_UNREADABLE")
 const liveModules = async (worker: string) => {
   const response = await fetch(`${accountURL}/workers/scripts/${worker}/content/v2`, { redirect: "error", signal: AbortSignal.timeout(60_000), headers: { authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` } })
   if (!response.ok) fail("CF_INSTALL_CONTENT_UNREADABLE")
@@ -146,6 +154,8 @@ export const prepareInstall = async (directory: string, options: { rehearsalWork
     const folder = `${dir}/${worker}`
     mkdirSync(resolve(root, folder), { mode: 0o700 })
     const before = await liveVersion(worker)
+    // Settings and module bytes below come from the newest upload; it must be the deployed original.
+    if (await newestUpload(worker) !== before.version) fail("CF_INSTALL_LATEST_NOT_DEPLOYED")
     const settings = await liveSettings(worker)
     if (settings.bindings.some(b => (MAINTENANCE_SECRETS as readonly string[]).includes(b.name))) fail("CF_INSTALL_MAINTENANCE_ALREADY_PRESENT")
     const namespaces = namespacesOf(settings)
@@ -162,8 +172,9 @@ export const prepareInstall = async (directory: string, options: { rehearsalWork
     const surface = await authoritySurface(worker)
     let schedules: string[] = []
     try { schedules = (await api<{ schedules: Array<{ cron: string }> }>(`/workers/scripts/${worker}/schedules`)).result.schedules.map(s => s.cron).sort() } catch { fail("CF_INSTALL_SCHEDULES_UNREADABLE") }
+    const originalEtag = (await versionDetail(worker, before.version)).resources.script.etag
     const after = await liveVersion(worker)
-    if (after.version !== before.version || hash(stable(await liveSettings(worker))) !== hash(stable(settings))) fail("CF_INSTALL_ORIGINAL_CHANGED_DURING_PREPARE")
+    if (after.version !== before.version || await newestUpload(worker) !== before.version || hash(stable(await liveSettings(worker))) !== hash(stable(settings))) fail("CF_INSTALL_ORIGINAL_CHANGED_DURING_PREPARE")
     const objects = namespaces.map(n => ({ binding: n.binding, className: n.className }))
     const identity: FenceIdentity = { ...expected, worker, sourceVersion: before.version, sourceArtifactSHA256 }
     const generate = (kind: "admission" | "fence"): Generated => {
@@ -174,7 +185,7 @@ export const prepareInstall = async (directory: string, options: { rehearsalWork
         metadata: write(root, `${folder}/${kind}-metadata.json`, JSON.stringify(uploadMetadata(settings, entryName, message(expected.executionID, kind)))) }
     }
     workers.push({ worker, originalVersion: before.version, originalDeployment: before.deployment, settingsSHA256: hash(stable(settings)),
-      originalSettings: write(root, `${folder}/original-settings.json`, JSON.stringify(settings)), entry: content.entry, originalModules, sourceArtifactSHA256,
+      originalSettings: write(root, `${folder}/original-settings.json`, JSON.stringify(settings)), entry: content.entry, originalModules, sourceArtifactSHA256, originalEtag,
       objects, namespaces, secretNames: secretNames(settings), surface, schedules,
       admission: admitted.includes(worker) ? generate("admission") : null, fence: generate("fence") })
   }
@@ -388,11 +399,12 @@ export const restoreAll = async (directory: string, planSHA256: string): Promise
             body: JSON.stringify({ strategy: "percentage", versions: [{ version_id: w.originalVersion, percentage: 100 }], annotations: { "workers/message": message(plan.executionID, "restore") } }) })
         }
         if ((await liveVersion(worker)).version !== w.originalVersion) fail("CF_RESTORE_VERSION_NOT_LIVE")
-        const content = await liveModules(worker)
-        if (content.entry !== w.entry || moduleSet(content.modules.map(m => ({ name: m.name, sha256: hash(m.bytes) }))) !== moduleSet(w.originalModules)) fail("CF_RESTORE_MODULES_DIFFER")
-        const original = JSON.parse(privateArtifact(root, w.originalSettings).toString()) as Settings, observed = await liveSettings(worker)
-        const bare = (s: Settings) => stable(Object.fromEntries(Object.entries(s).filter(([k]) => k !== "annotations")))
-        if (bare(observed) !== bare(original)) fail("CF_RESTORE_SETTINGS_DIFFER")
+        // The deployed version itself, not the newest upload (which is still this execution's fence).
+        const original = JSON.parse(privateArtifact(root, w.originalSettings).toString()) as Settings, deployed = await versionDetail(worker, w.originalVersion)
+        if (deployed.id !== w.originalVersion || !w.originalEtag || deployed.resources.script.etag !== w.originalEtag) fail("CF_RESTORE_MODULES_DIFFER")
+        const runtime = deployed.resources.script_runtime
+        if (stable(nonSecret({ bindings: deployed.resources.bindings } as Settings)) !== stable(nonSecret(original)) || stable(secretNames({ bindings: deployed.resources.bindings } as Settings)) !== stable(w.secretNames) ||
+          runtime.compatibility_date !== original.compatibility_date || stable(runtime.compatibility_flags ?? []) !== stable(original.compatibility_flags ?? []) || runtime.usage_model !== original.usage_model) fail("CF_RESTORE_SETTINGS_DIFFER")
         if (w.surface.previews) {
           const sub = (await api<{ previews_enabled: boolean }>(`/workers/scripts/${worker}/subdomain`)).result
           if (!sub.previews_enabled) await setPreviews(worker, w.surface, true)

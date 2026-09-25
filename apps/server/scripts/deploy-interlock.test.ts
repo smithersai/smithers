@@ -63,6 +63,7 @@ test("the live read refuses a split deployment and a version that changes while 
   let reads = 0
   const moving = (async (path: string) => path.endsWith("/deployments")
     ? { result: { deployments: [{ versions: [{ version_id: reads++ === 0 ? "v1" : "v2", percentage: 100 }] }] } }
+    : path.endsWith("/versions?per_page=1") ? { result: { items: [{ id: "v1" }] } }
     : { result: { annotations: LIVE_LEGACY } }) as never
   await expect(readLiveFacts("smithers-mvp-web", moving, content)).rejects.toThrow("DEPLOY_GUARD_LIVE_CHANGED")
   const split = (async () => ({ result: { deployments: [{ versions: [{ version_id: "a", percentage: 50 }, { version_id: "b", percentage: 50 }] }] } })) as never
@@ -114,7 +115,16 @@ test("the guard reads the installer's real admission/fence versions and blocks C
   await expect(guard("src/index.ts")).rejects.toThrow("DEPLOY_GUARD_LIVE_CUTOVER")
   expect(await guard("src/edge.ts")).toMatchObject({ mode: "activation", executionID })
   await restoreAll(root, planSHA256)
-  expect((await guard("src/index.ts")).mode).toBe("normal")
+  // After the exact rollback the fence is still the newest upload, so content/v2 cannot describe
+  // the live version: the guard refuses rather than guess (live-verified 2026-09-24).
+  await expect(guard("src/index.ts")).rejects.toThrow("DEPLOY_GUARD_LIVE_NOT_NEWEST")
+})
+
+test("an upload-only edge build over the live legacy writer never reads as a live edge", async () => {
+  fake = new FakeCloudflare().install()
+  fake.uploadOnly("smithers-mvp-web")
+  fake.latest("smithers-mvp-web").entry = "edge.js"; fake.latest("smithers-mvp-web").modules = [{ name: "edge.js", type: "application/javascript+module", bytes: new TextEncoder().encode("// edge") }]
+  await expect(preflightDeploy("smithers-mvp-web", "src/edge.ts", "src/edge.ts")).rejects.toThrow("DEPLOY_GUARD_LIVE_NOT_NEWEST")
 })
 
 test("the real deploy.ts enforces the checkout identity before any subprocess", () => {

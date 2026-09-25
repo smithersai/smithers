@@ -102,10 +102,14 @@ export const readLiveFacts = async (worker: string, get: Get, content: Content):
     return d.versions[0]!.version_id
   }
   const versionId = await current()
+  // Live shape (observed 2026-09-24): content/v2 serves the NEWEST UPLOAD, not the deployed version.
+  // An upload-only edge build over a live legacy writer would otherwise read as "edge is live".
+  const newest = (await get<{ items: Array<{ id: string }> }>(`/workers/scripts/${worker}/versions?per_page=1`)).result.items[0]?.id
+  if (newest !== versionId) refuse("DEPLOY_GUARD_LIVE_NOT_NEWEST", `live version ${versionId} is not the newest upload ${newest ?? "(none)"}; its content cannot be read`)
   // Live shape: version annotations are top-level `result.annotations`.
   const annotations = (await get<{ annotations?: Record<string, string> }>(`/workers/scripts/${worker}/versions/${versionId}`)).result.annotations ?? {}
   const body = await content(worker)
-  if (await current() !== versionId) refuse("DEPLOY_GUARD_LIVE_CHANGED", "the live version changed while it was being read")
+  if (await current() !== versionId || (await get<{ items: Array<{ id: string }> }>(`/workers/scripts/${worker}/versions?per_page=1`)).result.items[0]?.id !== versionId) refuse("DEPLOY_GUARD_LIVE_CHANGED", "the live version changed while it was being read")
   return { versionId, entry: body.entry, modules: body.modules, annotations, digests: body.digests }
 }
 export const sha256 = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex")
