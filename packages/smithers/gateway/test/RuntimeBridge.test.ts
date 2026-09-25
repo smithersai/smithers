@@ -368,6 +368,34 @@ describe("RuntimeBridge", () => {
       ).toBe(output)
     }))
 
+  for (const changed of [
+    { flowId: "fixture/other" },
+    { status: "failed" as const },
+    { planId: "other-plan" },
+    { planDigest: "other-digest" }
+  ]) {
+    it.effect(`refuses a terminal result when its ${Object.keys(changed)[0]} changes during observation`, () =>
+      Effect.gen(function*() {
+        let reads = 0
+        const control = service({
+          list: () => Effect.sync(() => ({
+            _tag: "runs" as const,
+            items: [++reads === 1 ? summary : { ...summary, ...changed }]
+          }))
+        })
+        const error = yield* Effect.flip(RuntimeBridge.observe(control, {
+          protocol: RuntimeBridge.protocol,
+          runId: "run-1"
+        }))
+        expect(error).toMatchObject({
+          code: "internal",
+          message: "Terminal result observation changed",
+          retryable: true
+        })
+        expect(reads).toBeGreaterThan(1)
+      }))
+  }
+
   it.effect("does not invent a result for a terminal run without committed output", () =>
     Effect.gen(function*() {
       const result = yield* RuntimeBridge.observe(service(), { protocol: RuntimeBridge.protocol, runId: "run-1" })
