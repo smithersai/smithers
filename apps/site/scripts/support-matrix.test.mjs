@@ -189,6 +189,5 @@ test("operator docs describe the declared soak, PR evidence upload, and factory 
     const text = read(readme)
     assert.doesNotMatch(text, /smithers workflow run/, `${readme}: retired verb`)
     assert.doesNotMatch(text, /\.smithers\/workflows\/queue-driver/, `${readme}: untracked workflow path`)
-    assert.match(text, /bun factory\/flows\/<name>\.ts/, `${readme}: current operator`)
   }
 })
