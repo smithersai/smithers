@@ -421,7 +421,7 @@ func (s *ChangeService) SplitChange(
 	if s.pool != nil {
 		owned, err := db.New(s.pool).IsMythicalChange(ctx, repositoryID, current.ChangeID)
 		if err != nil {
-			return SplitChangeResponse{}, pkgerrors.Internal("failed to check whether change is on the mythical stack")
+			return SplitChangeResponse{}, pkgerrors.Internal("failed to check whether change is on the mythical stack").WithCause(err)
 		}
 		if owned {
 			return SplitChangeResponse{}, errMythicalBookmarkOwned
