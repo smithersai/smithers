@@ -1557,6 +1557,26 @@ type ProviderConnection struct {
 	UpdatedAt             time.Time          `json:"updated_at"`
 	RefreshLeaseUntil     pgtype.Timestamptz `json:"refresh_lease_until"`
 	RefreshGeneration     int64              `json:"refresh_generation"`
+	LimitedUntil          pgtype.Timestamptz `json:"limited_until"`
+	LastUsedAt            pgtype.Timestamptz `json:"last_used_at"`
+	SortOrder             int32              `json:"sort_order"`
+}
+
+type ProviderConnectionDeviceLogin struct {
+	ID                    string             `json:"id"`
+	UserID                int64              `json:"user_id"`
+	Provider              string             `json:"provider"`
+	DeviceAuthIDEncrypted []byte             `json:"device_auth_id_encrypted"`
+	UserCode              string             `json:"user_code"`
+	IntervalSeconds       int32              `json:"interval_seconds"`
+	ExpiresAt             time.Time          `json:"expires_at"`
+	NextPollAt            time.Time          `json:"next_poll_at"`
+	PollLeaseUntil        pgtype.Timestamptz `json:"poll_lease_until"`
+	State                 string             `json:"state"`
+	ConnectionID          pgtype.UUID        `json:"connection_id"`
+	LastError             string             `json:"last_error"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
 }
 
 type ProviderConnectionGrant struct {

@@ -252,6 +252,7 @@ test("card configuration args round-trip through their production grammars", () 
     ["issues.reopen", { number: 3, repo: "owner/repo" }],
     ["commits.list", { branch: "feature/topic", repo: "owner/repo" }],
     ["workspace.facet", { workspaceId: "w1", facet: "files" }],
+    ["secrets.move", { id: "conn-1", direction: "down" }],
     ["workspace.open", { repo: "owner/repo", kind: "desktop" }],
     ["workspace.delete", { workspaceId: "w1", confirmName: "My workspace" }],
     ["workspace.egress", { workspaceId: "w1", cursor: "next" }],

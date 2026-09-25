@@ -1286,6 +1286,16 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       setupScript: "pnpm install"
     }
   },
+  "provider-accounts": {
+    minimal: { accounts: [] },
+    full: {
+      accounts: [
+        { id: "conn-1", provider: "claude", label: "work", email: "ada@example.com", state: "active", limitedUntil: "2026-09-25T10:15:00Z" },
+        { id: "conn-2", provider: "codex", label: "codex-1", email: null, state: "refresh_failed", limitedUntil: null }
+      ],
+      pending: { userCode: "ABCD-EFGH", verificationUri: "https://auth.openai.com/codex/device" }
+    }
+  },
   secrets: {
     minimal: { repo: "smithersai/smithers", scope: "repository", secrets: [] },
     full: {

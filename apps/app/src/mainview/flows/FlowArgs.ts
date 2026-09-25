@@ -48,6 +48,7 @@ export interface FlowInput {
   readonly "flow.run.stop-all": { readonly sourceCard: string; readonly repo: string }
   readonly "commits.list": { readonly branch: string; readonly repo: string }
   readonly "workspace.facet": { readonly workspaceId: string; readonly facet: string }
+  readonly "secrets.move": { readonly id: string; readonly direction: "up" | "down" }
   readonly "issues.close": { readonly number: number; readonly repo: string }
   readonly "issues.reopen": { readonly number: number; readonly repo: string }
   readonly "findings.please-fix": { readonly changeId: string; readonly findingId: number }
@@ -204,6 +205,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "flow.run.stop-all": payload => line(keyed(payload, "sourceCard"), token(payload, "repo")),
   "commits.list": payload => line(token(payload, "branch"), token(payload, "repo")),
   "workspace.facet": payload => line(token(payload, "workspaceId"), token(payload, "facet")),
+  "secrets.move": payload => line(token(payload, "id"), token(payload, "direction")),
   "issues.close": payload => line(token(payload, "number"), token(payload, "repo")),
   "issues.reopen": payload => line(token(payload, "number"), token(payload, "repo")),
   "findings.please-fix": payload => line(token(payload, "changeId"), token(payload, "findingId")),

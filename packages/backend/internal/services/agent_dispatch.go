@@ -934,7 +934,7 @@ func (d *agentDispatch) bindProviderConnection() error {
 		// The platform Anthropic credential would otherwise compete for
 		// provider selection inside the guest; the subscription replaces it.
 		d.unbindEgressSecret("ANTHROPIC_API_KEY")
-		for _, secret := range ClaudeProxySecrets(resolved.AccessToken) {
+		for _, secret := range ClaudeConnectionProxySecrets(resolved) {
 			d.bindEgressSecret(secret)
 		}
 	case ProviderConnectionProviderCodex:

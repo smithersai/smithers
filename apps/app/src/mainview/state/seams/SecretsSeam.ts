@@ -6,6 +6,11 @@ import { preparedView, type ViewAction } from "../PreparedView"
  * binding (hosts, match_headers) and the updated time. No value exists on the
  * wire, so none can reach a card, the journal or the model. Adding and
  * removing secrets land in later Secrets lanes.
+ *
+ * The same seam owns the account's coding-provider pool
+ * (/api/user/provider-connections): Claude token enrollment, Codex device
+ * sign-in, pool order and revocation, each acknowledged once its intent is
+ * durable and finished in the shared toast stack, and the Accounts card.
  */
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
@@ -18,23 +23,82 @@ import { TOAST_SUPERSEDED } from "../controller/failures"
 
 const CONNECTIONS = "/api/user/provider-connections"
 const CONNECTION_ITEM = "/api/user/provider-connections/"
+const CONNECTION_ORDER = "/api/user/provider-connections/order"
+const CODEX_DEVICE = "/api/user/provider-connections/codex/device"
+const ACCOUNTS_CARD = "provider-accounts"
 const connectionId = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9-]{1,100}$/.test(value)
-type Connection = { id: string; provider: string; state: string; label: string }
+const deviceId = (value: unknown): value is string =>
+  typeof value === "string" && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(value)
+/* A Claude setup token or an Anthropic API key; the server infers which. */
+const claudeToken = (value: string | undefined): value is string =>
+  value !== undefined && (value.startsWith("sk-ant-oat01-") || value.startsWith("sk-ant-api")) && !/\s/.test(value)
+type Connection = { id: string; provider: string; state: string; label: string; email: string | null; limitedUntil: string | null; sortOrder: number }
+const text = (value: unknown): string | null => typeof value === "string" && value !== "" ? value : null
 const connections = (raw: unknown): Connection[] | undefined => Array.isArray(raw) && raw.every(row =>
   row && typeof row === "object" && connectionId(row.id) && typeof row.provider === "string" && typeof row.state === "string" && typeof row.label === "string")
-  ? raw.map(row => ({ id: row.id, provider: row.provider, state: row.state, label: row.label })) : undefined
+  ? raw.map((row, index) => ({
+    id: row.id, provider: row.provider, state: row.state, label: row.label, email: text(row.account_email),
+    limitedUntil: text(row.limited_until), sortOrder: typeof row.sort_order === "number" ? row.sort_order : index
+  })) : undefined
+const PROVIDERS = ["claude", "codex"] as const
+type AccountsCard = Extract<Card, { kind: "provider-accounts" }>
+type Account = AccountsCard["payload"]["accounts"][number]
+type PendingCode = NonNullable<AccountsCard["payload"]["pending"]>
+/** One provider's live accounts in pool order. */
+const pool = (rows: ReadonlyArray<Connection>, provider: string): Connection[] =>
+  rows.filter(row => row.provider === provider && row.state !== "revoked")
+    .map((row, index) => ({ row, index })).sort((a, b) => a.row.sortOrder - b.row.sortOrder || a.index - b.index).map(({ row }) => row)
+const accountsOf = (rows: ReadonlyArray<Connection>): Account[] => PROVIDERS.flatMap(provider => pool(rows, provider).map(row => ({
+  id: row.id, provider, label: row.label, email: row.email, state: row.state, limitedUntil: row.limitedUntil
+})))
+type Device = { id: string; state: string; userCode: string; verificationUri: string; interval: number; expiresAt: string }
+const httpsUrl = (value: unknown): value is string => {
+  if (typeof value !== "string") return false
+  try { return new URL(value).protocol === "https:" } catch { return false }
+}
+const deviceOf = (raw: unknown): Device | undefined => {
+  if (!raw || typeof raw !== "object") return undefined
+  const row = raw as Record<string, unknown>
+  if (!deviceId(row.id) || typeof row.state !== "string" || !["pending", "connected", "expired", "failed"].includes(row.state)) return undefined
+  if (typeof row.user_code !== "string" || !httpsUrl(row.verification_uri) || typeof row.expires_at !== "string") return undefined
+  const interval = typeof row.interval_seconds === "number" && Number.isFinite(row.interval_seconds) ? row.interval_seconds : 5
+  return { id: row.id, state: row.state, userCode: row.user_code, verificationUri: row.verification_uri, interval, expiresAt: row.expires_at }
+}
 
 export interface SecretsSeam {
   readonly listSecrets: ViewAction<[repo?: string]>
   readonly connectCodingProvider: (gesture?: CommandGesture) => Promise<{ readonly value: string } | string>
+  readonly connectCodex: () => Promise<{ readonly value: string } | string>
   readonly listCodingProviders: () => Promise<{ readonly value: string } | string>
   readonly revokeCodingProvider: (id: string) => Promise<{ readonly value: string } | string>
+  readonly moveCodingProvider: (id: string, direction: "up" | "down") => Promise<{ readonly value: string } | string>
   readonly resumeCodingProviders: () => void
 }
 
-export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController["withToast"]): SecretsSeam => {
-  type Flight = { readonly current: () => boolean; readonly admitted: Promise<boolean> }
-  const inFlight = new Map<string, Flight>()
+export interface SecretsSeamOptions {
+  /** The wait between device-sign-in polls; tests hold or skip it. */
+  readonly sleep?: (ms: number) => Promise<void>
+  readonly now?: () => number
+}
+
+type Flight = { readonly current: () => boolean; readonly admitted: Promise<boolean> }
+/*
+ * In-flight work is shared by the user's and the agent's seam (ActorBindings
+ * builds one of each over the same store), so a duplicate from either door
+ * joins the running request instead of starting a second one.
+ */
+const shared = new WeakMap<object, { readonly inFlight: Map<string, Flight>; moves: Promise<unknown>; reads: number; applied: number }>()
+const sharedFor = (store: object) => {
+  let state = shared.get(store)
+  if (!state) shared.set(store, state = { inFlight: new Map(), moves: Promise.resolve(), reads: 0, applied: 0 })
+  return state
+}
+
+export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController["withToast"], options: SecretsSeamOptions = {}): SecretsSeam => {
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)))
+  const now = options.now ?? Date.now
+  const state = sharedFor(ctx.store)
+  const inFlight = state.inFlight
   const flightAt = (key: string): Flight | undefined => {
     const flight = inFlight.get(key)
     return flight?.current() ? flight : undefined
@@ -45,14 +109,14 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
   const owner = () => ctx.store.collections.identitySessions.get("identity")?.login ?? null
   type Pending = NonNullable<ReturnType<typeof ctx.store.session>["codingProviderRequests"]>[number]
   const requests = (): Pending[] => ctx.store.session().codingProviderRequests ?? []
-  const save = async (row: Pending, current: () => boolean): Promise<boolean> => {
+  const save = async (row: Pending, current: () => boolean, supersedes: (item: Pending) => boolean = () => false): Promise<boolean> => {
     if (!current()) return false
-    await ctx.dispatch({ type: "coding.provider.requests.changed", actor: "system", requests: [...requests().filter(item => item.id !== row.id), row].slice(-64) }).isPersisted.promise
+    await ctx.dispatch({ type: "coding.provider.requests.changed", actor: "system", requests: [...requests().filter(item => item.id !== row.id && !supersedes(item)), row].slice(-64) }).isPersisted.promise
     return current()
   }
   const active = (row: Connection): boolean => row.provider === "claude" && row.state === "active" && connectionId(row.id)
-  const admit = (row: Pending, current: () => boolean): Flight => {
-    const flight = { current, admitted: save(row, current).catch(() => false) }
+  const admit = (row: Pending, current: () => boolean, supersedes?: (item: Pending) => boolean): Flight => {
+    const flight = { current, admitted: save(row, current, supersedes).catch(() => false) }
     inFlight.set(row.id, flight)
     return flight
   }
@@ -63,12 +127,149 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
   const report = (outcome: unknown, current: () => boolean): void => {
     if (current() && typeof outcome === "string") ctx.dispatch({ type: "message.appended", actor: "system", text: outcome })
   }
+  /*
+   * The Accounts card: one per app, re-surfaced at the end of the transcript
+   * when listed or when a Codex sign-in needs the person, and updated in place
+   * after any other change. `pending` undefined keeps the card's own code.
+   */
+  const accountsCard = (): AccountsCard | undefined => {
+    const card = ctx.store.collections.cards?.get(ACCOUNTS_CARD)
+    return card?.kind === "provider-accounts" ? card : undefined
+  }
+  const publish = (rows: ReadonlyArray<Connection> | undefined, pending: PendingCode | null | undefined, surface: boolean): void => {
+    const previous = accountsCard()
+    if (!previous && !surface) return
+    const code = pending === undefined ? previous?.payload.pending : pending ?? undefined
+    const card: AccountsCard = {
+      ...previous,
+      id: ACCOUNTS_CARD, kind: "provider-accounts", title: "Accounts", status: "active", loading: false,
+      createdAt: previous?.createdAt ?? Date.now(),
+      ordinal: surface || !previous ? ctx.nextOrdinal() : previous.ordinal,
+      payload: { accounts: rows ? withPendingOrders(accountsOf(rows)) : previous?.payload.accounts ?? [], ...(code ? { pending: code } : {}) }
+    }
+    ctx.dispatch({ type: "card.upsert", actor: "system", card })
+  }
+  /*
+   * A provider whose order request is still pending keeps the order applied
+   * locally: a read taken before the write lands would otherwise revert it,
+   * and the next move would compute from the reverted order.
+   */
+  const withPendingOrders = (accounts: Account[]): Account[] => {
+    const login = owner()
+    const orders = requests().filter(row => row.owner === login && row.action === "order" && row.state === "requested" && row.provider && row.ids)
+    if (orders.length === 0) return accounts
+    return PROVIDERS.flatMap(provider => {
+      const rows = accounts.filter(account => account.provider === provider)
+      const ids = orders.filter(row => row.provider === provider).at(-1)?.ids
+      if (!ids) return rows
+      const rank = (id: string) => { const index = ids.indexOf(id); return index < 0 ? ids.length : index }
+      return rows.map((account, index) => ({ account, index })).sort((a, b) => rank(a.account.id) - rank(b.account.id) || a.index - b.index).map(({ account }) => account)
+    })
+  }
+  /** Reads are numbered; an answer older than one already applied is dropped. */
+  const readPool = async (): Promise<{ readonly response: Response; readonly rows: Connection[] | undefined; readonly fresh: () => boolean }> => {
+    const seq = ++state.reads
+    const response = await ctx.http(`${ctx.baseUrl}${CONNECTIONS}`)
+    const rows = response.ok ? connections(await response.json().catch(() => undefined)) : undefined
+    return { response, rows, fresh: () => {
+      if (seq < state.applied) return false
+      state.applied = seq
+      return true
+    } }
+  }
+  /** Re-read the pool into the card; a failed read keeps the rows the card had. */
+  const refresh = async (current: () => boolean, pending?: PendingCode | null, surface = false): Promise<void> => {
+    if (!surface && !accountsCard()) return
+    let rows: Connection[] | undefined
+    try {
+      const read = await readPool()
+      if (!current()) return
+      rows = read.rows && read.fresh() ? read.rows : undefined
+    } catch { rows = undefined }
+    if (current()) publish(rows, pending, surface)
+  }
+  /*
+   * Poll one Codex device sign-in at the server's interval until it settles.
+   * The server answers `pending` to an early poll, so a transient refusal
+   * (429, 5xx) waits for the next interval rather than failing the sign-in.
+   */
+  const poll = async (row: Pending, device: NonNullable<Pending["device"]>, current: () => boolean): Promise<true | string | typeof TOAST_SUPERSEDED> => {
+    const deadline = Date.parse(device.expiresAt)
+    const settle = async (state: "completed" | "failed", outcome: true | string) => {
+      if (!await save({ ...row, device, state }, current)) return TOAST_SUPERSEDED
+      publish(undefined, null, false)
+      void refresh(current)
+      return outcome
+    }
+    for (;;) {
+      if (!Number.isNaN(deadline) && now() > deadline + 60_000) return settle("failed", "Codex sign-in expired. Retry.")
+      await sleep(Math.min(Math.max(device.interval, 1), 60) * 1000)
+      if (!current()) return TOAST_SUPERSEDED
+      const response = await ctx.http(`${ctx.baseUrl}${CODEX_DEVICE}/${device.id}`, { method: "POST" })
+      if (!current()) return TOAST_SUPERSEDED
+      if (response.status === 429 || response.status >= 500) continue
+      if (!response.ok) return settle("failed", `Codex sign-in failed (HTTP ${response.status}).`)
+      const answer = deviceOf(await response.json().catch(() => undefined))
+      if (!current()) return TOAST_SUPERSEDED
+      if (!answer || answer.id !== device.id) return settle("failed", "Codex sign-in failed.")
+      if (answer.state === "pending") continue
+      if (answer.state === "connected") return settle("completed", true)
+      return settle("failed", answer.state === "expired" ? "Codex sign-in expired. Retry." : "Codex sign-in failed.")
+    }
+  }
+  /*
+   * Write one persisted order. Writes run one at a time in the order they were
+   * asked for, and each carries the provider's whole order, so a replay after
+   * a reload lands the same result.
+   */
+  const sendOrder = (row: Pending, current: () => boolean): Promise<true | string | typeof TOAST_SUPERSEDED> => {
+    const work = state.moves.then(async (): Promise<true | string | typeof TOAST_SUPERSEDED> => {
+      if (!current()) return TOAST_SUPERSEDED
+      if (!row.provider || !row.ids?.every(connectionId)) return await fail(row, current, "Invalid connection.")
+      const put = await ctx.http(`${ctx.baseUrl}${CONNECTION_ORDER}`, {
+        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider: row.provider, ids: row.ids })
+      })
+      if (!current()) return TOAST_SUPERSEDED
+      if (put.status !== 204) {
+        const outcome = await fail(row, current, `Connection move failed (HTTP ${put.status}).`)
+        void refresh(current)
+        return outcome
+      }
+      if (!await save({ ...row, state: "completed" }, current)) return TOAST_SUPERSEDED
+      void refresh(current)
+      return true
+    })
+    state.moves = work.catch(() => undefined)
+    return work
+  }
   const resumeCodingProviders: SecretsSeam["resumeCodingProviders"] = () => {
     const login = owner()
     if (!login) return
     for (const row of requests().filter(item => item.owner === login && item.state === "requested" && !flightAt(item.id))) {
       const current = captureCloudOwner(ctx, false)
       const flight = admit(row, current)
+      if (row.action === "codex") {
+        void withToast(`coding-provider-codex:${login}`, "Connecting Codex…", "Codex connected", async () => {
+          try {
+            if (!await flight.admitted || !current()) return TOAST_SUPERSEDED
+            if (!row.device) return await fail(row, current, "Codex sign-in interrupted. Retry.")
+            publish(undefined, { userCode: row.device.userCode, verificationUri: row.device.verificationUri }, !accountsCard())
+            return await poll(row, row.device, current)
+          } catch { return current() ? "Codex sign-in failed." : TOAST_SUPERSEDED }
+          finally { release(row.id, flight) }
+        }, false, current).then(outcome => report(outcome, current))
+        continue
+      }
+      if (row.action === "order") {
+        void withToast(`coding-provider-move:${login}`, "Moving connection…", "Connection moved", async () => {
+          try {
+            if (!await flight.admitted || !current()) return TOAST_SUPERSEDED
+            return await sendOrder(row, current)
+          } catch { return current() ? "Connection move failed." : TOAST_SUPERSEDED }
+          finally { release(row.id, flight) }
+        }, false, current).then(outcome => report(outcome, current))
+        continue
+      }
       void withToast(`coding-provider-${row.action === "revoke" ? "revoke" : "connect"}:${row.id}`, "Checking connection…", "Connection updated", async () => {
         try {
           if (!await flight.admitted || !current()) return TOAST_SUPERSEDED
@@ -106,17 +307,17 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
     const flightKey = `connect:${login}`
     const previous = flightAt(flightKey)
     if (previous) return acknowledgment(previous)
-    const pending = requests().find(row => row.owner === login && row.action !== "revoke" && row.state === "requested")
+    const pending = requests().find(row => row.owner === login && (row.action ?? "connect") === "connect" && row.state === "requested")
     if (pending) {
       resumeCodingProviders()
       const flight = flightAt(pending.id)
       return flight ? acknowledgment(flight) : "Connection check failed."
     }
-    if (!value?.startsWith("sk-ant-oat01-") || /\s/.test(value)) return "Enter a Claude setup token."
+    if (!claudeToken(value)) return "Enter a Claude setup token or API key."
     const row: Pending = { id: crypto.randomUUID(), owner: login, action: "connect", state: "requested" }
     const flight = admit(row, current)
     inFlight.set(flightKey, flight)
-    let body: string | undefined = JSON.stringify({ provider: "claude", kind: "setup_token", label: `web-${row.id}`, access_token: value })
+    let body: string | undefined = JSON.stringify({ provider: "claude", label: `web-${row.id}`, access_token: value })
     const receipt = await acknowledgment(flight)
     if (typeof receipt === "string") {
       body = undefined
@@ -137,9 +338,89 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
         const result = await response.json().catch(() => undefined) as Connection | undefined
         if (!current()) return TOAST_SUPERSEDED
         if (!result || !active(result) || result.label !== `web-${row.id}`) return await fail(row, current, "Claude connection failed.")
-        return await save({ ...row, state: "completed" }, current) ? true : TOAST_SUPERSEDED
+        if (!await save({ ...row, state: "completed" }, current)) return TOAST_SUPERSEDED
+        void refresh(current)
+        return true
       } catch { return current() ? "Claude connection failed." : TOAST_SUPERSEDED }
       finally { release(flightKey, flight); release(row.id, flight); body = undefined }
+    }, false, current).then(outcome => report(outcome, current))
+    return receipt
+  }
+  const connectCodex: SecretsSeam["connectCodex"] = async () => {
+    const login = owner()
+    const current = captureCloudOwner(ctx, false)
+    if (!login) return "Sign in to connect Codex."
+    const flightKey = `codex:${login}`
+    const previous = flightAt(flightKey)
+    if (previous) return acknowledgment(previous)
+    const pending = requests().find(row => row.owner === login && row.action === "codex" && row.state === "requested")
+    if (pending) {
+      resumeCodingProviders()
+      const flight = flightAt(pending.id)
+      return flight ? acknowledgment(flight) : "Connection check failed."
+    }
+    const row: Pending = { id: crypto.randomUUID(), owner: login, action: "codex", state: "requested" }
+    const flight = admit(row, current)
+    inFlight.set(flightKey, flight)
+    const receipt = await acknowledgment(flight)
+    if (typeof receipt === "string") {
+      release(flightKey, flight)
+      release(row.id, flight)
+      return receipt
+    }
+    void withToast(`coding-provider-codex:${login}`, "Connecting Codex…", "Codex connected", async () => {
+      try {
+        if (!current()) return TOAST_SUPERSEDED
+        const response = await ctx.http(`${ctx.baseUrl}${CODEX_DEVICE}`, { method: "POST" })
+        if (!current()) return TOAST_SUPERSEDED
+        if (!response.ok) return await fail(row, current, `Codex sign-in failed (HTTP ${response.status}).`)
+        const answer = deviceOf(await response.json().catch(() => undefined))
+        if (!current()) return TOAST_SUPERSEDED
+        if (!answer || answer.state !== "pending") return await fail(row, current, "Codex sign-in failed.")
+        const device = { id: answer.id, userCode: answer.userCode, verificationUri: answer.verificationUri, interval: answer.interval, expiresAt: answer.expiresAt }
+        if (!await save({ ...row, device }, current)) return TOAST_SUPERSEDED
+        publish(undefined, { userCode: device.userCode, verificationUri: device.verificationUri }, true)
+        void refresh(current)
+        return await poll(row, device, current)
+      } catch { return current() ? "Codex sign-in failed." : TOAST_SUPERSEDED }
+      finally { release(flightKey, flight); release(row.id, flight) }
+    }, false, current).then(outcome => report(outcome, current))
+    return receipt
+  }
+  /*
+   * Move one account a place within its provider's pool. The new order is
+   * computed from the Accounts card the person is looking at, applied to the
+   * card at once (so a second press moves from there), and persisted as the
+   * provider's whole order before the answer; the write runs in the background.
+   */
+  const moveCodingProvider: SecretsSeam["moveCodingProvider"] = async (id, direction) => {
+    const login = owner()
+    const current = captureCloudOwner(ctx, false)
+    if (!login) return "Sign in to reorder coding connections."
+    if (!connectionId(id)) return "Invalid connection."
+    if (direction !== "up" && direction !== "down") return "Choose up or down."
+    const card = accountsCard()
+    if (!card) return "Show coding accounts first."
+    const target = card.payload.accounts.find(account => account.id === id)
+    if (!target) return "Connection not found."
+    const peers = card.payload.accounts.filter(account => account.provider === target.provider)
+    const from = peers.indexOf(target)
+    const to = direction === "up" ? from - 1 : from + 1
+    if (to < 0 || to >= peers.length) return { value: "Already in place." }
+    const moved = [...peers]
+    moved.splice(from, 1)
+    moved.splice(to, 0, target)
+    const row: Pending = { id: crypto.randomUUID(), owner: login, action: "order", provider: target.provider, ids: moved.map(account => account.id), state: "requested" }
+    // The card takes the new order before any await, so a second press computes from it.
+    ctx.dispatch({ type: "card.upsert", actor: "system", card: { ...card, payload: { ...card.payload,
+      accounts: PROVIDERS.flatMap(provider => provider === target.provider ? moved : card.payload.accounts.filter(account => account.provider === provider)) } } })
+    const flight = admit(row, current, item => item.owner === login && item.action === "order" && item.provider === target.provider && item.state === "requested")
+    const receipt = await acknowledgment(flight)
+    if (typeof receipt === "string") { release(row.id, flight); void refresh(current); return receipt }
+    void withToast(`coding-provider-move:${login}`, "Moving connection…", "Connection moved", async () => {
+      try { return await sendOrder(row, current) }
+      catch { return current() ? "Connection move failed." : TOAST_SUPERSEDED }
+      finally { release(row.id, flight) }
     }, false, current).then(outcome => report(outcome, current))
     return receipt
   }
@@ -148,13 +429,14 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
     const current = captureCloudOwner(ctx, false)
     if (!login) return "Sign in to list coding connections."
     try {
-      const response = await ctx.http(`${ctx.baseUrl}${CONNECTIONS}`)
+      const { response, rows, fresh } = await readPool()
       if (!current()) return "Account changed."
       if (!response.ok) return `Coding connections unavailable (HTTP ${response.status}).`
-      const rows = connections(await response.json().catch(() => undefined))
-      if (!current()) return "Account changed."
       if (!rows) return "Coding connections unavailable."
-      return readResult(rows.length ? rows.map(row => `${row.id} · ${row.provider} · ${row.state}`).join("\n") : "No coding connections.")
+      publish(fresh() ? rows : undefined, undefined, true)
+      const live = accountsOf(rows)
+      return readResult(live.length ? live.map(row =>
+        [row.id, row.provider, row.email ?? row.label, row.state, ...(row.limitedUntil ? [`limited until ${row.limitedUntil}`] : [])].join(" · ")).join("\n") : "No coding connections.")
     } catch { return "Coding connections unavailable." }
   }
   const revokeCodingProvider: SecretsSeam["revokeCodingProvider"] = async id => {
@@ -186,7 +468,9 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
         const response = await ctx.http(`${ctx.baseUrl}${CONNECTION_ITEM}${id}`, { method: "DELETE" })
         if (!current()) return TOAST_SUPERSEDED
         if (response.status !== 204) return await fail(row, current, `Connection revocation failed (HTTP ${response.status}).`)
-        return await save({ ...row, state: "completed" }, current) ? true : TOAST_SUPERSEDED
+        if (!await save({ ...row, state: "completed" }, current)) return TOAST_SUPERSEDED
+        void refresh(current)
+        return true
       } catch { return current() ? "Connection revocation failed." : TOAST_SUPERSEDED }
       finally { release(flightKey, flight); release(row.id, flight) }
     }, false, current).then(outcome => report(outcome, current))
@@ -231,5 +515,5 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
     } }
   })
 
-  return { listSecrets, connectCodingProvider, listCodingProviders, revokeCodingProvider, resumeCodingProviders }
+  return { listSecrets, connectCodingProvider, connectCodex, listCodingProviders, revokeCodingProvider, moveCodingProvider, resumeCodingProviders }
 }

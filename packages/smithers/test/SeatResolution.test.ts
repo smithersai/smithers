@@ -306,6 +306,35 @@ describe("NodeControl.seatResolver OpenAI-compatible providers", () => {
   })
 })
 
+describe("NodeControl.seatResolver Claude subscription tokens", () => {
+  it.each(["ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"] as const)(
+    "routes an anthropic seat on %s as a Claude Code bearer when no API key is set",
+    async (variable) => {
+      const resolved = await Effect.runPromise(
+        resolve({ [variable]: "sk-ant-oat01-subscription" }, "anthropic:claude-sonnet-4-6")
+      )
+      const request = await prepared(resolved, resolved.modelId)
+
+      expect(request.url).toBe("https://api.anthropic.com/v1/messages")
+      expect(request.publicHeaders["anthropic-beta"]).toBe("oauth-2025-04-20")
+      expect(JSON.parse(request.bodyText).system[0].text).toBe(
+        "You are Claude Code, Anthropic's official CLI for Claude."
+      )
+      expect(JSON.stringify(request)).not.toContain("sk-ant-oat01-subscription")
+    }
+  )
+
+  it("prefers ANTHROPIC_API_KEY over a subscription token", async () => {
+    const resolved = await Effect.runPromise(
+      resolve({ ANTHROPIC_API_KEY: "api-key", ANTHROPIC_AUTH_TOKEN: "sk-ant-oat01-x" }, "anthropic:claude-sonnet-4-6")
+    )
+    const request = await prepared(resolved, resolved.modelId)
+
+    expect(request.publicHeaders["anthropic-beta"]).toBeUndefined()
+    expect(JSON.parse(request.bodyText).system).toBeUndefined()
+  })
+})
+
 describe("NodeControl.seatResolver behind SMITHERS_MODEL_PROXY_URL", () => {
   const proxy = "https://cloud.example.test/api/model/"
 
@@ -338,6 +367,28 @@ describe("NodeControl.seatResolver behind SMITHERS_MODEL_PROXY_URL", () => {
     const request = await prepared(resolved, resolved.modelId)
     expect(request.url).toBe(url)
     expect(JSON.stringify(request.publicHeaders)).not.toContain("cloud-token")
+  })
+
+  it("sends a ChatGPT-mode openai seat to the proxied ChatGPT backend with the proxy credential", async () => {
+    const resolved = await Effect.runPromise(
+      resolve(
+        { SMITHERS_MODEL_PROXY_URL: proxy, SMITHERS_OPENAI_AUTH: "chatgpt", OPENAI_API_KEY: "cloud-token" },
+        "openai:gpt-6-luna"
+      )
+    )
+
+    const request = await prepared(resolved, resolved.modelId)
+    expect(request.url).toBe("https://cloud.example.test/api/model/chatgpt/codex/responses")
+    expect(JSON.stringify(request)).not.toContain("cloud-token")
+    expect(request.publicHeaders.originator).toBe("codex_cli_rs")
+  })
+
+  it("refuses a ChatGPT-mode seat behind the proxy without the proxy credential", async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(resolve({ SMITHERS_MODEL_PROXY_URL: proxy, SMITHERS_OPENAI_AUTH: "chatgpt" }, "openai:gpt-6-luna"))
+    )
+
+    expect(error.message).toBe("Set OPENAI_API_KEY to run the openai:gpt-6-luna seat through SMITHERS_MODEL_PROXY_URL")
   })
 
   it("treats an empty proxy variable as unset", async () => {

@@ -111,3 +111,38 @@ test("cloud session ownership changes reconnect a held coding receipt", async ()
   expect(store.session().codingProviderRequests?.[0]?.state).toBe("completed")
   expect([...store.collections.messages.values()].some(message => message.text?.includes("Connection check failed"))).toBe(false)
 })
+
+test("the account pool doors: the card renders, move and Codex answer before their held requests", async () => {
+  const persisted = new Map<string, string>()
+  const store = await createAppStore({ kind: "localStorage", storage: {
+    getItem: key => persisted.get(key) ?? null, setItem: (key, value) => { persisted.set(key, value) }, removeItem: key => { persisted.delete(key) }
+  } })
+  const start = deferred<Response>()
+  const puts: string[] = []
+  const pool = [
+    { id: "a", provider: "claude", label: "a", state: "active", sort_order: 0 },
+    { id: "b", provider: "claude", label: "b", state: "active", sort_order: 1 }
+  ]
+  const controller = createAppController(store, unavailableAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (url, init) => {
+      const path = new URL(String(url), "https://test.invalid").pathname
+      if (path === "/api/user/provider-connections/codex/device") return start.promise
+      if (path === "/api/user/provider-connections/order") { puts.push(String(init?.body)); return new Response(null, { status: 204 }) }
+      if (path === "/api/user/provider-connections") return Response.json(pool)
+      return Response.json([])
+    }
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  expect(await controller.commands.run("secrets.connections")).toMatchObject({ status: "executed" })
+  const card = store.collections.cards.get("provider-accounts")
+  expect(card?.kind === "provider-accounts" && card.payload.accounts.map(row => row.id)).toEqual(["a", "b"])
+  expect(await controller.commands.run("secrets.move", "b up")).toMatchObject({ status: "executed", value: "Requested" })
+  await waitFor(() => puts.length === 1)
+  expect(JSON.parse(puts[0]!)).toEqual({ provider: "claude", ids: ["b", "a"] })
+  expect(await controller.commands.run("secrets.move")).toMatchObject({ status: "form" })
+  expect(await controller.commands.run("secrets.connect.codex")).toMatchObject({ status: "executed", value: "Requested" })
+  expect(store.session().codingProviderRequests?.find(row => row.action === "codex")?.state).toBe("requested")
+  start.resolve(new Response(null, { status: 500 }))
+  await waitFor(() => store.session().codingProviderRequests?.find(row => row.action === "codex")?.state === "failed")
+})

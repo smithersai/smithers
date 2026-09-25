@@ -35,6 +35,7 @@ const (
 
 	ProviderConnectionKindSetupToken = "setup_token"
 	ProviderConnectionKindOAuth      = "oauth"
+	ProviderConnectionKindAPIKey     = "api_key"
 
 	ProviderConnectionStateActive        = "active"
 	ProviderConnectionStateRefreshFailed = "refresh_failed"
@@ -69,6 +70,7 @@ const (
 var (
 	providerConnectionLabelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,79}$`)
 	claudeSetupTokenPrefix         = "sk-ant-oat01-"
+	claudeAPIKeyPrefix             = "sk-ant-api"
 
 	// ErrProviderRefreshInvalidGrant is what a provider says when the refresh
 	// token was revoked, expired, or reused elsewhere (reuse detection).
@@ -87,6 +89,18 @@ type ProviderConnectionQuerier interface {
 	ClaimProviderConnectionForRefresh(ctx context.Context, arg db.ClaimProviderConnectionForRefreshParams) (db.ProviderConnection, error)
 	ResolveActiveOrgProviderConnection(ctx context.Context, arg db.ResolveActiveOrgProviderConnectionParams) (db.ProviderConnection, error)
 	ResolveActiveUserProviderConnectionForRepository(ctx context.Context, arg db.ResolveActiveUserProviderConnectionForRepositoryParams) (db.ProviderConnection, error)
+	ProviderConnectionPoolStatus(ctx context.Context, arg db.ProviderConnectionPoolStatusParams) (db.ProviderConnectionPoolStatusRow, error)
+	PickProviderConnection(ctx context.Context, arg db.PickProviderConnectionParams) (db.ProviderConnection, error)
+	PickProviderConnectionWaiting(ctx context.Context, arg db.PickProviderConnectionWaitingParams) (db.ProviderConnection, error)
+	MarkProviderConnectionLimited(ctx context.Context, arg db.MarkProviderConnectionLimitedParams) error
+	MarkProviderConnectionRejected(ctx context.Context, arg db.MarkProviderConnectionRejectedParams) (int64, error)
+	SetUserProviderConnectionSortOrder(ctx context.Context, arg db.SetUserProviderConnectionSortOrderParams) (int64, error)
+	RevokeOtherUserProviderAccountConnections(ctx context.Context, arg db.RevokeOtherUserProviderAccountConnectionsParams) (int64, error)
+	CreateProviderConnectionDeviceLogin(ctx context.Context, arg db.CreateProviderConnectionDeviceLoginParams) (db.ProviderConnectionDeviceLogin, error)
+	GetProviderConnectionDeviceLogin(ctx context.Context, arg db.GetProviderConnectionDeviceLoginParams) (db.ProviderConnectionDeviceLogin, error)
+	ClaimProviderConnectionDeviceLoginPoll(ctx context.Context, arg db.ClaimProviderConnectionDeviceLoginPollParams) (db.ProviderConnectionDeviceLogin, error)
+	FinishProviderConnectionDeviceLoginPoll(ctx context.Context, arg db.FinishProviderConnectionDeviceLoginPollParams) (int64, error)
+	ExpireProviderConnectionDeviceLogin(ctx context.Context, arg db.ExpireProviderConnectionDeviceLoginParams) (int64, error)
 	AddProviderConnectionGrant(ctx context.Context, arg db.AddProviderConnectionGrantParams) (db.ProviderConnectionGrant, error)
 	ListProviderConnectionGrants(ctx context.Context, connectionID string) ([]db.ProviderConnectionGrant, error)
 	DeleteProviderConnectionGrant(ctx context.Context, arg db.DeleteProviderConnectionGrantParams) (int64, error)
@@ -120,6 +134,9 @@ type ProviderConnectionsConfig struct {
 	ClaudeClientID string
 	CodexTokenURL  string
 	CodexClientID  string
+	// CodexIssuer is the OpenAI auth origin serving the device-code sign-in
+	// (`codex login --device-auth`).
+	CodexIssuer string
 }
 
 // DefaultProviderConnectionsConfig is the Claude Code and Codex CLI OAuth
@@ -131,6 +148,7 @@ func DefaultProviderConnectionsConfig() ProviderConnectionsConfig {
 		ClaudeClientID: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
 		CodexTokenURL:  "https://auth.openai.com/oauth/token",
 		CodexClientID:  "app_EMoamEEZ73f0CkXaXp7hrann",
+		CodexIssuer:    "https://auth.openai.com",
 	}
 }
 
@@ -255,6 +273,7 @@ type ProviderConnectionService struct {
 	q         ProviderConnectionQuerier
 	codec     webhook.SecretCodec
 	refresher ProviderTokenRefresher
+	device    CodexDeviceAuthorizer
 	audit     *AuditService
 	logger    *slog.Logger
 	now       func() time.Time
@@ -272,6 +291,9 @@ func WithProviderConnectionLogger(logger *slog.Logger) ProviderConnectionService
 
 func NewProviderConnectionService(q ProviderConnectionQuerier, codec webhook.SecretCodec, refresher ProviderTokenRefresher, opts ...ProviderConnectionServiceOption) *ProviderConnectionService {
 	s := &ProviderConnectionService{q: q, codec: codec, refresher: refresher, logger: slog.Default(), now: time.Now}
+	if device, ok := refresher.(CodexDeviceAuthorizer); ok {
+		s.device = device
+	}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -312,6 +334,8 @@ type ProviderConnectionResponse struct {
 	Plan            string                            `json:"plan"`
 	State           string                            `json:"state"`
 	HasRefreshToken bool                              `json:"has_refresh_token"`
+	LimitedUntil    *time.Time                        `json:"limited_until,omitempty"`
+	SortOrder       int32                             `json:"sort_order"`
 	AccessExpiresAt *time.Time                        `json:"access_expires_at,omitempty"`
 	LastRefreshAt   *time.Time                        `json:"last_refresh_at,omitempty"`
 	LastError       string                            `json:"last_error"`
@@ -337,6 +361,9 @@ type ResolvedProviderConnection struct {
 	AccountID    string
 	AccountEmail string
 	Plan         string
+	// RefreshGeneration fences a later refusal of this token (MarkRejected).
+	RefreshGeneration int64
+	HasRefreshToken   bool
 }
 
 func normalizeProviderConnectionProvider(provider string) (string, error) {
@@ -375,12 +402,20 @@ func (s *ProviderConnectionService) validateConnectInput(in *ConnectProviderInpu
 	case "":
 		if in.RefreshToken != "" {
 			in.Kind = ProviderConnectionKindOAuth
+		} else if provider == ProviderConnectionProviderClaude && strings.HasPrefix(in.AccessToken, claudeAPIKeyPrefix) {
+			in.Kind = ProviderConnectionKindAPIKey
 		} else {
 			in.Kind = ProviderConnectionKindSetupToken
 		}
-	case ProviderConnectionKindSetupToken, ProviderConnectionKindOAuth:
+	case ProviderConnectionKindSetupToken, ProviderConnectionKindOAuth, ProviderConnectionKindAPIKey:
 	default:
-		return pkgerrors.BadRequest("kind must be setup_token or oauth")
+		return pkgerrors.BadRequest("kind must be setup_token, oauth, or api_key")
+	}
+	if in.Kind == ProviderConnectionKindAPIKey {
+		if provider != ProviderConnectionProviderClaude || !strings.HasPrefix(in.AccessToken, claudeAPIKeyPrefix) {
+			return pkgerrors.BadRequest("an api_key connection is an Anthropic API key (sk-ant-api…)")
+		}
+		in.RefreshToken = ""
 	}
 	if in.Kind == ProviderConnectionKindSetupToken {
 		if provider != ProviderConnectionProviderClaude {
@@ -480,16 +515,38 @@ func (s *ProviderConnectionService) ConnectForUser(ctx context.Context, actor *d
 		if found, err := find(); err != nil {
 			return ProviderConnectionResponse{}, pkgerrors.Internal("failed to check connection request").WithCause(err)
 		} else if found != nil {
-			return *found, nil
+			return s.grantEverywhere(ctx, *found)
 		}
 	}
 	answer, err := s.createConnection(ctx, actor, "user", actor.ID, 0, in)
 	if err != nil && strings.HasPrefix(in.Label, "web-") {
 		if found, lookupErr := find(); lookupErr == nil && found != nil {
-			return *found, nil
+			return s.grantEverywhere(ctx, *found)
 		}
 	}
+	if err == nil && strings.HasPrefix(in.Label, "web-") {
+		return s.grantEverywhere(ctx, answer)
+	}
 	return answer, err
+}
+
+// grantEverywhere lets an account connected in the browser serve the owner's
+// work in every repository, organization repositories included. A user
+// connection is only ever drawn on for its owner's own workspaces and runs.
+// It is idempotent, so a replayed request repairs a grant that failed.
+func (s *ProviderConnectionService) grantEverywhere(ctx context.Context, answer ProviderConnectionResponse) (ProviderConnectionResponse, error) {
+	for _, grant := range answer.Grants {
+		if grant.AllRepositories {
+			return answer, nil
+		}
+	}
+	grant, err := s.q.AddProviderConnectionGrant(ctx, db.AddProviderConnectionGrantParams{ConnectionID: answer.ID, AllRepositories: true})
+	if err != nil {
+		s.logger.Warn("grant provider connection to every repository failed", "connection_id", answer.ID, "error", err)
+		return answer, pkgerrors.Internal("failed to grant the connection").WithCause(err)
+	}
+	answer.Grants = append(answer.Grants, toGrantResponse(grant))
+	return answer, nil
 }
 
 // ConnectForOrg connects an account owned by an organization; only owners may.
@@ -694,28 +751,9 @@ func (s *ProviderConnectionService) ResolveForRun(ctx context.Context, userID, r
 	if err != nil {
 		return nil, nil
 	}
-	preference, err := s.q.GetRepositoryProviderConnectionPreference(ctx, repositoryID)
-	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("load provider connection preference: %w", err)
-		}
-		preference = ProviderConnectionPreferenceOrgFirst
-	}
-	if preference == ProviderConnectionPreferencePlatformOnly {
-		return nil, nil
-	}
-	repo, err := s.q.GetRepoByID(ctx, repositoryID)
-	if err != nil {
-		return nil, fmt.Errorf("load repository: %w", err)
-	}
-	order := []string{"org", "user"}
-	switch preference {
-	case ProviderConnectionPreferenceUserFirst:
-		order = []string{"user", "org"}
-	case ProviderConnectionPreferenceOrgOnly:
-		order = []string{"org"}
-	case ProviderConnectionPreferenceUserOnly:
-		order = []string{"user"}
+	order, repo, err := s.connectionSources(ctx, repositoryID)
+	if err != nil || len(order) == 0 {
+		return nil, err
 	}
 	for _, source := range order {
 		var (
@@ -765,6 +803,34 @@ func (s *ProviderConnectionService) ResolveForRun(ctx context.Context, userID, r
 	return nil, nil
 }
 
+// connectionSources is the repository's preference as an ordered list of
+// connection owners ("org", "user"); empty means platform credentials only.
+func (s *ProviderConnectionService) connectionSources(ctx context.Context, repositoryID int64) ([]string, db.Repository, error) {
+	preference, err := s.q.GetRepositoryProviderConnectionPreference(ctx, repositoryID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, db.Repository{}, fmt.Errorf("load provider connection preference: %w", err)
+		}
+		preference = ProviderConnectionPreferenceOrgFirst
+	}
+	if preference == ProviderConnectionPreferencePlatformOnly {
+		return nil, db.Repository{}, nil
+	}
+	repo, err := s.q.GetRepoByID(ctx, repositoryID)
+	if err != nil {
+		return nil, db.Repository{}, fmt.Errorf("load repository: %w", err)
+	}
+	switch preference {
+	case ProviderConnectionPreferenceUserFirst:
+		return []string{"user", "org"}, repo, nil
+	case ProviderConnectionPreferenceOrgOnly:
+		return []string{"org"}, repo, nil
+	case ProviderConnectionPreferenceUserOnly:
+		return []string{"user"}, repo, nil
+	}
+	return []string{"org", "user"}, repo, nil
+}
+
 // materialize decrypts the access token, refreshing first when it is about to
 // expire and a refresh token exists.
 func (s *ProviderConnectionService) materialize(ctx context.Context, row db.ProviderConnection) (*ResolvedProviderConnection, error) {
@@ -792,6 +858,7 @@ func (s *ProviderConnectionService) materialize(ctx context.Context, row db.Prov
 	return &ResolvedProviderConnection{
 		ConnectionID: row.ID, OwnerType: row.OwnerType, Provider: row.Provider, Kind: row.Kind,
 		AccessToken: plaintext, AccountID: row.AccountID, AccountEmail: row.AccountEmail, Plan: row.Plan,
+		RefreshGeneration: row.RefreshGeneration, HasRefreshToken: len(row.RefreshTokenEncrypted) > 0,
 	}, nil
 }
 
@@ -905,7 +972,7 @@ func (s *ProviderConnectionService) toResponse(ctx context.Context, row db.Provi
 	out := ProviderConnectionResponse{
 		ID: row.ID, OwnerType: row.OwnerType, Provider: row.Provider, Kind: row.Kind, Label: row.Label,
 		AccountEmail: row.AccountEmail, AccountID: row.AccountID, Plan: row.Plan, State: row.State,
-		HasRefreshToken: len(row.RefreshTokenEncrypted) > 0, LastError: row.LastError,
+		HasRefreshToken: len(row.RefreshTokenEncrypted) > 0, LastError: row.LastError, SortOrder: row.SortOrder,
 		Grants: []ProviderConnectionGrantResponse{}, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 	if row.UserID.Valid {
@@ -923,6 +990,10 @@ func (s *ProviderConnectionService) toResponse(ctx context.Context, row db.Provi
 	if row.LastRefreshAt.Valid {
 		t := row.LastRefreshAt.Time
 		out.LastRefreshAt = &t
+	}
+	if row.LimitedUntil.Valid && row.LimitedUntil.Time.After(s.now()) {
+		t := row.LimitedUntil.Time
+		out.LimitedUntil = &t
 	}
 	if grants, err := s.q.ListProviderConnectionGrants(ctx, row.ID); err == nil {
 		for _, grant := range grants {
@@ -1004,6 +1075,19 @@ func ClaudeProxySecrets(accessToken string) []sandbox.EgressProxySecret {
 		{Name: claudeAuthTokenEnvName, Value: accessToken, Hosts: []string{claudeAPIHost}, MatchHeaders: []string{"authorization"}},
 		{Name: claudeCodeOAuthTokenEnvName, Value: accessToken, Hosts: []string{claudeAPIHost}, MatchHeaders: []string{"authorization"}},
 	}
+}
+
+// ClaudeConnectionProxySecrets are the placeholders a resolved Claude
+// connection binds: an API-key connection is the ANTHROPIC_API_KEY seat
+// (x-api-key), a subscription the bearer placeholders.
+func ClaudeConnectionProxySecrets(resolved *ResolvedProviderConnection) []sandbox.EgressProxySecret {
+	if resolved.Kind == ProviderConnectionKindAPIKey {
+		if secret, ok := ProviderCredentialEgressSecret("ANTHROPIC_API_KEY", resolved.AccessToken); ok {
+			return []sandbox.EgressProxySecret{secret}
+		}
+		return nil
+	}
+	return ClaudeProxySecrets(resolved.AccessToken)
 }
 
 // CodexProxySecret is the placeholder a Codex connection binds.

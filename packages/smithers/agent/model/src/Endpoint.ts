@@ -147,7 +147,9 @@ export const providerOrigins = {
   openai: "https://api.openai.com",
   cerebras: "https://api.cerebras.ai",
   openrouter: "https://openrouter.ai/api",
-  vercel: "https://ai-gateway.vercel.sh"
+  vercel: "https://ai-gateway.vercel.sh",
+  /** The ChatGPT-subscription backend (`OpenAIChatGPT.defaultBaseUrl`). */
+  chatgpt: "https://chatgpt.com/backend-api"
 } as const
 
 /**

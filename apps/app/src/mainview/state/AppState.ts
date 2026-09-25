@@ -738,7 +738,14 @@ export const QueuedPromptSchema = z.object({ id: z.string(), text: z.string(), s
 export const SessionSchema = z.object({
   queuedPrompts: z.array(QueuedPromptSchema).optional(),
   promptQueuePaused: z.boolean().optional(),
-  codingProviderRequests: z.array(z.object({ id: z.string(), owner: z.string(), action: z.enum(["connect", "revoke"]).optional(), connectionId: z.string().optional(), state: z.enum(["requested", "completed", "failed"]) })).optional(),
+  codingProviderRequests: z.array(z.object({
+    id: z.string(), owner: z.string(), action: z.enum(["connect", "revoke", "codex", "order"]).optional(), connectionId: z.string().optional(),
+    /* An order request: the provider's whole live order, replayed as is (PUT is idempotent). */
+    provider: z.enum(["claude", "codex"]).optional(), ids: z.array(z.string()).optional(),
+    /* A started Codex device sign-in: what a reload needs to keep polling and to show the code. */
+    device: z.object({ id: z.string(), userCode: z.string(), verificationUri: z.string(), interval: z.number(), expiresAt: z.string() }).optional(),
+    state: z.enum(["requested", "completed", "failed"])
+  })).optional(),
   librarianLaunches: z.array(z.object({
     kind: z.enum(["wiki", "history"]),
     repo: z.string(),

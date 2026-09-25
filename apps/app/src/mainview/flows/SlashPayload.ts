@@ -749,6 +749,13 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(repo === undefined ? { assignment: rest } : { assignment: rest, repo })
   },
   "secrets.revoke": (args) => required("id", args, "Choose a coding connection"),
+  "secrets.move": (args) => {
+    const [id, direction, ...rest] = tokensOf(args)
+    if (id === undefined || (direction !== "up" && direction !== "down") || rest.length > 0) {
+      return no("secrets.move takes a connection id and up or down")
+    }
+    return ok({ id, direction })
+  },
   "secrets.list": (args) => repoOnly("secrets.list", args),
   "model.show": (args) => modelName("model.show", args),
   "model.edit": (args) => modelName("model.edit", args),

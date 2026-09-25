@@ -1405,6 +1405,25 @@
 	vertical-align: top;
 }
 
+/* The Accounts card: provider groups of rows, header adds, and a pending Codex code. */
+.provider-accounts-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+.provider-accounts-pending {
+	margin: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+[data-kind="provider-accounts"] .world-card-row {
+	flex-wrap: wrap;
+}
+[data-kind="provider-accounts"] .world-card-row > .world-card-path {
+	margin-right: auto;
+}
+
 /* The models card: a row is its name, a test dot and its acts; maximized it is the list beside the facts and the seats. */
 .models-row {
 	flex-wrap: wrap;

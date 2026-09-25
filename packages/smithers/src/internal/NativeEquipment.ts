@@ -8,6 +8,7 @@ import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import type * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as Auth from "@smthrs/model/Auth"
 import * as Endpoint from "@smthrs/model/Endpoint"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as ModelError from "@smthrs/model/ModelError"
@@ -39,6 +40,12 @@ const apiKeyVariable: Readonly<Record<string, string>> = {
  * journaled seat, its context window, and its committed price stay identical.
  */
 const openaiAuthVariable = "SMITHERS_OPENAI_AUTH"
+
+/**
+ * The Claude subscription bearer variables, read in order when
+ * `ANTHROPIC_API_KEY` is unset: the SDK's name, then the Claude Code CLI's.
+ */
+const anthropicSubscriptionVariables = ["ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"] as const
 
 /**
  * The native seat resolver: it turns a `provider:modelId` seat into a live model
@@ -146,6 +153,28 @@ const providerSeats = (
             message: `${openaiAuthVariable} must be "api-key" or "chatgpt" to run the ${seat} seat`
           })
         }
+        const proxy = Environment_.read(environment, Endpoint.modelProxyVariable)
+        if (authMode === "chatgpt" && proxy !== undefined && proxy !== "") {
+          // Behind a Smithers model proxy the proxy owns the ChatGPT accounts:
+          // it picks one per request and signs it. The guest holds only the
+          // proxy credential, bound as the `openai` seat's key.
+          const key = environment[variable]
+          if (key === undefined || key.length === 0) {
+            return yield* new Seat.SeatUnresolved({
+              seat,
+              message: `Set ${variable} to run the ${seat} seat through ${Endpoint.modelProxyVariable}`
+            })
+          }
+          return yield* seatOf(
+            OpenAIChatGPT.make({
+              auth: Auth.bearer(Redacted.make(key)),
+              baseUrl: Endpoint.providerOrigin("chatgpt", environment)
+            }),
+            executor,
+            seat,
+            modelId
+          )
+        }
         if (authMode === "chatgpt") {
           // The ChatGPT mode needs a provisioned session, not an API key: the
           // refusal names the store so a detached lane fails before spending.
@@ -164,6 +193,24 @@ const providerSeats = (
           )
         }
         const key = environment[variable]
+        // A Claude subscription (`claude setup-token` or the Claude Code OAuth
+        // token) stands in for the Anthropic API key when no key is set.
+        const subscription = provider === "anthropic" && (key === undefined || key.length === 0)
+          ? anthropicSubscriptionVariables.map((name) => environment[name]).find((value) =>
+            value !== undefined && value.length > 0
+          )
+          : undefined
+        if (subscription !== undefined) {
+          return yield* seatOf(
+            Route.anthropic({
+              authToken: Redacted.make(subscription),
+              baseUrl: Endpoint.providerOrigin("anthropic", environment)
+            }),
+            executor,
+            seat,
+            modelId
+          )
+        }
         if (key === undefined || key.length === 0) {
           return yield* new Seat.SeatUnresolved({
             seat,

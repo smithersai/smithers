@@ -58,9 +58,9 @@ export const PLATFORM_PROXY_RULES: ReadonlyArray<{
    */
   { prefix: "/api/user/workspaces", methods: ["GET"] },
   { prefix: "/api/user/orgs", methods: ["GET"] },
-  /* Account-owned coding subscription: only Claude setup-token enrollment and metadata/revocation. */
+  /* Account-owned coding accounts: list, Claude enrollment, revocation, pool order, Codex device sign-in. */
   { exact: "/api/user/provider-connections", methods: ["GET", "POST"] },
-  { prefix: "/api/user/provider-connections/", methods: ["DELETE"] },
+  { prefix: "/api/user/provider-connections/", methods: ["DELETE", "PUT", "POST"] },
   /* ChangeSeam: the changeset DTO, and landing one (ADR 0003). */
   { prefix: "/api/orgs/", methods: ["GET", "POST"] },
   { prefix: "/api/notifications/", methods: ["GET", "PUT"] },
@@ -124,10 +124,21 @@ export const platformProxyRuleCovers = (
   return pathname === rule.prefix || pathname.startsWith(`${rule.prefix}/`)
 }
 
+/*
+ * The provider-connection item routes the account pool uses, each one exact:
+ * revoke one connection, set one provider's order, and start or poll one
+ * Codex device sign-in. Nothing else under the family forwards.
+ */
+const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+const providerConnectionItem = (pathname: string, method: string): boolean =>
+  (method === "DELETE" && /^\/api\/user\/provider-connections\/[A-Za-z0-9-]{1,100}$/.test(pathname) && pathname !== "/api/user/provider-connections/order") ||
+  (method === "PUT" && pathname === "/api/user/provider-connections/order") ||
+  (method === "POST" && pathname === "/api/user/provider-connections/codex/device") ||
+  (method === "POST" && new RegExp(`^/api/user/provider-connections/codex/device/${UUID}$`).test(pathname))
+
 export const platformProxyMatch = (pathname: string, method: string): boolean =>
   !/\/issues\/[^/]+\/linear-link(?:\/|$)/.test(pathname) &&
-  (!pathname.startsWith("/api/user/provider-connections/") ||
-    (method === "DELETE" && /^\/api\/user\/provider-connections\/[A-Za-z0-9-]{1,100}$/.test(pathname))) &&
+  (!pathname.startsWith("/api/user/provider-connections/") || providerConnectionItem(pathname, method)) &&
   PLATFORM_PROXY_RULES.some((rule) => rule.methods.includes(method) && platformProxyRuleCovers(rule, pathname))
 
 /** An anonymous catalog read, restated in the seam's envelope when the mirror refuses. */

@@ -1694,6 +1694,27 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
+   * The account's coding-provider pool (GET /api/user/provider-connections):
+   * non-revoked connections in pool order, metadata only. `limitedUntil` is
+   * the RFC3339 time a usage limit parks the account until; `pending` is a
+   * Codex device sign-in awaiting the person (its code and where to enter it).
+   */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("provider-accounts"),
+    payload: z.object({
+      accounts: z.array(z.object({
+        id: z.string(),
+        provider: z.enum(["claude", "codex"]),
+        label: z.string(),
+        email: z.string().nullable(),
+        state: z.string(),
+        limitedUntil: z.string().nullable()
+      })),
+      pending: z.object({ userCode: z.string(), verificationUri: z.string() }).optional()
+    })
+  }),
+  /*
    * The configured models and the seats they answer for (ConfiguredModel.ts).
    * A credential is a NAME with its presence and origins; no value exists on
    * this payload, and a test's failure is codes and numbers, never a

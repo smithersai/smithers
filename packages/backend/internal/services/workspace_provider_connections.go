@@ -68,7 +68,7 @@ func (s *WorkspaceService) resolveWorkspaceProviderBindings(ctx context.Context,
 				binding.egress.Secrets = slices.DeleteFunc(slices.Clone(binding.egress.Secrets), func(secret sandbox.EgressProxySecret) bool { return secret.Name == key })
 				binding.environment.Env = slices.DeleteFunc(binding.environment.Env, func(v AgentEnvironmentVariable) bool { return v.Name == key })
 				binding.environment.ProxyBound = slices.DeleteFunc(binding.environment.ProxyBound, func(name string) bool { return name == key })
-				for _, secret := range ClaudeProxySecrets(resolved.AccessToken) {
+				for _, secret := range ClaudeConnectionProxySecrets(resolved) {
 					binding.bind(secret)
 				}
 			}

@@ -16,14 +16,25 @@ export const secretsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
   flow({
     name: "secrets.connect", summary: "Connect Claude for coding in your repositories", runtime: ["cloud"],
     requires: ["signed-in"], input: Schema.Struct({ value: Schema.optional(Schema.String) }),
-    form: { submitLabel: "Connect", fields: { value: { label: "Claude setup token", kind: "write-only", required: true } } },
+    form: { submitLabel: "Connect", fields: { value: { label: "Claude token", kind: "write-only", required: true } } },
     confirm: () => "connect Claude for coding",
     handler: (_input, _signal, _call, gesture) => actions.connectCodingProvider(gesture)
   }),
   flow({
-    name: "secrets.connections", summary: "List coding connections", runtime: ["cloud"],
+    name: "secrets.connect.codex", summary: "Connect Codex for coding in your repositories", runtime: ["cloud"],
+    requires: ["signed-in"], input: Schema.Struct({}),
+    handler: () => actions.connectCodex()
+  }),
+  flow({
+    name: "secrets.connections", summary: "Show coding accounts", runtime: ["cloud"],
     requires: ["signed-in"], input: Schema.Struct({}),
     handler: () => actions.listCodingProviders()
+  }),
+  flow({
+    name: "secrets.move", summary: "Move a coding account up or down its provider's order", runtime: ["cloud"],
+    requires: ["signed-in"], args: "<id> <up|down>",
+    input: Schema.Struct({ id: Schema.String, direction: Schema.Literals(["up", "down"]) }),
+    handler: ({ id, direction }) => actions.moveCodingProvider(id, direction)
   }),
   flow({
     name: "secrets.revoke", summary: "Revoke coding connection", runtime: ["cloud"],

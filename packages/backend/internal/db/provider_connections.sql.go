@@ -44,6 +44,44 @@ func (q *Queries) AddProviderConnectionGrant(ctx context.Context, arg AddProvide
 	return i, err
 }
 
+const claimProviderConnectionDeviceLoginPoll = `-- name: ClaimProviderConnectionDeviceLoginPoll :one
+UPDATE provider_connection_device_logins
+SET poll_lease_until = $1::timestamptz, updated_at = NOW()
+WHERE id = $2 AND user_id = $3 AND state = 'pending'
+  AND next_poll_at <= NOW()
+  AND (poll_lease_until IS NULL OR poll_lease_until <= NOW())
+RETURNING id, user_id, provider, device_auth_id_encrypted, user_code, interval_seconds, expires_at, next_poll_at, poll_lease_until, state, connection_id, last_error, created_at, updated_at
+`
+
+type ClaimProviderConnectionDeviceLoginPollParams struct {
+	LeaseUntil time.Time `json:"lease_until"`
+	ID         string    `json:"id"`
+	UserID     int64     `json:"user_id"`
+}
+
+// One poller at a time, never sooner than the provider's interval.
+func (q *Queries) ClaimProviderConnectionDeviceLoginPoll(ctx context.Context, arg ClaimProviderConnectionDeviceLoginPollParams) (ProviderConnectionDeviceLogin, error) {
+	row := q.db.QueryRow(ctx, claimProviderConnectionDeviceLoginPoll, arg.LeaseUntil, arg.ID, arg.UserID)
+	var i ProviderConnectionDeviceLogin
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.DeviceAuthIDEncrypted,
+		&i.UserCode,
+		&i.IntervalSeconds,
+		&i.ExpiresAt,
+		&i.NextPollAt,
+		&i.PollLeaseUntil,
+		&i.State,
+		&i.ConnectionID,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const claimProviderConnectionForRefresh = `-- name: ClaimProviderConnectionForRefresh :one
 WITH due AS (
     SELECT id
@@ -63,7 +101,7 @@ SET refresh_lease_until = $1::timestamptz,
     refresh_generation = pc.refresh_generation + 1, updated_at = NOW()
 FROM due
 WHERE pc.id = due.id
-RETURNING pc.id, pc.owner_type, pc.user_id, pc.org_id, pc.provider, pc.kind, pc.label, pc.account_email, pc.account_id, pc.plan, pc.access_token_encrypted, pc.refresh_token_encrypted, pc.access_expires_at, pc.state, pc.last_refresh_at, pc.next_refresh_at, pc.refresh_failures, pc.last_error, pc.created_by, pc.created_at, pc.updated_at, pc.refresh_lease_until, pc.refresh_generation
+RETURNING pc.id, pc.owner_type, pc.user_id, pc.org_id, pc.provider, pc.kind, pc.label, pc.account_email, pc.account_id, pc.plan, pc.access_token_encrypted, pc.refresh_token_encrypted, pc.access_expires_at, pc.state, pc.last_refresh_at, pc.next_refresh_at, pc.refresh_failures, pc.last_error, pc.created_by, pc.created_at, pc.updated_at, pc.refresh_lease_until, pc.refresh_generation, pc.limited_until, pc.last_used_at, pc.sort_order
 `
 
 type ClaimProviderConnectionForRefreshParams struct {
@@ -102,6 +140,9 @@ func (q *Queries) ClaimProviderConnectionForRefresh(ctx context.Context, arg Cla
 		&i.UpdatedAt,
 		&i.RefreshLeaseUntil,
 		&i.RefreshGeneration,
+		&i.LimitedUntil,
+		&i.LastUsedAt,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -117,7 +158,7 @@ VALUES (
     $10, $11, $12,
     $13, $14
 )
-RETURNING id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation
+RETURNING id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation, limited_until, last_used_at, sort_order
 `
 
 type CreateProviderConnectionParams struct {
@@ -179,6 +220,55 @@ func (q *Queries) CreateProviderConnection(ctx context.Context, arg CreateProvid
 		&i.UpdatedAt,
 		&i.RefreshLeaseUntil,
 		&i.RefreshGeneration,
+		&i.LimitedUntil,
+		&i.LastUsedAt,
+		&i.SortOrder,
+	)
+	return i, err
+}
+
+const createProviderConnectionDeviceLogin = `-- name: CreateProviderConnectionDeviceLogin :one
+INSERT INTO provider_connection_device_logins (user_id, provider, device_auth_id_encrypted, user_code, interval_seconds, expires_at, next_poll_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, user_id, provider, device_auth_id_encrypted, user_code, interval_seconds, expires_at, next_poll_at, poll_lease_until, state, connection_id, last_error, created_at, updated_at
+`
+
+type CreateProviderConnectionDeviceLoginParams struct {
+	UserID                int64     `json:"user_id"`
+	Provider              string    `json:"provider"`
+	DeviceAuthIDEncrypted []byte    `json:"device_auth_id_encrypted"`
+	UserCode              string    `json:"user_code"`
+	IntervalSeconds       int32     `json:"interval_seconds"`
+	ExpiresAt             time.Time `json:"expires_at"`
+	NextPollAt            time.Time `json:"next_poll_at"`
+}
+
+func (q *Queries) CreateProviderConnectionDeviceLogin(ctx context.Context, arg CreateProviderConnectionDeviceLoginParams) (ProviderConnectionDeviceLogin, error) {
+	row := q.db.QueryRow(ctx, createProviderConnectionDeviceLogin,
+		arg.UserID,
+		arg.Provider,
+		arg.DeviceAuthIDEncrypted,
+		arg.UserCode,
+		arg.IntervalSeconds,
+		arg.ExpiresAt,
+		arg.NextPollAt,
+	)
+	var i ProviderConnectionDeviceLogin
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.DeviceAuthIDEncrypted,
+		&i.UserCode,
+		&i.IntervalSeconds,
+		&i.ExpiresAt,
+		&i.NextPollAt,
+		&i.PollLeaseUntil,
+		&i.State,
+		&i.ConnectionID,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -200,8 +290,67 @@ func (q *Queries) DeleteProviderConnectionGrant(ctx context.Context, arg DeleteP
 	return result.RowsAffected(), nil
 }
 
+const expireProviderConnectionDeviceLogin = `-- name: ExpireProviderConnectionDeviceLogin :execrows
+UPDATE provider_connection_device_logins
+SET state = 'expired', updated_at = NOW()
+WHERE id = $1 AND user_id = $2 AND state = 'pending' AND expires_at <= NOW()
+  AND (poll_lease_until IS NULL OR poll_lease_until <= NOW())
+`
+
+type ExpireProviderConnectionDeviceLoginParams struct {
+	ID     string `json:"id"`
+	UserID int64  `json:"user_id"`
+}
+
+// A sign-in past its deadline expires unless a poll holds it (that poll may
+// be completing the exchange and finishes it itself).
+func (q *Queries) ExpireProviderConnectionDeviceLogin(ctx context.Context, arg ExpireProviderConnectionDeviceLoginParams) (int64, error) {
+	result, err := q.db.Exec(ctx, expireProviderConnectionDeviceLogin, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const finishProviderConnectionDeviceLoginPoll = `-- name: FinishProviderConnectionDeviceLoginPoll :execrows
+UPDATE provider_connection_device_logins
+SET poll_lease_until = NULL, next_poll_at = $1, state = $2,
+    connection_id = $3, last_error = $4, updated_at = NOW()
+WHERE id = $5
+  AND (
+      (state = 'pending' AND poll_lease_until = $6::timestamptz)
+      OR ($2::text = 'connected' AND state IN ('pending', 'expired'))
+  )
+`
+
+type FinishProviderConnectionDeviceLoginPollParams struct {
+	NextPollAt   time.Time   `json:"next_poll_at"`
+	State        string      `json:"state"`
+	ConnectionID pgtype.UUID `json:"connection_id"`
+	LastError    string      `json:"last_error"`
+	ID           string      `json:"id"`
+	LeaseUntil   time.Time   `json:"lease_until"`
+}
+
+// Only the poller holding the lease finishes a poll, except that a stored
+// connection always records itself, even after its lease lapsed.
+func (q *Queries) FinishProviderConnectionDeviceLoginPoll(ctx context.Context, arg FinishProviderConnectionDeviceLoginPollParams) (int64, error) {
+	result, err := q.db.Exec(ctx, finishProviderConnectionDeviceLoginPoll,
+		arg.NextPollAt,
+		arg.State,
+		arg.ConnectionID,
+		arg.LastError,
+		arg.ID,
+		arg.LeaseUntil,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getProviderConnection = `-- name: GetProviderConnection :one
-SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation FROM provider_connections WHERE id = $1
+SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation, limited_until, last_used_at, sort_order FROM provider_connections WHERE id = $1
 `
 
 func (q *Queries) GetProviderConnection(ctx context.Context, id string) (ProviderConnection, error) {
@@ -231,6 +380,40 @@ func (q *Queries) GetProviderConnection(ctx context.Context, id string) (Provide
 		&i.UpdatedAt,
 		&i.RefreshLeaseUntil,
 		&i.RefreshGeneration,
+		&i.LimitedUntil,
+		&i.LastUsedAt,
+		&i.SortOrder,
+	)
+	return i, err
+}
+
+const getProviderConnectionDeviceLogin = `-- name: GetProviderConnectionDeviceLogin :one
+SELECT id, user_id, provider, device_auth_id_encrypted, user_code, interval_seconds, expires_at, next_poll_at, poll_lease_until, state, connection_id, last_error, created_at, updated_at FROM provider_connection_device_logins WHERE id = $1 AND user_id = $2
+`
+
+type GetProviderConnectionDeviceLoginParams struct {
+	ID     string `json:"id"`
+	UserID int64  `json:"user_id"`
+}
+
+func (q *Queries) GetProviderConnectionDeviceLogin(ctx context.Context, arg GetProviderConnectionDeviceLoginParams) (ProviderConnectionDeviceLogin, error) {
+	row := q.db.QueryRow(ctx, getProviderConnectionDeviceLogin, arg.ID, arg.UserID)
+	var i ProviderConnectionDeviceLogin
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.DeviceAuthIDEncrypted,
+		&i.UserCode,
+		&i.IntervalSeconds,
+		&i.ExpiresAt,
+		&i.NextPollAt,
+		&i.PollLeaseUntil,
+		&i.State,
+		&i.ConnectionID,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -247,9 +430,9 @@ func (q *Queries) GetRepositoryProviderConnectionPreference(ctx context.Context,
 }
 
 const listOrgProviderConnections = `-- name: ListOrgProviderConnections :many
-SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation FROM provider_connections
+SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation, limited_until, last_used_at, sort_order FROM provider_connections
 WHERE owner_type = 'org' AND org_id = $1
-ORDER BY created_at DESC, id
+ORDER BY provider, sort_order, created_at, id
 `
 
 func (q *Queries) ListOrgProviderConnections(ctx context.Context, orgID pgtype.Int8) ([]ProviderConnection, error) {
@@ -285,6 +468,9 @@ func (q *Queries) ListOrgProviderConnections(ctx context.Context, orgID pgtype.I
 			&i.UpdatedAt,
 			&i.RefreshLeaseUntil,
 			&i.RefreshGeneration,
+			&i.LimitedUntil,
+			&i.LastUsedAt,
+			&i.SortOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -328,9 +514,9 @@ func (q *Queries) ListProviderConnectionGrants(ctx context.Context, connectionID
 }
 
 const listUserProviderConnections = `-- name: ListUserProviderConnections :many
-SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation FROM provider_connections
+SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation, limited_until, last_used_at, sort_order FROM provider_connections
 WHERE owner_type = 'user' AND user_id = $1
-ORDER BY created_at DESC, id
+ORDER BY provider, sort_order, created_at, id
 `
 
 func (q *Queries) ListUserProviderConnections(ctx context.Context, userID pgtype.Int8) ([]ProviderConnection, error) {
@@ -366,6 +552,9 @@ func (q *Queries) ListUserProviderConnections(ctx context.Context, userID pgtype
 			&i.UpdatedAt,
 			&i.RefreshLeaseUntil,
 			&i.RefreshGeneration,
+			&i.LimitedUntil,
+			&i.LastUsedAt,
+			&i.SortOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -375,6 +564,24 @@ func (q *Queries) ListUserProviderConnections(ctx context.Context, userID pgtype
 		return nil, err
 	}
 	return items, nil
+}
+
+const markProviderConnectionLimited = `-- name: MarkProviderConnectionLimited :exec
+UPDATE provider_connections
+SET limited_until = GREATEST(COALESCE(limited_until, $1::timestamptz), $1::timestamptz),
+    updated_at = NOW()
+WHERE id = $2 AND state <> 'revoked'
+`
+
+type MarkProviderConnectionLimitedParams struct {
+	LimitedUntil time.Time `json:"limited_until"`
+	ID           string    `json:"id"`
+}
+
+// A usage limit only ever extends: a shorter, older reset cannot shorten it.
+func (q *Queries) MarkProviderConnectionLimited(ctx context.Context, arg MarkProviderConnectionLimitedParams) error {
+	_, err := q.db.Exec(ctx, markProviderConnectionLimited, arg.LimitedUntil, arg.ID)
+	return err
 }
 
 const markProviderConnectionRefreshFailure = `-- name: MarkProviderConnectionRefreshFailure :exec
@@ -409,8 +616,262 @@ func (q *Queries) MarkProviderConnectionRefreshFailure(ctx context.Context, arg 
 	return err
 }
 
+const markProviderConnectionRejected = `-- name: MarkProviderConnectionRejected :execrows
+UPDATE provider_connections
+SET state = 'refresh_failed', last_error = $1, updated_at = NOW()
+WHERE id = $2 AND state = 'active' AND refresh_generation = $3
+`
+
+type MarkProviderConnectionRejectedParams struct {
+	LastError         string `json:"last_error"`
+	ID                string `json:"id"`
+	RefreshGeneration int64  `json:"refresh_generation"`
+}
+
+// The provider refused the credential itself. Fenced by the refresh
+// generation the request used, so a refresh that already replaced the token
+// is not undone by a late refusal of the old one.
+func (q *Queries) MarkProviderConnectionRejected(ctx context.Context, arg MarkProviderConnectionRejectedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markProviderConnectionRejected, arg.LastError, arg.ID, arg.RefreshGeneration)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const pickProviderConnection = `-- name: PickProviderConnection :one
+WITH candidate AS (
+    SELECT c.id FROM provider_connections c
+    WHERE c.provider = $1 AND c.state = 'active'
+      AND (c.limited_until IS NULL OR c.limited_until <= clock_timestamp())
+      AND NOT (c.id = ANY($2::uuid[]))
+      AND (
+          ($3::text = 'org' AND c.owner_type = 'org' AND c.org_id = $4::bigint)
+          OR (
+              $3::text = 'user' AND c.owner_type = 'user' AND c.user_id = $5::bigint
+              AND (
+                  EXISTS (SELECT 1 FROM repositories r WHERE r.id = $6::bigint AND r.user_id = $5::bigint)
+                  OR EXISTS (
+                      SELECT 1 FROM provider_connection_grants g
+                      WHERE g.connection_id = c.id
+                        AND (g.all_repositories OR g.repository_id = $6::bigint
+                             OR g.org_id = (SELECT r2.org_id FROM repositories r2 WHERE r2.id = $6::bigint))
+                  )
+              )
+          )
+      )
+    ORDER BY c.last_used_at ASC NULLS FIRST, c.sort_order, c.created_at, c.id
+    FOR UPDATE OF c SKIP LOCKED
+    LIMIT 1
+)
+UPDATE provider_connections pc
+SET last_used_at = clock_timestamp()
+FROM candidate
+WHERE pc.id = candidate.id
+RETURNING pc.id, pc.owner_type, pc.user_id, pc.org_id, pc.provider, pc.kind, pc.label, pc.account_email, pc.account_id, pc.plan, pc.access_token_encrypted, pc.refresh_token_encrypted, pc.access_expires_at, pc.state, pc.last_refresh_at, pc.next_refresh_at, pc.refresh_failures, pc.last_error, pc.created_by, pc.created_at, pc.updated_at, pc.refresh_lease_until, pc.refresh_generation, pc.limited_until, pc.last_used_at, pc.sort_order
+`
+
+type PickProviderConnectionParams struct {
+	Provider     string   `json:"provider"`
+	Excluded     []string `json:"excluded"`
+	Source       string   `json:"source"`
+	OrgID        int64    `json:"org_id"`
+	UserID       int64    `json:"user_id"`
+	RepositoryID int64    `json:"repository_id"`
+}
+
+// Round-robin: the least recently used usable connection of the pool (ties
+// by sort_order), stamped as used in the same statement. SKIP LOCKED keeps
+// two concurrent picks off the same row; the lock ends with the statement,
+// so this is fair rotation, not an exclusive reservation.
+func (q *Queries) PickProviderConnection(ctx context.Context, arg PickProviderConnectionParams) (ProviderConnection, error) {
+	row := q.db.QueryRow(ctx, pickProviderConnection,
+		arg.Provider,
+		arg.Excluded,
+		arg.Source,
+		arg.OrgID,
+		arg.UserID,
+		arg.RepositoryID,
+	)
+	var i ProviderConnection
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerType,
+		&i.UserID,
+		&i.OrgID,
+		&i.Provider,
+		&i.Kind,
+		&i.Label,
+		&i.AccountEmail,
+		&i.AccountID,
+		&i.Plan,
+		&i.AccessTokenEncrypted,
+		&i.RefreshTokenEncrypted,
+		&i.AccessExpiresAt,
+		&i.State,
+		&i.LastRefreshAt,
+		&i.NextRefreshAt,
+		&i.RefreshFailures,
+		&i.LastError,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RefreshLeaseUntil,
+		&i.RefreshGeneration,
+		&i.LimitedUntil,
+		&i.LastUsedAt,
+		&i.SortOrder,
+	)
+	return i, err
+}
+
+const pickProviderConnectionWaiting = `-- name: PickProviderConnectionWaiting :one
+WITH candidate AS (
+    SELECT c.id FROM provider_connections c
+    WHERE c.provider = $1 AND c.state = 'active'
+      AND (c.limited_until IS NULL OR c.limited_until <= clock_timestamp())
+      AND NOT (c.id = ANY($2::uuid[]))
+      AND (
+          ($3::text = 'org' AND c.owner_type = 'org' AND c.org_id = $4::bigint)
+          OR (
+              $3::text = 'user' AND c.owner_type = 'user' AND c.user_id = $5::bigint
+              AND (
+                  EXISTS (SELECT 1 FROM repositories r WHERE r.id = $6::bigint AND r.user_id = $5::bigint)
+                  OR EXISTS (
+                      SELECT 1 FROM provider_connection_grants g
+                      WHERE g.connection_id = c.id
+                        AND (g.all_repositories OR g.repository_id = $6::bigint
+                             OR g.org_id = (SELECT r2.org_id FROM repositories r2 WHERE r2.id = $6::bigint))
+                  )
+              )
+          )
+      )
+    ORDER BY c.last_used_at ASC NULLS FIRST, c.sort_order, c.created_at, c.id
+    FOR UPDATE OF c
+    LIMIT 1
+)
+UPDATE provider_connections pc
+SET last_used_at = clock_timestamp()
+FROM candidate
+WHERE pc.id = candidate.id
+RETURNING pc.id, pc.owner_type, pc.user_id, pc.org_id, pc.provider, pc.kind, pc.label, pc.account_email, pc.account_id, pc.plan, pc.access_token_encrypted, pc.refresh_token_encrypted, pc.access_expires_at, pc.state, pc.last_refresh_at, pc.next_refresh_at, pc.refresh_failures, pc.last_error, pc.created_by, pc.created_at, pc.updated_at, pc.refresh_lease_until, pc.refresh_generation, pc.limited_until, pc.last_used_at, pc.sort_order
+`
+
+type PickProviderConnectionWaitingParams struct {
+	Provider     string   `json:"provider"`
+	Excluded     []string `json:"excluded"`
+	Source       string   `json:"source"`
+	OrgID        int64    `json:"org_id"`
+	UserID       int64    `json:"user_id"`
+	RepositoryID int64    `json:"repository_id"`
+}
+
+// PickProviderConnection when every usable row was locked by a concurrent
+// pick: wait for one instead of reporting an empty pool.
+func (q *Queries) PickProviderConnectionWaiting(ctx context.Context, arg PickProviderConnectionWaitingParams) (ProviderConnection, error) {
+	row := q.db.QueryRow(ctx, pickProviderConnectionWaiting,
+		arg.Provider,
+		arg.Excluded,
+		arg.Source,
+		arg.OrgID,
+		arg.UserID,
+		arg.RepositoryID,
+	)
+	var i ProviderConnection
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerType,
+		&i.UserID,
+		&i.OrgID,
+		&i.Provider,
+		&i.Kind,
+		&i.Label,
+		&i.AccountEmail,
+		&i.AccountID,
+		&i.Plan,
+		&i.AccessTokenEncrypted,
+		&i.RefreshTokenEncrypted,
+		&i.AccessExpiresAt,
+		&i.State,
+		&i.LastRefreshAt,
+		&i.NextRefreshAt,
+		&i.RefreshFailures,
+		&i.LastError,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RefreshLeaseUntil,
+		&i.RefreshGeneration,
+		&i.LimitedUntil,
+		&i.LastUsedAt,
+		&i.SortOrder,
+	)
+	return i, err
+}
+
+const providerConnectionPoolStatus = `-- name: ProviderConnectionPoolStatus :one
+SELECT
+    count(*) FILTER (WHERE c.state = 'active')::bigint AS active,
+    count(*) FILTER (WHERE c.state = 'active' AND (c.limited_until IS NULL OR c.limited_until <= clock_timestamp()))::bigint AS usable,
+    count(*) FILTER (WHERE c.state = 'refresh_failed')::bigint AS reconnect,
+    COALESCE(min(c.limited_until) FILTER (WHERE c.state = 'active' AND c.limited_until > clock_timestamp()), 'epoch'::timestamptz)::timestamptz AS next_reset
+FROM provider_connections c
+WHERE c.provider = $1 AND c.state <> 'revoked'
+  AND (
+      ($2::text = 'org' AND c.owner_type = 'org' AND c.org_id = $3::bigint)
+      OR (
+          $2::text = 'user' AND c.owner_type = 'user' AND c.user_id = $4::bigint
+          AND (
+              EXISTS (SELECT 1 FROM repositories r WHERE r.id = $5::bigint AND r.user_id = $4::bigint)
+              OR EXISTS (
+                  SELECT 1 FROM provider_connection_grants g
+                  WHERE g.connection_id = c.id
+                    AND (g.all_repositories OR g.repository_id = $5::bigint
+                         OR g.org_id = (SELECT r2.org_id FROM repositories r2 WHERE r2.id = $5::bigint))
+              )
+          )
+      )
+  )
+`
+
+type ProviderConnectionPoolStatusParams struct {
+	Provider     string `json:"provider"`
+	Source       string `json:"source"`
+	OrgID        int64  `json:"org_id"`
+	UserID       int64  `json:"user_id"`
+	RepositoryID int64  `json:"repository_id"`
+}
+
+type ProviderConnectionPoolStatusRow struct {
+	Active    int64     `json:"active"`
+	Usable    int64     `json:"usable"`
+	Reconnect int64     `json:"reconnect"`
+	NextReset time.Time `json:"next_reset"`
+}
+
+// The pool one source offers a run: the org's connections, or the user's
+// connections that apply to the repository (owned, or granted). Revoked rows
+// are not part of any pool.
+func (q *Queries) ProviderConnectionPoolStatus(ctx context.Context, arg ProviderConnectionPoolStatusParams) (ProviderConnectionPoolStatusRow, error) {
+	row := q.db.QueryRow(ctx, providerConnectionPoolStatus,
+		arg.Provider,
+		arg.Source,
+		arg.OrgID,
+		arg.UserID,
+		arg.RepositoryID,
+	)
+	var i ProviderConnectionPoolStatusRow
+	err := row.Scan(
+		&i.Active,
+		&i.Usable,
+		&i.Reconnect,
+		&i.NextReset,
+	)
+	return i, err
+}
+
 const resolveActiveOrgProviderConnection = `-- name: ResolveActiveOrgProviderConnection :one
-SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation FROM provider_connections
+SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation, limited_until, last_used_at, sort_order FROM provider_connections
 WHERE owner_type = 'org' AND org_id = $1 AND provider = $2 AND state = 'active'
 ORDER BY updated_at DESC, id
 LIMIT 1
@@ -448,12 +909,15 @@ func (q *Queries) ResolveActiveOrgProviderConnection(ctx context.Context, arg Re
 		&i.UpdatedAt,
 		&i.RefreshLeaseUntil,
 		&i.RefreshGeneration,
+		&i.LimitedUntil,
+		&i.LastUsedAt,
+		&i.SortOrder,
 	)
 	return i, err
 }
 
 const resolveActiveUserProviderConnectionForRepository = `-- name: ResolveActiveUserProviderConnectionForRepository :one
-SELECT c.id, c.owner_type, c.user_id, c.org_id, c.provider, c.kind, c.label, c.account_email, c.account_id, c.plan, c.access_token_encrypted, c.refresh_token_encrypted, c.access_expires_at, c.state, c.last_refresh_at, c.next_refresh_at, c.refresh_failures, c.last_error, c.created_by, c.created_at, c.updated_at, c.refresh_lease_until, c.refresh_generation FROM provider_connections c
+SELECT c.id, c.owner_type, c.user_id, c.org_id, c.provider, c.kind, c.label, c.account_email, c.account_id, c.plan, c.access_token_encrypted, c.refresh_token_encrypted, c.access_expires_at, c.state, c.last_refresh_at, c.next_refresh_at, c.refresh_failures, c.last_error, c.created_by, c.created_at, c.updated_at, c.refresh_lease_until, c.refresh_generation, c.limited_until, c.last_used_at, c.sort_order FROM provider_connections c
 WHERE c.owner_type = 'user' AND c.user_id = $1 AND c.provider = $2 AND c.state = 'active'
   AND (
       EXISTS (SELECT 1 FROM repositories r WHERE r.id = $3 AND r.user_id = $1)
@@ -506,8 +970,43 @@ func (q *Queries) ResolveActiveUserProviderConnectionForRepository(ctx context.C
 		&i.UpdatedAt,
 		&i.RefreshLeaseUntil,
 		&i.RefreshGeneration,
+		&i.LimitedUntil,
+		&i.LastUsedAt,
+		&i.SortOrder,
 	)
 	return i, err
+}
+
+const revokeOtherUserProviderAccountConnections = `-- name: RevokeOtherUserProviderAccountConnections :execrows
+UPDATE provider_connections old
+SET state = 'revoked', last_error = 'replaced by a newer sign-in', updated_at = NOW()
+FROM provider_connections keep
+WHERE keep.id = $1
+  AND old.owner_type = 'user' AND old.user_id = $2 AND old.provider = $3
+  AND old.account_id = $4 AND old.account_id <> '' AND old.state <> 'revoked'
+  AND (old.created_at, old.id) < (keep.created_at, keep.id)
+`
+
+type RevokeOtherUserProviderAccountConnectionsParams struct {
+	KeepID    string      `json:"keep_id"`
+	UserID    pgtype.Int8 `json:"user_id"`
+	Provider  string      `json:"provider"`
+	AccountID string      `json:"account_id"`
+}
+
+// Reconnecting the same provider account replaces its OLDER connections only,
+// so two concurrent sign-ins of one account never revoke each other.
+func (q *Queries) RevokeOtherUserProviderAccountConnections(ctx context.Context, arg RevokeOtherUserProviderAccountConnectionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeOtherUserProviderAccountConnections,
+		arg.KeepID,
+		arg.UserID,
+		arg.Provider,
+		arg.AccountID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const revokeProviderConnection = `-- name: RevokeProviderConnection :execrows
@@ -523,6 +1022,33 @@ type RevokeProviderConnectionParams struct {
 
 func (q *Queries) RevokeProviderConnection(ctx context.Context, arg RevokeProviderConnectionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, revokeProviderConnection, arg.ID, arg.LastError)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setUserProviderConnectionSortOrder = `-- name: SetUserProviderConnectionSortOrder :execrows
+UPDATE provider_connections
+SET sort_order = $1, last_used_at = NULL, updated_at = NOW()
+WHERE id = $2 AND owner_type = 'user' AND user_id = $3 AND provider = $4
+`
+
+type SetUserProviderConnectionSortOrderParams struct {
+	SortOrder int32       `json:"sort_order"`
+	ID        string      `json:"id"`
+	UserID    pgtype.Int8 `json:"user_id"`
+	Provider  string      `json:"provider"`
+}
+
+// Reordering restarts the rotation at the top of the new order.
+func (q *Queries) SetUserProviderConnectionSortOrder(ctx context.Context, arg SetUserProviderConnectionSortOrderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserProviderConnectionSortOrder,
+		arg.SortOrder,
+		arg.ID,
+		arg.UserID,
+		arg.Provider,
+	)
 	if err != nil {
 		return 0, err
 	}

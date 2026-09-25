@@ -2921,6 +2921,9 @@ describe("the browser tool route (§2d)", () => {
       ["GET", "/api/user/provider-connections"],
       ["POST", "/api/user/provider-connections"],
       ["DELETE", "/api/user/provider-connections/conn-1"],
+      ["PUT", "/api/user/provider-connections/order"],
+      ["POST", "/api/user/provider-connections/codex/device"],
+      ["POST", "/api/user/provider-connections/codex/device/6f1b9c2e-6a4a-4c0e-9f52-2c1a7f0b39d1"],
       ["GET", "/api/orgs/smithersai/provider-connections"],
       ["POST", "/api/orgs/smithersai/changesets/7/land"],
       ["GET", "/api/notifications/list"],
@@ -2956,6 +2959,10 @@ describe("the browser tool route (§2d)", () => {
       ["PATCH", "/api/user/workspaces"],
       ["PUT", "/api/orgs/smithersai/provider-connections"],
       ["POST", "/api/user/provider-connections/conn-1/grants"],
+      ["POST", "/api/user/provider-connections/order"],
+      ["PUT", "/api/user/provider-connections/conn-1"],
+      ["POST", "/api/user/provider-connections/codex/device/not-a-uuid"],
+      ["GET", "/api/user/provider-connections/codex/device"],
       /*
        * Doors no product seam calls (apps/app/src/mainview/state/seams): a PAT
        * mint, an org delete, an integration
@@ -3019,6 +3026,61 @@ describe("the browser tool route (§2d)", () => {
       expect(body.status).toBe("error")
       expect(body.message).not.toContain("404 page not found")
       expect(body.message).toContain("Smithers Cloud")
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  /*
+   * Account pool writes: a refusal on any provider-connection write is the
+   * bare code (a token may have crossed in the body, so no upstream prose or
+   * field is reflected), while a device sign-in's success body passes through
+   * so the page can show the user code.
+   */
+  test("provider-connection writes pass a device answer through and restate a refusal as its code alone", async () => {
+    const env: WorkerEnv = {
+      ...assetsEnv(),
+      IDENTITY_UPSTREAM_URL: "https://identity.test",
+      IDENTITY_SERVICE_TOKEN: "svc",
+      SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
+    }
+    const device = { id: "6f1b9c2e-6a4a-4c0e-9f52-2c1a7f0b39d1", provider: "codex", state: "pending", user_code: "ABCD-EFGH", verification_uri: "https://auth.openai.com/codex/device", interval_seconds: 5, expires_at: "2026-09-25T10:15:00Z" }
+    const upstream: Array<{ url: string; method: string; body: string }> = []
+    const original = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (url.includes("/api/identity/validate")) {
+        return new Response(JSON.stringify({ login: "will", allowlisted: true, admin: false, scopes: [] }), { status: 200, headers: { "content-type": "application/json" } })
+      }
+      if (url.includes("/api/identity/cloud-token")) {
+        return new Response(JSON.stringify({ found: true, token: "cloud-token-1" }), { status: 200, headers: { "content-type": "application/json" } })
+      }
+      const body = init?.body === undefined || init.body === null ? "" : new TextDecoder().decode(init.body as Uint8Array)
+      upstream.push({ url, method: init?.method ?? "GET", body })
+      if (url.endsWith("/codex/device")) return new Response(JSON.stringify(device), { status: 200, headers: { "content-type": "application/json" } })
+      if (url.endsWith("/order")) {
+        return new Response(JSON.stringify({ message: "ids sk-ant-oat01-echoed do not match", code: "order_mismatch" }), { status: 400, headers: { "content-type": "application/json" } })
+      }
+      return new Response(JSON.stringify({ ...device, state: "failed", message: "upstream words" }), { status: 409, headers: { "content-type": "application/json" } })
+    }) as unknown as typeof fetch
+    try {
+      const started = await worker.fetch(new Request("https://mvp.test/api/user/provider-connections/codex/device", { method: "POST", headers: { cookie: "smithers_session=s" } }), env)
+      expect(started.status).toBe(200)
+      expect(await started.json()).toEqual(device)
+      const order = await worker.fetch(new Request("https://mvp.test/api/user/provider-connections/order", {
+        method: "PUT", headers: { cookie: "smithers_session=s", "content-type": "application/json" }, body: JSON.stringify({ provider: "claude", ids: ["a", "b"] })
+      }), env)
+      expect(order.status).toBe(400)
+      expect(await order.json()).toEqual({ status: "error", code: "provider_connection_refused" })
+      const polled = await worker.fetch(new Request(`https://mvp.test/api/user/provider-connections/codex/device/${device.id}`, { method: "POST", headers: { cookie: "smithers_session=s" } }), env)
+      expect(polled.status).toBe(409)
+      expect(await polled.json()).toEqual({ status: "error", code: "provider_connection_refused" })
+      expect(upstream.map(call => `${call.method} ${call.url}`)).toEqual([
+        "POST https://cloud.test/api/user/provider-connections/codex/device",
+        "PUT https://cloud.test/api/user/provider-connections/order",
+        `POST https://cloud.test/api/user/provider-connections/codex/device/${device.id}`
+      ])
+      expect(upstream[1]?.body).toBe(JSON.stringify({ provider: "claude", ids: ["a", "b"] }))
     } finally {
       globalThis.fetch = original
     }

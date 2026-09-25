@@ -529,6 +529,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly connectCodingProvider: SecretsSeam["connectCodingProvider"]
   readonly listCodingProviders: SecretsSeam["listCodingProviders"]
   readonly revokeCodingProvider: SecretsSeam["revokeCodingProvider"]
+  readonly connectCodex: SecretsSeam["connectCodex"]
+  readonly moveCodingProvider: SecretsSeam["moveCodingProvider"]
   readonly listSecrets: SecretsSeam["listSecrets"]
   readonly showHistory: HistorySeam["showHistory"]
   readonly retellHistory: HistorySeam["retellHistory"]
@@ -1829,6 +1831,8 @@ export const createAppController = (
     connectCodingProvider: secretsSeam.connectCodingProvider,
     listCodingProviders: secretsSeam.listCodingProviders,
     revokeCodingProvider: secretsSeam.revokeCodingProvider,
+    connectCodex: secretsSeam.connectCodex,
+    moveCodingProvider: secretsSeam.moveCodingProvider,
     listSecrets: secretsSeam.listSecrets,
     showHistory: historySeam.showHistory,
     retellHistory: historySeam.retellHistory,

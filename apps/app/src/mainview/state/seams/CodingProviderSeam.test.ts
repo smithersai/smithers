@@ -171,7 +171,7 @@ test("Claude coding enrollment returns before the held request, deduplicates, an
   expect(rows[0]).toMatchObject({ owner: "alice", state: "completed" })
   expect(gesture.takeWriteOnly?.("value")).toBeUndefined()
   login = "bob"
-  expect(await seam.connectCodingProvider(writeOnlyGesture("secrets.connect", { value: "bad" }))).toBe("Enter a Claude setup token.")
+  expect(await seam.connectCodingProvider(writeOnlyGesture("secrets.connect", { value: "bad" }))).toBe("Enter a Claude setup token or API key.")
   expect(sent).toHaveLength(1)
 })
 
