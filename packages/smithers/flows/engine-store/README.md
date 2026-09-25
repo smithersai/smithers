@@ -106,11 +106,12 @@ directly, `process.pid` and `randomUUID` from `node:crypto`, enter through the
 injectable `OwnerIdentity` service, and the SQL contracts it imports are
 driver-neutral.
 
-Bundling is not running. The only durable backing shipped here is local SQLite
-through Node.js `node:sqlite` and `@effect/sql-sqlite-node`. A browser or edge
-deployment can import the types and the browser-safe in-memory helpers, but
-cannot execute durable flows, and supplying an alternative browser SQL client
-is not a supported runtime.
+Bundling is not running. The durable backing is local SQLite, composed by the
+aggregate [`@smthrs/flows` runtime](../README.md) with native Node.js or Bun SQL
+and host adapters over these driver-neutral stores. A browser or edge deployment
+can import the types and browser-safe in-memory helpers, but cannot execute
+durable flows; supplying an alternative browser SQL client is not a supported
+runtime.
 
 ## Documentation
 
