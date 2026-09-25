@@ -9,6 +9,7 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:47312", headless: true, trace: "retain-on-failure" },
   projects: [
     { name: "chromium", testMatch: "**/site/*.spec.ts", use: { ...devices["Desktop Chrome"] } },
+    { name: "webkit", testMatch: "**/site/first-click.spec.ts", use: { ...devices["Desktop Safari"] } },
   ],
   webServer: {
     command: "pnpm --filter @smithers/site run build && pnpm --filter @smithers/site run preview --host 127.0.0.1 --port 47312",

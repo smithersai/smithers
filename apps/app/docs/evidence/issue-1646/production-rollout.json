@@ -1,0 +1,239 @@
+{
+  "startedAt": "2026-09-24T20:56:06.432Z",
+  "url": "https://smithers.sh/smithersai/smithers/",
+  "context": "fresh persistent browser profiles; no routes intercepted",
+  "checks": [
+    {
+      "browser": "Chrome",
+      "version": "143.0.7499.170",
+      "activation": "click",
+      "checkedAt": "2026-09-24T20:56:06.782Z",
+      "errors": [],
+      "console": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 400 ()"
+        }
+      ],
+      "writes": [
+        {
+          "method": "POST",
+          "url": "https://smithers.sh/api/recommend"
+        }
+      ],
+      "pageRevision": "6fa1a42d8692f23d4e9ea3362a3e1cafc5532c17",
+      "build": {
+        "app": "smithers-app",
+        "gitSha": "6fa1a42d8692f23d4e9ea3362a3e1cafc5532c17",
+        "builtAt": "2026-09-24T20:42:19.170Z"
+      },
+      "bootstrap": {
+        "apiVersion": 1,
+        "host": "cloud",
+        "version": "1.0.0",
+        "buildSha": "6fa1a42d8692f23d4e9ea3362a3e1cafc5532c17",
+        "capabilities": [
+          "agent",
+          "identity",
+          "cloud",
+          "cloud.terminal",
+          "recommend"
+        ],
+        "authFlow": "native-handoff",
+        "sandbox": null
+      },
+      "firstClick": "passed",
+      "controllerChunks": [
+        "https://smithers.sh/_astro/ControllerBoot.client.DMPw_lba.js"
+      ],
+      "chat": "passed",
+      "reload": "passed",
+      "reloadRevision": "6fa1a42d8692f23d4e9ea3362a3e1cafc5532c17",
+      "result": "passed"
+    },
+    {
+      "browser": "Chrome",
+      "version": "143.0.7499.170",
+      "activation": "Enter",
+      "checkedAt": "2026-09-24T20:56:10.370Z",
+      "errors": [],
+      "console": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 400 ()"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 400 ()"
+        }
+      ],
+      "writes": [
+        {
+          "method": "POST",
+          "url": "https://smithers.sh/api/recommend"
+        },
+        {
+          "method": "POST",
+          "url": "https://smithers.sh/api/recommend"
+        }
+      ],
+      "pageRevision": "6fa1a42d8692f23d4e9ea3362a3e1cafc5532c17",
+      "build": {
+        "app": "smithers-app",
+        "gitSha": "6fa1a42d8692f23d4e9ea3362a3e1cafc5532c17",
+        "builtAt": "2026-09-24T20:42:19.170Z"
+      },
+      "bootstrap": {
+        "apiVersion": 1,
+        "host": "cloud",
+        "version": "1.0.0",
+        "buildSha": "6fa1a42d8692f23d4e9ea3362a3e1cafc5532c17",
+        "capabilities": [
+          "agent",
+          "identity",
+          "cloud",
+          "cloud.terminal",
+          "recommend"
+        ],
+        "authFlow": "native-handoff",
+        "sandbox": null
+      },
+      "firstClick": "passed",
+      "controllerChunks": [
+        "https://smithers.sh/_astro/ControllerBoot.client.DMPw_lba.js"
+      ],
+      "chat": "passed",
+      "reload": "passed",
+      "reloadRevision": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "result": "failed",
+      "failure": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"6fa1a42d8692f23d4e9ea3362a3e1cafc5532c17\"\nReceived: \"8ca0f793645d72910cae23fb006519fe1547ed1c\""
+    },
+    {
+      "browser": "WebKit",
+      "version": "26.5",
+      "activation": "click",
+      "checkedAt": "2026-09-24T20:56:14.829Z",
+      "errors": [],
+      "console": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 400 (Bad Request)"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 400 (Bad Request)"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+        }
+      ],
+      "writes": [
+        {
+          "method": "POST",
+          "url": "https://smithers.sh/api/recommend"
+        },
+        {
+          "method": "POST",
+          "url": "https://smithers.sh/api/recommend"
+        }
+      ],
+      "pageRevision": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "build": {
+        "app": "smithers-app",
+        "gitSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "builtAt": "2026-09-24T20:53:59.006Z"
+      },
+      "bootstrap": {
+        "apiVersion": 1,
+        "host": "cloud",
+        "version": "1.0.0",
+        "buildSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "capabilities": [
+          "agent",
+          "identity",
+          "cloud",
+          "cloud.terminal",
+          "recommend"
+        ],
+        "authFlow": "native-handoff",
+        "sandbox": null
+      },
+      "firstClick": "passed",
+      "controllerChunks": [
+        "https://smithers.sh/_astro/ControllerBoot.client.DMPw_lba.js"
+      ],
+      "chat": "passed",
+      "reload": "passed",
+      "reloadRevision": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "result": "passed"
+    },
+    {
+      "browser": "WebKit",
+      "version": "26.5",
+      "activation": "Enter",
+      "checkedAt": "2026-09-24T20:56:19.363Z",
+      "errors": [
+        "/smithers.sh/api/recommend/outcome due to access control checks."
+      ],
+      "console": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 400 (Bad Request)"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 400 (Bad Request)"
+        }
+      ],
+      "writes": [
+        {
+          "method": "POST",
+          "url": "https://smithers.sh/api/recommend"
+        },
+        {
+          "method": "POST",
+          "url": "https://smithers.sh/api/telemetry/errors"
+        },
+        {
+          "method": "POST",
+          "url": "https://smithers.sh/api/recommend"
+        }
+      ],
+      "pageRevision": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "build": {
+        "app": "smithers-app",
+        "gitSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "builtAt": "2026-09-24T20:53:59.006Z"
+      },
+      "bootstrap": {
+        "apiVersion": 1,
+        "host": "cloud",
+        "version": "1.0.0",
+        "buildSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "capabilities": [
+          "agent",
+          "identity",
+          "cloud",
+          "cloud.terminal",
+          "recommend"
+        ],
+        "authFlow": "native-handoff",
+        "sandbox": null
+      },
+      "firstClick": "passed",
+      "controllerChunks": [
+        "https://smithers.sh/_astro/ControllerBoot.client.DMPw_lba.js"
+      ],
+      "chat": "passed",
+      "reload": "passed",
+      "reloadRevision": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "result": "failed",
+      "failure": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 3\n\n- Array []\n+ Array [\n+   \"/smithers.sh/api/recommend/outcome due to access control checks.\",\n+ ]"
+    }
+  ]
+}
