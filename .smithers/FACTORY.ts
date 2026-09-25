@@ -88,6 +88,7 @@ export const home = S.Factory.Home({
   blocks: [
     S.Home.Prompt({ placeholder: "Change Smithers…" }),
     S.Home.Flows({ title: "Try first" }),
+    S.Home.Stack({ title: "Stack" }),
     S.Home.Markdown({ path: "README.md" }),
     S.Home.Links({
       title: "Read more",

@@ -495,7 +495,7 @@ describe("the repository homepage", () => {
    */
   const home = JSON.parse(readFileSync(join(projectionRoot, "home.json"), "utf8"));
   const catalog = JSON.parse(readFileSync(join(projectionRoot, "factory.json"), "utf8"));
-  const KNOWN_BLOCKS = ["prompt", "markdown", "text", "links", "flows"];
+  const KNOWN_BLOCKS = ["prompt", "markdown", "text", "links", "flows", "stack"];
 
   it("is made of declared blocks and carries no HTML", () => {
     assert.ok(Array.isArray(home.blocks) && home.blocks.length > 0, "the pane declares at least one block");
@@ -515,11 +515,11 @@ describe("the repository homepage", () => {
     }
   });
 
-  it("opens with a prompt and featured flows, then the README", () => {
+  it("opens with a prompt, featured flows and the live stack, then the README", () => {
     const types = home.blocks.map((block) => block.type);
-    assert.deepEqual(types.slice(0, 3), ["prompt", "flows", "markdown"]);
+    assert.deepEqual(types.slice(0, 4), ["prompt", "flows", "stack", "markdown"]);
     assert.equal(home.blocks[0].placeholder, "Change Smithers…");
-    assert.equal(home.blocks[2].path, "README.md");
+    assert.equal(home.blocks[3].path, "README.md");
     assert.ok(catalog.flows.some((row) => row.featured), "the flows block has featured rows to show");
   });
 });

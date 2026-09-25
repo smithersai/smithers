@@ -9,6 +9,10 @@
       "title": "Try first"
     },
     {
+      "type": "stack",
+      "title": "Stack"
+    },
+    {
       "type": "markdown",
       "path": "README.md"
     },
