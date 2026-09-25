@@ -103,7 +103,9 @@ test("a checkpoint larger than the budget every collection fits still boots", as
     notes: [...Array(4).keys()].map(index => `note-${index}:${fill("note body ", share).length}`).sort()
   })
   expect((await reopened.verifyState()).valid).toBe(true)
-})
+// Persisting eight large events, compacting, reopening and verifying is an I/O
+// regression check; the collection's byte budget is not a five-second deadline.
+}, 30_000)
 
 test("a store compacted many times keeps one checkpoint and reopens at the tip", async () => {
   const path = temporaryPath()

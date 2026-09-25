@@ -29,4 +29,5 @@ test("packaged source revision follows content across jj's empty post-push worki
   const edited = jj(root, "log", "-r", "@", "--no-graph", "-T", "commit_id")
   expect(edited).not.toBe(landed)
   expect(await sourceRevision(root)).toBe(edited)
-})
+// Several real jj processes initialize and snapshot a repository; this is not a 5 s latency contract.
+}, 30_000)

@@ -4,6 +4,9 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
 const script = resolve(import.meta.dir, "build-native.ts")
+// These tests compile Mach-O fixtures and launch the build in another process.
+// Shared release-gate runners can spend more than Bun's default 5 s doing that.
+const BUILD_CHECK_TIMEOUT = 30_000
 const pnpmPin = (JSON.parse(readFileSync(resolve(import.meta.dir, "..", "..", "..", "package.json"), "utf8")) as {
   packageManager: string
 }).packageManager
@@ -63,7 +66,7 @@ test.skipIf(process.platform !== "darwin")("refuses a Node runtime that loads a 
 
   expect(result.exitCode).not.toBe(0)
   expect(result.stderr).toContain(`loads ${library}`)
-})
+}, BUILD_CHECK_TIMEOUT)
 
 test.skipIf(process.platform !== "darwin")("accepts a Node runtime that loads only macOS system libraries", () => {
   const result = build(fakeNode("official"))
@@ -73,4 +76,4 @@ test.skipIf(process.platform !== "darwin")("accepts a Node runtime that loads on
   expect(result.exitCode).not.toBe(0)
   expect(result.stderr).not.toContain(" loads ")
   expect(result.stderr).toContain("Node license is unavailable")
-})
+}, BUILD_CHECK_TIMEOUT)
