@@ -399,16 +399,36 @@ func TestCommandsAuth_Z_ClaudeLoginHandlers(t *testing.T) {
 		}
 	})
 
-	t.Run("push warning message", func(t *testing.T) {
-		server := authZSecretServer(t, http.StatusInternalServerError)
+	t.Run("detected repo without --repo is not pushed", func(t *testing.T) {
+		var requests []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests = append(requests, r.Method+" "+r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"ok":true}`)
+		}))
+		t.Cleanup(server.Close)
 		commandsAuthCovSetConfig(t, server.URL)
 		authZClearClaudeEnv(t)
 		t.Setenv("SMITHERS_TOKEN", "smithers_push_z")
 		agentFInstallJj(t)
 		t.Setenv("AGENTF_REMOTES", "origin https://127.0.0.1/alice/demo.git")
 		authZSetStdin(t, "sk-ant-oat1-token")
-		if _, err := authZServe(t, claudeAuthCommand(), "login", "--json"); err != nil {
-			t.Fatalf("claude login push warning = %v", err)
+		out, err := authZServe(t, claudeAuthCommand(), "login", "--json")
+		if err != nil {
+			t.Fatalf("claude login without --repo = %v", err)
+		}
+		if len(requests) != 0 {
+			t.Fatalf("claude login without --repo sent %v; the personal token must stay local", requests)
+		}
+		if strings.Contains(out, "pushed_secret") || strings.Contains(out, "alice/demo") {
+			t.Fatalf("claude login without --repo reported a push: %s", out)
+		}
+		got, loadErr := LoadStoredToken(claudeSetupTokenStorageKey)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		if got = strings.TrimSpace(got); got != "sk-ant-oat1-token" {
+			t.Fatalf("stored token = %q", got)
 		}
 	})
 
@@ -499,34 +519,6 @@ func TestCommandsAuth_Z_ClaudeOtherHandlers(t *testing.T) {
 		t.Setenv("ANTHROPIC_AUTH_TOKEN", "env-claude")
 		if _, err := authZServe(t, claudeAuthCommand(), "push", "--repo", "alice/demo"); err == nil {
 			t.Fatal("expected push API error")
-		}
-	})
-}
-
-func TestCommandsAuth_Z_MaybePushStoredClaudeTokenErrors(t *testing.T) {
-	t.Run("warning for detected repo", func(t *testing.T) {
-		server := authZSecretServer(t, http.StatusInternalServerError)
-		commandsAuthCovSetConfig(t, server.URL)
-		authZClearClaudeEnv(t)
-		t.Setenv("SMITHERS_TOKEN", "smithers_push_z")
-		agentFInstallJj(t)
-		t.Setenv("AGENTF_REMOTES", "origin https://127.0.0.1/alice/demo.git")
-		got, err := maybePushStoredClaudeToken("", "stored-token")
-		if err != nil {
-			t.Fatalf("maybePush warning err = %v", err)
-		}
-		if warning := stringValue(got["push_warning"]); !strings.Contains(warning, "automatic repository secret push failed") {
-			t.Fatalf("push warning = %#v", got)
-		}
-	})
-
-	t.Run("explicit repo error", func(t *testing.T) {
-		server := authZSecretServer(t, http.StatusInternalServerError)
-		commandsAuthCovSetConfig(t, server.URL)
-		authZClearClaudeEnv(t)
-		t.Setenv("SMITHERS_TOKEN", "smithers_push_z")
-		if _, err := maybePushStoredClaudeToken("alice/demo", "stored-token"); err == nil {
-			t.Fatal("expected explicit repo push error")
 		}
 	})
 }

@@ -156,13 +156,23 @@ func issueCommand() *incur.Cli {
 		if _, ok := ctx.Options["body"]; ok {
 			body["body"] = stringValue(ctx.Options["body"])
 		}
-		if assignee := stringValue(ctx.Options["assignee"]); assignee != "" {
-			body["assignees"] = []string{assignee}
-		}
+		issuePath := fmt.Sprintf("/api/repos/%s/%s/issues/%d", owner, repo, number)
+		// PATCH replaces the whole label and assignee sets, so --label goes
+		// through the additive labels route and --assignee sends the current
+		// assignees plus the new one.
 		if label := stringValue(ctx.Options["label"]); label != "" {
-			body["labels"] = []string{label}
+			if _, err := APIRequest("POST", issuePath+"/labels", map[string]any{"labels": []string{label}}, nil); err != nil {
+				return nil, cleanAPIError(err)
+			}
 		}
-		issue, err := APIRequest("PATCH", fmt.Sprintf("/api/repos/%s/%s/issues/%d", owner, repo, number), body, nil)
+		if assignee := stringValue(ctx.Options["assignee"]); assignee != "" {
+			current, err := APIRequest("GET", issuePath, nil, nil)
+			if err != nil {
+				return nil, cleanAPIError(err)
+			}
+			body["assignees"] = appendAssignee(objectValue(current)["assignees"], assignee)
+		}
+		issue, err := APIRequest("PATCH", issuePath, body, nil)
 		if err != nil {
 			return nil, cleanAPIError(err)
 		}
@@ -185,6 +195,24 @@ func issueCommand() *incur.Cli {
 	}))
 
 	return cmd
+}
+
+// appendAssignee returns the logins in an issue's assignees list with login
+// added unless it is already present. Usernames compare case-insensitively,
+// matching the server.
+func appendAssignee(assignees any, login string) []string {
+	logins := []string{}
+	for _, entry := range arrayValue(assignees) {
+		if existing := stringValue(objectValue(entry)["login"]); existing != "" {
+			logins = append(logins, existing)
+		}
+	}
+	for _, existing := range logins {
+		if strings.EqualFold(existing, login) {
+			return logins
+		}
+	}
+	return append(logins, login)
 }
 
 func issueNumberCommand(description string, handler func(owner, repo string, number int, ctx *incur.CommandContext) (any, error)) *incur.CommandDef {
@@ -561,7 +589,11 @@ func workflowRunWatchCommand(description string) *incur.CommandDef {
 			if err != nil {
 				return nil, err
 			}
-			return watchWorkflowRun(owner, repo, intValue(ctx.Args["id"], 0))
+			run, err := watchWorkflowRun(owner, repo, intValue(ctx.Args["id"], 0))
+			if err == nil && workflowRunFailed(stringValue(objectValue(run)["status"])) {
+				pendingProcessExitCode = 1
+			}
+			return run, err
 		},
 	}
 }
@@ -574,7 +606,7 @@ func watchWorkflowRun(owner, repo string, runID int) (any, error) {
 	runRecord := objectValue(runData)
 	status := stringValue(runRecord["status"])
 	fmt.Fprintf(os.Stderr, "Watching run #%d (status: %s)...\n", intValue(runRecord["id"], runID), status)
-	if status == "completed" || status == "failed" || status == "cancelled" {
+	if workflowRunTerminal(status) {
 		fmt.Fprintf(os.Stderr, "Run #%d already %s.\n", intValue(runRecord["id"], runID), status)
 		return runData, nil
 	}
@@ -582,12 +614,39 @@ func watchWorkflowRun(owner, repo string, runID int) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The log stream is only a wakeup. Read the durable run status after it
+	// ends so the CLI exit code reflects the settled run.
+	finalData, err := APIRequest("GET", fmt.Sprintf("/api/repos/%s/%s/runs/%d", owner, repo, runID), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if final := objectValue(finalData); final != nil {
+		runRecord = final
+	}
 	out := map[string]any{}
 	for key, value := range runRecord {
 		out[key] = value
 	}
 	out["events"] = events
 	return out, nil
+}
+
+func workflowRunTerminal(status string) bool {
+	switch status {
+	case "success", "failure", "completed", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+func workflowRunFailed(status string) bool {
+	switch status {
+	case "failure", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
 }
 
 func streamWorkflowRunEvents(owner, repo string, runID int) ([]map[string]any, error) {

@@ -196,6 +196,9 @@ func authCommand() *incur.Cli {
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			status := GetAuthStatus(nil, map[string]string{"hostname": stringValue(ctx.Options["hostname"])})
+			if !status.LoggedIn {
+				pendingProcessExitCode = 1
+			}
 			if ctx.FormatExplicit {
 				return status, nil
 			}
@@ -278,7 +281,7 @@ func claudeAuthCommand() *incur.Cli {
 	cmd.Command("login", &incur.CommandDef{
 		Description: "Store a Claude setup token from stdin",
 		OptionsSchema: objectSchema(nil, map[string]*incur.JSONSchema{
-			"repo": stringSchema("Repository (OWNER/REPO)"),
+			"repo": stringSchema("Also push the token to this repository's secrets (OWNER/REPO)"),
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			fmt.Fprintln(os.Stderr, "Paste the Claude setup token from `claude setup-token`, then press Ctrl-D.")
@@ -298,22 +301,22 @@ func claudeAuthCommand() *incur.Cli {
 			if resolved != nil {
 				activeSource = resolved.Source
 			}
-			pushResult, err := maybePushStoredClaudeToken(stringValue(ctx.Options["repo"]), token)
-			if err != nil {
-				return nil, err
-			}
 			result := map[string]any{
 				"status":        "logged_in",
 				"stored_token":  true,
 				"active_source": activeSource,
 			}
-			for key, value := range pushResult {
-				result[key] = value
-			}
-			if result["pushed_secret"] != nil {
-				result["message"] = fmt.Sprintf("Stored Claude setup token in keyring and pushed %s to %s.", result["pushed_secret"], result["pushed_repo"])
-			} else if warning := stringValue(result["push_warning"]); warning != "" {
-				result["message"] = warning
+			// The setup token is a personal subscription credential. Push it into
+			// repository secrets only when the caller names the repository;
+			// never infer one from the working directory's remotes.
+			if repo := strings.TrimSpace(stringValue(ctx.Options["repo"])); repo != "" {
+				pushed, err := pushClaudeAuthSecret(repo, &resolvedClaudeToken{EnvKey: "ANTHROPIC_AUTH_TOKEN", Source: "stored Claude subscription token", Token: token})
+				if err != nil {
+					return nil, err
+				}
+				result["pushed_secret"] = pushed["secret_name"]
+				result["pushed_repo"] = pushed["repo"]
+				result["message"] = fmt.Sprintf("Stored Claude setup token in keyring and pushed %s to %s.", pushed["secret_name"], pushed["repo"])
 			} else if activeSource == "stored Claude subscription token" {
 				result["message"] = "Stored Claude setup token in keyring"
 			} else {
@@ -464,21 +467,6 @@ func pushClaudeAuthSecret(repoOverride string, resolved *resolvedClaudeToken) (m
 		return nil, err
 	}
 	return map[string]any{"repo": owner + "/" + repo, "secret_name": resolved.EnvKey, "source": resolved.Source}, nil
-}
-
-func maybePushStoredClaudeToken(repoOverride, token string) (map[string]any, error) {
-	pushed, err := pushClaudeAuthSecret(repoOverride, &resolvedClaudeToken{EnvKey: "ANTHROPIC_AUTH_TOKEN", Source: "stored Claude subscription token", Token: token})
-	if err == nil {
-		return map[string]any{"pushed_secret": pushed["secret_name"], "pushed_repo": pushed["repo"]}, nil
-	}
-	message := err.Error()
-	if strings.TrimSpace(repoOverride) == "" && strings.HasPrefix(message, "Could not determine repository.") {
-		return nil, nil
-	}
-	if strings.TrimSpace(repoOverride) == "" {
-		return map[string]any{"push_warning": "Stored Claude setup token in keyring, but automatic repository secret push failed: " + message}, nil
-	}
-	return nil, err
 }
 
 func isLikelyJWT(token string) bool {

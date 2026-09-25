@@ -92,6 +92,8 @@ func TestCommandsIssueWikiWorkflow_Cov_IssueAndWikiCommands(t *testing.T) {
 				state = "open"
 			}
 			fmt.Fprintf(w, `{"number":7,"title":%q,"state":%q}`, title, state)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/repos/alice/demo/issues/7/labels":
+			fmt.Fprint(w, `[{"name":"bug"}]`)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/repos/alice/demo/issues/7/reactions":
 			fmt.Fprint(w, `{"content":"heart"}`)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/repos/alice/demo/issues/7/pin":

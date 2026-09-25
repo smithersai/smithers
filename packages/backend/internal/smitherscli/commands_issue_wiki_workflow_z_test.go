@@ -108,6 +108,8 @@ func TestCommandsIssueWikiWorkflow_Z_IssueFormatAndErrorBranches(t *testing.T) {
 	commandsIWWZServeErr(t, issueCommand(), "boom", "close", "7", "--repo", "err/err")
 	commandsIWWZServeErr(t, issueCommand(), "boom", "reopen", "7", "--repo", "err/err")
 	commandsIWWZServeErr(t, issueCommand(), "boom", "edit", "7", "--repo", "err/err", "--title", "X")
+	commandsIWWZServeErr(t, issueCommand(), "boom", "edit", "7", "--repo", "err/err", "--label", "bug")
+	commandsIWWZServeErr(t, issueCommand(), "boom", "edit", "7", "--repo", "err/err", "--assignee", "bob")
 	commandsIWWZServeErr(t, issueCommand(), "boom", "comment", "7", "--repo", "err/err", "--body", "n")
 
 	// ResolveRepoRef error branches (bad repo ref).

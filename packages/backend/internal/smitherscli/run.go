@@ -16,6 +16,10 @@ import (
 
 var cliVersion = "0.1.0"
 
+// A command may return a printable result while still reporting failure to
+// shell scripts, as with a failed workflow run.
+var pendingProcessExitCode int
+
 func Run(argv []string) int {
 	rewritten := rewriteCLIArgv(argv)
 	return serveCLI(newCLIWithFeatureFlags(loadFeatureFlagsForRootHelp(rewritten)), rewritten)
@@ -23,6 +27,7 @@ func Run(argv []string) int {
 
 func serveCLI(cli *incur.Cli, argv []string) int {
 	var stdout bytes.Buffer
+	pendingProcessExitCode = 0
 	human := term.IsTerminal(int(os.Stdout.Fd()))
 	err := cli.ServeWithOptions(argv, incur.ServeOptions{
 		Stdin:  os.Stdin,
@@ -32,7 +37,7 @@ func serveCLI(cli *incur.Cli, argv []string) int {
 	})
 	if err == nil {
 		_, _ = os.Stdout.Write(stdout.Bytes())
-		return 0
+		return pendingProcessExitCode
 	}
 	_, _ = os.Stderr.Write(stdout.Bytes())
 	var incurErr *incur.IncurError

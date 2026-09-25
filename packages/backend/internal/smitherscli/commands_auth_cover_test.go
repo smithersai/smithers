@@ -148,7 +148,7 @@ func TestCommandsAuth_Cov_ClaudeSetupValidationAndResolution(t *testing.T) {
 	}
 }
 
-func TestCommandsAuth_Cov_PushClaudeSecretAndMaybePush(t *testing.T) {
+func TestCommandsAuth_Cov_PushClaudeSecret(t *testing.T) {
 	var secretPayload map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/repos/alice/demo/secrets" {
@@ -173,31 +173,6 @@ func TestCommandsAuth_Cov_PushClaudeSecretAndMaybePush(t *testing.T) {
 	}
 	if pushed["repo"] != "alice/demo" || pushed["secret_name"] != "ANTHROPIC_AUTH_TOKEN" || secretPayload["value"] != "secret-token" {
 		t.Fatalf("push result = %#v payload = %#v", pushed, secretPayload)
-	}
-
-	auto, err := maybePushStoredClaudeToken("alice/demo", "stored-token")
-	if err != nil {
-		t.Fatalf("maybePushStoredClaudeToken returned error: %v", err)
-	}
-	if auto["pushed_secret"] != "ANTHROPIC_AUTH_TOKEN" || auto["pushed_repo"] != "alice/demo" {
-		t.Fatalf("automatic push result = %#v", auto)
-	}
-
-	commandsAuthCovSetConfig(t, server.URL)
-	t.Setenv("SMITHERS_TOKEN", "smithers_auth_cov_token")
-	t.Setenv("PATH", t.TempDir())
-	oldwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tempwd := t.TempDir()
-	if err := os.Chdir(tempwd); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(oldwd)
-	none, err := maybePushStoredClaudeToken("", "stored-token")
-	if err != nil || none != nil {
-		t.Fatalf("missing repo automatic push = %#v, %v", none, err)
 	}
 }
 
