@@ -22,7 +22,7 @@ import { canonicalCommandName } from "../flows/CommandName"
 import { ASK_HONEST_LINES, type ImpossibleAskClass } from "./Instructions"
 
 /** The commands that launch a run on the user's workspace. */
-export const RUN_LAUNCH_COMMANDS: ReadonlyArray<string> = ["flow.create", "flow.run", "feature.prototype"]
+export const RUN_LAUNCH_COMMANDS: ReadonlyArray<string> = ["flow.create", "flow.run", "feature.prototype", "change.request"]
 
 /**
  * The command a model tool call would launch a run with, if any. The model

@@ -52,6 +52,8 @@ export interface WorkflowController {
   /** The Flows pane: the surface switch, and the same listing that fills it. */
   readonly showFlows: () => Promise<string | void | { readonly value: string }>
   readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string) => Promise<string | void | { readonly value: string }>
+  /** `change.request`: coding/request on the prompt, continuing into coding/vibe once it validates. */
+  readonly requestChange: (prompt: string, repo?: string) => Promise<string | void | { readonly value: string }>
   /** What a flow WOULD run: the plan card, filled in the background. */
   readonly planFlow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string, against?: string) => Promise<string | void | { readonly value: string }>
   readonly chooseWorkflowRepo: (fullName: string) => Promise<string | void | { readonly value: string }>
@@ -798,6 +800,26 @@ export const createWorkflowController = (
     return requests.start({ repo, binding, workflow: name, input, actor: ctx.commandActor })
   }
 
+  /*
+   * A change typed in chat is a coding/request whose validated result lands
+   * through coding/vibe. The request is durable before this returns; the
+   * workspace's preparation, the run and the hand-over to vibe continue in
+   * the background under the shared toast, and each stage has its own card.
+   */
+  const requestChange = async (prompt: string, repoArg?: string): Promise<string | void | { readonly value: string }> => {
+    const what = prompt.trim()
+    if (what === "") return "change.request needs what to change"
+    if (!runtimeFlowAvailable("coding/request", ctx.services.features)) return "This feature is not enabled."
+    if (what.length > 32_768) return "The change request exceeds the coding request limit of 32,768 characters."
+    const guard = workflowIdentityGuard()
+    if (guard !== undefined) return guard
+    const target = workflowScope(repoArg)
+    if ("error" in target) return target.error
+    const { repo, binding } = target
+    if (binding.workspaceId === undefined) return `Open a cloud workspace for ${repo} with /workspace.open, select it, then request the change again.`
+    return requests.start({ repo, binding, workflow: "coding/request", input: { prompt: what }, actor: ctx.commandActor, then: "coding/vibe" })
+  }
+
   /**
    * Plan a flow: what it WOULD run, before anything runs.
    *
@@ -1049,6 +1071,7 @@ export const createWorkflowController = (
     listWorkspaceWorkflows,
     showFlows,
     runWorkflow,
+    requestChange,
     planFlow,
     chooseWorkflowRepo,
     forwardApprovalDecision,

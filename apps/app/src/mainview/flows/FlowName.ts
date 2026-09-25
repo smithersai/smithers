@@ -70,6 +70,7 @@ export const FLOW_NAMES = [
   "change.open",
   "change.pick",
   "change.pins",
+  "change.request",
   "change.resolve",
   "change.revert",
   "change.split",

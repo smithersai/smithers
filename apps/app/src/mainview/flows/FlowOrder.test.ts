@@ -138,6 +138,7 @@ const PRE_SPLIT_BASE: ReadonlyArray<string> = [
   "workspace.desktop.rotate",
   "workspace.images",
   "egress.session",
+  "change.request",
   "change.view",
   "change.diff",
   "change.land",

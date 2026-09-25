@@ -682,6 +682,13 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
    * each takes only its optional target. `feature.prototype` reads like
    * issues.create: the request is the line, a trailing owner/repo the target.
    */
+  "change.request": (args, known) => {
+    const { rest, repo } = splitTrailingRepo(args, known)
+    const payload: Record<string, unknown> = {}
+    if (rest !== "") payload["prompt"] = rest
+    if (repo !== undefined) payload["repo"] = repo
+    return ok(payload)
+  },
   "feature.prototype": (args, known) => {
     const { rest, repo } = splitTrailingRepo(args, known)
     if (rest === "") return no("feature.prototype needs what the feature should do")

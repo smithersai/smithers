@@ -1,7 +1,7 @@
 import type { Actor, Card } from "../AppState"
 import { actorSharedState } from "../ActorBindings"
 import { canonicalStoredJsonValue } from "../EventValue"
-import { runtimeRunKey } from "../RuntimeProjection"
+import { projectRuntimeCard, runtimeRunKey } from "../RuntimeProjection"
 import { workflowLaunchOf, type WorkflowLaunch } from "../WorkflowLaunch"
 import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED } from "./failures"
@@ -10,10 +10,18 @@ import { runtimeFlowAvailable } from "../KnowledgeFeatures"
 import { planCardSnapshot } from "../../cards/PlanNodes"
 import { runFailureOf } from "../RunFailure"
 import { digest } from "@smthrs/core/Digest"
+import { codingVibeRequestOf } from "../../cards/CodingVibe"
+import { codingEvidenceOf } from "../../cards/CodingPlan"
+import { engineProjectionPending } from "../../cards/EngineTrace"
 
 type RunCard = Extract<Card, { kind: "run-trace" }>
 type Refusal = { readonly message: string; readonly code?: string; readonly retryAfterSeconds?: number }
 const terminal = new Set(["completed", "failed", "cancelled"])
+/** Polls a completed request waits for its journal before judging whether it validated. */
+const EVIDENCE_ROUNDS = 24
+/** The dedup identity of a request: a change request is not the same work as a bare run of its first flow. */
+const requestKey = (request: Pick<WorkflowLaunch, "owner" | "repo" | "workspaceId" | "workflow" | "input" | "then">): string =>
+  canonicalStoredJsonValue([request.owner, request.repo, request.workspaceId ?? null, request.workflow, request.input, ...(request.then === undefined ? [] : [request.then])])
 class RequestPersistenceError extends Error {}
 
 /** One durable request owns preparation, launch and observation through remote settlement. */
@@ -63,7 +71,7 @@ export const createWorkflowLaunchController = (
       } catch { throw new RequestPersistenceError() }
     }
     // A new request for the same work replaces its earlier failure on the shared stack.
-    const toastKey = `flow.request.${digest(canonicalStoredJsonValue([request.owner, request.repo, request.workspaceId ?? null, request.workflow, request.input]))}`
+    const toastKey = `flow.request.${digest(requestKey(request))}`
     const work = ctx.withToast(toastKey, request.workflow, `${request.workflow} completed`, async () => {
       let stage: NonNullable<WorkflowLaunch["error"]>["stage"] = "preparation"
       const fail = async (failure: Refusal) => {
@@ -71,6 +79,52 @@ export const createWorkflowLaunchController = (
         const error = { stage, code: failure.code ?? "launch_unavailable", message: failure.message }
         await publish({ ...request, error }, { phase: "failed", error: error.message })
         return error.message
+      }
+      /*
+       * A change request lands only through coding/vibe, and coding/vibe
+       * admits only a validated request. Read that verdict off the run's own
+       * journal, then hand over to one follow-up request whose identity is
+       * derived from this one, so a reload or a second observer resumes it
+       * instead of starting another.
+       */
+      const continueChange = async (): Promise<true | string | typeof TOAST_SUPERSEDED> => {
+        for (let round = 0; current(); round++) {
+          const followed = workflowLaunchOf(read(id))?.next
+          if (followed !== undefined) {
+            const next = workflowLaunchOf(read(`flow-request-${followed}`))
+            if (next !== undefined && !next.error) send(`flow-request-${followed}`, next)
+            return true
+          }
+          const run = store.committedRuntimeRun(runtimeRunKey(read(id)!.payload))
+          const card = projectRuntimeCard(read(id)!, run === undefined ? [] : [run], [])
+          if (card.kind !== "run-trace") return TOAST_SUPERSEDED
+          const validated = codingVibeRequestOf(card)
+          if (validated !== undefined) {
+            const fresh: WorkflowLaunch = { version: 1, id: `${request.id}.vibe`, owner: request.owner, repo: request.repo,
+              ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }), workflow: "coding/vibe",
+              input: { requestExecutionId: validated.requestExecutionId }, preparationStartedAt: Date.now() }
+            // The plan card's own Vibe button may already have asked for the same landing.
+            const adopted = [...store.collections.cards.values()].map(workflowLaunchOf)
+              .find(held => held !== undefined && !held.error && requestKey(held) === requestKey(fresh))
+            const next = adopted ?? fresh
+            const nextId = next.id
+            const cardId = `flow-request-${nextId}`
+            if (read(cardId) === undefined) await save(requestCard(cardId, next))
+            if (!current()) return TOAST_SUPERSEDED
+            await publish({ ...request, next: nextId })
+            send(cardId, next)
+            return true
+          }
+          const outcome = codingEvidenceOf(card).outcome
+          if (outcome !== undefined && outcome.status !== "validated") {
+            return outcome.blocked?.message ?? `Changes requested after ${outcome.rounds} ${outcome.rounds === 1 ? "round" : "rounds"}.`
+          }
+          if (round >= EVIDENCE_ROUNDS && run?.journalPending !== true && !engineProjectionPending(run?.events)) {
+            return "The run finished without a validated change."
+          }
+          await pause(ctx.workflowPollMs, controller.signal)
+        }
+        return TOAST_SUPERSEDED
       }
       try {
         if (request.runId === undefined) {
@@ -140,7 +194,7 @@ export const createWorkflowLaunchController = (
           const card = read(id)!
           const summary = store.committedRuntimeRun(runtimeRunKey(card.payload))?.summary
           if (summary !== undefined && terminal.has(summary.status)) {
-            if (summary.status === "completed") return true
+            if (summary.status === "completed") return request.then === undefined ? true : await continueChange()
             if (summary.status === "cancelled") return summary.verdict ?? "Run cancelled."
             return summary.verdict === "failed — no cause recorded in the journal"
               ? runFailureOf({ workflow: request.workflow, error: summary.verdict,
@@ -185,7 +239,12 @@ export const createWorkflowLaunchController = (
     void saving.then(() => send(id, next), () => {}).finally(() => persisting.delete(id))
     return true
   }
-  const start = async (args: { repo: string; binding: GatewayWorkspaceBinding; workflow: string; input: Record<string, unknown>; actor: Actor }): Promise<string | { value: string }> => {
+  const requestCard = (id: string, request: WorkflowLaunch): RunCard => ({ id, kind: "run-trace", title: `${request.workflow} · ${request.repo}`,
+    status: "active", createdAt: Date.now(), ordinal: nextOrdinal(), payload: { repo: request.repo,
+      ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }), gatewayBindingVersion: 1,
+      workflow: request.workflow, runId: `pending-${request.id}`, phase: "launching", steps: [], result: null, lastSeq: 0, liveTail: true,
+      input: { ...request.input, _workflowLaunch: request } } })
+  const start = async (args: { repo: string; binding: GatewayWorkspaceBinding; workflow: string; input: Record<string, unknown>; actor: Actor; then?: "coding/vibe" }): Promise<string | { value: string }> => {
     const login = owner()
     if (!login) return "Sign in with GitHub first: flows run on your own workspace."
     // A request belongs to the account that made it: sign-out forgets its card, so no await may save it again.
@@ -193,13 +252,13 @@ export const createWorkflowLaunchController = (
     const admitted = () => !ctx.disposed && ctx.accountEpoch === epoch && owner() === login
     const ended = "The account changed before the run was requested."
     const input = JSON.parse(canonicalStoredJsonValue(args.input)) as Record<string, unknown>
-    const key = canonicalStoredJsonValue([login, args.repo, args.binding.workspaceId ?? null, args.workflow, input])
+    const key = requestKey({ owner: login, repo: args.repo, workspaceId: args.binding.workspaceId, workflow: args.workflow, input, then: args.then })
     // Admission is serialized through persistence, shared by button, slash and agent bindings.
     while (persisting.has(key)) await persisting.get(key)
     if (!admitted()) return ended
     const prior = [...store.collections.cards.values()].find(card => {
       const held = workflowLaunchOf(card)
-      return held && canonicalStoredJsonValue([held.owner, held.repo, held.workspaceId ?? null, held.workflow, held.input]) === key &&
+      return held && requestKey(held) === key &&
         (held.runId === undefined || (card.kind === "run-trace" && !terminal.has(card.payload.phase)))
     })
     if (prior) {
@@ -209,12 +268,9 @@ export const createWorkflowLaunchController = (
       return { value: `run-requested workflow=${args.workflow} request=${held.id} repo=${args.repo}` }
     }
     const request: WorkflowLaunch = { version: 1, id: crypto.randomUUID(), owner: login, repo: args.repo, ...args.binding, workflow: args.workflow,
-      input, preparationStartedAt: Date.now() }
+      input, preparationStartedAt: Date.now(), ...(args.then === undefined ? {} : { then: args.then }) }
     const id = `flow-request-${request.id}`
-    const saving = store.dispatch({ type: "card.upsert", actor: args.actor, card: { id, kind: "run-trace", title: `${args.workflow} · ${args.repo}`,
-      status: "active", createdAt: Date.now(), ordinal: nextOrdinal(), payload: { repo: args.repo, ...args.binding, gatewayBindingVersion: 1,
-        workflow: args.workflow, runId: `pending-${request.id}`, phase: "launching", steps: [], result: null, lastSeq: 0, liveTail: true,
-        input: { ...request.input, _workflowLaunch: request } } } }).isPersisted.promise
+    const saving = store.dispatch({ type: "card.upsert", actor: args.actor, card: requestCard(id, request) }).isPersisted.promise
     persisting.set(key, saving)
     try { await saving } catch { return "The run request could not be saved. Try again." } finally { persisting.delete(key) }
     if (!admitted()) return ended

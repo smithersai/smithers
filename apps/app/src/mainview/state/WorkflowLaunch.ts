@@ -13,6 +13,10 @@ export const WorkflowLaunchSchema = z.object({
   runId: z.string().optional(),
   preparationStartedAt: z.number().optional(),
   retryAt: z.number().optional(),
+  /** A change request (change.request): a validated coding/request continues into coding/vibe. */
+  then: z.literal("coding/vibe").optional(),
+  /** The follow-up request this one started, so a reload never starts it twice. */
+  next: z.string().optional(),
   error: z.object({ stage: z.enum(["preparation", "launch", "persistence"]), code: z.string(), message: z.string() }).optional()
 })
 export type WorkflowLaunch = z.infer<typeof WorkflowLaunchSchema>

@@ -278,6 +278,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string) => Promise<string | void | { readonly value: string }>
   /** What a flow WOULD run (flow.plan). */
   readonly planFlow: WorkflowController["planFlow"]
+  /** change.request: a coding/request that lands through coding/vibe once validated. */
+  readonly requestChange: WorkflowController["requestChange"]
   /* Wave 12 §2 — the answer to "which loaded repository?" (one act). */
   readonly chooseWorkflowRepo: (fullName: string) => Promise<string | void | { readonly value: string }>
   /* Wave 12 §3 — the two acts a run that has gone quiet offers. */
@@ -1179,6 +1181,7 @@ export const createAppController = (
     listWorkspaceWorkflows,
     showFlows,
     runWorkflow,
+    requestChange,
     planFlow,
     chooseWorkflowRepo,
     forwardApprovalDecision,
@@ -1660,6 +1663,7 @@ export const createAppController = (
     listTriggers,
     showFlows,
     runWorkflow,
+    requestChange,
     planFlow,
     chooseWorkflowRepo,
     stopWatchingRun,
