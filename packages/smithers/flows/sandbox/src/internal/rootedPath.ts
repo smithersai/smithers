@@ -21,12 +21,17 @@
  * @since 0.1.0
  */
 export const rootedAt = (workdir: string): (path: string) => string => {
-  const trimmed = workdir.replace(/\/+$/, "")
-  const root = trimmed === "" ? "/" : trimmed
-  return (path) => {
-    if (path.startsWith("/")) return path
+  // Interpret separators using the guest path dialect, independently of the
+  // machine driving it. A POSIX guest may legally have backslashes in a name.
+  const windows = /^(?:[A-Za-z]:[\\/]|\\\\)/.test(workdir)
+  const normalize = (path: string): string => windows ? path.replace(/\\/g, "/") : path
+  const trimmed = normalize(workdir).replace(/\/+$/, "")
+  const root = trimmed === "" ? "/" : windows && /^[A-Za-z]:$/.test(trimmed) ? `${trimmed}/` : trimmed
+  return (input) => {
+    const path = normalize(input)
+    if (path.startsWith("/") || (windows && /^[A-Za-z]:\//.test(path))) return path
     const relative = path.replace(/^(?:\.?\/+)*/, "")
     if (relative === "" || relative === ".") return root
-    return root === "/" ? `/${relative}` : `${root}/${relative}`
+    return root.endsWith("/") ? `${root}${relative}` : `${root}/${relative}`
   }
 }

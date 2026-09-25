@@ -48,4 +48,42 @@ describe("rootedAt", () => {
       "/work/sub/"
     ])
   })
+
+  it.each(["C:/work/", String.raw`C:\work`])("keeps Windows absolute paths absolute under %s", (workdir) => {
+    const resolve = rootedAt(workdir)
+    expect(
+      ["", ".", String.raw`.\nested\file`, String.raw`C:\work\file`, "D:/other/file", String.raw`\\server\share\file`]
+        .map(resolve)
+    ).toEqual([
+      "C:/work",
+      "C:/work",
+      "C:/work/nested/file",
+      "C:/work/file",
+      "D:/other/file",
+      "//server/share/file"
+    ])
+  })
+
+  it("roots relative Windows paths under a UNC workspace", () => {
+    const resolve = rootedAt(String.raw`\\server\share\work`)
+    expect(resolve(String.raw`.\nested\file`)).toBe("//server/share/work/nested/file")
+    expect(resolve(String.raw`\\other\share\file`)).toBe("//other/share/file")
+  })
+
+  it("preserves backslashes and drive-like names in POSIX guests", () => {
+    const resolve = rootedAt("/work")
+    expect(resolve(String.raw`C:\file`)).toBe(String.raw`/work/C:\file`)
+    expect(resolve(String.raw`nested\file`)).toBe(String.raw`/work/nested\file`)
+  })
+
+  it("preserves a Windows drive root without turning it into a drive-relative path", () => {
+    const resolve = rootedAt("C:/")
+    expect(["", ".", "./", "nested/file", "C:/absolute"].map(resolve)).toEqual([
+      "C:/",
+      "C:/",
+      "C:/",
+      "C:/nested/file",
+      "C:/absolute"
+    ])
+  })
 })
