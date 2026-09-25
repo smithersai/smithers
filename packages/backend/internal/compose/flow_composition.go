@@ -30,7 +30,7 @@ type flowComposition struct {
 	stopper    flowhost.RetirementStopper
 }
 
-func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService, repositoryJobs *services.RepositoryJobService, policy admission.Policy, setupServices ...*services.RepositorySetupService) (*flowComposition, error) {
+func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService, repositoryJobs *services.RepositoryJobService, policy admission.Policy, mythical *services.MythicalService, setupServices ...*services.RepositorySetupService) (*flowComposition, error) {
 	if options.FlowHostRegistry == nil {
 		return nil, nil
 	}
@@ -76,6 +76,12 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 		projectors = append(projectors, setupServices[0])
 	}
 	targets := flowTargetResolver(agentTargets, repositoryJobTargets, additionalTargets...)
+	if mythical != nil {
+		// Mythical stack lanes: every item launch is authorized against its
+		// persisted item and stack.
+		targets = withMythicalTargets(targets, services.NewMythicalFlowHostTargetResolver(mythical))
+		projectors = append(projectors, mythical)
+	}
 	launcher, err := flowhost.NewWorkspaceLauncher(options.Workspace)
 	if err != nil {
 		return nil, fmt.Errorf("Flow workspace launcher: %w", err)
@@ -218,4 +224,13 @@ func flowHostProductAPIURL(options runOptions, listenAddress string) (string, er
 		return "", errors.New("Flow hosts require a fixed local backend port")
 	}
 	return "http://" + net.JoinHostPort("127.0.0.1", port), nil
+}
+
+func withMythicalTargets(base, mythical flowhost.TargetResolver) flowhost.TargetResolver {
+	return flowhost.TargetResolverFunc(func(ctx context.Context, target flowruntime.Target) (flowhost.Authority, error) {
+		if target.BindingKind == "mythical-item" {
+			return mythical.ResolveFlowHostTarget(ctx, target)
+		}
+		return base.ResolveFlowHostTarget(ctx, target)
+	})
 }

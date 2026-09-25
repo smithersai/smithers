@@ -69,6 +69,11 @@ CREATE TABLE mythical_items (
     issue_title text NOT NULL DEFAULT '',
     issue_url text NOT NULL DEFAULT '',
     issue_digest text NOT NULL DEFAULT '',
+    -- 'issue' items come from GitHub; 'chat' items are results a workspace
+    -- handed to the stack without an issue.
+    source varchar(8) NOT NULL DEFAULT 'issue' CHECK (source IN ('issue', 'chat')),
+    -- Optimistic concurrency between the stack worker and run projections.
+    version bigint NOT NULL DEFAULT 0,
     state varchar(16) NOT NULL DEFAULT 'queued'
         CHECK (state IN ('queued', 'skipped', 'cancelled', 'running', 'delivering', 'integrating', 'verifying',
                          'proposing', 'waiting', 'proposed', 'landed', 'rejected', 'retrying', 'blocked')),
@@ -84,6 +89,13 @@ CREATE TABLE mythical_items (
     request_run_id text NOT NULL DEFAULT '',
     vibe_run_id text NOT NULL DEFAULT '',
     verify_run_id text NOT NULL DEFAULT '',
+    -- Terminal outcomes of the current attempt's runs, recorded by the
+    -- projection: '' while running, else validated, changes-requested,
+    -- blocked, declined, submitted, passed or failed[: reason].
+    request_outcome text NOT NULL DEFAULT '',
+    vibe_outcome text NOT NULL DEFAULT '',
+    verify_outcome text NOT NULL DEFAULT '',
+    summary text NOT NULL DEFAULT '',
     plan jsonb CHECK (plan IS NULL OR jsonb_typeof(plan) = 'object'),
     integration jsonb CHECK (integration IS NULL OR jsonb_typeof(integration) = 'object'),
     checks jsonb CHECK (checks IS NULL OR jsonb_typeof(checks) = 'object'),

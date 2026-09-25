@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -63,6 +64,14 @@ type MythicalService struct {
 	scratchRoot string
 	logger      *slog.Logger
 	now         func() time.Time
+
+	// The item machinery (SetOrchestration); absent, the stack only
+	// bootstraps and folds.
+	github    mythicalGitHub
+	launcher  mythicalLauncher
+	lanes     mythicalLanes
+	mu        sync.Mutex
+	backfills map[int64]time.Time
 }
 
 func NewMythicalService(store MythicalStore, host mythicalRepoHost) *MythicalService {
@@ -165,6 +174,17 @@ type mythicalOp struct {
 	Depth           int      `json:"depth,omitempty"`
 	Folded          []string `json:"folded,omitempty"`
 	ResetGeneration int64    `json:"resetGeneration,omitempty"`
+	// Adopt names, per folded main commit, the merged item whose candidate
+	// the fold adopts when its tree is exactly that commit's tree.
+	Adopt map[string]mythicalAdoption `json:"adopt,omitempty"`
+}
+
+// mythicalAdoption is a merged item's verified candidate.
+type mythicalAdoption struct {
+	ItemID string `json:"itemId"`
+	Issue  int64  `json:"issue,omitempty"`
+	Base   string `json:"base"`
+	Head   string `json:"head"`
 }
 
 // mythicalOutcome is what one run records.
@@ -202,6 +222,9 @@ func (s *MythicalService) runClaimed(parent context.Context, row db.MythicalStac
 	defer finishCancel()
 	if err := s.finish(finishCtx, row, outcome); err != nil {
 		s.logger.Error("mythical.finish_failed", "repository_id", row.RepositoryID, "error", err)
+	} else if outcome.op != nil {
+		// Items advance on the next claim, against the new tip.
+		s.MainMoved(finishCtx, row.RepositoryID)
 	}
 	attrs := []any{"repository_id", row.RepositoryID, "state", outcome.state}
 	if outcome.op != nil {
@@ -331,6 +354,8 @@ func (s *MythicalService) run(ctx context.Context, row db.MythicalStack) mythica
 			short(r.tip), short(row.TipCommit))
 	}
 	if r.mainTip == row.LandedMain {
+		// The stack is current: this claim moves the items instead.
+		s.advanceItems(ctx, r)
 		return mythicalOutcome{state: "active", clearPending: true}
 	}
 	return s.fold(ctx, r)
@@ -415,13 +440,23 @@ func (g mythicalGit) has(ctx context.Context, commit string) bool {
 	return err == nil
 }
 
+// errMythicalDiverged is main proven not to descend from the folded commit:
+// the scratch repository holds main's complete history.
+var errMythicalDiverged = errors.New("main does not descend from the last folded commit")
+
 // connectMain fetches main until from is on its history. Running out of the
 // per-claim budget is a retryable failure: the scratch repository keeps what
-// it fetched and the next claim continues.
+// it fetched (later fetches never shorten it) and the next claim continues.
 func (s *MythicalService) connectMain(ctx context.Context, r *mythicalRun, from string) error {
 	remote := r.bridge.URL()
+	depth := 0
 	if !r.g.has(ctx, r.mainTip) {
-		if err := r.g.fetch(ctx, remote, 64, 0, "refs/heads/"+r.branch); err != nil {
+		// Only an empty scratch repository starts shallow; an incremental
+		// fetch keeps the boundary it already deepened.
+		if _, err := r.g.git(ctx, "rev-parse", "--verify", "--quiet", "refs/mythical-scratch/heads/"+r.branch); err != nil {
+			depth = 64
+		}
+		if err := r.g.fetch(ctx, remote, depth, 0, "refs/heads/"+r.branch); err != nil {
 			return fmt.Errorf("fetch %s: %s", r.branch, sanitizeMirrorError(err, remote))
 		}
 	}
@@ -430,6 +465,12 @@ func (s *MythicalService) connectMain(ctx context.Context, r *mythicalRun, from 
 			if ancestor, err := r.g.isAncestor(ctx, from, r.mainTip); err == nil && ancestor {
 				return nil
 			}
+		}
+		if !r.g.shallow() {
+			if r.g.has(ctx, from) {
+				return errMythicalDiverged
+			}
+			return fmt.Errorf("%s is not in %s's complete history", short(from), r.branch)
 		}
 		if round == 4 {
 			return fmt.Errorf("%s is not yet connected to %s (%s); fetching more history on the next run", short(from), r.branch, short(r.mainTip))
@@ -440,11 +481,47 @@ func (s *MythicalService) connectMain(ctx context.Context, r *mythicalRun, from 
 	}
 }
 
+// shallow reports whether the scratch repository has a shallow boundary.
+func (g mythicalGit) shallow() bool {
+	out, err := g.git(context.Background(), "rev-parse", "--is-shallow-repository")
+	return err != nil || strings.TrimSpace(out) != "false"
+}
+
+// connectWindow fetches main until commit's first-parent window of depth+1
+// commits is complete (or reaches the root), so a bootstrap recomputes the
+// identical objects however far main has moved since.
+func (s *MythicalService) connectWindow(ctx context.Context, r *mythicalRun, commit string, depth int) error {
+	remote := r.bridge.URL()
+	if err := r.g.fetch(ctx, remote, depth+1, 0, "refs/heads/"+r.branch); err != nil {
+		return fmt.Errorf("fetch %s: %s", r.branch, sanitizeMirrorError(err, remote))
+	}
+	for round := 0; ; round++ {
+		if r.g.has(ctx, commit) {
+			chain, err := r.g.firstParents(ctx, commit, depth+1)
+			if err == nil && (len(chain) == depth+1 || (len(chain) > 0 && chain[len(chain)-1].Parent() == "" && !r.g.isShallowBoundary(chain[len(chain)-1].ID))) {
+				return nil
+			}
+		}
+		if !r.g.shallow() || round == 8 {
+			return fmt.Errorf("the bootstrap window of %s is not available yet", short(commit))
+		}
+		if err := r.g.fetch(ctx, remote, 0, 512, "refs/heads/"+r.branch); err != nil {
+			return fmt.Errorf("deepen %s: %s", r.branch, sanitizeMirrorError(err, remote))
+		}
+	}
+}
+
+// isShallowBoundary reports whether commit's parents were cut by a shallow fetch.
+func (g mythicalGit) isShallowBoundary(commit string) bool {
+	data, err := os.ReadFile(filepath.Join(g.dir, "shallow"))
+	return err == nil && strings.Contains(string(data), commit)
+}
+
 func (s *MythicalService) bootstrap(ctx context.Context, r *mythicalRun) mythicalOutcome {
 	op := mythicalOp{Kind: "bootstrap", OldTip: r.tip, OldNotes: r.notesRef, Main: r.mainTip,
 		Depth: int(r.row.BootstrapDepth), ResetGeneration: r.row.ResetGeneration}
-	if err := r.g.fetch(ctx, r.bridge.URL(), op.Depth+1, 0, "refs/heads/"+r.branch); err != nil {
-		return mythicalFailed("fetch %s: %v", r.branch, sanitizeMirrorError(err, r.bridge.URL()))
+	if err := s.connectWindow(ctx, r, op.Main, op.Depth); err != nil {
+		return mythicalFailed("%v", err)
 	}
 	if err := s.compute(ctx, r, &op); err != nil {
 		return mythicalFailed("%v", err)
@@ -460,7 +537,9 @@ func (s *MythicalService) fold(ctx context.Context, r *mythicalRun) mythicalOutc
 	if err := r.g.fetch(ctx, remote, 0, 0, repohost.MythicalBookmarkRef, repohost.MythicalNotesRef); err != nil {
 		return mythicalFailed("fetch the stack: %v", sanitizeMirrorError(err, remote))
 	}
-	if err := s.connectMain(ctx, r, r.row.LandedMain); err != nil {
+	if err := s.connectMain(ctx, r, r.row.LandedMain); errors.Is(err, errMythicalDiverged) {
+		return mythicalFrozen("main (%s) does not descend from the last folded commit %s; it was rewritten", short(r.mainTip), short(r.row.LandedMain))
+	} else if err != nil {
 		return mythicalFailed("%v", err)
 	}
 	landed, err := r.g.readCommit(ctx, r.row.LandedMain)
@@ -492,6 +571,9 @@ func (s *MythicalService) fold(ctx context.Context, r *mythicalRun) mythicalOutc
 	for _, commit := range commits {
 		op.Folded = append(op.Folded, commit.ID)
 	}
+	if err := s.adoptions(ctx, r, &op); err != nil {
+		return mythicalFailed("%v", err)
+	}
 	if err := s.compute(ctx, r, &op); err != nil {
 		return mythicalFailed("%v", err)
 	}
@@ -503,6 +585,7 @@ func (s *MythicalService) fold(ctx context.Context, r *mythicalRun) mythicalOutc
 func (s *MythicalService) compute(ctx context.Context, r *mythicalRun, op *mythicalOp) error {
 	var written []mythicalStackCommit
 	notesByCommit := map[string]string{}
+	var kept map[string]bool // commits of the unchanged prefix, for pruning notes
 	switch op.Kind {
 	case "bootstrap":
 		commits, err := r.g.bootstrap(ctx, op.Main, op.Depth)
@@ -516,11 +599,56 @@ func (s *MythicalService) compute(ctx context.Context, r *mythicalRun, op *mythi
 			return fmt.Errorf("read notes: %w", err)
 		}
 		notesByCommit = notes
-		parent := op.OldTip
+		rows, err := s.queries().ListMythicalChanges(ctx, r.row.RepositoryID)
+		if err != nil {
+			return fmt.Errorf("load the stack: %w", err)
+		}
+		position := make(map[string]int32, len(rows))
+		for _, row := range rows {
+			position[row.CommitID] = row.Position
+		}
+		from, parent := op.From, op.OldTip
 		for _, id := range op.Folded {
 			m, err := r.g.readCommit(ctx, id)
 			if err != nil {
 				return err
+			}
+			if adoption, ok := op.Adopt[id]; ok {
+				adopted, ok, err := r.g.adopt(ctx, parent, mythicalCandidate{ItemID: adoption.ItemID, Issue: adoption.Issue,
+					Base: adoption.Base, Head: adoption.Head}, mythicalChainLimit)
+				if err != nil {
+					return fmt.Errorf("adopt %s: %w", short(adoption.Head), err)
+				}
+				if ok && len(adopted) > 0 && adopted[len(adopted)-1].Tree == m.Tree {
+					// The candidate's changes land where its plan put them: the
+					// stack is cut at the candidate's fork.
+					first, err := r.g.readCommit(ctx, adopted[0].ID)
+					if err != nil {
+						return err
+					}
+					fork := first.Parent()
+					cut := -1
+					for i, commit := range written {
+						if commit.ID == fork {
+							cut = i
+						}
+					}
+					switch {
+					case cut >= 0:
+						written = written[:cut+1]
+					case fork == "":
+						from, written = 0, nil
+					default:
+						p, ok := position[fork]
+						if !ok {
+							return fmt.Errorf("the candidate forks from %s, which is not on the stack", short(fork))
+						}
+						from, written = p+1, nil
+					}
+					adopted[len(adopted)-1].FoldedFrom = id
+					written, parent = append(written, adopted...), adopted[len(adopted)-1].ID
+					continue
+				}
 			}
 			step, err := r.g.flatFold(ctx, parent, m, "fold")
 			if err != nil {
@@ -528,11 +656,25 @@ func (s *MythicalService) compute(ctx context.Context, r *mythicalRun, op *mythi
 			}
 			written, parent = append(written, step), step.ID
 		}
-		op.LandedMain = op.Folded[len(op.Folded)-1]
+		op.From, op.LandedMain = from, op.Folded[len(op.Folded)-1]
+		kept = map[string]bool{}
+		for _, row := range rows {
+			if row.Position < from {
+				kept[row.CommitID] = true
+			}
+		}
 	default:
 		return fmt.Errorf("unknown stack write %q", op.Kind)
 	}
 	op.Changes = make([]db.MythicalChange, len(written))
+	if kept != nil {
+		// Notes of rewritten commits go with them.
+		for commit := range notesByCommit {
+			if !kept[commit] {
+				delete(notesByCommit, commit)
+			}
+		}
+	}
 	for i, commit := range written {
 		op.Changes[i] = mythicalChangeRow(r.row.RepositoryID, op.From+int32(i), commit)
 		notesByCommit[commit.ID] = mythicalNote(commit)
@@ -551,14 +693,13 @@ func (s *MythicalService) compute(ctx context.Context, r *mythicalRun, op *mythi
 func (s *MythicalService) replay(ctx context.Context, r *mythicalRun, op mythicalOp) mythicalOutcome {
 	remote := r.bridge.URL()
 	again := mythicalOp{Kind: op.Kind, OldTip: op.OldTip, OldNotes: op.OldNotes, From: op.From, Main: op.Main, Depth: op.Depth,
-		Folded: op.Folded, ResetGeneration: op.ResetGeneration}
+		Folded: op.Folded, ResetGeneration: op.ResetGeneration, Adopt: op.Adopt}
 	switch op.Kind {
 	case "bootstrap":
-		if err := r.g.fetch(ctx, remote, op.Depth+1, 0, "refs/heads/"+r.branch); err != nil {
-			return mythicalFailed("fetch %s: %v", r.branch, sanitizeMirrorError(err, remote))
-		}
-		if !r.g.has(ctx, op.Main) {
-			return mythicalFrozen("the prepared bootstrap's main commit %s is no longer on %s", short(op.Main), r.branch)
+		// The recorded main may be far behind the current one: fetch its own
+		// window, never recompute from a shorter history.
+		if err := s.connectWindow(ctx, r, op.Main, op.Depth); err != nil {
+			return mythicalFailed("%v", err)
 		}
 	case "fold":
 		if err := r.g.fetch(ctx, remote, 0, 0, repohost.MythicalBookmarkRef, repohost.MythicalNotesRef); err != nil {
@@ -567,8 +708,15 @@ func (s *MythicalService) replay(ctx context.Context, r *mythicalRun, op mythica
 		if len(op.Folded) == 0 {
 			return mythicalFrozen("the prepared fold is empty")
 		}
-		if err := s.connectMain(ctx, r, op.Folded[0]); err != nil {
+		if err := s.connectMain(ctx, r, op.Folded[0]); err != nil && !errors.Is(err, errMythicalDiverged) {
 			return mythicalFailed("%v", err)
+		}
+		for _, adoption := range op.Adopt {
+			if !r.g.has(ctx, adoption.Head) {
+				if err := r.g.fetch(ctx, remote, 0, 0, repohost.MythicalReservedRefNS+"keep/"+adoption.Head); err != nil {
+					return mythicalFailed("fetch the adopted candidate: %v", sanitizeMirrorError(err, remote))
+				}
+			}
 		}
 	}
 	if err := s.compute(ctx, r, &again); err != nil {
@@ -711,3 +859,69 @@ func (g mythicalGit) readNotes(ctx context.Context, notesCommit string) (map[str
 // mythicalNotesStamp dates every notes commit identically, so a notes
 // commit is a pure function of its notes.
 const mythicalNotesStamp = "0 +0000"
+
+// adoptions names the merged items whose PR merge commits this fold copies,
+// and fetches their pinned candidates. A merge commit no item claims folds flat.
+func (s *MythicalService) adoptions(ctx context.Context, r *mythicalRun, op *mythicalOp) error {
+	s.refreshMerged(ctx, r)
+	items, err := s.queries().ListMythicalItems(ctx, r.row.RepositoryID, 1000)
+	if err != nil {
+		return err
+	}
+	folded := make(map[string]bool, len(op.Folded))
+	for _, id := range op.Folded {
+		folded[id] = true
+	}
+	var refs []string
+	for _, item := range items {
+		if item.PRMergeCommit == "" || !folded[item.PRMergeCommit] || item.CandidateHead == "" || item.CandidateBase == "" {
+			continue
+		}
+		if op.Adopt == nil {
+			op.Adopt = map[string]mythicalAdoption{}
+		}
+		op.Adopt[item.PRMergeCommit] = mythicalAdoption{ItemID: uuidString(item.ID), Issue: item.IssueNumber.Int64,
+			Base: item.CandidateBase, Head: item.CandidateHead}
+		if !r.g.has(ctx, item.CandidateHead) {
+			refs = append(refs, repohost.MythicalReservedRefNS+"keep/"+item.CandidateHead)
+		}
+	}
+	if len(refs) > 0 {
+		if err := r.g.fetch(ctx, r.bridge.URL(), 0, 0, refs...); err != nil {
+			// A candidate that cannot be fetched folds flat; content stays exact.
+			for id, adoption := range op.Adopt {
+				if !r.g.has(ctx, adoption.Head) {
+					delete(op.Adopt, id)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// refreshMerged reads the pull requests of proposed items before a fold, so
+// a merge the fold copies is attributed to its item (merge evidence, never
+// tree equality alone). Failures only mean the fold copies flat.
+func (s *MythicalService) refreshMerged(ctx context.Context, r *mythicalRun) {
+	if s.github == nil {
+		return
+	}
+	q := s.queries()
+	items, err := q.ListMythicalItems(ctx, r.row.RepositoryID, 1000)
+	if err != nil {
+		return
+	}
+	step := &mythicalItemStep{s: s, r: r, q: q, now: s.now()}
+	for _, item := range items {
+		if item.State != "proposed" {
+			continue
+		}
+		next, err := step.follow(ctx, item)
+		if err != nil || next == nil || next.State == item.State {
+			continue
+		}
+		if saved, err := q.SaveMythicalItem(ctx, *next); err == nil {
+			s.notify(ctx, q, r.row.RepositoryID, r.row.Generation, "item", uuidString(saved.ID))
+		}
+	}
+}

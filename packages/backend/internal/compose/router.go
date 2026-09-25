@@ -1188,6 +1188,10 @@ func buildRouter(
 				if extras.Mythical != nil {
 					r.With(readRepo...).Get("/mythical", extras.Mythical.GetStack)
 					r.With(adminRepo...).Post("/mythical/bootstrap", extras.Mythical.Bootstrap)
+					r.With(writeRepo...).Post("/mythical/backfill", extras.Mythical.Backfill)
+					r.With(adminRepo...).Put("/mythical/config", extras.Mythical.Config)
+					r.With(writeRepo...).Post("/mythical/items/{id}/retry", extras.Mythical.Retry)
+					r.With(writeRepo...).Put("/mythical/lanes", extras.Mythical.Lanes)
 				}
 
 				r.With(writeRepo...).Post("/statuses/{sha}", commitStatusHandler.CreateCommitStatus)

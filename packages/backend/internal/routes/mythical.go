@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -18,6 +21,10 @@ import (
 type MythicalRouteService interface {
 	Snapshot(ctx context.Context, repositoryID int64, slug, mainCommit string) (services.MythicalStackView, error)
 	RequestBootstrap(ctx context.Context, repositoryID, actorUserID int64, depth int32, reset bool) (db.MythicalStack, error)
+	Backfill(ctx context.Context, repositoryID int64) error
+	SubmitLane(ctx context.Context, repositoryID, userID int64, input services.MythicalLaneSubmission) (services.MythicalLaneReceipt, error)
+	SetMaxParallel(ctx context.Context, repositoryID int64, maxParallel int32) error
+	RetryItem(ctx context.Context, repositoryID int64, itemID string) (services.MythicalItemView, error)
 }
 
 // MythicalHandler serves /api/repos/{owner}/{repo}/mythical: the stack
@@ -137,4 +144,108 @@ func (h *MythicalHandler) Events(w http.ResponseWriter, r *http.Request) {
 	}
 	attachRevocation(&cfg, r, revocation.Principal{RepositoryID: repoCtx.Repository.ID})
 	serveChangeBrokerSSE(w, r, cfg)
+}
+
+func decodeMythicalBody(w http.ResponseWriter, r *http.Request, limit int64, out any) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(out); err != nil {
+		pkgerrors.WriteError(w, pkgerrors.BadRequest("Invalid request body"))
+		return false
+	}
+	return true
+}
+
+// Backfill admits every open GitHub issue now instead of waiting for the sweep.
+// It answers when the issues are admitted; the lanes start in the background.
+func (h *MythicalHandler) Backfill(w http.ResponseWriter, r *http.Request) {
+	if _, err := requireRouteUser(r); err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	repoCtx, ok := h.repository(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	if err := h.Service.Backfill(ctx, repoCtx.Repository.ID); err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	view, err := h.snapshot(r, repoCtx)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusAccepted, view)
+}
+
+// Lanes takes a coding host's validated, cleaned result (coding/vibe).
+func (h *MythicalHandler) Lanes(w http.ResponseWriter, r *http.Request) {
+	user, err := requireRouteUser(r)
+	if err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	repoCtx, ok := h.repository(w, r)
+	if !ok {
+		return
+	}
+	var body services.MythicalLaneSubmission
+	if !decodeMythicalBody(w, r, 32<<10, &body) {
+		return
+	}
+	receipt, err := h.Service.SubmitLane(r.Context(), repoCtx.Repository.ID, user.ID, body)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusAccepted, receipt)
+}
+
+// Config sets how many lanes work at once.
+func (h *MythicalHandler) Config(w http.ResponseWriter, r *http.Request) {
+	if _, err := requireRouteUser(r); err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	repoCtx, ok := h.repository(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		MaxParallel int32 `json:"maxParallel"`
+	}
+	if !decodeMythicalBody(w, r, 1024, &body) {
+		return
+	}
+	if err := h.Service.SetMaxParallel(r.Context(), repoCtx.Repository.ID, body.MaxParallel); err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	view, err := h.snapshot(r, repoCtx)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, view)
+}
+
+// Retry gives a blocked, rejected or skipped item a fresh set of attempts.
+func (h *MythicalHandler) Retry(w http.ResponseWriter, r *http.Request) {
+	if _, err := requireRouteUser(r); err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	repoCtx, ok := h.repository(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.Service.RetryItem(r.Context(), repoCtx.Repository.ID, chi.URLParam(r, "id"))
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusAccepted, item)
 }

@@ -895,9 +895,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	gitHubMainPullService := services.NewGitHubMainPullService(queries, repoHostClient, repoConnectionService, repoConnectionService)
 	gitHubSyncedRepoService.SetPullMirror(gitHubMainPullService.PullMirror)
 	gitHubWebhookEventWorker.SetMainPull(gitHubMainPullService)
-	// The mythical stack folds every main the pull brings in.
+	// The mythical stack folds every main the pull brings in, admits every
+	// issue, works it on lane workspaces and proposes it to GitHub.
 	mythicalService := services.NewMythicalService(pool, repoHostClient)
 	gitHubMainPullService.SetMainMoved(mythicalService.MainMoved)
+	gitHubWebhookEventWorker.SetMythical(mythicalService)
+	mythicalService.SetOrchestration(services.NewMythicalGitHub(queries, repoConnectionService, gitHubUserReposService, repoConnectionService),
+		nil, services.NewWorkspaceMythicalLanes(workspaceService))
 	mythicalHandler := &routes.MythicalHandler{Service: mythicalService, Broker: sseBroker,
 		MainHead: func(ctx context.Context, owner, repo, bookmark string) (string, error) {
 			return mythicalService.MainHead(ctx, owner, repo, bookmark)
@@ -1123,7 +1127,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	repositoryJobService := services.NewRepositoryJobService(queries, repositoryJobGateway, pool)
 	repositoryJobService.SetGitHubReadAccess(gitHubUserReposService)
 	repositorySetupService := services.NewRepositorySetupService(pool, repositoryJobService, workspaceService)
-	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService, repositoryJobService, billingPolicy, repositorySetupService)
+	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService, repositoryJobService, billingPolicy, mythicalService, repositorySetupService)
 	if err != nil {
 		return err
 	}
@@ -1132,6 +1136,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		agentService.SetFlowDispatcher(flow.dispatcher)
 		repositoryJobService.SetFlowDispatcher(flow.dispatcher)
 		repositorySetupService.SetFlowDispatcher(flow.dispatcher)
+		mythicalService.SetLauncher(flow.dispatcher)
 		if options.topology.workers() {
 			flowWorker = newCriticalWorker()
 		}

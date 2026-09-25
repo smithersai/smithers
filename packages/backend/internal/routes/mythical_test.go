@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,6 +20,27 @@ import (
 type fakeMythicalRoute struct {
 	bootstraps []string
 	main       string
+	lanes      []services.MythicalLaneSubmission
+	parallel   int32
+	retried    string
+	backfills  int
+}
+
+func (f *fakeMythicalRoute) Backfill(context.Context, int64) error { f.backfills++; return nil }
+
+func (f *fakeMythicalRoute) SubmitLane(_ context.Context, _, _ int64, input services.MythicalLaneSubmission) (services.MythicalLaneReceipt, error) {
+	f.lanes = append(f.lanes, input)
+	return services.MythicalLaneReceipt{ItemID: "item", State: "integrating", Source: input.Source}, nil
+}
+
+func (f *fakeMythicalRoute) SetMaxParallel(_ context.Context, _ int64, n int32) error {
+	f.parallel = n
+	return nil
+}
+
+func (f *fakeMythicalRoute) RetryItem(_ context.Context, _ int64, id string) (services.MythicalItemView, error) {
+	f.retried = id
+	return services.MythicalItemView{ID: id, State: "queued", DependsOn: []string{}}, nil
 }
 
 func (f *fakeMythicalRoute) Snapshot(_ context.Context, id int64, slug, main string) (services.MythicalStackView, error) {
@@ -79,4 +101,43 @@ func TestMythicalRoutes(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, rec.Code)
 	assert.Len(t, service.bootstraps, 1)
 	assert.Contains(t, rec.Body.String(), `"state":"bootstrapping"`)
+}
+
+func TestMythicalWriteRoutes(t *testing.T) {
+	service := &fakeMythicalRoute{}
+	handler := &MythicalHandler{Service: service}
+	withRepo := func(r *http.Request) *http.Request {
+		ctx := middleware.ContextWithRepoContext(r.Context(), &middleware.RepoContext{Owner: "o",
+			Repository: &db.Repository{ID: 19, Name: "r"}}, middleware.PermissionAdmin)
+		return r.WithContext(context.WithValue(ctx, middleware.UserContextKey, &db.User{ID: 7}))
+	}
+	rec := httptest.NewRecorder()
+	body := `{"workspaceId":"0b2f3c1e-4c7a-4a6e-9d7e-2f3a1b4c5d6e","base":"` + strings.Repeat("1", 40) + `","source":"` +
+		strings.Repeat("2", 40) + `","requestRunId":"run","summary":"✨ feat: x"}`
+	handler.Lanes(rec, withRepo(httptest.NewRequest(http.MethodPut, "/", strings.NewReader(body))))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"itemId":"item"`)
+	require.Len(t, service.lanes, 1)
+
+	rec = httptest.NewRecorder()
+	handler.Lanes(rec, withRepo(httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"workspaceId":"x","extra":1}`))))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	rec = httptest.NewRecorder()
+	handler.Config(rec, withRepo(httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"maxParallel":4}`))))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.EqualValues(t, 4, service.parallel)
+
+	rec = httptest.NewRecorder()
+	handler.Backfill(rec, withRepo(httptest.NewRequest(http.MethodPost, "/", nil)))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Equal(t, 1, service.backfills)
+
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("id", "item-9")
+	handler.Retry(rec, withRepo(req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Equal(t, "item-9", service.retried)
 }

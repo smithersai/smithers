@@ -64,9 +64,19 @@ type GitHubWebhookEventWorker struct {
 	repositoryJobs interface {
 		AdmitGitHubEvent(context.Context, int64, db.GithubWebhookJob, TriggerEvent) error
 	}
+	mythical interface {
+		ObserveGitHubEvent(ctx context.Context, eventType string, payload []byte) error
+	}
 	mainPull interface {
 		RequestForGitHub(ctx context.Context, owner, repo string) error
 	}
+}
+
+// SetMythical admits issue events into repositories' mythical stacks.
+func (w *GitHubWebhookEventWorker) SetMythical(service interface {
+	ObserveGitHubEvent(ctx context.Context, eventType string, payload []byte) error
+}) {
+	w.mythical = service
 }
 
 // SetMainPull makes a push to a GitHub repository's default branch request
@@ -210,6 +220,11 @@ func (w *GitHubWebhookEventWorker) processJob(ctx context.Context, job db.Github
 
 	if err := w.requestMainPull(ctx, job, payload); err != nil {
 		return err
+	}
+	if w.mythical != nil {
+		if err := w.mythical.ObserveGitHubEvent(ctx, job.EventType, job.Payload); err != nil {
+			return fmt.Errorf("admit mythical issue: %w", err)
+		}
 	}
 
 	selector := buildGitHubWebhookRepositorySelector(job, payload)

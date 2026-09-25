@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -315,6 +316,8 @@ type MythicalItem struct {
 	IssueTitle        string             `json:"issue_title"`
 	IssueURL          string             `json:"issue_url"`
 	IssueDigest       string             `json:"issue_digest"`
+	Source            string             `json:"source"`
+	Version           int64              `json:"version"`
 	State             string             `json:"state"`
 	Reason            string             `json:"reason"`
 	Attempt           int32              `json:"attempt"`
@@ -328,6 +331,10 @@ type MythicalItem struct {
 	RequestRunID      string             `json:"request_run_id"`
 	VibeRunID         string             `json:"vibe_run_id"`
 	VerifyRunID       string             `json:"verify_run_id"`
+	RequestOutcome    string             `json:"request_outcome"`
+	VibeOutcome       string             `json:"vibe_outcome"`
+	VerifyOutcome     string             `json:"verify_outcome"`
+	Summary           string             `json:"summary"`
 	Plan              json.RawMessage    `json:"plan"`
 	Integration       json.RawMessage    `json:"integration"`
 	Checks            json.RawMessage    `json:"checks"`
@@ -342,17 +349,18 @@ type MythicalItem struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
-const mythicalItemColumns = `id, repository_id, issue_number, issue_title, issue_url, issue_digest, state, reason, attempt, generation,
-lane, workspace_id, base_commit, candidate_base, candidate_head, candidate_verified, request_run_id, vibe_run_id, verify_run_id,
-plan, integration, checks, pr_number, pr_url, pr_state, pr_head, pr_merge_commit, pending_op, next_attempt_at, created_at, updated_at`
+const mythicalItemColumns = `id, repository_id, issue_number, issue_title, issue_url, issue_digest, source, version, state, reason, attempt,
+generation, lane, workspace_id, base_commit, candidate_base, candidate_head, candidate_verified, request_run_id, vibe_run_id, verify_run_id,
+request_outcome, vibe_outcome, verify_outcome, summary, plan, integration, checks, pr_number, pr_url, pr_state, pr_head, pr_merge_commit,
+pending_op, next_attempt_at, created_at, updated_at`
 
 func scanMythicalItem(row interface{ Scan(...any) error }) (MythicalItem, error) {
 	var i MythicalItem
 	var plan, integration, checks, pending []byte
-	err := row.Scan(&i.ID, &i.RepositoryID, &i.IssueNumber, &i.IssueTitle, &i.IssueURL, &i.IssueDigest, &i.State, &i.Reason, &i.Attempt,
-		&i.Generation, &i.Lane, &i.WorkspaceID, &i.BaseCommit, &i.CandidateBase, &i.CandidateHead, &i.CandidateVerified, &i.RequestRunID,
-		&i.VibeRunID, &i.VerifyRunID, &plan, &integration, &checks, &i.PRNumber, &i.PRURL, &i.PRState, &i.PRHead, &i.PRMergeCommit,
-		&pending, &i.NextAttemptAt, &i.CreatedAt, &i.UpdatedAt)
+	err := row.Scan(&i.ID, &i.RepositoryID, &i.IssueNumber, &i.IssueTitle, &i.IssueURL, &i.IssueDigest, &i.Source, &i.Version, &i.State,
+		&i.Reason, &i.Attempt, &i.Generation, &i.Lane, &i.WorkspaceID, &i.BaseCommit, &i.CandidateBase, &i.CandidateHead, &i.CandidateVerified,
+		&i.RequestRunID, &i.VibeRunID, &i.VerifyRunID, &i.RequestOutcome, &i.VibeOutcome, &i.VerifyOutcome, &i.Summary, &plan, &integration,
+		&checks, &i.PRNumber, &i.PRURL, &i.PRState, &i.PRHead, &i.PRMergeCommit, &pending, &i.NextAttemptAt, &i.CreatedAt, &i.UpdatedAt)
 	i.Plan, i.Integration, i.Checks, i.PendingOp = rawJSON(plan), rawJSON(integration), rawJSON(checks), rawJSON(pending)
 	return i, err
 }
@@ -397,4 +405,79 @@ func (q *Queries) IsMythicalChange(ctx context.Context, repositoryID int64, chan
 	err := q.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mythical_changes WHERE repository_id = $1 AND change_id = $2)`,
 		repositoryID, changeID).Scan(&owned)
 	return owned, err
+}
+
+// GetMythicalItem returns one item.
+func (q *Queries) GetMythicalItem(ctx context.Context, id pgtype.UUID) (MythicalItem, error) {
+	return scanMythicalItem(q.db.QueryRow(ctx, `SELECT `+mythicalItemColumns+` FROM mythical_items WHERE id = $1`, id))
+}
+
+// GetMythicalItemByIssue returns a repository's item for one issue.
+func (q *Queries) GetMythicalItemByIssue(ctx context.Context, repositoryID, issue int64) (MythicalItem, error) {
+	return scanMythicalItem(q.db.QueryRow(ctx, `SELECT `+mythicalItemColumns+` FROM mythical_items
+		WHERE repository_id = $1 AND issue_number = $2`, repositoryID, issue))
+}
+
+// GetMythicalItemByWorkspace returns the unsettled item a lane workspace works on.
+func (q *Queries) GetMythicalItemByWorkspace(ctx context.Context, repositoryID int64, workspaceID string) (MythicalItem, error) {
+	return scanMythicalItem(q.db.QueryRow(ctx, `SELECT `+mythicalItemColumns+` FROM mythical_items
+		WHERE repository_id = $1 AND workspace_id = $2 AND workspace_id <> ''
+		  AND state NOT IN ('skipped', 'cancelled', 'landed', 'rejected', 'blocked')
+		ORDER BY updated_at DESC LIMIT 1`, repositoryID, workspaceID))
+}
+
+// InsertMythicalItem creates an item; an existing item for the same issue is
+// returned unchanged (inserted false).
+func (q *Queries) InsertMythicalItem(ctx context.Context, item MythicalItem) (MythicalItem, bool, error) {
+	created, err := scanMythicalItem(q.db.QueryRow(ctx, `INSERT INTO mythical_items
+		(repository_id, issue_number, issue_title, issue_url, issue_digest, source, state, reason, candidate_base, candidate_head, summary)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (repository_id, issue_number) WHERE issue_number IS NOT NULL DO NOTHING
+		RETURNING `+mythicalItemColumns,
+		item.RepositoryID, item.IssueNumber, item.IssueTitle, item.IssueURL, item.IssueDigest, item.Source, item.State, item.Reason,
+		item.CandidateBase, item.CandidateHead, item.Summary))
+	if err == nil {
+		return created, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) || !item.IssueNumber.Valid {
+		return MythicalItem{}, false, err
+	}
+	existing, err := q.GetMythicalItemByIssue(ctx, item.RepositoryID, item.IssueNumber.Int64)
+	return existing, false, err
+}
+
+// SaveMythicalItem writes every mutable field of item when its version is
+// still item.Version, and answers the saved row (version + 1). A concurrent
+// writer makes it answer pgx.ErrNoRows; the caller rereads and decides again.
+func (q *Queries) SaveMythicalItem(ctx context.Context, item MythicalItem) (MythicalItem, error) {
+	return scanMythicalItem(q.db.QueryRow(ctx, `UPDATE mythical_items SET
+		issue_title = $3, issue_url = $4, issue_digest = $5, state = $6, reason = $7, attempt = $8, generation = $9, lane = $10,
+		workspace_id = $11, base_commit = $12, candidate_base = $13, candidate_head = $14, candidate_verified = $15,
+		request_run_id = $16, vibe_run_id = $17, verify_run_id = $18, request_outcome = $19, vibe_outcome = $20, verify_outcome = $21,
+		summary = $22, plan = $23, integration = $24, checks = $25, pr_number = $26, pr_url = $27, pr_state = $28, pr_head = $29,
+		pr_merge_commit = $30, pending_op = $31, next_attempt_at = COALESCE($32, NOW()), version = version + 1, updated_at = NOW()
+		WHERE id = $1 AND version = $2
+		RETURNING `+mythicalItemColumns,
+		item.ID, item.Version, item.IssueTitle, item.IssueURL, item.IssueDigest, item.State, item.Reason, item.Attempt, item.Generation,
+		item.Lane, item.WorkspaceID, item.BaseCommit, item.CandidateBase, item.CandidateHead, item.CandidateVerified, item.RequestRunID,
+		item.VibeRunID, item.VerifyRunID, item.RequestOutcome, item.VibeOutcome, item.VerifyOutcome, item.Summary, jsonArg(item.Plan),
+		jsonArg(item.Integration), jsonArg(item.Checks), item.PRNumber, item.PRURL, item.PRState, item.PRHead, item.PRMergeCommit,
+		jsonArg(item.PendingOp), item.NextAttemptAt))
+}
+
+func jsonArg(value json.RawMessage) any {
+	if len(value) == 0 {
+		return nil
+	}
+	return []byte(value)
+}
+
+// SetMythicalMaxParallel sets a stack's lane count and wakes its worker.
+func (q *Queries) SetMythicalMaxParallel(ctx context.Context, repositoryID int64, maxParallel int32) (int64, error) {
+	tag, err := q.db.Exec(ctx, `UPDATE mythical_stacks SET max_parallel = $2, requested_generation = requested_generation + 1,
+		generation = generation + 1, updated_at = NOW() WHERE repository_id = $1`, repositoryID, maxParallel)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }

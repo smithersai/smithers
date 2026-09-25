@@ -284,14 +284,13 @@ func TestMythicalServiceReplaysAPushThatNeverLanded(t *testing.T) {
 	// never different work, and a later run folds the rest.
 	f.commit("🔧 chore: later", "c.txt", "c")
 	later := f.publish()
+	// One poll settles the replay and then (a write asks for one more claim)
+	// folds the rest on top of it.
 	row = f.poll()
 	require.Equal(t, "active", row.State, row.LastError)
-	assert.Equal(t, prepared.NewTip, row.TipCommit)
-	assert.Equal(t, outside, row.LandedMain)
-	f.service.MainMoved(ctx, f.repoID)
-	row = f.poll()
 	assert.Equal(t, later, row.LandedMain)
-	assert.Equal(t, prepared.NewTip, f.git(f.hostDir, "rev-parse", row.TipCommit+"^"))
+	assert.Equal(t, prepared.NewTip, f.git(f.hostDir, "rev-parse", row.TipCommit+"^"), "the prepared fold landed exactly")
+	assert.Equal(t, f.hostTree(later), f.hostTree(row.TipCommit))
 }
 
 func TestMythicalServiceFreezesWhenTheStackMovesOutsideIt(t *testing.T) {
