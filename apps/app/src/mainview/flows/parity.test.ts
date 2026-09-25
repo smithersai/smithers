@@ -432,6 +432,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/RunsCards.tsx": 10,
       "../cards/SearchResultsCard.tsx": 2,
       "../cards/SecretsCard.tsx": 5,
+      /* 6 = the Stack card's Backfill, fewer/more lanes, a row's Retry, a failure's Retry and Bootstrap. */
+      "../cards/StackCard.tsx": 6,
       /* 2 = the Agents card's New agent and the cloud session card's Stop (agent.session.stop); the role launch went with agent.role. */
       "../cards/AgentCards.tsx": 2,
       "../cards/AnonymousCeilingCard.tsx": 1,

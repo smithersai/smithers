@@ -155,6 +155,7 @@ describe("the controller's command surface", () => {
     const compositionRoot = [
       "store",
       "localAuth",
+      "stackSnapshots",
       "controlFocus",
       "formFocus",
       "storageRecoveryState",

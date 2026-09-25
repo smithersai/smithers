@@ -58,10 +58,10 @@ describe("optional generated knowledge", () => {
       expect(await controller.runWorkflow(name, "owner/repo")).toBe("Sign in with GitHub first: flows run on your own workspace.")
     }
     expect(await controller.createWiki("owner/repo")).toBe("This feature is not enabled.")
-    expect(await controller.bootstrapHistory("owner/repo")).toBe("Sign in with GitHub first: flows run on your own workspace.")
+    // Creating the mythical history asks the server for its stack (#1760), never a workspace flow.
+    expect(await controller.bootstrapStack("owner/repo")).toBe("Sign in to see the stack.")
     expect(calls).toEqual([])
-    // Only the always-on history reached a launch, and it stays a visible, retryable refusal.
-    expect((store.session().librarianLaunches ?? []).map(entry => [entry.kind, entry.phase])).toEqual([["history", "failed"]])
+    expect(store.session().librarianLaunches ?? []).toEqual([])
   })
 
   test("restored knowledge cards stay stored but cannot open or take over the current view", async () => {

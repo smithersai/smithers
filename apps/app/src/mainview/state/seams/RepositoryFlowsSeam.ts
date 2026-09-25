@@ -57,7 +57,11 @@ export const repositoryFlowsOf = (
     .map(({ id, description, summary, featured, modelInvocable, inputSchema }) => ({ id, description, summary, featured, modelInvocable,
       ...(inputSchema === undefined ? {} : { inputSchema }) }))
 
-export const createRepositoryFlowsSeam = (ctx: SeamContext): RepositoryFlowsSeam => {
+export const createRepositoryFlowsSeam = (
+  ctx: SeamContext,
+  /** The homepage landed: a block that reads live state (the stack) starts its read. */
+  onHome?: (repo: string, home: RepositoryHome | { readonly kind: "error"; readonly message: string }) => void
+): RepositoryFlowsSeam => {
   /** Repositories read this session, in flight or landed: one background read each. */
   const read = new Set<string>()
   let disposed = false
@@ -68,12 +72,19 @@ export const createRepositoryFlowsSeam = (ctx: SeamContext): RepositoryFlowsSeam
     if (disposed) return
     const flows = "error" in answer || answer.absent ? [] : repositoryFlowsOf(answer.projection.flows ?? [])
     ctx.dispatch({ type: "repository-flows.loaded", actor: "system", repo, flows, home })
+    onHome?.(repo, home)
   }
 
   const loadTarget = (): void => {
     if (disposed) return
     const target = resolveTargetRepo(ctx.store, undefined)
-    if ("error" in target || read.has(target.repo)) return
+    if ("error" in target) return
+    if (read.has(target.repo)) {
+      // Back on a repository read earlier: its homepage's live blocks resume.
+      const home = ctx.store.collections.repositoryFlows.get(target.repo)?.home
+      if (home !== undefined) onHome?.(target.repo, home)
+      return
+    }
     void load(target.repo)
   }
 
@@ -98,6 +109,14 @@ export const createRepositoryFlowsSeam = (ctx: SeamContext): RepositoryFlowsSeam
   return { load, subscribe }
 }
 
+const KNOWN_BLOCKS = new Set(["prompt", "flows", "markdown", "text", "links", "stack"])
+/** A block kind this build does not render is left out, never the whole homepage. */
+const knownBlocks = (body: unknown): unknown => {
+  if (typeof body !== "object" || body === null || !Array.isArray((body as { blocks?: unknown }).blocks)) return body
+  const blocks = (body as { blocks: ReadonlyArray<unknown> }).blocks
+  return { ...body, blocks: blocks.filter((block) => typeof block !== "object" || block === null || KNOWN_BLOCKS.has(String((block as { type?: unknown }).type))) }
+}
+
 /** One server-resolved read, including README fallback and visible failures. */
 export const readRepositoryHome = async (
   ctx: Pick<SeamContext, "http" | "baseUrl">,
@@ -109,7 +128,7 @@ export const readRepositoryHome = async (
     // A repository the backend does not host has no homepage, not a failure.
     if (response.status === 404) return { kind: "none" }
     if (!response.ok) return { kind: "error", message: "Homepage unavailable" }
-    const parsed = RepositoryHomeSchema.safeParse(await response.json())
+    const parsed = RepositoryHomeSchema.safeParse(knownBlocks(await response.json()))
     return parsed.success ? parsed.data : { kind: "error", message: "Homepage is invalid" }
   } catch {
     return { kind: "error", message: "Homepage unavailable" }

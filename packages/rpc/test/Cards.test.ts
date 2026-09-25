@@ -1286,6 +1286,14 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       setupScript: "pnpm install"
     }
   },
+  stack: {
+    minimal: { repo: "smithersai/smithers", failure: null },
+    full: {
+      repo: "smithersai/smithers",
+      failure: { act: "backfill", message: "Refused", args: "smithersai/smithers" },
+      bootstrap: { requestedAt: 1 }
+    }
+  },
   "provider-accounts": {
     minimal: { accounts: [] },
     full: {

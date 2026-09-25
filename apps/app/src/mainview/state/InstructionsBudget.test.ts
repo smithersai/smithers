@@ -132,8 +132,14 @@ describe("the instructions budget", () => {
      * the namespace list at stage 2 leaves room the notes then spend — the
      * assertions below are what proves that room went to the notes.
      */
-    expect(instructionStageOf(instructions)).toBe(2)
-    expect(instructions).toContain("Commands, by namespace")
+    /*
+     * With every note cut, the names-by-namespace catalog alone left 23
+     * bytes under the cap once the stack flows (#1745) joined the registry
+     * it no longer fits, so the catalog falls to namespaces and counts —
+     * the documented floor — and the notes keep the room it frees.
+     */
+    expect(instructionStageOf(instructions)).toBe(3)
+    expect(instructions).toContain("Commands: ")
     // Every note is still listed with its body (the head of it) and says when it was cut; none silently vanished.
     const notes = context.worldState.documents.filter((document) => document.path.startsWith("notes/"))
     expect(notes).toHaveLength(3)

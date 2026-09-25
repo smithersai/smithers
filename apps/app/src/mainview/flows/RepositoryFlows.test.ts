@@ -90,6 +90,9 @@ test("repository homepage read decodes blocks and makes failures visible", async
   expect(await readRepositoryHome({ baseUrl, http }, REPO)).toEqual({ kind: "blocks", blocks: [{ type: "markdown", path: "README.md", markdown: "# Hello" }] })
   expect(await readRepositoryHome({ baseUrl, http: async () => json(200, { kind: "blocks", blocks: [{ type: "markdown", path: "../secret", markdown: "x" }] }) }, REPO))
     .toEqual({ kind: "error", message: "Homepage is invalid" })
+  // A block kind this build does not know is left out; the rest of the homepage still renders.
+  expect(await readRepositoryHome({ baseUrl, http: async () => json(200, { kind: "blocks", blocks: [{ type: "future" }, { type: "stack" }, { type: "text", text: "Hi" }] }) }, REPO))
+    .toEqual({ kind: "blocks", blocks: [{ type: "stack" }, { type: "text", text: "Hi" }] })
   expect(await readRepositoryHome({ baseUrl, http: async () => json(404, {}) }, REPO)).toEqual({ kind: "none" })
   expect(await readRepositoryHome({ baseUrl, http: async () => json(503, {}) }, REPO))
     .toEqual({ kind: "error", message: "Homepage unavailable" })

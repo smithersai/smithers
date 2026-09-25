@@ -48,6 +48,8 @@ export type CommandActions =
     | "tappedFetch"
     // Owner credential presentation is a composition-owned panel, never a command action.
     | "localAuth"
+    // Live stack snapshots are what the Stack views read, never an act.
+    | "stackSnapshots"
     // Feature flags and the download URL are the composition root's configuration, never an action.
     | "features"
     | "downloadUrl"

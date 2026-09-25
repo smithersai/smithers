@@ -274,6 +274,19 @@ describe("factory homepage", () => {
     expect(renderToStaticMarkup(<RepositoryHomeCard card={error} onRunCommand={() => {}} />)).toContain('role="alert"')
   })
 
+  test("a stack block renders the live stack, and nothing before a read or signed out", () => {
+    const card = home([{ type: "stack", title: "Stack" }])
+    expect(renderToStaticMarkup(<RepositoryHomeCard card={card} onRunCommand={() => {}} />)).not.toContain("home-stack")
+    const stack = { repository: "org/repo", state: "active" as const, generation: 1, mainBehind: false, changes: [],
+      items: [], lanes: [{ index: 0, state: "idle" as const }], limits: { maxParallel: 1 } }
+    const controller = { stackSnapshots: { get: () => ({ stack, error: null }), subscribe: () => () => {} } } as unknown as AppController
+    const markup = renderToStaticMarkup(<ControllerTestProvider controller={controller}>
+      <RepositoryHomeCard card={card} onRunCommand={() => {}} /></ControllerTestProvider>)
+    expect(markup).toContain("<h2>Stack</h2>")
+    expect(markup).toContain("0/1 lanes")
+    expect(markup).toContain('data-flow="stack.backfill"')
+  })
+
   test("prompt submits through chat.send and flow button uses the repository slash leaf", async () => {
     GlobalRegistrator.register()
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })

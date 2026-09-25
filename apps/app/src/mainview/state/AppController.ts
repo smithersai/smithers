@@ -133,6 +133,8 @@ import type { PaletteAnswer,SearchSeam } from "./seams/SearchSeam"
 import { createSearchSeam } from "./seams/SearchSeam"
 import type { SecretsSeam } from "./seams/SecretsSeam"
 import { createSecretsSeam } from "./seams/SecretsSeam"
+import type { StackSeam } from "./seams/StackSeam"
+import { createStackSeam } from "./seams/StackSeam"
 import type { TriggersSeam } from "./seams/TriggersSeam"
 import { createTriggersSeam } from "./seams/TriggersSeam"
 import type { WorkspaceSeam } from "./seams/WorkspaceSeam"
@@ -141,7 +143,6 @@ import { createWorkspaceSeam } from "./seams/WorkspaceSeam"
 export interface AppController extends TutorialChangeController, IssueFlowsController, RepositorySetupController {
   /* Tutorial stage 6: the two Librarian generators and their monitored runs. */
   readonly createWiki: LibrarianRunsController["createWiki"]
-  readonly bootstrapHistory: LibrarianRunsController["bootstrapHistory"]
   readonly storageRecoveryState: StorageRecoveryAction["state"]
   readonly promptStorageRecovery: () => Promise<void>
   readonly exportStorageRecovery: () => Promise<string | void>
@@ -534,6 +535,13 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly listSecrets: SecretsSeam["listSecrets"]
   readonly showHistory: HistorySeam["showHistory"]
   readonly retellHistory: HistorySeam["retellHistory"]
+  /* The mythical stack (#1745): the Stack card, its admin writes, and the live snapshots its views read. */
+  readonly showStack: StackSeam["showStack"]
+  readonly bootstrapStack: StackSeam["bootstrapStack"]
+  readonly backfillStack: StackSeam["backfillStack"]
+  readonly setStackParallel: StackSeam["setStackParallel"]
+  readonly retryStackItem: StackSeam["retryStackItem"]
+  readonly stackSnapshots: StackSeam["snapshots"]
   readonly importRepository: RepoImportSeam["importRepository"]
   readonly retryImport: RepoImportSeam["retryImport"]
   readonly listBookmarks: BookmarksSeam["listBookmarks"]
@@ -859,7 +867,14 @@ export const createAppController = (
     promptCloudSignIn: () => promptCloudSignIn(true),
     checkout: services.bootstrap?.capabilities.includes("billing.checkout") ?? true
   }
-  const repositoryFlowsSeam = createRepositoryFlowsSeam(seamCtx)
+  const stackSeam = actors.pair(seamCtx, (context) => createStackSeam(context, withToast, {
+    debounceMs: ctx.toastDebounceMs,
+    onDispose: ctx.onDispose
+  }))
+  // A homepage that declares the stack keeps its snapshot live.
+  const repositoryFlowsSeam = createRepositoryFlowsSeam(seamCtx, (repo, home) => {
+    if (home.kind === "blocks" && home.blocks.some((block) => block.type === "stack")) stackSeam.watchHomeStack(repo)
+  })
   const repositoryFlows = (): RepositoryFlowCatalog | undefined => {
     const target = resolveTargetRepo(store, undefined)
     if ("error" in target) return undefined
@@ -887,7 +902,7 @@ export const createAppController = (
   const environmentSeam = actors.pair(seamCtx, (context) => createEnvironmentSeam(context))
   const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context, withToast))
   const historySeam = actors.pair(seamCtx, (context, select) => createHistorySeam(context, async repo => {
-    const result = await select(librarianRuns).bootstrapHistory(repo)
+    const result = await select(stackSeam).bootstrapStack(repo)
     return typeof result === "string" ? result : undefined
   }))
   /* A registration is a launched flow run: it rides the app's own run watch and the shared toast stack. */
@@ -1673,7 +1688,6 @@ export const createAppController = (
     retryRunWatch,
     resumeWorkflowRuns,
     createWiki: librarianRuns.createWiki,
-    bootstrapHistory: librarianRuns.bootstrapHistory,
     listRuns: monitoredRuns.listRuns,
     prepareRunHandoff: runs.prepareRunHandoff,
     openRun: monitoredRuns.openRun,
@@ -1834,6 +1848,11 @@ export const createAppController = (
     listSecrets: secretsSeam.listSecrets,
     showHistory: historySeam.showHistory,
     retellHistory: historySeam.retellHistory,
+    showStack: stackSeam.showStack,
+    bootstrapStack: stackSeam.bootstrapStack,
+    backfillStack: stackSeam.backfillStack,
+    setStackParallel: stackSeam.setStackParallel,
+    retryStackItem: stackSeam.retryStackItem,
     registerTrigger,
     importRepository: repoImportSeam.importRepository,
     retryImport: repoImportSeam.retryImport,
@@ -2026,6 +2045,7 @@ export const createAppController = (
 
   repoImportSeam.resume()
   secretsSeam.resumeCodingProviders()
+  stackSeam.resumeStacks()
   workflowController.resumeWorkflowRequests()
   repositorySetup.resumeRepositorySetups()
   /*
@@ -2100,6 +2120,7 @@ export const createAppController = (
     nativeAgentAvailable: agent.available,
     tappedFetch: http,
     localAuth,
+    stackSnapshots: stackSeam.snapshots,
     commands,
     slashItems: (needle) => commands.slashItems(needle),
     slashTree: (needle) => commands.slashTree(needle),

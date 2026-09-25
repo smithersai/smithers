@@ -1774,6 +1774,27 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
+   * The repository's mythical stack (@smthrs/rpc/Mythical, epic #1745). The
+   * snapshot itself is live server state the stack seam keeps in memory and
+   * never journals; the card holds what the person asked for: `failure` is
+   * the last failed act, visible with its retry until one succeeds, and
+   * `bootstrap` is the durable creation request whose notice runs until the
+   * stack reads active, across reloads.
+   */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("stack"),
+    payload: z.object({
+      repo: z.string(),
+      failure: z.object({
+        act: z.enum(["bootstrap", "backfill", "parallel", "retry"]),
+        message: z.string(),
+        args: z.string()
+      }).nullable(),
+      bootstrap: z.object({ requestedAt: z.number() }).optional()
+    })
+  }),
+  /*
    * The account card (factory mock 21, design session §6c): who is signed in
    * and what the identity seam knows about them. Every row is a seam fact:
    * the GitHub login, the scopes the identity worker states (GET

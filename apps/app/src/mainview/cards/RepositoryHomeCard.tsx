@@ -5,6 +5,7 @@ import { useController } from "../ControllerContext"
 import { dynamicFlowAction, flowProps } from "../flows/FlowAction"
 import { repositoryFlowName } from "../flows/entries/flow"
 import type { CardFamily } from "./CardFamily"
+import { HomeStack } from "./StackCard"
 import "./RepositoryHomeCard.css"
 
 type HomeCard = Extract<Card, { kind: "factory.home" }>
@@ -68,6 +69,7 @@ export const RepositoryHomeCard = ({ card, onRunCommand }: {
       case "text": return <div key={index}>{block.title && <h2>{block.title}</h2>}<p>{block.text}</p></div>
       case "links": return <div key={index}>{block.title && <h2>{block.title}</h2>}
         <div className="factory-home-row">{block.links.map((link) => <a key={link.url} href={link.url}>{link.label}</a>)}</div></div>
+      case "stack": return <HomeStack key={index} title={block.title} repo={card.payload.repo} onRunCommand={onRunCommand} />
     }
   })}</div>
 }

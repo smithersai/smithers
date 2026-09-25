@@ -20,7 +20,6 @@ const metadata = librarianRunMetadata
 export interface LibrarianRunsController {
   readonly recoverLaunches: () => Promise<void>
   readonly createWiki: (repo: string) => Promise<CommandResult>
-  readonly bootstrapHistory: (repo: string) => Promise<CommandResult>
   /** Call only after a successful gateway read has rendered this run's monitor. */
   readonly inspectLibrarianRun: (runId: string) => Promise<void>
 }
@@ -192,5 +191,6 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
     ctx.onDispose(() => { disposed = true; for (const subscription of subscriptions) subscription.unsubscribe() })
     return subscriptions
   })
-  return { recoverLaunches, createWiki: repo => launch("wiki", repo), bootstrapHistory: repo => launch("history", repo), inspectLibrarianRun }
+  // `history` intents persisted before #1760 still recover; Create now asks the server (StackSeam).
+  return { recoverLaunches, createWiki: repo => launch("wiki", repo), inspectLibrarianRun }
 }

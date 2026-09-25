@@ -1424,6 +1424,36 @@
 	margin-right: auto;
 }
 
+/* The Stack card and homepage block: counts, lanes, then the ordered stack; rows wrap on a narrow screen. */
+.stack-lanes,
+.stack-rows {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.stack-counts,
+.stack-admin,
+.stack-lanes > .world-card-row,
+.stack-rows > .world-card-row,
+.stack-failure {
+	flex-wrap: wrap;
+	margin: 0;
+}
+.stack-state {
+	font-size: var(--fs-small);
+	font-weight: 600;
+}
+.stack-state[data-state="blocked"],
+.stack-state[data-state="rejected"] {
+	color: var(--danger);
+}
+.stack-reason {
+	flex-basis: 100%;
+}
+
 /* The models card: a row is its name, a test dot and its acts; maximized it is the list beside the facts and the seats. */
 .models-row {
 	flex-wrap: wrap;

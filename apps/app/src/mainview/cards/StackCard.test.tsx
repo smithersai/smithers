@@ -1,0 +1,134 @@
+import { describe, expect, test } from "bun:test"
+import type { MythicalItem, MythicalStack } from "@smthrs/rpc/Mythical"
+import { renderToStaticMarkup } from "react-dom/server"
+import { StackBody } from "./StackCard"
+import type { StackBodyProps } from "./StackCard"
+import { itemStateLabel, laneRows, stackCounts, stackRows } from "./StackView"
+
+/*
+ * The Stack card renders exactly what the snapshot states: counts, lanes
+ * against maxParallel, the ordered stack with each row's issue, state,
+ * checks and pull request, and every failure beside the door that retries it.
+ */
+
+const REPO = "smithersai/smithers"
+const item = (id: string, state: MythicalItem["state"], extra: Partial<MythicalItem> = {}): MythicalItem => ({
+  id, state, attempt: 1, runs: {}, dependsOn: [], updatedAt: "2026-09-25T10:00:00Z",
+  issue: { number: Number(id.replace(/\D/g, "")), title: `Issue ${id}`, url: `https://github.com/${REPO}/issues/${id.replace(/\D/g, "")}` },
+  ...extra
+})
+const STACK: MythicalStack = {
+  repository: REPO, state: "active", generation: 9, mainBehind: false,
+  tip: { changeId: "kzzzzzzz", commitId: "c3" },
+  changes: [
+    { changeId: "kzzzzzzzaaaa", commitId: "c3", title: "Fix the toast", kind: "item", state: "landed", itemId: "i4", issue: 4 },
+    { changeId: "kyyyyyyybbbb", commitId: "c2", title: "Initial import", kind: "bootstrap", state: "landed" }
+  ],
+  items: [
+    item("i1", "running", { lane: 0 }),
+    item("i2", "retrying", { lane: 1, integration: { conflict: { paths: ["src/a.ts", "src/b.ts"] } } }),
+    item("i3", "queued"),
+    item("i4", "proposed", { checks: { state: "passed", failed: [] }, pullRequest: { number: 44, url: "https://github.com/pr/44", state: "open" } }),
+    item("i5", "blocked", { reason: "3 attempts failed", checks: { state: "failed", failed: ["//:ci"] } }),
+    item("i6", "skipped", { reason: "not actionable" }),
+    item("i7", "landed")
+  ],
+  lanes: [{ index: 0, state: "busy", itemId: "i1", workspaceId: "ws-000111222" }, { index: 1, state: "busy", itemId: "i2" }],
+  limits: { maxParallel: 2 }
+}
+
+const render = (props: Partial<StackBodyProps> = {}, calls: Array<[string, string | undefined]> = []): string =>
+  renderToStaticMarkup(<StackBody repo={REPO} snapshot={{ stack: STACK, error: null }} failure={null} bootstrapping={false}
+    onRunCommand={(name, args) => { calls.push([name, args]) }} {...props} />)
+
+describe("the Stack card", () => {
+  test("labels every API state in the owner's words", () => {
+    const labels = Object.fromEntries(([
+      "queued", "skipped", "cancelled", "running", "delivering", "integrating", "verifying", "proposing", "waiting",
+      "proposed", "landed", "rejected", "retrying", "blocked"
+    ] as const).map((state) => [state, itemStateLabel(item("i1", state))]))
+    expect(labels).toEqual({
+      queued: "queued", skipped: "declined", cancelled: "cancelled", running: "implementing", delivering: "checking",
+      integrating: "rebasing", verifying: "checking", proposing: "proposing", waiting: "ready", proposed: "PR open",
+      landed: "landed", rejected: "rejected", retrying: "retrying", blocked: "blocked"
+    })
+    expect(itemStateLabel(STACK.items[1]!)).toBe("conflict")
+  })
+
+  test("counts, not prose", () => {
+    expect(stackCounts(STACK)).toEqual({ changes: 2, busy: 2, maxParallel: 2, queued: 1, open: 1, blocked: 1, declined: 1 })
+    const html = render()
+    expect(html).toContain("2 changes")
+    expect(html).toContain("2/2 lanes")
+    expect(html).toContain("1 queued")
+    expect(html).toContain("1 PR<")
+    expect(html).toContain("1 blocked")
+    expect(html).toContain("1 declined")
+  })
+
+  test("orders the stack: lanes, queue, decisions, declined, then the changes tip first", () => {
+    expect(stackRows(STACK).map((row) => row.kind === "item" ? row.item.id : row.change.changeId))
+      .toEqual(["i1", "i2", "i3", "i5", "i6", "kzzzzzzzaaaa", "kyyyyyyybbbb"])
+    const html = render()
+    expect(html.indexOf("stack-item-i1")).toBeLessThan(html.indexOf("stack-change-kzzzzzzzaaaa"))
+    // The change i4 made is joined to its issue, state, checks and pull request.
+    const change = html.slice(html.indexOf("stack-change-kzzzzzzzaaaa"), html.indexOf("stack-change-kyyyyyyybbbb"))
+    expect(change).toContain(`href="https://github.com/${REPO}/issues/4"`)
+    expect(change).toContain("#4 Issue i4")
+    expect(change).toContain("PR open")
+    expect(change).toContain('data-checks="passed"')
+    expect(change).toContain('href="https://github.com/pr/44"')
+    expect(html).toContain("src/a.ts, src/b.ts")
+    expect(html).toContain("✗ //:ci")
+    expect(html).toContain("not actionable")
+    // A landed item that is no longer a stack row stays out of the list.
+    expect(html).not.toContain("stack-item-i7")
+  })
+
+  test("lanes show the issue each works on and its workspace, and a lowered limit keeps a busy lane", () => {
+    const html = render()
+    const lane = html.slice(html.indexOf("stack-lane-0"), html.indexOf("stack-lane-1"))
+    expect(lane).toContain("#1 Issue i1")
+    expect(lane).toContain("implementing")
+    expect(lane).toContain("ws-00011")
+    const lowered = { ...STACK, limits: { maxParallel: 1 }, lanes: [STACK.lanes[0]!] }
+    expect(laneRows(lowered).map((row) => [row.index, row.item?.id])).toEqual([[0, "i1"], [1, "i2"]])
+    expect(stackCounts(lowered).busy).toBe(2)
+  })
+
+  test("retry only where the API takes it, and admin doors carry typed args", () => {
+    const html = render()
+    const retries = [...html.matchAll(/data-flow="stack.retry" data-flow-args="([^"]+)"/g)].map((match) => match[1])
+    expect(retries).toEqual([`i5 ${REPO}`, `i6 ${REPO}`])
+    expect(html).toContain(`data-flow="stack.backfill" data-flow-args="${REPO}"`)
+    expect(html).toContain(`data-flow="stack.parallel" data-flow-args="1 ${REPO}"`)
+    expect(html).toContain(`data-flow="stack.parallel" data-flow-args="3 ${REPO}"`)
+    const chat = { ...STACK, items: [{ ...item("i8", "blocked"), issue: undefined }] }
+    expect(render({ snapshot: { stack: chat, error: null } })).not.toContain('data-flow="stack.retry"')
+  })
+
+  test("absent offers Bootstrap until a request is pending; frozen states its reason", () => {
+    const absent = { ...STACK, state: "absent" as const, items: [], changes: [], lanes: [] }
+    expect(render({ snapshot: { stack: absent, error: null } })).toContain(`data-flow="history.bootstrap" data-flow-args="${REPO}"`)
+    expect(render({ snapshot: { stack: absent, error: null }, bootstrapping: true })).not.toContain("history.bootstrap")
+    expect(render({ snapshot: { stack: { ...STACK, state: "frozen", reason: "main was force-pushed" }, error: null } }))
+      .toContain("main was force-pushed")
+  })
+
+  test("a failure stays visible with its Retry, beside the last good snapshot", () => {
+    const html = render({
+      snapshot: { stack: STACK, error: "Reading the stack failed (502)" },
+      failure: { act: "parallel", message: "Only a repository admin can change lanes.", args: `3 ${REPO}` }
+    })
+    expect(html).toContain('role="alert"')
+    expect(html).toContain("Only a repository admin can change lanes.")
+    expect(html).toContain(`data-flow="stack.parallel" data-flow-args="3 ${REPO}"`)
+    expect(html).toContain("Reading the stack failed (502)")
+    expect(html).toContain(`data-flow="stack.show" data-flow-args="${REPO}"`)
+    expect(html).toContain("stack-item-i1")
+    // Before any snapshot, the failure is all there is.
+    const empty = render({ snapshot: { stack: null, error: "Not found" } })
+    expect(empty).toContain("Not found")
+    expect(empty).not.toContain("history.bootstrap")
+  })
+})
