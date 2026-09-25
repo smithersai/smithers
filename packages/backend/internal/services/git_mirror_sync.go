@@ -207,7 +207,7 @@ func (s *GitMirrorSyncService) startMirrorSync(ctx context.Context, userID, repo
 
 	s.launch("git-mirror-sync", func() {
 		defer remotes.close()
-		s.runMirrorSyncDetached(run.ID, remotes.sourceURL, remotes.targetURL)
+		s.runMirrorSyncDetached(run.ID, repositoryID, remotes.sourceURL, remotes.targetURL)
 	})
 	return run, nil
 }
@@ -336,12 +336,12 @@ func (s *GitMirrorSyncService) RetryMirrorRef(ctx context.Context, userID, repos
 	}
 	s.launch("git-mirror-ref-retry", func() {
 		defer remotes.close()
-		s.runMirrorRefRetryDetached(run.ID, ref, latest, remotes.sourceURL, remotes.targetURL)
+		s.runMirrorRefRetryDetached(run.ID, repositoryID, ref, latest, remotes.sourceURL, remotes.targetURL)
 	})
 	return run.ID, nil
 }
 
-func (s *GitMirrorSyncService) runMirrorRefRetryDetached(runID int64, ref string, prior db.GithubMirrorSyncRefResult, sourceURL, targetURL string) {
+func (s *GitMirrorSyncService) runMirrorRefRetryDetached(runID, repositoryID int64, ref string, prior db.GithubMirrorSyncRefResult, sourceURL, targetURL string) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitMirrorSyncTimeout)
 	defer cancel()
 	finished := false
@@ -368,6 +368,13 @@ func (s *GitMirrorSyncService) runMirrorRefRetryDetached(runID int64, ref string
 			slog.Error("git mirror ref retry could not mark run running", "run_id", runID, "ref", ref, "error", err)
 			finish(gitMirrorRunFailed)
 		}
+		return
+	}
+	// Admission checked the policy; it is checked again at execution, so a
+	// run queued before the repository began following GitHub never writes.
+	if err := s.refusePullPolicy(ctx, repositoryID); err != nil {
+		slog.Warn("git mirror ref retry refused", "run_id", runID, "ref", ref, "error", err)
+		finish(gitMirrorRunFailed)
 		return
 	}
 	priorChange := gitMirrorRefChange{name: ref, from: prior.FromRevision, to: prior.ToRevision}
@@ -429,7 +436,7 @@ type gitMirrorRefChange struct {
 	to   string
 }
 
-func (s *GitMirrorSyncService) runMirrorSyncDetached(runID int64, sourceURL, targetURL string) {
+func (s *GitMirrorSyncService) runMirrorSyncDetached(runID, repositoryID int64, sourceURL, targetURL string) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitMirrorSyncTimeout)
 	defer cancel()
 
@@ -468,6 +475,12 @@ func (s *GitMirrorSyncService) runMirrorSyncDetached(runID int64, sourceURL, tar
 		return
 	}
 	if claimed != 1 {
+		return
+	}
+
+	if err := s.refusePullPolicy(ctx, repositoryID); err != nil {
+		slog.Warn("git mirror sync refused", "run_id", runID, "error", err)
+		finish(gitMirrorRunFailed)
 		return
 	}
 

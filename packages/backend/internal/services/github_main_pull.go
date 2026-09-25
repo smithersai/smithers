@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -42,6 +43,8 @@ const (
 	// the in-process push, so a stale owner cannot write after a takeover.
 	gitHubMainPullLease        = 15 * time.Minute
 	gitHubMainPullTimeout      = 10 * time.Minute
+	gitHubMainPullLeaseMargin  = time.Minute
+	gitHubMainPullMinimumRun   = time.Minute
 	gitHubMainPullClaimLimit   = int32(4)
 	gitHubMainPullBaseBackoff  = 30 * time.Second
 	gitHubMainPullMaxBackoff   = 30 * time.Minute
@@ -286,7 +289,20 @@ type gitHubMainPullOutcome struct {
 }
 
 func (s *GitHubMainPullService) runClaimed(parent context.Context, row db.GithubMainPull) {
-	ctx, cancel := context.WithTimeout(parent, gitHubMainPullTimeout)
+	// The run ends a margin before its lease does. A claim that arrives
+	// already too close to expiry (a delayed response, a paused process) is
+	// not run: another replica may claim it, and this one writes nothing.
+	deadline := s.now().Add(gitHubMainPullTimeout)
+	if row.LeaseExpiresAt.Valid {
+		if leaseEnd := row.LeaseExpiresAt.Time.Add(-gitHubMainPullLeaseMargin); leaseEnd.Before(deadline) {
+			deadline = leaseEnd
+		}
+	}
+	if !deadline.After(s.now().Add(gitHubMainPullMinimumRun)) {
+		s.logger.Warn("github.main_pull.claim_expired", "repository_id", row.RepositoryID, "claim", row.Claim)
+		return
+	}
+	ctx, cancel := context.WithDeadline(parent, deadline)
 	defer cancel()
 	var outcome gitHubMainPullOutcome
 	func() {
@@ -391,7 +407,7 @@ func (s *GitHubMainPullService) pull(ctx context.Context, row db.GithubMainPull)
 	out.smithersHead = smithersHead
 	policy := func(commit string) (string, bool) {
 		if row.PolicyCommit == commit && row.Policy != "" && row.GithubRepository == out.githubRepository {
-			out.policy = row.Policy
+			out.policy, out.policyCommit = row.Policy, commit
 			return row.Policy, true
 		}
 		value, err := s.readPolicy(ctx, token, githubOwner, githubRepo, commit)
@@ -542,6 +558,19 @@ func (s *GitHubMainPullService) bookmarkCommit(ctx context.Context, owner, repo,
 func gitHubMainPullCommand(ctx context.Context, args ...string) *exec.Cmd {
 	cmd := mirrorCommand(ctx, "git", args...)
 	cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+	// Cancellation kills the whole process group, including transport
+	// helpers, and pipe waits are bounded.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
 	cmd.WaitDelay = 5 * time.Second
 	return cmd
 }

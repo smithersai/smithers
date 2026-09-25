@@ -928,3 +928,77 @@ func (c *countingClaims) ClaimGithubMainPulls(ctx context.Context, limit int32, 
 	c.limits = append(c.limits, limit)
 	return c.fakeMainPullStore.ClaimGithubMainPulls(ctx, limit, lease)
 }
+
+func TestGitHubMainPullPolicyReceiptStaysBoundToItsCommit(t *testing.T) {
+	const a, b = pullOld, pullNew
+	h := newPullHarness(t)
+	policies := map[string]string{a: "none", b: "pull"}
+	h.service.readPolicy = func(_ context.Context, _, _, _, commit string) (string, error) {
+		h.policyReads++
+		return policies[commit], nil
+	}
+	// Recorded: A declares none. GitHub advertises B, then rolls back to A
+	// before the fetch.
+	h.store.rows[19] = &db.GithubMainPull{RepositoryID: 19, State: "skipped", GithubRepository: "smithersai/smithers",
+		Policy: "none", PolicyCommit: a}
+	h.host.bookmarks["main"] = "7777777777777777777777777777777777777777"
+	h.github = b
+	h.git.githubMove = a
+	_, err := h.service.Request(context.Background(), 19)
+	require.NoError(t, err)
+	require.NoError(t, h.service.PollOnce(context.Background()))
+	row := h.row(t)
+	assert.Equal(t, "skipped", row.State)
+	assert.Equal(t, "none", row.Policy)
+	assert.Equal(t, a, row.PolicyCommit, "a cached policy is recorded with the commit it was read at")
+
+	// GitHub returns to B: its policy (pull) is read, not the cached one.
+	h.git.githubMove = ""
+	h.github = b
+	h.host.bookmarks["main"] = a
+	_, err = h.service.Request(context.Background(), 19)
+	require.NoError(t, err)
+	require.NoError(t, h.service.PollOnce(context.Background()))
+	row = h.row(t)
+	assert.Equal(t, "synced", row.State, row.LastError)
+	assert.Equal(t, "pull", row.Policy)
+	assert.Equal(t, b, h.host.bookmarks["main"])
+}
+
+func TestGitHubMainPullDoesNotRunAnExpiredClaim(t *testing.T) {
+	h := newPullHarness(t)
+	_, err := h.service.Request(context.Background(), 19)
+	require.NoError(t, err)
+	rows, err := h.store.ClaimGithubMainPulls(context.Background(), 1, 900)
+	require.NoError(t, err)
+	claim := rows[0]
+	claim.LeaseExpiresAt = pgtype.Timestamptz{Time: time.Now().Add(30 * time.Second), Valid: true}
+	h.service.runClaimed(context.Background(), claim)
+	assert.Zero(t, h.git.fetches)
+	assert.Zero(t, h.policyReads)
+	assert.Equal(t, "running", h.row(t).State, "the claim is left for its next claimant")
+}
+
+func TestGitMirrorSyncRechecksThePolicyAtExecution(t *testing.T) {
+	pull := false
+	var queued []func()
+	store := newFakeGitMirrorSyncStore()
+	service := NewGitMirrorSyncService(store, WithGitMirrorPullPolicy(func(context.Context, int64) (bool, error) { return pull, nil }))
+	service.resolveRemotes = func(context.Context, int64, int64, string, string) (gitMirrorRemotes, error) {
+		return gitMirrorRemotes{sourceURL: "https://smithers.example/a/b.git", targetURL: "https://github.example/c/d.git"}, nil
+	}
+	service.launch = func(_ string, run func()) { queued = append(queued, run) }
+	listed := false
+	service.listRemoteRefs = func(context.Context, string) (map[string]string, error) {
+		listed = true
+		return map[string]string{}, nil
+	}
+	_, err := service.StartMirrorSync(context.Background(), 7, 19, "smithers-canary", "smithers")
+	require.NoError(t, err)
+	require.Len(t, queued, 1)
+	// The repository begins following GitHub before the queued run starts.
+	pull = true
+	queued[0]()
+	assert.False(t, listed, "the queued run never reaches either remote")
+	assert.Equal(t, gitMirrorRunFailed, store.run.State)
+}
