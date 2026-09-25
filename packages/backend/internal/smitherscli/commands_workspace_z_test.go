@@ -138,7 +138,7 @@ func TestCommandsWorkspace_Z_CommandErrorBranches(t *testing.T) {
 	commandsWorkspaceZServeErr(t, "Invalid repo format", "create", "--repo", "bad")
 	commandsWorkspaceZServeErr(t, "workspace failed", "create", "--repo", "alice/error")
 	commandsWorkspaceZServeErr(t, "view failed", "view", "ws-error", "--repo", "alice/demo")
-	commandsWorkspaceZServeErr(t, "delete failed", "delete", "ws-delete-error", "--repo", "alice/demo")
+	commandsWorkspaceZServeErr(t, "delete failed", "delete", "ws-delete-error", "--repo", "alice/demo", "--yes")
 	commandsWorkspaceZServeErr(t, "Invalid repo format", "ssh", "--repo", "bad")
 	commandsWorkspaceZServeErr(t, "ssh forbidden", "ssh", "ws-forbidden", "--repo", "alice/demo")
 	t.Setenv("COMMANDS_WORKSPACE_H_SSH_EXIT", "9")

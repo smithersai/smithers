@@ -57,7 +57,7 @@ func TestAdminCommandRequests(t *testing.T) {
 		{"deploys platform list", "GET", "/api/v1/deploys/platform", "", "", ""},
 		{"deploys platform rollback server --revision 42 --yes", "POST", "/api/v1/deploys/platform/server/rollback", "", `{"revision":"42"}`, "server"},
 		{"deploys platform status server", "GET", "/api/v1/deploys/platform/server/status", "", "", ""},
-		{"runs list --repo alice/demo", "GET", "/api/repos/alice/demo/workflows/runs", "limit=30&page=1", "", ""},
+		{"runs list --repo alice/demo", "GET", "/api/repos/alice/demo/workflows/runs", "page=1&per_page=30", "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.command, func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestAdminConfirmationPrompt(t *testing.T) {
 	}{{"yes\n", true}, {"Y\n", true}, {"no\n", false}, {"\n", false}, {"", false}} {
 		t.Run(fmt.Sprintf("%q", tc.input), func(t *testing.T) {
 			commandsMoreHTTPHWithStdin(t, tc.input, func() {
-				err := confirmAdminOperation(false, "cancel abc")
+				err := confirmDestructiveOperation(false, "cancel abc")
 				if tc.approved {
 					require.NoError(t, err)
 				} else {

@@ -33,11 +33,9 @@ const defaultRemotePromptFile = "/home/developer/.smithers/issue-prompt.txt"
 const defaultRemoteClaudeInstallLog = "/home/developer/.smithers/claude-install.log"
 const defaultRemoteCodexAuthDir = "/home/developer/.codex"
 const defaultRemoteCodexAuthFile = "/home/developer/.codex/auth.json"
-const defaultRemoteNodeInstallLog = "/home/developer/.smithers/node-install.log"
 const defaultRemoteWorkspaceUser = "developer"
 const defaultRemoteLocalRoot = "/home/developer/.local"
 const defaultRemoteLocalBinDir = "/home/developer/.local/bin"
-const defaultRemoteLocalNodeDir = "/home/developer/.local/node"
 const defaultRemoteDeveloperPath = "/home/developer/.local/bin:/usr/local/bin:/usr/bin:/bin"
 const defaultClaudeCodePackage = "@anthropic-ai/claude-code"
 const defaultWorkspaceSSHConnectTimeoutSeconds = 15
@@ -120,7 +118,10 @@ func workspaceCommand() *incur.Cli {
 		}
 		return out, nil
 	}))
-	cmd.Command("delete", workspaceIDCommand("Delete a workspace", func(owner, repo, id string, ctx *incur.CommandContext) (any, error) {
+	cmd.Command("delete", workspaceIDCommandWithOptions("Delete a workspace", map[string]*incur.JSONSchema{"yes": booleanSchema("Confirm deleting the workspace", false)}, func(owner, repo, id string, ctx *incur.CommandContext) (any, error) {
+		if err := confirmDestructiveOperation(ctx.Options["yes"] == true, "delete workspace "+strconv.Quote(id)); err != nil {
+			return nil, err
+		}
 		if _, err := APIRequest("DELETE", fmt.Sprintf("/api/repos/%s/%s/workspaces/%s", owner, repo, url.PathEscape(id)), nil, nil); err != nil {
 			return nil, err
 		}
@@ -999,16 +1000,9 @@ func buildWorkspaceNodeBootstrapScript() string {
 		"install -d -o " + shellEscape(defaultRemoteWorkspaceUser) + " -g " + shellEscape(defaultRemoteWorkspaceUser) + " -m 700 " + shellEscape(defaultRemoteClaudeAuthDir),
 		"install -d -o " + shellEscape(defaultRemoteWorkspaceUser) + " -g " + shellEscape(defaultRemoteWorkspaceUser) + " -m 755 " + shellEscape(defaultRemoteLocalRoot),
 		"install -d -o " + shellEscape(defaultRemoteWorkspaceUser) + " -g " + shellEscape(defaultRemoteWorkspaceUser) + " -m 755 " + shellEscape(defaultRemoteLocalBinDir),
-		"if [ ! -x " + shellEscape(defaultRemoteLocalBinDir+"/node") + " ] || [ ! -x " + shellEscape(defaultRemoteLocalBinDir+"/npm") + " ]; then",
-		"  if ! command -v node >/dev/null 2>&1; then",
-		`    echo "Node.js is unavailable for workspace-local bootstrap." >&2`,
-		"    exit 1",
-		"  fi",
-		"  rm -rf " + shellEscape(defaultRemoteLocalNodeDir),
-		"  mkdir -p " + shellEscape(defaultRemoteLocalNodeDir),
-		"  ln -sfn ../node/bin/node " + shellEscape(defaultRemoteLocalBinDir+"/node"),
-		"  ln -sfn ../node/bin/npm " + shellEscape(defaultRemoteLocalBinDir+"/npm"),
-		"  ln -sfn ../node/bin/npx " + shellEscape(defaultRemoteLocalBinDir+"/npx"),
+		"if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then",
+		`  echo "Node.js and npm must be on PATH in the workspace image to install Claude Code." >&2`,
+		"  exit 1",
 		"fi",
 	}, "\n")
 }
@@ -1191,7 +1185,7 @@ func buildClaudeDiagnosticsRemoteScript() string {
 		`echo "claude_processes:"`,
 		"ps -eo pid=,ppid=,stat=,wchan=,etime=,time=,comm=,args= | grep -E '[c]laude|[r]unuser|[s]u -' || true",
 		`echo "\nworkspace_files:"`,
-		"ls -ld " + shellEscape(defaultRemoteLocalRoot) + " " + shellEscape(defaultRemoteLocalBinDir) + " " + shellEscape(defaultRemoteLocalNodeDir) + " " + shellEscape(defaultRemoteClaudeAuthDir) + " " + shellEscape(defaultRemotePromptFile) + " " + shellEscape(defaultRemoteClaudeAuthFile) + " 2>/dev/null || true",
+		"ls -ld " + shellEscape(defaultRemoteLocalRoot) + " " + shellEscape(defaultRemoteLocalBinDir) + " " + shellEscape(defaultRemoteClaudeAuthDir) + " " + shellEscape(defaultRemotePromptFile) + " " + shellEscape(defaultRemoteClaudeAuthFile) + " 2>/dev/null || true",
 		"ls -l " + shellEscape(defaultRemoteLocalBinDir+"/node") + " " + shellEscape(defaultRemoteLocalBinDir+"/npm") + " " + shellEscape(defaultRemoteLocalBinDir+"/claude") + " 2>/dev/null || true",
 		`echo "\ndeveloper_env:"`,
 		"if command -v runuser >/dev/null 2>&1; then",
@@ -1199,8 +1193,6 @@ func buildClaudeDiagnosticsRemoteScript() string {
 		"else",
 		"  su - " + shellEscape(defaultRemoteWorkspaceUser) + " -c " + shellEscape(developerEnvProbe) + " || true",
 		"fi",
-		`echo "\nnode_install_log:"`,
-		"tail -n 80 " + shellEscape(defaultRemoteNodeInstallLog) + " 2>/dev/null || true",
 		`echo "\nclaude_install_log:"`,
 		"tail -n 80 " + shellEscape(defaultRemoteClaudeInstallLog) + " 2>/dev/null || true",
 	}, "\n")

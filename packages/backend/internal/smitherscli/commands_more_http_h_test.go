@@ -133,7 +133,7 @@ func TestCommandsMoreHttp_H_CommandSurfaceSuccess(t *testing.T) {
 	commandsMoreHTTPHServe(t, adminCommand(), "user", "list", "--page", "2", "--limit", "5", "--json")
 	commandsMoreHTTPHServe(t, adminCommand(), "user", "create", "--username", "new-user", "--email", "new@example.com", "--json")
 	commandsMoreHTTPHServe(t, adminCommand(), "user", "disable", "new-user", "--json")
-	commandsMoreHTTPHServe(t, adminCommand(), "user", "delete", "new-user", "--json")
+	commandsMoreHTTPHServe(t, adminCommand(), "user", "delete", "new-user", "--yes", "--json")
 	commandsMoreHTTPHServe(t, adminCommand(), "runner", "list", "--json")
 	commandsMoreHTTPHServe(t, adminCommand(), "runs", "list", "--repo", "acme/repo", "--page", "3", "--limit", "7", "--json")
 	commandsMoreHTTPHServe(t, adminCommand(), "health", "--json")
@@ -456,7 +456,7 @@ func TestCommandsMoreHttp_H_CommandErrorBranches(t *testing.T) {
 		want string
 		argv []string
 	}{
-		{"delete-user", adminCommand(), "delete user denied", []string{"user", "delete", "bad", "--json"}},
+		{"delete-user", adminCommand(), "delete user denied", []string{"user", "delete", "bad", "--yes", "--json"}},
 		{"whitelist-remove", betaCommand(), "whitelist denied", []string{"whitelist", "remove", "--type", "email", "--value", "bad@example.com", "--json"}},
 		{"org-delete", orgCommand(), "org delete denied", []string{"delete", "acme", "--json"}},
 		{"member-remove", orgCommand(), "member remove denied", []string{"member", "remove", "acme", "bob", "--json"}},

@@ -417,24 +417,30 @@ func registerRepoMutationCommands(cmd *incur.Cli) {
 		},
 	})
 	for _, spec := range []struct {
-		name   string
-		method string
-		path   string
-		status string
-		action string
+		name        string
+		method      string
+		path        string
+		status      string
+		action      string
+		destructive bool
 	}{
-		{"archive", "POST", "/archive", "archived", "Archived"},
-		{"unarchive", "DELETE", "/archive", "unarchived", "Unarchived"},
-		{"delete", "DELETE", "", "deleted", "Deleted"},
+		{"archive", "POST", "/archive", "archived", "Archived", false},
+		{"unarchive", "DELETE", "/archive", "unarchived", "Unarchived", false},
+		{"delete", "DELETE", "", "deleted", "Deleted", true},
 	} {
 		spec := spec
-		cmd.Command(spec.name, &incur.CommandDef{
+		def := &incur.CommandDef{
 			Description: repoMutationDescription(spec.name),
 			ArgsSchema:  objectSchema([]string{"repo"}, map[string]*incur.JSONSchema{"repo": stringSchema("Repository in OWNER/REPO format")}),
 			Handler: func(ctx *incur.CommandContext) (any, error) {
 				owner, repoName, err := ResolveRepoRef(stringValue(ctx.Args["repo"]))
 				if err != nil {
 					return nil, err
+				}
+				if spec.destructive {
+					if err := confirmDestructiveOperation(ctx.Options["yes"] == true, spec.name+" repository "+strconv.Quote(owner+"/"+repoName)); err != nil {
+						return nil, err
+					}
 				}
 				path := fmt.Sprintf("/api/repos/%s/%s%s", owner, repoName, spec.path)
 				if _, err := APIRequest(spec.method, path, nil, nil); err != nil {
@@ -446,7 +452,11 @@ func registerRepoMutationCommands(cmd *incur.Cli) {
 				}
 				return formatRepoMutation(spec.action, repoRef), nil
 			},
-		})
+		}
+		if spec.destructive {
+			def.OptionsSchema = objectSchema(nil, map[string]*incur.JSONSchema{"yes": booleanSchema("Confirm deleting the repository", false)})
+		}
+		cmd.Command(spec.name, def)
 	}
 	cmd.Command("edit", &incur.CommandDef{
 		Description: "Edit repository settings",

@@ -29,7 +29,7 @@ func adminCommand() *incur.Cli {
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			query := url.Values{}
 			query.Set("page", strconv.Itoa(intValue(ctx.Options["page"], 1)))
-			query.Set("limit", strconv.Itoa(intValue(ctx.Options["limit"], 30)))
+			query.Set("per_page", strconv.Itoa(intValue(ctx.Options["limit"], 30)))
 			return APIRequest("GET", "/api/admin/users?"+query.Encode(), nil, nil)
 		},
 	})
@@ -47,17 +47,28 @@ func adminCommand() *incur.Cli {
 		},
 	})
 	cmd.Command("user disable", &incur.CommandDef{
-		Description: "Disable a user",
-		ArgsSchema:  objectSchema([]string{"username"}, map[string]*incur.JSONSchema{"username": stringSchema("Username to disable")}),
+		Description: "Suspend a user",
+		ArgsSchema:  objectSchema([]string{"username"}, map[string]*incur.JSONSchema{"username": stringSchema("Username to suspend")}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
-			return APIRequest("PATCH", "/api/admin/users/"+url.PathEscape(stringValue(ctx.Args["username"])), map[string]any{"active": false}, nil)
+			return APIRequest("PATCH", "/api/admin/users/"+url.PathEscape(stringValue(ctx.Args["username"])), map[string]any{"suspended": true}, nil)
+		},
+	})
+	cmd.Command("user enable", &incur.CommandDef{
+		Description: "Lift a user's suspension",
+		ArgsSchema:  objectSchema([]string{"username"}, map[string]*incur.JSONSchema{"username": stringSchema("Username to unsuspend")}),
+		Handler: func(ctx *incur.CommandContext) (any, error) {
+			return APIRequest("PATCH", "/api/admin/users/"+url.PathEscape(stringValue(ctx.Args["username"])), map[string]any{"suspended": false}, nil)
 		},
 	})
 	cmd.Command("user delete", &incur.CommandDef{
-		Description: "Delete a user",
-		ArgsSchema:  objectSchema([]string{"username"}, map[string]*incur.JSONSchema{"username": stringSchema("Username to delete")}),
+		Description:   "Delete a user",
+		ArgsSchema:    objectSchema([]string{"username"}, map[string]*incur.JSONSchema{"username": stringSchema("Username to delete")}),
+		OptionsSchema: objectSchema(nil, map[string]*incur.JSONSchema{"yes": booleanSchema("Confirm deleting the user", false)}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			username := stringValue(ctx.Args["username"])
+			if err := confirmDestructiveOperation(ctx.Options["yes"] == true, "delete user "+strconv.Quote(username)); err != nil {
+				return nil, err
+			}
 			if _, err := APIRequest("DELETE", "/api/admin/users/"+url.PathEscape(username), nil, nil); err != nil {
 				return nil, err
 			}
@@ -85,7 +96,7 @@ func adminCommand() *incur.Cli {
 			}
 			query := url.Values{}
 			query.Set("page", strconv.Itoa(intValue(ctx.Options["page"], 1)))
-			query.Set("limit", strconv.Itoa(intValue(ctx.Options["limit"], 30)))
+			query.Set("per_page", strconv.Itoa(intValue(ctx.Options["limit"], 30)))
 			result, err := APIRequest("GET", fmt.Sprintf("/api/repos/%s/%s/workflows/runs?%s", url.PathEscape(owner), url.PathEscape(repo), query.Encode()), nil, nil)
 			token, _ := ResolveAuthToken(nil)
 			if err != nil {

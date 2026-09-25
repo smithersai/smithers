@@ -110,7 +110,7 @@ func TestCommandsMoreHttp_Cov_CommandConstructorsAndHandlers(t *testing.T) {
 		})
 	}
 
-	commandsMoreHTTPCovServe(t, adminCommand(), []string{"user", "delete", "bob", "--json"})
+	commandsMoreHTTPCovServe(t, adminCommand(), []string{"user", "delete", "bob", "--yes", "--json"})
 	commandsMoreHTTPCovServe(t, betaCommand(), []string{"waitlist", "join", "--email", " person@example.com ", "--note", "hello", "--source", " cov ", "--json"})
 	commandsMoreHTTPCovServe(t, orgCommand(), []string{"team", "member", "remove", "acme", "core", "bob", "--json"})
 	commandsMoreHTTPCovServe(t, orgCommand(), []string{"team", "repo", "add", "acme", "core", "alice/demo", "--json"})

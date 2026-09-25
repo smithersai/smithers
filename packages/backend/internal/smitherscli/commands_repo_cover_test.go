@@ -179,7 +179,7 @@ func TestCommandsRepo_Cov_CommandHandlersMutationsAndClone(t *testing.T) {
 	commandsRepoCovServe(t, repoCommand(), []string{"transfer", "alice/demo", "--to", "acme", "--json"})
 	commandsRepoCovServe(t, repoCommand(), []string{"archive", "alice/demo", "--json"})
 	commandsRepoCovServe(t, repoCommand(), []string{"unarchive", "alice/demo", "--json"})
-	commandsRepoCovServe(t, repoCommand(), []string{"delete", "alice/demo", "--json"})
+	commandsRepoCovServe(t, repoCommand(), []string{"delete", "alice/demo", "--yes", "--json"})
 	commandsRepoCovServe(t, repoCommand(), []string{"edit", "alice/demo", "--description", "", "--private=false", "--name", "demo-renamed", "--json"})
 
 	for _, expected := range []string{

@@ -106,7 +106,7 @@ func registerAdminOperations(cmd *incur.Cli) {
 
 var adminIsTerminal = term.IsTerminal
 
-func confirmAdminOperation(yes bool, description string) error {
+func confirmDestructiveOperation(yes bool, description string) error {
 	if yes {
 		return nil
 	}
@@ -187,7 +187,7 @@ func executeAdminOperation(ctx *incur.CommandContext, op adminOperation) (any, e
 		if op.name == "incidents bulk" {
 			description += " " + stringValue(body["action"]) + " " + firstNonEmpty(stringValue(body["policy"]), stringValue(ctx.Options["ids"]))
 		}
-		if err := confirmAdminOperation(ctx.Options["yes"] == true, description); err != nil {
+		if err := confirmDestructiveOperation(ctx.Options["yes"] == true, description); err != nil {
 			return nil, err
 		}
 	}

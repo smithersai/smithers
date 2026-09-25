@@ -159,7 +159,7 @@ func TestCommandsRepo_Z_HumanOutputAndAPIErrorBranches(t *testing.T) {
 		{"transfer", "alice/demo", "--to", "bob"},
 		{"archive", "alice/demo"},
 		{"unarchive", "alice/demo"},
-		{"delete", "alice/demo"},
+		{"delete", "alice/demo", "--yes"},
 		{"edit", "alice/demo"},
 		{"disconnect"},
 	} {

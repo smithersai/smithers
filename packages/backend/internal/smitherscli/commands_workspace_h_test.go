@@ -230,7 +230,7 @@ func TestCommandsWorkspace_H_CommandHandlersAndTerminal(t *testing.T) {
 	commandsWorkspaceHServe(t, "create", "--repo", "alice/demo", "--name", "created", "--snapshot", "snap-1", "--json")
 	commandsWorkspaceHServe(t, "list", "--repo", "alice/demo", "--json")
 	commandsWorkspaceHServe(t, "view", "ws-view", "--repo", "alice/demo", "--json")
-	commandsWorkspaceHServe(t, "delete", "ws-delete", "--repo", "alice/demo", "--json")
+	commandsWorkspaceHServe(t, "delete", "ws-delete", "--repo", "alice/demo", "--yes", "--json")
 	commandsWorkspaceHServe(t, "ssh", "ws-ssh", "--repo", "alice/demo", "--json")
 	commandsWorkspaceHServeWantErr(t, "not become SSH-ready", "ssh", "ws-no-command", "--repo", "alice/demo", "--json")
 	commandsWorkspaceHServe(t, "fork", "ws-fork", "--repo", "alice/demo", "--name", "forked", "--json")
