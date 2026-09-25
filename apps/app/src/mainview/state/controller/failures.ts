@@ -1,3 +1,4 @@
+import { claimWorkToast } from "./backgroundWork"
 import type { CommandOutcome } from "../../flows/Commands"
 import type { Toast } from "../AppState"
 import { spokenLostAct } from "../BrowserWriteFailure"
@@ -54,7 +55,8 @@ export interface FailureController {
     doneTitle: string,
     work: () => Promise<T | string>,
     quiet?: boolean,
-    current?: () => boolean
+    current?: () => boolean,
+    sourceCard?: string
   ) => Promise<T | string>
   /**
    * Resolve the toast on `key`; an ok outcome dismisses itself after
@@ -194,8 +196,10 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     doneTitle: string,
     work: () => Promise<T | string>,
     quiet = false,
-    current?: () => boolean
+    current?: () => boolean,
+    sourceCard?: string
   ): Promise<T | string> => {
+    if (sourceCard !== undefined) claimWorkToast(ctx.store, sourceCard, key)
     if (quiet) return quietly(key, title, work, current)
     nextRun += 1
     const run = nextRun
@@ -204,7 +208,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     const debounce = later(() => {
       if (ctx.toastRuns.get(key) !== run || current?.() === false) return
       shown = true
-      ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title })
+      ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title, ...(sourceCard === undefined ? {} : { sourceCard }) })
     }, ctx.toastDebounceMs)
     let outcome: T | string
     try {

@@ -591,6 +591,7 @@ export type Frame = z.infer<typeof FrameSchema>
  * honest and stays until dismissed.
  */
 export const ToastSchema = z.object({
+  sourceCard: z.string().optional(),
   id: z.string(),
   /** The work identity ("billing.balance.refresh"): one toast per background flow. */
   key: z.string(),
@@ -730,7 +731,11 @@ export const ApprovalsInboxRequestSchema = z.object({
 })
 export type ApprovalsInboxRequest = z.infer<typeof ApprovalsInboxRequestSchema>
 
+export const QueuedPromptSchema = z.object({ id: z.string(), text: z.string(), scope: z.string() })
+
 export const SessionSchema = z.object({
+  queuedPrompts: z.array(QueuedPromptSchema).optional(),
+  promptQueuePaused: z.boolean().optional(),
   codingProviderRequests: z.array(z.object({ id: z.string(), owner: z.string(), action: z.enum(["connect", "revoke"]).optional(), connectionId: z.string().optional(), state: z.enum(["requested", "completed", "failed"]) })).optional(),
   librarianLaunches: z.array(z.object({
     kind: z.enum(["wiki", "history"]),
@@ -1147,6 +1152,9 @@ export type AppTransition =
   | { type: "card.recovered"; actor: Actor; workspaceId: string; branchId: string; id: string; card: Card | null; history?: CardHistory }
   | { type: "input.mode.changed"; actor: Actor; mode: InputMode }
   | { type: "dictation.changed"; actor: Actor; listening: boolean }
+  | { type: "prompt.queued"; actor: "user"; prompt: z.infer<typeof QueuedPromptSchema> }
+  | { type: "prompt.removed"; actor: "user"; id: string; edit?: boolean }
+  | { type: "prompt.queue.paused"; actor: Actor; paused: boolean }
   | { type: "composer.changed"; actor: Actor; draft: string; recoveryScope?: PendingRecoveryScope }
   | { type: "message.submitted"; actor: "user" | "smithers"; turnId: string; text: string }
   | {
@@ -1518,6 +1526,7 @@ export type AppTransition =
   | {
     /* The 300ms toast law: slow background work states what is running. */
     type: "toast.shown"
+    sourceCard?: string
     actor: "system"
     key: string
     title: string

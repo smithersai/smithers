@@ -10,6 +10,18 @@
     "cacheable": false,
     "inputs": [
       {
+        "kind": "file",
+        "path": "scripts/check-go-boundaries.py"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/check-public-backend-boundary.sh"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/test_check_go_boundaries.py"
+      },
+      {
         "kind": "glob",
         "pattern": "apps/model-host/src/**/*.ts",
         "exclude": []
@@ -751,6 +763,10 @@
       {
         "kind": "file",
         "path": "apps/app/playwright.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/playwright.site.config.ts"
       },
       {
         "kind": "file",
@@ -5873,6 +5889,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/shared/manifest.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/shared/starlight.css"
       },
       {
@@ -6837,6 +6857,42 @@
       {
         "kind": "file",
         "path": "apps/model-host/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/agent/model-host:lib"
+    ],
+    "source": {
+      "file": "apps/model-host/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/model-host:test",
+    "package": "apps/model-host",
+    "name": "test",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/model-host/test/serve.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/model-host/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/model-host/build.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/model-host/package.json"
       }
     ],
     "outputs": [],
@@ -7939,6 +7995,18 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/bug-worker/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/review/CONTRIBUTING.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/review/package.json"
       },
       {
@@ -7951,7 +8019,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/agent/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/chain/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/chain/package.json"
       },
       {
         "kind": "file",
@@ -7959,7 +8035,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/evals/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/fs/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/fs/package.json"
       },
       {
         "kind": "file",
@@ -7967,7 +8051,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/harness/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/integrations/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/integrations/package.json"
       },
       {
         "kind": "file",
@@ -7975,7 +8067,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/memory/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/model/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/model/package.json"
       },
       {
         "kind": "file",
@@ -7983,7 +8083,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/plugin/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/registry/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/registry/package.json"
       },
       {
         "kind": "file",
@@ -7991,7 +8099,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/scorers/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/std/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/std/package.json"
       },
       {
         "kind": "file",
@@ -7999,7 +8115,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/triggers/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/control/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/control/package.json"
       },
       {
         "kind": "file",
@@ -8007,7 +8131,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/create-app/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/cli/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/cli/package.json"
       },
       {
         "kind": "file",
@@ -8015,7 +8147,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/artifacts/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/canonical/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/canonical/package.json"
       },
       {
         "kind": "file",
@@ -8023,7 +8163,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/capability/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/core/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/core/package.json"
       },
       {
         "kind": "file",
@@ -8031,7 +8179,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/crypto/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/database/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/database/package.json"
       },
       {
         "kind": "file",
@@ -8039,7 +8195,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/flows/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/engine-store/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/engine-store/package.json"
       },
       {
         "kind": "file",
@@ -8047,7 +8211,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/engine/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/flow/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/flow/package.json"
       },
       {
         "kind": "file",
@@ -8055,7 +8227,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/jj/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/journal/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/journal/package.json"
       },
       {
         "kind": "file",
@@ -8063,7 +8243,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/kernel/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/keys/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/keys/package.json"
       },
       {
         "kind": "file",
@@ -8071,7 +8259,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/observability/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/smithers-patterns/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smithers-patterns/package.json"
       },
       {
         "kind": "file",
@@ -8079,7 +8275,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/plan/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/plan-store/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan-store/package.json"
       },
       {
         "kind": "file",
@@ -8087,7 +8291,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/platform-browser/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/platform-bun/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-bun/package.json"
       },
       {
         "kind": "file",
@@ -8095,7 +8307,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/platform-node/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/run-store/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/run-store/package.json"
       },
       {
         "kind": "file",
@@ -8103,7 +8323,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/sandbox/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/step-cache/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/step-cache/package.json"
       },
       {
         "kind": "file",
@@ -8111,7 +8339,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/smithers-sync/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/time-travel/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/time-travel/package.json"
       },
       {
         "kind": "file",
@@ -8119,7 +8355,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/gateway/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/mcp/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/mcp/package.json"
       },
       {
         "kind": "file",
@@ -8127,7 +8371,15 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/migrate/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/notifications/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/notifications/package.json"
       },
       {
         "kind": "file",
@@ -8135,11 +8387,23 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/errors/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/testing/alchemy.run.ts"
       },
       {
         "kind": "file",
+        "path": "apps/docs/testing/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/smthrs/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smthrs/package.json"
       }
     ],
     "outputs": [],
@@ -9245,6 +9509,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/bunfig.toml"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui/tsconfig.json"
       }
     ],
@@ -9278,6 +9546,10 @@
         "kind": "glob",
         "pattern": "apps/tui/test/**/*",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/bunfig.toml"
       }
     ],
     "outputs": [],
@@ -12575,6 +12847,10 @@
       {
         "kind": "file",
         "path": "flows/test/coding-host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-runtime-bridge.test.ts"
       },
       {
         "kind": "file",
@@ -18122,6 +18398,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/build/infra/tsconfig.contract.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/Cache.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/internal/Fs.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/build/infra/tsconfig.json"
       }
     ],
@@ -18308,6 +18596,18 @@
       {
         "kind": "file",
         "path": "packages/smithers/build/infra/tsconfig.test.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/tsconfig.contract.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/Cache.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/internal/Fs.ts"
       },
       {
         "kind": "file",
@@ -18877,9 +19177,7 @@
       }
     ],
     "outputs": [],
-    "dependencies": [
-      "//packages/smithers/build:cacheServicePostgresDatabase"
-    ],
+    "dependencies": [],
     "source": {
       "file": "packages/smithers/build/PACKAGE.ts"
     }

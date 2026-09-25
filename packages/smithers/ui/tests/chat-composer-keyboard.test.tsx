@@ -116,6 +116,17 @@ describe("ChatComposer keyboard contract", () => {
     expect(submitted).toEqual([]);
   });
 
+  test("a steerable busy composer accepts Enter and keeps Escape available to stop", async () => {
+    const submitted: string[] = [];
+    let stops = 0;
+    await render(<ChatComposer value="steer" lifecycleStatus="streaming" submitWhileBusy
+      onValueChange={() => {}} onSubmit={text => submitted.push(text)} onStop={() => { stops++; }} />);
+    await press("Enter");
+    expect(submitted).toEqual(["steer"]);
+    await press("Escape");
+    expect(stops).toBe(1);
+  });
+
   test("Escape stops an in-flight generation, and does nothing while ready", async () => {
     const stops: number[] = [];
     await render(

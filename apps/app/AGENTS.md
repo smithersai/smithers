@@ -1,5 +1,13 @@
 # Smithers MVP engineering rules
 
+## Background work controls and prompt queue (Will, 2026-09-24)
+
+Background worker controls belong in the shared toast stack. Offer the actions
+the observed worker state and host support; keep progress through launch and
+execution. Share worker-action rules and prompt queue behavior with the TUI.
+Enter steers the current turn; Alt+Enter queues a follow-up. Keep queued prompts
+durable, scoped to their conversation, and editable without blocking Chat.
+
 ## Keyboard-only access is a product rule (Will, 2026-09-08)
 
 Users must be able to operate all of Smithers without a mouse. Every action needs an accessible keyboard path, visible focus, and predictable focus movement. Use native control semantics, Tab/Shift-Tab navigation, Enter/Space activation, Escape dismissal, and appropriate arrow-key navigation. Preserve normal text editing. No hover-only, drag-only, or pointer-only required action. Keyboard-only completion is a release check for every new workflow, including onboarding.

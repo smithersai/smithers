@@ -18,6 +18,20 @@ app. `pnpm --filter smithers-app dev` runs the native watch loop. For build-only
 work, use `build:web` for the SPA or `build:native` for the native package.
 The old template's `dev:hmr` and `build:prod` scripts do not exist.
 
+## Background work and queued prompts
+
+Worker toasts offer the controls supported by their host and current state:
+open, stop, steer, model, thinking, approval, resume, retry or reconnect.
+They appear after 300 ms and stay running through launch and execution.
+The embedded run card retains the output.
+
+Enter submits or steers; Alt+Enter (or Queue) adds a FIFO follow-up.
+Alt+Up restores queued prompts to the editor. Items can also be edited or removed.
+The queue persists within its repository, workspace and conversation branch;
+Stop, failure or an interrupted reload pauses it until Resume.
+The GUI and TUI share queue operations and worker action eligibility through
+`@smthrs/rpc/PromptQueue` and `@smthrs/rpc/WorkerControls`.
+
 ## Verification
 
 ```sh

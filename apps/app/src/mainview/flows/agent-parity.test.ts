@@ -37,6 +37,11 @@ import { WIKI_HEADING_USER_ONLY_REASON } from "./entries/wiki"
 const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "storage.recovery.export": STORAGE_RECOVERY_USER_ONLY_REASON,
   "storage.recovery.reset": STORAGE_RESET_USER_ONLY_REASON,
+  "chat.queue": "the prompt queue is the human's composer",
+  "chat.queue.edit": "the prompt queue is the human's composer",
+  "chat.queue.remove": "the prompt queue is the human's composer",
+  "chat.queue.restore": "the prompt queue is the human's composer",
+  "chat.queue.resume": "the prompt queue is the human's composer",
   "chat.send": "the composer is the human's; the model is already the turn, and sending would nest one",
   "chat.stop": "stopping the model's own turn is the human's Escape key",
   "chat.copy-message": "the clipboard write is the human's browser gesture",

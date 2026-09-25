@@ -1,3 +1,4 @@
+import * as PromptQueue from "@smthrs/rpc/PromptQueue"
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import type { ConfiguredModel, ModelBinding } from "@smthrs/rpc/ConfiguredModel"
 import { bindingOf,seatAccepts } from "@smthrs/rpc/ConfiguredModel"
@@ -182,6 +183,9 @@ export const APP_TRANSITION_TYPES = {
   "command.intent.settled": true,
   "input.mode.changed": true,
   "dictation.changed": true,
+  "prompt.queued": true,
+  "prompt.removed": true,
+  "prompt.queue.paused": true,
   "composer.changed": true,
   "message.submitted": true,
   "message.response.delta": true,
@@ -792,6 +796,8 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
   collections.sessions.update(SESSION_ID, (draft) => {
     const branchId = draft.activeBranchId ?? DEFAULT_BRANCH_ID
     draft.draft = ""
+    delete draft.queuedPrompts
+    delete draft.promptQueuePaused
     draft.pendingCommand = null
     delete draft.repositoryCommandEntry
     delete draft.approvalsInboxRequests
@@ -1363,6 +1369,28 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, (draft) => { draft.dictating = transition.listening })
           break
 
+        case "prompt.queued":
+          collections.sessions.update(SESSION_ID, draft => {
+            draft.queuedPrompts = [...PromptQueue.enqueue(draft.queuedPrompts ?? [], transition.prompt)]
+            if (draft.draft.trim() === transition.prompt.text.trim()) draft.draft = ""
+          })
+          break
+        case "prompt.removed": {
+          const prompt = current.queuedPrompts?.find(item => item.id === transition.id)
+          if (!prompt) return
+          collections.sessions.update(SESSION_ID, draft => {
+            draft.queuedPrompts = [...PromptQueue.remove(draft.queuedPrompts ?? [], transition.id)]
+            if (transition.edit) {
+              draft.draft = PromptQueue.restoreDraft([prompt], draft.draft)
+              draft.paletteOpen = true
+            }
+          })
+          break
+        }
+        case "prompt.queue.paused":
+          collections.sessions.update(SESSION_ID, draft => { draft.promptQueuePaused = transition.paused })
+          break
+
         case "composer.changed":
           if (transition.recoveryScope && !sameRecoveryScope(transition.recoveryScope, pendingRecoveryScope(current))) {
             const scope = transition.recoveryScope, branch = collections.branches.get(scope.branchId)
@@ -1387,7 +1415,9 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             ordinal: nextOrdinal(collections)
           })
           collections.sessions.update(SESSION_ID, (draft) => {
-            draft.draft = ""
+            const queued = draft.queuedPrompts?.some(item => item.id === transition.turnId)
+            if (queued) draft.queuedPrompts = [...PromptQueue.remove(draft.queuedPrompts ?? [], transition.turnId)]
+            else draft.draft = ""
             draft.phase = "responding"
             // The turn belongs to the conversation it was asked in, whatever tab is active later.
             draft.turnTabId = conversationTabId ?? null
@@ -1451,6 +1481,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "idle"
+            if (draft.queuedPrompts?.length) draft.promptQueuePaused = true
           })
           break
         }
@@ -1500,6 +1531,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "idle"
+            if (draft.queuedPrompts?.length) draft.promptQueuePaused = true
           })
           break
         }
@@ -1547,6 +1579,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "idle"
             draft.turnId = null
+            if (draft.queuedPrompts?.length) draft.promptQueuePaused = true
           })
           break
         }
@@ -1586,6 +1619,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.draft = ""
             draft.phase = "idle"
+            if (draft.queuedPrompts?.length) draft.promptQueuePaused = true
             draft.composerOwner = "user"
             draft.maximizedCardId = null
             draft.activeFrameId = rootFrameId(activeBranchId)
@@ -2569,6 +2603,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             id,
             key: transition.key,
             title: transition.title,
+            sourceCard: transition.sourceCard,
             status: "running",
             detail: "",
             action: transition.action,

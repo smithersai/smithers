@@ -114,6 +114,28 @@ const mountCounted = async (): Promise<Counted> => {
 const textarea = (host: HTMLElement): HTMLTextAreaElement | null => host.querySelector<HTMLTextAreaElement>("textarea")
 
 describe("the composer hot path: typing never re-renders the transcript", () => {
+  test("Alt+Enter queues while busy and edit/remove controls use persisted state", async () => {
+    const view = await mountCounted()
+    await view.act(() => view.controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "held", text: "in flight" }))
+    await view.act(() => view.controller.changeDraft("follow-up"))
+    await view.act(() => textarea(view.host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", altKey: true, bubbles: true, cancelable: true })))
+    await waitFor(() => view.controller.store.session().queuedPrompts?.length === 1)
+    await view.act(() => {})
+    expect(view.controller.store.session()).toMatchObject({ draft: "", phase: "responding" })
+    expect(view.host.querySelector('[aria-label="Queued prompts"]')?.textContent).toContain("follow-up")
+    await view.act(() => view.host.querySelector<HTMLButtonElement>('[data-flow="chat.queue.edit"]')!.click())
+    await waitFor(() => view.controller.store.session().draft === "follow-up")
+    await view.act(() => {})
+    expect(textarea(view.host)?.value).toBe("follow-up")
+    expect(view.controller.store.session().queuedPrompts).toEqual([])
+    await view.act(() => view.host.querySelector<HTMLButtonElement>('[data-flow="chat.queue"]')!.click())
+    await waitFor(() => view.controller.store.session().queuedPrompts?.length === 1)
+    await view.act(() => {})
+    await view.act(() => view.host.querySelector<HTMLButtonElement>('[data-flow="chat.queue.remove"]')!.click())
+    await waitFor(() => view.controller.store.session().queuedPrompts?.length === 0)
+    expect(view.controller.store.session().phase).toBe("responding")
+  })
+
   test("a run of keystrokes re-renders the shell zero times", async () => {
     const view = await mountCounted()
     const before = view.renders()
@@ -264,4 +286,3 @@ describe("the streaming hot path: a message delta re-derives only what the trans
  * the projection follows, and the two dismissals (an outside press, Escape)
  * that have to reach the store rather than a local setter.
  */
-

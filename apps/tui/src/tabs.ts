@@ -4,6 +4,7 @@
  * its clock, and the actions its status allows.
  */
 import * as Keys from "./keys.ts"
+import * as WorkerControls from "@smthrs/rpc/WorkerControls"
 import { delegateModels } from "./models.ts"
 import type { Model } from "./models.ts"
 import { color } from "./theme.ts"
@@ -34,8 +35,7 @@ export const style = (status: Status, tick: string): { readonly glyph: string; r
   }
 }
 
-export const live = (status: Status): boolean =>
-  status === "requested" || status === "queued" || status === "running" || status === "waiting" || status === "parked"
+export const live = WorkerControls.live
 
 const aliases = new Map<string, string>(Object.entries(delegateModels).map(([alias, seat]) => [seat, alias]))
 
@@ -55,12 +55,12 @@ type Worker = Pick<Tab, "status" | "failure">
 
 /** Each worker action is a button in the worker view and a registry key (`panel` context). */
 const registered: ReadonlyArray<{ readonly id: ActionId; readonly binding: string; readonly when: (tab: Worker) => boolean }> = [
-  { id: "stop", binding: "stop", when: (tab) => live(tab.status) },
-  { id: "retry", binding: "retry", when: (tab) => tab.status === "failed" || tab.status === "cancelled" },
-  { id: "model", binding: "worker-model", when: (tab) => tab.status === "failed" },
-  { id: "wait", binding: "worker-wait", when: (tab) => tab.status === "failed" && tab.failure?.actions.includes("wait") === true },
-  { id: "steer", binding: "steer-worker", when: (tab) => tab.status === "running" },
-  { id: "open-chat", binding: "worker-chat", when: () => true }
+  { id: "stop", binding: "stop", when: (tab) => WorkerControls.allowed("stop", tab) },
+  { id: "retry", binding: "retry", when: (tab) => WorkerControls.allowed("retry", tab) },
+  { id: "model", binding: "worker-model", when: (tab) => WorkerControls.allowed("model", tab) },
+  { id: "wait", binding: "worker-wait", when: (tab) => WorkerControls.allowed("wait", tab) },
+  { id: "steer", binding: "steer-worker", when: (tab) => WorkerControls.allowed("steer", tab) },
+  { id: "open-chat", binding: "worker-chat", when: (tab) => WorkerControls.allowed("open-chat", tab) }
 ]
 
 export const bindings = registered.map(({ id, binding, when }) => {

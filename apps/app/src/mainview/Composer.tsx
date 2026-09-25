@@ -3,7 +3,9 @@ import { useLiveQuery } from "@tanstack/react-db"
 import type { KeyboardEvent } from "react"
 import { useId,useRef,useState } from "react"
 import { useController } from "./ControllerContext"
-import { flowProps } from "./flows/FlowAction"
+import * as PromptQueue from "@smthrs/rpc/PromptQueue"
+import { promptQueueScope } from "./state/PromptQueue"
+import { flowAction, flowProps } from "./flows/FlowAction"
 import { actionForKey } from "./flows/SearchQuery"
 import type { PaletteDecision,PaletteRow } from "./SearchPalette"
 import { paletteKey,PaletteOverlay,paletteRows } from "./SearchPalette"
@@ -50,6 +52,12 @@ export function Composer({
       .select(({ session }) => ({
         id: session.id,
         draft: session.draft,
+        queuedPrompts: session.queuedPrompts,
+        promptQueuePaused: session.promptQueuePaused,
+        activeWorkspaceId: session.activeWorkspaceId,
+        activeBranchId: session.activeBranchId,
+        activeTabId: session.activeTabId,
+        activeRepoKey: session.activeRepoKey,
         paletteOpen: session.paletteOpen,
         paletteActionsRef: session.paletteActionsRef,
         /*
@@ -73,6 +81,8 @@ export function Composer({
     index: 0,
     dismissed: false
   })
+  const queued = PromptQueue.inScope(draftRows[0]?.queuedPrompts ?? [], promptQueueScope(controller.store.session()))
+  const queuePaused = draftRows[0]?.promptQueuePaused === true
   const draft = draftRows[0]?.draft ?? controller.store.session().draft
   const paletteOpen = draftRows[0]?.paletteOpen ?? controller.store.session().paletteOpen ?? false
   // Focus as part of the opening commit; waiting for an animation frame lets
@@ -100,8 +110,7 @@ export function Composer({
    * §5.2: the listing used to be suppressed for the whole duration of a turn,
    * which made `typing -> chat.stop` — the first clause of the recommendation
    * order — unreachable in the shipped UI, and left the composer with no way
-   * to invoke any flow mid-turn (the component blocks submit while busy, so
-   * Enter only reaches a flow through this menu).
+   * to invoke any flow mid-turn. Submission and the menu now both stay usable.
    */
   /*
    * ONE palette (Search and Command Palette Spec 2026-09-07 §1): the slash
@@ -217,6 +226,18 @@ export function Composer({
 
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.nativeEvent.isComposing) return
+    if (event.altKey && !event.ctrlKey && !event.metaKey && event.key === "Enter") {
+      event.preventDefault()
+      if (event.repeat) return
+      const text = controller.store.session().draft.trim()
+      if (text !== "") controller.runCommand("chat.queue", text)
+      return
+    }
+    if (event.altKey && event.key === "ArrowUp") {
+      event.preventDefault()
+      controller.runCommand("chat.queue.restore")
+      return
+    }
     if (event.key === "Enter" && event.shiftKey) return
     // Capture owns this Escape; leave the palette and Chat available below it.
     if (event.key === "Escape" && controller.store.session().dictating) {
@@ -327,6 +348,13 @@ export function Composer({
           controller.runCommand("chat.send", controller.store.session().draft.trim())
         }}
         onStop={() => controller.runCommand("chat.stop")}
+        submitWhileBusy
+        actions={<button type="button" className="composer-queue-action" disabled={draft.trim() === ""}
+          aria-keyshortcuts="Alt+Enter" {...flowProps("chat.queue")}
+          onClick={() => {
+            const text = controller.store.session().draft.trim()
+            if (text !== "") controller.runCommand("chat.queue", text)
+          }}>Queue</button>}
         placeholder={placeholder}
         lifecycleStatus={typing ? "submitted" : "ready"}
         submitProps={COMPOSER_SEND_PROPS}
@@ -338,7 +366,16 @@ export function Composer({
           "aria-activedescendant": slashOpen && rows?.rows[slashHighlighted] ? `${paletteId}-option-${slashHighlighted}` : undefined,
         }}
       />
+      {queued.length > 0 && <section className="prompt-queue" aria-label="Queued prompts">
+        <div className="prompt-queue-heading"><span>{queuePaused ? "Paused" : "Queued"} · {queued.length}</span>
+          {queuePaused && <button type="button" {...flowAction(controller.runCommand, "chat.queue.resume")}>Resume</button>}
+        </div>
+        <ol>{queued.map(prompt => <li key={prompt.id}>
+          <span className="prompt-queue-text">{prompt.text}</span>
+          <button type="button" aria-label={`Edit queued prompt: ${prompt.text}`} {...flowAction(controller.runCommand, "chat.queue.edit", prompt.id)}>Edit</button>
+          <button type="button" aria-label={`Remove queued prompt: ${prompt.text}`} {...flowAction(controller.runCommand, "chat.queue.remove", prompt.id)}>Remove</button>
+        </li>)}</ol>
+      </section>}
     </>
   )
 }
-

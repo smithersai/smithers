@@ -1115,3 +1115,15 @@
   .chat-run-timeline-heading { flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
   .chat-run-timeline .run-outcome { font-size: var(--fs-small); }
 }
+
+.prompt-queue { padding: 8px 12px; max-height: 30vh; overflow: auto; }
+.prompt-queue-heading, .prompt-queue li { display: flex; align-items: baseline; gap: 8px; }
+.prompt-queue-heading { justify-content: space-between; }
+.prompt-queue ol { list-style: none; padding: 0; margin: 4px 0 0; }
+.prompt-queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prompt-queue button, .composer-queue-action { font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; }
+.prompt-queue button:focus-visible, .composer-queue-action:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.composer-queue-action:disabled { opacity: .5; cursor: default; }
+
+.toast-worker-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.toast-worker-actions:empty { display: none; }

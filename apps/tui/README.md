@@ -43,6 +43,10 @@ them. The flag wins over the variable, and `-p` cannot `ask`.
 
 ## Keys
 
+Queue operations and worker action eligibility are shared with the GUI through
+`@smthrs/rpc/PromptQueue` and `@smthrs/rpc/WorkerControls`. Each host keeps its
+own rendering and execution adapter.
+
 `src/keys.ts` lists every key; the footer, the `?` panel, `/hotkeys`, and
 Ctrl+O read it.
 

@@ -82,7 +82,7 @@ export interface TurnControllerDependencies {
 
 export interface TurnController {
   readonly subscribeToAgent: () => void
-  readonly send: (text: string, admission?: { readonly turnId: string; readonly owner: string }) => Promise<boolean> | void
+  readonly send: (text: string, admission?: { readonly turnId: string; readonly owner: string | null | undefined }) => Promise<boolean> | void
   readonly reset: () => void
   readonly stop: () => void
   readonly decideApproval: (id: string, decision: "approved" | "denied", answer?: unknown, question?: string) => void
@@ -1059,7 +1059,7 @@ export const createTurnController = (
     const generation = ctx.accountEpoch
     if (admission && ctx.accountOwner() !== admission.owner) return
     // This lookup excludes optimistic rows, including a prior failed attempt.
-    if (admission && store.committedHttpTurn(admission.turnId, admission.owner)) return Promise.resolve(true)
+    if (admission && typeof admission.owner === "string" && store.committedHttpTurn(admission.turnId, admission.owner)) return Promise.resolve(true)
     const parsed = parseSubmit(text, ctx.commands.all())
     if (parsed.kind === "empty") return
     if (parsed.kind === "unknown-command") {

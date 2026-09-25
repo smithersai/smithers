@@ -31,6 +31,8 @@ export type ChatComposerProps = Omit<ComponentProps<"form">, "onSubmit" | "onErr
   placeholder?: string;
   /** Lifecycle state, mirroring PromptInput: while submitted|streaming the composer is busy, submission is blocked, and a Stop button appears when `onStop` is set. */
   lifecycleStatus?: ChatComposerStatus;
+  /** Hosts with live steering can admit input while generation continues. */
+  submitWhileBusy?: boolean;
   /** Stop the in-flight generation; renders a Stop button next to Send while busy. */
   onStop?: () => void;
   /** Free-form status line in the composer toolbar (announced via aria-live). */
@@ -71,6 +73,7 @@ export function ChatComposer({
   onError,
   placeholder = "Message Smithers…",
   lifecycleStatus = "ready",
+  submitWhileBusy = false,
   onStop,
   statusText,
   actions,
@@ -88,7 +91,7 @@ export function ChatComposer({
 }: ChatComposerProps) {
   useInjectUiCss();
   const busy = lifecycleStatus === "submitted" || lifecycleStatus === "streaming";
-  const canSubmit = !disabled && !busy && value.trim().length > 0;
+  const canSubmit = !disabled && (!busy || submitWhileBusy) && value.trim().length > 0;
   const stopAccessibleLabel = typeof stopLabel === "string" && stopLabel !== "■" ? stopLabel : "Stop generating";
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -112,7 +115,7 @@ export function ChatComposer({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextValue = value.trim();
-    if (!nextValue || disabled || busy) return;
+    if (!nextValue || disabled || (busy && !submitWhileBusy)) return;
     // The host owns the draft, so a failure only reports; it never clears.
     const fail = (cause: unknown) => {
       if (onError) onError({ code: "submit-failed", cause });

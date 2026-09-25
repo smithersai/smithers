@@ -81,6 +81,8 @@ import { latestOrdinal } from "./controller/spokenLines"
 import { createStorageRecoveryController } from "./controller/storage-recovery"
 import type { TabsController } from "./controller/tabs"
 import { createTabsController } from "./controller/tabs"
+import { observeBackgroundWork } from "./controller/backgroundWork"
+import { createPromptQueueController } from "./controller/promptQueue"
 import { createTurnController, type TurnController } from "./controller/turns"
 import { createTutorialChangeController,type TutorialChangeController } from "./controller/tutorialChange"
 import { createTutorialRepositoryController,type TutorialRepositoryActions } from "./controller/tutorialRepository"
@@ -194,6 +196,10 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly debugReset: () => Promise<string | void>
   readonly stop: () => void
   readonly send: TurnController["send"]
+  readonly enqueuePrompt: (text: string) => void
+  readonly removeQueuedPrompt: (id: string, edit?: boolean) => void
+  readonly restoreQueuedPrompts: () => void
+  readonly resumePromptQueue: () => void
   readonly showChat: () => void
   readonly showWorld: () => void
   readonly showConnectors: () => void
@@ -1222,6 +1228,8 @@ export const createAppController = (
     forwardInboxApprovalDecision,
     credentialMissing
   })
+  const promptQueue = createPromptQueueController(ctx, send)
+  const { enqueuePrompt, removeQueuedPrompt, restoreQueuedPrompts, resumePromptQueue } = promptQueue
   const cloudWiki = actors.pair(ctx, (context) => createCloudWikiController(context, store.nextOrdinal))
   const { listCloudWiki, openCloudWiki, retryCloudWiki, attachWorldEditor } = cloudWiki
   const {
@@ -1610,6 +1618,7 @@ export const createAppController = (
     cancelReset,
     stop,
     send,
+    enqueuePrompt, removeQueuedPrompt, restoreQueuedPrompts, resumePromptQueue,
     showChat,
     showWorld,
     showConnectors,
@@ -2033,6 +2042,8 @@ export const createAppController = (
   })
   ctx.onDispose(() => importCloudSubscription.unsubscribe())
   subscribeToAgent()
+  promptQueue.subscribe()
+  observeBackgroundWork(ctx)
   // Material transitions regenerate the next-step pills through the `recommend` flow.
   recommender.subscribe()
   // The active repository's flow catalog, read now and on every change of target, so its leaves are in the registry.

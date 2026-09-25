@@ -615,7 +615,8 @@ function AppContent() {
 function App() {
   const controller = useController()
   const { data: toasts } = useLiveQuery(controller.store.collections.toasts)
-  return <><AppContent /><ToastStack toasts={toasts}
+  const { data: workCards } = useLiveQuery(controller.store.collections.cards)
+  return <><AppContent /><ToastStack toasts={toasts} cards={workCards} available={action => controller.commands.find(action.flow) !== undefined}
     onDismiss={id => controller.runCommand("toast.dismiss", id)}
     onAction={action => controller.runCommand(action.flow, action.args)} /></>
 }

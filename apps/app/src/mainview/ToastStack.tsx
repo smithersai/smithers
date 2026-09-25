@@ -1,7 +1,8 @@
 import { Alert, AlertDescription, AlertTitle, Button, Spinner } from "@smthrs/ui"
 import { Check, X } from "lucide-react"
 import { ModalPopover } from "./ModalPopover"
-import type { Toast } from "./state/AppState"
+import { workerToastActions } from "./WorkerToastActions"
+import type { Card, Toast } from "./state/AppState"
 import { bindToastShortcut, ToastActionButton, type ToastAction } from "./ToastAction"
 import { flowProps } from "./flows/FlowAction"
 
@@ -15,8 +16,12 @@ import { flowProps } from "./flows/FlowAction"
 export function ToastStack({
   toasts,
   onDismiss,
-  onAction
+  onAction,
+  cards = [],
+  available = () => true
 }: {
+  readonly cards?: ReadonlyArray<Card>
+  readonly available?: (action: ToastAction) => boolean
   readonly toasts: ReadonlyArray<Toast>
   readonly onDismiss: (id: string) => void
   readonly onAction: (action: ToastAction) => void
@@ -45,6 +50,10 @@ export function ToastStack({
             <AlertTitle className="toast-title">{toast.title}</AlertTitle>
             {toast.detail !== "" ? <AlertDescription className="toast-detail">{toast.detail}</AlertDescription> : null}
             <ToastActionButton toast={toast} onAction={action => { if (toast.status !== "running") onDismiss(toast.id); onAction(action) }} />
+            <div className="toast-worker-actions">
+              {workerToastActions(cards.find(card => card.id === toast.sourceCard), cards).filter(available).map(action =>
+                <ToastActionButton key={action.flow} toast={{ ...toast, action, answeredAction: undefined }} onAction={onAction} />)}
+            </div>
           </div>
           {toast.status === "failed" ?
             (

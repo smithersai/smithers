@@ -159,7 +159,7 @@ export const createWorkflowLaunchController = (
         if (request.runId !== undefined) return message
         try { return await fail({ code, message }) } catch { return message }
       }
-    })
+    }, false, current, id)
     inFlight.set(id, { epoch, controller, work })
     void work.finally(() => { if (inFlight.get(id)?.work === work) inFlight.delete(id); controllers.delete(controller) })
   }

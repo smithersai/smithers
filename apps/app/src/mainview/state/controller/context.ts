@@ -129,7 +129,8 @@ export interface ControllerContext {
     key: string,
     title: string,
     doneTitle: string,
-    work: () => Promise<T | string>
+    work: () => Promise<T | string>,
+    quiet?: boolean, current?: () => boolean, sourceCard?: string
   ) => Promise<T | string>
   /** Resolve a toast; an ok outcome dismisses itself (failures.ts resolveToast). */
   resolveToast: (

@@ -579,7 +579,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         await upsert({ ...latest, status: "error", payload: { ...latest.payload, request: { ...intent, ...(observing() ? { observeOnly: true } : {}), state: "failed", error: message } } }, "system")
         return message
       }
-    })
+    }, false, undefined, id)
     shared.pending.set(flight, work)
     void work.finally(() => { if (shared.pending.get(flight) === work) shared.pending.delete(flight) }).catch(() => {})
     return work
@@ -632,7 +632,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         })
         return recoveryCurrent(id, intent.id, login, accountEpoch) ? message : TOAST_SUPERSEDED
       }
-    })
+    }, false, () => recoveryCurrent(id, intent.id, login, accountEpoch), id)
     shared.recovering.set(flight, work)
     void work.finally(() => { if (shared.recovering.get(flight) === work) shared.recovering.delete(flight) }).catch(() => {})
     return work

@@ -12,6 +12,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
+import type { ComponentProps } from "react"
 import { ToastStack } from "../ToastStack"
 import type { Toast } from "./AppState"
 
@@ -40,11 +41,11 @@ const toast = (id: string, status: Toast["status"]): Toast => ({
   updatedAt: 1
 })
 
-const renderToasts = (toasts: ReadonlyArray<Toast>, onDismiss = (_id: string) => {}): HTMLElement => {
+const renderToasts = (toasts: ReadonlyArray<Toast>, onDismiss = (_id: string) => {}, options: Partial<ComponentProps<typeof ToastStack>> = {}): HTMLElement => {
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
-  flushSync(() => root.render(<ToastStack toasts={toasts} onDismiss={onDismiss} onAction={() => {}} />))
+  flushSync(() => root.render(<ToastStack toasts={toasts} onDismiss={onDismiss} onAction={() => {}} {...options} />))
   mounted.push(() => {
     flushSync(() => root.unmount())
     host.remove()
@@ -53,6 +54,22 @@ const renderToasts = (toasts: ReadonlyArray<Toast>, onDismiss = (_id: string) =>
 }
 
 describe("wave 13 B-6 — a notification is a status, never an alert", () => {
+  test("worker buttons route their source and hide controls absent from this host", () => {
+    const actions: NonNullable<Toast["action"]>[] = [], dismissed: string[] = []
+    const host = renderToasts([{ ...toast("worker", "running"), sourceCard: "card-run" }], id => dismissed.push(id), {
+      cards: [{ id: "card-run", kind: "run-trace", title: "Review", status: "active", ordinal: 1, createdAt: 1,
+        payload: { repo: "owner/repo", runId: "run-1", workflow: "review", phase: "running", steps: [], result: null, lastSeq: 0 } }],
+      available: action => action.flow !== "runs.seat",
+      onAction: action => actions.push(action)
+    })
+    expect(host.querySelector('[data-flow="runs.seat"]')).toBeNull()
+    const steer = host.querySelector<HTMLButtonElement>('[data-flow="runs.steer"]')!
+    expect(steer.getAttribute("data-flow-args")).toBe("sourceCard=card-run run-1")
+    steer.click()
+    expect(actions).toEqual([{ label: "Steer", flow: "runs.steer", args: "sourceCard=card-run run-1" }])
+    expect(dismissed).toEqual([])
+  })
+
   test("running and ok toasts render role=status — no alert surface", () => {
     const host = renderToasts([toast("t1", "running"), toast("t2", "ok")])
     expect(host.querySelectorAll("[role=\"alert\"]").length).toBe(0)

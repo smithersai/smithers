@@ -1,3 +1,4 @@
+import * as PromptQueue from "@smthrs/rpc/PromptQueue"
 import * as Log from "./log.ts"
 import * as TabCommand from "./tab-command.ts"
 /**
@@ -114,7 +115,7 @@ export function App(props: AppProps) {
   const [shell, setShell] = useState<Shell.Running | undefined>()
   /** When an undo started; set from the confirm until its real settlement. */
   const [undoing, setUndoing] = useState<number | undefined>()
-  const [followUps, setFollowUps] = useState<ReadonlyArray<string>>([])
+  const [followUps, setFollowUps] = useState<ReadonlyArray<PromptQueue.Prompt>>([])
   const [picker, setPicker] = useState<Picker | undefined>(
     props.pickSession === true
       ? { kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) }
@@ -673,7 +674,7 @@ export function App(props: AppProps) {
       if (outcome._tag === "cancelled") return
       // Steers no boundary reached, then follow-ups, go next, one turn each.
       const undelivered = steering.take()
-      const next = undelivered.length > 0 ? undelivered.join("\n\n") : live.current.followUps[0]
+      const next = undelivered.length > 0 ? undelivered.join("\n\n") : live.current.followUps[0]?.text
       if (undelivered.length === 0 && next !== undefined) setFollowUps((queued) => queued.slice(1))
       if (next !== undefined) startTurnRef.current(next)
     })
@@ -737,7 +738,7 @@ export function App(props: AppProps) {
         live.current.undoing = undefined
         setUndoing(undefined)
         // A prompt sent while undoing waited, so the model never races the undo's writes.
-        const next = live.current.followUps[0]
+        const next = live.current.followUps[0]?.text
         if (next !== undefined && live.current.turn === undefined) {
           setFollowUps((queued) => queued.slice(1))
           startTurnRef.current(next)
@@ -1029,12 +1030,12 @@ export function App(props: AppProps) {
   const send = useCallback((text: string, followUp = false) => {
     const running = live.current.turn
     if (running === undefined && live.current.undoing !== undefined) {
-      setFollowUps((queued) => [...queued, text])
+      setFollowUps((queued) => PromptQueue.enqueue(queued, { id: crypto.randomUUID(), text, scope: "chat" }))
       return
     }
     if (running === undefined) return startTurn(text)
     if (followUp) {
-      setFollowUps((queued) => [...queued, text])
+      setFollowUps((queued) => PromptQueue.enqueue(queued, { id: crypto.randomUUID(), text, scope: "chat" }))
       return
     }
     running.steering.steer(text)
@@ -1077,7 +1078,7 @@ export function App(props: AppProps) {
       case "prompt":
         setPanelFocus(false)
         if (live.current.turn === undefined && live.current.undoing === undefined) return startTurnRef.current(action.prompt)
-        return setFollowUps((queued) => [...queued, action.prompt])
+        return setFollowUps((queued) => PromptQueue.enqueue(queued, { id: crypto.randomUUID(), text: action.prompt, scope: "chat" }))
       case "flow":
         try {
           userRuns.current.add(runs.request({ flow: action.flow, input: action.input ?? {}, by: "user" }).id)
@@ -1108,11 +1109,11 @@ export function App(props: AppProps) {
 
   /** pi's restore: queued messages go back into the editor, above the draft. */
   const restoreQueued = useCallback((extra: ReadonlyArray<string> = []) => {
-    const queued = [...extra, ...live.current.followUps]
+    const queued = [...extra.map(text => ({ text })), ...live.current.followUps]
     if (queued.length === 0) return
     setFollowUps([])
     const current = composer.current?.plainText ?? ""
-    setText([...queued, ...(current === "" ? [] : [current])].join("\n\n"))
+    setText(PromptQueue.restoreDraft(queued, current))
     setStatus(`Restored ${queued.length} queued message${queued.length === 1 ? "" : "s"} to editor`)
   }, [setText, setStatus])
 
@@ -1582,7 +1583,7 @@ export function App(props: AppProps) {
             onPause={() => activeInspection !== undefined ? followLive() : inspectActivity(monitored.activity.records.at(-1)!.sequence!, false)} />}
         {followUps.length === 0 ? null : (
           <box style={{ marginTop: 1, paddingLeft: 2, flexShrink: 0 }}>
-            {followUps.map((text, index) => <text key={index} fg={color.muted}>Follow-up: {text.split("\n")[0]}</text>)}
+            {followUps.map(prompt => <text key={prompt.id} fg={color.muted}>Follow-up: {prompt.text.split("\n")[0]}</text>)}
             <text fg={color.faint}>↳ alt+up to edit all queued messages</text>
           </box>
         )}

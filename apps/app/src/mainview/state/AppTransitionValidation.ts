@@ -12,7 +12,7 @@ ActorSchema,AgentRoleSchema,BranchSchema,CardHistorySchema,CardPatchSchema,CardS
 CloudRepositorySchema,CloudWorkspaceRowSchema,FrameSchema,GitHubAppStatusRowSchema,
 HarnessSchema,MessageSchema,PALETTES,
 PinnedRepoSchema,RecommendationSourceSchema,RepoSchema,RepositoryEntrySchema,RepositoryCommandEntrySchema,RepositoryFlowSchema,
-SessionSchema,StarredTargetSchema,SuggestionSchema,TabSchema,ToastSchema,
+QueuedPromptSchema,SessionSchema,StarredTargetSchema,SuggestionSchema,TabSchema,ToastSchema,
 WorkingCopySchema,WorldDocumentSchema,
 type AppTransition,type Card,type Tab
 } from "./AppState"
@@ -72,6 +72,9 @@ export const APP_TRANSITION_SCHEMAS = {
   "card.history.moved": z.object({ "type": z.literal("card.history.moved"), "actor": ActorSchema, "id": z.string(), "delta": z.union([z.literal(-1), z.literal(1)]) }).strict(),
   "input.mode.changed": z.object({ "type": z.literal("input.mode.changed"), "actor": ActorSchema, "mode": z.enum(INPUT_MODES) }).strict(),
   "dictation.changed": z.object({ "type": z.literal("dictation.changed"), "actor": ActorSchema, "listening": z.boolean() }).strict(),
+  "prompt.queued": z.object({ type: z.literal("prompt.queued"), actor: z.literal("user"), prompt: QueuedPromptSchema }).strict(),
+  "prompt.removed": z.object({ type: z.literal("prompt.removed"), actor: z.literal("user"), id: z.string(), edit: z.boolean().optional() }).strict(),
+  "prompt.queue.paused": z.object({ type: z.literal("prompt.queue.paused"), actor: ActorSchema, paused: z.boolean() }).strict(),
   "composer.changed": z.object({ "type": z.literal("composer.changed"), "actor": ActorSchema, "draft": z.string(), recoveryScope: PendingRecoveryScopeSchema.optional() }).strict(),
   "message.submitted": z.object({ "type": z.literal("message.submitted"), "actor": z.enum(["user", "smithers"]), "turnId": z.string(), "text": z.string() }).strict(),
   "message.response.delta": z.object({ "type": z.literal("message.response.delta"), "actor": z.literal("smithers"), "turnId": z.string(), "channel": z.enum(["text", "reasoning"]), "delta": z.string() }).strict(),
@@ -137,7 +140,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "billing.refreshed": z.object({ "type": z.literal("billing.refreshed"), "actor": z.literal("system"), "state": z.enum(["ok", "low", "empty"]), "totalUsd": z.string(), "allowedToStartWork": z.boolean(), "lifetimeChargedUsd": z.string(), "chargeCount": z.number().finite() }).strict(),
   "billing.plans.loaded": z.object({ type: z.literal("billing.plans.loaded"), actor: ActorSchema, planKey: z.string(), sandbox: SandboxEntitlementSchema, plans: z.array(BillingPlanSchema), creditBalanceCents: z.number().int().nullable().optional() }).strict(),
   "billing.unavailable": z.object({ "type": z.literal("billing.unavailable"), "actor": z.literal("system") }).strict(),
-  "toast.shown": z.object({ "type": z.literal("toast.shown"), "actor": z.literal("system"), "key": z.string(), "title": z.string(), "action": ToastSchema.shape["action"].optional() }).strict(),
+  "toast.shown": z.object({ "type": z.literal("toast.shown"), sourceCard: z.string().optional(), "actor": z.literal("system"), "key": z.string(), "title": z.string(), "action": ToastSchema.shape["action"].optional() }).strict(),
   "toast.progressed": z.object({ "type": z.literal("toast.progressed"), "actor": z.literal("system"), "key": z.string(), "detail": z.string(), "title": z.string().optional() }).strict(),
   "toast.resolved": z.object({ "type": z.literal("toast.resolved"), "actor": z.literal("system"), "key": z.string(), "status": z.enum(["ok", "failed"]), "title": z.string().optional(), "detail": z.string(), "action": ToastSchema.shape["action"].optional() }).strict(),
   "toast.dismissed": z.object({ "type": z.literal("toast.dismissed"), "actor": z.enum(["user", "system"]), "id": z.string() }).strict(),
