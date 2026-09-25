@@ -165,7 +165,8 @@ export const home = Smithers.Factory.Home({
 })
 ```
 
-`Smithers.Home.Text({ text })` adds plain text. The factory projection writes
+`Smithers.Home.Text({ text })` adds plain text, and `Smithers.Home.Stack()`
+shows the repository's live mythical stack. The factory projection writes
 `.smithers/home.json`; the server resolves Markdown files at `main`. When that
 file is absent, the chat shows `README.md` if present.
 

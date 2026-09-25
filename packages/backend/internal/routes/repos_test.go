@@ -41,6 +41,8 @@ func TestRepositoryHomeResolution(t *testing.T) {
 		paths  []string
 	}{
 		{"blocks", map[string]string{".smithers/home.json": `{"blocks":[{"type":"markdown","path":"docs/intro.md"}]}`, "docs/intro.md": "# Intro", "README.md": "# Fallback"}, `"kind":"blocks"`, 200, []string{".smithers/home.json", "docs/intro.md"}},
+		{"stack", map[string]string{".smithers/home.json": `{"blocks":[{"type":"stack","title":"Stack"}]}`}, `{"type":"stack","title":"Stack"}`, 200, []string{".smithers/home.json"}},
+		{"unknown", map[string]string{".smithers/home.json": `{"blocks":[{"type":"html"},{"type":"text","text":"Hi"}]}`}, `"blocks":[{"type":"text","text":"Hi"}]`, 200, []string{".smithers/home.json"}},
 		{"readme", map[string]string{"README.md": "# Fallback"}, `"kind":"readme"`, 200, []string{".smithers/home.json", "README.md"}},
 		{"none", map[string]string{}, `"kind":"none"`, 200, []string{".smithers/home.json", "README.md"}},
 		{"empty markdown", map[string]string{".smithers/home.json": `{"blocks":[{"type":"markdown","path":"README.md"}]}`, "README.md": ""}, `"markdown":""`, 200, []string{".smithers/home.json", "README.md"}},

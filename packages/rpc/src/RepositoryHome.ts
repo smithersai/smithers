@@ -22,6 +22,8 @@ export const RepositoryHomeBlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("flows"), title: title.optional() }),
   z.object({ type: z.literal("markdown"), path, title: title.optional(), markdown: z.string().max(256 * 1024) }),
   z.object({ type: z.literal("text"), title: title.optional(), text: z.string().min(1).max(4096) }),
+  /* The repository's live mythical stack; the app reads it from `@smthrs/rpc/Mythical`. */
+  z.object({ type: z.literal("stack"), title: title.optional() }),
   z.object({
     type: z.literal("links"),
     title: title.optional(),

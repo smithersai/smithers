@@ -34,6 +34,10 @@ describe("the home blocks", () => {
     expect(Home.Prompt({ flow: "review" })).toEqual({ type: "prompt", flow: "review" })
     expect(() => Home.Prompt({ flow: "https://example.com" })).toThrow()
     expect(Home.Markdown({ path: "docs/README.md" })).toEqual({ type: "markdown", path: "docs/README.md" })
+    expect(Home.Stack()).toEqual({ type: "stack" })
+    expect(Home.Stack({ title: "Stack" })).toEqual({ type: "stack", title: "Stack" })
+    expect(() => Home.Stack({ title: "<b>x</b>" })).toThrow(/must not contain HTML/)
+    expect(() => Home.Stack({ rows: [] } as never)).toThrow(/unknown option "rows"/)
   })
 
   it("refuse raw HTML in text, titles, and labels, and keep plain comparisons", () => {

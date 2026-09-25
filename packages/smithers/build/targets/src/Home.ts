@@ -5,7 +5,8 @@
  * alternative the maintainer declares in
  * `.smithers/FACTORY.ts` as `export const home = Smithers.Factory.Home({ blocks })`,
  * the second export beside the factory itself. Blocks are declared values,
- * never raw HTML: a prompt, markdown file, text, links, and featured flows.
+ * never raw HTML: a prompt, markdown file, text, links, featured flows, and
+ * the repository's live mythical stack.
  * The app renders every block from data; a string carrying an HTML tag is refused where
  * it is written.
  *
@@ -199,12 +200,25 @@ export const MarkdownBlock = Schema.Struct({
 })
 
 /**
+ * The repository's mythical stack, live: the app reads it from
+ * `GET /api/repos/{owner}/{repo}/mythical` (`@smthrs/rpc/Mythical`). The
+ * block carries no rows; an unreadable stack renders its refusal.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const StackBlock = Schema.Struct({
+  type: Schema.Literal("stack"),
+  title: Schema.optional(Title)
+})
+
+/**
  * One declared block.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const Block = Schema.Union([TextBlock, LinksBlock, FlowsBlock, PromptBlock, MarkdownBlock])
+export const Block = Schema.Union([TextBlock, LinksBlock, FlowsBlock, PromptBlock, MarkdownBlock, StackBlock])
 
 /**
  * One declared block.
@@ -376,6 +390,16 @@ export interface MarkdownOptions {
 }
 
 /**
+ * What a `FACTORY.ts` writes for a stack block.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface StackOptions {
+  readonly title?: string | undefined
+}
+
+/**
  * What a `FACTORY.ts` writes for the home declaration.
  *
  * @category models
@@ -446,6 +470,18 @@ export const Markdown = (options: MarkdownOptions): typeof MarkdownBlock.Type =>
   }))
 
 /**
+ * Declares the repository's live mythical stack.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const Stack = (options: StackOptions = {}): typeof StackBlock.Type =>
+  freezeDeep(decode("Home.Stack", StackBlock, {
+    type: "stack",
+    ...plainOptions("Home.Stack", options, new Set(["title"]))
+  }))
+
+/**
  * Declares the repository's homepage from declared blocks.
  *
  * Every block has to be a value one of the block constructors returned, or
@@ -475,7 +511,7 @@ export const Home = (options: HomeOptions): Declaration => {
   blocks.forEach((block, index) => {
     if (typeof block !== "object" || block === null) {
       throw new TypeError(
-        `Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown), not ${
+        `Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown, Stack), not ${
           typeof block === "string" ? "a string" : typeof block
         }`
       )

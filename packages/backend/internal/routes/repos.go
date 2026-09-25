@@ -541,10 +541,14 @@ func (h *RepoHandler) GetRepositoryHome(w http.ResponseWriter, r *http.Request) 
 			errors.WriteError(w, errors.BadRequest("repository homepage is invalid"))
 			return
 		}
+		// A block kind this server does not know is left out, never the whole
+		// homepage: a repository can declare a newer block before the server
+		// that renders it is deployed.
+		blocks := parsed.Blocks[:0]
 		for i := range parsed.Blocks {
 			block := &parsed.Blocks[i]
 			switch block.Type {
-			case "prompt", "flows", "text", "links":
+			case "prompt", "flows", "text", "links", "stack":
 			case "markdown":
 				if !validHomePath(block.Path) {
 					errors.WriteError(w, errors.BadRequest("repository homepage has an invalid markdown path"))
@@ -566,10 +570,11 @@ func (h *RepoHandler) GetRepositoryHome(w http.ResponseWriter, r *http.Request) 
 				}
 				block.Markdown = &file.Content
 			default:
-				errors.WriteError(w, errors.BadRequest("repository homepage has an unknown block"))
-				return
+				continue
 			}
+			blocks = append(blocks, *block)
 		}
+		parsed.Blocks = blocks
 		errors.WriteJSON(w, http.StatusOK, map[string]any{"kind": "blocks", "blocks": parsed.Blocks})
 		return
 	}
