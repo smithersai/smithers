@@ -662,11 +662,12 @@ export const segmentsOf = (value: string): ReadonlyArray<string> =>
  * have the dotted shape but name a build artifact, so the dotted rule skips
  * them rather than sending every new fixture path to the allowlist. `db` and
  * `sqlite` are here because a script that stands up a real control plane names
- * the database file it writes, and `c` because the packaged suite compiles a
- * throwaway `sleep.c` to hold a second process group open.
+ * the database file it writes, `c` because the packaged suite compiles a
+ * throwaway `sleep.c` to hold a second process group open, and `log` because
+ * the packaged staging test plants a `debug.log` it must not copy.
  */
 export const FILE_NAME =
-  /\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc|html|css|md|map|txt|lock|toml|ya?ml|png|svg|ico|woff2?|wasm|tar|t?gz|zip|dmg|db|sqlite|bin|c|h)$/
+  /\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc|html|css|md|map|txt|log|lock|toml|ya?ml|png|svg|ico|woff2?|wasm|tar|t?gz|zip|dmg|db|sqlite|bin|c|h)$/
 
 /**
  * The name of a file that asserts against the app instead of building it:

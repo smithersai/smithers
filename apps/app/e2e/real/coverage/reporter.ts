@@ -74,7 +74,7 @@ export default class RealE2EEvidenceReporter implements Reporter {
         endpoint: evidenceOrigin(requiredEnvironment("SMITHERS_REAL_MATRIX_ENDPOINT")),
         surfaceOrigin: evidenceOrigin(new URL(requiredEnvironment("SMITHERS_REAL_BASE_URL")).origin),
         startedAt: this.startedAt, finishedAt: new Date().toISOString(),
-        ...(this.mode?.startsWith("native-") ? { native: {
+        ...(this.mode === "native-own" || this.mode === "native-plue" ? { native: {
           cdpEndpoint: requiredEnvironment("SMITHERS_REAL_NATIVE_CDP_ENDPOINT"), targetID: requiredEnvironment("SMITHERS_REAL_NATIVE_TARGET_ID"),
           windowURL: requiredEnvironment("SMITHERS_REAL_NATIVE_WINDOW_URL")
         } } : {})
