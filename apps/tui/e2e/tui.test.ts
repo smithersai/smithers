@@ -560,12 +560,20 @@ describe("timeline scrubber", () => {
 
   it("a click on a milestone jumps the chat to its numbered step; keys step and esc follows live", async () => {
     const { tui } = await restored(120)
-    const screen = await tui.until((screen) => screen.includes("approvals.ts") && screen.includes("Pause"), 15_000, "scrubber")
+    // The scrubber paints before the composer below it; the composer then
+    // pushes it up several rows. Read coordinates only from the settled
+    // layout, or the click lands in the chat and nothing pauses.
+    const screen = await tui.until(
+      (screen) => screen.includes("approvals.ts") && screen.includes("⏸ Pause") && screen.includes("Ask Smithers to change this repository"),
+      15_000,
+      "settled scrubber"
+    )
     const rows = screen.split("\n")
     const row = rows.findIndex((line) => line.includes("approvals.ts") && !line.includes("┃"))
     const column = rows[row]!.indexOf("approvals.ts")
     await tui.press(`\x1b[<0;${column + 2};${row + 1}M\x1b[<0;${column + 2};${row + 1}m`)
-    const jumped = await tui.until((screen) => /▾ 10\s+patched approvals\.ts/.test(screen), 5_000, "jumped to step 10")
+    // Step 10 can already be on screen at the live end; the playhead pausing is the jump.
+    const jumped = await tui.until((screen) => screen.includes("▶ Live") && /▾ 10\s+patched approvals\.ts/.test(screen), 5_000, "jumped to step 10")
     expect(jumped).toContain("Implementing")
     expect(jumped).toContain("▶ Live")
     await tui.press("\x1b[D")

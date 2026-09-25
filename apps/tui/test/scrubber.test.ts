@@ -75,6 +75,18 @@ describe("scrubber layout from a recorded session", () => {
     expect(Scrubber.clock(3_725_000)).toBe("1:02:05")
   })
 
+  test("the phase comes from journal timestamps, never the render clock", () => {
+    const running: Activity.Activity = { ...activity, status: "running" }
+    const end = activity.records.at(-1)!.occurredAt!
+    for (const subject of [activity, running]) {
+      for (const cursor of [undefined, ...activity.records.map((record) => record.sequence!)]) {
+        const phases = [end, end + 60_000, end + 86_400_000].map((now) => Scrubber.layout(subject, 120, cursor, now).phase)
+        expect(new Set(phases).size).toBe(1)
+      }
+    }
+    expect(Scrubber.layout(activity, 120, 204, end + 86_400_000).phase).toBe("Implementing")
+  })
+
   test("a column resolves to the last record at or before it", () => {
     const layout = Scrubber.layout(activity, 120)
     expect(Scrubber.layout(activity, 120, Scrubber.seqAt(layout, 0)).knob).toBe(0)
