@@ -939,19 +939,22 @@ export const createAppController = (
     }
   }
   const loadCloudSession = async (): Promise<void> => {
-    if (services.applicationIdentity !== undefined) await loadSession()
-    else await cloudSeam.loadSession()
+    await cloudSeam.loadSession()
     reloadRepositoriesWhenSignedIn()
   }
   const signInCloud = async (): Promise<string | void> => {
-    if (services.applicationIdentity !== undefined) { await signIn(); return }
     const refusal = await cloudSeam.signIn()
     reloadRepositoriesWhenSignedIn()
     return refusal
   }
 
-  // Session and token modes share the selected backend's identity authority.
-  const applicationIdentity = services.applicationIdentity
+  // A cloud browser session uses its hosted identity seam. A selected Plue
+  // bearer/token target reads the same backend through its application client.
+  const cloudSession = services.bootstrap?.host === "cloud" &&
+    (services.applicationTarget === undefined || services.applicationTarget.auth.kind === "session")
+  const applicationIdentity = cloudSession
+    ? undefined
+    : services.applicationIdentity
   let localAuth: LocalAuthController | undefined
   const {
     handleAuthReturn,
@@ -1854,7 +1857,7 @@ export const createAppController = (
     githubMirrorSync: gitHubSeam.mirrorSync,
     loadCloudSession,
     signInCloud,
-    signOutCloud: applicationIdentity === undefined ? cloudSeam.signOut : signOut,
+    signOutCloud: cloudSeam.signOut,
     loadRepositories: repositoriesSeam.loadRepositories,
     listWorkspaces: workspaceSeam.listWorkspaces,
     openWorkspace: workspaceSeam.openWorkspace,

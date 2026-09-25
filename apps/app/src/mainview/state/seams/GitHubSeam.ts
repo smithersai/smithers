@@ -2,7 +2,6 @@ import { formFieldsFor } from "../../flows/FlowForms"
 import { GitHubInstallationForm,GitHubInstallationInput } from "../../flows/entries/github"
 import { actorSharedState } from "../ActorBindings"
 import { refuseCloudSignIn } from "./CloudSignIn"
-import { readInstalledRepositories } from "./GitHubInstallInventory"
 /*
  * The GitHub seam (lane sync, ADR 0005; lane L5 against the live routes),
  * behind the `/api/cloud/*` proxy. Every path was read off plue's own router
@@ -117,6 +116,15 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 
 /** Registered App 4163546, shared with apps/server/src/githubApp.ts and plue; verified against GitHub App metadata. */
 export const GITHUB_APP_INSTALL_URL = "https://github.com/apps/smitherspreviewrelease/installations/new"
+/**
+ * Verifies a setup-URL return with the user's session (GitHub's setup-URL
+ * docs: never trust `installation_id`). Answers `{ repos: [{ fullName,
+ * pushedAt }] }` or `{ repo }`. The route belongs to apps/server and is
+ * verified against the session-owned repository inventory and App statuses.
+ */
+export const INSTALL_VERIFY_PATH = "/api/user/github-app/installations"
+/** The lesson that waits on the install, keyed by its signal. */
+
 /** Only the github.com https install origin is worth linking (multi githubInstallUrl.ts). */
 export const trustedInstallUrl = (value: string): string | null => trustedHttpsUrl(value, "github.com")
 
@@ -385,16 +393,15 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     const login = ctx.store.collections.identitySessions.get("identity")?.login
     const stillCurrent = () =>
       ctx.store.collections.identitySessions.get("identity")?.login === login
-    let inventory: Awaited<ReturnType<typeof readInstalledRepositories>>
+    let response: Response
     try {
-      inventory = await readInstalledRepositories(ctx, installationId, stillCurrent)
+      response = await ctx.http(`${ctx.baseUrl}${INSTALL_VERIFY_PATH}${installationId === undefined ? "" : `/${encodeURIComponent(installationId)}`}`)
     } catch (error) {
       if (!stillCurrent()) return
       return installNotice(`Nothing came back from GitHub that I could confirm (${error instanceof Error ? error.message : String(error)}). Try again?`)
     }
-    if (!stillCurrent() || inventory === undefined) return
-    if ("response" in inventory) {
-      const response = inventory.response
+    if (!stillCurrent()) { await response.body?.cancel(); return }
+    if (!response.ok) {
       const fallback = response.status === 404 || response.status === 501
         ? "GitHub sent you back, but this Smithers server can't confirm installs yet, so I won't guess which repository you chose. Try again later, or choose Later."
         : `GitHub sent you back, but Smithers couldn't confirm the install (${response.status}). Try again?`
@@ -402,7 +409,16 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
       if (stillCurrent()) return installNotice(refusal.message)
       return
     }
-    const { repos } = inventory
+    const body: unknown = await response.json().catch(() => null)
+    if (!stillCurrent()) return
+    if (!isRecord(body) || (!Array.isArray(body.repos) && typeof body.repo !== "string")) return installNotice("Smithers Cloud returned an unreadable installation list. Try again.")
+    const rows = isRecord(body) && Array.isArray(body.repos) ? body.repos : isRecord(body) && typeof body.repo === "string" ? [{ fullName: body.repo }] : []
+    const repos = rows.flatMap((row) => {
+      if (!isRecord(row)) return []
+      const fullName = str(row.fullName) ?? str(row.full_name)
+      return fullName === null || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(fullName) ? [] : [{ fullName, installationId: intOrNull(row.installationId) ?? intOrNull(row.installation_id), pushedAt: str(row.pushedAt) ?? str(row.pushed_at) ?? "" }]
+    })
+    if (repos.length !== rows.length) return installNotice("Smithers Cloud returned an unreadable installation list. Try again.")
     const installations = new Map<number, string>()
     for (const repo of repos) if (repo.installationId !== null) installations.set(repo.installationId, repo.fullName.split("/")[0]!)
     for (const repo of repos) {

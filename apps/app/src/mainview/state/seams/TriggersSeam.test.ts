@@ -58,14 +58,6 @@ const backend = (routes: Record<string, Route>, seen: Array<string> = []): AppSe
     // The repository-flows seam reads the homepage beside the projection; not this seam's read.
     if (/^\/api\/repos\/[^/]+\/[^/]+\/home$/.test(absolute.pathname)) return new Response(JSON.stringify({ status: "error" }), { status: 404 })
     seen.push(path)
-    if (path === RPC && init?.body) {
-      const call = JSON.parse(String(init.body))
-      if (call.procedure === "List" && call.payload?._tag === "triggers") {
-        const answer = routes[LIVE]
-        if (answer) return typeof answer === "function" ? answer(new Request(absolute, init)) : answer.clone()
-        return json(404, { ok: false, error: { code: "runtime_host_not_running", message: "No live Flow host" } })
-      }
-    }
     for (const [route, answer] of Object.entries(routes)) {
       if (path === route || path.startsWith(`${route}?`)) {
         return typeof answer === "function" ? answer(new Request(absolute.toString(), init)) : answer.clone()
@@ -127,7 +119,7 @@ const ready = async (
 
 const REPO = "/api/repos/will/flows"
 const PROJECTION = `${REPO}/contents/.smithers/factory.json`
-const LIVE = "List:triggers"
+const LIVE = "/api/workflow/triggers"
 
 /** The day-one table (design §7) as the mirror serves the committed projection: a base64 contents document. */
 const projectionDocument = (projection: unknown): Response =>
@@ -233,11 +225,16 @@ describe("triggers seam: the box, signed in", () => {
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
         [LIVE]: json(200, {
-          ok: true, payload: { _tag: "triggers", items: [
-            { triggerId: "nightly", flowId: "review", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true, lastFiredAtMs: 1_700_000_000_000, nextOccurrencesMs: [1_700_086_400_000], activeRunId: "run-8f21" },
-            { triggerId: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false },
-            { triggerId: "broken" }
-          ] } })
+          status: "ok",
+          repo: "will/flows",
+          live: true,
+          triggers: [
+            { id: "nightly", flowId: "review", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true, lastFiredAt: 1_700_000_000_000, nextFireAt: 1_700_086_400_000, activeRunId: "run-8f21" },
+            { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false },
+            { id: "broken" }
+          ],
+          webhooks: [{ name: "github-push", flowId: "review" }, { flowId: "nameless" }]
+        })
       }, seen),
       { signedIn: true }
     )
@@ -245,7 +242,7 @@ describe("triggers seam: the box, signed in", () => {
     expect(outcome.status).toBe("executed")
     if (outcome.status === "executed") {
       expect(outcome.value).toBe(
-        "Dispatcher on will/flows: 4 rules declared in .smithers/FACTORY.ts: issue.opened runs issue; issue.labeled:smithers runs implement; change.landed runs wiki, history.fold, improve.mine; schedule:0 9 * * 1-5 runs review. the box is listening: nightly runs review, sweep runs issue."
+        "Dispatcher on will/flows: 4 rules declared in .smithers/FACTORY.ts: issue.opened runs issue; issue.labeled:smithers runs implement; change.landed runs wiki, history.fold, improve.mine; schedule:0 9 * * 1-5 runs review. the box is listening: nightly runs review, sweep runs issue, webhook github-push runs review."
       )
     }
     await settled()
@@ -253,13 +250,13 @@ describe("triggers seam: the box, signed in", () => {
     expect(card.payload.declared).toEqual(DAY_ONE.on)
     expect(card.payload.live).toBe(true)
     expect(card.payload.triggers).toEqual([
-      { id: "nightly", flowId: "review", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true, lastFiredAt: 1_700_000_000_000, nextFireAt: 1_700_086_400_000, nextFiresAt: [1_700_086_400_000], activeRunId: "run-8f21" },
+      { id: "nightly", flowId: "review", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true, lastFiredAt: 1_700_000_000_000, nextFireAt: 1_700_086_400_000, activeRunId: "run-8f21" },
       { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }
     ])
-    expect(card.payload.webhooks).toEqual([])
+    expect(card.payload.webhooks).toEqual([{ name: "github-push", flowId: "review" }])
     /* Two live sources now: the box's own store and the repository's Smithers Cloud registrations, plus one ledger read per box row. */
     expect(seen.filter((path) => path !== PROJECTION).sort()).toEqual(
-      [RPC, `/api/repos/will/flows/repository-jobs`, RPC, RPC].sort()
+      [`${LIVE}?repo=will%2Fflows`, `/api/workflow/trigger-registrations?repo=will%2Fflows`, RPC, RPC].sort()
     )
     expect(seen).toContain(PROJECTION)
   })
@@ -269,22 +266,28 @@ describe("triggers seam: the box, signed in", () => {
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
         [LIVE]: json(200, {
-          ok: true, payload: { _tag: "triggers", items: [{
-            triggerId: "nightly",
+          status: "ok",
+          repo: "will/flows",
+          live: true,
+          triggers: [{
+            id: "nightly",
             flowId: "review",
             cron: "0 9 * * 1-5",
             timezone: "America/New_York",
             enabled: true,
-            nextOccurrencesMs: [1_700_086_400_000, 1_700_172_800_000, 1_700_259_200_000, 1_700_345_600_000, 1_700_432_000_000],
+            nextFireAt: 1_700_086_400_000,
+            nextFiresAt: [1_700_086_400_000, 1_700_172_800_000, 1_700_259_200_000, 1_700_345_600_000, 1_700_432_000_000],
             overlap: "buffer-one",
             catchUp: "one",
             maxCatchUp: 3,
-            pendingAtMs: 1_700_086_400_000,
-            schedulerLastTickMs: 1_700_000_500_000,
+            pendingAt: 1_700_086_400_000,
+            schedulerLastTickAt: 1_700_000_500_000,
             /* The route carries these two; the card has no field for either, so the seam drops them rather than smuggling them onto a row. */
             input: { label: "nightly" },
             revision: 7
-          }] } })
+          }],
+          webhooks: []
+        })
       }),
       { signedIn: true }
     )
@@ -311,21 +314,27 @@ describe("triggers seam: the box, signed in", () => {
    * scheduler's heartbeat are the trigger panel's own fields.
    */
   const BOX_WITH_POLICIES = {
-    ok: true, payload: { _tag: "triggers", items: [{
-      triggerId: "nightly",
+    status: "ok",
+    repo: "will/flows",
+    live: true,
+    triggers: [{
+      id: "nightly",
       flowId: "review",
       cron: "0 9 * * 1-5",
       timezone: "America/New_York",
       enabled: true,
-      lastFiredAtMs: 1_700_000_000_000,
+      lastFiredAt: 1_700_000_000_000,
+      nextFireAt: 1_700_086_400_000,
       activeRunId: "run-8f21",
-      nextOccurrencesMs: [1_700_086_400_000, 1_700_172_800_000],
+      nextFiresAt: [1_700_086_400_000, 1_700_172_800_000],
       overlap: "buffer-one",
       catchUp: "one",
       maxCatchUp: 3,
-      pendingAtMs: 1_700_086_400_000,
-      schedulerLastTickMs: 1_700_000_500_000
-    }] } }
+      pendingAt: 1_700_086_400_000,
+      schedulerLastTickAt: 1_700_000_500_000
+    }],
+    webhooks: []
+  }
 
   test("a box answer carries every field the trigger panel reads", async () => {
     const { store, controller } = await ready(
@@ -358,20 +367,25 @@ describe("triggers seam: the box, signed in", () => {
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
         [LIVE]: json(200, {
-          ok: true, payload: { _tag: "triggers", items: [{ triggerId: "odd", flowId: "review", cron: "* * * * *", enabled: true, overlap: "queue", catchUp: 3, maxCatchUp: "many", nextOccurrencesMs: [1, "soon", 2] }] } })
+          status: "ok",
+          repo: "will/flows",
+          live: true,
+          triggers: [{ id: "odd", flowId: "review", cron: "* * * * *", enabled: true, overlap: "queue", catchUp: 3, maxCatchUp: "many", nextFiresAt: [1, "soon", 2] }],
+          webhooks: []
+        })
       }),
       { signedIn: true }
     )
     expect((await controller.commands.run("triggers.list")).status).toBe("executed")
     await settled()
-    expect(triggerCard(store).payload.triggers).toEqual([{ id: "odd", flowId: "review", cron: "* * * * *", enabled: true, nextFireAt: 1, nextFiresAt: [1, 2] }])
+    expect(triggerCard(store).payload.triggers).toEqual([{ id: "odd", flowId: "review", cron: "* * * * *", enabled: true, nextFiresAt: [1, 2] }])
   })
 
   test("signed in with no box answering, the card is the declaration alone with live false", async () => {
     const { store, controller } = await ready(
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
-        [LIVE]: json(404, { ok: false, error: { code: "runtime_host_not_running", message: "No live Flow host" } })
+        [LIVE]: json(200, { status: "ok", repo: "will/flows", live: false, triggers: [], webhooks: [] })
       }),
       { signedIn: true }
     )
@@ -415,9 +429,9 @@ describe("triggers seam: the box, signed in", () => {
  */
 
 const RPC = "/api/workflow/rpc"
-const REGISTRATIONS = "/api/repos/will/flows/repository-jobs"
-const PAUSE = "/api/repos/will/flows/repository-jobs/flow:nightly/pause"
-const APPROVAL = "/api/repos/will/flows/repository-jobs/flow:nightly/approvals"
+const REGISTRATIONS = "/api/workflow/trigger-registrations"
+const PAUSE = "/api/workflow/trigger-pause"
+const APPROVAL = "/api/workflow/trigger-approval"
 
 interface RelayCall {
   readonly procedure: string
@@ -974,7 +988,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         [RPC]: relayRoute(calls, workspaceAnswers()),
         [APPROVAL]: async (request) => {
           receipts.push(await request.json())
-          return json(200, { approved_at: "2026-09-17T06:00:00Z", approved_by: 1 })
+          return json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
         }
       }))
     )
@@ -992,7 +1006,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
      * registration will carry: the plan's, bounded by the reviewed limits.
      */
     expect(receipts).toEqual([{
-      flow_id: "nightly-lint", plan_id: "plan-1", plan_digest: PLAN_DIGEST,
+      repo: "will/flows", slug: "nightly", flowId: "nightly-lint", planId: "plan-1", planDigest: PLAN_DIGEST,
       envelope: { ...PLAN.envelope, budget: { tokens: 200_000, milliseconds: 1_800_000 } }
     }])
     expect(calls.map((call) => call.procedure).filter((name) => name !== "Projection.Snapshot")).toEqual([
@@ -1031,7 +1045,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         [RPC]: relayRoute([], workspaceAnswers({
           Plan: (payload) => payload.flowId === "repository/trigger" ? refusedFrame(moduleRefusal) : okFrame(PLAN)
         })),
-        [APPROVAL]: json(200, { approved_at: "2026-09-17T06:00:00Z", approved_by: 1 })
+        [APPROVAL]: json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
       }))
     )
     await hosted.controller.registerTrigger(REQUEST)
@@ -1079,7 +1093,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         })),
         [APPROVAL]: async (request) => {
           receipts.push(await request.json())
-          return json(200, { approved_at: "2026-09-17T06:00:00Z", approved_by: 1 })
+          return json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
         }
       }))
     )
@@ -1110,7 +1124,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         })),
         [APPROVAL]: async (request) => {
           receipts.push(await request.json())
-          return json(200, { approved_at: "2026-09-17T06:00:00Z", approved_by: 1 })
+          return json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
         }
       }))
     )
@@ -1158,7 +1172,7 @@ describe("triggers seam: watching the registration run", () => {
   ) => watched(backend({
     [PROJECTION]: projectionDocument(DAY_ONE),
     [RPC]: relayRoute(calls, workspaceAnswers(answers, run)),
-    [APPROVAL]: json(200, { approved_at: "2026-09-17T06:00:00Z", approved_by: 1 }),
+    [APPROVAL]: json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 }),
     ...extra
   }))
 
@@ -1262,11 +1276,14 @@ describe("triggers seam: watching the registration run", () => {
     const run: HostRun = { status: "running", verdict: "" }
     const { store, controller } = await readyToRegister(
       ROUTES(calls, run, {
-        [REGISTRATIONS]: json(200, [{
-            job: "flow:nightly", flow_id: "nightly-lint", schedule: "0 9 * * 1-5", enabled: true, revision: 1,
-            digest: "c".repeat(64), source_revision: "b".repeat(40), next_fire_at: "2026-09-18T09:00:00Z",
-            id: "registration-nightly"
-          }])
+        [REGISTRATIONS]: json(200, {
+          status: "ok", repo: "will/flows",
+          rows: [{
+            slug: "nightly", flowId: "nightly-lint", schedule: "0 9 * * 1-5", enabled: true, revision: 1,
+            digest: "c".repeat(64), sourceRevision: "b".repeat(40), nextFireAt: "2026-09-18T09:00:00Z",
+            registrationId: "registration-nightly"
+          }]
+        })
       })
     )
     const requestId = await approved(store, controller)
@@ -1373,17 +1390,21 @@ describe("triggers seam: watching the registration run", () => {
 })
 
 describe("triggers seam: listing and pausing a schedule", () => {
-  const ROWS = [{
-      job: "flow:nightly", flow_id: "nightly-lint", schedule: "0 9 * * 1-5", enabled: true, revision: 1,
-      digest: "c".repeat(64), source_revision: "b".repeat(40), next_fire_at: "2026-09-18T09:00:00Z",
-      id: "registration-nightly"
+  const ROWS = {
+    status: "ok",
+    repo: "will/flows",
+    rows: [{
+      slug: "nightly", flowId: "nightly-lint", schedule: "0 9 * * 1-5", enabled: true, revision: 1,
+      digest: "c".repeat(64), sourceRevision: "b".repeat(40), nextFireAt: "2026-09-18T09:00:00Z",
+      registrationId: "registration-nightly"
     }]
+  }
 
   test("the dispatcher lists the registered schedule beside the box's own rows", async () => {
     const { store, controller } = await ready(
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
-        [LIVE]: json(200, { ok: true, payload: { _tag: "triggers", items: [{ triggerId: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }] } }),
+        [LIVE]: json(200, { status: "ok", repo: "will/flows", live: true, triggers: [{ id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }], webhooks: [] }),
         [REGISTRATIONS]: json(200, ROWS)
       }),
       { signedIn: true }
@@ -1404,7 +1425,7 @@ describe("triggers seam: listing and pausing a schedule", () => {
   test("a repository with no registrations and no box is not listening", async () => {
     /* Smithers Cloud answers 200 [] for every repository, which is the shape every signed-in user meets on day one. */
     const { store, controller } = await ready(
-      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [REGISTRATIONS]: json(200, []) }),
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [REGISTRATIONS]: json(200, { status: "ok", repo: "will/flows", rows: [] }) }),
       { signedIn: true }
     )
     const outcome = await controller.commands.run("triggers.list")
@@ -1424,24 +1445,24 @@ describe("triggers seam: listing and pausing a schedule", () => {
     expect(triggerCard(store).payload).toEqual({ repo: "will/flows", declared: DAY_ONE.on, live: false, triggers: [], webhooks: [] })
   })
 
-  test("pause stops the canonical repository job and re-reads the listing; a refusal stays the refusing party's", async () => {
+  test("pause stops the schedule through the Worker and re-reads the listing; a refusal stays the refusing party's", async () => {
     const seen: Array<string> = []
     const paused: Array<unknown> = []
     const { controller } = await ready(
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
-        [REGISTRATIONS]: json(200, [{ ...ROWS[0], enabled: false }]),
+        [REGISTRATIONS]: json(200, { ...ROWS, rows: [{ ...ROWS.rows[0], enabled: false }] }),
         [PAUSE]: async (request) => {
-          paused.push({ path: new URL(request.url).pathname, body: await request.text() })
-          return json(200, [{ id: "registration-nightly", enabled: false }])
+          paused.push(await request.json())
+          return json(200, { status: "ok", paused: 1 })
         }
       }, seen),
       { signedIn: true }
     )
     const outcome = await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
     expect(typeof outcome).toBe("object")
-    expect(paused).toEqual([{ path: PAUSE, body: "" }])
-    expect(seen.filter((path) => path === REGISTRATIONS)).toHaveLength(1)
+    expect(paused).toEqual([{ repo: "will/flows", slug: "nightly" }])
+    expect(seen.filter((path) => path.startsWith(REGISTRATIONS))).toHaveLength(1)
 
     const refused = await ready(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [PAUSE]: json(404, { status: "error", code: "upstream_refused", message: "unknown repository job" }) }),
@@ -1456,13 +1477,13 @@ describe("triggers seam: listing and pausing a schedule", () => {
     const { controller } = await ready(
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
-        [PAUSE.replace("nightly", "no-such-schedule")]: json(200, [])
+        [PAUSE]: json(200, { status: "ok", paused: 0 })
       }, seen),
       { signedIn: true }
     )
     const outcome = await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "no-such-schedule" })
     expect(outcome).toBe('No schedule "no-such-schedule" is registered on will/flows.')
-    expect(seen.filter((path) => path === REGISTRATIONS)).toEqual([])
+    expect(seen.filter((path) => path.startsWith(REGISTRATIONS))).toEqual([])
   })
 
   /*
@@ -1476,7 +1497,7 @@ describe("triggers seam: listing and pausing a schedule", () => {
     const { store, controller } = await ready(
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
-        [PAUSE.replace("nightly", "canary-never-registered")]: json(200, [])
+        [PAUSE]: json(200, { status: "ok", paused: 0 })
       }),
       { signedIn: true }
     )
@@ -1499,7 +1520,7 @@ describe("triggers seam: listing and pausing a schedule", () => {
    */
   test("a refusal the door already said in the transcript is not repeated on its form card", async () => {
     const { store, controller } = await ready(
-      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [PAUSE.replace("nightly", "canary-w1-not-registered")]: json(200, []) }),
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [PAUSE]: json(200, { status: "ok", paused: 0 }) }),
       { signedIn: true }
     )
     const sentence = 'No schedule "canary-w1-not-registered" is registered on will/flows.'
@@ -1535,11 +1556,15 @@ describe("triggers seam: listing and pausing a schedule", () => {
  * twice", receipt D-14-doors.json).
  */
 describe("triggers seam: running a registered schedule now", () => {
-  const REGISTERED = [{
-      job: "flow:nightly", flow_id: "nightly-lint", schedule: "0 9 * * 1-5", enabled: true, revision: 1,
-      digest: "c".repeat(64), source_revision: "b".repeat(40), next_fire_at: "2026-09-18T09:00:00Z",
-      id: "registration-nightly"
+  const REGISTERED = {
+    status: "ok",
+    repo: "will/flows",
+    rows: [{
+      slug: "nightly", flowId: "nightly-lint", schedule: "0 9 * * 1-5", enabled: true, revision: 1,
+      digest: "c".repeat(64), sourceRevision: "b".repeat(40), nextFireAt: "2026-09-18T09:00:00Z",
+      registrationId: "registration-nightly"
     }]
+  }
 
   const ROUTES = (calls: Array<RelayCall>, run: HostRun = { status: "running", verdict: "" }, rows: unknown = REGISTERED) =>
     watched(backend({
@@ -1590,7 +1615,7 @@ describe("triggers seam: running a registered schedule now", () => {
 
   test("a name no schedule holds is refused before anything is asked of the workspace", async () => {
     const calls: Array<RelayCall> = []
-    const { controller } = await readyToRegister(ROUTES(calls, { status: "running", verdict: "" }, []))
+    const { controller } = await readyToRegister(ROUTES(calls, { status: "running", verdict: "" }, { status: "ok", repo: "will/flows", rows: [] }))
     const outcome = await controller.commands.run("triggers.run", "nightly will/flows")
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") expect(outcome.error).toBe('No schedule "nightly" is registered on will/flows.')
@@ -1722,12 +1747,21 @@ describe("triggers seam: a trigger's fire ledger", () => {
    * types the slash, gets the box's rows with their history already on them.
    */
   const TWO_BOX_ROWS = json(200, {
-    ok: true, payload: { _tag: "triggers", items: [
-      { triggerId: "nightly", flowId: "review", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true },
-      { triggerId: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }
-    ] } })
+    status: "ok",
+    repo: "will/flows",
+    live: true,
+    triggers: [
+      { id: "nightly", flowId: "review", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true },
+      { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }
+    ],
+    webhooks: []
+  })
 
-  const ONE_PLUE_ROW = json(200, [{ id: "reg-1", job: "flow:nightly", flow_id: "review", schedule: "0 9 * * 1-5", enabled: true, next_fire_at: "2026-09-21T16:00:00.000Z" }])
+  const ONE_PLUE_ROW = json(200, {
+    status: "ok",
+    repo: "will/flows",
+    rows: [{ registrationId: "reg-1", slug: "nightly", flowId: "review", schedule: "0 9 * * 1-5", enabled: true, nextFireAt: "2026-09-21T16:00:00.000Z" }]
+  })
 
   /** The relay as the list path meets it: every call recorded, each answered for the trigger it named. */
   const firesRoute = (calls: Array<RelayCall>, answer: (triggerId: string) => unknown): Route =>
