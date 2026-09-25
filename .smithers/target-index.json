@@ -13004,6 +13004,10 @@
       },
       {
         "kind": "file",
+        "path": "flows/test/coding-planning-placement.test.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/test/coding-project-config.test.ts"
       },
       {

@@ -23,7 +23,7 @@ import * as Snapshots from "./snapshots.ts"
 import * as CodingFileSystem from "./filesystem.ts"
 import { correctionLayers, SelectRepair } from "./correction.ts"
 import { memoryLayer, type MemoryOptions } from "./planning-memory.ts"
-import { DraftPlan, planningPolicy, PreparePlan, ReviewRequest } from "./planning.ts"
+import { declineLayer, DraftPlan, planningPolicy, PreparePlan, ReviewRequest } from "./planning.ts"
 import { evidenceOnly } from "./planning-authority.ts"
 import { requestRegistration } from "./request.ts"
 import { sourceAdmission } from "./source-admission.ts"
@@ -206,7 +206,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       preparationLayers(wikiEnabled), prototypeRegistration,
       ...(wikiOptions === undefined ? [] : [planningWikiLayers(wikiOptions, fs),
         wikiCheckLayers({ ...wikiOptions, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment })]),
-      planningPolicy, Interpreter.layer(PreparePlan), HumanTask.layer, correctionLayers, sourceAdmission, requestRegistration, feedbackLayer,
+      planningPolicy, declineLayer, Interpreter.layer(PreparePlan), HumanTask.layer, correctionLayers, sourceAdmission, requestRegistration, feedbackLayer,
       pocPolicy, pocModels, pocSource({ ...options, fs }),
       evidenceOnly(Layer.mergeAll(ReviewRequest.layer, DraftPlan.layer, SelectRepair.layer, ReviewPage.layer)),
       ...(options.landing === undefined ? [] : [vibeRegistration.pipe(Layer.provide(options.landing)), cleanupModels])

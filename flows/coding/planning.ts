@@ -48,7 +48,11 @@ const RequestReview = Schema.Struct({
   explanation: Text,
   // Empty means sufficient information; otherwise one concise bundled question
   // can include a reasoned pushback. It becomes an actual durable human wait.
-  clarification: Schema.String.check(Schema.isMaxLength(16_384))
+  clarification: Schema.String.check(Schema.isMaxLength(16_384)),
+  // Non-empty means the request is not actionable as a code change (already
+  // done, only a question, a duplicate, needs a product decision): the reason
+  // is the visible refusal and nothing is planned. Absent in older receipts.
+  decline: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_048)))
 })
 const Error = Schema.Union([CodingError, AgentAction.AgentFailure, HumanTask.HumanTaskFailed])
 /** Every planning fact is captured evidence, so the payload IS the prompt. */
@@ -66,6 +70,7 @@ export const ReviewRequest = AgentAction.make("coding/review-request", {
     "Explain relevant conflicts or uncertainty and push back when the request contradicts its stated goal or repository constraints.",
     "context.sources holds the current text of the files the request names; do not ask the human for file contents that are present there; ask only when a file is listed under missing and the request depends on it.",
     "Ask only material questions whose answers cannot be inferred from the request and evidence. Bundle them into clarification; use an empty string when ready.",
+    "When the request is not actionable as a code change (the evidence shows it is already done, it is only a question, it duplicates another request, or it needs a product decision nobody has made), set decline to one short sentence saying which and why, and leave clarification empty. Otherwise omit decline or leave it empty.",
     "You are planning from captured evidence. Do not edit files, run commands or change version control. Do not claim checks passed."
   ],
   prompt: planningPrompt
@@ -76,7 +81,8 @@ export const DraftPlan = AgentAction.make("coding/draft-plan", {
   system: [
     "Plan one linear mythical coding progression as small understandable product Changes containing atomic emoji conventional commits.",
     "Use the supplied native history. Existing atoms use their exact native changeId; new atoms use null. Do not invent native IDs, executable names, digests or test evidence.",
-    "To append, choose the current head as baseChangeId. To amend older code, choose its preceding visible native change as base, include every existing atom after that base through the current head in native order, then any new atoms. Do not omit, duplicate or reorder existing descendants in this pass.",
+    "Place work where it belongs in the history. To append, choose the current head as baseChangeId and list only new atoms. To amend an older change or insert a new change after it, choose the visible native change before the first one you touch as base, then list every existing atom after that base through the current head in native order, with new atoms placed between them exactly where they belong. Do not omit, duplicate or reorder existing descendants.",
+    "Appending is the cheapest to reconcile with other work in flight; amend or insert only when the change genuinely belongs inside existing history (a fix to the change that introduced a bug, a missing piece of an existing feature).",
     "Use small contained intents and predict files read and written for every atom. Put fundamental stable work before volatile details when creating new atoms. Preserve existing descendants with explicit keep/revalidate intents if they require no edits.",
     "Select check IDs only from context.checks. The host always includes every operator-required check on each Change; you may select additional optional checks. Each Change needs a required fast check and a required slow check. Delivery checks retain their later delivery tier. Model assertions do not replace checks.",
     "context.sources holds the current text of the files the request names; do not ask the human for file contents that are present there; ask only when a file is listed under missing and the request depends on it.",
@@ -87,6 +93,10 @@ export const DraftPlan = AgentAction.make("coding/draft-plan", {
 export const FinalizePlan = Action.make("coding/finalize-plan", {
   payload: { input: PlanningInput, context: PlanningContext, draft: Draft },
   success: Plan, error: CodingError
+})
+/** Records the reviewer's refusal as the plan's typed failure. */
+export const DeclineRequest = Action.make("coding/decline-request", {
+  payload: { review: RequestReview }, success: Plan, error: CodingError
 })
 export const VerifyContext = Action.make("coding/verify-planning-context", {
   payload: { context: PlanningContext, draft: Draft }, success: PlanningContext,
@@ -99,14 +109,19 @@ export const PreparePlan = Flow.make("coding/PreparePlan", {
   body: input => GatherContext.call(input).pipe(Node.bindPlanned(context =>
     ReviewRequest.call({ input, context }).pipe(Node.bindPlanned(review =>
       Node.branch(Node.succeed(review), {
-        if: review => review.clarification.trim().length > 0,
-        then: review => HumanTask.action.call({
-          name: "coding-clarification", kind: "ask", prompt: review.clarification, maxAttempts: 3
-        }),
-        else: () => Node.succeed("")
-      }).pipe(Node.bindPlanned(answer => DraftPlan.call({ input, context, review, answer })),
-        Node.bindPlanned(draft => VerifyContext.call({ context, draft }).pipe(
-          Node.bindPlanned(context => FinalizePlan.call({ input, context, draft })))))))))
+        // A declined request plans nothing: the reason is the visible refusal.
+        if: review => (review.decline ?? "").trim().length > 0,
+        then: review => DeclineRequest.call({ review }),
+        else: review => Node.branch(Node.succeed(review), {
+          if: review => review.clarification.trim().length > 0,
+          then: review => HumanTask.action.call({
+            name: "coding-clarification", kind: "ask", prompt: review.clarification, maxAttempts: 3
+          }),
+          else: () => Node.succeed("")
+        }).pipe(Node.bindPlanned(answer => DraftPlan.call({ input, context, review, answer })),
+          Node.bindPlanned(draft => VerifyContext.call({ context, draft }).pipe(
+            Node.bindPlanned(context => FinalizePlan.call({ input, context, draft })))))
+      })))))
 })
 
 const invalid = (message: string) => new CodingError({ code: "invalid_plan", message })
@@ -209,17 +224,14 @@ export const finalize = (input: typeof PlanningInput.Type, context: PlanningCont
   if (baseIndex < 0) throw invalid("The proposed base is outside the gathered native history; gather its missing context first")
   const remaining = context.history.slice(baseIndex + 1).map(atom => atom.changeId)
   const actual: string[] = []
-  let hasNew = false
   const checks = new Map(context.checks.map(check => [check.id, check]))
   if (checks.size !== context.checks.length) throw invalid("Configured planning checks have duplicate IDs")
   const changes = draft.changes.map(change => {
     for (const atom of change.atoms) {
       if (![...atom.reads, ...atom.writes].every(filePath)) throw invalid("Predicted files must be normalized repository-relative paths outside native metadata")
-      if (atom.changeId === null) hasNew = true
-      else {
-        if (hasNew) throw invalid("This planning pass cannot insert new atoms before existing descendants")
-        actual.push(atom.changeId)
-      }
+      // New atoms may sit anywhere after the base: the native adapter creates
+      // them with `jj new --insert-after`, and JJ restacks the descendants.
+      if (atom.changeId !== null) actual.push(atom.changeId)
     }
     return {
       ...change,
@@ -254,4 +266,6 @@ export const planningPolicy = FinalizePlan.toLayer(({ input, context, draft }) =
 /** Pure identity over the gathered evidence, not a second memory store. */
 export const memoryRevision = (evidence: unknown) => `sha256:${Digest.digest(Digest.canonical(evidence))}`
 
-export const planningActions = Layer.mergeAll(planningPolicy, ReviewRequest.layer, DraftPlan.layer)
+export const declineLayer = DeclineRequest.toLayer(({ review }) =>
+  Effect.fail(new CodingError({ code: "declined", message: (review.decline ?? "").trim().slice(0, 2_048) || "Declined" })))
+export const planningActions = Layer.mergeAll(planningPolicy, declineLayer, ReviewRequest.layer, DraftPlan.layer)

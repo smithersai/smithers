@@ -129,8 +129,13 @@ earlier base and retains every existing descendant in native order before
 adding new atoms. Missing context, omitted/reordered descendants, duplicate
 ownership, unknown checks, and paths escaping the repository or entering native
 metadata are refused. Each Change receives all configured required checks and
-needs a required fast and required slow check. This pass does not yet insert new atoms between existing ones or reorder
-history. The model is instructed to use small emoji conventional commits;
+needs a required fast and required slow check. New atoms may be inserted between
+existing ones: the native adapter creates them with `jj new --insert-after` and JJ
+restacks what follows. Existing atoms are never reordered or dropped. When the
+request is not actionable (already done, only a question, a duplicate, an open
+product decision), the review's `decline` fails the plan with
+`CodingError{code:"declined"}` and its reason; nothing is drafted.
+The model is instructed to use small emoji conventional commits;
 final history cleanup is a separate later lifecycle step.
 
 `feedback` is bounded text intended for saved disposable POC findings. Passing

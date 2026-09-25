@@ -111,7 +111,7 @@ export const CorrectionResult = Schema.Struct({
 export const RequestResult = Schema.Struct({ plan: Plan, outcome: CorrectionResult })
 export class CodingError extends Schema.TaggedError<CodingError>()("coding/Error", {
   code: Schema.Literals(["invalid_plan", "invalid_request", "fast_gate", "stale_revision", "invalid_receipt", "unavailable", "execution",
-    "source_missing", "source_changed", "source_refused", "source_unavailable"]),
+    "source_missing", "source_changed", "source_refused", "source_unavailable", "declined"]),
   message: Text
 }) {}
 
