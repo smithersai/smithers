@@ -248,17 +248,6 @@ func orgCommand() *incur.Cli {
 			return APIRequest("PATCH", "/api/orgs/"+url.PathEscape(stringValue(ctx.Args["name"])), body, nil)
 		},
 	})
-	cmd.Command("delete", &incur.CommandDef{
-		Description: "Delete an organization",
-		ArgsSchema:  objectSchema([]string{"name"}, map[string]*incur.JSONSchema{"name": stringSchema("Organization name")}),
-		Handler: func(ctx *incur.CommandContext) (any, error) {
-			name := stringValue(ctx.Args["name"])
-			if _, err := APIRequest("DELETE", "/api/orgs/"+url.PathEscape(name), nil, nil); err != nil {
-				return nil, err
-			}
-			return map[string]any{"status": "deleted", "name": name}, nil
-		},
-	})
 	cmd.Command("member list", &incur.CommandDef{
 		Description: "List members in an organization",
 		ArgsSchema:  objectSchema([]string{"org"}, map[string]*incur.JSONSchema{"org": stringSchema("Organization name")}),

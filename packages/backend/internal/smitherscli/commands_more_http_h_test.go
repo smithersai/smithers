@@ -149,7 +149,6 @@ func TestCommandsMoreHttp_H_CommandSurfaceSuccess(t *testing.T) {
 	commandsMoreHTTPHServe(t, orgCommand(), "list", "--json")
 	commandsMoreHTTPHServe(t, orgCommand(), "view", "acme", "--json")
 	commandsMoreHTTPHServe(t, orgCommand(), "edit", "acme", "--description", "", "--visibility", "limited", "--json")
-	commandsMoreHTTPHServe(t, orgCommand(), "delete", "acme", "--json")
 	commandsMoreHTTPHServe(t, orgCommand(), "member", "list", "acme", "--json")
 	commandsMoreHTTPHServe(t, orgCommand(), "member", "add", "acme", "alice", "--json")
 	commandsMoreHTTPHServe(t, orgCommand(), "member", "remove", "acme", "alice", "--json")
@@ -204,7 +203,7 @@ func TestCommandsMoreHttp_H_CommandSurfaceSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(seen) < 48 {
+	if len(seen) < 47 {
 		t.Fatalf("expected broad command surface to be exercised, saw only %d requests", len(seen))
 	}
 	var foundUserCreate, foundWebhookSecret, foundLinearInstall bool
@@ -458,7 +457,6 @@ func TestCommandsMoreHttp_H_CommandErrorBranches(t *testing.T) {
 	}{
 		{"delete-user", adminCommand(), "delete user denied", []string{"user", "delete", "bad", "--yes", "--json"}},
 		{"whitelist-remove", betaCommand(), "whitelist denied", []string{"whitelist", "remove", "--type", "email", "--value", "bad@example.com", "--json"}},
-		{"org-delete", orgCommand(), "org delete denied", []string{"delete", "acme", "--json"}},
 		{"member-remove", orgCommand(), "member remove denied", []string{"member", "remove", "acme", "bob", "--json"}},
 		{"team-delete", orgCommand(), "team delete denied", []string{"team", "delete", "acme", "core", "--json"}},
 		{"team-member-remove", orgCommand(), "team member remove denied", []string{"team", "member", "remove", "acme", "core", "bob", "--json"}},
