@@ -127,3 +127,22 @@ func TestIfExpressionReferencesNeeds_StatusHelpersInConjunction(t *testing.T) {
 	assert.True(t, IfExpressionReferencesNeeds(`success() && trigger.type == "workflow_run"`))
 	assert.False(t, IfExpressionReferencesNeeds(`trigger.type == "push"`))
 }
+
+func TestDependentJobShouldRunAppliesImplicitSuccess(t *testing.T) {
+	event := TriggerEvent{Type: "push"}
+	failed := map[string]string{"test": "failure"}
+	for _, tc := range []struct {
+		expr string
+		want bool
+	}{
+		{`trigger.type == "push"`, false},
+		{"", false},
+		{"always()", true},
+		{`needs.test.result == "failure"`, true},
+		{"success()", false},
+	} {
+		got, err := DependentJobShouldRun(tc.expr, event, failed)
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, got, "expression %q", tc.expr)
+	}
+}

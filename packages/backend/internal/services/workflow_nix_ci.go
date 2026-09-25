@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -58,7 +59,8 @@ const (
 	nixCIPollInterval = 2 * time.Second
 	// nixCIPollTimeout bounds one tail exec so a wedged guest cannot stall the
 	// poll loop past the task ceiling.
-	nixCIPollTimeout = 30 * time.Second
+	nixCIPollTimeout        = 30 * time.Second
+	nixCIMaxPendingLogBytes = 64 << 10
 	// nixCIGuestDeleteTimeout bounds the best-effort teardown of one guest.
 	nixCIGuestDeleteTimeout = 30 * time.Second
 	// defaultNixCIRunTimeout is the whole-run backstop. Each job already has
@@ -80,6 +82,8 @@ type nixCITaskQuerier interface {
 	GetWorkflowTask(ctx context.Context, arg db.GetWorkflowTaskParams) (db.WorkflowTask, error)
 	MarkWorkflowTaskVMRunning(ctx context.Context, arg db.MarkWorkflowTaskVMRunningParams) (int64, error)
 	MarkWorkflowTaskTerminalByID(ctx context.Context, arg db.MarkWorkflowTaskTerminalByIDParams) (int64, error)
+	UnblockWorkflowTask(ctx context.Context, id int64) error
+	SkipBlockedWorkflowTask(ctx context.Context, id int64) error
 	UpdateWorkflowStepStatusRunning(ctx context.Context, stepID int64) (int64, error)
 	UpdateWorkflowStepStatusTerminal(ctx context.Context, arg db.UpdateWorkflowStepStatusTerminalParams) (int64, error)
 }
@@ -87,9 +91,12 @@ type nixCITaskQuerier interface {
 // nixCITaskPayload is the slice of the workflow_tasks payload the NixOS guest
 // needs. It is written by createWorkflowRunRows and read by both planes.
 type nixCITaskPayload struct {
-	Job   string       `json:"job"`
-	Steps []StepConfig `json:"steps"`
-	Needs []string     `json:"needs"`
+	Job    string                 `json:"job"`
+	Steps  []StepConfig           `json:"steps"`
+	Needs  []string               `json:"needs"`
+	If     string                 `json:"if"`
+	Event  string                 `json:"event"`
+	Inputs map[string]interface{} `json:"inputs"`
 }
 
 // nixCITask couples a persisted task row with its decoded payload.
@@ -102,6 +109,8 @@ type nixCITask struct {
 	Job           string
 	Steps         []StepConfig
 	Needs         []string
+	If            string
+	Event         TriggerEvent
 }
 
 // nixCITaskOutcome is the terminal state one task reached.
@@ -158,6 +167,8 @@ func loadNixCITasks(ctx context.Context, q nixCITaskQuerier, runID, repositoryID
 			Job:           job,
 			Steps:         payload.Steps,
 			Needs:         payload.Needs,
+			If:            payload.If,
+			Event:         TriggerEvent{Type: payload.Event, Inputs: payload.Inputs},
 		})
 	}
 	return tasks, nil
@@ -254,29 +265,34 @@ func parseNixCIExitMarker(stderr string) (int32, bool) {
 	return int32(code), true
 }
 
-// nixCIReadyTasks returns the tasks whose dependencies are all satisfied.
-// A task whose dependency failed or was cancelled is returned as skipped, which
-// mirrors the runner plane's progressDependencies.
+// nixCIReadyTasks waits for every need to settle, then applies the same
+// implicit success() rule as the runner plane.
 func nixCIReadyTasks(tasks []nixCITask, outcomes map[string]nixCITaskOutcome, started map[int64]bool) (ready []nixCITask, skip []nixCITask) {
 	for _, task := range tasks {
 		if started[task.ID] || outcomes[task.Job] != "" {
 			continue
 		}
-		satisfied := true
-		blocked := false
+		settled := true
+		needsResults := make(map[string]string, len(task.Needs))
 		for _, need := range task.Needs {
 			switch outcomes[strings.TrimSpace(need)] {
 			case nixCITaskDone:
+				needsResults[strings.TrimSpace(need)] = "success"
 			case "":
-				satisfied = false
+				settled = false
+			case nixCITaskFailed:
+				needsResults[strings.TrimSpace(need)] = "failure"
 			default:
-				blocked = true
+				needsResults[strings.TrimSpace(need)] = string(outcomes[strings.TrimSpace(need)])
 			}
 		}
-		switch {
-		case blocked:
+		if !settled {
+			continue
+		}
+		shouldRun, err := DependentJobShouldRun(task.If, task.Event, needsResults)
+		if err != nil || !shouldRun {
 			skip = append(skip, task)
-		case satisfied:
+		} else {
 			ready = append(ready, task)
 		}
 	}
@@ -321,6 +337,18 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCIRun(
 	outcomes := map[string]nixCITaskOutcome{}
 	started := map[int64]bool{}
 	var mu sync.Mutex
+	for _, task := range tasks {
+		switch outcome := nixCITaskOutcome(task.Status); outcome {
+		case nixCITaskDone, nixCITaskFailed, nixCITaskCancelled, nixCITaskSkipped:
+			started[task.ID] = true
+			outcomes[task.Job] = outcome
+		case "running":
+			// A prior claim may have executed side effects before it died.
+			started[task.ID] = true
+			outcomes[task.Job] = nixCITaskFailed
+			w.finalizeNixCITask(ctx, task, nixCITaskFailed, "job was interrupted when its scheduler lost the run")
+		}
+	}
 
 	concurrency := w.nixCIConcurrency()
 	for {
@@ -333,7 +361,13 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCIRun(
 		mu.Unlock()
 
 		for _, task := range skip {
+			if err := w.queries.SkipBlockedWorkflowTask(ctx, task.ID); err != nil {
+				return w.failRun(ctx, claim, 0, "failed to skip blocked workflow task")
+			}
 			w.finalizeNixCITask(ctx, task, nixCITaskSkipped, "a job it needs did not succeed")
+		}
+		if len(skip) > 0 && len(ready) == 0 {
+			continue
 		}
 		if len(ready) == 0 {
 			mu.Lock()
@@ -354,6 +388,11 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCIRun(
 		}
 		var wg sync.WaitGroup
 		for _, task := range ready {
+			if len(task.Needs) > 0 {
+				if err := w.queries.UnblockWorkflowTask(ctx, task.ID); err != nil {
+					return w.failRun(ctx, claim, 0, "failed to unblock workflow task")
+				}
+			}
 			mu.Lock()
 			started[task.ID] = true
 			mu.Unlock()
@@ -386,13 +425,16 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCIRun(
 }
 
 // nixCIRunEnvironment carries the per-run values every task guest needs: the
-// repository checkout URL, the workflow secrets, and the redaction table.
+// repository identity, the workflow secrets, and the redaction table. Each
+// guest receives its own short-lived clone credential when it boots.
 type nixCIRunEnvironment struct {
-	RepositoryID int64
-	CloneURL     string
-	Revision     string
-	Secrets      map[string]string
-	RedactEnv    map[string]string
+	RepositoryID   int64
+	Owner          string
+	RepositoryName string
+	CloneUserID    int64
+	Revision       string
+	Secrets        map[string]string
+	RedactEnv      map[string]string
 }
 
 // executeNixCITask boots one guest, runs one job in it, streams its output, and
@@ -415,7 +457,7 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCITask(
 	taskCtx, cancel := context.WithTimeout(ctx, w.nixCITaskTimeout())
 	defer cancel()
 
-	vmID, err := w.provisionNixCIGuest(taskCtx, task, env)
+	vmID, cloneToken, err := w.provisionNixCIGuest(taskCtx, task, env)
 	if err != nil {
 		message := "failed to provision NixOS CI guest"
 		logger.Error(message, "error", err)
@@ -426,6 +468,14 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCITask(
 		}
 		w.finalizeNixCITask(ctx, task, outcome, message)
 		return outcome
+	}
+	if cloneToken != "" {
+		redactEnv := make(map[string]string, len(env.RedactEnv)+1)
+		for name, value := range env.RedactEnv {
+			redactEnv[name] = value
+		}
+		redactEnv["SMITHERS_REPO_CLONE_TOKEN"] = cloneToken
+		env.RedactEnv = redactEnv
 	}
 	defer func() {
 		deleteCtx, deleteCancel := context.WithTimeout(context.WithoutCancel(ctx), nixCIGuestDeleteTimeout)
@@ -481,32 +531,39 @@ func (w *WorkflowSandboxSchedulerWorker) provisionNixCIGuest(
 	ctx context.Context,
 	task nixCITask,
 	env nixCIRunEnvironment,
-) (string, error) {
+) (string, string, error) {
 	if w.ciGuests == nil {
-		return "", fmt.Errorf("NixOS CI guest provisioner is not wired")
+		return "", "", fmt.Errorf("NixOS CI guest provisioner is not wired")
 	}
-	req, err := w.ciGuests.CIGuestVMRequest(ctx, env.RepositoryID, []sandbox.GitRepositorySpec{
-		{Repo: env.CloneURL, Path: nixCITaskWorkdir, Rev: env.Revision},
+	cloneURL, cloneToken, revokeCloneToken, err := w.buildCloneURLWithToken(ctx, env.Owner, env.RepositoryName, env.CloneUserID, func() (temporaryRepoCloneToken, error) {
+		return issueTemporaryBoundRepoCloneToken(ctx, w.queries, env.CloneUserID, env.RepositoryID, "workflow-ci-guest-clone")
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	defer revokeCloneToken()
+	req, err := w.ciGuests.CIGuestVMRequest(ctx, env.RepositoryID, []sandbox.GitRepositorySpec{
+		{Repo: cloneURL, Path: nixCITaskWorkdir, Rev: env.Revision},
+	})
+	if err != nil {
+		return "", "", err
 	}
 	w.applyNixCISizing(&req)
 
 	var lastErr error
 	for attempt := 1; attempt <= defaultNixCIProvisionAttempts; attempt++ {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return "", "", ctx.Err()
 		}
 		createCtx := sandboxProvisionContext(ctx, "create", "workflow_task", fmt.Sprint(task.ID), "attempt-"+strconv.Itoa(attempt))
 		vm, err := w.sandbox.CreateSandbox(createCtx, req)
 		if err == nil {
-			return vm.ID, nil
+			return vm.ID, cloneToken, nil
 		}
 		lastErr = err
 		w.logger.Warn("NixOS CI guest create failed", "task_id", task.ID, "attempt", attempt, "error", err)
 	}
-	return "", lastErr
+	return "", "", lastErr
 }
 
 // applyNixCISizing lets CI guests be sized independently of interactive
@@ -535,6 +592,8 @@ func (w *WorkflowSandboxSchedulerWorker) streamNixCITask(
 ) (int32, nixCITaskOutcome) {
 	offset := int64(1)
 	pollTimeout := int64(nixCIPollTimeout / time.Millisecond)
+	lines := newNixCILogLines(env.RedactEnv)
+	defer func() { w.appendNixCILines(ctx, task, lines.flush()) }()
 
 	for {
 		resp, err := w.sandbox.Execute(ctx, vmID, sandbox.ExecRequest{
@@ -548,7 +607,7 @@ func (w *WorkflowSandboxSchedulerWorker) streamNixCITask(
 			w.logger.Warn("NixOS CI log poll failed", "task_id", task.ID, "error", err)
 		} else {
 			if resp.Stdout != "" {
-				w.appendNixCIOutput(ctx, task, resp.Stdout, env.RedactEnv)
+				w.appendNixCILines(ctx, task, lines.push(resp.Stdout))
 				offset += int64(len(resp.Stdout))
 			}
 			if code, done := parseNixCIExitMarker(resp.Stderr); done {
@@ -618,22 +677,97 @@ func (w *WorkflowSandboxSchedulerWorker) finalizeNixCITask(
 	}
 }
 
-// appendNixCIOutput splits a poll's raw bytes into log lines, redacts them, and
-// appends them in order. Order matters: these rows are what the run's live log
-// SSE stream replays.
-func (w *WorkflowSandboxSchedulerWorker) appendNixCIOutput(
-	ctx context.Context,
-	task nixCITask,
-	chunk string,
-	redactEnv map[string]string,
-) {
-	normalized := strings.ReplaceAll(chunk, "\r\n", "\n")
-	for _, line := range strings.Split(normalized, "\n") {
+// appendNixCILines appends already-redacted log lines in order. Order matters:
+// these rows are what the run's live log SSE stream replays.
+func (w *WorkflowSandboxSchedulerWorker) appendNixCILines(ctx context.Context, task nixCITask, lines []string) {
+	for _, line := range lines {
+		w.appendNixCILog(ctx, task, "stdout", line)
+	}
+}
+
+// nixCILogLines turns a task's polled log bytes into redacted log lines. Polls
+// cut the log at arbitrary byte offsets, so it redacts only complete lines and
+// carries the unterminated tail into the next poll; redacting each poll's
+// fragment on its own would let a secret split across two polls escape
+// RedactSecretValues in both halves.
+type nixCILogLines struct {
+	redactEnv map[string]string
+	// longestSecret is the byte length of the longest value RedactSecretValues
+	// masks: a forced flush keeps at least longestSecret-1 bytes back.
+	longestSecret int
+	pending       string
+}
+
+func newNixCILogLines(redactEnv map[string]string) *nixCILogLines {
+	longest := 0
+	for _, value := range redactEnv {
+		longest = max(longest, len(strings.TrimSpace(value)))
+	}
+	return &nixCILogLines{redactEnv: redactEnv, longestSecret: longest}
+}
+
+// push adds one poll's bytes and returns the lines they completed.
+func (l *nixCILogLines) push(chunk string) []string {
+	// Normalize after joining so a CRLF split across polls still collapses.
+	text := strings.ReplaceAll(l.pending+chunk, "\r\n", "\n")
+	cut := strings.LastIndex(text, "\n") + 1
+	if tail := text[cut:]; len(tail) > nixCIMaxPendingLogBytes+l.longestSecret {
+		cut += l.safeCut(tail)
+	}
+	l.pending = text[cut:]
+	return l.redactLines(text[:cut])
+}
+
+// flush returns whatever is still held back, for when the log ends.
+func (l *nixCILogLines) flush() []string {
+	text := l.pending
+	l.pending = ""
+	return l.redactLines(text)
+}
+
+// safeCut picks where to break an oversized unterminated line: far enough
+// from its end that a secret still being written cannot straddle the break,
+// and never inside a secret or a UTF-8 sequence already in the line.
+func (l *nixCILogLines) safeCut(line string) int {
+	cut := len(line) - max(l.longestSecret-1, 0)
+	for moved := true; moved; {
+		moved = false
+		for cut > 0 && cut < len(line) && !utf8.RuneStart(line[cut]) {
+			cut--
+			moved = true
+		}
+		for _, value := range l.redactEnv {
+			secret := strings.TrimSpace(value)
+			if secret == "" {
+				continue
+			}
+			for start := max(cut-len(secret)+1, 0); start < cut; start++ {
+				if strings.HasPrefix(line[start:], secret) {
+					cut = start
+					moved = true
+					break
+				}
+			}
+		}
+	}
+	if cut == 0 {
+		// Back-to-back secrets fill the whole line; flushing it all still
+		// redacts every complete one.
+		return len(line)
+	}
+	return cut
+}
+
+func (l *nixCILogLines) redactLines(text string) []string {
+	redacted := RedactSecretValues(l.redactEnv, text)
+	lines := []string{}
+	for _, line := range strings.Split(redacted, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		w.appendNixCILog(ctx, task, "stdout", RedactSecretValues(redactEnv, line))
+		lines = append(lines, line)
 	}
+	return lines
 }
 
 func (w *WorkflowSandboxSchedulerWorker) appendNixCILog(ctx context.Context, task nixCITask, stream, entry string) {

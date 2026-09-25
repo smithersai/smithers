@@ -181,7 +181,7 @@ func TestWorkflowSandboxScheduler_Cov_CloneURLAndVMRequestBranches(t *testing.T)
 		},
 	}, &mockWorkflowSandboxVMClient{}, WithWorkflowSandboxSchedulerGitBaseURL("https://git.example.test"))
 
-	cloneURL, cloneToken, revoke, err := worker.buildCloneURL(context.Background(), "alice", "demo", 7)
+	cloneURL, cloneToken, revoke, err := worker.buildCloneURL(context.Background(), 42, "alice", "demo", 7)
 	require.NoError(t, err)
 	assert.Equal(t, "https://git.example.test/alice/demo.git", cloneURL)
 	assert.Empty(t, cloneToken, "public fallback clone URL must not carry a token")
@@ -189,7 +189,7 @@ func TestWorkflowSandboxScheduler_Cov_CloneURLAndVMRequestBranches(t *testing.T)
 	revoke()
 
 	worker.gitBaseURL = ""
-	_, _, _, err = worker.buildCloneURL(context.Background(), "alice", "demo", 0)
+	_, _, _, err = worker.buildCloneURL(context.Background(), 42, "alice", "demo", 0)
 	require.Error(t, err)
 
 	worker.gitBaseURL = "https://git.example.test"

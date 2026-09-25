@@ -89,6 +89,16 @@ func IfExpressionReferencesNeeds(expr string) bool {
 	return false
 }
 
+// DependentJobShouldRun applies the implicit success() guard to a job whose
+// needs have all settled. An explicit status check decides by itself.
+func DependentJobShouldRun(ifExpr string, event TriggerEvent, needsResults map[string]string) (bool, error) {
+	allSucceeded := !anyNeedsStatus(needsResults, func(result string) bool { return result != "success" })
+	if strings.TrimSpace(ifExpr) == "" || (!allSucceeded && !strings.Contains(ifExpr, "always()") && !IfExpressionReferencesNeeds(ifExpr)) {
+		return allSucceeded, nil
+	}
+	return EvaluateIfExpression(ifExpr, event, needsResults)
+}
+
 func evaluateIfAtom(expr string, event TriggerEvent, needsResults map[string]string) (bool, error) {
 	expr = strings.TrimSpace(expr)
 

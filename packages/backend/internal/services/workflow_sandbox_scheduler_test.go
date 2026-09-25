@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
@@ -36,6 +37,7 @@ type mockWorkflowSandboxSchedulerQuerier struct {
 	getRepoByIDFn                      func(ctx context.Context, id int64) (db.Repository, error)
 	getUserByIDFn                      func(ctx context.Context, id int64) (db.User, error)
 	getOrgByIDFn                       func(ctx context.Context, id int64) (db.Organization, error)
+	getOrgCredentialOwnerIDFn          func(ctx context.Context, id int64) (int64, error)
 	listWorkflowStepsByRunIDFn         func(ctx context.Context, runID int64) ([]db.WorkflowStep, error)
 	createWorkflowStepFn               func(ctx context.Context, arg db.CreateWorkflowStepParams) (db.WorkflowStep, error)
 	updateWorkflowStepStatusRunningFn  func(ctx context.Context, stepID int64) (int64, error)
@@ -55,6 +57,8 @@ type mockWorkflowSandboxSchedulerQuerier struct {
 	getWorkflowTaskFn              func(ctx context.Context, arg db.GetWorkflowTaskParams) (db.WorkflowTask, error)
 	markWorkflowTaskVMRunningFn    func(ctx context.Context, arg db.MarkWorkflowTaskVMRunningParams) (int64, error)
 	markWorkflowTaskTerminalByIDFn func(ctx context.Context, arg db.MarkWorkflowTaskTerminalByIDParams) (int64, error)
+	unblockWorkflowTaskFn          func(ctx context.Context, id int64) error
+	skipBlockedWorkflowTaskFn      func(ctx context.Context, id int64) error
 
 	markSuccessIDs         []int64
 	markFailureIDs         []int64
@@ -75,9 +79,38 @@ type mockWorkflowSandboxSchedulerQuerier struct {
 
 	// The NixOS CI executor runs a run's jobs concurrently, so every recorder
 	// this mock writes from a task goroutine is mutex-guarded.
-	mu            sync.Mutex
-	taskVMRunning []db.MarkWorkflowTaskVMRunningParams
-	terminalTasks []db.MarkWorkflowTaskTerminalByIDParams
+	mu             sync.Mutex
+	taskVMRunning  []db.MarkWorkflowTaskVMRunningParams
+	terminalTasks  []db.MarkWorkflowTaskTerminalByIDParams
+	unblockedTasks []int64
+	skippedTasks   []int64
+}
+
+func (m *mockWorkflowSandboxSchedulerQuerier) UnblockWorkflowTask(ctx context.Context, id int64) error {
+	m.mu.Lock()
+	m.unblockedTasks = append(m.unblockedTasks, id)
+	m.mu.Unlock()
+	if m.unblockWorkflowTaskFn != nil {
+		return m.unblockWorkflowTaskFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockWorkflowSandboxSchedulerQuerier) SkipBlockedWorkflowTask(ctx context.Context, id int64) error {
+	m.mu.Lock()
+	m.skippedTasks = append(m.skippedTasks, id)
+	m.mu.Unlock()
+	if m.skipBlockedWorkflowTaskFn != nil {
+		return m.skipBlockedWorkflowTaskFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockWorkflowSandboxSchedulerQuerier) GetOrgCredentialOwnerID(ctx context.Context, id int64) (int64, error) {
+	if m.getOrgCredentialOwnerIDFn != nil {
+		return m.getOrgCredentialOwnerIDFn(ctx, id)
+	}
+	return 0, pgx.ErrNoRows
 }
 
 func (m *mockWorkflowSandboxSchedulerQuerier) ClaimQueuedWorkflowRuns(ctx context.Context, limitCount int32) ([]runtimeports.ClaimQueuedWorkflowRunsRow, error) {
@@ -1506,4 +1539,80 @@ func (m *mockWorkflowSandboxSchedulerQuerier) MarkWorkflowTaskTerminalByID(ctx c
 		return m.markWorkflowTaskTerminalByIDFn(ctx, arg)
 	}
 	return arg.ID, nil
+}
+
+func TestWorkflowSandboxSchedulerWorker_OrgOwnedRepoClonesWithRepoBoundCredential(t *testing.T) {
+	t.Parallel()
+
+	var minted []db.CreateAccessTokenParams
+	queries := &mockWorkflowSandboxSchedulerQuerier{
+		claimQueuedWorkflowRunsFn: func(_ context.Context, _ int32) ([]db.WorkflowRun, error) {
+			return []db.WorkflowRun{{ID: 77, RepositoryID: 300, WorkflowDefinitionID: 7, TriggerRef: "main"}}, nil
+		},
+		getWorkflowDefinitionFn: func(_ context.Context, _ db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error) {
+			return db.WorkflowDefinition{ID: 7, RepositoryID: 300, Path: ".smithers/workflows/ci.tsx"}, nil
+		},
+		getRepoByIDFn: func(_ context.Context, id int64) (db.Repository, error) {
+			return db.Repository{ID: id, Name: "infra", OrgID: pgtype.Int8{Int64: 44, Valid: true}}, nil
+		},
+		getOrgByIDFn: func(_ context.Context, id int64) (db.Organization, error) {
+			return db.Organization{ID: id, Name: "acme"}, nil
+		},
+		getOrgCredentialOwnerIDFn: func(_ context.Context, organizationID int64) (int64, error) {
+			assert.Equal(t, int64(44), organizationID)
+			return 5, nil
+		},
+		createAccessTokenFn: func(_ context.Context, arg db.CreateAccessTokenParams) (db.AccessToken, error) {
+			minted = append(minted, arg)
+			return db.AccessToken{ID: int64(900 + len(minted))}, nil
+		},
+		listWorkflowStepsByRunIDFn: func(_ context.Context, _ int64) ([]db.WorkflowStep, error) {
+			return []db.WorkflowStep{{ID: 31, WorkflowRunID: 77, Status: "queued"}}, nil
+		},
+	}
+	sandboxClient := &mockWorkflowSandboxVMClient{}
+
+	worker := NewWorkflowSandboxSchedulerWorker(
+		queries,
+		sandboxClient,
+		WithWorkflowSandboxSchedulerGitBaseURL("https://api.smithers.test"),
+		WithWorkflowSandboxSchedulerAPIBaseURL("https://api.smithers.test/api"),
+	)
+	require.NoError(t, worker.PollOnce(context.Background()))
+	assert.Equal(t, []int64{77}, queries.markSuccessIDs)
+
+	require.Len(t, sandboxClient.createCalls, 1)
+	created := sandboxClient.createCalls[0]
+	require.NotEmpty(t, created.GitRepos)
+	cloneURL, err := url.Parse(created.GitRepos[0].Repo)
+	require.NoError(t, err)
+	assert.Equal(t, "/acme/infra.git", cloneURL.Path)
+	require.NotNil(t, cloneURL.User, "an org-owned private repository must not be cloned anonymously")
+	password, ok := cloneURL.User.Password()
+	require.True(t, ok)
+	assert.NotEmpty(t, password)
+
+	require.Len(t, minted, 1, "org repositories mint only the clone credential, never the per-run api token")
+	assert.Equal(t, int64(5), minted[0].UserID)
+	scopes := strings.Split(minted[0].Scopes, ",")
+	assert.ElementsMatch(t, []string{"read:repository", middleware.RepositoryRestrictionScope(300)}, scopes)
+	require.NotNil(t, created.Init)
+	require.Len(t, created.Init.Services, 1)
+	assert.NotContains(t, created.Init.Services[0].Env, "SMITHERS_JJHUB_TOKEN")
+
+	assert.Contains(t, queries.deleteAccessTokenCalls, db.DeleteAccessTokenParams{ID: 901, UserID: 5},
+		"the clone credential is revoked when the run ends")
+}
+
+func TestWorkflowSandboxLogStoresBinaryOutputAsText(t *testing.T) {
+	var stored string
+	queries := &mockWorkflowSandboxSchedulerQuerier{
+		insertWorkflowRunLogNextSequenceFn: func(_ context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error) {
+			stored = arg.Entry
+			return db.InsertWorkflowRunLogNextSequenceRow{Entry: arg.Entry}, nil
+		},
+	}
+	worker := &WorkflowSandboxSchedulerWorker{queries: queries}
+	require.NoError(t, worker.appendLog(context.Background(), 1, 2, "stdout", "ok\x00\xff done"))
+	assert.Equal(t, "ok\uFFFD\uFFFD done", stored)
 }

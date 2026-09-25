@@ -2,8 +2,11 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -60,6 +63,21 @@ func TestNixCIReadyTasks_SkipsDependentsOfAFailedJob(t *testing.T) {
 	assert.Empty(t, ready)
 	assert.Equal(t, []string{"test"}, nixCIJobNames(skip),
 		"a job whose dependency failed is skipped, as on the runner plane")
+}
+
+func TestNixCIReadyTasksWaitsForAllNeedsAndHonorsStatusChecks(t *testing.T) {
+	tasks := []nixCITask{
+		{ID: 2, Job: "notify", Needs: []string{"build", "lint"}, If: "always()"},
+		{ID: 3, Job: "deploy", Needs: []string{"build"}, If: `trigger.type == "push"`, Event: TriggerEvent{Type: "push"}},
+	}
+	started := map[int64]bool{1: true}
+	ready, skip := nixCIReadyTasks(tasks, map[string]nixCITaskOutcome{"build": nixCITaskFailed}, started)
+	require.Empty(t, ready, "always() must wait until every need settles")
+	assert.Equal(t, []string{"deploy"}, nixCIJobNames(skip), "ordinary if retains implicit success()")
+
+	ready, skip = nixCIReadyTasks(tasks, map[string]nixCITaskOutcome{"build": nixCITaskFailed, "lint": nixCITaskDone}, started)
+	assert.Equal(t, []string{"notify"}, nixCIJobNames(ready))
+	assert.Equal(t, []string{"deploy"}, nixCIJobNames(skip))
 }
 
 func nixCIJobNames(tasks []nixCITask) []string {
@@ -445,4 +463,171 @@ func nixCIStepStatuses(q *mockWorkflowSandboxSchedulerQuerier) map[int64]string 
 		statuses[terminal.StepID] = terminal.Status
 	}
 	return statuses
+}
+
+func streamNixCIChunks(t *testing.T, redactEnv map[string]string, chunks ...string) []string {
+	t.Helper()
+	queries := nixCIQuerier(nil)
+	worker, client := newNixCIWorker(t, queries, &fakeNixCIGuests{polls: map[string]int{}})
+	polls := 0
+	client.execAwaitFn = func(_ context.Context, _ string, _ sandbox.ExecRequest) (sandbox.ExecResult, error) {
+		ok := int32(0)
+		if polls < len(chunks) {
+			polls++
+			return sandbox.ExecResult{Stdout: chunks[polls-1], StatusCode: &ok}, nil
+		}
+		return sandbox.ExecResult{Stderr: nixCITaskExitMarker + "0", StatusCode: &ok}, nil
+	}
+	task := nixTask(1, "build")
+	code, outcome := worker.streamNixCITask(context.Background(), "vm-1", task, nixCIRunEnvironment{RedactEnv: redactEnv})
+	require.Equal(t, nixCITaskDone, outcome)
+	require.Equal(t, int32(0), code)
+	return nixCILogEntriesForStep(queries, task.StepID)
+}
+
+func TestNixCIStream_RedactsASecretSplitAcrossPolls(t *testing.T) {
+	entries := streamNixCIChunks(t, map[string]string{"TOKEN": "hunter2-secret"},
+		"deploy token=hunt", "er2-sec", "ret ok\nnext\n")
+
+	assert.Equal(t, []string{"deploy token=" + redactedSecretValue + " ok", "next"}, entries,
+		"a line split across polls is stored once, with its secret redacted")
+	for _, entry := range entries {
+		for _, fragment := range []string{"hunt", "er2", "sec"} {
+			assert.NotContains(t, entry, fragment)
+		}
+	}
+}
+
+func TestNixCIStream_FlushesTheUnterminatedLastLineAtExit(t *testing.T) {
+	entries := streamNixCIChunks(t, map[string]string{"TOKEN": "hunter2-secret"},
+		"step one\r", "\nfinal hunter2-", "secret")
+
+	assert.Equal(t, []string{"step one", "final " + redactedSecretValue}, entries)
+}
+
+func TestNixCIStream_BoundsAnEndlessLineWithoutSplittingASecret(t *testing.T) {
+	secret := "hunter2-secret"
+	// Put the secret across the forced flush point: the held-back tail is
+	// exactly len(secret)-1 bytes, so the naive cut lands inside it.
+	filler := strings.Repeat("x", nixCIMaxPendingLogBytes+2)
+	entries := streamNixCIChunks(t, map[string]string{"TOKEN": secret},
+		filler+secret, "y\n")
+
+	joined := strings.Join(entries, "")
+	assert.NotContains(t, joined, "hunter")
+	assert.Equal(t, filler+redactedSecretValue+"y", joined)
+	assert.Greater(t, len(entries), 1, "an unterminated line is flushed before it reaches the cap")
+}
+
+// nixCITokenLedger models the access-token table the git host authenticates
+// clones against: a clone credential is accepted only while it is minted and
+// not yet revoked.
+type nixCITokenLedger struct {
+	mu      sync.Mutex
+	nextID  int64
+	byHash  map[string]db.AccessToken
+	revoked map[int64]bool
+}
+
+func newNixCITokenLedger() *nixCITokenLedger {
+	return &nixCITokenLedger{byHash: map[string]db.AccessToken{}, revoked: map[int64]bool{}}
+}
+
+func (l *nixCITokenLedger) create(_ context.Context, arg db.CreateAccessTokenParams) (db.AccessToken, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.nextID++
+	token := db.AccessToken{ID: l.nextID, UserID: arg.UserID, Name: arg.Name, Scopes: arg.Scopes, ExpiresAt: arg.ExpiresAt}
+	l.byHash[arg.TokenHash] = token
+	return token, nil
+}
+
+func (l *nixCITokenLedger) delete(_ context.Context, arg db.DeleteAccessTokenParams) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.revoked[arg.ID] = true
+	return nil
+}
+
+// cloneToken resolves the credential embedded in a guest's clone URL.
+func (l *nixCITokenLedger) cloneToken(t *testing.T, cloneURL string) (db.AccessToken, bool) {
+	t.Helper()
+	parsed, err := url.Parse(cloneURL)
+	require.NoError(t, err)
+	plaintext, ok := parsed.User.Password()
+	require.True(t, ok, "the guest clone URL carries a clone token")
+	sum := sha256.Sum256([]byte(plaintext))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	token, minted := l.byHash[hex.EncodeToString(sum[:])]
+	require.True(t, minted, "the clone token was minted by the scheduler")
+	return token, !l.revoked[token.ID]
+}
+
+func (l *nixCITokenLedger) isRevoked(id int64) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.revoked[id]
+}
+
+// A run's jobs can start hours apart (a second DAG wave waits on a 120-minute
+// first wave), while a clone token lives one hour. Each guest must therefore
+// clone with a token minted for it, bound to the run's repository, and revoked
+// once the guest has cloned, never with one minted at run start.
+func TestNixCIRun_EachGuestClonesWithItsOwnRepositoryBoundToken(t *testing.T) {
+	queries := nixCIQuerier([]db.WorkflowTask{
+		nixCITaskRow(1, 11, "build", nil),
+		nixCITaskRow(2, 22, "test", []string{"build"}),
+	})
+	ledger := newNixCITokenLedger()
+	queries.createAccessTokenFn = ledger.create
+	queries.deleteAccessTokenFn = ledger.delete
+	guests := &fakeNixCIGuests{
+		polls: map[string]int{},
+		scripts: map[string]nixCIGuestScript{
+			"build": {exitCode: "0"},
+			"test":  {exitCode: "0"},
+		},
+	}
+	worker, client := newNixCIWorker(t, queries, guests)
+
+	var mu sync.Mutex
+	tokenForVM := map[string]db.AccessToken{}
+	var guestTokens []db.AccessToken
+	var revokedBeforeJob []bool
+	create := client.createVMFn
+	client.createVMFn = func(ctx context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error) {
+		require.Len(t, req.GitRepos, 1)
+		token, live := ledger.cloneToken(t, req.GitRepos[0].Repo)
+		assert.True(t, live, "the git host must accept the clone token while the guest clones")
+		result, err := create(ctx, req)
+		mu.Lock()
+		tokenForVM[result.ID] = token
+		guestTokens = append(guestTokens, token)
+		mu.Unlock()
+		return result, err
+	}
+	exec := client.execAwaitFn
+	client.execAwaitFn = func(ctx context.Context, vmID string, req sandbox.ExecRequest) (sandbox.ExecResult, error) {
+		if strings.Contains(req.Command, "SMITHERS_CI_EOF") {
+			mu.Lock()
+			revokedBeforeJob = append(revokedBeforeJob, ledger.isRevoked(tokenForVM[vmID].ID))
+			mu.Unlock()
+		}
+		return exec(ctx, vmID, req)
+	}
+
+	require.NoError(t, worker.PollOnce(context.Background()))
+
+	require.Len(t, guestTokens, 2)
+	assert.NotEqual(t, guestTokens[0].ID, guestTokens[1].ID,
+		"the second DAG wave must not reuse a clone token minted before the first wave ran")
+	for _, token := range guestTokens {
+		assert.Equal(t, "read:repository,repo:100", token.Scopes,
+			"a guest clone token reads only the run's repository")
+		assert.WithinDuration(t, time.Now().Add(temporaryRepoTokenTTL), token.ExpiresAt.Time, time.Minute)
+	}
+	assert.Equal(t, []bool{true, true}, revokedBeforeJob,
+		"each clone token is revoked once its guest has cloned, before the job runs")
+	assert.Equal(t, []int64{42}, queries.markSuccessIDs)
 }

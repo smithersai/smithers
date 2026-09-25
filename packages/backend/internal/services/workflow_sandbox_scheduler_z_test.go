@@ -236,7 +236,7 @@ func TestWorkflowSandboxScheduler_Z_FinalizeStepCloneOwnerAndEnvBranches(t *test
 		return nil
 	}
 	_, _, _, err = NewWorkflowSandboxSchedulerWorker(q, &mockWorkflowSandboxVMClient{}, WithWorkflowSandboxSchedulerGitBaseURL("://bad")).
-		buildCloneURL(ctx, "alice", "demo", 11)
+		buildCloneURL(ctx, 42, "alice", "demo", 11)
 	require.Error(t, err)
 	assert.True(t, revoked)
 

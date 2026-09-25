@@ -83,6 +83,7 @@ type WorkflowSandboxSchedulerQuerier interface {
 	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
 	GetUserByID(ctx context.Context, id int64) (db.User, error)
 	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
+	GetOrgCredentialOwnerID(ctx context.Context, organizationID int64) (int64, error)
 
 	CancelWorkflowTasks(ctx context.Context, workflowRunID int64) error
 
@@ -93,6 +94,8 @@ type WorkflowSandboxSchedulerQuerier interface {
 	GetWorkflowTask(ctx context.Context, arg db.GetWorkflowTaskParams) (db.WorkflowTask, error)
 	MarkWorkflowTaskVMRunning(ctx context.Context, arg db.MarkWorkflowTaskVMRunningParams) (int64, error)
 	MarkWorkflowTaskTerminalByID(ctx context.Context, arg db.MarkWorkflowTaskTerminalByIDParams) (int64, error)
+	UnblockWorkflowTask(ctx context.Context, id int64) error
+	SkipBlockedWorkflowTask(ctx context.Context, id int64) error
 	CreateWorkflowStep(ctx context.Context, arg db.CreateWorkflowStepParams) (db.WorkflowStep, error)
 	UpdateWorkflowStepStatusRunning(ctx context.Context, stepID int64) (int64, error)
 	UpdateWorkflowStepStatusTerminal(ctx context.Context, arg db.UpdateWorkflowStepStatusTerminalParams) (int64, error)
@@ -549,9 +552,13 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 		}
 	}
 
-	cloneURL, cloneToken, revokeCloneToken, err := w.buildCloneURL(runCtx, owner, repository.Name, cloneUserID)
-	if err != nil {
-		return w.failRun(runCtx, claim, step.ID, "failed to build clone url")
+	var cloneURL, cloneToken string
+	revokeCloneToken := func() {}
+	if !nixCI {
+		cloneURL, cloneToken, revokeCloneToken, err = w.buildCloneURL(runCtx, repository.ID, owner, repository.Name, cloneUserID)
+		if err != nil {
+			return w.failRun(runCtx, claim, step.ID, "failed to build clone url")
+		}
 	}
 	defer revokeCloneToken()
 
@@ -580,7 +587,7 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 	// call the REST API as the owning user. Best-effort: a mint failure must not
 	// fail the run (the tools simply 401 if used). Org-owned repos have no
 	// user-scoped token (cloneUserID == 0), so skip them.
-	if cloneUserID > 0 {
+	if repository.UserID.Valid && cloneUserID > 0 {
 		if apiToken, apiErr := issueTemporaryRepoAPIToken(runCtx, w.queries, cloneUserID, run.RepositoryID, fmt.Sprintf("sandbox-run-%d", run.ID)); apiErr != nil {
 			logger.Warn("failed to mint per-run jjhub api token", "error", apiErr)
 		} else {
@@ -607,15 +614,14 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 	// firewall enforced by the self-hosted sandbox network policy.
 
 	if nixCI {
-		// The clone token is spent by every guest this run boots, so it stays
-		// valid until the deferred revoke at run end rather than being revoked
-		// after the first create the way the single-VM path does.
 		return w.executeNixCIRun(runCtx, claim, nixCIRunEnvironment{
-			RepositoryID: run.RepositoryID,
-			CloneURL:     cloneURL,
-			Revision:     resolveWorkflowTargetRevision(run),
-			Secrets:      secrets,
-			RedactEnv:    redactEnv,
+			RepositoryID:   run.RepositoryID,
+			Owner:          owner,
+			RepositoryName: repository.Name,
+			CloneUserID:    cloneUserID,
+			Revision:       resolveWorkflowTargetRevision(run),
+			Secrets:        secrets,
+			RedactEnv:      redactEnv,
 		})
 	}
 
@@ -823,12 +829,24 @@ func (w *WorkflowSandboxSchedulerWorker) ensureRunningStep(ctx context.Context, 
 
 func (w *WorkflowSandboxSchedulerWorker) buildCloneURL(
 	ctx context.Context,
+	repositoryID int64,
 	owner string,
 	repo string,
 	cloneUserID int64,
 ) (string, string, func(), error) {
+	return w.buildCloneURLWithToken(ctx, owner, repo, cloneUserID, func() (temporaryRepoCloneToken, error) {
+		return issueTemporaryBoundRepoCloneToken(ctx, w.queries, cloneUserID, repositoryID, "workflow-sandbox-clone")
+	})
+}
+
+func (w *WorkflowSandboxSchedulerWorker) buildCloneURLWithToken(
+	ctx context.Context,
+	owner, repo string,
+	cloneUserID int64,
+	mint func() (temporaryRepoCloneToken, error),
+) (string, string, func(), error) {
 	if cloneUserID > 0 {
-		token, err := issueTemporaryRepoCloneToken(ctx, w.queries, cloneUserID, "workflow-sandbox-clone")
+		token, err := mint()
 		if err == nil {
 			cloneURL, cloneErr := buildAuthenticatedRepoCloneURL(w.gitBaseURL, owner, repo, token.Plaintext)
 			if cloneErr == nil {
@@ -867,8 +885,14 @@ func (w *WorkflowSandboxSchedulerWorker) resolveRepositoryOwner(
 		if orgErr != nil {
 			return db.Repository{}, "", 0, orgErr
 		}
-		// Org-owned repositories do not always have a user-scoped clone token.
-		return repository, org.Name, 0, nil
+		ownerID, ownerErr := w.queries.GetOrgCredentialOwnerID(ctx, org.ID)
+		if stdErrors.Is(ownerErr, pgx.ErrNoRows) {
+			return repository, org.Name, 0, nil
+		}
+		if ownerErr != nil {
+			return db.Repository{}, "", 0, ownerErr
+		}
+		return repository, org.Name, ownerID, nil
 	}
 	return db.Repository{}, "", 0, fmt.Errorf("repository owner not set")
 }
@@ -1015,6 +1039,7 @@ func (w *WorkflowSandboxSchedulerWorker) appendLog(
 	stream string,
 	entry string,
 ) error {
+	entry = storableWorkflowLogEntry(entry)
 	if starter, ok := w.queries.(runnerTxStarter); ok {
 		return w.appendLogWithTx(ctx, starter, runID, stepID, stream, entry)
 	}
@@ -1040,6 +1065,12 @@ func (w *WorkflowSandboxSchedulerWorker) appendLog(
 		RunID:   runID,
 		Payload: string(payloadBytes),
 	})
+}
+
+// PostgreSQL TEXT rejects NUL and invalid UTF-8. Replace them so a malformed
+// CI output line cannot strand a log batch or disappear from the run stream.
+func storableWorkflowLogEntry(entry string) string {
+	return strings.ReplaceAll(strings.ToValidUTF8(entry, "\uFFFD"), "\x00", "\uFFFD")
 }
 
 // appendLogWithTx serializes MAX(sequence)+1 allocation per workflow run on a
