@@ -604,6 +604,18 @@ func buildRouter(
 	// user-authenticated /api group below.
 	r.Route("/api/internal", func(chi.Router) {})
 
+	// The provider account pool: workspaces' Claude and Codex model calls,
+	// authenticated by the workspace's pool credential. Outside /api: calls
+	// stream for minutes, and workspace-bound credentials are confined away
+	// from the /api surface.
+	if providerConnectionHandler != nil && providerConnectionHandler.Pool != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(routes.ProviderPoolAuth)
+			r.Use(authLoader(queries, cfg.Auth))
+			r.With(middleware.RequireAuth).Post(services.ProviderPoolPath+"/*", providerConnectionHandler.Pool.ServeHTTP)
+		})
+	}
+
 	// Build the rate-limit reject observer once so both the /api route group and
 	// the long-lived SSE/WebSocket groups (mounted outside /api to avoid the 30s
 	// timeout) share the same Prometheus counter instance.
@@ -1562,6 +1574,9 @@ func buildRouter(
 			// the CLI can connect with a PAT; connecting needs write:user.
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/provider-connections", providerConnectionHandler.ListUserConnections)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/provider-connections", providerConnectionHandler.ConnectUser)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Put("/user/provider-connections/order", providerConnectionHandler.ReorderConnections)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/provider-connections/codex/device", providerConnectionHandler.StartCodexDeviceLogin)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/provider-connections/codex/device/{id}", providerConnectionHandler.PollCodexDeviceLogin)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/provider-connections/{id}", providerConnectionHandler.GetConnection)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/provider-connections/{id}", providerConnectionHandler.RevokeConnection)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/provider-connections/{id}/refresh", providerConnectionHandler.RefreshConnection)

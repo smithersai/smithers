@@ -335,6 +335,43 @@ describe("NodeControl.seatResolver Claude subscription tokens", () => {
   })
 })
 
+describe("NodeControl.seatResolver behind SMITHERS_ACCOUNT_POOL_URL", () => {
+  const pool = "https://cloud.example.test/provider-pool/"
+
+  it("sends the anthropic seat and ChatGPT-mode openai seats to the pool, other providers direct", async () => {
+    const environment = {
+      SMITHERS_ACCOUNT_POOL_URL: pool,
+      SMITHERS_ACCOUNT_POOL_PROVIDERS: "anthropic,chatgpt",
+      SMITHERS_OPENAI_AUTH: "chatgpt",
+      ANTHROPIC_API_KEY: "pool-token",
+      OPENAI_API_KEY: "pool-token",
+      CEREBRAS_API_KEY: "cerebras-key"
+    }
+    const anthropic = await Effect.runPromise(resolve(environment, "anthropic:claude-sonnet-4-6"))
+    const openai = await Effect.runPromise(resolve(environment, "openai:gpt-6-luna"))
+    const cerebras = await Effect.runPromise(resolve(environment, "cerebras:qwen-3.8-27b"))
+
+    expect((await prepared(anthropic, anthropic.modelId)).url).toBe(
+      "https://cloud.example.test/provider-pool/anthropic/v1/messages"
+    )
+    expect((await prepared(openai, openai.modelId)).url).toBe(
+      "https://cloud.example.test/provider-pool/chatgpt/codex/responses"
+    )
+    expect((await prepared(cerebras, cerebras.modelId)).url).toBe("https://api.cerebras.ai/v1/chat/completions")
+    expect(JSON.stringify(await prepared(anthropic, anthropic.modelId))).not.toContain("pool-token")
+  })
+
+  it("keeps a provider without pooled accounts on its own origin", async () => {
+    const resolved = await Effect.runPromise(resolve({
+      SMITHERS_ACCOUNT_POOL_URL: pool,
+      SMITHERS_ACCOUNT_POOL_PROVIDERS: "chatgpt",
+      ANTHROPIC_API_KEY: "repository-key"
+    }, "anthropic:claude-sonnet-4-6"))
+
+    expect((await prepared(resolved, resolved.modelId)).url).toBe("https://api.anthropic.com/v1/messages")
+  })
+})
+
 describe("NodeControl.seatResolver behind SMITHERS_MODEL_PROXY_URL", () => {
   const proxy = "https://cloud.example.test/api/model/"
 
@@ -388,7 +425,7 @@ describe("NodeControl.seatResolver behind SMITHERS_MODEL_PROXY_URL", () => {
       Effect.flip(resolve({ SMITHERS_MODEL_PROXY_URL: proxy, SMITHERS_OPENAI_AUTH: "chatgpt" }, "openai:gpt-6-luna"))
     )
 
-    expect(error.message).toBe("Set OPENAI_API_KEY to run the openai:gpt-6-luna seat through SMITHERS_MODEL_PROXY_URL")
+    expect(error.message).toBe("Set OPENAI_API_KEY to run the openai:gpt-6-luna seat through the account pool")
   })
 
   it("treats an empty proxy variable as unset", async () => {

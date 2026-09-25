@@ -32,7 +32,7 @@ func TestWorkspaceProviderBootstrapPrecedenceAndRedaction(t *testing.T) {
 				options = append(options, WithWorkspaceAgentEnvironment(&boundSecretsAgentEnvironmentProvider{bound: []sandbox.EgressProxySecret{secret}, staticAgentEnvironmentProvider: staticAgentEnvironmentProvider{config: AgentEnvironmentProvisioningConfig{ProxyBound: []string{"ANTHROPIC_API_KEY"}}}}))
 			}
 			if source != "platform" {
-				options = append(options, WithWorkspaceProviderConnections(&workspaceProviderResolver{connections: map[string]*ResolvedProviderConnection{ProviderConnectionProviderClaude: {Provider: ProviderConnectionProviderClaude, AccessToken: "subscription-private"}}}))
+				options = append(options, WithWorkspaceGitBaseURL(poolTestBaseURL), WithWorkspaceProviderConnections(&workspaceProviderPool{pools: map[string]bool{ProviderConnectionProviderClaude: true}}))
 			}
 			s := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, options...)
 			binding, err := s.resolveWorkspaceProviderBindings(context.Background(), sampleDBWorkspace("boot"))
@@ -47,8 +47,12 @@ func TestWorkspaceProviderBootstrapPrecedenceAndRedaction(t *testing.T) {
 				require.Contains(t, binding.egress.Secrets, secret)
 			}
 			if source == "subscription" {
-				require.Contains(t, binding.egress.SecretNames(), "ANTHROPIC_AUTH_TOKEN")
-				require.NotContains(t, binding.egress.SecretNames(), "ANTHROPIC_API_KEY")
+				require.Contains(t, binding.egress.SecretNames(), "ANTHROPIC_API_KEY")
+				for _, secret := range binding.egress.Secrets {
+					if secret.Name == "ANTHROPIC_API_KEY" {
+						require.Equal(t, []string{"api.example.test"}, secret.Hosts, "the account pool, not the platform key")
+					}
+				}
 			}
 			require.NotContains(t, binding.egress.SecretNames(), "UNKNOWN_KEY")
 			profile, err := renderWorkspaceAgentEnvironmentProfile(binding.environment.Env, binding.environment.ProxyBound)
@@ -118,7 +122,7 @@ func TestWorkspaceProviderBootstrapDefaultsAndExplicitChoice(t *testing.T) {
 
 func TestWorkspaceProviderBootstrapPreservesSetupOnlySecret(t *testing.T) {
 	env := &boundSecretsAgentEnvironmentProvider{staticAgentEnvironmentProvider: staticAgentEnvironmentProvider{config: AgentEnvironmentProvisioningConfig{Secrets: map[string]string{"OPENAI_API_KEY": "setup-only-private"}}}}
-	resolver := &workspaceProviderResolver{connections: map[string]*ResolvedProviderConnection{ProviderConnectionProviderCodex: {AccessToken: "subscription-private"}}}
+	resolver := &workspaceProviderPool{pools: map[string]bool{ProviderConnectionProviderCodex: true}}
 	s := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceAgentEnvironment(env), WithWorkspaceProviderConnections(resolver), WithWorkspaceProviderBootstrap(map[string]string{"OPENAI_API_KEY": "platform-private"}, ""))
 	binding, err := s.resolveWorkspaceProviderBindings(context.Background(), sampleDBWorkspace("boot"))
 	require.NoError(t, err)

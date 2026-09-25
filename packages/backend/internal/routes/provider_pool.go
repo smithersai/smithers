@@ -1,0 +1,461 @@
+package routes
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+)
+
+// The provider account pool route. A workspace's model calls for Claude and
+// Codex reach here (POST /provider-pool/{anthropic,chatgpt}/...) with the
+// workspace's pool credential instead of a provider key. The handler asks the
+// pool for the next account per request, and on a usage limit or a refused
+// credential records it and tries the next account before anything reaches
+// the caller. Provider tokens never leave this process.
+
+// ProviderPool is the account pool (services.ProviderConnectionService).
+type ProviderPool interface {
+	PickForModelCall(ctx context.Context, userID, repositoryID int64, provider string, excluded []string) (services.ProviderPoolPick, error)
+	MarkLimited(ctx context.Context, connectionID string, until time.Time) error
+	MarkRejected(ctx context.Context, connectionID string, generation int64, reason string) error
+	ForceRefresh(ctx context.Context, connectionID string) error
+}
+
+// ProviderPoolScopes binds an authenticated call to its workspace's
+// repository (services.ProviderPoolScopes).
+type ProviderPoolScopes interface {
+	Scope(ctx context.Context, info *middleware.AuthInfo) (userID, repositoryID int64, ok bool)
+}
+
+// ProviderPoolHandler serves /provider-pool/{provider}/{path}.
+type ProviderPoolHandler struct {
+	Pool   ProviderPool
+	Scopes ProviderPoolScopes
+	// Upstreams overrides a provider's origin (tests).
+	Upstreams map[string]string
+	Client    *http.Client
+	// MaxBodyBytes caps the request body; 0 means 16 MiB.
+	MaxBodyBytes int64
+}
+
+const providerPoolDefaultMaxBody = 16 << 20
+
+// ServeHTTP answers one model call from the caller's connected accounts.
+func (h *ProviderPoolHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	provider, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, services.ProviderPoolPath+"/"), "/")
+	route, ok := modelPoolRoutes[provider]
+	if !ok {
+		writeModelPoolError(w, provider, http.StatusNotFound, "not_found_error", "Unknown provider.", 0)
+		return
+	}
+	if r.Method != http.MethodPost || strings.Trim(rest, "/") != route.path {
+		writeModelPoolError(w, provider, http.StatusNotFound, "not_found_error", "Only POST "+route.path+" is served.", 0)
+		return
+	}
+	userID, repositoryID, ok := h.Scopes.Scope(r.Context(), middleware.AuthInfoFromContext(r.Context()))
+	if !ok {
+		writeModelPoolError(w, provider, http.StatusForbidden, "permission_error", "A workspace pool credential is required.", 0)
+		return
+	}
+	limit := h.MaxBodyBytes
+	if limit <= 0 {
+		limit = providerPoolDefaultMaxBody
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+	if err != nil || int64(len(body)) > limit {
+		writeModelPoolError(w, provider, http.StatusRequestEntityTooLarge, "invalid_request_error", "Request body is too large.", 0)
+		return
+	}
+	h.servePool(w, r, provider, route, body, userID, repositoryID)
+}
+
+// ProviderPoolAuth reads an Anthropic SDK's x-api-key as the bearer
+// credential, so both SDK conventions authenticate the same way. A cookie
+// alone never spends an account.
+func ProviderPoolAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("Authorization")) == "" {
+			key := strings.TrimSpace(r.Header.Get("X-Api-Key"))
+			if key == "" {
+				writeModelPoolError(w, "", http.StatusUnauthorized, "authentication_error", "Authentication required.", 0)
+				return
+			}
+			r.Header.Set("Authorization", "Bearer "+key)
+		}
+		r.Header.Del("Cookie")
+		next.ServeHTTP(w, r)
+	})
+}
+
+const (
+	claudeCodeIdentity    = "You are Claude Code, Anthropic's official CLI for Claude."
+	anthropicOAuthBeta    = "oauth-2025-04-20"
+	modelPoolMaxAttempts  = 8
+	modelPoolDefaultLimit = 5 * time.Minute
+	modelPoolMinLimit     = 30 * time.Second
+	modelPoolMaxLimit     = 7 * 24 * time.Hour
+)
+
+// modelPoolRoute is one proxied path that may draw on a pool: the pool's
+// provider, the exact inference path, and the upstream origin.
+type modelPoolRoute struct {
+	pool     string
+	path     string
+	upstream string
+}
+
+var modelPoolRoutes = map[string]modelPoolRoute{
+	"anthropic": {pool: services.ProviderConnectionProviderClaude, path: "v1/messages", upstream: "https://api.anthropic.com"},
+	"chatgpt":   {pool: services.ProviderConnectionProviderCodex, path: "codex/responses", upstream: "https://chatgpt.com/backend-api"},
+}
+
+var modelPoolClient = &http.Client{
+	Timeout: 15 * time.Minute,
+	// A provider redirect must never carry an account credential elsewhere.
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// servePool answers the call from the pool, trying accounts until one
+// takes it or none is left.
+func (h *ProviderPoolHandler) servePool(w http.ResponseWriter, r *http.Request, provider string, route modelPoolRoute, body []byte, userID, repositoryID int64) {
+	ctx := r.Context()
+	var tried []string
+	refreshed := map[string]bool{}
+	var pick services.ProviderPoolPick
+	for attempt := 0; attempt < modelPoolMaxAttempts; attempt++ {
+		var err error
+		pick, err = h.Pool.PickForModelCall(ctx, userID, repositoryID, route.pool, tried)
+		if err != nil {
+			slog.Error("provider pool pick failed", "provider", route.pool, "repository_id", repositoryID, "error", err)
+			writeModelPoolError(w, provider, http.StatusBadGateway, "api_error", "Connected accounts are unavailable.", 0)
+			return
+		}
+		if !pick.Pooled {
+			writeModelPoolError(w, provider, http.StatusNotFound, "not_found_error", "No connected account serves this repository.", 0)
+			return
+		}
+		conn := pick.Connection
+		if conn == nil {
+			break
+		}
+		tried = append(tried, conn.ConnectionID)
+		resp, err := h.sendPooled(ctx, provider, route, r.Header, body, conn)
+		if err != nil {
+			// The request may have reached the provider; retrying could
+			// duplicate a generation.
+			writeModelPoolError(w, provider, http.StatusBadGateway, "api_error", "Model provider unreachable.", 0)
+			return
+		}
+		switch {
+		case resp.StatusCode == http.StatusTooManyRequests:
+			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+			_ = resp.Body.Close()
+			until := modelPoolLimitReset(resp.Header, raw, time.Now())
+			if err := h.Pool.MarkLimited(context.WithoutCancel(ctx), conn.ConnectionID, until); err != nil {
+				slog.Warn("mark provider connection limited failed", "connection_id", conn.ConnectionID, "error", err)
+			}
+			continue
+		case resp.StatusCode == http.StatusUnauthorized:
+			_ = resp.Body.Close()
+			// A refused OAuth token is refreshed once and the account tried
+			// again; a setup token, an API key, or a token refused again
+			// after its refresh needs a new sign-in.
+			if conn.HasRefreshToken && !refreshed[conn.ConnectionID] && h.Pool.ForceRefresh(context.WithoutCancel(ctx), conn.ConnectionID) == nil {
+				refreshed[conn.ConnectionID] = true
+				tried = tried[:len(tried)-1]
+				continue
+			}
+			if err := h.Pool.MarkRejected(context.WithoutCancel(ctx), conn.ConnectionID, conn.RefreshGeneration, "provider refused the credential (401)"); err != nil {
+				slog.Warn("mark provider connection rejected failed", "connection_id", conn.ConnectionID, "error", err)
+			}
+			continue
+		}
+		h.relayPooled(ctx, w, resp, conn)
+		return
+	}
+	writeModelPoolExhausted(w, provider, pick)
+}
+
+func (h *ProviderPoolHandler) sendPooled(ctx context.Context, provider string, route modelPoolRoute, in http.Header, body []byte, conn *services.ResolvedProviderConnection) (*http.Response, error) {
+	upstream := route.upstream
+	if override, ok := h.Upstreams[provider]; ok {
+		upstream = override
+	}
+	out := http.Header{}
+	copyProviderPoolHeaders(out, in)
+	switch provider {
+	case "anthropic":
+		if out.Get("Anthropic-Version") == "" {
+			out.Set("Anthropic-Version", "2023-06-01")
+		}
+		if conn.Kind == services.ProviderConnectionKindAPIKey {
+			out.Set("X-Api-Key", conn.AccessToken)
+			break
+		}
+		out.Set("Authorization", "Bearer "+conn.AccessToken)
+		out.Set("Anthropic-Beta", withBeta(out.Get("Anthropic-Beta"), anthropicOAuthBeta))
+		body = withClaudeCodeIdentity(body)
+	case "chatgpt":
+		for _, name := range []string{"Originator", "Session_id", "Version", "Conversation_id"} {
+			if value := in.Get(name); value != "" {
+				out.Set(name, value)
+			}
+		}
+		out.Set("Authorization", "Bearer "+conn.AccessToken)
+		out.Set("Chatgpt-Account-Id", conn.AccountID)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(upstream, "/")+"/"+route.path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header = out
+	req.ContentLength = int64(len(body))
+	client := h.Client
+	if client == nil {
+		client = modelPoolClient
+	}
+	return client.Do(req)
+}
+
+// relayPooled streams the provider's answer to the caller. A usage limit
+// reported inside an already-started stream cannot be retried (the caller
+// has seen output), but the account is still parked for later requests.
+func (h *ProviderPoolHandler) relayPooled(ctx context.Context, w http.ResponseWriter, resp *http.Response, conn *services.ResolvedProviderConnection) {
+	defer func() { _ = resp.Body.Close() }()
+	copyProviderPoolResponseHeaders(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		_, _ = io.Copy(w, io.LimitReader(resp.Body, providerPoolDefaultMaxBody))
+		return
+	}
+	flusher, _ := w.(http.Flusher)
+	reader := bufio.NewReaderSize(resp.Body, 64<<10)
+	limited := false
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			if _, writeErr := w.Write(line); writeErr == nil && flusher != nil {
+				flusher.Flush()
+			}
+			if !limited && modelPoolStreamLimit(line) {
+				limited = true
+				payload := bytes.TrimSpace(bytes.TrimPrefix(bytes.TrimSpace(line), []byte("data:")))
+				until := modelPoolLimitReset(resp.Header, payload, time.Now())
+				if markErr := h.Pool.MarkLimited(context.WithoutCancel(ctx), conn.ConnectionID, until); markErr != nil {
+					slog.Warn("mark provider connection limited failed", "connection_id", conn.ConnectionID, "error", markErr)
+				}
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// modelPoolStreamLimit reports an SSE data line that ends the stream on a
+// usage or rate limit: Anthropic's `error` event or the Responses
+// `response.failed` / `error` events.
+func modelPoolStreamLimit(line []byte) bool {
+	payload := bytes.TrimSpace(line)
+	if !bytes.HasPrefix(payload, []byte("data:")) {
+		return false
+	}
+	payload = bytes.TrimSpace(payload[len("data:"):])
+	if !bytes.Contains(payload, []byte("limit")) {
+		return false
+	}
+	var event struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(payload, &event) != nil {
+		return false
+	}
+	if event.Type != "error" && event.Type != "response.failed" {
+		return false
+	}
+	return bytes.Contains(payload, []byte("rate_limit")) || bytes.Contains(payload, []byte("usage_limit"))
+}
+
+// modelPoolLimitReset reads when a limited account resets: an explicit
+// reset in the body (Codex resets_at / resets_in_seconds), Retry-After, or
+// Anthropic's unified reset; otherwise a short default. Clamped so a bad
+// value neither hammers the account nor parks it for good.
+func modelPoolLimitReset(header http.Header, body []byte, now time.Time) time.Time {
+	var reset time.Time
+	var doc struct {
+		Error struct {
+			ResetsAt        json.Number `json:"resets_at"`
+			ResetsInSeconds json.Number `json:"resets_in_seconds"`
+		} `json:"error"`
+		Response struct {
+			Error struct {
+				ResetsAt        json.Number `json:"resets_at"`
+				ResetsInSeconds json.Number `json:"resets_in_seconds"`
+			} `json:"error"`
+		} `json:"response"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if decoder.Decode(&doc) == nil {
+		for _, pair := range [][2]json.Number{{doc.Error.ResetsAt, doc.Error.ResetsInSeconds}, {doc.Response.Error.ResetsAt, doc.Response.Error.ResetsInSeconds}} {
+			if at, err := pair[0].Float64(); err == nil && at > 0 {
+				reset = time.Unix(int64(at), 0)
+				break
+			}
+			if in, err := pair[1].Float64(); err == nil && in > 0 {
+				reset = now.Add(time.Duration(in) * time.Second)
+				break
+			}
+		}
+	}
+	if reset.IsZero() {
+		if value := strings.TrimSpace(header.Get("Retry-After")); value != "" {
+			if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
+				reset = now.Add(time.Duration(seconds) * time.Second)
+			} else if at, err := http.ParseTime(value); err == nil {
+				reset = at
+			}
+		}
+	}
+	if reset.IsZero() {
+		if value := strings.TrimSpace(header.Get("Anthropic-Ratelimit-Unified-Reset")); value != "" {
+			if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds > 0 {
+				reset = time.Unix(seconds, 0)
+			} else if at, err := time.Parse(time.RFC3339, value); err == nil {
+				reset = at
+			}
+		}
+	}
+	if reset.IsZero() {
+		reset = now.Add(modelPoolDefaultLimit)
+	}
+	if reset.Before(now.Add(modelPoolMinLimit)) {
+		reset = now.Add(modelPoolMinLimit)
+	}
+	if reset.After(now.Add(modelPoolMaxLimit)) {
+		reset = now.Add(modelPoolMaxLimit)
+	}
+	return reset
+}
+
+func withBeta(existing, beta string) string {
+	for _, part := range strings.Split(existing, ",") {
+		if strings.TrimSpace(part) == beta {
+			return existing
+		}
+	}
+	if strings.TrimSpace(existing) == "" {
+		return beta
+	}
+	return existing + "," + beta
+}
+
+// withClaudeCodeIdentity leads the system prompt with the Claude Code
+// identity a subscription credential requires. The body is otherwise
+// unchanged; an unreadable body is forwarded as is for the provider to refuse.
+func withClaudeCodeIdentity(body []byte) []byte {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(body, &fields) != nil {
+		return body
+	}
+	identity := map[string]string{"type": "text", "text": claudeCodeIdentity}
+	var blocks []json.RawMessage
+	if raw, ok := fields["system"]; ok && string(raw) != "null" {
+		var text string
+		if json.Unmarshal(raw, &text) == nil {
+			if strings.HasPrefix(text, claudeCodeIdentity) {
+				return body
+			}
+			encoded, _ := json.Marshal(map[string]string{"type": "text", "text": text})
+			blocks = []json.RawMessage{encoded}
+		} else if json.Unmarshal(raw, &blocks) == nil {
+			var first struct {
+				Text string `json:"text"`
+			}
+			if len(blocks) > 0 && json.Unmarshal(blocks[0], &first) == nil && strings.HasPrefix(first.Text, claudeCodeIdentity) {
+				return body
+			}
+		} else {
+			return body
+		}
+	}
+	encoded, _ := json.Marshal(identity)
+	system, err := json.Marshal(append([]json.RawMessage{encoded}, blocks...))
+	if err != nil {
+		return body
+	}
+	fields["system"] = system
+	rebuilt, err := json.Marshal(fields)
+	if err != nil {
+		return body
+	}
+	return rebuilt
+}
+
+// writeModelPoolError answers in the provider's own error shape so the
+// caller's SDK classifies it (rate limit, authentication, not found).
+func writeModelPoolError(w http.ResponseWriter, provider string, status int, kind, message string, retryAfter time.Duration) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "private, no-store")
+	if retryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Round(time.Second)/time.Second)))
+	}
+	w.WriteHeader(status)
+	var doc any
+	if provider == "anthropic" {
+		doc = map[string]any{"type": "error", "error": map[string]any{"type": kind, "message": message}}
+	} else {
+		doc = map[string]any{"error": map[string]any{"type": kind, "message": message}}
+	}
+	_ = json.NewEncoder(w).Encode(doc)
+}
+
+// writeModelPoolExhausted answers when no account of the pool can take the
+// call: all parked on usage limits (429 until the earliest reset), all
+// needing a new sign-in (401), or every account tried for this call (503).
+func writeModelPoolExhausted(w http.ResponseWriter, provider string, pick services.ProviderPoolPick) {
+	now := time.Now()
+	switch {
+	case pick.Pooled && pick.Reconnect:
+		writeModelPoolError(w, provider, http.StatusUnauthorized, "authentication_error", "Every connected account needs a reconnect.", 0)
+	case !pick.NextReset.IsZero() && pick.NextReset.After(now):
+		kind := "rate_limit_error"
+		if provider == "chatgpt" {
+			kind = "usage_limit_reached"
+		}
+		writeModelPoolError(w, provider, http.StatusTooManyRequests, kind, "Every connected account is at its usage limit.", pick.NextReset.Sub(now))
+	default:
+		writeModelPoolError(w, provider, http.StatusServiceUnavailable, "overloaded_error", "No connected account could take the request.", 30*time.Second)
+	}
+}
+
+// copyProviderPoolHeaders forwards the request headers a provider reads and
+// nothing that could carry the caller's Smithers credential.
+func copyProviderPoolHeaders(dst, src http.Header) {
+	for _, name := range []string{"Content-Type", "Accept", "Anthropic-Version", "Anthropic-Beta", "OpenAI-Beta", "User-Agent"} {
+		if value := src.Get(name); value != "" {
+			dst.Set(name, value)
+		}
+	}
+	if dst.Get("Content-Type") == "" {
+		dst.Set("Content-Type", "application/json")
+	}
+}
+
+func copyProviderPoolResponseHeaders(dst, src http.Header) {
+	for _, name := range []string{"Content-Type", "Cache-Control", "Request-Id", "X-Request-Id", "Retry-After"} {
+		if value := src.Get(name); value != "" {
+			dst.Set(name, value)
+		}
+	}
+}

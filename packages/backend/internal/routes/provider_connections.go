@@ -25,10 +25,16 @@ type ProviderConnectionRouteService interface {
 	RefreshNow(ctx context.Context, actor *db.User, id string) (services.ProviderConnectionResponse, error)
 	AddGrant(ctx context.Context, actor *db.User, id string, in services.ProviderConnectionGrantInput) (services.ProviderConnectionGrantResponse, error)
 	DeleteGrant(ctx context.Context, actor *db.User, id string, grantID int64) error
+	Reorder(ctx context.Context, actor *db.User, provider string, ids []string) error
+	StartCodexDeviceLogin(ctx context.Context, actor *db.User) (services.ProviderDeviceLoginResponse, error)
+	PollCodexDeviceLogin(ctx context.Context, actor *db.User, id string) (services.ProviderDeviceLoginResponse, error)
 }
 
 type ProviderConnectionHandler struct {
 	Service ProviderConnectionRouteService
+	// Pool serves workspaces' model calls from connected accounts; nil
+	// leaves /provider-pool unmounted.
+	Pool *ProviderPoolHandler
 }
 
 // ListUserConnections handles GET /api/user/provider-connections.
@@ -185,4 +191,56 @@ func (h *ProviderConnectionHandler) ConnectOrg(w http.ResponseWriter, r *http.Re
 		return
 	}
 	errors.WriteJSON(w, http.StatusCreated, out)
+}
+
+// ReorderConnections handles PUT /api/user/provider-connections/order: the
+// rotation order of one provider's accounts.
+func (h *ProviderConnectionHandler) ReorderConnections(w http.ResponseWriter, r *http.Request) {
+	actor, err := requireRouteUser(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	var in struct {
+		Provider string   `json:"provider"`
+		IDs      []string `json:"ids"`
+	}
+	if !decodeJSONBody(w, r, &in) {
+		return
+	}
+	if err := h.Service.Reorder(r.Context(), actor, in.Provider, in.IDs); err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// StartCodexDeviceLogin handles POST /api/user/provider-connections/codex/device.
+func (h *ProviderConnectionHandler) StartCodexDeviceLogin(w http.ResponseWriter, r *http.Request) {
+	actor, err := requireRouteUser(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	out, err := h.Service.StartCodexDeviceLogin(r.Context(), actor)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	errors.WriteJSON(w, http.StatusCreated, out)
+}
+
+// PollCodexDeviceLogin handles POST /api/user/provider-connections/codex/device/{id}.
+func (h *ProviderConnectionHandler) PollCodexDeviceLogin(w http.ResponseWriter, r *http.Request) {
+	actor, err := requireRouteUser(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	out, err := h.Service.PollCodexDeviceLogin(r.Context(), actor, chi.URLParam(r, "id"))
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	errors.WriteJSON(w, http.StatusOK, out)
 }

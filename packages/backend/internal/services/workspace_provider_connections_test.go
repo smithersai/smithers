@@ -11,39 +11,48 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
-type workspaceProviderResolver struct {
-	connections          map[string]*ResolvedProviderConnection
+const poolTestBaseURL = "https://api.example.test"
+
+// workspaceProviderPool is a pool fake: which providers have connected
+// accounts for the workspace's repository.
+type workspaceProviderPool struct {
+	pools                map[string]bool
 	calls                []string
 	userID, repositoryID int64
 	err                  error
 }
 
-func (r *workspaceProviderResolver) ResolveForRun(_ context.Context, userID, repositoryID int64, provider string) (*ResolvedProviderConnection, error) {
-	r.calls = append(r.calls, provider)
-	r.userID, r.repositoryID = userID, repositoryID
-	return r.connections[provider], r.err
+func (p *workspaceProviderPool) HasPool(_ context.Context, userID, repositoryID int64, provider string) (bool, error) {
+	p.calls = append(p.calls, provider)
+	p.userID, p.repositoryID = userID, repositoryID
+	return p.pools[provider], p.err
 }
 
-func TestWorkspaceProviderConnectionsProvisioning(t *testing.T) {
+func poolTokenQuerier(minted *[]db.CreateAccessTokenParams) *mockWorkspaceQuerier {
+	return &mockWorkspaceQuerier{createAccessTokenFn: func(_ context.Context, arg db.CreateAccessTokenParams) (db.AccessToken, error) {
+		*minted = append(*minted, arg)
+		return db.AccessToken{ID: int64(len(*minted)), UserID: arg.UserID, Name: arg.Name, Scopes: arg.Scopes}, nil
+	}}
+}
+
+func TestWorkspaceProviderPoolProvisioning(t *testing.T) {
 	for _, kind := range []string{"container", "vm"} {
 		for _, path := range []string{"create", "snapshot", "fork", "resume"} {
-			for _, provider := range []string{ProviderConnectionProviderCodex, ProviderConnectionProviderClaude, "both", "none", "platform"} {
+			for _, provider := range []string{ProviderConnectionProviderCodex, ProviderConnectionProviderClaude, "both", "none"} {
 				t.Run(kind+"/"+path+"/"+provider, func(t *testing.T) {
 					ctx := context.Background()
 					workspace := sampleDBWorkspace("ws-byok")
 					workspace.Kind = kind
 					workspace.UserID = 42
-					resolver := &workspaceProviderResolver{connections: map[string]*ResolvedProviderConnection{}}
-					if provider != "none" && provider != "platform" {
-						for _, p := range []string{ProviderConnectionProviderCodex, ProviderConnectionProviderClaude} {
-							if provider == p || provider == "both" {
-								resolver.connections[p] = &ResolvedProviderConnection{Provider: p, AccessToken: "subscription-token-" + p, AccountID: "account-123"}
-							}
-						}
-					}
+					pool := &workspaceProviderPool{pools: map[string]bool{
+						ProviderConnectionProviderCodex:  provider == ProviderConnectionProviderCodex || provider == "both",
+						ProviderConnectionProviderClaude: provider == ProviderConnectionProviderClaude || provider == "both",
+					}}
+					var minted []db.CreateAccessTokenParams
 					var policy *sandbox.EgressProxyPolicy
 					files := map[string]string{}
 					var commands []string
@@ -56,9 +65,6 @@ func TestWorkspaceProviderConnectionsProvisioning(t *testing.T) {
 						createVMFn: func(_ context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error) {
 							policy = req.EgressProxy
 							captureFiles(req.Files)
-							services, err := json.Marshal(req.Init)
-							require.NoError(t, err)
-							assert.NotContains(t, string(services), "subscription-token-")
 							return sandbox.CreateResult{ID: "vm-byok"}, nil
 						},
 						forkVMFn: func(_ context.Context, _ string, req sandbox.ForkRequest) (sandbox.CreateResult, error) {
@@ -80,13 +86,9 @@ func TestWorkspaceProviderConnectionsProvisioning(t *testing.T) {
 							return sandbox.ExecResult{StatusCode: &status}, nil
 						},
 					}
-					options := []WorkspaceServiceOption{WithWorkspaceSandboxClient(client), WithWorkspaceEnvironmentImages(&stubEnvironmentImageResolver{image: nixTestImage(kind)})}
-					if provider == "platform" {
-						options = append(options, WithWorkspaceProviderBootstrap(map[string]string{"CEREBRAS_API_KEY": "platform-private-cerebras"}, ""))
-					} else {
-						options = append(options, WithWorkspaceProviderConnections(resolver))
-					}
-					service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, options...)
+					service := newWorkspaceServiceForTests(poolTokenQuerier(&minted), WithWorkspaceSandboxClient(client),
+						WithWorkspaceEnvironmentImages(&stubEnvironmentImageResolver{image: nixTestImage(kind)}),
+						WithWorkspaceGitBaseURL(poolTestBaseURL), WithWorkspaceProviderConnections(pool))
 					var err error
 					switch path {
 					case "create":
@@ -103,57 +105,50 @@ func TestWorkspaceProviderConnectionsProvisioning(t *testing.T) {
 						_, err = service.resumeWorkspaceVM(ctx, workspace)
 					}
 					require.NoError(t, err)
-					if provider == "platform" {
-						assert.Empty(t, resolver.calls)
-					} else {
-						assert.Equal(t, []string{ProviderConnectionProviderCodex, ProviderConnectionProviderClaude}, resolver.calls)
-						assert.Equal(t, workspace.UserID, resolver.userID, "credentials belong to the workspace owner, not the caller")
-						assert.Equal(t, workspace.RepositoryID, resolver.repositoryID)
-					}
+					assert.Equal(t, []string{ProviderConnectionProviderClaude, ProviderConnectionProviderCodex}, pool.calls)
+					assert.Equal(t, workspace.UserID, pool.userID, "accounts belong to the workspace owner, not the caller")
+					assert.Equal(t, workspace.RepositoryID, pool.repositoryID)
 					require.NotNil(t, policy)
 					profile := files[workspaceAgentEnvironmentProfilePath]
-					if provider == "platform" {
-						secret, _ := ProviderCredentialEgressSecret("CEREBRAS_API_KEY", "platform-private-cerebras")
-						assert.Contains(t, policy.Secrets, secret)
-						assert.Contains(t, profile, "export CEREBRAS_API_KEY='"+sandbox.EgressProxyPlaceholder("CEREBRAS_API_KEY")+"'")
-						assert.Contains(t, profile, "export SMITHERS_CODING_IMPLEMENT_MODEL='cerebras:gpt-oss-120b'")
-					}
-					if resolver.connections[ProviderConnectionProviderCodex] != nil {
-						assert.Contains(t, policy.Secrets, CodexProxySecret("subscription-token-codex"))
-						assert.Contains(t, profile, "export CODEX_HOME='"+codexHomeGuestPath+"'")
-						assert.Contains(t, profile, "export SMITHERS_OPENAI_AUTH='chatgpt'")
-						var auth map[string]any
-						require.NoError(t, json.Unmarshal([]byte(files[codexAuthGuestPath]), &auth))
-						assert.Equal(t, "chatgpt", auth["auth_mode"])
-						assert.Equal(t, sandbox.EgressProxyPlaceholder(codexAccessTokenEnvName), auth["tokens"].(map[string]any)["access_token"])
-						assert.Contains(t, strings.Join(commands, "\n"), "chown 'developer:developer' '"+codexHomeGuestPath+"' '"+codexAuthGuestPath+"'")
-					} else {
-						assert.NotContains(t, files, codexAuthGuestPath)
-						assert.NotContains(t, profile, "CODEX_HOME")
-					}
-					if resolver.connections[ProviderConnectionProviderClaude] != nil {
-						for _, secret := range ClaudeProxySecrets("subscription-token-claude") {
-							assert.Contains(t, policy.Secrets, secret)
-							assert.Contains(t, profile, "export "+secret.Name+"='"+sandbox.EgressProxyPlaceholder(secret.Name)+"'")
-						}
-						assert.NotContains(t, policy.SecretNames(), "ANTHROPIC_API_KEY")
-					}
 					if provider == "none" {
 						assert.Empty(t, policy.Secrets)
+						assert.Empty(t, minted)
+						assert.NotContains(t, profile, ProviderPoolURLEnvName)
+						return
 					}
-					for path, content := range files {
-						assert.NotContains(t, content, "subscription-token-", path)
-						assert.NotContains(t, content, "platform-private-", path)
+					require.Len(t, minted, 1, "one pool credential per boot")
+					assert.Equal(t, "provider-pool-workspace-"+workspace.ID, minted[0].Name)
+					assert.Equal(t, ProviderPoolTokenScopes(workspace.RepositoryID, workspace.ID), minted[0].Scopes)
+					assert.Contains(t, profile, "export "+ProviderPoolURLEnvName+"='"+poolTestBaseURL+ProviderPoolPath+"'")
+					routes := map[string]string{ProviderConnectionProviderClaude: "anthropic", ProviderConnectionProviderCodex: "chatgpt", "both": "anthropic,chatgpt"}[provider]
+					assert.Contains(t, profile, "export "+ProviderPoolProvidersEnvName+"='"+routes+"'")
+					for _, secret := range policy.Secrets {
+						assert.Equal(t, []string{"api.example.test"}, secret.Hosts, "pool seats are bound to the API host only")
 					}
-					assert.NotContains(t, strings.Join(commands, "\n"), "subscription-token-")
-					assert.NotContains(t, strings.Join(commands, "\n"), "platform-private-")
+					names := policy.SecretNames()
+					if pool.pools[ProviderConnectionProviderClaude] {
+						assert.Contains(t, names, "ANTHROPIC_API_KEY")
+					}
+					if pool.pools[ProviderConnectionProviderCodex] {
+						assert.Contains(t, names, "OPENAI_API_KEY")
+						assert.Contains(t, profile, "export SMITHERS_OPENAI_AUTH='chatgpt'")
+					} else {
+						assert.NotContains(t, profile, "SMITHERS_OPENAI_AUTH")
+					}
+					assert.NotContains(t, files, codexAuthGuestPath, "no provider session file enters the guest")
+					for _, secret := range policy.Secrets {
+						for path, content := range files {
+							assert.NotContains(t, content, secret.Value, path)
+						}
+						assert.NotContains(t, strings.Join(commands, "\n"), secret.Value)
+					}
 				})
 			}
 		}
 	}
 }
 
-func TestWorkspaceProviderConnectionsRepositorySecretPrecedence(t *testing.T) {
+func TestWorkspaceProviderPoolRepositorySecretPrecedence(t *testing.T) {
 	for _, bound := range []bool{true, false} {
 		t.Run(map[bool]string{true: "proxy", false: "setup"}[bound], func(t *testing.T) {
 			env := &boundSecretsAgentEnvironmentProvider{}
@@ -169,11 +164,11 @@ func TestWorkspaceProviderConnectionsRepositorySecretPrecedence(t *testing.T) {
 					config.Secrets[key] = "repo-key"
 				}
 			}
-			resolver := &workspaceProviderResolver{err: errors.New("must not resolve a shadowed subscription")}
-			service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceAgentEnvironment(env), WithWorkspaceProviderConnections(resolver))
+			pool := &workspaceProviderPool{err: errors.New("must not consult a shadowed pool")}
+			service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceAgentEnvironment(env), WithWorkspaceGitBaseURL(poolTestBaseURL), WithWorkspaceProviderConnections(pool))
 			binding, err := service.resolveWorkspaceProviderBindings(context.Background(), sampleDBWorkspace("ws-explicit"))
 			require.NoError(t, err)
-			assert.Empty(t, resolver.calls)
+			assert.Empty(t, pool.calls)
 			assert.Equal(t, env.bound, binding.egress.Secrets)
 			assert.Empty(t, binding.files)
 			assert.Equal(t, *config, binding.environment)
@@ -181,24 +176,25 @@ func TestWorkspaceProviderConnectionsRepositorySecretPrecedence(t *testing.T) {
 	}
 }
 
-func TestWorkspaceProviderConnectionsClaudeReplacesPlatformKey(t *testing.T) {
-	// The production loader currently returns repo bindings only. Model a
-	// platform policy separately from the explicit repository config.
-	env := &boundSecretsAgentEnvironmentProvider{bound: []sandbox.EgressProxySecret{{Name: "ANTHROPIC_API_KEY", Value: "platform-key", Hosts: []string{claudeAPIHost}, MatchHeaders: []string{"x-api-key"}}}}
-	resolver := &workspaceProviderResolver{connections: map[string]*ResolvedProviderConnection{ProviderConnectionProviderClaude: {Provider: ProviderConnectionProviderClaude, AccessToken: "subscription-token"}}}
-	service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceAgentEnvironment(env), WithWorkspaceProviderConnections(resolver))
+func TestWorkspaceProviderPoolReplacesPlatformKey(t *testing.T) {
+	var minted []db.CreateAccessTokenParams
+	pool := &workspaceProviderPool{pools: map[string]bool{ProviderConnectionProviderClaude: true}}
+	service := newWorkspaceServiceForTests(poolTokenQuerier(&minted), WithWorkspaceGitBaseURL(poolTestBaseURL),
+		WithWorkspaceProviderBootstrap(map[string]string{"ANTHROPIC_API_KEY": "sk-ant-platform-private"}, ""), WithWorkspaceProviderConnections(pool))
 	binding, err := service.resolveWorkspaceProviderBindings(context.Background(), sampleDBWorkspace("ws-platform"))
 	require.NoError(t, err)
-	assert.ElementsMatch(t, ClaudeProxySecrets("subscription-token"), binding.egress.Secrets)
+	require.Len(t, binding.egress.Secrets, 1)
+	assert.Equal(t, "ANTHROPIC_API_KEY", binding.egress.Secrets[0].Name)
+	assert.Equal(t, []string{"api.example.test"}, binding.egress.Secrets[0].Hosts, "the pool, not the platform key on the provider host")
+	assert.NotEqual(t, "sk-ant-platform-private", binding.egress.Secrets[0].Value)
+	assert.Equal(t, "anthropic:claude-sonnet-4-6", bootstrapModel(binding.environment))
 	profile, err := renderWorkspaceAgentEnvironmentProfile(binding.environment.Env, binding.environment.ProxyBound)
 	require.NoError(t, err)
-	assert.NotContains(t, profile, "ANTHROPIC_API_KEY")
-	assert.NotContains(t, profile, "platform-key")
-	assert.NotContains(t, profile, "subscription-token")
+	assert.NotContains(t, profile, "private")
 }
 
-func TestWorkspaceProviderConnectionsNoConnectionPreservesRequest(t *testing.T) {
-	service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceProviderConnections(&workspaceProviderResolver{}))
+func TestWorkspaceProviderPoolNoConnectionPreservesRequest(t *testing.T) {
+	service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceGitBaseURL(poolTestBaseURL), WithWorkspaceProviderConnections(&workspaceProviderPool{}))
 	req, err := service.buildWorkspaceVMRequest(context.Background(), "", nil, 101, "container")
 	require.NoError(t, err)
 	before, err := json.Marshal(req)
@@ -211,9 +207,9 @@ func TestWorkspaceProviderConnectionsNoConnectionPreservesRequest(t *testing.T) 
 	assert.JSONEq(t, string(before), string(after))
 }
 
-func TestWorkspaceProviderConnectionsResolutionFailurePreventsBoot(t *testing.T) {
-	resolver := &workspaceProviderResolver{err: errors.New("secret-token-in-upstream-error")}
-	service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceProviderConnections(resolver), WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
+func TestWorkspaceProviderPoolFailurePreventsBoot(t *testing.T) {
+	pool := &workspaceProviderPool{err: errors.New("secret-token-in-upstream-error")}
+	service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceGitBaseURL(poolTestBaseURL), WithWorkspaceProviderConnections(pool), WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
 		createVMFn: func(context.Context, sandbox.CreateRequest) (sandbox.CreateResult, error) {
 			t.Fatal("must not boot")
 			return sandbox.CreateResult{}, nil
@@ -232,30 +228,74 @@ func TestWorkspaceProviderConnectionsResolutionFailurePreventsBoot(t *testing.T)
 	assert.NotContains(t, err.Error(), "secret-token")
 }
 
-func TestWorkspaceProviderConnectionsPrecedenceIsPerProvider(t *testing.T) {
+func TestWorkspaceProviderPoolPrecedenceIsPerProvider(t *testing.T) {
 	for _, key := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
 		t.Run(key, func(t *testing.T) {
 			env := &boundSecretsAgentEnvironmentProvider{bound: []sandbox.EgressProxySecret{{Name: key, Value: "repo-key", Hosts: []string{"api.example.com"}, MatchHeaders: []string{"authorization"}}}}
 			env.config.ProxyBound = []string{key}
-			resolver := &workspaceProviderResolver{connections: map[string]*ResolvedProviderConnection{
-				ProviderConnectionProviderCodex:  {Provider: ProviderConnectionProviderCodex, AccessToken: "codex-token"},
-				ProviderConnectionProviderClaude: {Provider: ProviderConnectionProviderClaude, AccessToken: "claude-token"},
-			}}
-			service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceAgentEnvironment(env), WithWorkspaceProviderConnections(resolver))
+			pool := &workspaceProviderPool{pools: map[string]bool{ProviderConnectionProviderCodex: true, ProviderConnectionProviderClaude: true}}
+			service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceAgentEnvironment(env), WithWorkspaceGitBaseURL(poolTestBaseURL), WithWorkspaceProviderConnections(pool))
 			binding, err := service.resolveWorkspaceProviderBindings(context.Background(), sampleDBWorkspace("ws-precedence"))
 			require.NoError(t, err)
 			assert.Contains(t, binding.egress.Secrets, env.bound[0])
 			if key == "OPENAI_API_KEY" {
-				assert.Equal(t, []string{ProviderConnectionProviderClaude}, resolver.calls)
-				assert.NotContains(t, binding.files, codexAuthGuestPath)
-				for _, secret := range ClaudeProxySecrets("claude-token") {
-					assert.Contains(t, binding.egress.Secrets, secret)
-				}
+				assert.Equal(t, []string{ProviderConnectionProviderClaude}, pool.calls)
+				assert.Contains(t, binding.egress.SecretNames(), "ANTHROPIC_API_KEY")
 			} else {
-				assert.Equal(t, []string{ProviderConnectionProviderCodex}, resolver.calls)
-				assert.Contains(t, binding.egress.Secrets, CodexProxySecret("codex-token"))
-				assert.Contains(t, binding.files, codexAuthGuestPath)
+				assert.Equal(t, []string{ProviderConnectionProviderCodex}, pool.calls)
+				assert.Contains(t, binding.egress.SecretNames(), "OPENAI_API_KEY")
 			}
 		})
 	}
+}
+
+func TestProviderPoolScopesBindOnlyTheWorkspaceCredential(t *testing.T) {
+	workspace := sampleDBWorkspace("ws-scope")
+	q := &poolScopeQuerier{workspace: workspace, tokens: map[int64]db.AccessToken{
+		1: {ID: 1, UserID: workspace.UserID, Name: "provider-pool-workspace-" + workspace.ID, SystemIssued: true},
+		2: {ID: 2, UserID: workspace.UserID, Name: "sandbox-workspace-" + workspace.ID, SystemIssued: true},
+		3: {ID: 3, UserID: workspace.UserID, Name: "provider-pool-workspace-" + workspace.ID},
+	}}
+	scopes := NewProviderPoolScopes(q)
+	tokenID := int64(1)
+	info := func(userID int64, raw string) *middleware.AuthInfo {
+		return &middleware.AuthInfo{User: &db.User{ID: userID}, IsTokenAuth: true, TokenID: tokenID, RawScopes: raw}
+	}
+	user, repo, ok := scopes.Scope(context.Background(), info(workspace.UserID, ProviderPoolTokenScopes(workspace.RepositoryID, workspace.ID)))
+	require.True(t, ok)
+	assert.Equal(t, [2]int64{workspace.UserID, workspace.RepositoryID}, [2]int64{user, repo})
+	for name, candidate := range map[string]*middleware.AuthInfo{
+		"no workspace binding":   info(workspace.UserID, "read:workspace,repo:1"),
+		"another repository":     info(workspace.UserID, ProviderPoolTokenScopes(workspace.RepositoryID+1, workspace.ID)),
+		"another user":           info(workspace.UserID+1, ProviderPoolTokenScopes(workspace.RepositoryID, workspace.ID)),
+		"another workspace":      info(workspace.UserID, ProviderPoolTokenScopes(workspace.RepositoryID, "ws-other")),
+		"a session, not a token": nil,
+	} {
+		_, _, ok := scopes.Scope(context.Background(), candidate)
+		assert.False(t, ok, name)
+	}
+	for _, id := range []int64{2, 3, 99} {
+		tokenID = id
+		_, _, ok := scopes.Scope(context.Background(), info(workspace.UserID, workspaceHeadTokenScopes(workspace.RepositoryID, workspace.ID)))
+		assert.False(t, ok, "token %d: only the workspace's pool credential spends an account", id)
+	}
+}
+
+type poolScopeQuerier struct {
+	workspace db.Workspace
+	tokens    map[int64]db.AccessToken
+}
+
+func (q *poolScopeQuerier) GetAccessTokenByID(_ context.Context, id int64) (db.AccessToken, error) {
+	if token, ok := q.tokens[id]; ok {
+		return token, nil
+	}
+	return db.AccessToken{}, errors.New("not found")
+}
+
+func (q *poolScopeQuerier) GetWorkspace(_ context.Context, id string) (db.Workspace, error) {
+	if id == q.workspace.ID {
+		return q.workspace, nil
+	}
+	return db.Workspace{}, errors.New("not found")
 }

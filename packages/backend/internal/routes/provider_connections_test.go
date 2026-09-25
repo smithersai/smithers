@@ -21,6 +21,20 @@ type stubProviderConnectionService struct {
 	connected services.ConnectProviderInput
 	revoked   string
 	listErr   error
+	order     []string
+	polled    string
+}
+
+func (s *stubProviderConnectionService) Reorder(_ context.Context, _ *db.User, provider string, ids []string) error {
+	s.order = append([]string{provider}, ids...)
+	return nil
+}
+func (s *stubProviderConnectionService) StartCodexDeviceLogin(context.Context, *db.User) (services.ProviderDeviceLoginResponse, error) {
+	return services.ProviderDeviceLoginResponse{ID: "login-1", Provider: "codex", State: "pending", UserCode: "ABCD-1234", VerificationURI: "https://auth.openai.com/codex/device", IntervalSeconds: 5}, nil
+}
+func (s *stubProviderConnectionService) PollCodexDeviceLogin(_ context.Context, _ *db.User, id string) (services.ProviderDeviceLoginResponse, error) {
+	s.polled = id
+	return services.ProviderDeviceLoginResponse{ID: id, Provider: "codex", State: "connected"}, nil
 }
 
 func (s *stubProviderConnectionService) ConnectForUser(_ context.Context, actor *db.User, in services.ConnectProviderInput) (services.ProviderConnectionResponse, error) {
@@ -68,6 +82,9 @@ func providerConnectionTestRouter(h *ProviderConnectionHandler, user *db.User) h
 	})
 	r.Get("/api/user/provider-connections", h.ListUserConnections)
 	r.Post("/api/user/provider-connections", h.ConnectUser)
+	r.Put("/api/user/provider-connections/order", h.ReorderConnections)
+	r.Post("/api/user/provider-connections/codex/device", h.StartCodexDeviceLogin)
+	r.Post("/api/user/provider-connections/codex/device/{id}", h.PollCodexDeviceLogin)
 	r.Get("/api/user/provider-connections/{id}", h.GetConnection)
 	r.Delete("/api/user/provider-connections/{id}", h.RevokeConnection)
 	r.Post("/api/user/provider-connections/{id}/refresh", h.RefreshConnection)
@@ -118,6 +135,17 @@ func TestProviderConnectionRoutes(t *testing.T) {
 
 	rec = do(http.MethodGet, "/api/orgs/acme/provider-connections", "")
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+
+	rec = do(http.MethodPut, "/api/user/provider-connections/order", `{"provider":"claude","ids":["b","a"]}`)
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Equal(t, []string{"claude", "b", "a"}, stub.order)
+
+	rec = do(http.MethodPost, "/api/user/provider-connections/codex/device", "")
+	require.Equal(t, http.StatusCreated, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"user_code":"ABCD-1234"`)
+	rec = do(http.MethodPost, "/api/user/provider-connections/codex/device/login-1", "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "login-1", stub.polled)
 
 	rec = do(http.MethodPost, "/api/user/provider-connections", `{bad json`)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)

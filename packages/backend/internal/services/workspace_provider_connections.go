@@ -4,7 +4,6 @@ import (
 	"context"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -39,39 +38,17 @@ func (s *WorkspaceService) resolveWorkspaceProviderBindings(ctx context.Context,
 	// or platform fallbacks. A setup-only secret is deliberately not usable by
 	// a long-running coding host and still shadows the same provider fallback.
 	model := workspaceCodingModel(binding.availableProviderNames(), "")
+	// Connected provider accounts are served per request by the account pool
+	// route (provider_pool.go), never bound into the guest: the guest holds a
+	// workspace-bound pool credential that the egress proxy swaps in on
+	// requests to this API host only. Explicit repository-admin API keys win
+	// over the pool, which in turn replaces platform credentials.
 	if s.providerConnections != nil && workspace.Kind != "agent" {
-		for _, provider := range []string{ProviderConnectionProviderCodex, ProviderConnectionProviderClaude} {
-			// Explicit repository-admin API-key secrets win over subscriptions, which
-			// in turn replace platform credentials. Check the repository config, not
-			// the merged proxy policy, so a platform key cannot mask a subscription.
-			key := "OPENAI_API_KEY"
-			if provider == ProviderConnectionProviderClaude {
-				key = "ANTHROPIC_API_KEY"
-			}
-			if workspaceDeclaresProvider(binding.environment, key) {
-				continue
-			}
-			resolved, err := s.providerConnections.ResolveForRun(ctx, workspace.UserID, workspace.RepositoryID, provider)
-			if err != nil {
-				return nil, pkgerrors.Internal("resolve workspace provider connection").WithCause(err)
-			}
-			if resolved == nil {
-				continue
-			}
-			switch provider {
-			case ProviderConnectionProviderCodex:
-				binding.bind(CodexProxySecret(resolved.AccessToken))
-				binding.setEnv("CODEX_HOME", codexHomeGuestPath)
-				binding.setEnv("SMITHERS_OPENAI_AUTH", "chatgpt")
-				binding.files[codexAuthGuestPath] = sandbox.SandboxFile{Content: string(CodexGuestAuthJSON(resolved.AccountID, resolved.AccountEmail, resolved.Plan, time.Now()))}
-			case ProviderConnectionProviderClaude:
-				binding.egress.Secrets = slices.DeleteFunc(slices.Clone(binding.egress.Secrets), func(secret sandbox.EgressProxySecret) bool { return secret.Name == key })
-				binding.environment.Env = slices.DeleteFunc(binding.environment.Env, func(v AgentEnvironmentVariable) bool { return v.Name == key })
-				binding.environment.ProxyBound = slices.DeleteFunc(binding.environment.ProxyBound, func(name string) bool { return name == key })
-				for _, secret := range ClaudeConnectionProxySecrets(resolved) {
-					binding.bind(secret)
-				}
-			}
+		if err := s.bindWorkspaceProviderPool(ctx, workspace, binding); err != nil {
+			return nil, err
+		}
+		if model == "" {
+			model = workspaceCodingModel(binding.availableProviderNames(), "")
 		}
 	}
 	if s.providerBootstrap && workspace.RepositoryID > 0 && workspace.UserID > 0 && workspace.Kind != "agent" {

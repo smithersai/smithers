@@ -1000,7 +1000,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	gitHubSyncedReposHandler := &routes.GitHubSyncedReposHandler{
 		Service: gitHubSyncedRepoService,
 	}
-	providerConnectionHandler := &routes.ProviderConnectionHandler{Service: providerConnectionService}
+	providerConnectionHandler := &routes.ProviderConnectionHandler{Service: providerConnectionService,
+		Pool: &routes.ProviderPoolHandler{Pool: providerConnectionService, Scopes: services.NewProviderPoolScopes(queries)}}
 	secretHandler := &routes.SecretHandler{
 		Service:          secretService,
 		AgentEnvironment: agentEnvironmentService,

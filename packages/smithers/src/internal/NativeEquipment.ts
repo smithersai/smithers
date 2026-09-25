@@ -48,6 +48,28 @@ const openaiAuthVariable = "SMITHERS_OPENAI_AUTH"
 const anthropicSubscriptionVariables = ["ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"] as const
 
 /**
+ * A Smithers account pool (`{base}/provider-pool`): each route listed in
+ * `SMITHERS_ACCOUNT_POOL_PROVIDERS` (`anthropic`, `chatgpt`) sends its calls to
+ * `${pool}/anthropic` or `${pool}/chatgpt` with the seat's key holding the pool
+ * credential, and the pool picks the connected account per request. `SMITHERS_MODEL_PROXY_URL` serves ChatGPT
+ * mode the same way.
+ */
+const accountPoolVariable = "SMITHERS_ACCOUNT_POOL_URL"
+
+const origin = (value: string | undefined): string | undefined =>
+  value === undefined || value === "" ? undefined : value.replace(/\/+$/, "")
+
+/** The pool origin when it serves `route` (`SMITHERS_ACCOUNT_POOL_PROVIDERS`). */
+const accountPool = (
+  environment: Readonly<Record<string, string | undefined>>,
+  route: "anthropic" | "chatgpt"
+): string | undefined =>
+  (Environment_.read(environment, "SMITHERS_ACCOUNT_POOL_PROVIDERS") ?? "").split(",").map((item) => item.trim())
+      .includes(route)
+    ? origin(Environment_.read(environment, accountPoolVariable))
+    : undefined
+
+/**
  * The native seat resolver: it turns a `provider:modelId` seat into a live model
  * route, with the API key read from the given environment, usually
  * `process.env`, passed in as a value so nothing below this composition touches
@@ -153,22 +175,23 @@ const providerSeats = (
             message: `${openaiAuthVariable} must be "api-key" or "chatgpt" to run the ${seat} seat`
           })
         }
-        const proxy = Environment_.read(environment, Endpoint.modelProxyVariable)
-        if (authMode === "chatgpt" && proxy !== undefined && proxy !== "") {
-          // Behind a Smithers model proxy the proxy owns the ChatGPT accounts:
+        const pool = accountPool(environment, "chatgpt") ??
+          origin(Environment_.read(environment, Endpoint.modelProxyVariable))
+        if (authMode === "chatgpt" && pool !== undefined) {
+          // Behind a Smithers account pool the pool owns the ChatGPT accounts:
           // it picks one per request and signs it. The guest holds only the
-          // proxy credential, bound as the `openai` seat's key.
+          // pool credential, bound as the `openai` seat's key.
           const key = environment[variable]
           if (key === undefined || key.length === 0) {
             return yield* new Seat.SeatUnresolved({
               seat,
-              message: `Set ${variable} to run the ${seat} seat through ${Endpoint.modelProxyVariable}`
+              message: `Set ${variable} to run the ${seat} seat through the account pool`
             })
           }
           return yield* seatOf(
             OpenAIChatGPT.make({
               auth: Auth.bearer(Redacted.make(key)),
-              baseUrl: Endpoint.providerOrigin("chatgpt", environment)
+              baseUrl: `${pool}/chatgpt`
             }),
             executor,
             seat,
@@ -226,7 +249,9 @@ const providerSeats = (
           ? seatOf(
             Route.anthropic({
               apiKey: Redacted.make(key),
-              baseUrl: Endpoint.providerOrigin("anthropic", environment)
+              baseUrl: accountPool(environment, "anthropic") === undefined
+                ? Endpoint.providerOrigin("anthropic", environment)
+                : `${accountPool(environment, "anthropic")}/anthropic`
             }),
             executor,
             seat,
