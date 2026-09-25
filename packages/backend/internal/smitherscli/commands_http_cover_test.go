@@ -164,7 +164,7 @@ func TestCommandsHttp_Cov_ResourceCommandsAndHelpers(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/search/repositories":
-			if r.URL.Query().Get("q") != "bug fix" || r.URL.Query().Get("page") != "2" || r.URL.Query().Get("limit") != "5" {
+			if r.URL.Query().Get("q") != "bug fix" || r.URL.Query().Get("page") != "2" || r.URL.Query().Get("per_page") != "5" {
 				t.Errorf("search query = %s", r.URL.RawQuery)
 			}
 			fmt.Fprint(w, `[{"name":"demo"}]`)

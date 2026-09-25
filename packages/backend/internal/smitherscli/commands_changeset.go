@@ -17,7 +17,7 @@ func changesetCommand() *incur.Cli {
 		Description: "Create a changeset that pins one change per member repository",
 		OptionsSchema: objectSchema([]string{"org", "member"}, map[string]*incur.JSONSchema{
 			"org":         stringSchema("Organization name"),
-			"member":      stringSchema("Member as REPO=CHANGE_ID (repeat or comma-separate for several)"),
+			"member":      arraySchema("Member as REPO=CHANGE_ID (repeat or comma-separate for several)"),
 			"description": {Type: "string", Description: "Changeset description", Default: ""},
 			"target":      {Type: "string", Description: "Target bookmark for every member and the superproject", Default: "main"},
 			"parent":      {Type: "string", Description: "Parent changeset change id (stacking)", Default: ""},
@@ -27,7 +27,7 @@ func changesetCommand() *incur.Cli {
 			if org == "" {
 				return nil, fmt.Errorf("organization is required")
 			}
-			members, err := parseChangesetMembers(ctx.Options["member"])
+			members, err := parseChangesetMembers(stringSliceValue(ctx.Options["member"]))
 			if err != nil {
 				return nil, err
 			}
@@ -145,25 +145,12 @@ func changesetTarget(ctx *incur.CommandContext) (string, int, error) {
 	return org, id, nil
 }
 
-// parseChangesetMembers accepts a string, a comma-separated string, or a list
-// of REPO=CHANGE_ID entries.
-func parseChangesetMembers(raw any) ([]map[string]any, error) {
+// parseChangesetMembers expands repeated --member values, each of which may
+// hold several comma-separated REPO=CHANGE_ID entries.
+func parseChangesetMembers(values []string) ([]map[string]any, error) {
 	var entries []string
-	switch v := raw.(type) {
-	case string:
-		entries = strings.Split(v, ",")
-	case []any:
-		for _, item := range v {
-			entries = append(entries, strings.Split(stringValue(item), ",")...)
-		}
-	case []string:
-		for _, item := range v {
-			entries = append(entries, strings.Split(item, ",")...)
-		}
-	default:
-		if raw != nil {
-			entries = strings.Split(stringValue(raw), ",")
-		}
+	for _, value := range values {
+		entries = append(entries, strings.Split(value, ",")...)
 	}
 	members := make([]map[string]any, 0, len(entries))
 	for _, entry := range entries {

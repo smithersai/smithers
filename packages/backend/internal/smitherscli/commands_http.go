@@ -149,7 +149,7 @@ func searchCommand() *incur.Cli {
 				query := url.Values{}
 				query.Set("q", searchQuery)
 				query.Set("page", strconv.Itoa(intValue(ctx.Options["page"], 1)))
-				query.Set("limit", strconv.Itoa(intValue(ctx.Options["limit"], 30)))
+				query.Set("per_page", strconv.Itoa(intValue(ctx.Options["limit"], 30)))
 				return APIRequest("GET", "/api/search/"+spec.endpoint+"?"+query.Encode(), nil, nil)
 			},
 		})
