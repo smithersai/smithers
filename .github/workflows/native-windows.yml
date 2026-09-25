@@ -20,6 +20,11 @@ on:
       - crates/smithers-ffi/Cargo.toml
       - Cargo.lock
   workflow_dispatch:
+    inputs:
+      portablePackages:
+        description: Run the complete sandbox and flow package suites too
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -71,5 +76,26 @@ jobs:
         with:
           name: node-host-coverage
           path: ${{ runner.temp }}/node-host-coverage
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Install Bun for portable package suites
+        if: inputs.portablePackages == true
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.4.1"
+      - name: Test complete sandbox and flow package suites
+        if: inputs.portablePackages == true
+        shell: bash
+        run: |
+          suite_status=0
+          pnpm --dir packages/smithers/flows/sandbox exec vitest run --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/sandbox" || suite_status=1
+          pnpm --dir packages/smithers/flows exec vitest run --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/flows" || suite_status=1
+          exit "$suite_status"
+      - name: Preserve portable package coverage diagnostics
+        if: always() && inputs.portablePackages == true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: portable-package-coverage
+          path: ${{ runner.temp }}/portable-package-coverage
           if-no-files-found: ignore
           retention-days: 3
