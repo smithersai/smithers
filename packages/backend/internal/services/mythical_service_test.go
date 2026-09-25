@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -19,33 +20,58 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
-// recordingRepoHost is a real bare repository behind repo-host's git surface
-// that records every receive-pack's metadata and can fail bookmark reads.
+// recordingRepoHost is a real bare repository behind repo-host's git surface.
+// Like repo-host, its bookmark reads come from a separate jj view that a
+// receive-pack updates by importing git refs; dropImports simulates a crash
+// between the git update and that import, which only ImportRefs repairs.
 type recordingRepoHost struct {
 	*gitBackedRepoHost
 	mu            sync.Mutex
 	metas         []repohost.ReceivePackMetadata
 	failBookmarks int
+	dropImports   int
+	imports       int
+	jj            []repohost.Bookmark
+}
+
+func (h *recordingRepoHost) importGitRefs() error {
+	bookmarks, _, err := h.gitBackedRepoHost.ListBookmarks(context.Background(), "", "", "", 0)
+	if err != nil {
+		return err
+	}
+	h.jj = bookmarks
+	return nil
 }
 
 func (h *recordingRepoHost) ProxyReceivePack(ctx context.Context, owner, repo string, stdin io.Reader, stdout io.Writer, meta ...repohost.ReceivePackMetadata) error {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.metas = append(h.metas, meta...)
-	h.mu.Unlock()
-	return h.gitBackedRepoHost.ProxyReceivePack(ctx, owner, repo, stdin, stdout, meta...)
+	if err := h.gitBackedRepoHost.ProxyReceivePack(ctx, owner, repo, stdin, stdout, meta...); err != nil {
+		return err
+	}
+	if h.dropImports > 0 {
+		h.dropImports--
+		return nil
+	}
+	return h.importGitRefs()
 }
 
-func (h *recordingRepoHost) ListBookmarks(ctx context.Context, owner, repo, cursor string, limit int) ([]repohost.Bookmark, string, error) {
+func (h *recordingRepoHost) ImportRefs(context.Context, string, string) error {
 	h.mu.Lock()
-	fail := h.failBookmarks > 0
-	if fail {
+	defer h.mu.Unlock()
+	h.imports++
+	return h.importGitRefs()
+}
+
+func (h *recordingRepoHost) ListBookmarks(context.Context, string, string, string, int) ([]repohost.Bookmark, string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.failBookmarks > 0 {
 		h.failBookmarks--
-	}
-	h.mu.Unlock()
-	if fail {
 		return nil, "", errors.New("repo-host unavailable")
 	}
-	return h.gitBackedRepoHost.ListBookmarks(ctx, owner, repo, cursor, limit)
+	return append([]repohost.Bookmark(nil), h.jj...), "", nil
 }
 
 type mythicalServiceFixture struct {
@@ -84,6 +110,7 @@ func newMythicalServiceFixture(t *testing.T) *mythicalServiceFixture {
 // arriving through the main pull would.
 func (f *mythicalServiceFixture) publish() string {
 	f.git(f.work, "push", "-q", "--force", f.hostDir, "main:refs/heads/main")
+	require.NoError(f.t, f.host.ImportRefs(context.Background(), "", ""))
 	return f.git(f.work, "rev-parse", "HEAD")
 }
 
@@ -177,26 +204,94 @@ func TestMythicalServiceRecoversAPushItCouldNotConfirm(t *testing.T) {
 	_, err := f.service.RequestBootstrap(ctx, f.repoID, f.userID, 100, false)
 	require.NoError(t, err)
 
-	// The push lands but the repository's bookmark cannot be read: the
+	// The git refs land but repo-host crashes before its jj import: the
 	// prepared write stays, and nothing is finalized.
-	f.host.failBookmarks = 1
+	f.host.dropImports = 1
 	row := f.poll()
 	assert.Equal(t, "bootstrapping", row.State)
 	require.NotEmpty(t, row.PendingOp)
 	pushed := f.hostRef(repohost.MythicalBookmarkRef)
 	require.NotEmpty(t, pushed)
 
-	// The next claim sees the refs at the prepared values and finalizes
-	// without writing again.
+	// A transient failure on the next claim keeps the prepared write too.
+	f.host.failBookmarks = 1
+	due := func() {
+		_, err := f.pool.Exec(ctx, `UPDATE mythical_stacks SET next_attempt_at = NOW() WHERE repository_id = $1`, f.repoID)
+		require.NoError(t, err)
+	}
+	due()
+	row = f.poll()
+	require.NotEmpty(t, row.PendingOp, "a failure never discards the evidence of a push")
+
+	// The next claim sees the refs at the prepared values, asks repo-host to
+	// import them, and finalizes without pushing again.
 	pushes := len(f.host.metas)
-	_, err = f.pool.Exec(ctx, `UPDATE mythical_stacks SET next_attempt_at = NOW() WHERE repository_id = $1`, f.repoID)
-	require.NoError(t, err)
+	due()
 	row = f.poll()
 	require.Equal(t, "active", row.State, row.LastError)
 	assert.Empty(t, row.PendingOp)
 	assert.Equal(t, pushed, row.TipCommit)
 	assert.Equal(t, main, row.LandedMain)
 	assert.Equal(t, pushes, len(f.host.metas), "recovery never pushes twice")
+	assert.Equal(t, 2, f.host.imports, "the publish's import and one recovery import")
+}
+
+func TestMythicalServiceReplaysAPushThatNeverLanded(t *testing.T) {
+	f := newMythicalServiceFixture(t)
+	ctx := context.Background()
+	f.commit("✨ feat: one", "a.txt", "a")
+	f.publish()
+	_, err := f.service.RequestBootstrap(ctx, f.repoID, f.userID, 100, false)
+	require.NoError(t, err)
+	row := f.poll()
+	require.Equal(t, "active", row.State, row.LastError)
+
+	// A fold is prepared and persisted, then the worker dies before its push.
+	f.commit("🔧 chore: outside", "b.txt", "b")
+	outside := f.publish()
+	var prepared mythicalOp
+	func() {
+		claims, err := db.New(f.pool).ClaimMythicalStacks(ctx, 1, 600)
+		if err == nil && len(claims) == 0 {
+			_, err = db.New(f.pool).RequestMythicalStack(ctx, f.repoID)
+			require.NoError(t, err)
+			claims, err = db.New(f.pool).ClaimMythicalStacks(ctx, 1, 600)
+		}
+		require.NoError(t, err)
+		require.Len(t, claims, 1)
+		g := mythicalGit{dir: filepath.Join(f.service.scratchRoot, "repo-"+strconv.FormatInt(f.repoID, 10)+".git")}
+		bridge, err := startMythicalBridge(ctx, f.host, "smithers-canary", "smithers")
+		require.NoError(t, err)
+		defer bridge.Close()
+		r := &mythicalRun{row: claims[0], g: g, bridge: bridge, owner: "smithers-canary", repo: "smithers", branch: "main",
+			mainTip: outside, tip: row.TipCommit, notesRef: row.NotesCommit}
+		require.NoError(t, g.fetch(ctx, bridge.URL(), 0, 0, repohost.MythicalBookmarkRef, repohost.MythicalNotesRef))
+		require.NoError(t, f.service.connectMain(ctx, r, row.LandedMain))
+		prepared = mythicalOp{Kind: "fold", OldTip: row.TipCommit, OldNotes: row.NotesCommit, From: 1, Folded: []string{outside}}
+		require.NoError(t, f.service.compute(ctx, r, &prepared))
+		encoded, err := json.Marshal(prepared)
+		require.NoError(t, err)
+		_, err = db.New(f.pool).SetMythicalPendingOp(ctx, f.repoID, claims[0].Claim, encoded)
+		require.NoError(t, err)
+		// The lease expires with the worker gone.
+		_, err = f.pool.Exec(ctx, `UPDATE mythical_stacks SET lease_expires_at = NOW() - interval '1 second' WHERE repository_id = $1`, f.repoID)
+		require.NoError(t, err)
+	}()
+	// The scratch repository is lost too; the replay rebuilds it.
+	require.NoError(t, os.RemoveAll(f.service.scratchRoot))
+
+	// Meanwhile main moves again: the replay still pushes the prepared fold,
+	// never different work, and a later run folds the rest.
+	f.commit("🔧 chore: later", "c.txt", "c")
+	later := f.publish()
+	row = f.poll()
+	require.Equal(t, "active", row.State, row.LastError)
+	assert.Equal(t, prepared.NewTip, row.TipCommit)
+	assert.Equal(t, outside, row.LandedMain)
+	f.service.MainMoved(ctx, f.repoID)
+	row = f.poll()
+	assert.Equal(t, later, row.LandedMain)
+	assert.Equal(t, prepared.NewTip, f.git(f.hostDir, "rev-parse", row.TipCommit+"^"))
 }
 
 func TestMythicalServiceFreezesWhenTheStackMovesOutsideIt(t *testing.T) {
@@ -223,7 +318,7 @@ func TestMythicalServiceFreezesWhenTheStackMovesOutsideIt(t *testing.T) {
 	require.NoError(t, err)
 	row = f.poll()
 	require.Equal(t, "active", row.State, row.LastError)
-	assert.False(t, row.ResetRequested)
+	assert.Zero(t, row.ResetGeneration)
 	assert.Equal(t, f.hostTree(f.hostRef("refs/heads/main")), f.hostTree(f.hostRef(repohost.MythicalBookmarkRef)))
 }
 

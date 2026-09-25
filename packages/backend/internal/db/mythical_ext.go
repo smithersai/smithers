@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -12,10 +13,10 @@ import (
 // MythicalStack is one repository's mythical stack worker state.
 type MythicalStack struct {
 	RepositoryID        int64              `json:"repository_id"`
-	ActorUserID         int64              `json:"actor_user_id"`
+	ActorUserID         pgtype.Int8        `json:"actor_user_id"`
 	State               string             `json:"state"`
 	Reason              string             `json:"reason"`
-	ResetRequested      bool               `json:"reset_requested"`
+	ResetGeneration     int64              `json:"reset_generation"`
 	BootstrapDepth      int32              `json:"bootstrap_depth"`
 	MaxParallel         int32              `json:"max_parallel"`
 	TipCommit           string             `json:"tip_commit"`
@@ -37,14 +38,14 @@ type MythicalStack struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
-const mythicalStackColumns = `s.repository_id, s.actor_user_id, s.state, s.reason, s.reset_requested, s.bootstrap_depth, s.max_parallel, s.tip_commit,
+const mythicalStackColumns = `s.repository_id, s.actor_user_id, s.state, s.reason, s.reset_generation, s.bootstrap_depth, s.max_parallel, s.tip_commit,
 s.tip_change, s.notes_commit, s.landed_main, s.generation, s.requested_generation, s.processed_generation, s.claimed_generation,
 s.claim, s.running, s.lease_expires_at, s.next_attempt_at, s.attempts, s.pending_op, s.last_error, s.created_at, s.updated_at`
 
 func scanMythicalStack(row interface{ Scan(...any) error }) (MythicalStack, error) {
 	var s MythicalStack
 	var pending []byte
-	err := row.Scan(&s.RepositoryID, &s.ActorUserID, &s.State, &s.Reason, &s.ResetRequested, &s.BootstrapDepth, &s.MaxParallel, &s.TipCommit,
+	err := row.Scan(&s.RepositoryID, &s.ActorUserID, &s.State, &s.Reason, &s.ResetGeneration, &s.BootstrapDepth, &s.MaxParallel, &s.TipCommit,
 		&s.TipChange, &s.NotesCommit, &s.LandedMain, &s.Generation, &s.RequestedGeneration, &s.ProcessedGeneration, &s.ClaimedGeneration,
 		&s.Claim, &s.Running, &s.LeaseExpiresAt, &s.NextAttemptAt, &s.Attempts, &pending, &s.LastError, &s.CreatedAt, &s.UpdatedAt)
 	if len(pending) > 0 {
@@ -53,20 +54,18 @@ func scanMythicalStack(row interface{ Scan(...any) error }) (MythicalStack, erro
 	return s, err
 }
 
-// Bootstrapping an absent stack creates its row; bootstrapping a frozen stack
-// asks the worker to try again. An active stack is left alone.
 // Bootstrapping an absent stack creates its row. Bootstrapping an existing
 // one is a no-op unless reset is set: then the worker rebuilds the stack from
 // main and replaces whatever the bookmark holds (an operator's repair of a
 // frozen stack).
 const requestMythicalBootstrap = `
-INSERT INTO mythical_stacks AS s (repository_id, actor_user_id, bootstrap_depth, reset_requested)
-VALUES ($1, $2, $3, $4)
+INSERT INTO mythical_stacks AS s (repository_id, actor_user_id, bootstrap_depth, reset_generation)
+VALUES ($1, $2, $3, CASE WHEN $4 THEN 1 ELSE 0 END)
 ON CONFLICT (repository_id) DO UPDATE
 SET requested_generation = s.requested_generation + 1,
-    actor_user_id = CASE WHEN $4 THEN $2 ELSE s.actor_user_id END,
+    actor_user_id = CASE WHEN $4 OR s.actor_user_id IS NULL THEN $2 ELSE s.actor_user_id END,
     bootstrap_depth = CASE WHEN $4 THEN $3 ELSE s.bootstrap_depth END,
-    reset_requested = s.reset_requested OR $4,
+    reset_generation = CASE WHEN $4 THEN s.requested_generation + 1 ELSE s.reset_generation END,
     state = CASE WHEN $4 THEN 'bootstrapping' ELSE s.state END,
     reason = CASE WHEN $4 THEN '' ELSE s.reason END,
     next_attempt_at = NOW(),
@@ -74,7 +73,8 @@ SET requested_generation = s.requested_generation + 1,
 RETURNING ` + mythicalStackColumns
 
 // RequestMythicalBootstrap records a request to create a repository's stack,
-// or with reset to rebuild it from main.
+// or with reset to rebuild it from main (replacing whatever the bookmark
+// holds, the operator's repair of a frozen stack).
 func (q *Queries) RequestMythicalBootstrap(ctx context.Context, repositoryID, actorUserID int64, depth int32, reset bool) (MythicalStack, error) {
 	return scanMythicalStack(q.db.QueryRow(ctx, requestMythicalBootstrap, repositoryID, actorUserID, depth, reset))
 }
@@ -187,6 +187,8 @@ func (q *Queries) SetMythicalPendingOp(ctx context.Context, repositoryID, claim 
 // FinishMythicalStackParams closes one claim. Failed keeps the generation
 // due after BackoffSeconds; every other outcome marks it processed. Empty
 // ref fields keep their previous values. Changed bumps the event generation.
+// A prepared write survives every finish except the one that confirmed it
+// (ClearPendingOp), so a crash or a transient failure never loses evidence.
 type FinishMythicalStackParams struct {
 	RepositoryID   int64
 	Claim          int64
@@ -200,11 +202,10 @@ type FinishMythicalStackParams struct {
 	Error          string
 	BackoffSeconds float64
 	Changed        bool
-	// KeepPendingOp leaves the prepared write in place for the next claim
-	// (its push landed but the repository has not confirmed it yet).
-	KeepPendingOp bool
-	// ResetDone clears a completed reset request.
-	ResetDone bool
+	ClearPendingOp bool
+	// ResetGeneration is the reset this finish completed (0: none). Only that
+	// generation is cleared; a newer reset stays requested.
+	ResetGeneration int64
 }
 
 const finishMythicalStack = `
@@ -220,8 +221,8 @@ SET processed_generation = CASE WHEN $9 THEN processed_generation ELSE GREATEST(
     next_attempt_at = CASE WHEN $9 THEN NOW() + make_interval(secs => $11) ELSE NOW() END,
     last_error = $10,
     generation = generation + CASE WHEN $12 THEN 1 ELSE 0 END,
-    pending_op = CASE WHEN $13 THEN pending_op ELSE NULL END,
-    reset_requested = CASE WHEN $14 THEN false ELSE reset_requested END,
+    pending_op = CASE WHEN $13 THEN NULL ELSE pending_op END,
+    reset_generation = CASE WHEN $14 > 0 AND reset_generation = $14 THEN 0 ELSE reset_generation END,
     running = false,
     lease_expires_at = NULL,
     updated_at = NOW()
@@ -235,7 +236,7 @@ func (q *Queries) FinishMythicalStack(ctx context.Context, arg FinishMythicalSta
 	var generation int64
 	err := q.db.QueryRow(ctx, finishMythicalStack, arg.RepositoryID, arg.Claim, arg.State, strings.TrimSpace(arg.Reason), arg.TipCommit,
 		arg.TipChange, arg.NotesCommit, arg.LandedMain, arg.Failed, strings.TrimSpace(arg.Error), arg.BackoffSeconds, arg.Changed,
-		arg.KeepPendingOp, arg.ResetDone).Scan(&generation)
+		arg.ClearPendingOp, arg.ResetGeneration).Scan(&generation)
 	return generation, err
 }
 
@@ -386,6 +387,14 @@ func (q *Queries) ListMythicalItems(ctx context.Context, repositoryID int64, lim
 
 // NotifyMythical wakes the repository's `mythical` event stream with a hint.
 func (q *Queries) NotifyMythical(ctx context.Context, repositoryID int64, payload string) error {
-	_, err := q.db.Exec(ctx, `SELECT pg_notify('mythical_' || $1::text, $2)`, repositoryID, payload)
+	_, err := q.db.Exec(ctx, `SELECT pg_notify($1, $2)`, "mythical_"+strconv.FormatInt(repositoryID, 10), payload)
 	return err
+}
+
+// IsMythicalChange reports whether a change id is on the repository's stack.
+func (q *Queries) IsMythicalChange(ctx context.Context, repositoryID int64, changeID string) (bool, error) {
+	var owned bool
+	err := q.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mythical_changes WHERE repository_id = $1 AND change_id = $2)`,
+		repositoryID, changeID).Scan(&owned)
+	return owned, err
 }

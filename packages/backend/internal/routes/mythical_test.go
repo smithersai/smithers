@@ -33,7 +33,7 @@ func (f *fakeMythicalRoute) Snapshot(_ context.Context, id int64, slug, main str
 
 func (f *fakeMythicalRoute) RequestBootstrap(_ context.Context, id, actor int64, depth int32, reset bool) (db.MythicalStack, error) {
 	f.bootstraps = append(f.bootstraps, strings.Join([]string{"repo", "depth", "reset"}, ":"))
-	return db.MythicalStack{RepositoryID: id, ActorUserID: actor, BootstrapDepth: depth, ResetRequested: reset}, nil
+	return db.MythicalStack{RepositoryID: id, BootstrapDepth: depth}, nil
 }
 
 func TestMythicalRoutes(t *testing.T) {

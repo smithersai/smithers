@@ -182,7 +182,7 @@ func TestMythicalBootstrapLinearizesMainWithStableIdentities(t *testing.T) {
 	assert.Equal(t, stackIDs(all), stackIDs(again))
 }
 
-func TestMythicalFoldCopiesTreesAndAdoptsMergedCandidates(t *testing.T) {
+func TestMythicalGitAdoptsACandidateAndFoldsFlat(t *testing.T) {
 	f := newMythicalFixture(t)
 	ctx := context.Background()
 	f.commit("✨ feat: config", map[string]string{"config.txt": "x=0\n"})

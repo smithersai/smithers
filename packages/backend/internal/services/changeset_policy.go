@@ -39,6 +39,9 @@ func (s *ChangesetService) requireMembersAccess(ctx context.Context, userID int6
 }
 
 func (s *ChangesetService) checkLandingPolicy(ctx context.Context, repo db.Repository, owner, changeID, commitID, target string) error {
+	if target == MythicalBookmark {
+		return errMythicalBookmarkOwned
+	}
 	rules, err := s.queries.ListAllProtectedBookmarksByRepo(ctx, repo.ID)
 	if err != nil {
 		return pkgerrors.Internal("failed to load protected bookmarks").WithCause(err)

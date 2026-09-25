@@ -411,6 +411,18 @@ func (s *ChangeService) SplitChange(
 		return SplitChangeResponse{}, pkgerrors.Internal("failed to check whether change is in a landed changeset")
 	}
 
+	// A change of the mythical stack is rewritten only by the stack service;
+	// splitting it here would rewrite its descendants and move the bookmark.
+	if s.pool != nil {
+		owned, err := db.New(s.pool).IsMythicalChange(ctx, repositoryID, changeID)
+		if err != nil {
+			return SplitChangeResponse{}, pkgerrors.Internal("failed to check whether change is on the mythical stack")
+		}
+		if owned {
+			return SplitChangeResponse{}, errMythicalBookmarkOwned
+		}
+	}
+
 	current, err := s.repoHost.GetChange(ctx, owner, repo, changeID)
 	if err != nil {
 		return SplitChangeResponse{}, mapChangeRepoHostError(err, "failed to get change")

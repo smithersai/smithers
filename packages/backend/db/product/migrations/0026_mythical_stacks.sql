@@ -10,11 +10,14 @@
 -- compares the repository's refs with it before anything else runs.
 CREATE TABLE mythical_stacks (
     repository_id bigint PRIMARY KEY REFERENCES repositories(id) ON DELETE CASCADE,
-    actor_user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- Who turned the stack on; deleting that user keeps the repository's stack.
+    actor_user_id bigint REFERENCES users(id) ON DELETE SET NULL,
     state varchar(16) NOT NULL DEFAULT 'bootstrapping'
         CHECK (state IN ('bootstrapping', 'active', 'frozen')),
     reason text NOT NULL DEFAULT '',
-    reset_requested boolean NOT NULL DEFAULT false,
+    -- The requested generation of the newest unfinished reset (0: none). A
+    -- finishing reset clears only its own generation, never a newer one.
+    reset_generation bigint NOT NULL DEFAULT 0,
     bootstrap_depth integer NOT NULL DEFAULT 100 CHECK (bootstrap_depth BETWEEN 1 AND 500),
     max_parallel integer NOT NULL DEFAULT 2 CHECK (max_parallel BETWEEN 1 AND 8),
     tip_commit text NOT NULL DEFAULT '',
