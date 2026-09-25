@@ -77,3 +77,19 @@ test("the coding role reuses the existing seat resolver and keeps the approved r
   for (const id of ["coding/plan", "coding/poc", "wiki/reviewer"]) await Effect.runPromise(seats.resolve(id))
   assert.deepEqual(resolved.slice(-3), ["test:chosen-model", "test:chosen-model", "test:chosen-model"])
 })
+
+test("repository seats win for the roles they name and add roles its flows declare", async () => {
+  const resolved: string[] = []
+  const model = Model.make({ stream: () => { throw new Error("seat resolution must not invoke a provider") } })
+  const base: SeatResolver.Service = { resolve: id => {
+    resolved.push(id)
+    return Effect.succeed({ id, model, modelId: id, contextWindowTokens: 16_000,
+      route: { prepare: () => { throw new Error("seat resolution must not prepare provider requests") } } })
+  } }
+  const roles = roleResolver(base, "test:implementation", { planningModel: "test:planning",
+    seats: { "coding/implement": "luna", "coding/plan": "sol", triage: "luna", review: "astra" } })
+  for (const id of ["coding/implement", "coding/plan", "coding/poc", "triage", "review", "repository/author"]) {
+    assert.equal((await Effect.runPromise(roles.resolve(id))).id, id)
+  }
+  assert.deepEqual(resolved, ["luna", "sol", "test:implementation", "luna", "astra", "test:implementation"])
+})

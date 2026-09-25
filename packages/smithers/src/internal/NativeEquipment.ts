@@ -60,6 +60,29 @@ const openaiAuthVariable = "SMITHERS_OPENAI_AUTH"
 export const seatResolver = (
   environment: Readonly<Record<string, string | undefined>>,
   executor: RequestExecutor.RequestExecutor
+): SeatResolver.Service => withAliases(providerSeats(environment, executor))
+
+/**
+ * Resolves a seat alias (`luna`, `sol`, ...) as the `provider:modelId` it
+ * names, keeping the declared id on the journaled seat, and refuses Jev, which
+ * answers classifier questions and never runs an agent turn.
+ */
+const withAliases = (base: SeatResolver.Service): SeatResolver.Service =>
+  SeatResolver.make({
+    resolve: (declared) => {
+      if (Providers.isDecisionSeat(declared)) {
+        return Effect.fail(new Seat.SeatUnresolved({ seat: declared, message: Providers.seatRefusal(declared)! }))
+      }
+      const seat = Providers.expandSeat(declared)
+      return seat === declared
+        ? base.resolve(seat)
+        : base.resolve(seat).pipe(Effect.map((resolved) => Seat.make({ ...resolved, id: declared })))
+    }
+  })
+
+const providerSeats = (
+  environment: Readonly<Record<string, string | undefined>>,
+  executor: RequestExecutor.RequestExecutor
 ): SeatResolver.Service => {
   const codexStores = new Map<string, CodexAuth.Store>()
   const codexStore = (file: string): CodexAuth.Store => {

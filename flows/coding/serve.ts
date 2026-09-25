@@ -16,6 +16,14 @@ import { layer as checkReceiptLayer } from "../repository/check-receipt.ts"
 import { remoteLayer } from "../repository/remote.ts"
 import type * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 
+/** Operator role→seat pins; `configured` validates each entry. */
+const parseSeats = (text: string): Readonly<Record<string, string>> => {
+  const value: unknown = JSON.parse(text)
+  if (typeof value !== "object" || value === null || Array.isArray(value) ||
+    Object.values(value).some(seat => typeof seat !== "string")) throw new Error("SMITHERS_CODING_SEATS must be a JSON object of role to seat")
+  return value as Readonly<Record<string, string>>
+}
+
 const parsed = parseArgs({ args: process.argv.slice(2), allowPositionals: true, options: {
   root: { type: "string" }, host: { type: "string", default: Serve.defaultBind.host },
   port: { type: "string", default: String(Serve.defaultBind.port) }, listen: { type: "boolean", default: false },
@@ -33,6 +41,7 @@ if (parsed.values.version) {
     "SMITHERS_FLOW_ARTIFACT_SHA256, SMITHERS_SOURCE_REVISION and SMITHERS_OWNER_GENERATION bind the runtime bridge.\n" +
     "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY selects the packaged native workspace helper.\n" +
     "Optional SMITHERS_CODING_PLAN_MODEL, SMITHERS_CODING_POC_MODEL and SMITHERS_CODING_WIKI_MODEL select provider:model roles.\n" +
+    "The project's \"seats\" map routes roles to aliases (sol, astra, luna, opus, fable, qwen); SMITHERS_CODING_SEATS (JSON) overrides it.\n" +
     "The provisioned SMITHERS_JJHUB_TOKEN and SMITHERS_JJHUB_API_URL enable coding/vibe; the token is consumed before any tool starts.\n")
 } else {
   if (parsed.positionals.length !== 1 || parsed.positionals[0] !== "serve") throw new Error("This configured workspace entry accepts the existing serve command")
@@ -58,6 +67,7 @@ if (parsed.values.version) {
     ...(process.env.SMITHERS_CODING_PLAN_MODEL === undefined ? {} : { planningModel: process.env.SMITHERS_CODING_PLAN_MODEL }),
     ...(process.env.SMITHERS_CODING_POC_MODEL === undefined ? {} : { pocModel: process.env.SMITHERS_CODING_POC_MODEL }),
     ...(process.env.SMITHERS_CODING_WIKI_MODEL === undefined ? {} : { wikiModel: process.env.SMITHERS_CODING_WIKI_MODEL }),
+    ...(process.env.SMITHERS_CODING_SEATS === undefined ? {} : { seats: parseSeats(process.env.SMITHERS_CODING_SEATS) }),
     checkEnvironment: Object.fromEntries([
       "PATH", "HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
       "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS"

@@ -6,8 +6,12 @@ import type { ProjectConfig } from "../../flows/coding/project-config.ts"
 
 export const smithersProject = (wikiOutput = "../smithers-wiki", wiki = false): ProjectConfig => ({
   wiki, ...(wiki ? { wikiOutput, pages, reviewer: "smithers-public-engineering-v1" } : {}), implementation: "coding/implementation",
+  // Cheap lanes write code on Luna; planning and review run on Sol.
+  seats: { "coding/implement": "luna", "coding/dispatch": "luna", "repository/author": "luna", "flow/author": "luna",
+    "coding/plan": "sol", "coding/poc": "sol", "repository/research": "sol", "repository/evaluator": "sol", "wiki/reviewer": "sol" },
   checks: [
     { id: "policy", target: "//flows:codingPolicy", flow: "checks/policy", tier: "fast", required: true },
+    { id: "lint", target: ".", flow: "checks/lint", tier: "fast", required: false },
     ...([ ["runtime", "codingRuntime"], ["native", "codingNative"], ["native-bun", "codingNativeBun"],
       ["bundle", "codingBundle"], ["bundle-bun", "codingBundleBun"] ] as const).map(([id, target]) => ({
       id, target: `//flows:${target}`, flow: `checks/${id}`, tier: "slow" as const, required: true

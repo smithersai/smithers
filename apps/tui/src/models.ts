@@ -18,9 +18,9 @@ export interface Model {
 
 export const delegateModels = {
   cerebras: Providers.defaultSeat.cerebras,
-  luna: "openai:gpt-6-luna",
-  sol: "openai:gpt-6-sol",
-  astra: "openai:gpt-6-astra"
+  luna: Providers.seatAliases.luna!,
+  sol: Providers.seatAliases.sol!,
+  astra: Providers.seatAliases.astra!
 } as const
 export type DelegateModel = keyof typeof delegateModels
 
@@ -95,14 +95,7 @@ export const workerFallbackSeats = (requested: string, available: Available, env
 }
 
 /** The short names an agent file's `model:` may use instead of `provider:modelId`. */
-export const aliases: Readonly<Record<string, string>> = {
-  sol: delegateModels.sol,
-  astra: delegateModels.astra,
-  luna: delegateModels.luna,
-  opus: "anthropic:claude-opus-5-5",
-  fable: "anthropic:claude-fable-5-1",
-  qwen: Providers.defaultSeat.cerebras
-}
+export const aliases: Readonly<Record<string, string>> = Providers.seatAliases
 
 const providerOf = (seat: string): string => seat.slice(0, seat.indexOf(":"))
 /** Every provider a seat here names, plus the replay seat the tests drive. */

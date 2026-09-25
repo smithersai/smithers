@@ -54,6 +54,18 @@ a claim that review already passed. Page entries use the existing wiki
 (1024–92160, default 49152). A project with no adequate required checks still
 fails the existing planning/validation policy; the loader invents none.
 
+## Seats
+
+`seats` maps a role id to a seat alias (`sol`, `astra`, `luna`, `opus`,
+`fable`, `qwen`) or an explicit `provider:model`, for example
+`{"coding/implement": "luna", "coding/plan": "sol"}`. A declared role wins over
+the `SMITHERS_CODING_*_MODEL` defaults; `SMITHERS_CODING_SEATS` (a JSON object of
+the same shape) is the operator's override over both. The seat's provider picks
+the credential the workspace binds: `openai:` the Codex connection or OpenAI
+key, `anthropic:` the Anthropic key. `jev` is refused here: Jev answers
+classifier questions through the host evaluator (`AI_GATEWAY_API_KEY`), as in
+the `coding/JevCheck` lint check, and never runs an agent turn.
+
 ```sh
 SMITHERS_CODING_PROJECT=/etc/smithers/project.json \
 SMITHERS_CODING_IMPLEMENT_MODEL=provider:implementation-model \
@@ -66,7 +78,8 @@ smithers-coding-host serve --root /home/developer/workspace
 `SMITHERS_CODING_IMPLEMENT_MODEL` is required. The optional plan, POC and wiki
 variables select the existing logical seats `coding/plan`, `coding/poc` and
 `wiki/reviewer`. When omitted, the host explicitly uses the implementation model
-for that role. Every selection must be a `provider:model`; this configuration
+for that role, unless the project's `seats` names it. Every selection must be a
+seat alias or a `provider:model`; this configuration
 does not add credentials or a broker. Existing workspace/user provider setup
 supplies authentication. Deployment still supplies the owning
 `SMITHERS_GATEWAY_ID`, gateway `SMITHERS_API_KEY`, and existing binding/single-host

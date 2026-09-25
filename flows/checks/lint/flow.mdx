@@ -1,0 +1,6 @@
+---
+description: Lint the change on Jev against this repository's conventions, one changed hunk at a time.
+flows: [coding/JevCheck]
+capabilities: ["fs:read:**"]
+---
+{"rules":[{"id":"no-unexplained-escape","rule":"The changed TypeScript lines add no `any` type and no non-null `!` assertion, unless a comment on the same or the previous line names why it is safe.","paths":["**/*.ts","**/*.tsx"]},{"id":"no-console","rule":"The changed lines add no `console.log` call, unless the file is a `bin` entry point, a script under `scripts/`, or a test.","paths":["**/*.ts","**/*.tsx"]},{"id":"minimal-text","rule":"Changed user-facing copy in cards, panes, toasts and lessons carries only the words needed to act: no explanatory prose about how the product works, no provenance footer, no row whose value is 'not measured yet', and no summary sentence beside a button.","paths":["apps/app/src/**/*.tsx"]}]}

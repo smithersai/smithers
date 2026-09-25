@@ -195,3 +195,40 @@ describe("Providers default seats", () => {
     expect(Providers.defaultSeat.openrouter).toBe("openrouter:openai/gpt-6-sol")
   })
 })
+
+describe("Providers seat aliases", () => {
+  it("names one provider:model per alias", () => {
+    expect(Providers.seatAliases).toEqual({
+      sol: "openai:gpt-6-sol",
+      astra: "openai:gpt-6-astra",
+      luna: "openai:gpt-6-luna",
+      opus: "anthropic:claude-opus-5-5",
+      fable: "anthropic:claude-fable-5-1",
+      qwen: Providers.defaultSeat.cerebras
+    })
+  })
+
+  it.each([
+    ["luna", "openai:gpt-6-luna"],
+    [" OPUS ", "anthropic:claude-opus-5-5"],
+    ["openai:gpt-6-sol", "openai:gpt-6-sol"],
+    ["coding/implement", "coding/implement"],
+    ["jev", "jev"]
+  ])("expands %j to %j", (seat, expected) => {
+    expect(Providers.expandSeat(seat)).toBe(expected)
+  })
+
+  it.each([
+    ["luna", undefined],
+    ["anthropic:claude-opus-5-5", undefined],
+    ["jev", "classifier"],
+    ["vercel:typesafe-ai/jev", "classifier"],
+    ["typesafe-ai/jev", "classifier"],
+    ["gpt-6-luna", "neither"],
+    ["open ai:x", "neither"]
+  ])("refuses %j only when it cannot run a turn", (seat, refusal) => {
+    const message = Providers.seatRefusal(seat)
+    if (refusal === undefined) expect(message).toBeUndefined()
+    else expect(message).toContain(refusal)
+  })
+})

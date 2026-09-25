@@ -13,6 +13,7 @@ import { Effect, Option } from "effect"
 import { bindWikiRegistry } from "../coding/wiki-registry.ts"
 import { checkDelegate } from "../coding/checks.ts"
 import { wikiCheckDelegate } from "../coding/wiki-check.ts"
+import { jevCheckDelegate } from "../coding/jev-check.ts"
 import { smithersProject } from "../../factory/coding/project.ts"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
@@ -29,14 +30,14 @@ test("the actual Smithers default check declarations lower under the configured 
     .pipe(Effect.provide(Discovery.layer), Effect.provide(platform)))
   const registry = bindWikiRegistry(base, "fixture-deployed-policy")
   const selected = { ...registry, list: () => registry.list().pipe(Effect.map(values => values.filter(value => names.has(value.name)))) }
-  const built = await Effect.runPromise(Executable.catalog({ delegates: [checkDelegate, wikiCheckDelegate] })
+  const built = await Effect.runPromise(Executable.catalog({ delegates: [checkDelegate, jevCheckDelegate, wikiCheckDelegate] })
     .pipe(Effect.provideService(Registry.Registry, selected), Effect.provide(platform)))
   assert.deepEqual(built.refused, [])
   assert.equal(built.executables.length, names.size)
   for (const check of config.checks) {
     const entry = built.executables.find(entry => entry.descriptor.name === check.flow)
     assert.ok(entry, `${check.id} must resolve its actual declaration`)
-    assert.equal(entry.delegate, check.id === "wiki" ? wikiCheckDelegate._tag : checkDelegate._tag)
+    assert.equal(entry.delegate, check.id === "wiki" ? wikiCheckDelegate._tag : check.id === "lint" ? jevCheckDelegate._tag : checkDelegate._tag)
     assert.equal(Descriptor.executionDigest(entry.descriptor),
       Descriptor.executionDigest(await Effect.runPromise(registry.get(check.flow))))
   }

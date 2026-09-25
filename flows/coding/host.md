@@ -4,7 +4,7 @@
 
 The same Effect composition runs on Node and Bun. The concrete adapters supply filesystem, path, subprocess containment, crypto, SQLite, model transport and HTTP. No Node sidecar is required on Bun. Runtime-specific imports stay at the executable boundary; repository workflows do not select a runtime.
 
-The `coding/implement` role must map to an explicit `provider:model` through the existing `SeatResolver`. Workspace/user provider configuration supplies authentication. The host neither invents provider defaults nor copies platform seat credentials into the workspace process. Its deployment entry requires `SMITHERS_CODING_IMPLEMENT_MODEL` and the owning `SMITHERS_GATEWAY_ID`; the existing `SMITHERS_API_KEY` authenticates the gateway. These are operator configuration, never fields accepted from a plan.
+The `coding/implement` role must map to a seat alias (`luna`, `sol`, ...) or an explicit `provider:model` through the existing `SeatResolver`; the project's `seats` map may route any role. Workspace/user provider configuration supplies authentication. The host neither invents provider defaults nor copies platform seat credentials into the workspace process. Its deployment entry requires `SMITHERS_CODING_IMPLEMENT_MODEL` and the owning `SMITHERS_GATEWAY_ID`; the existing `SMITHERS_API_KEY` authenticates the gateway. These are operator configuration, never fields accepted from a plan.
 
 The private deployment entry passes that same operator credential to the existing
 native control composition. The recipe explicitly selects its existing gateway approval

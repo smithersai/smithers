@@ -1,5 +1,6 @@
 /** Private operator input, loaded once before the configured host is constructed. */
 import { Effect, FileSystem, Path, Schema, Stream } from "effect"
+import { seatRefusal } from "../../packages/smithers/src/Providers.ts"
 import { PageSpec } from "../wiki/schema.ts"
 import type { MemoryOptions } from "./planning-memory.ts"
 import { Check } from "./schema.ts"
@@ -15,9 +16,14 @@ const Project = Schema.Struct({
   checks: Schema.Array(Schema.Struct(checkFields)),
   historyLimit: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(100))),
   maxMemoryBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1024), Schema.isLessThanOrEqualTo(90 * 1024))),
-  reviewer: Schema.optionalKey(text)
+  reviewer: Schema.optionalKey(text),
+  /** Role id to seat alias or `provider:model`, e.g. `"coding/implement": "luna"`. */
+  seats: Schema.optionalKey(Schema.Record(Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9/_-]{0,63}$/)), text))
 })
-export type ProjectConfig = Omit<MemoryOptions, "repositoryPath"> & { readonly reviewer?: string }
+export type ProjectConfig = Omit<MemoryOptions, "repositoryPath"> & {
+  readonly reviewer?: string
+  readonly seats?: Readonly<Record<string, string>>
+}
 const invalid = (message: string, filename?: string) => new Error(`Invalid SMITHERS_CODING_PROJECT${filename === undefined ? "" : ` at ${filename}`}: ${message}`)
 const maximumBytes = 256 * 1024
 
@@ -69,6 +75,10 @@ export const loadProject = (repositoryPath: string, filename: string | undefined
   if ((project.wikiOutput !== undefined && (!project.wikiOutput.trim() || project.wikiOutput.includes("\0"))) ||
       (project.reviewer !== undefined && !project.reviewer.trim()) || !project.implementation.trim()) {
     return yield* Effect.fail(fail("output, reviewer and implementation must be nonempty"))
+  }
+  for (const [role, seat] of Object.entries(project.seats ?? {})) {
+    const refusal = seatRefusal(seat)
+    if (refusal !== undefined) return yield* Effect.fail(fail(`seat ${role}: ${refusal}`))
   }
   const wikiOutput = project.wikiOutput === undefined ? undefined : yield* separateWikiOutput(repositoryPath, project.wikiOutput).pipe(
     Effect.mapError(() => fail("wikiOutput must resolve outside the source workspace, including .flows")))

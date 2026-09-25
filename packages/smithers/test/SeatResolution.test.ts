@@ -348,3 +348,35 @@ describe("NodeControl.seatResolver behind SMITHERS_MODEL_PROXY_URL", () => {
     expect((await prepared(resolved, resolved.modelId)).url).toBe("https://api.anthropic.com/v1/messages")
   })
 })
+
+describe("NodeControl.seatResolver aliases", () => {
+  it.each(
+    [
+      ["sol", "gpt-6-sol", "https://api.openai.com/v1/responses"],
+      ["astra", "gpt-6-astra", "https://api.openai.com/v1/responses"],
+      ["luna", "gpt-6-luna", "https://api.openai.com/v1/responses"],
+      ["opus", "claude-opus-5-5", "https://api.anthropic.com/v1/messages"],
+      ["fable", "claude-fable-5-1", "https://api.anthropic.com/v1/messages"],
+      ["Luna ", "gpt-6-luna", "https://api.openai.com/v1/responses"]
+    ] as const
+  )("resolves %j to its provider's route and keeps the declared id", async (alias, modelId, url) => {
+    const resolved = await Effect.runPromise(resolve(keyed, alias))
+
+    expect(resolved.id).toBe(alias)
+    expect(resolved.modelId).toBe(modelId)
+    expect((await prepared(resolved, resolved.modelId)).url).toBe(url)
+  })
+
+  it("reads the aliased provider's credential, naming the expanded seat", async () => {
+    const error = await Effect.runPromise(Effect.flip(resolve({ ANTHROPIC_API_KEY: "k" }, "luna")))
+
+    expect(error.message).toBe("Set OPENAI_API_KEY to run the openai:gpt-6-luna seat")
+  })
+
+  it.each(["jev", "typesafe-ai/jev", "openrouter:typesafe-ai/jev"])("refuses %j as an agent seat", async (seat) => {
+    const error = await Effect.runPromise(Effect.flip(resolve(keyed, seat)))
+
+    expect(error.seat).toBe(seat)
+    expect(error.message).toContain("classifier")
+  })
+})

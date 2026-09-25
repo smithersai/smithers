@@ -103,3 +103,14 @@ to the ordinary check declaration's execution identity. The owning
 [semantic-check guide](wiki-check.md) describes the capture and reuse contract.
 
 The deployed coding host explicitly selects `concurrency: 1` to run one revision command check at a time. The permit covers source export, dependency installation, execution, and temporary-tree cleanup, so concurrent check flows do not multiply the workspace VM's memory and disk usage. Each check still records its own immutable-source receipt. Standalone `checkLayers` compositions retain concurrent execution unless they supply this resource limit; owner-feedback checks can therefore cancel unrelated pending checks without waiting for them to finish.
+
+## Lint on Jev
+
+`jev-check.ts` registers `coding/JevCheck`. Its body's first line declares up to
+eight rules, `{"rules":[{"id","rule","paths"}]}`. The check reads only the
+unified diff between the implementation's immutable parent and head, skips
+private repository-job paths, and asks Jev whether each in-scope hunk violates
+each rule (the `check/rule` classifier, 0.8/0.2 thresholds). A decisive flag
+or an unsure answer fails the receipt with a finding; more than 256 questions
+or a diff over 1 MB fails without asking. An unreachable Jev fails the check;
+no other model answers in its place. See `flows/checks/lint/flow.mdx`.

@@ -12,7 +12,7 @@
         "fs:read:**",
         "proc:spawn:*"
       ],
-      "model": "openai:gpt-6-sol",
+      "model": "sol",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -43,7 +43,7 @@
         "fs:write:**",
         "proc:spawn:*"
       ],
-      "model": "openai:gpt-6-sol",
+      "model": "luna",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -74,7 +74,7 @@
         "fs:write:.triage/report.json",
         "proc:spawn:rg *"
       ],
-      "model": "openai:gpt-6-sol",
+      "model": "luna",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -109,7 +109,7 @@
         "proc:spawn:pnpm test *",
         "proc:spawn:pnpm exec vitest *"
       ],
-      "model": "openai:gpt-6-sol",
+      "model": "luna",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -139,7 +139,7 @@
         "fs:read:**",
         "proc:spawn:*"
       ],
-      "model": "openai:gpt-6-sol",
+      "model": "sol",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -194,6 +194,35 @@
       "featured": false,
       "kind": "mdx",
       "path": "flows/checks/bundle-bun/flow.mdx",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
+      "id": "checks/lint",
+      "description": "Lint the change on Jev against this repository's conventions, one changed hunk at a time.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/lint/flow.mdx",
       "capabilities": [
         "*"
       ],

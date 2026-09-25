@@ -3,6 +3,17 @@
   "wikiOutput": "../smithers-coding-wiki",
   "reviewer": "smithers-public-engineering-v1",
   "implementation": "coding/implementation",
+  "seats": {
+    "coding/implement": "luna",
+    "coding/dispatch": "luna",
+    "repository/author": "luna",
+    "flow/author": "luna",
+    "coding/plan": "sol",
+    "coding/poc": "sol",
+    "repository/research": "sol",
+    "repository/evaluator": "sol",
+    "wiki/reviewer": "sol"
+  },
   "pages": [
     {
       "id": "packages",
@@ -248,6 +259,13 @@
       "flow": "checks/bundle-bun",
       "tier": "slow",
       "required": true
+    },
+    {
+      "id": "lint",
+      "target": ".",
+      "flow": "checks/lint",
+      "tier": "fast",
+      "required": false
     },
     {
       "id": "wiki",

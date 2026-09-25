@@ -21,6 +21,7 @@
  * @since 1.0.0-rc.0
  */
 import * as Endpoint from "@smthrs/model/Endpoint"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as CodexAuth from "./CodexAuth.ts"
 import * as Environment from "./Environment.ts"
 
@@ -159,6 +160,74 @@ export const defaultSeat: Readonly<Record<Candidate, string>> = {
   gemini: "gemini:gemini-2.5-pro",
   openrouter: "openrouter:openai/gpt-6-sol",
   cerebras: "cerebras:qwen-3.8-27b"
+}
+
+/**
+ * The short seat names a flow, a role table or an operator may write instead
+ * of `provider:modelId`. The prefix picks the credential: `openai:` seats run
+ * on the Codex (ChatGPT) session or an OpenAI key, `anthropic:` seats on an
+ * Anthropic key.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const seatAliases: Readonly<Record<string, string>> = {
+  sol: "openai:gpt-6-sol",
+  astra: "openai:gpt-6-astra",
+  luna: "openai:gpt-6-luna",
+  opus: "anthropic:claude-opus-5-5",
+  fable: "anthropic:claude-fable-5-1",
+  qwen: defaultSeat.cerebras
+}
+
+/**
+ * Jev, the decision model. It answers typed classifier questions through the
+ * host's `Evaluator` and writes no text, so it is never an agent seat.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const decisionSeat = { alias: "jev", modelId: Evaluator.defaultModel } as const
+
+/**
+ * The `provider:modelId` an alias names, or the seat unchanged. Case and
+ * surrounding space are ignored for aliases only.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const expandSeat = (seat: string): string => {
+  const alias = seat.trim().toLowerCase()
+  return Object.hasOwn(seatAliases, alias) ? seatAliases[alias]! : seat
+}
+
+/**
+ * True when a seat names Jev, bare or behind any provider prefix.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const isDecisionSeat = (seat: string): boolean => {
+  const value = seat.trim().toLowerCase()
+  return value === decisionSeat.alias || value === decisionSeat.modelId || value.endsWith(`:${decisionSeat.modelId}`)
+}
+
+/**
+ * Why a declared seat cannot run an agent turn, or `undefined` when it can be
+ * resolved: an alias, or an explicit `provider:modelId`.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const seatRefusal = (seat: string): string | undefined => {
+  const value = seat.trim().toLowerCase()
+  if (isDecisionSeat(seat)) {
+    return "jev answers classifier questions through the host evaluator; it cannot run an agent turn"
+  }
+  if (Object.hasOwn(seatAliases, value)) return undefined
+  return /^[a-z0-9-]+:[^\s:]+$/.test(seat)
+    ? undefined
+    : `${JSON.stringify(seat)} is neither a seat alias (${Object.keys(seatAliases).join(", ")}) nor provider:model`
 }
 
 /**

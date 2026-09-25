@@ -63,6 +63,26 @@ test("repository coding project decodes with registered flows, real source paths
     "wikiOutput must resolve outside the repository")
 })
 
+test("repository coding project routes roles to seat aliases and refuses jev or unknown seats", async () => {
+  const root = await mkdtemp(join(tmpdir(), "coding-seats-"))
+  try {
+    const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
+    const load = async (seats: unknown) => {
+      await writeFile(join(root, "project.json"), JSON.stringify({ ...valid(), wikiOutput: undefined, seats }))
+      return Effect.runPromise(Effect.result(loadProject(root, "project.json")).pipe(Effect.provide(platform)))
+    }
+    const loaded = await load({ "coding/implement": "luna", "coding/plan": "openai:gpt-6-sol", triage: "luna" })
+    assert.equal(loaded._tag, "Success")
+    assert.deepEqual(loaded._tag === "Success" && loaded.success?.seats, { "coding/implement": "luna", "coding/plan": "openai:gpt-6-sol", triage: "luna" })
+    for (const [seats, reason] of [[{ lint: "jev" }, /seat lint: jev answers classifier questions/],
+      [{ "coding/plan": "gpt-6-sol" }, /neither a seat alias/], [{ "Bad Role": "luna" }, /fields must match/]] as const) {
+      const refused = await load(seats)
+      assert.equal(refused._tag, "Failure")
+      assert.match(refused._tag === "Failure" ? String(refused.failure) : "", reason)
+    }
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
 test("default project lookup, explicit override and absent default use the injected Node/Bun filesystem", async t => {
   const directory = await mkdtemp(join(tmpdir(), "coding-project-config-"))
   t.after(() => rm(directory, { recursive: true, force: true }))

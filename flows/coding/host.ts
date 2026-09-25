@@ -8,11 +8,13 @@ import { HumanTask, Interpreter } from "@smthrs/flow"
 import { Context, Effect, FileSystem, Layer } from "effect"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as NativeEquipment from "../../packages/smithers/src/internal/NativeEquipment.ts"
+import { seatRefusal } from "../../packages/smithers/src/Providers.ts"
 import type * as Application from "../../packages/smithers/src/Application.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { atomOperations, EditAtom } from "./atoms.ts"
 import { atomFlows } from "./implementation/flow.ts"
 import { checkDelegate, checkLayers } from "./checks.ts"
+import { jevCheckDelegate, jevCheckLayers } from "./jev-check.ts"
 import { NativeCoding, nativeActions, nativeLayer, type NativeOptions } from "./native.ts"
 import { registration } from "./registration.ts"
 import { dispatchModels } from "./dispatch.ts"
@@ -70,10 +72,12 @@ export interface Options extends NativeOptions {
   readonly runtimeSourceRevision?: string | undefined
   readonly ownerGeneration?: number | undefined
   /** Enables the private prompt route using this repository's owning memory/check configuration. */
-  readonly planning?: (Omit<MemoryOptions, "repositoryPath"> & { readonly reviewer?: string }) | undefined
+  readonly planning?: (Omit<MemoryOptions, "repositoryPath"> & { readonly reviewer?: string; readonly seats?: Readonly<Record<string, string>> }) | undefined
   readonly planningModel?: string | undefined
   readonly pocModel?: string | undefined
   readonly wikiModel?: string | undefined
+  /** Operator role→seat pins (`SMITHERS_CODING_SEATS`); they win over the repository's `seats`. */
+  readonly seats?: Readonly<Record<string, string>> | undefined
   /**
    * Deployment-owned landing adapter over the reserved repository credential.
    * Repository automation uses it on its own; `coding/vibe` is registered only
@@ -97,11 +101,15 @@ export const configuredCodingRoutes = (options: Pick<Options, "planning" | "land
 ]
 
 const configured = (options: Options) => {
-  if (!/^[a-z0-9-]+:[^\s:]+$/.test(options.implementationModel)) {
-    throw new Error("Set SMITHERS_CODING_IMPLEMENT_MODEL to an explicit provider:model for coding/implement")
+  if (seatRefusal(options.implementationModel) !== undefined) {
+    throw new Error("Set SMITHERS_CODING_IMPLEMENT_MODEL to a seat alias or an explicit provider:model for coding/implement")
   }
   for (const model of [options.planningModel, options.pocModel, options.wikiModel]) {
-    if (model !== undefined && !/^[a-z0-9-]+:[^\s:]+$/.test(model)) throw new Error("Coding role models must be explicit provider:model values")
+    if (model !== undefined && seatRefusal(model) !== undefined) throw new Error("Coding role models must be seat aliases or explicit provider:model values")
+  }
+  for (const [role, seat] of Object.entries(options.seats ?? {})) {
+    const refusal = seatRefusal(seat)
+    if (refusal !== undefined || !/^[a-z0-9][a-z0-9/_-]{0,63}$/.test(role)) throw new Error(`SMITHERS_CODING_SEATS ${role}: ${refusal ?? "invalid role id"}`)
   }
   if (options.planning?.wiki === true && (!options.planning.reviewer?.trim() || !options.planning.wikiOutput?.trim() || !options.planning.pages?.length)) {
     throw new Error("Enabled Wiki requires an explicit reviewer, publication path and page configuration")
@@ -119,10 +127,23 @@ const configured = (options: Options) => {
   )) throw new Error("Runtime bridge identity requires an artifact digest, source revision, and positive owner generation")
 }
 
-/** Resolves the role through the existing workspace/user credential route. */
+/**
+ * Resolves the role through the existing workspace/user credential route.
+ *
+ * The operator environment supplies the defaults; the repository's own
+ * `seats` declaration (`.smithers/coding-project.json`) wins for every role it
+ * names, and may name roles only its flows declare (`model: triage`).
+ */
 export const roleResolver = (base: SeatResolver.Service, implementationModel: string,
-  models: Pick<Options, "planningModel" | "pocModel" | "wikiModel"> = {}): SeatResolver.Service => {
-  const roles: Readonly<Record<string, string>> = { "coding/implement": implementationModel,
+  models: Pick<Options, "planningModel" | "pocModel" | "wikiModel"> & { readonly seats?: Readonly<Record<string, string>> | undefined } = {}): SeatResolver.Service => {
+  const roles: Readonly<Record<string, string>> = { ...defaultRoles(implementationModel, models), ...models.seats }
+  return SeatResolver.make({ resolve: id => base.resolve(Object.hasOwn(roles, id) ? roles[id]! : id).pipe(
+    Effect.map(seat => Object.hasOwn(roles, id) ? Seat.make({ ...seat, id }) : seat)
+  ) })
+}
+
+const defaultRoles = (implementationModel: string,
+  models: Pick<Options, "planningModel" | "pocModel" | "wikiModel">): Readonly<Record<string, string>> => ({ "coding/implement": implementationModel,
     // A dispatched turn that names no model runs on the implementation seat,
     // because that is the seat this host was configured to write code with.
     "coding/dispatch": implementationModel,
@@ -135,11 +156,11 @@ export const roleResolver = (base: SeatResolver.Service, implementationModel: st
     // alternative is a `provider:model` literal baked into a prompt file,
     // which would outlive whatever this deployment was configured with.
     "flow/author": implementationModel,
-    "repository/evaluator": models.planningModel ?? implementationModel, "repository/author": implementationModel }
-  return SeatResolver.make({ resolve: id => base.resolve(Object.hasOwn(roles, id) ? roles[id]! : id).pipe(
-    Effect.map(seat => Object.hasOwn(roles, id) ? Seat.make({ ...seat, id }) : seat)
-  ) })
-}
+    "repository/evaluator": models.planningModel ?? implementationModel, "repository/author": implementationModel })
+
+/** The repository's role→seat declaration with the operator's pins over it. */
+const effectiveSeats = (options: Pick<Options, "planning" | "seats">): Readonly<Record<string, string>> =>
+  ({ ...options.planning?.seats, ...options.seats })
 
 /** Both platform entries call this one recipe; no second executor or store. */
 export const layer = (platform: NativeControl.Platform, options: Options, suppliedSeats?: SeatResolver.Service) => {
@@ -157,7 +178,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       Effect.orDie
     )
   }, environment => Layer.effect(SeatResolver.SeatResolver)(
-    Effect.map(SeatResolver.SeatResolver, base => roleResolver(base, options.implementationModel, options))
+    Effect.map(SeatResolver.SeatResolver, base => roleResolver(base, options.implementationModel, { ...options, seats: effectiveSeats(options) }))
   ).pipe(Layer.provide(suppliedSeats === undefined ? NativeEquipment.layerSeatResolver(environment) : SeatResolver.layer(suppliedSeats))),
   options.planning === undefined ? undefined : routeMessages)
   return Layer.suspend(() => Layer.unwrap(Effect.gen(function*() {
@@ -168,12 +189,13 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     const reviewerPolicy = !wikiEnabled ? undefined : yield* runningWikiPolicy
     const wikiOutput = !wikiEnabled ? undefined : yield* separateWikiOutput(options.repositoryPath, options.planning!.wikiOutput!)
     const wikiReviewer = !wikiEnabled ? undefined : Digest.canonical({ policy: options.planning!.reviewer,
-      model: options.wikiModel ?? options.implementationModel, gateway: options.gatewayId, hostPolicy: reviewerPolicy })
+      model: effectiveSeats(options)["wiki/reviewer"] ?? options.wikiModel ?? options.implementationModel, gateway: options.gatewayId, hostPolicy: reviewerPolicy })
     const wikiOptions = !wikiEnabled ? undefined : { ...options.planning!, pages: options.planning!.pages!, wikiOutput: wikiOutput!,
       repositoryPath: options.repositoryPath, reviewer: wikiReviewer!, hostPolicy: reviewerPolicy!, evaluator }
     const repositoryBundle = yield* runningRepositoryPolicy
     const repositoryPolicy = Digest.digest(Digest.canonical({ bundle: repositoryBundle, implementationModel: options.implementationModel,
-      researchModel: options.planningModel ?? options.implementationModel, gateway: options.gatewayId }))
+      researchModel: options.planningModel ?? options.implementationModel, gateway: options.gatewayId,
+      seats: effectiveSeats(options) }))
     const builtins = yield* provisionBuiltins(stateRoot, repositoryPolicy)
     const registry = Layer.effect(Registry.Registry)(
       Effect.map(Registry.Registry, base => bindRepositoryRegistry(wikiOptions === undefined ? base
@@ -208,14 +230,16 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       // it is expected to edit the workspace, so it is not evidence-only.
       dispatchRegistration(), dispatchModels,
       checkLayers({ repositoryPath: options.repositoryPath, fs, concurrency: 1,
-        exporterPath: options.exporterPath, environment: options.checkEnvironment }))
+        exporterPath: options.exporterPath, environment: options.checkEnvironment }),
+      // Lint on Jev: a check body's rules judged over the implementation diff.
+      jevCheckLayers(evaluator))
       .pipe(Layer.provideMerge(nativeLayer(options)),
         layers => options.repositoryRemote === undefined ? layers : layers.pipe(Layer.provideMerge(options.repositoryRemote)),
         layers => options.landing === undefined ? layers : layers.pipe(Layer.provideMerge(options.landing)))
     // Loading verified declaration bytes reserves a sibling temporary module.
     // This is host startup work. Register the resulting flows only after that
     // read/import effect ends, under the original guarded handler context.
-    const executableOptions = { delegates: [checkDelegate, RunSetup, RunJob, RunTrigger,
+    const executableOptions = { delegates: [checkDelegate, jevCheckDelegate, RunSetup, RunJob, RunTrigger,
       ...(wikiEnabled ? [wikiCheckDelegate] : [])] }
     const catalog = Layer.unwrap(repositoryCatalog(executableOptions, builtins.load).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
