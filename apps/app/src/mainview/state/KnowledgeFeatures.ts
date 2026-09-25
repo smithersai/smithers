@@ -1,8 +1,8 @@
-/** Generated repository knowledge is an opt-in release capability. Native
- * source, commit history, files and user-authored flows remain available. */
+/** The Wiki is an opt-in release capability. The mythical history is core
+ * (D-09 superseded, Will 2026-09-25) and always available, like native source,
+ * commit history, files and user-authored flows. */
 export interface KnowledgeFeatures {
   readonly wiki?: boolean
-  readonly mythicalHistory?: boolean
   readonly pluginLibrary?: boolean
 }
 
@@ -14,9 +14,6 @@ export const knowledgeFlowAvailable = (name: string, features: KnowledgeFeatures
   if (/^(?:wiki|world)(?:[./]|$)/.test(name) || name === "search.wiki" || name === "librarian/wiki" || name === "checks/wiki") {
     return features.wiki === true
   }
-  if (/^history(?:[./]|$)/.test(name) || name === "search.history" || name === "librarian/history") {
-    return features.mythicalHistory === true
-  }
   return true
 }
 
@@ -27,7 +24,6 @@ export const runtimeFlowAvailable = (name: string, features: KnowledgeFeatures =
 /** Restored cards must obey the same release flags as new command dispatch. */
 export const knowledgeCardAvailable = (kind: string, features: KnowledgeFeatures = {}): boolean => {
   if (["world", "wiki", "wiki-list", "wiki-links", "wiki-graph"].includes(kind)) return features.wiki === true
-  if (kind === "history") return features.mythicalHistory === true
   if (kind === "plugin-library") return features.pluginLibrary === true
   return true
 }

@@ -38,7 +38,7 @@ const freshController = async (bootstrap?: AppBootstrap) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   return {
     store,
-    controller: createAppController(store, unavailableAgent, { bootstrap, features: { pluginLibrary: true, wiki: true, mythicalHistory: true } })
+    controller: createAppController(store, unavailableAgent, { bootstrap, features: { pluginLibrary: true, wiki: true } })
   }
 }
 

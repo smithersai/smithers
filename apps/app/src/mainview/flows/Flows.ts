@@ -157,7 +157,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...envFlows(actions),
   ...secretsFlows(actions),
   ...modelFlows(actions),
-  ...(actions.snapshot?.()?.mythicalHistory === true ? historyFlows(actions) : []),
+  ...historyFlows(actions),
   ...branchesFlows(actions),
   ...commitsFlows(actions),
   ...filesFlows(actions),

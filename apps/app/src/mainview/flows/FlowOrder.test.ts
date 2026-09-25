@@ -17,7 +17,7 @@ import { nameOf } from "./registry"
 
 /** Every controller call answers with nothing: registration never invokes a handler. */
 const inertActions = new Proxy({}, {
-  get: (_, key) => key === "snapshot" ? () => ({ wiki: true, mythicalHistory: true, pluginLibrary: true }) : () => undefined
+  get: (_, key) => key === "snapshot" ? () => ({ wiki: true, pluginLibrary: true }) : () => undefined
 }) as CommandActions
 
 /** baseFlows at the split, in registration order. */

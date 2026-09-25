@@ -34,7 +34,8 @@ The following are user decisions, not implementation defaults:
 | D-06 | Use specific repeatable feature and chore patterns from PR history to help users create ordinary workflows with minimal or zero code. |
 | D-07 | Store workflows, prompts, and supporting configuration under the repository's .smithers directory, using the current Smithers framework. |
 | D-08 | Runtime agents author repository-specific evals and involve the maintainer in how outcomes are measured. Evals need an accessible inspection surface. |
-| D-09 | Wiki and Mythical history are separate default-off release flags for this MVP. Both remain important future capabilities and may become internal implementation details. Core work must function without them. This supersedes the earlier decision to ship them immediately. |
+| D-09 | ~~Wiki and Mythical history are separate default-off release flags for this MVP.~~ Superseded by D-09a. |
+| D-09a (Will, 2026-09-25, #1745) | Supersedes D-09: the Wiki and the Mythical history are core. The repository's history is one linear `mythical` stack of logical changes written only by the stack service; every open issue is planned onto it (append, insert or amend), worked in parallel lanes, and reaches append-only `main` as one commit per item (a GitHub PR the owner merges for send-upstream repositories); merged work is folded back into the stack. Mythical history is on by default with no flag; the Wiki default follows its refresh work (#1651). Core jobs still run when a repository has no stack yet. |
 | D-10 | Plugin Library remains implemented behind a default-off flag. |
 | D-11 | Delete repository welcome/explore/contribute/maintain modes, the dedicated Factory inspection screen, user snapshot/template/fork controls, revision-computer forks, Linear integration, custom-agent configuration, and repository-defined home panes. “Remove” means delete, not flag. |
 | D-11a (Will, 2026-09-24, #1711) | Supersedes D-11 only for repository homepages: the factory declares typed homepage blocks, rendered as the first workspace chat message; otherwise show README.md, then the normal composer. The separate welcome modes and Factory screen remain removed. |
@@ -194,7 +195,7 @@ An AI code check judges a proposed change. An eval measures whether that check o
 | Candidate updated after a green check | Old result cannot unlock landing; rerun required checks. |
 | Duplicate event, retry, restart | One logical job and no duplicate comments or fixes. |
 | Large issue decomposition | Reviewable proposal; children created only through allowed action. |
-| Wiki and Mythical history off | Core jobs execute using source, existing docs, and ordinary history. |
+| Wiki off, or no mythical stack yet | Core jobs execute using source, existing docs, and ordinary history. |
 | Prompt/policy/expectation edit | Relevant results become stale and cannot activate the candidate. |
 | Trial while handling is off | Only the scoped test item runs; unrelated work stays inactive. |
 | Clean PR / known defect | No invented criticism on clean code; relevant defect found with evidence. |
@@ -268,7 +269,7 @@ The authoritative composition is [Flows.ts](../../apps/app/src/mainview/flows/Fl
 | Capability | Required release behavior | Inspected source |
 | --- | --- | --- |
 | Collaborative Wiki creation, notes, editing, backlinks, graph, synchronization | Retain behind its default-off release flag. Remove entry points, recommendations, implicit generation, and prerequisites from ordinary MVP work. | [wiki entries](../../apps/app/src/mainview/flows/entries/wiki.ts), [world aliases](../../apps/app/src/mainview/flows/entries/world.ts), [WikiCards](../../apps/app/src/mainview/cards/WikiCards.tsx). |
-| Mythical history bootstrap/view/amend/fold | Retain behind a separate default-off flag. Ordinary commits, source checks, and navigation history remain. | [history entries](../../apps/app/src/mainview/flows/entries/history.ts), [HistoryCard](../../apps/app/src/mainview/cards/HistoryCard.tsx). |
+| Mythical history bootstrap/view/amend/fold | Core (D-09a): on by default, no flag. The stack service bootstraps and folds; ordinary commits, source checks, and navigation history remain. | [history entries](../../apps/app/src/mainview/flows/entries/history.ts), [HistoryCard](../../apps/app/src/mainview/cards/HistoryCard.tsx). |
 | Plugin Library browse/install/remove | Retain default off. Baseline Flows.ts already gates registration on pluginLibrary. | [plugins](../../apps/app/src/mainview/flows/entries/plugins.ts). |
 | User model-seat/thinking/tool changes and raw run events | Existing controls; owner proposal is an operator flag. Do not conflate these with ordinary steering/logs. | [runs](../../apps/app/src/mainview/flows/entries/runs.ts). |
 | Historical UI-frame forks | Existing control; owner proposal is a default-off flag. Distinct from removed workspace/revision-computer forks. | [frame](../../apps/app/src/mainview/flows/entries/frame.ts). |
@@ -288,7 +289,7 @@ The authoritative composition is [Flows.ts](../../apps/app/src/mainview/flows/Fl
 
 **CUT-01 — Complete approved deletion.** D-11 applies across UI, commands, agent catalogs, forms, recommendations, public docs, and dead feature-specific implementation. Preserve shared file access and execution machinery. Current parent commit is named for the retired-feature removal, but the commit title is not proof every surface is gone.
 
-**FLAG-01 — Disable features consistently.** Wiki, Mythical history, and Plugin Library each have explicit default-off flags. Direct commands, old deep links/cards, agent tools, recommendations, search results, setup, background listeners, and implicit generation obey the flag. Required ordinary operations cannot fail merely because these optional artifacts are absent.
+**FLAG-01 — Disable features consistently.** Wiki and Plugin Library each have explicit default-off flags (Mythical history is core, D-09a). Direct commands, old deep links/cards, agent tools, recommendations, search results, setup, background listeners, and implicit generation obey the flag. Required ordinary operations cannot fail merely because these optional artifacts are absent.
 
 **KEEP-01 — Preserve protected functionality.** Cloud desktops, Vim, local builds, authoring, and trigger registration remain in scope. Backend endpoints used by automation are retained even if no frontend component calls them directly. Labels, comments, issue links, checks, and workflow control may be essential to the factory.
 
@@ -313,7 +314,7 @@ Every requirement ID above is part of the release acceptance contract. Engineeri
 | REL-07 — Features and chores | A direct feature and a repository-specific authored flow execute with real checks. A chore completes its trial and demonstrates selected event/scheduled operation, bounds, pause, and restart behavior. Resulting .smithers files are inspectable and reusable. |
 | REL-08 — Evals and policy replacement | Runtime-authored cases, editable reviewed expectations, real expected/observed/evidence views, stale-result behavior, human judgment, and tested candidate activation are demonstrated. Editing an active policy does not silently replace it. |
 | REL-09 — Retained inventory | Relevant regression coverage for all retained feature families is reviewed. Real web smoke covers files, repository context, chat, runs/approvals, issues/PRs/changes, workspace terminal and desktop. Native-only tooling has native evidence and is not advertised on the web. Any unverified family is named; a narrow unit test cannot support a broad release claim. |
-| REL-10 — Cuts and flags | Approved deletions are checked through UI/catalog/deep-link/agent/docs paths. Wiki/Mythical/Library are off by default; core jobs run without generated artifacts. Protected functionality remains accessible at its proper host. |
+| REL-10 — Cuts and flags | Approved deletions are checked through UI/catalog/deep-link/agent/docs paths. Wiki/Library are off by default and Mythical history is on (D-09a); core jobs run without generated artifacts. Protected functionality remains accessible at its proper host. |
 | REL-11 — Access and outward effects | Real sign-in/access and repository identity are verified. Trial scope, external contributor input, approval boundaries, public posting, duplicate delivery, and failure behavior pass. No cross-repository or stale-account action is allowed. |
 | REL-12 — Deployment and polish | Record the deployed app/backend revisions and actual URLs; verify the complete user path against that deployment. Review responsive and keyboard behavior, copy, errors, reload/reconnect, and required integrations. Fix and redeploy material failures, then rerun affected verification. |
 

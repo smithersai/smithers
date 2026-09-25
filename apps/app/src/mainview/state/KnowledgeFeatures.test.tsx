@@ -15,15 +15,16 @@ import { parseRecommendation } from "./Recommend"
 import { json, memoryStorage, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
-const hidden = ["wiki", "wiki.create", "wiki.open", "wiki.graph", "world", "world.new-note",
-  "history.show", "history.bootstrap", "history.amend", "history.fold", "search.wiki", "search.history"]
+const hidden = ["wiki", "wiki.create", "wiki.open", "wiki.graph", "world", "world.new-note", "search.wiki"]
+/* The mythical history is core (D-09 superseded, Will 2026-09-25): no flag hides it. */
+const core = ["history.show", "history.bootstrap", "history.amend", "history.fold", "search.history"]
 
 describe("optional generated knowledge", () => {
   test("default-off flags remove command, agent, recommendation and palette doors without changing source tools", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, silentAgent)
     expect(controller.features.wiki).toBe(false)
-    expect(controller.features.mythicalHistory).toBe(false)
+    for (const name of core) expect(controller.commands.find(name)).toBeDefined()
     const callable = controller.commands.callable().map(entry => entry.binding.descriptor.name)
     for (const name of hidden) {
       expect(controller.commands.find(name)).toBeUndefined()
@@ -32,7 +33,7 @@ describe("optional generated knowledge", () => {
       expect((await controller.commands.runForAgent(name)).status).toBe("unknown-command")
     }
     expect(recommendedNames(controller.commands.state())).not.toContain("wiki")
-    for (const prefix of ["wiki:", "history:"]) {
+    for (const prefix of ["wiki:"]) {
       expect(controller.searchPalette(prefix).groups).toEqual([])
       expect(controller.searchPalette(prefix).flow).toBeNull()
       expect(controller.searchPalette("?").help?.map(row => row.prefix)).not.toContain(prefix)
@@ -44,7 +45,7 @@ describe("optional generated knowledge", () => {
     expect(JSON.stringify(search)).not.toContain('"kind":"note"')
   })
 
-  test("built-in knowledge doors stay disabled while runtime flows reach the identity guard", async () => {
+  test("built-in Wiki doors stay disabled while history and runtime flows reach the identity guard", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const calls: string[] = []
     const controller = createAppController(store, silentAgent, {
@@ -57,9 +58,10 @@ describe("optional generated knowledge", () => {
       expect(await controller.runWorkflow(name, "owner/repo")).toBe("Sign in with GitHub first: flows run on your own workspace.")
     }
     expect(await controller.createWiki("owner/repo")).toBe("This feature is not enabled.")
-    expect(await controller.bootstrapHistory("owner/repo")).toBe("This feature is not enabled.")
+    expect(await controller.bootstrapHistory("owner/repo")).toBe("Sign in with GitHub first: flows run on your own workspace.")
     expect(calls).toEqual([])
-    expect(store.session().librarianLaunches ?? []).toEqual([])
+    // Only the always-on history reached a launch, and it stays a visible, retryable refusal.
+    expect((store.session().librarianLaunches ?? []).map(entry => [entry.kind, entry.phase])).toEqual([["history", "failed"]])
   })
 
   test("restored knowledge cards stay stored but cannot open or take over the current view", async () => {
@@ -78,12 +80,12 @@ describe("optional generated knowledge", () => {
     expect((await controller.commands.run("tab.card", card.id)).status).toBe("failed")
   })
 
-  test("the two opt-ins are independent and preserve their existing implementations", async () => {
-    for (const features of [{ wiki: true }, { mythicalHistory: true }]) {
+  test("the Wiki opt-in is independent of the always-on history and preserves its implementation", async () => {
+    for (const features of [{ wiki: true }, {}]) {
       const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
       const controller = createAppController(store, silentAgent, { features })
       expect(controller.commands.find("wiki") !== undefined).toBe("wiki" in features)
-      expect(controller.commands.find("history.bootstrap") !== undefined).toBe("mythicalHistory" in features)
+      expect(controller.commands.find("history.bootstrap")).toBeDefined()
       if ("wiki" in features) {
         expect((await controller.commands.run("wiki")).status).toBe("executed")
         expect(store.collections.cards.get("world-embedded")?.kind).toBe("world")
@@ -186,7 +188,7 @@ describe("the copy the slash menu and the prompt carry", () => {
   test("the search summaries name no flag-off feature", async () => {
     expect(searchNamespace.summary).not.toMatch(/wiki|history/i)
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    for (const features of [{}, { wiki: true, mythicalHistory: true }]) {
+    for (const features of [{}, { wiki: true }]) {
       const controller = createAppController(store, silentAgent, { features })
       const open = controller.commands.all().find(item => item.name === "search.open")
       expect(open?.summary).toBeDefined()

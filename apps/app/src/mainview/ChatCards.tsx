@@ -94,7 +94,6 @@ export const CardView = memo(function CardView({
   projectionStore,
   pluginLibrary,
   wiki,
-  mythicalHistory,
   experimental: experimentalProp,
   experimentalSnapshot,
   signedOut,
@@ -148,7 +147,7 @@ export const CardView = memo(function CardView({
     pendingFocus.current = "maximize"
     onMinimize()
   }
-  if (card.kind === "retired" || !knowledgeCardAvailable(card.kind, { wiki, mythicalHistory, pluginLibrary })) return null
+  if (card.kind === "retired" || !knowledgeCardAvailable(card.kind, { wiki, pluginLibrary })) return null
   if (isRetiredCard(card)) return null
   return (
     <>

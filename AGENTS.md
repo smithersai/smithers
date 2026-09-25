@@ -32,6 +32,14 @@ rules to behavior that applies throughout their directory trees.
   or undifferentiated features. Publish benchmark claims only with reproducible
   methods, artifacts, and limitations.
 
+## One mythical stack; append-only main (Will, 2026-09-25)
+
+A repository's history is one linear `mythical` stack of logical changes that
+only the stack service writes (`packages/backend/internal/services/mythical*.go`).
+Work is planned onto it (append, insert or amend) and reaches append-only `main`
+only as one commit per item: a GitHub PR the owner merges for send-upstream
+repositories. Never rewrite `main`; never write `mythical` by hand.
+
 ## Instant chat; slow work runs in the background (Will, 2026-09-15)
 
 Chat responses acknowledge an action immediately. Repository setup, research,

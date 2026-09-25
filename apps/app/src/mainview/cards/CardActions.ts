@@ -34,7 +34,6 @@ export const cardActions = (controller: AppController): CardBindings => {
     projectionStore: controller.store,
     pluginLibrary: controller.features?.pluginLibrary ?? false,
     wiki: controller.features?.wiki ?? false,
-    mythicalHistory: controller.features?.mythicalHistory ?? false,
     get experimental() { return controller.commands?.state().experimental === true },
     experimentalSnapshot: () => controller.commands?.state().experimental === true,
     onDecideApproval: (id, decision, answer, question) =>

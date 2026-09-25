@@ -70,7 +70,7 @@ const REPO = "will/flows"
 const ready = async (services: AppServices = backend({}), state: "signed-in" | "signed-out" = "signed-out") => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableAgent, {
-    ...services, features: { wiki: true, mythicalHistory: true, ...services.features }
+    ...services, features: { wiki: true, ...services.features }
   })
   await identity(store, state)
   store.dispatch({

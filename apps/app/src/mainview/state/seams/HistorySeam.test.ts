@@ -107,7 +107,7 @@ const ready = async (services: AppServices, options: { signedIn?: boolean; toast
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableAgent, {
     ...services,
-    features: { mythicalHistory: true, ...services.features },
+    features: { ...services.features },
     ...(options.toastDebounceMs === undefined ? {} : { toastDebounceMs: options.toastDebounceMs })
   })
   if (options.signedIn === true) await signedIn(store)

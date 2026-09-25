@@ -32,7 +32,7 @@ export function ChromeDock() {
   // Secrets: secrets.list, registered on the cloud host only.
   const canSecrets = controller.commands.find("secrets.list") !== undefined
   // History: history.show, the mythical history card (design session 2026-09-07).
-  const canHistory = controller.features.mythicalHistory === true && controller.commands.find("history.show") !== undefined
+  const canHistory = controller.commands.find("history.show") !== undefined
   // Account (factory mock 21): account.show, registered where an identity seam exists.
   const canAccount = controller.commands.find("account.show") !== undefined
   // Admin chrome follows the same capability-filtered registry as every act.

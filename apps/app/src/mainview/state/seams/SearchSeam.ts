@@ -193,7 +193,6 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
 
   /** The mythical history as read: epics, atomic commits, and the note sections. */
   const historyItems = (payloads: ReadonlyArray<HistoryPayload>, section?: string): ReadonlyArray<Fact> => {
-    if (deps.registry().state().mythicalHistory !== true) return []
     const out: Array<Fact> = []
     const note = (sha: string, owner: string, sections: Record<string, string | null> | null): void => {
       if (sections === null) return

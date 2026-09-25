@@ -747,7 +747,6 @@ export interface AppServices {
 export interface AppFeatures {
   readonly pluginLibrary?: boolean
   readonly wiki?: boolean
-  readonly mythicalHistory?: boolean
   readonly suggestionPills?: boolean
   /** The hidden mock namespace (experimental/Manifest.ts). */
   readonly experimental?: boolean
@@ -764,7 +763,6 @@ export const createAppController = (
 ): AppController => {
   const knowledge = {
     wiki: services.features?.wiki ?? import.meta.env?.VITE_SMITHERS_WIKI === "true",
-    mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true",
     experimental: services.features?.experimental === true || import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"
   }
   const ctx = createControllerContext(store, agent, {
@@ -1948,7 +1946,6 @@ export const createAppController = (
         repositoryReadiness,
         pluginLibrary: features.pluginLibrary,
         wiki: features.wiki,
-        mythicalHistory: features.mythicalHistory,
         experimental: experimentalEnabled(),
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],

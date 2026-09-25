@@ -65,7 +65,6 @@ import { recordingAgent } from "./TestFixtures"
  */
 const createAppController = scopedControllers({
   wiki: true,
-  mythicalHistory: true,
   pluginLibrary: true
 })
 

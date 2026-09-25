@@ -215,7 +215,7 @@ const boot = async (bootstrap: AppBootstrap = EVERYTHING) => {
   let picks = 0
   
   const controller = createAppController(store, unavailableAgent, {
-    features: { pluginLibrary: true, wiki: true, mythicalHistory: true },
+    features: { pluginLibrary: true, wiki: true },
     bootstrap,
     fetchImpl: async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
