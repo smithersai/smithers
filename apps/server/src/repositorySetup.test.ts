@@ -968,7 +968,7 @@ test("a retry carrying the adopted replacement pin is admitted; an unrelated pin
   expect(other.status).toBe(409)
   // The refusal is typed and says what the next attempt does, so the app can
   // spend the id instead of rendering the store's internal sentence (B-15).
-  expect(await other.json()).toMatchObject({ status: "error", code: "setup_request_reused",
+  expect(await other.json()).toMatchObject({ status: "error", code: "setup_request_conflict",
     message: "This setup request was already used for another operation. Not your fault; retry starts a new one." })
   await t.settle()
 })

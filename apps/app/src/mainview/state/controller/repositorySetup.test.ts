@@ -1363,16 +1363,16 @@ test("a pin no loaded collection can contradict is still sent", async () => {
   } finally { await t.close() }
 })
 
-/* The Worker's answer to a same-id POST whose input differs (apps/server/src/repositorySetupStore.ts). */
+/* Both host spellings of a same-id POST whose input differs must spend the id. */
 const REUSED = { status: "error", code: "setup_request_reused",
   message: "This setup request was already used for another operation. Not your fault; retry starts a new one." }
 
-test("a request id the host says already names other work is spent: the next Retry asks under a new one", async () => {
+test.each(["setup_request_conflict", "setup_request_reused"])("a request id refused with %s is spent: the next Retry asks under a new one", async (code) => {
   let lost = true
   const spent = new Set<string>()
   const t = await fixture(async body => {
     if (lost) { lost = false; spent.add(body.requestId); throw Error("Connection lost") }
-    return spent.has(body.requestId) ? Response.json(REUSED, { status: 409 }) : response(body)
+    return spent.has(body.requestId) ? Response.json({ ...REUSED, code }, { status: 409 }) : response(body)
   })
   try {
     await t.setup.runRepositorySetup("setup", "evaluate"); await Promise.all(t.background)

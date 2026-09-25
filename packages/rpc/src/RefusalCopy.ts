@@ -613,7 +613,7 @@ export const WORKER_REFUSAL_COPY = {
    * nothing wrong and nothing is broken, so the sentence spends the id out
    * loud and says the next attempt is a new request.
    */
-  setup_request_reused: {
+  setup_request_conflict: {
     lead: "This setup request was already used for another operation. Not your fault; retry starts a new one.",
     agent:
       "fault=infra: the setup request id the app sent already names different work on Smithers' side — another candidate, operation or workspace. Not the user's fault and not their request's. Nothing is full, so do NOT say Smithers ran out of infra. The next attempt asks under a new request id, so say plainly that retrying is worth it.",

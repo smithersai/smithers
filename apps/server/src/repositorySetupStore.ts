@@ -123,7 +123,7 @@ export const repositorySetupStorageRequest = (request: Request) => Effect.gen(fu
     if (command.action === "create" && old) {
       // A typed refusal, not a bare sentence: the app spends the id on this
       // code and asks under a new one instead of repeating the same 409.
-      if (!sameInput(old.input, command.input, old.workspaceId ?? old.binding?.workspaceId)) return refuse("setup_request_reused", "This setup request was already used for another operation. Not your fault; retry starts a new one.")
+      if (!sameInput(old.input, command.input, old.workspaceId ?? old.binding?.workspaceId)) return refuse("setup_request_conflict", "This setup request was already used for another operation. Not your fault; retry starts a new one.")
       if (!old.result) yield* storage.put(SETUP_QUEUE_KEY, yield* enqueue())
       return Response.json({ record: old })
     }

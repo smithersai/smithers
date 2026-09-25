@@ -4,7 +4,7 @@ import {
   SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, archiveReplacedSetupReceipt, discardSetupDraft, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate, storedSetupCandidate,
   type RepositoryJob, type RepositorySetup, type SetupDraft, type SetupManualRequest, type SetupRecoveryResponse
 } from "@smthrs/rpc/RepositorySetup"
-import { workerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
+import { refusalCode } from "@smthrs/rpc/Refusal"
 import { accountOwnerOf } from "../AccountOwner"
 import type { Card } from "../AppState"
 import { actorSharedState } from "../ActorBindings"
@@ -494,7 +494,9 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
             // A refusal that says this id already names other work spends it:
             // asking again under the same one only earns the same 409.
             const refusal: unknown = await response.clone().json().catch(() => undefined)
-            if (workerFailureCode((refusal as { code?: unknown } | undefined)?.code) === "setup_request_reused") shared.spentRequests.add(intent.id)
+            const code = refusalCode((refusal as { code?: unknown } | undefined)?.code)
+            // Accept the older spelling during a mixed app/host rollout too.
+            if (code === "setup_request_conflict" || code === "setup_request_reused") shared.spentRequests.add(intent.id)
             throw Error(await ctx.errorMessageOf(response, "The setup could not be completed."))
           }
           const result = SetupOperationResponseSchema.parse(await response.json())
