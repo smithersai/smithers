@@ -6,7 +6,7 @@
 import { Action } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
 import { NativeCoding, NativeCodingError, requestIdFor } from "./native.ts"
-import { Check, CodingError, Receipt, Revision, StackBase } from "./schema.ts"
+import { Check, CodingError, Implementation, Receipt, receiptMatches, Revision, StackBase } from "./schema.ts"
 export const VerifyInput = Schema.Struct({
   source: StackBase,
   checks: Schema.Array(Check).check(Schema.isMinLength(1), Schema.isMaxLength(64))
@@ -20,17 +20,38 @@ export type VerifyResult = typeof VerifyResult.Type
 
 /** Imports the retained commit and answers its exact revision. */
 export const AdmitVerifySource = Action.make("coding/admit-verify-source", {
-  payload: { source: StackBase }, success: Revision, error: CodingError, nondeterministic: true
+  payload: { source: StackBase, checks: Schema.Array(Check) }, success: Revision, error: CodingError, nondeterministic: true
 })
 
-/** Passed only when every required check has a passing receipt. */
-export const verifySummary = (checks: ReadonlyArray<typeof Check.Type>, receipts: ReadonlyArray<typeof Receipt.Type>): VerifyResult => {
-  const failed = checks.filter(check => check.required && !receipts.some(receipt => receipt.checkId === check.id && receipt.status === "passed"))
+/** The implementation every verify receipt is bound to: the one retained commit. */
+export const verifyImplementation = (head: typeof Revision.Type): typeof Implementation.Type =>
+  ({ change: "mythical-candidate", parent: head, atoms: [head], head, reads: [], writes: [] })
+
+/** Why a check set cannot verify anything (repeated ids, no required fast and slow check), or undefined. */
+export const verifyChecksRefusal = (checks: ReadonlyArray<typeof Check.Type>): CodingError | undefined => {
+  const ids = checks.map(check => check.id)
+  if (new Set(ids).size !== ids.length) return new CodingError({ code: "invalid_request", message: "Verification checks repeat an id" })
+  if (!checks.some(check => check.required && check.tier === "fast") || !checks.some(check => check.required && check.tier === "slow")) {
+    return new CodingError({ code: "invalid_request", message: "Verification needs a required fast check and a required slow check" })
+  }
+  return undefined
+}
+
+/**
+ * Passed only when every required check has a passing receipt without
+ * findings that is bound to exactly the verified commit, tree and inputs.
+ */
+export const verifySummary = (checks: ReadonlyArray<typeof Check.Type>, implementation: typeof Implementation.Type,
+  receipts: ReadonlyArray<typeof Receipt.Type>): VerifyResult => {
+  const failed = checks.filter(check => check.required && !receipts.some(receipt => receipt.checkId === check.id &&
+    receipt.status === "passed" && receipt.findings.length === 0 && receiptMatches(implementation, check, receipt)))
     .map(check => check.id)
   return { status: failed.length === 0 ? "passed" : "failed", failed, receipts: [...receipts] }
 }
 
-export const admitVerifySource = (source: StackBase, executionId: string) => Effect.gen(function*() {
+export const admitVerifySource = (source: StackBase, checks: ReadonlyArray<typeof Check.Type>, executionId: string) => Effect.gen(function*() {
+  const refusal = verifyChecksRefusal(checks)
+  if (refusal !== undefined) return yield* refusal
   const native = yield* NativeCoding
   if (!native.importSource) return yield* new CodingError({ code: "source_refused", message: "This workspace's native helper cannot import a stack commit" })
   const imported = yield* native.importSource({ requestId: requestIdFor(executionId, "verify/import"),

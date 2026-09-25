@@ -8,7 +8,7 @@ export { Verify }
 export { VerifyInput, VerifyResult } from "./verify-schema.ts"
 
 export const verifyRegistration = Layer.mergeAll(Interpreter.layer(Verify),
-  AdmitVerifySource.toLayer(({ source }) => Effect.gen(function*() {
+  AdmitVerifySource.toLayer(({ source, checks }) => Effect.gen(function*() {
     const instance = yield* FlowRuntime.FlowInstance
-    return yield* admitVerifySource(source, instance.executionId)
+    return yield* admitVerifySource(source, checks, instance.executionId)
   })))

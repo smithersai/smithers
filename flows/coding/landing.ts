@@ -136,8 +136,12 @@ export const make = (options: Options) => Effect.gen(function*() {
         Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(DeclaredPolicy))),
         Effect.mapError(error => error instanceof CodingError ? error : invalid("The declared factory projection on main is not valid JSON")),
         Effect.map((policy): Delivery => policy.github?.changes === "send-upstream" ? "pull-request" : "append"))))
+  // Only a repository without a stack delivers the ordinary way; a frozen or
+  // rebuilding stack makes the delivery wait (a retryable refusal).
   const readStack = send(HttpClientRequest.get(`${base}/mythical`), [200, 404], Schema.Union([StackState, Missing])).pipe(
-    Effect.map(reply => "state" in reply && reply.state === "active"))
+    Effect.flatMap(reply => !("state" in reply) || reply.state === "absent" ? Effect.succeed(false)
+      : reply.state === "active" ? Effect.succeed(true)
+      : Effect.fail(unavailable(`The repository's mythical stack is ${reply.state}; deliver again once it is active`))))
   const submitLane = (submission: LaneSubmission) => Schema.decodeUnknownEffect(LaneSubmission)(submission).pipe(
     Effect.mapError(() => invalid("A lane submission requires exact commits and this workspace")),
     Effect.flatMap(body => send(json(HttpClientRequest.put(`${base}/mythical/lanes`), body), [200, 202], LaneReceipt)),

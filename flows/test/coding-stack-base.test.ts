@@ -3,7 +3,7 @@ import { test } from "node:test"
 import { Effect, Layer } from "effect"
 import { NativeCoding, type NativeRevision } from "../coding/native.ts"
 import { CodingError } from "../coding/schema.ts"
-import { admitStackBase } from "../coding/stack.ts"
+import { observeStackBase, prepareStackBase } from "../coding/stack.ts"
 
 /*
  * A stack request stands on a fresh working change on the retained stack
@@ -41,23 +41,27 @@ const fake = (head: NativeRevision, createdParent = tip) => {
   return { calls, layer }
 }
 
-test("the tip is imported and a fresh working change is created on it", async () => {
+test("the tip is imported and the create is prepared on it", async () => {
   const { calls, layer } = fake(resolved("k", "d".repeat(40), ["f".repeat(40)]))
-  const working = await Effect.runPromise(admitStackBase(base, "execution").pipe(Effect.provide(layer)))
+  const operation = await Effect.runPromise(prepareStackBase(base, "execution").pipe(Effect.provide(layer)))
+  assert.equal(operation.operation, "create")
+  assert.equal(operation.target.commitId, tip)
+  assert.equal(operation.expectedOperationId, op("2"), "the create is fenced on the import's operation")
+  assert.deepEqual(calls, [`import:${base.ref}`])
+  // The same execution prepares the same request id: a replayed create is
+  // recovered from its native receipt, never duplicated.
+  const again = await Effect.runPromise(prepareStackBase(base, "execution").pipe(Effect.provide(layer)))
+  assert.equal(again.requestId, operation.requestId)
+})
+
+test("the working change is accepted only on the tip", async () => {
+  const onTip = resolved("m", "c".repeat(40), [tip])
+  const accepted = { status: "accepted" as const, operationId: op("3"), parentOperationId: op("2"), timestamp: "t", head: onTip,
+    revision: onTip, revisions: [onTip], provenance: "pending" as const }
+  const working = await Effect.runPromise(observeStackBase(base, accepted))
   assert.deepEqual(working.parentCommitIds, [tip])
-  assert.deepEqual(calls, ["read", `import:${base.ref}`, `create:${tip}`])
-})
-
-test("a workspace already on a fresh change on the tip is answered as is", async () => {
-  const { calls, layer } = fake(resolved("m", "c".repeat(40), [tip], { empty: true, description: "" }))
-  const working = await Effect.runPromise(admitStackBase(base, "execution").pipe(Effect.provide(layer)))
-  assert.equal(working.commitId, "c".repeat(40))
-  assert.deepEqual(calls, ["read"])
-})
-
-test("a change created anywhere but on the tip is refused", async () => {
-  const { layer } = fake(resolved("k", "d".repeat(40), ["f".repeat(40)]), "9".repeat(40))
-  const error = await Effect.runPromise(Effect.flip(admitStackBase(base, "execution").pipe(Effect.provide(layer))))
+  const elsewhere = resolved("m", "c".repeat(40), ["9".repeat(40)])
+  const error = await Effect.runPromise(Effect.flip(observeStackBase(base, { ...accepted, revision: elsewhere, head: elsewhere })))
   assert.ok(error instanceof CodingError)
   assert.equal(error.code, "source_refused")
 })
@@ -68,8 +72,9 @@ test("coding/verify runs every check on the imported commit and fails on a faile
   const { Action, Interpreter } = await import("@smthrs/flow")
   const { ManagedRuntime } = await import("effect")
   const { Verify } = await import("../coding/verify.ts")
-  const { AdmitVerifySource } = await import("../coding/verify-schema.ts")
+  const { AdmitVerifySource, verifyChecksRefusal } = await import("../coding/verify-schema.ts")
   const { RunCheck } = await import("../coding/workflow.ts")
+  const { checkInputDigest } = await import("../coding/schema.ts")
   const head = resolved("l", tip, ["b".repeat(40)])
   const checks = [
     { id: "fast", target: "flows", flow: "checks/fast", flowDigest: "f".repeat(64), tier: "fast" as const, required: true },
@@ -77,14 +82,18 @@ test("coding/verify runs every check on the imported commit and fails on a faile
     { id: "lint", target: "flows", flow: "checks/lint", flowDigest: "l".repeat(64), tier: "slow" as const, required: false }
   ]
   const ran: string[] = []
+  let failing = ["slow"]
   const layer = Layer.mergeAll(Interpreter.layer(Verify),
-    AdmitVerifySource.toLayer(() => Effect.succeed({ changeId: head.changeId, commitId: head.commitId, treeId: "e".repeat(40),
-      operationId: op("1"), parentCommitIds: [...head.parentCommitIds] })),
+    AdmitVerifySource.toLayer(({ checks }) => {
+      const refusal = verifyChecksRefusal(checks)
+      return refusal !== undefined ? Effect.fail(refusal) : Effect.succeed({ changeId: head.changeId, commitId: head.commitId,
+        treeId: "e".repeat(40), operationId: op("1"), parentCommitIds: [...head.parentCommitIds] })
+    }),
     RunCheck.toLayer(({ implementation, check }) => Effect.sync(() => {
       ran.push(`${check.id}@${implementation.head.commitId.slice(0, 4)}`)
       return { checkId: check.id, target: check.target, tier: check.tier, change: implementation.change, commitId: implementation.head.commitId,
-        treeId: implementation.head.treeId, inputDigest: "d", status: check.id === "slow" ? "failed" as const : "passed" as const,
-        evidence: "", findings: [] }
+        treeId: implementation.head.treeId, inputDigest: checkInputDigest(implementation, check),
+        status: failing.includes(check.id) ? "failed" as const : "passed" as const, evidence: "", findings: [] }
     }))
   ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeCrypto.layer))
   const host = ManagedRuntime.make(layer)
@@ -93,4 +102,14 @@ test("coding/verify runs every check on the imported commit and fails on a faile
   assert.deepEqual([...ran].sort(), ["fast@aaaa", "lint@aaaa", "slow@aaaa"])
   assert.equal(result.status, "failed")
   assert.deepEqual(result.failed, ["slow"])
+  // An optional check failing does not fail the verification.
+  failing = ["lint"]
+  assert.equal((await host.runPromise(Verify.execute({ source: base, checks }, { executionId: "verify-2" }))).status, "passed")
+  // Repeated ids, or no required slow check, are refused before any check runs.
+  const before = ran.length
+  const repeated = await host.runPromise(Effect.flip(Verify.execute({ source: base, checks: [checks[0]!, checks[0]!, checks[1]!] }, { executionId: "verify-3" })))
+  assert.match(JSON.stringify(repeated), /repeat an id/)
+  const fastOnly = await host.runPromise(Effect.flip(Verify.execute({ source: base, checks: [checks[0]!] }, { executionId: "verify-4" })))
+  assert.match(JSON.stringify(fastOnly), /required slow check/)
+  assert.equal(ran.length, before)
 })

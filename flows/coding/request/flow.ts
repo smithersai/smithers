@@ -6,7 +6,7 @@ import { CorrectPlan } from "../correction.ts"
 import { PrepareRequest } from "../preparation.ts"
 import { CodingError, Plan, PlanningInput, RequestInput, RequestResult } from "../schema.ts"
 import { AdmitSource } from "../source-admission.ts"
-import { AdmitStackBase } from "../stack.ts"
+import { admitStackBase } from "../stack.ts"
 import { FeedbackReceipt, ReceiveFeedback } from "../steering.ts"
 
 export const maximumPlanningPasses = 8
@@ -69,7 +69,7 @@ export default Flow.make("coding/Request", {
   body: input => {
     const prepare = PrepareRequest.child({ prompt: input.prompt, feedback: input.feedback ?? "" })
     // A stack request first stands on a fresh working change on the tip.
-    return (input.base === undefined ? prepare : AdmitStackBase.call({ base: input.base }).pipe(Node.andThen(prepare))).pipe(
+    return (input.base === undefined ? prepare : admitStackBase(input.base).pipe(Node.andThen(prepare))).pipe(
       Node.bindPlanned(plan => AdmitSource.call({ plan })),
       Node.bindPlanned(preparedPlan => Coordinate.child({ prompt: input.prompt, feedback: input.feedback ?? "",
         maxRounds: input.maxRounds ?? 3, revision: 0, preparedPlan }))

@@ -10,7 +10,7 @@ import { Poc } from "../coding/poc.ts"
 import { Prototype, prototypeRegistration } from "../coding/prototype.ts"
 import { Request, requestRegistration } from "../coding/request.ts"
 import { AdmitSource } from "../coding/source-admission.ts"
-import { AdmitStackBase } from "../coding/stack.ts"
+import { CreateStackBase, PrepareStackBase } from "../coding/stack.ts"
 import { ReceiveFeedback, type FeedbackReceipt } from "../coding/steering.ts"
 import { CodingError, type Plan, type Revision } from "../coding/schema.ts"
 
@@ -52,8 +52,13 @@ const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray
     }))
   }))
   const layer = Layer.mergeAll(requestRegistration, prototypeRegistration, registration,
-    AdmitStackBase.toLayer(({ base }) => Effect.sync(() => {
+    PrepareStackBase.toLayer(({ base }) => Effect.sync(() => {
       events.push(`base:${base.commitId.slice(0, 4)}`)
+      return { operation: "create" as const, requestId: "00000000-0000-8000-a000-000000000001", expectedOperationId: "1".repeat(128),
+        target: { changeId: "k".repeat(32), commitId: base.commitId, treeId: "e".repeat(40), operationId: "1".repeat(128), parentCommitIds: [] },
+        description: "" }
+    })),
+    CreateStackBase.toLayer(({ base }) => Effect.sync(() => {
       head = { ...revision("working"), parentCommitIds: [base.commitId] }
       return head
     })),
