@@ -11,6 +11,10 @@ import { tempRepos } from "../support/tempRepos.ts";
 
 const { git, write, track, initRepo } = tempRepos();
 
+// Fixture commits and snapshot reads spawn real git processes. Match the
+// guarded-git budget in pullRequestScope.test.ts; 5s is flaky under gate load.
+const GIT_TIMEOUT_MS = 30_000;
+
 const previewSnapshot = async (input: OpenCodeReviewInput) => previewFromSnapshot(await loadReviewSnapshot(input));
 const promptSnapshot = async (input: OpenCodeReviewInput, preview: PreviewOutput) => nativeReviewPromptFromSnapshot(await loadReviewSnapshot(input), preview);
 
@@ -73,7 +77,7 @@ describe("previewSnapshot + promptSnapshot (real git)", () => {
     expect(helper?.prompt).toContain("Test quality:");
     const e2e = prompt.files.find((f) => f.path === "e2e/flow.ts");
     expect(e2e?.prompt).toContain("Test quality:");
-  });
+  }, GIT_TIMEOUT_MS);
 
   test("promptSnapshot reports no reviewable files when a stale preview disagrees", async () => {
     const dir = initRepo();
@@ -96,7 +100,7 @@ describe("previewSnapshot + promptSnapshot (real git)", () => {
     const prompt = await promptSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir }, stalePreview);
     expect(prompt.shouldReview).toBe(false);
     expect(prompt.message).toContain("No supported files changed");
-  });
+  }, GIT_TIMEOUT_MS);
 
   test("workspace mode with only untracked changes falls through to the staged-diff branch", async () => {
     const dir = initRepo();
@@ -107,7 +111,7 @@ describe("previewSnapshot + promptSnapshot (real git)", () => {
     write(join(dir, "src/fresh.ts"), "export const fresh = 1;\n");
     const preview = await previewSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir });
     expect(preview.entries.some((e) => e.path === "src/fresh.ts")).toBe(true);
-  });
+  }, GIT_TIMEOUT_MS);
 
   test("range and commit modes read their diffs", async () => {
     const dir = initRepo();
@@ -128,7 +132,7 @@ describe("previewSnapshot + promptSnapshot (real git)", () => {
     expect(range.totalFiles).toBeGreaterThan(0);
     const commit = await previewSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir, commit: "HEAD" });
     expect(commit.totalFiles).toBeGreaterThan(0);
-  });
+  }, GIT_TIMEOUT_MS);
 
   test("project rule.json include/exclude filters via --rule and repo config", async () => {
     const dir = initRepo();
@@ -153,7 +157,7 @@ describe("previewSnapshot + promptSnapshot (real git)", () => {
     expect(skip?.excludeReason).toBe("user_exclude");
     const app = preview.entries.find((e) => e.path === "src/app.ts");
     expect(app?.willReview).toBe(true);
-  });
+  }, GIT_TIMEOUT_MS);
 
   test("promptSnapshot short-circuits when runReview is false or nothing is reviewable", async () => {
     const dir = initRepo();
@@ -175,5 +179,5 @@ describe("previewSnapshot + promptSnapshot (real git)", () => {
     const nothing = await promptSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir }, preview);
     expect(nothing.shouldReview).toBe(false);
     expect(nothing.message).toContain("No supported files changed");
-  });
+  }, GIT_TIMEOUT_MS);
 });
