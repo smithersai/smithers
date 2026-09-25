@@ -218,6 +218,7 @@ func (s *Server) Handler() http.Handler {
 			r.Method(http.MethodGet, "/repos/{id}/bookmarks", s.withAppError(s.listBookmarks))
 			r.Method(http.MethodPost, "/repos/{id}/bookmarks", s.withAppError(s.createBookmark))
 			r.Method(http.MethodPut, "/repos/{id}/default-bookmark", s.withAppError(s.setDefaultBookmark))
+			r.Method(http.MethodGet, "/repos/{id}/bookmarks/{name}", s.withAppError(s.getBookmark))
 			r.Method(http.MethodDelete, "/repos/{id}/bookmarks/{name}", s.withAppError(s.deleteBookmark))
 			r.Method(http.MethodGet, "/repos/{id}/changes", s.withAppError(s.listChanges))
 			r.Method(http.MethodGet, "/repos/{id}/changes/{change_id}", s.withAppError(s.getChange))
@@ -1324,6 +1325,70 @@ func (s *Server) listBookmarks(w http.ResponseWriter, r *http.Request) error {
 	return writeJSON(w, http.StatusOK, result)
 }
 
+// getBookmark serves GET /repos/{id}/bookmarks/{name}: one bookmark by exact
+// name, or 404. Product callers resolve refs (contents, landing, changesets)
+// through this route; without it they received 405 and every repository
+// contents read failed with 500.
+func (s *Server) getBookmark(w http.ResponseWriter, r *http.Request) error {
+	done := s.metrics.StartOperation("GetBookmark")
+	defer done()
+
+	repoPath, err := s.repoPathFromID(chi.URLParam(r, "id"))
+	if err != nil {
+		return err
+	}
+	name := chi.URLParam(r, "name")
+	// chi matches RawPath when the request carries escapes such as %2F in
+	// "feature%2Fx" and then leaves the parameter escaped.
+	if r.URL.RawPath != "" {
+		if name, err = url.PathUnescape(name); err != nil {
+			return badRequest("bookmark name must be url-encoded")
+		}
+	}
+	if strings.TrimSpace(name) == "" {
+		return badRequest("bookmark name is required")
+	}
+
+	unlock := s.locks.RLock(repoPath)
+	defer unlock()
+
+	bookmark, found, err := s.findBookmark(repoPath, name)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return notFound("bookmark not found")
+	}
+	return writeJSON(w, http.StatusOK, bookmark)
+}
+
+// bookmarkLookupPageSize and bookmarkLookupMaxPages bound an in-process
+// bookmark lookup over the paginated native listing.
+const (
+	bookmarkLookupPageSize = 100
+	bookmarkLookupMaxPages = 1000
+)
+
+// findBookmark returns the bookmark with the exact name. The caller holds the
+// repository lock, so the listing cannot change between pages.
+func (s *Server) findBookmark(repoPath, name string) (repohost.Bookmark, bool, error) {
+	for page := uint32(1); page <= bookmarkLookupMaxPages; page++ {
+		bookmarks, err := s.ffi.ListBookmarks(repoPath, page, bookmarkLookupPageSize)
+		if err != nil {
+			return repohost.Bookmark{}, false, err
+		}
+		for _, bookmark := range bookmarks.Items {
+			if bookmark.Name == name {
+				return bookmark, true, nil
+			}
+		}
+		if len(bookmarks.Items) == 0 || int(page)*bookmarkLookupPageSize >= bookmarks.TotalCount {
+			return repohost.Bookmark{}, false, nil
+		}
+	}
+	return repohost.Bookmark{}, false, internalError("bookmark listing exceeds lookup bound", nil)
+}
+
 func (s *Server) createBookmark(w http.ResponseWriter, r *http.Request) error {
 	done := s.metrics.StartOperation("CreateBookmark")
 	defer done()
@@ -1351,22 +1416,11 @@ func (s *Server) createBookmark(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if req.ExpectedCommitID != nil {
-		current := ""
-		for page := uint32(1); ; page++ {
-			bookmarks, err := s.ffi.ListBookmarks(repoPath, page, 100)
-			if err != nil {
-				return err
-			}
-			for _, bookmark := range bookmarks.Items {
-				if bookmark.Name == req.Name {
-					current = bookmark.TargetCommitID
-				}
-			}
-			if int(page)*100 >= bookmarks.TotalCount {
-				break
-			}
+		bookmark, _, err := s.findBookmark(repoPath, req.Name)
+		if err != nil {
+			return err
 		}
-		if current != *req.ExpectedCommitID {
+		if bookmark.TargetCommitID != *req.ExpectedCommitID {
 			return conflict("bookmark changed since the operation began")
 		}
 	}

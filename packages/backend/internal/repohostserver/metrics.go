@@ -26,6 +26,7 @@ var operationLabels = []string{
 	"DeleteDoc",
 	"ListBookmarks",
 	"CreateBookmark",
+	"GetBookmark",
 	"SetDefaultBookmark",
 	"DeleteBookmark",
 	"ListChanges",

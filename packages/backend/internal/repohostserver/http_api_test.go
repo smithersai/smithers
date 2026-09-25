@@ -296,6 +296,57 @@ func TestListBookmarksReturnsPaginatedJSON(t *testing.T) {
 	}
 }
 
+func TestGetBookmarkResolvesOneBookmarkByName(t *testing.T) {
+	// 150 bookmarks: the target sits on the second native page, as main does
+	// on mirrored repositories with hundreds of branches.
+	all := make([]repohost.Bookmark, 0, 150)
+	for i := 0; i < 149; i++ {
+		all = append(all, repohost.Bookmark{Name: "branch-" + strings.Repeat("a", i%5) + string(rune('a'+i%26)), TargetChangeID: "chg", TargetCommitID: "cmt"})
+	}
+	all = append(all, repohost.Bookmark{Name: "feature/x", TargetChangeID: "want-change", TargetCommitID: "want-commit"})
+	var pages []uint32
+	mock := &mockFFI{
+		listBookmarksFn: func(storePath string, page, perPage uint32) (repohostffi.Paginated[repohost.Bookmark], error) {
+			pages = append(pages, page)
+			start := int((page - 1) * perPage)
+			end := min(start+int(perPage), len(all))
+			if start > len(all) {
+				start = len(all)
+			}
+			return repohostffi.Paginated[repohost.Bookmark]{Items: all[start:end], TotalCount: len(all)}, nil
+		},
+	}
+	handler := newTestServerWithMock(t, mock).Handler()
+
+	get := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", validAuth())
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		return w
+	}
+
+	w := get("/repos/alice%3Ademo/bookmarks/feature%2Fx")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", w.Code, w.Body.String())
+	}
+	var got repohost.Bookmark
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	want := repohost.Bookmark{Name: "feature/x", TargetChangeID: "want-change", TargetCommitID: "want-commit"}
+	if got != want {
+		t.Fatalf("expected %+v, got %+v", want, got)
+	}
+	if !reflect.DeepEqual(pages, []uint32{1, 2}) {
+		t.Fatalf("expected pages [1 2], got %v", pages)
+	}
+
+	if w := get("/repos/alice%3Ademo/bookmarks/absent"); w.Code != http.StatusNotFound {
+		t.Fatalf("absent bookmark: expected 404, got %d; body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestCreateDeleteBookmarkLifecycle(t *testing.T) {
 	created := false
 	deleted := false
