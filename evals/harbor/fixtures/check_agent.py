@@ -317,6 +317,30 @@ def check_container_gate() -> None:
     assert codex_pool.container_commands(lines.splitlines()[0]) == {"attempted": 1, "succeeded": 0}
 
 
+def check_container_survival() -> None:
+    """A task container that died during the run cannot be graded: tb4-confirm-A2
+    mp-checkpoint 7FU4pw3's VM was gone ("workspace VM no longer exists"), the
+    artifact copy failed best-effort and the verifier scored the missing file 0."""
+    import asyncio
+
+    class Alive:
+        async def exec(self, command, cwd=None, env=None, timeout_sec=None, **_):
+            assert command == "true" and timeout_sec, (command, timeout_sec)
+            return type("R", (), {"return_code": 0, "stdout": "", "stderr": ""})()
+
+    class Gone:
+        async def exec(self, command, cwd=None, env=None, timeout_sec=None, **_):
+            raise RuntimeError("409: workspace VM no longer exists")
+
+    class Refuses:
+        async def exec(self, command, cwd=None, env=None, timeout_sec=None, **_):
+            return type("R", (), {"return_code": 125, "stdout": "", "stderr": "no such container"})()
+
+    assert asyncio.run(agent.container_lost(Alive())) is None
+    assert "no longer exists" in asyncio.run(agent.container_lost(Gone()))
+    assert "125" in asyncio.run(agent.container_lost(Refuses()))
+
+
 def check_accounts() -> None:
     with tempfile.TemporaryDirectory() as directory:
         home = Path(directory)
@@ -592,6 +616,7 @@ if __name__ == "__main__":
     check_plue_shim()
     check_plue_env()
     check_container_gate()
+    check_container_survival()
     check_accounts()
     revision = check_harness_revision()
     print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim, plue environment and account pool hold; "

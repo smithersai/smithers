@@ -247,6 +247,23 @@ def container_commands(events: list[dict[str, Any]], container: str) -> dict[str
     return {"attempted": attempted, "succeeded": succeeded}
 
 
+async def container_lost(environment: Any, timeout_sec: int = 180) -> str | None:
+    """Why the task container can no longer be graded, or None when it answers.
+
+    Probed once after the run. A container that died mid-run (a plue VM that
+    "no longer exists", a removed docker container) leaves the verifier grading
+    an empty tree, so the trial is infrastructure, never a score."""
+    try:
+        result = await environment.exec("true", timeout_sec=timeout_sec)
+    except Exception as error:  # noqa: BLE001 - any transport failure means the task is gone
+        return f"{type(error).__name__}: {str(error)[:300]}"
+    code = getattr(result, "return_code", None)
+    if code != 0:
+        stderr = (getattr(result, "stderr", "") or "").strip()
+        return f"liveness probe exited {code}: {stderr[:300]}"
+    return None
+
+
 def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None = None,
                     shim: Path | None = None, codex_home: Path | None = None,
                     container: str | None = None) -> dict[str, str]:
@@ -862,6 +879,11 @@ class SmithersAgent(BaseAgent):
         if reached["succeeded"] == 0:
             raise accounts.ContainerUnreachable(
                 f"no command reached {container} with exit 0 ({reached['attempted']} attempted)")
+        lost = await container_lost(environment)
+        if lost is not None:
+            record["containerLost"] = lost
+            (self.logs_dir / "smithers-run.json").write_text(json.dumps(record, indent=2))
+            raise accounts.ContainerUnreachable(f"task container {container} gone after the run: {lost}")
 
     def _cli(self, *args: str) -> list[str]:
         return ["node", str(self.root / CLI_RELATIVE), "--json", *args]
