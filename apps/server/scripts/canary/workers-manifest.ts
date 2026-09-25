@@ -48,7 +48,11 @@
  */
 
 /** @see BACKING_WORKERS for which Worker carries which contract. */
-export type HealthContract = "ok-json" | "responds"
+/**
+ * status-ok-json is Plue's /healthz (packages/backend/internal/routes/healthz.go):
+ * HTTP 200, `status: "ok"`, and every entry of `checks` "ok".
+ */
+export type HealthContract = "ok-json" | "status-ok-json" | "responds"
 
 export interface BackingWorker {
   readonly name: string
@@ -81,7 +85,7 @@ export const BACKING_WORKERS: ReadonlyArray<BackingWorker> = [
     origin: "https://api.jjhub.tech",
     alternateOrigins: [],
     path: "/healthz",
-    contract: "ok-json",
+    contract: "status-ok-json",
     note: "repositories, workspaces and gateway provisioning; SMITHERS_CLOUD_API_BASE_URL"
   },
   {

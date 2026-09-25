@@ -340,7 +340,18 @@ export const workerHealthVerdict = (observation: HealthObservation): HealthVerdi
   if (observation.body.kind !== "json") {
     return { name, state: "unhealthy", detail: `${name} ${target} answered HTTP 200 but no JSON body was read.` }
   }
-  if (!isRecord(observation.body.value) || observation.body.value.ok !== true) {
+  if (worker.contract === "status-ok-json") {
+    const body = observation.body.value
+    const checks = isRecord(body) && isRecord(body.checks) ? Object.entries(body.checks) : undefined
+    const failing = checks?.filter(([, value]) => value !== "ok").map(([key]) => key) ?? []
+    if (!isRecord(body) || body.status !== "ok" || checks === undefined || failing.length > 0) {
+      return {
+        name,
+        state: "unhealthy",
+        detail: `${name} ${target} answered HTTP 200 without status "ok" on every check${failing.length > 0 ? ` (${failing.join(", ")})` : ""}: ${excerpt(JSON.stringify(body))}`
+      }
+    }
+  } else if (!isRecord(observation.body.value) || observation.body.value.ok !== true) {
     return {
       name,
       state: "unhealthy",

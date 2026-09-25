@@ -255,6 +255,27 @@ describe("Cloudflare's edge error page", () => {
 })
 
 describe("one Worker's verdict", () => {
+  // Plue's /healthz (packages/backend/internal/routes/healthz.go) answers
+  // {status, checks}, never ok:true; CN-18 read the live cloud-api as down.
+  const plue = worker({ name: "cloud-api", origin: "https://api.test", contract: "status-ok-json" })
+  test("status-ok-json: Plue's healthy body is healthy", async () => {
+    const observation = await probeWorker(plue, {
+      fetch: fakeFetch({ "https://api.test/healthz": jsonResponse(200, { status: "ok", checks: { database: "ok", repo_host: "ok" } }) })
+    })
+    expect(workerHealthVerdict(observation).state).toBe("healthy")
+  })
+
+  test("status-ok-json: a failing dependency check is unhealthy even on HTTP 200", async () => {
+    for (const body of [{ status: "ok", checks: { database: "ok", repo_host: "error" } }, { status: "degraded", checks: {} }, { ok: true }]) {
+      const observation = await probeWorker(plue, { fetch: fakeFetch({ "https://api.test/healthz": jsonResponse(200, body) }) })
+      expect(workerHealthVerdict(observation).state).toBe("unhealthy")
+    }
+  })
+
+  test("the manifest holds cloud-api to Plue's health contract", () => {
+    expect(BACKING_WORKERS.find((entry) => entry.name === "cloud-api")?.contract).toBe("status-ok-json")
+  })
+
   test("ok-json: HTTP 200 with ok:true is healthy", async () => {
     const observation = await probeWorker(worker(), {
       fetch: fakeFetch({ "https://identity.test/healthz": jsonResponse(200, { ok: true, oauth: true }) }),
@@ -389,7 +410,7 @@ describe("the run", () => {
     Object.fromEntries(
       expandTargets(BACKING_WORKERS).map((entry) => [
         healthUrl(entry) as string,
-        entry.contract === "ok-json" ? jsonResponse(200, { ok: true }) : textResponse(404, "Not found")
+        entry.contract === "ok-json" ? jsonResponse(200, { ok: true }) : entry.contract === "status-ok-json" ? jsonResponse(200, { status: "ok", checks: { database: "ok" } }) : textResponse(404, "Not found")
       ])
     )
 
