@@ -171,19 +171,29 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 		post("/api/user/repos", tokenResult.Token, map[string]any{
 			"name": "flow-http-integration", "private": true, "auto_init": true, "default_bookmark": "main",
 		})
-		catalog := post("/api/workflow/rpc", tokenResult.Token, map[string]any{
-			"repo": "l3bowner/flow-http-integration", "procedure": "List", "payload": map[string]string{"_tag": "flows"},
-		})
-		require.Contains(t, string(catalog), `"flowId":"librarian/history"`)
+		// Catalog reads require an existing workspace and must never provision one.
+		var workspace struct {
+			ID string `json:"workspaceId"`
+		}
+		require.NoError(t, json.Unmarshal(post("/api/workflow/provision", tokenResult.Token, map[string]any{
+			"repo": "l3bowner/flow-http-integration",
+		}), &workspace))
+		_, err = uuid.Parse(workspace.ID)
+		require.NoError(t, err)
 		missing := post("/api/workflow/rpc", tokenResult.Token, map[string]any{
-			"repo": "l3bowner/flow-http-integration", "procedure": "Plan",
+			"repo": "l3bowner/flow-http-integration", "workspaceId": workspace.ID, "procedure": "Plan",
 			"payload": map[string]any{"flowId": "missing/flow", "input": map[string]any{}},
 		})
 		require.Contains(t, string(missing), `"ok":false`)
 		require.Contains(t, string(missing), `No flow`)
+		// Planning starts the admitted host; subsequent catalog reads only reconnect.
+		catalog := post("/api/workflow/rpc", tokenResult.Token, map[string]any{
+			"repo": "l3bowner/flow-http-integration", "workspaceId": workspace.ID, "procedure": "List", "payload": map[string]string{"_tag": "flows"},
+		})
+		require.Contains(t, string(catalog), `"flowId":"librarian/history"`)
 		flowRPC := func(procedure string, payload any) map[string]any {
 			result := post("/api/workflow/rpc", tokenResult.Token, map[string]any{
-				"repo": "l3bowner/flow-http-integration", "procedure": procedure, "payload": payload,
+				"repo": "l3bowner/flow-http-integration", "workspaceId": workspace.ID, "procedure": procedure, "payload": payload,
 			})
 			var frame map[string]any
 			require.NoError(t, json.Unmarshal(result, &frame))
