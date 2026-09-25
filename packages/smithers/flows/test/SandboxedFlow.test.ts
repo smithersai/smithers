@@ -481,37 +481,45 @@ describe("native Windows sandbox diff paths", () => {
       Effect.gen(function*() {
         const guest = yield* limitedGuest({ files: ["ok"] })
         const windows: Sandbox.Provider = {
-          acquire: (key) => Effect.map(guest.provider.acquire(key), (session): Sandbox.Session => {
-            const prefix = workdir.replace(/\\/g, "/")
-            const local = (path: string): string => {
-              const normalized = path.replace(/\\/g, "/")
-              return normalized.startsWith(prefix) ? `${session.workdir}${normalized.slice(prefix.length)}` : path
-            }
-            return {
-              ...session,
-              workdir,
-              writeFile: (path, bytes) => session.writeFile(local(path), bytes),
-              readFile: (path) => session.readFile(local(path)),
-              files: {
-                ...session.files,
-                stat: (path) => session.files!.stat!(local(path)),
-                remove: (path, options) => session.files!.remove!(local(path), options),
-                stream: (path, options) => session.files!.stream!(local(path), options),
-                readDirectory: (path, options) => session.files!.readDirectory!(local(path), options).pipe(
-                  Effect.map((entries) => entries.map((entry) => entry.replace(/[\\/]/g, "\\")))
-                )
-              },
-              spawn: (command, options) => session.spawn(command, {
-                ...options,
-                ...(options.env === undefined ? {} : { env: {
-                  ...options.env,
-                  SMITHERS_SANDBOX_RESULT_PATH: local(options.env.SMITHERS_SANDBOX_RESULT_PATH!)
-                } })
-              }).pipe(Effect.tap(() => session.writeFile(
-                `${session.workdir}/nested/result.txt`, new TextEncoder().encode("hi")
-              )))
-            }
-          })
+          acquire: (key) =>
+            Effect.map(guest.provider.acquire(key), (session): Sandbox.Session => {
+              const prefix = workdir.replace(/\\/g, "/")
+              const local = (path: string): string => {
+                const normalized = path.replace(/\\/g, "/")
+                return normalized.startsWith(prefix) ? `${session.workdir}${normalized.slice(prefix.length)}` : path
+              }
+              return {
+                ...session,
+                workdir,
+                writeFile: (path, bytes) => session.writeFile(local(path), bytes),
+                readFile: (path) => session.readFile(local(path)),
+                files: {
+                  ...session.files,
+                  stat: (path) => session.files!.stat!(local(path)),
+                  remove: (path, options) => session.files!.remove!(local(path), options),
+                  stream: (path, options) => session.files!.stream!(local(path), options),
+                  readDirectory: (path, options) =>
+                    session.files!.readDirectory!(local(path), options).pipe(
+                      Effect.map((entries) => entries.map((entry) => entry.replace(/[\\/]/g, "\\")))
+                    )
+                },
+                spawn: (command, options) =>
+                  session.spawn(command, {
+                    ...options,
+                    ...(options.env === undefined ? {} : {
+                      env: {
+                        ...options.env,
+                        SMITHERS_SANDBOX_RESULT_PATH: local(options.env.SMITHERS_SANDBOX_RESULT_PATH!)
+                      }
+                    })
+                  }).pipe(Effect.tap(() =>
+                    session.writeFile(
+                      `${session.workdir}/nested/result.txt`,
+                      new TextEncoder().encode("hi")
+                    )
+                  ))
+              }
+            })
         }
         const result = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
           provider: windows,

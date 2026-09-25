@@ -21,8 +21,9 @@ export interface Prompt {
  * @category operations
  */
 export const enqueue = <T extends Prompt>(items: ReadonlyArray<T>, prompt: T): ReadonlyArray<T> =>
-  prompt.text.trim() === "" || items.some(item => item.id === prompt.id)
-    ? items : [...items, { ...prompt, text: prompt.text.trim() }]
+  prompt.text.trim() === "" || items.some((item) => item.id === prompt.id)
+    ? items :
+    [...items, { ...prompt, text: prompt.text.trim() }]
 
 /**
  * Remove the admitted request by identity.
@@ -30,7 +31,7 @@ export const enqueue = <T extends Prompt>(items: ReadonlyArray<T>, prompt: T): R
  * @category operations
  */
 export const remove = <T extends Prompt>(items: ReadonlyArray<T>, id: string): ReadonlyArray<T> =>
-  items.filter(item => item.id !== id)
+  items.filter((item) => item.id !== id)
 
 /**
  * Scope is captured at admission. Switching conversations never retargets a prompt.
@@ -38,7 +39,7 @@ export const remove = <T extends Prompt>(items: ReadonlyArray<T>, id: string): R
  * @category operations
  */
 export const inScope = <T extends Prompt>(items: ReadonlyArray<T>, scope: string): ReadonlyArray<T> =>
-  items.filter(item => item.scope === scope)
+  items.filter((item) => item.scope === scope)
 
 /**
  * Read the oldest request belonging to this conversation.
@@ -46,7 +47,7 @@ export const inScope = <T extends Prompt>(items: ReadonlyArray<T>, scope: string
  * @category operations
  */
 export const next = <T extends Prompt>(items: ReadonlyArray<T>, scope: string): T | undefined =>
-  items.find(item => item.scope === scope)
+  items.find((item) => item.scope === scope)
 
 /**
  * Restoring queued work preserves an unfinished draft after it.
@@ -54,4 +55,4 @@ export const next = <T extends Prompt>(items: ReadonlyArray<T>, scope: string): 
  * @category operations
  */
 export const restoreDraft = (items: ReadonlyArray<Pick<Prompt, "text">>, draft: string): string =>
-  [...items.map(item => item.text), ...(draft === "" ? [] : [draft])].join("\n\n")
+  [...items.map((item) => item.text), ...(draft === "" ? [] : [draft])].join("\n\n")

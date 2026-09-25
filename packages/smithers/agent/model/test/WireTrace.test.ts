@@ -21,7 +21,10 @@ const user = (text: string) => ({ role: "user", content: [{ type: "input_text", 
 describe("WireTrace.line", () => {
   it("reports the cache identity and the input prefix shared with the previous request", () => {
     const history = new Map<string, ReadonlyArray<string>>()
-    const first = WireTrace.line(prepared({ instructions: "teach", input: [user("begin"), user("panel 0")] }, "k"), history)
+    const first = WireTrace.line(
+      prepared({ instructions: "teach", input: [user("begin"), user("panel 0")] }, "k"),
+      history
+    )
     const second = WireTrace.line(
       prepared({
         instructions: "teach",
@@ -51,7 +54,6 @@ describe("WireTrace.line", () => {
 })
 
 describe("WireTrace.record", () => {
-
   it("appends one line to the file SMITHERS_WIRE_TRACE names", () => {
     const file = join(mkdtempSync(join(tmpdir(), "wire-trace-")), "trace.jsonl")
     const node = { env: { SMITHERS_WIRE_TRACE: file }, getBuiltinModule: process.getBuiltinModule } as never
@@ -72,8 +74,14 @@ describe("WireTrace.record", () => {
   })
 
   it("never fails the call when the trace file cannot be written", () => {
-    const failing = { appendFileSync: () => { throw new Error("read-only") } }
-    expect(() => WireTrace.record(prepared({}), { env: { SMITHERS_WIRE_TRACE: "/x" }, getBuiltinModule: () => failing }))
+    const failing = {
+      appendFileSync: () => {
+        throw new Error("read-only")
+      }
+    }
+    expect(() =>
+      WireTrace.record(prepared({}), { env: { SMITHERS_WIRE_TRACE: "/x" }, getBuiltinModule: () => failing })
+    )
       .not.toThrow()
   })
 })

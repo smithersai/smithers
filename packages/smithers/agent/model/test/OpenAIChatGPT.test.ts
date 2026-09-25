@@ -181,7 +181,10 @@ describe("OpenAIChatGPT turn-state affinity", () => {
   const completed = `data: ${JSON.stringify({ type: "response.completed", response: { id: "r", usage: {} } })}\n\n`
 
   /** Streams each request through one model and records the headers it left with. */
-  const drive = async (requests: ReadonlyArray<ModelRequest.ModelRequest>, turnStates: ReadonlyArray<string | undefined>) => {
+  const drive = async (
+    requests: ReadonlyArray<ModelRequest.ModelRequest>,
+    turnStates: ReadonlyArray<string | undefined>
+  ) => {
     const sent: Array<Readonly<Record<string, string>>> = []
     const executor = RequestExecutor.RequestExecutor.of({
       execute: (httpRequest: HttpClientRequest.HttpClientRequest) => {
@@ -191,7 +194,10 @@ describe("OpenAIChatGPT turn-state affinity", () => {
           httpRequest,
           new Response(completed, {
             status: 200,
-            headers: { "content-type": "text/event-stream", ...(state === undefined ? {} : { "x-codex-turn-state": state }) }
+            headers: {
+              "content-type": "text/event-stream",
+              ...(state === undefined ? {} : { "x-codex-turn-state": state })
+            }
           })
         ))
       }
