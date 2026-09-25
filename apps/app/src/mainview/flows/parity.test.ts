@@ -332,7 +332,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../plugins/PluginRail.tsx": 1,
       "../plugins/PluginsSurface.tsx": 1,
       /* 11 = 10 + the origin chip's "rev N exists · view" (lane change step 4; renders only when both seqs are known). */
-      "../Composer.tsx": 2,
+      // Send and Stop, plus the prompt queue: Queue, Resume, Edit and Remove.
+      "../Composer.tsx": 6,
       /*
        * 3 — the GitHub connect / disconnect pair and the empty state's own
        * import affordance (§11.6). The connected list carries no control.
