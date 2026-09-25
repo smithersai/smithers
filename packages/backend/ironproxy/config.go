@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -282,7 +283,7 @@ func renderSecrets(bindings []SecretBinding) ([]SecretEntry, error) {
 		if len(hosts) == 0 {
 			return nil, fmt.Errorf("%w: secret %s has no host binding", ErrInvalidSpec, envVar)
 		}
-		headers := cleanList(binding.MatchHeaders)
+		headers := canonicalHeaderNames(binding.MatchHeaders)
 		if len(headers) == 0 && !binding.MatchQuery && !binding.MatchPath {
 			return nil, fmt.Errorf("%w: secret %s has no match location", ErrInvalidSpec, envVar)
 		}
@@ -324,6 +325,31 @@ func RenderYAML(spec Spec) ([]byte, error) {
 		return nil, err
 	}
 	return Marshal(config)
+}
+
+// canonicalHeaderNames renders match_headers in canonical MIME form.
+//
+// iron-proxy 0.50.0 swaps a header by reading it under its canonical key and
+// writing the result back under the name as configured
+// (internal/headers.Swap). A lowercase name therefore moves the header to a
+// non-canonical map key, and every later secret bound to the same header
+// reads the canonical key, finds nothing, and never swaps. With two model
+// seats bound to Authorization on the Plue API host, only the first binding
+// in the list ever worked: agent runs whose seat came second sent the literal
+// placeholder and failed 401 until the reaper (2026-09-24, run 13748).
+// Canonical names round-trip through the canonical key. /regex/ patterns
+// match existing names and are left as written.
+func canonicalHeaderNames(values []string) []string {
+	names := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && strings.HasPrefix(value, "/") && strings.HasSuffix(value, "/") {
+			names = append(names, value)
+			continue
+		}
+		names = append(names, http.CanonicalHeaderKey(value))
+	}
+	return cleanList(names)
 }
 
 func cleanList(values []string) []string {

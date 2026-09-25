@@ -67,7 +67,7 @@ func TestRenderEmitsRealIronProxySchema(t *testing.T) {
 	assert.Equal(t, map[string]any{"type": "env", "var": "ANTHROPIC_API_KEY"}, entry["source"])
 	replace := entry["replace"].(map[string]any)
 	assert.Equal(t, "ANTHROPIC_API_KEY", replace["proxy_value"], "placeholder defaults to NAME so the guest carries NAME=NAME")
-	assert.Equal(t, []any{"authorization", "x-api-key"}, replace["match_headers"])
+	assert.Equal(t, []any{"Authorization", "X-Api-Key"}, replace["match_headers"])
 	assert.Equal(t, true, replace["require"])
 	assert.Nil(t, replace["match_query"], "query scanning stays off unless bound")
 	assert.Equal(t, []any{map[string]any{"host": "api.anthropic.com"}}, entry["rules"])
@@ -152,4 +152,32 @@ func TestGenerateCAProducesASigningCA(t *testing.T) {
 	keyBlock, _ := pem.Decode(ca.KeyPEM)
 	require.NotNil(t, keyBlock)
 	assert.Equal(t, "EC PRIVATE KEY", keyBlock.Type)
+}
+
+// Two secrets bound to the same header on the same host must both be able to
+// swap. iron-proxy writes a swapped header back under the configured name and
+// reads it under the canonical one, so only canonical names let the second
+// binding see the header the first one already processed.
+func TestRenderCanonicalizesMatchHeadersSoEveryBindingSwaps(t *testing.T) {
+	t.Parallel()
+	config, err := Render(Spec{
+		ListenAddr: "127.0.0.1:41000", HTTPListen: "127.0.0.1:42000", HTTPSListen: "127.0.0.1:43000", MetricsListen: "127.0.0.1:44000",
+		CACertPath: "/run/egress/ca.crt", CAKeyPath: "/run/egress/ca.key",
+		Secrets: []SecretBinding{
+			{EnvVar: "S0", ProxyValue: "AI_GATEWAY_API_KEY", Hosts: []string{"api.jjhub.tech"}, MatchHeaders: []string{"authorization", "x-api-key"}},
+			{EnvVar: "S1", ProxyValue: "CEREBRAS_API_KEY", Hosts: []string{"api.jjhub.tech"}, MatchHeaders: []string{"Authorization", "authorization", "x-api-key"}},
+			{EnvVar: "S2", ProxyValue: "CUSTOM", Hosts: []string{"api.example.com"}, MatchHeaders: []string{"/^x-custom-.*$/"}},
+		},
+	})
+	require.NoError(t, err)
+	var entries []SecretEntry
+	for _, transform := range config.Transforms {
+		if secrets, ok := transform.Config.(SecretsConfig); ok {
+			entries = secrets.Secrets
+		}
+	}
+	require.Len(t, entries, 3)
+	assert.Equal(t, []string{"Authorization", "X-Api-Key"}, entries[0].Replace.MatchHeaders)
+	assert.Equal(t, []string{"Authorization", "X-Api-Key"}, entries[1].Replace.MatchHeaders, "case variants collapse to one canonical name")
+	assert.Equal(t, []string{"/^x-custom-.*$/"}, entries[2].Replace.MatchHeaders, "regex patterns are left as written")
 }
