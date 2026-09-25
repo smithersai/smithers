@@ -70,6 +70,8 @@ SET requested_generation = s.requested_generation + 1,
     reset_generation = CASE WHEN $4 THEN s.requested_generation + 1 ELSE s.reset_generation END,
     state = CASE WHEN $4 THEN 'bootstrapping' ELSE s.state END,
     reason = CASE WHEN $4 THEN '' ELSE s.reason END,
+    -- A new request is a new attempt: its watcher waits for this pass, not the last one's error.
+    last_error = CASE WHEN $4 OR s.state = 'bootstrapping' THEN '' ELSE s.last_error END,
     next_attempt_at = NOW(),
     updated_at = NOW()
 RETURNING ` + mythicalStackColumns
@@ -221,7 +223,8 @@ SET processed_generation = CASE WHEN $9 THEN processed_generation ELSE GREATEST(
     landed_main = CASE WHEN $8 = '' THEN landed_main ELSE $8 END,
     attempts = CASE WHEN $9 THEN attempts ELSE 0 END,
     next_attempt_at = CASE WHEN $9 THEN NOW() + make_interval(secs => $11) ELSE NOW() END,
-    last_error = $10,
+    -- A pass claimed before a newer request does not answer it: its error waits for the next pass.
+    last_error = CASE WHEN claimed_generation >= requested_generation OR $10 = '' THEN $10 ELSE last_error END,
     generation = generation + CASE WHEN $12 THEN 1 ELSE 0 END,
     pending_op = CASE WHEN $13 THEN NULL ELSE pending_op END,
     reset_generation = CASE WHEN $14 > 0 AND reset_generation = $14 THEN 0 ELSE reset_generation END,

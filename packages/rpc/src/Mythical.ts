@@ -367,6 +367,7 @@ export const MythicalStackSchema = z.object({
   items: z.array(MythicalItemSchema),
   lanes: z.array(MythicalLaneSchema),
   limits: z.object({ maxParallel: z.number().int().positive() }),
+  lastError: z.string().optional(),
   updatedAt: z.string().optional()
 })
 

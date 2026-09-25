@@ -26,6 +26,7 @@ type MythicalStackView struct {
 	Items      []MythicalItemView   `json:"items"`
 	Lanes      []MythicalLaneView   `json:"lanes"`
 	Limits     MythicalLimitsView   `json:"limits"`
+	LastError  string               `json:"lastError,omitempty"`
 	UpdatedAt  string               `json:"updatedAt,omitempty"`
 }
 
@@ -106,6 +107,7 @@ func (s *MythicalService) Snapshot(ctx context.Context, repositoryID int64, slug
 	}
 	view.State, view.Reason, view.Generation, view.LandedMain = stack.State, stack.Reason, stack.Generation, stack.LandedMain
 	view.Limits.MaxParallel = stack.MaxParallel
+	view.LastError = stack.LastError
 	if stack.TipCommit != "" {
 		view.Tip = &MythicalTipView{ChangeID: stack.TipChange, CommitID: stack.TipCommit}
 	}

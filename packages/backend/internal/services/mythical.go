@@ -262,7 +262,8 @@ func (s *MythicalService) finish(ctx context.Context, row db.MythicalStack, outc
 	if err != nil {
 		return err
 	}
-	if params.Changed {
+	// A failed pass changes nothing but lastError; the hint still lets a watcher show it.
+	if params.Changed || params.Failed {
 		s.notify(ctx, q, row.RepositoryID, generation, "stack", "")
 	}
 	return tx.Commit(ctx)
