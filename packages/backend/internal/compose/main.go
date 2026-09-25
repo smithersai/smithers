@@ -349,9 +349,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	linearIntegrationSvc := services.NewLinearIntegrationService(queries, linearClient, cfg.Auth.SessionSecret)
 	linearEnabled := strings.TrimSpace(cfg.Auth.LinearClientID) != "" && strings.TrimSpace(cfg.Auth.LinearClientSecret) != ""
 	var linearSyncSvc *services.LinearSyncService
+	var linearDispatcher *webhooks.LinearDispatcher
 	if linearEnabled {
 		linearSyncSvc = services.NewLinearSyncServiceWithPool(queries, linearIntegrationSvc, pool)
-		webhookDispatcher = webhooks.NewLinearDispatcher(webhookDispatcher, linearSyncSvc)
+		linearDispatcher = webhooks.NewLinearDispatcher(webhookDispatcher, linearSyncSvc)
+		webhookDispatcher = linearDispatcher
 	}
 	sshAuthzService := services.NewSSHAuthorizationService(queries)
 	gitHTTPOptions := []services.GitHTTPProxyServiceOption{
@@ -553,7 +555,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	variableService := services.NewVariableService(queries)
 	wikiService := services.NewWikiService(queries, webhookDispatcher, services.WithWikiCollaboration(queries, repoHostClient))
 
-	workflowAPIService := services.NewWorkflowAPIService(queries, workflowRunService)
+	workflowAPIService := services.NewWorkflowAPIService(queries, workflowRunService, services.WithWorkflowAPIBillingPolicy(billingPolicy))
 
 	blobConfig := cfg.Blob
 	blobConfig.TransferBaseURL = publicBaseURL
@@ -885,9 +887,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		return err
 	}
 	workflowCacheCleaner := cleanup.NewWorkflowCacheCleaner(workflowCacheService, workflowCacheCleanupInterval)
-	workflowArtifactCleaner := cleanup.NewWorkflowArtifactCleaner(workflowArtifactService, 24*time.Hour, 250)
+	workflowArtifactCleaner := cleanup.NewWorkflowArtifactCleaner(workflowArtifactService, time.Hour, 250)
 
-	auditCleaner := cleanup.NewAuditCleaner(queries, 24*time.Hour, 90*24*time.Hour)
+	auditCleaner := cleanup.NewAuditCleaner(queries, time.Hour, 90*24*time.Hour)
+	webhookDeliveryCleaner := cleanup.NewWebhookDeliveryCleaner(queries, time.Hour, 30, 1000)
 
 	workspaceCleaner := cleanup.NewWorkspaceCleaner(workspaceService, 5*time.Minute)
 	repoSyncService := services.NewRepoSyncService("", repoConnectionService)
@@ -1560,6 +1563,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		workflowCacheCleaner.Start(workerCtx)
 		workflowArtifactCleaner.Start(workerCtx)
 		auditCleaner.Start(workerCtx)
+		webhookDeliveryCleaner.Start(workerCtx)
 		workspaceCleaner.Start(workerCtx)
 	}
 	if options.topology.hosted() && options.topology.workers() {
@@ -1630,6 +1634,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		if drainErr := requestTracker.WaitForDrain(shutdownCtx); drainErr != nil {
 			shutdownErr = errors.Join(shutdownErr, drainErr)
 		}
+		if linearDispatcher != nil {
+			if err := linearDispatcher.Shutdown(shutdownCtx); err != nil {
+				shutdownErr = errors.Join(shutdownErr, fmt.Errorf("Linear sync did not drain: %w", err))
+			}
+		}
 		drained, killed, activeRemaining := requestTracker.Snapshot()
 
 		// Keep background services alive while in-flight HTTP requests drain. A
@@ -1691,6 +1700,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			workflowCacheCleaner.Stop()
 			workflowArtifactCleaner.Stop()
 			auditCleaner.Stop()
+			webhookDeliveryCleaner.Stop()
 			workspaceCleaner.Stop()
 		}
 		if goldenSnapshotService != nil {

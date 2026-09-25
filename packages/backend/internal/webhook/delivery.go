@@ -16,7 +16,7 @@ const (
 	smithersUserAgent     = "Smithers-Hookshot/1.0"
 	smithersSignatureName = "X-Smithers-Signature-256"
 	maxFailureStreak      = 10
-	maxResponseBodyBytes  = 1 << 20
+	maxResponseBodyBytes  = 4 << 10
 )
 
 var retrySchedule = []time.Duration{1 * time.Second, 10 * time.Second, 60 * time.Second}
@@ -74,7 +74,7 @@ func Deliver(ctx context.Context, client *http.Client, req DeliveryRequest) (int
 		return resp.StatusCode, "", readErr
 	}
 
-	return resp.StatusCode, string(body), nil
+	return resp.StatusCode, storableResponseBody(string(body)), nil
 }
 
 // CalculateNextRetry returns the next retry timestamp for a failed attempt.

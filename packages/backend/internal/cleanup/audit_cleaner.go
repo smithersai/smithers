@@ -26,6 +26,7 @@ const defaultAuditCleanupInterval = 24 * time.Hour
 func NewAuditCleaner(store AuditCleanupStore, interval, retention time.Duration) *AuditCleaner {
 	c := &AuditCleaner{store: store, retention: retention}
 	c.init("audit", interval, defaultAuditCleanupInterval)
+	c.initialSweep = true
 	return c
 }
 

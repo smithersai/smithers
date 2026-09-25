@@ -13,18 +13,39 @@ import (
 )
 
 const claimDueWebhookDeliveries = `-- name: ClaimDueWebhookDeliveries :many
+WITH due_webhooks AS (
+    SELECT DISTINCT webhook_id
+    FROM webhook_deliveries
+    WHERE status = 'pending'
+      AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+),
+candidates AS (
+    SELECT due.id, due.webhook_id
+    FROM due_webhooks
+    CROSS JOIN LATERAL (
+        SELECT d.id, d.webhook_id
+        FROM webhook_deliveries d
+        WHERE d.webhook_id = due_webhooks.webhook_id
+          AND d.status = 'pending'
+          AND (d.next_retry_at IS NULL OR d.next_retry_at <= NOW())
+        ORDER BY d.id
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED
+    ) due
+),
+turns AS (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY webhook_id ORDER BY id) AS turn
+    FROM candidates
+)
 UPDATE webhook_deliveries
 SET attempts = attempts + 1,
     next_retry_at = NOW() + INTERVAL '2 minutes',
     updated_at = NOW()
 WHERE id IN (
     SELECT id
-    FROM webhook_deliveries
-    WHERE status = 'pending'
-      AND (next_retry_at IS NULL OR next_retry_at <= NOW())
-    ORDER BY id
+    FROM turns
+    ORDER BY turn, id
     LIMIT $1
-    FOR UPDATE SKIP LOCKED
 )
 RETURNING id, webhook_id, event_type, payload, status, response_status, response_body, attempts, delivered_at, next_retry_at, created_at, updated_at
 `
@@ -35,6 +56,9 @@ RETURNING id, webhook_id, event_type, payload, status, response_status, response
 // A worker that crashes mid-delivery simply lets the lease lapse and the row
 // becomes due again. The 2-minute lease comfortably exceeds the delivery HTTP
 // timeout; UpdateWebhookDeliveryRetry/Result overwrite it on completion.
+// The claim is fair across webhooks: it takes the oldest due delivery of
+// every webhook before a second delivery of any one webhook, so a burst to
+// one receiver cannot fill every claim and starve other tenants' webhooks.
 func (q *Queries) ClaimDueWebhookDeliveries(ctx context.Context, claimLimit int32) ([]WebhookDelivery, error) {
 	rows, err := q.db.Query(ctx, claimDueWebhookDeliveries, claimLimit)
 	if err != nil {
@@ -177,6 +201,35 @@ type DeleteRepoWebhookByOwnerAndRepoParams struct {
 
 func (q *Queries) DeleteRepoWebhookByOwnerAndRepo(ctx context.Context, arg DeleteRepoWebhookByOwnerAndRepoParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteRepoWebhookByOwnerAndRepo, arg.WebhookID, arg.Owner, arg.Repo)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteTerminalWebhookDeliveriesOlderThan = `-- name: DeleteTerminalWebhookDeliveriesOlderThan :execrows
+DELETE FROM webhook_deliveries
+WHERE id IN (
+    SELECT id
+    FROM webhook_deliveries
+    WHERE status <> 'pending'
+      AND created_at < NOW() - ($1::bigint * INTERVAL '1 day')
+    ORDER BY id
+    LIMIT $2
+)
+`
+
+type DeleteTerminalWebhookDeliveriesOlderThanParams struct {
+	RetentionDays int64 `json:"retention_days"`
+	BatchLimit    int32 `json:"batch_limit"`
+}
+
+// Retention for delivery history. Deletes at most batch_limit settled
+// (success or failed) deliveries created before the retention window, oldest
+// first; pending deliveries are never deleted because a worker still owns
+// them. ids grow with created_at, so the id-ordered scan stops early.
+func (q *Queries) DeleteTerminalWebhookDeliveriesOlderThan(ctx context.Context, arg DeleteTerminalWebhookDeliveriesOlderThanParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTerminalWebhookDeliveriesOlderThan, arg.RetentionDays, arg.BatchLimit)
 	if err != nil {
 		return 0, err
 	}

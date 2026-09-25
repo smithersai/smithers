@@ -84,18 +84,42 @@ WHERE id = $1
 -- A worker that crashes mid-delivery simply lets the lease lapse and the row
 -- becomes due again. The 2-minute lease comfortably exceeds the delivery HTTP
 -- timeout; UpdateWebhookDeliveryRetry/Result overwrite it on completion.
+-- The claim is fair across webhooks: it takes the oldest due delivery of
+-- every webhook before a second delivery of any one webhook, so a burst to
+-- one receiver cannot fill every claim and starve other tenants' webhooks.
+WITH due_webhooks AS (
+    SELECT DISTINCT webhook_id
+    FROM webhook_deliveries
+    WHERE status = 'pending'
+      AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+),
+candidates AS (
+    SELECT due.id, due.webhook_id
+    FROM due_webhooks
+    CROSS JOIN LATERAL (
+        SELECT d.id, d.webhook_id
+        FROM webhook_deliveries d
+        WHERE d.webhook_id = due_webhooks.webhook_id
+          AND d.status = 'pending'
+          AND (d.next_retry_at IS NULL OR d.next_retry_at <= NOW())
+        ORDER BY d.id
+        LIMIT @claim_limit
+        FOR UPDATE SKIP LOCKED
+    ) due
+),
+turns AS (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY webhook_id ORDER BY id) AS turn
+    FROM candidates
+)
 UPDATE webhook_deliveries
 SET attempts = attempts + 1,
     next_retry_at = NOW() + INTERVAL '2 minutes',
     updated_at = NOW()
 WHERE id IN (
     SELECT id
-    FROM webhook_deliveries
-    WHERE status = 'pending'
-      AND (next_retry_at IS NULL OR next_retry_at <= NOW())
-    ORDER BY id
+    FROM turns
+    ORDER BY turn, id
     LIMIT @claim_limit
-    FOR UPDATE SKIP LOCKED
 )
 RETURNING *;
 
@@ -111,6 +135,21 @@ SET status = $2,
     updated_at = NOW()
 WHERE id = $1
   AND status = 'pending';
+
+-- name: DeleteTerminalWebhookDeliveriesOlderThan :execrows
+-- Retention for delivery history. Deletes at most batch_limit settled
+-- (success or failed) deliveries created before the retention window, oldest
+-- first; pending deliveries are never deleted because a worker still owns
+-- them. ids grow with created_at, so the id-ordered scan stops early.
+DELETE FROM webhook_deliveries
+WHERE id IN (
+    SELECT id
+    FROM webhook_deliveries
+    WHERE status <> 'pending'
+      AND created_at < NOW() - (sqlc.arg(retention_days)::bigint * INTERVAL '1 day')
+    ORDER BY id
+    LIMIT sqlc.arg(batch_limit)
+);
 
 -- name: ListRecentWebhookDeliveryStatuses :many
 SELECT status

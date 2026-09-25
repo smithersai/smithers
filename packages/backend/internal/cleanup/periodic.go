@@ -36,14 +36,15 @@ func (t *realTicker) Stop() { t.t.Stop() }
 // goroutine calls the sweep on each tick until Stop or context cancellation.
 // A failed or panicking sweep is logged and counted, and the loop continues.
 type periodicRunner struct {
-	name      string
-	interval  time.Duration
-	ticker    ticker
-	newTicker func(time.Duration) ticker
-	stopCh    chan struct{}
-	wg        sync.WaitGroup
-	mu        sync.Mutex
-	running   bool
+	name         string
+	interval     time.Duration
+	ticker       ticker
+	newTicker    func(time.Duration) ticker
+	stopCh       chan struct{}
+	wg           sync.WaitGroup
+	mu           sync.Mutex
+	running      bool
+	initialSweep bool
 }
 
 // init sets up the runner. A non-positive interval falls back to fallback:
@@ -76,6 +77,11 @@ func (r *periodicRunner) start(ctx context.Context, sweep func(context.Context) 
 func (r *periodicRunner) loop(ctx context.Context, t ticker, sweep func(context.Context) error) {
 	defer r.wg.Done()
 	defer t.Stop()
+	if r.initialSweep {
+		// Deploys can restart more often than the interval. Retention must
+		// not depend on a process surviving its first tick.
+		r.runSweep(ctx, sweep)
+	}
 	for {
 		select {
 		case <-ctx.Done():

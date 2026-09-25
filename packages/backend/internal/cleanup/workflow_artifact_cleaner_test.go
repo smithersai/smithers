@@ -59,16 +59,19 @@ func TestWorkflowArtifactCleanerLifecycle_TickerRunsSweep(t *testing.T) {
 	defer cancel()
 
 	cleaner.Start(ctx)
+	waitForCondition(t, 500*time.Millisecond, func() bool {
+		return len(store.callSnapshot()) == 1
+	})
 	ft.ch <- time.Now()
 
 	waitForCondition(t, 500*time.Millisecond, func() bool {
-		return len(store.callSnapshot()) == 1
+		return len(store.callSnapshot()) == 2
 	})
 
 	cleaner.Stop()
 	cleaner.Wait()
 
-	assert.Equal(t, []int32{10}, store.callSnapshot())
+	assert.Equal(t, []int32{10, 10}, store.callSnapshot())
 	assert.Equal(t, 1, ft.StopCalls())
 }
 

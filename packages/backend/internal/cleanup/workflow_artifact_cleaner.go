@@ -21,6 +21,7 @@ const defaultWorkflowArtifactCleanupInterval = 24 * time.Hour
 func NewWorkflowArtifactCleaner(store WorkflowArtifactCleanupStore, interval time.Duration, batchSize int32) *WorkflowArtifactCleaner {
 	c := &WorkflowArtifactCleaner{store: store, batchSize: batchSize}
 	c.init("workflow_artifact", interval, defaultWorkflowArtifactCleanupInterval)
+	c.initialSweep = true
 	return c
 }
 

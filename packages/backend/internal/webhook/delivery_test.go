@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -226,4 +227,29 @@ func TestWebhook_TimingAttack_ConstantTimeCompare(t *testing.T) {
 	source, err := os.ReadFile("delivery.go")
 	require.NoError(t, err)
 	assert.Contains(t, string(source), "hmac.Equal(")
+}
+
+func TestDeliver_ReturnsStorableBodyForBinaryResponse(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\x00\xff\xfe done"))
+	}))
+	defer server.Close()
+
+	status, body, err := Deliver(context.Background(), server.Client(), DeliveryRequest{
+		URL:        server.URL,
+		EventType:  "push",
+		DeliveryID: "delivery-binary-body",
+		Payload:    []byte(`{}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, status)
+	// PostgreSQL TEXT rejects NUL bytes and invalid UTF-8, so the body must
+	// be sanitized before it reaches webhook_deliveries.response_body.
+	assert.True(t, utf8.ValidString(body))
+	assert.NotContains(t, body, "\x00")
+	assert.Equal(t, "ok\uFFFD done", body)
 }
