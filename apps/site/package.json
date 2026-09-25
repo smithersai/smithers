@@ -35,6 +35,7 @@
     "@smthrs/model": "workspace:*",
     "@smthrs/observability": "workspace:*",
     "@smthrs/plan": "workspace:*",
+    "@smthrs/platform-node": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/run-store": "workspace:*",
     "@smthrs/sandbox": "workspace:*",

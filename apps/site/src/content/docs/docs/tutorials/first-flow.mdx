@@ -133,10 +133,10 @@ The in-memory engine forgets everything at exit. To keep the run, swap the engin
 
 ```ts title="durable-layer.ts"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Jj } from "@smthrs/kernel"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Ownership } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -148,7 +148,7 @@ import { dirname } from "node:path"
 const stubJj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "tutorial-snapshot" as never }),
+    snapshot: () => Effect.succeed({ changeId: "tutorial-snapshot" as never, commitId: "tutorial-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,
@@ -172,7 +172,7 @@ export const durableEngine = (filename: string, hostId: string) =>
   ).pipe(
     Layer.provideMerge(stubJj),
     Layer.provideMerge(NodeCrypto.layer),
-    Layer.provideMerge(NodeFileSystem.layer)
+    Layer.provideMerge(AtomicFileSystem.layer)
   )
 ```
 

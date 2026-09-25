@@ -70,6 +70,7 @@ import * as Stream from "effect/Stream"
 
 // The bank this flow tree reads and writes.
 const namespace = { kind: "flow", id: "release-notes" } as const
+const bank = Recall.bankForNamespace(namespace)
 
 // The policy every run carries.
 const policy: WithMemory.Policy = {
@@ -142,8 +143,8 @@ const cellFor = (task: string, note: string): string => {
   if (task === "record") {
     return [
       ...facts.map((fact) =>
-        // The bank is empty on purpose: the policy fills it in.
-        `await ctx.call("remember", { bank: "", key: ${JSON.stringify(fact.key)}, text: ${JSON.stringify(fact.text)} })`
+        // A write names its bank; the policy refuses any bank outside its namespace.
+        `await ctx.call("remember", { bank: ${JSON.stringify(bank)}, key: ${JSON.stringify(fact.key)}, text: ${JSON.stringify(fact.text)} })`
       ),
       `ctx.done({ keys: ${JSON.stringify(facts.map((fact) => fact.key))} })`
     ].join("\n")

@@ -74,6 +74,10 @@ provide `Runner.layerInline` to say so explicitly, `Runner.layerNoop` to state
 that a suite must not score, or your own adapter through `options.scorer` or
 the `Runner` service.
 
+A run executes under the span `Eval.run` (attributes `suite` and `runId`), and
+each case under a child span `Eval.case` (attribute `case`), so any tracer the
+host provides shows which case a slow or failing run spent its time in.
+
 ## How comparison works
 
 Four rules decide what a comparison reports, and none of them are obvious:

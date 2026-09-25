@@ -28,18 +28,18 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 
 ## Related reference
 
-[`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/)
+[`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/)
 
 ## Source
 
 ```ts title="examples/src/35-remote-cache.ts"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { CacheSync, EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as CombinedCacheStore from "@smthrs/step-cache/CombinedCacheStore"
 import * as RemoteCacheStore from "@smthrs/step-cache/RemoteCacheStore"
@@ -218,7 +218,7 @@ const engineLayer = (filename: string, hostId: string, endpoint: string) => {
       )
     ),
     Layer.provideMerge(NodeCrypto.layer),
-    Layer.provideMerge(NodeFileSystem.layer)
+    Layer.provideMerge(AtomicFileSystem.layer)
   )
 }
 

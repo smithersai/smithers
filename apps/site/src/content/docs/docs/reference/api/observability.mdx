@@ -88,7 +88,7 @@ cannot add unvalidated metadata to these explicit resources.
 
 Requests over `maxRequestBytes` (1 MiB), stalled for ten seconds, or exceeding
 four in-flight requests are discarded locally. Each discard increments
-`flows/observability/otlp/dropped`. A `Warn` diagnostic with code
+`flows_observability_otlp_dropped`. A `Warn` diagnostic with code
 `otlp_export_discarded` reports `reason` (`oversized`, `stalled`, or `saturated`),
 `bytes`, `limit`, and cumulative `dropped` at most once per minute per transport.
 It uses the logger set captured before this exporter is installed, so it cannot
@@ -561,10 +561,10 @@ and the handles.
 ### Metric handles
 
 ```ts
-const runThroughput: Metric.Counter // "flows/run/throughput"
-const activeSeats: Metric.Gauge // "flows/seat/active"
-const quotaParks: Metric.Counter // "flows/quota/park"
-const droppedLogRecords: Metric.Counter // "flows/observability/log/dropped"
+const runThroughput: Metric.Counter // "flows_run_throughput"
+const activeSeats: Metric.Gauge // "flows_seat_active"
+const quotaParks: Metric.Counter // "flows_quota_park"
+const droppedLogRecords: Metric.Counter // "flows_observability_log_dropped"
 ```
 
 - `runThroughput` advances after a terminal run transition commits in

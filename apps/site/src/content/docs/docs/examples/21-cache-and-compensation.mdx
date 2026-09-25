@@ -28,19 +28,19 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 
 ## Related reference
 
-[`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/)
+[`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/)
 
 ## Source
 
 ```ts title="examples/src/21-cache-and-compensation.ts"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -116,7 +116,8 @@ export const directoryJj = (options: {
           }
           taken.set(changeId, describe(message))
           options.log.snapshots.push(describe(message))
-          return { changeId: changeId as never }
+          // Published directory snapshots are immutable; both names resolve to this pre-image.
+          return { changeId: changeId as never, commitId: changeId as never }
         }),
       restore: (changeId) =>
         Effect.sync(() => {
@@ -183,7 +184,7 @@ const engine = (filename: string, hostId: string, jj: Layer.Layer<Jj.Jj>) =>
       Layer.mergeAll(jj, Action.layerCacheEnvironment({ layers: [], capabilities: {} }))
     ),
     Layer.provideMerge(NodeCrypto.layer),
-    Layer.provideMerge(NodeFileSystem.layer)
+    Layer.provideMerge(AtomicFileSystem.layer)
   )
 
 /** The declared atom the caching flow's body names. */

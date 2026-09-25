@@ -253,7 +253,7 @@ process or signal handlers.
 
 `registry` is the optional catalog the registration phase reads from. A host that
 discovers its flows rather than listing them passes
-[`@smthrs/registry`](/docs/reference/api/registry/)'s `Executable.layerProject({ root })`, and
+[`@smthrs/registry`](/docs/reference/api/registry/)'s `Registry.layerProject({ root })`, and
 builds `registerFlows` from `Executable.layer(...)`. The registry is provided
 beneath registration and above the engine, so every discovered flow is
 registered before the runtime accepts a launch. Omitting it is exactly the
@@ -278,6 +278,9 @@ required.
 | `signals`           | `ReadonlyArray<NodeJS.Signals>`                    | `["SIGINT", "SIGTERM"]`            | The signals that shut the runtime down. An empty list installs no handler at all.                                                                                                                    |
 | `shutdownTimeoutMs` | `number`                                           | `defaultShutdownTimeoutMs`         | How long a graceful shutdown may take before the host leaves with the signal's own exit code.                                                                                                        |
 | `containment`       | `ContainedSpawner.Options & ProcessReaper.Options` | none                               | Process containment and reaping options for the host spawner.                                                                                                                                        |
+| `canExecute`        | `(row) => Effect<boolean>`                         | none                               | The same shared-store routing check as the runtime `Options` field.                                                                                                                                  |
+| `cacheEnvironment`  | `Action.CacheEnvironment`                          | none                               | The same cross-run cache environment as the runtime `Options` field, provided under the engine.                                                                                                      |
+| `sourceRevision`    | `string \| (() => string \| undefined)`            | none                               | The same source revision declaration as the runtime `Options` field, recorded on every graph page.                                                                                                   |
 
 Every option is validated and snapshotted at the call. Rule arrays, rule
 objects, signal lists, and containment callbacks are all copied, and relative
@@ -448,7 +451,7 @@ const defaultLimits: ResolvedLimits
 | ------------- | ------- | ------------------------------------------------- |
 | `resultBytes` | 5 MiB   | The result JSON the guest wrote.                  |
 | `diffBytes`   | 100 MiB | The total bytes collected across the diff.        |
-| `files`       | 1,000   | The number of created or resized files collected. |
+| `files`       | 1,000   | The number of created or changed files collected. |
 
 Limits are inclusive and count bytes, not characters. `resultBytes` includes
 the complete UTF-8 JSON envelope. Metadata can reject oversized files before
@@ -471,7 +474,7 @@ overlong unfinished quoted credential suppresses the rest of that stream.
 | `session`     | `string`           | required        | The session key the machine is acquired under. An exclusive claim: two live executions with one key share a machine, and the first to finish tears it down under the other. Reusing a key is what resume looks like.           |
 | `entry`       | `URL \| string`    | required        | The module to bundle: a `file:` URL or an absolute path. It must export the flow being executed, under any name, and may export `layer`, an Effect `Layer` providing the implementations of the actions the flow's body names. |
 | `runtime`     | `string`           | `"node"`        | The guest executable that runs the bundle: `"node"`, `"bun"`, or an executable path. Each path is quoted as one shell word. Use a wrapper script for flags.                                                                    |
-| `collectDiff` | `boolean`          | `false`         | Whether to collect the files the guest created or resized.                                                                                                                                                                     |
+| `collectDiff` | `boolean`          | `false`         | Whether to collect the files the guest created, changed, or deleted.                                                                                                                                                           |
 | `limits`      | `Limits`           | `defaultLimits` | Bounds on the result and the diff.                                                                                                                                                                                             |
 | `timeout`     | `Duration.Input`   | 10 minutes      | The wall-clock budget for the whole session, acquisition through result readback. Uses platform timers, including chunked timers for long finite budgets. `Duration.infinity` disables the deadline.                           |
 
@@ -487,15 +490,20 @@ interface DiffEntry {
 interface Result<A> {
   readonly output: A
   readonly diff: ReadonlyArray<DiffEntry>
+  /** Workspace-relative paths that existed before the guest ran and were gone after. */
+  readonly deleted: ReadonlyArray<string>
 }
 
 const DiffEntry: Schema.Struct<{ path: Schema.String; bytes: Schema.Uint8Array }>
 const Diff: Schema.Array<typeof DiffEntry>
+const Deleted: Schema.Array<Schema.String> // decodes a missing key as []
 ```
 
-One `DiffEntry` per file the guest created or resized, as it stood when the guest
-exited. The schemas are JSON-encodable for the journal: the bytes serialize as
-base64.
+One `DiffEntry` per file the guest created or changed, as it stood when the
+guest exited, and one `deleted` path per file it removed. A file counts as
+changed when its size or its modification time differs; a provider whose `stat`
+reports no modification time compares sizes alone. The schemas are
+JSON-encodable for the journal: the bytes serialize as base64.
 
 ### `resultSchema` and `ResultSchema`
 
@@ -503,6 +511,7 @@ base64.
 type ResultSchema<Success extends Schema.Top> = Schema.Struct<{
   readonly output: Success
   readonly diff: typeof Diff
+  readonly deleted: typeof Deleted
 }>
 
 const resultSchema: <Success extends Schema.Top>(success: Success) => ResultSchema<Success>

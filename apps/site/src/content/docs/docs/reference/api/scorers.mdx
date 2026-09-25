@@ -191,12 +191,17 @@ accepts every write and reads back nothing.
 
 ## Stores
 
-`ScoreStore.Service` has four methods. `record` appends an observation.
+`ScoreStore.Service` has five methods. `record` appends an observation.
 `recordOnce(identity, observation)` claims the identity and appends in one
 transaction. `observations(targetStepKey, scorerKey?, page?)` reads a bounded
 page ordered by `(at, insertion)`. `aggregate(targetStepKey, scorerKey?)`
 reports `{count, mean, min, inconclusive}` over that target, or `undefined`
 when it has no observations of either kind.
+`prune({ olderThan })` deletes observations whose `at`, and job claims whose
+creation time, is older than the cutoff and answers `{ observations, jobs }`.
+Nothing else deletes from the store, so a host that scores live runs should
+call it on a schedule. A pruned claim no longer suppresses a duplicate, so
+prune only past the oldest job the host may still replay.
 
 Four documented bounds govern the write and read paths, each exported as a
 constant: an observation `reason` is at most `maxReasonBytes` (1,024) UTF-8
@@ -280,6 +285,7 @@ Every public export, once.
 | `ScoreStore.Aggregate`               | models       | Count, mean, and minimum over successful scores, plus the inconclusive count.     |
 | `ScoreStore.Page`                    | models       | Page bounds for `observations`: `limit`, `offset`, and the `before` filter.       |
 | `ScoreStore.Service`                 | services     | The durable score store implementation.                                           |
+| `ScoreStore.Pruned`                  | models       | Rows one `prune` call removed: `observations` and `jobs`.                         |
 | `ScoreStore.ScoreStore`              | services     | Context service for durable scorer observations.                                  |
 | `ScoreStore.makeNoop`                | constructors | Constructs an inoperative score store.                                            |
 | `ScoreStore.layerNoop`               | layers       | Provides the inoperative score store.                                             |

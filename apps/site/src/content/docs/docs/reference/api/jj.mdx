@@ -70,22 +70,24 @@ a hand-written test double may leave them out.
 
 | Member                                | Signature                                                                                       |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `snapshot(message?)`                  | `(message?: string) => Effect<{ readonly changeId: ChangeId }, JjFailure>`                      |
-| `restore(changeId)`                   | `(changeId: ChangeId) => Effect<void, JjFailure>`                                               |
-| `diff(from, to)`                      | `(from: ChangeId, to: ChangeId) => Effect<string, JjFailure>`                                   |
-| `workspaceAdd(name, path, revision?)` | `(name: string, path: string, revision?: ChangeId) => Effect<void, JjFailure \| PlatformError>` |
+| `snapshot(message?)`                  | `(message?: string) => Effect<Snapshot, JjFailure>`                                             |
+| `restore(revision)`                   | `(revision: Revision) => Effect<void, JjFailure>`                                               |
+| `diff(from, to)`                      | `(from: Revision, to: Revision) => Effect<string, JjFailure>`                                   |
+| `workspaceAdd(name, path, revision?)` | `(name: string, path: string, revision?: Revision) => Effect<void, JjFailure \| PlatformError>` |
 | `workspaceForget(name)`               | `(name: string) => Effect<void, JjFailure>`                                                     |
 | `status()`                            | `() => Effect<string, JjFailure>`                                                               |
 | `root(from)` (optional)               | `(from: string) => Effect<string, JjFailure \| PlatformError>`                                  |
-| `revert(changeId)` (optional)         | `(changeId: ChangeId) => Effect<{ readonly reverted: ReadonlyArray<string> }, JjFailure>`       |
+| `revert(revision)` (optional)         | `(revision: Revision) => Effect<{ readonly reverted: ReadonlyArray<string> }, JjFailure>`       |
 
-`snapshot` commits the working copy and returns the change id to restore to
-later: it closes the current change and opens a fresh one. Node and Bun only
+`snapshot` commits the working copy and returns `{ commitId, changeId }` for the
+change it closes, then opens a fresh one. Restore to `commitId`: it is content
+addressed, and jj resolves it even after the commit is hidden. `changeId` is
+for display; a later rewrite such as `jj squash` moves it to a different tree. Node and Bun only
 label a closed change that has no existing description.
 With no message there is no `describe` at all, because `jj describe` without
 `-m` starts `$JJ_EDITOR` and waits for it.
 
-`restore` puts the working copy back to `changeId`, replacing the tree rather
+`restore` puts the working copy back to `revision`, replacing the tree rather
 than merging into it. `diff` is a git-format unified diff between two
 revisions. `workspaceAdd` adds a named workspace rooted at `path`, one lane per
 parallel agent, pinned at `revision` when one is given. `workspaceForget` drops
@@ -234,6 +236,9 @@ Node and Bun repository commands (except `root`) disable jj's default new-file s
 included. Any command that still warns `Refused to snapshot some files` fails
 with `JjError.code = "snapshot_refused"`, even when jj exits successfully.
 
+Every Node and Bun command passes `--color=never`, so a user config that sets
+`ui.color = "always"` cannot put ANSI escapes into change ids, diffs, or roots.
+
 One invocation buffers at most 64 MiB of each output stream, counted in bytes as
 they arrive rather than in decoded characters, and past the ceiling the child is
 killed and the operation fails `unknown`. The `command` recorded on a failure is
@@ -279,7 +284,8 @@ Decides which file `jj` is, and explains the answer.
 an existing file stays authoritative even when it cannot be executed, so a
 broken explicit path is reported instead of a different binary being quietly
 substituted. An override that names nothing falls through to `PATH`, and the
-fall-through is reported in `describe()`. Existing overrides and executable
+fall-through is reported in `describe()`, and the Node and Bun layers log a
+warning annotated with the variable and path when they are built. Existing overrides and executable
 PATH candidates resolve to absolute host paths. Relative paths resolve against
 the host cwd at layer construction. Preflight and operations use the same path
 through the same runner, including when the host spawner changes PATH.

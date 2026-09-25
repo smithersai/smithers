@@ -10,7 +10,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/age
 
 > **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
 
-`@smthrs/agent` exports twenty modules from its root entry point, and each is
+`@smthrs/agent` exports twenty-two modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
 
 ```ts
@@ -67,35 +67,37 @@ descriptor to another implementation.
 Everything one assembled cell run declares. The required half is the run
 itself; every default on the optional half is the conservative one.
 
-| Field                | Type                                              | What it decides                                                                                                                                                                       |
-| -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session`            | `string`                                          | The durable session or lineage every call identity is scoped to. Required.                                                                                                            |
-| `seat`               | `Seat.Seat`                                       | The resolved seat this run streams from: model, route, and context window together. Required.                                                                                         |
-| `prompt`             | `string`                                          | The task the run was admitted with. Required.                                                                                                                                         |
-| `registry`           | `Registry.Registry`                               | The catalog shown to the model and the registry its calls resolve against. Required.                                                                                                  |
-| `system`             | `ReadonlyArray<string>`                           | Stable system teaching placed ahead of the cell contract.                                                                                                                             |
-| `flows`              | `ReadonlyArray<FlowBinding.Source>`               | Ordered executable-flow sources composed into the run's catalog.                                                                                                                      |
-| `implementations`    | `ReadonlyMap<string, CellCalls.Implementation>`   | Host implementations for module-backed flows, keyed by flow name.                                                                                                                     |
-| `promptRunner`       | `CellCalls.PromptRunner`                          | Runs a rendered markdown flow. A host with none refuses them catchably.                                                                                                               |
-| `authorize`          | `(call: Cell.Call) => Effect<void, HarnessError>` | Decides whether a call may proceed, before its durable boundary opens.                                                                                                                |
-| `plugins`            | `PluginInput<FlowsHooks>`                         | Shared-kernel plugins resolved for the harness target.                                                                                                                                |
-| `config`             | `FlowsConfig`                                     | Raw config threaded through the plugin kernel's config waterfall.                                                                                                                     |
-| `memory`             | `MemorySource.DeclaredText`                       | One explicitly selected memory snapshot. Omitting it injects no memory.                                                                                                               |
-| `modelParams`        | `ModelRequest.GenerationParams`                   | Generation parameters for the run's model calls.                                                                                                                                      |
-| `modelRetryPolicy`   | `Schedule<unknown, Model.ModelFailure>`           | Overrides the bounded transport retry schedule at the model boundary.                                                                                                                 |
-| `layers`             | `ReadonlyArray<string>`                           | The resolved composition identity folded into every durable key.                                                                                                                      |
-| `capabilityEnvelope` | `ReadonlyArray<Capability.CapabilityPattern>`     | The run's complete authority. The default is nothing granted.                                                                                                                         |
-| `placement`          | `Option<Descriptor.Placement>`                    | The run's placement identity.                                                                                                                                                         |
-| `maxFrames`          | `number`                                          | Bounds one loop's frames.                                                                                                                                                             |
-| `readOnlyCap`        | `number`                                          | Caps consecutive read-only frames. Armed for task runs only; see `CellTurn.make` in [`@smthrs/harness`](/docs/reference/api/harness/).                                                                |
-| `modelCallMs`        | `number`                                          | Caps the wall clock one model call may spend. Armed by default at `CellTurn.defaultModelCallMs` (300,000 ms); zero disarms it.                                                        |
-| `repeatCap`          | `number`                                          | Caps consecutive repeat-observation frames. Armed by default at `CellTurn.defaultRepeatFrames`; zero disarms it.                                                                      |
-| `narrowingCap`       | `number`                                          | Caps completions bounced for narrowed evidence. Armed by default at `CellTurn.defaultNarrowingDemands`.                                                                               |
-| `unmovedCap`         | `number`                                          | Caps completions bounced for an unmoved tree. Armed by default at `CellTurn.defaultUnmovedDemands`.                                                                                   |
-| `unresolvedCap`      | `number`                                          | Caps completions bounced for a failing check the run replaced rather than answered. Armed by default at `CellTurn.defaultUnresolvedDemands`.                                          |
-| `claimCap`           | `number`                                          | Caps completions bounced for a claim the run's record does not support; the one brake that asks the `Evaluator`. Armed by default at `CellTurn.defaultClaimDemands`; zero disarms it. |
-| `approvalChannel`    | `boolean`                                         | Whether a human can answer this run. Defaults to false; a run that claims it wrongly buys a run that waits forever.                                                                   |
-| `limits`             | `Sandbox.Limits`                                  | The sandbox budget every cell runs under.                                                                                                                                             |
+| Field                | Type                                                           | What it decides                                                                                                                                                                                                                                                          |
+| -------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `session`            | `string`                                                       | The durable session or lineage every call identity is scoped to. Required.                                                                                                                                                                                               |
+| `seat`               | `Seat.Seat`                                                    | The resolved seat this run streams from: model, route, and context window together. Required.                                                                                                                                                                            |
+| `fallbackSeats`      | `ReadonlyArray<Seat.Seat>`                                     | Resolved seats tried in order after a capacity refusal. Seats with the same route ID cool together.                                                                                                                                                                      |
+| `capacity`           | `{ park: boolean; maxParkMillis?: number; maxParks?: number }` | Capacity handling. Parking defaults to true, with no wait ceiling; unknown resets are re-probed after 15 minutes. `maxParks` (default `QuotaPolicy.defaultMaxParks`, 8) bounds the parks per run; the next refusal fails the run with the provider's typed `ModelError`. |
+| `prompt`             | `string`                                                       | The task the run was admitted with. Required.                                                                                                                                                                                                                            |
+| `registry`           | `Registry.Registry`                                            | The catalog shown to the model and the registry its calls resolve against. Required.                                                                                                                                                                                     |
+| `system`             | `ReadonlyArray<string>`                                        | Stable system teaching placed ahead of the cell contract.                                                                                                                                                                                                                |
+| `flows`              | `ReadonlyArray<FlowBinding.Source>`                            | Ordered executable-flow sources composed into the run's catalog.                                                                                                                                                                                                         |
+| `implementations`    | `ReadonlyMap<string, CellCalls.Implementation>`                | Host implementations for module-backed flows, keyed by flow name.                                                                                                                                                                                                        |
+| `promptRunner`       | `CellCalls.PromptRunner`                                       | Runs a rendered markdown flow. A host with none refuses them catchably.                                                                                                                                                                                                  |
+| `authorize`          | `(call: Cell.Call) => Effect<void, HarnessError>`              | Decides whether a call may proceed, before its durable boundary opens.                                                                                                                                                                                                   |
+| `plugins`            | `PluginInput<FlowsHooks>`                                      | Shared-kernel plugins resolved for the harness target.                                                                                                                                                                                                                   |
+| `config`             | `FlowsConfig`                                                  | Raw config threaded through the plugin kernel's config waterfall.                                                                                                                                                                                                        |
+| `memory`             | `MemorySource.DeclaredText`                                    | One explicitly selected memory snapshot. Omitting it injects no memory.                                                                                                                                                                                                  |
+| `modelParams`        | `ModelRequest.GenerationParams`                                | Generation parameters for the run's model calls.                                                                                                                                                                                                                         |
+| `modelRetryPolicy`   | `Schedule<unknown, Model.ModelFailure>`                        | Overrides the bounded transport retry schedule at the model boundary.                                                                                                                                                                                                    |
+| `layers`             | `ReadonlyArray<string>`                                        | The resolved composition identity folded into every durable key.                                                                                                                                                                                                         |
+| `capabilityEnvelope` | `ReadonlyArray<Capability.CapabilityPattern>`                  | The run's complete authority. The default is nothing granted.                                                                                                                                                                                                            |
+| `placement`          | `Option<Descriptor.Placement>`                                 | The run's placement identity.                                                                                                                                                                                                                                            |
+| `maxFrames`          | `number`                                                       | Bounds one loop's frames.                                                                                                                                                                                                                                                |
+| `readOnlyCap`        | `number`                                                       | Caps consecutive read-only frames. Armed for task runs only; see `CellTurn.make` in [`@smthrs/harness`](/docs/reference/api/harness/).                                                                                                                                                   |
+| `modelCallMs`        | `number`                                                       | Caps the wall clock one model call may spend. Armed by default at `CellTurn.modelCallMsFor(effort)` (300,000 ms up to `medium`, 1,800,000 ms at `max`); zero disarms it.                                                                                                 |
+| `repeatCap`          | `number`                                                       | Caps consecutive repeat-observation frames. Armed by default at `CellTurn.defaultRepeatFrames`; zero disarms it.                                                                                                                                                         |
+| `narrowingCap`       | `number`                                                       | Caps completions bounced for narrowed evidence. Armed by default at `CellTurn.defaultNarrowingDemands`.                                                                                                                                                                  |
+| `unmovedCap`         | `number`                                                       | Caps completions bounced for an unmoved tree. Armed by default at `CellTurn.defaultUnmovedDemands`.                                                                                                                                                                      |
+| `unresolvedCap`      | `number`                                                       | Caps completions bounced for a failing check the run replaced rather than answered. Armed by default at `CellTurn.defaultUnresolvedDemands`.                                                                                                                             |
+| `claimCap`           | `number`                                                       | Caps completions bounced for a claim the run's record does not support; the one brake that asks the `Evaluator`. Armed by default at `CellTurn.defaultClaimDemands`; zero disarms it.                                                                                    |
+| `approvalChannel`    | `boolean`                                                      | Whether a human can answer this run. Defaults to false; a run that claims it wrongly buys a run that waits forever.                                                                                                                                                      |
+| `limits`             | `Sandbox.Limits`                                               | The sandbox budget every cell runs under.                                                                                                                                                                                                                                |
 
 ### Agent.Agent
 
@@ -204,7 +206,7 @@ delegation must stand before adoption. The default is
 | `system`          | `ReadonlyArray<string>`                                                   | Stable system teaching placed ahead of the cell contract.                                                                                           |
 | `maxFrames`       | `number`                                                                  | The cell-loop bound.                                                                                                                                |
 | `readOnlyCap`     | `number`                                                                  | Consecutive read-only frames a task run may spend. Defaults to `CellTurn.defaultReadOnlyFrames`.                                                    |
-| `modelCallMs`     | `number`                                                                  | Wall-clock milliseconds one model call may spend. Defaults to `CellTurn.defaultModelCallMs`; zero disarms it.                                       |
+| `modelCallMs`     | `number`                                                                  | Wall-clock milliseconds one model call may spend. Defaults to `CellTurn.modelCallMsFor(effort)`; zero disarms it.                                   |
 | `repeatCap`       | `number`                                                                  | Consecutive repeat-observation frames. Defaults to `CellTurn.defaultRepeatFrames`; zero disarms it.                                                 |
 | `narrowingCap`    | `number`                                                                  | Completions bounced for narrowed evidence. Defaults to `CellTurn.defaultNarrowingDemands`; zero disarms it.                                         |
 | `unmovedCap`      | `number`                                                                  | Completions bounced for an unmoved tree. Defaults to `CellTurn.defaultUnmovedDemands`; zero disarms it.                                             |
@@ -1447,20 +1449,18 @@ holds, and is not restricted.
 
 ### EngineChildren.Options
 
-| Field          | Type                      | What it decides                                                                                                                                                  |
-| -------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `flows`        | `ReadonlyArray<Flow.Any>` | The flows a child may run, by `_tag`. Anything else is `ChildError { code: "not_found" }`. Registering the flow with the runtime is separate and still required. |
-| `pollInterval` | `Duration.Input`          | How long `await` waits before re-reading an unsettled child, and how long `spawn` waits between checks for the child's run row. Defaults to 250 ms.              |
-| `startTimeout` | `Duration.Input`          | How long `spawn` waits for the child's run row before reporting the child never started. Defaults to 30 seconds.                                                 |
+| Field          | Type                      | What it decides                                                                                                                                                     |
+| -------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flows`        | `ReadonlyArray<Flow.Any>` | The flows a child may run, by `_tag`. Anything else is `ChildError { code: "not_found" }`. Registering the flow with the runtime is separate and still required.    |
+| `pollInterval` | `Duration.Input`          | How long `await` waits before re-reading an unsettled child, and how long `spawn` waits between checks for the child's run row. Defaults to 250 ms.                 |
+| `startTimeout` | `Duration.Input`          | How long `spawn` waits for the child's run row before reporting the child never started. Defaults to 30 seconds.                                                    |
+| `awaitTimeout` | `Duration.Input`          | How long `await` polls an unsettled child before answering `ChildError { code: "still_running" }`, when the call names no `timeoutSeconds`. Defaults to 10 minutes. |
 
 `spawn` owns its startup fiber until the row is confirmed. Timeout, store
 failure, and cancellation interrupt and join it before returning failure.
 
-`legacyChildIds?: boolean` selects the old `${parentExecutionId}/child/${label}`
-format for replaying existing children only. It refuses to create missing legacy
-rows. Configure it only for parents persisted before the new format; use the
-default for new parents. `await` and `send` accept both formats. Existing legacy
-ambiguities are retained; no rows are automatically renamed.
+A run store that cannot answer is `ChildError { code: "failed" }`, logged with
+its cause, never `not_found` and never a defect.
 
 ### EngineChildren.childExecutionId
 
@@ -1563,6 +1563,56 @@ Computes the order-sensitive identity of a resolved host composition, as
 `flows/cell-composition/v1:<digest>`. Plugin and layer order can change request
 and registry semantics, so the ordered declarations and resolved config are
 folded into one digest inside the otherwise set-like layer material.
+
+## SmithersPlugin
+
+A cell plugin that teaches an agent Smithers itself. It uses the two
+`CellPlugin` hooks above and adds no `ctx` global: a cell reaches its flows
+with `ctx.call`, like every other capability.
+
+```ts
+import { SmithersPlugin } from "@smthrs/agent"
+
+agent.run({ ...options, plugins: [SmithersPlugin.make(ports)] })
+```
+
+| Flow               | Needs `ports` | What it does                                                                       |
+| ------------------ | ------------- | ---------------------------------------------------------------------------------- |
+| `smithers.guide`   | no            | Returns `knowledge` for `{ topic?: "packages" \| "cli" \| "authoring" \| "all" }`. |
+| `smithers.flows`   | yes           | Lists the project flows a model may start.                                         |
+| `smithers.run`     | yes           | Requests a run `{ id, flow, input? }` and returns its receipt at once.             |
+| `smithers.inspect` | yes           | Reads one run's status, steps, and result without waiting.                         |
+
+### SmithersPlugin.make
+
+```ts
+const make: (ports?: Ports) => FlowsPlugin<FlowsHooks>
+```
+
+The plugin, named `smithers`, applied to the harness target. `cellFlows`
+appends the flows above; a name already in the catalog fails catalog assembly
+instead of being shadowed. `cellModelRequest` appends `brief` to the system
+prompt once.
+
+### SmithersPlugin.Ports
+
+```ts
+interface Ports {
+  readonly list: () => unknown
+  readonly run: (request: { id: string; flow: string; input?: { [key: string]: Schema.Json } }) => unknown
+  readonly inspect: (id: string) => unknown
+}
+```
+
+The host's own run path. Each port returns data or a promise of it; the flow
+returns it as plain JSON. A thrown error becomes the call's failure text.
+
+### SmithersPlugin.knowledge, SmithersPlugin.brief, SmithersPlugin.guide
+
+`knowledge` holds `packages`, `cli`, and `authoring` facts, each
+`{ name, about }`. `brief` is the short system teaching. `guide` is the
+`smithers.guide` binding; `flows(ports?)` returns every binding `make`
+contributes. `Topic` is the guide's topic schema and `name` is `"smithers"`.
 
 ## PromoteFlows
 
@@ -1863,6 +1913,7 @@ model call made outside any ladder.
 | `defaultModelRetryWindowMillis` | 45,000               | The wall clock the ladder may span. Whichever of the count and the window arrives first ends the ladder.                                                                                                    |
 | `defaultModelRetryPolicy`       | jittered exponential | The production transport retry budget, composed from the four values. Sleeps are taken on the injected clock and jitter on the injected `Random`.                                                           |
 | `defaultModelOverruns`          | 1                    | How many times one sealed step re-issues a call its `modelCallMs` budget cut off, with overrun teaching prepended. An overrun costs a whole armed ceiling, so it does not share the transport retry budget. |
+| `defaultModelIdleMs`            | 300,000              | How long a model stream may send nothing before it is cut off as `transport` and re-issued without teaching, at most `defaultModelOverruns` times. Armed only below the call's `modelCallMs` ceiling.       |
 
 ### FlowEngineLike.workspaceRelative, FlowEngineLike.callBoundary, FlowEngineLike.callMaterial
 
@@ -1903,6 +1954,17 @@ that pins nothing is still wrapped: a call carrying an `at` must never quietly
 read the live tree instead, so `unpinned` refuses it with
 `checkpoint_unavailable`. A store that cannot hand the tree back is also a
 catchable `checkpoint_unavailable` refusal, not a failed run.
+
+### Checkpointed.unpinnedFact
+
+```ts
+const unpinnedFact: string
+```
+
+The system text `Agent.run` adds to a run whose composition has no
+`Checkpoints` store. It says that `ctx.base`, `ctx.checkpoint()` and every
+`at`-carrying call are refused, and that a baseline is taken by running the
+check before the edit.
 
 ### Checkpointed.unsupported, Checkpointed.absolute, Checkpointed.outside
 

@@ -42,11 +42,11 @@ Write three files: the engine composition every part reuses, the flow declaratio
 
 ```ts title="engine.ts"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Jj } from "@smthrs/kernel"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Ownership } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -57,7 +57,7 @@ import { dirname } from "node:path"
 export const stubJj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "tutorial-snapshot" as never }),
+    snapshot: () => Effect.succeed({ changeId: "tutorial-snapshot" as never, commitId: "tutorial-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,
@@ -71,7 +71,7 @@ export const requirements = (filename: string) =>
   Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), stubJj).pipe(
     Layer.provideMerge(NodeRuntime.storage(filename)),
     Layer.provideMerge(NodeCrypto.layer),
-    Layer.provideMerge(NodeFileSystem.layer)
+    Layer.provideMerge(AtomicFileSystem.layer)
   )
 
 // An EngineStore over the same file, with the cache environment declared so a
@@ -93,7 +93,7 @@ export const durableEngine = (filename: string, hostId: string) =>
   ).pipe(
     Layer.provideMerge(stubJj),
     Layer.provideMerge(NodeCrypto.layer),
-    Layer.provideMerge(NodeFileSystem.layer)
+    Layer.provideMerge(AtomicFileSystem.layer)
   )
 ```
 
