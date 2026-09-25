@@ -9,21 +9,11 @@ Effect v4 (`effect@4.0.0-rc.115`) is authoritative. When an API is in doubt,
 read `node_modules/effect/src/*.ts`; there is no v3 idiom in this package
 (`Context.Service`, not `Context.Tag`; `Effect.catch`, not `catchAll`).
 
-## Current deployment entry
-
-`src/edge.ts` is the prepared deployment entry. `handleEdgeRequest` uses only
-`Transport` and `EdgeAssets`; `runRequest` is the Web API boundary. Product API
-requests are streamed unchanged to the canonical backend, and asset requests
-use the platform binding. Retained Durable Object classes have no product I/O.
-Activation requires the drain and migration receipts in `shared-edge-cutover.md`.
-
-The following sections describe `src/index.ts`, the legacy source retained
-for maintenance export and rollback. It is not imported by the stateless entry.
-
 ## Entrypoints
 
-The legacy entry is `src/index.ts` `export default`, workerd's
-`fetch(request, env, ctx)` shape, still run by its legacy tests and maintenance tooling, with `runRequest` in
+There is one: `src/index.ts` `export default`, workerd's
+`fetch(request, env, ctx)` shape, deployed by wrangler (`wrangler.jsonc`
+`main`) and run as-is by the tests and the local host, with `runRequest` in
 `src/Boundary.ts` as its adapter.
 
 It calls the router, `handleRequest(request)` in `src/index.ts`, an

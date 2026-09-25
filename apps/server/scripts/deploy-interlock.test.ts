@@ -136,7 +136,8 @@ test("the real deploy.ts enforces the checkout identity before any subprocess", 
       { cwd: new URL("..", import.meta.url).pathname, env: { PATH: shims, HOME: process.env.HOME ?? "", CLOUDFLARE_API_TOKEN: "fake-control-plane-token", DEPLOY_INTERLOCK_LIVE: live } })
     return { code: run.exitCode, out: run.stdout.toString() + run.stderr.toString(), spawned: existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [] }
   }
-  const local = WORKER_IDENTITY.entry === "src/edge.ts" ? "edge" : "legacy"
+  const entry: string = WORKER_IDENTITY.entry
+  const local = entry === "src/edge.ts" ? "edge" : "legacy"
   const refused = local === "edge"
     ? [["legacy", "DEPLOY_GUARD_EDGE_BEFORE_CUTOVER"], ["admission", "DEPLOY_GUARD_LIVE_CUTOVER"], ["export", "DEPLOY_GUARD_LIVE_CUTOVER"]]
     : [["fence", "DEPLOY_GUARD_LIVE_CUTOVER"], ["admission", "DEPLOY_GUARD_LIVE_CUTOVER"], ["export", "DEPLOY_GUARD_LIVE_CUTOVER"], ["edge", "DEPLOY_GUARD_LEGACY_OVER_EDGE"]]

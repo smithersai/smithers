@@ -8,7 +8,7 @@ import {
   workerHealthVerdict
 } from "./workers-health.ts"
 import type { HealthVerdict, ProbeFetch, ProbeResponse } from "./workers-health.ts"
-import { BACKING_WORKERS, RETIRED_WORKERS, expandTargets, healthUrl, withOriginOverrides } from "./workers-manifest.ts"
+import { BACKING_WORKERS, expandTargets, healthUrl, withOriginOverrides } from "./workers-manifest.ts"
 import type { BackingWorker } from "./workers-manifest.ts"
 
 /*
@@ -131,10 +131,15 @@ const steppingClock = (): () => number => {
 describe("the manifest", () => {
   test("names the backing Workers with a public origin each", () => {
     expect(BACKING_WORKERS.map((entry) => entry.name).sort()).toEqual([
-      "application", "connectors-catalog", "status"
-    ])
-    expect(RETIRED_WORKERS.map(entry => entry.name).sort()).toEqual([
-      "billing", "chat", "cron", "identity", "sync", "webhooks"
+      "billing",
+      "chat",
+      "cloud-api",
+      "connectors-catalog",
+      "cron",
+      "identity",
+      "status",
+      "sync",
+      "webhooks"
     ])
     for (const entry of BACKING_WORKERS) {
       expect(entry.origin).toStartWith("https://")
@@ -156,7 +161,7 @@ describe("the manifest", () => {
     // operator repoints a seam at a host this file does not know, CN-18 would
     // otherwise stay green while probing a stack the product no longer calls.
     const wrangler = await Bun.file(new URL("../../wrangler.jsonc", import.meta.url)).text()
-    const configured = [...wrangler.matchAll(/"([A-Z_]*(?:UPSTREAM_URL|CHAT_URL|CLOUD_API_BASE_URL|BACKEND_ORIGIN))"\s*:\s*"([^"]+)"/g)].map(
+    const configured = [...wrangler.matchAll(/"([A-Z_]*(?:UPSTREAM_URL|CHAT_URL|CLOUD_API_BASE_URL))"\s*:\s*"([^"]+)"/g)].map(
       (match) => ({ name: match[1] as string, origin: new URL(match[2] as string).origin })
     )
     expect(configured.length).toBeGreaterThan(0)
@@ -170,9 +175,9 @@ describe("the manifest", () => {
     }
   })
 
-  test("active dependencies all assert a real health contract", () => {
+  test("the three Workers with no health route are `responds`, and only those", () => {
     const responds = BACKING_WORKERS.filter((entry) => entry.contract === "responds").map((entry) => entry.name)
-    expect(responds).toEqual([])
+    expect(responds.sort()).toEqual(["chat", "cron", "webhooks"])
   })
 
   test("sync's health path is /health — /healthz is a 404 on that Worker", () => {
@@ -189,33 +194,33 @@ describe("$CANARY_WORKER_ORIGINS", () => {
   })
 
   test("overriding one origin leaves the others at their defaults", () => {
-    const overridden = withOriginOverrides(BACKING_WORKERS, JSON.stringify({ status: "https://status.staging" }))
-    expect(overridden.find((entry) => entry.name === "status")?.origin).toBe("https://status.staging")
-    expect(overridden.find((entry) => entry.name === "application")?.origin).toBe(
-      BACKING_WORKERS.find((entry) => entry.name === "application")?.origin
+    const overridden = withOriginOverrides(BACKING_WORKERS, JSON.stringify({ identity: "https://identity.staging" }))
+    expect(overridden.find((entry) => entry.name === "identity")?.origin).toBe("https://identity.staging")
+    expect(overridden.find((entry) => entry.name === "billing")?.origin).toBe(
+      BACKING_WORKERS.find((entry) => entry.name === "billing")?.origin
     )
   })
 
   test("\"\" and null declare a Worker unset on this deployment", () => {
-    const overridden = withOriginOverrides(BACKING_WORKERS, "{\"connectors-catalog\":\"\",\"status\":null}")
-    expect(overridden.find((entry) => entry.name === "connectors-catalog")?.origin).toBeUndefined()
-    expect(overridden.find((entry) => entry.name === "status")?.origin).toBeUndefined()
+    const overridden = withOriginOverrides(BACKING_WORKERS, "{\"cron\":\"\",\"webhooks\":null}")
+    expect(overridden.find((entry) => entry.name === "cron")?.origin).toBeUndefined()
+    expect(overridden.find((entry) => entry.name === "webhooks")?.origin).toBeUndefined()
   })
 
   test("malformed values throw instead of silently probing the default deployment", () => {
     expect(() => withOriginOverrides(BACKING_WORKERS, "not json")).toThrow(/not a JSON object/)
     expect(() => withOriginOverrides(BACKING_WORKERS, "[1,2]")).toThrow(/not a JSON object/)
-    expect(() => withOriginOverrides(BACKING_WORKERS, "{\"status\":7}")).toThrow(/must be an origin string/)
-    expect(() => withOriginOverrides(BACKING_WORKERS, "{\"status\":\"status.example\"}")).toThrow(
+    expect(() => withOriginOverrides(BACKING_WORKERS, "{\"identity\":7}")).toThrow(/must be an origin string/)
+    expect(() => withOriginOverrides(BACKING_WORKERS, "{\"identity\":\"identity.example\"}")).toThrow(
       /not an absolute URL/
     )
-    expect(() => withOriginOverrides(BACKING_WORKERS, "{\"status\":\"ftp://status.example\"}")).toThrow(
+    expect(() => withOriginOverrides(BACKING_WORKERS, "{\"identity\":\"ftp://identity.example\"}")).toThrow(
       /must be http or https/
     )
   })
 
   test("a typo'd Worker name throws and lists the known names", () => {
-    expect(() => withOriginOverrides(BACKING_WORKERS, "{\"identiy\":\"https://status.test\"}")).toThrow(
+    expect(() => withOriginOverrides(BACKING_WORKERS, "{\"identiy\":\"https://identity.test\"}")).toThrow(
       /unknown Worker "identiy"/
     )
   })
@@ -384,7 +389,7 @@ describe("the run", () => {
     Object.fromEntries(
       expandTargets(BACKING_WORKERS).map((entry) => [
         healthUrl(entry) as string,
-        entry.contract === "application-bootstrap" ? jsonResponse(200, { apiVersion: 1, host: "cloud", version: "1.0.0", capabilities: ["agent", "identity"] }) : entry.contract === "ok-json" ? jsonResponse(200, { ok: true }) : textResponse(404, "Not found")
+        entry.contract === "ok-json" ? jsonResponse(200, { ok: true }) : textResponse(404, "Not found")
       ])
     )
 
@@ -411,48 +416,44 @@ describe("the run", () => {
     expect(lines.filter((line) => line.startsWith("ok: "))).toHaveLength(TARGET_COUNT)
   })
 
-  test("the canonical application failing bootstrap fails the run", async () => {
+  test("the workers.dev route apps/server actually configures is probed, not just the custom domain", async () => {
     const routes = allHealthy()
-    routes["https://api.jjhub.tech/api/bootstrap"] = jsonResponse(200, { ok: true })
+    // The route wrangler.jsonc points IDENTITY_UPSTREAM_URL at. If only the
+    // custom domain were probed, sign-in could be dead with CN-18 green.
+    routes["https://smithers-cloud-identity.willcory10.workers.dev/healthz"] = jsonResponse(200, { ok: false })
     const { summary, lines } = await runWith(routes)
     expect(summary.exitCode).toBe(1)
-    expect(lines).toContainEqual(expect.stringContaining("FAIL: application"))
+    expect(lines).toContainEqual(
+      expect.stringContaining("FAIL: identity via smithers-cloud-identity.willcory10.workers.dev")
+    )
+    expect(lines).toContainEqual(expect.stringContaining("ok: identity https://identity.smithers.sh/healthz"))
   })
 
-  test("retired authorities are never probed by the active dependency check", async () => {
-    const fetch = fakeFetch(allHealthy())
-    const summary = await runWorkersHealth({ fetch, env: {}, now: steppingClock(), log: () => {} })
-    expect(summary.exitCode).toBe(0)
-    expect((fetch as unknown as { seen: string[] }).seen).toEqual([
-      "https://api.jjhub.tech/api/bootstrap", "https://connectors.smithers.sh/healthz", "https://status.smithers.sh/healthz"
-    ])
-  })
-
-  test("pointing status at an undeployed workers.dev host fails the run (the CN-18 reproduction)", async () => {
+  test("pointing chat at an undeployed workers.dev host fails the run (the CN-18 reproduction)", async () => {
     // The auditor's command, in fake form:
     //   CANARY_WORKER_ORIGINS='{"chat":"https://this-worker-does-not-exist…"}'
     // The run used to report CN-18 PASS with exit 0.
     const routes = allHealthy()
-    routes["https://this-worker-does-not-exist-xyz123.willcory10.workers.dev/healthz"] = textResponse(404, EDGE_JSON_404)
+    routes["https://this-worker-does-not-exist-xyz123.willcory10.workers.dev/"] = textResponse(404, EDGE_JSON_404)
     const { summary, lines } = await runWith(routes, {
-      CANARY_WORKER_ORIGINS: "{\"status\":\"https://this-worker-does-not-exist-xyz123.willcory10.workers.dev\"}"
+      CANARY_WORKER_ORIGINS: "{\"chat\":\"https://this-worker-does-not-exist-xyz123.willcory10.workers.dev\"}"
     })
     expect(summary.exitCode).toBe(1)
     expect(summary.unhealthy).toBe(1)
     expect(summary.line).toContain("CN-18 FAILED")
-    expect(lines).toContainEqual(expect.stringContaining("FAIL: status"))
+    expect(lines).toContainEqual(expect.stringContaining("FAIL: chat"))
   })
 
   test("an override replaces a Worker's routes rather than adding to them", async () => {
     const routes = allHealthy()
-    routes["https://status.staging/healthz"] = jsonResponse(200, { ok: true })
+    routes["https://identity.staging/healthz"] = jsonResponse(200, { ok: true })
     // No route is registered for the canary's workers.dev twin here: the fake
     // fetch throws on an unexpected URL, so probing it would fail this test.
     const { summary, lines } = await runWith(routes, {
-      CANARY_WORKER_ORIGINS: "{\"status\":\"https://status.staging\"}"
+      CANARY_WORKER_ORIGINS: "{\"identity\":\"https://identity.staging\"}"
     })
     expect(summary.exitCode).toBe(0)
-    expect(lines.filter((line) => line.includes("status"))).toHaveLength(1)
+    expect(lines.filter((line) => line.includes("identity"))).toHaveLength(1)
   })
 
   test("reports in manifest order so a diff of two runs is readable", async () => {
@@ -463,12 +464,12 @@ describe("the run", () => {
 
   test("one 500, one timeout, one unconfigured: two failures, one skip, and exit 1", async () => {
     const routes = allHealthy()
-    routes["https://api.jjhub.tech/api/bootstrap"] = textResponse(500, "boom")
-    routes["https://status.smithers.sh/healthz"] = timeoutError
-    const { summary, lines } = await runWith(routes, { CANARY_WORKER_ORIGINS: "{\"connectors-catalog\":\"\"}" })
+    routes["https://billing.smithers.sh/healthz"] = textResponse(500, "boom")
+    routes["https://sync.smithers.sh/health"] = timeoutError
+    const { summary, lines } = await runWith(routes, { CANARY_WORKER_ORIGINS: "{\"cron\":\"\"}" })
     expect(summary).toMatchObject({ healthy: TARGET_COUNT - 3, unhealthy: 2, notConfigured: 1, exitCode: 1 })
-    expect(summary.line).toContain("application, status")
-    expect(lines.some((line) => line.startsWith("skip: connectors-catalog"))).toBe(true)
+    expect(summary.line).toContain("billing, sync")
+    expect(lines.some((line) => line.startsWith("skip: cron"))).toBe(true)
     // The skip must not be counted as a failure, and the failures must not
     // be counted as skips: three states, three tallies.
     expect(lines.filter((line) => line.startsWith("FAIL: "))).toHaveLength(2)
@@ -476,7 +477,7 @@ describe("the run", () => {
 
   test("a healthy Worker an operator left unset never reads as broken", async () => {
     const routes = allHealthy()
-    const { summary, lines } = await runWith(routes, { CANARY_WORKER_ORIGINS: "{\"status\":null}" })
+    const { summary, lines } = await runWith(routes, { CANARY_WORKER_ORIGINS: "{\"webhooks\":null}" })
     expect(summary.exitCode).toBe(0)
     expect(summary.notConfigured).toBe(1)
     expect(lines.some((line) => line.startsWith("FAIL"))).toBe(false)

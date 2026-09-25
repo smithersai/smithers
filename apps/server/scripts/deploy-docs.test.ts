@@ -35,14 +35,9 @@ for (const [name, source] of [["deployment guide", guide], ["HTTP reference", re
     for (const route of ["/rpc", "/projections", "/sync", "/health", "/api/workflow/provision", "/api/workflow/rpc"]) {
       expect(source).toContain(`\`${route}\``)
     }
-    if (name === "deployment guide") {
-      expect(source).toContain("shared backend's responsibility")
-      expect(source).toContain("never falls back to old product handlers")
-    } else {
-      expect(source).toContain("gateway_proxy_removed")
-      expect(source).toContain("HTTP 410")
-      expect(source).toContain("validated, allowlisted session")
-    }
+    expect(source).toContain("gateway_proxy_removed")
+    expect(source).toContain("HTTP 410")
+    expect(source).toContain("validated, allowlisted session")
   })
 }
 
@@ -92,8 +87,8 @@ test("the secrets section names every secret and knob the Worker reads, and no v
   const section = guide.split("## Secrets")[1]!.split("## Scripted deploy")[0]!
   for (const name of Object.keys(WORKER_IDENTITY.secrets)) expect(section).toContain(`\`${name}\``)
   for (const name of WORKER_IDENTITY.optionalVars) expect(section).toContain(`\`${name}\``)
-  expect(Object.values(WORKER_IDENTITY.secrets).filter(secret => secret.required)).toEqual([])
-  expect(section).toContain("requires no product secrets")
+  const required = Object.entries(WORKER_IDENTITY.secrets).filter(([, secret]) => secret.required).map(([name]) => `\`${name}\``)
+  expect(section.split("FAILs on a missing\nrequired one (")[1]?.split(")")[0]?.split(/,\s+/)).toEqual(required)
   expect(guide).not.toMatch(/-----BEGIN [A-Z ]*PRIVATE KEY-----\n[A-Za-z0-9+/=]{20,}/)
 })
 

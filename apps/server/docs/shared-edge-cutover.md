@@ -4,7 +4,10 @@ The live Worker still owns product state. The candidate entry `src/edge.ts`
 serves assets and forwards `/api` unchanged to `SMITHERS_BACKEND_ORIGIN`.
 Authentication, provider credentials, chat, recommendations and product jobs
 belong to the shared Smithers backend. There is no fallback or dual write.
-Do not land this deployment configuration before the gates below pass.
+Its configuration is `wrangler.edge.jsonc`; `wrangler.jsonc` stays on the
+legacy `src/index.ts` and the hosted documents declare no application target
+until the gates below pass (`src/deployGeneration.test.ts` holds this). The
+activation steps are in `shared-edge-deploy.md`.
 
 ## Evidence and retained state
 
