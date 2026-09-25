@@ -939,6 +939,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	landingHandler := &routes.LandingHandler{
 		Service: landingService,
+		// A send-upstream repository delivers a landing as a GitHub pull request.
+		GitHubPull: services.NewLandingGitHubPullService(landingService, queries, repoConnectionService, gitHubUserReposService, publicBaseURL, repoConnectionService),
 	}
 	changesetHandler := &routes.ChangesetHandler{
 		Service: changesetService,

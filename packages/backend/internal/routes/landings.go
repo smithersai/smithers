@@ -40,6 +40,54 @@ type LandingRouteService interface {
 
 type LandingHandler struct {
 	Service LandingRouteService
+	// GitHubPull opens a landing's GitHub pull request. Nil when the
+	// deployment has no GitHub App.
+	GitHubPull LandingGitHubPullRouteService
+}
+
+// LandingGitHubPullRouteService opens the GitHub pull request of a landing.
+type LandingGitHubPullRouteService interface {
+	OpenLandingGitHubPull(ctx context.Context, actor *db.User, owner, repo string, number int64, input services.LandingGitHubPullInput) (services.LandingGitHubPull, error)
+}
+
+// OpenLandingGitHubPull serves PUT /landings/{number}/github/pull. Repeating
+// it returns the same pull request; it never opens a second one.
+func (h *LandingHandler) OpenLandingGitHubPull(w http.ResponseWriter, r *http.Request) {
+	user, err := requireRouteUser(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	owner, repo, number, err := landingRouteContext(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	if aliasErr := refuseGitHubSourceWrite(r, "Opening a GitHub pull request"); aliasErr != nil {
+		errors.WriteError(w, aliasErr)
+		return
+	}
+	if h.GitHubPull == nil {
+		errors.WriteError(w, errors.New(errors.CodeServiceUnavailable, "GitHub pull requests are not configured"))
+		return
+	}
+	var req struct {
+		CommitID string `json:"commit_id"`
+		RunID    string `json:"run_id"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	pull, svcErr := h.GitHubPull.OpenLandingGitHubPull(r.Context(), user, owner, repo, number, services.LandingGitHubPullInput{CommitID: req.CommitID, RunID: req.RunID})
+	if svcErr != nil {
+		writeRouteError(w, r, svcErr)
+		return
+	}
+	status := http.StatusOK
+	if pull.Created {
+		status = http.StatusCreated
+	}
+	errors.WriteJSON(w, status, pull)
 }
 
 type createLandingRequest struct {

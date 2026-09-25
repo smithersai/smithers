@@ -52,34 +52,11 @@ func WithGitMirrorCredentials(q GitMirrorCredentialStore, github GitMirrorGitHub
 			if q == nil || github == nil {
 				return gitMirrorRemotes{}, pkgerrors.Internal("mirror credentials are not configured")
 			}
-			repository, err := q.GetRepoByID(ctx, repositoryID)
-			if err != nil {
-				return gitMirrorRemotes{}, pkgerrors.Internal("load mirror repository").WithCause(err)
+			var conn RepoSyncConnectionChecker
+			if len(connections) > 0 {
+				conn = connections[0]
 			}
-			destination := strings.TrimSpace(repository.MirrorDestination)
-			if destination == "" {
-				sources, err := q.ListRepositoryGitHubSources(ctx, repositoryID)
-				if err != nil {
-					return gitMirrorRemotes{}, pkgerrors.Internal("load GitHub mirror destination").WithCause(err)
-				}
-				if len(sources) == 1 {
-					destination = sources[0].GithubOwner + "/" + sources[0].GithubRepo
-				} else if len(sources) == 0 && len(connections) > 0 && connections[0] != nil {
-					// A native repository may have an explicit ConnectRepo link
-					// without import provenance. Never infer a link from names alone.
-					connection, err := connections[0].GetRepoConnectionStatus(ctx, userID, owner, repo)
-					if err != nil {
-						return gitMirrorRemotes{}, err
-					}
-					if connection.Connected {
-						destination = owner + "/" + repo
-					}
-				}
-				if destination == "" {
-					return gitMirrorRemotes{}, pkgerrors.Conflict("Connect one GitHub destination before reconciling this repository")
-				}
-			}
-			targetOwner, targetRepo, err := mirrorDestination(destination)
+			targetOwner, targetRepo, err := resolveGitHubDestination(ctx, q, conn, userID, repositoryID, owner, repo)
 			if err != nil {
 				return gitMirrorRemotes{}, err
 			}
