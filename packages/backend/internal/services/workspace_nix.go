@@ -127,7 +127,7 @@ func (s *WorkspaceService) applyNixGuest(req *sandbox.CreateRequest, image runti
 	}
 	for i := range req.Init.Services {
 		if req.Init.Services[i].Name == workspaceReadyService {
-			req.Init.Services[i].Exec = []string{"/bin/sh", "-lc", shellQuote(workspaceNixActivationWaitCommand)}
+			req.Init.Services[i].Exec = []string{"/bin/sh", "-lc", workspaceNixActivationWaitCommand}
 		}
 	}
 	if req.Kind == "desktop" {

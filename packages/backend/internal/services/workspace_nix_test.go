@@ -85,6 +85,8 @@ func TestBuildWorkspaceVMRequestVMKindBootsClosureImage(t *testing.T) {
 		}
 	}
 	require.NotNil(t, ready)
+	assert.Equal(t, []string{"/bin/sh", "-lc", workspaceNixActivationWaitCommand}, ready.Exec,
+		"service Exec is an argv; quoting the script as one shell word prevents activation")
 	assert.Contains(t, strings.Join(ready.Exec, " "), "systemctl is-system-running")
 	assert.Contains(t, strings.Join(ready.Exec, " "), "/run/current-system/sw/bin/bash")
 }
