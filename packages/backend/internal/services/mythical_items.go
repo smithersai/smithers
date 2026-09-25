@@ -62,12 +62,14 @@ type mythicalLauncher interface {
 	AdmitInTx(context.Context, pgx.Tx, flowdispatch.LaunchRequest) (jobs.RequestReceipt, error)
 }
 
-// mythicalLanes provisions lane workspaces for the stack actor. Ensure is
-// idempotent by name, so a crash between provisioning and recording it never
-// leaks a workspace; Delete of an absent workspace succeeds.
+// mythicalLanes provisions lane workspaces for the stack actor. The stack
+// binds each one it creates (mythical_lanes) and never reuses or deletes an
+// unbound workspace; Delete of an absent workspace succeeds. Owned reports a
+// live workspace of the user's in the repository.
 type mythicalLanes interface {
-	Ensure(ctx context.Context, repository db.Repository, owner string, actorUserID int64, name string) (string, error)
+	Create(ctx context.Context, repository db.Repository, owner string, actorUserID int64, name string) (string, error)
 	Delete(ctx context.Context, repositoryID, actorUserID int64, workspaceID string) error
+	Owned(ctx context.Context, repositoryID, userID int64, workspaceID string) (bool, error)
 }
 
 // SetOrchestration connects the item machinery: GitHub, Flow launches and
@@ -97,7 +99,7 @@ func mythicalAdmission(issue mythicalIssue, approved bool) (string, string) {
 	}
 	if !approved {
 		if mythicalLabeled(issue) {
-			return "skipped", "edited after approval; a maintainer re-applies the smithers label"
+			return "skipped", "a maintainer re-applies the smithers label to approve this text"
 		}
 		return "skipped", "waiting for a maintainer to add the smithers label"
 	}
@@ -139,9 +141,11 @@ func (s *MythicalService) ObserveIssue(ctx context.Context, repositoryID int64, 
 		switch {
 		case trusted:
 			approved = digest
-		case mythicalLabeled(issue) && (errors.Is(err, pgx.ErrNoRows) || strings.EqualFold(action, "labeled")):
+		// An outsider's text is approved only by the smithers label being
+		// applied to exactly this text, and only while the label stays.
+		case mythicalLabeled(issue) && strings.EqualFold(action, "labeled"):
 			approved = digest
-		case err == nil && existing.ApprovedDigest == digest:
+		case mythicalLabeled(issue) && err == nil && existing.ApprovedDigest == digest:
 			approved = digest
 		}
 		state, reason := mythicalAdmission(issue, approved == digest)
@@ -307,9 +311,37 @@ func (s *MythicalService) SubmitLane(ctx context.Context, repositoryID, userID i
 	if retained != input.Source {
 		return MythicalLaneReceipt{}, pkgerrors.Conflict("the result is not retained by that workspace; publish it from the workspace first")
 	}
+	lane, err := q.GetMythicalLane(ctx, input.WorkspaceID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return MythicalLaneReceipt{}, err
+	}
+	isLane := err == nil
+	if isLane && (lane.RepositoryID != repositoryID || lane.RetiredAt.Valid) {
+		return MythicalLaneReceipt{}, pkgerrors.Conflict("that lane is retired; its results no longer reach the stack")
+	}
+	if !isLane {
+		// A chat result comes from a live workspace of the stack's account
+		// that the stack never provisioned.
+		if s.lanes == nil {
+			return MythicalLaneReceipt{}, pkgerrors.Internal("workspaces are unavailable")
+		}
+		owned, err := s.lanes.Owned(ctx, repositoryID, userID, input.WorkspaceID)
+		if err != nil {
+			return MythicalLaneReceipt{}, err
+		}
+		if !owned {
+			return MythicalLaneReceipt{}, pkgerrors.Forbidden("the result must come from a live workspace of the stack's account")
+		}
+	}
 	for range 3 {
-		item, err := q.GetMythicalItemByWorkspace(ctx, repositoryID, input.WorkspaceID)
-		if errors.Is(err, pgx.ErrNoRows) {
+		var item db.MythicalItem
+		if isLane {
+			item, err = q.GetMythicalItem(ctx, lane.ItemID)
+			if err == nil && item.WorkspaceID != input.WorkspaceID {
+				return MythicalLaneReceipt{}, pkgerrors.Conflict("that lane's attempt is over; its results no longer reach the stack")
+			}
+		}
+		if !isLane {
 			title, _, _ := strings.Cut(strings.TrimSpace(input.Summary), "\n")
 			created, _, err := q.InsertMythicalChatItem(ctx, db.MythicalItem{RepositoryID: repositoryID, IssueTitle: title,
 				WorkspaceID: input.WorkspaceID, CandidateBase: input.Base, CandidateHead: input.Source, RequestRunID: input.RequestRunID,
@@ -326,8 +358,10 @@ func (s *MythicalService) SubmitLane(ctx context.Context, repositoryID, userID i
 		if item.CandidateHead == input.Source && item.CandidateHead != "" {
 			return MythicalLaneReceipt{ItemID: uuidString(item.ID), State: item.State, Source: input.Source}, nil
 		}
-		if item.State != "running" && item.State != "delivering" {
-			return MythicalLaneReceipt{}, pkgerrors.Conflict("the lane's item is " + item.State + ", not waiting for a result")
+		// The lane's own request run, launched by the stack, validated the
+		// result before delivery started; that is the verification evidence.
+		if item.State != "delivering" || item.RequestOutcome != "validated" {
+			return MythicalLaneReceipt{}, pkgerrors.Conflict("the lane's item is " + item.State + ", not waiting for a validated result")
 		}
 		if item.RequestRunID == "" || input.RequestRunID != item.RequestRunID || input.Base != item.BaseCommit {
 			return MythicalLaneReceipt{}, pkgerrors.Conflict("the result does not come from this lane's current request on its tip")
@@ -665,6 +699,7 @@ func (s *MythicalService) advanceItems(ctx context.Context, r *mythicalRun) {
 		}
 		return a.IssueNumber.Int64 < b.IssueNumber.Int64
 	})
+	defer s.sweepLanes(ctx, r)
 	for _, item := range items {
 		if ctx.Err() != nil {
 			return
@@ -737,7 +772,7 @@ func (s *MythicalService) releaseLane(ctx context.Context, r *mythicalRun, item 
 		_, _ = s.queries().SaveMythicalItem(ctx, next)
 		return
 	}
-	if err := s.lanes.Delete(ctx, r.row.RepositoryID, r.row.ActorUserID.Int64, item.WorkspaceID); err != nil {
+	if err := s.retireLane(ctx, r, item.WorkspaceID); err != nil {
 		if ctx.Err() == nil {
 			s.logger.Warn("mythical.lane_release_failed", "workspace_id", item.WorkspaceID, "error", err)
 		}
@@ -850,21 +885,95 @@ func (st *mythicalItemStep) commit(ctx context.Context, item db.MythicalItem, ph
 		return db.MythicalItem{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
+		// The acknowledgment may be lost after PostgreSQL committed: the
+		// persisted row decides.
+		if persisted, readErr := s.queries().GetMythicalItem(context.WithoutCancel(ctx), saved.ID); readErr == nil && persisted.Version == saved.Version {
+			st.launches++
+			return persisted, nil
+		}
 		return db.MythicalItem{}, err
 	}
 	st.launches++
 	return saved, nil
 }
 
-// lane ensures the workspace named for this item's attempt (idempotent by
-// name) after retiring any earlier attempt's workspace.
+// lane answers the item's bound workspace of this name, provisioning and
+// binding one the first time. Names carry the generation, so a binding is
+// never reused across attempts. A workspace that lost the binding race is
+// deleted; one whose binding outcome is unknown is left to the sweep only if
+// it was bound, and deleted if it provably was not.
 func (st *mythicalItemStep) lane(ctx context.Context, item db.MythicalItem, name string) (string, error) {
 	s, r := st.s, st.r
+	q := s.queries()
+	bound, err := q.GetMythicalLaneByName(ctx, item.ID, name)
+	switch {
+	case err == nil && bound.RetiredAt.Valid:
+		return "", errors.New("the lane " + name + " was retired")
+	case err == nil:
+		return bound.WorkspaceID, nil
+	case !errors.Is(err, pgx.ErrNoRows):
+		return "", err
+	}
 	repository, owner, err := s.repository(ctx, r.row.RepositoryID)
 	if err != nil {
 		return "", err
 	}
-	return s.lanes.Ensure(ctx, repository, owner, r.row.ActorUserID.Int64, name)
+	actor := r.row.ActorUserID.Int64
+	workspaceID, err := s.lanes.Create(ctx, repository, owner, actor, name)
+	if err != nil {
+		return "", err
+	}
+	bound, inserted, err := q.BindMythicalLane(ctx, db.MythicalLane{WorkspaceID: workspaceID, RepositoryID: r.row.RepositoryID,
+		ItemID: item.ID, Name: name})
+	if err != nil {
+		if _, lookup := q.GetMythicalLane(ctx, workspaceID); errors.Is(lookup, pgx.ErrNoRows) {
+			_ = s.lanes.Delete(ctx, r.row.RepositoryID, actor, workspaceID)
+		}
+		return "", err
+	}
+	if !inserted {
+		_ = s.lanes.Delete(ctx, r.row.RepositoryID, actor, workspaceID)
+	}
+	return bound.WorkspaceID, nil
+}
+
+// retireLane deletes a workspace the stack bound as a lane and records it;
+// a workspace the stack never bound is never deleted.
+func (s *MythicalService) retireLane(ctx context.Context, r *mythicalRun, workspaceID string) error {
+	q := s.queries()
+	bound, err := q.GetMythicalLane(ctx, workspaceID)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (bound.RetiredAt.Valid || bound.RepositoryID != r.row.RepositoryID)) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.lanes.Delete(ctx, r.row.RepositoryID, r.row.ActorUserID.Int64, workspaceID); err != nil {
+		return err
+	}
+	return q.RetireMythicalLane(ctx, workspaceID)
+}
+
+// mythicalLaneGrace keeps a just-provisioned lane out of the sweep while the
+// launch that records it on its item may still be committing.
+const mythicalLaneGrace = 2 * time.Minute
+
+// sweepLanes retires bound lanes their item no longer references: a failed
+// launch, an earlier attempt, or a release that failed before.
+func (s *MythicalService) sweepLanes(ctx context.Context, r *mythicalRun) {
+	if s.lanes == nil || !r.row.ActorUserID.Valid {
+		return
+	}
+	lanes, err := s.queries().ListRetirableMythicalLanes(ctx, r.row.RepositoryID, mythicalLaneGrace, 8)
+	if err != nil {
+		s.logger.Warn("mythical.lane_sweep_failed", "repository_id", r.row.RepositoryID, "error", err)
+		return
+	}
+	for _, lane := range lanes {
+		if err := s.retireLane(ctx, r, lane.WorkspaceID); err != nil && ctx.Err() == nil {
+			s.logger.Warn("mythical.lane_release_failed", "workspace_id", lane.WorkspaceID, "error", err)
+		}
+	}
 }
 
 // start opens a lane for a new attempt: a fresh workspace on the stack, the
@@ -881,7 +990,7 @@ func (st *mythicalItemStep) start(ctx context.Context, item db.MythicalItem) (*d
 	}
 	if item.WorkspaceID != "" {
 		// The previous attempt's lane is retired before a new one opens.
-		if err := s.lanes.Delete(ctx, r.row.RepositoryID, r.row.ActorUserID.Int64, item.WorkspaceID); err != nil {
+		if err := s.retireLane(ctx, r, item.WorkspaceID); err != nil {
 			return mythicalLater(item, "the previous lane could not be retired: "+err.Error(), st.now), false, nil
 		}
 	}
@@ -890,7 +999,7 @@ func (st *mythicalItemStep) start(ctx context.Context, item db.MythicalItem) (*d
 	next.RequestOutcome, next.VibeOutcome, next.VerifyOutcome = "", "", ""
 	next.RequestRunID, next.VibeRunID, next.VerifyRunID = "", "", ""
 	next.CandidateBase, next.CandidateHead, next.CandidateVerified = "", "", false
-	workspaceID, err := st.lane(ctx, item, fmt.Sprintf("mythical #%d attempt %d", item.IssueNumber.Int64, next.Attempt))
+	workspaceID, err := st.lane(ctx, item, fmt.Sprintf("mythical #%d attempt %d g%d", item.IssueNumber.Int64, next.Attempt, next.Generation))
 	if err != nil {
 		return mythicalLater(item, "no lane workspace: "+err.Error(), st.now), false, nil
 	}
@@ -898,7 +1007,6 @@ func (st *mythicalItemStep) start(ctx context.Context, item db.MythicalItem) (*d
 	next.Lane = pgtype.Int4{Int32: int32(next.Attempt % 8), Valid: true}
 	ref, err := s.retainFor(ctx, r, workspaceID, r.row.TipCommit)
 	if err != nil {
-		_ = s.lanes.Delete(ctx, r.row.RepositoryID, r.row.ActorUserID.Int64, workspaceID)
 		return mythicalLater(item, "the stack tip could not reach the lane: "+err.Error(), st.now), false, nil
 	}
 	payload, _ := json.Marshal(map[string]any{"prompt": st.prompt(item, next.Attempt), "maxRounds": 3,
@@ -906,7 +1014,9 @@ func (st *mythicalItemStep) start(ctx context.Context, item db.MythicalItem) (*d
 	next.State, next.Reason, next.NextAttemptAt = "running", "", pgtype.Timestamptz{}
 	saved, err := st.commit(ctx, next, "request", "coding/request", payload)
 	if err != nil {
-		_ = s.lanes.Delete(ctx, r.row.RepositoryID, r.row.ActorUserID.Int64, workspaceID)
+		// The lane stays bound; the sweep retires it once the item provably
+		// does not reference it, so a lost COMMIT acknowledgment never
+		// deletes an admitted lane.
 		return mythicalLater(item, "the request could not be launched: "+err.Error(), st.now), false, nil
 	}
 	return &saved, true, nil
@@ -1391,19 +1501,9 @@ func NewWorkspaceMythicalLanes(workspaces *WorkspaceService) *workspaceMythicalL
 	return &workspaceMythicalLanes{workspaces: workspaces}
 }
 
-func (l *workspaceMythicalLanes) Ensure(ctx context.Context, repository db.Repository, owner string, actorUserID int64, name string) (string, error) {
+func (l *workspaceMythicalLanes) Create(ctx context.Context, repository db.Repository, owner string, actorUserID int64, name string) (string, error) {
 	if l == nil || l.workspaces == nil || l.workspaces.q == nil {
 		return "", pkgerrors.Internal("workspaces are unavailable")
-	}
-	existing, err := l.workspaces.q.ListWorkspacesByRepo(ctx, db.ListWorkspacesByRepoParams{RepositoryID: repository.ID, UserID: actorUserID,
-		PageSize: MaxActiveWorkspacesPerUser, PageOffset: 0})
-	if err != nil {
-		return "", err
-	}
-	for _, workspace := range existing {
-		if workspace.Name == name && !workspace.DeletedAt.Valid && workspace.Status != "failed" {
-			return workspace.ID, nil
-		}
 	}
 	workspace, err := l.workspaces.createDerivedWorkspaceForBookmark(ctx, repository.ID, actorUserID, name, MythicalBookmark, workspaceCreateMetadata{})
 	if err != nil {
@@ -1412,6 +1512,20 @@ func (l *workspaceMythicalLanes) Ensure(ctx context.Context, repository db.Repos
 	l.workspaces.provisionWorkspaceAsync(ctx, workspace, CreateWorkspaceSessionInput{RepositoryID: repository.ID, UserID: actorUserID,
 		RepoOwner: owner, RepoName: repository.Name, SourceBookmark: MythicalBookmark})
 	return workspace.ID, nil
+}
+
+func (l *workspaceMythicalLanes) Owned(ctx context.Context, repositoryID, userID int64, workspaceID string) (bool, error) {
+	if l == nil || l.workspaces == nil || l.workspaces.q == nil {
+		return false, pkgerrors.Internal("workspaces are unavailable")
+	}
+	workspace, err := l.workspaces.q.GetWorkspace(ctx, workspaceID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !workspace.DeletedAt.Valid && workspace.RepositoryID == repositoryID && workspace.UserID == userID, nil
 }
 
 func (l *workspaceMythicalLanes) Delete(ctx context.Context, repositoryID, actorUserID int64, workspaceID string) error {
@@ -1492,8 +1606,11 @@ func (s *MythicalService) ObserveGitHubEvent(ctx context.Context, eventType stri
 		return nil
 	}
 	var event struct {
-		Action     string               `json:"action"`
-		Issue      *mythicalGitHubIssue `json:"issue"`
+		Action string               `json:"action"`
+		Issue  *mythicalGitHubIssue `json:"issue"`
+		Label  *struct {
+			Name string `json:"name"`
+		} `json:"label"`
 		Repository *struct {
 			Name  string `json:"name"`
 			Owner struct {
@@ -1504,12 +1621,16 @@ func (s *MythicalService) ObserveGitHubEvent(ctx context.Context, eventType stri
 	if json.Unmarshal(payload, &event) != nil || event.Issue == nil || event.Repository == nil {
 		return nil
 	}
+	action := event.Action
+	if strings.EqualFold(action, "labeled") && (event.Label == nil || !strings.EqualFold(strings.TrimSpace(event.Label.Name), "smithers")) {
+		action = "labeled-other"
+	}
 	ids, err := s.queries().ListRepositoryIDsForGitHubSource(ctx, event.Repository.Owner.Login, event.Repository.Name)
 	if err != nil {
 		return err
 	}
 	for _, id := range ids {
-		if err := s.ObserveIssue(ctx, id, event.Issue.issue(), event.Action); err != nil {
+		if err := s.ObserveIssue(ctx, id, event.Issue.issue(), action); err != nil {
 			return err
 		}
 	}

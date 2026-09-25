@@ -241,4 +241,5 @@ provider_connection_device_logins,product,product migration 0025
 mythical_stacks,product,product migration 0026
 mythical_changes,product,product migration 0026
 mythical_items,product,product migration 0026
+mythical_lanes,product,product migration 0026
 billing_model_usage,private,Plue model usage metering migration 0012

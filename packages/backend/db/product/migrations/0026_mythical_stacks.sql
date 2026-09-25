@@ -125,3 +125,18 @@ CREATE INDEX mythical_items_repository_idx ON mythical_items (repository_id, sta
 CREATE UNIQUE INDEX mythical_items_chat_idx
     ON mythical_items (repository_id, candidate_head)
     WHERE source = 'chat';
+
+-- Every lane workspace the stack provisioned, bound to its item. Only a bound
+-- workspace is reused, handed a lane's work, or deleted by the stack; a bound
+-- workspace its item no longer references is retired by the next sweep.
+CREATE TABLE mythical_lanes (
+    workspace_id text PRIMARY KEY,
+    repository_id bigint NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    item_id uuid NOT NULL REFERENCES mythical_items(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    retired_at timestamptz
+);
+
+CREATE UNIQUE INDEX mythical_lanes_item_name_idx ON mythical_lanes (item_id, name);
+CREATE INDEX mythical_lanes_active_idx ON mythical_lanes (repository_id) WHERE retired_at IS NULL;

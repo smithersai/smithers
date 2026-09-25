@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -423,14 +424,6 @@ func (q *Queries) GetMythicalItemByIssue(ctx context.Context, repositoryID, issu
 		WHERE repository_id = $1 AND issue_number = $2`, repositoryID, issue))
 }
 
-// GetMythicalItemByWorkspace returns the unsettled item a lane workspace works on.
-func (q *Queries) GetMythicalItemByWorkspace(ctx context.Context, repositoryID int64, workspaceID string) (MythicalItem, error) {
-	return scanMythicalItem(q.db.QueryRow(ctx, `SELECT `+mythicalItemColumns+` FROM mythical_items
-		WHERE repository_id = $1 AND workspace_id = $2 AND workspace_id <> ''
-		  AND state NOT IN ('skipped', 'cancelled', 'landed', 'rejected', 'blocked')
-		ORDER BY updated_at DESC LIMIT 1`, repositoryID, workspaceID))
-}
-
 // InsertMythicalItem creates an issue item; an existing item for the same
 // issue is returned unchanged (inserted false).
 func (q *Queries) InsertMythicalItem(ctx context.Context, item MythicalItem) (MythicalItem, bool, error) {
@@ -507,4 +500,78 @@ func (q *Queries) SetMythicalMaxParallel(ctx context.Context, repositoryID int64
 		return 0, err
 	}
 	return tag.RowsAffected(), nil
+}
+
+// MythicalLane is one lane workspace the stack provisioned for an item.
+type MythicalLane struct {
+	WorkspaceID  string             `json:"workspace_id"`
+	RepositoryID int64              `json:"repository_id"`
+	ItemID       pgtype.UUID        `json:"item_id"`
+	Name         string             `json:"name"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	RetiredAt    pgtype.Timestamptz `json:"retired_at"`
+}
+
+const mythicalLaneColumns = `workspace_id, repository_id, item_id, name, created_at, retired_at`
+
+func scanMythicalLane(row pgx.Row) (MythicalLane, error) {
+	var l MythicalLane
+	err := row.Scan(&l.WorkspaceID, &l.RepositoryID, &l.ItemID, &l.Name, &l.CreatedAt, &l.RetiredAt)
+	return l, err
+}
+
+// GetMythicalLane returns the binding of one workspace, if the stack made it.
+func (q *Queries) GetMythicalLane(ctx context.Context, workspaceID string) (MythicalLane, error) {
+	return scanMythicalLane(q.db.QueryRow(ctx, `SELECT `+mythicalLaneColumns+` FROM mythical_lanes WHERE workspace_id = $1`, workspaceID))
+}
+
+// GetMythicalLaneByName returns an item's lane of one name.
+func (q *Queries) GetMythicalLaneByName(ctx context.Context, itemID pgtype.UUID, name string) (MythicalLane, error) {
+	return scanMythicalLane(q.db.QueryRow(ctx, `SELECT `+mythicalLaneColumns+` FROM mythical_lanes WHERE item_id = $1 AND name = $2`, itemID, name))
+}
+
+// BindMythicalLane records a provisioned workspace as an item's lane. When a
+// concurrent claimant bound that name first it answers the existing binding
+// and inserted false.
+func (q *Queries) BindMythicalLane(ctx context.Context, lane MythicalLane) (MythicalLane, bool, error) {
+	bound, err := scanMythicalLane(q.db.QueryRow(ctx, `INSERT INTO mythical_lanes (workspace_id, repository_id, item_id, name)
+		VALUES ($1, $2, $3, $4) ON CONFLICT (item_id, name) DO NOTHING RETURNING `+mythicalLaneColumns,
+		lane.WorkspaceID, lane.RepositoryID, lane.ItemID, lane.Name))
+	if err == nil {
+		return bound, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return MythicalLane{}, false, err
+	}
+	existing, err := q.GetMythicalLaneByName(ctx, lane.ItemID, lane.Name)
+	return existing, false, err
+}
+
+// ListRetirableMythicalLanes returns a repository's unretired lanes that their
+// item no longer references and that are older than the grace period.
+func (q *Queries) ListRetirableMythicalLanes(ctx context.Context, repositoryID int64, grace time.Duration, limit int32) ([]MythicalLane, error) {
+	rows, err := q.db.Query(ctx, `SELECT l.workspace_id, l.repository_id, l.item_id, l.name, l.created_at, l.retired_at
+		FROM mythical_lanes l JOIN mythical_items i ON i.id = l.item_id
+		WHERE l.repository_id = $1 AND l.retired_at IS NULL AND i.workspace_id <> l.workspace_id
+		  AND l.created_at < NOW() - make_interval(secs => $2)
+		ORDER BY l.created_at LIMIT $3`, repositoryID, grace.Seconds(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MythicalLane
+	for rows.Next() {
+		lane, err := scanMythicalLane(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, lane)
+	}
+	return out, rows.Err()
+}
+
+// RetireMythicalLane records that a lane's workspace was deleted.
+func (q *Queries) RetireMythicalLane(ctx context.Context, workspaceID string) error {
+	_, err := q.db.Exec(ctx, `UPDATE mythical_lanes SET retired_at = NOW() WHERE workspace_id = $1 AND retired_at IS NULL`, workspaceID)
+	return err
 }

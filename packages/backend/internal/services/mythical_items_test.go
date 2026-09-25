@@ -123,22 +123,21 @@ type fakeMythicalLanes struct {
 	mu      sync.Mutex
 	created []string
 	deleted []string
-	byName  map[string]string
+	owned   map[string]bool
 }
 
-func (l *fakeMythicalLanes) Ensure(_ context.Context, _ db.Repository, _ string, _ int64, name string) (string, error) {
+func (l *fakeMythicalLanes) Create(_ context.Context, _ db.Repository, _ string, _ int64, name string) (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.byName == nil {
-		l.byName = map[string]string{}
-	}
-	if id, ok := l.byName[name]; ok {
-		return id, nil
-	}
 	id := uuid.NewString()
-	l.byName[name] = id
 	l.created = append(l.created, id)
 	return id, nil
+}
+
+func (l *fakeMythicalLanes) Owned(_ context.Context, _, _ int64, id string) (bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.owned[id], nil
 }
 
 func (l *fakeMythicalLanes) Delete(_ context.Context, _, _ int64, id string) error {
@@ -470,6 +469,8 @@ func TestMythicalItemsSurviveFailuresAndStayBound(t *testing.T) {
 	// exact text; an edit afterwards needs a new label.
 	outsider := mythicalIssue{Number: 21, Title: "Outsider", Body: "do x", State: "open", AuthorAssociation: "NONE", Labels: []string{"smithers"}}
 	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, outsider, ""))
+	assert.Equal(t, "skipped", o.item(21).State, "a label seen only in a sweep may predate an edit")
+	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, outsider, "labeled"))
 	assert.Equal(t, "queued", o.item(21).State)
 	assert.Equal(t, "do x", o.item(21).IssueBody, "the admitted text is pinned")
 	edited := outsider
@@ -491,7 +492,7 @@ func TestMythicalItemsSurviveFailuresAndStayBound(t *testing.T) {
 	item := o.item(21)
 	require.Equal(t, "running", item.State, item.Reason)
 	require.Len(t, o.launcher.requests, 1)
-	assert.Len(t, o.lanes.created, 1, "the lane is found again by name, never duplicated")
+	assert.Len(t, o.lanes.created, 1, "the bound lane is found again, never duplicated")
 	var payload struct {
 		Prompt string `json:"prompt"`
 	}
@@ -519,6 +520,26 @@ func TestMythicalItemsSurviveFailuresAndStayBound(t *testing.T) {
 	_, err = o.service.SubmitLane(ctx, o.repoID, o.userID, MythicalLaneSubmission{WorkspaceID: item.WorkspaceID, Base: stack.TipCommit,
 		Source: candidate, RequestRunID: "run-21", Summary: "✨ feat: x"})
 	require.NoError(t, err)
+	lane := item.WorkspaceID
+
+	// A workspace the stack never bound hands a chat result only when it is
+	// a live workspace of the stack's account.
+	chat := uuid.NewString()
+	chatResult := o.laneResult(chat, stack.TipCommit, map[string]string{"y.txt": "y\n"}, "✨ feat: y")
+	_, err = o.service.SubmitLane(ctx, o.repoID, o.userID, MythicalLaneSubmission{WorkspaceID: chat, Base: stack.TipCommit,
+		Source: chatResult, RequestRunID: "chat-run", Summary: "✨ feat: y"})
+	require.Error(t, err, "an unowned or deleted workspace is not a chat source")
+	o.lanes.mu.Lock()
+	o.lanes.owned = map[string]bool{chat: true}
+	o.lanes.mu.Unlock()
+	receipt, err := o.service.SubmitLane(ctx, o.repoID, o.userID, MythicalLaneSubmission{WorkspaceID: chat, Base: stack.TipCommit,
+		Source: chatResult, RequestRunID: "chat-run", Summary: "✨ feat: y"})
+	require.NoError(t, err)
+	assert.Equal(t, "integrating", receipt.State)
+	again, err := o.service.SubmitLane(ctx, o.repoID, o.userID, MythicalLaneSubmission{WorkspaceID: chat, Base: stack.TipCommit,
+		Source: chatResult, RequestRunID: "chat-run", Summary: "✨ feat: y"})
+	require.NoError(t, err)
+	assert.Equal(t, receipt.ItemID, again.ItemID, "a replayed chat result is one item")
 
 	// A proposal push that landed on GitHub but was never recorded is settled
 	// from the branch, not pushed again or blocked.
@@ -539,6 +560,12 @@ func TestMythicalItemsSurviveFailuresAndStayBound(t *testing.T) {
 	require.Equal(t, "proposed", item.State, item.Reason)
 	assert.Equal(t, head, item.PRHead)
 	assert.Empty(t, item.PendingOp)
+
+	// A retired lane's results never reach the stack again, as a lane or as chat.
+	assert.Contains(t, o.lanes.deleted, lane)
+	_, err = o.service.SubmitLane(ctx, o.repoID, o.userID, MythicalLaneSubmission{WorkspaceID: lane, Base: stack.TipCommit,
+		Source: candidate, RequestRunID: "run-21", Summary: "✨ feat: x"})
+	require.Error(t, err)
 
 	// A rejected item retried proposes on a new branch, never its closed PR.
 	o.github.mu.Lock()
