@@ -492,7 +492,13 @@ func (g mythicalGit) shallow() bool {
 // identical objects however far main has moved since.
 func (s *MythicalService) connectWindow(ctx context.Context, r *mythicalRun, commit string, depth int) error {
 	remote := r.bridge.URL()
-	if err := r.g.fetch(ctx, remote, depth+1, 0, "refs/heads/"+r.branch); err != nil {
+	// Only an empty scratch repository starts shallow; later fetches keep
+	// every boundary already deepened, so progress survives across claims.
+	initial := 0
+	if _, err := r.g.git(ctx, "rev-parse", "--verify", "--quiet", "refs/mythical-scratch/heads/"+r.branch); err != nil {
+		initial = depth + 1
+	}
+	if err := r.g.fetch(ctx, remote, initial, 0, "refs/heads/"+r.branch); err != nil {
 		return fmt.Errorf("fetch %s: %s", r.branch, sanitizeMirrorError(err, remote))
 	}
 	for round := 0; ; round++ {

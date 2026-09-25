@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -85,11 +87,23 @@ func (g *fakeMythicalGitHub) merge(number int64, commit string) {
 type fakeMythicalLauncher struct {
 	mu       sync.Mutex
 	requests []flowdispatch.LaunchRequest
+	fail     int
 }
 
-func (l *fakeMythicalLauncher) Admit(_ context.Context, request flowdispatch.LaunchRequest) (jobs.RequestReceipt, error) {
+// AdmitInTx records the launch only when the item's transaction commits, as
+// flowdispatch does; fail makes the next admission fail (a lost launch).
+func (l *fakeMythicalLauncher) AdmitInTx(ctx context.Context, tx pgx.Tx, request flowdispatch.LaunchRequest) (jobs.RequestReceipt, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.fail > 0 {
+		l.fail--
+		return jobs.RequestReceipt{}, errors.New("dispatch unavailable")
+	}
+	for _, seen := range l.requests {
+		if seen.RequestID == request.RequestID {
+			return jobs.RequestReceipt{}, errors.New("duplicate launch " + request.RequestID)
+		}
+	}
 	l.requests = append(l.requests, request)
 	return jobs.RequestReceipt{}, nil
 }
@@ -109,12 +123,20 @@ type fakeMythicalLanes struct {
 	mu      sync.Mutex
 	created []string
 	deleted []string
+	byName  map[string]string
 }
 
-func (l *fakeMythicalLanes) Create(context.Context, db.Repository, string, int64, string) (string, error) {
+func (l *fakeMythicalLanes) Ensure(_ context.Context, _ db.Repository, _ string, _ int64, name string) (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.byName == nil {
+		l.byName = map[string]string{}
+	}
+	if id, ok := l.byName[name]; ok {
+		return id, nil
+	}
 	id := uuid.NewString()
+	l.byName[name] = id
 	l.created = append(l.created, id)
 	return id, nil
 }
@@ -208,9 +230,9 @@ func TestMythicalItemsFlowFromIssueToLandedAndAdopted(t *testing.T) {
 	o := newMythicalOrchestration(t)
 	ctx := context.Background()
 	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, mythicalIssue{Number: 7, Title: "Add docs", URL: "https://github.com/smithersai/smithers/issues/7",
-		State: "open", AuthorAssociation: "OWNER"}))
-	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, mythicalIssue{Number: 8, Title: "Drive-by", State: "open", AuthorAssociation: "NONE"}))
-	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, mythicalIssue{Number: 9, Title: "A PR", State: "open", PullRequest: true}))
+		State: "open", AuthorAssociation: "OWNER", Body: "Please add a docs page."}, ""))
+	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, mythicalIssue{Number: 8, Title: "Drive-by", State: "open", AuthorAssociation: "NONE"}, ""))
+	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, mythicalIssue{Number: 9, Title: "A PR", State: "open", PullRequest: true}, ""))
 	assert.Equal(t, "queued", o.item(7).State)
 	assert.Equal(t, "skipped", o.item(8).State)
 	assert.Contains(t, o.item(8).Reason, "smithers label")
@@ -313,7 +335,7 @@ func TestMythicalItemsRebaseVerifyRetryAndDecline(t *testing.T) {
 	ctx := context.Background()
 	for _, number := range []int64{11, 12, 13} {
 		require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, mythicalIssue{Number: number, Title: fmt.Sprintf("Issue %d", number),
-			State: "open", AuthorAssociation: "MEMBER"}))
+			State: "open", AuthorAssociation: "MEMBER"}, ""))
 	}
 	_, err := o.pool.Exec(ctx, `UPDATE mythical_stacks SET max_parallel = 3 WHERE repository_id = $1`, o.repoID)
 	require.NoError(t, err)
@@ -407,6 +429,28 @@ func TestMythicalItemsRebaseVerifyRetryAndDecline(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "queued", view.State)
 
+	// Main moves again while #11's PR is open; GitHub reports it behind, so
+	// the proposal is rebuilt on the new tip and verified on a fresh lane.
+	eleven := o.item(11)
+	require.Empty(t, eleven.WorkspaceID, "the proposed item's lane was retired")
+	pullNumber := eleven.PRNumber.Int64
+	o.commit("🔧 chore: more outside", "c.txt", "c\n")
+	o.publish()
+	stack = o.wake()
+	o.github.mu.Lock()
+	o.github.pulls[eleven.PRNumber.Int64].MergeableState = "behind"
+	o.github.mu.Unlock()
+	_, err = o.pool.Exec(ctx, `UPDATE mythical_items SET next_attempt_at = NOW() WHERE repository_id = $1`, o.repoID)
+	require.NoError(t, err)
+	o.wake() // follow: behind on a moved tip -> integrating
+	require.Equal(t, "integrating", o.item(11).State)
+	o.wake() // integrate: rebase, fresh lane, verify
+	eleven = o.item(11)
+	require.Equal(t, "verifying", eleven.State, eleven.Reason)
+	assert.Equal(t, stack.TipCommit, eleven.CandidateBase)
+	assert.NotEmpty(t, eleven.WorkspaceID, "a fresh lane verifies the refreshed proposal")
+	assert.Equal(t, pullNumber, eleven.PRNumber.Int64, "the same pull request is updated")
+
 	// The snapshot shows the items and their lanes.
 	snapshot, err := o.service.Snapshot(ctx, o.repoID, "smithers-canary/smithers", "")
 	require.NoError(t, err)
@@ -414,6 +458,100 @@ func TestMythicalItemsRebaseVerifyRetryAndDecline(t *testing.T) {
 	for _, row := range snapshot.Items {
 		states[row.Issue.Title] = row.State
 	}
-	assert.Equal(t, map[string]string{"Issue 11": "proposed", "Issue 12": "queued", "Issue 13": "skipped"}, states)
+	assert.Equal(t, map[string]string{"Issue 11": "verifying", "Issue 12": "running", "Issue 13": "skipped"}, states)
 	_ = pgtype.UUID{}
+}
+
+func TestMythicalItemsSurviveFailuresAndStayBound(t *testing.T) {
+	o := newMythicalOrchestration(t)
+	ctx := context.Background()
+
+	// An outsider's issue is approved only by a maintainer's label on that
+	// exact text; an edit afterwards needs a new label.
+	outsider := mythicalIssue{Number: 21, Title: "Outsider", Body: "do x", State: "open", AuthorAssociation: "NONE", Labels: []string{"smithers"}}
+	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, outsider, ""))
+	assert.Equal(t, "queued", o.item(21).State)
+	assert.Equal(t, "do x", o.item(21).IssueBody, "the admitted text is pinned")
+	edited := outsider
+	edited.Body = "do something else entirely"
+	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, edited, "edited"))
+	assert.Equal(t, "skipped", o.item(21).State)
+	assert.Contains(t, o.item(21).Reason, "re-applies the smithers label")
+	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, edited, "labeled"))
+	assert.Equal(t, "queued", o.item(21).State)
+	assert.Equal(t, "do something else entirely", o.item(21).IssueBody)
+
+	// A lost launch leaves the item exactly as it was; the next claim
+	// launches once, under the attempt's own request id.
+	o.launcher.fail = 1
+	o.wake()
+	assert.Equal(t, "queued", o.item(21).State)
+	assert.Empty(t, o.launcher.requests)
+	o.wake()
+	item := o.item(21)
+	require.Equal(t, "running", item.State, item.Reason)
+	require.Len(t, o.launcher.requests, 1)
+	assert.Len(t, o.lanes.created, 1, "the lane is found again by name, never duplicated")
+	var payload struct {
+		Prompt string `json:"prompt"`
+	}
+	require.NoError(t, json.Unmarshal(o.launcher.requests[0].Payload, &payload))
+	assert.Contains(t, payload.Prompt, "<issue>\ndo something else entirely\n</issue>")
+
+	// A result must come from this lane's current run, on its tip, and be
+	// retained by the lane workspace itself.
+	o.project(o.launcher.requests[0], jobs.StateCompleted, "run-21", validatedRequest)
+	o.wake()
+	require.Equal(t, "delivering", o.item(21).State)
+	stack, err := db.New(o.pool).GetMythicalStack(ctx, o.repoID)
+	require.NoError(t, err)
+	candidate := o.laneResult(item.WorkspaceID, stack.TipCommit, map[string]string{"x.txt": "x\n"}, "✨ feat: x")
+	_, err = o.service.SubmitLane(ctx, o.repoID, o.userID, MythicalLaneSubmission{WorkspaceID: item.WorkspaceID, Base: stack.TipCommit,
+		Source: candidate, RequestRunID: "some-other-run", Summary: "✨ feat: x"})
+	require.Error(t, err)
+	unretained := strings.Repeat("9", 40)
+	_, err = o.service.SubmitLane(ctx, o.repoID, o.userID, MythicalLaneSubmission{WorkspaceID: item.WorkspaceID, Base: stack.TipCommit,
+		Source: unretained, RequestRunID: "run-21", Summary: "✨ feat: x"})
+	require.Error(t, err)
+	_, err = o.service.SubmitLane(ctx, o.repoID, o.userID+1, MythicalLaneSubmission{WorkspaceID: item.WorkspaceID, Base: stack.TipCommit,
+		Source: candidate, RequestRunID: "run-21", Summary: "✨ feat: x"})
+	require.Error(t, err, "only the stack's account submits")
+	_, err = o.service.SubmitLane(ctx, o.repoID, o.userID, MythicalLaneSubmission{WorkspaceID: item.WorkspaceID, Base: stack.TipCommit,
+		Source: candidate, RequestRunID: "run-21", Summary: "✨ feat: x"})
+	require.NoError(t, err)
+
+	// A proposal push that landed on GitHub but was never recorded is settled
+	// from the branch, not pushed again or blocked.
+	o.wake() // integrating -> proposing
+	require.Equal(t, "proposing", o.item(21).State)
+	item = o.item(21)
+	main := o.git(o.github.dir, "rev-parse", "refs/heads/main")
+	tree := o.hostTree(candidate)
+	head := o.git(o.hostDir, "commit-tree", tree, "-p", main, "-m", "✨ feat: x")
+	o.git(o.hostDir, "update-ref", repohost.MythicalReservedRefNS+"keep/"+head, head)
+	o.git(o.hostDir, "push", "-q", o.github.dir, head+":refs/heads/smithers/issue-21")
+	pending, _ := json.Marshal(mythicalProposalOp{Branch: "smithers/issue-21", Expected: "", Head: head})
+	item.PendingOp = pending
+	_, err = db.New(o.pool).SaveMythicalItem(ctx, item)
+	require.NoError(t, err)
+	o.wake()
+	item = o.item(21)
+	require.Equal(t, "proposed", item.State, item.Reason)
+	assert.Equal(t, head, item.PRHead)
+	assert.Empty(t, item.PendingOp)
+
+	// A rejected item retried proposes on a new branch, never its closed PR.
+	o.github.mu.Lock()
+	o.github.pulls[item.PRNumber.Int64].State = "closed"
+	o.github.mu.Unlock()
+	_, err = o.pool.Exec(ctx, `UPDATE mythical_items SET next_attempt_at = NOW() WHERE repository_id = $1`, o.repoID)
+	require.NoError(t, err)
+	o.wake()
+	require.Equal(t, "rejected", o.item(21).State)
+	view, err := o.service.RetryItem(ctx, o.repoID, uuidString(item.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "queued", view.State)
+	retried := o.item(21)
+	assert.False(t, retried.PRNumber.Valid)
+	assert.Equal(t, "smithers/issue-21-r1", mythicalBranch(retried))
 }

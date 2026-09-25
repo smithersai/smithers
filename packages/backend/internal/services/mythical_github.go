@@ -41,6 +41,9 @@ type mythicalPull struct {
 	MergeCommit string
 	HeadRef     string
 	HeadSHA     string
+	// MergeableState is GitHub's word: clean, dirty (conflicts), behind
+	// (the base moved and the branch must be updated), blocked, unknown.
+	MergeableState string
 }
 
 // mythicalGitHub is the stack's GitHub surface: the destination and a token
@@ -164,11 +167,12 @@ func (g *mythicalGitHubAPI) OpenIssues(ctx context.Context, gh mythicalGitHubRep
 type mythicalGitHubPull struct {
 	landingGitHubPullRequest
 	MergeCommitSHA *string `json:"merge_commit_sha"`
+	MergeableState string  `json:"mergeable_state"`
 }
 
 func (p mythicalGitHubPull) pull() mythicalPull {
 	out := mythicalPull{Number: p.Number, URL: p.HTMLURL, State: p.State, Merged: p.MergedAt != nil,
-		HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA}
+		HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, MergeableState: p.MergeableState}
 	if out.Merged && p.MergeCommitSHA != nil {
 		out.MergeCommit = *p.MergeCommitSHA
 	}

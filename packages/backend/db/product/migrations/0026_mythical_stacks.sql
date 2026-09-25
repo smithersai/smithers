@@ -69,6 +69,13 @@ CREATE TABLE mythical_items (
     issue_title text NOT NULL DEFAULT '',
     issue_url text NOT NULL DEFAULT '',
     issue_digest text NOT NULL DEFAULT '',
+    -- The admitted issue text, pinned: a lane reads this, never the live issue.
+    issue_body text NOT NULL DEFAULT '',
+    -- The digest a trusted author or a maintainer's smithers label approved;
+    -- an edit after approval needs a new approval.
+    approved_digest text NOT NULL DEFAULT '',
+    -- Proposal rounds: a retried rejected item proposes on a new branch.
+    proposal_round integer NOT NULL DEFAULT 0,
     -- 'issue' items come from GitHub; 'chat' items are results a workspace
     -- handed to the stack without an issue.
     source varchar(8) NOT NULL DEFAULT 'issue' CHECK (source IN ('issue', 'chat')),
@@ -114,3 +121,7 @@ CREATE UNIQUE INDEX mythical_items_issue_idx
     ON mythical_items (repository_id, issue_number)
     WHERE issue_number IS NOT NULL;
 CREATE INDEX mythical_items_repository_idx ON mythical_items (repository_id, state, created_at);
+-- A chat result is submitted once per candidate.
+CREATE UNIQUE INDEX mythical_items_chat_idx
+    ON mythical_items (repository_id, candidate_head)
+    WHERE source = 'chat';
