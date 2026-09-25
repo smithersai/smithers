@@ -674,9 +674,10 @@ export const createAuthBillingController = (
 
   /**
    * Billing seam: dollars only; chat is complimentary, so a definitive $0
-   * never pauses it. A reply that arrives after the account moved is
-   * TOAST_SUPERSEDED, not success: it describes an account the app no longer
-   * has open, so nothing is written and the toast leaves without a result.
+   * never pauses it. A reply that arrives after the account moved or the
+   * controller closed is TOAST_SUPERSEDED, not success: it describes an
+   * account the app no longer has open, so nothing is written and the toast
+   * leaves without a result.
    */
   const refreshBalanceImpl = async (): Promise<true | typeof TOAST_SUPERSEDED | string> => {
     const identity = store.collections.identitySessions.get("identity")
@@ -684,6 +685,7 @@ export const createAuthBillingController = (
     const identityState = identity?.state
     const login = identity?.login
     const current = (): boolean => {
+      if (ctx.disposed) return false
       const latest = store.collections.identitySessions.get("identity")
       return ctx.accountEpoch === epoch && latest?.state === identityState && latest?.login === login
     }

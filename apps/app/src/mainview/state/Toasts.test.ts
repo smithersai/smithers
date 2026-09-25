@@ -181,3 +181,38 @@ describe("the 300ms toast law", () => {
 
 describe("tutorial toast selection", () => {
 })
+
+/*
+ * A balance read still in flight when its controller closes answers into a
+ * store the next owner may already hold. The late reply writes nothing,
+ * whatever it says.
+ */
+describe("a late balance reply after dispose", () => {
+  for (const outcome of ["success", "refusal", "network"] as const) {
+    test(`a late ${outcome} writes nothing into the store`, async () => {
+      const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+      let resolve!: (response: Response) => void
+      let reject!: (error: Error) => void
+      const held = new Promise<Response>((yes, no) => { resolve = yes; reject = no })
+      const controller = createAppController(store, silentAgent, {
+        fetchImpl: () => held,
+        toastDebounceMs: 0
+      })
+      const pending = controller.refreshBalance()
+      await settled()
+      await controller.dispose()
+      // Record every write the late reply attempts, including one the closed
+      // owner would refuse by throwing.
+      const attempted: string[] = []
+      const dispatch = store.dispatch
+      ;(store as { dispatch: typeof dispatch }).dispatch = (event) => {
+        attempted.push(event.type)
+        return dispatch(event)
+      }
+      if (outcome === "network") reject(new Error("late transport refusal"))
+      else resolve(outcome === "success" ? balanceJson.clone() : new Response(null, { status: 503 }))
+      await pending
+      expect(attempted).toEqual([])
+    })
+  }
+})
