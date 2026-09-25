@@ -31,9 +31,12 @@ const (
 	maxOutputBytes  = 8 << 20
 	// The producer commits one frame per batch, so a batch count cap must not
 	// bind before the byte budget. No valid batch encodes below 192 bytes.
-	maxBatches           = maxOutputBytes / 192
-	maxReplayBatches     = 16
-	terminalReserveBytes = 2048
+	maxBatches       = maxOutputBytes / 192
+	maxReplayBatches = 16
+	// A terminal batch repeats runId in its envelope and frame and legId in
+	// its envelope. JSON escapes a control byte to six bytes, so two
+	// 160-byte identities can cost about 3 KB before the frame itself.
+	terminalReserveBytes = 4096
 	maxIdentityBytes     = 160
 	maxSafeInteger       = int64(1<<53 - 1)
 )
@@ -412,16 +415,15 @@ func (s *Store) Admit(ctx context.Context, input AdmitInput) (AdmitResult, error
 	if err = lockTurnIdentity(ctx, tx, input.RunID, input.Journal.LegID); err != nil {
 		return AdmitResult{}, err
 	}
-	var erasedProof string
-	err = tx.QueryRow(ctx, `SELECT access_hash FROM chat_turn_erasures WHERE run_id=$1 AND leg_id=$2`, input.RunID, input.Journal.LegID).Scan(&erasedProof)
-	if err == nil {
-		if equalSecret(erasedProof, accessHash) {
-			return AdmitResult{}, ErrRetired
-		}
-		return AdmitResult{}, ErrForbidden
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	// A tombstone fences only the proof that wrote it; other accounts admit
+	// the same public identity under their own replay token.
+	var erased bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM chat_turn_erasures WHERE run_id=$1 AND leg_id=$2 AND access_hash=$3)`, input.RunID, input.Journal.LegID, accessHash).Scan(&erased)
+	if err != nil {
 		return AdmitResult{}, err
+	}
+	if erased {
+		return AdmitResult{}, ErrRetired
 	}
 	turnID := uuid.NewString()
 	result, err := tx.Exec(ctx, `INSERT INTO chat_turns(
@@ -936,6 +938,12 @@ func (s *Store) replayVerified(ctx context.Context, query journalQuerier, turn t
 	if err = rows.Err(); err != nil {
 		return ReplayResult{}, err
 	}
+	// Batches and head commit in one transaction and Replay reads one
+	// snapshot, so a short page means stored batches are missing. Returning
+	// More without progress would spin the stream on the same empty range.
+	if int64(len(batches)) != min(int64(limit), head.Batch-after.Batch) {
+		return ReplayResult{}, ErrCorrupt
+	}
 	if next.Batch == head.Batch {
 		if !sameCursor(next, head) {
 			return ReplayResult{}, ErrCorrupt
@@ -1147,15 +1155,9 @@ func (s *Store) Erase(ctx context.Context, runID, legID, proof string) error {
 	if err = lockTurnIdentity(ctx, tx, runID, legID); err != nil {
 		return err
 	}
-	var savedProof string
-	err = tx.QueryRow(ctx, `SELECT access_hash FROM chat_turn_erasures WHERE run_id=$1 AND leg_id=$2`, runID, legID).Scan(&savedProof)
-	if err == nil && !equalSecret(savedProof, proof) {
-		return ErrForbidden
-	}
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return err
-	}
-	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE run_id=$1 AND leg_id=$2 FOR UPDATE`, runID, legID)
+	// Only the turns this proof admitted are erased. Another account's turn
+	// under the same public identity neither blocks nor is touched.
+	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE run_id=$1 AND leg_id=$2 AND access_hash=$3 FOR UPDATE`, runID, legID, proof)
 	if err != nil {
 		return err
 	}
@@ -1174,11 +1176,6 @@ func (s *Store) Erase(ctx context.Context, runID, legID, proof string) error {
 		return err
 	}
 	for _, turn := range turns {
-		if !equalSecret(turn.AccessHash, proof) {
-			return ErrForbidden
-		}
-	}
-	for _, turn := range turns {
 		if turn.State == StateRetired {
 			continue
 		}
@@ -1187,7 +1184,7 @@ func (s *Store) Erase(ctx context.Context, runID, legID, proof string) error {
 		}
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO chat_turn_erasures(run_id,leg_id,access_hash,retired_at) VALUES($1,$2,$3,$4)
-		ON CONFLICT(run_id,leg_id) DO NOTHING`, runID, legID, proof, s.now().UTC())
+		ON CONFLICT(run_id,leg_id,access_hash) DO NOTHING`, runID, legID, proof, s.now().UTC())
 	if err != nil {
 		return err
 	}

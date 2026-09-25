@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -153,6 +154,77 @@ func TestTestDatabaseNamesCarryTheirAge(t *testing.T) {
 	for _, name := range []string{"smithers_chat_0123abcd", "smithers_chat_x_y", "other_1_2"} {
 		if _, ok := testDatabaseCreated(name); ok {
 			t.Fatalf("%s parsed as a dated test database", name)
+		}
+	}
+}
+
+// validIdentity admits any UTF-8 string of up to maxIdentityBytes, and the
+// canonical encoding escapes a control character to six bytes. Every
+// mandatory terminal receipt must still fit the reserve, or the backend
+// cannot seal a turn it admitted.
+func TestEscapedIdentitiesCanAlwaysSeal(t *testing.T) {
+	for _, operation := range []string{"cancel", "failure", "credential_missing", "expired_provider"} {
+		t.Run(operation, func(t *testing.T) {
+			store, clock := clockedStore(needStore(t))
+			ctx := context.Background()
+			scope, journal := testScope(), testJournal()
+			runID := strings.Repeat("\x01", maxIdentityBytes)
+			journal.LegID = strings.Repeat("\x02", maxIdentityBytes)
+			request, err := json.Marshal(map[string]any{"runId": runID, "messages": []any{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			accepted, err := store.Admit(ctx, AdmitInput{Scope: scope, RunID: runID, Journal: journal, Request: request})
+			if err != nil {
+				t.Fatal(err)
+			}
+			grant, err := store.Claim(ctx, scope, accepted.TurnID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantState := StateFailed
+			switch operation {
+			case "cancel":
+				wantState = StateCancelled
+				_, err = store.Cancel(ctx, scope, runID)
+			case "expired_provider":
+				wantState = StateUncertain
+				if err = store.MarkProviderStarted(ctx, grant); err != nil {
+					t.Fatal(err)
+				}
+				clock.advance(2 * time.Minute)
+				_, err = store.Claim(ctx, scope, accepted.TurnID, time.Minute)
+				if errors.Is(err, ErrUncertain) {
+					err = nil
+				}
+			default:
+				err = store.FailProducer(ctx, grant, operation)
+			}
+			if err != nil {
+				t.Fatalf("valid identity cannot seal: %v", err)
+			}
+			page, err := store.Replay(ctx, ReplayInput{Scope: scope, RunID: runID, Journal: journal})
+			if err != nil || !page.Terminal || page.More || len(page.Batches) != 1 {
+				t.Fatalf("terminal receipt: %#v %v", page, err)
+			}
+			var state State
+			if err = store.pool.QueryRow(ctx, `SELECT state FROM chat_turns WHERE id=$1`, accepted.TurnID).Scan(&state); err != nil || state != wantState {
+				t.Fatalf("state=%s want=%s err=%v", state, wantState, err)
+			}
+		})
+	}
+}
+
+// The reserve is sized for the largest head checkHead accepts and the
+// largest identities validIdentity accepts.
+func TestTerminalReserveCoversEncodedIdentityBoundary(t *testing.T) {
+	runID, legID := strings.Repeat("\x01", maxIdentityBytes), strings.Repeat("\x02", maxIdentityBytes)
+	credential, _ := json.Marshal(map[string]any{"runId": runID, "type": "done", "code": "credential_missing", "error": "Model credential missing."})
+	for _, receipt := range []json.RawMessage{cancelledFrame(runID), errorFrame(runID, "The model host stopped before completing the turn."), credential} {
+		cursor := Cursor{Version: 1, RunID: runID, LegID: legID, Batch: maxBatches, Position: maxSafeInteger - 1, Hash: strings.Repeat("f", 64)}
+		_, size, err := makeBatch(cursor, []json.RawMessage{receipt})
+		if err != nil || size > terminalReserveBytes {
+			t.Errorf("mandatory receipt size=%d reserve=%d err=%v", size, terminalReserveBytes, err)
 		}
 	}
 }

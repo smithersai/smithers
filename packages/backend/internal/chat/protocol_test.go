@@ -79,7 +79,11 @@ func TestEmbeddedSchemaIsProductMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(embedded) != string(first)+"\n"+string(second) {
+	third, err := os.ReadFile("../../db/product/migrations/0023_chat_turn_erasure_proofs.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(embedded) != string(first)+"\n"+string(second)+"\n"+string(third) {
 		t.Fatal("chat integration schema drifted from product migrations")
 	}
 }

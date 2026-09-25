@@ -58,10 +58,10 @@ func TestEraseDeletesAcceptedOutputAndRetainsOnlyTombstones(t *testing.T) {
 	if _, err = store.Replay(ctx, ReplayInput{Scope: scope, RunID: runID, Journal: readWithProof}); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("delete proof could read output: %v", err)
 	}
-	if err = store.Erase(ctx, runID, journal.LegID, strings.Repeat("0", 64)); !errors.Is(err, ErrForbidden) {
+	if err = store.Erase(ctx, runID, journal.LegID, strings.Repeat("0", 64)); err != nil {
 		t.Fatalf("wrong proof = %v", err)
 	}
-	// A refused proof must leave the accepted request and output intact.
+	// An unrelated proof must leave the accepted request and output intact.
 	page, err := store.Replay(ctx, ReplayInput{Scope: scope, RunID: runID, Journal: journal})
 	if err != nil || len(page.Batches) != 1 {
 		t.Fatalf("wrong proof changed turn: batches=%d err=%v", len(page.Batches), err)
@@ -122,8 +122,8 @@ func TestEraseBeforeAndDuringAcceptanceFencesRecreation(t *testing.T) {
 			}
 			other := journal
 			other.Token = strings.Repeat("z", 64)
-			if _, err = store.Admit(ctx, AdmitInput{Scope: scope, RunID: runID, Journal: other, Request: requestFor(runID)}); !errors.Is(err, ErrForbidden) {
-				t.Fatalf("different proof accepted over tombstone: %v", err)
+			if _, err = store.Admit(ctx, AdmitInput{Scope: scope, RunID: runID, Journal: other, Request: requestFor(runID)}); err != nil {
+				t.Fatalf("different proof blocked by tombstone: %v", err)
 			}
 			continue
 		}
@@ -155,17 +155,93 @@ func TestEraseBeforeAndDuringAcceptanceFencesRecreation(t *testing.T) {
 	}
 }
 
-func TestUnknownIdentityFirstProofReservesIt(t *testing.T) {
+func TestUnknownIdentityProofsReserveOnlyThemselves(t *testing.T) {
 	store := needStore(t)
 	ctx := context.Background()
 	scope, runID, journal := testScope(), "erase-first-proof-"+uuid.NewString(), testJournal()
 	if err := store.Erase(ctx, runID, journal.LegID, strings.Repeat("0", 64)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Erase(ctx, runID, journal.LegID, strings.Repeat("1", 64)); !errors.Is(err, ErrForbidden) {
+	if err := store.Erase(ctx, runID, journal.LegID, strings.Repeat("1", 64)); err != nil {
 		t.Fatalf("second proof = %v", err)
 	}
-	if _, err := store.Admit(ctx, AdmitInput{Scope: scope, RunID: runID, Journal: journal, Request: requestFor(runID)}); !errors.Is(err, ErrForbidden) {
+	if _, err := store.Admit(ctx, AdmitInput{Scope: scope, RunID: runID, Journal: journal, Request: requestFor(runID)}); err != nil {
 		t.Fatalf("admission over another proof's preacceptance tombstone = %v", err)
+	}
+}
+
+// Admission is unique per account, so two accounts can hold the same public
+// identity under different tokens. A proof erases only the turns it
+// authorizes; it can neither block nor erase another proof's turn.
+func TestOtherAccountCannotBlockErasure(t *testing.T) {
+	store := needStore(t)
+	ctx := context.Background()
+	for _, retired := range []bool{false, true} {
+		t.Run(map[bool]string{false: "live", true: "retired"}[retired], func(t *testing.T) {
+			a, b := testScope(), testScope()
+			runID, ja, jb := uuid.NewString(), testJournal(), testJournal()
+			jb.LegID = ja.LegID
+			aa := admit(t, store, a, runID, ja)
+			admit(t, store, b, runID, jb)
+			if _, err := store.Cancel(ctx, a, runID); err != nil {
+				t.Fatal(err)
+			}
+			if retired {
+				if err := store.Retire(ctx, ReplayInput{Scope: b, RunID: runID, Journal: jb}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, proofA, _ := authHashes(a, ja.Token)
+			_, proofB, _ := authHashes(b, jb.Token)
+			if err := store.Erase(ctx, runID, ja.LegID, proofA); err != nil {
+				t.Fatalf("other account blocked erasure: %v", err)
+			}
+			var erased bool
+			if err := store.pool.QueryRow(ctx, `SELECT state='retired' AND request_payload IS NULL AND acceptance IS NULL AND NOT EXISTS (SELECT 1 FROM chat_turn_batches WHERE turn_id=$1) FROM chat_turns WHERE id=$1`, aa.TurnID).Scan(&erased); err != nil || !erased {
+				t.Fatalf("private data retained: erased=%v err=%v", erased, err)
+			}
+			page, err := store.Replay(ctx, ReplayInput{Scope: b, RunID: runID, Journal: jb})
+			if retired {
+				if !errors.Is(err, ErrRetired) {
+					t.Fatalf("retired collision: %v", err)
+				}
+			} else if err != nil || page.Terminal {
+				t.Fatalf("other proof erased B: terminal=%v err=%v", page.Terminal, err)
+			}
+			if err := store.Erase(ctx, runID, jb.LegID, proofB); err != nil {
+				t.Fatalf("A's tombstone blocked B: %v", err)
+			}
+			if err := store.Erase(ctx, runID, ja.LegID, proofA); err != nil {
+				t.Fatalf("repeat erasure: %v", err)
+			}
+		})
+	}
+}
+
+func TestPreAdmissionTombstonesAreProofScoped(t *testing.T) {
+	store := needStore(t)
+	ctx := context.Background()
+	a, b := testScope(), testScope()
+	runID, ja, jb := uuid.NewString(), testJournal(), testJournal()
+	jb.LegID = ja.LegID
+	_, proofA, _ := authHashes(a, ja.Token)
+	_, proofB, _ := authHashes(b, jb.Token)
+	if err := store.Erase(ctx, runID, ja.LegID, proofA); err != nil {
+		t.Fatal(err)
+	}
+	admit(t, store, b, runID, jb)
+	if _, err := store.Admit(ctx, AdmitInput{Scope: a, RunID: runID, Journal: ja, Request: requestFor(runID)}); !errors.Is(err, ErrRetired) {
+		t.Fatalf("A recreated over its tombstone: %v", err)
+	}
+	if err := store.Erase(ctx, runID, jb.LegID, proofB); err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []AdmitInput{
+		{Scope: a, RunID: runID, Journal: ja, Request: requestFor(runID)},
+		{Scope: b, RunID: runID, Journal: jb, Request: requestFor(runID)},
+	} {
+		if _, err := store.Admit(ctx, input); !errors.Is(err, ErrRetired) {
+			t.Fatalf("proof tombstone lost: %v", err)
+		}
 	}
 }
