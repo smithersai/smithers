@@ -34,6 +34,7 @@ type fakeSyncedRepoStore struct {
 	mirrorStatusErr    error
 	readGrants         map[string]time.Time // "userID|owner/repo" -> verified_at
 	readGrantErr       error
+	readyImports       []fakeReadyImport
 }
 
 func newFakeSyncedRepoStore() *fakeSyncedRepoStore {
@@ -673,7 +674,9 @@ func TestSyncedRepos_ListSyncedReposFeedsGitHubSync(t *testing.T) {
 
 	refs, err := service.EnrollGitHubRepo(context.Background(), EnrollGitHubRepoInput{Owner: "octo", Repo: "widget"})
 	require.NoError(t, err)
-	require.NoError(t, service.RecordMirror(context.Background(), refs.ID, "alice", "widget"))
+	service.SetPushAccess(pushAccessFunc(func(context.Context, int64, string, string) error { return nil }))
+	store.recordReadyImport(fakeReadyImport{userID: 7, githubOwner: "octo", githubRepo: "widget", repoOwner: "alice", repoName: "widget"})
+	require.NoError(t, service.BindMirror(context.Background(), 7, refs, "alice", "widget"))
 	_, err = service.EnrollGitHubRepo(context.Background(), EnrollGitHubRepoInput{
 		Owner: "zulu", Repo: "meta", MetadataOnly: true,
 	})
@@ -747,4 +750,46 @@ func TestSyncedRepos_RecordMirrorStatusValidationAndStorageErrors(t *testing.T) 
 // githubSyncedRepoParams is a tiny constructor so tests read as owner/repo.
 func githubSyncedRepoParams(owner, repo string) db.GetGitHubSyncedRepoParams {
 	return db.GetGitHubSyncedRepoParams{OwnerLogin: owner, RepoName: repo}
+}
+
+type pushAccessFunc func(ctx context.Context, userID int64, owner, repo string) error
+
+func (f pushAccessFunc) GitHubRepoPushAuthorized(ctx context.Context, userID int64, owner, repo string) error {
+	return f(ctx, userID, owner, repo)
+}
+
+// fakeReadyImport is a ready import_jobs row: userID imported the GitHub
+// source into the Smithers repo repoOwner/repoName.
+type fakeReadyImport struct {
+	userID                  int64
+	githubOwner, githubRepo string
+	repoOwner, repoName     string
+}
+
+func (f *fakeSyncedRepoStore) recordReadyImport(imp fakeReadyImport) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.readyImports = append(f.readyImports, imp)
+}
+
+// ListGitHubSyncedRepoMirrorBinders mirrors the SQL: the newest ready import
+// whose source and destination match the row's recorded mirror.
+func (f *fakeSyncedRepoStore) ListGitHubSyncedRepoMirrorBinders(context.Context) ([]db.ListGitHubSyncedRepoMirrorBindersRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []db.ListGitHubSyncedRepoMirrorBindersRow
+	for _, row := range f.repos {
+		if !row.MirrorOwner.Valid || !row.MirrorRepo.Valid {
+			continue
+		}
+		for i := len(f.readyImports) - 1; i >= 0; i-- {
+			imp := f.readyImports[i]
+			if strings.EqualFold(imp.githubOwner, row.OwnerLogin) && strings.EqualFold(imp.githubRepo, row.RepoName) &&
+				strings.EqualFold(imp.repoOwner, row.MirrorOwner.String) && strings.EqualFold(imp.repoName, row.MirrorRepo.String) {
+				out = append(out, db.ListGitHubSyncedRepoMirrorBindersRow{SyncedRepoID: row.ID, UserID: imp.userID})
+				break
+			}
+		}
+	}
+	return out, nil
 }

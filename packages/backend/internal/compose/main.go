@@ -479,6 +479,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithGitHubUserReposSyncedStore(gitHubSyncedRepoService),
 	)
 	repoConnectionService.SetGitHubRepoAccessVerifier(gitHubUserReposService)
+	// github-sync writes to GitHub with the platform token; a mirror is bound
+	// and advertised only while its binding user can push with their own
+	// GitHub credential.
+	gitHubSyncedRepoService.SetPushAccess(gitHubUserReposService)
+	gitHubSyncedRepoService.SetMirrorFailureObserver(smithersMetrics)
 	// R2: backfills and the reconciliation sweep fetch with cached App
 	// installation tokens whenever the registry row has an installation;
 	// request-bound user tokens remain only the fallback for rows without one.

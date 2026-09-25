@@ -60,9 +60,11 @@ func (s *GitHubImportService) MirrorEnrolledGitHubRepo(ctx context.Context, user
 
 // EnrollImportedGitHubRepo adds a just-imported GitHub source to the sync
 // registry (spec §1a). Best-effort: an import must never fail because the
-// registry was briefly unavailable, and the mirror it just created is recorded
-// so github-sync keeps its refs current without re-cloning.
-func (s *GitHubImportService) EnrollImportedGitHubRepo(ctx context.Context, githubOwner, githubRepo, mirrorOwner, mirrorRepo string) {
+// registry was briefly unavailable. The mirror it just created becomes the
+// repo github-sync pushes to GitHub only when userID can push to the GitHub
+// repo (BindMirror); an importer who can only read it gets a private copy and
+// leaves the existing binding alone.
+func (s *GitHubImportService) EnrollImportedGitHubRepo(ctx context.Context, userID int64, githubOwner, githubRepo, mirrorOwner, mirrorRepo string) {
 	if s == nil || s.syncedRepos == nil {
 		return
 	}
@@ -79,7 +81,7 @@ func (s *GitHubImportService) EnrollImportedGitHubRepo(ctx context.Context, gith
 	if mirrorOwner == "" || mirrorRepo == "" {
 		return
 	}
-	if err := s.syncedRepos.RecordMirror(ctx, row.ID, mirrorOwner, mirrorRepo); err != nil {
+	if err := s.syncedRepos.BindMirror(ctx, userID, row, mirrorOwner, mirrorRepo); err != nil {
 		slog.Warn("github synced repo import mirror not recorded",
 			"github_owner", githubOwner, "github_repo", githubRepo, "error", err)
 	}

@@ -315,3 +315,23 @@ WHERE user_id = sqlc.arg(user_id)::bigint
 -- name: DeleteGitHubSyncedRepoReadGrantsForUser :exec
 DELETE FROM github_synced_repo_read_grants
 WHERE user_id = sqlc.arg(user_id)::bigint;
+
+-- name: ListGitHubSyncedRepoMirrorBinders :many
+-- The user who bound each recorded mirror: the newest ready import that
+-- produced exactly that mirror repository from that GitHub source. github-sync
+-- may write to the GitHub repo only while this user can push to it.
+SELECT g.id AS synced_repo_id, b.user_id
+FROM github_synced_repos g
+JOIN LATERAL (
+    SELECT j.user_id
+    FROM import_jobs j
+    WHERE LOWER(j.github_owner) = g.owner_login_lower
+      AND LOWER(j.github_repo) = g.repo_name_lower
+      AND LOWER(j.repo_owner) = LOWER(g.mirror_owner)
+      AND LOWER(j.repo_name) = LOWER(g.mirror_repo)
+      AND j.status = 'ready'
+    ORDER BY j.updated_at DESC, j.created_at DESC
+    LIMIT 1
+) b ON TRUE
+WHERE g.mirror_owner IS NOT NULL
+  AND g.mirror_repo IS NOT NULL;

@@ -511,6 +511,52 @@ func (q *Queries) ListGitHubSyncedIssues(ctx context.Context, arg ListGitHubSync
 	return items, nil
 }
 
+const listGitHubSyncedRepoMirrorBinders = `-- name: ListGitHubSyncedRepoMirrorBinders :many
+SELECT g.id AS synced_repo_id, b.user_id
+FROM github_synced_repos g
+JOIN LATERAL (
+    SELECT j.user_id
+    FROM import_jobs j
+    WHERE LOWER(j.github_owner) = g.owner_login_lower
+      AND LOWER(j.github_repo) = g.repo_name_lower
+      AND LOWER(j.repo_owner) = LOWER(g.mirror_owner)
+      AND LOWER(j.repo_name) = LOWER(g.mirror_repo)
+      AND j.status = 'ready'
+    ORDER BY j.updated_at DESC, j.created_at DESC
+    LIMIT 1
+) b ON TRUE
+WHERE g.mirror_owner IS NOT NULL
+  AND g.mirror_repo IS NOT NULL
+`
+
+type ListGitHubSyncedRepoMirrorBindersRow struct {
+	SyncedRepoID int64 `json:"synced_repo_id"`
+	UserID       int64 `json:"user_id"`
+}
+
+// The user who bound each recorded mirror: the newest ready import that
+// produced exactly that mirror repository from that GitHub source. github-sync
+// may write to the GitHub repo only while this user can push to it.
+func (q *Queries) ListGitHubSyncedRepoMirrorBinders(ctx context.Context) ([]ListGitHubSyncedRepoMirrorBindersRow, error) {
+	rows, err := q.db.Query(ctx, listGitHubSyncedRepoMirrorBinders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGitHubSyncedRepoMirrorBindersRow{}
+	for rows.Next() {
+		var i ListGitHubSyncedRepoMirrorBindersRow
+		if err := rows.Scan(&i.SyncedRepoID, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGitHubSyncedRepos = `-- name: ListGitHubSyncedRepos :many
 SELECT id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at
 FROM github_synced_repos

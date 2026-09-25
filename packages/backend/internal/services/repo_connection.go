@@ -4,6 +4,7 @@ import (
 	"context"
 	stdErrors "errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -78,6 +79,11 @@ type RepoConnectionService struct {
 	db                   RepoConnectionDB
 	gitHubBudgetTracker  *BudgetTracker
 	githubAccessVerifier GitHubRepoAccessVerifier
+
+	// importedSourcePublic remembers, per "owner/repo", until when GitHub last
+	// confirmed an imported source is public.
+	importedSourceMu     sync.Mutex
+	importedSourcePublic map[string]time.Time
 }
 
 func NewRepoConnectionService(db RepoConnectionDB) *RepoConnectionService {

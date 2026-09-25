@@ -1197,7 +1197,7 @@ func (s *GitHubImportService) markDurableImportReady(
 	// Import is one of the three registry enrollment triggers (spec §1a): the
 	// mirror it just built is exactly what continuous ref sync should keep
 	// current. Best-effort — never fails a completed import.
-	s.EnrollImportedGitHubRepo(ctx, job.GitHubOwner, job.GitHubRepo, job.RepoOwner, repository.Name)
+	s.EnrollImportedGitHubRepo(ctx, job.UserID, job.GitHubOwner, job.GitHubRepo, job.RepoOwner, repository.Name)
 	return nil
 }
 
@@ -1639,7 +1639,7 @@ func (s *GitHubImportService) runImportToName(ctx context.Context, userID int64,
 	if reused {
 		reusedRepository, workspace, reuseErr := s.finishReusedImport(ctx, userID, owner, localOwner, repo, branch, defaultBranch, jobID, githubCloneToken, repository)
 		if reuseErr == nil {
-			s.EnrollImportedGitHubRepo(ctx, owner, repo, localOwner, reusedRepository.Name)
+			s.EnrollImportedGitHubRepo(ctx, userID, owner, repo, localOwner, reusedRepository.Name)
 		}
 		return reusedRepository, workspace, reuseErr
 	}
@@ -1654,7 +1654,7 @@ func (s *GitHubImportService) runImportToName(ctx context.Context, userID int64,
 		s.rollbackFreshImportRepo(ctx, repository.ID, localOwner, repository.Name)
 		return db.Repository{}, WorkspaceResponse{}, err
 	}
-	s.EnrollImportedGitHubRepo(ctx, owner, repo, localOwner, repository.Name)
+	s.EnrollImportedGitHubRepo(ctx, userID, owner, repo, localOwner, repository.Name)
 	return repository, workspace, nil
 }
 

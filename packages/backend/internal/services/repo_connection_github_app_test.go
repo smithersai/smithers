@@ -232,9 +232,13 @@ func TestRepoConnectionService_CreateGitHubInstallationTokenForImportedSource_Us
 
 	expiresAt := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/repos/smithersai/smithers" {
+			_, _ = w.Write([]byte(`{"private":false}`))
+			return
+		}
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/app/installations/9901/access_tokens", r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"token":"ghs_imported_public","expires_at":"` + expiresAt.Format(time.RFC3339) + `"}`))
 	}))

@@ -87,6 +87,9 @@ type GitHubUserReposService struct {
 	syncDone func(userID int64, err error)
 	// enrollDone, when set, fires after every lazy enrollment. Test seam.
 	enrollDone func(owner, repo string)
+	// pushProofs remembers which users proved GitHub push access, gating
+	// every platform-token write made on a user's behalf (the git mirror).
+	pushProofs githubPushProofs
 }
 
 type GitHubUserReposOption func(*GitHubUserReposService)

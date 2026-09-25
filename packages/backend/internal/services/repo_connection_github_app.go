@@ -15,6 +15,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -69,6 +70,15 @@ WHERE owner_login_lower = $1
   AND repo_name_lower = $2
   AND is_private = FALSE
 LIMIT 1;
+`
+
+const markGitHubAppInstallationRepositoryPrivateSQL = `
+UPDATE github_app_installation_repositories
+SET is_private = TRUE,
+    updated_at = NOW()
+WHERE owner_login_lower = $1
+  AND repo_name_lower = $2
+  AND is_private = FALSE;
 `
 
 const getReadyImportedSourceProvenanceForUserRepoSQL = `
@@ -293,7 +303,97 @@ func (s *RepoConnectionService) CreateGitHubInstallationTokenForImportedSource(
 		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository")
 	}
 
-	return s.createGitHubInstallationTokenForInstallationID(ctx, installationID)
+	token, err := s.createGitHubInstallationTokenForInstallationID(ctx, installationID)
+	if err != nil {
+		return GitHubInstallationToken{}, err
+	}
+	if err := s.confirmImportedSourceReadable(ctx, userID, normalizedOwner, normalizedRepo, token.Token); err != nil {
+		return GitHubInstallationToken{}, err
+	}
+	return token, nil
+}
+
+// githubImportedSourcePublicTTL bounds how long a live "still public" answer
+// lets imported-source tokens skip GitHub. A repo made private stops serving
+// non-readers within this window.
+const githubImportedSourcePublicTTL = 5 * time.Minute
+
+// confirmImportedSourceReadable re-checks, live, that an imported source is
+// still public before its installation token is used on the importer's
+// behalf. is_private comes from installation webhooks, and a later visibility
+// change can leave it stale. If GitHub now reports the repo private, the flag
+// is corrected and the actor must prove read access with their own GitHub
+// credential; otherwise the request is refused with FORBIDDEN_ACTION and
+// github.proxy.imported_source_private is logged. A failed check fails closed.
+func (s *RepoConnectionService) confirmImportedSourceReadable(ctx context.Context, userID int64, owner, repo, installationToken string) error {
+	slug := owner + "/" + repo
+	now := time.Now()
+	s.importedSourceMu.Lock()
+	exp, ok := s.importedSourcePublic[slug]
+	s.importedSourceMu.Unlock()
+	if ok && now.Before(exp) {
+		return nil
+	}
+
+	private, err := fetchGitHubRepoPrivate(ctx, installationToken, owner, repo)
+	if err != nil {
+		slog.Warn("github.proxy.imported_source_visibility_unknown", "user_id", userID, "github_owner", owner, "github_repo", repo, "error", err)
+		return err
+	}
+	if !private {
+		s.importedSourceMu.Lock()
+		if s.importedSourcePublic == nil {
+			s.importedSourcePublic = map[string]time.Time{}
+		}
+		s.importedSourcePublic[slug] = now.Add(githubImportedSourcePublicTTL)
+		s.importedSourceMu.Unlock()
+		return nil
+	}
+
+	if _, err := s.db.Exec(ctx, markGitHubAppInstallationRepositoryPrivateSQL, owner, repo); err != nil {
+		slog.Warn("github.proxy.imported_source_flag_not_corrected", "github_owner", owner, "github_repo", repo, "error", err)
+	}
+	if reader, ok := s.githubAccessVerifier.(RepositoryJobGitHubReadAccess); ok && reader.GitHubRepoReadAuthorized(ctx, userID, owner, repo) {
+		return nil
+	}
+	slog.Warn("github.proxy.imported_source_private", "user_id", userID, "github_owner", owner, "github_repo", repo)
+	return &pkgerrors.APIError{
+		Status:  http.StatusForbidden,
+		Code:    pkgerrors.CodeGitHubForbiddenAction,
+		Message: fmt.Sprintf("%s/%s is now private and your GitHub account cannot read it", owner, repo),
+	}
+}
+
+// fetchGitHubRepoPrivate asks GitHub for a repository's current visibility.
+func fetchGitHubRepoPrivate(ctx context.Context, token, owner, repo string) (bool, error) {
+	endpoint := strings.TrimRight(githubAPIBaseURL(), "/") + "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return false, pkgerrors.Internal("failed to build github repository request").WithCause(err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	req.Header.Set("User-Agent", "smithers-server")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	resp, err := observability.NewHTTPClient(10 * time.Second).Do(req)
+	if err != nil {
+		return false, pkgerrors.New(pkgerrors.CodeGitHubUnavailable, "github repository visibility check failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode == http.StatusNotFound {
+		return false, pkgerrors.BadRequest("github app is not installed for this repository")
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return false, pkgerrors.New(pkgerrors.CodeGitHubUnavailable, "github repository visibility check was rejected")
+	}
+	var payload struct {
+		Private *bool `json:"private"`
+	}
+	if json.Unmarshal(body, &payload) != nil || payload.Private == nil {
+		return false, pkgerrors.New(pkgerrors.CodeGitHubUnavailable, "github repository visibility check returned no visibility")
+	}
+	return *payload.Private, nil
 }
 
 // CreateGitHubInstallationTokenForInternalInstallation mints a token when a

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -73,6 +74,7 @@ type GitHubSyncedRepoStore interface {
 	EnrollGitHubSyncedRepo(ctx context.Context, arg db.EnrollGitHubSyncedRepoParams) (db.GithubSyncedRepo, error)
 	ListGitHubSyncedRepos(ctx context.Context, refsOnly bool) ([]db.GithubSyncedRepo, error)
 	SetGitHubSyncedRepoMirror(ctx context.Context, arg db.SetGitHubSyncedRepoMirrorParams) error
+	ListGitHubSyncedRepoMirrorBinders(ctx context.Context) ([]db.ListGitHubSyncedRepoMirrorBindersRow, error)
 	RecordGitHubMirrorStatus(ctx context.Context, arg db.RecordGitHubMirrorStatusParams) (int64, error)
 	ClaimGitHubSyncedRepoSync(ctx context.Context, id int64) (int64, error)
 	MarkGitHubSyncedRepoSynced(ctx context.Context, id int64) error
@@ -129,6 +131,19 @@ type GitHubSyncedRepoService struct {
 	// syncDone, when set, fires after every background backfill attempt.
 	// Test seam — nil in production.
 	syncDone func(syncedRepoID int64, err error)
+	// pushAccess proves a user's current GitHub push access. github-sync
+	// writes the mirror's refs, issues, landings and merges to the GitHub repo
+	// with the platform token, so a mirror is bound, and advertised to
+	// github-sync, only while its binding user can push. Nil fails closed.
+	pushAccess GitHubRepoPushProver
+	// mirrorFailures counts refused bindings and suspended mirrors.
+	mirrorFailures GitHubMirrorFailureObserver
+}
+
+// GitHubMirrorFailureObserver records a mirror failure by stage and reason
+// (smithers_mirror_failures_total). Satisfied by *routes.SmithersMetrics.
+type GitHubMirrorFailureObserver interface {
+	ObserveMirrorFailure(stage, reason string)
 }
 
 type GitHubSyncedRepoOption func(*GitHubSyncedRepoService)
@@ -180,6 +195,22 @@ func (s *GitHubSyncedRepoService) SetMirrorer(mirrorer GitHubSyncedRepoMirrorer)
 	}
 }
 
+// SetPushAccess wires the GitHub push proof that gates mirror binding and the
+// github-sync feed. Two-step: the user-repos service that implements it is
+// built after this one.
+func (s *GitHubSyncedRepoService) SetPushAccess(access GitHubRepoPushProver) {
+	if s != nil {
+		s.pushAccess = access
+	}
+}
+
+// SetMirrorFailureObserver wires the mirror failure metric.
+func (s *GitHubSyncedRepoService) SetMirrorFailureObserver(observer GitHubMirrorFailureObserver) {
+	if s != nil {
+		s.mirrorFailures = observer
+	}
+}
+
 // SetFetcherFactory wires the installation-token page fetcher (R2). Two-step
 // for the same reason as SetMirrorer: the issuer-backed factory depends on
 // services built after this one.
@@ -204,6 +235,10 @@ type GitHubSyncedRepoSummary struct {
 	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty"`
 	LastWebhookAt  *time.Time `json:"last_webhook_at,omitempty"`
 	SyncError      string     `json:"sync_error,omitempty"`
+	// MirrorSuspended names why a recorded mirror is withheld from
+	// github-sync (a GitHubPushProofReason). SmithersOwner/SmithersRepo are
+	// empty whenever it is set, so github-sync writes nothing to the repo.
+	MirrorSuspended string `json:"mirror_suspended,omitempty"`
 }
 
 const (
@@ -280,8 +315,28 @@ func (s *GitHubSyncedRepoService) ListSyncedRepos(ctx context.Context, refsOnly 
 	if err != nil {
 		return nil, pkgerrors.Internal("failed to list synced github repositories").WithCause(err)
 	}
+	suspended := s.suspendedMirrors(ctx, rows)
 	summaries := make([]GitHubSyncedRepoSummary, 0, len(rows))
 	for _, row := range rows {
+		if reason, ok := suspended[row.ID]; ok {
+			// github-sync maps a row only when it names the Smithers side, so
+			// withholding it stops every write to this GitHub repo: refs,
+			// prune, issues, landings and merges.
+			if refsOnly {
+				continue
+			}
+			summaries = append(summaries, GitHubSyncedRepoSummary{
+				GitHubOwner:     row.OwnerLogin,
+				GitHubRepo:      row.RepoName,
+				SyncRefs:        row.SyncRefs,
+				SyncMetadata:    row.SyncMetadata,
+				SyncState:       row.SyncState,
+				EnrolledVia:     row.EnrolledVia,
+				SyncError:       row.SyncError.String,
+				MirrorSuspended: string(reason),
+			})
+			continue
+		}
 		summary := GitHubSyncedRepoSummary{
 			GitHubOwner:   row.OwnerLogin,
 			GitHubRepo:    row.RepoName,
@@ -384,27 +439,115 @@ func (s *GitHubSyncedRepoService) MirrorEnrolledRepo(ctx context.Context, userID
 	if strings.TrimSpace(mirrorOwner) == "" || strings.TrimSpace(mirrorRepo) == "" {
 		return
 	}
-	if err := s.store.SetGitHubSyncedRepoMirror(ctx, db.SetGitHubSyncedRepoMirrorParams{
-		MirrorOwner: mirrorOwner,
-		MirrorRepo:  mirrorRepo,
-		ID:          row.ID,
-	}); err != nil {
+	if err := s.BindMirror(ctx, userID, row, mirrorOwner, mirrorRepo); err != nil {
 		slog.Warn("github.synced_repo.mirror_not_recorded",
 			"owner", row.OwnerLogin, "repo", row.RepoName, "error", err)
 	}
 }
 
-// RecordMirror binds a registry row to the jjhub repo its refs are mirrored
-// into, so github-sync's mirror mode knows where to push without re-deriving it.
-func (s *GitHubSyncedRepoService) RecordMirror(ctx context.Context, syncedRepoID int64, mirrorOwner, mirrorRepo string) error {
+// BindMirror points a registry row at the jjhub repo userID mirrored it into,
+// so github-sync knows which repo to push to GitHub. github-sync writes with
+// the platform token, which can push to repositories userID cannot, so the
+// binding needs userID's own current GitHub push access to the source. Without
+// it the row keeps its existing mirror and the refusal is returned as a
+// *GitHubPushProofError, logged, and counted.
+func (s *GitHubSyncedRepoService) BindMirror(ctx context.Context, userID int64, row db.GithubSyncedRepo, mirrorOwner, mirrorRepo string) error {
 	if s == nil || s.store == nil {
 		return pkgerrors.Internal("github sync registry unavailable")
+	}
+	if err := s.provePush(ctx, userID, row.OwnerLogin, row.RepoName); err != nil {
+		s.observeMirrorRefusal("github.mirror.bind_refused", "bind", row, userID, err)
+		return err
 	}
 	return s.store.SetGitHubSyncedRepoMirror(ctx, db.SetGitHubSyncedRepoMirrorParams{
 		MirrorOwner: mirrorOwner,
 		MirrorRepo:  mirrorRepo,
-		ID:          syncedRepoID,
+		ID:          row.ID,
 	})
+}
+
+func (s *GitHubSyncedRepoService) provePush(ctx context.Context, userID int64, owner, repo string) error {
+	if userID <= 0 {
+		return &GitHubPushProofError{UserID: userID, Owner: owner, Repo: repo, Reason: GitHubPushProofNoBinder}
+	}
+	if s.pushAccess == nil {
+		return &GitHubPushProofError{UserID: userID, Owner: owner, Repo: repo, Reason: GitHubPushProofUnwired}
+	}
+	return s.pushAccess.GitHubRepoPushAuthorized(ctx, userID, owner, repo)
+}
+
+func (s *GitHubSyncedRepoService) observeMirrorRefusal(event, stage string, row db.GithubSyncedRepo, userID int64, err error) {
+	reason := string(GitHubPushProofDenied)
+	var proofErr *GitHubPushProofError
+	if stdErrors.As(err, &proofErr) {
+		reason = string(proofErr.Reason)
+	}
+	slog.Warn(event,
+		"github_owner", row.OwnerLogin, "github_repo", row.RepoName,
+		"mirror_owner", row.MirrorOwner.String, "mirror_repo", row.MirrorRepo.String,
+		"user_id", userID, "reason", reason)
+	if s.mirrorFailures != nil {
+		s.mirrorFailures.ObserveMirrorFailure("github_push_"+stage, reason)
+	}
+}
+
+// githubMirrorFeedProofConcurrency bounds the push proofs one feed request
+// runs at once. github-sync gives the whole request 10 seconds and keeps its
+// previous mappings when a request fails, so the proofs share a shorter budget
+// and a proof that runs out of time suspends its mirror instead.
+const (
+	githubMirrorFeedProofConcurrency = 16
+	githubMirrorFeedProofBudget      = 6 * time.Second
+)
+
+// suspendedMirrors re-proves, for every row with a recorded mirror, that the
+// user who bound it (ListGitHubSyncedRepoMirrorBinders: the newest ready
+// import that produced that mirror) can still push to the GitHub repo. It
+// returns the rows whose mirror must be withheld from github-sync, with the
+// reason.
+func (s *GitHubSyncedRepoService) suspendedMirrors(ctx context.Context, rows []db.GithubSyncedRepo) map[int64]GitHubPushProofReason {
+	suspended := map[int64]GitHubPushProofReason{}
+	binders := map[int64]int64{}
+	binderRows, err := s.store.ListGitHubSyncedRepoMirrorBinders(ctx)
+	if err != nil {
+		// Without binders nothing can be proven: every mirror is withheld.
+		slog.Warn("github.mirror.binders_unavailable", "error", err)
+	}
+	for _, binder := range binderRows {
+		binders[binder.SyncedRepoID] = binder.UserID
+	}
+	ctx, cancel := context.WithTimeout(ctx, githubMirrorFeedProofBudget)
+	defer cancel()
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, githubMirrorFeedProofConcurrency)
+	for _, row := range rows {
+		if !row.MirrorOwner.Valid || !row.MirrorRepo.Valid || row.MirrorOwner.String == "" || row.MirrorRepo.String == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(row db.GithubSyncedRepo) {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			binder := binders[row.ID]
+			err := s.provePush(ctx, binder, row.OwnerLogin, row.RepoName)
+			if err == nil {
+				return
+			}
+			s.observeMirrorRefusal("github.mirror.suspended", "feed", row, binder, err)
+			reason := GitHubPushProofDenied
+			var proofErr *GitHubPushProofError
+			if stdErrors.As(err, &proofErr) {
+				reason = proofErr.Reason
+			}
+			mu.Lock()
+			suspended[row.ID] = reason
+			mu.Unlock()
+		}(row)
+	}
+	wg.Wait()
+	return suspended
 }
 
 // GitHubRepoReadGrant is proof that one user's own GitHub credential read one
