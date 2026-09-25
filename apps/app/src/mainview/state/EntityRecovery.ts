@@ -3,6 +3,7 @@ import { PERSISTED_KEY_PREFIX } from "../chain/SchemaVersion"
 import { CardHistorySchema,CardSchema,StarredTargetSchema,type Card,type CardHistory,type StarredTarget } from "./AppState"
 import { canonicalStoredJsonValue } from "./EventValue"
 import { PendingRecoveryAuthoritySchema,type PendingRecoveryAuthority } from "./PendingRecovery"
+import { SignupSchema,type Signup } from "./Signup"
 
 export const ENTITY_RECOVERY_STORAGE_KEY = `${PERSISTED_KEY_PREFIX}entity-recovery`
 
@@ -10,6 +11,8 @@ export type EntityRecoveryValue =
   | { readonly kind: "approval-answer"; readonly id: string; readonly question: string; readonly text: string }
   | { readonly kind: "card"; readonly workspaceId: string; readonly branchId: string; readonly id: string; readonly card: Card | null; readonly history?: CardHistory }
   | { readonly kind: "target-star"; readonly id: string; readonly repoId: string; readonly star: StarredTarget | null }
+  | { readonly kind: "signup"; readonly signup: Signup }
+  | { readonly kind: "first-run-dismissed" }
 
 export interface EntityRecoveryRecord {
   readonly key: string
@@ -48,7 +51,7 @@ const record = (key: string, input: unknown): EntityRecoveryRecord | undefined =
     !authority?.success || authority.data.actor !== "user" || authority.data.intentId !== candidate.preparedCommandId)) return undefined
   const binding = { ...(authority?.success ? { authority: authority.data } : {}),
     ...(typeof candidate.preparedCommandId === "string" ? { preparedCommandId: candidate.preparedCommandId } : {}) }
-  const value = candidate.value as { readonly kind?: unknown; readonly workspaceId?: unknown; readonly branchId?: unknown; readonly card?: unknown; readonly history?: unknown; readonly star?: unknown; readonly id?: unknown; readonly repoId?: unknown; readonly question?: unknown; readonly text?: unknown }
+  const value = candidate.value as { readonly kind?: unknown; readonly workspaceId?: unknown; readonly branchId?: unknown; readonly card?: unknown; readonly history?: unknown; readonly star?: unknown; readonly id?: unknown; readonly repoId?: unknown; readonly question?: unknown; readonly text?: unknown; readonly signup?: unknown }
   if (value.kind === "card" && typeof value.workspaceId === "string" && typeof value.branchId === "string" && typeof value.id === "string" &&
     key === `card:${value.workspaceId}:${value.branchId}:${value.id}`) {
     const location = { workspaceId: value.workspaceId, branchId: value.branchId }
@@ -81,6 +84,13 @@ const record = (key: string, input: unknown): EntityRecoveryRecord | undefined =
     return star.success && star.data.id === value.id
       ? { key, revision: candidate.revision as number, ...binding, value: { kind: "target-star", id: value.id, repoId: value.repoId, star: star.data } }
       : undefined
+  }
+  if (value.kind === "first-run-dismissed" && key === "first-run-dismissed" && Object.keys(value).length === 1) {
+    return { key, revision: candidate.revision as number, ...binding, value: { kind: "first-run-dismissed" } }
+  }
+  if (value.kind === "signup" && key === "signup") {
+    const signup = SignupSchema.safeParse(value.signup)
+    return signup.success ? { key, revision: candidate.revision as number, ...binding, value: { kind: "signup", signup: signup.data } } : undefined
   }
   return undefined
 }

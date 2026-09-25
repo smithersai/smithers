@@ -1,4 +1,4 @@
-import { ENTITY_RECOVERY_STORAGE_KEY, writeEntityRecovery } from "./EntityRecovery"
+import { ENTITY_RECOVERY_STORAGE_KEY, readEntityRecoveries, writeEntityRecovery } from "./EntityRecovery"
 import { WIKI_RECOVERY_STORAGE_KEY, writeWikiRecovery } from "./WikiRecovery"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
@@ -80,6 +80,50 @@ describe("an atomic commit point per logical transition", () => {
       await store?.dispose?.()
       if (priorFlag === undefined) delete process.env.VITE_SMITHERS_WIKI
       else process.env.VITE_SMITHERS_WIKI = priorFlag
+      if (priorWindow !== undefined) Object.defineProperty(globalThis, "window", priorWindow)
+      else Reflect.deleteProperty(globalThis, "window")
+    }
+  })
+
+  test("a signup answer and a first-run dismissal are recoverable from dispatch and replay on boot", async () => {
+    const recovery = memoryStorage(), durableStorage = memoryStorage()
+    const priorWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+    Object.defineProperty(globalThis, "window", { configurable: true, value: {
+      localStorage: recovery, matchMedia: () => ({ matches: false })
+    } })
+    let store: Awaited<ReturnType<typeof createAppStore>> | undefined
+    let reopened: Awaited<ReturnType<typeof createAppStore>> | undefined
+    try {
+      store = await createAppStore({ kind: "localStorage", storage: durableStorage })
+      const signup = { stage: "poll" as const, question: 5, answers: { models: ["Claude"] }, draft: {} }
+      const answered = store.dispatch({ type: "signup.changed", actor: "user", patch: { ...signup, draft: { code: "123456" } } })
+      const dismissed = store.dispatch({ type: "first-run.dismissed", actor: "user" })
+      // The page may leave before the durable commit settles: the answers are already recoverable, the code is not copied.
+      expect(readEntityRecoveries(recovery).map(record => record.value)).toEqual([{ kind: "signup", signup }, { kind: "first-run-dismissed" }])
+      await answered.isPersisted.promise
+      await dismissed.isPersisted.promise
+      expect(recovery.getItem(ENTITY_RECOVERY_STORAGE_KEY)).toBeNull()
+      await store.dispose?.()
+      store = undefined
+
+      // A departure before the commit: the durable stream is still at `head`, the record is not.
+      const lost = memoryStorage()
+      const before = await createAppStore({ kind: "localStorage", storage: lost })
+      const lostHead = (await before.eventHistory()).head
+      await before.dispose?.()
+      writeEntityRecovery(recovery, { key: "signup", revision: lostHead.revision + 1, value: { kind: "signup", signup }, authority: {
+        streamId: lostHead.streamId, baseSequence: lostHead.sequence, baseEventHash: lostHead.eventHash, actor: "user",
+        intentId: "pending-signup", workspaceId: "workspace-main", branchId: "branch-main", conversationTabId: null } })
+      writeEntityRecovery(recovery, { key: "first-run-dismissed", revision: lostHead.revision + 2, value: { kind: "first-run-dismissed" }, authority: {
+        streamId: lostHead.streamId, baseSequence: lostHead.sequence, baseEventHash: lostHead.eventHash, actor: "user",
+        intentId: "pending-dismissal", workspaceId: "workspace-main", branchId: "branch-main", conversationTabId: null } })
+      reopened = await createAppStore({ kind: "localStorage", storage: lost })
+      expect(reopened.session().signup).toEqual(signup)
+      expect(reopened.session().firstRunDismissed).toBe(true)
+      expect(recovery.getItem(ENTITY_RECOVERY_STORAGE_KEY)).toBeNull()
+    } finally {
+      await reopened?.dispose?.()
+      await store?.dispose?.()
       if (priorWindow !== undefined) Object.defineProperty(globalThis, "window", priorWindow)
       else Reflect.deleteProperty(globalThis, "window")
     }

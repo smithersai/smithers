@@ -42,6 +42,8 @@ test("the keyboard reaches Mode to stop dictation without closing Chat", async (
   const input = page.getByTestId("composer-input")
   await input.fill("Keep this draft")
   await input.press("Tab")
+  await expect(page.getByRole("button", { name: "Queue", exact: true })).toBeFocused()
+  await page.keyboard.press("Tab")
   await expect(page.getByTestId("composer-send")).toBeFocused()
   await page.keyboard.press("Tab")
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeFocused()

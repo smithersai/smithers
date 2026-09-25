@@ -274,6 +274,9 @@ const valueOf = (value: unknown): string | undefined => {
   return typeof carried === "string" ? carried : undefined
 }
 
+/** Chrome commands that render no card, so they leave a maximized card in place. */
+const OVER_MAXIMIZED_CARD: ReadonlySet<string> = new Set(["chat.open", "chat.dictate", "palette.open", "palette.actions", "appearance.dark-mode", "input.mode"])
+
 export const createCommandRegistry = (actions: CommandActions, agentActions: CommandActions = actions, lifecycle?: CommandLifecycle): CommandRegistry => {
   /*
    * The app's own invocation carries no host authority. Approval is a
@@ -481,9 +484,10 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     // A new human command is a return to the transcript. A stale maximized
     // card from an earlier session must not hide the card this command renders.
     // Commands raised by a maximized card itself keep that presentation until
-    // their own frame or card handler decides where to go.
-    const staysInMaximizedCard = name === "card.maximize" || name === "card.minimize" ||
-      name.startsWith("frame.") || name.startsWith("files.")
+    // their own frame or card handler decides where to go. Chrome commands
+    // render no card: Chat opens over the card and closes back to it.
+    const staysInMaximizedCard = name === "card.maximize" || name === "card.minimize" || name.startsWith("card.history.") ||
+      name.startsWith("frame.") || name.startsWith("files.") || OVER_MAXIMIZED_CARD.has(name)
     if (invoker === "user" && actions.snapshot().maximizedCardId != null && !staysInMaximizedCard) actions.minimizeCard()
     // Only the human's local form edit has a synchronous recovery preparation.
     // Agent input waits for capability authorization in settle before dispatch.
@@ -673,6 +677,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
        * the grammar's own reason stays the fallback only for a flow with no
        * fields to ask for (none today).
        */
+      // A form is a new transcript card: a maximized card must not hide it.
+      if (invoker === "user" && actions.snapshot().maximizedCardId != null) actions.minimizeCard()
       const rendered = acting.renderFlowForm({
         name: nameOf(target),
         args,

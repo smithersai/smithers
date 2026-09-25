@@ -1457,6 +1457,17 @@ const initializeAppStore = async (
       return writeEntityRecovery(draftRecoveryStorage, { key: `target-star:${id}`, revision: after.head.revision, authority,
         value: { kind: "target-star", id, repoId: transition.repoId, star: after.snapshot.starredTargets.find(row => row.id === id) ?? null } })
     }
+    // Session answers a person expects to survive an immediate reload.
+    if (transition.type === "first-run.dismissed") {
+      return writeEntityRecovery(draftRecoveryStorage, { key: "first-run-dismissed", revision: after.head.revision, authority, value: { kind: "first-run-dismissed" } })
+    }
+    if (transition.type === "signup.changed") {
+      const signup = after.snapshot.sessions.find(row => row.id === SESSION_ID)?.signup
+      if (signup === undefined) return undefined
+      // A typed verification code is a credential: it never reaches the recovery copy.
+      const { code: _code, ...draft } = signup.draft
+      return writeEntityRecovery(draftRecoveryStorage, { key: "signup", revision: after.head.revision, authority, value: { kind: "signup", signup: { ...signup, draft } } })
+    }
     const id = transition.type === "card.upsert" || transition.type === "card.view.loaded" || transition.type === "card.navigated" ? transition.card.id
       : transition.type === "card.updated" || transition.type === "card.removed" || transition.type === "card.history.moved" ? transition.id : undefined
     if (id === undefined) return undefined
@@ -1588,18 +1599,19 @@ const initializeAppStore = async (
         isCurrentApprovalAnswer(row, value)
     }
     if (record.preparedCommandId === undefined) return true
-    if (!record.authority || record.value.kind !== "card" || record.value.card?.kind !== "flow-form" || !recoverySnapshot) return false
+    const value = record.value
+    if (!record.authority || value.kind !== "card" || value.card?.kind !== "flow-form" || !recoverySnapshot) return false
     const scope = record.authority, savedSession = recoverySnapshot.sessions.find(row => row.id === SESSION_ID)!
     const currentScope = pendingRecoveryScope(savedSession)
     const cards = scope.branchId === currentScope.branchId && scope.workspaceId === currentScope.workspaceId ? recoverySnapshot.cards
       : recoverySnapshot.branches.find(branch => branch.id === scope.branchId && branch.workspaceId === scope.workspaceId)?.snapshot?.cards
-    const prior = cards?.find(row => row.id === record.value.id)
+    const prior = cards?.find(row => row.id === value.id)
     if (prior?.kind !== "flow-form" || prior.status === "acted" || prior.payload.submitting) return false
     const metadata = (card: Extract<Card, { kind: "flow-form" }>) => {
       const { draft: _draft, error: _error, ...payload } = card.payload
       return { ...card, status: "active", payload }
     }
-    return canonicalStoredJsonValue(metadata(prior)) === canonicalStoredJsonValue(metadata(record.value.card))
+    return canonicalStoredJsonValue(metadata(prior)) === canonicalStoredJsonValue(metadata(value.card))
   }
   for (const pending of pendingRecoveries) {
     const authority = pending.record.authority
@@ -1619,6 +1631,10 @@ const initializeAppStore = async (
           }).isPersisted.promise
         } else if (value.kind === "approval-answer") {
           await dispatch({ type: "approval.answer.changed", actor: "user", id: value.id, question: value.question, text: value.text }).isPersisted.promise
+        } else if (value.kind === "first-run-dismissed") {
+          await dispatch({ type: "first-run.dismissed", actor: authority.actor }).isPersisted.promise
+        } else if (value.kind === "signup") {
+          await dispatch({ type: "signup.changed", actor: authority.actor, patch: value.signup }).isPersisted.promise
         } else if (value.star === null) await dispatch({ type: "target.unstarred", actor: authority.actor, repoId: value.repoId, id: value.id }).isPersisted.promise
         else await dispatch({ type: "target.starred", actor: authority.actor, repoId: value.repoId, star: value.star }).isPersisted.promise
       }

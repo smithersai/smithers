@@ -76,3 +76,25 @@ test("a user command restores the transcript before rendering over a stale maxim
   await controller.dispose()
   await store.dispose?.()
 })
+
+test("chrome commands and the card's own history keep a maximized card in place", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+  const answering = host()
+  const controller = createAppController(store, unavailableAgent, { fetchImpl: answering.fetchImpl })
+
+  await controller.commands.run("model.save", "--name mine --protocol openai-chat --model qwen-3-coder-480b --credential CEREBRAS_API_KEY --url https://api.cerebras.ai")
+  await controller.commands.run("card.maximize", MODELS_CARD_ID)
+  for (const [name, args] of [["chat.open"], ["palette.open"], ["appearance.dark-mode"], ["input.mode", "vim"], ["card.history.back", MODELS_CARD_ID]] as const) {
+    await controller.commands.run(name, args)
+    expect(store.session().maximizedCardId).toBe(MODELS_CARD_ID)
+  }
+  expect(store.session().inputMode).toBe("vim")
+
+  // Without its input the same command renders a form, which the maximized card must not hide.
+  const form = await controller.commands.run("input.mode")
+  expect(form.status).toBe("form")
+  expect(store.session().maximizedCardId).toBeNull()
+
+  await controller.dispose()
+  await store.dispose?.()
+})
