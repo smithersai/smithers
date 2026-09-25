@@ -4,7 +4,7 @@ import { runDurable, runRequest } from "./Boundary"
 import { storageFrom, type NativeStorage } from "./DurableStorage"
 import type { WorkerEnv } from "./Environment"
 import { readBoundedJson } from "./Http"
-import { authenticatedExport, encodeStored, sealSnapshot, SnapshotFailure } from "./SealedSnapshot"
+import { authenticatedExport, compareStorageKeys, CURSOR_BYTES, encodeStored, PAGE_BYTES, PAGE_ENTRIES, sealSnapshot, snapshotCursor, snapshotDigest, SnapshotFailure, type PageMetadata, type SnapshotFence } from "./SealedSnapshot"
 import type { NativeRecommendStorage } from "./recommend"
 
 export const EXPORT_PATH = "/__maintenance/state-export"
@@ -34,7 +34,10 @@ const alarmMarkers = (storage: SnapshotStorage): string[] => {
   const sql = sqlOf(storage)
   if (!sql) return []
   if (!sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", ALARM_MARKER_TABLE).toArray().length) return []
-  return sql.exec(`SELECT marker FROM ${ALARM_MARKER_TABLE} ORDER BY execution_id`).toArray().map(row => String(row.marker))
+  // Bound both row count and individual SQL values before loading them into JS.
+  const rows = sql.exec(`SELECT substr(marker, 1, 4097) AS marker FROM ${ALARM_MARKER_TABLE} ORDER BY execution_id LIMIT 257`).toArray()
+  if (rows.length > 256 || rows.some(row => new TextEncoder().encode(String(row.marker)).byteLength > 4096)) throw new SnapshotFailure({ code: "snapshot_metadata_too_large" })
+  return rows.map(row => String(row.marker))
 }
 /** On a KV-backed object the platform's `sql` getter itself throws; such an object cannot hold markers. */
 export const sqlOf = (storage: { readonly sql?: MarkerSql } | undefined): MarkerSql | undefined => {
@@ -51,7 +54,11 @@ interface LegacyObject {
 }
 type LegacyClass = new (ctx: ExportContext, env: MaintenanceEnv) => LegacyObject
 
-const Input = z.object({ binding: z.enum(EXPORT_BINDINGS), objectId: z.string().regex(/^[a-f0-9]{64}$/), migrationId: z.uuid() }).strict()
+const Input = z.object({ binding: z.enum(EXPORT_BINDINGS), objectId: z.string().regex(/^[a-f0-9]{64}$/), migrationId: z.uuid(),
+  page: z.object({ cursor: z.string().min(1).max(CURSOR_BYTES).nullable() }).strict().optional() }).strict()
+const Cursor = z.object({ scanId: z.uuid(), index: z.number().int().min(1).max(1_000_000), after: z.string(),
+  entriesThrough: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), previousSHA256: z.string().regex(/^[a-f0-9]{64}$/),
+  stateSHA256: z.string().regex(/^[a-f0-9]{64}$/) }).strict()
 type ExportInput = z.infer<typeof Input>
 const response = (status: number, code: string) => Response.json({ code }, { status, headers: { "cache-control": "no-store" } })
 const enabled = (env: ExportSettings): boolean => {
@@ -64,7 +71,7 @@ const enabled = (env: ExportSettings): boolean => {
 const authorized = (request: Request, env: ExportSettings) =>
   enabled(env) ? authenticatedExport(request.headers.get("authorization"), env.SMITHERS_EXPORT_TOKEN) : Effect.succeed(false)
 
-const decode = (request: Request) => readBoundedJson(request, 2048).pipe(
+const decode = (request: Request) => readBoundedJson(request, CURSOR_BYTES + 2048).pipe(
   Effect.flatMap(body => {
     const parsed = Input.safeParse(body)
     return parsed.success ? Effect.succeed(parsed.data) : Effect.fail(new SnapshotFailure({ code: "invalid_export_request" }))
@@ -72,16 +79,18 @@ const decode = (request: Request) => readBoundedJson(request, 2048).pipe(
   Effect.catch(() => Effect.fail(new SnapshotFailure({ code: "invalid_export_request" })))
 )
 
-const objectSnapshot = (ctx: ExportContext, env: ExportSettings, binding: string, request: Request) => Effect.gen(function* () {
+const objectSnapshot = (ctx: ExportContext, env: ExportSettings, binding: string, request: Request, fence?: SnapshotFence) => Effect.gen(function* () {
   if (!(yield* authorized(request, env))) return response(404, "not_found")
   const input = yield* decode(request)
   if (input.binding !== binding || input.objectId !== ctx.id.toString()) return response(409, "export_object_mismatch")
+  if (input.page) return yield* objectPage(ctx, env, input, fence)
   const storage = storageFrom(ctx.storage)
   const alarm = yield* Effect.tryPromise({ try: () => ctx.storage.getAlarm(), catch: () => new SnapshotFailure({ code: "snapshot_read_failed" }) })
   const entries: Array<readonly [string, unknown]> = []
   let cursor: string | undefined, bytes = 0
   for (;;) {
-    const page = yield* storage.list<unknown>({ prefix: "", limit: 64, ...(cursor ? { startAfter: cursor } : {}) })
+    // A SQLite value can be 2 MB; loading 64 at once can exhaust an isolate before encoding.
+    const page = yield* storage.list<unknown>({ prefix: "", limit: 8, ...(cursor !== undefined ? { startAfter: cursor } : {}) })
     for (const [key, value] of page) {
       const encoded = yield* Effect.try({ try: () => encodeStored(value), catch: () => new SnapshotFailure({ code: "unsupported_storage_value" }) })
       bytes += new TextEncoder().encode(JSON.stringify([key, encoded])).byteLength
@@ -89,23 +98,72 @@ const objectSnapshot = (ctx: ExportContext, env: ExportSettings, binding: string
       entries.push([key, encoded])
       cursor = key
     }
-    if (page.size < 64) break
+    if (page.size < 8) break
   }
   const recipient = yield* Effect.try({ try: () => JSON.parse(env.SMITHERS_EXPORT_RECIPIENT!) as JsonWebKey, catch: () => new SnapshotFailure({ code: "invalid_export_recipient" }) })
   const sealed = yield* sealSnapshot({ version: 1, schema: "smithers-do-storage/v1", keyVersion: binding === "MODEL_VAULTS" ? "model-vault:v1" : null,
-    ...input, sourceRevision: env.SMITHERS_EXPORT_SOURCE_REVISION!, sourceVersion: env.SMITHERS_EXPORT_SOURCE_VERSION!, capturedAt: new Date().toISOString() },
+    binding: input.binding, objectId: input.objectId, migrationId: input.migrationId, sourceRevision: env.SMITHERS_EXPORT_SOURCE_REVISION!, sourceVersion: env.SMITHERS_EXPORT_SOURCE_VERSION!, capturedAt: new Date().toISOString() },
     { entries, alarm, cutoverAlarmMarkers: yield* Effect.try({ try: () => alarmMarkers(ctx.storage), catch: () => new SnapshotFailure({ code: "snapshot_read_failed" }) }), ...(binding === "MODEL_VAULTS" ? { migrationContext: { keyVersion: "model-vault:v1", modelVaultKey: env.MODEL_VAULT_KEY ?? null } } : {}) }, recipient)
   return Response.json(sealed, { headers: { "cache-control": "no-store" } })
 }).pipe(Effect.catch(() => Effect.succeed(response(503, "snapshot_unavailable"))))
 
+/** One bounded, object-serialized page. A cursor never claims a mutable scan is atomic. */
+const objectPage = (ctx: ExportContext, env: ExportSettings, input: ExportInput, fence?: SnapshotFence) => Effect.gen(function* () {
+  if (fence && (fence.executionID !== input.migrationId || fence.sourceVersion !== env.SMITHERS_EXPORT_SOURCE_VERSION ||
+    env.SMITHERS_EXPORT_SOURCE_REVISION !== `sha256:${fence.sourceArtifactSHA256}`)) return response(409, "export_fence_mismatch")
+  const provenance = { migrationId: input.migrationId, binding: input.binding, objectId: input.objectId,
+    sourceRevision: env.SMITHERS_EXPORT_SOURCE_REVISION!, sourceVersion: env.SMITHERS_EXPORT_SOURCE_VERSION! }
+  const aad = JSON.stringify({ protocol: "smithers-do-storage-page/v2", ...provenance, recipient: env.SMITHERS_EXPORT_RECIPIENT, expires: env.SMITHERS_EXPORT_EXPIRES_AT, fence: fence ?? null })
+  const prior = input.page!.cursor === null ? null : yield* snapshotCursor(env.SMITHERS_EXPORT_TOKEN!, aad, { open: input.page!.cursor }).pipe(
+    Effect.flatMap(text => Effect.try({ try: () => Cursor.parse(JSON.parse(text)), catch: () => new SnapshotFailure({ code: "invalid_export_cursor" }) })))
+  const alarm = yield* Effect.tryPromise({ try: () => ctx.storage.getAlarm(), catch: () => new SnapshotFailure({ code: "snapshot_read_failed" }) })
+  const header = { alarm, cutoverAlarmMarkers: yield* Effect.try({ try: () => alarmMarkers(ctx.storage), catch: () => new SnapshotFailure({ code: "snapshot_read_failed" }) }),
+    ...(input.binding === "MODEL_VAULTS" ? { migrationContext: { keyVersion: "model-vault:v1" as const, modelVaultKey: env.MODEL_VAULT_KEY ?? null } } : {}) }
+  const headerJSON = JSON.stringify(header)
+  const stateSHA256 = yield* snapshotDigest(headerJSON)
+  // Alarms may be delivered between fenced pages; a changed marker forces a new scan.
+  if (prior && prior.stateSHA256 !== stateSHA256) return response(409, "snapshot_metadata_changed")
+  let bytes = new TextEncoder().encode(headerJSON).byteLength + 16
+  if (bytes > PAGE_BYTES / 2) return response(413, "snapshot_metadata_too_large")
+  const storage = storageFrom(ctx.storage), entries: Array<readonly [string, unknown]> = []
+  let after = prior?.after, complete = false
+  // The extra read distinguishes a final full page from a truncated stream.
+  for (let reads = 0; reads <= PAGE_ENTRIES; reads++) {
+    const row = yield* storage.list<unknown>({ prefix: "", limit: 1, ...(after === undefined ? {} : { startAfter: after }) })
+    if (row.size === 0) { complete = true; break }
+    if (row.size !== 1) return response(503, "snapshot_storage_order_invalid")
+    const [key, value] = row.entries().next().value!
+    if (after !== undefined && compareStorageKeys(key, after) <= 0) return response(503, "snapshot_storage_order_invalid")
+    if (entries.length === PAGE_ENTRIES) break
+    const encoded = yield* Effect.try({ try: () => encodeStored(value), catch: () => new SnapshotFailure({ code: "unsupported_storage_value" }) })
+    const size = new TextEncoder().encode(JSON.stringify([key, encoded])).byteLength + 1
+    if (bytes + size > PAGE_BYTES) {
+      if (entries.length === 0) return response(413, "snapshot_entry_exceeds_page_limit")
+      break
+    }
+    entries.push([key, encoded]); bytes += size; after = key
+  }
+  const metadata: PageMetadata = { version: 2, schema: "smithers-do-storage-page/v2", keyVersion: input.binding === "MODEL_VAULTS" ? "model-vault:v1" : null,
+    ...provenance, capturedAt: new Date().toISOString(), page: { scanId: prior?.scanId ?? crypto.randomUUID(), index: prior?.index ?? 0,
+      previousSHA256: prior?.previousSHA256 ?? null, entriesBefore: prior?.entriesThrough ?? 0, entriesThrough: (prior?.entriesThrough ?? 0) + entries.length,
+      complete, consistency: fence ? "object-writers-fenced" : "unfenced", fence: fence ?? null } }
+  const recipient = yield* Effect.try({ try: () => JSON.parse(env.SMITHERS_EXPORT_RECIPIENT!) as JsonWebKey, catch: () => new SnapshotFailure({ code: "invalid_export_recipient" }) })
+  const snapshot = yield* sealSnapshot(metadata, { entries, ...header }, recipient)
+  const cursor = complete ? null : yield* snapshotCursor(env.SMITHERS_EXPORT_TOKEN!, aad, { seal: JSON.stringify({ scanId: metadata.page.scanId,
+    index: metadata.page.index + 1, after, entriesThrough: metadata.page.entriesThrough, previousSHA256: yield* snapshotDigest(JSON.stringify(snapshot)), stateSHA256 }) })
+  if (cursor && cursor.length > CURSOR_BYTES) return response(413, "snapshot_cursor_too_large")
+  return Response.json({ snapshot, cursor }, { headers: { "cache-control": "no-store" } })
+}).pipe(Effect.catch(error => Effect.succeed(response(error instanceof SnapshotFailure && error.code === "invalid_export_cursor" ? 409 : 503,
+  error instanceof SnapshotFailure && error.code === "invalid_export_cursor" ? "invalid_export_cursor" : "snapshot_unavailable"))))
+
 /** Inherit every legacy RPC, WebSocket hook and alarm; override only the temporary fetch path. */
-export const withSealedExport = (Legacy: LegacyClass, binding: typeof EXPORT_BINDINGS[number]) => class extends Legacy {
+export const withSealedExport = (Legacy: LegacyClass, binding: typeof EXPORT_BINDINGS[number], fence?: SnapshotFence) => class extends Legacy {
   constructor(private readonly snapshotContext: ExportContext, private readonly exportEnv: MaintenanceEnv) {
     super(snapshotContext, exportEnv)
   }
   fetch(request: Request): Promise<Response> { // effect-policy: boundary
     if (new URL(request.url).pathname !== EXPORT_PATH) return super.fetch(request)
-    return this.snapshotContext.blockConcurrencyWhile(() => runDurable(objectSnapshot(this.snapshotContext, this.exportEnv, binding, request)))
+    return this.snapshotContext.blockConcurrencyWhile(() => runDurable(objectSnapshot(this.snapshotContext, this.exportEnv, binding, request, fence)))
   }
 }
 

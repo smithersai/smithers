@@ -1,14 +1,15 @@
-import { randomUUID, createHash } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { basename, dirname, resolve } from "node:path"
 import { api, listObjects, type Settings } from "./cloudflare"
 import { requireExportVersion } from "./deployment"
 import { exportBatch } from "./batch"
 import { decodeStored, openSnapshot, type SnapshotPayload } from "./sealed"
 import { authorityOrigins } from "./fence-routes"
-import { CLOUDFLARE_PRODUCERS } from "./fence"
+import { CLOUDFLARE_PRODUCERS, privateArtifact } from "./fence"
+import { collectPagedSnapshot, validatePagedArchive } from "./paged"
 import { EXPORT_PATH } from "../../src/MaintenanceExport"
-import type { SealedSnapshot } from "../../src/SealedSnapshot"
+import type { SealedSnapshot, SnapshotFence } from "../../src/SealedSnapshot"
 import type { FenceExpected, ArtifactReference } from "./fence"
 const record=(v:unknown):Record<string,unknown>|undefined=>v!==null&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:undefined
 export interface DurableDrainCounts { objects:number; rows:number; alarms:number; liveTurns:number; expiredRegistrations:number; openJournals:number; pendingSetup:number; queuedSetup:number; invalidRows:number; unsupportedWorkObjects:number }
@@ -97,7 +98,7 @@ export const readRecipient=(root:string,executionID:string):Recipient=>{
  if(recipient.migrationId!==executionID||!recipient.privateJwk?.d||typeof recipient.token!=="string"||recipient.token.length<43||!Number.isFinite(Date.parse(recipient.expiresAt)))throw Error('CF_DRAIN_RECIPIENT_INVALID')
  return recipient
 }
-export interface DrainSnapshot extends ArtifactReference { binding:string; objectId:string; capturedAt:string }
+export interface DrainSnapshot extends ArtifactReference { binding:string; objectId:string; capturedAt:string; format?:"paged" }
 export interface DurableDrainObservation extends FenceExpected {
  schema:"smithers-durable-drain/v3";worker:string;version:string;sourceVersion:string;sourceArtifactSHA256:string;startedAt:string;finishedAt:string
  credentialExpiresAt:string;complete:true;counts:DurableDrainCounts;dispositions:Disposition[];charges:ChargeRow[];stripeGrants:StripeGrant[]
@@ -109,6 +110,28 @@ export const openDrainSnapshot=async(bytes:string,expect:SnapshotProvenance,priv
  const sealed=JSON.parse(bytes) as SealedSnapshot,m=sealed.metadata,at=Date.parse(m.capturedAt)
  if(m.migrationId!==expect.executionID||m.binding!==expect.binding||m.objectId!==expect.objectId||m.sourceVersion!==expect.sourceVersion||m.sourceRevision!=='sha256:'+expect.sourceArtifactSHA256||!Number.isFinite(at)||at<expect.notBefore||at>=Date.parse(expect.credentialExpiresAt))throw Error('CF_DRAIN_SNAPSHOT_PROVENANCE')
  return {payload:await openSnapshot(sealed,privateJwk),capturedAt:m.capturedAt}
+}
+/** Every page is classified, but object-level facts are counted only once. */
+export const classifyDurablePage=(binding:string,objectId:string,payload:SnapshotPayload,capturedAt:string,first:boolean,worker?:string):ObjectClassification=>{
+ const result=classifyDurableObject(binding,objectId,payload.entries,first?payload.alarm:null,Date.parse(capturedAt),first?payload.cutoverAlarmMarkers??[]:[],worker)
+ if(!first){result.counts.objects=0;result.counts.unsupportedWorkObjects=0;result.dispositions=result.dispositions.filter(d=>d.reason!=="unclassified-retained")}
+ return result
+}
+/** Reopen retained v1 or the complete authenticated v2 chain; no page is an object by itself. */
+export const visitDrainSnapshot=async(root:string,ref:DrainSnapshot,expect:SnapshotProvenance,fence:SnapshotFence,privateJwk:JsonWebKey,onPage:(payload:SnapshotPayload,capturedAt:string,first:boolean)=>void|Promise<void>):Promise<void>=>{
+ const text=privateArtifact(root,ref).toString()
+ if(ref.format!=="paged"){
+  const opened=await openDrainSnapshot(text,expect,privateJwk)
+  if(opened.capturedAt!==ref.capturedAt)throw Error("CF_DRAIN_SNAPSHOT_PROVENANCE")
+  await onPage(opened.payload,opened.capturedAt,true);return
+ }
+ const path=resolve(root,ref.path)
+ const archive=await validatePagedArchive(dirname(path),basename(path),{migrationId:expect.executionID,binding:expect.binding,objectId:expect.objectId,sourceRevision:"sha256:"+expect.sourceArtifactSHA256,sourceVersion:expect.sourceVersion,fence},privateJwk,async(payload,metadata)=>{
+  const at=Date.parse(metadata.capturedAt)
+  if(at<expect.notBefore||at>=Date.parse(expect.credentialExpiresAt))throw Error("CF_DRAIN_SNAPSHOT_PROVENANCE")
+  await onPage(payload,metadata.capturedAt,metadata.page.index===0)
+ })
+ if(archive.capturedAt!==ref.capturedAt)throw Error("CF_DRAIN_SNAPSHOT_PROVENANCE")
 }
 /** Reads every stored object of one fenced authority through its sealed export door. GET/export only. */
 export const collectDurableDrain=async(input:FenceExpected&{worker:string;version:string;sourceVersion:string;sourceArtifactSHA256:string;origin:string;privateDirectory:string;fencedAt:string}):Promise<DurableDrainObservation>=>{
@@ -132,15 +155,16 @@ export const collectDurableDrain=async(input:FenceExpected&{worker:string;versio
   listed.push({binding:binding.name,namespaceId:binding.namespace_id!,listed:before.length})
   await exportBatch(before.filter(o=>o.hasStoredData),async object=>{
    await guard()
-   const response=await fetch(input.origin+EXPORT_PATH,{method:'POST',redirect:'error',signal:AbortSignal.timeout(60000),headers:{authorization:'Bearer '+recipient.token,'content-type':'application/json'},body:JSON.stringify({migrationId:input.executionID,binding:binding.name,objectId:object.id})})
-   if(!response.ok)throw Error('CF_DRAIN_SNAPSHOT_REFUSED_'+response.status)
-   const bytes=await response.text();if(bytes.length>12_000_000)throw Error('CF_DRAIN_SNAPSHOT_TOO_LARGE')
-   const opened=await openDrainSnapshot(bytes,{executionID:input.executionID,binding:binding.name,objectId:object.id,sourceVersion:input.sourceVersion,sourceArtifactSHA256:input.sourceArtifactSHA256,notBefore:Math.max(Date.parse(startedAt),Date.parse(input.fencedAt)),credentialExpiresAt:recipient.expiresAt},recipient.privateJwk)
-   const observed=classifyDurableObject(binding.name,object.id,opened.payload.entries,opened.payload.alarm,Date.parse(opened.capturedAt),opened.payload.cutoverAlarmMarkers??[],input.worker)
-   const path=directory+'/'+binding.name+'-'+object.id+'.json'
-   writeFileSync(resolve(root,path),bytes,{mode:0o600,flag:'wx'})
-   snapshots.push({path,sha256:createHash('sha256').update(bytes).digest('hex'),binding:binding.name,objectId:object.id,capturedAt:opened.capturedAt})
-   addCounts(counts,observed.counts);dispositions.push(...observed.dispositions);charges.push(...observed.charges);stripeGrants.push(...observed.stripeGrants)
+   const fence:SnapshotFence={executionID:input.executionID,worker:input.worker,sourceVersion:input.sourceVersion,sourceArtifactSHA256:input.sourceArtifactSHA256,smithersRevision:input.smithersRevision,plueRevision:input.plueRevision,endpoint:input.endpoint}
+   const collected=await collectPagedSnapshot({directory:resolve(root,directory),stem:binding.name+'-'+object.id,expected:{migrationId:input.executionID,binding:binding.name,objectId:object.id,sourceRevision:'sha256:'+input.sourceArtifactSHA256,sourceVersion:input.sourceVersion,fence},privateJwk:recipient.privateJwk,
+    fetchPage:async cursor=>{await guard();return fetch(input.origin+EXPORT_PATH,{method:'POST',redirect:'error',signal:AbortSignal.timeout(60000),headers:{authorization:'Bearer '+recipient.token,'content-type':'application/json'},body:JSON.stringify({migrationId:input.executionID,binding:binding.name,objectId:object.id,page:{cursor}})})},
+    onPage:(payload,metadata)=>{
+     const at=Date.parse(metadata.capturedAt)
+     if(at<Math.max(Date.parse(startedAt),Date.parse(input.fencedAt))||at>=Date.parse(recipient.expiresAt))throw Error('CF_DRAIN_SNAPSHOT_PROVENANCE')
+     const observed=classifyDurablePage(binding.name,object.id,payload,metadata.capturedAt,metadata.page.index===0,input.worker)
+     addCounts(counts,observed.counts);dispositions.push(...observed.dispositions);charges.push(...observed.charges);stripeGrants.push(...observed.stripeGrants)
+    }})
+   snapshots.push({path:directory+'/'+collected.file,sha256:collected.sha256,binding:binding.name,objectId:object.id,capturedAt:collected.archive.capturedAt,format:'paged'})
   })
   const after=await listObjects(binding.namespace_id!)
   if(JSON.stringify(before.sort((a,b)=>a.id.localeCompare(b.id)))!==JSON.stringify(after.sort((a,b)=>a.id.localeCompare(b.id))))throw Error('CF_DRAIN_OBJECT_INVENTORY_CHANGED')

@@ -74,7 +74,9 @@ version of each owning Worker; it cannot be obtained by the counts script.
    authenticated encrypted envelopes. Encrypt in the owning isolate before
    any bytes leave it; no raw body, transcript or credential logs. Bind the
    envelope to migration ID, namespace, object ID, page number and hash of the
-   previous page; sign the final manifest. Write files with mode 0600 outside
+   previous page, and require an authenticated final page. Verify every page
+   and the final manifest with the [bounded export protocol](../scripts/cutover/PAGED-EXPORT.md).
+   Write files with mode 0600 outside
    the repository. Existing vault ciphertext remains ciphertext inside the
    encrypted archive.
 3. Take a rehearsal snapshot while the old authority serves users. An initial

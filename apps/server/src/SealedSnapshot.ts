@@ -31,9 +31,7 @@ export const encodeStored = (value: unknown, seen = new Set<object>()): unknown 
   } finally { seen.delete(value) }
 }
 
-export interface SnapshotMetadata {
-  readonly version: 1
-  readonly schema: "smithers-do-storage/v1"
+export interface SnapshotProvenance {
   readonly keyVersion: "model-vault:v1" | null
   readonly migrationId: string
   readonly binding: string
@@ -42,22 +40,83 @@ export interface SnapshotMetadata {
   readonly sourceVersion: string
   readonly capturedAt: string
 }
-export interface SealedSnapshot {
-  readonly metadata: SnapshotMetadata
+export interface SnapshotMetadata extends SnapshotProvenance {
+  readonly version: 1
+  readonly schema: "smithers-do-storage/v1"
+}
+export interface SnapshotFence {
+  readonly executionID: string
+  readonly worker: string
+  readonly sourceVersion: string
+  readonly sourceArtifactSHA256: string
+  readonly smithersRevision: string
+  readonly plueRevision: string
+  readonly endpoint: string
+}
+export interface PageMetadata extends SnapshotProvenance {
+  readonly version: 2
+  readonly schema: "smithers-do-storage-page/v2"
+  readonly page: {
+    readonly scanId: string
+    readonly index: number
+    readonly previousSHA256: string | null
+    readonly entriesBefore: number
+    readonly entriesThrough: number
+    readonly complete: boolean
+    /** A fenced object is not proof of a global fence or drain. */
+    readonly consistency: "unfenced" | "object-writers-fenced"
+    readonly fence: SnapshotFence | null
+  }
+}
+export interface SealedEnvelope<M = SnapshotMetadata> {
+  readonly metadata: M
   readonly algorithm: "RSA-OAEP-256+A256GCM"
   readonly wrappedKey: string
   readonly nonce: string
   readonly ciphertext: string
 }
+export type SealedSnapshot = SealedEnvelope<SnapshotMetadata>
+export type SealedPage = SealedEnvelope<PageMetadata>
+export interface PageResponse { readonly snapshot: SealedPage; readonly cursor: string | null }
+export const PAGE_ENTRIES = 256
+export const PAGE_BYTES = 1_000_000
+export const PAGE_RESPONSE_BYTES = 1_500_000
+export const CURSOR_BYTES = 16_384
+
+/** Storage orders keys by UTF-8 bytes, not JavaScript UTF-16 code units. */
+export const compareStorageKeys = (a: string, b: string): number => {
+  const x = utf8.encode(a), y = utf8.encode(b)
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i]! - y[i]!
+  return x.length - y.length
+}
+export const snapshotDigest = (value: string) => Effect.tryPromise({
+  try: () => crypto.subtle.digest("SHA-256", utf8.encode(value)), catch: () => failed("snapshot_digest_failed")
+}).pipe(Effect.map(value => [...new Uint8Array(value)].map(byte => byte.toString(16).padStart(2, "0")).join("")))
+
+/** Stateless, encrypted continuation; source/provenance is authenticated as AAD. */
+export const snapshotCursor = (token: string, aad: string, value: { seal: string } | { open: string }) => Effect.gen(function* () {
+  const material = yield* Effect.tryPromise({ try: () => crypto.subtle.digest("SHA-256", utf8.encode("smithers-do-page-cursor/v2\0" + token)), catch: () => failed("invalid_export_cursor") })
+  const key = yield* Effect.tryPromise({ try: () => crypto.subtle.importKey("raw", material, "AES-GCM", false, ["encrypt", "decrypt"]), catch: () => failed("invalid_export_cursor") })
+  if ("seal" in value) {
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const ciphertext = yield* Effect.tryPromise({ try: () => crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: utf8.encode(aad) }, key, utf8.encode(value.seal)), catch: () => failed("invalid_export_cursor") })
+    const bytes = new Uint8Array(12 + ciphertext.byteLength)
+    bytes.set(iv); bytes.set(new Uint8Array(ciphertext), 12)
+    return base64(bytes)
+  }
+  const bytes = yield* Effect.try({ try: () => Uint8Array.from(atob(value.open), ch => ch.charCodeAt(0)), catch: () => failed("invalid_export_cursor") })
+  const plaintext = yield* Effect.tryPromise({ try: () => crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.subarray(0, 12), additionalData: utf8.encode(aad) }, key, bytes.subarray(12)), catch: () => failed("invalid_export_cursor") })
+  try { return new TextDecoder().decode(plaintext) } finally { new Uint8Array(plaintext).fill(0) }
+})
 
 /** The owning isolate exports ciphertext only; the recipient private key never reaches it. */
-export const sealSnapshot = (metadata: SnapshotMetadata, values: unknown, recipient: JsonWebKey): Effect.Effect<SealedSnapshot, SnapshotFailure> =>
+export const sealSnapshot = <M extends SnapshotMetadata | PageMetadata>(metadata: M, values: unknown, recipient: JsonWebKey): Effect.Effect<SealedEnvelope<M>, SnapshotFailure> =>
   Effect.gen(function* () {
     if (recipient.kty !== "RSA" || ["d", "p", "q", "dp", "dq", "qi", "oth"].some(name => name in recipient) ||
       !recipient.n || !recipient.e || recipient.n.length < 342) return yield* Effect.fail(failed("invalid_export_recipient"))
     const plaintext = yield* Effect.try({ try: () => utf8.encode(JSON.stringify(values)), catch: () => failed("unserializable_snapshot") })
     return yield* Effect.gen(function* () {
-    if (plaintext.byteLength > 8_000_000) return yield* Effect.fail(failed("snapshot_requires_paged_export"))
+    if (plaintext.byteLength > (metadata.version === 2 ? PAGE_BYTES : 8_000_000)) return yield* Effect.fail(failed("snapshot_requires_paged_export"))
     const publicKey = yield* Effect.tryPromise({ try: () => crypto.subtle.importKey("jwk", recipient, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["wrapKey"]), catch: () => failed("invalid_export_recipient") })
     const key = yield* Effect.tryPromise({ try: () => crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]), catch: () => failed("snapshot_encryption_failed") })
     const nonce = crypto.getRandomValues(new Uint8Array(12))

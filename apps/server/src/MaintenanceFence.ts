@@ -85,7 +85,7 @@ export const fencedDurable = (identity: FenceIdentity, binding: typeof EXPORT_BI
     webSocketClose(): void {}
     webSocketError(): void {}
   }
-  return withSealedExport(StoppedObject, binding)
+  return withSealedExport(StoppedObject, binding, identity)
 }
 
 export const fencedWorker = (identity: FenceIdentity) => ({

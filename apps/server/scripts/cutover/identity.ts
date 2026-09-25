@@ -13,9 +13,10 @@ export class IdentityInventory {
   private readonly ambiguousAliases = new Set<string>()
   private readonly counts: Record<string, number> = {}
   private add(name: string, count = 1) { this.counts[name] = (this.counts[name] ?? 0) + count }
-  include(snapshot: { entries: Array<[string, unknown]>; alarm: number | null }) {
-    this.add("objects"); this.add("rows", snapshot.entries.length)
-    if (snapshot.alarm !== null) this.add("alarms")
+  include(snapshot: { entries: Array<[string, unknown]>; alarm: number | null }, firstPage = true) {
+    if (firstPage) this.add("objects")
+    this.add("rows", snapshot.entries.length)
+    if (firstPage && snapshot.alarm !== null) this.add("alarms")
     for (const [key, encoded] of snapshot.entries) {
       const raw = decodeStored(encoded), value = object(raw)
       if (key.startsWith("account:")) {

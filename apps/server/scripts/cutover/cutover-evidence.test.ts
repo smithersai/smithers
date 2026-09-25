@@ -9,6 +9,7 @@ import { CLOUDFLARE_PRODUCERS, save, type ArtifactReference, type CloudflareFenc
 import { classifyDurableObject, emptyCounts, addCounts, orderRows, type DurableDrainObservation, type Disposition, type ChargeRow, type StripeGrant } from "./drain"
 import { reconcileMetering, type MeteringEvidence } from "./metering"
 import { validateCutoverEvidence, type CutoverEvidenceBundle } from "./cutover-evidence"
+import { collectPagedSnapshot } from "./paged"
 
 const keys = await crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["wrapKey", "unwrapKey"]) as CryptoKeyPair
 const publicJwk = await crypto.subtle.exportKey("jwk", keys.publicKey), privateJwk = await crypto.subtle.exportKey("jwk", keys.privateKey)
@@ -20,7 +21,7 @@ const DO: Record<string, Array<{ binding: string; namespaceId: string }>> = {
   "smithers-mvp-web": [{ binding: "TURN_CANCELS", namespaceId: "1".repeat(32) }],
   "smithers-cloud-billing": [{ binding: "ACCOUNTS", namespaceId: "2".repeat(32) }]
 }
-interface Options { marker?: "valid" | "invalid" | "hidden"; captureAt?: number; lateCharge?: boolean; fakeCompleted?: boolean; dropWorker?: string; confirmationDrift?: boolean; dropException?: boolean; dropNamespace?: boolean; tamperSnapshot?: boolean; epoch?: string }
+interface Options { paged?: "valid" | "duplicate" | "truncated" | "reordered" | "unfenced" | "foreign-source" | "foreign-object"; marker?: "valid" | "invalid" | "hidden"; captureAt?: number; lateCharge?: boolean; fakeCompleted?: boolean; dropWorker?: string; confirmationDrift?: boolean; dropException?: boolean; dropNamespace?: boolean; tamperSnapshot?: boolean; epoch?: string }
 
 const build = async (o: Options = {}) => {
   const root = mkdtempSync(join(tmpdir(), "cutover-evidence-")); roots.push(root)
@@ -43,6 +44,30 @@ const build = async (o: Options = {}) => {
   for (const a of fence.authorities) authorities.get(a.worker)!.observedAt = a.observedAt
   const seal = async (worker: string, binding: string, objectId: string, entries: Array<[string, unknown]>, alarm: number | null, cutoverAlarmMarkers: string[]) => {
     const a = authorities.get(worker)!, capturedAt = iso(o.captureAt ?? T + 3000)
+    if (o.paged) {
+      const pageExpected = { migrationId: expected.executionID, binding, objectId: o.paged === "foreign-object" ? "d".repeat(64) : objectId,
+        sourceRevision: "sha256:" + a.sourceArtifactSHA256, sourceVersion: o.paged === "foreign-source" ? randomUUID() : a.sourceVersion,
+        ...o.paged === "unfenced" ? {} : { fence: { ...expected, worker, sourceVersion: a.sourceVersion, sourceArtifactSHA256: a.sourceArtifactSHA256 } } }
+      // Foreign source stays internally coherent but must fail the independent fence's provenance.
+      if (pageExpected.fence) pageExpected.fence.sourceVersion = pageExpected.sourceVersion
+      let index = 0, previousSHA256: string | null = null
+      const scanId = randomUUID()
+      const collected = await collectPagedSnapshot({ directory: root, stem: `${binding}-${objectId}`, expected: pageExpected, privateJwk, fetchPage: async () => {
+        const snapshot = await Effect.runPromise(sealSnapshot({ version: 2, schema: "smithers-do-storage-page/v2", keyVersion: null,
+          migrationId: pageExpected.migrationId, binding, objectId: pageExpected.objectId, sourceRevision: pageExpected.sourceRevision, sourceVersion: pageExpected.sourceVersion, capturedAt,
+          page: { scanId, index, previousSHA256, entriesBefore: index, entriesThrough: index + 1, complete: index === entries.length - 1,
+            consistency: pageExpected.fence ? "object-writers-fenced" : "unfenced", fence: pageExpected.fence ?? null } }, { entries: [entries[index]], alarm, cutoverAlarmMarkers }, publicJwk))
+        previousSHA256 = sha(JSON.stringify(snapshot)); index++
+        return Response.json({ snapshot, cursor: index === entries.length ? null : "test-next" })
+      } })
+      const manifest = collected.archive
+      if (o.paged === "duplicate") manifest.pages.splice(1, 0, manifest.pages[0]!)
+      if (o.paged === "truncated") manifest.pages.pop()
+      if (o.paged === "reordered") manifest.pages.reverse()
+      const bytes = JSON.stringify(manifest)
+      writeFileSync(join(root, collected.file), bytes, { mode: 0o600 })
+      return { path: collected.file, sha256: sha(bytes), binding, objectId, capturedAt, format: "paged" as const }
+    }
     const sealed = await Effect.runPromise(sealSnapshot({ version: 1, schema: "smithers-do-storage/v1", keyVersion: null, migrationId: expected.executionID, binding, objectId,
       sourceRevision: "sha256:" + a.sourceArtifactSHA256, sourceVersion: a.sourceVersion, capturedAt }, { entries, alarm, cutoverAlarmMarkers }, publicJwk))
     const bytes = JSON.stringify(sealed), path = `${binding}-${objectId}.json`
@@ -126,3 +151,16 @@ test("an interrupted-alarm marker is surfaced as alarm-interrupted, never hidden
 })
 test("a drain receipt that omits the sealed alarm marker is refused", () => refusal({ marker: "hidden" }, "CF_DRAIN_RECEIPT_MISMATCH"))
 test("a marker for another object is an invalid row, not a silent pass", () => refusal({ marker: "invalid" }, "CF_DRAIN_INVALID_ROWS"))
+
+test("final acceptance reopens every paged ciphertext, counts an object and its repeated alarm marker once, and reconciles its grants", async () => {
+  const f = await build({ paged: "valid", marker: "valid" })
+  const acceptance = await validateCutoverEvidence(f.root, f.bundle, f.expected, { now: f.now })
+  expect(acceptance.durable).toEqual({ objects: 2, rows: 4, interruptedUnknown: { "active-at-fence": 1, "alarm-interrupted": 1, "open-journal": 1 } })
+  expect(acceptance.metering.charges).toBe(1)
+  const again = await validateCutoverEvidence(f.root, f.bundle, f.expected, { now: f.now })
+  expect(again.durable).toEqual(acceptance.durable)
+  expect(again.metering).toEqual(acceptance.metering)
+})
+for (const [paged, code] of [["duplicate", "DUPLICATE"], ["truncated", "TRUNCATED"], ["reordered", "CHAIN"], ["unfenced", "PROVENANCE"], ["foreign-source", "PROVENANCE"], ["foreign-object", "PROVENANCE"]] as const) {
+  test(`final acceptance refuses paged ${paged} evidence even with an updated outer manifest digest`, () => refusal({ paged }, code))
+}

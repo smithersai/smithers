@@ -16,7 +16,7 @@ import { lstatSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { stable } from "./deployment"
 import { CLOUDFLARE_PRODUCERS, collectCloudflareFence, privateArtifact, requireFence, save, type ArtifactReference, type CloudflareFenceReceipt, type FenceExpected } from "./fence"
-import { addCounts, classifyDurableObject, collectDurableDrain, emptyCounts, openDrainSnapshot, orderRows, readRecipient, type ChargeRow, type Disposition, type DurableDrainObservation, type StripeGrant } from "./drain"
+import { addCounts, classifyDurablePage, collectDurableDrain, emptyCounts, visitDrainSnapshot, orderRows, readRecipient, type ChargeRow, type Disposition, type DurableDrainObservation, type StripeGrant } from "./drain"
 import { collectMeteringEvidence, METERING_QUEUES, METERING_WORKERS, reconcileMetering, type MeteringEvidence, type MeteringReceipt } from "./metering"
 
 export interface CutoverEvidenceBundle extends FenceExpected {
@@ -81,11 +81,12 @@ export const validateCutoverEvidence = async (directory: string, bundle: Cutover
       new Set(d.snapshots.map(s => s.binding + "\0" + s.objectId)).size !== d.snapshots.length || d.snapshots.some(s => !d.namespaces.some(n => n.binding === s.binding))) throw new Error("CF_DRAIN_OBJECT_COVERAGE")
     const counts = emptyCounts(), rows = { dispositions: [] as Disposition[], charges: [] as ChargeRow[], stripeGrants: [] as StripeGrant[] }
     for (const snapshot of d.snapshots) {
-      const opened = await openDrainSnapshot(privateArtifact(root, snapshot).toString(), { executionID: expected.executionID, binding: snapshot.binding, objectId: snapshot.objectId,
-        sourceVersion: a.sourceVersion, sourceArtifactSHA256: a.sourceArtifactSHA256, notBefore: Date.parse(a.observedAt), credentialExpiresAt: recipient.expiresAt }, recipient.privateJwk)
-      if (opened.capturedAt !== snapshot.capturedAt) throw new Error("CF_DRAIN_SNAPSHOT_PROVENANCE")
-      const c = classifyDurableObject(snapshot.binding, snapshot.objectId, opened.payload.entries, opened.payload.alarm, Date.parse(opened.capturedAt), opened.payload.cutoverAlarmMarkers ?? [], worker)
-      addCounts(counts, c.counts); rows.dispositions.push(...c.dispositions); rows.charges.push(...c.charges); rows.stripeGrants.push(...c.stripeGrants)
+      await visitDrainSnapshot(root, snapshot, { executionID: expected.executionID, binding: snapshot.binding, objectId: snapshot.objectId,
+        sourceVersion: a.sourceVersion, sourceArtifactSHA256: a.sourceArtifactSHA256, notBefore: Date.parse(a.observedAt), credentialExpiresAt: recipient.expiresAt },
+        { ...expected, worker, sourceVersion: a.sourceVersion, sourceArtifactSHA256: a.sourceArtifactSHA256 }, recipient.privateJwk, (payload, capturedAt, first) => {
+          const c = classifyDurablePage(snapshot.binding, snapshot.objectId, payload, capturedAt, first, worker)
+          addCounts(counts, c.counts); rows.dispositions.push(...c.dispositions); rows.charges.push(...c.charges); rows.stripeGrants.push(...c.stripeGrants)
+        })
     }
     const recomputed = orderRows(rows)
     if (stable(counts) !== stable(d.counts) || stable(recomputed) !== stable(orderRows(d))) throw new Error("CF_DRAIN_RECEIPT_MISMATCH")

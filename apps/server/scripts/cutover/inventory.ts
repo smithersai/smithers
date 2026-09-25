@@ -10,11 +10,11 @@ export class Inventory {
   private readonly journalOwners = new Set<string>()
   private add(name: string, count = 1) { this.counts[name] = (this.counts[name] ?? 0) + count }
   private owner(value: unknown) { if (typeof value === "string" && value.length > 0) this.logins.add(value) }
-  include(binding: string, snapshot: { entries: Array<[string, unknown]>; alarm: number | null; migrationContext?: { modelVaultKey: string | null } }, capturedAt: string) {
-    this.add("objects")
+  include(binding: string, snapshot: { entries: Array<[string, unknown]>; alarm: number | null; migrationContext?: { modelVaultKey: string | null } }, capturedAt: string, firstPage = true) {
+    if (firstPage) this.add("objects")
     this.add("rows", snapshot.entries.length)
-    if (snapshot.alarm !== null) this.add("alarms")
-    if (!snapshot.entries.length) this.add("emptyObjects")
+    if (firstPage && snapshot.alarm !== null) this.add("alarms")
+    if (firstPage && !snapshot.entries.length) this.add("emptyObjects")
     for (const [key, encoded] of snapshot.entries) {
       const raw = decodeStored(encoded), value = record(raw)
       if (binding === "MODEL_VAULTS" && key === "model-vault:v1") {
