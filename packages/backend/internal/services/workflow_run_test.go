@@ -798,9 +798,7 @@ func TestWorkflowRunService_DispatchForEvent_MatchingPush_CreatesStepAndTask(t *
 	assert.Equal(t, ".smithers/workflows/ci.tsx", payload["workflow_path"])
 	assert.Equal(t, "demo", payload["repo_name"])
 	assert.Equal(t, "testuser", payload["repo_owner"])
-	require.Len(t, mock.updateTokenCalls, 1)
-	assert.True(t, mock.updateTokenCalls[0].AgentTokenHash.Valid)
-	assert.True(t, mock.updateTokenCalls[0].AgentTokenExpiresAt.Valid)
+	assert.Empty(t, mock.updateTokenCalls, "CI dispatch must not mint an orphaned agent token")
 }
 
 func TestWorkflowRunService_DispatchForEvent_IncludesChangeIDInTaskPayload(t *testing.T) {

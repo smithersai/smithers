@@ -133,19 +133,6 @@ func TestWorkflowRun_H_CreateRunForDefinitionBranches(t *testing.T) {
 	})
 	assert.Equal(t, 500, workflowRunAPIStatus(t, err))
 
-	oldRandRead := agentRandRead
-	agentRandRead = func([]byte) (int, error) { return 0, errors.New("entropy failed") }
-	_, err = NewWorkflowRunService(&mockWorkflowRunQuerier{
-		listDefsFn: func(context.Context, db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error) {
-			return []db.WorkflowDefinition{matchingDef}, nil
-		},
-	}).DispatchForEvent(ctx, DispatchForEventInput{
-		RepositoryID: 42,
-		Event:        TriggerEvent{Type: "push", Ref: "main"},
-	})
-	agentRandRead = oldRandRead
-	assert.Equal(t, 500, workflowRunAPIStatus(t, err))
-
 	_, err = NewWorkflowRunService(&mockWorkflowRunQuerier{
 		listDefsFn: func(context.Context, db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error) {
 			return []db.WorkflowDefinition{matchingDef}, nil
@@ -176,19 +163,6 @@ func TestWorkflowRun_H_CreateRunForDefinitionBranches(t *testing.T) {
 		Event:        TriggerEvent{Type: "push", Ref: "main"},
 	})
 	require.NoError(t, err)
-
-	_, err = NewWorkflowRunService(&mockWorkflowRunQuerier{
-		listDefsFn: func(context.Context, db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error) {
-			return []db.WorkflowDefinition{matchingDef}, nil
-		},
-		updateTokenFn: func(context.Context, db.UpdateWorkflowRunAgentTokenParams) (db.WorkflowRun, error) {
-			return db.WorkflowRun{}, errors.New("token failed")
-		},
-	}).DispatchForEvent(ctx, DispatchForEventInput{
-		RepositoryID: 42,
-		Event:        TriggerEvent{Type: "push", Ref: "main"},
-	})
-	assert.Equal(t, 500, workflowRunAPIStatus(t, err))
 
 	// Malformed job configs are rejected up front instead of dispatching a
 	// best-effort run with no steps.

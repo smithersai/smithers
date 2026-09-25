@@ -101,6 +101,11 @@ func (s *workflowAPIService) InvokeWorkflow(ctx context.Context, input InvokeWor
 		dispatchInputs = encoded
 	}
 
+	if s.billing != nil {
+		if err := s.billing.AuthorizeWorkflowDispatch(ctx, input.RepositoryID); err != nil {
+			return nil, err
+		}
+	}
 	run, err := s.queries.CreateWorkflowRun(ctx, db.CreateWorkflowRunParams{
 		RepositoryID:         input.RepositoryID,
 		WorkflowDefinitionID: matched.ID,

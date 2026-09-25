@@ -86,6 +86,16 @@ func issueTemporaryRepoCloneToken(ctx context.Context, store accessTokenStore, u
 	return issueTemporaryRepoToken(ctx, store, userID, name, string(middleware.ScopeReadRepository))
 }
 
+// CI clone credentials are limited to one repository, including when an org
+// owner lends their identity to an org-owned repository's guest.
+func issueTemporaryBoundRepoCloneToken(ctx context.Context, store accessTokenStore, userID, repositoryID int64, name string) (temporaryRepoCloneToken, error) {
+	if repositoryID <= 0 {
+		return temporaryRepoCloneToken{}, fmt.Errorf("bound clone token requires a repository binding")
+	}
+	scopes := string(middleware.ScopeReadRepository) + "," + middleware.RepositoryRestrictionScope(repositoryID)
+	return issueTemporaryRepoToken(ctx, store, userID, name, scopes)
+}
+
 // issueTemporaryRepoPushToken mints a short-lived token that can PUSH (write) to
 // a user's jjhub repos. The github mirror import uses it to push the cloned refs
 // into the freshly-created local repo (a read-only token gets a 403 on push).

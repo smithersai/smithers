@@ -46,11 +46,22 @@ type WorkflowAPIService interface {
 type workflowAPIService struct {
 	queries WorkflowAPIQuerier
 	runner  WorkflowRunService
+	billing BillingPolicy
+}
+
+type WorkflowAPIServiceOption func(*workflowAPIService)
+
+func WithWorkflowAPIBillingPolicy(policy BillingPolicy) WorkflowAPIServiceOption {
+	return func(s *workflowAPIService) { s.billing = policy }
 }
 
 // NewWorkflowAPIService creates a new WorkflowAPIService.
-func NewWorkflowAPIService(queries WorkflowAPIQuerier, runner WorkflowRunService) WorkflowAPIService {
-	return &workflowAPIService{queries: queries, runner: runner}
+func NewWorkflowAPIService(queries WorkflowAPIQuerier, runner WorkflowRunService, opts ...WorkflowAPIServiceOption) WorkflowAPIService {
+	s := &workflowAPIService{queries: queries, runner: runner}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // listWorkflowDefinitionsBatchSize is the DB page size used when scanning

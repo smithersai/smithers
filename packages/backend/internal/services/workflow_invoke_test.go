@@ -76,6 +76,25 @@ func TestInvokeWorkflowCreatesSandboxPlaneRun(t *testing.T) {
 	assert.JSONEq(t, `{"goal":"hello"}`, string(captured.DispatchInputs))
 }
 
+func TestInvokeWorkflowBillingDeniedCreatesNoRun(t *testing.T) {
+	policy := &denyWorkflowDispatchBillingPolicy{}
+	created := false
+	querier := &mockWorkflowAPIQuerier{
+		listDefsByRepoFn: func(context.Context, db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error) {
+			return []db.WorkflowDefinition{invokeTestDefinition(11, "echo", ".smithers/workflows/echo.tsx", true)}, nil
+		},
+		createWorkflowRunFn: func(context.Context, db.CreateWorkflowRunParams) (db.WorkflowRun, error) {
+			created = true
+			return db.WorkflowRun{}, nil
+		},
+	}
+	svc := NewWorkflowAPIService(querier, nil, WithWorkflowAPIBillingPolicy(policy))
+	_, err := svc.InvokeWorkflow(context.Background(), InvokeWorkflowInput{RepositoryID: 7, Identifier: "echo"})
+	require.Error(t, err)
+	assert.Equal(t, 1, policy.dispatchCalls)
+	assert.False(t, created, "billing refusal must precede run creation")
+}
+
 func TestInvokeWorkflowMatchesPathAndBasename(t *testing.T) {
 	defs := []db.WorkflowDefinition{invokeTestDefinition(11, "echo", ".smithers/workflows/echo.tsx", true)}
 	for _, identifier := range []string{".smithers/workflows/echo.tsx", "Echo"} {

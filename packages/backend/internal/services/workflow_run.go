@@ -227,9 +227,6 @@ type WorkflowRunResult struct {
 	WorkflowDefinitionID int64
 	WorkflowRunID        int64
 	Steps                []WorkflowStepResult
-	// AgentToken is the plaintext agent token for this run, populated only at
-	// dispatch time. Only the hash is stored in the DB — never the plaintext.
-	AgentToken string
 	// pendingCommitStatus is created in the same transaction as the run and its
 	// tasks, then published only after that transaction commits.
 	pendingCommitStatus *db.CommitStatus
@@ -595,11 +592,6 @@ func (s *workflowRunService) createRunForDefinition(
 		dispatchInputs, _ = json.Marshal(input.Event.Inputs)
 	}
 
-	plaintextAgentToken, tokenHash, err := generateAgentToken()
-	if err != nil {
-		return WorkflowRunResult{}, pkgerrors.Internal("failed to generate workflow run agent token").WithCause(err)
-	}
-
 	executionPlane := ResolveCIExecutionPlane(ctx, s.repoFileProbe, s.environmentImages, CIExecutionPlaneInput{
 		RepositoryID: input.RepositoryID,
 		Owner:        repoOwner,
@@ -615,7 +607,7 @@ func (s *workflowRunService) createRunForDefinition(
 	var run db.WorkflowRun
 	if transactional {
 		defer func() { _ = tx.Rollback(context.Background()) }()
-		result, run, err = createWorkflowRunRows(ctx, txQueries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, tokenHash, plaintextAgentToken, s.commitStatusWriter != nil, executionPlane)
+		result, run, err = createWorkflowRunRows(ctx, txQueries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, s.commitStatusWriter != nil, executionPlane)
 		if err != nil {
 			return WorkflowRunResult{}, err
 		}
@@ -623,7 +615,7 @@ func (s *workflowRunService) createRunForDefinition(
 			return WorkflowRunResult{}, pkgerrors.Internal("failed to commit workflow run").WithCause(err)
 		}
 	} else {
-		result, run, err = createWorkflowRunRows(ctx, s.queries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, tokenHash, plaintextAgentToken, s.commitStatusWriter != nil, executionPlane)
+		result, run, err = createWorkflowRunRows(ctx, s.queries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, s.commitStatusWriter != nil, executionPlane)
 		if err != nil {
 			if result.WorkflowRunID > 0 {
 				abortWorkflowRunDispatch(ctx, s.queries, result.WorkflowRunID)
@@ -837,11 +829,10 @@ func createWorkflowRunRows(
 	repoOwner, triggerRef, resolvedBookmark string,
 	dispatchInputs []byte,
 	jobs []preparedWorkflowJob,
-	tokenHash, plaintextAgentToken string,
 	createPendingCommitStatus bool,
 	executionPlane string,
 ) (WorkflowRunResult, db.WorkflowRun, error) {
-	result := WorkflowRunResult{WorkflowDefinitionID: def.ID, AgentToken: plaintextAgentToken}
+	result := WorkflowRunResult{WorkflowDefinitionID: def.ID}
 	run, err := queries.CreateWorkflowRun(ctx, db.CreateWorkflowRunParams{
 		RepositoryID:         input.RepositoryID,
 		WorkflowDefinitionID: def.ID,
@@ -881,17 +872,6 @@ func createWorkflowRunRows(
 			return result, run, pkgerrors.Internal(fmt.Sprintf(
 				"failed to bind alert remediation workflow run: rows_affected=%d: %v", rowsAffected, bindErr))
 		}
-	}
-
-	if _, err := queries.UpdateWorkflowRunAgentToken(ctx, db.UpdateWorkflowRunAgentTokenParams{
-		AgentTokenHash: pgtype.Text{String: tokenHash, Valid: true},
-		AgentTokenExpiresAt: pgtype.Timestamptz{
-			Time:  time.Now().Add(24 * time.Hour),
-			Valid: true,
-		},
-		ID: run.ID,
-	}); err != nil {
-		return result, run, pkgerrors.Internal(fmt.Sprintf("failed to store workflow run agent token: %v", err))
 	}
 
 	jobHasNeeds := make(map[string]bool, len(jobs))

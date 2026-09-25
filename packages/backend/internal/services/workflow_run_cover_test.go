@@ -208,24 +208,6 @@ func TestWorkflowRun_Cov_RepositoryResolutionCancelAndRerunErrors(t *testing.T) 
 		assert.Empty(t, svc.resolveRepoOwner(ctx, db.Repository{}))
 	})
 
-	t.Run("dispatch maps token storage failure", func(t *testing.T) {
-		q := &mockWorkflowRunQuerier{
-			listDefsFn: func(context.Context, db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error) {
-				return []db.WorkflowDefinition{
-					makeWorkflowDef(1, 42, "ci", true, `{"on":{"push":{}},"jobs":{"build":{}}}`),
-				}, nil
-			},
-			updateTokenFn: func(context.Context, db.UpdateWorkflowRunAgentTokenParams) (db.WorkflowRun, error) {
-				return db.WorkflowRun{}, errors.New("token write failed")
-			},
-		}
-		_, err := NewWorkflowRunService(q).DispatchForEvent(ctx, DispatchForEventInput{
-			RepositoryID: 42,
-			Event:        TriggerEvent{Type: "push", Ref: "main"},
-		})
-		assert.Equal(t, 500, workflowRunAPIStatus(t, err))
-	})
-
 	t.Run("cancel maps task cancellation failure and records metrics", func(t *testing.T) {
 		q := &mockWorkflowRunQuerier{
 			getRunFn: func(_ context.Context, arg db.GetWorkflowRunParams) (db.WorkflowRun, error) {

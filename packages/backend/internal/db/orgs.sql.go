@@ -407,6 +407,30 @@ func (q *Queries) GetOrgByLowerName(ctx context.Context, lowerName string) (Orga
 	return i, err
 }
 
+const getOrgCredentialOwnerID = `-- name: GetOrgCredentialOwnerID :one
+SELECT om.user_id
+FROM org_members om
+JOIN users u ON u.id = om.user_id
+WHERE om.organization_id = $1
+  AND om.role = 'owner'
+  AND u.is_active = true
+  AND u.prohibit_login = false
+  AND u.deleted_at IS NULL
+ORDER BY om.user_id ASC
+LIMIT 1
+`
+
+// Picks a stable owner of the organization whose tokens authenticate (see
+// GetAuthInfoByTokenHash). Access tokens need a user, so platform-minted,
+// repository-bound credentials for org-owned repositories (sandbox-plane CI
+// clones) are issued under this owner.
+func (q *Queries) GetOrgCredentialOwnerID(ctx context.Context, organizationID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, getOrgCredentialOwnerID, organizationID)
+	var user_id int64
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const getOrgMember = `-- name: GetOrgMember :one
 SELECT id, organization_id, user_id, role, created_at, updated_at
 FROM org_members

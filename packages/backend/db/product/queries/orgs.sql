@@ -244,6 +244,22 @@ SELECT COUNT(*)
 FROM org_members
 WHERE organization_id = $1 AND role = 'owner';
 
+-- name: GetOrgCredentialOwnerID :one
+-- Picks a stable owner of the organization whose tokens authenticate (see
+-- GetAuthInfoByTokenHash). Access tokens need a user, so platform-minted,
+-- repository-bound credentials for org-owned repositories (sandbox-plane CI
+-- clones) are issued under this owner.
+SELECT om.user_id
+FROM org_members om
+JOIN users u ON u.id = om.user_id
+WHERE om.organization_id = $1
+  AND om.role = 'owner'
+  AND u.is_active = true
+  AND u.prohibit_login = false
+  AND u.deleted_at IS NULL
+ORDER BY om.user_id ASC
+LIMIT 1;
+
 -- name: ListAllOrgs :many
 SELECT *
 FROM organizations
