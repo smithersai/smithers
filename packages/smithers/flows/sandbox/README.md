@@ -49,6 +49,8 @@ Every namespace below is also its own import subpath.
 | `SandboxHealth`             | `@smthrs/sandbox/SandboxHealth`             | Sandbox health-check contracts.                                           |
 | `SandboxSupervision`        | `@smthrs/sandbox/SandboxSupervision`        | Heartbeat supervision over a remote sandbox session.                      |
 
+`DirectorySandbox` requires `sh` on `PATH`, including on Windows.
+
 Opening a provider is scoped, so interruption closes the layer scope and runs
 the provider's cancellation finalizer. No `AbortSignal` crosses this seam.
 `Provider.kill` and `Provider.ping` are optional: a provider that implements

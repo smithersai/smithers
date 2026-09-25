@@ -15,7 +15,7 @@ import {
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { isAbsolute, join } from "node:path"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
@@ -145,7 +145,7 @@ const fakeSdk = (faults: Faults = {}): { readonly sdk: Sdk; readonly recorded: R
   })
   // Relative paths resolve the way the vendor documents them: "Defaults to
   // writing to /vercel/sandbox unless an absolute path is specified."
-  const resolve = (path: string): string => path.startsWith("/") ? path : join(home, path)
+  const resolve = (path: string): string => isAbsolute(path) ? path : join(home, path)
   const instance = (machine: { readonly name: string; running: boolean }): VendorSandbox => ({
     name: machine.name,
     runCommand: async (request) => {

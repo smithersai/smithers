@@ -372,7 +372,7 @@ const limitedGuest = (options: {
               ),
             spawn: (command) =>
               Effect.sync(() => {
-                const child = spawnSync("/bin/sh", ["-c", command], { cwd: workdir })
+                const child = spawnSync("sh", ["-c", command], { cwd: workdir })
                 return {
                   stdout: Stream.succeed(child.stdout),
                   stderr: Stream.succeed(child.stderr),

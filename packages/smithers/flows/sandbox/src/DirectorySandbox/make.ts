@@ -45,7 +45,7 @@ const failure = providerFailure
  *
  * `acquire` creates one scratch directory per session key and serves the
  * session contract from it: `spawn` runs the command line through the host
- * spawner's shell with the directory as its default working directory — a
+ * spawner's `sh` shell with the directory as its default working directory — a
  * relative `cwd` is taken under it, the caller's `env` extends a narrow host
  * bootstrap environment, and `stdin` bytes become the command's whole standard
  * input — file transfer is the host filesystem, `kill` delegates to the
@@ -98,7 +98,8 @@ export const make = (options: DirectorySandboxOptions): Provider => ({
         spawn: Effect.fnUntraced(function*(command, spawnOptions) {
           yield* checkEnvironmentNames(spawnOptions.env)
           const settings: ChildProcess.CommandOptions = {
-            shell: true,
+            // Sessions use POSIX command and probe syntax on every host.
+            shell: "sh",
             cwd: resolve(spawnOptions.cwd ?? ""),
             env: ChildProcessEnvironment.make(globalThis.process.env, spawnOptions.env),
             extendEnv: false,
