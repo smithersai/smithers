@@ -569,7 +569,12 @@ const snapshot = (
 ): Effect.Effect<ReadonlyMap<string, Fingerprint>, SandboxedFlowError> =>
   Effect.gen(function*() {
     const listed = yield* files.readDirectory(workdir, { recursive: true }).pipe(Effect.mapError(unlistable))
-    const entries = listed.filter((entry) => entry !== controlDirectory && !entry.startsWith(`${controlDirectory}/`))
+    // Native Windows listings use backslashes. Normalize that guest dialect
+    // before excluding protocol files or exposing workspace-relative diffs.
+    // Backslashes in a POSIX guest remain literal filename characters.
+    const windows = /^(?:[A-Za-z]:[\\/]|\\\\)/.test(workdir)
+    const relative = windows ? listed.map((entry) => entry.replace(/\\/g, "/")) : listed
+    const entries = relative.filter((entry) => entry !== controlDirectory && !entry.startsWith(`${controlDirectory}/`))
     let over = 0
     const measure = (entry: string): Effect.Effect<Fingerprint | undefined, SandboxedFlowError> =>
       Effect.flatMap(files.stat(entry).pipe(Effect.mapError(unlistable)), (info) => {

@@ -475,6 +475,60 @@ const limitedGuest = (options: {
     return { provider: wrapped, reads, streamed, walk }
   })
 
+describe("native Windows sandbox diff paths", () => {
+  for (const workdir of ["C:/workspace", "\\\\server\\share\\workspace"]) {
+    it.live(`excludes protocol files and returns portable diffs for ${workdir}`, () =>
+      Effect.gen(function*() {
+        const guest = yield* limitedGuest({ files: ["ok"] })
+        const windows: Sandbox.Provider = {
+          acquire: (key) => Effect.map(guest.provider.acquire(key), (session): Sandbox.Session => {
+            const prefix = workdir.replace(/\\/g, "/")
+            const local = (path: string): string => {
+              const normalized = path.replace(/\\/g, "/")
+              return normalized.startsWith(prefix) ? `${session.workdir}${normalized.slice(prefix.length)}` : path
+            }
+            return {
+              ...session,
+              workdir,
+              writeFile: (path, bytes) => session.writeFile(local(path), bytes),
+              readFile: (path) => session.readFile(local(path)),
+              files: {
+                ...session.files,
+                stat: (path) => session.files!.stat!(local(path)),
+                remove: (path, options) => session.files!.remove!(local(path), options),
+                stream: (path, options) => session.files!.stream!(local(path), options),
+                readDirectory: (path, options) => session.files!.readDirectory!(local(path), options).pipe(
+                  Effect.map((entries) => entries.map((entry) => entry.replace(/[\\/]/g, "\\")))
+                )
+              },
+              spawn: (command, options) => session.spawn(command, {
+                ...options,
+                ...(options.env === undefined ? {} : { env: {
+                  ...options.env,
+                  SMITHERS_SANDBOX_RESULT_PATH: local(options.env.SMITHERS_SANDBOX_RESULT_PATH!)
+                } })
+              }).pipe(Effect.tap(() => session.writeFile(
+                `${session.workdir}/nested/result.txt`, new TextEncoder().encode("hi")
+              )))
+            }
+          })
+        }
+        const result = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+          provider: windows,
+          session: "windows-diff",
+          entry: pure,
+          collectDiff: true,
+          limits: { files: 2, diffBytes: 4 }
+        })
+        expect(result.diff.map(({ path, bytes }) => ({ path, text: new TextDecoder().decode(bytes) }))).toEqual([
+          { path: "file-0", text: "ok" },
+          { path: "nested/result.txt", text: "hi" }
+        ])
+        expect(result.deleted).toEqual([])
+      }), 60_000)
+  }
+})
+
 describe("sandbox limit boundaries", () => {
   const resultSize = (output: string) =>
     new TextEncoder().encode(JSON.stringify({
