@@ -126,10 +126,13 @@ type fakeMythicalLanes struct {
 	owned   map[string]bool
 }
 
-func (l *fakeMythicalLanes) Create(_ context.Context, _ db.Repository, _ string, _ int64, name string) (string, error) {
+func (l *fakeMythicalLanes) Create(_ context.Context, _ db.Repository, _ string, _ int64, name string, bind func(string) error) (string, error) {
+	id := uuid.NewString()
+	if err := bind(id); err != nil {
+		return "", err
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	id := uuid.NewString()
 	l.created = append(l.created, id)
 	return id, nil
 }
@@ -493,6 +496,25 @@ func TestMythicalItemsSurviveFailuresAndStayBound(t *testing.T) {
 	require.Equal(t, "running", item.State, item.Reason)
 	require.Len(t, o.launcher.requests, 1)
 	assert.Len(t, o.lanes.created, 1, "the bound lane is found again, never duplicated")
+
+	// A lane the sweep retired while its launch kept failing never strands
+	// the item: the next attempt binds the next name in the series.
+	_, err := o.pool.Exec(ctx, `UPDATE mythical_lanes SET retired_at = NOW() WHERE workspace_id = $1`, item.WorkspaceID)
+	require.NoError(t, err)
+	_, err = o.pool.Exec(ctx, `UPDATE mythical_items SET state = 'queued', workspace_id = '', generation = generation - 1, attempt = attempt - 1,
+		version = version + 1 WHERE id = $1`, item.ID)
+	require.NoError(t, err)
+	o.launcher.mu.Lock()
+	o.launcher.requests = nil
+	o.launcher.mu.Unlock()
+	o.wake()
+	item = o.item(21)
+	require.Equal(t, "running", item.State, item.Reason)
+	require.Len(t, o.lanes.created, 2)
+	rebound, err := db.New(o.pool).GetMythicalLane(ctx, item.WorkspaceID)
+	require.NoError(t, err)
+	assert.True(t, strings.HasSuffix(rebound.Name, " r1"), rebound.Name)
+	require.Len(t, o.launcher.requests, 1)
 	var payload struct {
 		Prompt string `json:"prompt"`
 	}

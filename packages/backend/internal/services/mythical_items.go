@@ -67,7 +67,9 @@ type mythicalLauncher interface {
 // unbound workspace; Delete of an absent workspace succeeds. Owned reports a
 // live workspace of the user's in the repository.
 type mythicalLanes interface {
-	Create(ctx context.Context, repository db.Repository, owner string, actorUserID int64, name string) (string, error)
+	// Create records the workspace, calls bind with its ID, and provisions it
+	// only after bind succeeds; a failed bind deletes the record.
+	Create(ctx context.Context, repository db.Repository, owner string, actorUserID int64, name string, bind func(workspaceID string) error) (string, error)
 	Delete(ctx context.Context, repositoryID, actorUserID int64, workspaceID string) error
 	Owned(ctx context.Context, repositoryID, userID int64, workspaceID string) (bool, error)
 }
@@ -898,44 +900,56 @@ func (st *mythicalItemStep) commit(ctx context.Context, item db.MythicalItem, ph
 }
 
 // lane answers the item's bound workspace of this name, provisioning and
-// binding one the first time. Names carry the generation, so a binding is
-// never reused across attempts. A workspace that lost the binding race is
-// deleted; one whose binding outcome is unknown is left to the sweep only if
-// it was bound, and deleted if it provably was not.
+// binding one the first time. A retired binding is history: the next name in
+// the series is used, so a swept lane never strands its item. The binding is
+// recorded before the workspace is provisioned, so only a crash between the
+// two inserts can leave an unbound, unprovisioned workspace row.
 func (st *mythicalItemStep) lane(ctx context.Context, item db.MythicalItem, name string) (string, error) {
 	s, r := st.s, st.r
 	q := s.queries()
-	bound, err := q.GetMythicalLaneByName(ctx, item.ID, name)
-	switch {
-	case err == nil && bound.RetiredAt.Valid:
-		return "", errors.New("the lane " + name + " was retired")
-	case err == nil:
-		return bound.WorkspaceID, nil
-	case !errors.Is(err, pgx.ErrNoRows):
-		return "", err
-	}
-	repository, owner, err := s.repository(ctx, r.row.RepositoryID)
-	if err != nil {
-		return "", err
-	}
-	actor := r.row.ActorUserID.Int64
-	workspaceID, err := s.lanes.Create(ctx, repository, owner, actor, name)
-	if err != nil {
-		return "", err
-	}
-	bound, inserted, err := q.BindMythicalLane(ctx, db.MythicalLane{WorkspaceID: workspaceID, RepositoryID: r.row.RepositoryID,
-		ItemID: item.ID, Name: name})
-	if err != nil {
-		if _, lookup := q.GetMythicalLane(ctx, workspaceID); errors.Is(lookup, pgx.ErrNoRows) {
-			_ = s.lanes.Delete(ctx, r.row.RepositoryID, actor, workspaceID)
+	for k := 0; k < 16; k++ {
+		candidate := name
+		if k > 0 {
+			candidate = fmt.Sprintf("%s r%d", name, k)
 		}
-		return "", err
+		bound, err := q.GetMythicalLaneByName(ctx, item.ID, candidate)
+		switch {
+		case err == nil && bound.RetiredAt.Valid:
+			continue
+		case err == nil:
+			return bound.WorkspaceID, nil
+		case !errors.Is(err, pgx.ErrNoRows):
+			return "", err
+		}
+		repository, owner, err := s.repository(ctx, r.row.RepositoryID)
+		if err != nil {
+			return "", err
+		}
+		var winner db.MythicalLane
+		workspaceID, err := s.lanes.Create(ctx, repository, owner, r.row.ActorUserID.Int64, candidate, func(workspaceID string) error {
+			lane, inserted, err := q.BindMythicalLane(ctx, db.MythicalLane{WorkspaceID: workspaceID, RepositoryID: r.row.RepositoryID,
+				ItemID: item.ID, Name: candidate})
+			if err != nil {
+				return err
+			}
+			if !inserted {
+				winner = lane
+				return errMythicalLaneTaken
+			}
+			return nil
+		})
+		if errors.Is(err, errMythicalLaneTaken) {
+			if winner.RetiredAt.Valid {
+				continue
+			}
+			return winner.WorkspaceID, nil
+		}
+		return workspaceID, err
 	}
-	if !inserted {
-		_ = s.lanes.Delete(ctx, r.row.RepositoryID, actor, workspaceID)
-	}
-	return bound.WorkspaceID, nil
+	return "", errors.New("the lane " + name + " was retired too many times")
 }
+
+var errMythicalLaneTaken = errors.New("another claimant bound this lane first")
 
 // retireLane deletes a workspace the stack bound as a lane and records it;
 // a workspace the stack never bound is never deleted.
@@ -1501,12 +1515,16 @@ func NewWorkspaceMythicalLanes(workspaces *WorkspaceService) *workspaceMythicalL
 	return &workspaceMythicalLanes{workspaces: workspaces}
 }
 
-func (l *workspaceMythicalLanes) Create(ctx context.Context, repository db.Repository, owner string, actorUserID int64, name string) (string, error) {
+func (l *workspaceMythicalLanes) Create(ctx context.Context, repository db.Repository, owner string, actorUserID int64, name string, bind func(string) error) (string, error) {
 	if l == nil || l.workspaces == nil || l.workspaces.q == nil {
 		return "", pkgerrors.Internal("workspaces are unavailable")
 	}
 	workspace, err := l.workspaces.createDerivedWorkspaceForBookmark(ctx, repository.ID, actorUserID, name, MythicalBookmark, workspaceCreateMetadata{})
 	if err != nil {
+		return "", err
+	}
+	if err := bind(workspace.ID); err != nil {
+		_ = l.workspaces.DeleteWorkspace(context.WithoutCancel(ctx), workspace.ID, repository.ID, actorUserID)
 		return "", err
 	}
 	l.workspaces.provisionWorkspaceAsync(ctx, workspace, CreateWorkspaceSessionInput{RepositoryID: repository.ID, UserID: actorUserID,
