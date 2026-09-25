@@ -142,6 +142,35 @@ func TestPollQueue_SkipsLockedRows(t *testing.T) {
 	assert.Equal(t, int32(1), secondAttempts)
 }
 
+// A backlog for one webhook must not monopolize a claim: the claim takes the
+// oldest due delivery of every webhook before a second delivery of any one
+// webhook, so a burst to a slow receiver cannot starve other tenants.
+func TestPollQueue_ClaimsRoundRobinAcrossWebhooks(t *testing.T) {
+	q, pool := newWebhookQueries(t)
+
+	ownerID := mustCreateWebhookUser(t, pool, "fair-owner")
+	repoID := mustCreateWebhookRepo(t, pool, ownerID, "fair-repo")
+	burstWebhookID := mustCreateWebhook(t, q, repoID)
+	otherWebhookID := mustCreateWebhook(t, q, repoID)
+	thirdWebhookID := mustCreateWebhook(t, q, repoID)
+
+	burst := make([]db.WebhookDelivery, 0, 5)
+	for i := 0; i < 5; i++ {
+		burst = append(burst, mustCreateDelivery(t, q, burstWebhookID))
+	}
+	other := mustCreateDelivery(t, q, otherWebhookID)
+	third := mustCreateDelivery(t, q, thirdWebhookID)
+
+	tasks, err := PollQueue(context.Background(), q, 4)
+	require.NoError(t, err)
+
+	claimed := make([]int64, 0, len(tasks))
+	for _, task := range tasks {
+		claimed = append(claimed, task.Delivery.ID)
+	}
+	assert.ElementsMatch(t, []int64{burst[0].ID, burst[1].ID, other.ID, third.ID}, claimed)
+}
+
 func TestUpdateTaskStatus_SetsRetryAndFinalFailure(t *testing.T) {
 	q, pool := newWebhookQueries(t)
 	ctx := context.Background()

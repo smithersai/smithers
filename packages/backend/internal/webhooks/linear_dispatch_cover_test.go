@@ -10,7 +10,7 @@ import (
 )
 
 // linearCoverInner is a controllable inner Dispatcher used to verify delegation
-// and error propagation in linearDispatcher.
+// and error propagation in LinearDispatcher.
 type linearCoverInner struct {
 	dispatchErr    error
 	dispatchOrgErr error

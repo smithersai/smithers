@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -91,13 +92,17 @@ func (w *Worker) pollOnceRecovering(ctx context.Context) (err error) {
 	return w.PollOnce(ctx)
 }
 
-// PollOnce claims due deliveries and processes them.
+// PollOnce claims due deliveries and delivers them concurrently. The claim
+// limit bounds the batch, so it also bounds the number of requests in flight.
+// Delivering the batch in parallel keeps one slow or black-holed receiver
+// from holding every other webhook in the batch behind its HTTP timeout.
 func (w *Worker) PollOnce(ctx context.Context) error {
 	tasks, err := PollQueue(ctx, w.store, w.limit)
 	if err != nil {
 		return fmt.Errorf("poll webhook queue: %w", err)
 	}
 
+	var wg sync.WaitGroup
 	for _, task := range tasks {
 		if !task.Webhook.IsActive {
 			// Inactive webhooks should fail terminally instead of requeueing.
@@ -110,8 +115,22 @@ func (w *Worker) PollOnce(ctx context.Context) error {
 			continue
 		}
 
-		w.processTask(ctx, task)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					w.logger.Error("webhook delivery panicked",
+						"delivery_id", task.Delivery.ID,
+						"webhook_id", task.Webhook.ID,
+						"panic", r,
+					)
+				}
+			}()
+			w.processTask(ctx, task)
+		}()
 	}
+	wg.Wait()
 
 	return nil
 }

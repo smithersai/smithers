@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +23,9 @@ type workerMockStore struct {
 	listStatusFn   func(ctx context.Context, webhookID int64) ([]string, error)
 	setActiveFn    func(ctx context.Context, arg db.SetWebhookActiveParams) error
 
+	// mu guards the call records: the worker delivers a claimed batch
+	// concurrently, so result/retry/disable writes arrive from many goroutines.
+	mu             sync.Mutex
 	claimCallCount int
 	resultCalls    []db.UpdateWebhookDeliveryResultParams
 	retryCalls     []db.UpdateWebhookDeliveryRetryParams
@@ -29,7 +33,9 @@ type workerMockStore struct {
 }
 
 func (m *workerMockStore) ClaimDueWebhookDeliveries(ctx context.Context, limit int32) ([]db.WebhookDelivery, error) {
+	m.mu.Lock()
 	m.claimCallCount++
+	m.mu.Unlock()
 	if m.claimFn != nil {
 		return m.claimFn(ctx, limit)
 	}
@@ -44,7 +50,9 @@ func (m *workerMockStore) ListWebhooksByIDs(ctx context.Context, ids []int64) ([
 }
 
 func (m *workerMockStore) UpdateWebhookDeliveryResult(ctx context.Context, arg db.UpdateWebhookDeliveryResultParams) error {
+	m.mu.Lock()
 	m.resultCalls = append(m.resultCalls, arg)
+	m.mu.Unlock()
 	if m.updateResultFn != nil {
 		return m.updateResultFn(ctx, arg)
 	}
@@ -52,7 +60,9 @@ func (m *workerMockStore) UpdateWebhookDeliveryResult(ctx context.Context, arg d
 }
 
 func (m *workerMockStore) UpdateWebhookDeliveryRetry(ctx context.Context, arg db.UpdateWebhookDeliveryRetryParams) error {
+	m.mu.Lock()
 	m.retryCalls = append(m.retryCalls, arg)
+	m.mu.Unlock()
 	if m.updateRetryFn != nil {
 		return m.updateRetryFn(ctx, arg)
 	}
@@ -67,7 +77,9 @@ func (m *workerMockStore) ListRecentWebhookDeliveryStatuses(ctx context.Context,
 }
 
 func (m *workerMockStore) SetWebhookActive(ctx context.Context, arg db.SetWebhookActiveParams) error {
+	m.mu.Lock()
 	m.setActiveCalls = append(m.setActiveCalls, arg)
+	m.mu.Unlock()
 	if m.setActiveFn != nil {
 		return m.setActiveFn(ctx, arg)
 	}
@@ -229,6 +241,52 @@ func TestWorker_PollOnce_MultipleTasks_ProcessesAll(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, store.resultCalls, 3)
+}
+
+// A slow receiver must not hold up another webhook's delivery in the same
+// claimed batch. The slow receiver answers 200 only if the fast webhook's
+// delivery reaches its server while the slow request is still open, which
+// can only happen when the batch is delivered concurrently.
+func TestWorker_PollOnce_SlowReceiverDoesNotBlockOtherWebhooks(t *testing.T) {
+	fastArrived := make(chan struct{})
+	fast := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(fastArrived)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer fast.Close()
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-fastArrived:
+			w.WriteHeader(http.StatusOK)
+		case <-time.After(2 * time.Second):
+			w.WriteHeader(http.StatusGatewayTimeout)
+		}
+	}))
+	defer slow.Close()
+
+	store := &workerMockStore{
+		claimFn: func(ctx context.Context, limit int32) ([]db.WebhookDelivery, error) {
+			return []db.WebhookDelivery{
+				{ID: 1, WebhookID: 1, Attempts: 1, EventType: "test_event", Payload: []byte(`{}`)},
+				{ID: 2, WebhookID: 2, Attempts: 1, EventType: "test_event", Payload: []byte(`{}`)},
+			}, nil
+		},
+		listWebhooksFn: func(ctx context.Context, ids []int64) ([]db.Webhook, error) {
+			return []db.Webhook{
+				{ID: 1, Url: slow.URL, IsActive: true},
+				{ID: 2, Url: fast.URL, IsActive: true},
+			}, nil
+		},
+	}
+
+	worker := NewWorker(store, http.DefaultClient, NoopSecretCodec{})
+	require.NoError(t, worker.PollOnce(context.Background()))
+
+	require.Empty(t, store.retryCalls, "the slow receiver timed out waiting for the other webhook's delivery")
+	require.Len(t, store.resultCalls, 2)
+	for _, call := range store.resultCalls {
+		assert.Equal(t, "success", call.Status, "delivery %d", call.ID)
+	}
 }
 
 func TestWorker_PollOnce_SkipsInactiveWebhook(t *testing.T) {
