@@ -131,7 +131,7 @@ func TestLocalTarRoundTrip(t *testing.T) {
 		t.Fatalf("writeLocalTar = %#v, %v", stats, err)
 	}
 	dest := t.TempDir()
-	stats, err = readLocalTar(bytes.NewReader(archive.Bytes()), dest)
+	stats, err = readLocalTar(bytes.NewReader(archive.Bytes()), dest, "")
 	if err != nil || stats.Files != 3 {
 		t.Fatalf("readLocalTar = %#v, %v", stats, err)
 	}
@@ -156,7 +156,7 @@ func TestLocalTarRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest = t.TempDir()
-	if _, err := readLocalTar(bytes.NewReader(archive.Bytes()), dest); err != nil {
+	if _, err := readLocalTar(bytes.NewReader(archive.Bytes()), dest, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "solve.sh")); err != nil {
@@ -169,7 +169,7 @@ func TestLocalTarRoundTrip(t *testing.T) {
 		t.Fatalf("single file = %#v, %v", stats, err)
 	}
 	dest = t.TempDir()
-	if _, err := readLocalTar(bytes.NewReader(archive.Bytes()), dest); err != nil {
+	if _, err := readLocalTar(bytes.NewReader(archive.Bytes()), dest, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "renamed.sh")); err != nil {
@@ -185,7 +185,7 @@ func TestLocalTarRoundTrip(t *testing.T) {
 	if _, err := writeLocalTar(&evil, filepath.Join(evilDir, "f"), "../escape"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readLocalTar(bytes.NewReader(evil.Bytes()), t.TempDir()); err == nil || !strings.Contains(err.Error(), "escapes") {
+	if _, err := readLocalTar(bytes.NewReader(evil.Bytes()), t.TempDir(), ""); err == nil || !strings.Contains(err.Error(), "escapes") {
 		t.Fatalf("traversal accepted: %v", err)
 	}
 }
@@ -361,5 +361,135 @@ func TestRunWorkspaceCopy_DownloadRefusesWritesThroughEscapingSymlinks(t *testin
 				t.Fatalf("archive wrote outside the destination: %v (copy err %v)", statErr, err)
 			}
 		})
+	}
+}
+
+func tarOf(t *testing.T, headers ...*tar.Header) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, h := range headers {
+		if err := tw.WriteHeader(h); err != nil {
+			t.Fatal(err)
+		}
+		if h.Typeflag == tar.TypeReg {
+			if _, err := tw.Write(make([]byte, h.Size)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestReadLocalTarRefusesEntriesOutsideTheRequestedRoot(t *testing.T) {
+	dest := t.TempDir()
+	archive := tarOf(t,
+		&tar.Header{Name: "foo/a", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1},
+		&tar.Header{Name: "sibling", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1},
+	)
+	if _, err := readLocalTar(bytes.NewReader(archive), dest, "foo"); err == nil || !strings.Contains(err.Error(), "outside the requested") {
+		t.Fatalf("sibling entry accepted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "sibling")); !os.IsNotExist(err) {
+		t.Fatalf("sibling written: %v", err)
+	}
+}
+
+func TestReadLocalTarExtractsConfinedHardLinks(t *testing.T) {
+	dest := t.TempDir()
+	archive := tarOf(t,
+		&tar.Header{Name: "foo/a", Typeflag: tar.TypeReg, Mode: 0o644, Size: 3},
+		&tar.Header{Name: "foo/b", Typeflag: tar.TypeLink, Linkname: "foo/a"},
+	)
+	stats, err := readLocalTar(bytes.NewReader(archive), dest, "foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Files != 2 {
+		t.Fatalf("files = %d, want 2", stats.Files)
+	}
+	a, _ := os.Stat(filepath.Join(dest, "foo", "a"))
+	b, err := os.Stat(filepath.Join(dest, "foo", "b"))
+	if err != nil || !os.SameFile(a, b) {
+		t.Fatalf("hard link not extracted: %v", err)
+	}
+	escape := tarOf(t, &tar.Header{Name: "foo/c", Typeflag: tar.TypeLink, Linkname: "../outside"})
+	if _, err := readLocalTar(bytes.NewReader(escape), t.TempDir(), "foo"); err == nil || !strings.Contains(err.Error(), "escapes") {
+		t.Fatalf("escaping hard link accepted: %v", err)
+	}
+}
+
+func TestReadLocalTarRefusesHardLinksToFilesOutsideTheRoot(t *testing.T) {
+	dest := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dest, "victim"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	archive := tarOf(t,
+		&tar.Header{Name: "foo/x", Typeflag: tar.TypeLink, Linkname: "victim"},
+		&tar.Header{Name: "foo/x", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1},
+	)
+	if _, err := readLocalTar(bytes.NewReader(archive), dest, "foo"); err == nil || !strings.Contains(err.Error(), "outside the requested") {
+		t.Fatalf("link to local file accepted: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dest, "victim")); string(got) != "keep" {
+		t.Fatalf("victim changed: %q", got)
+	}
+}
+
+func TestReadLocalTarAcceptsCurrentDirectoryArchives(t *testing.T) {
+	dest := t.TempDir()
+	archive := tarOf(t, &tar.Header{Name: "./file", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1})
+	if _, err := readLocalTar(bytes.NewReader(archive), dest, "."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "file")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadLocalTarNeverWritesThroughAPlantedSymlink(t *testing.T) {
+	dest := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dest, "victim"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	archive := tarOf(t,
+		&tar.Header{Name: "foo/up", Typeflag: tar.TypeSymlink, Linkname: ".."},
+		&tar.Header{Name: "foo/x", Typeflag: tar.TypeLink, Linkname: "foo/up/victim"},
+		&tar.Header{Name: "foo/x", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1},
+	)
+	if _, err := readLocalTar(bytes.NewReader(archive), dest, "foo"); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("write through symlink accepted: %v", err)
+	}
+	direct := tarOf(t,
+		&tar.Header{Name: "foo/up", Typeflag: tar.TypeSymlink, Linkname: ".."},
+		&tar.Header{Name: "foo/up/victim", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1},
+	)
+	if _, err := readLocalTar(bytes.NewReader(direct), dest, "foo"); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("write through symlink parent accepted: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dest, "victim")); string(got) != "keep" {
+		t.Fatalf("victim changed: %q", got)
+	}
+}
+
+func TestReadLocalTarNeverPlacesASymlinkThroughAPlantedSymlink(t *testing.T) {
+	dest := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dest, "victim"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	archive := tarOf(t,
+		&tar.Header{Name: "foo/payload", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1},
+		&tar.Header{Name: "foo/up", Typeflag: tar.TypeSymlink, Linkname: ".."},
+		&tar.Header{Name: "foo/up/victim", Typeflag: tar.TypeSymlink, Linkname: "foo/payload"},
+	)
+	if _, err := readLocalTar(bytes.NewReader(archive), dest, "foo"); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlink through symlink accepted: %v", err)
+	}
+	info, err := os.Lstat(filepath.Join(dest, "victim"))
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("victim replaced: %v", err)
 	}
 }

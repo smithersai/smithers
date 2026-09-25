@@ -127,11 +127,20 @@ func writeLocalTar(w io.Writer, source, name string) (workspaceTarStats, error) 
 // workspace, which the user does not control, so every write goes through an
 // os.Root on dest: neither a "../" entry name nor a symlink created earlier in
 // the archive can place a file outside dest.
-func readLocalTar(r io.Reader, dest string) (workspaceTarStats, error) {
+// readLocalTar extracts r under dest. A non-empty rootName requires every
+// entry to be rootName or lie beneath it, so a workspace cannot plant
+// unrelated siblings next to the requested path.
+func readLocalTar(r io.Reader, dest, rootName string) (workspaceTarStats, error) {
 	stats := workspaceTarStats{}
 	abs, err := filepath.Abs(dest)
 	if err != nil {
 		return stats, err
+	}
+	if rootName == "." {
+		rootName = ""
+	}
+	within := func(rel string) bool {
+		return rootName == "" || rel == rootName || strings.HasPrefix(rel, rootName+string(filepath.Separator))
 	}
 	root, err := os.OpenRoot(abs)
 	if err != nil {
@@ -155,13 +164,72 @@ func readLocalTar(r io.Reader, dest string) (workspaceTarStats, error) {
 		if err != nil {
 			return stats, err
 		}
+		if !within(name) {
+			return stats, fmt.Errorf("archive entry %q is outside the requested %q", header.Name, rootName)
+		}
+		if header.Typeflag == tar.TypeLink {
+			link := filepath.Join(abs, filepath.FromSlash(header.Linkname))
+			if !strings.HasPrefix(link, abs+string(filepath.Separator)) {
+				return stats, fmt.Errorf("archive hard link %q escapes %s", header.Linkname, dest)
+			}
+			if header.Linkname, err = filepath.Rel(abs, link); err != nil {
+				return stats, err
+			}
+			// A link may only join files this archive owns; pointing at an
+			// existing local file would let a later entry truncate it.
+			if !within(header.Linkname) {
+				return stats, fmt.Errorf("archive hard link %q is outside the requested %q", header.Linkname, rootName)
+			}
+		}
 		if err := extractTarEntry(root, name, header, tr, &stats); err != nil {
 			return stats, fmt.Errorf("archive entry %q: %w", header.Name, err)
 		}
 	}
 }
 
+// throughSymlink reports whether any existing component of rel (the final
+// one included) is a symlink. Entries are never written or linked through a
+// symlink, so an archive cannot plant one and then redirect a later entry.
+func throughSymlink(root *os.Root, rel string) (bool, error) {
+	parts := strings.Split(rel, string(filepath.Separator))
+	for i := range parts {
+		info, err := root.Lstat(filepath.Join(parts[:i+1]...))
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func extractTarEntry(root *os.Root, name string, header *tar.Header, body io.Reader, stats *workspaceTarStats) error {
+	// A symlink entry may replace an existing symlink at its own name, but no
+	// entry is ever written beneath one.
+	checked := name
+	if header.Typeflag == tar.TypeSymlink {
+		checked = filepath.Dir(name)
+	}
+	if checked != "." {
+		if linked, err := throughSymlink(root, checked); err != nil || linked {
+			if err == nil {
+				err = fmt.Errorf("refusing to write through a symlink")
+			}
+			return err
+		}
+	}
+	if header.Typeflag == tar.TypeLink {
+		if linked, err := throughSymlink(root, header.Linkname); err != nil || linked {
+			if err == nil {
+				err = fmt.Errorf("refusing to hard link through a symlink")
+			}
+			return err
+		}
+	}
 	switch header.Typeflag {
 	case tar.TypeDir:
 		return root.MkdirAll(name, os.FileMode(header.Mode)&0o777|0o700)
@@ -179,6 +247,15 @@ func extractTarEntry(root *os.Root, name string, header *tar.Header, body io.Rea
 			return err
 		}
 		stats.Bytes += n
+		stats.Files++
+	case tar.TypeLink:
+		if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+			return err
+		}
+		_ = root.Remove(name)
+		if err := root.Link(header.Linkname, name); err != nil {
+			return err
+		}
 		stats.Files++
 	case tar.TypeSymlink:
 		if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
@@ -276,13 +353,27 @@ func runWorkspaceDownload(sshCommand, remotePath, localPath string, timeout time
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return workspaceTarStats{}, err
 	}
+	// A renamed download lands in a private scratch directory first, so the
+	// archive's own top-level name never replaces an unrelated local file.
+	extractDir, rootName := dest, name
+	if contents {
+		rootName = ""
+	}
+	if rename != "" && rename != name {
+		scratch, err := os.MkdirTemp(dest, ".smithers-cp-")
+		if err != nil {
+			return workspaceTarStats{}, err
+		}
+		defer func() { _ = os.RemoveAll(scratch) }()
+		extractDir = scratch
+	}
 	reader, writer := io.Pipe()
 	var stats workspaceTarStats
 	var extractErr error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		stats, extractErr = readLocalTar(reader, dest)
+		stats, extractErr = readLocalTar(reader, extractDir, rootName)
 		_, _ = io.Copy(io.Discard, reader)
 	}()
 	var stderr bytes.Buffer
@@ -301,7 +392,7 @@ func runWorkspaceDownload(sshCommand, remotePath, localPath string, timeout time
 	if rename != "" && rename != name {
 		target := filepath.Join(dest, rename)
 		_ = os.RemoveAll(target)
-		if err := os.Rename(filepath.Join(dest, name), target); err != nil {
+		if err := os.Rename(filepath.Join(extractDir, name), target); err != nil {
 			return stats, err
 		}
 	}
