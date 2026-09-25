@@ -22,7 +22,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 type routerExtras struct {
@@ -170,20 +169,6 @@ func buildRouter(
 	// The API only verifies bridge credentials, so it must not depend on the
 	// public URL that is needed solely by the SSH issuer.
 	lfsAuthManager, _ := lfsauth.NewManager(cfg.Auth.LFSSigningSecret)
-	// The process-local HMAC ticket manager is only the fallback for routers
-	// built without queries. With a database, tickets are minted and redeemed
-	// only through the shared single-use store, so HMAC tickets are neither
-	// issued nor accepted.
-	var sseTicketValidators []middleware.SSETicketValidator
-	if queries == nil && authHandler != nil {
-		if authHandler.SSETickets == nil {
-			authHandler.SSETickets = sseauth.NewSSETicketManager(cfg.Auth.SessionSecret)
-		}
-		sseTicketValidators = append(
-			sseTicketValidators,
-			middleware.NewSSETicketManagerValidator(authHandler.SSETickets, nil),
-		)
-	}
 	var ticketsIssued prometheus.Counter
 	var ticketsValidated *prometheus.CounterVec
 	if smithersMetrics != nil {
@@ -198,24 +183,24 @@ func buildRouter(
 		smithersMetrics.MustRegister(ticketsIssued, ticketsValidated)
 	}
 	var sseTicketHandler *routes.SSETicketHandler
+	var sseTicketService *services.SSETicketService
 	if queries != nil {
-		sseTicketService := services.NewSSETicketService(queries)
+		sseTicketService = services.NewSSETicketService(queries)
 		sseTicketHandler = &routes.SSETicketHandler{
 			Service: sseTicketService,
 		}
 		if ticketsIssued != nil {
 			sseTicketHandler.Metrics = &routes.SSETicketRouteMetrics{TicketsIssued: ticketsIssued}
 		}
-		sseTicketValidators = append(sseTicketValidators, sseTicketService)
 	}
 	sseTicketAuth := func(next http.Handler) http.Handler { return next }
-	if len(sseTicketValidators) > 0 {
+	if sseTicketHandler != nil {
 		var sseTicketMetrics *middleware.SSETicketMetrics
 		if ticketsValidated != nil {
 			sseTicketMetrics = &middleware.SSETicketMetrics{TicketsValidated: ticketsValidated}
 		}
 		ticketAuth := middleware.SSETicketAuth(
-			middleware.NewSSETicketValidatorChain(sseTicketValidators...),
+			sseTicketService,
 			sseTicketMetrics,
 			ownerBoundary,
 		)
@@ -972,13 +957,7 @@ func buildRouter(
 		}
 		if sseTicketHandler != nil {
 			r.With(issueSSETicket...).Post("/auth/sse-ticket", sseTicketHandler.PostSSETicket)
-		} else {
-			r.With(issueSSETicket...).Post("/auth/sse-ticket", authHandler.PostSSETicket)
-		}
-		if sseTicketHandler != nil {
 			r.With(issueSSETicket...).Post("/v1/sse/ticket", sseTicketHandler.PostSSETicket)
-		} else {
-			r.With(issueSSETicket...).Post("/v1/sse/ticket", authHandler.PostSSETicket)
 		}
 		if cfg.FeatureFlags.Integrations && linearHandler != nil {
 			r.With(middleware.AuthRateLimit(queries), authLoader(queries, cfg.Auth), middleware.RequireAuth).Get("/auth/linear", linearHandler.GetLinearOAuthStart)

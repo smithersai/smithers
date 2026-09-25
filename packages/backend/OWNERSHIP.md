@@ -93,7 +93,6 @@ needed by adapters without copying product queries or schemas.
 - `packages/backend/internal/services/workspace_scripts`
 - `packages/backend/internal/smitherscli`
 - `packages/backend/internal/sse`
-- `packages/backend/internal/sseauth`
 - `packages/backend/internal/ssh`
 - `packages/backend/internal/taskrunner`
 - `packages/backend/internal/taskrunner/client`

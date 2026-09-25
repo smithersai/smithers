@@ -17,7 +17,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 type AuthService interface {
@@ -47,8 +46,6 @@ type AuthHandler struct {
 	PublicOrigin   string
 	AllowedOrigins []string
 	AuditService   *services.AuditService
-	SSETickets     *sseauth.SSETicketManager
-	IssueSSETicket func(sseauth.SSETicketSubject) (string, time.Time, error)
 	// RepoListingWarmer, when set, is invoked after a successful GitHub token
 	// exchange to warm the user's repo-listing cache in the background.
 	RepoListingWarmer GitHubRepoListingWarmer
@@ -60,11 +57,6 @@ const cliCallbackCookieName = "smithers_cli_callback"
 type postKeyAuthVerifyRequest struct {
 	Message   string `json:"message"`
 	Signature string `json:"signature"`
-}
-
-type sseTicketResponse struct {
-	Ticket    string    `json:"ticket"`
-	ExpiresAt time.Time `json:"expires_at"`
 }
 
 func (h *AuthHandler) GetKeyAuthNonce(w http.ResponseWriter, r *http.Request) {
@@ -170,50 +162,6 @@ func (h *AuthHandler) PostKeyAuthToken(w http.ResponseWriter, r *http.Request) {
 	errors.WriteJSON(w, http.StatusOK, map[string]any{
 		"token":    tokenResult.Token,
 		"username": result.User.Username,
-	})
-}
-
-func (h *AuthHandler) PostSSETicket(w http.ResponseWriter, r *http.Request) {
-	if h.SSETickets == nil {
-		errors.WriteError(w, errors.Internal("sse ticket exchange not configured"))
-		return
-	}
-
-	authInfo := middleware.AuthInfoFromContext(r.Context())
-	if authInfo == nil || authInfo.User == nil {
-		errors.WriteError(w, errors.Unauthorized("authentication required"))
-		return
-	}
-	tokenHash := ""
-	rawScopes := ""
-	if authInfo.IsTokenAuth {
-		tokenHash = strings.TrimSpace(authInfo.TokenHash)
-		rawScopes = strings.TrimSpace(authInfo.RawScopes)
-	}
-
-	issueSSETicket := h.IssueSSETicket
-	if issueSSETicket == nil {
-		issueSSETicket = h.SSETickets.Issue
-	}
-	ticket, expiresAt, err := issueSSETicket(sseauth.SSETicketSubject{
-		UserID:    authInfo.User.ID,
-		TokenHash: tokenHash,
-		TokenAuth: authInfo.IsTokenAuth,
-		Scopes:    rawScopes,
-	})
-	if err != nil {
-		if stdErrors.Is(err, sseauth.ErrSSETicketLimit) {
-			errors.WriteError(w, errors.New(errors.CodeRateLimitExceeded,
-				"too many active sse tickets"))
-			return
-		}
-		errors.WriteError(w, errors.Internal("failed to create sse ticket").WithCause(err))
-		return
-	}
-
-	errors.WriteJSON(w, http.StatusOK, sseTicketResponse{
-		Ticket:    ticket,
-		ExpiresAt: expiresAt,
 	})
 }
 

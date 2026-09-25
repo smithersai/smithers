@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 type mockSSETicketValidator struct {
@@ -33,17 +31,6 @@ func (m *mockSSETicketValidator) ValidateTicket(ctx context.Context, rawTicket s
 		return m.validateFn(ctx, rawTicket)
 	}
 	return nil, errors.Unauthorized("invalid SSE ticket")
-}
-
-type mockSSETicketUserLoader struct {
-	getUserByIDFn func(ctx context.Context, id int64) (db.User, error)
-}
-
-func (m *mockSSETicketUserLoader) GetUserByID(ctx context.Context, id int64) (db.User, error) {
-	if m.getUserByIDFn != nil {
-		return m.getUserByIDFn(ctx, id)
-	}
-	return db.User{}, pgx.ErrNoRows
 }
 
 func TestSSETicketAuth_NoTicket_PassThrough(t *testing.T) {
@@ -67,94 +54,6 @@ func TestSSETicketAuth_NoTicket_PassThrough(t *testing.T) {
 
 	assert.True(t, handlerCalled)
 	assert.Equal(t, http.StatusOK, rec.Code)
-}
-
-func TestSSETicketValidatorChain_AcceptsFirstSuccessfulValidator(t *testing.T) {
-	t.Parallel()
-
-	chain := NewSSETicketValidatorChain(
-		&mockSSETicketValidator{
-			validateFn: func(context.Context, string) (*SSETicketPrincipal, error) {
-				return nil, errors.Unauthorized("wrong format")
-			},
-		},
-		&mockSSETicketValidator{
-			validateFn: func(context.Context, string) (*SSETicketPrincipal, error) {
-				return &SSETicketPrincipal{User: &db.User{ID: 42, Username: "alice"}}, nil
-			},
-		},
-	)
-
-	principal, err := chain.ValidateTicket(context.Background(), "ticket")
-	require.NoError(t, err)
-	assert.Equal(t, int64(42), principal.User.ID)
-}
-
-func TestSSETicketManagerValidator_ValidTicketLoadsUser(t *testing.T) {
-	t.Parallel()
-
-	manager := sseauth.NewSSETicketManager("session-secret")
-	ticket, _, err := manager.Issue(sseauth.SSETicketSubject{UserID: 42})
-	require.NoError(t, err)
-
-	validator := NewSSETicketManagerValidator(manager, &mockSSETicketUserLoader{
-		getUserByIDFn: func(_ context.Context, id int64) (db.User, error) {
-			assert.Equal(t, int64(42), id)
-			return db.User{ID: 42, Username: "alice"}, nil
-		},
-	})
-
-	principal, err := validator.ValidateTicket(context.Background(), ticket)
-	require.NoError(t, err)
-	assert.Equal(t, int64(42), principal.User.ID)
-	assert.Equal(t, "alice", principal.User.Username)
-	assert.False(t, principal.IsTokenAuth)
-
-	_, err = validator.ValidateTicket(context.Background(), ticket)
-	require.Error(t, err)
-}
-
-func TestSSETicketManagerValidator_TokenMintedTicketKeepsScopes(t *testing.T) {
-	t.Parallel()
-
-	manager := sseauth.NewSSETicketManager("session-secret")
-	ticket, _, err := manager.Issue(sseauth.SSETicketSubject{
-		UserID:    42,
-		TokenHash: "token-hash-42",
-		TokenAuth: true,
-		Scopes:    "read:user",
-	})
-	require.NoError(t, err)
-
-	validator := NewSSETicketManagerValidator(manager, &mockSSETicketUserLoader{
-		getUserByIDFn: func(_ context.Context, id int64) (db.User, error) {
-			return db.User{ID: id, Username: "alice"}, nil
-		},
-	})
-
-	principal, err := validator.ValidateTicket(context.Background(), ticket)
-	require.NoError(t, err)
-	assert.True(t, principal.IsTokenAuth)
-	assert.Equal(t, "read:user", principal.RawScopes)
-	assert.Equal(t, "token-hash-42", principal.TokenHash)
-}
-
-func TestSSETicketManagerValidator_SuspendedUserRejected(t *testing.T) {
-	t.Parallel()
-
-	manager := sseauth.NewSSETicketManager("session-secret")
-	ticket, _, err := manager.Issue(sseauth.SSETicketSubject{UserID: 42})
-	require.NoError(t, err)
-
-	validator := NewSSETicketManagerValidator(manager, &mockSSETicketUserLoader{
-		getUserByIDFn: func(context.Context, int64) (db.User, error) {
-			return db.User{ID: 42, Username: "alice", ProhibitLogin: true}, nil
-		},
-	})
-
-	principal, err := validator.ValidateTicket(context.Background(), ticket)
-	require.Error(t, err)
-	assert.Nil(t, principal)
 }
 
 func TestSSETicketAuth_ValidTicket_SetsContext(t *testing.T) {

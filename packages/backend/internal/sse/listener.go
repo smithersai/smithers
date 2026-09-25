@@ -40,16 +40,12 @@ func isChannelChar(c rune) bool {
 		c == '_'
 }
 
-// multiNotifier adapts a *pgxpool.Conn to provide channel-aware notifications.
-type multiNotifier interface {
+// brokerNotifier adapts one shared PostgreSQL connection for fan-out.
+type brokerNotifier interface {
 	// waitForNotificationWithChannel blocks until a NOTIFY arrives and returns both channel and payload.
 	waitForNotificationWithChannel(ctx context.Context) (channel string, payload string, err error)
 	// release returns the underlying connection to the pool.
 	release()
-}
-
-type brokerNotifier interface {
-	multiNotifier
 	listen(ctx context.Context, channel string) error
 	unlisten(ctx context.Context, channel string) error
 }
@@ -87,7 +83,7 @@ type discarder interface {
 
 // discardNotifier drops n's connection. A notifier that cannot discard is
 // leaked rather than released, because release could share a conn still in use.
-func discardNotifier(n multiNotifier) {
+func discardNotifier(n brokerNotifier) {
 	if d, ok := n.(discarder); ok {
 		d.discard()
 	}

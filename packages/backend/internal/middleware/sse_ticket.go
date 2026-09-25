@@ -2,16 +2,13 @@ package middleware
 
 import (
 	"context"
-	stdErrors "errors"
 	"net/http"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 // SSETicketPrincipal describes the identity and authority granted by a
@@ -27,92 +24,6 @@ type SSETicketPrincipal struct {
 // SSETicketValidator is the interface for validating SSE tickets.
 type SSETicketValidator interface {
 	ValidateTicket(ctx context.Context, rawTicket string) (*SSETicketPrincipal, error)
-}
-
-type sseTicketValidatorChain struct {
-	validators []SSETicketValidator
-}
-
-// NewSSETicketValidatorChain returns a validator that accepts tickets from any
-// configured backend, preserving compatibility while clients migrate.
-func NewSSETicketValidatorChain(validators ...SSETicketValidator) SSETicketValidator {
-	filtered := make([]SSETicketValidator, 0, len(validators))
-	for _, validator := range validators {
-		if validator != nil {
-			filtered = append(filtered, validator)
-		}
-	}
-	return &sseTicketValidatorChain{validators: filtered}
-}
-
-func (v *sseTicketValidatorChain) ValidateTicket(ctx context.Context, rawTicket string) (*SSETicketPrincipal, error) {
-	var lastErr error
-	for _, validator := range v.validators {
-		principal, err := validator.ValidateTicket(ctx, rawTicket)
-		if err == nil {
-			return principal, nil
-		}
-		lastErr = err
-	}
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, errors.Unauthorized("invalid SSE ticket")
-}
-
-// SSETicketUserLoader loads users referenced by HMAC SSE tickets.
-type SSETicketUserLoader interface {
-	GetUserByID(ctx context.Context, id int64) (db.User, error)
-}
-
-// SSETicketManagerValidator adapts the HMAC ticket manager to request middleware.
-type SSETicketManagerValidator struct {
-	manager *sseauth.SSETicketManager
-	users   SSETicketUserLoader
-}
-
-// NewSSETicketManagerValidator returns a validator for short-lived HMAC SSE tickets.
-func NewSSETicketManagerValidator(manager *sseauth.SSETicketManager, users SSETicketUserLoader) *SSETicketManagerValidator {
-	return &SSETicketManagerValidator{
-		manager: manager,
-		users:   users,
-	}
-}
-
-func (v *SSETicketManagerValidator) ValidateTicket(ctx context.Context, rawTicket string) (*SSETicketPrincipal, error) {
-	if v == nil || v.manager == nil {
-		return nil, errors.Unauthorized("invalid SSE ticket")
-	}
-
-	subject, err := v.manager.ValidateAndConsume(rawTicket)
-	if err != nil {
-		return nil, errors.Unauthorized("invalid or expired SSE ticket")
-	}
-
-	principal := &SSETicketPrincipal{
-		IsTokenAuth: subject.TokenAuth,
-		RawScopes:   subject.Scopes,
-		TokenHash:   subject.TokenHash,
-	}
-
-	if v.users == nil {
-		principal.User = &db.User{ID: subject.UserID}
-		return principal, nil
-	}
-
-	user, err := v.users.GetUserByID(ctx, subject.UserID)
-	if err != nil {
-		if stdErrors.Is(err, pgx.ErrNoRows) {
-			return nil, errors.Unauthorized("invalid or expired SSE ticket")
-		}
-		return nil, errors.Internal("failed to load SSE ticket user").WithCause(err)
-	}
-	if user.ProhibitLogin {
-		return nil, errors.Forbidden("account is suspended")
-	}
-
-	principal.User = &user
-	return principal, nil
 }
 
 // SSETicketMetrics holds Prometheus metrics for SSE ticket operations.

@@ -20,7 +20,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 func TestAuth_Cov_PostKeyAuthTokenSuccessAndErrors(t *testing.T) {
@@ -228,7 +227,7 @@ func TestAuth_Cov_Auth0CallbackBranches(t *testing.T) {
 	assert.Equal(t, "a@example.test", fragment.Get("email"))
 }
 
-func TestAuth_Cov_PendingCookieLogoutAndSSETicketLimit(t *testing.T) {
+func TestAuth_Cov_PendingCookieAndLogout(t *testing.T) {
 	absoluteReq := httptest.NewRequest(http.MethodGet, "/api/auth/github/callback", nil)
 	absoluteReq.AddCookie(&http.Cookie{Name: oauth2PendingAuthorizeCookie, Value: "https://evil.example/callback"})
 	absoluteRec := httptest.NewRecorder()
@@ -255,23 +254,6 @@ func TestAuth_Cov_PendingCookieLogoutAndSSETicketLimit(t *testing.T) {
 	assert.Equal(t, -1, cookieByName(logoutRec.Result().Cookies(), "smithers_session").MaxAge)
 	assert.Equal(t, -1, cookieByName(logoutRec.Result().Cookies(), middleware.CSRFCookieName).MaxAge)
 
-	nilTicketReq := httptest.NewRequest(http.MethodPost, "/api/v1/sse/ticket", nil)
-	nilTicketReq = nilTicketReq.WithContext(middleware.ContextWithAuthInfo(nilTicketReq.Context(), &middleware.AuthInfo{User: &db.User{ID: 7, Username: "alice"}}))
-	nilTicketRec := httptest.NewRecorder()
-	(&AuthHandler{}).PostSSETicket(nilTicketRec, nilTicketReq)
-	require.Equal(t, http.StatusInternalServerError, nilTicketRec.Code)
-
-	manager := sseauth.NewSSETicketManager("limit-secret")
-	for i := 0; i < 50; i++ {
-		_, _, err := manager.Issue(sseauth.SSETicketSubject{UserID: 8})
-		require.NoError(t, err)
-	}
-	limitReq := httptest.NewRequest(http.MethodPost, "/api/v1/sse/ticket", nil)
-	limitReq = limitReq.WithContext(middleware.ContextWithAuthInfo(limitReq.Context(), &middleware.AuthInfo{User: &db.User{ID: 8, Username: "bob"}}))
-	limitRec := httptest.NewRecorder()
-	(&AuthHandler{SSETickets: manager}).PostSSETicket(limitRec, limitReq)
-	require.Equal(t, http.StatusTooManyRequests, limitRec.Code)
-	assert.Contains(t, limitRec.Body.String(), "too many active sse tickets")
 }
 
 func TestAuth_Cov_RouteErrorRetryAfterAndRandomHex(t *testing.T) {

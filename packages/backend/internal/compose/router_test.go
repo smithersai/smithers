@@ -26,7 +26,6 @@ import (
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 // Compile-time assertion: services.WorkflowAPIService must satisfy routes.WorkflowRunRouteService.
@@ -2143,65 +2142,6 @@ func TestServerRouter_NotificationSSERouteRegistered(t *testing.T) {
 	assert.NotEqual(t, http.StatusNotFound, rec.Code, "notification SSE route must be registered")
 }
 
-func TestServerRouter_SSETicketRouteRequiresSessionCSRF(t *testing.T) {
-	t.Parallel()
-	for _, path := range []string{"/api/auth/sse-ticket", "/api/v1/sse/ticket"} {
-		t.Run(path, func(t *testing.T) {
-			manager := sseauth.NewSSETicketManager("session-secret")
-			router := routerWithAuthAndNotifications(&routes.AuthHandler{SSETickets: manager}, nil)
-
-			req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{}`))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, req)
-			require.Equal(t, http.StatusUnauthorized, rec.Code)
-
-			req = httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{}`))
-			req.Header.Set("Content-Type", "application/json")
-			req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
-				User: &db.User{ID: 1, Username: "alice", LowerUsername: "alice"},
-			}))
-			rec = httptest.NewRecorder()
-			router.ServeHTTP(rec, req)
-			assert.Equal(t, http.StatusForbidden, rec.Code, "session SSE ticket exchange must require CSRF")
-
-			req = httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{}`))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-CSRF-Token", "csrf-token")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-token"})
-			req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
-				User: &db.User{ID: 1, Username: "alice", LowerUsername: "alice"},
-			}))
-			rec = httptest.NewRecorder()
-			router.ServeHTTP(rec, req)
-			require.Equal(t, http.StatusOK, rec.Code)
-			assert.Equal(t, "60", rec.Header().Get("X-RateLimit-Limit"))
-
-			var payload map[string]any
-			require.NoError(t, json.NewDecoder(rec.Body).Decode(&payload))
-			assert.NotEmpty(t, payload["ticket"])
-		})
-	}
-}
-
-func TestServerRouter_NotificationSSEAcceptsSSETicket(t *testing.T) {
-	t.Parallel()
-
-	manager := sseauth.NewSSETicketManager("session-secret")
-	ticket, _, err := manager.Issue(sseauth.SSETicketSubject{UserID: 1})
-	require.NoError(t, err)
-
-	notifHandler := &routes.NotificationHandler{Service: &mockRouterNotificationService{}}
-	router := routerWithAuthAndNotifications(&routes.AuthHandler{SSETickets: manager}, notifHandler)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/notifications?ticket="+ticket, nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	assert.NotEqual(t, http.StatusUnauthorized, rec.Code, "valid SSE ticket should satisfy auth before the stream handler runs")
-	assert.NotEqual(t, http.StatusNotFound, rec.Code, "notification SSE route must be registered")
-}
-
 func TestServerRouter_WorkflowRunLogsSSERouteRegisteredAndBypassesTimeout(t *testing.T) {
 	t.Parallel()
 
@@ -3431,10 +3371,7 @@ func TestServerRouter_SSETicketAliasIsDatabaseBacked(t *testing.T) {
 	}
 
 	withoutDB := sseTicketMintEndpoints(t, sseTicketMintRouter(nil))
-	require.Len(t, withoutDB, 2, "both minting routes must be registered: %v", withoutDB)
-	for key, name := range withoutDB {
-		assert.Contains(t, name, "(*AuthHandler).PostSSETicket", "%s must fall back to the HMAC handler only without queries, got %s", key, name)
-	}
+	require.Empty(t, withoutDB, "without the database no minting route is registered")
 }
 
 func TestServerRouter_SSETicketAliasReturnsDatabaseTicketShape(t *testing.T) {

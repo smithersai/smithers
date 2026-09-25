@@ -17,10 +17,8 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 type mockAuthService struct {
@@ -512,85 +510,6 @@ func TestAuthHandler_PostLogout_RevokesSessionAndClearsCookie(t *testing.T) {
 	assert.False(t, csrfCookie.HttpOnly)
 	assert.Equal(t, http.SameSiteStrictMode, csrfCookie.SameSite)
 	assert.True(t, csrfCookie.Secure, "logout csrf clear cookie must have Secure attribute")
-}
-
-func TestAuthHandler_PostSSETicket_ReturnsTicket(t *testing.T) {
-	t.Parallel()
-
-	manager := sseauth.NewSSETicketManager("session-secret")
-	handler := AuthHandler{
-		AuthConfig: defaultRouteAuthConfig(),
-		SSETickets: manager,
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sse/ticket", strings.NewReader(`{}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
-		User:        &db.User{ID: 7, Username: "alice", LowerUsername: "alice"},
-		TokenHash:   "token-hash-7",
-		IsTokenAuth: true,
-		TokenSource: middleware.TokenSourcePersonalAccessToken,
-	}))
-	rec := httptest.NewRecorder()
-
-	handler.PostSSETicket(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	var payload sseTicketResponse
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
-	assert.NotEmpty(t, payload.Ticket)
-	assert.WithinDuration(t, time.Now().UTC().Add(30*time.Second), payload.ExpiresAt, 2*time.Second)
-
-	subject, err := manager.ValidateAndConsume(payload.Ticket)
-	require.NoError(t, err)
-	assert.Equal(t, int64(7), subject.UserID)
-	assert.Equal(t, "token-hash-7", subject.TokenHash)
-}
-
-func TestAuthHandler_PostSSETicket_RequiresAuth(t *testing.T) {
-	t.Parallel()
-
-	handler := AuthHandler{
-		AuthConfig: defaultRouteAuthConfig(),
-		SSETickets: sseauth.NewSSETicketManager("session-secret"),
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sse/ticket", strings.NewReader(`{}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	handler.PostSSETicket(rec, req)
-
-	require.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestAuthHandler_PostSSETicket_AllowsSessionAuth(t *testing.T) {
-	t.Parallel()
-
-	manager := sseauth.NewSSETicketManager("session-secret")
-	handler := AuthHandler{
-		AuthConfig: defaultRouteAuthConfig(),
-		SSETickets: manager,
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sse/ticket", strings.NewReader(`{}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
-		User: &db.User{ID: 7, Username: "alice", LowerUsername: "alice"},
-	}))
-	rec := httptest.NewRecorder()
-
-	handler.PostSSETicket(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	var payload sseTicketResponse
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
-	assert.NotEmpty(t, payload.Ticket)
-
-	subject, err := manager.ValidateAndConsume(payload.Ticket)
-	require.NoError(t, err)
-	assert.Equal(t, int64(7), subject.UserID)
-	assert.Empty(t, subject.TokenHash)
 }
 
 func TestAuthHandler_PropagatesAPIErrors(t *testing.T) {

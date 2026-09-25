@@ -15,10 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 // authFAuditQuerier is a minimal AuditQueries fake that records how many audit
@@ -161,23 +159,6 @@ func TestAuth_F_PostKeyAuthToken(t *testing.T) {
 }
 
 // --- PostSSETicket internal (non-limit) error ---
-
-func TestAuth_F_PostSSETicketInternalError(t *testing.T) {
-	h := &AuthHandler{
-		SSETickets: sseauth.NewSSETicketManager("secret"),
-		IssueSSETicket: func(sseauth.SSETicketSubject) (string, time.Time, error) {
-			return "", time.Time{}, stderrors.New("issuer down")
-		},
-	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sse/ticket", nil)
-	req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{User: authFUser(), IsTokenAuth: true, TokenHash: "hash"}))
-	rec := httptest.NewRecorder()
-	h.PostSSETicket(rec, req)
-	require.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Contains(t, rec.Body.String(), "failed to create sse ticket")
-}
-
-// --- consumeOAuth2PendingAuthorizeCookie url.Parse error ---
 
 func TestAuth_F_ConsumePendingCookieParseError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/github/callback", nil)
