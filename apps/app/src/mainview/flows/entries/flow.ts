@@ -170,6 +170,7 @@ export const flowFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
 /** The active repository's declared flows, as the controller reads them off the `repositoryFlows` collection. */
 export interface RepositoryFlowCatalog {
   readonly repo: string
+  readonly home?: import("../../state/AppState").RepositoryFlowsRow["home"]
   /** The projection's rows, featured first. */
   readonly flows: ReadonlyArray<RepositoryFlow>
   /** When the row landed: the registry's cache key beside `repo`. */

@@ -150,6 +150,25 @@ part of Smithers hangs off. That CLI runs durable agent flows with
 graph for the repository those flows work in. Start there for the product as a
 whole.
 
+## Repository homepage
+
+A repository can declare its workspace chat homepage in `.smithers/FACTORY.ts`:
+
+```ts
+export const home = Smithers.Factory.Home({
+  blocks: [
+    Smithers.Home.Prompt({ placeholder: "Change this repository…" }),
+    Smithers.Home.Flows({ title: "Try first" }),
+    Smithers.Home.Markdown({ path: "README.md" }),
+    Smithers.Home.Links({ links: [{ label: "Source", url: "https://example.com" }] })
+  ]
+})
+```
+
+`Smithers.Home.Text({ text })` adds plain text. The factory projection writes
+`.smithers/home.json`; the server resolves Markdown files at `main`. When that
+file is absent, the chat shows `README.md` if present.
+
 ## Where to go next
 
 - [API reference](./api.md), the module surface and what each layer owns.

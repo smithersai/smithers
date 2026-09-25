@@ -48,7 +48,7 @@ const backend = (routes: Record<string, Route>, seen: Array<string> = []): AppSe
     const absolute = new URL(url, "https://app.test")
     const path = absolute.pathname + absolute.search
     // The repository-flows seam reads .smithers/factory.json in the background whenever the target repository changes (the slash leaves); it is not this seam's request.
-    if (!path.endsWith("/contents/.smithers/factory.json")) seen.push(path)
+    if (!path.endsWith("/contents/.smithers/factory.json") && !/\/api\/repos\/[^/]+\/[^/]+\/home$/.test(path)) seen.push(path)
     for (const [route, answer] of Object.entries(routes)) {
       if (path === route || path.startsWith(`${route}?`)) {
         return typeof answer === "function" ? answer(new Request(absolute.toString(), init)) : answer.clone()

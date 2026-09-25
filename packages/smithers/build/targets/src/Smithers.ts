@@ -539,8 +539,7 @@ export const Size = Object.freeze({ Budgets: NodeArtifactModule.Budgets })
 export const Docs = Object.freeze({ Page: DocsPageModule.Page, Check: DocsCheckModule.Check })
 
 /**
- * The declared home-pane blocks: `Smithers.Home.Text`, `Links`, `Flows`, and
- * `CiBenchmark`, the values `Smithers.Factory.Home` takes.
+ * The declared homepage blocks: `Prompt`, `Flows`, `Markdown`, `Text`, and `Links`.
  *
  * @category namespace exports
  * @since 1.0.0
@@ -549,12 +548,13 @@ export const Home = Object.freeze({
   Text: HomeModule.Text,
   Links: HomeModule.Links,
   Flows: HomeModule.Flows,
-  CiBenchmark: HomeModule.CiBenchmark
+  Prompt: HomeModule.Prompt,
+  Markdown: HomeModule.Markdown
 })
 
 /**
  * The factory `.smithers/FACTORY.ts` exports: `S.Factory({...})` is the
- * declaration itself, and `S.Factory.Home({ blocks })` the home pane exported
+ * declaration itself, and `S.Factory.Home({ blocks })` the homepage exported
  * beside it. `FactoryProjection` projects both to `.smithers/factory.json`
  * and `.smithers/home.json`.
  *

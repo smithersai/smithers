@@ -17,6 +17,7 @@ import type { PointerEvent as ReactPointerEvent } from "react"
 import { useMemo,useRef } from "react"
 import { AVAILABLE_REPOS } from "smithers-server/publicRepoCatalog"
 import { cardActions } from "./cards/CardActions"
+import { RepositoryHomeCard } from "./cards/RepositoryHomeCard"
 import { FirstRunActions } from "./cards/FirstRunActions"
 import { SetupChecklist } from "./cards/SetupChecklist"
 import { SignupCards } from "./cards/SignupCards"
@@ -29,6 +30,7 @@ import { useController } from "./ControllerContext"
 import { DevtoolsPanel } from "./DevtoolsPanel"
 import { ChatHint,FirstSightHint } from "./FirstSightHint"
 import { dynamicFlowAction, flowProps } from "./flows/FlowAction"
+import { repositoryFlowName } from "./flows/entries/flow"
 import { FlowsSurface } from "./FlowsSurface"
 import { InputModeMenu } from "./InputModeMenu"
 import type { InitMessage } from "./Onboarding"
@@ -330,6 +332,17 @@ function AppContent() {
    * this render, so a card whose record did not change can bail out.
    */
   const actions = cardActions(controller)
+  const repositoryCatalog = controller.repositoryFlows()
+  const homeCard: Extract<Card, { kind: "factory.home" }> | undefined = repositoryCatalog?.home === undefined || repositoryCatalog.home.kind === "none"
+    ? undefined
+    : {
+      kind: "factory.home", id: `factory.home:${repositoryCatalog.repo}`, title: "", status: "active",
+      createdAt: 0, ordinal: 0, payload: {
+        repo: repositoryCatalog.repo, home: repositoryCatalog.home,
+        flows: repositoryCatalog.flows.filter(({ id }) => controller.commands.find(repositoryFlowName(id)) !== undefined)
+          .map(({ id, summary, description, featured }) => ({ id, summary, description, featured }))
+      }
+    }
 
   /*
    * §2a″ (wave 12 §4): auth is a conversation STATE, and a state shows only
@@ -516,10 +529,13 @@ function AppContent() {
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages">
+            {!signingUp && !repositoryNotice && homeCard && <MessageScrollerItem messageId={homeCard.id}>
+              <RepositoryHomeCard card={homeCard} onRunCommand={controller.runCommand} />
+            </MessageScrollerItem>}
             {signingUp && <MessageScrollerItem messageId="signup"><SignupCards /></MessageScrollerItem>}
             {!signingUp && !repositoryNotice && <MessageScrollerItem messageId="setup-checklist"><SetupChecklist commands={flows} /></MessageScrollerItem>}
             {!signingUp && !repositoryNotice && !session.firstRunDismissed && <MessageScrollerItem messageId="first-run-actions"><FirstRunActions commands={flows} /></MessageScrollerItem>}
-            {session.firstRunDismissed && entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
+            {session.firstRunDismissed && entries.length === 0 && !homeCard && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
               title="Nothing here yet" description="Ask Smithers anything to get started." />}
             {entries.map((entry) => <MessageScrollerItem key={entry.kind === "lane" ? `${entry.lane.id}:${entry.row.id}` : entry.kind === "card" ? entry.card.id : entry.message.id}
               messageId={entry.kind === "lane" ? `${entry.lane.id}:${entry.row.id}` : entry.kind === "card" ? entry.card.id : entry.message.id} style={{ contentVisibility: "visible" }}>

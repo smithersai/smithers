@@ -55,6 +55,8 @@ const backend = (routes: Record<string, Route>, seen: Array<string> = []): AppSe
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const absolute = new URL(url, "https://app.test")
     const path = absolute.pathname + absolute.search
+    // The repository-flows seam reads the homepage beside the projection; not this seam's read.
+    if (/^\/api\/repos\/[^/]+\/[^/]+\/home$/.test(absolute.pathname)) return new Response(JSON.stringify({ status: "error" }), { status: 404 })
     seen.push(path)
     if (path === RPC && init?.body) {
       const call = JSON.parse(String(init.body))

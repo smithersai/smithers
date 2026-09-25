@@ -110,7 +110,7 @@ const treeBackend = () => {
       const path = parsed.pathname
       if (path === SHARED_CONTENTS || path.startsWith(`${SHARED_CONTENTS}/`)) {
         // The repository-flows seam reads .smithers/factory.json in the background whenever the target repository changes; not this seam's read.
-        if (!path.endsWith("/contents/.smithers/factory.json")) sharedRequests.push(`${path}${parsed.search}`)
+        if (!path.endsWith("/contents/.smithers/factory.json") && !/\/api\/repos\/[^/]+\/[^/]+\/home$/.test(path)) sharedRequests.push(`${path}${parsed.search}`)
         if (path === `${SHARED_CONTENTS}/paged`) {
           return parsed.searchParams.get("after") === "paged/first"
             ? new Response(JSON.stringify([{ name: "second", path: "paged/second", type: "file" }]), { headers: { "X-Contents-Commit": PAGE_COMMIT } })
@@ -123,6 +123,8 @@ const treeBackend = () => {
         const answer = sharedAnswers[at]
         return answer === undefined ? json(404, { message: `smithersai/smithers has no ${at}` }) : answer()
       }
+      // The repository-flows seam reads the homepage beside the projection; not this seam's read.
+      if (/^\/api\/repos\/[^/]+\/[^/]+\/home$/.test(path)) return json(404, { status: "error", message: "no homepage" })
       if (path.startsWith("/api/repos/")) {
         boxRequests.push(`${path.slice("/api".length)}${parsed.search}`)
         if (path !== BOX_FILES) return json(401, { status: "error", message: "Sign in to run a Smithers turn." })

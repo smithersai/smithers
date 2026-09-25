@@ -223,6 +223,8 @@ const relay = (options: {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
       // The repository-flows seam reads .smithers/factory.json in the background whenever the target repository changes (the slash leaves); it is not this test's request.
       if (absolute.pathname.endsWith("/contents/.smithers/factory.json")) return json(404, { status: "error", message: "no projection" })
+      // The same seam reads the repository homepage beside it.
+      if (/^\/api\/repos\/[^/]+\/[^/]+\/home$/.test(absolute.pathname)) return json(404, { status: "error", message: "no homepage" })
       calls.push({ path: absolute.pathname + absolute.search, method: init?.method ?? "GET", body })
       if (absolute.pathname === "/api/workflow/provision") {
         return json(200, { status: "ready", repo: body?.repo, gatewayId: "gw-1" })

@@ -154,6 +154,7 @@ const filesBackend = () => {
       }
       // The repository-flows seam reads .smithers/factory.json in the background whenever the target repository changes (the slash leaves); it is not this seam's request.
       if (url.endsWith("/contents/.smithers/factory.json")) return json(404, { status: "error", message: "no projection" })
+      if (/\/api\/repos\/[^/]+\/[^/]+\/home$/.test(url.split("?")[0]!)) return json(404, { status: "error", message: "no homepage" })
       requests.push({ method: "GET", url })
       if (url === "/api/repos/will/flows/contents/oversized") {
         return json(200, Array.from({ length: 10_001 }, (_, index) => ({ name: `file-${index}`, type: "file" })))
@@ -672,6 +673,7 @@ const localFilesBackend = () => {
       }
       // The repository-flows seam reads .smithers/factory.json in the background whenever the target repository changes (the slash leaves); it is not this seam's request.
       if (url.endsWith("/contents/.smithers/factory.json")) return json(404, { status: "error", message: "no projection" })
+      if (/\/api\/repos\/[^/]+\/[^/]+\/home$/.test(url.split("?")[0]!)) return json(404, { status: "error", message: "no homepage" })
       requests.push({ url })
       if (path === "/api/public/repos") return json(200, { repos: [] })
       if (url.includes("/contents")) return json(404, { code: "not_found", message: "repository not found" })

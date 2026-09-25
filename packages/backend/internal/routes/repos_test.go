@@ -32,6 +32,44 @@ type mockRepoRouteService struct {
 	listContentsFn  func(ctx context.Context, viewer *db.User, owner, repo, ref, dirPath string) ([]services.RepoContent, error)
 }
 
+func TestRepositoryHomeResolution(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		files  map[string]string
+		want   string
+		status int
+		paths  []string
+	}{
+		{"blocks", map[string]string{".smithers/home.json": `{"blocks":[{"type":"markdown","path":"docs/intro.md"}]}`, "docs/intro.md": "# Intro", "README.md": "# Fallback"}, `"kind":"blocks"`, 200, []string{".smithers/home.json", "docs/intro.md"}},
+		{"readme", map[string]string{"README.md": "# Fallback"}, `"kind":"readme"`, 200, []string{".smithers/home.json", "README.md"}},
+		{"none", map[string]string{}, `"kind":"none"`, 200, []string{".smithers/home.json", "README.md"}},
+		{"empty markdown", map[string]string{".smithers/home.json": `{"blocks":[{"type":"markdown","path":"README.md"}]}`, "README.md": ""}, `"markdown":""`, 200, []string{".smithers/home.json", "README.md"}},
+		{"oversized markdown", map[string]string{".smithers/home.json": `{"blocks":[{"type":"markdown","path":"README.md"}]}`, "README.md": strings.Repeat("x", homeMarkdownLimit+1)}, "", 400, []string{".smithers/home.json", "README.md"}},
+		{"missing markdown", map[string]string{".smithers/home.json": `{"blocks":[{"type":"markdown","path":"docs/gone.md"}]}`}, "", 400, []string{".smithers/home.json", "docs/gone.md"}},
+		{"escape", map[string]string{".smithers/home.json": `{"blocks":[{"type":"markdown","path":"../secret"}]}`}, "", 400, []string{".smithers/home.json"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var seen []string
+			h := RepoHandler{Service: mockRepoRouteService{getContentsFn: func(_ context.Context, _ *db.User, _, _, ref, path string) (services.RepoContent, error) {
+				require.Equal(t, "main", ref)
+				seen = append(seen, path)
+				if content, ok := tc.files[path]; ok {
+					return services.RepoContent{Content: content, Size: int64(len(content))}, nil
+				}
+				return services.RepoContent{}, pkgerrors.NotFound("content not found")
+			}}}
+			req := withRouteParams(httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/home", nil), map[string]string{"owner": "alice", "repo": "demo"})
+			rec := httptest.NewRecorder()
+			h.GetRepositoryHome(rec, req)
+			require.Equal(t, tc.status, rec.Code)
+			if tc.want != "" {
+				assert.Contains(t, rec.Body.String(), tc.want)
+			}
+			assert.Equal(t, tc.paths, seen)
+		})
+	}
+}
+
 type pagedRepoRouteService struct{ mockRepoRouteService }
 
 func (pagedRepoRouteService) ListRepoContentsPage(_ context.Context, _ *db.User, _, _, _, path, after string, limit int) ([]services.RepoContent, string, string, error) {

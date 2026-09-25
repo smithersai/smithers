@@ -32,6 +32,7 @@ import { HARNESS_IDS, RepoSchema, TargetSchema } from "./LocalApp.ts"
 import { LSP_DIAGNOSTICS_CAP, LspDiagnosticSchema, LspHoverSchema } from "./LocalLsp.ts"
 import { PLUE_FAULTS } from "./PlueFailureCodes.ts"
 import { REFUSAL_ORIGINS } from "./Refusal.ts"
+import { RepositoryHomeSchema } from "./RepositoryHome.ts"
 import { RepositorySetupSchema } from "./RepositorySetup.ts"
 import {
   AffectedCardPayloadSchema,
@@ -759,6 +760,17 @@ const GraphDrawerSchema = z.object({
  * @category schemas
  */
 const CurrentCardSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("factory.home"),
+    payload: z.object({
+      home: z.union([RepositoryHomeSchema, z.object({ kind: z.literal("error"), message: z.string() })]),
+      repo: z.string(),
+      flows: z.array(
+        z.object({ id: z.string(), summary: z.string().nullable(), description: z.string(), featured: z.boolean() })
+      )
+    })
+  }),
   z.object({ ...cardBaseShape, kind: z.literal("repository-setup"), payload: RepositorySetupSchema }),
   // Identity-only tombstones keep historical frames and journals loadable.
   z.object({ ...cardBaseShape, kind: z.literal("retired"), payload: z.object({}) }),

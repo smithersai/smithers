@@ -3,7 +3,7 @@
  * 2026-09-07 §4; owner rule: flows are slash commands, and the featured ones
  * are the repository's to declare in .smithers/FACTORY.ts).
  *
- * Live defect this pins: the Home pane of smithersai/smithers said "Try
+ * Live defect this pins: the homepage of smithersai/smithers said "Try
  * first /review" while typing /review answered "There is no /review flow",
  * because the projection's flows were never leaves of the registry. Every
  * expectation below runs the real controller over a stub of the public
@@ -22,6 +22,7 @@ import type { AppStore } from "../state/AppStore"
 import { executeAgentToolCall } from "./agentTools"
 import { visibleItems } from "./Commands"
 import { namespaceOf, parseSubmit, SURFACE_FLOWS } from "./registry"
+import { readRepositoryHome } from "../state/seams/RepositoryFlowsSeam"
 
 setDefaultTimeout(30_000)
 
@@ -82,6 +83,17 @@ const identity = async (store: AppStore, state: "signed-in" | "signed-out"): Pro
 const REPO = "will/flows"
 const projectionPath = (repo: string): string => `/api/repos/${repo}/contents/.smithers/factory.json`
 const PROJECTION = projectionPath(REPO)
+
+test("repository homepage read decodes blocks and makes failures visible", async () => {
+  const baseUrl = "https://app.test"
+  const http = async () => json(200, { kind: "blocks", blocks: [{ type: "markdown", path: "README.md", markdown: "# Hello" }] })
+  expect(await readRepositoryHome({ baseUrl, http }, REPO)).toEqual({ kind: "blocks", blocks: [{ type: "markdown", path: "README.md", markdown: "# Hello" }] })
+  expect(await readRepositoryHome({ baseUrl, http: async () => json(200, { kind: "blocks", blocks: [{ type: "markdown", path: "../secret", markdown: "x" }] }) }, REPO))
+    .toEqual({ kind: "error", message: "Homepage is invalid" })
+  expect(await readRepositoryHome({ baseUrl, http: async () => json(404, {}) }, REPO)).toEqual({ kind: "none" })
+  expect(await readRepositoryHome({ baseUrl, http: async () => json(503, {}) }, REPO))
+    .toEqual({ kind: "error", message: "Homepage unavailable" })
+})
 
 /** The mirror's contents document for a committed projection: base64, as the route serves it. */
 const projectionDocument = (projection: unknown): Response =>
@@ -200,7 +212,7 @@ describe("the repository's flows are slash leaves", () => {
   test("/review dispatches exactly what /flow.run review does: the same doors, the same wire, this repository as the target", async () => {
     const seen: Array<Seen> = []
     const { controller } = await ready(backend({ [PROJECTION]: projectionDocument(CATALOG) }, seen))
-    const walked = (): Array<Seen> => seen.filter((call) => call.path !== PROJECTION)
+    const walked = (): Array<Seen> => seen.filter((call) => call.path !== PROJECTION && call.path !== `/api/repos/${REPO}/home`)
     const viaLeaf = await controller.commands.run("review")
     const leafCalls = walked()
     seen.length = 0

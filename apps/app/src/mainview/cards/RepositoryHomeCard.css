@@ -1,0 +1,4 @@
+.factory-home { display: grid; gap: 16px; min-width: 0; }
+.factory-home h2 { font-size: 1rem; margin: 0 0 8px; }
+.factory-home-row { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.factory-home a:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }

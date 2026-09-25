@@ -3,8 +3,8 @@
  * `.smithers/factory.json` declares it (the `flows` rows of the factory
  * projection), held in the `repositoryFlows` collection so the registry can
  * derive one slash leaf per row synchronously (flows/entries/flow.ts
- * `repositoryFlowLeaves`). The Home pane says "Try first /review"; this seam
- * is why typing `/review` finds a flow.
+ * `repositoryFlowLeaves`). Homepage flow buttons and slash leaves read these
+ * same rows.
  *
  * The read is the public contents route the Dispatcher card and the palette's
  * target search already use (TriggersSeam.readFactoryProjection), allowlisted
@@ -12,9 +12,9 @@
  * leaves themselves defer through sign-in when run: that door is flow.run's.
  *
  * Data-driven end to end: the collection holds what the mirror answered and
- * nothing else. A mirror without a projection, or an unreadable one, leaves
- * no row and therefore no leaves; a repository that stops being the target
- * keeps its row, and the leaves follow the target (AppController
+ * nothing else. A mirror without a projection has no leaves; the row also
+ * carries its resolved homepage or a visible read failure. A repository that
+ * stops being the target keeps its row, and the leaves follow the target (AppController
  * `repositoryFlows`). Each repository is read once per session, in the
  * background, the first time it becomes the target; `load` re-reads on demand.
  * No flow name is written in this app.
@@ -28,12 +28,14 @@
  * per-repository dedup makes a repeat resolution free.
  */
 import type { RepositoryFlow } from "../AppState"
+import { RepositoryHomeSchema } from "@smthrs/rpc/RepositoryHome"
+import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
 import { resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
 import { readFactoryProjection } from "./TriggersSeam"
 
 export interface RepositoryFlowsSeam {
-  /** Read one repository's declared flows into the collection now; an absent or unreadable projection clears its row. */
+  /** Read one repository's flows and homepage; an absent projection clears its leaves. */
   readonly load: (repo: string) => Promise<void>
   /** Read the active repository's flows, and every new target's as it becomes one, until disposed. */
   readonly subscribe: (onDispose: (release: () => void) => void) => void
@@ -62,11 +64,10 @@ export const createRepositoryFlowsSeam = (ctx: SeamContext): RepositoryFlowsSeam
 
   const load: RepositoryFlowsSeam["load"] = async (repo) => {
     read.add(repo)
-    const answer = await readFactoryProjection(ctx, repo)
+    const [answer, home] = await Promise.all([readFactoryProjection(ctx, repo), readRepositoryHome(ctx, repo)])
     if (disposed) return
     const flows = "error" in answer || answer.absent ? [] : repositoryFlowsOf(answer.projection.flows ?? [])
-    if (flows.length === 0 && ctx.store.collections.repositoryFlows.get(repo) === undefined) return
-    ctx.dispatch({ type: "repository-flows.loaded", actor: "system", repo, flows })
+    ctx.dispatch({ type: "repository-flows.loaded", actor: "system", repo, flows, home })
   }
 
   const loadTarget = (): void => {
@@ -95,4 +96,22 @@ export const createRepositoryFlowsSeam = (ctx: SeamContext): RepositoryFlowsSeam
   }
 
   return { load, subscribe }
+}
+
+/** One server-resolved read, including README fallback and visible failures. */
+export const readRepositoryHome = async (
+  ctx: Pick<SeamContext, "http" | "baseUrl">,
+  repo: string
+): Promise<RepositoryHome | { readonly kind: "error"; readonly message: string }> => {
+  const [owner = "", name = ""] = repo.split("/")
+  try {
+    const response = await ctx.http(`${ctx.baseUrl}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/home`)
+    // A repository the backend does not host has no homepage, not a failure.
+    if (response.status === 404) return { kind: "none" }
+    if (!response.ok) return { kind: "error", message: "Homepage unavailable" }
+    const parsed = RepositoryHomeSchema.safeParse(await response.json())
+    return parsed.success ? parsed.data : { kind: "error", message: "Homepage is invalid" }
+  } catch {
+    return { kind: "error", message: "Homepage unavailable" }
+  }
 }

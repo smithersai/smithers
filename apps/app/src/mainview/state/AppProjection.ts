@@ -3343,17 +3343,18 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         case "repository-flows.loaded": {
           /*
            * One row per repository, replaced whole: the projection is the
-           * catalog, so a reload keeps nothing of a stale one, and an absent
-           * projection (an empty list) leaves no row and therefore no leaves.
+           * catalog, so a reload keeps nothing of a stale one. An absent
+           * projection leaves no leaves, while a homepage can keep the row.
            */
           const existing = collections.repositoryFlows.get(transition.repo)
-          if (transition.flows.length === 0) {
+          if (transition.flows.length === 0 && transition.home === undefined) {
             if (existing !== undefined) collections.repositoryFlows.delete(transition.repo)
           } else if (existing === undefined) {
-            collections.repositoryFlows.insert({ id: transition.repo, flows: [...transition.flows], loadedAt: createdAt })
+            collections.repositoryFlows.insert({ id: transition.repo, flows: [...transition.flows], home: transition.home, loadedAt: createdAt })
           } else {
             collections.repositoryFlows.update(transition.repo, (draft) => {
               draft.flows = [...transition.flows]
+              draft.home = transition.home
               draft.loadedAt = createdAt
             })
           }

@@ -12,6 +12,7 @@ import {
 } from "../src/Cards.ts"
 import { LSP_DIAGNOSTICS_CAP } from "../src/LocalLsp.ts"
 import { AgentTurnFrameSchema } from "../src/NativeAgent.ts"
+import { RepositoryHomeSchema } from "../src/RepositoryHome.ts"
 
 const builtIn = AGENT_ROLES[0]!
 const builtInCardRow = {
@@ -723,6 +724,20 @@ type KindFixtures = {
 }
 
 const FIXTURES: Record<Card["kind"], KindFixtures> = {
+  "factory.home": {
+    minimal: { repo: "org/repo", home: { kind: "none" }, flows: [] },
+    full: {
+      repo: "org/repo",
+      home: {
+        kind: "blocks",
+        blocks: [
+          { type: "prompt", placeholder: "Change it…" },
+          { type: "markdown", path: "README.md", markdown: "# Hello" }
+        ]
+      },
+      flows: [{ id: "review", summary: "Review", description: "Review code", featured: true }]
+    }
+  },
   "repo-update": {
     minimal: {
       repo: "org/repo",
@@ -2475,6 +2490,22 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     full: { pane: "flow-graph", props: { runId: "run_1" } }
   }
 }
+
+test("repository home schema decodes every resolution and refuses unsafe paths", () => {
+  expect(RepositoryHomeSchema.safeParse({ kind: "none" }).success).toBe(true)
+  expect(RepositoryHomeSchema.safeParse({ kind: "readme", markdown: "# Hello" }).success).toBe(true)
+  expect(RepositoryHomeSchema.safeParse(FIXTURES["factory.home"].full.home).success).toBe(true)
+  for (
+    const path of ["/etc/passwd", "../README.md", "a/../README.md", "https://example.com", "a\\b", "%2e%2e/secret"]
+  ) {
+    expect(
+      RepositoryHomeSchema.safeParse({ kind: "blocks", blocks: [{ type: "markdown", path, markdown: "x" }] }).success
+    ).toBe(false)
+  }
+  expect(
+    RepositoryHomeSchema.safeParse({ kind: "blocks", blocks: [{ type: "ci-benchmark", measures: ["cold"] }] }).success
+  ).toBe(false)
+})
 
 const kinds = CardSchema.options.map((option) => option.shape.kind.value)
 const card = (kind: string, payload: unknown): unknown => ({ ...base, kind, payload })

@@ -37,6 +37,7 @@ The following are user decisions, not implementation defaults:
 | D-09 | Wiki and Mythical history are separate default-off release flags for this MVP. Both remain important future capabilities and may become internal implementation details. Core work must function without them. This supersedes the earlier decision to ship them immediately. |
 | D-10 | Plugin Library remains implemented behind a default-off flag. |
 | D-11 | Delete repository welcome/explore/contribute/maintain modes, the dedicated Factory inspection screen, user snapshot/template/fork controls, revision-computer forks, Linear integration, custom-agent configuration, and repository-defined home panes. “Remove” means delete, not flag. |
+| D-11a (Will, 2026-09-24, #1711) | Supersedes D-11 only for repository homepages: the factory declares typed homepage blocks, rendered as the first workspace chat message; otherwise show README.md, then the normal composer. The separate welcome modes and Factory screen remain removed. |
 | D-12 | Preserve cloud desktops, Vim input, local build tooling, flow authoring, and trigger registration. |
 | D-13 | Existing functionality is cut only when the result is a better product, not to meet an arbitrary MVP feature count. |
 | D-14 | For AI checks, inspect the working Artsy examples and verify compatibility with current breaking Smithers changes. An observability lint is a concrete initial example. |

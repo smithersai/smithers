@@ -1,13 +1,12 @@
 /**
- * The home pane a factory declares for its repository: `.smithers/home.json`.
+ * The homepage a factory declares for its repository: `.smithers/home.json`.
  *
- * A repository's page on smithers.sh opens on the repository's own home
- * pane, a README on steroids the maintainer declares in
+ * A repository's workspace chat opens with its homepage message, a README
+ * alternative the maintainer declares in
  * `.smithers/FACTORY.ts` as `export const home = Smithers.Factory.Home({ blocks })`,
  * the second export beside the factory itself. Blocks are declared values,
- * never raw HTML: a paragraph of text, a list of links, the featured flows,
- * and the CI benchmark that names which numbers it wants. The app renders
- * every block from data; a string that carries an HTML tag is refused where
+ * never raw HTML: a prompt, markdown file, text, links, and featured flows.
+ * The app renders every block from data; a string carrying an HTML tag is refused where
  * it is written.
  *
  * The declaration is inert, like {@link Flow.Flow}. The `FactoryProjection`
@@ -17,10 +16,6 @@
  * verb never writes. The file is checked in so the public mirror serves it
  * signed out and a workspace without `node_modules` never has to evaluate
  * `FACTORY.ts`.
- *
- * The benchmark numbers are not measured yet. The block declares which ones
- * it wants; the projection carries no values, and the app says "not
- * measured yet" for each until a measurement exists.
  *
  * @since 1.0.0
  */
@@ -107,29 +102,29 @@ export const Url = Schema.NonEmptyString.check(
 )
 
 /**
- * The CI numbers a benchmark block may ask for: the cold, full CI wall time;
- * the incremental time after a one-file change; and the cache hit rate.
+ * A relative path that cannot escape the repository.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const Measure = Schema.Literals(["cold", "incremental", "cache-hit-rate"])
+export const RepositoryPath = Schema.NonEmptyString.check(
+  Schema.isMaxLength(1024),
+  Schema.makeFilter<string>((path) =>
+    path.startsWith("/") || path.startsWith("\\") || path.includes("\\") ||
+      path.split("/").some((part) => part === "" || part === "." || part === "..") ||
+      /[%:?#\x00-\x1f]/.test(path)
+      ? "must be a relative in-repository path" :
+      true
+  )
+)
 
 /**
- * One CI benchmark measure.
+ * A slash leaf name or repository flow id.
  *
- * @category models
+ * @category schemas
  * @since 1.0.0
  */
-export type Measure = typeof Measure.Type
-
-/**
- * Every measure, in display order.
- *
- * @category constants
- * @since 1.0.0
- */
-export const allMeasures: ReadonlyArray<Measure> = ["cold", "incremental", "cache-hit-rate"]
+export const PromptFlow = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/))
 
 /**
  * A paragraph of plain text under an optional title.
@@ -180,16 +175,27 @@ export const FlowsBlock = Schema.Struct({
 })
 
 /**
- * The CI benchmark: which measures the pane shows. The projection carries no
- * numbers; every measure renders as "not measured yet" until one exists.
+ * A prompt that sends through the workspace chat, with optional copy.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const CiBenchmarkBlock = Schema.Struct({
-  type: Schema.Literal("ci-benchmark"),
-  title: Schema.optional(Title),
-  measures: Schema.NonEmptyArray(Measure)
+export const PromptBlock = Schema.Struct({
+  type: Schema.Literal("prompt"),
+  flow: Schema.optional(PromptFlow),
+  placeholder: Schema.optional(Title)
+})
+
+/**
+ * A repository markdown file resolved at main by the server.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const MarkdownBlock = Schema.Struct({
+  type: Schema.Literal("markdown"),
+  path: RepositoryPath,
+  title: Schema.optional(Title)
 })
 
 /**
@@ -198,7 +204,7 @@ export const CiBenchmarkBlock = Schema.Struct({
  * @category schemas
  * @since 1.0.0
  */
-export const Block = Schema.Union([TextBlock, LinksBlock, FlowsBlock, CiBenchmarkBlock])
+export const Block = Schema.Union([TextBlock, LinksBlock, FlowsBlock, PromptBlock, MarkdownBlock])
 
 /**
  * One declared block.
@@ -348,15 +354,25 @@ export interface FlowsOptions {
 }
 
 /**
- * What a `FACTORY.ts` writes for a CI benchmark block. `measures` defaults to
- * every measure.
+ * What a `FACTORY.ts` writes for a prompt block.
  *
  * @category models
  * @since 1.0.0
  */
-export interface CiBenchmarkOptions {
+export interface PromptOptions {
+  readonly flow?: string | undefined
+  readonly placeholder?: string | undefined
+}
+
+/**
+ * What a `FACTORY.ts` writes for a markdown block.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface MarkdownOptions {
+  readonly path: string
   readonly title?: string | undefined
-  readonly measures?: ReadonlyArray<Measure> | undefined
 }
 
 /**
@@ -406,22 +422,31 @@ export const Flows = (options: FlowsOptions = {}): typeof FlowsBlock.Type =>
   }))
 
 /**
- * Declares the CI benchmark block.
+ * Declares the homepage prompt.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const CiBenchmark = (options: CiBenchmarkOptions = {}): typeof CiBenchmarkBlock.Type => {
-  const plain = plainOptions("Home.CiBenchmark", options, new Set(["title", "measures"]))
-  return freezeDeep(decode("Home.CiBenchmark", CiBenchmarkBlock, {
-    type: "ci-benchmark",
-    ...plain,
-    measures: plain["measures"] ?? allMeasures
+export const Prompt = (options: PromptOptions = {}): typeof PromptBlock.Type =>
+  freezeDeep(decode("Home.Prompt", PromptBlock, {
+    type: "prompt",
+    ...plainOptions("Home.Prompt", options, new Set(["flow", "placeholder"]))
   }))
-}
 
 /**
- * Declares the repository's home pane from declared blocks.
+ * Declares a markdown file inside this repository.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const Markdown = (options: MarkdownOptions): typeof MarkdownBlock.Type =>
+  freezeDeep(decode("Home.Markdown", MarkdownBlock, {
+    type: "markdown",
+    ...plainOptions("Home.Markdown", options, new Set(["path", "title"]))
+  }))
+
+/**
+ * Declares the repository's homepage from declared blocks.
  *
  * Every block has to be a value one of the block constructors returned, or
  * an equal plain value; a string, an element, or any other shape is refused
@@ -435,7 +460,7 @@ export const CiBenchmark = (options: CiBenchmarkOptions = {}): typeof CiBenchmar
  *   blocks: [
  *     Smithers.Home.Text({ text: "Smithers builds itself with Smithers." }),
  *     Smithers.Home.Flows({ title: "Try first" }),
- *     Smithers.Home.CiBenchmark({ title: "CI on Smithers" })
+ *     Smithers.Home.Markdown({ path: "README.md" })
  *   ]
  * })
  * ```
@@ -450,7 +475,7 @@ export const Home = (options: HomeOptions): Declaration => {
   blocks.forEach((block, index) => {
     if (typeof block !== "object" || block === null) {
       throw new TypeError(
-        `Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, CiBenchmark), not ${
+        `Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown), not ${
           typeof block === "string" ? "a string" : typeof block
         }`
       )
@@ -480,10 +505,10 @@ export const parse = (text: string): Document | string => {
   try {
     value = JSON.parse(text)
   } catch (cause) {
-    return `the home pane is not JSON: ${cause instanceof Error ? cause.message : String(cause)}`
+    return `the homepage is not JSON: ${cause instanceof Error ? cause.message : String(cause)}`
   }
   const result = Schema.decodeUnknownResult(Document)(value)
   return Result.isFailure(result)
-    ? `the home pane does not have the .smithers/home.json shape: ${formatIssue(result.failure.issue)}`
+    ? `the homepage does not have the .smithers/home.json shape: ${formatIssue(result.failure.issue)}`
     : result.success
 }

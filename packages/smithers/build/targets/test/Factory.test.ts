@@ -201,7 +201,9 @@ describe("Smithers.Factory", () => {
 
 describe("FactoryProjection target", () => {
   const factory = Factory.Factory({ summary: "S.", flows: [review] })
-  const home = Home.Home({ blocks: [Home.Flows()] })
+  const home = Home.Home({
+    blocks: [Home.Prompt({ placeholder: "Change it…" }), Home.Flows(), Home.Markdown({ path: "README.md" })]
+  })
 
   it("checks by default, keys on the declaration, the entries, and both files, and plans one projection", () => {
     const checking = Factory.FactoryProjection({})

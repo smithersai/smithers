@@ -22,6 +22,7 @@ import type { Harness,Repo } from "@smthrs/rpc/LocalApp"
 import { HARNESS_IDS,HarnessSchema,RepoFileEntrySchema,RepoSchema } from "@smthrs/rpc/LocalApp"
 import type { LocalRepositoryInspection,RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
+import { RepositoryHomeSchema } from "@smthrs/rpc/RepositoryHome"
 import { z } from "zod"
 import { SignupSchema, type Signup } from "./Signup"
 import { FLOW_NAMES } from "../flows/FlowName"
@@ -106,6 +107,7 @@ export const RepositoryFlowsRowSchema = z.object({
   id: z.string(),
   /** The projection's flow rows, featured first, in catalog order. */
   flows: z.array(RepositoryFlowSchema),
+  home: z.union([RepositoryHomeSchema, z.object({ kind: z.literal("error"), message: z.string() })]).optional(),
   loadedAt: z.number()
 })
 export type RepositoryFlowsRow = z.infer<typeof RepositoryFlowsRowSchema>
@@ -1709,7 +1711,7 @@ export type AppTransition =
   | { type: "repo-tree.loaded"; actor: "system"; copyId: string; path: string; entries: ReadonlyArray<RepoTreeEntry>; truncated: boolean }
   | { type: "repo-tree.failed"; actor: "system"; copyId: string; path: string; error: string }
   /* The repository's declared flows landed (or went absent: an empty list) from its factory projection. */
-  | { type: "repository-flows.loaded"; actor: "system"; repo: string; flows: ReadonlyArray<RepositoryFlow> }
+  | { type: "repository-flows.loaded"; actor: "system"; repo: string; flows: ReadonlyArray<RepositoryFlow>; home?: RepositoryFlowsRow["home"] }
   /* The whole of one flow's measured history, replacing whatever was read before. */
   | { type: "flow-durations.loaded"; actor: "system"; repo: string; flowId: string; rows: ReadonlyArray<{ readonly actionTag: string; readonly samples: number; readonly p50Ms: number; readonly p90Ms: number }> }
   /* The workspace heading: its name, and the inline editor the pencil opens. */

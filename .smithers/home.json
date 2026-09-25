@@ -1,17 +1,16 @@
 {
   "blocks": [
     {
+      "type": "prompt",
+      "placeholder": "Change Smithers…"
+    },
+    {
       "type": "flows",
       "title": "Try first"
     },
     {
-      "type": "ci-benchmark",
-      "title": "CI on Smithers",
-      "measures": [
-        "cold",
-        "incremental",
-        "cache-hit-rate"
-      ]
+      "type": "markdown",
+      "path": "README.md"
     },
     {
       "type": "links",

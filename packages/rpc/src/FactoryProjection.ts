@@ -4,7 +4,7 @@
  * `.smithers/FACTORY.ts` (Factory design session 2026-09-07 §4; spec 08 §1;
  * RULINGS 21, 23). The public mirror serves it through the contents route
  * that is already allowlisted for signed-out reads, so the Dispatcher card
- * renders the declared rules and the home pane lists the featured flows
+ * renders the declared rules and the homepage lists the featured flows
  * before anyone signs in.
  *
  * Only the part the app reads is typed here. Field names are the

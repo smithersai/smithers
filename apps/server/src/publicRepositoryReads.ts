@@ -7,7 +7,7 @@ export const isPublicRepositoryRead = (method: string, pathname: string): boolea
   if (method !== "GET") return false
   const match = /^\/api\/repos\/([a-z\d][a-z\d-]{0,38})\/([a-z\d_.-]{1,100})(.*)$/i.exec(pathname)
   if (!match || match[2] === "." || match[2] === "..") return false
-  return /^(?:\/?|\/contents(?:\/.*)?|\/topics|\/bookmarks(?:\/[^/]+)?|\/changes(?:\/[^/]+(?:\/(?:diff|files))?)?|\/issues(?:\/\d+(?:\/comments)?)?|\/labels|\/git\/(?:refs|trees\/[^/]+|commits\/[^/]+))$/.test(match[3]!)
+  return /^(?:\/?|\/home|\/contents(?:\/.*)?|\/topics|\/bookmarks(?:\/[^/]+)?|\/changes(?:\/[^/]+(?:\/(?:diff|files))?)?|\/issues(?:\/\d+(?:\/comments)?)?|\/labels|\/git\/(?:refs|trees\/[^/]+|commits\/[^/]+))$/.test(match[3]!)
 }
 
 /**

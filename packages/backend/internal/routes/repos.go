@@ -2,11 +2,13 @@ package routes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -480,6 +482,115 @@ func (h *RepoHandler) GetRepoContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	errors.WriteJSON(w, http.StatusOK, entries)
+}
+
+const homeDocumentLimit = 128 * 1024
+const homeMarkdownLimit = 256 * 1024
+
+type repositoryHomeBlock struct {
+	Type        string  `json:"type"`
+	Title       string  `json:"title,omitempty"`
+	Text        string  `json:"text,omitempty"`
+	Flow        string  `json:"flow,omitempty"`
+	Placeholder string  `json:"placeholder,omitempty"`
+	Path        string  `json:"path,omitempty"`
+	Markdown    *string `json:"markdown,omitempty"`
+	Links       []struct {
+		Label string `json:"label"`
+		URL   string `json:"url"`
+	} `json:"links,omitempty"`
+}
+
+func validHomePath(value string) bool {
+	if value == "" || len(value) > 1024 || strings.HasPrefix(value, "/") || strings.ContainsAny(value, "\\%:?#") || strings.IndexFunc(value, func(r rune) bool { return r < 0x20 }) >= 0 {
+		return false
+	}
+	for _, part := range strings.Split(value, "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// GetRepositoryHome resolves the homepage against main through the same readable
+// repository contents service as the public file route.
+func (h *RepoHandler) GetRepositoryHome(w http.ResponseWriter, r *http.Request) {
+	owner, repo, err := repoOwnerAndName(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	read := func(path string) (services.RepoContent, error) {
+		return h.Service.GetRepoContents(r.Context(), middleware.UserFromContext(r.Context()), owner, repo, "main", path)
+	}
+	missing := func(err error) bool {
+		apiErr, ok := err.(*errors.APIError)
+		return ok && apiErr.Status == http.StatusNotFound
+	}
+	document, err := read(".smithers/home.json")
+	if err == nil {
+		if document.Size > homeDocumentLimit || len(document.Content) > homeDocumentLimit || !utf8.ValidString(document.Content) {
+			errors.WriteError(w, errors.BadRequest("repository homepage is too large or invalid"))
+			return
+		}
+		var parsed struct {
+			Blocks []repositoryHomeBlock `json:"blocks"`
+		}
+		if json.Unmarshal([]byte(document.Content), &parsed) != nil || len(parsed.Blocks) > 32 || parsed.Blocks == nil {
+			errors.WriteError(w, errors.BadRequest("repository homepage is invalid"))
+			return
+		}
+		for i := range parsed.Blocks {
+			block := &parsed.Blocks[i]
+			switch block.Type {
+			case "prompt", "flows", "text", "links":
+			case "markdown":
+				if !validHomePath(block.Path) {
+					errors.WriteError(w, errors.BadRequest("repository homepage has an invalid markdown path"))
+					return
+				}
+				file, fileErr := read(block.Path)
+				if missing(fileErr) {
+					// A declared file that is absent is the declaration's fault, not a missing repository.
+					errors.WriteError(w, errors.BadRequest("repository homepage markdown file is missing: "+block.Path))
+					return
+				}
+				if fileErr != nil {
+					writeRouteError(w, r, fileErr)
+					return
+				}
+				if file.Size > homeMarkdownLimit || len(file.Content) > homeMarkdownLimit || !utf8.ValidString(file.Content) {
+					errors.WriteError(w, errors.BadRequest("repository homepage markdown is too large or invalid"))
+					return
+				}
+				block.Markdown = &file.Content
+			default:
+				errors.WriteError(w, errors.BadRequest("repository homepage has an unknown block"))
+				return
+			}
+		}
+		errors.WriteJSON(w, http.StatusOK, map[string]any{"kind": "blocks", "blocks": parsed.Blocks})
+		return
+	}
+	if !missing(err) {
+		writeRouteError(w, r, err)
+		return
+	}
+	readme, err := read("README.md")
+	if err == nil {
+		if readme.Size > homeMarkdownLimit || len(readme.Content) > homeMarkdownLimit || !utf8.ValidString(readme.Content) {
+			errors.WriteError(w, errors.BadRequest("repository README is too large or invalid"))
+			return
+		}
+		errors.WriteJSON(w, http.StatusOK, map[string]any{"kind": "readme", "markdown": readme.Content})
+		return
+	}
+	if !missing(err) {
+		writeRouteError(w, r, err)
+		return
+	}
+	errors.WriteJSON(w, http.StatusOK, map[string]string{"kind": "none"})
 }
 
 // ListGitRefs handles GET /api/repos/{owner}/{repo}/git/refs.

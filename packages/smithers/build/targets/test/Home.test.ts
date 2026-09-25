@@ -27,6 +27,13 @@ describe("the home blocks", () => {
 
     expect(Home.Flows()).toEqual({ type: "flows" })
     expect(Home.Flows({ title: "Try first" })).toEqual({ type: "flows", title: "Try first" })
+    expect(Home.Prompt({ placeholder: "Change Smithers…" })).toEqual({
+      type: "prompt",
+      placeholder: "Change Smithers…"
+    })
+    expect(Home.Prompt({ flow: "review" })).toEqual({ type: "prompt", flow: "review" })
+    expect(() => Home.Prompt({ flow: "https://example.com" })).toThrow()
+    expect(Home.Markdown({ path: "docs/README.md" })).toEqual({ type: "markdown", path: "docs/README.md" })
   })
 
   it("refuse raw HTML in text, titles, and labels, and keep plain comparisons", () => {
@@ -50,15 +57,25 @@ describe("the home blocks", () => {
     expect(() => Home.Text(null as never)).toThrow(/plain object/)
   })
 
-  it("the CI benchmark names every measure by default and refuses others", () => {
-    expect(Home.CiBenchmark()).toEqual({ type: "ci-benchmark", measures: ["cold", "incremental", "cache-hit-rate"] })
-    expect(Home.CiBenchmark({ title: "CI", measures: ["cold"] })).toEqual({
-      type: "ci-benchmark",
-      title: "CI",
-      measures: ["cold"]
-    })
-    expect(() => Home.CiBenchmark({ measures: [] })).toThrow()
-    expect(() => Home.CiBenchmark({ measures: ["p99"] as never })).toThrow()
+  it("keeps markdown paths inside the repository", () => {
+    for (
+      const path of [
+        "",
+        "/README.md",
+        "../README.md",
+        "docs/../README.md",
+        "docs//README.md",
+        "./README.md",
+        "https://example.com/x",
+        "C:\\README.md",
+        "docs\\README.md",
+        "README.md?raw=1",
+        "%2e%2e/secret"
+      ]
+    ) {
+      expect(() => Home.Markdown({ path })).toThrow()
+    }
+    expect("CiBenchmark" in Home).toBe(false)
   })
 })
 
@@ -66,7 +83,7 @@ describe("Smithers.Factory.Home", () => {
   const blocks = [
     Home.Text({ text: "Smithers builds itself with Smithers." }),
     Home.Flows({ title: "Try first" }),
-    Home.CiBenchmark({ title: "CI on Smithers" })
+    Home.Markdown({ path: "README.md" })
   ]
 
   it("declares a frozen, tagged declaration over declared blocks", () => {

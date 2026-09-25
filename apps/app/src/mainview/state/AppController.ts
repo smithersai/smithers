@@ -864,7 +864,7 @@ export const createAppController = (
     const target = resolveTargetRepo(store, undefined)
     if ("error" in target) return undefined
     const row = store.collections.repositoryFlows.get(target.repo)
-    return row === undefined ? undefined : { repo: row.id, flows: row.flows, loadedAt: row.loadedAt }
+    return row === undefined ? undefined : { repo: row.id, flows: row.flows, home: row.home, loadedAt: row.loadedAt }
   }
   const issuesSeam = actors.pair(seamCtx, (context, select) => createIssuesSeam(context, request => select(renderFlowForm)(request)))
   const landingsSeam = actors.pair(seamCtx, (context, select) => createLandingsSeam(context, request => select(renderFlowForm)(request)))

@@ -62,7 +62,7 @@ ${
   blocks: [
     S.Home.Text({ text: ${JSON.stringify(options.text ?? "Builds itself.")} }),
     S.Home.Flows({ title: "Try first" }),
-    S.Home.CiBenchmark({ title: "CI", measures: ["cold", "incremental"] }),
+    S.Home.Markdown({ path: "README.md" }),
   ],
 })
 `
@@ -157,7 +157,7 @@ describe("FactoryProjection through the CLI", () => {
       blocks: [
         { type: "text", text: "Builds itself." },
         { type: "flows", title: "Try first" },
-        { type: "ci-benchmark", title: "CI", measures: ["cold", "incremental"] }
+        { type: "markdown", path: "README.md" }
       ]
     })
 

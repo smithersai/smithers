@@ -5,10 +5,16 @@ import { act } from "react"
 import { createRoot } from "react-dom/client"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import type { Card } from "@smthrs/rpc/Cards"
+import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
 import { CardView } from "../ChatCards"
 import { FlowGraphSurface } from "../ViewModules"
 import { defaultPill } from "./CardFamily"
 import { CARD_FAMILIES, CARD_RENDERERS, RETIRED_CARD_KINDS, pillStatus } from "./CardRenderers"
+import { RepositoryHomeCard, stripHomeHtml } from "./RepositoryHomeCard"
+import { ControllerTestProvider } from "../ControllerContext"
+import type { AppController } from "../state/AppController"
+import { createAppStore } from "../state/AppStore"
+import { memoryStorage } from "../state/TestFixtures"
 
 /*
  * The renderer map replaced ChatCards.tsx's render switch and pill switch.
@@ -234,6 +240,61 @@ describe("CardRenderers", () => {
       delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
       await GlobalRegistrator.unregister()
     }
+  })
+})
+
+describe("factory homepage", () => {
+  const home = (blocks: Extract<RepositoryHome, { kind: "blocks" }>["blocks"]): Extract<Card, { kind: "factory.home" }> => ({
+    ...base, status: "active", kind: "factory.home", payload: {
+      repo: "org/repo", home: { kind: "blocks", blocks },
+      flows: [{ id: "review", summary: "Review", description: "Review code", featured: true }]
+    }
+  })
+
+  test("renders text, links, flows, markdown, and safe README content", () => {
+    const card = home([
+      { type: "text", text: "Welcome" },
+      { type: "links", links: [{ label: "Source", url: "https://example.com" }] },
+      { type: "flows", title: "Try first" },
+      { type: "markdown", path: "README.md", markdown: "# Intro\n<script>alert(1)</script>[unsafe](javascript:alert(1))" }
+    ])
+    const markup = renderToStaticMarkup(<RepositoryHomeCard card={card} onRunCommand={() => {}} />)
+    expect(markup).toContain("Welcome")
+    expect(markup).toContain("https://example.com")
+    expect(markup).toContain('data-flow="review"')
+    expect(markup).toContain("Intro")
+    expect(markup).not.toContain("<script")
+    expect(markup).not.toContain("alert(1)</script>")
+    expect(markup).not.toContain('href="javascript:')
+    expect(stripHomeHtml("<b>Hi</b><!-- x -->")).toBe("Hi")
+    expect(stripHomeHtml("<p>a</p>\n```ts\nconst x: Array<string> = []\n```\n<i>b</i>")).toBe("a\n```ts\nconst x: Array<string> = []\n```\nb")
+    const readme = { ...card, payload: { ...card.payload, home: { kind: "readme" as const, markdown: "# README <img src=x>" } } }
+    expect(renderToStaticMarkup(<RepositoryHomeCard card={readme} onRunCommand={() => {}} />)).not.toContain("<img")
+    const error = { ...card, payload: { ...card.payload, home: { kind: "error" as const, message: "Homepage unavailable" } } }
+    expect(renderToStaticMarkup(<RepositoryHomeCard card={error} onRunCommand={() => {}} />)).toContain('role="alert"')
+  })
+
+  test("prompt submits through chat.send and flow button uses the repository slash leaf", async () => {
+    GlobalRegistrator.register()
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+    store.dispatch({ type: "composer.changed", actor: "user", draft: "Change it" })
+    const controller = { store, changeDraft: (draft: string) => { store.dispatch({ type: "composer.changed", actor: "user", draft }) } } as unknown as AppController
+    const calls: Array<[string, string | undefined]> = []
+    const host = document.createElement("div")
+    const root = createRoot(host)
+    act(() => root.render(<ControllerTestProvider controller={controller}><RepositoryHomeCard
+      card={home([{ type: "prompt", placeholder: "Change it…" }, { type: "flows" }])}
+      onRunCommand={(name, args) => calls.push([name, args])} /></ControllerTestProvider>))
+    act(() => host.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })))
+    act(() => host.querySelector<HTMLButtonElement>('[data-flow="review"]')?.click())
+    expect(calls).toEqual([["chat.send", "Change it"], ["review", undefined]])
+    act(() => root.render(<ControllerTestProvider controller={controller}><RepositoryHomeCard
+      card={home([{ type: "prompt", flow: "review" }])}
+      onRunCommand={(name, args) => calls.push([name, args])} /></ControllerTestProvider>))
+    act(() => host.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })))
+    expect(calls.at(-1)).toEqual(["chat.send", "/review Change it"])
+    act(() => root.unmount())
+    await GlobalRegistrator.unregister()
   })
 })
 

@@ -6,7 +6,7 @@
  * the factory that develops it: one `summary` line, the `flows` it features
  * ({@link Flow.Flow} declarations), the `on` table the Dispatcher listens
  * with, and the `github` policy that says who writes `main`. `export const
- * home = S.Factory.Home({ blocks })` in the same file is the home pane
+ * home = S.Factory.Home({ blocks })` in the same file is the homepage
  * (`Home.ts`). The file sits beside `WORKSPACE.ts`, may import it, and never
  * imports a `PACKAGE.ts`: a target it needs is named by label
  * (`S.label("//:ci")`), never by value.
@@ -58,7 +58,7 @@ export const declarationPath = ".smithers/FACTORY.ts"
 export const projectionPath = ".smithers/factory.json"
 
 /**
- * Where the home pane projection is written.
+ * Where the homepage projection is written.
  *
  * @category constants
  * @since 1.0.0
@@ -517,7 +517,7 @@ export const parseProjection = (text: string): Projection | string => {
 
 /**
  * The projection could not be rendered: the workspace declares no factory,
- * or the home pane file disagrees with the declaration's exports.
+ * or the homepage file disagrees with the declaration's exports.
  *
  * @category errors
  * @since 1.0.0
@@ -601,7 +601,7 @@ export const Attrs = Schema.Struct({
   declaration: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(declarationPath))),
   /** The workspace-relative file the factory projection is written to. @default ".smithers/factory.json" */
   output: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(projectionPath))),
-  /** The workspace-relative file the home pane is written to. @default ".smithers/home.json" */
+  /** The workspace-relative file the homepage is written to. @default ".smithers/home.json" */
   homeOutput: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(homePath))),
   /** Whether to write the files or verify the checked-in copies. @default "check" */
   mode: Mode,

@@ -82,16 +82,13 @@ export const factory = S.Factory({
   github: S.Github.Policy({ mirror: "pull", issues: "two-way", changes: "send-upstream" })
 })
 
-// --- home pane -------------------------------------------------------------
-// The first card a visitor sees on smithers.sh/smithersai/smithers, above the
-// welcome: what this repository is, the flows to try first, and the CI
-// benchmark. Blocks are declared values, never raw HTML; the app renders each
-// from data. The benchmark numbers are not measured yet; the block names the
-// measures and the app hides them until a measurement exists.
+// --- homepage --------------------------------------------------------------
+// The first message in this repository's workspace chat, projected as data.
 export const home = S.Factory.Home({
   blocks: [
+    S.Home.Prompt({ placeholder: "Change Smithers…" }),
     S.Home.Flows({ title: "Try first" }),
-    S.Home.CiBenchmark({ title: "CI on Smithers" }),
+    S.Home.Markdown({ path: "README.md" }),
     S.Home.Links({
       title: "Read more",
       links: [
@@ -101,4 +98,4 @@ export const home = S.Factory.Home({
     })
   ]
 })
-// --- end home pane ---------------------------------------------------------
+// --- end homepage ----------------------------------------------------------

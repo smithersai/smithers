@@ -141,7 +141,7 @@ const commit = Smithers.ToolRun({
 
 // --- factory projection ----------------------------------------------------
 // The factory is declared in .smithers/FACTORY.ts beside WORKSPACE.ts: the
-// featured flows, the Dispatcher table, the GitHub policy, and the home pane.
+// featured flows, the Dispatcher table, the GitHub policy, and the homepage.
 // This target projects that declaration into .smithers/factory.json and
 // .smithers/home.json, the files smithers.sh reads from the public mirror, so
 // a visitor signed out sees them and a workspace without node_modules never
@@ -490,7 +490,7 @@ const ci = Smithers.GithubCiGen({
         // died at runtime in every case that spawned it.
         { name: "Generated workflow drift", verb: Smithers.Verb.Lint, pattern: "//:ci" },
         // The factory projection smithers.sh serves from the public mirror:
-        // the featured flows, the Dispatcher table, and the home pane,
+        // the featured flows, the Dispatcher table, and the homepage,
         // declared in .smithers/FACTORY.ts, rendered over the flows/ tree,
         // checked in.
         { name: "Factory projection drift", verb: Smithers.Verb.Lint, pattern: "//:factoryProjection" },
