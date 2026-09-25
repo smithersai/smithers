@@ -22,6 +22,8 @@ type GitMirrorSyncRouteService interface {
 
 type GitMirrorSyncHandler struct {
 	Service GitMirrorSyncRouteService
+	// MainPull is the opposite direction: Smithers main following GitHub.
+	MainPull *GitHubMainPullHandler
 }
 
 type GitMirrorSyncResponse struct {

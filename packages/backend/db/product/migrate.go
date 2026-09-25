@@ -57,6 +57,7 @@ var migrationRegistry = []migrationSpec{
 	{21, "migrations/0021_oauth2_grant_source.sql"},
 	{22, "migrations/0022_provider_refresh_and_mention_sources.sql"},
 	{23, "migrations/0023_chat_turn_erasure_proofs.sql"},
+	{24, "migrations/0024_github_main_pulls.sql"},
 }
 
 type migration struct {

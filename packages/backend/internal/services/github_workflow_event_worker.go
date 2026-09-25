@@ -64,6 +64,17 @@ type GitHubWebhookEventWorker struct {
 	repositoryJobs interface {
 		AdmitGitHubEvent(context.Context, int64, db.GithubWebhookJob, TriggerEvent) error
 	}
+	mainPull interface {
+		RequestForGitHub(ctx context.Context, owner, repo string) error
+	}
+}
+
+// SetMainPull makes a push to a GitHub repository's default branch request
+// the Smithers main pull for the repositories it is the source of.
+func (w *GitHubWebhookEventWorker) SetMainPull(service interface {
+	RequestForGitHub(ctx context.Context, owner, repo string) error
+}) {
+	w.mainPull = service
 }
 
 // SetRepositoryJobs connects authenticated webhook deliveries to the modern
@@ -197,6 +208,10 @@ func (w *GitHubWebhookEventWorker) processJob(ctx context.Context, job db.Github
 		return w.markJobDone(ctx, job)
 	}
 
+	if err := w.requestMainPull(ctx, job, payload); err != nil {
+		return err
+	}
+
 	selector := buildGitHubWebhookRepositorySelector(job, payload)
 	if selector.InstallationID == 0 && selector.GitHubRepositoryID == 0 &&
 		(strings.TrimSpace(selector.OwnerLoginLower) == "" || strings.TrimSpace(selector.RepoNameLower) == "") {
@@ -232,6 +247,30 @@ func (w *GitHubWebhookEventWorker) processJob(ctx context.Context, job db.Github
 	}
 
 	return w.markJobDone(ctx, job)
+}
+
+// requestMainPull runs before workflow dispatch; a replayed job requests
+// again, which only coalesces into the same pull.
+func (w *GitHubWebhookEventWorker) requestMainPull(ctx context.Context, job db.GithubWebhookJob, payload gitHubWorkflowEventPayload) error {
+	if w.mainPull == nil || !strings.EqualFold(strings.TrimSpace(job.EventType), "push") || payload.Repository == nil {
+		return nil
+	}
+	branch := strings.TrimSpace(payload.Repository.DefaultBranch)
+	if branch == "" || strings.TrimSpace(payload.Ref) != "refs/heads/"+branch {
+		return nil
+	}
+	owner := strings.TrimSpace(payload.Repository.Owner.Login)
+	name := strings.TrimSpace(payload.Repository.Name)
+	if (owner == "" || name == "") && strings.Count(payload.Repository.FullName, "/") == 1 {
+		owner, name, _ = strings.Cut(strings.TrimSpace(payload.Repository.FullName), "/")
+	}
+	if owner == "" || name == "" {
+		return nil
+	}
+	if err := w.mainPull.RequestForGitHub(ctx, owner, name); err != nil {
+		return fmt.Errorf("request main pull: %w", err)
+	}
+	return nil
 }
 
 // markJobDone finishes this worker's claim generation. A zero-row write means

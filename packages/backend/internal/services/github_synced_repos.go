@@ -138,6 +138,7 @@ type GitHubSyncedRepoService struct {
 	pushAccess GitHubRepoPushProver
 	// mirrorFailures counts refused bindings and suspended mirrors.
 	mirrorFailures GitHubMirrorFailureObserver
+	pullMirror     func(ctx context.Context, owner, repo string) (bool, error)
 }
 
 // GitHubMirrorFailureObserver records a mirror failure by stage and reason
@@ -201,6 +202,15 @@ func (s *GitHubSyncedRepoService) SetMirrorer(mirrorer GitHubSyncedRepoMirrorer)
 func (s *GitHubSyncedRepoService) SetPushAccess(access GitHubRepoPushProver) {
 	if s != nil {
 		s.pushAccess = access
+	}
+}
+
+// SetPullMirror withholds repositories that follow GitHub (`mirror: "pull"`)
+// from the ref-push feed: GitHub writes their main, and a Smithers -> GitHub
+// ref mirror would overwrite it and prune smithers/landing-<n> branches.
+func (s *GitHubSyncedRepoService) SetPullMirror(pullMirror func(ctx context.Context, owner, repo string) (bool, error)) {
+	if s != nil {
+		s.pullMirror = pullMirror
 	}
 }
 
@@ -336,6 +346,15 @@ func (s *GitHubSyncedRepoService) ListSyncedRepos(ctx context.Context, refsOnly 
 				MirrorSuspended: string(reason),
 			})
 			continue
+		}
+		if refsOnly && s.pullMirror != nil && row.MirrorOwner.Valid && row.MirrorRepo.Valid {
+			pull, err := s.pullMirror(ctx, row.MirrorOwner.String, row.MirrorRepo.String)
+			if err != nil {
+				return nil, pkgerrors.Internal("failed to read the repository's GitHub policy").WithCause(err)
+			}
+			if pull {
+				continue
+			}
 		}
 		summary := GitHubSyncedRepoSummary{
 			GitHubOwner:   row.OwnerLogin,

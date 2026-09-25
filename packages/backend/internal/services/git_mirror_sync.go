@@ -60,6 +60,31 @@ type GitMirrorSyncService struct {
 	runGitRefSync  func(ctx context.Context, sourceURL, targetURL, ref, targetRevision string) error
 	listRemoteRefs func(ctx context.Context, remote string) (map[string]string, error)
 	launch         func(name string, fn func())
+	// pullPolicy reports a repository whose recorded GitHub policy is
+	// `mirror: "pull"`. GitHub writes main there, and this Smithers -> GitHub
+	// sync (with --prune) would delete GitHub-only branches such as
+	// smithers/landing-<n>, so it is refused.
+	pullPolicy func(context.Context, int64) (bool, error)
+}
+
+// WithGitMirrorPullPolicy refuses Smithers -> GitHub syncs for repositories
+// whose GitHub policy is `mirror: "pull"`.
+func WithGitMirrorPullPolicy(pullPolicy func(context.Context, int64) (bool, error)) GitMirrorSyncOption {
+	return func(s *GitMirrorSyncService) { s.pullPolicy = pullPolicy }
+}
+
+func (s *GitMirrorSyncService) refusePullPolicy(ctx context.Context, repositoryID int64) error {
+	if s.pullPolicy == nil {
+		return nil
+	}
+	pull, err := s.pullPolicy(ctx, repositoryID)
+	if err != nil {
+		return pkgerrors.Internal("failed to read the repository's GitHub policy").WithCause(err)
+	}
+	if pull {
+		return pkgerrors.Conflict("GitHub writes main for this repository (mirror: \"pull\"); Smithers follows it through github/main-pull")
+	}
+	return nil
 }
 
 type GitMirrorSyncRefResult struct {
@@ -160,6 +185,9 @@ func (s *GitMirrorSyncService) startMirrorSync(ctx context.Context, userID, repo
 		return db.GithubMirrorSyncRun{}, pkgerrors.Internal("git mirror sync runner not configured")
 	}
 
+	if err := s.refusePullPolicy(ctx, repositoryID); err != nil {
+		return db.GithubMirrorSyncRun{}, err
+	}
 	remotes, err := s.resolveRemotes(ctx, userID, repositoryID, normalizedOwner, normalizedRepo)
 	if err != nil {
 		return db.GithubMirrorSyncRun{}, err
@@ -278,6 +306,9 @@ func (s *GitMirrorSyncService) RetryMirrorRef(ctx context.Context, userID, repos
 		return 0, pkgerrors.Internal("git mirror sync runner not configured")
 	}
 
+	if err := s.refusePullPolicy(ctx, repositoryID); err != nil {
+		return 0, err
+	}
 	latest, err := s.queries.GetLatestGithubMirrorSyncRefResult(ctx, db.GetLatestGithubMirrorSyncRefResultParams{
 		RepositoryID: repositoryID,
 		Name:         ref,

@@ -1163,6 +1163,10 @@ func buildRouter(
 				r.With(readRepo...).Get("/mirror-sync/{run_id}", mirrorSyncHandler.GetMirrorSyncRun)
 				r.With(writeRepo...).Post("/github/reconcile", mirrorSyncHandler.ReconcileGitHub)
 				r.With(writeRepo...).Post("/github/mirror/refs/{ref}/retry", mirrorSyncHandler.RetryMirrorRef)
+				if mirrorSyncHandler != nil && mirrorSyncHandler.MainPull != nil {
+					r.With(writeRepo...).Post("/github/main-pull", mirrorSyncHandler.MainPull.RequestMainPull)
+					r.With(readRepo...).Get("/github/main-pull", mirrorSyncHandler.MainPull.GetMainPull)
+				}
 
 				r.With(writeRepo...).Post("/statuses/{sha}", commitStatusHandler.CreateCommitStatus)
 

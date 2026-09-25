@@ -891,7 +891,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	workspaceCleaner := cleanup.NewWorkspaceCleaner(workspaceService, 5*time.Minute)
 	repoSyncService := services.NewRepoSyncService("", repoConnectionService)
-	gitMirrorSyncService := services.NewGitMirrorSyncService(queries, services.WithGitMirrorCredentials(queries, gitHubUserReposService, publicBaseURL, repoConnectionService))
+	// Smithers main follows GitHub main for `mirror: "pull"` repositories.
+	gitHubMainPullService := services.NewGitHubMainPullService(queries, repoHostClient, repoConnectionService, repoConnectionService)
+	gitHubSyncedRepoService.SetPullMirror(gitHubMainPullService.PullMirror)
+	gitHubWebhookEventWorker.SetMainPull(gitHubMainPullService)
+	gitMirrorSyncService := services.NewGitMirrorSyncService(queries, services.WithGitMirrorCredentials(queries, gitHubUserReposService, publicBaseURL, repoConnectionService),
+		services.WithGitMirrorPullPolicy(gitHubMainPullService.PullPolicyRecorded))
 
 	repoHandler := &routes.RepoHandler{
 		Service:               repoService,
@@ -900,7 +905,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		SSHHost:               cfg.Server.SSHHost,
 		AuditService:          auditService,
 	}
-	mirrorSyncHandler := &routes.GitMirrorSyncHandler{Service: gitMirrorSyncService}
+	mirrorSyncHandler := &routes.GitMirrorSyncHandler{Service: gitMirrorSyncService,
+		MainPull: &routes.GitHubMainPullHandler{Service: gitHubMainPullService}}
 	authHandler := &routes.AuthHandler{
 		Service:      authService,
 		AuthConfig:   cfg.Auth,
@@ -1508,6 +1514,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		})
 	} else if options.topology.hosted() && options.topology.workers() {
 		slog.Error("durable GitHub import worker is disabled until repository provisioning enforcement is enabled")
+	}
+	if options.topology.workers() {
+		// The poll catches missed webhooks even where workflows are off.
+		launchWorker(func() { gitHubMainPullService.Start(workerCtx) })
 	}
 	if options.topology.workers() && cfg.FeatureFlags.Workflows {
 		launchWorker(func() { cronSchedulerWorker.Start(workerCtx) })

@@ -338,7 +338,13 @@ func landingGitHubGitError(action string, err error, remotes landingGitHubRemote
 // resolveGitHubDestination is the repository's one GitHub destination: an
 // explicit mirror destination, its single recorded GitHub source, or an
 // explicit repository connection. It is never inferred from names alone.
-func resolveGitHubDestination(ctx context.Context, q GitMirrorCredentialStore, connection RepoSyncConnectionChecker, userID, repositoryID int64, owner, repo string) (string, string, error) {
+// gitHubDestinationStore is what resolveGitHubDestination reads.
+type gitHubDestinationStore interface {
+	GetRepoByID(context.Context, int64) (db.Repository, error)
+	ListRepositoryGitHubSources(context.Context, int64) ([]db.ListRepositoryGitHubSourcesRow, error)
+}
+
+func resolveGitHubDestination(ctx context.Context, q gitHubDestinationStore, connection RepoSyncConnectionChecker, userID, repositoryID int64, owner, repo string) (string, string, error) {
 	repository, err := q.GetRepoByID(ctx, repositoryID)
 	if err != nil {
 		return "", "", pkgerrors.Internal("load mirror repository").WithCause(err)
