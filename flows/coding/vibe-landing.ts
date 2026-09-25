@@ -1,13 +1,17 @@
-/** Append the cleaned request to main through Plue's existing landing policy. */
+/**
+ * Deliver the cleaned request: append it to main through Plue's existing
+ * landing policy, or, when the repository's declared GitHub policy is
+ * `send-upstream`, open its GitHub pull request for a maintainer to merge.
+ */
 import { Action, Flow, FlowRuntime, Interpreter, Poll } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
 import { Landing } from "./landing.ts"
-import { AppendObservation, AppendPreparation, LandingIdentity, QueuedAppend } from "./landing-schema.ts"
+import { AppendObservation, AppendPreparation, Delivery, LandingIdentity, QueuedAppend } from "./landing-schema.ts"
 import { requestIdFor } from "./native.ts"
 import { CodingError } from "./schema.ts"
 import { PublishVibeSource } from "./vibe-publication.ts"
-import { VibeCleanup, VibeLanded } from "./vibe-schema.ts"
+import { VibeCleanup, VibeDelivered, VibeLanded, VibeProposed } from "./vibe-schema.ts"
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 /** Existing landing policy runs in Plue's worker; this bound covers full-history inspection. */
@@ -15,6 +19,14 @@ const observationIntervalMs = 10_000, observationAttempts = 90
 const Unobserved = Schema.Struct({ status: Schema.Literal("unobserved"), reason: Schema.String })
 const Observed = Schema.Union([AppendObservation, Unobserved])
 
+/** Recorded once, so a restart never switches an in-flight request to the other delivery. */
+const ReadDelivery = Action.make("coding/read-vibe-delivery", {
+  payload: { cleanup: VibeCleanup }, success: Delivery, error: CodingError, nondeterministic: true
+})
+const OpenPull = Action.make("coding/open-vibe-pull", {
+  payload: { cleanup: VibeCleanup, cleanedSource: PublishVibeSource.successSchema, landing: LandingIdentity }, success: VibeProposed,
+  error: CodingError, nondeterministic: true
+})
 const PrepareAppend = Action.make("coding/prepare-vibe-append", {
   payload: { cleanup: VibeCleanup }, success: AppendPreparation, error: CodingError, nondeterministic: true
 })
@@ -42,21 +54,33 @@ const AwaitAppend = Poll.make("coding/AwaitVibeAppend", {
 })
 export const LandVibeError = Schema.Union([CodingError, Poll.Failure])
 export const LandVibe = Flow.make("coding/LandVibe", {
-  payload: VibeCleanup, success: VibeLanded, error: LandVibeError,
+  payload: VibeCleanup, success: VibeDelivered, error: LandVibeError,
   // bindPlanned alone lets independent descendants run early. The explicit
-  // andThen makes the whole append subtree wait for the retention receipt.
+  // andThen makes the whole delivery subtree wait for the retention receipt.
   body: cleanup => PublishVibeSource.child({ source: cleanup.head, phase: "cleaned" }).pipe(
     Node.bindPlanned(cleanedSource => Node.succeed(cleanedSource).pipe(
       Node.andThen(PrepareAppend.call({ cleanup })),
       Node.bindPlanned(preparation => CreateLanding.call({ cleanup, preparation }).pipe(
-        Node.bindPlanned(landing => QueueAppend.call({ cleanup, preparation, landing })))),
-      Node.bindPlanned(queued => AwaitAppend.child({ queued }).pipe(
-        Node.bindPlanned(observed => VerifyLanded.call({ cleanup, cleanedSource, queued, observed })))))))
+        // The policy is read once the landing exists, so a refusal before it reads nothing.
+        Node.bindPlanned(landing => Node.succeed(landing).pipe(Node.andThen(ReadDelivery.call({ cleanup })), Node.branch({
+          if: delivery => delivery === "pull-request",
+          then: () => OpenPull.call({ cleanup, cleanedSource, landing }),
+          else: () => QueueAppend.call({ cleanup, preparation, landing }).pipe(
+            Node.bindPlanned(queued => AwaitAppend.child({ queued }).pipe(
+              Node.bindPlanned(observed => VerifyLanded.call({ cleanup, cleanedSource, queued, observed })))))
+        }))))))))
 })
 
 const atomsOf = (cleanup: VibeCleanup) => cleanup.result.changes.flatMap(change => change.implementation.atoms)
 export const landingLayers = Layer.mergeAll(
   Interpreter.layer(LandVibe), Interpreter.layer(AwaitAppend),
+  ReadDelivery.toLayer(() => Effect.flatMap(Landing, landing => landing.readDelivery)),
+  OpenPull.toLayer(({ cleanup, cleanedSource, landing: identity }) => Effect.gen(function*() {
+    const landing = yield* Landing, instance = yield* FlowRuntime.FlowInstance
+    if (cleanedSource.source.commitId !== cleanup.head.commitId) return yield* invalid("Pull request requires this exact retained cleaned source")
+    const pullRequest = yield* landing.openPull(identity, cleanup.head.commitId, instance.executionId)
+    return { cleanup, cleanedSource, landing: identity, pullRequest }
+  })),
   PrepareAppend.toLayer(({ cleanup }) => Effect.gen(function*() {
     const landing = yield* Landing
     if (cleanup.result.status !== "validated" || cleanup.result.findings.length !== 0 ||

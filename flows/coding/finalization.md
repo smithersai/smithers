@@ -2,7 +2,8 @@
 
 The public `coding/vibe` descriptor's module IS the `coding/Vibe` flow, which
 composes three private children in order: `coding/AdmitVibe`,
-`coding/CleanVibeHistory` and `coding/LandVibe`. Each child leaves its own
+`coding/CleanVibeHistory` and `coding/LandVibe`. `LandVibe` appends to main,
+or, for a repository that sends changes upstream, opens a GitHub pull request. Each child leaves its own
 source-qualified receipt for the existing cards. Shipment is separate and not
 implemented. The existing request outcome stops at validated, changes-requested
 or blocked.
@@ -196,6 +197,51 @@ cleaned-source retention receipt:
 
 The `VibeLanded` receipt carries the cleanup, the cleaned-source retention, the
 landing identity, task ID, appended main commit and landed count.
+
+## Send upstream as a GitHub pull request
+
+A repository whose `.smithers/FACTORY.ts` declares
+`S.Github.Policy({ mirror: "pull", changes: "send-upstream" })` does not append
+to Smithers main. GitHub writes main: a maintainer merges the pull request on
+GitHub and the Smithers mirror follows GitHub's main. `Github.Policy` refuses
+`send-upstream` with `mirror: "push"`, and `land` without it, so a repository
+never has two writers of main.
+
+After the cleaned-source retention receipt, `LandVibe` still runs
+`PrepareAppend` and `CreateLanding`; the landing is the Change's review record
+in Smithers. `ReadDelivery` then reads `github.changes` from the checked-in
+`.smithers/factory.json` on Smithers main (absent file or field: append) and
+records it once, so a restart never switches an in-flight request to the other
+delivery. For `send-upstream`, `OpenPull` calls:
+
+```http
+PUT /api/repos/{owner}/{repo}/landings/{number}/github/pull
+Content-Type: application/json
+
+{ "commit_id": "<cleaned tip>", "run_id": "<vibe execution id>" }
+```
+
+The backend resolves every credential at dispatch and persists none: the
+repository's one GitHub destination (the same resolution as the mirror), the
+caller's proven GitHub push access, the repository owner's GitHub App
+installation token, and a disposable Smithers read token. It requires the
+landing to be open with `commit_id` as its current tip, fetches that commit
+through its `refs/smithers/workspaces/<id>/sources/<commit>` retention ref, and
+pushes it unforced to the GitHub branch `smithers/landing-<number>`. It then
+requires GitHub's `main...<tip>` comparison to be exactly the landing's stack,
+so a pull request never proposes Smithers-only commits from diverged mains,
+and opens the pull request with the landing's title and body.
+
+The branch name is the idempotency key. A retry finds the existing pull request
+(open, closed or merged) and returns it with `200`; a first open returns `201`.
+A branch already at the tip is not pushed again, a branch that moved is a
+`409`, and a concurrent open that GitHub rejects with `422` is found again.
+Missing App installation, push access or App permissions are typed refusals
+whose API error code the run shows; the durable action is retryable.
+
+The `VibeProposed` receipt carries the cleanup, cleaned-source retention,
+landing identity and the GitHub pull request. It is proposed work, not a
+changed main. Merging happens on GitHub.
 
 ## Separate product states
 

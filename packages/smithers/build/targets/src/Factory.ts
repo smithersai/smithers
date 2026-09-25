@@ -191,8 +191,8 @@ export const Issues = Schema.Literals(["read", "two-way", "none"])
 
 /**
  * What happens to a Change: `land` on Smithers Cloud (needs `mirror: "push"`),
- * `send-upstream` as a pull request the upstream maintainers merge, or
- * `none`.
+ * `send-upstream` as a GitHub pull request a maintainer merges on GitHub
+ * (refused with `mirror: "push"`), or `none`.
  *
  * @category schemas
  * @since 1.0.0
@@ -235,8 +235,10 @@ export interface GithubPolicyOptions {
 
 /**
  * Declares the GitHub policy. `changes: "land"` is refused without
- * `mirror: "push"`: landing on Smithers Cloud while GitHub writes `main`
- * would be two writers of one branch.
+ * `mirror: "push"`, and `changes: "send-upstream"` with it: landing on
+ * Smithers Cloud while GitHub writes `main`, or merging pull requests on
+ * GitHub while Smithers Cloud pushes `main`, would be two writers of one
+ * branch.
  *
  * @example
  * ```ts
@@ -261,6 +263,11 @@ export const Policy = (options: GithubPolicyOptions = {}): GithubPolicy => {
       `Github.Policy: changes "land" requires mirror "push"; with mirror ${
         JSON.stringify(policy.mirror)
       } GitHub writes main and a Change is sent upstream`
+    )
+  }
+  if (policy.changes === "send-upstream" && policy.mirror === "push") {
+    throw new TypeError(
+      `Github.Policy: changes "send-upstream" refuses mirror "push"; GitHub merges the pull request and writes main`
     )
   }
   return Home.freezeDeep(policy)

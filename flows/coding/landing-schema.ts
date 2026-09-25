@@ -33,3 +33,12 @@ export const AppendObservation = Schema.Union([
     result: Schema.Struct({ landed_count: PositiveId, target_bookmark: Schema.Literal("main"), target_commit_id: CommitId }) })
 ])
 export type AppendObservation = typeof AppendObservation.Type
+/** What the repository's declared GitHub policy does with a Change. */
+export const Delivery = Schema.Literals(["append", "pull-request"])
+export type Delivery = typeof Delivery.Type
+/** GitHub's pull request for one landing, keyed by its smithers/landing-<n> head branch. */
+export const GitHubPull = Schema.Struct({ landing_number: PositiveId, repository: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)),
+  number: PositiveId, url: Schema.String.check(Schema.isPattern(/^https:\/\/\S+$/), Schema.isMaxLength(2048)),
+  state: Schema.Literals(["open", "closed"]), merged: Schema.Boolean, head_ref: Schema.String.check(Schema.isMaxLength(255)),
+  head_sha: CommitId, base_ref: Schema.Literal("main"), created: Schema.Boolean })
+export type GitHubPull = typeof GitHubPull.Type

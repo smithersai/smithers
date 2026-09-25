@@ -1,6 +1,6 @@
 /** Private browser-safe values projected from ordinary finalization receipts. */
 import { Schema } from "effect"
-import { LandingIdentity } from "./landing-schema.ts"
+import { GitHubPull, LandingIdentity } from "./landing-schema.ts"
 import { SourcePublication } from "./native-schema.ts"
 import { RequestResult, Result, Revision } from "./schema.ts"
 
@@ -32,3 +32,9 @@ export const VibeLanded = Schema.Struct({ cleanup: VibeCleanup, cleanedSource: S
   taskId: Schema.Int.check(Schema.isGreaterThan(0)), mainCommitId: Revision.fields.commitId,
   landedCount: Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(1024)) })
 export type VibeLanded = typeof VibeLanded.Type
+/** A send-upstream Change: its GitHub pull request is open for a maintainer to merge. Not landed. */
+export const VibeProposed = Schema.Struct({ cleanup: VibeCleanup, cleanedSource: SourcePublication, landing: LandingIdentity,
+  pullRequest: GitHubPull })
+export type VibeProposed = typeof VibeProposed.Type
+export const VibeDelivered = Schema.Union([VibeLanded, VibeProposed])
+export type VibeDelivered = typeof VibeDelivered.Type

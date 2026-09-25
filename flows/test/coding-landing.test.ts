@@ -172,3 +172,42 @@ test("actual selected Node/Bun HTTP transport refuses redirects and replays lost
   assert.equal(attempts, 2)
   assert.equal(writes[0], writes[1], "ambiguous transport outcome retries the original immutable create body")
 })
+const factory = (value: unknown) => json({ name: "factory.json", encoding: "base64", content: Buffer.from(JSON.stringify(value)).toString("base64") })
+for (const [mode, reply, expected] of [
+  ["send-upstream", () => factory({ on: [], github: { mirror: "pull", issues: "two-way", changes: "send-upstream" } }), "pull-request"],
+  ["land", () => factory({ on: [], github: { mirror: "push", issues: "two-way", changes: "land" } }), "append"],
+  ["undeclared", () => factory({ on: [] }), "append"],
+  ["absent", () => json({ code: "not_found", fault: "user", message: "file not found" }, 404), "append"]
+] as const) {
+  test(`delivery reads the declared ${mode} policy from main`, async () => {
+    const { service, calls } = await configured(reply)
+    assert.equal(await Effect.runPromise(service.readDelivery), expected)
+    assert.equal(calls[0]!.url, `${options.apiBaseUrl}/repos/owner/repo/contents/.smithers/factory.json`)
+    assert.ok(calls[0]!.urlParams.params.some(([key, value]) => key === "ref" && value === "main"))
+  })
+}
+test("delivery refuses an unreadable declared policy", async () => {
+  const { service } = await configured(() => json({ encoding: "base64", content: Buffer.from("{").toString("base64") }))
+  await assert.rejects(Effect.runPromise(service.readDelivery), /not valid JSON/)
+})
+const tip = preparation.source_commit_id
+const pull = { landing_number: 7, repository: "acme/app", number: 41, url: "https://github.com/acme/app/pull/41", state: "open",
+  merged: false, head_ref: "smithers/landing-7", head_sha: tip, base_ref: "main", created: true }
+test("pull request opens once per landing tip and replays the same receipt", async () => {
+  const { service, calls } = await configured((_, call) => json({ ...pull, created: call === 1 }, call === 1 ? 201 : 200))
+  const first = await Effect.runPromise(service.openPull({ requestId, number: 7 }, tip, "run-7"))
+  const second = await Effect.runPromise(service.openPull({ requestId, number: 7 }, tip, "run-7"))
+  assert.equal(first.number, second.number)
+  assert.equal(calls[0]!.method, "PUT")
+  assert.equal(calls[0]!.url, `${options.apiBaseUrl}/repos/owner/repo/landings/7/github/pull`)
+  assert.deepEqual(body(calls[0]!), { commit_id: tip, run_id: "run-7" })
+})
+for (const mode of ["other-tip", "other-branch", "other-landing", "refused"] as const) {
+  test(`pull request refuses ${mode}`, async () => {
+    const { service } = await configured(() => mode === "refused"
+      ? json({ code: "forbidden", message: "The Smithers GitHub App cannot open pull requests" }, 403)
+      : json({ ...pull, ...(mode === "other-tip" ? { head_sha: "f".repeat(40) } : mode === "other-branch" ? { head_ref: "feature" } : { landing_number: 8 }) }, 201))
+    await assert.rejects(Effect.runPromise(service.openPull({ requestId, number: 7 }, tip, "run-7")),
+      mode === "refused" ? /HTTP 403 forbidden/ : /exact landing tip/)
+  })
+}

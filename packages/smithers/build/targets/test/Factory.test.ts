@@ -78,6 +78,11 @@ describe("Smithers.Github.Policy", () => {
     expect(() => Factory.Policy({ mirror: "push", changes: "land" })).not.toThrow()
   })
 
+  it("refuses two writers of main: a pull request merged on GitHub refuses mirror push", () => {
+    expect(() => Factory.Policy({ mirror: "push" })).toThrow(/changes "send-upstream" refuses mirror "push"/)
+    expect(() => Factory.Policy({ mirror: "pull", issues: "two-way", changes: "send-upstream" })).not.toThrow()
+  })
+
   it("refuses a value outside the vocabulary and an unknown option", () => {
     expect(() => Factory.Policy({ mirror: "push-on-land" as never })).toThrow(/Github.Policy/)
     expect(() => Factory.Policy({ issues: "write" as never })).toThrow(/Github.Policy/)

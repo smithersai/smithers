@@ -2,7 +2,8 @@
 import { Cause, Context, Effect, Layer, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
 import { ChangeId, Resolved, SourcePublication } from "./native-schema.ts"
-import { AppendObservation, AppendPreparation, AppendPreparationInput, AppendRequest, LandingIdentity, QueuedAppend } from "./landing-schema.ts"
+import { AppendObservation, AppendPreparation, AppendPreparationInput, AppendRequest, type Delivery, GitHubPull, LandingIdentity,
+  QueuedAppend } from "./landing-schema.ts"
 import { CodingError } from "./schema.ts"
 
 /** Trusted provisioned workspace binding, never workflow or model input. */
@@ -20,6 +21,10 @@ export class Landing extends Context.Service<Landing, {
   readonly create: (requestId: string, preparation: AppendPreparation, description: string) => Effect.Effect<LandingIdentity, CodingError>
   readonly queue: (identity: LandingIdentity, preparation: AppendPreparation, request: AppendRequest) => Effect.Effect<QueuedAppend, CodingError>
   readonly observe: (queued: QueuedAppend) => Effect.Effect<AppendObservation, CodingError>
+  /** The declared GitHub policy on main: `send-upstream` delivers a pull request. */
+  readonly readDelivery: Effect.Effect<Delivery, CodingError>
+  /** Open, or find again, the GitHub pull request carrying this landing's exact tip. */
+  readonly openPull: (identity: LandingIdentity, commitId: string, runId: string) => Effect.Effect<GitHubPull, CodingError>
 }>()("coding/Landing") {}
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
@@ -32,6 +37,11 @@ const LandingResponse = Schema.Struct({ request_id: SourcePublication.fields.req
   target_bookmark: Schema.Literal("main"), change_ids: Schema.Array(ChangeId).check(Schema.isMaxLength(1024)),
   agent_authored: Schema.Literal(true) })
 const QueueResponse = Schema.Struct({ ...LandingResponse.fields, task_id: boundedId })
+const Contents = Schema.Struct({ content: Schema.String, encoding: Schema.Literal("base64") })
+const Missing = Schema.Struct({ code: Schema.Literal("not_found") })
+/** Only the projected policy field is read; the rest of the projection is not this adapter's contract. */
+const DeclaredPolicy = Schema.Struct({ github: Schema.optionalKey(Schema.Struct({ changes: Schema.String })) })
+const errorCode = /^[a-z][a-z0-9_]{0,63}$/
 const same = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
   left.length === right.length && left.every((value, index) => value === right[index])
 const maximumBodyBytes = 2 * 1024 * 1024
@@ -70,8 +80,11 @@ export const make = (options: Options) => Effect.gen(function*() {
         .pipe(Effect.mapError(() => unavailable("Landing API request could not be acknowledged; retry the same durable request")))
       if (!expectedStatus.includes(response.status)) {
         // Do not expose remote response bodies, request headers or credential-bearing errors.
-        if (response.status === 409) return yield* new CodingError({ code: "stale_revision", message: "Landing policy or the pinned source/main changed; inspect this exact landing before replanning" })
-        return yield* unavailable(`Landing API did not acknowledge the required operation (HTTP ${response.status})`)
+        // A bounded API error code is an identifier, not a body.
+        const code = yield* readJson(response).pipe(Effect.map(value => typeof value === "object" && value !== null && "code" in value &&
+          typeof value.code === "string" && errorCode.test(value.code) ? ` ${value.code}` : ""), Effect.orElseSucceed(() => ""))
+        if (response.status === 409) return yield* new CodingError({ code: "stale_revision", message: `Landing policy or the pinned source/main changed; inspect this exact landing before replanning (HTTP 409${code})` })
+        return yield* unavailable(`Landing API did not acknowledge the required operation (HTTP ${response.status}${code})`)
       }
       return yield* readJson(response).pipe(Effect.flatMap(Schema.decodeUnknownEffect(schema)),
         Effect.mapError(error => error instanceof CodingError ? error : invalid("Landing API receipt does not match the required protocol")))
@@ -112,7 +125,25 @@ export const make = (options: Options) => Effect.gen(function*() {
     }
     return yield* invalid("Bookmark traversal exceeded its bounded page count")
   })
-  return Landing.of({ binding: { repositoryId: options.repositoryId, workspaceId: options.workspaceId }, readMain,
+  const readDelivery = send(HttpClientRequest.get(`${base}/contents/.smithers/factory.json`).pipe(HttpClientRequest.setUrlParams({ ref: "main" })),
+    [200, 404], Schema.Union([Contents, Missing])).pipe(Effect.flatMap(reply => "code" in reply ? Effect.succeed<Delivery>("append")
+      : Effect.try({ try: () => new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(reply.content.replace(/\s/g, "")), c => c.charCodeAt(0))),
+        catch: () => invalid("The declared factory projection on main is not valid UTF-8") }).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(DeclaredPolicy))),
+        Effect.mapError(error => error instanceof CodingError ? error : invalid("The declared factory projection on main is not valid JSON")),
+        Effect.map((policy): Delivery => policy.github?.changes === "send-upstream" ? "pull-request" : "append"))))
+  return Landing.of({ binding: { repositoryId: options.repositoryId, workspaceId: options.workspaceId }, readMain, readDelivery,
+    openPull: (identity, commitId, runId) => Effect.gen(function*() {
+      if (!Schema.is(Resolved.fields.commitId)(commitId) || !runId || runId.length > 1024 || /[\r\n`]/.test(runId)) {
+        return yield* invalid("A pull request requires the exact landing tip and this run's identity")
+      }
+      const pull = yield* send(json(HttpClientRequest.put(`${base}/landings/${identity.number}/github/pull`), { commit_id: commitId, run_id: runId }),
+        [200, 201], GitHubPull)
+      if (pull.landing_number !== identity.number || pull.head_sha !== commitId || pull.head_ref !== `smithers/landing-${identity.number}`) {
+        return yield* invalid("GitHub pull request receipt does not carry this exact landing tip")
+      }
+      return pull
+    }),
     prepare: input => Schema.decodeUnknownEffect(AppendPreparationInput)(input).pipe(
       Effect.mapError(() => invalid("Append preparation requires exact immutable commits")),
       Effect.flatMap(request => send(json(HttpClientRequest.post(`${base}/landings/append/prepare`), request), [200], AppendPreparation)),

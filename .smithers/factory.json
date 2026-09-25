@@ -412,7 +412,7 @@
     },
     {
       "id": "coding/vibe",
-      "description": "Retain the original source, clean and revalidate the validated native history, retain the cleaned source, and append one commit to main through the existing landing policy.",
+      "description": "Retain the original source, clean and revalidate the validated native history, retain the cleaned source, and append one commit to main through the existing landing policy, or open a GitHub pull request when the repository sends changes upstream.",
       "summary": null,
       "featured": false,
       "kind": "ts",
@@ -945,8 +945,8 @@
     }
   ],
   "github": {
-    "mirror": "push",
+    "mirror": "pull",
     "issues": "two-way",
-    "changes": "land"
+    "changes": "send-upstream"
   }
 }

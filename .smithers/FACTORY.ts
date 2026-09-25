@@ -75,9 +75,11 @@ export const factory = S.Factory({
       description: "Suggest factory improvements once a week; every one needs your approval"
     }
   },
-  // Ours: Smithers Cloud writes main and pushes it to GitHub after every
-  // landing, issues move both ways, and a Change lands here (RULINGS 23).
-  github: S.Github.Policy({ mirror: "push", issues: "two-way", changes: "land" })
+  // For now GitHub writes main: a Change opens a GitHub pull request that a
+  // maintainer merges there, Smithers Cloud follows GitHub's main, and issues
+  // move both ways. Returns to `mirror: "push", changes: "land"` (RULINGS 23)
+  // once landing on Smithers Cloud is proven (flows/coding/finalization.md).
+  github: S.Github.Policy({ mirror: "pull", issues: "two-way", changes: "send-upstream" })
 })
 
 // --- home pane -------------------------------------------------------------

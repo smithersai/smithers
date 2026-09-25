@@ -315,6 +315,7 @@ const gatewayId = "44444444-4444-4444-a444-444444444444"
 const landing = (calls: string[]): Landing["Service"] => ({
   binding: { repositoryId: 3, workspaceId },
   readMain: Effect.sync(() => { calls.push("readMain"); return mainCommit }),
+  readDelivery: Effect.die("repository delivery does not read the vibe policy"), openPull: () => Effect.die("repository delivery opens no pull request"),
   prepare: input => Effect.sync(() => { calls.push("prepare")
     return { ...input, status: "prepared" as const, changes: [{ change_id: changeId, commit_id: sourceCommit }] } }),
   create: requestId => Effect.sync(() => { calls.push("create"); return { requestId, number: 1 } }),
