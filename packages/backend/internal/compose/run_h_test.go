@@ -411,8 +411,8 @@ func TestRun_AuthProviderConfigError(t *testing.T) {
 	stubSSEBroker(t)
 	stderr := &syncBuffer{}
 	err := run(context.Background(), nil, io.Discard, stderr)
-	require.Error(t, err)
-	assert.Contains(t, stderr.String(), "invalid auth provider configuration")
+	require.ErrorContains(t, err, "auth.github_client_id and auth.github_client_secret must be configured together")
+	assert.Contains(t, stderr.String(), "invalid startup config")
 }
 
 func TestRun_EmailTransportError(t *testing.T) {

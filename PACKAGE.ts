@@ -256,6 +256,7 @@ const backendGo = Smithers.Shell.Test({
     GOPROXY: "off",
     // The composition test creates its own isolated database through this admin connection.
     SMITHERS_PRODUCT_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
+    SMITHERS_ADMISSION_TEST_ADMIN_URL: backendDatabaseURL("postgres"),
     SMITHERS_TEST_DEPLOYMENTDB_DATABASE_URL: backendDatabaseURL("backend_deploymentdb"),
     SMITHERS_TEST_DB_DATABASE_URL: backendDatabaseURL("backend_db"),
     SMITHERS_ROUTES_TEST_DATABASE_URL: backendDatabaseURL("backend_routes"),

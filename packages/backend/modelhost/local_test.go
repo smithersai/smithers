@@ -75,6 +75,10 @@ func TestCredentialEnvironmentRejectsArbitraryEnvironment(t *testing.T) {
 }
 
 func TestLocalLauncherRemovesTurnWorkspacesLeftByACrash(t *testing.T) {
+	node, err := exec.LookPath("node")
+	require.NoError(t, err)
+	node, err = filepath.EvalSymlinks(node)
+	require.NoError(t, err)
 	root := t.TempDir()
 	bundle := filepath.Join(root, "model-host.mjs")
 	source := []byte("// model host\n")
@@ -94,7 +98,7 @@ func TestLocalLauncherRemovesTurnWorkspacesLeftByACrash(t *testing.T) {
 	require.NoError(t, err)
 	defer runtime.Close()
 	require.Equal(t, []string{"chat-model-0123456789abcdef", "user-workspace"}, runtime.WorkspaceIDs())
-	_, err = NewLocalLauncher(LocalConfig{Runtime: runtime, NodeBinary: "/bin/sh", BundlePath: bundle})
+	_, err = NewLocalLauncher(LocalConfig{Runtime: runtime, NodeBinary: node, BundlePath: bundle})
 	require.NoError(t, err)
 	require.Equal(t, []string{"user-workspace"}, runtime.WorkspaceIDs())
 }
