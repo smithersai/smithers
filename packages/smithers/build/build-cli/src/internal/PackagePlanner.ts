@@ -1863,6 +1863,10 @@ const visit = async (
         if (plannedGo.refusal !== undefined) noteRefusal(plannedGo.refusal)
         argv = plannedGo.argv === undefined ? undefined : [...plannedGo.argv]
         env = { ...plannedGo.env }
+        // Go refuses a relative GOMODCACHE; the planned value stays
+        // workspace-relative so two checkouts key alike, and is rooted at spawn.
+        const moduleCache = env["GOMODCACHE"]
+        if (moduleCache !== undefined && !NodePath.isAbsolute(moduleCache)) absoluteEnv.push("GOMODCACHE")
         if (generatorPath.length > 0) {
           // The directories join PATH for the spawn only. Their identities
           // already key above; a host path in `env` would key nothing extra

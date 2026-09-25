@@ -536,12 +536,14 @@ const graphEnvironment = (context: Context, attrs: Record<string, unknown>): Rec
 const fetchedModuleCache = (context: Context, attrs: Record<string, unknown>): string | undefined => {
   const data = attrs["data"]
   if (!Array.isArray(data)) return undefined
+  // Workspace-relative: the executor roots GOMODCACHE at spawn. A rooted path
+  // here entered the key and split the cache per checkout.
   for (const entry of data) {
     const target = targetOf(entry)
     if (target === undefined || Target.metadata(target).target !== "Go.ModDownload") continue
     const outDirs = (Target.metadata(target).attrs as { readonly outDirs?: ReadonlyArray<string> }).outDirs
     const first = outDirs?.[0]
-    if (first !== undefined) return NodePath.join(context.root, Input.resolvePath("", first))
+    if (first !== undefined) return Input.resolvePath("", first)
   }
   return undefined
 }
@@ -606,7 +608,7 @@ export const planRule = async (
     )
     return {
       argv: [goPath, "mod", "download"],
-      env: { ...env, GOMODCACHE: NodePath.join(context.root, outDirs[0] ?? ".gomodcache") },
+      env: { ...env, GOMODCACHE: outDirs[0] ?? ".gomodcache" },
       outDirs,
       writeSet: [],
       readSet: authority

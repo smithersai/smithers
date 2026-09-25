@@ -1,0 +1,1340 @@
+{
+  "method": "scripts/bench/rebase-cache.mjs",
+  "repository": "<repository>",
+  "base": "3982b54edb6c85633e8bf2c62ad0589c0456830e",
+  "verb": "ci",
+  "pattern": "//...",
+  "stack": [
+    "packages/smithers/agent/memory/src/Bank.ts",
+    "packages/smithers/flows/journal/src/CallFact.ts",
+    "apps/site/src/build-stamp.d.ts",
+    "packages/smithers/build/targets/src/AgentTarget.ts"
+  ],
+  "inserted": "packages/smithers/notifications/src/AlertPolicy.ts",
+  "host": {
+    "node": "v26.4.0",
+    "platform": "darwin-arm64"
+  },
+  "revisions": [
+    {
+      "name": "change-1",
+      "phase": "original",
+      "commit": "01a60f143f34f5ea5517e371c1074a651f7d274e",
+      "touched": "packages/smithers/agent/memory/src/Bank.ts",
+      "targets": 769,
+      "roots": 650,
+      "planMs": 26957,
+      "all": {
+        "hit": 0,
+        "expectedMiss": 322,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 447,
+        "uncacheableUnchanged": 0
+      },
+      "rootsOnly": {
+        "hit": 0,
+        "expectedMiss": 204,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 446,
+        "uncacheableUnchanged": 0
+      },
+      "rootsDependingOnInserted": 20,
+      "missedRoots": [
+        "//:backendGo",
+        "//:backendGoModules",
+        "//:changelog",
+        "//:ci",
+        "//:factoryProjection",
+        "//:nativeFfi",
+        "//:projectCopy",
+        "//:targetIndex",
+        "//apps/docs/agent:build",
+        "//apps/docs/agent:contentSync",
+        "//apps/docs/artifacts:build",
+        "//apps/docs/artifacts:contentSync",
+        "//apps/docs/canonical:build",
+        "//apps/docs/canonical:contentSync",
+        "//apps/docs/capability:build",
+        "//apps/docs/capability:contentSync",
+        "//apps/docs/chain:build",
+        "//apps/docs/chain:contentSync",
+        "//apps/docs/cli:build",
+        "//apps/docs/cli:contentSync",
+        "//apps/docs/control:build",
+        "//apps/docs/control:contentSync",
+        "//apps/docs/core:build",
+        "//apps/docs/core:contentSync",
+        "//apps/docs/create-app:build",
+        "//apps/docs/create-app:contentSync",
+        "//apps/docs/crypto:build",
+        "//apps/docs/crypto:contentSync",
+        "//apps/docs/database:build",
+        "//apps/docs/database:contentSync",
+        "//apps/docs/engine-store:build",
+        "//apps/docs/engine-store:contentSync",
+        "//apps/docs/engine:build",
+        "//apps/docs/engine:contentSync",
+        "//apps/docs/errors:build",
+        "//apps/docs/errors:contentSync",
+        "//apps/docs/evals:build",
+        "//apps/docs/evals:contentSync",
+        "//apps/docs/flow:build",
+        "//apps/docs/flow:contentSync",
+        "//apps/docs/flows:build",
+        "//apps/docs/flows:contentSync",
+        "//apps/docs/fs:build",
+        "//apps/docs/fs:contentSync",
+        "//apps/docs/gateway:build",
+        "//apps/docs/gateway:contentSync",
+        "//apps/docs/harness:build",
+        "//apps/docs/harness:contentSync",
+        "//apps/docs/integrations:build",
+        "//apps/docs/integrations:contentSync",
+        "//apps/docs/jj:build",
+        "//apps/docs/jj:contentSync",
+        "//apps/docs/journal:build",
+        "//apps/docs/journal:contentSync",
+        "//apps/docs/kernel:build",
+        "//apps/docs/kernel:contentSync",
+        "//apps/docs/keys:build",
+        "//apps/docs/keys:contentSync",
+        "//apps/docs/mcp:build",
+        "//apps/docs/mcp:contentSync",
+        "//apps/docs/memory:build",
+        "//apps/docs/memory:contentSync",
+        "//apps/docs/migrate:build",
+        "//apps/docs/migrate:contentSync",
+        "//apps/docs/model:build",
+        "//apps/docs/model:contentSync",
+        "//apps/docs/notifications:build",
+        "//apps/docs/notifications:contentSync",
+        "//apps/docs/observability:build",
+        "//apps/docs/observability:contentSync",
+        "//apps/docs/plan-store:build",
+        "//apps/docs/plan-store:contentSync",
+        "//apps/docs/plan:build",
+        "//apps/docs/plan:contentSync",
+        "//apps/docs/platform-browser:build",
+        "//apps/docs/platform-browser:contentSync",
+        "//apps/docs/platform-bun:build",
+        "//apps/docs/platform-bun:contentSync",
+        "//apps/docs/platform-node:build",
+        "//apps/docs/platform-node:contentSync",
+        "//apps/docs/plugin:build",
+        "//apps/docs/plugin:contentSync",
+        "//apps/docs/registry:build",
+        "//apps/docs/registry:contentSync",
+        "//apps/docs/run-store:build",
+        "//apps/docs/run-store:contentSync",
+        "//apps/docs/sandbox:build",
+        "//apps/docs/sandbox:contentSync",
+        "//apps/docs/scorers:build",
+        "//apps/docs/scorers:contentSync",
+        "//apps/docs/shared:tests",
+        "//apps/docs/smithers-patterns:build",
+        "//apps/docs/smithers-patterns:contentSync",
+        "//apps/docs/smithers-sync:build",
+        "//apps/docs/smithers-sync:contentSync",
+        "//apps/docs/smthrs:build",
+        "//apps/docs/smthrs:contentSync",
+        "//apps/docs/std:build",
+        "//apps/docs/std:contentSync",
+        "//apps/docs/step-cache:build",
+        "//apps/docs/step-cache:contentSync",
+        "//apps/docs/testing:build",
+        "//apps/docs/testing:contentSync",
+        "//apps/docs/time-travel:build",
+        "//apps/docs/time-travel:contentSync",
+        "//apps/docs/triggers:build",
+        "//apps/docs/triggers:contentSync",
+        "//apps/site:apiDocs",
+        "//apps/site:build",
+        "//apps/site:catalogPublicationTest",
+        "//apps/site:cliData",
+        "//apps/site:docsLint",
+        "//apps/site:docsRuntimeTests",
+        "//apps/site:docsTextTest",
+        "//apps/site:examplesPages",
+        "//apps/site:llms",
+        "//apps/site:projectCopyTest",
+        "//apps/site:recordTapeTest",
+        "//apps/site:referenceIngest",
+        "//apps/site:repoStatsTest",
+        "//apps/site:supportDocs",
+        "//apps/site:supportMatrixTest",
+        "//apps/site:tutorialAgentOutputsCodeBlocks",
+        "//apps/site:tutorialCrashAndResumeCodeBlocks",
+        "//apps/site:tutorialFirstAgentFlowCodeBlocks",
+        "//apps/site:tutorialFirstFlowCodeBlocks",
+        "//apps/site:tutorialHumanApprovalCodeBlocks",
+        "//apps/site:tutorialMemoryCodeBlocks",
+        "//apps/site:tutorialRetryPolicyCodeBlocks",
+        "//apps/site:tutorialTimeTravelCodeBlocks",
+        "//crates/flows-jj:cargoClippy",
+        "//crates/flows-jj:cargoFmt",
+        "//crates/flows-jj:cargoTest",
+        "//evals/harbor:offline",
+        "//evals/swebench:offline",
+        "//flows/wiki:freshness",
+        "//flows/wiki:preview",
+        "//flows:codingBundle",
+        "//flows:codingBundleBun",
+        "//flows:codingNative",
+        "//flows:codingNativeBun",
+        "//flows:codingPolicy",
+        "//flows:codingRuntime",
+        "//packages/errors:docs",
+        "//packages/smithers/agent/chain:docs",
+        "//packages/smithers/agent/evals:docs",
+        "//packages/smithers/agent/fs:docs",
+        "//packages/smithers/agent/harness-detect:docs",
+        "//packages/smithers/agent/harness:docs",
+        "//packages/smithers/agent/integrations:docs",
+        "//packages/smithers/agent/memory:docs",
+        "//packages/smithers/agent/model-host:docs",
+        "//packages/smithers/agent/model:docs",
+        "//packages/smithers/agent/plugin:docs",
+        "//packages/smithers/agent/registry:docs",
+        "//packages/smithers/agent/scorers:docs",
+        "//packages/smithers/agent/std:docs",
+        "//packages/smithers/agent/triggers:docs",
+        "//packages/smithers/agent:docs",
+        "//packages/smithers/build/build-cli:docs",
+        "//packages/smithers/build/infra:docs",
+        "//packages/smithers/build/targets:docs",
+        "//packages/smithers/build/targets:referenceAgentDiffCodeBlocks",
+        "//packages/smithers/build/targets:referenceCodeBlocks",
+        "//packages/smithers/build/targets:referenceFilegroupCodeBlocks",
+        "//packages/smithers/build:cacheServicePostgres",
+        "//packages/smithers/build:docs",
+        "//packages/smithers/control:docs",
+        "//packages/smithers/create-app:docs",
+        "//packages/smithers/flows/artifacts:docs",
+        "//packages/smithers/flows/canonical:docs",
+        "//packages/smithers/flows/capability:docs",
+        "//packages/smithers/flows/core:docs",
+        "//packages/smithers/flows/crypto:docs",
+        "//packages/smithers/flows/database:docs",
+        "//packages/smithers/flows/engine-store:docs",
+        "//packages/smithers/flows/engine:docs",
+        "//packages/smithers/flows/engine:referenceCodeBlocks",
+        "//packages/smithers/flows/flow:docs",
+        "//packages/smithers/flows/flow:referenceCodeBlocks",
+        "//packages/smithers/flows/jj:docs",
+        "//packages/smithers/flows/journal:docs",
+        "//packages/smithers/flows/kernel:docs",
+        "//packages/smithers/flows/keys:docs",
+        "//packages/smithers/flows/observability:docs",
+        "//packages/smithers/flows/patterns:docs",
+        "//packages/smithers/flows/plan-store:docs",
+        "//packages/smithers/flows/plan:docs",
+        "//packages/smithers/flows/platform-browser:docs",
+        "//packages/smithers/flows/platform-bun:docs",
+        "//packages/smithers/flows/platform-node:docs",
+        "//packages/smithers/flows/run-store:docs",
+        "//packages/smithers/flows/sandbox:docs",
+        "//packages/smithers/flows/step-cache:docs",
+        "//packages/smithers/flows/sync:docs",
+        "//packages/smithers/flows/time-travel:docs",
+        "//packages/smithers/flows:docs",
+        "//packages/smithers/gateway:docs",
+        "//packages/smithers/mcp:docs",
+        "//packages/smithers/migrate:docs",
+        "//packages/smithers/notifications:docs",
+        "//packages/smithers:docs",
+        "//packages/smthrs-deprecation:docs",
+        "//packages/testing:docs"
+      ],
+      "unexpectedMisses": [],
+      "execution": {
+        "wallMs": 30011,
+        "results": [
+          {
+            "label": "//flows:codingPolicy",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "519d55217bee8b131dafa1a8c44e6b6449b37c94987995babd5409351cfa4e32",
+            "exitCode": 0,
+            "wallMs": 2625,
+            "counts": {
+              "hit": 0,
+              "ran": 57,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//flows:codingRuntime",
+            "status": "failed",
+            "exitCode": 1,
+            "wallMs": 23705,
+            "message": "1 of 57 targets failed"
+          },
+          {
+            "label": "//packages/smithers/notifications:docs",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "2349a651e1f20106547b60988d60f1cf5408176ffc3dab93761a8296fce37d86",
+            "exitCode": 0,
+            "wallMs": 1264,
+            "counts": {
+              "hit": 0,
+              "ran": 1,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/agent/memory:docs",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "a6d60e05aec004e7c0d20e76c9889de8f631e058a7b9e708df369c56e1248e2d",
+            "exitCode": 0,
+            "wallMs": 1223,
+            "counts": {
+              "hit": 0,
+              "ran": 1,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/flows/journal:docs",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "953de6d1163610450079297f4e2cc5563333e5a1342c6683eff4079a6c028c5c",
+            "exitCode": 0,
+            "wallMs": 1194,
+            "counts": {
+              "hit": 0,
+              "ran": 1,
+              "failed": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "mismatches": []
+      }
+    },
+    {
+      "name": "change-2",
+      "phase": "original",
+      "commit": "44c688452b6ecc860004d463c6e1854ffbfba651",
+      "touched": "packages/smithers/flows/journal/src/CallFact.ts",
+      "targets": 769,
+      "roots": 650,
+      "planMs": 23308,
+      "all": {
+        "hit": 315,
+        "expectedMiss": 7,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 447,
+        "uncacheableUnchanged": 433
+      },
+      "rootsOnly": {
+        "hit": 198,
+        "expectedMiss": 6,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 446,
+        "uncacheableUnchanged": 432
+      },
+      "rootsDependingOnInserted": 20,
+      "missedRoots": [
+        "//flows:codingBundle",
+        "//flows:codingBundleBun",
+        "//flows:codingNative",
+        "//flows:codingNativeBun",
+        "//flows:codingPolicy",
+        "//flows:codingRuntime"
+      ],
+      "unexpectedMisses": [],
+      "execution": {
+        "wallMs": 30102,
+        "results": [
+          {
+            "label": "//flows:codingPolicy",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "36f9f7bcda318a84cbc51a400e2467ad4e73e1bf2faac3d99a386b904fc1a1a3",
+            "exitCode": 0,
+            "wallMs": 3280,
+            "counts": {
+              "hit": 0,
+              "ran": 57,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//flows:codingRuntime",
+            "status": "failed",
+            "exitCode": 1,
+            "wallMs": 23543,
+            "message": "1 of 57 targets failed"
+          },
+          {
+            "label": "//packages/smithers/notifications:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "2349a651e1f20106547b60988d60f1cf5408176ffc3dab93761a8296fce37d86",
+            "exitCode": 0,
+            "wallMs": 1090,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/agent/memory:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "a6d60e05aec004e7c0d20e76c9889de8f631e058a7b9e708df369c56e1248e2d",
+            "exitCode": 0,
+            "wallMs": 1094,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/flows/journal:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "953de6d1163610450079297f4e2cc5563333e5a1342c6683eff4079a6c028c5c",
+            "exitCode": 0,
+            "wallMs": 1095,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "mismatches": []
+      }
+    },
+    {
+      "name": "change-3",
+      "phase": "original",
+      "commit": "0c42386374aa3c40f050d253bcadc56d519b9724",
+      "touched": "apps/site/src/build-stamp.d.ts",
+      "targets": 769,
+      "roots": 650,
+      "planMs": 18415,
+      "all": {
+        "hit": 321,
+        "expectedMiss": 1,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 447,
+        "uncacheableUnchanged": 446
+      },
+      "rootsOnly": {
+        "hit": 203,
+        "expectedMiss": 1,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 446,
+        "uncacheableUnchanged": 445
+      },
+      "rootsDependingOnInserted": 20,
+      "missedRoots": [
+        "//apps/site:build"
+      ],
+      "unexpectedMisses": [],
+      "execution": {
+        "wallMs": 28572,
+        "results": [
+          {
+            "label": "//flows:codingPolicy",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "36f9f7bcda318a84cbc51a400e2467ad4e73e1bf2faac3d99a386b904fc1a1a3",
+            "exitCode": 0,
+            "wallMs": 1716,
+            "counts": {
+              "hit": 1,
+              "ran": 56,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//flows:codingRuntime",
+            "status": "failed",
+            "exitCode": 1,
+            "wallMs": 23374,
+            "message": "1 of 57 targets failed"
+          },
+          {
+            "label": "//packages/smithers/notifications:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "2349a651e1f20106547b60988d60f1cf5408176ffc3dab93761a8296fce37d86",
+            "exitCode": 0,
+            "wallMs": 1149,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/agent/memory:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "a6d60e05aec004e7c0d20e76c9889de8f631e058a7b9e708df369c56e1248e2d",
+            "exitCode": 0,
+            "wallMs": 1156,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/flows/journal:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "953de6d1163610450079297f4e2cc5563333e5a1342c6683eff4079a6c028c5c",
+            "exitCode": 0,
+            "wallMs": 1177,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "mismatches": []
+      }
+    },
+    {
+      "name": "change-4",
+      "phase": "original",
+      "commit": "fe35707ad9369928b1305c7a0aecc082f7e4c907",
+      "touched": "packages/smithers/build/targets/src/AgentTarget.ts",
+      "targets": 769,
+      "roots": 650,
+      "planMs": 27460,
+      "all": {
+        "hit": 0,
+        "expectedMiss": 322,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 447,
+        "uncacheableUnchanged": 0
+      },
+      "rootsOnly": {
+        "hit": 0,
+        "expectedMiss": 204,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 446,
+        "uncacheableUnchanged": 0
+      },
+      "rootsDependingOnInserted": 20,
+      "missedRoots": [
+        "//:backendGo",
+        "//:backendGoModules",
+        "//:changelog",
+        "//:ci",
+        "//:factoryProjection",
+        "//:nativeFfi",
+        "//:projectCopy",
+        "//:targetIndex",
+        "//apps/docs/agent:build",
+        "//apps/docs/agent:contentSync",
+        "//apps/docs/artifacts:build",
+        "//apps/docs/artifacts:contentSync",
+        "//apps/docs/canonical:build",
+        "//apps/docs/canonical:contentSync",
+        "//apps/docs/capability:build",
+        "//apps/docs/capability:contentSync",
+        "//apps/docs/chain:build",
+        "//apps/docs/chain:contentSync",
+        "//apps/docs/cli:build",
+        "//apps/docs/cli:contentSync",
+        "//apps/docs/control:build",
+        "//apps/docs/control:contentSync",
+        "//apps/docs/core:build",
+        "//apps/docs/core:contentSync",
+        "//apps/docs/create-app:build",
+        "//apps/docs/create-app:contentSync",
+        "//apps/docs/crypto:build",
+        "//apps/docs/crypto:contentSync",
+        "//apps/docs/database:build",
+        "//apps/docs/database:contentSync",
+        "//apps/docs/engine-store:build",
+        "//apps/docs/engine-store:contentSync",
+        "//apps/docs/engine:build",
+        "//apps/docs/engine:contentSync",
+        "//apps/docs/errors:build",
+        "//apps/docs/errors:contentSync",
+        "//apps/docs/evals:build",
+        "//apps/docs/evals:contentSync",
+        "//apps/docs/flow:build",
+        "//apps/docs/flow:contentSync",
+        "//apps/docs/flows:build",
+        "//apps/docs/flows:contentSync",
+        "//apps/docs/fs:build",
+        "//apps/docs/fs:contentSync",
+        "//apps/docs/gateway:build",
+        "//apps/docs/gateway:contentSync",
+        "//apps/docs/harness:build",
+        "//apps/docs/harness:contentSync",
+        "//apps/docs/integrations:build",
+        "//apps/docs/integrations:contentSync",
+        "//apps/docs/jj:build",
+        "//apps/docs/jj:contentSync",
+        "//apps/docs/journal:build",
+        "//apps/docs/journal:contentSync",
+        "//apps/docs/kernel:build",
+        "//apps/docs/kernel:contentSync",
+        "//apps/docs/keys:build",
+        "//apps/docs/keys:contentSync",
+        "//apps/docs/mcp:build",
+        "//apps/docs/mcp:contentSync",
+        "//apps/docs/memory:build",
+        "//apps/docs/memory:contentSync",
+        "//apps/docs/migrate:build",
+        "//apps/docs/migrate:contentSync",
+        "//apps/docs/model:build",
+        "//apps/docs/model:contentSync",
+        "//apps/docs/notifications:build",
+        "//apps/docs/notifications:contentSync",
+        "//apps/docs/observability:build",
+        "//apps/docs/observability:contentSync",
+        "//apps/docs/plan-store:build",
+        "//apps/docs/plan-store:contentSync",
+        "//apps/docs/plan:build",
+        "//apps/docs/plan:contentSync",
+        "//apps/docs/platform-browser:build",
+        "//apps/docs/platform-browser:contentSync",
+        "//apps/docs/platform-bun:build",
+        "//apps/docs/platform-bun:contentSync",
+        "//apps/docs/platform-node:build",
+        "//apps/docs/platform-node:contentSync",
+        "//apps/docs/plugin:build",
+        "//apps/docs/plugin:contentSync",
+        "//apps/docs/registry:build",
+        "//apps/docs/registry:contentSync",
+        "//apps/docs/run-store:build",
+        "//apps/docs/run-store:contentSync",
+        "//apps/docs/sandbox:build",
+        "//apps/docs/sandbox:contentSync",
+        "//apps/docs/scorers:build",
+        "//apps/docs/scorers:contentSync",
+        "//apps/docs/shared:tests",
+        "//apps/docs/smithers-patterns:build",
+        "//apps/docs/smithers-patterns:contentSync",
+        "//apps/docs/smithers-sync:build",
+        "//apps/docs/smithers-sync:contentSync",
+        "//apps/docs/smthrs:build",
+        "//apps/docs/smthrs:contentSync",
+        "//apps/docs/std:build",
+        "//apps/docs/std:contentSync",
+        "//apps/docs/step-cache:build",
+        "//apps/docs/step-cache:contentSync",
+        "//apps/docs/testing:build",
+        "//apps/docs/testing:contentSync",
+        "//apps/docs/time-travel:build",
+        "//apps/docs/time-travel:contentSync",
+        "//apps/docs/triggers:build",
+        "//apps/docs/triggers:contentSync",
+        "//apps/site:apiDocs",
+        "//apps/site:build",
+        "//apps/site:catalogPublicationTest",
+        "//apps/site:cliData",
+        "//apps/site:docsLint",
+        "//apps/site:docsRuntimeTests",
+        "//apps/site:docsTextTest",
+        "//apps/site:examplesPages",
+        "//apps/site:llms",
+        "//apps/site:projectCopyTest",
+        "//apps/site:recordTapeTest",
+        "//apps/site:referenceIngest",
+        "//apps/site:repoStatsTest",
+        "//apps/site:supportDocs",
+        "//apps/site:supportMatrixTest",
+        "//apps/site:tutorialAgentOutputsCodeBlocks",
+        "//apps/site:tutorialCrashAndResumeCodeBlocks",
+        "//apps/site:tutorialFirstAgentFlowCodeBlocks",
+        "//apps/site:tutorialFirstFlowCodeBlocks",
+        "//apps/site:tutorialHumanApprovalCodeBlocks",
+        "//apps/site:tutorialMemoryCodeBlocks",
+        "//apps/site:tutorialRetryPolicyCodeBlocks",
+        "//apps/site:tutorialTimeTravelCodeBlocks",
+        "//crates/flows-jj:cargoClippy",
+        "//crates/flows-jj:cargoFmt",
+        "//crates/flows-jj:cargoTest",
+        "//evals/harbor:offline",
+        "//evals/swebench:offline",
+        "//flows/wiki:freshness",
+        "//flows/wiki:preview",
+        "//flows:codingBundle",
+        "//flows:codingBundleBun",
+        "//flows:codingNative",
+        "//flows:codingNativeBun",
+        "//flows:codingPolicy",
+        "//flows:codingRuntime",
+        "//packages/errors:docs",
+        "//packages/smithers/agent/chain:docs",
+        "//packages/smithers/agent/evals:docs",
+        "//packages/smithers/agent/fs:docs",
+        "//packages/smithers/agent/harness-detect:docs",
+        "//packages/smithers/agent/harness:docs",
+        "//packages/smithers/agent/integrations:docs",
+        "//packages/smithers/agent/memory:docs",
+        "//packages/smithers/agent/model-host:docs",
+        "//packages/smithers/agent/model:docs",
+        "//packages/smithers/agent/plugin:docs",
+        "//packages/smithers/agent/registry:docs",
+        "//packages/smithers/agent/scorers:docs",
+        "//packages/smithers/agent/std:docs",
+        "//packages/smithers/agent/triggers:docs",
+        "//packages/smithers/agent:docs",
+        "//packages/smithers/build/build-cli:docs",
+        "//packages/smithers/build/infra:docs",
+        "//packages/smithers/build/targets:docs",
+        "//packages/smithers/build/targets:referenceAgentDiffCodeBlocks",
+        "//packages/smithers/build/targets:referenceCodeBlocks",
+        "//packages/smithers/build/targets:referenceFilegroupCodeBlocks",
+        "//packages/smithers/build:cacheServicePostgres",
+        "//packages/smithers/build:docs",
+        "//packages/smithers/control:docs",
+        "//packages/smithers/create-app:docs",
+        "//packages/smithers/flows/artifacts:docs",
+        "//packages/smithers/flows/canonical:docs",
+        "//packages/smithers/flows/capability:docs",
+        "//packages/smithers/flows/core:docs",
+        "//packages/smithers/flows/crypto:docs",
+        "//packages/smithers/flows/database:docs",
+        "//packages/smithers/flows/engine-store:docs",
+        "//packages/smithers/flows/engine:docs",
+        "//packages/smithers/flows/engine:referenceCodeBlocks",
+        "//packages/smithers/flows/flow:docs",
+        "//packages/smithers/flows/flow:referenceCodeBlocks",
+        "//packages/smithers/flows/jj:docs",
+        "//packages/smithers/flows/journal:docs",
+        "//packages/smithers/flows/kernel:docs",
+        "//packages/smithers/flows/keys:docs",
+        "//packages/smithers/flows/observability:docs",
+        "//packages/smithers/flows/patterns:docs",
+        "//packages/smithers/flows/plan-store:docs",
+        "//packages/smithers/flows/plan:docs",
+        "//packages/smithers/flows/platform-browser:docs",
+        "//packages/smithers/flows/platform-bun:docs",
+        "//packages/smithers/flows/platform-node:docs",
+        "//packages/smithers/flows/run-store:docs",
+        "//packages/smithers/flows/sandbox:docs",
+        "//packages/smithers/flows/step-cache:docs",
+        "//packages/smithers/flows/sync:docs",
+        "//packages/smithers/flows/time-travel:docs",
+        "//packages/smithers/flows:docs",
+        "//packages/smithers/gateway:docs",
+        "//packages/smithers/mcp:docs",
+        "//packages/smithers/migrate:docs",
+        "//packages/smithers/notifications:docs",
+        "//packages/smithers:docs",
+        "//packages/smthrs-deprecation:docs",
+        "//packages/testing:docs"
+      ],
+      "unexpectedMisses": [],
+      "execution": {
+        "wallMs": 32196,
+        "results": [
+          {
+            "label": "//flows:codingPolicy",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "0f04d67485f9d167685e1d4c6d54e30471981cc9093fcb62f7013096f7bed535",
+            "exitCode": 0,
+            "wallMs": 3382,
+            "counts": {
+              "hit": 0,
+              "ran": 57,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//flows:codingRuntime",
+            "status": "failed",
+            "exitCode": 1,
+            "wallMs": 24080,
+            "message": "1 of 57 targets failed"
+          },
+          {
+            "label": "//packages/smithers/notifications:docs",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "676802490d8f2d78587b19c77f0449dd088f220338a1294bdbc13b228a9d0300",
+            "exitCode": 0,
+            "wallMs": 2005,
+            "counts": {
+              "hit": 0,
+              "ran": 1,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/agent/memory:docs",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "14c8e7879d2e6fc14472a68a1570d9b668c7eef74f4bef263b228ed2c9f364e6",
+            "exitCode": 0,
+            "wallMs": 1430,
+            "counts": {
+              "hit": 0,
+              "ran": 1,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/flows/journal:docs",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "48d5fc4fe478856b3efb6b5d7947709606d4fba2e47212f334ae5c9ab434b224",
+            "exitCode": 0,
+            "wallMs": 1299,
+            "counts": {
+              "hit": 0,
+              "ran": 1,
+              "failed": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "mismatches": []
+      }
+    },
+    {
+      "name": "inserted",
+      "phase": "rebased",
+      "commit": "a1b87e219f186dc6a53e3e39706dd3f851a812e0",
+      "touched": "packages/smithers/notifications/src/AlertPolicy.ts",
+      "targets": 769,
+      "roots": 650,
+      "planMs": 27641,
+      "all": {
+        "hit": 314,
+        "expectedMiss": 8,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 447,
+        "uncacheableUnchanged": 427
+      },
+      "rootsOnly": {
+        "hit": 198,
+        "expectedMiss": 6,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 446,
+        "uncacheableUnchanged": 426
+      },
+      "rootsDependingOnInserted": 20,
+      "missedRoots": [
+        "//flows:codingBundle",
+        "//flows:codingBundleBun",
+        "//flows:codingNative",
+        "//flows:codingNativeBun",
+        "//flows:codingPolicy",
+        "//flows:codingRuntime"
+      ],
+      "unexpectedMisses": [],
+      "execution": {
+        "wallMs": 33268,
+        "results": [
+          {
+            "label": "//flows:codingPolicy",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "f66c379253d62a497101a7db3f62c1fd8f85e83dfcfaa797c6cb59d5208e8e98",
+            "exitCode": 0,
+            "wallMs": 4252,
+            "counts": {
+              "hit": 0,
+              "ran": 57,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//flows:codingRuntime",
+            "status": "failed",
+            "exitCode": 1,
+            "wallMs": 24600,
+            "message": "1 of 57 targets failed"
+          },
+          {
+            "label": "//packages/smithers/notifications:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "2349a651e1f20106547b60988d60f1cf5408176ffc3dab93761a8296fce37d86",
+            "exitCode": 0,
+            "wallMs": 1623,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/agent/memory:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "a6d60e05aec004e7c0d20e76c9889de8f631e058a7b9e708df369c56e1248e2d",
+            "exitCode": 0,
+            "wallMs": 1367,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/flows/journal:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "953de6d1163610450079297f4e2cc5563333e5a1342c6683eff4079a6c028c5c",
+            "exitCode": 0,
+            "wallMs": 1426,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "mismatches": []
+      }
+    },
+    {
+      "name": "change-1'",
+      "phase": "rebased",
+      "commit": "04f48a24e6dda55c63be35a4aeb7b6e11eea6462",
+      "touched": "packages/smithers/agent/memory/src/Bank.ts",
+      "targets": 769,
+      "roots": 650,
+      "planMs": 21933,
+      "all": {
+        "hit": 316,
+        "expectedMiss": 6,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 447,
+        "uncacheableUnchanged": 439
+      },
+      "rootsOnly": {
+        "hit": 198,
+        "expectedMiss": 6,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 446,
+        "uncacheableUnchanged": 438
+      },
+      "rootsDependingOnInserted": 20,
+      "missedRoots": [
+        "//flows:codingBundle",
+        "//flows:codingBundleBun",
+        "//flows:codingNative",
+        "//flows:codingNativeBun",
+        "//flows:codingPolicy",
+        "//flows:codingRuntime"
+      ],
+      "unexpectedMisses": [],
+      "execution": {
+        "wallMs": 31571,
+        "results": [
+          {
+            "label": "//flows:codingPolicy",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "c43605651455fb973a96a933ea855570dc0ebb84e1655a5c3e3dbf1c23432b42",
+            "exitCode": 0,
+            "wallMs": 2982,
+            "counts": {
+              "hit": 0,
+              "ran": 57,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//flows:codingRuntime",
+            "status": "failed",
+            "exitCode": 1,
+            "wallMs": 23820,
+            "message": "1 of 57 targets failed"
+          },
+          {
+            "label": "//packages/smithers/notifications:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "2349a651e1f20106547b60988d60f1cf5408176ffc3dab93761a8296fce37d86",
+            "exitCode": 0,
+            "wallMs": 1926,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/agent/memory:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "a6d60e05aec004e7c0d20e76c9889de8f631e058a7b9e708df369c56e1248e2d",
+            "exitCode": 0,
+            "wallMs": 1556,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/flows/journal:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "953de6d1163610450079297f4e2cc5563333e5a1342c6683eff4079a6c028c5c",
+            "exitCode": 0,
+            "wallMs": 1287,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "mismatches": []
+      }
+    },
+    {
+      "name": "change-2'",
+      "phase": "rebased",
+      "commit": "7105cbec35a150976468cb9c33db5a92ddfb7302",
+      "touched": "packages/smithers/flows/journal/src/CallFact.ts",
+      "targets": 769,
+      "roots": 650,
+      "planMs": 20492,
+      "all": {
+        "hit": 316,
+        "expectedMiss": 6,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 447,
+        "uncacheableUnchanged": 439
+      },
+      "rootsOnly": {
+        "hit": 198,
+        "expectedMiss": 6,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 446,
+        "uncacheableUnchanged": 438
+      },
+      "rootsDependingOnInserted": 20,
+      "missedRoots": [
+        "//flows:codingBundle",
+        "//flows:codingBundleBun",
+        "//flows:codingNative",
+        "//flows:codingNativeBun",
+        "//flows:codingPolicy",
+        "//flows:codingRuntime"
+      ],
+      "unexpectedMisses": [],
+      "execution": {
+        "wallMs": 32258,
+        "results": [
+          {
+            "label": "//flows:codingPolicy",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "95eb67e481bce281231d62b84375478b5f35281e2f5ca1bc16a06ca919d13f2e",
+            "exitCode": 0,
+            "wallMs": 3466,
+            "counts": {
+              "hit": 0,
+              "ran": 57,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//flows:codingRuntime",
+            "status": "failed",
+            "exitCode": 1,
+            "wallMs": 24670,
+            "message": "1 of 57 targets failed"
+          },
+          {
+            "label": "//packages/smithers/notifications:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "2349a651e1f20106547b60988d60f1cf5408176ffc3dab93761a8296fce37d86",
+            "exitCode": 0,
+            "wallMs": 1620,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/agent/memory:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "a6d60e05aec004e7c0d20e76c9889de8f631e058a7b9e708df369c56e1248e2d",
+            "exitCode": 0,
+            "wallMs": 1259,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/flows/journal:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "953de6d1163610450079297f4e2cc5563333e5a1342c6683eff4079a6c028c5c",
+            "exitCode": 0,
+            "wallMs": 1243,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "mismatches": []
+      }
+    },
+    {
+      "name": "change-3'",
+      "phase": "rebased",
+      "commit": "36335a389115ece23262ec05e88763f0e9d08340",
+      "touched": "apps/site/src/build-stamp.d.ts",
+      "targets": 769,
+      "roots": 650,
+      "planMs": 20958,
+      "all": {
+        "hit": 322,
+        "expectedMiss": 0,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 447,
+        "uncacheableUnchanged": 447
+      },
+      "rootsOnly": {
+        "hit": 204,
+        "expectedMiss": 0,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 446,
+        "uncacheableUnchanged": 446
+      },
+      "rootsDependingOnInserted": 20,
+      "missedRoots": [],
+      "unexpectedMisses": [],
+      "execution": {
+        "wallMs": 29024,
+        "results": [
+          {
+            "label": "//flows:codingPolicy",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "95eb67e481bce281231d62b84375478b5f35281e2f5ca1bc16a06ca919d13f2e",
+            "exitCode": 0,
+            "wallMs": 1952,
+            "counts": {
+              "hit": 1,
+              "ran": 56,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//flows:codingRuntime",
+            "status": "failed",
+            "exitCode": 1,
+            "wallMs": 23387,
+            "message": "1 of 57 targets failed"
+          },
+          {
+            "label": "//packages/smithers/notifications:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "2349a651e1f20106547b60988d60f1cf5408176ffc3dab93761a8296fce37d86",
+            "exitCode": 0,
+            "wallMs": 1214,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/agent/memory:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "a6d60e05aec004e7c0d20e76c9889de8f631e058a7b9e708df369c56e1248e2d",
+            "exitCode": 0,
+            "wallMs": 1235,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/flows/journal:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "953de6d1163610450079297f4e2cc5563333e5a1342c6683eff4079a6c028c5c",
+            "exitCode": 0,
+            "wallMs": 1236,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "mismatches": []
+      }
+    },
+    {
+      "name": "change-4'",
+      "phase": "rebased",
+      "commit": "427b1cf5ce2e30e021eacaf6d5a620a1e7baee22",
+      "touched": "packages/smithers/build/targets/src/AgentTarget.ts",
+      "targets": 769,
+      "roots": 650,
+      "planMs": 21288,
+      "all": {
+        "hit": 315,
+        "expectedMiss": 7,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 447,
+        "uncacheableUnchanged": 433
+      },
+      "rootsOnly": {
+        "hit": 198,
+        "expectedMiss": 6,
+        "unexpectedMiss": 0,
+        "unexpectedHit": 0,
+        "uncacheableRuns": 446,
+        "uncacheableUnchanged": 432
+      },
+      "rootsDependingOnInserted": 20,
+      "missedRoots": [
+        "//flows:codingBundle",
+        "//flows:codingBundleBun",
+        "//flows:codingNative",
+        "//flows:codingNativeBun",
+        "//flows:codingPolicy",
+        "//flows:codingRuntime"
+      ],
+      "unexpectedMisses": [],
+      "execution": {
+        "wallMs": 31445,
+        "results": [
+          {
+            "label": "//flows:codingPolicy",
+            "status": "ran",
+            "predicted": "ran",
+            "key": "9dc77c90298a1a7a7a95d8e7c37a0063a9a741ce92dff175b1a5dc7ae50167b2",
+            "exitCode": 0,
+            "wallMs": 3356,
+            "counts": {
+              "hit": 0,
+              "ran": 57,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//flows:codingRuntime",
+            "status": "failed",
+            "exitCode": 1,
+            "wallMs": 23487,
+            "message": "1 of 57 targets failed"
+          },
+          {
+            "label": "//packages/smithers/notifications:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "676802490d8f2d78587b19c77f0449dd088f220338a1294bdbc13b228a9d0300",
+            "exitCode": 0,
+            "wallMs": 2012,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/agent/memory:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "14c8e7879d2e6fc14472a68a1570d9b668c7eef74f4bef263b228ed2c9f364e6",
+            "exitCode": 0,
+            "wallMs": 1305,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "label": "//packages/smithers/flows/journal:docs",
+            "status": "hit",
+            "predicted": "hit",
+            "key": "48d5fc4fe478856b3efb6b5d7947709606d4fba2e47212f334ae5c9ab434b224",
+            "exitCode": 0,
+            "wallMs": 1285,
+            "counts": {
+              "hit": 1,
+              "ran": 0,
+              "failed": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "mismatches": []
+      }
+    }
+  ]
+}

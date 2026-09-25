@@ -19,9 +19,17 @@ that take longer asynchronously.
 The native and bundle labels are slow gates. Their private launcher runs one
 existing test file at a time, with a 25 minute child limit in addition to each
 fixture's own timeout. The enclosing existing `Shell.Test` also bounds the entire
-gate. They are uncached, so an installed external tool is never mistaken for a
-repository build output with a stable content key. Gate output records measured
-preflight helper SHA256 and JJ version.
+gate. `Shell.Test` caches a green verdict in `execute` mode, but the JJ binary and
+native helper these gates spawn are not key material: only the Node or Bun
+runtime is. Coding checks bind those tools through the check cache partition
+(`scripts/ci/check-cache.mjs`); a direct `smthrs test` of these labels does not.
+Gate output records measured preflight helper SHA256 and JJ version.
+
+`//flows:codingPolicy` and `//flows:codingRuntime` declare `cache: true`. Their
+inputs are every Smithers package source, the flows sources and scripts, the
+lockfile, and the checked-in project configuration and pages the fixtures read.
+A fixture that starts reading another file must declare it, or a rebase can
+replay a verdict that file would have changed.
 
 Native gates require a POSIX host with JJ and the packaged Rust helper. The
 launcher records the JJ version and uses

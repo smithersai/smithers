@@ -133,21 +133,22 @@ not yet key material.
 | --------------------------------------------- | ---------------------------------------------------------------- |
 | `DocsParity`, `Filegroup`, `PackageJsonCheck` | Always; each is a bounded in-process check over declared content |
 | `GithubCiGen`                                 | In `check` mode; never in `write` mode                           |
-| `ToolBuild`                                   | Only when its declaration sets `cache: true`                     |
+| `ToolBuild`, `NodeTest`                       | Only when the declaration sets `cache: true`                     |
+| Rules the executor runs natively              | As their rule policy says; `Shell.Test` caches in `execute` mode |
 | Every other catalog target                    | Never                                                            |
 
 Mutation, long-lived processes, model calls, and external publication are never
-cached. External compiler, test, and lint targets remain non-cacheable until
-their executable and runtime toolchain are represented in the content key; a
-lockfile path or command name alone is not toolchain identity.
+cached. External compiler, test, and lint targets remain non-cacheable by
+default: the executable the target spawns is key material, but a program can
+still read files its declaration does not name, and an unconfined run cannot
+prove it did not. `cache: true` on a `NodeTest` is the declaration's assertion
+that `srcs` and `deps` cover everything it reads.
 
-A declared [Nix environment](../concepts/environments.md) is that identity.
-When a target's package declares one, the planner marks these targets
-cacheable, because the `nix:<hash>` layer names the exact compiler, runner, or
-linter that produced the result: `TsBuild`, `DtsBuild`, `Typecheck`, `Vitest`,
-`VitestCoverage`, `NodeTest`, `EsLint`, `BiomeCheck`, `DepsLint`,
-`PackageLint`, `CargoTest`, and `CargoLint`. Without an environment they stay
-as the table says.
+A declared [Nix environment](../concepts/environments.md) enters keys through
+the tool environment, but does not by itself make these targets cacheable.
+
+A result produced without enforced confinement is stored in the local tier
+only; it never publishes to a remote cache.
 
 ## Keys vary by verb
 

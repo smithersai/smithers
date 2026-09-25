@@ -188,7 +188,14 @@ export const Attrs = Schema.Struct({
   env: Schema.Record(Schema.String, Schema.String).pipe(
     Schema.withConstructorDefault(Effect.succeed({}))
   ),
-  cwd: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(".")))
+  cwd: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed("."))),
+  /**
+   * Replays a green verdict from the result cache. Set it only when `srcs` and
+   * `deps` cover everything the program reads: an undeclared input cannot
+   * re-key the target. The runtime executable, lockfile, and build
+   * implementation are key material either way.
+   */
+  cache: Schema.optional(Schema.Boolean)
 })
 
 /**
@@ -226,7 +233,8 @@ export const runArgv = (attrs: Attrs): ReadonlyArray<string> => {
  * action. Success carries the {@link Exec.Result} run summary; the target
  * declares no output directories, because a gate's product is its exit code.
  * The entry point, the declared sources, the runtime declaration, and the
- * environment are the key material. Executing the plan requires
+ * environment are the key material. The target is cacheable only when its
+ * declaration sets `cache: true`. Executing the plan requires
  * {@link Exec.ExecLive}.
  *
  * @category targets
@@ -238,6 +246,7 @@ export const NodeTest = Target.make("NodeTest", {
   kinds: ["test"],
   success: Exec.Result,
   error: Exec.ExecError,
+  cache: (attrs) => attrs.cache === true,
   implementation: (attrs) =>
     Exec.runTool({
       cwd: attrs.cwd,

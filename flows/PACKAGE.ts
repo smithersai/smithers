@@ -136,7 +136,8 @@ const codingPolicy = Smithers.NodeTest({
   runtime: node,
   runner: Smithers.testRunner([Smithers.file("//flows/test/coding-host.test.ts"), Smithers.file("//flows/test/coding-runtime-bridge.test.ts"),
     Smithers.file("//flows/test/coding-gates.test.ts"), Smithers.file("//flows/test/coding-planning-wiki-prior.test.ts")]),
-  srcs: codingSources, deps: codingDependencies, cwd
+  // `coding-host.test.ts` loads the checked-in project configuration.
+  srcs: [...codingSources, ...codingProjectInputs], deps: codingDependencies, cwd, cache: true
 })
 const codingRuntime = Smithers.NodeTest({
   runtime: node,
@@ -149,7 +150,7 @@ const codingRuntime = Smithers.NodeTest({
     Smithers.file("//flows/test/coding-vibe-evidence.test.ts"), Smithers.file("//flows/test/coding-vibe-admission.test.ts"),
     Smithers.file("//flows/test/coding-landing.test.ts"), Smithers.file("//flows/test/coding-landing-config.test.ts"), Smithers.file("//flows/test/coding-vibe-landing.test.ts"),
     Smithers.file("//flows/test/coding-source-publication.test.ts"), Smithers.file("//flows/test/coding-dispatch.test.ts")]),
-  srcs: [...codingSources, ...codingProjectInputs], deps: codingDependencies, cwd
+  srcs: [...codingSources, ...codingProjectInputs], deps: codingDependencies, cwd, cache: true
 })
 const codingConfigBun = Smithers.NodeTest({
   runtime: bun,
@@ -161,7 +162,8 @@ const codingConfigBun = Smithers.NodeTest({
 })
 
 // Explicit slow gates: preflight refuses missing native tools instead of letting
-// opt-in integration cases silently skip. The existing Shell.Test is uncached.
+// opt-in integration cases silently skip. Shell.Test caches a green verdict; the
+// JJ and helper bytes it spawns are bound by the coding check cache partition.
 const codingNative = Smithers.Shell.Test({ bin: Smithers.Runtime.bin, runtime: node,
   args: ["flows/test/coding-native-gate.mjs", "source"], data: [...codingSources, ...codingDependencies], timeout: "45m" })
 const codingNativeBun = Smithers.Shell.Test({ bin: Smithers.Runtime.bin, runtime: bun,

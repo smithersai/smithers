@@ -27,6 +27,17 @@ test("coding gates track source-only groups at every Smithers package boundary",
   assert.ok(metadata.inputs.some(input => input._tag === "PnpmWorkspace" && input.path === "//pnpm-workspace.yaml"))
 })
 
+// A rebased stack replays these verdicts, so their declarations must name what
+// the fixtures read: `coding-host.test.ts` loads the project configuration.
+test("the fast coding checks replay unchanged verdicts over their declared inputs", () => {
+  for (const target of [Package.codingPolicy, Package.codingRuntime]) {
+    const metadata = Target.metadata(target)
+    assert.equal(metadata.cacheable, true)
+    assert.ok(metadata.inputs.some(input => input._tag === "File" && input.path === "//.smithers/coding-project.json"))
+    assert.ok(metadata.inputs.some(input => input._tag === "File" && input.path === "//pnpm-lock.yaml"))
+  }
+})
+
 // Every fixture under flows/test, not just the coding family. Forty-five of the
 // eighty-seven were in no target and in no gate when this claim was widened:
 // they ran only under this package's bare `pnpm test`, which no workflow

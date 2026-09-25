@@ -97,7 +97,7 @@ or pull-request operations. Use an implemented publication tool or CI job.
 | `Memory.Retain`          | MemoryTarget      | run                | no        | no               | package executor |
 | `NewPackage`             | NewPackage        | run                | no        | no               | flow body        |
 | `NodeBinary`             | NodeBinary        | build              | no        | no               | flow body        |
-| `NodeTest`               | NodeTest          | test               | no        | no               | flow body        |
+| `NodeTest`               | NodeTest          | test               | by attrs  | no               | flow body        |
 | `Npm.Downstream`         | NpmTarget         | test               | yes       | no               | unsupported      |
 | `Npm.Pack`               | NpmTarget         | build              | yes       | no               | package executor |
 | `Npm.Publish`            | NpmTarget         | run                | no        | no               | unsupported      |

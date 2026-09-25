@@ -58,6 +58,17 @@ This repository's `scripts/ci/coding-check.sh` gives each frozen Bun install
 failures retain their exit status; tests start only after installation succeeds.
 `SMITHERS_CHECK_INSTALL_TIMEOUT` can select a different GNU timeout duration
 for an operator or a bootstrap test. Coreutils is supplied by the workspace base.
+Each check starts in a fresh export, so `scripts/ci/check-cache.mjs` carries
+target results between them: it seeds the export's `.flows/cache` from
+`$HOME/.cache/smithers-checks/cache` (or `SMITHERS_CHECK_CACHE_DIR`) before the
+run and saves new entries after it, pass or fail. The partition is named by the
+bytes of Node, Bun, JJ and the native exporter, the tools the target key does
+not fully bind. A rebased revision therefore replays every cacheable target
+whose content key is unchanged, and runs the rest; there is no separate
+diff-based selection. Bun's package cache lives beside it, so a replayed check
+does not download its dependencies again. This cache is evidence for one
+workspace VM: check code runs as the same user and could write it. Remote
+build-cache credentials are not forwarded to checks.
 The example requires an explicit host `environment.PATH` containing `node`;
 without a supplied PATH the command must name an absolute executable. Tools
 that need HOME, a package cache or other build settings receive those explicitly.

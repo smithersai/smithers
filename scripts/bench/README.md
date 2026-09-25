@@ -72,3 +72,61 @@ The upload-on-failure and 30-day retention policy above applies to the scheduled
 permits missing files (`if-no-files-found: ignore`) and its generator exposes
 no retention control, so a lost runner or an unwritten receipt yields no
 artifact and no error. Local failed receipts remain on disk.
+
+## Rebase cache reuse
+
+`scripts/bench/rebase-cache.mjs` measures whether a rebased stack replays
+every target whose inputs did not change. It is a manual measurement, not a PR
+gate; the deterministic gate is `build-cli/test/RebaseKeyStability.test.ts`.
+
+Method: on a base revision it commits one change per `--stack` package (a
+comment appended to that package's first tracked source file), then commits
+`--insert` below the stack and rebases it, so every commit id and tree changes.
+Each revision is exported with `git archive` into a fresh directory at a new
+absolute path with no `.git`, installed from the frozen lockfile, and planned
+with `ci //... --plan`. A result store is replayed in check order: the original
+stack, then the inserted change and the rebased stack. A target's input
+signature is its ambient identity plus every declared input file digest in its
+dependency closure. A cacheable target whose key was stored earlier is a hit;
+a key that moved while the signature did not, or stayed while it moved, fails
+the run. `--execute` also runs labels for real through
+`scripts/ci/check-cache.mjs`, the persistence coding checks use, and fails when
+the executor's hit/ran disagrees with the prediction from earlier effective
+keys, or a label fails outside `--allow-failed`.
+
+```sh
+node scripts/bench/rebase-cache.mjs --out /tmp/rebase-inside \
+  --insert packages/smithers/notifications \
+  --execute //flows:codingPolicy,//flows:codingRuntime,//packages/smithers/notifications:docs \
+  --allow-failed //flows:codingRuntime
+```
+
+Results from 2026-09-25 (macOS arm64, Node 26.4.0, 650 `ci` roots, 204
+cacheable), in `rebase-cache/`. The stack touched `agent/memory`,
+`flows/journal`, `apps/site` and `build/targets`:
+
+| Inserted change | Rebased roots hit / cacheable | Misses | Coding gates (6) |
+| --------------- | ----------------------------- | ------ | ---------------- |
+| `apps/app` (outside the coding gate inputs) | 816 / 816 | 0 | hit in all 4 rebased changes |
+| `smithers/notifications` (inside them) | 798 / 816 | 18: the 6 coding gates in 3 changes; the fourth matched an earlier check | miss where the content is new |
+
+Both runs had zero unexpected misses or hits and zero executor disagreements.
+`//flows:codingPolicy` measured 2.6-4.7 s ran (11 runs) and 1.7-2.0 s hit (6 of 7
+hits; one 5.5 s outlier), most of it planning; the native and bundle gates it stands for have 45 minute budgets.
+
+Limitations:
+
+- 446 of the 650 roots are not cacheable (`NodeTest`, `Vitest`, `Typecheck`,
+  `EsLint`, `Dprint`, `TsBuild` without `cache: true`) and re-run on every
+  revision; 432-446 of them had unchanged keys in each rebased revision.
+- The coding gates declare every Smithers package source, so any change there
+  re-runs all six. A change to the build implementation (`build/targets`,
+  `build-cli`, the flow engine packages it loads) or the lockfile re-keys every
+  target.
+- The signature covers declared inputs only. An input a target reads without
+  declaring cannot be detected here, and Go, Cargo and import-closure keys that
+  derive inputs from the toolchain can report a miss the oracle calls unexpected.
+- `//flows:codingRuntime` failed on the base for an unrelated reason (#1728);
+  failures are never cached. The native gates were not executed (no JJ export
+  helper on the measuring host).
+- Wall times are single samples on a developer laptop, not controlled runs.

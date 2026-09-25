@@ -12842,7 +12842,7 @@
     "kinds": [
       "test"
     ],
-    "cacheable": false,
+    "cacheable": true,
     "inputs": [
       {
         "kind": "file",
@@ -12886,6 +12886,96 @@
       {
         "kind": "file",
         "path": "flows/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/coding-project.json"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/factory.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime-packages.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/app-workspace.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/worker-gateway.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-workspace.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/health-contract.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/LOCAL-APP.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/docs/EFFECT.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/src/index.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/src/Environment.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/src/Boundary.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "docs/design/agent-flow-health.md"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/checks/**/flow.mdx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/create-flow/**/flow.mdx",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -12902,7 +12992,7 @@
     "kinds": [
       "test"
     ],
-    "cacheable": false,
+    "cacheable": true,
     "inputs": [
       {
         "kind": "file",
@@ -31797,6 +31887,10 @@
       {
         "kind": "file",
         "path": "scripts/ci/coding-check.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/ci/check-cache.test.mjs"
       },
       {
         "kind": "file",

@@ -48,6 +48,7 @@ export const Package = Smithers.Package({
 | `deps`    | `Array<Target.Target>`   | required | Dependency targets. A gate that consumes a build's product depends on it here. |
 | `env`     | `Record<string, string>` | `{}`     | Environment merged over the host bootstrap environment.                        |
 | `cwd`     | `string`                 | `"."`    | Workspace-relative directory the program runs in.                              |
+| `cache`   | `boolean`                | `false`  | Replay a green verdict for an unchanged key. Set only when `srcs` and `deps` cover everything the program reads. |
 
 ## Runners
 
