@@ -1,6 +1,6 @@
 /** Private browser-safe values projected from ordinary finalization receipts. */
 import { Schema } from "effect"
-import { GitHubPull, LandingIdentity } from "./landing-schema.ts"
+import { GitHubPull, LandingIdentity, LaneReceipt } from "./landing-schema.ts"
 import { SourcePublication } from "./native-schema.ts"
 import { RequestResult, Result, Revision } from "./schema.ts"
 
@@ -36,5 +36,8 @@ export type VibeLanded = typeof VibeLanded.Type
 export const VibeProposed = Schema.Struct({ cleanup: VibeCleanup, cleanedSource: SourcePublication, landing: LandingIdentity,
   pullRequest: GitHubPull })
 export type VibeProposed = typeof VibeProposed.Type
-export const VibeDelivered = Schema.Union([VibeLanded, VibeProposed])
+/** A repository with a mythical stack: the result went to the stack service, which integrates it and proposes it. */
+export const VibeSubmitted = Schema.Struct({ cleanup: VibeCleanup, cleanedSource: SourcePublication, lane: LaneReceipt })
+export type VibeSubmitted = typeof VibeSubmitted.Type
+export const VibeDelivered = Schema.Union([VibeLanded, VibeProposed, VibeSubmitted])
 export type VibeDelivered = typeof VibeDelivered.Type

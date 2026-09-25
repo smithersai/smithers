@@ -10,6 +10,7 @@ import { Poc } from "../coding/poc.ts"
 import { Prototype, prototypeRegistration } from "../coding/prototype.ts"
 import { Request, requestRegistration } from "../coding/request.ts"
 import { AdmitSource } from "../coding/source-admission.ts"
+import { AdmitStackBase } from "../coding/stack.ts"
 import { ReceiveFeedback, type FeedbackReceipt } from "../coding/steering.ts"
 import { CodingError, type Plan, type Revision } from "../coding/schema.ts"
 
@@ -51,6 +52,11 @@ const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray
     }))
   }))
   const layer = Layer.mergeAll(requestRegistration, prototypeRegistration, registration,
+    AdmitStackBase.toLayer(({ base }) => Effect.sync(() => {
+      events.push(`base:${base.commitId.slice(0, 4)}`)
+      head = { ...revision("working"), parentCommitIds: [base.commitId] }
+      return head
+    })),
     AdmitSource.toLayer(({ plan }) => Effect.gen(function*() {
       events.push("admit")
       if (stale) return yield* Effect.fail(new CodingError({ code: "stale_revision", message: "fixture source moved" }))
@@ -65,6 +71,16 @@ const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray
   return { host: ManagedRuntime.make(layer), events, feedback,
     counts: () => ({ plans, implementations, prototypes }), head: () => head }
 }
+
+test("a stack request stands on the tip before it plans", { timeout: 60_000 }, async t => {
+  const f = fixture(() => [])
+  t.after(() => f.host.dispose())
+  const tip = "a".repeat(40)
+  const base = { commitId: tip, ref: `refs/smithers/workspaces/11111111-1111-4111-a111-111111111111/sources/${tip}` }
+  const result = await f.host.runPromise(Request.execute({ ...input, base }, { executionId: "request-stack" }))
+  assert.equal(result.outcome.status, "validated")
+  assert.deepEqual(f.events.slice(0, 2), ["base:aaaa", "plan:0"])
+})
 
 test("a real fix plans once, retains the original constraints and never requires a POC", { timeout: 60_000 }, async t => {
   const f = fixture(() => [])

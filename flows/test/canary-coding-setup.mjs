@@ -15,7 +15,7 @@ await mkdir(output, { recursive: true })
 // the bundled API is derived from what they import rather than fixed here: the
 // named imports of each authored file, resolved against `flows/`, re-exported
 // once per module and read back through the hoisted factory below.
-const entries = ['flow.ts', 'implementation/flow.ts', 'request/flow.ts', 'vibe/flow.ts']
+const entries = ['flow.ts', 'implementation/flow.ts', 'request/flow.ts', 'vibe/flow.ts', 'verify/flow.ts']
 const authored = new Map()
 const clausePattern = /^import \{([^}]+)\} from "([^"]+)"$/gm
 /** The module id a specifier names, as `flows/` sees it. */

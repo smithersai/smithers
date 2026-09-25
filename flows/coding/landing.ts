@@ -3,7 +3,7 @@ import { Cause, Context, Effect, Layer, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
 import { ChangeId, Resolved, SourcePublication } from "./native-schema.ts"
 import { AppendObservation, AppendPreparation, AppendPreparationInput, AppendRequest, type Delivery, GitHubPull, LandingIdentity,
-  QueuedAppend } from "./landing-schema.ts"
+  LaneReceipt, LaneSubmission, QueuedAppend, StackState } from "./landing-schema.ts"
 import { CodingError } from "./schema.ts"
 
 /** Trusted provisioned workspace binding, never workflow or model input. */
@@ -25,6 +25,10 @@ export class Landing extends Context.Service<Landing, {
   readonly readDelivery: Effect.Effect<Delivery, CodingError>
   /** Open, or find again, the GitHub pull request carrying this landing's exact tip. */
   readonly openPull: (identity: LandingIdentity, commitId: string, runId: string) => Effect.Effect<GitHubPull, CodingError>
+  /** Whether the repository has an active mythical stack (then vibe hands results to it). */
+  readonly readStack?: Effect.Effect<boolean, CodingError>
+  /** Hand a validated, cleaned result to the stack service; replaying the same body is idempotent. */
+  readonly submitLane?: (submission: LaneSubmission) => Effect.Effect<LaneReceipt, CodingError>
 }>()("coding/Landing") {}
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
@@ -132,7 +136,14 @@ export const make = (options: Options) => Effect.gen(function*() {
         Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(DeclaredPolicy))),
         Effect.mapError(error => error instanceof CodingError ? error : invalid("The declared factory projection on main is not valid JSON")),
         Effect.map((policy): Delivery => policy.github?.changes === "send-upstream" ? "pull-request" : "append"))))
-  return Landing.of({ binding: { repositoryId: options.repositoryId, workspaceId: options.workspaceId }, readMain, readDelivery,
+  const readStack = send(HttpClientRequest.get(`${base}/mythical`), [200, 404], Schema.Union([StackState, Missing])).pipe(
+    Effect.map(reply => "state" in reply && reply.state === "active"))
+  const submitLane = (submission: LaneSubmission) => Schema.decodeUnknownEffect(LaneSubmission)(submission).pipe(
+    Effect.mapError(() => invalid("A lane submission requires exact commits and this workspace")),
+    Effect.flatMap(body => send(json(HttpClientRequest.put(`${base}/mythical/lanes`), body), [200, 202], LaneReceipt)),
+    Effect.flatMap(receipt => receipt.source === submission.source ? Effect.succeed(receipt)
+      : Effect.fail(invalid("The stack service acknowledged another source"))))
+  return Landing.of({ binding: { repositoryId: options.repositoryId, workspaceId: options.workspaceId }, readMain, readDelivery, readStack, submitLane,
     openPull: (identity, commitId, runId) => Effect.gen(function*() {
       if (!Schema.is(Resolved.fields.commitId)(commitId) || !runId || runId.length > 1024 || /[\r\n`]/.test(runId)) {
         return yield* invalid("A pull request requires the exact landing tip and this run's identity")

@@ -440,6 +440,19 @@
       "modelInvocable": true
     },
     {
+      "id": "coding/verify",
+      "description": "Run the project's required checks on one retained commit of the repository's mythical stack.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/verify/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true
+    },
+    {
       "id": "coding/vibe",
       "description": "Retain the original source, clean and revalidate the validated native history, retain the cleaned source, and append one commit to main through the existing landing policy, or open a GitHub pull request when the repository sends changes upstream.",
       "summary": null,

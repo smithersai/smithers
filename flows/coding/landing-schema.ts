@@ -42,3 +42,12 @@ export const GitHubPull = Schema.Struct({ landing_number: PositiveId, repository
   state: Schema.Literals(["open", "closed"]), merged: Schema.Boolean, head_ref: Schema.String.check(Schema.isMaxLength(255)),
   head_sha: CommitId, base_ref: Schema.Literal("main"), created: Schema.Boolean })
 export type GitHubPull = typeof GitHubPull.Type
+/** The repository's mythical stack as `coding/vibe` needs it: only whether it is active. */
+export const StackState = Schema.Struct({ state: Schema.Literals(["absent", "bootstrapping", "active", "frozen"]) })
+/** A lane result handed to the stack service (PUT /mythical/lanes). */
+export const LaneSubmission = Schema.Struct({ workspaceId: Schema.String, base: CommitId, source: CommitId,
+  requestRunId: Schema.NonEmptyString.check(Schema.isMaxLength(1024)), summary: Schema.NonEmptyString.check(Schema.isMaxLength(16_384)) })
+export type LaneSubmission = typeof LaneSubmission.Type
+/** The stack service's receipt: the item that now carries this candidate. */
+export const LaneReceipt = Schema.Struct({ itemId: Schema.NonEmptyString, state: Schema.NonEmptyString, source: CommitId })
+export type LaneReceipt = typeof LaneReceipt.Type

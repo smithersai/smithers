@@ -58,10 +58,20 @@ export const PlanningInput = Schema.Struct({
   // feedback (32,768 characters each), separated by two newlines.
   feedback: Schema.String.check(Schema.isMaxLength(65_538))
 })
+/** The mythical stack tip a request starts from: an exact commit the stack
+ * service retained into this workspace's source ref. */
+export const StackBase = Schema.Struct({
+  commitId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)),
+  ref: Schema.String.check(Schema.isPattern(/^refs\/smithers\/workspaces\/[0-9a-f-]{36}\/sources\/[0-9a-f]{40}$/))
+})
+export type StackBase = typeof StackBase.Type
 export const RequestInput = Schema.Struct({
   prompt: PlanningInput.fields.prompt,
   feedback: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(32_768))),
-  maxRounds: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(8)))
+  maxRounds: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(8))),
+  // Start on the mythical stack: import this tip and plan on a fresh working
+  // change on it (stack.ts). Absent, the request plans on the workspace as is.
+  base: Schema.optionalKey(StackBase)
 })
 export const Finding = Schema.Struct({
   owner: Id,

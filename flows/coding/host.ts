@@ -24,6 +24,8 @@ import * as CodingFileSystem from "./filesystem.ts"
 import { correctionLayers, SelectRepair } from "./correction.ts"
 import { memoryLayer, type MemoryOptions } from "./planning-memory.ts"
 import { declineLayer, DraftPlan, planningPolicy, PreparePlan, ReviewRequest } from "./planning.ts"
+import { stackBaseLayer } from "./stack.ts"
+import { verifyRegistration } from "./verify.ts"
 import { evidenceOnly } from "./planning-authority.ts"
 import { requestRegistration } from "./request.ts"
 import { sourceAdmission } from "./source-admission.ts"
@@ -97,7 +99,9 @@ export interface Options extends NativeOptions {
 /** The optional routes advertised by this configured host. */
 export const configuredCodingRoutes = (options: Pick<Options, "planning" | "landing">) => [
   ...(options.planning === undefined ? [] : [{ name: "coding/request", capability: "coding-request/v1" }]),
-  ...(options.planning === undefined || options.landing === undefined ? [] : [{ name: "coding/vibe", capability: "coding-vibe/v1" }])
+  ...(options.planning === undefined || options.landing === undefined ? [] : [{ name: "coding/vibe", capability: "coding-vibe/v1" }]),
+  // The mythical stack verifies rebased candidates with the same checks.
+  ...(options.planning === undefined ? [] : [{ name: "coding/verify", capability: "coding-verify/v1" }])
 ]
 
 const configured = (options: Options) => {
@@ -206,7 +210,8 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       preparationLayers(wikiEnabled), prototypeRegistration,
       ...(wikiOptions === undefined ? [] : [planningWikiLayers(wikiOptions, fs),
         wikiCheckLayers({ ...wikiOptions, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment })]),
-      planningPolicy, declineLayer, Interpreter.layer(PreparePlan), HumanTask.layer, correctionLayers, sourceAdmission, requestRegistration, feedbackLayer,
+      planningPolicy, declineLayer, Interpreter.layer(PreparePlan), HumanTask.layer, correctionLayers, sourceAdmission, stackBaseLayer, requestRegistration, feedbackLayer,
+      verifyRegistration,
       pocPolicy, pocModels, pocSource({ ...options, fs }),
       evidenceOnly(Layer.mergeAll(ReviewRequest.layer, DraftPlan.layer, SelectRepair.layer, ReviewPage.layer)),
       ...(options.landing === undefined ? [] : [vibeRegistration.pipe(Layer.provide(options.landing)), cleanupModels])

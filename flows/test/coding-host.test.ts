@@ -19,16 +19,18 @@ const landing = Layer.succeed(Landing, { binding: { repositoryId: 1, workspaceId
   readMain: refused, prepare: () => refused, create: () => refused, queue: () => refused, observe: () => refused,
   readDelivery: refused, openPull: () => refused })
 
-test("the repository default and a landing binding select both coding routes", async () => {
+test("the repository default and a landing binding select the coding routes", async () => {
   const root = await realpath(fileURLToPath(new URL("../../", import.meta.url)))
   const planning = await Effect.runPromise(loadProject(root, undefined).pipe(Effect.provide(NodeServices.layer)))
   assert.ok(planning)
   assert.deepEqual(configuredCodingRoutes({ planning, landing }), [
     { name: "coding/request", capability: "coding-request/v1" },
-    { name: "coding/vibe", capability: "coding-vibe/v1" }
+    { name: "coding/vibe", capability: "coding-vibe/v1" },
+    { name: "coding/verify", capability: "coding-verify/v1" }
   ])
   assert.deepEqual(configuredCodingRoutes({ planning }), [
-    { name: "coding/request", capability: "coding-request/v1" }
+    { name: "coding/request", capability: "coding-request/v1" },
+    { name: "coding/verify", capability: "coding-verify/v1" }
   ])
   assert.deepEqual(configuredCodingRoutes({ landing }), [])
 })

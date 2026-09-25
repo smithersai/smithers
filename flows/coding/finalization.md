@@ -243,6 +243,27 @@ The `VibeProposed` receipt carries the cleanup, cleaned-source retention,
 landing identity and the GitHub pull request. It is proposed work, not a
 changed main. Merging happens on GitHub.
 
+## Hand the result to the mythical stack
+
+A repository whose backend runs a mythical stack (`GET /api/repos/{o}/{r}/mythical`
+answers `state: "active"`) does not append or open its own pull request.
+After the cleaned-source retention receipt, `LandVibe` records `ReadStack` once
+and, for a stacked repository, `SubmitLane` hands the stack service
+`{ workspaceId, base, source, requestRunId, summary }` with
+`PUT …/mythical/lanes`: `base` is the stack tip the request started from (the
+original source's parent) and `source` the retained cleaned tip. The service
+integrates it onto the current tip, verifies a rebased candidate with
+`coding/verify`, and proposes it; the `VibeSubmitted` receipt names the item
+that now carries the result. A repository without an active stack keeps the
+paths above.
+
+A stack request starts on the tip: `coding/request` with
+`base: { commitId, ref }` (the tip retained in this workspace's source ref)
+imports that commit and creates an empty working change on it before planning
+(`stack.ts`), so the plan's native history is the stack. `coding/verify`
+(`verify/flow.ts`) imports one retained commit and runs the required checks on
+its immutable export; it passes only when every required check passed.
+
 ## Separate product states
 
 A validated request can begin vibing: final history and context cleanup, repeated

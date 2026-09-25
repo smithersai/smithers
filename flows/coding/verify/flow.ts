@@ -1,0 +1,23 @@
+/** Required checks on one retained commit of the mythical stack. */
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { AdmitVerifySource, VerifyInput, VerifyResult, verifySummary } from "../verify-schema.ts"
+import { CodingError, Receipt } from "../schema.ts"
+import { RunCheck } from "../workflow.ts"
+
+/**
+ * The stack service runs this on a lane when it had to rebase a candidate
+ * onto a newer tip: the lane's own checks measured the old commits, so the
+ * rebased tree is checked again before it is proposed. Each receipt binds
+ * the exact commit and tree, like every other coding check.
+ */
+export default Flow.make("coding/Verify", {
+  description: "Run the project's required checks on one retained commit of the repository's mythical stack.",
+  capabilities: ["*"],
+  effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  payload: VerifyInput, success: VerifyResult, error: CodingError,
+  body: input => AdmitVerifySource.call({ source: input.source }).pipe(
+    Node.bindPlanned(head => Node.all(Object.fromEntries(input.checks.map(check => [check.id,
+      RunCheck.call({ implementation: { change: "mythical-candidate", parent: head, atoms: [head], head, reads: [], writes: [] }, check })]))
+    ).pipe(Node.map((receipts: Readonly<Record<string, typeof Receipt.Type>>) => verifySummary(input.checks, Object.values(receipts))))))
+})

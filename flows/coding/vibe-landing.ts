@@ -11,7 +11,7 @@ import { AppendObservation, AppendPreparation, Delivery, LandingIdentity, Queued
 import { requestIdFor } from "./native.ts"
 import { CodingError } from "./schema.ts"
 import { PublishVibeSource } from "./vibe-publication.ts"
-import { VibeCleanup, VibeDelivered, VibeLanded, VibeProposed } from "./vibe-schema.ts"
+import { VibeCleanup, VibeDelivered, VibeLanded, VibeProposed, VibeSubmitted } from "./vibe-schema.ts"
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 /** Existing landing policy runs in Plue's worker; this bound covers full-history inspection. */
@@ -19,6 +19,14 @@ const observationIntervalMs = 10_000, observationAttempts = 90
 const Unobserved = Schema.Struct({ status: Schema.Literal("unobserved"), reason: Schema.String })
 const Observed = Schema.Union([AppendObservation, Unobserved])
 
+/** Recorded once: a repository with an active mythical stack takes the result, not main. */
+const ReadStack = Action.make("coding/read-vibe-stack", {
+  payload: { cleanup: VibeCleanup }, success: Schema.Boolean, error: CodingError, nondeterministic: true
+})
+const SubmitLane = Action.make("coding/submit-vibe-lane", {
+  payload: { cleanup: VibeCleanup, cleanedSource: PublishVibeSource.successSchema }, success: VibeSubmitted,
+  error: CodingError, nondeterministic: true
+})
 /** Recorded once, so a restart never switches an in-flight request to the other delivery. */
 const ReadDelivery = Action.make("coding/read-vibe-delivery", {
   payload: { cleanup: VibeCleanup }, success: Delivery, error: CodingError, nondeterministic: true
@@ -59,21 +67,41 @@ export const LandVibe = Flow.make("coding/LandVibe", {
   // andThen makes the whole delivery subtree wait for the retention receipt.
   body: cleanup => PublishVibeSource.child({ source: cleanup.head, phase: "cleaned" }).pipe(
     Node.bindPlanned(cleanedSource => Node.succeed(cleanedSource).pipe(
-      Node.andThen(PrepareAppend.call({ cleanup })),
-      Node.bindPlanned(preparation => CreateLanding.call({ cleanup, preparation }).pipe(
-        // The policy is read once the landing exists, so a refusal before it reads nothing.
-        Node.bindPlanned(landing => Node.succeed(landing).pipe(Node.andThen(ReadDelivery.call({ cleanup })), Node.branch({
-          if: delivery => delivery === "pull-request",
-          then: () => OpenPull.call({ cleanup, cleanedSource, landing }),
-          else: () => QueueAppend.call({ cleanup, preparation, landing }).pipe(
-            Node.bindPlanned(queued => AwaitAppend.child({ queued }).pipe(
-              Node.bindPlanned(observed => VerifyLanded.call({ cleanup, cleanedSource, queued, observed })))))
-        }))))))))
+      // A repository with an active mythical stack takes the result instead
+      // of main; the stack service integrates and proposes it.
+      Node.andThen(ReadStack.call({ cleanup })),
+      Node.branch({
+        if: stacked => stacked,
+        then: () => SubmitLane.call({ cleanup, cleanedSource }),
+        else: () => Node.succeed(cleanedSource).pipe(
+          Node.andThen(PrepareAppend.call({ cleanup })),
+          Node.bindPlanned(preparation => CreateLanding.call({ cleanup, preparation }).pipe(
+            // The policy is read once the landing exists, so a refusal before it reads nothing.
+            Node.bindPlanned(landing => Node.succeed(landing).pipe(Node.andThen(ReadDelivery.call({ cleanup })), Node.branch({
+              if: delivery => delivery === "pull-request",
+              then: () => OpenPull.call({ cleanup, cleanedSource, landing }),
+              else: () => QueueAppend.call({ cleanup, preparation, landing }).pipe(
+                Node.bindPlanned(queued => AwaitAppend.child({ queued }).pipe(
+                  Node.bindPlanned(observed => VerifyLanded.call({ cleanup, cleanedSource, queued, observed })))))
+            }))))))
+      }))))
 })
 
 const atomsOf = (cleanup: VibeCleanup) => cleanup.result.changes.flatMap(change => change.implementation.atoms)
 export const landingLayers = Layer.mergeAll(
   Interpreter.layer(LandVibe), Interpreter.layer(AwaitAppend),
+  ReadStack.toLayer(() => Effect.flatMap(Landing, landing => landing.readStack ?? Effect.succeed(false))),
+  SubmitLane.toLayer(({ cleanup, cleanedSource }) => Effect.gen(function*() {
+    const landing = yield* Landing, instance = yield* FlowRuntime.FlowInstance
+    if (landing.submitLane === undefined) return yield* invalid("This host cannot hand results to the mythical stack")
+    const original = cleanup.admission.originalSource
+    if (cleanedSource.source.commitId !== cleanup.head.commitId || original.parentCommitIds.length !== 1) {
+      return yield* invalid("A stack submission requires the exact retained cleaned source and a linear original source")
+    }
+    const lane = yield* landing.submitLane({ workspaceId: landing.binding.workspaceId, base: original.parentCommitIds[0]!,
+      source: cleanup.head.commitId, requestRunId: cleanup.admission.requestExecutionId || instance.executionId, summary: cleanup.summary })
+    return { cleanup, cleanedSource, lane }
+  })),
   ReadDelivery.toLayer(() => Effect.flatMap(Landing, landing => landing.readDelivery)),
   OpenPull.toLayer(({ cleanup, cleanedSource, landing: identity }) => Effect.gen(function*() {
     const landing = yield* Landing, instance = yield* FlowRuntime.FlowInstance

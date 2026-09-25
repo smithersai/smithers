@@ -104,3 +104,42 @@ for (const mode of modes) test(`vibe landing: ${mode}`, { timeout: 60_000 }, asy
     if (mode === "foreign-tail") assert.deepEqual(calls.slice(1), ["main", "prepare"])
   }
 })
+
+test("vibe landing: a repository with an active mythical stack hands the result to it", { timeout: 60_000 }, async t => {
+  const calls: string[] = []
+  const unused = () => Effect.die("a stack repository neither appends nor opens its own pull request")
+  const fake: Landing["Service"] = {
+    binding: { repositoryId: 42, workspaceId: "11111111-1111-4111-a111-111111111111" },
+    readMain: unused(), readDelivery: unused(), openPull: unused, prepare: unused, create: unused, queue: unused, observe: unused,
+    readStack: Effect.sync(() => { calls.push("stack"); return true }),
+    submitLane: submission => Effect.sync(() => {
+      calls.push(`submit:${submission.base}:${submission.source}`)
+      assert.equal(submission.workspaceId, fake.binding.workspaceId)
+      assert.equal(submission.requestRunId, "request")
+      assert.equal(submission.summary, cleanup.summary)
+      return { itemId: "item-1", state: "integrating", source: submission.source }
+    })
+  }
+  const native = Layer.succeed(NativeCoding, { sourcePublication: "cloud", read: () => Effect.die("no reads"), apply: () => Effect.die("no writes"),
+    publishOriginalSource: request => Effect.sync(() => {
+      calls.push(`retain:${request.source.commitId}`)
+      return { status: "retained" as const, requestId: request.requestId, workspaceId: fake.binding.workspaceId, repositoryId: 42,
+        ref: `refs/smithers/workspaces/${fake.binding.workspaceId}/sources/${request.source.commitId}`, source: request.source }
+    }) })
+  const host = ManagedRuntime.make(Layer.mergeAll(landingLayers, publicationLayers, Poll.layer, Sleep.layer).pipe(
+    Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
+    Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeCrypto.layer)))
+  t.after(() => host.dispose())
+  // A stack request's original source is the fresh working change on the tip.
+  const tip = "7".repeat(40)
+  const stackCleanup: VibeCleanup = { ...cleanup, admission: { ...cleanup.admission, originalSource: { ...original, parentCommitIds: [tip] } } }
+  const execute = LandVibe.execute(stackCleanup, { executionId: "stack" })
+  const value = await host.runPromise(execute)
+  assert.ok("lane" in value)
+  assert.equal(value.lane.itemId, "item-1")
+  // The base is the stack tip the request started from: the original source's parent.
+  assert.deepEqual(calls, [`retain:${last.commitId}`, "stack", `submit:${tip}:${last.commitId}`])
+  const count = calls.length
+  assert.deepEqual(await host.runPromise(execute), value)
+  assert.equal(calls.length, count, "replay uses receipts; nothing is submitted twice")
+})

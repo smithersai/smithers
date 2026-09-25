@@ -32,7 +32,7 @@ test('canary setup installs self-contained coding declarations and checks real d
   // installed bytes with nothing else on disk to resolve against.
   for (
     const [path, tag] of [['flow.ts', 'coding/ImplementPlan'], ['implementation/flow.ts', 'coding/ImplementAtoms'],
-      ['request/flow.ts', 'coding/Request'], ['vibe/flow.ts', 'coding/Vibe']]
+      ['request/flow.ts', 'coding/Request'], ['vibe/flow.ts', 'coding/Vibe'], ['verify/flow.ts', 'coding/Verify']]
   ) {
     const declaration = (await import(pathToFileURL(join(root, 'flows/coding', path)).href)).default
     assert.equal(declaration._tag, tag)
@@ -40,7 +40,7 @@ test('canary setup installs self-contained coding declarations and checks real d
     assert.equal(typeof declaration.body, 'function', `${tag} carries its own body`)
     assert.equal(declaration.flows, undefined, `${tag} names no delegate`)
   }
-  // And the registry reads the same thing from the installed tree: four coding
+  // And the registry reads the same thing from the installed tree: five coding
   // doors that delegate to nothing, and the three checks that still do.
   const found = await scan(root)
   assert.deepEqual(found.entries.map(entry => [entry.name, [...entry.flows]]), [
@@ -50,6 +50,7 @@ test('canary setup installs self-contained coding declarations and checks real d
     ['coding', []],
     ['coding/implementation', []],
     ['coding/request', []],
+    ['coding/verify', []],
     ['coding/vibe', []]
   ])
   assert.deepEqual(found.warnings.map(warning => warning.code), ['unprojectable_authority', 'unprojectable_authority', 'unprojectable_authority'])
