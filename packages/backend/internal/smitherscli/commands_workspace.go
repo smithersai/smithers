@@ -156,6 +156,50 @@ func workspaceCommand() *incur.Cli {
 			return map[string]any{"connected": true, "workspace_id": workspaceID}, nil
 		},
 	})
+	cmd.Command("cp", &incur.CommandDef{
+		Description: "Copy files or directories between the local machine and a workspace",
+		ArgsSchema: objectSchema([]string{"src", "dst"}, map[string]*incur.JSONSchema{
+			"src": stringSchema("Local path or <workspace-id>:<path>"),
+			"dst": stringSchema("Local path or <workspace-id>:<path>"),
+		}),
+		OptionsSchema: objectSchema(nil, map[string]*incur.JSONSchema{
+			"repo":    stringSchema("Repository (OWNER/REPO)"),
+			"user":    {Type: "string", Description: "Guest user", Default: defaultRemoteWorkspaceUser},
+			"timeout": numberSchema("Transfer timeout in seconds", 0),
+		}),
+		Handler: func(ctx *incur.CommandContext) (any, error) {
+			from, to, err := parseWorkspaceCopyArgs(stringValue(ctx.Args["src"]), stringValue(ctx.Args["dst"]))
+			if err != nil {
+				return nil, err
+			}
+			remote := from
+			if to.Remote {
+				remote = to
+			}
+			ctx.Args["id"] = remote.WorkspaceID
+			owner, repo, workspaceID, err := resolveWorkspaceID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			timeout := defaultWorkspaceCopyTimeout
+			if seconds := intValue(ctx.Options["timeout"], 0); seconds > 0 {
+				timeout = time.Duration(seconds) * time.Second
+			}
+			sshInfo, err := waitForWorkspaceSSHInfoAs(owner, repo, workspaceID, strings.TrimSpace(stringValue(ctx.Options["user"])))
+			if err != nil {
+				return nil, err
+			}
+			sshCommand := getWorkspaceSSHCommand(sshInfo)
+			if sshCommand == "" {
+				return nil, fmt.Errorf("workspace %s did not return an SSH command", workspaceID)
+			}
+			stats, err := runWorkspaceCopy(sshCommand, from, to, timeout)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"workspace_id": workspaceID, "bytes": stats.Bytes, "files": stats.Files}, nil
+		},
+	})
 	cmd.Command("fork", workspaceIDCommandWithOptions("Fork a workspace", map[string]*incur.JSONSchema{
 		"name": {Type: "string", Description: "Name for the forked workspace", Default: ""},
 	}, func(owner, repo, id string, ctx *incur.CommandContext) (any, error) {
@@ -403,12 +447,20 @@ func resolveWorkspaceID(ctx *incur.CommandContext) (owner, repo, workspaceID str
 }
 
 func waitForWorkspaceSSHInfo(owner, repo, workspaceID string) (map[string]any, error) {
+	return waitForWorkspaceSSHInfoAs(owner, repo, workspaceID, "")
+}
+
+func waitForWorkspaceSSHInfoAs(owner, repo, workspaceID, user string) (map[string]any, error) {
 	interval := parsePositiveDurationEnv("SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS", defaultWorkspaceSSHPollInterval)
 	timeout := parsePositiveDurationEnv("SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS", defaultWorkspaceSSHPollTimeout)
 	deadline := time.Now().Add(timeout)
 	var lastErr error
+	sshPath := fmt.Sprintf("/api/repos/%s/%s/workspaces/%s/ssh", owner, repo, url.PathEscape(workspaceID))
+	if user != "" && user != defaultRemoteWorkspaceUser {
+		sshPath += "?user=" + url.QueryEscape(user)
+	}
 	for time.Now().Before(deadline) || time.Now().Equal(deadline) {
-		sshInfo, err := APIRequest("GET", fmt.Sprintf("/api/repos/%s/%s/workspaces/%s/ssh", owner, repo, url.PathEscape(workspaceID)), nil, nil)
+		sshInfo, err := APIRequest("GET", sshPath, nil, nil)
 		if err == nil {
 			record := objectValue(sshInfo)
 			if getWorkspaceSSHCommand(record) != "" {
