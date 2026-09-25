@@ -1,0 +1,137 @@
+import { describe, expect, test } from "vitest"
+import {
+  isSettledItemState,
+  MYTHICAL_ROUTES,
+  MythicalEventSchema,
+  MythicalLaneSubmissionSchema,
+  mythicalRoute,
+  MythicalStackSchema
+} from "../src/Mythical.ts"
+
+/*
+ * The mythical stack snapshot the monitoring UI reads and the backend
+ * serves: a stack with one landed bootstrap change, one pending item change,
+ * an item in each interesting state, and two lanes.
+ */
+const snapshot = {
+  repository: "smithers-canary/smithers",
+  state: "active",
+  generation: 42,
+  tip: { changeId: "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", commitId: "a".repeat(40) },
+  landedMain: "b".repeat(40),
+  mainBehind: false,
+  changes: [
+    {
+      changeId: "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      commitId: "a".repeat(40),
+      title: "🐛 fix(app): keep the toast until the job settles",
+      kind: "item",
+      state: "pending",
+      itemId: "item-1",
+      issue: 1700,
+      predecessor: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+    },
+    {
+      changeId: "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+      commitId: "c".repeat(40),
+      title: "✨ feat: earlier work",
+      kind: "bootstrap",
+      state: "landed"
+    }
+  ],
+  items: [
+    {
+      id: "item-1",
+      issue: { number: 1700, title: "Toast settles early", url: "https://github.com/smithersai/smithers/issues/1700" },
+      state: "proposed",
+      attempt: 1,
+      lane: 0,
+      runs: { request: "run-1", vibe: "run-2" },
+      plan: { title: "Keep the toast", amends: [], inserts: [], appends: 1 },
+      integration: { kind: "rebased" },
+      checks: { state: "passed", failed: [] },
+      pullRequest: { number: 1801, url: "https://github.com/smithersai/smithers/pull/1801", state: "open" },
+      dependsOn: [],
+      updatedAt: "2026-09-25T12:00:00Z"
+    },
+    {
+      id: "item-2",
+      issue: { number: 1695, title: "Umbrella", url: "https://github.com/smithersai/smithers/issues/1695" },
+      state: "skipped",
+      reason: "label umbrella",
+      attempt: 0,
+      runs: {},
+      dependsOn: [],
+      updatedAt: "2026-09-25T12:00:00Z"
+    },
+    {
+      id: "item-3",
+      state: "retrying",
+      attempt: 2,
+      lane: 1,
+      runs: { request: "run-9" },
+      integration: { conflict: { changeId: "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", paths: ["apps/app/src/a.ts"] } },
+      dependsOn: ["item-1"],
+      updatedAt: "2026-09-25T12:00:00Z"
+    }
+  ],
+  lanes: [
+    { index: 0, workspaceId: "ws-0", state: "idle" },
+    { index: 1, workspaceId: "ws-1", itemId: "item-3", state: "busy" }
+  ],
+  limits: { maxParallel: 2 },
+  updatedAt: "2026-09-25T12:00:00Z"
+}
+
+describe("the mythical stack contract", () => {
+  test("a snapshot with every section decodes unchanged", () => {
+    expect(MythicalStackSchema.parse(snapshot)).toEqual(snapshot)
+  })
+
+  test("an absent stack is an empty snapshot, not an error", () => {
+    const absent = MythicalStackSchema.parse({
+      repository: "o/r",
+      state: "absent",
+      generation: 0,
+      mainBehind: false,
+      changes: [],
+      items: [],
+      lanes: [],
+      limits: { maxParallel: 2 }
+    })
+    expect(absent.tip).toBeUndefined()
+  })
+
+  test("an unknown item state is refused rather than rendered as something else", () => {
+    const bad = { ...snapshot, items: [{ ...snapshot.items[0], state: "done" }] }
+    expect(MythicalStackSchema.safeParse(bad).success).toBe(false)
+  })
+
+  test("event hints and lane submissions decode", () => {
+    expect(MythicalEventSchema.parse({ generation: 3, kind: "item", itemId: "item-1" }).kind).toBe("item")
+    const submission = {
+      workspaceId: "0b2f3c1e-4c7a-4a6e-9d7e-2f3a1b4c5d6e",
+      base: "1".repeat(40),
+      source: "2".repeat(40),
+      requestRunId: "run-1",
+      summary: "🐛 fix: settle the toast with the job"
+    }
+    expect(MythicalLaneSubmissionSchema.parse(submission)).toEqual(submission)
+    expect(MythicalLaneSubmissionSchema.safeParse({ ...submission, source: "HEAD" }).success).toBe(false)
+  })
+
+  test("routes fill owner, repository and item", () => {
+    expect(mythicalRoute("stack", "smithers-canary", "smithers")).toBe("/api/repos/smithers-canary/smithers/mythical")
+    expect(mythicalRoute("retry", "o", "r", "item 1")).toBe("/api/repos/o/r/mythical/items/item%201/retry")
+    for (const route of Object.values(MYTHICAL_ROUTES)) {
+      expect(route.startsWith("/api/repos/{owner}/{repo}/mythical")).toBe(true)
+    }
+  })
+
+  test("settled states are the ones nothing moves without a person or a new event", () => {
+    expect(
+      ["skipped", "cancelled", "landed", "rejected", "blocked"].every((state) => isSettledItemState(state as never))
+    ).toBe(true)
+    expect(isSettledItemState("proposed")).toBe(false)
+  })
+})
