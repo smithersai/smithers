@@ -9,6 +9,7 @@
  * same cache key. A prefix that stops growing while the transcript grows is
  * the signature of a request the provider cannot read back from cache.
  *
+ * @since 1.0.0-rc.1
  * @internal
  */
 import * as CanonicalJson from "../CanonicalJson.ts"
@@ -33,7 +34,12 @@ type Item = { readonly type?: unknown; readonly role?: unknown } | null
 
 const previous = new Map<string, ReadonlyArray<string>>()
 
-/** The trace line for one prepared request; `history` is per process. */
+/**
+ * The trace line for one prepared request; `history` is per process.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
 export const line = (
   prepared: Traced,
   history: Map<string, ReadonlyArray<string>> = previous
@@ -74,6 +80,9 @@ interface NodeProcess {
 /**
  * Appends one trace line when `SMITHERS_WIRE_TRACE` names a file. Tracing
  * never fails a model call: a runtime without `process` records nothing.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
  */
 export const record = (
   prepared: Traced,
