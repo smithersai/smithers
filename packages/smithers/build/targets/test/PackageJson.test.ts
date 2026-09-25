@@ -426,6 +426,10 @@ describe("publish derivation", () => {
     )
     expect(() => publishFields(named({ outDir: "dist", format: "dual", entries: [""] }), "//p:lib", options))
       .toThrow(/entry without a path/)
+    expect(() =>
+      publishFields(named({ outDir: "dist", format: "dual", entries: ["src/index.ts"] }), "//p:lib", options)
+    )
+      .toThrow(/no supported TsBuild distribution layout/)
   })
 })
 
