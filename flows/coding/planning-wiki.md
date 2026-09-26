@@ -47,6 +47,12 @@ host includes the selected wiki model and owning gateway in the operator's
 reviewer identity, so changing those routes invalidates reuse through this
 same protocol.
 
+The configured `coding/request` selects this dependency only when host-owned
+`planning.wiki` is true; Wiki planning is off by default. Enabled preparation
+refreshes before planning, including later feedback-driven planning passes.
+The separate `coding/prototype` entry does not make a POC a prerequisite for
+implementation.
+
 The configuration scope hashes the complete PageSpec catalog, reviewer identity,
 canonical source root, configured output path, composition policy and lookup
 limits. Source bytes are separately measured by the existing Collect action.
@@ -58,7 +64,7 @@ Existing reuse validation checks the terminal native run, committed attempt,
 reviewer and policy identities, every page/source digest, section boundaries,
 and the current exact-citation assessment. Unchanged pages do not call the
 model again. Changed pages are reviewed again. The configured Smithers catalog
-must include the four existing `policySources` files only when no trusted host fingerprint is supplied; that is an explicit
+must include the `policySources` files declared in `flows/wiki/reuse.ts` only when no trusted host fingerprint is supplied; that is an explicit
 requirement of the current wiki recipe's reuse protocol, not a new generic
 policy subsystem. Source files stay inside the configured public engineering
 repository. Private Ops content is not an input.
@@ -80,12 +86,11 @@ shows it as failed and retries it. The existing wiki writer retains its source-p
 artifact for inspection. The recipe does not relabel that draft as verified,
 publish it, or infer correctness from matching hashes alone.
 
-The native acceptance fixture runs on both Node and Bun with real JJ history,
-SQLite, source collection, citation validation and immutable wiki artifacts.
-It checks child ordering, restart replay, unchanged-page model reuse, targeted
-source invalidation, reviewer-configuration invalidation, and refusal on
-unsupported prose. Semantic decisions are scripted in
-that fixture; it does not claim a live provider evaluation or deployed host.
+`flows/test/coding-planning-wiki-prior.test.ts` covers bounded prior-review
+selection. `flows/test/wiki-reuse.test.ts` covers unchanged-page reuse and
+invalidation, while `flows/test/wiki.test.ts` covers source capture, citation
+validation, and immutable artifacts. These scripted checks do not certify a
+live provider or a deployed end-to-end request.
 
 The prior-review hint reads the latest 256 run IDs through the existing indexed
 catalog, newest insertion first, and inspects at most 20 completed wiki-refresh
