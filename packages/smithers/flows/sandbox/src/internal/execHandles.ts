@@ -9,10 +9,12 @@
  * the machine going dead in the middle of a task. Collecting garbage every
  * {@link collectEvery} starts keeps the uncollected handles well below that.
  *
+ * The collector is loaded through `process.getBuiltinModule` on first use:
+ * this module is reachable from the browser entry points of `@smthrs/sandbox`
+ * and `@smthrs/flows`, and only a Microsandbox host ever collects.
+ *
  * @since 0.1.0
  */
-import * as v8 from "node:v8"
-import * as vm from "node:vm"
 
 /**
  * How many command starts pass between two collections: with the concurrent
@@ -25,17 +27,22 @@ import * as vm from "node:vm"
 export const collectEvery = 64
 
 /**
- * The runtime's full garbage collection, exposed on first use when the
- * process was not started with `--expose-gc`.
+ * The runtime's full garbage collection: an exposed `gc`, Bun's `Bun.gc`, or
+ * Node's collector exposed on first use when the process was not started with
+ * `--expose-gc`.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const exposeCollector = (): () => void => {
-  const exposed: unknown = Reflect.get(globalThis, "gc")
+export const exposeCollector = (runtime: object = globalThis): () => void => {
+  const exposed: unknown = Reflect.get(runtime, "gc")
   if (typeof exposed === "function") return exposed as () => void
-  v8.setFlagsFromString("--expose-gc")
-  return vm.runInNewContext("gc") as () => void
+  // Bun takes no V8 flags; it exposes its collector itself.
+  const bun: unknown = Reflect.get(runtime, "Bun")
+  const collect: unknown = typeof bun === "object" && bun !== null ? Reflect.get(bun, "gc") : undefined
+  if (typeof collect === "function") return () => void collect.call(bun, true)
+  process.getBuiltinModule("node:v8").setFlagsFromString("--expose-gc")
+  return process.getBuiltinModule("node:vm").runInNewContext("gc") as () => void
 }
 
 /**

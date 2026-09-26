@@ -8598,7 +8598,7 @@
         "internal/environmentCommand.d.ts": "bdfe5aa6f52e0872f8e9f007b1a9e98797b01c6ed427780a163b7d7f394c57b8",
         "internal/environmentInput.d.ts": "03d4f166e9193f2b7878ed5c79ad7d00f3095ceee4dafb9284c85264e64303b3",
         "internal/environmentNames.d.ts": "2db078da11744b2c37f36e2b813f2cecef65e5366ae5cd55459959bd76a2f133",
-        "internal/execHandles.d.ts": "622fdc960132d94fdc28aa196215375dea5451efe2a98e65b0c571622d5ee42a",
+        "internal/execHandles.d.ts": "fe53f76b13116366e4675e4ae3af4653e20e8d5644e49f78c1c7c91f195445bb",
         "internal/execSession.d.ts": "a144e1abad62b9a051555ff5c333663bb591900a431f97de6d8835e0e44786cc",
         "internal/finalizeWithin.d.ts": "4af8f62e32f5ed3245dcc496c7ddc09836732fa5762dd2082b830caa1f7012eb",
         "internal/guestPath.d.ts": "0c26a45227a2d694db3b4013384d4d8ee22bc232bee67d3c2f98c77b7a61cb08",

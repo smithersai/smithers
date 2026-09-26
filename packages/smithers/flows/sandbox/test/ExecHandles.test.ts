@@ -19,20 +19,34 @@ describe("exec handle release", () => {
     expect(collectEvery).toBeLessThan(140)
   })
 
-  it("uses the runtime's collector, exposing it when the process did not", () => {
-    const saved: unknown = Reflect.get(globalThis, "gc")
-    try {
-      Reflect.deleteProperty(globalThis, "gc")
-      const exposed = exposeCollector()
+  const onBun = "Bun" in globalThis
+
+  it("uses the runtime's own collector", () => {
+    const own = () => undefined
+    expect(exposeCollector({ gc: own })).toBe(own)
+    execHandles.release()
+  })
+
+  it("collects through Bun.gc on Bun", () => {
+    const calls: Array<unknown> = []
+    const bun = {
+      gc(this: unknown, sync: boolean) {
+        calls.push([this, sync])
+      }
+    }
+    exposeCollector({ Bun: bun })()
+    expect(calls).toEqual([[bun, true]])
+  })
+
+  it.runIf(onBun)("collects on the real Bun runtime", () => {
+    exposeCollector()()
+  })
+
+  it.skipIf(onBun)("exposes Node's collector when the process did not", () => {
+    for (const runtime of [{}, { Bun: null }, { Bun: {} }]) {
+      const exposed = exposeCollector(runtime)
       expect(typeof exposed).toBe("function")
       exposed()
-      const own = () => undefined
-      Reflect.set(globalThis, "gc", own)
-      expect(exposeCollector()).toBe(own)
-      execHandles.release()
-    } finally {
-      if (saved === undefined) Reflect.deleteProperty(globalThis, "gc")
-      else Reflect.set(globalThis, "gc", saved)
     }
   })
 })
