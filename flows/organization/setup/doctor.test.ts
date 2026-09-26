@@ -232,7 +232,7 @@ test("a missing jj fails naming the install", async () => {
 test("host prerequisites fail with the command that fixes them", async () => {
   const old = await doctor(healthy({ node: fakeNode("26.3.9") }))
   assert.match(one(old, "node").detail, /^v26\.3\.9 is older than 26\.4\.0$/)
-  assert.equal(one(old, "node").fix, "brew install node@26")
+  assert.equal(one(old, "node").fix, "brew install node")
   const none = await doctor(healthy({ node: { ...fakeNode("26.5.0"), homebrew: [] } }))
   assert.match(one(none, "node").detail, /^no Node >= 26\.4\.0$/)
   const missing = await doctor(healthy({ install: null }))

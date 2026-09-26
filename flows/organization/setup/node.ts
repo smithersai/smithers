@@ -107,7 +107,7 @@ export const installFix = (
   if (fnm.some((dir) => on.exists(dir))) return `fnm install ${wanted}`
   if (on.exists(volta)) return `volta install node@${wanted}`
   if (on.exists(nvm)) return `nvm install ${wanted}`
-  if (on.exists("/opt/homebrew/bin/brew") || on.exists("/usr/local/bin/brew")) return "brew install node@26"
+  if (on.exists("/opt/homebrew/bin/brew") || on.exists("/usr/local/bin/brew")) return "brew install node"
   return `curl -fsSL https://fnm.vercel.app/install | bash && fnm install ${wanted}`
 }
 

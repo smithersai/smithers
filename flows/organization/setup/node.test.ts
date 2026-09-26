@@ -76,7 +76,7 @@ test("names the newest Node too old, and the one command that installs one", () 
   assert.equal(NodeResolve.installFix({}, none, "26.5.0", bare), "curl -fsSL https://fnm.vercel.app/install | bash && fnm install 26.5.0")
   assert.equal(
     NodeResolve.installFix({}, none, "26.5.0", { ...bare, exists: (path) => path === "/opt/homebrew/bin/brew" }),
-    "brew install node@26"
+    "brew install node"
   )
   assert.equal(NodeResolve.system.version(join(scratch, "missing")), undefined)
   assert.deepEqual(NodeResolve.system.list(join(scratch, "missing")), [])
