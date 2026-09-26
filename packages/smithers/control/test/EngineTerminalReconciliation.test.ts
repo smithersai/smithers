@@ -30,74 +30,79 @@ const events = (runId: string) =>
 describe("terminal engine authority and durable control reconciliation", () => {
   for (const status of ["completed", "failed", "cancelled"] as const) {
     for (const staleFirstRead of [false, true]) {
-      it.each([false, true])(`persists ${status} learned from ${staleFirstRead ? "the cancellation recheck" : "the engine observation"} across reopen (parked=%s)`, async (parked) => {
-        const directory = mkdtempSync(join(tmpdir(), "control-engine-terminal-"))
-        const controlFile = join(directory, "control.sqlite")
-        const engineFile = join(directory, "engine.sqlite")
-        try {
-          const runId = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-            // The executor captures the engine store before constructing the
-            // control stack. The ambient control store must not replace it.
-            const engine = Context.get(yield* Layer.build(fileBundle(engineFile)), RunStore.RunStore)
-            let observations = 0
-            let requests = 0
-            const executor = ControlExecutor.makeNoop({
-              readExecution: (id) =>
-                Effect.gen(function*() {
-                  const row = yield* engine.get(id).pipe(Effect.orDie)
-                  expect(row.status).toBe(status)
-                  observations++
-                  return {
-                    _tag: "Observed" as const,
-                    status: staleFirstRead && observations === 1 ? "running" as const : status
-                  }
-                }),
-              requestCancel: ({ runId: id }) =>
-                Effect.gen(function*() {
-                  requests++
-                  const result = yield* engine.requestCancel(id, yield* Clock.currentTimeMillis).pipe(Effect.orDie)
-                  expect(result).toEqual({ _tag: "Terminal", status })
-                  return { _tag: "Terminal" as const, status }
-                })
-            })
-            const stack = yield* Layer.build(durable({ database: fileBundle(controlFile), executor }))
-            return yield* Effect.gen(function*() {
-              const control = yield* Control
-              const runtime = yield* ControlRuntime
-              const id = yield* start
-              if (parked) yield* runtime.writeStatus(id, yield* runtime.claimFence(id), "parked")
-              yield* engine.create(id, JSON.stringify({ version: 1, flowName: "system/test", payload: {} }))
-              const owner = { hostId: "engine", pid: process.pid, nonce: "terminal-test" }
-              const row = yield* engine.get(id)
-              const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-              expect(yield* engine.claimAndOwn(id, snapshot, owner, yield* Clock.currentTimeMillis))
-                .toEqual({ _tag: "Activated" })
-              expect(yield* engine.transitionOwned(id, owner, status)).toEqual({ _tag: "Transitioned" })
-              expect((yield* runtime.getRun(id)).status).toBe(parked ? "parked" : "accepted")
-              expect(yield* control.cancel({ runId: id, idempotencyKey: "cancel-after-engine-settled" }))
-                .toEqual({ _tag: "Terminal", runId: id, status })
-              expect((yield* runtime.getRun(id)).status).toBe(status)
-              expect(yield* control.cancel({ runId: id, idempotencyKey: "cancel-after-engine-settled" }))
-                .toEqual({ _tag: "Terminal", runId: id, status })
-              expect(requests).toBe(staleFirstRead ? 1 : 0)
-              expect(yield* events(id)).toEqual([`control.run.${status}`])
-              expect((yield* engine.get(id)).cancelRequestedAtMs).toBeNull()
-              return id
-            }).pipe(Effect.provide(stack))
-          })))
-          // A later reader without an executor still sees the persisted truth;
-          // this assertion cannot pass on an in-memory projection alone.
-          await Effect.runPromise(Effect.scoped(
-            Effect.gen(function*() {
-              const runtime = yield* ControlRuntime
-              expect((yield* runtime.getRun(runId)).status).toBe(status)
-              expect(yield* events(runId)).toEqual([`control.run.${status}`])
-            }).pipe(Effect.provide(durable({ database: fileBundle(controlFile) })))
-          ))
-        } finally {
-          rmSync(directory, { recursive: true, force: true })
+      it.each([false, true])(
+        `persists ${status} learned from ${
+          staleFirstRead ? "the cancellation recheck" : "the engine observation"
+        } across reopen (parked=%s)`,
+        async (parked) => {
+          const directory = mkdtempSync(join(tmpdir(), "control-engine-terminal-"))
+          const controlFile = join(directory, "control.sqlite")
+          const engineFile = join(directory, "engine.sqlite")
+          try {
+            const runId = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+              // The executor captures the engine store before constructing the
+              // control stack. The ambient control store must not replace it.
+              const engine = Context.get(yield* Layer.build(fileBundle(engineFile)), RunStore.RunStore)
+              let observations = 0
+              let requests = 0
+              const executor = ControlExecutor.makeNoop({
+                readExecution: (id) =>
+                  Effect.gen(function*() {
+                    const row = yield* engine.get(id).pipe(Effect.orDie)
+                    expect(row.status).toBe(status)
+                    observations++
+                    return {
+                      _tag: "Observed" as const,
+                      status: staleFirstRead && observations === 1 ? "running" as const : status
+                    }
+                  }),
+                requestCancel: ({ runId: id }) =>
+                  Effect.gen(function*() {
+                    requests++
+                    const result = yield* engine.requestCancel(id, yield* Clock.currentTimeMillis).pipe(Effect.orDie)
+                    expect(result).toEqual({ _tag: "Terminal", status })
+                    return { _tag: "Terminal" as const, status }
+                  })
+              })
+              const stack = yield* Layer.build(durable({ database: fileBundle(controlFile), executor }))
+              return yield* Effect.gen(function*() {
+                const control = yield* Control
+                const runtime = yield* ControlRuntime
+                const id = yield* start
+                if (parked) yield* runtime.writeStatus(id, yield* runtime.claimFence(id), "parked")
+                yield* engine.create(id, JSON.stringify({ version: 1, flowName: "system/test", payload: {} }))
+                const owner = { hostId: "engine", pid: process.pid, nonce: "terminal-test" }
+                const row = yield* engine.get(id)
+                const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
+                expect(yield* engine.claimAndOwn(id, snapshot, owner, yield* Clock.currentTimeMillis))
+                  .toEqual({ _tag: "Activated" })
+                expect(yield* engine.transitionOwned(id, owner, status)).toEqual({ _tag: "Transitioned" })
+                expect((yield* runtime.getRun(id)).status).toBe(parked ? "parked" : "accepted")
+                expect(yield* control.cancel({ runId: id, idempotencyKey: "cancel-after-engine-settled" }))
+                  .toEqual({ _tag: "Terminal", runId: id, status })
+                expect((yield* runtime.getRun(id)).status).toBe(status)
+                expect(yield* control.cancel({ runId: id, idempotencyKey: "cancel-after-engine-settled" }))
+                  .toEqual({ _tag: "Terminal", runId: id, status })
+                expect(requests).toBe(staleFirstRead ? 1 : 0)
+                expect(yield* events(id)).toEqual([`control.run.${status}`])
+                expect((yield* engine.get(id)).cancelRequestedAtMs).toBeNull()
+                return id
+              }).pipe(Effect.provide(stack))
+            })))
+            // A later reader without an executor still sees the persisted truth;
+            // this assertion cannot pass on an in-memory projection alone.
+            await Effect.runPromise(Effect.scoped(
+              Effect.gen(function*() {
+                const runtime = yield* ControlRuntime
+                expect((yield* runtime.getRun(runId)).status).toBe(status)
+                expect(yield* events(runId)).toEqual([`control.run.${status}`])
+              }).pipe(Effect.provide(durable({ database: fileBundle(controlFile) })))
+            ))
+          } finally {
+            rmSync(directory, { recursive: true, force: true })
+          }
         }
-      })
+      )
     }
   }
 

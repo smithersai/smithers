@@ -621,9 +621,9 @@ export const make = <
       // routes on its own prompt and a replay is served the seat it ran on.
       const routed = declaredSeat === Seat.auto ? yield* routeSeat(tag, task, instance.executionId, stepId) : undefined
       const ids = routed === undefined ? declaredIds : [routed.decision.seat]
-      const seatId = ids[0]!
+      const seatId = ids[0]
       const resolvedSeats = yield* Effect.forEach(ids, (id) => seats.resolve(id))
-      const seat = resolvedSeats[0]!
+      const seat = resolvedSeats[0]
       const fallbackSeats = resolvedSeats.slice(1)
       /** The trace coordinates of one ask, when the dispatch has an identity. */
       const stepOf = (ask: StepFact.Step["ask"], retry: number, scope: string): StepFact.Step | undefined =>

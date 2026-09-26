@@ -398,7 +398,10 @@ export const make = (
    * @category layers
    * @since 0.1.0
    */
-  const layerObserver = (root: string, options?: WorkspaceObservation.Options): Layer.Layer<WorkspaceObservation.Observer> =>
+  const layerObserver = (
+    root: string,
+    options?: WorkspaceObservation.Options
+  ): Layer.Layer<WorkspaceObservation.Observer> =>
     WorkspaceObservation.layerHost(NodeWorkspaceObservation.host, root, options)
 
   /**

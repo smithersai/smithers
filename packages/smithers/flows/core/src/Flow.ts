@@ -116,7 +116,7 @@ export interface Flow<
    *
    * @since 0.1.0
    */
-  readonly model: Seat | readonly [Seat, ...Seat[]] | undefined
+  readonly model: Seat | readonly [Seat, ...Array<Seat>] | undefined
   /**
    * Advisory collaborator metadata recorded on the flow.
    *
@@ -229,7 +229,7 @@ export interface MakeOptions<
   readonly error?: Err | undefined
   readonly capabilities?: ReadonlyArray<string> | undefined
   readonly effects?: Effects.Declaration | undefined
-  readonly model?: Seat | readonly [Seat, ...Seat[]] | undefined
+  readonly model?: Seat | readonly [Seat, ...Array<Seat>] | undefined
   readonly flows?: ReadonlyArray<Reference> | undefined
   readonly prompt?: string | undefined
   readonly body?:
@@ -253,7 +253,7 @@ interface Options<
   readonly error: Err
   readonly capabilities: ReadonlyArray<string>
   readonly effects: Effects.Declaration | undefined
-  readonly model: Seat | readonly [Seat, ...Seat[]] | undefined
+  readonly model: Seat | readonly [Seat, ...Array<Seat>] | undefined
   readonly flows: ReadonlyArray<Reference> | undefined
   readonly prompt: string | undefined
   /**
