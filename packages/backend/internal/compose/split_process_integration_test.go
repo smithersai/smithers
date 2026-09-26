@@ -13,9 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 )
@@ -23,6 +26,11 @@ import (
 // splitProcessEnvironment configures a single-owner product whose repository
 // engine runs in a separate repo-host service, as in Plue's compose stack.
 func splitProcessEnvironment(t *testing.T) (repositoryURL string, repositoryHealthChecks *atomic.Int32) {
+	repositoryURL, repositoryHealthChecks, _ = splitProcessDatabase(t)
+	return repositoryURL, repositoryHealthChecks
+}
+
+func splitProcessDatabase(t *testing.T) (repositoryURL string, repositoryHealthChecks *atomic.Int32, pool *pgxpool.Pool) {
 	t.Helper()
 	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
 	if raw == "" {
@@ -31,7 +39,7 @@ func splitProcessEnvironment(t *testing.T) (repositoryURL string, repositoryHeal
 		}
 		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
 	}
-	_, databaseURL := postgresfixture.NewProductDatabase(t, raw)
+	pool, databaseURL := postgresfixture.NewProductDatabase(t, raw)
 	var checks atomic.Int32
 	repoHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
@@ -65,7 +73,7 @@ func splitProcessEnvironment(t *testing.T) (repositoryURL string, repositoryHeal
 	} {
 		t.Setenv(name, value)
 	}
-	return repoHost.URL, &checks
+	return repoHost.URL, &checks, pool
 }
 
 // startSplitProcess starts one composition and stops it at test cleanup.
@@ -122,8 +130,25 @@ func TestSingleOwnerReadinessProbesRemoteRepositoryHost(t *testing.T) {
 // A workers-only process mounts no product router, so it exports the product
 // registry, including deployment collectors, on its own guarded listener.
 func TestWorkersOnlyProcessExportsProductAndDeploymentMetrics(t *testing.T) {
-	repositoryURL, _ := splitProcessEnvironment(t)
+	repositoryURL, _, pool := splitProcessDatabase(t)
 	t.Setenv("SMITHERS_METRICS_ADDR", "127.0.0.1:0")
+	// The worker's runtime collector reports one active agent session and one
+	// queued landing task, deferred so the landing worker leaves it queued.
+	ctx := context.Background()
+	var userID, repoID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users (username, lower_username, email, lower_email, display_name)
+		VALUES ('gauges', 'gauges', 'gauges@example.test', 'gauges@example.test', 'Gauges') RETURNING id`).Scan(&userID))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number)
+		VALUES ($1, 'gauges', 'gauges', '', TRUE, 'main', 1) RETURNING id`, userID).Scan(&repoID))
+	q := db.New(pool)
+	_, err := q.CreateAgentSession(ctx, db.CreateAgentSessionParams{ID: uuid.NewString(), RepositoryID: repoID, UserID: userID, Title: "gauge", Status: "active"})
+	require.NoError(t, err)
+	request, err := q.CreateLandingRequest(ctx, db.CreateLandingRequestParams{RepositoryID: repoID, AuthorID: userID, Title: "gauge", TargetBookmark: "main", StackSize: 1})
+	require.NoError(t, err)
+	task, err := q.CreateLandingTask(ctx, db.CreateLandingTaskParams{LandingRequestID: request.ID, RepositoryID: repoID, Priority: 1})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE landing_tasks SET available_at = NOW() + interval '1 hour' WHERE id = $1`, task.ID)
+	require.NoError(t, err)
 	listeners := make(chan net.Listener, 1)
 	original := netListen
 	netListen = func(network, address string) (net.Listener, error) {
@@ -171,6 +196,11 @@ func TestWorkersOnlyProcessExportsProductAndDeploymentMetrics(t *testing.T) {
 	require.Equal(t, http.StatusOK, status)
 	require.Contains(t, body, "deployment_private_sweeps_total 1")
 	require.True(t, strings.Contains(body, "smithers_db_connections_max"), "product metrics missing:\n%s", body)
+	require.Eventually(t, func() bool {
+		_, body := scrape("split-process-metrics")
+		return strings.Contains(body, "\nsmithers_active_agent_sessions 1\n") &&
+			strings.Contains(body, "\nsmithers_landing_queue_depth 1\n")
+	}, 10*time.Second, 50*time.Millisecond, "runtime gauges were not collected")
 }
 
 func TestMetricsListenerRequiresWorkersOnlyDuties(t *testing.T) {

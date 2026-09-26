@@ -1557,6 +1557,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	if options.topology.workers() {
 		launchWorker(func() { landingWorker.Start(workerCtx) })
+		launchWorker(func() {
+			services.RunRuntimeMetricsCollector(workerCtx, queries, smithersMetrics, services.RuntimeMetricsInterval)
+		})
 		launchWorker(func() { providerConnectionRefreshWorker.Start(workerCtx) })
 		launchWorker(func() { workflowLogBudgetBackfiller.Start(workerCtx) })
 	}

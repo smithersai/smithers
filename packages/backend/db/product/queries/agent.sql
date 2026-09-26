@@ -304,3 +304,15 @@ WITH session_lock AS (
 )
 SELECT COALESCE(MAX(m.id), 0)::bigint AS head
 FROM session_lock LEFT JOIN agent_messages m ON m.session_id = session_lock.id;
+
+-- name: CountActiveAgentSessions :one
+-- Runtime gauge: sessions still holding an agent run.
+SELECT COUNT(*)::bigint AS active_sessions
+FROM agent_sessions
+WHERE status = 'active';
+
+-- name: GetActiveAgentSessionOldestAgeSeconds :one
+-- Runtime gauge: age of the oldest active session; zero when none is active.
+SELECT COALESCE(EXTRACT(EPOCH FROM NOW() - MIN(created_at)), 0)::double precision AS oldest_age_seconds
+FROM agent_sessions
+WHERE status = 'active';

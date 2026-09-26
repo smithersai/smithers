@@ -13,6 +13,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveAgentSessions = `-- name: CountActiveAgentSessions :one
+SELECT COUNT(*)::bigint AS active_sessions
+FROM agent_sessions
+WHERE status = 'active'
+`
+
+// Runtime gauge: sessions still holding an agent run.
+func (q *Queries) CountActiveAgentSessions(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveAgentSessions)
+	var active_sessions int64
+	err := row.Scan(&active_sessions)
+	return active_sessions, err
+}
+
 const countAgentMessagesBySession = `-- name: CountAgentMessagesBySession :one
 SELECT COUNT(*) FROM agent_messages WHERE session_id = $1
 `
@@ -220,6 +234,20 @@ type DeleteAgentSessionParams struct {
 func (q *Queries) DeleteAgentSession(ctx context.Context, arg DeleteAgentSessionParams) error {
 	_, err := q.db.Exec(ctx, deleteAgentSession, arg.ID, arg.UserID)
 	return err
+}
+
+const getActiveAgentSessionOldestAgeSeconds = `-- name: GetActiveAgentSessionOldestAgeSeconds :one
+SELECT COALESCE(EXTRACT(EPOCH FROM NOW() - MIN(created_at)), 0)::double precision AS oldest_age_seconds
+FROM agent_sessions
+WHERE status = 'active'
+`
+
+// Runtime gauge: age of the oldest active session; zero when none is active.
+func (q *Queries) GetActiveAgentSessionOldestAgeSeconds(ctx context.Context) (float64, error) {
+	row := q.db.QueryRow(ctx, getActiveAgentSessionOldestAgeSeconds)
+	var oldest_age_seconds float64
+	err := row.Scan(&oldest_age_seconds)
+	return oldest_age_seconds, err
 }
 
 const getAgentMessageStreamHead = `-- name: GetAgentMessageStreamHead :one
