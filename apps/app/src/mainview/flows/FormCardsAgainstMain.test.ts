@@ -302,6 +302,10 @@ interface DeclaredMove {
 }
 
 const DECLARED: ReadonlyArray<DeclaredMove> = [
+  ...(["agent.session.view", "agent.session.stop"] as const).map(flow => ({
+    flow, kind: "sentence" as const, rows: 1,
+    because: "An explicit repository is recognized without loaded inventory (#2075). A repository alone now receives the existing missing-session-id diagnostic instead of being mistaken for the session id; complete id-plus-repository arguments work through every door."
+  })),
   {
     flow: "change.split", kind: "sentence", rows: 1,
     because: "A quoted change id without a path now receives the same missing-path refusal as every other incomplete split. The parser preserves the quoted token instead of treating its space as a second argument. No existing sentence is removed."
@@ -408,7 +412,7 @@ describe("the card every slash line opens, against main@origin", () => {
     })
     expect(lost.map((row) => `/${row.flow} ${row.args ?? ""}`)).toEqual([])
     /* `here` counts only flows that still exist: the three `change.pick` rows left with the flow (#1904). */
-    expect({ atMain, here }).toEqual({ atMain: 1437, here: 1439 })
+    expect({ atMain, here }).toEqual({ atMain: 1437, here: 1441 })
     /*
      * Two doors throw when the one token they are given is a number: the
      * render dispatches a card whose payload the event schema rejects. It is

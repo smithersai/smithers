@@ -26,6 +26,14 @@ describe("flowArgs — one serialisation, and the grammar gives the values back"
   test("cloud session controls carry the session and its repository", () => {
     for (const name of ["agent.session.view", "agent.session.stop"] as const) {
       roundTrip(name, { sessionId: "session-1", repo: "will/other" }, "session-1 will/other", { sessionId: "session-1", repo: "will/other" })
+      for (const known of [new Set<string>(), new Set(["will/flows"])]) {
+        expect(payloadFor(name, flowArgs(name, { sessionId: "session-1", repo: "will/other" }), undefined, known))
+          .toEqual({ payload: { sessionId: "session-1", repo: "will/other" } })
+        expect(payloadFor(name, "session-1", undefined, known)).toEqual({ payload: { sessionId: "session-1" } })
+        for (const args of ["", "will/other", "session-1 extra will/other", "session-1 invalid-repo"]) {
+          expect(payloadFor(name, args, undefined, known)).toHaveProperty("error")
+        }
+      }
     }
   })
 

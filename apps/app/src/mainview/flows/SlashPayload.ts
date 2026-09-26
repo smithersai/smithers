@@ -1225,8 +1225,10 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(payload)
   },
   "agent.session.list": (args) => repoOnly("agent.session.list", args),
-  "agent.session.view": (args, known) => {
-    const { rest, repo } = splitTrailingRepo(args, known)
+  // Session ids have no trailing free text: the explicit repo is unambiguous
+  // even when repository inventory is unavailable or has not refreshed yet.
+  "agent.session.view": (args) => {
+    const { rest, repo } = splitTrailingRepo(args)
     const sessionId = rest.trim()
     if (sessionId === "" || /\s/.test(sessionId)) return no("agent.session.view needs a session id: /agent.session.view <id> [owner/repo]")
     return ok(repo === undefined ? { sessionId } : { sessionId, repo })
@@ -1239,8 +1241,8 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     if (text === "") return no("agent.session.say needs the message text")
     return ok({ sessionId, text })
   },
-  "agent.session.stop": (args, known) => {
-    const { rest, repo } = splitTrailingRepo(args, known)
+  "agent.session.stop": (args) => {
+    const { rest, repo } = splitTrailingRepo(args)
     const sessionId = rest.trim()
     if (sessionId === "" || /\s/.test(sessionId)) return no("agent.session.stop needs a session id: /agent.session.stop <id> [owner/repo]")
     return ok(repo === undefined ? { sessionId } : { sessionId, repo })
