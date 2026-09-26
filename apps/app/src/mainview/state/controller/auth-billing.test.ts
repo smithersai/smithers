@@ -6,6 +6,7 @@ import { createAppStore } from "../AppStore"
 import { createAuthBillingController } from "./auth-billing"
 import { createControllerContext } from "./context"
 import { createFailureController } from "./failures"
+import { settle, waitFor } from "../TestFixtures"
 import { ADMIN_ALLOWLIST_PATH, ADMIN_GRANT_PATH, ADMIN_HEALTH_PATH, ADMIN_REQUESTS_PATH, IDENTITY_REQUEST_ACCESS_PATH } from "@smthrs/rpc/AgentApiRoutes"
 
 const memoryStorage = (): StorageApi => {
@@ -30,6 +31,44 @@ const signedIn = {
   login: "will",
   allowlisted: true,
   admin: false
+}
+
+for (const balance of [false, true]) for (const checkout of [false, true]) for (const failure of [false, true]) {
+  test(`balance support ${balance}, checkout ${checkout}, upstream failure ${failure}: automatic reads honor the balance route`, async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    let reads = 0
+    const ctx = createControllerContext(store, agent, {
+      bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", authFlow: "credentials", sandbox: null,
+        capabilities: ["identity", ...(balance ? ["billing.balance" as const] : []), ...(checkout ? ["billing.checkout" as const] : [])] },
+      toastDebounceMs: 0,
+      fetchImpl: async input => {
+        if (String(input).endsWith("/api/billing/balance")) reads += 1
+        return failure ? new Response(null, { status: 503 }) : Response.json({ state: "ok", allowedToStartWork: true,
+          balance: { totalUsd: "25", lifetimeChargedUsd: "0", chargeCount: 0 } })
+      }
+    })
+    ctx.withToast = createFailureController(ctx).withToast
+    const controller = createAuthBillingController(ctx, store.nextOrdinal)
+    try {
+      await controller.adoptSession(signedIn)
+      await settle()
+      expect(reads).toBe(balance ? 1 : 0)
+      controller.settleTurnBilling()
+      await controller.refreshBalance()
+      if (balance && failure) await waitFor(() => [...store.collections.toasts.values()].some(row => row.status === "failed"))
+      else if (balance) expect(store.collections.billingAccounts.get("billing")?.totalUsd).toBe("25")
+      else expect(store.collections.toasts.size).toBe(0)
+      const result = await controller.showBalance()
+      if (!balance) {
+        expect(reads).toBe(0)
+        expect(store.collections.cards.has("billing-balance")).toBe(false)
+        expect(store.collections.toasts.size).toBe(0)
+      } else if (failure) {
+        expect(typeof result).toBe("string")
+        expect(store.collections.cards.has("billing-balance")).toBe(false)
+      } else expect(result).toMatchObject({ value: expect.stringContaining("$25") })
+    } finally { await ctx.dispose(); await store.dispose?.() }
+  })
 }
 
 const runSignedInEntry = async (entry: "load" | "adopt", sessionAnswer: Record<string, unknown> = signedIn) => {

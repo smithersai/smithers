@@ -1502,6 +1502,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		recommend:        recommendationHandler != nil && options.topology.servesHTTP(),
 		workspace:        options.Workspace != nil && options.topology.servesHTTP(),
 		terminal:         options.Workspace != nil && options.topology.servesHTTP(),
+		billingBalance:   billingCapabilities.Overview,
 		billingCheckout:  billingCapabilities.Checkout,
 		workspaceRuntime: options.Workspace != nil,
 		isolatedSandbox:  provider != nil || (options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed),

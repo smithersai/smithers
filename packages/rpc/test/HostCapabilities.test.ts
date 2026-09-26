@@ -4,6 +4,16 @@ import { cloudCapabilities, localCapabilities } from "../src/HostCapabilities.ts
 
 const booleans = [false, true] as const
 
+test("balance support is explicit and independent of identity and checkout", () => {
+  for (const balance of booleans) for (const checkout of booleans) {
+    const cloud = cloudCapabilities({ identity: true, cloud: true, agent: true, terminal: false, balance, checkout })
+    expect(cloud.includes("billing.balance")).toBe(balance)
+    expect(cloud.includes("billing.checkout")).toBe(checkout)
+    expect(localCapabilities({ identity: true, cloud: true, agent: true, balance }).includes("billing.balance")).toBe(balance)
+  }
+  expect(localCapabilities({ identity: true, cloud: true, agent: true })).not.toContain("billing.balance")
+})
+
 test("browser.read requires an explicitly configured pinned transport on either host", () => {
   const cloud = { identity: true, cloud: true, agent: true, checkout: false, terminal: false }
   const local = { identity: true, cloud: true, agent: true }

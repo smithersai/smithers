@@ -151,7 +151,7 @@ const reachEveryDoor = async (): Promise<ReadonlyArray<Reached>> => {
       fetchImpl: async () => Response.json({}, { status: 404 }),
       bootstrap: {
         apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
-        capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null
+        capabilities: ["agent", "identity", "cloud", "billing.balance"], authFlow: "redirect", sandbox: null
       }
     })
     try {

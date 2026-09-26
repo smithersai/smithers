@@ -155,9 +155,9 @@ const localBootstrap = (capabilities: ReadonlyArray<RuntimeCapability>): AppBoot
 })
 
 /** The Worker with every supported capability, including the W4 terminal relay. */
-const WEB = cloudBootstrap(cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: true, browser: true }))
+const WEB = cloudBootstrap(cloudCapabilities({ identity: true, cloud: true, agent: true, balance: true, checkout: true, terminal: true, browser: true }))
 /** The Bun server with a cloud upstream, the agent, identity and manual paths. */
-const NATIVE = localBootstrap(localCapabilities({ agent: true, identity: true, cloud: true, browser: true }))
+const NATIVE = localBootstrap(localCapabilities({ agent: true, identity: true, cloud: true, balance: true, browser: true }))
 
 /** Every command state the recommendation rule distinguishes. */
 const STATES: ReadonlyArray<CommandState> = (["chat", "world", "connectors", "flows"] as const).flatMap((surface) =>
@@ -306,6 +306,12 @@ const proxied = (path: string, method?: string): boolean =>
 const KNOWN_UNPROXIED: ReadonlyArray<{ readonly path: string; readonly flows: ReadonlyArray<string>; readonly why: string }> = []
 
 describe("host parity — the web and native catalogs against the servers' own capability tables", () => {
+  test("balance commands require the read route, not checkout or identity alone", async () => {
+    for (const balance of [false, true]) for (const checkout of [false, true]) {
+      const controller = await controllerFor(localBootstrap(["identity", ...(balance ? ["billing.balance" as const] : []), ...(checkout ? ["billing.checkout" as const] : [])]))
+      expect(controller.commands.find("billing.balance") !== undefined).toBe(balance)
+    }
+  })
   const registries = (async () => ({
     web: await sharedControllerFor(WEB),
     native: await sharedControllerFor(NATIVE),

@@ -291,6 +291,9 @@ const handleBootstrap = (request: Request): Effect.Effect<Response, never, Serve
         identity,
         cloud: bindings.cloudApi,
         agent: config.chatAuthToken !== undefined || config.chatProductServiceToken !== undefined,
+        balance: config.billingUpstreamUrl !== undefined && (identity
+          ? config.billingProductServiceToken !== undefined
+          : config.billingAuthToken !== undefined),
         checkout: config.billingCheckoutEnabled,
         terminal: true,
         recommend: config.aiGatewayApiKey !== undefined,

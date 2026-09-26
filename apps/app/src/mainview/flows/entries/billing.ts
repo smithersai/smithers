@@ -16,7 +16,7 @@ export const billingBalanceFlows = (actions: CommandActions): ReadonlyArray<Flow
   flow({
     name: "billing.balance",
     summary: "Show your balance",
-    runtime: ["identity"],
+    runtime: ["identity", "billing.balance"],
     requires: ["signed-in"],
     input: NoPayload,
     handler: () => actions.showBalance()

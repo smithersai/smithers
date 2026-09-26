@@ -230,6 +230,20 @@ describe("routed repository pages", () => {
 })
 
 describe("smithers mvp worker", () => {
+  test("balance capability requires its upstream and the credential for this identity mode", async () => {
+    for (const identity of [false, true]) for (const upstream of [false, true]) for (const service of [false, true]) for (const bearer of [false, true]) {
+      const response = await worker.fetch(new Request("https://mvp.test/api/bootstrap"), {
+        ...assetsEnv(),
+        ...(identity ? { IDENTITY_UPSTREAM_URL: "https://identity.test" } : {}),
+        ...(upstream ? { BILLING_UPSTREAM_URL: "https://billing.test" } : {}),
+        ...(service ? { BILLING_PRODUCT_SERVICE_TOKEN: "test-service" } : {}),
+        ...(bearer ? { BILLING_AUTH_TOKEN: "test-bearer" } : {})
+      })
+      const body = AppBootstrapSchema.parse(await response.json())
+      expect(body.capabilities.includes("billing.balance")).toBe(upstream && (identity ? service : bearer))
+      expect(body.capabilities).not.toContain("billing.checkout")
+    }
+  })
   test("serves the site's root as the assets layer answers it, without the app's isolation headers", async () => {
     const response = await worker.fetch(new Request("https://mvp.test/"), assetsEnv())
     expect(response.status).toBe(200)

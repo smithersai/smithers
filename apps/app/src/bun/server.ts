@@ -717,6 +717,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       capabilities: localCapabilities({
         agent: agent !== undefined,
         identity: identityUpstream !== null,
+        balance: identityUpstream !== null,
         cloud: cloudUpstream !== null,
         browser: remoteEnabled
       }),

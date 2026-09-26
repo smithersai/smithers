@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/go-chi/cors"
@@ -36,6 +37,16 @@ func TestAppBootstrapGitHubRequiresConfiguredIntegration(t *testing.T) {
 	require.NotContains(t, without.Capabilities, "github")
 	with := newAppBootstrap(bootstrapFeatures{role: hostedAPITopology, identity: true, github: true})
 	require.Contains(t, with.Capabilities, "github")
+}
+
+func TestAppBootstrapBalanceIsIndependentOfCheckout(t *testing.T) {
+	for _, balance := range []bool{false, true} {
+		for _, checkout := range []bool{false, true} {
+			boot := newAppBootstrap(bootstrapFeatures{role: localTopology, identity: true, billingBalance: balance, billingCheckout: checkout})
+			require.Equal(t, balance, slices.Contains(boot.Capabilities, "billing.balance"))
+			require.Equal(t, checkout, slices.Contains(boot.Capabilities, "billing.checkout"))
+		}
+	}
 }
 
 func TestBuildIdentityUsesInjectedRevision(t *testing.T) {

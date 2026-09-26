@@ -62,6 +62,7 @@ export const createAuthBillingController = (
   selectedIdentity?: SelectedBackendIdentity
 ): AuthBillingController => {
   const { store, services, baseUrl, boundedFetch: http, errorMessageOf, unref } = ctx
+  const balanceAvailable = services.bootstrap?.capabilities.includes("billing.balance") ?? true
   // Only a session validated during this controller lifetime can complete login.
   // A hydrated identity row, local capability or cloud PAT is not proof.
   let disposed = false
@@ -741,7 +742,7 @@ export const createAuthBillingController = (
    * notice, its result, and the toast slot both reads share.
    */
   const readBalance = (announce: boolean): Promise<void> =>
-    withToast("billing.balance.refresh", "Refreshing your balance…", "Balance is up to date", refreshBalanceImpl, !announce)
+    !balanceAvailable ? Promise.resolve() : withToast("billing.balance.refresh", "Refreshing your balance…", "Balance is up to date", refreshBalanceImpl, !announce)
       .then(() => undefined)
 
   /** The balance the user asked for: the read states its result. */
@@ -768,6 +769,7 @@ export const createAuthBillingController = (
    * question, not just this one.
    */
   const showBalance = async (): Promise<string | { readonly value: string }> => {
+    if (!balanceAvailable) return "Balance is unavailable on this host."
     await refreshBalance()
     const account = store.collections.billingAccounts.get("billing")
     if (account === undefined || account.state === "unknown" || account.state === "unavailable") {

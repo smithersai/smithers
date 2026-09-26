@@ -274,6 +274,8 @@ describe("the local origin", () => {
     })
     try {
       const headers = { [LOCAL_SESSION_HEADER]: proxied.sessionToken, origin: proxied.origin, cookie: "smithers_identity=sealed" }
+      const bootstrap = await (await fetch(`${proxied.origin}/api/bootstrap`, { headers })).json() as { capabilities: string[] }
+      expect(bootstrap.capabilities).toContain("billing.balance")
       for (const path of ["/api/user", "/api/repos/smithersai/smithers/issues?state=open", "/api/user/github-repos/smithersai/smithers/issues", "/api/billing/balance", "/api/notifications/unread", "/api/workflow/provision"]) {
         const response = await fetch(`${proxied.origin}${path}`, { headers })
         expect(response.status).toBe(200)

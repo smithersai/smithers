@@ -20,6 +20,7 @@ import type { RuntimeCapability } from "./AppBootstrap.ts"
  * @category models
  */
 export interface CloudCapabilityEnv {
+  readonly balance?: boolean
   readonly browser?: boolean
   readonly identity: boolean
   readonly cloud: boolean
@@ -34,6 +35,7 @@ export interface CloudCapabilityEnv {
  * @category models
  */
 export interface LocalCapabilityOptions {
+  readonly balance?: boolean
   readonly browser?: boolean
   readonly agent: boolean
   readonly identity: boolean
@@ -54,6 +56,7 @@ export const cloudCapabilities = (env: CloudCapabilityEnv): Array<RuntimeCapabil
     ["browser.read", env.browser === true],
     ["identity", env.identity],
     ["cloud", env.cloud],
+    ["billing.balance", env.balance === true],
     ["billing.checkout", env.checkout],
     ["cloud.terminal", env.terminal],
     ["recommend", env.recommend === true]
@@ -73,6 +76,7 @@ export const localCapabilities = (opts: LocalCapabilityOptions): Array<RuntimeCa
     ["browser.read", opts.browser === true],
     ["identity", opts.identity],
     ["cloud", opts.cloud],
+    ["billing.balance", opts.balance === true],
     ["cloud.terminal", opts.cloud],
     ["cloud.pat", opts.cloud],
     ["recommend", opts.recommend === true]
