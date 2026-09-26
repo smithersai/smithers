@@ -33,7 +33,7 @@ importable as `@smthrs/harness/<Module>`.
 | `StructuredOutput` | `StructuredOutputFailureCode`, `OutputIssueCode`, `OutputIssue`, `StructuredOutputFailure`, `maxIssues`, `jsonSchema`, `digest`, `instructions`, `issuesDigest`, `correction`, `lastBalanced`, `candidates`, `decode` | Turning one agent's final text into a value the declared output schema accepts, or into a typed failure. |
 | `TruncatedOutput` | `flagSuffix`, `droppedSuffix`, `flagKey`, `minimumBytes`, `retained`, `Capture`, `Reuse`, `captures`, `reuse`, `refusal`, `retain`, `Ledger` | The truncation ledger: which bytes this run was handed as a fragment. |
 | `CallLedger` | `bound`, `width`, `members`, `Entry`, `Ledger`, `subject`, `target`, `digest`, `payload`, `Settlement`, `entry`, `settled`, `remember`, `render` | The call ledger: what this run has already asked, rendered every frame. |
-| `NarrowedCheck` | `retained`, `maxTerms`, `label`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger` | The narrowing ledger: which checks this run has run, and over which tree. |
+| `NarrowedCheck` | `retained`, `maxTerms`, `labelWidth`, `label`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger` | The narrowing ledger: which checks this run has run, and over which tree. |
 | `CellValidation` | `Validation`, `normalize`, `validate` | Cell validation at the boundary. |
 | `Supervisor` | `frameBytes`, `recentFrames`, `candidateLimit`, `recalledLimit`, `thrashingAt`, `offTargetAt`, `suspectAt`, `acceptAt`, `Level`, `levels`, `Help`, `emotions`, `Emotion`, `Frame`, `Signals`, `Recalled`, `skillLimit`, `skillBytes`, `calledLimit`, `Skill`, `skill`, `Snapshot`, `monitorPrefix`, `MonitorQuestions`, `classifierFor`, `classifier`, `Reading`, `read`, `Options`, `defaultOptions`, `Memory`, `memoryNone`, `Verdict`, `nudge`, `recalledInsert`, `judge`, `head`, `tail`, `candidates` | The reading Jev takes of a run while it is still running. |
 | `Monitor` | `Kind`, `Common`, `Questioned`, `Derived`, `Monitor`, `Budget`, `Input`, `budgets`, `idPattern`, `questionId`, `make`, `InvalidMonitor`, `validate`, `lint`, `paranoidText`, `carefulText`, `stepBackText`, `clarifyText`, `moods`, `defaults`, `skillText`, `skills`, `useJevText`, `useJev`, `questions`, `Row`, `Candidate`, `Evaluation`, `evaluate`, `Entry`, `Ledger`, `fresh`, `Gated`, `gate` | What one supervisor reading can put in front of the run, and when. |
@@ -42,7 +42,7 @@ importable as `@smthrs/harness/<Module>`.
 | `UnmovedTree` | `Unmoved`, `find`, `demand` | The completion with nothing behind it. |
 | `UnresolvedFailure` | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
 | `FailedCall` | `cap`, `heading`, `stated`, `Failure`, `reason`, `inspects`, `find`, `demand`, `state` | The completion its own cell wrote before a call in it failed. |
-| `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `leafBytes`, `resultBytes`, `receipt`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `sentenceLimit`, `sentences`, `sentenceMarker`, `sentenceOf`, `sentenceClassifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `unjudged`, `unproven`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
+| `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `leafBytes`, `resultBytes`, `receipt`, `Reported`, `Settled`, `record`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `sentenceLimit`, `sentences`, `sentenceMarker`, `sentenceOf`, `sentenceClassifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `unjudged`, `unproven`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
 | `Sufficiency` | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation` | The evidence that is already complete. |
 | `VacuousVerification` | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation` | The proof that was already true before anything changed. |
 | `VariablesPanel` | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render` | The variables panel: what the realm holds, stated every frame. |
@@ -575,6 +575,7 @@ check is only evidence for the tree it ran over.
 | `conditions` | const | conversions | The terms of one call input that could be conditions its author added. |
 | `Check` | class | models | One check this run has run, and the tree it ran over. |
 | `Narrowing` | interface | models | A check this frame ran, paired with the broader one it stands in for. |
+| `labelWidth` | const | constants | How many UTF-8 bytes of a check's input the demand may quote back. |
 | `label` | const | conversions | An input as its label quotes it: canonical JSON, the longest string member last. |
 | `check` | const | constructors | Records one settled call as a check, unless its input is a payload. |
 | `narrows` | const | predicates | Whether one call's terms are a strict narrowing of another's. |
@@ -664,9 +665,12 @@ The completion nothing in the record contradicts.
 | `leafBytes` | const | constants | The most of one string in a listed check's result `receipt` keeps, newest kept. |
 | `resultBytes` | const | constants | The most of one listed check's whole result `receipt` keeps. |
 | `receipt` | const | conversions | What `Evidence.checksRun` says a check reported: each string's tail, the whole bounded. |
+| `Reported` | const | schemas | The ledger `record` keeps in controller state, and what `Evidence.checksRun` sends. |
+| `Settled` | interface | models | One settled call as `record` reads it. |
+| `record` | const | combinators | Folds one frame's calls into the commands this run ran, writes included, with the outcome each reported before it changed. |
 | `checksRunLimit` | const | constants | The most checks `Evidence.checksRun` lists, newest kept. |
 | `Check` | const | models | The last check the completing frame ran, with its verbatim result. |
-| `Ran` | const | models | One check this run ran, and the tail of what it reported. |
+| `Ran` | const | models | One command this run ran, the tail of what it reported, and what it reported before when that differed. |
 | `Evidence` | const | schemas | Everything the brake sends, and the whole of it. |
 | `classifier` | const | classifiers | The one classifier this brake asks, declared once. |
 | `sentenceLimit` | const | constants | The most parts `sentences` splits one claim into. |

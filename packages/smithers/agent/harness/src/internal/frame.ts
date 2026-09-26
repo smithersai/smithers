@@ -238,7 +238,7 @@ export interface Accounting {
     & Required<
       Pick<StateChanges, "readOnlyFrames" | "repeatFrames" | "checks" | "failures" | "mutations" | "remoteMutations">
     >
-    & Required<Pick<StateChanges, "openingDigest" | "callLedger">>
+    & Required<Pick<StateChanges, "openingDigest" | "callLedger" | "reported">>
 }
 
 /**
@@ -348,7 +348,6 @@ export const account = (options: {
         digest: checkpointed ? "" : workspaceDigest,
         failing: call.failing,
         passing: call.passing,
-        result: CompletionClaim.receipt(call.value),
         // Whether the tree stamped above is the tree this call read. Every
         // write the frame declared is a call with a position among these ones,
         // so the answer is positional: a check with no standing write after it
@@ -416,6 +415,9 @@ export const account = (options: {
       // the run paid for, and the ledger is the only place the next model turn
       // can read it.
       callLedger: CallLedger.remember(state.callLedger, calls),
+      // Every call that reported an exit status, writes included, for the
+      // claim brake. See `CompletionClaim.record`.
+      reported: CompletionClaim.record(state.reported, calls),
       // Which of this frame's checks failed before any change did, and how
       // many frames have changed the workspace. Both, because this is the one
       // ledger a checkpointed reading belongs in: its whole question is an
@@ -593,7 +595,7 @@ export const taskText = (window: ContextWindow.ContextWindow): string =>
  * this is the only check the brake can quote in full, and a completing frame
  * that ran none sends none rather than sending a description of one.
  *
- * It is not the run's evidence, only the newest page of it. {@link checksRun}
+ * It is not the run's evidence, only the newest page of it. `CompletionClaim.record`
  * is the rest, and the two are separate because one measured live failure was
  * exactly the difference: a run that fixed the planted bug, ran the
  * repository's test, and then ran `git diff` to show its work sent the
@@ -614,63 +616,6 @@ const lastCheck = (calls: ReadonlyArray<ObservedCall>): CompletionClaim.Check | 
   }
   return undefined
 }
-
-/**
- * Every check this run has run, without its result.
- *
- * Read off the run's own durable check ledger, which is the same ledger
- * `UnresolvedFailure` and `NarrowedCheck` read and which already holds what
- * this needs: the call's input as a clipped label and whether it reported a
- * failing or a passing exit status. `NarrowedCheck.remember` keeps the newest
- * entry per subject, so this is "every distinct command this run ran, and what
- * it last reported", newest kept and bounded by
- * `CompletionClaim.checksRunLimit`.
- *
- * One filter: `failing || passing`. A read or a search reports no exit status,
- * and listing it would tell the question a command ran without telling it what
- * the command found. A reading taken against a checkpoint is not in this
- * ledger at all, by the ledger's own rule: it read a tree that is not this
- * workspace, and `account` files it under the sufficiency ledger instead.
- *
- * ## Why it does not filter on the tree, although every other reader does
- *
- * The ledger stamps each entry with its frame's closing workspace digest and
- * with `stable`, whether that stamp is the tree the check actually read, and
- * every deterministic brake reads both because each of them asks a question
- * about *this* tree. Filtering here the same way was written first and was
- * measured wrong on a live run: the bug was fixed, the repository's own test
- * passed at frame 7, the run completed at frame 8 having made no calls, and
- * the list went out empty, so a true sentence read 0.91 on `invented` and the
- * run died with the fix on disk. Asked with the list, the same claim reads
- * 0.40; asked with an empty one, 0.93.
- *
- * The cause is the host, not the ledger. A host that serves a
- * directory and keeps the run's own journal at `<directory>/.smithers`, which
- * `WorkspaceObservation.defaultPrune` does not prune, so the digest moves on
- * every frame with no call declaring a write. Every frame therefore reads as
- * an unattributed mutation, which stamps every check `stable: false` and
- * leaves every ledger entry one digest behind. A tree filter over that reports
- * "this run has checked nothing" about a run that checked twice.
- *
- * So this list is deliberately a weaker statement than the brakes above make.
- * It says what the run ran and what it reported, not that the reading still
- * holds over the tree being completed on. That is the statement the question
- * it feeds actually needs — whether a claim about a command's result is a
- * claim about a command this run ran — and staleness is owned by
- * `NarrowedCheck` and `UnresolvedFailure`, which do filter, and which run
- * first.
- */
-const checksRun = (
-  ledger: ReadonlyArray<NarrowedCheck.Check>
-): ReadonlyArray<CompletionClaim.Ran> =>
-  ledger
-    .filter((entry) => entry.failing || entry.passing)
-    .slice(-CompletionClaim.checksRunLimit)
-    .map((entry) => ({
-      command: entry.label,
-      outcome: entry.failing ? "failed" as const : "passed" as const,
-      result: entry.result
-    }))
 
 /**
  * The demands a completion's own measurements produce, in precedence order —
@@ -951,7 +896,7 @@ export const judgeCompletion = (
         digest: workspaceDigest,
         elsewhere: facts.remoteMutations
       }) === undefined,
-      checksRun: checksRun(facts.checks),
+      checksRun: facts.reported,
       callsRun: facts.callLedger.map((entry) => ({
         flow: entry.flow,
         input: entry.subject,

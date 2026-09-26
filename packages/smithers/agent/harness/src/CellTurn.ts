@@ -724,6 +724,11 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
    */
   callLedger: CallLedger.Ledger,
   /**
+   * Every command this run ran that reported an exit status, as the claim
+   * brake lists it. See `CompletionClaim.record`.
+   */
+  reported: CompletionClaim.Reported,
+  /**
    * Checks this run has watched fail, each stamped with the epoch it failed in.
    *
    * Separate from {@link State.checks} because that ledger holds one entry per
@@ -1189,6 +1194,7 @@ export const make = (options: {
     openingDigest: "",
     checks: [],
     callLedger: [],
+    reported: [],
     failures: [],
     mutations: 0,
     remoteMutations: 0,

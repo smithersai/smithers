@@ -734,8 +734,8 @@ describe("the claim brake", () => {
           input: { command: "git diff --stat" },
           value: { exitCode: 0, stdout: " add.mjs | 2 +-" }
         }),
-        // A reading of a pinned tree is a reading of a tree this workspace is
-        // not, so it answers a question about somebody else's workspace.
+        // A reading of a pinned tree is listed too: "it failed before the
+        // fix" is a claim about exactly such a reading.
         call({
           ordinal: 4,
           signature: "node test at checkpoint",
@@ -755,6 +755,64 @@ describe("the claim brake", () => {
         command: "{\"command\":\"git diff --stat\"}",
         outcome: "passed",
         result: "{\"exitCode\":0,\"stdout\":\" add.mjs | 2 +-\"}"
+      },
+      { command: "{\"command\":\"node test.mjs --pinned\"}", outcome: "failed", result: "{\"exitCode\":1}" }
+    ])
+  })
+
+  it("lists a check that also wrote, and what the same command reported before it changed", async () => {
+    // The two 2026-09-26 refusals after the sentence reading: a DeepSWE run
+    // whose passing `go test` and commit both wrote to the tree, so neither
+    // was listed, and a Terminal-Bench run (reward 1.0) whose probes "failed
+    // before the fix and passed afterward", which a list of newest readings
+    // could not show.
+    const jev = reading({})
+    const probe = { command: "python3 probe.py" }
+    await settled({
+      layer: jev.layer,
+      calls: [
+        call({
+          ordinal: 1,
+          signature: "probe",
+          subject: "probe",
+          input: probe,
+          value: { exitCode: 1, stderr: "AssertionError" },
+          failing: true,
+          passing: false
+        }),
+        call({
+          ordinal: 2,
+          signature: "edit",
+          subject: "edit",
+          flow: "edit",
+          mutates: true,
+          input: { path: "wal.py" },
+          value: {},
+          passing: false
+        }),
+        call({ ordinal: 3, signature: "probe", subject: "probe", input: probe, value: { exitCode: 0, stdout: "ok" } }),
+        call({
+          ordinal: 4,
+          signature: "go test",
+          subject: "go test",
+          mutates: true,
+          input: { command: "go test ./evaluator" },
+          value: { exitCode: 0, mutated: true, stdout: "ok  github.com/abs-lang/abs/evaluator" }
+        })
+      ]
+    })
+
+    expect((jev.asked[0]?.state as Record<string, unknown>)["checksRun"]).toEqual([
+      {
+        command: "{\"command\":\"python3 probe.py\"}",
+        outcome: "passed",
+        before: "failed",
+        result: "{\"exitCode\":0,\"stdout\":\"ok\"}"
+      },
+      {
+        command: "{\"command\":\"go test ./evaluator\"}",
+        outcome: "passed",
+        result: "{\"exitCode\":0,\"mutated\":true,\"stdout\":\"ok  github.com/abs-lang/abs/evaluator\"}"
       }
     ])
   })
@@ -939,6 +997,13 @@ describe("a long claim, read one sentence at a time", () => {
 })
 
 describe("the sentences of a claim", () => {
+  it("never ends a sentence inside inline code", () => {
+    expect(CompletionClaim.sentences("Ran `go test . ./ast` (pass). Committed.")).toEqual([
+      "Ran `go test . ./ast` (pass).",
+      "Committed."
+    ])
+  })
+
   it("splits at sentence ends and keeps every word", () => {
     expect(CompletionClaim.sentences("Fixed a.py. Tests pass! Done?  ")).toEqual([
       "Fixed a.py.",

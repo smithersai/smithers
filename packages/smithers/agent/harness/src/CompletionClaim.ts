@@ -167,6 +167,8 @@ import * as bytes from "./internal/bytes.ts"
 import * as DemandText from "./internal/demandText.ts"
 import * as elide from "./internal/elide.ts"
 import * as Judgement from "./Judgement.ts"
+import * as NarrowedCheck from "./NarrowedCheck.ts"
+import * as UnresolvedFailure from "./UnresolvedFailure.ts"
 
 /**
  * The most of one check's result the brake sends, in UTF-8 bytes.
@@ -316,6 +318,9 @@ export const Ran = Schema.Struct({
   }),
   result: Schema.optional(Schema.String).annotate({
     description: "The newest bytes of what it last reported, canonical JSON; empty when the ledger kept none"
+  }),
+  before: Schema.optional(Schema.Literals(["passed", "failed"])).annotate({
+    description: "What the same command reported the last time it ran, when that differed from its outcome"
   })
 })
 
@@ -374,6 +379,85 @@ const tails = (value: Schema.Json): Schema.Json => {
  */
 export const receipt = (value: Schema.Json): string =>
   elide.head(quote(tails(value)), resultBytes, "the run record has the whole result")
+
+/**
+ * The ledger {@link record} keeps in controller state, and what
+ * {@link Evidence.checksRun} sends.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const Reported = Schema.Array(Ran).pipe(
+  Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Ran>>([])),
+  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Ran>>([]))
+)
+
+/**
+ * One settled call as {@link record} reads it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Settled {
+  readonly ok: boolean
+  readonly input: Schema.Json
+  readonly value: Schema.Json
+  /** Whether its result reported a failing exit status. */
+  readonly failing: boolean
+  /** Whether its result reported a passing exit status. */
+  readonly passing: boolean
+}
+
+/**
+ * Folds one frame's calls into the commands this run ran, as the brake lists
+ * them: every settled call that reported an exit status, the newest reading of
+ * each command last, bounded by {@link checksRunLimit}.
+ *
+ * Writes are included. The check ledger holds only calls that declared no
+ * write, because a write is not an observation of the tree, but a claim names
+ * whatever the run ran: a DeepSWE run on 2026-09-26 claimed a passing
+ * `go test` and a commit, both on the record with exit 0, and both were
+ * absent from the list because `go test` touched the tree and the commit wrote
+ * it. Its true sentences read 0.87 to 0.94.
+ *
+ * A command re-run with a different outcome keeps the earlier one as
+ * `before`, because "failed before the fix and passed afterward" is a claim
+ * about both readings: a Terminal-Bench run whose verifier rewarded it 1.0
+ * said exactly that about three probes, and a list holding only the newest
+ * reading read the sentence at 0.85 and ended the run.
+ *
+ * No reading is filtered by the tree it ran over: this says what the run ran
+ * and what it reported, and staleness is owned by the brakes that run first.
+ *
+ * @category combinators
+ * @since 1.0.0-rc.0
+ */
+export const record = (ledger: ReadonlyArray<Ran>, calls: ReadonlyArray<Settled>): ReadonlyArray<Ran> => {
+  const newest = new Map(ledger.map((entry) => [entry.command, entry]))
+  for (const call of calls) {
+    if (!call.ok || !(call.failing || call.passing) || UnresolvedFailure.exitStatus(call.value) === undefined) continue
+    const command = elide.head(
+      NarrowedCheck.label(call.input),
+      NarrowedCheck.labelWidth,
+      "the issuing cell in the run record has the whole input"
+    )
+    const outcome = call.failing ? "failed" as const : "passed" as const
+    const earlier = newest.get(command)
+    const before = earlier === undefined
+      ? undefined
+      : earlier.outcome !== outcome
+      ? earlier.outcome
+      : earlier.before
+    newest.delete(command)
+    newest.set(command, {
+      command,
+      outcome,
+      result: receipt(call.value),
+      ...(before === undefined ? {} : { before })
+    })
+  }
+  return [...newest.values()].slice(-checksRunLimit)
+}
 
 /**
  * The most checks {@link Evidence.checksRun} lists, newest kept.
@@ -499,7 +583,8 @@ export const sentenceLimit = 12
 /**
  * A claim split into its sentences, at most {@link sentenceLimit} parts.
  *
- * A sentence ends at `.`, `!` or `?` followed by whitespace. A claim with more
+ * A sentence ends at `.`, `!` or `?` followed by whitespace, outside inline
+ * code. A claim with more
  * sentences than the limit keeps the first `sentenceLimit - 1` and asks about
  * the rest as one part, so nothing the claim says goes unread.
  *
@@ -507,7 +592,21 @@ export const sentenceLimit = 12
  * @since 1.0.0-rc.0
  */
 export const sentences = (claim: string): ReadonlyArray<string> => {
-  const parts = claim.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter((part) => part !== "")
+  const found: Array<string> = []
+  let code = false
+  let start = 0
+  for (let index = 0; index < claim.length; index++) {
+    const char = claim[index]!
+    if (char === "`") code = !code
+    // A sentence never ends inside inline code: `go test . ./ast` is one
+    // command, and splitting it read its halves as two unrecorded claims.
+    if (!code && (char === "." || char === "!" || char === "?") && /\s/.test(claim[index + 1] ?? "")) {
+      found.push(claim.slice(start, index + 1))
+      start = index + 1
+    }
+  }
+  found.push(claim.slice(start))
+  const parts = found.map((part) => part.trim()).filter((part) => part !== "")
   if (parts.length <= sentenceLimit) return parts
   return [...parts.slice(0, sentenceLimit - 1), parts.slice(sentenceLimit - 1).join(" ")]
 }

@@ -96,8 +96,11 @@ const separator = /[^A-Za-z0-9_./@+-]+/
  * read is not a name. Bounded because the label lives in controller state,
  * once per retained entry. The honest-elision notice may exceed this content
  * bound so it can say how many bytes are missing and where the whole input is.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
  */
-const labelWidth = 512
+export const labelWidth = 512
 
 /**
  * An input as its label quotes it: canonical JSON, except that an object's
@@ -337,19 +340,6 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
     Schema.withDecodingDefaultKey(Effect.succeed(false))
   ),
   /**
-   * The newest bytes of what the call returned, as `CompletionClaim.receipt`
-   * clips them.
-   *
-   * Nothing in this module reads it. The claim brake lists every check the
-   * run ran, and a claim about what a check printed can only be read against
-   * what it printed. Defaults empty, so an entry journaled before the field
-   * decodes as a check that kept no result.
-   */
-  result: Schema.String.pipe(
-    Schema.withConstructorDefault(Effect.succeed("")),
-    Schema.withDecodingDefaultKey(Effect.succeed(""))
-  ),
-  /**
    * Whether {@link Check.digest} is the tree this check actually read.
    *
    * A check is stamped with its frame's closing digest, and a frame may both
@@ -405,8 +395,6 @@ export const check = (options: {
   readonly passing?: boolean | undefined
   /** Whether the frame that ran it left the workspace as it found it. */
   readonly stable?: boolean | undefined
-  /** The newest bytes of the call's result; see {@link Check.result}. */
-  readonly result?: string | undefined
 }): Check | undefined => {
   const collected = terms(options.input)
   if (collected.length > maxTerms) return undefined
@@ -423,7 +411,6 @@ export const check = (options: {
     ),
     failing: options.failing ?? false,
     passing: options.passing ?? false,
-    result: options.result ?? "",
     stable: options.stable ?? false
   })
 }
