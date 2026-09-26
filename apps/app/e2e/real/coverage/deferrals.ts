@@ -11,8 +11,7 @@
 export const RELEASE_CRITICAL_ACTIONS: readonly string[] = [
   "approval.approve", "approval.deny", "change.land", "secrets.connect", "secrets.connections",
   "secrets.list", "secrets.revoke", "setup.configure", "setup.run", "signup.account", "signup.answer",
-  "signup.back", "signup.email", "signup.finish", "signup.google", "signup.next", "signup.repo", "signup.set",
-  "signup.verify"
+  "signup.back", "signup.finish", "signup.next", "signup.repo", "signup.set"
 ]
 
 export type Deferral = "browser" | "diagnostics" | "owed"

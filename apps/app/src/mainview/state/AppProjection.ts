@@ -976,7 +976,10 @@ export const seedAppProjection = (previous: AppProjectionSnapshot, context: AppP
     if (keys.length > 0) collections[name].delete(keys)
   }
     if (collections.sessions.get(SESSION_ID) === undefined) {
-      collections.sessions.insert(initialSession(theme))
+      // A saved session row that no longer parses loads as absent while the
+      // transition journal it numbered survives: continue that revision.
+      const revision = Math.max(0, ...[...collections.transitions.values()].map(row => row.revision))
+      collections.sessions.insert({ ...initialSession(theme), revision })
     } else {
       /*
        * Heal a session row persisted before newer required fields existed

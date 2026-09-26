@@ -19,7 +19,6 @@ export interface SignupRepo { readonly id: string }
 
 const Check = () => <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
 const GitHubMark = () => <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 .5A11.5 11.5 0 0 0 8.36 22.9c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.05.78 2.12v3.14c0 .31.2.67.8.56A11.5 11.5 0 0 0 12 .5z" /></svg>
-const GoogleMark = () => <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M21.6 12.23c0-.68-.06-1.34-.17-1.98H12v3.75h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.24c1.9-1.75 2.98-4.32 2.98-7.29z" /><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.43l-3.24-2.5c-.9.6-2.04.95-3.38.95-2.6 0-4.8-1.75-5.58-4.1H3.07v2.58A10 10 0 0 0 12 22z" /><path fill="#FBBC05" d="M6.42 13.92A6 6 0 0 1 6.1 12c0-.67.12-1.31.32-1.92V7.5H3.07A10 10 0 0 0 2 12c0 1.61.39 3.14 1.07 4.5l3.35-2.58z" /><path fill="#EA4335" d="M12 5.98c1.47 0 2.78.5 3.82 1.5l2.86-2.86A10 10 0 0 0 12 2a10 10 0 0 0-8.93 5.5l3.35 2.58C7.2 7.73 9.4 5.98 12 5.98z" /></svg>
 
 const Receipt = ({ text, you }: { text: string; you?: boolean }) => <div className="signup-receipt" data-you={you || undefined}><Check /><b>{text}</b></div>
 
@@ -51,8 +50,7 @@ export function SignupCardBody({ signup, repos, onRunCommand, doors = true }: { 
   const draft = signup.draft
   const past = (stage: Signup["stage"]) => STAGE_ORDER.indexOf(stage) < STAGE_ORDER.indexOf(signup.stage)
   const receipts = <>
-    {past("sign-in") && signup.door !== undefined && <Receipt you text={signup.door === "email" ? signup.email ?? "Email" : signup.door === "google" ? "Signed in with Google" : "Signed in with GitHub"} />}
-    {past("verify") && signup.door === "email" && <Receipt text="Email verified" />}
+    {past("sign-in") && signup.door !== undefined && <Receipt you text="Signed in with GitHub" />}
     {past("account") && signup.account !== undefined && <Receipt you text={`smithers.sh/${signup.account}`} />}
     {past("poll") && <Receipt you text="Answered" />}
   </>
@@ -65,22 +63,7 @@ export function SignupCardBody({ signup, repos, onRunCommand, doors = true }: { 
     {signup.stage === "sign-in" && doors && <section className="signup-card signup-doors-card" aria-label="Sign in">
       <div className="signup-doors">
         <button type="button" className="signup-door" data-testid="signup-github" {...flowAction(onRunCommand, "auth.sign-in")}><GitHubMark />Continue with GitHub</button>
-        <button type="button" className="signup-door" data-testid="signup-google" {...flowAction(onRunCommand, "signup.google")}><GoogleMark />Continue with Google</button>
       </div>
-      <div className="signup-or">or</div>
-      <form className="signup-row" {...flowProps("signup.email")} onSubmit={event => { event.preventDefault(); onRunCommand("signup.email", event.currentTarget.querySelector<HTMLInputElement>('input[name="email"]')?.value ?? draft.email ?? "") }}>
-        <label className="signup-field"><span>Company email</span>
-          <input type="email" name="email" autoComplete="email" inputMode="email" placeholder="you@company.com" {...signupEditor(draft.email ?? "", "email", onRunCommand)} data-testid="signup-email" /></label>
-        <button type="submit" className="signup-primary" data-testid="signup-email-continue">Continue</button>
-      </form>
-    </section>}
-    {signup.stage === "verify" && <section className="signup-card" aria-label="Verification code">
-      <p className="signup-sent">Code sent to <b>{signup.email}</b></p>
-      <form className="signup-code-form" {...flowProps("signup.verify")} onSubmit={event => { event.preventDefault(); onRunCommand("signup.verify", event.currentTarget.querySelector<HTMLInputElement>('input[name="code"]')?.value ?? draft.code ?? "") }}>
-        <input className="signup-code" type="text" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" aria-label="6-digit code"
-          {...signupEditor(draft.code ?? "", "code", onRunCommand)} data-testid="signup-code" />
-        <button type="submit" className="signup-primary" data-testid="signup-verify">Verify</button>
-      </form>
     </section>}
     {signup.stage === "account" && <section className="signup-card" aria-label="Finish creating your account">
       <h2>Finish creating your account</h2>
@@ -107,7 +90,7 @@ export function SignupCardBody({ signup, repos, onRunCommand, doors = true }: { 
   </div>
 }
 
-const STAGE_ORDER: ReadonlyArray<Signup["stage"]> = ["sign-in", "verify", "account", "poll", "ready", "done"]
+const STAGE_ORDER: ReadonlyArray<Signup["stage"]> = ["sign-in", "account", "poll", "ready", "done"]
 
 function PollCard({ signup, repos, onRunCommand }: { signup: Signup; repos: ReadonlyArray<SignupRepo>; onRunCommand: RunCommand }) {
   const question = SIGNUP_QUESTIONS[signup.question]
@@ -133,9 +116,8 @@ function PollCard({ signup, repos, onRunCommand }: { signup: Signup; repos: Read
       </button>)}
     </div>}
     {question.kind === "repo" && <div className="signup-repos">
-      {signup.door === "github" ? repos.map(repo => <button type="button" key={repo.id} className="signup-repo" {...flowAction(onRunCommand, "signup.repo", repo.id)}>
-        <span className="signup-repo-name">{repo.id}</span></button>)
-        : <button type="button" className="signup-door" {...flowAction(onRunCommand, "auth.sign-in")}><GitHubMark />Connect GitHub</button>}
+      {repos.map(repo => <button type="button" key={repo.id} className="signup-repo" {...flowAction(onRunCommand, "signup.repo", repo.id)}>
+        <span className="signup-repo-name">{repo.id}</span></button>)}
       <button type="button" className="signup-tile" data-testid="signup-new-repo" {...flowAction(onRunCommand, "signup.repo", "new")}>+ Try Smithers on a new repo</button>
     </div>}
     {question.kind === "free" && <textarea className="signup-free" aria-label={question.text} {...signupEditor(signup.draft.more ?? "", "more", onRunCommand)} data-testid="signup-more" />}

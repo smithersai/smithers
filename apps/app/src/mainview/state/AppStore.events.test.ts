@@ -401,12 +401,63 @@ describe("the live store's authoritative event path", () => {
     })
     const restored = await open(storage)
     expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
-    expect((await restored.eventHistory()).head.projectorVersion).toBe(16)
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
     expect(restored.collections.cards.get("kept")?.title).toBe("kept.ts")
     expect(restored.collections.identitySessions.get("identity")?.login).toBe("alice")
     expect((await restored.verifyState()).valid).toBe(true)
     expect(Object.keys(restored.collections)).not.toContain("chainEvents")
     expect(Object.keys(restored.collections)).not.toContain("retiredChainLineages")
+  })
+
+  test("version 16 upgrade rotates a stream whose journal holds a retired email signup", async () => {
+    /*
+     * Version 16 accepted the email door: a signup.changed at the verify stage
+     * with door "email". This build's SignupSchema refuses both, so replaying
+     * that event would fail validation and lock the app out. The version moves
+     * instead, and the rotation re-seeds; the session row that holds the
+     * retired signup no longer parses, so the session starts fresh. No host
+     * ever answered those doors, so no saved stream reached this state.
+     */
+    const storage = memoryStorage(), store = await open(storage)
+    await store.dispatch({ type: "composer.changed", actor: "user", draft: "kept" }).isPersisted.promise
+    await store.compactEvents()
+    const old = await store.eventHistory()
+    const head = { ...old.head, projectorVersion: 16 }
+    const { hash: _, ...body } = { ...old.checkpoint, projectorVersion: 16 }
+    const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+    const patch = { stage: "verify", door: "email", email: "ada@acme.dev" }
+    const transition = { type: "signup.changed", actor: "user", patch }
+    // Version 16's SignupSchema key order, which the state hash reads.
+    const signup = { ...patch, question: 0, answers: {}, draft: {} }
+    // What version 16's projector made of that event; this build's schema refuses to project it.
+    const after = structuredClone(old.checkpoint.snapshot)
+    after.sessions![0] = { signup, ...after.sessions![0] as object, revision: head.revision + 1 } as never
+    after.transitions!.push({ id: `transition-${head.revision + 1}`, revision: head.revision + 1, actor: "user", type: transition.type,
+      payload: JSON.stringify({ patch }), createdAt: 1 })
+    const stateHash = appProjectionHash(after as unknown as Parameters<typeof appProjectionHash>[0])
+    const eventBody = { formatVersion: 1, projectorVersion: 16, id: "retired-email-signup", streamId: head.streamId,
+      sequence: head.sequence + 1, revision: head.revision + 1, kind: "transition", type: transition.type,
+      actor: "user", createdAt: 1, persistenceMode: "localStorage", input: encodeEventValue(transition),
+      previousEventHash: head.eventHash, previousStateHash: head.stateHash, stateHash }
+    const event = { ...eventBody, hash: digest("smithers-app/event/v1:" + canonicalEventValue(eventBody)) }
+    Object.assign(head, { sequence: event.sequence, revision: event.revision, eventHash: event.hash, stateHash })
+    await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      const sessions = JSON.parse(entries["smithers-mvp.app-sessions"]!)
+      Object.assign(sessions["s:main"].data, { signup })
+      entries["smithers-mvp.app-sessions"] = JSON.stringify(sessions)
+      entries["smithers-mvp.app-events"] = JSON.stringify({ "s:retired-email-signup": { versionKey: "fixture", data: event } })
+      for (const [id, data] of [["app-event-heads", head], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+    })
+    const restored = await open(storage)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect((await restored.verifyState()).valid).toBe(true)
+    expect(restored.session().signup?.stage ?? "sign-in").toBe("sign-in")
+    await restored.dispatch({ type: "signup.changed", actor: "user", patch: { stage: "account", door: "github" } }).isPersisted.promise
+    expect((await restored.verifyState()).valid).toBe(true)
   })
 
   test("the collection roster is pinned to the projector version", () => {
@@ -416,7 +467,7 @@ describe("the live store's authoritative event path", () => {
      * out. Changing this list owes a bump and an upgrade test like the ones
      * below.
      */
-    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 16, roster: [
+    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 17, roster: [
       "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "changes",
       "cloudSessions", "cloudWorkspaces", "commandIntents", "connectorOperations", "connectors", "flowDurations", "frames",
       "githubAppStatuses", "harnesses", "httpTurnLegs", "httpTurns", "identitySessions", "messages", "models",

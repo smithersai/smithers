@@ -9,17 +9,17 @@ for (const path of ["/", "/smithersai/smithers/"]) {
       await signedOutVisitor(page)
       await page.route("**/api/bootstrap", route => route.fulfill({ json: {
         apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
-        capabilities: ["identity", "cloud", "agent"], authFlow: "redirect", sandbox: null
+        capabilities: ["identity", "cloud", "agent", "browser.read"], authFlow: "redirect", sandbox: null
       } }))
       await page.route("**/api/auth/github/start**", route => route.fulfill({ contentType: "text/html", body: "Sign-in started" }))
       await page.goto(path)
       let input = page.getByTestId("composer-input")
-      // A refused identity door offers GitHub through the real flow-failure
-      // toast, independently of embedded repository read failures.
-      await page.route("**/api/auth/google/start", route => route.fulfill({
+      // A seam that refuses for sign-in offers GitHub through the real
+      // flow-failure toast, independently of embedded repository read failures.
+      await page.route("**/api/tools/browser-fetch", route => route.fulfill({
         status: 403, json: { message: "Use /auth.sign-in to continue with GitHub." },
       }))
-      await fillComposer(page, "/signup.google")
+      await fillComposer(page, "/browser.open https://example.com")
       await input.press("Enter")
       const stack = page.getByLabel("Notifications", { exact: true })
       const signIn = stack.getByRole("button", { name: "Sign in", exact: true })

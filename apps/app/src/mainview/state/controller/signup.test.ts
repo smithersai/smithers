@@ -1,37 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import { SIGNUP_QUESTIONS } from "../Signup"
-import { backend, json, memoryStorage, silentAgent } from "../TestFixtures"
+import { backend, memoryStorage, silentAgent } from "../TestFixtures"
 import { createControllerContext } from "./context"
-import { createSignupController, SIGNUP_DOOR_UNAVAILABLE, SIGNUP_EMAIL_START_PATH } from "./signup"
+import { createSignupController } from "./signup"
 
-const boot = async (routes: Record<string, Response> = {}) => {
+const boot = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const toasts: Array<string> = []
-  const ctx = createControllerContext(store, silentAgent, backend(routes))
-  ctx.withToast = async (key, _title, _done, work) => { toasts.push(key); return work() }
-  return { store, toasts, controller: createSignupController(ctx) }
+  return { store, controller: createSignupController(createControllerContext(store, silentAgent, backend({}))) }
 }
 
 describe("the signup controller", () => {
-  test("a host without the email door answers a typed refusal and the doors stay open", async () => {
-    const { store, controller, toasts } = await boot()
-    expect(await controller.signupEmail("not an email")).toBe("Type a company email like you@company.com.")
-    const refusal = await controller.signupEmail("ada@acme.dev")
-    expect(refusal).toBe(`Email sign-in: ${SIGNUP_DOOR_UNAVAILABLE}`)
-    expect(toasts).toEqual(["signup.email"])
-    expect(store.session().signup?.stage ?? "sign-in").toBe("sign-in")
-    await store.dispose?.()
-  })
-
-  test("a host with the email door moves to the code step, and a wrong-length code is refused before any request", async () => {
-    const { store, controller } = await boot({ [SIGNUP_EMAIL_START_PATH]: json(200, { ok: true }) })
-    expect(await controller.signupEmail("ada@acme.dev")).toBeUndefined()
-    expect(store.session().signup).toMatchObject({ stage: "verify", door: "email", email: "ada@acme.dev" })
-    expect(await controller.signupVerify("12")).toBe("Type the 6-digit code from the email.")
-    await store.dispose?.()
-  })
-
   test("the account step needs a name and a valid account, then opens the poll", async () => {
     const { store, controller } = await boot()
     controller.signupChange({ stage: "account" })

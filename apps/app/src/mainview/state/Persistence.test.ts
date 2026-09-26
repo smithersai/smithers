@@ -120,9 +120,9 @@ describe("an atomic commit point per logical transition", () => {
     try {
       store = await createAppStore({ kind: "localStorage", storage: durableStorage })
       const signup = { stage: "poll" as const, question: 5, answers: { models: ["Claude"] }, draft: {} }
-      const answered = store.dispatch({ type: "signup.changed", actor: "user", patch: { ...signup, draft: { code: "123456" } } })
+      const answered = store.dispatch({ type: "signup.changed", actor: "user", patch: signup })
       const dismissed = store.dispatch({ type: "first-run.dismissed", actor: "user" })
-      // The page may leave before the durable commit settles: the answers are already recoverable, the code is not copied.
+      // The page may leave before the durable commit settles: the answers are already recoverable.
       expect(readEntityRecoveries(recovery).map(record => record.value)).toEqual([{ kind: "signup", signup }, { kind: "first-run-dismissed" }])
       await answered.isPersisted.promise
       await dismissed.isPersisted.promise

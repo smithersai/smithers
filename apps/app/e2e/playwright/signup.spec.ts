@@ -3,8 +3,7 @@ import { signedOutVisitor } from "./identity"
 
 /*
  * The signup onboarding (state/Signup.ts) in a real browser: a signed-out
- * cloud visitor meets the hero and its doors → the doors this host lacks refuse with a
- * typed toast → account → the seven questions → ready → Start Automating,
+ * cloud visitor meets the hero and its GitHub door → account → the seven questions → ready → Start Automating,
  * and a reload resumes the stage the person stopped at.
  */
 const SHOTS = process.env.SIGNUP_SHOTS
@@ -29,18 +28,13 @@ test("a signed-out visitor walks the signup in the transcript and a reload resum
   await page.waitForTimeout(1500)
   const words = await signup.locator(".signup-word").evaluateAll(spans => spans.map(span => span.getBoundingClientRect()))
   expect(words[1]!.left - words[0]!.right).toBeGreaterThan(4)
-  expect(await page.getByTestId("signup-email-continue").evaluate(el => getComputedStyle(el).color)).not.toBe(await signup.locator("h1").evaluate(el => getComputedStyle(el).color))
+  await expect(signup.locator("button")).toHaveCount(1)
+  await expect(signup.locator("input, form")).toHaveCount(0)
   await expect(page.getByTestId("setup-checklist")).toHaveCount(0)
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/1-hero.png` })
 
   await expect(page.getByTestId("signup-github")).toBeVisible()
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/2-sign-in.png` })
-
-  // The host has no email door: the refusal is typed, the doors stay.
-  await page.getByTestId("signup-email").fill("ada@acme.dev")
-  await page.getByTestId("signup-email-continue").click()
-  await expect(page.locator("[data-toast-status='failed']")).toContainText("not available on this host yet")
-  await expect(page.getByTestId("signup-github")).toBeVisible()
 
   // The GitHub door is auth.sign-in's redirect.
   await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))

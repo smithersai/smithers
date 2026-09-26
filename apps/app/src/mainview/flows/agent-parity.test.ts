@@ -23,7 +23,6 @@ import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
 import type { AppStore } from "../state/AppStore"
 import { STORAGE_RECOVERY_USER_ONLY_REASON, STORAGE_RESET_USER_ONLY_REASON } from "../state/StorageRecoveryContract"
-import { SIGNUP_GOOGLE_USER_ONLY_REASON } from "./entries/signup"
 import { modelInvocable, nameOf } from "./registry"
 import { PALETTE_ACTIONS_REASON, PALETTE_OPEN_REASON } from "./entries/palette"
 import { PLUGINS_USER_ONLY_REASON } from "./entries/plugins"
@@ -60,7 +59,6 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "world.delete.confirm": "a confirm-dialog answer is the human's",
   "world.delete.cancel": "a confirm-dialog answer is the human's",
   "auth.sign-in": "sign-in is the human's browser gesture; the agent renders the step with auth.prompt",
-  "signup.google": SIGNUP_GOOGLE_USER_ONLY_REASON,
   "auth.sign-out": "dropping the human's session is theirs alone",
   "app.download": "a browser handoff the human clicks; the agent renders the step with app.download.prompt",
   "cloud.sign-in": "the Smithers Cloud browser login is the human's gesture on their account; the agent renders the step with cloud.prompt",

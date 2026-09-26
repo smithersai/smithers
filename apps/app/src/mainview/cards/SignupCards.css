@@ -35,10 +35,6 @@
 .signup-primary:disabled { opacity: 0.45; cursor: default; }
 .signup-ghost { border-color: transparent; color: var(--text-muted); }
 .signup-doors { display: grid; gap: 8px; }
-.signup-or { display: flex; align-items: center; gap: 12px; color: var(--text-faint); font-size: var(--fs-caption); }
-.signup-or::before, .signup-or::after { content: ""; flex: 1; height: 1px; background: var(--border-strong); }
-.signup-row { display: flex; gap: 8px; align-items: flex-end; }
-.signup-row .signup-field { flex: 1; }
 .signup-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .signup-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; font-size: var(--fs-small); color: var(--text-muted); }
 .signup-field input, .signup-url { min-height: 44px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg); padding: 0 12px; color: var(--text); font: inherit; }
@@ -53,12 +49,6 @@
 .signup-prefix { color: var(--text-faint); font-family: var(--font-mono); user-select: none; }
 .signup-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .signup-actions .signup-back { margin-right: auto; }
-.signup-sent { margin: 0; text-align: center; color: var(--text-muted); font-size: var(--fs-small); }
-.signup-sent b { color: var(--text); font-weight: 500; }
-.signup-code-form { display: flex; gap: 8px; justify-content: center; }
-/* letter-spacing trails the last digit too; the left padding puts the glyphs back on optical center. */
-.signup-code { width: 11ch; min-height: 52px; padding-left: 0.4em; text-align: center; font-family: var(--font-mono); font-size: 1.5rem; letter-spacing: 0.4em; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg); color: var(--text); transition: border-color var(--dur) var(--ease-current), box-shadow var(--dur) var(--ease-current); }
-.signup-code:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--ring); }
 
 /* Poll */
 .signup-progress { height: 2px; background: var(--border-strong); border-radius: 2px; overflow: hidden; }
@@ -95,5 +85,5 @@
 .signup-video { width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; border: 1px solid var(--border); background: linear-gradient(135deg, var(--surface-2), color-mix(in srgb, var(--g-accent) 18%, var(--surface-2))); display: grid; place-items: center; }
 .signup-play { width: 56px; height: 56px; border-radius: 50%; background: var(--inverse-bg); color: var(--inverse-text); display: grid; place-items: center; box-shadow: var(--shadow-2); }
 
-@media (max-width: 480px) { .signup-row { flex-direction: column; align-items: stretch; } .signup-hero { padding-top: 24px; } }
+@media (max-width: 480px) { .signup-hero { padding-top: 24px; } }
 @media (prefers-reduced-motion: reduce) { .signup *, .signup *::before, .signup *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; } }

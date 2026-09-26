@@ -54,8 +54,6 @@ describe("the signup cards", () => {
     const subscription = store.collections.sessions.subscribeChanges(project)
     try {
       const cases = [
-        { stage: "sign-in", field: "email", testId: "signup-email", value: "ada@acme.dev" },
-        { stage: "verify", field: "code", testId: "signup-code", value: "123456" },
         { stage: "account", field: "name", testId: "signup-name", value: "Ada Park " },
         { stage: "account", field: "account", testId: "signup-account", value: "ada park " },
         { stage: "poll", field: "more", testId: "signup-more", value: "ship it " }
@@ -87,12 +85,13 @@ describe("the signup cards", () => {
     }
   })
 
-  test("the first card carries the title and offers GitHub through auth.sign-in, Google through signup.google, and the email form through signup.email", () => {
-    const { host, flows, calls } = render({ ...initialSignup(), draft: { email: "ada@acme.dev" } })
+  test("the first card carries the title and offers the GitHub door alone, through auth.sign-in", () => {
+    const { host, flows, calls } = render(initialSignup())
     expect(host.querySelector("h1")?.textContent?.replace(/\s+/g, " ").trim()).toBe("Automate your codebase today")
-    expect(flows().map(row => row[1])).toEqual(["auth.sign-in", "signup.google"])
-    host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
-    expect(calls).toEqual([["signup.email", "ada@acme.dev"]])
+    expect(flows()).toEqual([["Continue with GitHub", "auth.sign-in", undefined]])
+    expect(host.querySelectorAll("input, form")).toHaveLength(0)
+    host.querySelector<HTMLButtonElement>('[data-testid="signup-github"]')!.click()
+    expect(calls).toEqual([["auth.sign-in", undefined]])
   })
 
   test("before identity answers, a first visit paints the title alone: no door, no receipt", () => {
@@ -122,11 +121,9 @@ describe("the signup cards", () => {
     expect(calls).toEqual([["signup.answer", "Engineering"]])
   })
 
-  test("the repo question lists the GitHub repositories for a GitHub sign-in and offers Connect GitHub otherwise", () => {
-    const github = render({ ...initialSignup(), stage: "poll", question: 5, door: "github" }, [{ id: "adapark/hello-server" }])
-    expect(github.flows().filter(row => row[1] === "signup.repo").map(row => row[2])).toEqual(["adapark/hello-server", "new"])
-    const email = render({ ...initialSignup(), stage: "poll", question: 5, door: "email" })
-    expect(email.flows().map(row => row[1])).toEqual(["auth.sign-in", "signup.repo", "signup.back", "signup.next"])
+  test("the repo question lists the GitHub repositories beside a new repo", () => {
+    const { flows } = render({ ...initialSignup(), stage: "poll", question: 5, door: "github" }, [{ id: "adapark/hello-server" }])
+    expect(flows().filter(row => row[1] === "signup.repo").map(row => row[2])).toEqual(["adapark/hello-server", "new"])
   })
 
   test("ready shows the account URL, the giant Start Automating door, and the tutorial slot", () => {

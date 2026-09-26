@@ -1478,9 +1478,7 @@ const initializeAppStore = async (
     if (transition.type === "signup.changed") {
       const signup = after.snapshot.sessions.find(row => row.id === SESSION_ID)?.signup
       if (signup === undefined) return undefined
-      // A typed verification code is a credential: it never reaches the recovery copy.
-      const { code: _code, ...draft } = signup.draft
-      return writeEntityRecovery(draftRecoveryStorage, { key: "signup", revision: after.head.revision, authority, value: { kind: "signup", signup: { ...signup, draft } } })
+      return writeEntityRecovery(draftRecoveryStorage, { key: "signup", revision: after.head.revision, authority, value: { kind: "signup", signup } })
     }
     const id = transition.type === "card.upsert" || transition.type === "card.view.loaded" || transition.type === "card.navigated" ? transition.card.id
       : transition.type === "card.updated" || transition.type === "card.removed" || transition.type === "card.history.moved" ? transition.id : undefined

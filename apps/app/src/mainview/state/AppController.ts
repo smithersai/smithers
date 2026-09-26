@@ -166,9 +166,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** The signup onboarding's doors (controller/signup.ts). */
   readonly signupChange: SignupController["signupChange"]
   readonly signupSet: SignupController["signupSet"]
-  readonly signupGoogle: SignupController["signupGoogle"]
-  readonly signupEmail: SignupController["signupEmail"]
-  readonly signupVerify: SignupController["signupVerify"]
   readonly signupAccount: SignupController["signupAccount"]
   readonly signupAnswer: SignupController["signupAnswer"]
   readonly signupNext: SignupController["signupNext"]

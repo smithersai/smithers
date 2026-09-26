@@ -1197,8 +1197,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     if (match === null) return no("signup.set needs the field name")
     return ok({ field: match[1]!, value: match[2] ?? "" })
   },
-  "signup.email": (args) => required("email", args, "Type your company email"),
-  "signup.verify": (args) => required("code", args, "Type the 6-digit code"),
   "signup.answer": (args) => required("value", args, "Choose an answer"),
   "signup.repo": (args) => required("repo", args, "Choose a repository, or new"),
   /*

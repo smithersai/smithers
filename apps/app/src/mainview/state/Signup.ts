@@ -1,6 +1,6 @@
 /*
  * The signup onboarding (Will, 2026-09-20): the chat log's opening for a
- * visitor with no account. Hero + sign-in doors → (email code) → account →
+ * visitor with no account. Hero + GitHub door → account →
  * poll → ready → done. The stage and every answer live on the session row so
  * a reload resumes where the person stopped; `done` is what every later
  * visit reads. A session saved before this field existed has no stage: a
@@ -8,15 +8,12 @@
  */
 import { z } from "zod"
 
-export const SIGNUP_STAGES = ["sign-in", "verify", "account", "poll", "ready", "done"] as const
+export const SIGNUP_STAGES = ["sign-in", "account", "poll", "ready", "done"] as const
 export type SignupStage = (typeof SIGNUP_STAGES)[number]
-export const SIGNUP_DOORS = ["github", "google", "email"] as const
-export type SignupDoor = (typeof SIGNUP_DOORS)[number]
 
 export const SignupSchema = z.object({
   stage: z.enum(SIGNUP_STAGES),
-  door: z.enum(SIGNUP_DOORS).optional(),
-  email: z.string().optional(),
+  door: z.literal("github").optional(),
   name: z.string().optional(),
   account: z.string().optional(),
   /** Index into SIGNUP_QUESTIONS while the stage is `poll`. */
@@ -85,6 +82,6 @@ export const signupAfterIdentity = (signup: Signup | undefined, state: "signed-i
     if (previousOwner) return undefined
     return { ...initialSignup(), stage: "account", door: "github", account: accountSlug(login), draft: { account: accountSlug(login) } }
   }
-  if (signup.stage !== "sign-in" && signup.stage !== "verify") return signup
+  if (signup.stage !== "sign-in") return signup
   return { ...signup, stage: "account", door: signup.door ?? "github", account: signup.account ?? accountSlug(login), draft: { ...signup.draft, account: signup.draft.account ?? accountSlug(login) } }
 }
