@@ -1,6 +1,11 @@
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import { check, findings, satisfies } from "./check-toolchain-pins.mjs"
+import { toolchainRefusal } from "./require-toolchain.mjs"
 
 const workspace = {
   runtime: { version: ">=26.4.0" },
@@ -113,5 +118,40 @@ test("Bun and jj pins are required in the flake and CI", () => {
     [flake, ci + '\n tool: jj-cli@0.38.0', "ci.yml installs jj 0.38.0"]
   ]) {
     assert.ok(findings({ workspace: declared, packageJson, flake: flakeText, ci: ciText, nodeVersion }).some((item) => item.startsWith(expected)), expected)
+  }
+})
+
+test("a toolchain below the engines floors is refused in one line naming both", () => {
+  const engines = { node: ">=26.4.0", bun: ">=1.4.0" }
+  assert.equal(toolchainRefusal(engines, { bun: "1.4.1", node: "26.10.0" }), null)
+  assert.equal(toolchainRefusal(engines, { bun: "1.4.0-canary.3", node: undefined }), null)
+  assert.equal(
+    toolchainRefusal(engines, { bun: "1.2.20", node: "26.10.0" }),
+    "Smithers requires Bun >=1.4.0 and Node >=26.4.0; found Bun 1.2.20, Node 26.10.0."
+  )
+  assert.equal(
+    toolchainRefusal(engines, { bun: undefined, node: "24.4.1" }),
+    "Smithers requires Bun >=1.4.0 and Node >=26.4.0; found Node 24.4.1."
+  )
+})
+
+test("requireToolchain stops the process with that line before anything else runs", () => {
+  const root = mkdtempSync(join(tmpdir(), "require-toolchain-"))
+  const run = (node) => {
+    const manifest = join(root, "package.json")
+    writeFileSync(manifest, JSON.stringify({ engines: { bun: ">=1.4.0", node } }))
+    const entry = new URL("./require-toolchain.mjs", import.meta.url).href
+    return spawnSync(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(entry)}); m.requireToolchain(${JSON.stringify(manifest)}); console.log("ran")`], { encoding: "utf8" })
+  }
+  try {
+    const refused = run(">=999.0.0")
+    assert.equal(refused.status, 1)
+    assert.equal(refused.stdout, "")
+    assert.equal(refused.stderr, `Smithers requires Bun >=1.4.0 and Node >=999.0.0; found Node ${process.versions.node}.\n`)
+    const allowed = run(">=1.0.0")
+    assert.equal(allowed.status, 0)
+    assert.equal(allowed.stdout, "ran\n")
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

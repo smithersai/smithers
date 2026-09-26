@@ -16,6 +16,7 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
+import { compare, floorOf } from "./require-toolchain.mjs"
 import { isMain, repoRoot } from "./workspace-packages.mjs"
 
 /**
@@ -30,20 +31,6 @@ const inlinePin = (key) => new RegExp(`"?${key}"?:\\s*"?([^"\\s]+)"?`, "g")
 
 /** The file that holds the one Node release every environment runs. */
 export const nodeVersionFile = ".node-version"
-
-/** The numeric floor of a `>=x.y.z` requirement, or of a bare `x.y.z`. */
-export const floorOf = (requirement) => {
-  const match = /^(?:>=)?(\d+)\.(\d+)\.(\d+)/.exec(requirement.trim())
-  if (match === null) throw new Error(`unreadable version requirement: ${JSON.stringify(requirement)}`)
-  return [Number(match[1]), Number(match[2]), Number(match[3])]
-}
-
-const compare = (left, right) => {
-  for (let index = 0; index < 3; index++) {
-    if (left[index] !== right[index]) return left[index] < right[index] ? -1 : 1
-  }
-  return 0
-}
 
 /** Whether an exact release satisfies the declared `>=` requirement within its major. */
 export const satisfies = (release, requirement) => {
