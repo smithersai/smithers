@@ -19,7 +19,11 @@ export default {
   app: {
     name: "Smithers",
     identifier: "sh.smithers.app",
-    version: appPackage.version
+    version: appPackage.version,
+    // `smthrs open` hands the installed app smithers://open/<owner>/<repo>
+    // (src/bun/DeepLink.ts). Electrobun registers it on macOS only, and only
+    // for a bundle in /Applications.
+    urlSchemes: ["smithers"]
   },
   build: {
     /*

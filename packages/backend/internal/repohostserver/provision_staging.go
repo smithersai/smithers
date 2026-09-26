@@ -541,7 +541,7 @@ func (s *Server) stagedProvisionReceivePack(w http.ResponseWriter, r *http.Reque
 	if peekErr != nil {
 		return badRequest("malformed receive-pack command list")
 	}
-	if msg := repohost.ReservedRefViolation(commands, ""); msg != "" {
+	if msg := repohost.ReservedRefViolation(commands, "", 0); msg != "" {
 		return forbidden(msg)
 	}
 	body, gitErr := runGitRPCBuffered(r.Context(), gitDir, "receive-pack", readCloserWithBody(peeked, requestBody))

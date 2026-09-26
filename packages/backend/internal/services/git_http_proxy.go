@@ -159,8 +159,9 @@ func (s *GitHTTPProxyService) ProxyReceivePack(
 		return err
 	}
 	// RFD-004: refs/smithers/ is the control plane's namespace. A workspace
-	// credential may write only its own head ref; nothing else may write there.
-	if msg := repohost.ReservedRefViolation(commands, workspaceID); msg != "" {
+	// credential may write only its own head ref; a user credential only its
+	// own refs/smithers/users/<id>/ (#1964); nothing else may write there.
+	if msg := repohost.ReservedRefViolation(commands, workspaceID, user.ID); msg != "" {
 		return errors.Forbidden(msg)
 	}
 

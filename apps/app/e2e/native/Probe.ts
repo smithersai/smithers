@@ -19,6 +19,9 @@ export interface ProbeScenario {
   /** What the host says when asked to open a URL in the system browser. */
   readonly openExternalAnswer?: boolean
   readonly exercises?: ReadonlyArray<ProbeExercise>
+  /** URLs the host delivers through Electrobun's "open-url" event: before the entrypoint loads, then after. */
+  readonly openUrlsAtLaunch?: ReadonlyArray<string>
+  readonly openUrlsAfterStart?: ReadonlyArray<string>
 }
 
 export interface RecordedWindow {
@@ -29,6 +32,8 @@ export interface RecordedWindow {
   readonly activate: unknown
   /** True when the window was handed the very object BrowserView.defineRPC returned. */
   readonly rpcBound: boolean
+  /** Every URL the entrypoint loaded into the window after constructing it. */
+  readonly loaded: ReadonlyArray<string>
 }
 
 export interface NativeProbeReport {

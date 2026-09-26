@@ -867,7 +867,10 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 	if peekErr != nil {
 		return badRequest("malformed receive-pack command list")
 	}
+	// The API sets X-Smithers-Pusher-Id from the credential it authenticated;
+	// it names whose refs/smithers/users/<id>/ namespace this push may write.
 	if msg := repohost.ControlPlaneRefViolation(commands, r.Header.Get("X-Smithers-Workspace-Id"),
+		pushHookSenderFromHeaders(r.Header).PusherID,
 		r.Header.Get("X-Smithers-Control-Plane") == "mythical"); msg != "" {
 		return forbidden(msg)
 	}

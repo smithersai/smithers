@@ -86,6 +86,26 @@ func TestGitHTTPProxyService_ReceivePack_ReservedRefs(t *testing.T) {
 		assert.Equal(t, 403, apiStatus(t, err))
 		assert.Equal(t, 0, repoHost.receivePackCall)
 	})
+	t.Run("user token writes its own refs/smithers/users/<id>/ and repo-host learns the pusher", func(t *testing.T) {
+		svc, repoHost := newReservedRefProxy(t, "write:repository")
+		require.NoError(t, push(svc, repohost.UserRef(10, "head")))
+		assert.Equal(t, 1, repoHost.receivePackCall)
+		assert.Equal(t, int64(10), repoHost.lastReceiveMeta.PusherID)
+	})
+	t.Run("user token cannot write another user's refs/smithers/users/<id>/", func(t *testing.T) {
+		svc, repoHost := newReservedRefProxy(t, "write:repository")
+		err := push(svc, repohost.UserRef(11, "head"))
+		require.Error(t, err)
+		assert.Equal(t, 403, apiStatus(t, err))
+		assert.Equal(t, 0, repoHost.receivePackCall)
+	})
+	t.Run("workspace token cannot write its user's refs/smithers/users/<id>/", func(t *testing.T) {
+		svc, repoHost := newReservedRefProxy(t, "write:repository,repo:314,workspace:"+reservedRefsWorkspace)
+		err := push(svc, repohost.UserRef(10, "head"))
+		require.Error(t, err)
+		assert.Equal(t, 403, apiStatus(t, err))
+		assert.Equal(t, 0, repoHost.receivePackCall)
+	})
 	t.Run("workspace token cannot push a bookmark", func(t *testing.T) {
 		svc, repoHost := newReservedRefProxy(t, "write:repository,repo:314,workspace:"+reservedRefsWorkspace)
 		err := push(svc, "refs/heads/main")

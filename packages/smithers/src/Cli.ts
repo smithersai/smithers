@@ -25,6 +25,7 @@ import * as DoctorCmd from "./commands/Doctor.ts"
 import * as GcCmd from "./commands/Gc.ts"
 import type * as Globals from "./commands/Globals.ts"
 import * as MigrateCmd from "./commands/Migrate.ts"
+import * as OpenCmd from "./commands/Open.ts"
 import * as TuiCmd from "./commands/Tui.ts"
 import * as UpdateCmd from "./commands/Update.ts"
 import { didYouMean } from "./DidYouMean.ts"
@@ -240,6 +241,16 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
           config.exit?.(Suggest.exitStatus(outcome))
           return json ? { ...outcome, documents } : undefined
         })
+    })
+    .command("open", {
+      description: "Open this checkout's repository in the Smithers app; `smthrs .` is the same",
+      mcp: false,
+      args: z.object({ directory: z.string().optional().describe("Checkout directory; defaults to cwd") }),
+      run: (c) =>
+        Presentation.guard(
+          c,
+          () => OpenCmd.open(OpenCmd.processHost(config.environment ?? process.env), c.args.directory)
+        )
     })
     .command("tui", {
       description: "Open the terminal coding agent",

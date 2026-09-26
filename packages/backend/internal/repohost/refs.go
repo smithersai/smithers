@@ -2,6 +2,7 @@ package repohost
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -73,6 +74,42 @@ const (
 	MythicalReservedRefNS = ReservedRefPrefix + "mythical/"
 )
 
+// UserRefPrefix holds work a user pushes from a local checkout (#1964):
+// refs/smithers/users/<user id>/<name>, written only by that user. Under
+// refs/smithers/ it is inert like every control-plane ref: no bookmark, no
+// push hook, no jj import, no GitHub mirror. The numeric id, never the login,
+// names the owner: a login can be renamed and reused, and internal pushers
+// carry fixed logins.
+const UserRefPrefix = ReservedRefPrefix + "users/"
+
+var userRefName = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
+
+// UserRef returns a user's ref for one pushed name.
+func UserRef(userID int64, name string) string {
+	return UserRefPrefix + strconv.FormatInt(userID, 10) + "/" + name
+}
+
+// UserIDFromRef parses refs/smithers/users/<id>/<name>. The id is canonical
+// decimal and positive; the name is one or more [A-Za-z0-9._-] segments,
+// none of them "." or "..", none ending in ".lock".
+func UserIDFromRef(ref string) (int64, bool) {
+	rest, ok := strings.CutPrefix(ref, UserRefPrefix)
+	if !ok {
+		return 0, false
+	}
+	idText, name, ok := strings.Cut(rest, "/")
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if !ok || err != nil || id <= 0 || strconv.FormatInt(id, 10) != idText || !userRefName.MatchString(name) {
+		return 0, false
+	}
+	for _, segment := range strings.Split(name, "/") {
+		if segment == "." || segment == ".." || strings.HasSuffix(segment, ".lock") || strings.HasPrefix(segment, ".") {
+			return 0, false
+		}
+	}
+	return id, true
+}
+
 // IsMythicalRef reports whether ref belongs to the mythical stack service.
 func IsMythicalRef(ref string) bool {
 	return ref == MythicalBookmarkRef || ref == MythicalNotesRef || strings.HasPrefix(ref, MythicalReservedRefNS)
@@ -83,20 +120,23 @@ func IsMythicalRef(ref string) bool {
 // allowed, or the reason it must be refused.
 //
 // workspaceID is the workspace a workspace-restricted credential is bound to
-// ("" for every other credential). Rules:
+// ("" for every other credential); pusherID is the authenticated user (0 when
+// none, as for internal pushers). Rules:
 //   - nothing may write under refs/jj/: jj owns that namespace, and its
 //     refs/jj/keep/* pins are what keep jj-only commits safe from git gc;
 //   - a ref under refs/smithers/ must be a workspace head ref, and only the
 //     owning workspace's credential may update it;
-//   - a workspace credential may update nothing but its own head ref.
-func ReservedRefViolation(commands []ReceivePackCommand, workspaceID string) string {
-	return ControlPlaneRefViolation(commands, workspaceID, false)
+//   - a workspace credential may update nothing but its own head ref;
+//   - refs/smithers/users/<id>/<name> may be written only by user <id>
+//     through a user credential.
+func ReservedRefViolation(commands []ReceivePackCommand, workspaceID string, pusherID int64) string {
+	return ControlPlaneRefViolation(commands, workspaceID, pusherID, false)
 }
 
 // ControlPlaneRefViolation is ReservedRefViolation for a push the API made
 // on its own behalf. Only such a push (controlPlane, never set from a
 // client) may write the mythical stack's refs, and it may write nothing else.
-func ControlPlaneRefViolation(commands []ReceivePackCommand, workspaceID string, controlPlane bool) string {
+func ControlPlaneRefViolation(commands []ReceivePackCommand, workspaceID string, pusherID int64, controlPlane bool) string {
 	workspaceID = strings.ToLower(strings.TrimSpace(workspaceID))
 	for _, command := range commands {
 		ref := strings.TrimSpace(command.RefName)
@@ -115,6 +155,13 @@ func ControlPlaneRefViolation(commands []ReceivePackCommand, workspaceID string,
 		if !strings.HasPrefix(ref, ReservedRefPrefix) {
 			if workspaceID != "" {
 				return "workspace credentials may only update the workspace head ref"
+			}
+			continue
+		}
+		if strings.HasPrefix(ref, UserRefPrefix) {
+			owner, ok := UserIDFromRef(ref)
+			if !ok || workspaceID != "" || pusherID <= 0 || owner != pusherID {
+				return "refs/smithers/users/<id>/<name> is written only by user <id>"
 			}
 			continue
 		}

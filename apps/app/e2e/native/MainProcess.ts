@@ -49,8 +49,25 @@ interface RpcConfig {
   }
 }
 
+const listeners = new Map<string, Array<(event: unknown) => void>>()
+/*
+ * A cold launch by URL: macOS delivers the link as the SDK initializes, so a
+ * launch URL is emitted the moment the entrypoint registers its listener.
+ */
+const launchUrls = [...(scenario.openUrlsAtLaunch ?? [])]
+const emit = (name: string, data: unknown): void => {
+  for (const listener of listeners.get(name) ?? []) listener({ name, data })
+}
+
 const fakeSdk = {
-  default: { events: { on: () => {} } },
+  default: {
+    events: {
+      on: (name: string, listener: (event: unknown) => void) => {
+        listeners.set(name, [...(listeners.get(name) ?? []), listener])
+        if (name === "open-url") for (const url of launchUrls.splice(0)) emit(name, { url })
+      }
+    }
+  },
   BuildConfig: {
     getSync: () => ({
       isPackaged: false,
@@ -67,16 +84,21 @@ const fakeSdk = {
     }
   },
   BrowserWindow: class FakeBrowserWindow {
+    readonly webview: { readonly loadURL: (url: string) => void }
     constructor(options: { title: unknown; url: unknown; frame: unknown; rpc: unknown; hidden: unknown; activate: unknown }) {
+      const loaded: Array<string> = []
       windows.push({
         title: options.title,
         url: options.url,
         frame: options.frame,
         hidden: options.hidden,
         activate: options.activate,
-        rpcBound: options.rpc === fakeRpc
+        rpcBound: options.rpc === fakeRpc,
+        loaded
       })
+      this.webview = { loadURL: (url) => { loaded.push(url) } }
     }
+    activate(): void {}
   },
   Screen: {
     captureRegion: () => null
@@ -99,6 +121,8 @@ const hostOs = { ...os, homedir: () => probeHome }
 mock.module("node:os", () => hostOs)
 
 await import("../../src/bun/index.ts")
+
+for (const url of scenario.openUrlsAfterStart ?? []) emit("open-url", { url })
 
 for (const exercise of scenario.exercises ?? []) {
   const handler = handlers[exercise.request]

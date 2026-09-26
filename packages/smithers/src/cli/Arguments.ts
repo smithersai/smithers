@@ -57,6 +57,8 @@ export const normalizeArguments = (args: ReadonlyArray<string>): Array<string> =
   const index = parsed.restIndices[offset] ?? args.length
   const command = args[index]
   if (command === undefined) return [...args]
+  // `smthrs .` opens the checkout in the app (commands/Open.ts).
+  if (command === ".") return normalizeArguments([...args.slice(0, index), "open", ".", ...args.slice(index + 1)])
   const bare = command.startsWith("//") || command.startsWith(":")
   const generator = command === "generate" && ["ci", "package"].includes(args[index + 1] ?? "")
   if (!bare && !targets.has(command) && !generator) {

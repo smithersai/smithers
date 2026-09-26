@@ -26,7 +26,7 @@ func TestReservedWorkspaceSourcesAreImmutableAndOwned(t *testing.T) {
 		{"root", mine, WorkspaceSourceRef(mine, zero), zero, zero, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			message := ReservedRefViolation([]ReceivePackCommand{{RefName: tc.ref, OldOID: tc.old, NewOID: tc.next}}, tc.owner)
+			message := ReservedRefViolation([]ReceivePackCommand{{RefName: tc.ref, OldOID: tc.old, NewOID: tc.next}}, tc.owner, 0)
 			if (message != "") != tc.denied {
 				t.Fatalf("violation=%q denied=%v", message, tc.denied)
 			}
@@ -84,7 +84,7 @@ func TestReservedRefViolation(t *testing.T) {
 			for _, ref := range tc.refs {
 				commands = append(commands, ReceivePackCommand{RefName: ref, OldOID: "0", NewOID: "1"})
 			}
-			msg := ReservedRefViolation(commands, tc.workspace)
+			msg := ReservedRefViolation(commands, tc.workspace, 0)
 			if (msg != "") != tc.denied {
 				t.Fatalf("violation=%q denied=%v", msg, tc.denied)
 			}
@@ -121,13 +121,57 @@ func TestControlPlaneRefViolation(t *testing.T) {
 			for _, ref := range tc.refs {
 				commands = append(commands, ReceivePackCommand{RefName: ref, OldOID: "0", NewOID: "1"})
 			}
-			msg := ControlPlaneRefViolation(commands, tc.workspace, tc.controlPlane)
+			msg := ControlPlaneRefViolation(commands, tc.workspace, 0, tc.controlPlane)
 			if (msg != "") != tc.denied {
 				t.Fatalf("violation=%q denied=%v", msg, tc.denied)
 			}
 		})
 	}
-	if ReservedRefViolation([]ReceivePackCommand{{RefName: MythicalBookmarkRef}}, "") == "" {
+	if ReservedRefViolation([]ReceivePackCommand{{RefName: MythicalBookmarkRef}}, "", 0) == "" {
 		t.Fatal("the ordinary policy must refuse the mythical bookmark")
+	}
+}
+
+// A user's pushed local work (#1964) lives under that user's numeric id and
+// nobody else's credential may write there.
+func TestUserRefViolation(t *testing.T) {
+	workspace := "0f8fad5b-d9cb-469f-a165-70867728950e"
+	cases := []struct {
+		name         string
+		refs         []string
+		workspace    string
+		pusher       int64
+		controlPlane bool
+		denied       bool
+	}{
+		{"owner creates", []string{UserRef(42, "head")}, "", 42, false, false},
+		{"owner nests a name", []string{UserRef(42, "feature/x.y_z-1")}, "", 42, false, false},
+		{"owner writes two", []string{UserRef(42, "a"), UserRef(42, "b")}, "", 42, false, false},
+		{"another user", []string{UserRef(42, "head")}, "", 43, false, true},
+		{"no pusher", []string{UserRef(42, "head")}, "", 0, false, true},
+		{"workspace credential of the owner", []string{UserRef(42, "head")}, workspace, 42, false, true},
+		{"control plane", []string{UserRef(42, "head")}, "", 42, true, true},
+		{"owner with main", []string{UserRef(42, "head"), "refs/heads/main"}, "", 42, false, false},
+		{"no name", []string{UserRefPrefix + "42/"}, "", 42, false, true},
+		{"bare id", []string{UserRefPrefix + "42"}, "", 42, false, true},
+		{"prefix only", []string{UserRefPrefix}, "", 42, false, true},
+		{"non-canonical id", []string{UserRefPrefix + "042/head"}, "", 42, false, true},
+		{"login instead of id", []string{UserRefPrefix + "will/head"}, "", 42, false, true},
+		{"dot segment", []string{UserRefPrefix + "42/a/../b"}, "", 42, false, true},
+		{"lock suffix", []string{UserRefPrefix + "42/head.lock"}, "", 42, false, true},
+		{"hidden segment", []string{UserRefPrefix + "42/.head"}, "", 42, false, true},
+		{"empty segment", []string{UserRefPrefix + "42/a//b"}, "", 42, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			commands := make([]ReceivePackCommand, 0, len(tc.refs))
+			for _, ref := range tc.refs {
+				commands = append(commands, ReceivePackCommand{RefName: ref, OldOID: "0", NewOID: "1"})
+			}
+			msg := ControlPlaneRefViolation(commands, tc.workspace, tc.pusher, tc.controlPlane)
+			if (msg != "") != tc.denied {
+				t.Fatalf("violation=%q denied=%v", msg, tc.denied)
+			}
+		})
 	}
 }

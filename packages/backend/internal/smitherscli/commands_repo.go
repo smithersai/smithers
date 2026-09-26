@@ -297,6 +297,7 @@ func repoCommand() *incur.Cli {
 			return "Mirror sync run " + runID + " started for " + owner + "/" + repoName, nil
 		},
 	})
+	cmd.Command("push", repoPushCommand())
 	cmd.Command("clone", &incur.CommandDef{
 		Description: "Clone a repository",
 		ArgsSchema:  objectSchema(nil, map[string]*incur.JSONSchema{"repo": stringSchema("Repository in OWNER/REPO format or URL")}),

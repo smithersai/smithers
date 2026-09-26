@@ -178,6 +178,8 @@ describe("the native RPC surface", () => {
     expect(report.results["bootstrap-token"]).toEqual({ token: null })
   }, PROBE_BUDGET_MS)
 
+  // smithers:// is inbound only (the "open-url" tests below): the page may
+  // not relaunch the app through the system browser door.
   test("openExternal refuses every scheme but http and https", async () => {
     const refused = ["file:///etc/passwd", "smithers://x", "javascript:alert(1)", "not a url", ""]
     const report = await probe({
@@ -227,5 +229,36 @@ describe("the native RPC surface", () => {
       }
     })
     expect(report.results.denied).toEqual({ opened: false })
+  }, PROBE_BUDGET_MS)
+})
+
+describe("smithers://open/<owner>/<repo> opens that repository page", () => {
+  test("a cold launch by URL becomes the window's first page", async () => {
+    const report = await probe({ scenario: { openUrlsAtLaunch: ["smithers://open/smithersai/smithers"] } })
+    expect(report.windows).toHaveLength(1)
+    expect(report.windows[0]?.url).toBe(`${report.origin}/smithersai/smithers`)
+    expect(report.windows[0]?.loaded).toEqual([])
+  }, PROBE_BUDGET_MS)
+
+  test("the dev build receives the same link through SMITHERS_OPEN_URL", async () => {
+    const report = await probe({ env: { SMITHERS_OPEN_URL: "smithers://open/acme/widgets" } })
+    expect(report.windows[0]?.url).toBe(`${report.origin}/acme/widgets`)
+  }, PROBE_BUDGET_MS)
+
+  test("a link while running navigates the open window; anything else is refused", async () => {
+    const report = await probe({
+      scenario: {
+        openUrlsAtLaunch: ["smithers://x"],
+        openUrlsAfterStart: [
+          "smithers://open/acme/widgets",
+          "smithers://open/acme/widgets?next=https://evil.example",
+          "smithers://open/acme/widgets/extra",
+          "file:///etc/passwd"
+        ]
+      }
+    })
+    expect(report.windows[0]?.url).toBe(`${report.origin}/`)
+    expect(report.windows[0]?.loaded).toEqual([`${report.origin}/acme/widgets`])
+    expect(report.openedExternally).toEqual([])
   }, PROBE_BUDGET_MS)
 })

@@ -14,10 +14,32 @@ import { createNativeShutdown } from "./NativeShutdown"
 import { defaultDistDir, startLocalServer } from "./server"
 import { nativeStateDirectory } from "./NativeState"
 import { startNativeRendererServer } from "./NativeRendererServer"
+import { deepLinkPath } from "./DeepLink"
 
 // This must stay dynamic: Bun hoists external static imports even from lazy
 // local modules. A daemon must never dlopen/initialize Electrobun's native SDK.
 const { default: Electrobun, BrowserView, BrowserWindow, BuildConfig, Screen, Utils } = await import("electrobun/main")
+
+/*
+ * `smithers://open/<owner>/<repo>` (DeepLink.ts). Registered before anything
+ * awaits: a cold launch by URL delivers it while the backend is still
+ * starting, before a window exists, so the newest valid link waits in
+ * `pendingDeepLink` and becomes the window's first URL. `SMITHERS_OPEN_URL`
+ * is the same link for the dev build `smthrs open` starts.
+ */
+let pendingDeepLink: string | undefined
+let openDeepLink: ((path: string) => void) | undefined
+const receiveDeepLink = (url: string): void => {
+  const path = deepLinkPath(url)
+  if (path === null) {
+    console.error("Refused a smithers:// link that is not smithers://open/<owner>/<repo>.")
+    return
+  }
+  if (openDeepLink === undefined) pendingDeepLink = path
+  else openDeepLink(path)
+}
+Electrobun.events.on("open-url", (event: { readonly data: { readonly url: string } }) => receiveDeepLink(event.data.url))
+if (Bun.env.SMITHERS_OPEN_URL) receiveDeepLink(Bun.env.SMITHERS_OPEN_URL)
 
 const headless = Bun.env.SMITHERS_LOCAL_HEADLESS === "1"
 const hiddenE2EWindow = Bun.env.SMITHERS_E2E_BRIDGE === "1" && Bun.env.SMITHERS_NATIVE_E2E_VISIBLE !== "1"
@@ -159,7 +181,7 @@ if (headless) {
   // The local origin, never views:// and never a Vite dev server.
   mainWindow = new BrowserWindow({
     title: "Smithers",
-    url: `${backend.rendererOrigin}/`,
+    url: `${backend.rendererOrigin}${pendingDeepLink ?? "/"}`,
     rpc,
     hidden: hiddenE2EWindow,
     activate: !hiddenE2EWindow,
@@ -170,6 +192,11 @@ if (headless) {
       y: 60
     }
   })
+  const window = mainWindow
+  openDeepLink = (path) => {
+    window.webview.loadURL(`${backend.rendererOrigin}${path}`)
+    void window.activate()
+  }
 }
 
 interface RendererEvalResponse {

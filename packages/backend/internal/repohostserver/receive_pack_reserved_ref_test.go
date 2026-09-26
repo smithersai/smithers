@@ -27,9 +27,12 @@ func reservedPushCommand(oid, ref string) string {
 	}
 }
 
-func postReceivePack(t *testing.T, f *laneHTTPFixture, body []byte) *httptest.ResponseRecorder {
+func postReceivePack(t *testing.T, f *laneHTTPFixture, body []byte, headers ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/repos/alice/demo/git/receive-pack", bytes.NewReader(body))
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
+	}
 	req.Header.Set("Authorization", validAuth())
 	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
 	req.Header.Set("Accept", "application/x-git-receive-pack-result")
@@ -79,6 +82,31 @@ func TestReceivePackRefusesOversizedCommandSection(t *testing.T) {
 	for ref := range f.repo.refs() {
 		assert.False(t, strings.HasPrefix(ref, "refs/heads/fill-"), "filler ref written: %s", ref)
 	}
+}
+
+// refs/smithers/users/<id>/ is writable only with the pusher id the API
+// attributes; with none, or another user's, repo-host refuses it (#1964).
+func TestReceivePackUserRefsFollowThePusherID(t *testing.T) {
+	ref := "refs/smithers/users/42/head"
+	body := func(f *laneHTTPFixture) []byte {
+		line := reservedPushCommand(f.base, ref)
+		return append([]byte(fmt.Sprintf("%04x%s0000", len(line)+4, line)), emptyPack()...)
+	}
+	for _, pusher := range []string{"", "43", "0"} {
+		f := newLaneHTTPFixture(t, nil)
+		rec := postReceivePack(t, f, body(f), "X-Smithers-Pusher-Id", pusher)
+		require.Equal(t, http.StatusForbidden, rec.Code, "pusher %q: %s", pusher, rec.Body.String())
+		assertNoReservedRefs(t, f)
+	}
+	f := newLaneHTTPFixture(t, nil)
+	line := reservedPushCommand(f.base, ref)
+	rec := postReceivePack(t, f, append([]byte(fmt.Sprintf("%04x%s0000", len(line)+4, line)), emptyPack()...), "X-Smithers-Pusher-Id", "42")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	written := false
+	for name := range f.repo.refs() {
+		written = written || strings.HasPrefix(name, "refs/smithers/users/42/head")
+	}
+	assert.True(t, written, "the owner's ref must be written")
 }
 
 // emptyPack is a valid version-2 pack holding zero objects.

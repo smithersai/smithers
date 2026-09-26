@@ -1194,9 +1194,14 @@ func (s *Server) proxyReceivePack(ctx context.Context, sess ssh.Session, owner, 
 	if err := s.rejectProtectedBookmarkPush(ctx, sess, owner, repo, commands); err != nil {
 		return err
 	}
-	// RFD-004: SSH sessions are user keys, never workspace credentials, so no
-	// SSH push may write under refs/smithers/.
-	if msg := repohost.ReservedRefViolation(commands, ""); msg != "" {
+	// RFD-004: SSH sessions are user keys, never workspace credentials, so an
+	// SSH push may write under refs/smithers/ only its user's own
+	// refs/smithers/users/<id>/ namespace; a deploy key has none.
+	userID := pusher.UserID
+	if pusher.IsDeployKey {
+		userID = 0
+	}
+	if msg := repohost.ReservedRefViolation(commands, "", userID); msg != "" {
 		_, _ = fmt.Fprintf(sess.Stderr(), "ERROR: %s\n", msg)
 		return fmt.Errorf("reserved ref rejected direct push: %s", msg)
 	}
