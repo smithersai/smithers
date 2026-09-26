@@ -149,6 +149,10 @@ type WorkflowSandboxSchedulerWorker struct {
 	ciGuests WorkflowCIGuestProvisioner
 	// ciPollInterval is the live-log flush cadence for NixOS CI guests.
 	ciPollInterval time.Duration
+	// ciJobCredentials mints each NixOS CI job's cache/artifact token, and
+	// ciInternalBaseURL is where the guest reaches the /internal routes.
+	ciJobCredentials  WorkflowCIJobCredentialStore
+	ciInternalBaseURL string
 
 	// terminalPublisher settles the commit status, check run and workflow_run
 	// webhook the run announced at creation, and fires downstream triggers.

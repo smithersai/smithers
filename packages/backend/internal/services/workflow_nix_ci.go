@@ -91,12 +91,13 @@ type nixCITaskQuerier interface {
 // nixCITaskPayload is the slice of the workflow_tasks payload the NixOS guest
 // needs. It is written by createWorkflowRunRows and read by both planes.
 type nixCITaskPayload struct {
-	Job    string                 `json:"job"`
-	Steps  []StepConfig           `json:"steps"`
-	Needs  []string               `json:"needs"`
-	If     string                 `json:"if"`
-	Event  string                 `json:"event"`
-	Inputs map[string]interface{} `json:"inputs"`
+	Job    string                    `json:"job"`
+	Steps  []StepConfig              `json:"steps"`
+	Needs  []string                  `json:"needs"`
+	If     string                    `json:"if"`
+	Event  string                    `json:"event"`
+	Inputs map[string]interface{}    `json:"inputs"`
+	Cache  []WorkflowCacheDescriptor `json:"cache"`
 }
 
 // nixCITask couples a persisted task row with its decoded payload.
@@ -111,6 +112,7 @@ type nixCITask struct {
 	Needs         []string
 	If            string
 	Event         TriggerEvent
+	Cache         []WorkflowCacheDescriptor
 }
 
 // nixCITaskOutcome is the terminal state one task reached.
@@ -174,6 +176,7 @@ func loadNixCITasks(ctx context.Context, q nixCITaskQuerier, runID, repositoryID
 			Needs:         payload.Needs,
 			If:            payload.If,
 			Event:         TriggerEvent{Type: payload.Event, Inputs: payload.Inputs},
+			Cache:         payload.Cache,
 		})
 	}
 	return tasks, nil
@@ -185,10 +188,18 @@ func loadNixCITasks(ctx context.Context, q nixCITaskQuerier, runID, repositoryID
 // semantics the deleted 0.x step runner had: the first failing step ends the
 // job. `uses:` steps are not supported on this plane yet and fail loudly
 // rather than being silently skipped.
+//
+// The job's `cache:` descriptors are restored before the first step and saved
+// only after every step succeeded, as the runner did; the smithers-ci helper
+// on PATH also serves `smithers-ci artifact upload|download` to the steps.
 func nixCITaskCommand(task nixCITask) (string, error) {
 	lines := []string{
 		"set -euo pipefail",
+		"export PATH=" + shellQuote(nixCIToolBinDir) + `:"$PATH"`,
 		"cd " + shellQuote(nixCITaskWorkdir),
+	}
+	if nixCIHasCacheAction(task, "restore") {
+		lines = append(lines, "smithers-ci cache restore "+shellQuote(nixCICacheDescriptors)+" "+shellQuote(nixCICacheState))
 	}
 	ran := 0
 	for i, step := range task.Steps {
@@ -209,6 +220,9 @@ func nixCITaskCommand(task nixCITask) (string, error) {
 	if ran == 0 {
 		return "", fmt.Errorf("job %s declares no run steps", task.Job)
 	}
+	if nixCIHasCacheAction(task, "save") {
+		lines = append(lines, "smithers-ci cache save "+shellQuote(nixCICacheDescriptors)+" "+shellQuote(nixCICacheState))
+	}
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
@@ -217,11 +231,18 @@ func nixCITaskCommand(task nixCITask) (string, error) {
 // the exit status to a file only after the command exits makes that file's
 // existence the single completion signal — no process table scraping, which is
 // what made the Debian runner image need `ps` in the first place.
-func nixCIStartCommand(script string) string {
+func nixCIStartCommand(task nixCITask, script string) string {
 	return strings.Join([]string{
 		"set -euo pipefail",
-		"mkdir -p " + shellQuote(nixCITaskLogDir),
-		"rm -f " + shellQuote(nixCITaskLogPath) + " " + shellQuote(nixCITaskExitPath),
+		"mkdir -p " + shellQuote(nixCITaskLogDir) + " " + shellQuote(nixCIToolBinDir),
+		"rm -f " + shellQuote(nixCITaskLogPath) + " " + shellQuote(nixCITaskExitPath) + " " + shellQuote(nixCICacheState),
+		"cat > " + shellQuote(nixCIToolHelperPath) + " <<'SMITHERS_CI_HELPER_EOF'",
+		strings.TrimRight(nixCIGuestHelper, "\n"),
+		"SMITHERS_CI_HELPER_EOF",
+		"chmod 0755 " + shellQuote(nixCIToolHelperPath),
+		"cat > " + shellQuote(nixCICacheDescriptors) + " <<'SMITHERS_CI_CACHE_EOF'",
+		nixCICacheDescriptorsJSON(task),
+		"SMITHERS_CI_CACHE_EOF",
 		"cat > " + shellQuote(nixCITaskScriptPath) + " <<'SMITHERS_CI_EOF'",
 		strings.TrimRight(script, "\n"),
 		"SMITHERS_CI_EOF",
@@ -498,9 +519,37 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCITask(
 	})
 	_, _ = w.queries.UpdateWorkflowStepStatusRunning(ctx, task.StepID)
 
+	// The job token reaches only this guest, only through the job's exec
+	// environment, and is deleted when the job ends (the deferred revoke runs
+	// before the guest is destroyed and after the task is terminal).
+	jobEnv, revokeJobToken, err := w.issueNixCIJobToken(ctx, task, env.RepositoryID)
+	defer revokeJobToken()
+	if err != nil {
+		logger.Warn("failed to issue NixOS CI job token", "error", err)
+	}
+	if len(jobEnv) == 0 && len(task.Cache) > 0 {
+		w.appendNixCILog(ctx, task, "system", "[cache] unavailable")
+	}
+	if len(jobEnv) > 0 {
+		secrets := make(map[string]string, len(env.Secrets)+len(jobEnv))
+		for name, value := range env.Secrets {
+			secrets[name] = value
+		}
+		redactEnv := make(map[string]string, len(env.RedactEnv)+1)
+		for name, value := range env.RedactEnv {
+			redactEnv[name] = value
+		}
+		for name, value := range jobEnv {
+			secrets[name] = value
+		}
+		redactEnv["SMITHERS_CI_JOB_TOKEN"] = jobEnv["SMITHERS_CI_JOB_TOKEN"]
+		env.Secrets = secrets
+		env.RedactEnv = redactEnv
+	}
+
 	startTimeout := int64(nixCIPollTimeout / time.Millisecond)
 	if _, err := w.sandbox.Execute(taskCtx, vmID, sandbox.ExecRequest{
-		Command:   nixCIStartCommand(script),
+		Command:   nixCIStartCommand(task, script),
 		TimeoutMS: &startTimeout,
 		Secrets:   env.Secrets,
 	}); err != nil {

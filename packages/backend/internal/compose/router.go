@@ -284,8 +284,15 @@ func buildRouter(
 				r.Post("/workspace/{id}/head", workspaceInternalHandler.PostWorkspaceHead)
 			}
 		})
+		// Workflow cache and artifact routes also accept a CI job token: the
+		// per-job credential the sandbox scheduler hands each NixOS CI guest.
+		// Agent-session routes below stay per-run-agent-token only.
+		var jobTokens middleware.CIJobTokenQuerier
+		if queries != nil {
+			jobTokens = queries
+		}
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAgentToken(querier))
+			r.Use(middleware.RequireWorkflowRunCredential(querier, jobTokens))
 			if workflowCacheHandler != nil {
 				r.With(gateWorkflows).Post("/caches/restore", workflowCacheHandler.Restore)
 				r.With(gateWorkflows).Post("/caches/save", workflowCacheHandler.BeginSave)
@@ -297,6 +304,9 @@ func buildRouter(
 				r.With(gateWorkflows).Post("/runs/{id}/artifacts/confirm", workflowArtifactHandler.PostInternalConfirm)
 				r.With(gateWorkflows).Get("/runs/{id}/artifacts/{name}/download", workflowArtifactHandler.GetInternalDownloadURL)
 			}
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAgentToken(querier))
 			if agentInternalHandler != nil {
 				r.Post("/agent/sessions/{session_id}/events", agentInternalHandler.PostSessionEvent)
 			}
@@ -1366,6 +1376,9 @@ func buildRouter(
 					r.With(workflowReadRepo...).Get("/actions/runs/{id}/artifacts/{name}/download", workflowArtifactHandler.GetDownloadURL)
 					r.With(workflowReadRepo...).Get("/workflow/runs/{id}/artifacts", workflowArtifactHandler.ListArtifacts)
 					r.With(workflowReadRepo...).Get("/workflow/runs/{id}/artifacts/{name}", workflowArtifactHandler.GetDownloadURL)
+					// Canonical `/runs/{id}/...` aliases (ticket 0111).
+					r.With(workflowReadRepo...).Get("/runs/{id}/artifacts", workflowArtifactHandler.ListArtifacts)
+					r.With(workflowReadRepo...).Get("/runs/{id}/artifacts/{name}/download", workflowArtifactHandler.GetDownloadURL)
 				}
 
 				// Ticket 12: agent sessions / messages — gated by feature_flags.agents.

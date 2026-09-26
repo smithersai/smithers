@@ -857,6 +857,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			// NixOS CI: a sandbox-plane run with a rendered job graph runs each job
 			// in its own kind=vm guest, built by the same code a workspace uses.
 			services.WithWorkflowSandboxSchedulerCIGuests(workspaceService),
+			// Each CI job gets its own token for the /internal workflow cache
+			// and artifact routes, deleted when the job ends (smithers#1768).
+			services.WithWorkflowSandboxSchedulerCIJobCredentials(queries, publicBaseURL+"/internal"),
 			// The run service settles the commit status, check run and
 			// workflow_run webhook it announced when it created the run.
 			services.WithWorkflowSandboxSchedulerTerminalPublisher(workflowRunTerminalPublisher),

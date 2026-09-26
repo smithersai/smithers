@@ -252,3 +252,4 @@ credit_legacy_imports,product,product migration 0027
 canonical_import_receipts,product,product migration 0028
 workspace_provider_uses,product,product migration 0029
 model_usage,product,product migration 0030
+workflow_task_guest_tokens,product,product migration 0032

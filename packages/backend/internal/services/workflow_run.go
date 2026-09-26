@@ -116,6 +116,16 @@ type workflowRunCredentialRevoker interface {
 // of 0 skips jjhub token revocation (used at dispatch-abort time, before any
 // jjhub token could have been minted for the run).
 func RevokeWorkflowRunCredentials(ctx context.Context, queries any, runID, repositoryID int64) {
+	// NixOS CI job tokens die with their job; this sweeps any a crashed
+	// scheduler left behind. The middleware also rejects them once the run is
+	// terminal.
+	if jobTokens, ok := queries.(interface {
+		RevokeWorkflowRunGuestTokens(ctx context.Context, workflowRunID int64) error
+	}); ok {
+		if err := jobTokens.RevokeWorkflowRunGuestTokens(ctx, runID); err != nil {
+			middleware.LoggerWithWorkflowRun(ctx, runID).Warn("failed to revoke workflow run job tokens", "error", err)
+		}
+	}
 	revoker, ok := queries.(workflowRunCredentialRevoker)
 	if !ok {
 		return
