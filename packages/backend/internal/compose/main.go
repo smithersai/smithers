@@ -916,6 +916,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	mythicalService.SetWiki(wikiService)
 	mythicalService.SetOrchestration(services.NewMythicalGitHub(queries, repoConnectionService, gitHubUserReposService, repoConnectionService),
 		nil, services.NewWorkspaceMythicalLanes(workspaceService))
+	userRefHandler := &routes.UserRefHandler{Service: services.NewUserRefService(repoHostClient, queries)}
 	mythicalHandler := &routes.MythicalHandler{Service: mythicalService, Broker: sseBroker,
 		MainHead: func(ctx context.Context, owner, repo, bookmark string) (string, error) {
 			return mythicalService.MainHead(ctx, owner, repo, bookmark)
@@ -1446,7 +1447,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubWebhookHandler,
 		smithersMetrics,
 		routerExtras{Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler,
-			Mythical: mythicalHandler, ModelProxy: modelProxyHandler, AdminSystemStatus: adminSystemStatusHandler,
+			Mythical: mythicalHandler, UserRefs: userRefHandler, ModelProxy: modelProxyHandler, AdminSystemStatus: adminSystemStatusHandler,
 			AdminSystemHealth: adminSystemHealthHandler, AdminAnalytics: adminAnalyticsHandler,
 			AdminAgentSessions: &routes.AdminAgentSessionHandler{Service: adminManageService},
 			AdminWorkspaces:    &routes.AdminWorkspaceHandler{Service: adminManageService},

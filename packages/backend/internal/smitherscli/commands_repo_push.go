@@ -19,6 +19,12 @@ import (
 // namespace (repohost.UserRef); the ref is not a bookmark, so it never moves
 // main, starts no push hook, and is never mirrored to GitHub.
 //
+// Each user has at most 20 refs per repository, a push that writes one
+// carries at most 256 MiB, and a ref expires 30 days after its last push
+// (repo-host SMITHERS_USER_REF_*; #1968). Every push, even of an unchanged
+// commit, restarts that ref's expiry and answers expires_at; --list shows
+// them all.
+//
 // Auth is the product CLI login (`smithers auth login`, the keyring,
 // ~/.config/smithers/auth.json, or SMITHERS_TOKEN). The token reaches git
 // only as an Authorization header scoped to the API origin through
@@ -159,6 +165,10 @@ func runRepoPush(ctx *incur.CommandContext) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Your refs in this repository, when each expires, and the limits.
+	if ctx.Options["list"] == true {
+		return APIRequest("GET", "/api/repos/"+owner+"/"+repo+"/user-refs", nil, nil)
+	}
 	token, err := RequireAuthToken(nil)
 	if err != nil {
 		return nil, err
@@ -223,11 +233,19 @@ func runRepoPush(ctx *incur.CommandContext) (any, error) {
 	result["commit"] = checkout.commit
 	result["uncommitted"] = checkout.uncommitted
 	result["updated"] = previous != checkout.commit
-	if previous == checkout.commit {
-		return result, nil
+	if previous != checkout.commit {
+		if _, err := runGit(env, "--git-dir", checkout.gitDir, "push", "--force-with-lease="+ref+":"+previous, remote, checkout.commit+":"+ref); err != nil {
+			return result, err
+		}
 	}
-	_, err = runGit(env, "--git-dir", checkout.gitDir, "push", "--force-with-lease="+ref+":"+previous, remote, checkout.commit+":"+ref)
-	return result, err
+	// A pushed ref expires (#1968). An unchanged commit sends git nothing,
+	// so every push, even a no-op, restarts the expiry here.
+	renewed, err := APIRequest("POST", "/api/repos/"+owner+"/"+repo+"/user-refs/renew", map[string]any{"name": name}, nil)
+	if err != nil {
+		return result, fmt.Errorf("pushed %s, but could not renew its expiry: %w", ref, err)
+	}
+	result["expires_at"] = objectValue(renewed)["expires_at"]
+	return result, nil
 }
 
 func repoPushCommand() *incur.CommandDef {
@@ -238,6 +256,7 @@ func repoPushCommand() *incur.CommandDef {
 			"name":         {Type: "string", Description: "Ref name under refs/smithers/users/<your id>/", Default: defaultPushName},
 			"working-copy": booleanSchema("jj: push @ with uncommitted edits instead of @-", false),
 			"delete":       booleanSchema("Delete the ref instead", false),
+			"list":         booleanSchema("List your refs in this repository with their expiry instead", false),
 		}),
 		Handler: runRepoPush,
 	}

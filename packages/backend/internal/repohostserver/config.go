@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 )
@@ -29,6 +30,10 @@ type Config struct {
 	PushHookCallbackToken string
 	FFILibraryPath        string
 	Observability         config.ObservabilityConfig
+	// Per-user ref bounds (#1968); zero takes the repohost.DefaultUserRef* value.
+	UserRefLimit        int
+	UserRefMaxPushBytes int64
+	UserRefTTL          time.Duration
 }
 
 func LoadConfig() (Config, error) {
@@ -39,6 +44,10 @@ func LoadConfig() (Config, error) {
 		PushHookCallbackURL:   strings.TrimSpace(os.Getenv("SMITHERS_PUSH_HOOK_CALLBACK_URL")),
 		PushHookCallbackToken: strings.TrimSpace(os.Getenv("SMITHERS_PUSH_HOOK_CALLBACK_TOKEN")),
 		FFILibraryPath:        strings.TrimSpace(os.Getenv("SMITHERS_FFI_LIBRARY_PATH")),
+	}
+
+	if err := userRefBoundsFromEnv(&cfg); err != nil {
+		return Config{}, err
 	}
 
 	observability, err := observabilityFromEnv()
@@ -253,4 +262,32 @@ func ffiLibraryExtForOS(goos string) string {
 	default:
 		return "so"
 	}
+}
+
+// userRefBoundsFromEnv reads SMITHERS_USER_REF_LIMIT (refs per user per
+// repository), SMITHERS_USER_REF_MAX_PUSH_BYTES and SMITHERS_USER_REF_TTL (a
+// Go duration such as 720h).
+func userRefBoundsFromEnv(cfg *Config) error {
+	if raw := strings.TrimSpace(os.Getenv("SMITHERS_USER_REF_LIMIT")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit <= 0 {
+			return fmt.Errorf("SMITHERS_USER_REF_LIMIT must be a positive integer")
+		}
+		cfg.UserRefLimit = limit
+	}
+	if raw := strings.TrimSpace(os.Getenv("SMITHERS_USER_REF_MAX_PUSH_BYTES")); raw != "" {
+		size, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || size <= 0 || size > maxDecompressedGitRequestSize {
+			return fmt.Errorf("SMITHERS_USER_REF_MAX_PUSH_BYTES must be between 1 and %d", maxDecompressedGitRequestSize)
+		}
+		cfg.UserRefMaxPushBytes = size
+	}
+	if raw := strings.TrimSpace(os.Getenv("SMITHERS_USER_REF_TTL")); raw != "" {
+		ttl, err := time.ParseDuration(raw)
+		if err != nil || ttl <= 0 {
+			return fmt.Errorf("SMITHERS_USER_REF_TTL must be a positive duration such as 720h")
+		}
+		cfg.UserRefTTL = ttl
+	}
+	return nil
 }

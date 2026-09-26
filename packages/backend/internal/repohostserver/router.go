@@ -55,6 +55,7 @@ type Server struct {
 	background sync.WaitGroup
 	pushOutbox *pushHookOutbox
 	stopReplay context.CancelFunc
+	stopSweep  context.CancelFunc
 }
 
 type loadableFFIClient interface {
@@ -122,6 +123,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	server.startPushHookReplay(pushHookReplayInterval)
+	server.startUserRefSweep(userRefSweepInterval)
 	return server, nil
 }
 
@@ -233,6 +235,9 @@ func (s *Server) Handler() http.Handler {
 			r.Method(http.MethodPost, "/repos/{id}/land/append", s.withAppError(s.landAppend))
 			r.Method(http.MethodPost, "/repos/{id}/land/append/prepare", s.withAppError(s.prepareLandAppend))
 			r.Method(http.MethodPost, "/repos/{id}/workspace-source", s.withAppError(s.readWorkspaceSource))
+			r.Method(http.MethodGet, "/repos/{id}/user-refs/{user_id}", s.withAppError(s.listUserRefs))
+			r.Method(http.MethodPost, "/repos/{id}/user-refs/{user_id}/retain", s.withAppError(s.retainUserRef))
+			r.Method(http.MethodPost, "/repos/{id}/user-refs/{user_id}/renew", s.withAppError(s.renewUserRef))
 			r.Method(http.MethodPost, "/repos/{id}/superproject", s.withAppError(s.composeSuperproject))
 			r.Method(http.MethodGet, "/repos/{id}/superproject/{revision}", s.withAppError(s.getSuperproject))
 			r.Method(http.MethodGet, "/repos/{id}/operations", s.withAppError(s.listOperations))
@@ -265,6 +270,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) Shutdown(ctx context.Context) error {
 	if s.stopReplay != nil {
 		s.stopReplay()
+	}
+	if s.stopSweep != nil {
+		s.stopSweep()
 	}
 	done := make(chan struct{})
 	go func() {
@@ -509,6 +517,11 @@ func (s *Server) forkRepo(w http.ResponseWriter, r *http.Request) error {
 		_ = os.RemoveAll(dstPath)
 		return internalError("failed to copy repository", err)
 	}
+	// A user's pushed refs belong to the repository they pushed to.
+	if err := dropUserRefs(r.Context(), s.config.GitBackendPath(req.DstOwner, req.DstRepo)); err != nil {
+		_ = os.RemoveAll(dstPath)
+		return internalError("failed to copy repository", err)
+	}
 
 	return writeJSON(w, http.StatusCreated, map[string]string{
 		"src_owner": req.SrcOwner,
@@ -746,7 +759,7 @@ func (s *Server) infoRefs(w http.ResponseWriter, r *http.Request) error {
 	defer cancelCmd()
 	cmd := exec.CommandContext(cmdCtx, "git", gitCommand, "--stateless-rpc", "--advertise-refs", gitDir)
 	if gitCommand == "receive-pack" {
-		cmd.Env = receivePackEnv()
+		cmd.Env = receivePackEnv(maxDecompressedGitRequestSize)
 	}
 	var refStderr bytes.Buffer
 	cmd.Stderr = &refStderr
@@ -869,17 +882,36 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 	}
 	// The API sets X-Smithers-Pusher-Id from the credential it authenticated;
 	// it names whose refs/smithers/users/<id>/ namespace this push may write.
+	pusherID := pushHookSenderFromHeaders(r.Header).PusherID
 	if msg := repohost.ControlPlaneRefViolation(commands, r.Header.Get("X-Smithers-Workspace-Id"),
-		pushHookSenderFromHeaders(r.Header).PusherID,
-		r.Header.Get("X-Smithers-Control-Plane") == "mythical"); msg != "" {
+		pusherID, r.Header.Get("X-Smithers-Control-Plane") == "mythical"); msg != "" {
 		return forbidden(msg)
+	}
+	// #1968: a push that writes a user ref first expires stale ones, then
+	// may not leave its pusher over the ref limit, and its pack is capped.
+	maxInputSize := maxDecompressedGitRequestSize
+	userRefs := writesUserRef(commands)
+	if userRefs {
+		if _, err := s.reconcileUserRefs(r.Context(), gitDir, beforeRefs); err != nil {
+			return internalError("failed to expire user refs", err)
+		}
+		policy := s.config.userRefPolicy()
+		if msg := userRefPushViolation(commands, beforeRefs, pusherID, policy.limit); msg != "" {
+			return forbidden(msg)
+		}
+		maxInputSize = policy.maxPushBytes
 	}
 	// receive-pack responses are small (sideband status lines only), so we
 	// buffer them here. We must hold the full response in memory until after
 	// jj ref import and push hooks so we can still return an HTTP error if the
 	// git subprocess itself fails before any bytes are written to the client.
-	body, err := runGitRPCBuffered(r.Context(), gitDir, "receive-pack", readCloserWithBody(peeked, requestBody))
+	pushed := &countingReader{r: peeked}
+	body, err := runReceivePackBuffered(r.Context(), gitDir, readCloserWithBody(pushed, requestBody), maxInputSize)
 	gitErr := err
+	if gitErr != nil && userRefs && pushed.n > maxInputSize {
+		gitErr = &appError{StatusCode: http.StatusRequestEntityTooLarge, Code: "user_ref_push_too_large",
+			Message: fmt.Sprintf("a push to refs/smithers/users/ is capped at %d MiB", maxInputSize>>20)}
+	}
 
 	// git has applied the ref updates. A path-restricted push is authorized
 	// here, before jj imports anything, so jj never sees a ref it must later
@@ -922,6 +954,14 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 		}
 		s.pushOutbox.discard(outboxPaths)
 		return rollBackPublishedPush(enforceCtx, gitDir, beforeRefs, afterRefs, fmt.Errorf("import git refs after receive-pack: %w", err))
+	}
+
+	// Stamp only a push that stands. A lost stamp is not fatal: the ref is
+	// stamped when next seen, which only lengthens its life.
+	if userRefs {
+		if err := stampUserRefPushes(gitDir, commands, afterRefs); err != nil && s.logger != nil {
+			s.logger.Warn("user ref push time not recorded", "owner", owner, "repo", repo, "error", err)
+		}
 	}
 
 	// Pay the export here, while the write lock is already held, rather than

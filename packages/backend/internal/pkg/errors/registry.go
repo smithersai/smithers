@@ -142,6 +142,8 @@ const (
 	CodeWorkspaceSourceMissing        Code = "workspace_source_missing"
 	CodeWorkspaceSourceUnavailable    Code = "workspace_source_unavailable"
 	CodeWorkspaceSourceInvalidAck     Code = "workspace_source_invalid_ack"
+	CodeUserRefMissing                Code = "user_ref_missing"
+	CodeUserRefStack                  Code = "user_ref_stack"
 )
 
 // Native coding operations run inside a box.
@@ -422,6 +424,10 @@ var registry = map[Code]Entry{
 	CodeWorkspaceSourceUnavailable: {Status: http.StatusServiceUnavailable, Fault: FaultInfra, RetryAfter: 0, Doc: "plue could not verify the box's native source."},
 	// The box acknowledged a different revision than the one requested.
 	CodeWorkspaceSourceInvalidAck: {Status: http.StatusServiceUnavailable, Fault: FaultInfra, RetryAfter: 0, Doc: "The box acknowledged a different revision than the one requested."},
+	// A change asked to start from a pushed ref the caller does not have.
+	CodeUserRefMissing: {Status: http.StatusNotFound, Fault: FaultUser, RetryAfter: 0, Doc: "The pushed ref refs/smithers/users/<id>/<name> does not exist or expired; push it again with `smithers repo push`."},
+	// The repository lands through its mythical stack, whose lanes start from the stack tip.
+	CodeUserRefStack: {Status: http.StatusConflict, Fault: FaultUser, RetryAfter: 0, Doc: "This repository lands through its mythical stack, so a change cannot start from a pushed ref."},
 	// The mutation is saved in the box but its provenance projection has not
 	// landed; the identical request finishes it.
 	CodeCodingProvenancePending: {Status: http.StatusServiceUnavailable, Fault: FaultWait, RetryAfter: 1, Doc: "The mutation is saved in the box but its provenance projection has not landed; the identical request finishes it."},

@@ -62,10 +62,10 @@ func (d *idleDeadlineWriter) Write(p []byte) (int, error) {
 //   - receive.hideRefs=refs/jj/: jj's refs/jj/keep/* retention pins are not
 //     advertised, so a `git push --mirror` never tries to prune them, and git
 //     itself refuses an update to them if one slips past the command peek.
-func receivePackEnv() []string {
+func receivePackEnv(maxInputSize int64) []string {
 	return append(os.Environ(), "GIT_CONFIG_COUNT=2",
 		"GIT_CONFIG_KEY_0=receive.maxInputSize",
-		fmt.Sprintf("GIT_CONFIG_VALUE_0=%d", maxDecompressedGitRequestSize),
+		fmt.Sprintf("GIT_CONFIG_VALUE_0=%d", maxInputSize),
 		"GIT_CONFIG_KEY_1=receive.hideRefs",
 		"GIT_CONFIG_VALUE_1="+repohost.JJRefPrefix)
 }
@@ -74,10 +74,16 @@ func receivePackEnv() []string {
 // using io.Copy with a 32 KB buffer so large packfiles are never accumulated in
 // memory. The function returns once the git subprocess has exited.
 func streamGitRPC(ctx context.Context, gitDir, command string, body io.Reader, dst io.Writer) error {
+	return streamGitRPCCapped(ctx, gitDir, command, body, dst, maxDecompressedGitRequestSize)
+}
+
+// streamGitRPCCapped is streamGitRPC with receive-pack's pack size capped at
+// maxInputSize.
+func streamGitRPCCapped(ctx context.Context, gitDir, command string, body io.Reader, dst io.Writer, maxInputSize int64) error {
 	args := []string{command, "--stateless-rpc", gitDir}
 	cmd := streamGitCommandContext(ctx, "git", args...)
 	if command == "receive-pack" {
-		cmd.Env = receivePackEnv()
+		cmd.Env = receivePackEnv(maxInputSize)
 	}
 
 	stdin, err := cmd.StdinPipe()
@@ -152,8 +158,18 @@ func streamGitRPC(ctx context.Context, gitDir, command string, body io.Reader, d
 // can send a reply (e.g. receive-pack, where jj ref import must happen first).
 // For streaming responses prefer streamGitRPC.
 func runGitRPCBuffered(ctx context.Context, gitDir, command string, body io.Reader) ([]byte, error) {
+	return runRPCBuffered(ctx, gitDir, command, body, maxDecompressedGitRequestSize)
+}
+
+// runReceivePackBuffered runs receive-pack buffered with its pack capped at
+// maxInputSize.
+func runReceivePackBuffered(ctx context.Context, gitDir string, body io.Reader, maxInputSize int64) ([]byte, error) {
+	return runRPCBuffered(ctx, gitDir, "receive-pack", body, maxInputSize)
+}
+
+func runRPCBuffered(ctx context.Context, gitDir, command string, body io.Reader, maxInputSize int64) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := streamGitRPC(ctx, gitDir, command, body, &buf); err != nil {
+	if err := streamGitRPCCapped(ctx, gitDir, command, body, &buf, maxInputSize); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

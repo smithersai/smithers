@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:f899a3de17ca0c051aa16f7126d94dd9a2cdd980a5456633905879e72c013703",
+  "digest": "sha256:a3a569e832fee2907c96d91fbb4c9a4bd003e3532aeb71d96eec643a0f8c43b5",
   "faults": [
     "user",
     "wait",
@@ -771,6 +771,20 @@
       "status": 415,
       "retry_after": 0,
       "doc": "The request's Content-Type is not one this endpoint reads."
+    },
+    {
+      "code": "user_ref_missing",
+      "fault": "user",
+      "status": 404,
+      "retry_after": 0,
+      "doc": "The pushed ref refs/smithers/users/\u003cid\u003e/\u003cname\u003e does not exist or expired; push it again with `smithers repo push`."
+    },
+    {
+      "code": "user_ref_stack",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "This repository lands through its mythical stack, so a change cannot start from a pushed ref."
     },
     {
       "code": "validation_failed",

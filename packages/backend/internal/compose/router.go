@@ -33,6 +33,7 @@ type routerExtras struct {
 	ModelStream         *routes.ModelStreamHandler
 	Catalog             *routes.PublicRepositoryCatalogHandler
 	Mythical            *routes.MythicalHandler
+	UserRefs            *routes.UserRefHandler
 	AdminSystemStatus   *routes.AdminSystemStatusHandler
 	AdminSystemHealth   *routes.AdminSystemHealthHandler
 	AdminAnalytics      *routes.AdminAnalyticsHandler
@@ -1211,6 +1212,12 @@ func buildRouter(
 					r.With(writeRepo...).Post("/mythical/wiki", extras.Mythical.Wiki)
 				}
 
+				// A user's own pushed refs (smithers repo push).
+				if extras.UserRefs != nil {
+					r.With(writeRepo...).Get("/user-refs", extras.UserRefs.List)
+					r.With(writeRepo...).Post("/user-refs/renew", extras.UserRefs.Renew)
+				}
+
 				r.With(writeRepo...).Post("/statuses/{sha}", commitStatusHandler.CreateCommitStatus)
 
 				// jj VCS write routes: bookmarks and generated change artifacts.
@@ -1495,6 +1502,9 @@ func buildRouter(
 					r.With(writeWorkspace...).Post("/workspaces/{id}/services/{name}/{action}", workspaceHandler.ManageWorkspaceService)
 					r.With(writeWorkspace...).Delete("/workspaces/{id}", workspaceHandler.DeleteWorkspace)
 					r.With(writeWorkspace...).Post("/workspaces/{id}/suspend", workspaceHandler.SuspendWorkspace)
+					if extras.UserRefs != nil {
+						r.With(writeWorkspace...).Post("/workspaces/{id}/user-source", extras.UserRefs.StartFrom)
+					}
 					r.With(writeWorkspace...).Get("/workspaces/{id}/ssh", workspaceHandler.GetWorkspaceSSHConnectionInfo)
 					routes.RegisterWorkspaceRuntimeRoutes(r, workspaceHandler, readWorkspace, writeWorkspace)
 					if workspaceHandler.Desktop != nil {

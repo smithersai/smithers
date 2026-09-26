@@ -23,6 +23,7 @@ type pushFixture struct {
 	unauthed   int
 	originMain string
 	public     bool
+	renewed    []string
 }
 
 func newPushFixture(t *testing.T) *pushFixture {
@@ -67,6 +68,19 @@ func newPushFixture(t *testing.T) *pushFixture {
 		}
 		if r.URL.Path == "/api/repos/alice/demo" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"is_public": f.public})
+			return
+		}
+		if r.URL.Path == "/api/repos/alice/demo/user-refs/renew" && r.Method == http.MethodPost {
+			var body struct{ Name string }
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			f.mu.Lock()
+			f.renewed = append(f.renewed, body.Name)
+			f.mu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": body.Name, "expires_at": "2026-10-26T00:00:00Z"})
+			return
+		}
+		if r.URL.Path == "/api/repos/alice/demo/user-refs" && r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(map[string]any{"refs": []any{}, "limit": 20, "ttl_seconds": 2592000})
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/git-receive-pack") {
@@ -147,9 +161,17 @@ func TestRepoPush_GitCheckoutIsIdempotentAndNamespaced(t *testing.T) {
 		t.Fatalf("remote refs after push = %#v", refs)
 	}
 
+	if first["expires_at"] != "2026-10-26T00:00:00Z" {
+		t.Fatalf("first push expiry = %#v", first["expires_at"])
+	}
+
+	// An unchanged commit sends git nothing but still renews the expiry.
 	second := repoPush(t)
-	if second["updated"] != false || second["previous"] != head || f.receives != 1 {
-		t.Fatalf("second push = %#v after %d receive-packs", second, f.receives)
+	if second["updated"] != false || second["previous"] != head || f.receives != 1 || len(f.renewed) != 2 {
+		t.Fatalf("second push = %#v after %d receive-packs, renewals %v", second, f.receives, f.renewed)
+	}
+	if listed := repoPush(t, "--list"); listed["limit"] != float64(20) {
+		t.Fatalf("list = %#v", listed)
 	}
 
 	writePushFile(t, checkout, "local.txt", "more\n")
