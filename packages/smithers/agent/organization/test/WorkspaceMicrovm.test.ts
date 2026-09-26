@@ -226,6 +226,93 @@ describe.skipIf(missing !== undefined)("Workspace against real microVMs", () => 
     expect(gone).toBe(true)
   }, 900_000)
 
+  it("brings back a workspace whose machine died, with its checkout", async () => {
+    const { repo, commit } = fixtureRepo()
+    const key = `${run}/fixture/crash`
+    const log = (line: string) => console.log(`[microvm-crash] ${line}`)
+    /** The machine's host process dies, as a crashed guest's does. */
+    const crash = (remoteId: string) => {
+      const killed = spawnSync("pkill", ["-9", "-f", "--", `--name ${remoteId} `]).status
+      log(`killed the process of ${remoteId}: ${killed === 0}`)
+      expect(killed).toBe(0)
+    }
+    const guest = (command: string) =>
+      within(Effect.scoped(Effect.gen(function*() {
+        const session = yield* (yield* Workspace.Workspace).session(key, { commit })
+        const result = yield* Process.guest(session, command, { limit: 4_096 })
+        return { exitCode: result.exitCode, stdout: Process.text(result.stdout) }
+      })))
+
+    const prepared = await within(
+      Effect.flatMap(Workspace.Workspace, (w) => w.prepare({ key, repoPath: repo, commit }))
+    )
+    // Dead between steps: the next session restarts it on its own disk.
+    crash(prepared.remoteId)
+    expect(await guest("printf 'hello world\\n' > lib.txt && sync && cat lib.txt")).toEqual({
+      exitCode: 0,
+      stdout: "hello world\n"
+    })
+    // Dead in the middle of a session: the next command's start brings it back.
+    const midway = await within(Effect.scoped(Effect.gen(function*() {
+      const session = yield* (yield* Workspace.Workspace).session(key, { commit })
+      crash(prepared.remoteId)
+      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 500)))
+      const result = yield* Process.guest(session, "git status --short", { limit: 4_096 })
+      return { exitCode: result.exitCode, stdout: Process.text(result.stdout) }
+    })))
+    expect(midway).toEqual({ exitCode: 0, stdout: " M lib.txt\n" })
+    const diff = await within(Effect.flatMap(Workspace.Workspace, (w) => w.collect(prepared)))
+    expect(diff.files).toEqual([{ path: "lib.txt", added: 1, deleted: 1 }])
+    await within(Effect.flatMap(Workspace.Workspace, (w) => w.dispose(prepared)))
+  }, 300_000)
+
+  /**
+   * `SMITHERS_VM_STRESS=<cycles>`: prepare, two sessions of commands, collect
+   * and dispose, `<cycles>` times one after another and again two at a time,
+   * counting failures. Off by default; the qualification's failure rates came
+   * from it.
+   */
+  const cycles = Number(process.env.SMITHERS_VM_STRESS ?? "0")
+  it.skipIf(cycles === 0)(
+    `survives ${cycles} sequential and ${cycles} two-way concurrent workspace cycles`,
+    async () => {
+      const { repo, commit } = fixtureRepo()
+      const cycle = (label: string) =>
+        Effect.gen(function*() {
+          const workspace = yield* Workspace.Workspace
+          const key = `${run}/stress/${label}`
+          const prepared = yield* workspace.prepare({ key, repoPath: repo, commit })
+          for (let round = 0; round < 2; round++) {
+            yield* Effect.scoped(Effect.gen(function*() {
+              const session = yield* workspace.session(key, { commit })
+              for (let n = 0; n < 5; n++) {
+                const result = yield* Process.guest(session, `echo ${round}-${n} >> notes.txt && git status --short`, {
+                  limit: 4_096
+                })
+                if (result.exitCode !== 0) return yield* Effect.fail(new Error(Process.text(result.stderr)))
+              }
+            }))
+          }
+          yield* workspace.collect(prepared)
+          yield* workspace.dispose(prepared)
+        }).pipe(Effect.exit)
+      const count = async (concurrency: number) => {
+        const exits = await within(
+          Effect.forEach(Array.from({ length: cycles }, (_, n) => `${concurrency}-${n}`), cycle, { concurrency })
+        )
+        const failed = exits.filter((exit) => exit._tag === "Failure")
+        for (const exit of failed) {
+          console.log(`[microvm-stress] ${Cause.pretty((exit as { cause: Cause.Cause<unknown> }).cause)}`)
+        }
+        console.log(`[microvm-stress] concurrency ${concurrency}: ${cycles - failed.length}/${cycles} cycles passed`)
+        return failed.length
+      }
+      expect(await count(1)).toBe(0)
+      expect(await count(2)).toBe(0)
+    },
+    3_600_000
+  )
+
   it("prepares a pnpm project once with its registry allowed, and checks a builder's fix offline", async () => {
     const { commit, repo } = pnpmRepo()
     const log = (line: string) => console.log(`[microvm-env] ${line}`)

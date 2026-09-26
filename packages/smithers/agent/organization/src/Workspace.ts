@@ -458,6 +458,12 @@ export interface Bases {
  * @since 1.0.0
  */
 export interface Machines {
+  /**
+   * A guest command that writes a machine's pending writes to its disk, run
+   * once a workspace is seeded, so a machine whose guest dies and is started
+   * again keeps it. None by default.
+   */
+  readonly flush?: string | undefined
   readonly workspace: (key: string, boot?: Boot) => Effect.Effect<Session, ProviderError, Scope.Scope>
   readonly fresh: (key: string, boot?: Boot) => Effect.Effect<Session, ProviderError, Scope.Scope>
   readonly dispose: (remoteId: string) => Effect.Effect<void, ProviderError>
@@ -581,6 +587,7 @@ export const microsandbox = (options: MicrosandboxOptions): Machines => {
     ...networkOptions(boot?.network ?? (options.network === true ? "all" : "none"))
   })
   return {
+    flush: "sync",
     workspace: (key, boot) =>
       MicrosandboxSandbox.make({
         ...booted(boot),
@@ -792,7 +799,16 @@ export type Workspace = Service
 
 const fail = (code: WorkspaceErrorCode, message: string) => new WorkspaceError({ code, message })
 
-const unavailable = (what: string) => (error: ProviderError) => fail("unavailable", `${what}: ${error.message}`)
+/** The vendor's own words behind a provider failure, when it gave any. */
+const causeText = (error: ProviderError): string => {
+  const cause: unknown = error.cause
+  const text = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : ""
+  const line = text.trim().split("\n")[0]!.slice(0, 500)
+  return line === "" || error.message.includes(line) ? "" : ` (${line})`
+}
+
+const unavailable = (what: string) => (error: ProviderError) =>
+  fail("unavailable", `${what}: ${error.message}${causeText(error)}`)
 
 const excerpt = (collected: Process.Collected): string => Process.text(collected).trim().slice(0, 2_000)
 
@@ -1226,27 +1242,34 @@ export const make = (
           const session = yield* machines.workspace(request.key, boot).pipe(
             Effect.mapError(unavailable("the workspace machine could not be opened"))
           )
-          const done = (live: Session, seededBase: string): Prepared => ({
-            key: request.key,
-            remoteId: live.remoteId,
-            commit,
-            base: seededBase,
-            workdir: live.workdir
-          })
+          // The seeded tree and its baseline are flushed to the machine's disk
+          // before anyone works in it: a guest that crashes and is restarted
+          // keeps them.
+          const done = (live: Session, seededBase: string) =>
+            Effect.as(
+              machines.flush === undefined ? Effect.void : run(live, machines.flush),
+              {
+                key: request.key,
+                remoteId: live.remoteId,
+                commit,
+                base: seededBase,
+                workdir: live.workdir
+              } satisfies Prepared
+            )
           const marker = yield* readMarker(session, markerPath)
           if (marker.commit === commit && Schema.is(CommitId)(marker.base)) {
-            return done(session, yield* patched(session, marker.base, request.patch))
+            return yield* done(session, yield* patched(session, marker.base, request.patch))
           }
           if (marker.commit.length > 0) {
             return yield* fail("occupied", `workspace ${request.key} is already seeded at another commit`)
           }
           if (base === undefined) {
             const seededBase = yield* seedFromArchive(session, request.repoPath, commit)
-            return done(session, yield* patched(session, seededBase, request.patch))
+            return yield* done(session, yield* patched(session, seededBase, request.patch))
           }
           const opened = yield* openFromBase((boot) => machines.workspace(request.key, boot), boot, true)
           const syncedBase = yield* syncFromBase(opened.session, request.repoPath, opened.prepared, commit)
-          return done(opened.session, yield* patched(opened.session, syncedBase, request.patch))
+          return yield* done(opened.session, yield* patched(opened.session, syncedBase, request.patch))
         }))
       }).pipe(Effect.scoped, permits.withPermit)
 
@@ -1326,9 +1349,9 @@ export const make = (
           : yield* ensureBase(request.repoPath, commit, environment.prepare)
         yield* Effect.addFinalizer(() => release(base))
         const boot: Boot = { base, network: environment?.network ?? (base === undefined ? undefined : "none") }
-        const fresh = `${request.key}/checks-${globalThis.crypto.randomUUID()}`
         const tar = base === undefined ? yield* archive(request.repoPath, commit) : undefined
-        return yield* Effect.scoped(Effect.gen(function*() {
+        const checked = Effect.scoped(Effect.gen(function*() {
+          const fresh = `${request.key}/checks-${globalThis.crypto.randomUUID()}`
           let session: Session
           if (tar === undefined) {
             const opened = yield* openFromBase((boot) => machines.fresh(fresh, boot), boot, false)
@@ -1364,6 +1387,9 @@ export const make = (
             receipts
           }
         }))
+        // A check machine that went away is replaced once: the checks start
+        // over in a fresh one, so nothing half-run is reported.
+        return yield* Effect.catch(checked, (error) => error.code === "unavailable" ? checked : Effect.fail(error))
       }).pipe(Effect.scoped, permits.withPermit)
 
     const dispose = (prepared: Pick<Prepared, "remoteId">) =>

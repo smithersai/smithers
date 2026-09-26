@@ -11,7 +11,7 @@ import { Context, Effect, Layer } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import * as PlatformError from "effect/PlatformError"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Workspace from "../src/Workspace.ts"
@@ -275,6 +275,42 @@ describe("prepare and collect", () => {
   })
 })
 
+describe("machine failures", () => {
+  const openingWith = (cause: unknown): Workspace.Machines => ({
+    ...unopenable,
+    workspace: () =>
+      Effect.fail(
+        new ProviderError({ code: "unavailable", message: "microsandbox: the microVM m could not be opened", cause })
+      )
+  })
+
+  it("names the vendor's own words behind a machine that could not be opened, once", async () => {
+    const { repo, commit } = fixtureRepo()
+    const opened = (cause: unknown) =>
+      failing(Effect.flatMap(service, (workspace) => workspace.prepare({ key: "k", repoPath: repo, commit })), {
+        machines: openingWith(cause)
+      }).then((error) => error.message)
+    const bare = "the workspace machine could not be opened: microsandbox: the microVM m could not be opened"
+    expect(await opened(new Error("[AgentClient] connect: Connection refused (os error 61)\nat ..."))).toBe(
+      `${bare} ([AgentClient] connect: Connection refused (os error 61))`
+    )
+    expect(await opened("timed out")).toBe(`${bare} (timed out)`)
+    expect(await opened({ code: 1 })).toBe(bare)
+    expect(await opened(new Error("could not be opened"))).toBe(bare)
+  })
+
+  it("flushes a seeded workspace to its machine's disk", async () => {
+    const { repo, commit } = fixtureRepo()
+    const { machines, root } = hostMachines()
+    const prepared = await within(
+      Effect.flatMap(service, (workspace) => workspace.prepare({ key: "run-1/flushed", repoPath: repo, commit })),
+      { machines: { ...machines, flush: "printf flushed > .git/flushed" } }
+    )
+    expect(readFileSync(join(root, "run-1-flushed", ".git", "flushed"), "utf8")).toBe("flushed")
+    expect(prepared.commit).toBe(commit)
+  })
+})
+
 describe("runChecks", () => {
   const checks: ReadonlyArray<Workspace.Check> = [{ name: "fixture", argv: ["sh", "check.sh"] }]
 
@@ -372,6 +408,40 @@ describe("runChecks", () => {
       { machines: dying }
     )
     expect(refused.message).toBe("check fixture did not run: the machine died")
+
+    // A machine that dies once is replaced, and the checks start over in it.
+    let deaths = 1
+    const opened: Array<string> = []
+    const once: Workspace.Machines = {
+      ...base,
+      fresh: (key) =>
+        Effect.map(base.fresh(key), (session) => {
+          opened.push(key)
+          return {
+            ...session,
+            spawn: (command, options) =>
+              command.startsWith("'") && deaths-- > 0 ? broken("the machine died") : session.spawn(command, options)
+          }
+        })
+    }
+    const recovered = await within(
+      Effect.flatMap(
+        service,
+        (workspace) =>
+          workspace.runChecks({
+            key: "run-1/x/checks",
+            repoPath: repo,
+            commit,
+            patch: "",
+            checks: [{ name: "true", argv: ["true"] }]
+          })
+      ),
+      { machines: once }
+    )
+    expect(recovered.passed).toBe(true)
+    expect(recovered.receipts).toHaveLength(1)
+    expect(opened).toHaveLength(2)
+    expect(new Set(opened).size).toBe(2)
   })
 })
 
