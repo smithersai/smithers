@@ -777,7 +777,8 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
    * budget still ends the run, and the run's own words are still what it ends
    * with. See `NarrowedCheck` for why the demand is issued at all.
    *
-   * Only the five measured demands keep it. The claim brake read the sentence
+   * The measured demands and the unread-call demand keep it; the failed-call
+   * demand does not, and neither does a claim demand. The claim brake read the sentence
    * itself and found the record against it, so restoring that sentence on the
    * budget notice hands back the exact answer the brake refused: one live run
    * finished `stop` with a bounced "the tests pass" over a repository whose

@@ -206,6 +206,21 @@ describe("CellTurn completion over unread calls", () => {
     expect(answer(events)).toContain("No command output")
   })
 
+  it("keeps the refused answer when the answering frame ends on the budget", async () => {
+    const { events } = await drive(
+      [
+        `const r = await ctx.call("bash", { command: "pnpm test" }); console.log(r.stdout); ctx.done("Tests pass.")`,
+        `const again = await ctx.call("bash", { command: "pnpm test" }); console.log(again.stdout)`
+      ],
+      [tail, tail],
+      2
+    )
+
+    expect(of(events, "unobserved-demanded")).toHaveLength(1)
+    expect(answer(events)).toContain("frame budget of 2 is exhausted")
+    expect(answer(events)).toContain("Tests pass.")
+  })
+
   it("replays the recorded demand instead of judging again", async () => {
     const records = new Map<string, unknown>()
     const attempt = async (seen: ScriptedEngine.CallStep) => {
@@ -362,9 +377,46 @@ describe("UnobservedCall", () => {
     expect(blind(`ctx.call("edit", {}); void ctx.call("edit", {}); void (await ctx.call("edit", {})); ctx.done("x")`))
       .toBe(false)
     expect(blind(`ctx.done("Nothing called.")`)).toBe(false)
-    // A completion reached through an alias is not seen, so it reads as blind.
-    expect(blind(`const r = await ctx.call("bash", {}); const finish = ctx["done"]; finish(r)`)).toBe(true)
+    // A completion reached through an alias is not seen, so the result handed
+    // to it reads as acted on: a wrong refusal costs every consumer an answer.
+    expect(blind(`const r = await ctx.call("bash", {}); const finish = ctx["done"]; finish(r)`)).toBe(false)
     expect(blind("const r = await ctx.call(\"bash\", {}); ctx.done(`unterminated")).toBe(false)
+  })
+
+  it("spares completions that read a result inline, through a helper, or in a callback", () => {
+    // The shapes review 3 found refused although each completes from the result.
+    for (
+      const reading of [
+        `ctx.done((await ctx.call("bash", { cmd: "x" })).stdout)`,
+        `ctx.done(JSON.stringify(await ctx.call("bash", { cmd: "pnpm test" })))`,
+        `const r = await ctx.call("bash", {}); function finish(x) { ctx.done(x) } finish(r)`,
+        `const r = await ctx.call("bash", {}); const finish = (x) => ctx.done(x); finish(r)`,
+        `ctx.call("bash", {}).then(r => ctx.done(r.stdout))`,
+        `const p = ctx.call("bash", {}); p.then((r) => { ctx.done(r.stdout) })`,
+        `const r = await ctx.call("bash", {}); const helper = { finish(x) { ctx.done(x) } }; helper.finish(r)`,
+        `const r = await ctx.call("bash", {}); class A { run(x) { ctx.done(x) } } new A().run(r)`,
+        `const r = await ctx.call("bash", {}); new Finisher(r)`,
+        `const r = await ctx.call("bash", {}); const f = function (x) { ctx.done(x) }; f(r)`,
+        `const r = await ctx.call("bash", {}); const lines = r.stdout.split("\\n").map((l) => l.trim()); console.log(lines); ctx.done("x")`,
+        `const r = await ctx.call("bash", {}); r;\nctx.done("x")`,
+        `const r = await ctx.call("bash", {}); const text = \`out: \${r.stdout.trim()}\`; ctx.done(text)`,
+        `const r = await ctx.call("bash", {}); ctx.done(String(r.exitCode))`,
+        `const out = []; out.push(await ctx.call("bash", {})); ctx.done(JSON.stringify(out))`
+      ]
+    ) expect(blind(reading)).toBe(false)
+    // Copying a result somewhere only the model reads is still blind.
+    for (
+      const blindly of [
+        `const r = await ctx.call("bash", {}); const text = r.stdout.trim(); console.log(text); ctx.done("x")`,
+        `const [a, b] = await Promise.all([ctx.call("a", {}), ctx.call("b", {})]); console.log(a, b); ctx.done("x")`,
+        `const all = []; all.push(await ctx.call("bash", {})); console.log(all); ctx.done("x")`,
+        `const r = await ctx.call("bash", {}); const parsed = JSON.parse(r.stdout); console.log(parsed); ctx.done("x")`,
+        `const r = await ctx.call("bash", {}); console.log(r); void ctx.call("edit", {}); ctx.done("x")`,
+        `const r = await ctx.call("bash", {}); console.log(r); function show() { console.log("hi") } ctx.done(String(1))`,
+        `let r; r = await ctx.call("bash", {}); console.log(r); ctx.done("x")`,
+        `const r = await ctx.call("bash", {}); const rows = r.stdout.split(",").slice(1); console.log(rows); ctx.done("x")`
+      ]
+    ) expect(blind(blindly)).toBe(true)
   })
 
   it("names the calls only when the cell completed blind", () => {

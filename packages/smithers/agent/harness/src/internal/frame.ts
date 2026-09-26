@@ -485,9 +485,11 @@ export interface CompletionDemand {
    * Whether the answer this demand takes away may come back as the run's
    * answer when the frame budget runs out; see `CellTurn.budgetMessage`.
    *
-   * True for the measured demands except `FailedCall` and `UnobservedCall`,
-   * whose answers were written before their cell's results existed. Each of
-   * the others says the record is
+   * True for the measured demands except `FailedCall`, whose answer was
+   * written over a call that failed. `UnobservedCall` keeps its answer: the
+   * brake reads the source, not the sentence, so an answer it refused may be
+   * right, and a run that ends on the budget should end on it rather than on
+   * a bare notice. Each of the others says the record is
    * missing a fact, not that the sentence is wrong, so a run that spends its
    * last frame and never completes again is better served by the answer it
    * wrote than by a bare budget notice.
@@ -701,7 +703,8 @@ const measuredDemand = (
   }
   // Second, for the same reason: the claim was written before any result of
   // its own cell existed, so every demand below would grade a sentence the
-  // model wrote without reading. Not kept, like the one above. See
+  // model wrote without reading. Kept, unlike the one above: the source was
+  // read, not the sentence, so it stays the run's answer at the budget. See
   // `UnobservedCall`.
   if (state.unobservedDemands < UnobservedCall.cap) {
     const unread = UnobservedCall.find(calls, accounting.source)
@@ -713,7 +716,7 @@ const measuredDemand = (
           nextFrame
         }),
         note: UnobservedCall.demand(unread),
-        keeps: false,
+        keeps: true,
         spent: { unobservedDemands: state.unobservedDemands + 1 }
       }
     }

@@ -34,9 +34,11 @@
  *
  * The reading is a parse of the cell's source, so it is a pure function of
  * the cell and a replay reaches the same decision. It reads names, not
- * scopes, and what it cannot resolve — a completion reached through an alias
- * — reads as blind: the price of a wrong refusal is one frame, bounded by
- * {@link cap}, and the price of a wrong pass is the answer this exists for.
+ * scopes, and what it cannot see through — a result handed to a function of
+ * the program's own, a `.then` callback, a completion reached through an
+ * alias — reads as acted on. A wrong refusal takes a legitimate answer away
+ * from every consumer of the harness, while a wrong pass costs one unread
+ * probe, so the rule fires only where the source leaves no other reading.
  *
  * @since 1.0.0-rc.1
  * @private
@@ -213,24 +215,96 @@ const resultNames = (root: Node): ReadonlySet<string> => {
   return results
 }
 
+/** The realm's calls that only move a value: their arguments are read where their result is. */
+const pure = new Map<string, ReadonlySet<string>>([
+  ["Promise", new Set(["all", "allSettled", "any", "race", "resolve"])],
+  ["JSON", new Set(["parse", "stringify"])],
+  ["Object", new Set(["assign", "entries", "fromEntries", "keys", "values"])],
+  ["Array", new Set(["from", "of"])]
+])
+const pureFunctions = new Set(["String", "Number", "Boolean"])
+/** Methods that keep their argument in the receiver; `flows` follows it there. */
+const keeping = new Set(["push", "unshift", "add", "set", "append"])
+
+/** A function's parameters and body, or nothing when the node is not a function. */
+const functionParts = (node: Node): ReadonlyArray<Node> | undefined => {
+  switch (node.type) {
+    case "FunctionExpression":
+    case "ArrowFunctionExpression":
+    case "FunctionDeclaration":
+    case "ObjectMethod":
+    case "ClassMethod":
+    case "ClassPrivateMethod":
+      return [...node.params, node.body]
+    default:
+      return undefined
+  }
+}
+
+const functionLike = (node: Node): boolean => functionParts(node) !== undefined
+
+const memberName = (callee: Node): readonly [Node, string] | undefined =>
+  (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") && !callee.computed &&
+    callee.property.type === "Identifier"
+    ? [callee.object, callee.property.name]
+    : undefined
+
 /**
- * Whether the program acts on a result: reads one in a call's input, in the
- * completion's output, or in a condition — the guard a completion sits under
- * included. A read inside `console.*` is addressed to the model, and one that
- * only copies a result into another name is followed through that name.
+ * Whether the program acts on a result: reads a call or a name holding a
+ * result anywhere but inside `console.*`, and other than by copying it into
+ * another name, which is followed through that name.
+ *
+ * Copying is narrow on purpose: the source of a binding or assignment, the
+ * argument of `push` and its kin, and the realm's value-moving functions
+ * (`JSON.parse`, `Promise.all`, a method of the result itself). Anything the
+ * parse cannot see through — a function of the program's own, a callback, a
+ * `.then`, an alias — is an act, because the program may complete from there.
  */
 const actsOn = (root: Node, results: ReadonlySet<string>): boolean => {
   const visit = (node: Node, acting: boolean): boolean => {
     if (node.type === "Identifier") return acting && results.has(node.name)
-    if (
-      (node.type === "CallExpression" || node.type === "OptionalCallExpression") &&
-      (node.callee.type === "MemberExpression" || node.callee.type === "OptionalMemberExpression") &&
-      node.callee.object.type === "Identifier" && node.callee.object.name === "console"
-    ) return false
-    if (ctxCall(node, "call") || ctxCall(node, "done")) {
-      return (node as Syntax.CallExpression).arguments.some((argument) => visit(argument, true))
+    const parts = functionParts(node)
+    // A function's body runs whenever the program calls it, so it acts.
+    if (parts !== undefined) return parts.some((child) => visit(child, true))
+    if (node.type === "ExpressionStatement" || (node.type === "UnaryExpression" && node.operator === "void")) {
+      // An effect's result discarded as a statement of its own is not read.
+      const discarded = node.type === "ExpressionStatement" ? node.expression : node.argument
+      const inner = discarded.type === "AwaitExpression" ? discarded.argument : discarded
+      if (ctxCall(inner, "call")) {
+        return (inner as Syntax.CallExpression).arguments.some((argument) => visit(argument, true))
+      }
+    }
+    if (node.type === "CallExpression" || node.type === "OptionalCallExpression" || node.type === "NewExpression") {
+      const callee = node.callee
+      const member = memberName(callee)
+      if (member !== undefined && member[0].type === "Identifier" && member[0].name === "console") return false
+      if (ctxCall(node, "call")) {
+        return acting || node.arguments.some((argument) => visit(argument, true))
+      }
+      if (ctxCall(node, "done")) return node.arguments.some((argument) => visit(argument, true))
+      const reading = reads(callee, results)
+      if (
+        (callee.type === "Identifier" && pureFunctions.has(callee.name)) ||
+        (member !== undefined && member[0].type === "Identifier" && pure.get(member[0].name)?.has(member[1]) === true)
+      ) return node.arguments.some((argument) => visit(argument, acting))
+      if (member !== undefined && keeping.has(member[1])) {
+        // `all.push(seen)` writes `all`; `flows` follows `seen` into it.
+        return node.arguments.some((argument) => visit(argument, false))
+      }
+      if (member !== undefined && reading && !node.arguments.some(functionLike)) {
+        // A method of the result itself, such as `seen.stdout.trim()`.
+        return visit(callee, acting) || node.arguments.some((argument) => visit(argument, acting))
+      }
+      return reading || node.arguments.some((argument) => reads(argument, results))
     }
     switch (node.type) {
+      case "VariableDeclarator":
+        return node.init != null && visit(node.init, false)
+      case "AssignmentExpression":
+        return visit(node.left, false) || visit(node.right, false)
+      case "ForOfStatement":
+      case "ForInStatement":
+        return visit(node.right, false) || visit(node.body, acting)
       case "IfStatement":
       case "ConditionalExpression":
       case "WhileStatement":
@@ -249,7 +323,7 @@ const actsOn = (root: Node, results: ReadonlySet<string>): boolean => {
     }
     return referencing(node).some((child) => visit(child, acting))
   }
-  return visit(root, false)
+  return visit(root, true)
 }
 
 /** Whether a call's result is used at all, rather than discarded as a statement of its own. */
