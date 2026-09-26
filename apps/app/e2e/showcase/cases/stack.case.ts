@@ -62,16 +62,17 @@ export default showcase({
     }), item("i9", "queued")])
     await expect(card.getByTestId("stack-item-i7")).toContainText("PR #70", { timeout: 15_000 })
     await app.beat(1500)
-    await app.click(card.getByRole("button", { name: "Restore" }))
-    await expect(card).toHaveAttribute("data-maximized", "false")
-    await app.show(card)
-
     await app.click(card.getByRole("button", { name: "Backfill", exact: true }))
+    await expect(card).toHaveAttribute("data-maximized", "true")
     const failure = card.locator('[data-testid="stack-failure"][data-act="backfill"]')
     await expect(failure).toContainText("backfill")
     await app.beat(1200)
     backfill = 202
     await app.click(failure.getByRole("button", { name: "Retry" }))
     await expect(failure).toHaveCount(0)
+    await expect(card).toHaveAttribute("data-maximized", "true")
+    await app.beat(900)
+    await app.click(card.getByRole("button", { name: "Restore" }))
+    await expect(card).toHaveAttribute("data-maximized", "false")
   }
 })
