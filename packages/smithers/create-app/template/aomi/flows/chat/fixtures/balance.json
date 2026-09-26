@@ -947,6 +947,15 @@
             ]
           },
           {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Your realm holds no names yet. Anything a cell declares at the top level is still bound in every later cell of this run."
+              }
+            ]
+          },
+          {
             "role": "assistant",
             "content": [
               {
