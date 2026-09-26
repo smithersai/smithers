@@ -20209,6 +20209,18 @@
         "path": "flows/organization/cli.test.ts"
       },
       {
+        "kind": "file",
+        "path": "flows/organization/wiki.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/organization/setup/node.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/organization/notify.test.ts"
+      },
+      {
         "kind": "glob",
         "pattern": "flows/**/*.ts",
         "exclude": []
