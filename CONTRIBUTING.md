@@ -1,5 +1,12 @@
 # Contributing
 
+Track actionable work in a GitHub issue and run the coding factory and CI/CD
+on Smithers Cloud. The stack service alone writes the repository's linear
+`mythical` stack. This repository sends work upstream through a GitHub PR the
+owner merges, with one commit per item on append-only `main`. Never rewrite
+`main` or push `mythical` by hand. Local work is bootstrap or repair; see
+[the factory workflow](factory/README.md) and [Cloud development](docs/cloud-workspace.md).
+
 Use the Node release in `.node-version` at the root. It is the one release CI
 installs and the Cloud runner bootstraps, and fnm, nvm and asdf read that file,
 so `fnm use` or `nvm use` in the checkout gives you the same Node the gates run.
@@ -42,6 +49,18 @@ Before review, run the docs checks above, `pnpm --filter @smithers/site run buil
 and `pnpm docs:build`. Preview the main docs locally with
 `pnpm --filter @smithers/site run dev` and open `/docs/`. Commit generated
 content with its source changes.
+
+The TUI site is separate from both pipelines: author in `apps/tui/docs/` and
+use `apps/tui-docs` for executable recordings, command/key references, and
+site checks. See [TUI docs](apps/tui-docs/README.md). Regeneration does not
+publish the app's repository Wiki; [the wiki recipe](factory/wiki/README.md)
+tracks its distinct generation, review, and Cloud publication receipts.
+
+Cloud's gates use `.github/ci-known-red.json` with `--known-red` where declared
+in `scripts/ci/cloud.sh`. A successful gate with that option means no new
+unlisted failures, not that every target passed. Keep listed failures tied to
+their issues and inspect the reported results. See the
+[build CLI policy](packages/smithers/build/build-cli/docs/cli.md).
 
 ## Changing a root file
 
@@ -309,27 +328,20 @@ To move `packages/<child>` under `packages/<parent>`:
     `pnpm exec dprint fmt` in every package whose docs quote a path that moved
     — a markdown table's padding is part of its formatting.
 
-## Committing the shared checkout
+## Landing changes
 
-Run `pnpm exec smithers-build run '//:commit'` to snapshot all nonignored
-changes on `main`, including edits left by other contributors or agents.
-The target is explicit, run-only, and uncached; CI never commits changes.
-It uses jj in a jj checkout and Git in a third-party Git clone.
+Prepare one logical change with its issue, reviewed diff, and validation receipts.
+The stack service owns its `mythical` item and upstream PR; the owner merges that
+PR onto append-only `main`. Preserve unrelated edits in a shared checkout.
 
-For a descriptive message and a push to `origin/main`, use the same entry point:
+The legacy `pnpm commit` / `//:commit` helper still snapshots every nonignored
+edit and can push directly to `main`. It does not implement the current stack
+policy and is not the landing path for this repository.
 
-```sh
-pnpm commit --message "fix(app): describe the change" --push
-pnpm deploy
-```
-
-Validate and review the shared diff first. The commit command refuses a checkout
-away from main or unresolved conflicts and serializes concurrent commit commands.
-Without `--push`, it only commits locally, so contributors do not need upstream
-write access. Deploy uses `apps/server/scripts/deploy.ts`, including its identity
-preflight and build receipt, and requires the operator's Cloudflare credentials.
-Keep edits paused during deployment so the build matches the committed revision;
-verify `/__build.json` against that revision before testing production.
+Deployment is a separate Cloud operation against the landed revision. Retain
+the deployment receipt and compare `/__build.json` with that revision before
+claiming production is current. Follow the scoped app/server instructions for
+bootstrap or repair operations.
 
 ## Working with the pinned jj fork
 
@@ -394,21 +406,22 @@ three sources that repeat the version as a literal
 the same `--check` invocations `release.yml` runs. It prints the two commands
 to run next and touches git not at all.
 
-`--commit` records and tags the cut for you. It refuses a dirty working copy,
-because `git commit -am` would sweep someone else's edit into the release:
+Land the prepared version and changelog through the stack's upstream PR. The
+script's legacy `--commit` option commits and tags locally; it does not follow
+that landing policy. Neither form pushes.
+
+### 3. Publish the landed revision
+
+After the owner merges the release item, the release operator tags that exact
+landed commit and pushes only the tag:
 
 ```sh
-node scripts/cut-release.mjs <version> --commit
+git tag v<version> <landed-commit>
+git push origin v<version>
 ```
 
-Neither form pushes. Nothing in this repository pushes a tag.
-
-### 3. Push
-
-```sh
-jj commit -m "🔖 release: <version>"       # or the --commit above
-git tag v<version> && git push origin main v<version>
-```
+Retain the successful release run and npm publication evidence. A pushed tag
+alone does not prove publication completed.
 
 ### What the changelog generator owns
 

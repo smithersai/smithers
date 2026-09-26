@@ -3,9 +3,8 @@
 Smithers' own coding factory. Target workflow:
 
 ```text
-GitHub issue -> Smithers Cloud run -> checks/review -> main -> GitHub sync
-                                                        -> wiki refresh
-                                                        -> issue receipt
+GitHub issue -> mythical stack item -> Smithers Cloud run -> checks/review
+  -> GitHub PR -> owner merge -> append-only main -> wiki refresh + issue receipt
 ```
 
 This is the operating target, not a claim that the Cloud loop is qualified.
@@ -22,8 +21,10 @@ an issue. GitHub remains synchronized; Cloud owns the coding and CI/CD work.
   wiki workflows and preserve their source/review receipts.
 - `reports/` — runtime reports and logs, not tracked.
 
-Land and push on `main`; remove temporary worktrees after landing. Old `vibe`
-integration branches and retelling `main` are not supported operating paths.
+Only the stack service writes `mythical`. This repository sends changes upstream:
+the owner merges its GitHub PR, with one commit per stack item on append-only
+`main`. Remove temporary worktrees after landing. Never rewrite `main` or push
+`mythical` by hand.
 Close issues and refresh documentation from real completion evidence.
 
 Tracking: [Cloud issue automation](https://github.com/smithersai/smithers/issues/1695),
