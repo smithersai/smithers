@@ -154,8 +154,6 @@ export const done = (value: unknown): boolean =>
 
 const defaultOnMaxReached: OnMaxReached = "return-last"
 
-const identity = (value: unknown): unknown => value
-
 const exhausted = (maxIterations: number): PatternError =>
   new PatternError({
     code: "exhausted",
@@ -256,7 +254,7 @@ export const make = <R = never>(options: MakeOptions<R>): LoopFlow<R> => {
           ? onMaxReached === "fail" ? Node.fail(exhausted(maxIterations)) : settled(value, iteration, true)
           : stall === undefined
           ? visit(value, iteration + 1, streaks)
-          : Stalling.guard("Loop", stall, { ...captures, iteration }, value, streaks as Stall.State, identity, {
+          : Stalling.guard("Loop", stall, { ...captures, iteration }, value, streaks as Stall.State, Stalling.output, {
             settle: (stalled) => Node.succeed({ value, iterations: iteration, exhausted: false, stalled }),
             next: (next) => visit(value, iteration + 1, next)
           })

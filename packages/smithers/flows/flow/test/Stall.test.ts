@@ -40,6 +40,7 @@ describe("Stall", () => {
 
   it("resets a streak when its signal moves or is absent, and prefers tree over checks over output", () => {
     const policy = Stall.policy({ rounds: 2 })
+    expect(run(policy, [{ checks: [] }, { checks: [] }])).toEqual([undefined, undefined])
     expect(run(policy, [{ tree: "a" }, {}, { tree: "a" }, { tree: "b" }])).toEqual([
       undefined,
       undefined,

@@ -12,15 +12,17 @@
  *
  * - `tree`: a fingerprint of the files the round left behind, such as a JJ
  *   tree id or a `TreeFingerprint` checksum.
- * - `checks`: the ids of the checks that failed. Order does not matter.
+ * - `checks`: the ids of the checks that failed. Order does not matter, and
+ *   an empty list is not compared.
  * - `output`: the round's value, compared by the SHA-256 of its RFC 8785
  *   canonical JSON. A value with no canonical form is not compared.
  *
  * Everything here is data. The {@link State} a round carries forward is a
  * plain record, so a durable trampoline keeps it in its payload and a replay
  * reads the same verdict. The loop decides what `on` means: `stop` settles
- * with the stalled value, `park` settles for a person to resume, and
- * `escalate` fails.
+ * with the stalled value, `park` settles the same way tagged for a caller
+ * that hands it to a person (the coding correction reports it `blocked`),
+ * and `escalate` fails.
  *
  * @since 1.0.0
  */
@@ -177,7 +179,10 @@ const hash = (value: unknown): string | undefined => {
 
 const keys = (observation: Observation): Record<Signal, string | undefined> => ({
   tree: observation.tree,
-  checks: observation.checks === undefined ? undefined : JSON.stringify([...new Set(observation.checks)].sort()),
+  // No failing check is not a repeated failure.
+  checks: observation.checks === undefined || observation.checks.length === 0
+    ? undefined
+    : JSON.stringify([...new Set(observation.checks)].sort()),
   output: "output" in observation ? hash(observation.output) : undefined
 })
 

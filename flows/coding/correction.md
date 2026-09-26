@@ -22,11 +22,13 @@ There is no process-local retry loop or parallel correction writer.
 
 ## Stall breaker
 
-Every unvalidated pass is folded into `@smthrs/flow`'s `Stall` with three
-signals: every atom's JJ tree id, the failing check receipts, and the findings
-the next repair would receive. The optional `stall` input defaults to
-`{ rounds: 2, on: "park" }`: two passes in a row with the same signal end the
-correction before its bound. `park` returns `blocked` on that pass, `stop`
+Every unvalidated pass before the last is folded into `@smthrs/flow`'s
+`Stall` with three signals: every atom's JJ tree id, each failing check receipt
+with its findings, and the findings the next repair would receive. The optional
+`stall` input defaults to `{ rounds: 2, on: "park" }`: two passes in a row with
+the same signal end the correction before its bound. A cursor recorded before
+this option decodes with that default, and the pass execution id ignores the
+stall fields, so an in-flight correction resumes on the same pass. `park` returns `blocked` on that pass, `stop`
 returns `changes-requested`, and `escalate` fails `CodingError` `stalled`. The
 result carries the typed `stalled` verdict. The implement agent's `EditAtom`
 also sets `readOnlyCap: 12`: twelve frames without a workspace write demand an

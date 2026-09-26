@@ -49,7 +49,27 @@ export const resolve = (
  * @private
  */
 export const escalated = (pattern: string, rounds: number): PatternError =>
-  new PatternError({ code: "stalled", message: `${pattern} stalled: ${rounds} rounds in a row changed nothing` })
+  new PatternError({ code: "stalled", message: `${pattern} stalled: the same result for ${rounds} rounds in a row` })
+
+/**
+ * What a declared round compares: a module-level projection of its value,
+ * named so the name, not the function, enters the step identity.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export interface Signal {
+  readonly name: string
+  readonly read: (value: unknown) => unknown
+}
+
+/**
+ * The round's whole value.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const output: Signal = { name: "output", read: (value) => value }
 
 /**
  * The label field a stall policy adds; absent without one, so existing names
@@ -90,9 +110,9 @@ interface Observed {
  * and branches. A stall settles through `settle` (or fails `stalled` under
  * `escalate`); otherwise `next` continues with the new streaks.
  *
- * The signal read is the output `signal` derives from the round's value; a
- * declared loop cannot carry a callback with stable identity, so `signal` is
- * the pattern's own module-level function and `kind` names it in the capture.
+ * The compared output is `signal.read` of the round's value; a declared loop
+ * cannot carry a caller's callback with stable identity, so `signal` is a
+ * pattern's own module-level projection and its `name` enters the capture.
  *
  * @since 1.0.0
  * @private
@@ -103,18 +123,18 @@ export const guard = <R>(
   identity: Readonly<Record<string, unknown>>,
   value: unknown,
   streaks: Planned.Planned<Stall.State> | Stall.State,
-  signal: (value: unknown) => unknown,
+  signal: Signal,
   arms: {
     readonly settle: (stalled: Planned.Planned<Stall.Stalled>) => Node.Node<unknown, unknown, R>
     readonly next: (streaks: Planned.Planned<Stall.State>) => Node.Node<unknown, unknown, R>
   }
 ): Node.Node<unknown, unknown, R> => {
-  const captured = { ...identity, stall: policy }
+  const captured = { ...identity, stall: policy, signal: signal.name }
   const observed = Node.map(
     // Planned references resolve to the real values at run time.
     Node.succeed({ value, streaks } as { readonly value: unknown; readonly streaks: Stall.State }),
     Node.capture(captured, ({ value, streaks }): Observed => {
-      const next = Stall.observe(policy, streaks, { output: signal(value) })
+      const next = Stall.observe(policy, streaks, { output: signal.read(value) })
       return { state: next.state, stalled: next.stalled ?? null }
     })
   )

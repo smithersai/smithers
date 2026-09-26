@@ -105,7 +105,8 @@ instead of unrolling. See
 A bound is only a budget. `stall: { rounds, on }` ends a loop whose last
 `rounds` unsatisfied iterations (at least two) produced the same value, using
 `@smthrs/flow`'s `Stall`. `on` defaults to `"stop"`: `stop` and `park` return
-the result with `stalled: { _tag: "Stalled", signal, rounds, on }`, and
+the result with `stalled: { _tag: "Stalled", signal, rounds, on }` (`park` is
+the same settlement, tagged for a caller that hands it to a person), and
 `escalate` fails `PatternError` `stalled`. `ReviewLoop` (a `Stalled` outcome
 when revisions repeat the reviewed output) and `Supervisor` (`Exhausted` with
 `stalled` when every task's outcome repeats) take the same option.

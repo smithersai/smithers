@@ -118,8 +118,6 @@ export interface Stalled<A, Review> {
  */
 export type Settled<A, Review> = Approved<A> | Exhausted<A, Review> | Stalled<A, Review>
 
-const same = (output: unknown): unknown => output
-
 /**
  * Reads an accepted decision: `true`, `"approved"`, `{ approved: true }`, or
  * `{ accepted: true }`.
@@ -192,10 +190,18 @@ export const make = <R = never>(options: MakeOptions<R>): ReviewLoopFlow<R> => {
             ? Node.succeed({ _tag: "Exhausted", output, review })
             : stall === undefined
             ? revise(review, streaks)
-            : Stalling.guard("ReviewLoop", stall, { ...captured, round }, output, streaks as Stall.State, same, {
-              settle: (stalled) => Node.succeed({ _tag: "Stalled", output, review, stalled }),
-              next: (next) => revise(review, next)
-            })
+            : Stalling.guard(
+              "ReviewLoop",
+              stall,
+              { ...captured, round },
+              output,
+              streaks as Stall.State,
+              Stalling.output,
+              {
+                settle: (stalled) => Node.succeed({ _tag: "Stalled", output, review, stalled }),
+                next: (next) => revise(review, next)
+              }
+            )
       })
     }
     return Node.bindPlanned(

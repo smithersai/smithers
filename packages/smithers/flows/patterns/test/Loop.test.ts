@@ -615,7 +615,7 @@ describe("Loop stall", () => {
       body: ({ iteration }) => Effect.succeed(iteration),
       until: () => Effect.succeed(false)
     })))
-    expect(checks).toMatchObject({ code: "stalled", message: "Loop stalled: 3 rounds in a row changed nothing" })
+    expect(checks).toMatchObject({ code: "stalled", message: "Loop stalled: the same result for 3 rounds in a row" })
 
     const output = await Effect.runPromise(Loop.runRalph("goal", {
       maxIterations: 9,

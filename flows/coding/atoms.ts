@@ -24,10 +24,10 @@ export const Observe = Action.make("coding/observe-atom", {
   success: Revision, error: CodingError
 })
 
-/** The host supplies its existing tool bindings, seats, capabilities and budget. */
 /** Consecutive frames without a workspace write the implement agent may spend; the harness default for task runs. */
 export const implementIdleFrames = 12
 
+/** The host supplies its existing tool bindings, seats, capabilities and budget. */
 export const EditAtom = AgentAction.make("coding/edit-atom", {
   payload: { atom: AtomicPlan, parent: Revision, revision: Revision, memoryRevision: Schema.String },
   output: EditReport,

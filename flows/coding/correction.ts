@@ -14,24 +14,33 @@ const MaxRounds = Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrE
 /** Two rounds in a row with the same trees, failing checks or findings park the correction for a person. */
 export const defaultStall: Stall.Policy = { rounds: 2, on: "park" }
 const Input = Schema.Struct({ plan: Plan, maxRounds: MaxRounds, stall: Schema.optionalKey(Stall.Policy) })
-const Cursor = Schema.Struct({ plan: Plan, maxRounds: MaxRounds, stall: Stall.Policy, streaks: Stall.State, round: Schema.Int, previous: Schema.NullOr(Result) })
+// Stall fields decode with defaults, so a cursor or round recorded before them still replays.
+const defaulted = <S extends Schema.Top & { readonly "~type.make": unknown }>(schema: S, value: S["Type"]) =>
+  schema.pipe(Schema.withDecodingDefaultKey(Effect.succeed(value)))
+export const Cursor = Schema.Struct({ plan: Plan, maxRounds: MaxRounds, stall: defaulted(Stall.Policy, defaultStall), streaks: defaulted(Stall.State, Stall.initial),
+  round: Schema.Int, previous: Schema.NullOr(Result) })
 const Blocked = Schema.Struct({ executionId: Schema.String, message: Schema.String })
-const RoundOutcome = Schema.Struct({ result: Schema.NullOr(Result), blocked: Schema.NullOr(Blocked), streaks: Stall.State, stalled: Schema.NullOr(Stall.Stalled) })
+const RoundOutcome = Schema.Struct({ result: Schema.NullOr(Result), blocked: Schema.NullOr(Blocked),
+  streaks: defaulted(Stall.State, Stall.initial), stalled: defaulted(Schema.NullOr(Stall.Stalled), null) })
 type Cursor = typeof Cursor.Type
 type RoundOutcome = typeof RoundOutcome.Type
 type Pass = Pick<RoundOutcome, "result" | "blocked">
 
-/** A round's stall signals: every atom's JJ tree, the failing checks, and the findings the next repair would get. */
+/** A round's stall signals: every atom's JJ tree, each failing check with its findings, and the findings the next repair would get. */
 export const roundSignals = (result: Result): Stall.Observation => ({
   tree: JSON.stringify(result.changes.map(group => group.implementation.atoms.map(atom => atom.treeId))),
-  checks: result.changes.flatMap(group => group.receipts.filter(receipt => receipt.status === "failed").map(receipt => `${receipt.change}/${receipt.checkId}`)),
+  checks: result.changes.flatMap(group => group.receipts.filter(receipt => receipt.status === "failed")
+    .map(receipt => JSON.stringify([receipt.change, receipt.checkId, receipt.findings.map(finding => finding.message)]))),
   output: result.findings
 })
 
-/** Folds a settled pass into the stall streaks; a parked stall blocks the round on its pass. */
-export const observeRound = (cursor: Pick<Cursor, "stall" | "streaks">, executionId: string, outcome: Pass): RoundOutcome => {
-  if (outcome.result === null || outcome.blocked !== null || outcome.result.status === "validated") return { ...outcome, streaks: cursor.streaks, stalled: null }
-  const { state, stalled } = Stall.observe(cursor.stall, cursor.streaks, roundSignals(outcome.result))
+/** Folds a settled pass into the stall streaks; a parked stall blocks the round on its pass. The last round settles on its bound instead. */
+export const observeRound = (cursor: Pick<Cursor, "stall" | "streaks" | "round" | "maxRounds">, executionId: string, outcome: Pass): RoundOutcome => {
+  const streaks = cursor.streaks
+  if (outcome.result === null || outcome.blocked !== null || outcome.result.status === "validated" || cursor.round >= cursor.maxRounds) {
+    return { ...outcome, streaks, stalled: null }
+  }
+  const { state, stalled } = Stall.observe(cursor.stall, streaks, roundSignals(outcome.result))
   if (stalled === undefined) return { ...outcome, streaks: state, stalled: null }
   const blocked = stalled.on === "park" ? { executionId, message: `Correction stalled: the same ${stalled.signal} for ${stalled.rounds} rounds` } : null
   return { result: outcome.result, blocked, streaks: state, stalled }
@@ -42,7 +51,7 @@ export const finishRound = (cursor: Pick<Cursor, "round" | "previous">, outcome:
   outcome.stalled?.on === "escalate"
     ? Effect.fail(new CodingError({ code: "stalled", message: `Correction stalled: the same ${outcome.stalled.signal} for ${outcome.stalled.rounds} rounds` }))
     : Effect.succeed({ status: outcome.blocked ? "blocked" as const : outcome.result!.status, rounds: cursor.round, result: outcome.result ?? cursor.previous,
-      blocked: outcome.blocked, ...(outcome.stalled === null ? {} : { stalled: outcome.stalled }) })
+      blocked: outcome.blocked, ...(outcome.stalled ? { stalled: outcome.stalled } : {}) })
 const Selection = Schema.Struct({ changeId: Schema.NonEmptyString, intent: Schema.NonEmptyString })
 const Context = Schema.Struct({
   owner: Change, implementation: Implementation, findings: Schema.Array(Finding), index: Schema.Int
@@ -234,7 +243,9 @@ export const correctionLayers = Layer.mergeAll(
   RunRound.toLayer(cursor => Effect.gen(function*() {
     const instance = yield* FlowRuntime.FlowInstance
     const runtime = yield* FlowRuntime.FlowRuntime
-    const executionId = Digest.digest(Digest.canonical(["coding/correction-pass/v1", instance.executionId, cursor]))
+    // The pass identity predates the stall fields, so a resumed pass reattaches.
+    const { plan, maxRounds, round, previous } = cursor
+    const executionId = Digest.digest(Digest.canonical(["coding/correction-pass/v1", instance.executionId, { plan, maxRounds, round, previous }]))
     const execute: Effect.Effect<Result, typeof Error.Type | FlowRuntime.FlowCycleDetected> = cursor.previous === null
       ? runtime.execute(ObservePlan, { executionId, payload: { plan: cursor.plan } })
       : runtime.execute(RepairPass, { executionId, payload: { plan: cursor.plan, previous: cursor.previous } })

@@ -816,6 +816,17 @@ describe("Supervisor stall", () => {
         stall: { rounds: 2, signals: () => ({ checks: ["b", "a"] }) }
       })
       expect(checks).toMatchObject({ rounds: 2, stalled: { signal: "checks" } })
+      const failing = yield* Supervisor.run("goal", {
+        ...options,
+        worker: ({ task }: { readonly task: Supervisor.Task }): Effect.Effect<string, unknown> =>
+          task.id === "a"
+            ? Effect.fail(new Error("flaky"))
+            : task.id === "b"
+            ? Effect.fail({ reason: "down" })
+            : Effect.succeed(`${task.id}-done`),
+        stall: { rounds: 2 }
+      })
+      expect(failing).toMatchObject({ rounds: 2, stalled: { signal: "output" } })
       expect(yield* Effect.flip(Supervisor.run("goal", { ...options, stall: { rounds: 2, on: "escalate" } })))
         .toMatchObject({ code: "stalled" })
       expect(yield* Effect.flip(Supervisor.run("goal", { ...options, stall: { rounds: 1 } })))

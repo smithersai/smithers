@@ -181,9 +181,21 @@ const retriable = (value: unknown): ReadonlyArray<string> => {
   return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : []
 }
 
-/** A round's output signal: every task's latest outcome, without the round it ran in. */
+/**
+ * A round's output signal: every task's latest outcome, without the round it
+ * ran in, and an `Error` failure by its name and message, since it has no
+ * canonical form to hash.
+ */
 const unrounded = (results: unknown): unknown =>
-  (results as ReadonlyArray<Outcome<unknown>>).map(({ round: _round, ...outcome }) => outcome)
+  (results as ReadonlyArray<Outcome<unknown>>).map((outcome) => {
+    if (outcome._tag === "Done") {
+      return { _tag: "Done", id: outcome.id, workerType: outcome.workerType, output: outcome.output }
+    }
+    const error = outcome.error instanceof Error ? `${outcome.error.name}: ${outcome.error.message}` : outcome.error
+    return { _tag: "Failed", id: outcome.id, workerType: outcome.workerType, error }
+  })
+
+const unroundedSignal: Stalling.Signal = { name: "unrounded", read: unrounded }
 
 const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
@@ -478,7 +490,7 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
                           { ...captures, round },
                           state.results,
                           streaks as Stall.State,
-                          unrounded,
+                          unroundedSignal,
                           {
                             settle: (stalled) =>
                               Node.succeed({ exhausted: true, rounds: round, review, stalled }),

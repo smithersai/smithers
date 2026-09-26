@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Stall } from "@smthrs/flow"
-import { Effect, Exit } from "effect"
-import { defaultStall, finishRound, observeRound, roundSignals } from "../coding/correction.ts"
+import { Effect, Exit, Schema } from "effect"
+import { Cursor, defaultStall, finishRound, observeRound, roundSignals } from "../coding/correction.ts"
 import type { Receipt, Result, Revision } from "../coding/schema.ts"
 
 const revision = (tree: string): Revision => ({ changeId: "jj-a", commitId: `commit-${tree}`, treeId: tree, operationId: "op", parentCommitIds: [] })
@@ -15,11 +15,14 @@ const result = (tree: string, failing: ReadonlyArray<string>, finding: string): 
   findings: [{ owner: "a", message: finding, sourceCommitId: "c" }]
 })
 
+const planFixture = { prompt: "p", memoryRevision: "m", base: revision("base"), changes: [{ id: "a", title: "a", intent: "a", implementation: "i",
+  implementationDigest: "0".repeat(64), atoms: [{ changeId: null, message: "m", intent: "a", reads: [], writes: [] }], checks: [] }] }
+
 /** Folds passes the way successive correction rounds do, returning each outcome. */
 const rounds = (stall: Stall.Policy, passes: ReadonlyArray<Result>) => {
   let streaks = Stall.initial
   return passes.map((pass, index) => {
-    const outcome = observeRound({ stall, streaks }, `pass-${index}`, { result: pass, blocked: null })
+    const outcome = observeRound({ stall, streaks, round: index + 1, maxRounds: 8 }, `pass-${index}`, { result: pass, blocked: null })
     streaks = outcome.streaks
     return outcome
   })
@@ -58,10 +61,19 @@ test("a moving, validated or blocked round never stalls", () => {
   assert.ok(moving.every(outcome => outcome.stalled === null))
   const validated = { ...result("t1", [], "x"), status: "validated" as const }
   const stall: Stall.Policy = { rounds: 2, on: "stop" }
-  const primed = observeRound({ stall, streaks: Stall.initial }, "p", { result: validated, blocked: null }).streaks
-  assert.equal(observeRound({ stall, streaks: primed }, "p", { result: validated, blocked: null }).stalled, null)
-  assert.equal(observeRound({ stall, streaks: primed }, "p", { result: null, blocked: { executionId: "p", message: "m" } }).stalled, null)
-  assert.deepEqual(roundSignals(result("t1", ["unit"], "x")).checks, ["a/unit"])
+  const cursor = { stall, streaks: Stall.initial, round: 1, maxRounds: 8 }
+  const primed = observeRound(cursor, "p", { result: validated, blocked: null }).streaks
+  assert.equal(observeRound({ ...cursor, streaks: primed }, "p", { result: validated, blocked: null }).stalled, null)
+  assert.equal(observeRound({ ...cursor, streaks: primed }, "p", { result: null, blocked: { executionId: "p", message: "m" } }).stalled, null)
+  assert.deepEqual(roundSignals(result("t1", ["unit"], "x")).checks, [JSON.stringify(["a", "unit", []])])
+  // Findings with no failing check never stall on checks, and the last round settles on its bound.
+  assert.ok(rounds(stall, [result("t1", [], "x"), result("t2", [], "y")]).every(outcome => outcome.stalled === null))
+  const last = observeRound({ stall, streaks: observeRound(cursor, "p", { result: result("t1", [], "x"), blocked: null }).streaks, round: 8, maxRounds: 8 },
+    "p", { result: result("t1", [], "x"), blocked: null })
+  assert.equal(last.stalled, null)
+  // A cursor recorded before the stall fields decodes with the default policy.
+  const legacy = Schema.decodeUnknownSync(Cursor)({ plan: planFixture, maxRounds: 3, round: 1, previous: null })
+  assert.deepEqual([legacy.stall, legacy.streaks], [defaultStall, Stall.initial])
   const plain = Effect.runSync(finishRound({ round: 1, previous: null }, moving[0]!))
   assert.equal("stalled" in plain, false)
 })
