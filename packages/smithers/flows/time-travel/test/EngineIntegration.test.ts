@@ -721,4 +721,56 @@ describe("time travel over an engine-written journal", () => {
         expect((yield* (yield* RunStore.RunStore).get("clock-run")).status).toBe("suspended")
       }).pipe(Effect.provide(engineLayer({ notifications: [], jjCalls: [] }, [])))
     ))
+
+  it.effect("fires a durable sleep again after rewinding between its schedule and its completion", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const timer = Flow.make("time-travel/Timer", { payload: {}, success: Schema.String, body: () => Post.call({}) })
+        const engine = yield* FlowRuntime.FlowRuntime
+        yield* engine.register(timer, () =>
+          Effect.gen(function*() {
+            yield* Action.make({
+              name: "time-travel/TimerStage",
+              tier: "compensable",
+              success: Schema.Void,
+              idempotencyKey: "timer-stage",
+              execute: Effect.void
+            })
+            yield* DurableClock.sleep({ name: "rewind-sleep", duration: 1000, inMemoryThreshold: 0 })
+            return yield* DurableDeferred.await(Settled)
+          }))
+        const execute = engine.execute(timer, { executionId: "fired-clock-run", payload: {}, discard: true })
+        yield* execute
+        const journal = yield* Journal.Journal
+        const before = yield* journal.entries({ runId: "fired-clock-run" as JournalEvent.RunId, limit: 100 })
+        const scheduled = before.entries.find((entry) => entry.eventType === "flows.engine.clock-scheduled")!
+        const frame = { lineageId: FlowEngine.Lineage.root("fired-clock-run"), seq: scheduled.seq }
+        yield* TestClock.adjust(1000)
+        const state = yield* DurableEngineState.DurableEngineState
+        const address = { flowName: timer._tag, executionId: "fired-clock-run", clockName: "rewind-sleep" }
+        // Timer delivery wakes the driver; completion is persisted afterwards.
+        let clock = yield* state.clock(address)
+        for (
+          let attempt = 0;
+          attempt < 2_000 && Option.isSome(clock) && clock.value.completedAtMs === null;
+          attempt++
+        ) {
+          yield* Effect.yieldNow
+          clock = yield* state.clock(address)
+        }
+        expect(clock).toMatchObject({ _tag: "Some", value: { completedAtMs: 1000 } })
+        const timeTravel = yield* TimeTravel
+        yield* timeTravel.rewind({ runId: "fired-clock-run", frame })
+        // The rewind keeps the fired clock row and drops the completion the
+        // replayed sleep waits on, so the clock has to fire again.
+        yield* execute
+        let deferred = yield* state.deferred({ ...address, deferredName: "DurableClock/rewind-sleep" })
+        for (let attempt = 0; attempt < 2_000 && Option.isNone(deferred); attempt++) {
+          yield* Effect.yieldNow
+          deferred = yield* state.deferred({ ...address, deferredName: "DurableClock/rewind-sleep" })
+        }
+        expect(deferred).toMatchObject({ _tag: "Some" })
+        expect((yield* (yield* RunStore.RunStore).get("fired-clock-run")).status).toBe("suspended")
+      }).pipe(Effect.provide(engineLayer({ notifications: [], jjCalls: [] }, [])))
+    ))
 })
