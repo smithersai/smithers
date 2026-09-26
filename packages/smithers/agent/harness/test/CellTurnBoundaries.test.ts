@@ -1473,6 +1473,17 @@ describe("CellTurn frame failures", () => {
     // record with the digest it failed on.
     expect(of(events, "turn-opened")).toHaveLength(1)
     expect(of(events, "model-settled")).toHaveLength(0)
+
+    // A later frame opens on the section the frame before it wrote, so nothing
+    // renders the window until its request is assembled; that is where the
+    // same window has to fail the same way.
+    const later = await run({
+      script: [emits(`ctx.done("done")`)],
+      state: new CellTurn.State({ ...state({ contextWindow: corrupt }), sectioned: true })
+    })
+    expect(later.failure).toMatchObject({ code: "render_failed", message: "Unable to render the context window" })
+    expect(of(later.events, "turn-opened")).toHaveLength(1)
+    expect(of(later.events, "model-settled")).toHaveLength(0)
   })
 })
 

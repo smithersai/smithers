@@ -874,6 +874,49 @@ describe("a long claim, read one sentence at a time", () => {
     expect(failure.code).toBe("completion_unjudged")
   })
 
+  it("meters both questions, and keeps the whole question's usage when the sentences report none", async () => {
+    const metered = (sentenceUsage: { inputTokens: number; outputTokens: number } | undefined) =>
+      Layer.succeed(Evaluator.Evaluator)(
+        Evaluator.Evaluator.of({
+          evaluate: (request) =>
+            Effect.succeed(
+              "invented" in request.questions
+                ? {
+                  answers: {
+                    complete: { type: "boolean", probability: 0.9 },
+                    overclaims: { type: "boolean", probability: 0.1 },
+                    invented: { type: "boolean", probability: 0.91 }
+                  },
+                  latencyMs: 7,
+                  usage: { inputTokens: 300, outputTokens: 10 }
+                }
+                : {
+                  answers: Object.fromEntries(
+                    Object.keys(request.questions).map((id) => [id, { type: "boolean", probability: 0.2 }])
+                  ),
+                  latencyMs: 3,
+                  ...(sentenceUsage === undefined ? {} : { usage: sentenceUsage })
+                }
+            )
+        })
+      )
+    const summed = await settled({
+      layer: metered({ inputTokens: 200, outputTokens: 4 }),
+      calls: [probe],
+      claim: truthful,
+      changes: { claimCap: 1, claimDemands: 1 }
+    })
+    expect(summed.observed).toMatchObject({ invented: 0.2, usage: { inputTokens: 500, outputTokens: 14 } })
+
+    const unmetered = await settled({
+      layer: metered(undefined),
+      calls: [probe],
+      claim: truthful,
+      changes: { claimCap: 1, claimDemands: 1 }
+    })
+    expect(unmetered.observed).toMatchObject({ invented: 0.2, usage: { inputTokens: 300, outputTokens: 10 } })
+  })
+
   it("lists a container check by its route, its program and what it printed", async () => {
     const whole = reading({})
     await settled({ layer: whole.layer, calls: [probe] })
@@ -901,6 +944,11 @@ describe("the sentences of a claim", () => {
 
     expect(parts).toHaveLength(CompletionClaim.sentenceLimit)
     expect(parts.join(" ")).toBe(claim)
+  })
+
+  it("reads the sentence back out of a question, and nothing out of any other text", () => {
+    expect(CompletionClaim.sentenceOf(`Judge this.${CompletionClaim.sentenceMarker}Tests pass.`)).toBe("Tests pass.")
+    expect(CompletionClaim.sentenceOf("Is the whole claim invented?")).toBe("")
   })
 })
 

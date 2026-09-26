@@ -4242,6 +4242,54 @@ describe("CellTurn context ordering", () => {
     expect(texts.at(-2)).toContain("realm holds")
   })
 
+  it("writes a rehydrated run's first section in front of asks that span two tail segments", async () => {
+    // `interventions` is durable state and the window is rebuilt around it, so
+    // the asks a host hands back need not share one segment.
+    const spanning = ContextWindow.make({
+      modelId: "test-model",
+      segments: [
+        ...window.segments.slice(0, 1),
+        {
+          kind: "transcript",
+          zone: "tail",
+          content: [ModelRequest.Message.user("start"), ModelRequest.Message.user("ask one")]
+        },
+        {
+          kind: "transcript",
+          zone: "tail",
+          content: [ModelRequest.Message.user("ask two"), ModelRequest.Message.user("ask three")]
+        }
+      ]
+    })
+    const texts = async (interventions: number) => {
+      const { model } = await run({
+        script: [emits(`ctx.done("done")`)],
+        state: new CellTurn.State({ ...state({ contextWindow: spanning }), interventions })
+      })
+      return (model.recorder.requests[0]?.messages ?? []).map((message) =>
+        message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n")
+      )
+    }
+
+    const spanned = await texts(3)
+    expect(spanned.filter((text) => !text.includes("realm"))).toEqual(["start", "ask one", "ask two", "ask three"])
+    expect(spanned[1]).toContain("realm")
+    // More asks than the window holds: the count is clamped, and with no tail
+    // left to hold the section it is read last, as with no asks at all.
+    const clamped = await texts(9)
+    expect(clamped.slice(0, -1)).toEqual(["start", "ask one", "ask two", "ask three"])
+    expect(clamped.at(-1)).toContain("realm")
+  })
+
+  it("gives a window with no segments yet a transcript segment for its first section", async () => {
+    const { model } = await run({
+      script: [emits(`ctx.done("done")`)],
+      state: state({ contextWindow: ContextWindow.make({ modelId: "test-model", segments: [] }) })
+    })
+    expect(model.recorder.requests[0]?.messages).toHaveLength(1)
+    expect(stateSection(model.recorder.requests[0])).toContain("realm")
+  })
+
   it("replays each frame's ChatGPT reasoning item ahead of the message it produced", async () => {
     // The model emits reasoning, then the message, and the Responses guide
     // asks for output items back as returned. The text-first order this
@@ -4379,7 +4427,9 @@ describe("CellTurn unsupported claim", () => {
   const claiming = (
     cells: ReadonlyArray<string>,
     calls: ReadonlyArray<ScriptedEngine.CallStep>,
-    answers: Readonly<Record<string, Evaluator.ScriptedAnswer>>,
+    answers:
+      | Readonly<Record<string, Evaluator.ScriptedAnswer>>
+      | ((request: Evaluator.Request) => Readonly<Record<string, Evaluator.ScriptedAnswer>>),
     overrides: { readonly maxFrames?: number } = {}
   ) => {
     const asked: Array<Evaluator.Request> = []
@@ -4401,7 +4451,7 @@ describe("CellTurn unsupported claim", () => {
       tree: "a.py=base",
       evaluator: Evaluator.layerScripted((request) => {
         asked.push(request)
-        return answers
+        return typeof answers === "function" ? answers(request) : answers
       })
     }).then((settled) => ({ ...settled, asked }))
   }
@@ -4414,6 +4464,27 @@ describe("CellTurn unsupported claim", () => {
 
   const edited: ScriptedEngine.CallStep = { _tag: "Success", value: null, tree: "a.py=fixed" }
   const green: ScriptedEngine.CallStep = { _tag: "Success", value: { exitCode: 0, stdout: "4 passed" } }
+
+  it("journals the sentence reading of a long claim the whole question misread", async () => {
+    // The whole claim reads as invented; each of its sentences reads as
+    // recorded, so it stands, and the run journals both readings.
+    const { asked, events } = await claiming(
+      [editing, finishing("check src/a.py", "Kept the query string. The suite is green.")],
+      [edited, green],
+      (request) =>
+        "invented" in request.questions
+          ? { complete: { probability: 0.9 }, overclaims: { probability: 0.1 }, invented: { probability: 0.91 } }
+          : Object.fromEntries(Object.keys(request.questions).map((id) => [id, { probability: 0.2 }])),
+      { maxFrames: 3 }
+    )
+
+    expect(asked).toHaveLength(2)
+    expect(of(events, "claim-demanded")).toEqual([expect.objectContaining({ invented: 0.2, demanded: false })])
+    expect(of(events, "decision-settled").map((event) => event.classifier)).toEqual([
+      "completion/claim",
+      "completion/claim-sentences"
+    ])
+  })
 
   it("journals the reading of a completion it lets through, and says nothing to the model", async () => {
     const { asked, events, model } = await claiming(
