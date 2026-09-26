@@ -3,8 +3,8 @@
  *
  * The SDK is injected by callers so this package remains browser-bundleable
  * and owns no vendor dependency. The private shapes below mirror the vendor's
- * fluent builders, single-drain command handle, lifecycle handles, and guest
- * filesystem operations.
+ * fluent builders, streaming command handle, lifecycle handles, label-scoped
+ * listing, default-backend selection, and guest filesystem operations.
  *
  * @since 0.1.0
  */
@@ -16,16 +16,24 @@ interface GuestFs {
   mkdir(path: string): Promise<void>
 }
 
-interface ExecOutput {
-  readonly code: number
-  stdout(): string
-  stderr(): string
-  stdoutBytes(): Uint8Array
-  stderrBytes(): Uint8Array
-}
+/** One event of a streamed command, in the order the guest produced it. */
+type ExecEvent =
+  | { readonly kind: "started"; readonly pid: number }
+  | { readonly kind: "stdout"; readonly data: Uint8Array }
+  | { readonly kind: "stderr"; readonly data: Uint8Array }
+  | { readonly kind: "exited"; readonly code: number }
 
 interface ExecHandle {
-  collect(): Promise<ExecOutput>
+  /**
+   * The next event, or `null` once the command's stream has ended. The vendor
+   * answers `undefined` for a guest event it does not normalise; the one the
+   * guest agent sends today is its report that the command could not be
+   * started at all, such as a missing program or working directory.
+   */
+  recv(): Promise<ExecEvent | null | undefined>
+  /** Delivers a Linux signal number to the command's process group. */
+  signal(signal: number): Promise<void>
+  kill(): Promise<void>
 }
 
 interface ExecBuilder {
@@ -35,18 +43,45 @@ interface ExecBuilder {
   stdinBytes(data: Uint8Array): this
 }
 
+interface DestroyOptions {
+  /** How long the stop and removal may take to converge. */
+  readonly timeoutMs: number
+  /** Stop the machine without the graceful shutdown first. */
+  readonly force?: boolean
+}
+
 interface Sandbox {
   readonly name: string
+  readonly backendKind: "local" | "cloud"
   fs(): GuestFs
   execStreamWith(command: string, configure: (builder: ExecBuilder) => ExecBuilder): Promise<ExecHandle>
-  stop(): Promise<void>
+  destroy(options: DestroyOptions): Promise<void>
 }
 
 interface SandboxHandle {
+  readonly name: string
   readonly status: string
+  /** The persisted configuration as JSON, labels included. */
+  readonly configJson: string
   connect(): Promise<Sandbox>
   start(): Promise<Sandbox>
   startDetached(): Promise<Sandbox>
+  refresh(): Promise<SandboxHandle>
+  modify(options: {
+    readonly labels: Record<string, string>
+    readonly policy: "next_start"
+  }): Promise<{ readonly applied: boolean }>
+  destroy(options: DestroyOptions): Promise<void>
+}
+
+interface SandboxList {
+  label(key: string, value: string): this
+  cursor(cursor: string): this
+}
+
+interface SandboxPage {
+  readonly sandboxes: ReadonlyArray<SandboxHandle>
+  readonly nextCursor?: string | undefined
 }
 
 interface SandboxBuilder {
@@ -71,6 +106,12 @@ interface SandboxBuilder {
 /**
  * The Microsandbox SDK entry point required by the provider.
  *
+ * `defaultBackendKind` is what the provider reads before it provisions, so it
+ * can refuse to run anywhere but this machine; `setDefaultBackend` is the
+ * vendor's own pin, and a composition that must never leave this machine calls
+ * `sdk.setDefaultBackend("local")` once at startup, which overrides the
+ * `MSB_BACKEND`, `MSB_API_KEY`, and `MSB_PROFILE` environment selection.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -78,5 +119,8 @@ export interface Sdk {
   readonly Sandbox: {
     builder(name: string): SandboxBuilder
     get(name: string): Promise<SandboxHandle>
+    listWith(configure: (list: SandboxList) => SandboxList): Promise<SandboxPage>
   }
+  defaultBackendKind(): "local" | "cloud"
+  setDefaultBackend(backend: "local"): void
 }

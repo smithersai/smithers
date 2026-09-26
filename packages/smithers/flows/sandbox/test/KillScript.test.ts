@@ -36,7 +36,8 @@ const collect = async (parents: ReadonlyArray<readonly [number, number]>, host: 
       // Count executed reads, including those inside command substitutions.
       // The kill stub records how many completed before the first signal.
       `read() { printf 'read\n' >> '${reads}'; command read "$@"; }; ` +
-      `kill() { wc -l < '${reads}' > '${collected}'; printf '%s\n' "$@" >> '${signals}'; return 0; }; ` +
+      // One line per `kill` invocation: the freeze, the signal, the thaw.
+      `kill() { wc -l < '${reads}' > '${collected}'; printf '%s ' "$@" >> '${signals}'; echo >> '${signals}'; return 0; }; ` +
       script
     ], { encoding: "utf8", timeout: 30_000 })
     expect(result.error).toBeUndefined()
@@ -45,9 +46,13 @@ const collect = async (parents: ReadonlyArray<readonly [number, number]>, host: 
     expect(existsSync(cancelMarker(pidfile))).toBe(!host)
     const statReads = (await readFile(reads, "utf8")).trim().split("\n").length
     expect(Number((await readFile(collected, "utf8")).trim())).toBe(statReads)
-    const args = (await readFile(signals, "utf8")).trim().split("\n")
-    expect(args.slice(0, 2)).toEqual(["-s", "TERM"])
-    return { statReads, pids: args.slice(2).map(Number) }
+    const invocations = (await readFile(signals, "utf8")).trim().split("\n").map((line) => line.trim().split(" "))
+    // The collected set is stopped, signalled, and continued, whole each time.
+    expect(invocations.map((args) => args.slice(0, 2))).toEqual([["-s", "STOP"], ["-s", "TERM"], ["-s", "CONT"]])
+    const [stopped, signalled, continued] = invocations.map((args) => args.slice(2))
+    expect(stopped).toEqual(signalled)
+    expect(continued).toEqual(signalled)
+    return { statReads, pids: signalled!.map(Number) }
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

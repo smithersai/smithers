@@ -2,6 +2,74 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking for custom `MicrosandboxSandbox.Sdk` implementations.** The
+  injected slice now matches the streaming and lifecycle surface of
+  `microsandbox` 0.6: command handles expose `recv()`, `signal(number)`, and
+  `kill()` in place of a collected result; machines and handles are removed
+  with `destroy({ timeoutMs, force? })` in place of `stop()`; handles expose
+  `configJson`, `refresh()`, and `modify()`; `Sandbox.listWith` lists machines
+  by label with cursor paging; and `defaultBackendKind()` and
+  `setDefaultBackend()` are required. Callers passing the real `microsandbox`
+  module are unaffected.
+- `MicrosandboxSandbox` sessions stream command output as the guest writes it,
+  return from `spawn` once the command has started, and declare `kill`.
+  Closing a spawn's scope before the exit, as an interrupted caller does,
+  sends `SIGTERM` to the command and every process it started, then `SIGKILL`
+  after a two-second grace, inside the five-second teardown bound.
+- The descendant kill scripts shared by `ContainerSandbox`,
+  `KubernetesSandbox`, `AwsSandbox`, and `MicrosandboxSandbox` stop the whole
+  collected process set, signal it, and continue it. Signalling children
+  before their parent let a shell parent woken by a child's death run its next
+  statement before its own signal landed; on a single-vCPU microVM an
+  interrupted `sleep 2; printf survived > file` wrote the file in 7 of 16
+  runs, and in none of 16 after this change. A signal that itself stops or
+  continues is delivered without the freeze.
+
+### Added
+
+- `MicrosandboxSandbox.reap` takes `retain`, which keeps a dead holder's
+  machine by the labels its configuration records, such as a sticky workspace
+  a resuming run will reattach.
+
+- `MicrosandboxSandbox` machines carry the ownership labels
+  `smithers.provider`, `smithers.owner`, and `smithers.holder`, exported as
+  `providerLabel`, `providerName`, `ownerLabel`, and `holderLabel`, with the
+  `owner` and `holder` options naming the installation and live holder;
+  reattaching a machine relabels it to the new holder. `reap({ sdk, owner,
+  isAlive })` removes one owner's machines whose holder is no longer alive,
+  re-reading each before removal so a reattached machine survives.
+- `MicrosandboxSandbox` refuses to provision unless the SDK's default backend
+  is local, and refuses a machine that reports another backend, so ambient
+  `MSB_*` configuration cannot move guest work off the host. `backend: "any"`
+  opts out.
+- `SandboxConformance.check` accepts `provides.interrupt` and
+  `provides.ephemeral` claims and `isolation.hostSentinel` and
+  `isolation.egressProbe` claims, checked by `interrupts-a-running-command`,
+  `releases-ephemeral-state`, `hides-host-paths`, and `refuses-egress`.
+
+### Fixed
+
+- A `MicrosandboxSandbox` command the guest could not start (a missing program
+  or working directory) left its streams and `exitCode` pending forever: the
+  SDK reports that failure as an `undefined` event, which the provider read as
+  an event kind and died on. It now fails with `spawn_error`, and an
+  equivalent failure while warming a Nix environment fails the acquire with
+  `unavailable`.
+- A `MicrosandboxSandbox` removal whose graceful stop fails is retried with
+  `force: true` before it is reported, on release and in `reap`.
+- A `MicrosandboxSandbox` command whose machine goes away fails its streams
+  and `exitCode` with `unavailable` at once instead of waiting for an exit that
+  will never be reported.
+- `MicrosandboxSandbox` sessions now supply `files`, the native `stat`,
+  exclusive creation (`wx`), modes, `chmod`, and `chown` that
+  `ContainerSandbox` sessions already had, through the same guest commands.
+  Without them the std `write`, `edit`, and `apply_patch` tools, which replace
+  a file through an exclusive sibling that keeps the file's mode, failed in a
+  microVM with "Could not write". The image needs GNU or BusyBox `stat`,
+  `mktemp`, and `ln -T`.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added

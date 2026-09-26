@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Option, Stream } from "effect"
-import { fileSystem } from "../src/ContainerSandbox/fileSystem.ts"
+import { linuxFileSystem } from "../src/internal/linuxFileSystem.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 
@@ -30,7 +30,7 @@ const fixture = (output = "81a0 3 1000 100 9 123 1 1700000000\n", code = 0, fail
           writes.push(content)
         })
   }
-  return { fs: fileSystem(session), commands, writes }
+  return { fs: linuxFileSystem(session, "container"), commands, writes }
 }
 
 describe("container native filesystem", () => {

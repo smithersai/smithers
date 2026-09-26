@@ -12,11 +12,11 @@ import { configurationFingerprint } from "../internal/configurationFingerprint.t
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { execSession } from "../internal/execSession.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
+import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
 import { gather, type GatheredRun, providerFailure } from "../internal/localProcess.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
-import { fileSystem } from "./fileSystem.ts"
 
 /**
  * How the provider reaches and shapes its containers.
@@ -257,7 +257,7 @@ export const make = (options: ContainerSandboxOptions): Provider => {
           ],
           ping: ["exec", name, "true"]
         })
-        return { ...session, files: fileSystem(session) }
+        return { ...session, files: linuxFileSystem(session, "container") }
       })
   }
 }

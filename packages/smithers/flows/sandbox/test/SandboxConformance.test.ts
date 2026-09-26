@@ -6,7 +6,7 @@
  * whose truthful half is fake would prove the suite agrees with the fake.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Deferred, Effect, Fiber, FileSystem, Stream } from "effect"
+import { Deferred, Effect, Fiber, FileSystem, Scope, Stream } from "effect"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -317,6 +317,94 @@ describe("SandboxConformance", () => {
       )
       expect(names).toEqual(expect.arrayContaining(["writes-its-output", "reports-a-nonzero-exit"]))
     }), 120_000)
+
+  it.live("names a session whose command outlives its interrupted caller", () =>
+    Effect.gen(function*() {
+      // The lie: every command runs in a scope of its own that nothing ever
+      // closes, so interrupting the caller reaches nothing.
+      const detached = warped((session) => ({
+        ...session,
+        spawn: (command, options) =>
+          Effect.flatMap(Scope.make(), (orphaned) => Scope.provide(session.spawn(command, options), orphaned))
+      }))
+      expect(
+        checkNames(
+          yield* SandboxConformance.check(detached, {
+            session: "trial-interrupt",
+            provides: { interrupt: true },
+            commands: SandboxConformance.posixCommands
+          })
+        )
+      ).toContain("interrupts-a-running-command")
+    }), 120_000)
+
+  it.live("names a session whose release keeps what it wrote", () =>
+    Effect.gen(function*() {
+      // The lie: a file written before the release is still there after it.
+      const keeping = warped((session) => ({
+        ...session,
+        readFile: (path) =>
+          path.endsWith("/conformance-ephemeral.bin") ? Effect.succeed(new Uint8Array([1])) : session.readFile(path)
+      }))
+      expect(
+        checkNames(
+          yield* SandboxConformance.check(keeping, {
+            session: "trial-ephemeral",
+            provides: { ephemeral: true },
+            commands: SandboxConformance.posixCommands
+          })
+        )
+      ).toContain("releases-ephemeral-state")
+    }), 120_000)
+
+  it.live(
+    "judges a host-path isolation claim by the file surface and a guest probe together",
+    () =>
+      Effect.gen(function*() {
+        const options = (session: string) => ({
+          session,
+          isolation: { hostSentinel: elsewhere },
+          commands: SandboxConformance.posixCommands
+        })
+        // A directory session reaches every host path.
+        expect(checkNames(yield* SandboxConformance.check(truthful, options("trial-hidden-open"))))
+          .toContain("hides-host-paths")
+        // Both surfaces deny the sentinel: the claim holds.
+        const hiding = warped((session) => ({
+          ...session,
+          readFile: (path) =>
+            path === elsewhere
+              ? Effect.fail(new ProviderError({ code: "not_found", message: `nothing at ${path}` }))
+              : session.readFile(path),
+          spawn: (command, spawnOptions) =>
+            session.spawn(command.startsWith("test -e ") ? "exit 1" : command, spawnOptions)
+        }))
+        expect(checkNames(yield* SandboxConformance.check(hiding, options("trial-hidden"))))
+          .not.toContain("hides-host-paths")
+      }),
+    120_000
+  )
+
+  for (
+    const [probe, verdict] of [
+      ["exit 0", "egress reached"],
+      ["exit 127", "the probe could not run (exit 127), so egress is unproven"],
+      ["exit 1", undefined]
+    ] as const
+  ) {
+    it.live(`judges an egress claim whose probe runs \`${probe}\``, () =>
+      Effect.gen(function*() {
+        const violations = yield* SandboxConformance.check(truthful, {
+          session: `trial-egress-${probe.replace(" ", "-")}`,
+          isolation: { egressProbe: probe },
+          commands: SandboxConformance.posixCommands
+        })
+        const refused = violations.find(({ check }) => check === "refuses-egress")
+        if (verdict === undefined) expect(refused).toBeUndefined()
+        else if (verdict === "egress reached") expect(refused?.actual).toContain("0")
+        else expect(refused?.actual).toBe(verdict)
+      }), 120_000)
+  }
 
   it("builds its default fixture on a host with no Node globals at all", async () => {
     // This module is part of a package whose contract is that it is

@@ -3,12 +3,14 @@
  *
  * @since 0.1.0
  */
+import * as CommandLine from "@smthrs/kernel/CommandLine"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as Stream from "effect/Stream"
 import { boundedCheck } from "../internal/boundedCheck.ts"
-import { defaultCheckTimeout } from "../internal/deadline.ts"
+import { defaultCheckTimeout, elapsed } from "../internal/deadline.ts"
 import { describeExit } from "../internal/describeExit.ts"
 import * as check_ from "../ProviderConformance/check.ts"
 import type { Commands } from "../ProviderConformance/Commands.ts"
@@ -61,6 +63,37 @@ const everything = (process: RemoteProcess): Effect.Effect<string, ProviderError
 const run = (live: Session, command: string, options: Parameters<Session["spawn"]>[1] = {}) =>
   Effect.scoped(Effect.flatMap(live.spawn(command, options), output))
 
+/** A command's exit status alone, with both output streams drained so neither can stall it. */
+const status = (live: Session, command: string): Effect.Effect<number, ProviderError> =>
+  Effect.scoped(Effect.flatMap(live.spawn(command, {}), (process) =>
+    Effect.map(
+      Effect.all(
+        [Stream.runDrain(process.stdout), Stream.runDrain(process.stderr), process.exitCode],
+        { concurrency: "unbounded" }
+      ),
+      ([, , code]) => code
+    )))
+
+/** What reading a path found: `present`, or the failure code. */
+const lookup = (live: Session, path: string): Effect.Effect<string> =>
+  Effect.match(live.readFile(path), { onFailure: (error) => error.code, onSuccess: () => "present" })
+
+/**
+ * The interrupt fixture: a command that marks its start, starts a background
+ * child, and then — both of them, two seconds later — writes a file of its
+ * own. A command that is really stopped when its fiber is interrupted writes
+ * neither late file.
+ */
+const interruptFixture = {
+  started: "conformance-interrupt-started",
+  survived: "conformance-interrupt-survived",
+  child: "conformance-interrupt-child",
+  command: "(sleep 2; printf child > conformance-interrupt-child) & " +
+    "printf started > conformance-interrupt-started; sleep 2; printf survived > conformance-interrupt-survived",
+  /** How long after the interrupt the late files are looked for: past both two-second sleeps. */
+  settleMs: 3_000
+} as const
+
 const conformanceBytes = new Uint8Array([0, 1, 2, 255, 254, 10, 13, 0, 7])
 
 /**
@@ -103,6 +136,35 @@ export interface CheckOptions {
   readonly provides?: {
     readonly kill?: boolean | undefined
     readonly ping?: boolean | undefined
+    /**
+     * Interrupting the fiber that holds a running command's scope ends the
+     * command and every process it started. Checked by
+     * `interrupts-a-running-command`.
+     */
+    readonly interrupt?: boolean | undefined
+    /**
+     * Releasing a session discards what it wrote, so the next acquire of the
+     * same key starts without it. Checked by `releases-ephemeral-state`.
+     */
+    readonly ephemeral?: boolean | undefined
+  } | undefined
+  /**
+   * Isolation claims, each checked only when named. The suite reads no host
+   * state itself, so the caller supplies what a claim is judged against.
+   */
+  readonly isolation?: {
+    /**
+     * An absolute path that exists on the host running the suite. Checked by
+     * `hides-host-paths`: the session must answer `not_found` for it and a
+     * guest `test -e` of it must exit 1.
+     */
+    readonly hostSentinel?: string | undefined
+    /**
+     * A guest command that exits 0 when it reaches the network and non-zero
+     * when it cannot. Checked by `refuses-egress`: it must exit non-zero, and
+     * 126 or 127 (the probe itself could not run) leaves the claim unproven.
+     */
+    readonly egressProbe?: string | undefined
   } | undefined
 }
 
@@ -126,6 +188,17 @@ export interface CheckOptions {
  * delegated `ProviderConformance` suite over `commandProvider`, so a session
  * provider is held to everything a spawn transport is, including that a
  * declared `kill` ends the command's work and not just its shell.
+ *
+ * Four more checks run only when the caller opts in, so a provider that makes
+ * no such claim is not held to it. `provides.interrupt` runs
+ * `interrupts-a-running-command`: a command and the background child it
+ * started are interrupted two seconds before each would write a file, and
+ * neither file may appear. `provides.ephemeral` runs
+ * `releases-ephemeral-state`: a file written before release must be absent
+ * after reacquiring the key. `isolation.hostSentinel` runs `hides-host-paths`
+ * and `isolation.egressProbe` runs `refuses-egress`; see
+ * {@link CheckOptions.isolation}. None of them is proof of a boundary on its
+ * own: each is one observation, and a provider documents what it isolates.
  *
  * @category constructors
  * @since 0.1.0
@@ -221,6 +294,56 @@ export const check = (
       ),
       deadline
     )
+    const interrupted = options.provides?.interrupt === true
+      ? yield* inSession(provider, session, deadline, (live) =>
+        Effect.gen(function*() {
+          const path = (name: string) =>
+            `${live.workdir}/${name}`
+          const running = yield* Effect.forkChild(
+            Effect.scoped(Effect.flatMap(live.spawn(interruptFixture.command, {}), (process) =>
+              process.exitCode))
+          )
+          let started = false
+          while (!started) {
+            started = (yield* lookup(live, path(interruptFixture.started))) === "present"
+            if (!started) {
+              yield* elapsed(100)
+            }
+          }
+          yield* Fiber.interrupt(running)
+          yield* elapsed(interruptFixture.settleMs)
+          return {
+            survived: yield* lookup(live, path(interruptFixture.survived)),
+            child: yield* lookup(live, path(interruptFixture.child))
+          }
+        }))
+      : undefined
+    const sentinel = options.isolation?.hostSentinel
+    const hidden = sentinel === undefined ?
+      undefined :
+      yield* inSession(provider, session, deadline, (live) =>
+        Effect.gen(function*() {
+          return {
+            read: yield* lookup(live, sentinel),
+            probe: yield* status(live, `test -e ${CommandLine.quote(sentinel)}`)
+          }
+        }))
+    const probe = options.isolation?.egressProbe
+    const egress = probe === undefined
+      ? undefined
+      : yield* inSession(provider, session, deadline, (live) =>
+        status(live, probe))
+    const released = options.provides?.ephemeral === true
+      ? yield* boundedCheck(
+        Effect.andThen(
+          Effect.scoped(Effect.flatMap(provider.acquire(session), (live) =>
+            live.writeFile(`${live.workdir}/conformance-ephemeral.bin`, conformanceBytes))),
+          Effect.scoped(Effect.flatMap(provider.acquire(session), (live) =>
+            lookup(live, `${live.workdir}/conformance-ephemeral.bin`)))
+        ),
+        deadline
+      )
+      : undefined
     // The delegated suite gets the same deadline. It used to be called outside
     // every race this generator sets up, so a provider that hung on spawn hung
     // both public entry points despite `checkTimeout` promising otherwise.
@@ -318,6 +441,39 @@ export const check = (
         check: "reacquires-its-session",
         expected: "a working session after release and reacquire",
         actual: describeExit(reacquired)
+      },
+      interrupted === undefined ||
+        Exit.isSuccess(interrupted) && interrupted.value.survived === "not_found" &&
+          interrupted.value.child === "not_found"
+        ? undefined
+        : {
+          check: "interrupts-a-running-command",
+          expected: "interrupting a running command's fiber ends the command and every process it started",
+          // `present` for `survived` is the command itself outliving the
+          // interrupt; `present` for `child` is its background child.
+          actual: describeExit(interrupted)
+        },
+      hidden === undefined || Exit.isSuccess(hidden) && hidden.value.read === "not_found" && hidden.value.probe === 1
+        ? undefined
+        : {
+          check: "hides-host-paths",
+          expected: "the host sentinel to be not_found through readFile and absent to a guest `test -e`",
+          actual: describeExit(hidden)
+        },
+      egress === undefined ||
+        Exit.isSuccess(egress) && egress.value !== 0 && egress.value !== 126 && egress.value !== 127
+        ? undefined
+        : {
+          check: "refuses-egress",
+          expected: "the egress probe to exit non-zero, having run",
+          actual: Exit.isSuccess(egress) && egress.value !== 0
+            ? `the probe could not run (exit ${egress.value}), so egress is unproven`
+            : describeExit(egress)
+        },
+      released === undefined || Exit.isSuccess(released) && released.value === "not_found" ? undefined : {
+        check: "releases-ephemeral-state",
+        expected: "a file written before release to be not_found after reacquiring the key",
+        actual: describeExit(released)
       }
     ]
     return [

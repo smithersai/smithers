@@ -29,6 +29,9 @@ const procKids = `kids() { t=$1; for d in /proc/[0-9]*; do read -r s 2>/dev/null
 /** A `kids` function on `pgrep -P`, for hosts with no `/proc` (macOS). */
 const pgrepKids = `kids() { for c in $(pgrep -P "$1" 2>/dev/null); do ( kids "$c" ); echo "$c"; done; }`
 
+/** Signals whose meaning a freeze-and-thaw around them would undo. */
+const unfrozen = new Set(["STOP", "TSTP", "TTIN", "TTOU", "CONT"])
+
 /**
  * The collect-then-signal tail both scripts share. The whole descendant set
  * is gathered BEFORE anything is signalled and delivered together with the
@@ -39,13 +42,29 @@ const pgrepKids = `kids() { for c in $(pgrep -P "$1" 2>/dev/null); do ( kids "$c
  * signal the root demonstrably took is delivered, and only a `kill` that
  * failed while the root is still alive exits non-zero instead of claiming
  * delivery.
+ *
+ * One `kill` invocation is still one `kill(2)` per pid, children first. On a
+ * single CPU the parent a dead child wakes can run before its own signal
+ * lands, and a shell parent runs its next command in that gap
+ * (`sleep 2; printf survived > file` writes the file). So the whole set is
+ * stopped first, signalled while nothing in it can run, and continued, and
+ * each process meets its pending signal before its next instruction. A
+ * signal that itself stops or continues is delivered without the freeze,
+ * whose continue would undo it.
  */
 const signalCollected = (signal: string): string =>
-  `set -- $(kids "$p") "$p"; ` +
-  `kill -s ${signal} "$@" 2>/dev/null && exit 0; ` +
-  `kill -s ${signal} "$p" 2>/dev/null && exit 0; ` +
-  `kill -0 "$p" 2>/dev/null || exit 0; ` +
-  `exit 1`
+  unfrozen.has(signal)
+    ? `set -- $(kids "$p") "$p"; ` +
+      `kill -s ${signal} "$@" 2>/dev/null && exit 0; ` +
+      `kill -s ${signal} "$p" 2>/dev/null && exit 0; ` +
+      `kill -0 "$p" 2>/dev/null || exit 0; ` +
+      `exit 1`
+    : `set -- $(kids "$p") "$p"; ` +
+      `kill -s STOP "$@" 2>/dev/null; ` +
+      `if kill -s ${signal} "$@" 2>/dev/null || kill -s ${signal} "$p" 2>/dev/null || ! kill -0 "$p" 2>/dev/null; ` +
+      `then r=0; else r=1; fi; ` +
+      `kill -s CONT "$@" 2>/dev/null; ` +
+      `exit $r`
 
 /**
  * The path a kill writes when the command it meant to stop has not recorded a

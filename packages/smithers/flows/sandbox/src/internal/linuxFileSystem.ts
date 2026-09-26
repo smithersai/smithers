@@ -1,5 +1,6 @@
 /**
- * Native Linux filesystem operations for container sessions.
+ * Native Linux filesystem operations for sessions on a Linux guest, shared by
+ * the container and microVM providers.
  *
  * @since 0.1.0
  */
@@ -21,11 +22,12 @@ const validOwner = (id: number): boolean => Number.isInteger(id) && id >= -1 && 
  * A complete sibling file is linked into place with `ln -T`, which refuses
  * every existing destination, including directories, symlinks and FIFOs.
  * The sibling lives in a private directory on the destination filesystem.
+ * `guest` names the machine kind in refusals, such as `container`.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const fileSystem = (session: Session): Partial<FileSystem.FileSystem> => {
+export const linuxFileSystem = (session: Session, guest: string): Partial<FileSystem.FileSystem> => {
   const badArgument = (method: string, description: string) =>
     PlatformError.badArgument({ module: "FileSystem", method, description })
   const failed = (method: string, path: string, description: string, code = 1) =>
@@ -66,7 +68,7 @@ export const fileSystem = (session: Session): Partial<FileSystem.FileSystem> => 
         fields.length !== 8 || !/^[0-9a-f]+$/i.test(fields[0]!) || !Number.isSafeInteger(mode) ||
         values.some((value) => !Number.isSafeInteger(value)) || values.slice(0, 6).some((value) => value < 0)
       ) {
-        return yield* Effect.fail(failed("stat", path, "container stat returned invalid metadata"))
+        return yield* Effect.fail(failed("stat", path, `${guest} stat returned invalid metadata`))
       }
       const [size, uid, gid, dev, ino, nlink, mtime] = values as [
         number,
@@ -109,7 +111,7 @@ export const fileSystem = (session: Session): Partial<FileSystem.FileSystem> => 
       return session.writeFile(path, content).pipe(Effect.mapError((error) => failed("writeFile", path, error.message)))
     }
     if (flag !== "wx" || (options?.mode !== undefined && !validMode(options.mode))) {
-      return Effect.fail(badArgument("writeFile", "container writes support w without a mode, or wx with a valid mode"))
+      return Effect.fail(badArgument("writeFile", `${guest} writes support w without a mode, or wx with a valid mode`))
     }
     const quoted = CommandLine.quote(path)
     const mode = (options?.mode ?? 0o666).toString(8)

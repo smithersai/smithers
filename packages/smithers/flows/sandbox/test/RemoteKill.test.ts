@@ -195,10 +195,11 @@ describe("guest kill scripts", () => {
         + "if (!seen[child]++) stack[++depth]=child; "
         + "} else { if (pid != root) print pid; depth-- } } }'; }; "
         + "set -- $(kids \"$p\") \"$p\"; "
-        + "kill -s TERM \"$@\" 2>/dev/null && exit 0; "
-        + "kill -s TERM \"$p\" 2>/dev/null && exit 0; "
-        + "kill -0 \"$p\" 2>/dev/null || exit 0; "
-        + "exit 1"
+        + "kill -s STOP \"$@\" 2>/dev/null; "
+        + "if kill -s TERM \"$@\" 2>/dev/null || kill -s TERM \"$p\" 2>/dev/null || ! kill -0 \"$p\" 2>/dev/null; "
+        + "then r=0; else r=1; fi; "
+        + "kill -s CONT \"$@\" 2>/dev/null; "
+        + "exit $r"
     )
   })
 
@@ -270,11 +271,24 @@ describe("guest kill scripts", () => {
         + "if (!seen[child]++) stack[++depth]=child; "
         + "} else { if (pid != root) print pid; depth-- } } }'; }; fi; "
         + "set -- $(kids \"$p\") \"$p\"; "
-        + "kill -s TERM \"$@\" 2>/dev/null && exit 0; "
-        + "kill -s TERM \"$p\" 2>/dev/null && exit 0; "
-        + "kill -0 \"$p\" 2>/dev/null || exit 0; "
-        + "exit 1"
+        + "kill -s STOP \"$@\" 2>/dev/null; "
+        + "if kill -s TERM \"$@\" 2>/dev/null || kill -s TERM \"$p\" 2>/dev/null || ! kill -0 \"$p\" 2>/dev/null; "
+        + "then r=0; else r=1; fi; "
+        + "kill -s CONT \"$@\" 2>/dev/null; "
+        + "exit $r"
     )
+  })
+
+  it("delivers a signal that stops or continues without the freeze its continue would undo", () => {
+    for (const signal of ["STOP", "TSTP", "TTIN", "TTOU", "CONT"]) {
+      expect(hostKillScript(1234, signal)).toMatch(
+        new RegExp(
+          `set -- \\$\\(kids "\\$p"\\) "\\$p"; kill -s ${signal} "\\$@" 2>/dev/null && exit 0; `
+            + `kill -s ${signal} "\\$p" 2>/dev/null && exit 0; kill -0 "\\$p" 2>/dev/null \\|\\| exit 0; exit 1$`
+        )
+      )
+      expect(hostKillScript(1234, signal)).not.toContain("kill -s STOP \"$@\"; ")
+    }
   })
 
   it("pins the cancellation marker the two halves agree on", () => {

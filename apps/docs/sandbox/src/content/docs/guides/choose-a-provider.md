@@ -19,7 +19,7 @@ stop a running command, and what the provider costs to run.
 | `JustBashSandbox`     | one directory in a shared virtual filesystem, interpreted in process | a just-bash instance                             | no                        | no              |
 | `ContainerSandbox`    | one container held on `sleep infinity`                               | a Docker-compatible CLI                          | yes                       | yes             |
 | `KubernetesSandbox`   | one Pod held on `sleep infinity`                                     | `kubectl` and a cluster                          | yes                       | yes             |
-| `MicrosandboxSandbox` | one local microVM                                                    | a Microsandbox host                              | yes                       | no              |
+| `MicrosandboxSandbox` | one local microVM                                                    | a Microsandbox host                              | yes                       | yes             |
 | `VercelSandbox`       | one persistent Vercel sandbox                                        | Vercel credentials                               | no                        | no              |
 | `DaytonaSandbox`      | one named Daytona sandbox                                            | a Daytona client                                 | no                        | no              |
 | `AwsSandbox`          | one Fargate task                                                     | ECS, the `aws` CLI, and `session-manager-plugin` | no                        | yes             |

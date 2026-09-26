@@ -4,11 +4,14 @@
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect"
-import * as Stream from "effect/Stream"
 import { attemptIn } from "../internal/attempt.ts"
 import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
+import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
+import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
+import { type GuestCommand, runGuest, signalGuest, spawnGuest } from "../internal/microsandboxProcess.ts"
+import { removeMachine } from "../internal/microsandboxRemove.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
@@ -17,6 +20,7 @@ import type { ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderErr
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
 import type { Session } from "../Sandbox/Session.ts"
+import { holderLabel, ownerLabel, providerLabel, providerName } from "./labels.ts"
 import type { Sdk } from "./Sdk.ts"
 
 const defaultImage = "oven/bun:1"
@@ -24,7 +28,14 @@ const defaultNixImage = "nixos/nix"
 const defaultWorkdir = "/workspace"
 const defaultShell = "/bin/sh"
 const defaultNixExecutable = "nix"
+const defaultOwner = "smithers"
 const namePrefix = "smthrs-msb-"
+/**
+ * How long a machine's graceful stop and removal may take before a forced
+ * removal is tried. Teardown is additionally observed under
+ * `finalizeWithin`'s bound.
+ */
+const stopGraceMs = 3_000
 
 /**
  * The Nix environment a microVM's commands run under: the workspace's
@@ -106,7 +117,11 @@ export interface MicrosandboxSandboxOptions {
   readonly security?: "default" | "restricted" | undefined
   /** Vendor image pull policy. */
   readonly pullPolicy?: string | undefined
-  /** Labels recorded on the microVM. */
+  /**
+   * Labels recorded on the microVM. The ownership keys `smithers.provider`,
+   * `smithers.owner`, and `smithers.holder` are the provider's own and
+   * override a caller value.
+   */
   readonly labels?: Readonly<Record<string, string>> | undefined
   /** Named guest scripts planted at boot. */
   readonly scripts?: Readonly<Record<string, string>> | undefined
@@ -116,11 +131,33 @@ export interface MicrosandboxSandboxOptions {
   readonly disableNetwork?: boolean | undefined
   /** The Nix environment every command runs under; see {@link NixEnvironment}. */
   readonly environment?: NixEnvironment | undefined
+  /**
+   * Where machines may run. `local`, the default, refuses to acquire unless
+   * the SDK's default backend is local and the machine it opened reports the
+   * local backend, so an ambient `MSB_BACKEND`, `MSB_API_KEY`, or
+   * `MSB_PROFILE` cannot move guest work off this machine. `any` accepts
+   * whatever backend the SDK selected, including the hosted one.
+   */
+  readonly backend?: "local" | "any" | undefined
+  /**
+   * The host installation these machines belong to, recorded as the
+   * `smithers.owner` label. `reap` sweeps one owner's machines and no other's,
+   * so give every installation sharing a Microsandbox home its own. Default
+   * `smithers`.
+   */
+  readonly owner?: string | undefined
+  /**
+   * The live process holding these machines, recorded as the
+   * `smithers.holder` label; `reap` asks whether it is still alive. A
+   * reattached machine is relabelled to the current holder. Default: a random
+   * token minted per `make` call, which no `isAlive` can vouch for, so a
+   * composition that reaps names its own holder.
+   */
+  readonly holder?: string | undefined
 }
 
 type Builder = ReturnType<Sdk["Sandbox"]["builder"]>
 type VendorSandbox = Awaited<ReturnType<Builder["create"]>>
-type ExecOutput = Awaited<ReturnType<Awaited<ReturnType<VendorSandbox["execStreamWith"]>>["collect"]>>
 
 const messageOf = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause)
 
@@ -129,7 +166,12 @@ const failure = (code: ProviderErrorCode, message: string, cause: unknown): Prov
 
 const attempt = attemptIn("microsandbox")
 
-const configure = (builder: Builder, options: MicrosandboxSandboxOptions, sticky: boolean): Builder => {
+const configure = (
+  builder: Builder,
+  options: MicrosandboxSandboxOptions,
+  sticky: boolean,
+  ownership: Record<string, string>
+): Builder => {
   let configured = options.snapshot === undefined
     ? builder.image(options.image ?? (options.environment === undefined ? defaultImage : defaultNixImage))
     : builder.fromSnapshot(options.snapshot)
@@ -139,7 +181,7 @@ const configure = (builder: Builder, options: MicrosandboxSandboxOptions, sticky
   if (options.maxMemoryMib !== undefined) configured = configured.maxMemory(options.maxMemoryMib)
   if (options.security !== undefined) configured = configured.security(options.security)
   if (options.pullPolicy !== undefined) configured = configured.pullPolicy(options.pullPolicy)
-  if (options.labels !== undefined) configured = configured.labels({ ...options.labels })
+  configured = configured.labels({ ...options.labels, ...ownership })
   if (options.scripts !== undefined) configured = configured.scripts({ ...options.scripts })
   if (options.maxDurationSecs !== undefined) configured = configured.maxDuration(options.maxDurationSecs)
   if (options.idleTimeoutSecs !== undefined) configured = configured.idleTimeout(options.idleTimeoutSecs)
@@ -152,18 +194,25 @@ const isAlreadyExists = (cause: unknown): boolean => Reflect.get(Object(cause), 
 const openMachine = (
   options: MicrosandboxSandboxOptions,
   name: string,
-  sticky: boolean
+  sticky: boolean,
+  ownership: Record<string, string>
 ): Effect.Effect<{ readonly sandbox: VendorSandbox; readonly created: boolean }, ProviderError> =>
   attempt(
     async () => {
       try {
         return {
-          sandbox: await configure(options.sdk.Sandbox.builder(name), options, sticky).create(),
+          sandbox: await configure(options.sdk.Sandbox.builder(name), options, sticky, ownership).create(),
           created: true
         }
       } catch (cause) {
         if (!isAlreadyExists(cause)) throw cause
         const handle = await options.sdk.Sandbox.get(name)
+        // The machine now belongs to this holder. Microsandbox cannot relabel
+        // a running machine live, but a next-start modification is recorded
+        // at once, and the recorded labels are what `reap` reads, so a sweep
+        // does not take the dead creator's label as this holder's.
+        const plan = await handle.modify({ labels: ownership, policy: "next_start" })
+        if (!plan.applied) throw new Error(`the ownership labels of ${name} were not recorded`)
         const detached = options.detached ?? sticky
         return {
           sandbox: handle.status === "running"
@@ -208,35 +257,6 @@ const commandLine = (
       args: ["develop", installable(nix.directory, nix.environment), "--command", shell, "-c", command]
     }
 
-const execute = (
-  sandbox: VendorSandbox,
-  line: { readonly program: string; readonly args: Array<string> },
-  cwd: string,
-  env: Record<string, string>,
-  stdin: Uint8Array | undefined,
-  code: ProviderErrorCode,
-  message: string
-): Effect.Effect<ExecOutput, ProviderError> =>
-  attempt(
-    async () => {
-      const handle = await sandbox.execStreamWith(line.program, (builder) => {
-        const configured = builder.args([...line.args]).cwd(cwd).envs(env)
-        return stdin === undefined ? configured : configured.stdinBytes(stdin)
-      })
-      // Microsandbox exposes one drain for stdout, stderr, and status. Calling
-      // collect more than once consumes an already-drained command handle.
-      return await handle.collect()
-    },
-    code,
-    message
-  )
-
-const processOf = (output: ExecOutput): RemoteProcess => ({
-  stdout: Stream.make(output.stdoutBytes()),
-  stderr: Stream.make(output.stderrBytes()),
-  exitCode: Effect.succeed(output.code)
-})
-
 /**
  * The SDK wraps every guest filesystem failure in one error kind, so absence
  * is recognized by the guest's own ENOENT text riding in the message.
@@ -246,173 +266,247 @@ const isMissingFile = (cause: unknown): boolean =>
   /no such file or directory/i.test(messageOf(cause))
 
 /**
+ * Refuses a hosted backend: the SDK's own default must be local.
+ */
+const requireLocalBackend = (sdk: Sdk): Effect.Effect<void, ProviderError> =>
+  Effect.flatMap(
+    Effect.try({
+      try: () => sdk.defaultBackendKind(),
+      catch: (cause) => failure("unavailable", "the SDK could not name its default backend", cause)
+    }),
+    (kind) =>
+      kind === "local" ? Effect.void : Effect.fail(
+        new ProviderError({
+          code: "unavailable",
+          message: `microsandbox: the SDK's default backend is ${kind}, and this provider runs local microVMs; ` +
+            `pin it with setDefaultBackend("local") or accept it with backend: "any"`
+        })
+      )
+  )
+
+/**
  * Builds a sandbox provider backed by local Microsandbox microVMs.
  *
  * Machine creation is registered as a scoped resource before guest setup, so
- * a microVM that boots but cannot prepare its workspace is stopped. Commands
+ * a microVM that boots but cannot prepare its workspace is removed. Commands
  * apply the workdir per execution because Microsandbox validates a builder
  * workdir before the selected image has booted; a relative `cwd` is rooted at
  * the session workdir and standard input rides the exec builder's own byte
  * channel. File transfer in both directions uses the SDK's byte-typed
- * operations, and process output is surfaced as the SDK's raw output bytes.
+ * operations. The session's `files` serve real `stat`, exclusive creation,
+ * modes, and ownership through guest commands, so the image needs GNU or
+ * BusyBox `stat`, `mktemp`, and `ln -T`.
  *
- * Ephemeral persistence is the default and stops the machine when the scope
- * closes. Sticky persistence leaves a successfully prepared machine running
- * and reconnects to its deterministic name on the next acquire. With an
- * `environment`, the flake is planted and warmed before the session is
- * returned and every command runs under `nix develop` of it.
+ * `spawn` returns once the guest command has started and streams its output
+ * as the guest writes it; `exitCode` settles on the exit. `kill` signals the
+ * command and every process it started, and closing a spawn's scope before
+ * the exit was observed — an interrupted caller — does the same with
+ * `SIGTERM`, then `SIGKILL` after a two-second grace, all under a five-second
+ * teardown bound. A machine that goes away mid-command fails that command's
+ * `exitCode` and streams with `unavailable` at once rather than leaving them
+ * pending.
+ *
+ * Every machine carries the ownership labels `smithers.provider`,
+ * `smithers.owner`, and `smithers.holder`, which `reap` sweeps by. With the
+ * default `backend: "local"`, acquisition refuses a hosted backend before
+ * provisioning anything.
+ *
+ * Ephemeral persistence is the default and removes the machine when the scope
+ * closes, crashed or not: a graceful stop bounded at three seconds, then a
+ * forced removal when that fails. Sticky persistence leaves a
+ * successfully prepared machine running and reconnects to its deterministic
+ * name on the next acquire. With an `environment`, the flake is planted and
+ * warmed before the session is returned and every command runs under
+ * `nix develop` of it.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MicrosandboxSandboxOptions): Provider => ({
-  acquire: (sessionKey) =>
-    Effect.gen(function*() {
-      const name = `${namePrefix}${sessionSlug(sessionKey)}`
-      const sticky = options.persistence === "sticky"
-      const workdir = options.workdir ?? defaultWorkdir
-      const shell = options.shell ?? defaultShell
-      if (options.image !== undefined && options.snapshot !== undefined) {
-        return yield* Effect.fail(
-          new ProviderError({
-            code: "unavailable",
-            message: "microsandbox: image and snapshot are exclusive; name one"
-          })
-        )
-      }
-
-      let prepared = false
-      const opened = yield* Effect.acquireRelease(
-        openMachine(options, name, sticky),
-        ({ created, sandbox }) =>
-          !sticky || created && !prepared
-            ? Effect.ignore(
-              attempt(() => sandbox.stop(), "unavailable", `the microVM ${name} could not be stopped`).pipe(
-                Effect.tapError((error) => warnTeardown("microsandbox", "stop", error))
-              )
-            )
-            : Effect.void
-      )
-
-      yield* attempt(
-        () => opened.sandbox.fs().mkdir(workdir),
-        "unavailable",
-        `the workspace ${workdir} could not be prepared in ${name}`
-      )
-
-      // The Nix environment is planted and warmed before the session is
-      // handed out, so the first command never pays for realising the
-      // closure and a flake that does not evaluate fails the acquire, not a
-      // later spawn. The warm failure carries the guest's own words.
-      const nix: PlantedEnvironment | undefined = options.environment === undefined
-        ? undefined
-        : {
-          directory: options.environment.directory ?? `${workdir}/.smithers/nix`,
-          executable: options.environment.nix ?? defaultNixExecutable,
-          environment: options.environment
-        }
-      if (nix !== undefined) {
-        const files: Array<readonly [string, string]> = [[`${nix.directory}/flake.nix`, nix.environment.flake]]
-        if (nix.environment.lock !== undefined) files.push([`${nix.directory}/flake.lock`, nix.environment.lock])
-        yield* attempt(
-          async () => {
-            await opened.sandbox.fs().mkdir(nix.directory)
-            for (const [path, text] of files) await opened.sandbox.fs().write(path, text)
-          },
-          "unavailable",
-          `the Nix environment could not be planted at ${nix.directory} in ${name}`
-        )
-        const warmed = yield* execute(
-          opened.sandbox,
-          {
-            program: nix.executable,
-            args: ["develop", installable(nix.directory, nix.environment), "--command", "true"]
-          },
-          workdir,
-          environment(options.env, undefined),
-          undefined,
-          "unavailable",
-          `the Nix environment at ${nix.directory} could not be realised in ${name}`
-        )
-        if (warmed.code !== 0) {
+export const make = (options: MicrosandboxSandboxOptions): Provider => {
+  const ownership: Record<string, string> = {
+    [providerLabel]: providerName,
+    [ownerLabel]: options.owner ?? defaultOwner,
+    [holderLabel]: options.holder ?? globalThis.crypto.randomUUID()
+  }
+  const local = options.backend !== "any"
+  return {
+    acquire: (sessionKey) =>
+      Effect.gen(function*() {
+        const name = `${namePrefix}${sessionSlug(sessionKey)}`
+        const sticky = options.persistence === "sticky"
+        const workdir = options.workdir ?? defaultWorkdir
+        const shell = options.shell ?? defaultShell
+        if (options.image !== undefined && options.snapshot !== undefined) {
           return yield* Effect.fail(
             new ProviderError({
               code: "unavailable",
-              message: `microsandbox: the Nix environment at ${nix.directory} could not be realised in ${name} ` +
-                `(nix develop exited ${warmed.code}): ${warmed.stderr().trim()}`
+              message: "microsandbox: image and snapshot are exclusive; name one"
             })
           )
         }
-      }
-      prepared = true
+        if (local) yield* requireLocalBackend(options.sdk)
 
-      const resolveCwd = rootedAt(workdir)
-
-      const session: Session = {
-        id: sessionKey,
-        remoteId: opened.sandbox.name,
-        workdir,
-        spawn: (command, spawnOptions) =>
-          Effect.gen(function*() {
-            yield* checkEnvironmentNames(spawnOptions.env)
-            if (!shell.startsWith("/") && Object.values(spawnOptions.env ?? {}).includes(undefined)) {
-              return yield* Effect.fail(
-                new ProviderError({
-                  code: "spawn_error",
-                  message: "microsandbox: environment deletion requires an absolute shell path"
-                })
+        let prepared = false
+        const opened = yield* Effect.acquireRelease(
+          openMachine(options, name, sticky, ownership),
+          ({ created, sandbox }) =>
+            !sticky || created && !prepared
+              ? finalizeWithin(
+                Effect.ignore(
+                  attempt(
+                    () => removeMachine(sandbox, stopGraceMs),
+                    "unavailable",
+                    `the microVM ${name} could not be removed`
+                  ).pipe(Effect.tapError((error) => warnTeardown("microsandbox", "destroy", error)))
+                ),
+                `microsandbox machine ${name}`
               )
-            }
-            const guest = environmentCommand(command, { ...options.env, ...spawnOptions.env }, shell)
-            return yield* Effect.map(
-              execute(
-                opened.sandbox,
-                commandLine(shell, guest.command, nix),
-                resolveCwd(spawnOptions.cwd ?? ""),
-                guest.env,
-                spawnOptions.stdin,
-                "spawn_error",
-                `\`${command}\` could not run in ${name}`
-              ),
-              processOf
-            )
-          }),
-        readFile: (path) =>
-          Effect.tryPromise({
-            try: () => opened.sandbox.fs().read(path),
-            catch: (cause) =>
-              isMissingFile(cause)
-                ? new ProviderError({
-                  code: "not_found",
-                  message: `the microVM holds nothing at ${path}`,
-                  cause
-                })
-                : failure("unknown", `the microVM could not read ${path}`, cause)
-          }),
-        writeFile: (path, content) =>
-          Effect.gen(function*() {
-            const parent = parentOf(path)
-            if (parent !== undefined) {
-              yield* attempt(
-                () => opened.sandbox.fs().mkdir(parent),
-                "unknown",
-                `the parent of ${path} could not be created in ${name}`
-              )
-            }
-            yield* attempt(
-              () => opened.sandbox.fs().write(path, content),
-              "unknown",
-              `the microVM could not write ${path}`
-            )
-          }),
-        ping: Effect.asVoid(
-          attempt(
-            () => opened.sandbox.fs().readToString("/etc/hostname"),
-            "unavailable",
-            `the microVM ${name} did not answer`
-          )
+              : Effect.void
         )
-      }
-      return session
-    })
-})
+        // The default backend is read before provisioning, but it is process
+        // state another caller can change in between; the opened machine
+        // reports the backend it actually runs on.
+        if (local && opened.sandbox.backendKind !== "local") {
+          return yield* Effect.fail(
+            new ProviderError({
+              code: "unavailable",
+              message: `microsandbox: the microVM ${name} runs on the ${opened.sandbox.backendKind} backend, ` +
+                `and this provider runs local microVMs`
+            })
+          )
+        }
+
+        yield* attempt(
+          () => opened.sandbox.fs().mkdir(workdir),
+          "unavailable",
+          `the workspace ${workdir} could not be prepared in ${name}`
+        )
+
+        // The Nix environment is planted and warmed before the session is
+        // handed out, so the first command never pays for realising the
+        // closure and a flake that does not evaluate fails the acquire, not a
+        // later spawn. The warm failure carries the guest's own words.
+        const nix: PlantedEnvironment | undefined = options.environment === undefined
+          ? undefined
+          : {
+            directory: options.environment.directory ?? `${workdir}/.smithers/nix`,
+            executable: options.environment.nix ?? defaultNixExecutable,
+            environment: options.environment
+          }
+        if (nix !== undefined) {
+          const files: Array<readonly [string, string]> = [[`${nix.directory}/flake.nix`, nix.environment.flake]]
+          if (nix.environment.lock !== undefined) files.push([`${nix.directory}/flake.lock`, nix.environment.lock])
+          yield* attempt(
+            async () => {
+              await opened.sandbox.fs().mkdir(nix.directory)
+              for (const [path, text] of files) await opened.sandbox.fs().write(path, text)
+            },
+            "unavailable",
+            `the Nix environment could not be planted at ${nix.directory} in ${name}`
+          )
+          const warmed = yield* runGuest(
+            opened.sandbox,
+            {
+              program: nix.executable,
+              args: ["develop", installable(nix.directory, nix.environment), "--command", "true"],
+              cwd: workdir,
+              env: environment(options.env, undefined),
+              stdin: undefined
+            },
+            `the Nix environment at ${nix.directory} could not be realised in ${name}`
+          )
+          if (warmed.code !== 0) {
+            return yield* Effect.fail(
+              new ProviderError({
+                code: "unavailable",
+                message: `microsandbox: the Nix environment at ${nix.directory} could not be realised in ${name} ` +
+                  `(nix develop exited ${warmed.code}): ${warmed.stderr.trim()}`
+              })
+            )
+          }
+        }
+        prepared = true
+
+        const resolveCwd = rootedAt(workdir)
+        const commands = new WeakMap<RemoteProcess, GuestCommand>()
+
+        const session: Session = {
+          id: sessionKey,
+          remoteId: opened.sandbox.name,
+          workdir,
+          spawn: (command, spawnOptions) =>
+            Effect.gen(function*() {
+              yield* checkEnvironmentNames(spawnOptions.env)
+              if (!shell.startsWith("/") && Object.values(spawnOptions.env ?? {}).includes(undefined)) {
+                return yield* Effect.fail(
+                  new ProviderError({
+                    code: "spawn_error",
+                    message: "microsandbox: environment deletion requires an absolute shell path"
+                  })
+                )
+              }
+              const guest = environmentCommand(command, { ...options.env, ...spawnOptions.env }, shell)
+              const line = commandLine(shell, guest.command, nix)
+              const spawned = yield* spawnGuest(
+                opened.sandbox,
+                {
+                  program: line.program,
+                  args: line.args,
+                  cwd: resolveCwd(spawnOptions.cwd ?? ""),
+                  env: guest.env,
+                  stdin: spawnOptions.stdin
+                },
+                { machine: name, command }
+              )
+              commands.set(spawned.process, spawned.command)
+              return spawned.process
+            }),
+          kill: (process, signal) =>
+            Effect.suspend(() => {
+              const command = commands.get(process)
+              /* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */
+              if (command === undefined) {
+                return Effect.fail(new ProviderError({ code: "unknown", message: "unrecognized process" }))
+              }
+              return signalGuest(command, signal, name)
+            }),
+          readFile: (path) =>
+            Effect.tryPromise({
+              try: () => opened.sandbox.fs().read(path),
+              catch: (cause) =>
+                isMissingFile(cause)
+                  ? new ProviderError({
+                    code: "not_found",
+                    message: `the microVM holds nothing at ${path}`,
+                    cause
+                  })
+                  : failure("unknown", `the microVM could not read ${path}`, cause)
+            }),
+          writeFile: (path, content) =>
+            Effect.gen(function*() {
+              const parent = parentOf(path)
+              if (parent !== undefined) {
+                yield* attempt(
+                  () => opened.sandbox.fs().mkdir(parent),
+                  "unknown",
+                  `the parent of ${path} could not be created in ${name}`
+                )
+              }
+              yield* attempt(
+                () => opened.sandbox.fs().write(path, content),
+                "unknown",
+                `the microVM could not write ${path}`
+              )
+            }),
+          ping: Effect.asVoid(
+            attempt(
+              () => opened.sandbox.fs().readToString("/etc/hostname"),
+              "unavailable",
+              `the microVM ${name} did not answer`
+            )
+          )
+        }
+        return { ...session, files: linuxFileSystem(session, "microVM") }
+      })
+  }
+}
