@@ -392,6 +392,7 @@ export const DiscoveryWarningCode = Schema.Literals([
   "invalid_budget",
   "unprojectable_authority",
   "invalid_model_invocation",
+  "invalid_model",
   "invalid_placement",
   "invalid_compatibility",
   "invalid_license",
@@ -554,6 +555,21 @@ export const CallPresentation = Schema.Struct({
 export type CallPresentation = typeof CallPresentation.Type
 
 /**
+ * One model seat or an ordered, non-empty fallback list.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const ModelSelection = Schema.Union([Schema.String, Schema.NonEmptyArray(Schema.String)])
+
+/**
+ * One primary seat or an ordered primary and fallback list.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type ModelSelection = typeof ModelSelection.Type
+
+/**
  * The discovered metadata for one flow, excluding its unloaded body content.
  *
  * `budget` is absent for a flow that declares none, and {@link budgetOf} is how
@@ -569,7 +585,7 @@ export class FlowDescriptor extends Schema.Class<FlowDescriptor>("flows/registry
   body: BodyRef,
   input: SchemaRef,
   output: SchemaRef,
-  model: Schema.Option(Schema.String),
+  model: Schema.Option(ModelSelection),
   flows: Schema.Array(Schema.String),
   capabilities: Schema.Array(Schema.String),
   effects: EffectDeclaration,

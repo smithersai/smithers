@@ -62,6 +62,7 @@ import * as ObservabilityMetric from "@smthrs/observability/Metric"
 import type { FlowsHooks, PluginInput } from "@smthrs/plugin"
 import type { FlowsConfig } from "@smthrs/plugin/Config"
 import { PluginError } from "@smthrs/plugin/PluginError"
+import { ModelSelection } from "@smthrs/registry/Descriptor"
 import type * as Registry from "@smthrs/registry/Registry"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
@@ -121,6 +122,8 @@ export interface Host {
    * answers rather than workspace claims.
    */
   readonly claimCap?: number | undefined
+  /** Whether this host can answer a parked agent step. Unattended hosts default to false. */
+  readonly approvalChannel?: boolean | undefined
   /**
    * Provider-run tools every model call of an action may use, such as the
    * provider's own web search. Forwarded to `Agent.Options.serverTools`.
@@ -291,24 +294,19 @@ export interface Options<
   /** The schema the answer must satisfy. Rendered into the prompt and enforced. */
   readonly output: Output
   /**
-   * The seat id the host's `SeatResolver` resolves into a live model. It is an
-   * opaque string here: the resolver owns the vocabulary, so
-   * `anthropic:claude-sonnet-4-5`, a bare model id, and a logical name like
-   * `reviewer` are all legal declarations.
+   * A seat id or a non-empty ordered list resolved by the host. The first
+   * seat is primary; the rest are fallbacks after capacity refusal, context
+   * overflow, or HTTP 5xx failure.
    *
-   * A function is read once per execution, before the first ask, against the
-   * decoded payload. That is what a dispatched step needs: the caller names
-   * the role and, when it has one, the exact model for *this* request, and
-   * neither is a fact the declaration can know. It changes nothing else — the
-   * answer is still one opaque seat id the host's resolver owns, and a
-   * declaration that writes a constant is the same declaration it was.
+   * A callback is evaluated once per execution against the decoded payload.
+   * The resolver owns seat names, including provider model ids and aliases.
    *
    * `"auto"` ({@link Seat.auto}), written or returned, asks Jev through
    * {@link module:SeatRouter} once per execution for the seat and the system
    * variant, so each subagent routes on its own prompt. Every correction and
    * the repair run on the routed seat unless {@link Repair.seat} names one.
    */
-  readonly seat: string | ((payload: PayloadSchemaOf<Payload>["Type"]) => string)
+  readonly seat: ModelSelection | ((payload: PayloadSchemaOf<Payload>["Type"]) => ModelSelection)
   /** The task, built from the decoded payload. */
   readonly prompt: (payload: PayloadSchemaOf<Payload>["Type"]) => string
   /** Stable system teaching for this step, after the host's and before the schema's. */
@@ -612,11 +610,21 @@ export const make = <
       // One resolution per execution: the declared seat may be a function of
       // the payload, and every later rung compares against the id it chose.
       const declaredSeat = typeof options.seat === "function" ? options.seat(payload) : options.seat
+      const declaredIds = typeof declaredSeat === "string" ? [declaredSeat] : declaredSeat
+      if (!Schema.is(ModelSelection)(declaredSeat) || declaredIds.some((id) => id.trim() === "")) {
+        return yield* new HarnessError({
+          code: "model_failed",
+          message: "AgentAction seat must name a model or a non-empty model list"
+        })
+      }
       // `auto` asks Jev once per execution, as a sealed step, so each subagent
       // routes on its own prompt and a replay is served the seat it ran on.
       const routed = declaredSeat === Seat.auto ? yield* routeSeat(tag, task, instance.executionId, stepId) : undefined
-      const seatId = routed?.decision.seat ?? declaredSeat
-      const seat = yield* seats.resolve(seatId)
+      const ids = routed === undefined ? declaredIds : [routed.decision.seat]
+      const seatId = ids[0]!
+      const resolvedSeats = yield* Effect.forEach(ids, (id) => seats.resolve(id))
+      const seat = resolvedSeats[0]!
+      const fallbackSeats = resolvedSeats.slice(1)
       /** The trace coordinates of one ask, when the dispatch has an identity. */
       const stepOf = (ask: StepFact.Step["ask"], retry: number, scope: string): StepFact.Step | undefined =>
         stepId === undefined ? undefined : {
@@ -771,6 +779,7 @@ export const make = <
               contextWindowTokensFor: contextWindowResolver(seats),
               session,
               seat: resolved,
+              ...(askSeat === seatId ? { fallbackSeats } : {}),
               // This adapter owns its recorded quota park and replay decision.
               capacity: { park: false },
               prompt,
@@ -790,7 +799,8 @@ export const make = <
               claimCap: host.claimCap,
               serverTools: host.serverTools,
               judged: host.judged,
-              supervisor: host.supervisor
+              supervisor: host.supervisor,
+              approvalChannel: host.approvalChannel
             }).pipe(
               Stream.provideService(AgentEvent.Observer, atSource ? observe : () => Effect.void),
               (stream) => agentOutcome(stream, atSource ? () => Effect.void : observe)

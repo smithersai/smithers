@@ -98,6 +98,7 @@ const agentDescriptor = new Descriptor.FlowDescriptor({
 const effortDescriptor = new Descriptor.FlowDescriptor({
   ...agentDescriptor,
   name: "agents/effort",
+  model: Option.some(["anthropic:test-model", "anthropic:backup"]),
   path: "/flows/agents/effort",
   frontmatter: { effort: "low" }
 })

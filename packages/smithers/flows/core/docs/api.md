@@ -75,7 +75,7 @@ interface MakeOptions<I extends Schema.Top, O extends Schema.Top, Err extends Sc
   readonly error?: Err | undefined
   readonly capabilities?: ReadonlyArray<string> | undefined
   readonly effects?: Effects.Declaration | undefined
-  readonly model?: Seat | undefined
+  readonly model?: Seat | readonly [Seat, ...Seat[]] | undefined
   readonly flows?: ReadonlyArray<Reference> | undefined
   readonly prompt?: string | undefined
   readonly body?: ((input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>) | undefined
@@ -103,7 +103,7 @@ interface Flow<
   readonly error: Err
   readonly capabilities: ReadonlyArray<string>
   readonly effects: Effects.Declaration | undefined
-  readonly model: Seat | undefined
+  readonly model: Seat | readonly [Seat, ...Seat[]] | undefined
   readonly flows: ReadonlyArray<Reference> | undefined
   readonly prompt: string | undefined
   readonly annotations: Context.Context<never>
@@ -598,7 +598,7 @@ declares no `model`.
 interface MarkdownFrontmatter {
   readonly name: string
   readonly description?: string | undefined
-  readonly model?: string | undefined
+  readonly model?: string | readonly [string, ...string[]] | undefined
   readonly flows?: ReadonlyArray<string> | undefined
   readonly capabilities?: ReadonlyArray<string> | undefined
   readonly effects?: {

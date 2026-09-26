@@ -342,6 +342,7 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
   const control = NodeControl.layer({
     ...config,
     startsRuns: true,
+    approvalChannel: true,
     approvalAuthority: config.approvalAuthority ?? ApprovalAuthority.local
   })
   const root = Project.root(config.root, process.cwd())

@@ -24,7 +24,7 @@ import { make as makePlugin } from "@smthrs/plugin"
 import type { FlowsHooks } from "@smthrs/plugin"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
-import { Cause, Deferred, Effect, Fiber, Layer, ManagedRuntime, Option, Schema, Stream } from "effect"
+import { Cause, Deferred, Effect, Fiber, Layer, ManagedRuntime, Option, Schedule, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentAction from "../src/AgentAction.ts"
@@ -354,6 +354,67 @@ const stack = <ROut, RIn>(
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
   )
+
+describe("AgentAction human approval channel", () => {
+  it.each([undefined, false, true])("arms the host's declared approval channel (%s)", async (approvalChannel) => {
+    const armed: Array<boolean> = []
+    const requests: Array<string> = []
+    const configured = { ...host, approvalChannel }
+    const value = await Effect.runPromise(
+      ReviewFlow.execute({ diff: "change" }, { executionId: `approval-${approvalChannel}` }).pipe(
+        Effect.provide(Layer.merge(
+          stack(
+            Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)),
+            configured,
+            scripted([answering("{\"approved\":true,\"issues\":[]}")], requests)
+          ),
+          EventSink.layer({
+            emit: (event) =>
+              Effect.sync(() => {
+                if (event._tag === "discipline-armed") armed.push(event.approvalChannel)
+              })
+          })
+        ))
+      )
+    )
+    expect(value).toEqual({ approved: true, issues: [] })
+    expect(armed).toEqual([approvalChannel ?? false])
+  })
+
+  it("parks a real durable agent step when the host can answer", async () => {
+    const requests: Array<string> = []
+    const armed: Array<boolean> = []
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* ReviewFlow.execute({ diff: "change" }, { executionId: "approval-park", discard: true })
+        for (let attempt = 0; attempt < 2_000; attempt++) {
+          const observed = yield* ReviewFlow.poll("approval-park")
+          if (Option.isSome(observed) && observed.value._tag === "Suspended") return observed.value._tag
+          yield* Effect.yieldNow
+        }
+        return "did not suspend"
+      }).pipe(
+        Effect.provide(Layer.merge(
+          stack(
+            Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)),
+            { ...host, approvalChannel: true },
+            scripted(["ctx.park(\"waiting-input\", \"Which branch?\")"], requests)
+          ),
+          EventSink.layer({
+            emit: (event) =>
+              Effect.sync(() => {
+                if (event._tag === "discipline-armed") armed.push(event.approvalChannel)
+              })
+          })
+        )),
+        Effect.scoped
+      )
+    )
+    expect(result).toBe("Suspended")
+    expect(armed).toEqual([true])
+    expect(requests).toHaveLength(1)
+  })
+})
 
 /** A cell that continues forever, projecting a different window every frame. */
 const stalling = `var seen = (typeof seen === "number" ? seen : 0) + 1
@@ -1130,6 +1191,30 @@ describe("AgentAction payload-chosen seats", () => {
       }
     })
 
+  it("refuses an empty seat before resolving or contacting a provider", async () => {
+    const asked: string[] = []
+    const requests: string[] = []
+    const exit = await Effect.runPromise(Effect.exit(
+      DispatchedFlow.execute({ diff: "change", model: "   " }, { executionId: "invalid-seat" }).pipe(
+        Effect.provide(
+          Layer.mergeAll(Dispatched.layer, Interpreter.layer(DispatchedFlow)).pipe(
+            Layer.provideMerge(AgentAction.layerHost(host)),
+            Layer.provideMerge(recordingSeats(scripted([], requests), asked)),
+            Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
+            Layer.provideMerge(Safety.layer),
+            Layer.provideMerge(Action.layerImplementations),
+            Layer.provideMerge(FlowEngine.layerMemory),
+            Layer.provideMerge(NodeCrypto.layer)
+          )
+        )
+      )
+    ))
+    expect(exit._tag).toBe("Failure")
+    expect(JSON.stringify(exit)).toContain("must name a model")
+    expect(asked).toEqual([])
+    expect(requests).toEqual([])
+  })
+
   it("resolves the seat the payload names, once, and asks for no other", async () => {
     const asked: Array<string> = []
     const requests: Array<string> = []
@@ -1545,5 +1630,51 @@ describe("AgentAction seat auto", () => {
     expect(requests).toHaveLength(2)
     expect(requests[0]).not.toContain("lookup")
     expect(requests[1]).toContain("lookup")
+  })
+})
+
+describe("AgentAction ordered fallback seats", () => {
+  const Step = AgentAction.make("agent/test/FallbackReview", {
+    payload: { diff: Schema.String },
+    output: Review,
+    seat: ["anthropic:first", "anthropic:second"],
+    prompt: ({ diff }) => diff
+  })
+  const Workflow = Flow.make("agent/test/FallbackReviewFlow", {
+    payload: { diff: Schema.String },
+    success: Review,
+    error: AgentAction.AgentFailure,
+    body: (input) => Step.call(input)
+  })
+  it("switches models on provider failure and replays without contacting either model", async () => {
+    const contacted: string[] = []
+    const answer = scripted([answering(`{"approved":true,"issues":[]}`)], [])
+    const model = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          contacted.push(request.modelId)
+          return request.modelId === "first"
+            ? Stream.fail(new ModelError({ code: "provider_internal", message: "unavailable", httpStatus: 503 }))
+            : answer.stream(request)
+        })
+    })
+    const stack = Layer.mergeAll(Step.layer, Interpreter.layer(Workflow)).pipe(
+      Layer.provideMerge(AgentAction.layerHost({ ...host, modelRetryPolicy: Schedule.recurs(0) })),
+      Layer.provideMerge(seats(model)),
+      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
+      Layer.provideMerge(Safety.layer),
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(FlowEngine.layerMemory),
+      Layer.provideMerge(NodeCrypto.layer)
+    )
+    const results = await Effect.runPromise(
+      Effect.gen(function*() {
+        const first = yield* Workflow.execute({ diff: "change" }, { executionId: "fallback-replay" })
+        const replay = yield* Workflow.execute({ diff: "change" }, { executionId: "fallback-replay" })
+        return [first, replay]
+      }).pipe(Effect.provide(stack))
+    )
+    expect(results).toEqual([{ approved: true, issues: [] }, { approved: true, issues: [] }])
+    expect(contacted).toEqual(["first", "second"])
   })
 })

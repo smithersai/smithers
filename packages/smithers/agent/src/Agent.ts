@@ -579,8 +579,14 @@ const withCapacity = (
             !tried.has(index) && (cooling.get(entry.key)?.wakeAt ?? 0) <= now
           )
           if (selected < 0) {
-            const earliest = entries.map((entry) => ({ entry, park: cooling.get(entry.key)! }))
-              .sort((a, b) => a.park.wakeAt - b.park.wakeAt)[0]!
+            const availableParks = entries.flatMap((entry) => {
+              const park = cooling.get(entry.key)
+              return park === undefined ? [] : [{ entry, park }]
+            })
+            // Overflow and provider failures try each configured seat once;
+            // they do not invent a quota reset or enter a timed park.
+            if (availableParks.length !== entries.length) return Stream.fail(lastError!)
+            const earliest = availableParks.sort((a, b) => a.park.wakeAt - b.park.wakeAt)[0]!
             if (
               capacity?.park === false ||
               parkCount >= maxParks ||
@@ -660,20 +666,25 @@ const withCapacity = (
                 const classified = model === undefined
                   ? Option.none<QuotaPolicy.Park>()
                   : policy.classify(model, afterCall)
-                if (Option.isNone(classified)) return Stream.failCause(cause)
-                const park = yield* Action.make({
-                  name: `agent/capacity/${seats[0]!.seat.id}/cool/${cycle}/${selected}/${tried.size}`,
-                  tier: "sealed",
-                  success: QuotaPolicy.Park,
-                  execute: Effect.succeed({
-                    ...classified.value,
-                    wakeAt: cycle > 0 && classified.value.wakeAt <= afterCall
-                      ? afterCall + 15 * 60_000
-                      : classified.value.wakeAt
+                const canFailOver = model !== undefined && seats.length > 1 &&
+                  (model.code === "context_overflow" ||
+                    (model.httpStatus !== undefined && model.httpStatus >= 500 && model.httpStatus <= 599))
+                if (Option.isNone(classified) && !canFailOver) return Stream.failCause(cause)
+                if (Option.isSome(classified)) {
+                  const park = yield* Action.make({
+                    name: `agent/capacity/${seats[0]!.seat.id}/cool/${cycle}/${selected}/${tried.size}`,
+                    tier: "sealed",
+                    success: QuotaPolicy.Park,
+                    execute: Effect.succeed({
+                      ...classified.value,
+                      wakeAt: cycle > 0 && classified.value.wakeAt <= afterCall
+                        ? afterCall + 15 * 60_000
+                        : classified.value.wakeAt
+                    })
                   })
-                })
+                  cooling.set(entry.key, park)
+                }
                 lastError = error as Model.ModelFailure | HarnessError
-                cooling.set(entry.key, park)
                 tried.add(selected)
                 previous = selected
                 return Stream.concat(

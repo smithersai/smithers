@@ -50,6 +50,8 @@ export interface Config {
    * default is `true` so a composition that says nothing keeps the refusal.
    */
   readonly startsRuns?: boolean | undefined
+  /** A human can answer parked agent steps on this host. Unattended compositions default to false. */
+  readonly approvalChannel?: boolean | undefined
   /** Trusted local observational checkers, keyed by flow id. Remote clients never execute these callbacks. */
   readonly health?: Health.HealthConfig | undefined
   /** Trusted local host configuration, never decoded from command arguments. */

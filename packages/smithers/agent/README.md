@@ -402,6 +402,19 @@ Provider execution holds no checkpoint transaction. Recorded invocation,
 attempt, correction, quota retry, and generation coordinates keep concurrent
 steps and replayed observations separate.
 
+`AgentAction.make` accepts either one `seat` or an ordered list, including a
+payload callback returning that list. Markdown flows use the same ordering:
+
+```yaml
+model: [openai:gpt-6-sol, anthropic:claude-opus-5-5]
+```
+
+The first model is primary. Remaining models are tried after a capacity refusal,
+context overflow, or HTTP 5xx failure. Transport retries finish before fallback;
+overflow and 5xx failures do not create a quota park. Exhausting those fallbacks
+returns the last provider error. The declared order is part of flow identity,
+and durable replay does not repeat completed provider calls.
+
 ## Quota-aware waits
 
 A `rate_limited` or `quota_exceeded` answer is not a defect report: the provider

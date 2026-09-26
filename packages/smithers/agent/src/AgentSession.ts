@@ -2402,18 +2402,18 @@ export const make = (
         return Effect.succeed(expected)
       })
 
-    const approvedSeat = (
+    const approvedSeats = (
       runId: string,
       card: PlanCard,
       descriptor: Descriptor.FlowDescriptor
-    ): Effect.Effect<string, LaunchFailed> =>
+    ): Effect.Effect<ReadonlyArray<string>, LaunchFailed> =>
       Effect.suspend(() => {
         // Validate the same executable fields at launch and on every resume.
         // A declared seat is a person's choice and wins. An undeclared one is
         // Jev's to pick, at run start, from the host's catalog; a host with no
         // catalog cannot run it at all.
         if (Option.isNone(descriptor.model)) {
-          if (Option.isSome(seatCatalog)) return Effect.succeed(Seat.auto)
+          if (Option.isSome(seatCatalog)) return Effect.succeed([Seat.auto])
           return Effect.fail(
             new LaunchFailed({
               runId,
@@ -2423,7 +2423,9 @@ export const make = (
             })
           )
         }
-        return Effect.succeed(descriptor.model.value)
+        return Effect.succeed(
+          typeof descriptor.model.value === "string" ? [descriptor.model.value] : descriptor.model.value
+        )
       })
 
     /**
@@ -2521,7 +2523,8 @@ export const make = (
             Effect.provide(options.quotaPolicy)
           )
         }
-        const seatId = yield* approvedSeat(payload.runId, card, descriptor)
+        const seatIds = yield* approvedSeats(payload.runId, card, descriptor)
+        const seatId = seatIds[0]!
         const steering = yield* Notifications.make({ runId: payload.runId, lineageId: payload.runId })
         // The three services a durable flow body already holds, captured
         // together: `StandardFlows.clock` hands them back to a `DurableClock`
@@ -2581,7 +2584,12 @@ export const make = (
             return { decision, variant }
           })
           : undefined
-        const seat = yield* seats.resolve(routing === undefined ? seatId : routing.decision.seat)
+        const resolvedSeats = yield* Effect.forEach(
+          routing === undefined ? seatIds : [routing.decision.seat],
+          (id) => seats.resolve(id)
+        )
+        const seat = resolvedSeats[0]!
+        const fallbackSeats = resolvedSeats.slice(1)
         const renderedRecord = promptRendered(rendered)
         const renderedMaterial = JSON.parse(JSON.stringify(renderedRecord.payload)) as Record<string, unknown>
         pending.push({
@@ -2661,6 +2669,7 @@ export const make = (
           contextWindowTokensFor: contextWindowResolver(seats),
           session: payload.runId,
           seat,
+          fallbackSeats,
           modelParams: ModelRequest.GenerationParams.make({
             reasoningEffort: effortFor(descriptor, options.reasoningEffort)
           }),
@@ -3307,15 +3316,15 @@ export const make = (
           yield* approvedModule(input.run.runId, input.plan.card, digest)
         } else {
           yield* approvedExecution(input.run.runId, input.plan.card, descriptor.value)
-          const seatId = yield* approvedSeat(input.run.runId, input.plan.card, descriptor.value)
+          const seatIds = yield* approvedSeats(input.run.runId, input.plan.card, descriptor.value)
           // Resolve the seat now, so a missing key refuses the launch as a
           // typed failure instead of failing the run after it was accepted.
           // An `auto` seat has no seat yet: Jev picks it when the run starts,
           // never here, so the launch only checks there is something to pick.
-          if (seatId === Seat.auto) {
+          if (seatIds[0] === Seat.auto) {
             yield* routingCatalog(input.run.runId)
           } else {
-            yield* seats.resolve(seatId).pipe(
+            yield* Effect.forEach(seatIds, (seatId) => seats.resolve(seatId)).pipe(
               Effect.mapError((error) =>
                 new LaunchFailed({
                   runId: input.run.runId,

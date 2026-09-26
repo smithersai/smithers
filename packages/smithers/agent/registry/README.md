@@ -184,3 +184,9 @@ compatibility grammar are documented in
   field, and constructor.
 - [Troubleshooting](https://registry.smithers.sh/troubleshooting/): every
   failure code this package raises, and what to change.
+
+Markdown `model` accepts a seat name or a non-empty ordered list, for example
+`model: [openai:gpt-6-sol, anthropic:claude-opus-5-5]`. The list's first entry is
+primary and the rest are fallbacks. Discovery preserves the order in the
+execution identity and invocation; invalid lists produce `invalid_model` and
+are not registered.

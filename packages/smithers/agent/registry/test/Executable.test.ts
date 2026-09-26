@@ -137,6 +137,16 @@ describe("delegate resolution", () => {
       }).pipe(Effect.provide(platform)))
   }
 
+  it.effect("carries fallback order into invocation and execution identity", () =>
+    Effect.gen(function*() {
+      const base = yield* descriptorNamed("greet")
+      const descriptor = new Descriptor.FlowDescriptor({ ...base, model: Option.some(["opus", "sol"]) })
+      const reversed = new Descriptor.FlowDescriptor({ ...base, model: Option.some(["sol", "opus"]) })
+      const executable = yield* Executable.fromDescriptor(descriptor, options())
+      expect(executable.invocation(null).model).toEqual(["opus", "sol"])
+      expect(Descriptor.executionDigest(descriptor)).not.toBe(Descriptor.executionDigest(reversed))
+    }).pipe(Effect.provide(platform)))
+
   it.effect("delegates to the one flow a descriptor names", () =>
     Effect.gen(function*() {
       const descriptor = yield* descriptorNamed("greet")

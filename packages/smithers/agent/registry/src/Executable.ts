@@ -133,7 +133,7 @@ export const Invocation = Schema.Struct({
   /** The rendered markdown body, or the empty string for a module flow. */
   prompt: Schema.String,
   /** The seat the descriptor declared, or `null`. */
-  model: Schema.NullOr(Schema.String),
+  model: Schema.NullOr(Descriptor.ModelSelection),
   /**
    * The lowered host kind, or `null`. A loaded body annotation wins over the
    * descriptor directive.

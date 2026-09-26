@@ -51,7 +51,7 @@ export const DiscoveredFlow = Schema.Struct({
   kind: Kind,
   path: Schema.NonEmptyString,
   capabilities: Schema.Array(Schema.String),
-  model: Schema.NullOr(Schema.String),
+  model: Schema.NullOr(Schema.Union([Schema.String, Schema.NonEmptyArray(Schema.String)])),
   modelInvocable: Schema.Boolean,
   inputSchema: Schema.optional(Schema.Json)
 })
@@ -81,7 +81,7 @@ export const Row = Schema.Struct({
   kind: Kind,
   path: Schema.NonEmptyString,
   capabilities: Schema.Array(Schema.String),
-  model: Schema.NullOr(Schema.String),
+  model: DiscoveredFlow.fields.model,
   modelInvocable: Schema.Boolean,
   inputSchema: Schema.optional(Schema.Json)
 })

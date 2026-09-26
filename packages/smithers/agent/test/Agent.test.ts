@@ -504,6 +504,62 @@ describe("capacity seat chain", () => {
       { type: "text", text: "```cell\nctx.done('fallback')\n```" }
     ])
   })
+  it.each([
+    new ModelError({ code: "context_overflow", message: "prompt too long" }),
+    ...[500, 502, 503, 504].map((httpStatus) =>
+      new ModelError({ code: "provider_internal", message: "provider failed", httpStatus })
+    )
+  ])("fails over without parking on $code / $httpStatus", async (error) => {
+    const contacted: Array<string> = []
+    const first = Model.make({
+      stream: () => {
+        contacted.push("first")
+        return Stream.fail(error)
+      }
+    })
+    const second = recordedCells([], ["ctx.done('fallback')"])
+    const events: AgentEvent.AgentEvent[] = []
+    const outcome = await drive(collect({
+      model: first,
+      seat: Seat.make({ id: "first", modelId: "first", model: first, route, contextWindowTokens: 0 }),
+      fallbackSeats: [Seat.make({ id: "second", modelId: "second", model: second, route, contextWindowTokens: 0 })],
+      registry: registryOf([]),
+      sink: events,
+      modelRetryPolicy: Schedule.recurs(0)
+    }))
+    expect(outcome._tag).toBe("completed")
+    expect(contacted).toEqual(["first"])
+    expect(events.filter((event) => event._tag === "seat-failed-over")).toMatchObject([{
+      from: "first",
+      to: "second",
+      code: error.code
+    }])
+    expect(events.some((event) => event._tag === "model-parked")).toBe(false)
+  })
+
+  it("fails with the final provider error when every fallback fails, without an invented reset", async () => {
+    const requests: Array<string> = []
+    const model = Model.make({
+      stream: (request) => {
+        requests.push(request.modelId)
+        return Stream.fail(new ModelError({ code: "provider_internal", message: "still unavailable", httpStatus: 503 }))
+      }
+    })
+    const events: AgentEvent.AgentEvent[] = []
+    const outcome = await drive(collect({
+      model,
+      seat: Seat.make({ id: "first", modelId: "first", model, route, contextWindowTokens: 0 }),
+      fallbackSeats: [Seat.make({ id: "second", modelId: "second", model, route, contextWindowTokens: 0 })],
+      registry: registryOf([]),
+      sink: events,
+      modelRetryPolicy: Schedule.recurs(0)
+    }))
+    expect(outcome._tag).toBe("failed")
+    expect(JSON.stringify(outcome)).toContain("still unavailable")
+    expect(requests).toEqual(["first", "second"])
+    expect(events.some((event) => event._tag === "model-parked")).toBe(false)
+  })
+
   it("cools every seat bound to the refused route", async () => {
     const contacted: Array<string> = []
     const refused = Model.make({

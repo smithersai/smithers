@@ -47,7 +47,7 @@ class FlowDescriptor {
   readonly body: BodyRef
   readonly input: SchemaRef
   readonly output: SchemaRef
-  readonly model: Option.Option<string>
+  readonly model: Option.Option<ModelSelection>
   readonly flows: ReadonlyArray<string>
   readonly capabilities: ReadonlyArray<string>
   readonly effects: EffectDeclaration
@@ -343,12 +343,12 @@ class DiscoveryWarning {
 
 A non-fatal source-discovery diagnostic. Anything a scan can survive is
 reported this way rather than raised, and read back through
-`registry.warnings()`. The 32 codes are grouped by what they say:
+`registry.warnings()`. The 33 codes are grouped by what they say:
 
 | Group                  | Codes                                                                                                                                                                                                                                                                    |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Naming and description | `missing_description`, `invalid_description`, `missing_name`, `invalid_name`, `directory_name_mismatch`, `name_field_ignored`, `duplicate_name`, `root_level_entry`                                                                                                      |
-| Declaration fields     | `unknown_frontmatter_key`, `invalid_allowed_tools`, `invalid_capabilities`, `invalid_budget`, `invalid_model_invocation`, `invalid_placement`, `invalid_compatibility`, `invalid_license`, `invalid_metadata`, `unsupported_input_schema`, `unsupported_module_metadata` |
+| Declaration fields     | `unknown_frontmatter_key`, `invalid_allowed_tools`, `invalid_capabilities`, `invalid_budget`, `invalid_model`, `invalid_model_invocation`, `invalid_placement`, `invalid_compatibility`, `invalid_license`, `invalid_metadata`, `unsupported_input_schema`, `unsupported_module_metadata` |
 | Authority              | `unprojectable_authority`, `invalid_effect_declaration`, `invalid_effect_tier`                                                                                                                                                                                           |
 | Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`                                                                                                |
 | Packs                  | `unknown_pack_key`, `shadowed`                                                                                                                                                                                                                                           |
@@ -893,7 +893,7 @@ descriptor's schema at the call site.
 rather than the descriptor's own input schema, because a host registers one
 delegate for many descriptors. It carries the two decisions a driver cannot
 re-derive: `placement`, which selects the host a cell is spawned on, and
-`model`, which selects the seat.
+`model`, which selects the seat. `ModelSelection` accepts one string or a non-empty ordered list: the first seat is primary and the rest are fallbacks. The order is included in execution identity.
 
 `placementOptions` decodes an absent key to `null`, so a journal row written
 before the field existed still decodes on replay. The default applies to

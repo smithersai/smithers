@@ -243,12 +243,13 @@ describe("MarkdownFlow", () => {
   it.each([
     ["a declared seat", "model: opus", "opus"],
     ["a blank seat", "model: '   '", undefined],
-    ["a non-string seat", "model:\n  - opus", undefined],
+    ["a single-seat list", "model:\n  - opus", ["opus"]],
+    ["ordered fallback seats", "model: [opus, sol]", ["opus", "sol"]],
     ["no seat at all", "capabilities: []", undefined]
   ])("reads %s from frontmatter", (_label, member, model) => {
     const result = fromMarkdown(`---\ndescription: Review\n${member}\n---\nbody`)
 
-    expect(Option.getOrUndefined(Option.getOrThrow(result.descriptor).model)).toBe(model)
+    expect(Option.getOrUndefined(Option.getOrThrow(result.descriptor).model)).toEqual(model)
   })
 
   it.each([
@@ -553,6 +554,23 @@ describe("MarkdownFlow", () => {
 
     expect(Option.isSome(result.descriptor)).toBe(true)
     expect(result.warnings.map((warning) => warning.code)).not.toContain("unknown_frontmatter_key")
+  })
+
+  it.each(["[]", "[opus, {}]", "[opus, '   ']"])("rejects an invalid model list %s", (value) => {
+    const result = fromMarkdown(`---
+description: Review
+model: ${value}
+---
+body`)
+    expect(Option.isNone(result.descriptor)).toBe(true)
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: "invalid_model" }))
+  })
+
+  it("preserves ordered fallback seats when lowering frontmatter", () => {
+    const descriptor = Option.getOrThrow(
+      fromMarkdown("---\ndescription: Review\nmodel: [opus, sol]\n---\nbody").descriptor
+    )
+    expect(MarkdownFlow.toCoreFrontmatter(descriptor).model).toEqual(["opus", "sol"])
   })
 
   it("projects the model seat and placement into the core authoring value", () => {

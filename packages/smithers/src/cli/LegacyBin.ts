@@ -235,6 +235,7 @@ const main = Effect.gen(function*() {
       return NodeControl.layer({
         ...config,
         startsRuns: Verb.startsRuns(Argv.words(parsed)),
+        approvalChannel: ["serve", "gateway"].includes(Argv.words(parsed)[0] ?? ""),
         approvalAuthority: config.approvalAuthority ?? ApprovalAuthority.local
       })
     }),

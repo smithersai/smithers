@@ -4,6 +4,10 @@ import * as ModuleMetadata from "../src/internal/ModuleMetadata.ts"
 import discoveredFlow from "./fixtures/project/flows/review/read-pr/flow.ts"
 
 describe("ModuleMetadata", () => {
+  it("preserves an ordered model list in module metadata", () => {
+    const metadata = ModuleMetadata.parse("export default Flow.make(\"review\", { model: [\"opus\", \"sol\"] })")
+    expect(Option.getOrThrow(metadata.model)).toEqual(["opus", "sol"])
+  })
   it("reads metadata from the default Flow.make value without named schema exports", () => {
     const metadata = ModuleMetadata.parse([
       "\"use sandbox\"",

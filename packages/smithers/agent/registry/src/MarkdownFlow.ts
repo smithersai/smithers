@@ -18,6 +18,7 @@ import {
   type FlowBudget,
   FlowDescriptor,
   type FlowDescriptor as FlowDescriptorType,
+  ModelSelection,
   Placement,
   type Provenance,
   SchemaRefMarkdownArgs,
@@ -129,9 +130,19 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
   const effects = deriveEffects(fields, capabilities, options.path, warnings)
   const placement = derivePlacement(fields, options.path, warnings)
   const budget = deriveBudget(fields, options.path, warnings)
-  const model = typeof fields.model === "string" && fields.model.trim() !== ""
-    ? Option.some(fields.model)
-    : Option.none<string>()
+  const selected: unknown = fields.model
+  const validModels = Schema.is(ModelSelection)(selected) &&
+    (typeof selected === "string" ? selected.trim() !== "" : selected.every((seat) => seat.trim() !== ""))
+  if (Array.isArray(selected) && !validModels) {
+    warnings.push({
+      code: "invalid_model",
+      path: options.path,
+      name,
+      message: "model must be a non-empty list of non-empty seat names"
+    })
+    return { descriptor: Option.none(), warnings }
+  }
+  const model = validModels ? Option.some(selected) : Option.none<ModelSelection>()
   warnUnsupportedSchema(fields, options.path, warnings)
   warnUnknownFields(fields, options.path, warnings)
 

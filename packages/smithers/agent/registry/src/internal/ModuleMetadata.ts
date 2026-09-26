@@ -5,7 +5,8 @@
  * @since 0.1.0
  */
 import * as Option from "effect/Option"
-import type { EffectDeclaration, Placement } from "../Descriptor.ts"
+import * as Schema from "effect/Schema"
+import { type EffectDeclaration, ModelSelection, type Placement } from "../Descriptor.ts"
 import { conservativeEffects, projectEffects, unprojectableDelegation } from "./Authority.ts"
 
 /**
@@ -24,7 +25,7 @@ export interface Metadata {
   readonly description: string | undefined
   readonly hasInput: boolean
   readonly hasOutput: boolean
-  readonly model: Option.Option<string>
+  readonly model: Option.Option<ModelSelection>
   readonly flows: ReadonlyArray<string>
   readonly capabilities: ReadonlyArray<string>
   readonly effects: EffectDeclaration
@@ -675,6 +676,9 @@ export const parse = (source: string): Metadata => {
     warnings.push({ message: "Model invocation visibility must be declared as a boolean literal for discovery" })
   }
 
+  const modelSource = properties.get("model")
+  const model = stringLiteral(modelSource) ?? stringArray(modelSource)
+
   return {
     description: stringLiteral(properties.get("description")),
     // Two declarations name the same two schemas. `@smthrs/core` calls them
@@ -684,7 +688,7 @@ export const parse = (source: string): Metadata => {
     // reporting a flow that declares a payload as one that takes no input.
     hasInput: properties.has("input") || properties.has("payload") || parsedProperties.hasUnprojectableMembers,
     hasOutput: properties.has("output") || properties.has("success") || parsedProperties.hasUnprojectableMembers,
-    model: Option.fromUndefinedOr(stringLiteral(properties.get("model"))),
+    model: Schema.is(ModelSelection)(model) ? Option.some(model) : Option.none(),
     flows: literalFlows ?? [],
     capabilities,
     effects,

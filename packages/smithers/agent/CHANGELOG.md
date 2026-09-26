@@ -9,11 +9,26 @@
 
 ### Fixed
 
+- Workspace observation can omit exact host-owned paths without hiding other
+  files with the same basename. The TUI excludes its session subtree and log
+  from mutation accounting ([#2009](https://github.com/smithersai/smithers/issues/2009)).
+
+- Ordered fallback seats now try the next model after context overflow or HTTP
+  5xx failure without inventing a quota park ([#1797](https://github.com/smithersai/smithers/issues/1797)).
+
+- `AgentAction.Host.approvalChannel` forwards the attended-host setting into
+  agent steps. TUI and served hosts arm it; unattended hosts default to false
+  ([#1784](https://github.com/smithersai/smithers/issues/1784)).
+
 - A run the engine re-drives for a host that died mid-run is claimed in the
   control plane before it executes, so its status writes are its own instead
   of failing `ClaimLost`.
 
 ### Added
+
+- Agent actions and markdown flows accept an ordered model list. The first seat
+  is primary; the remaining seats are fallbacks, preserved through durable
+  invocation and replay ([#1796](https://github.com/smithersai/smithers/issues/1796)).
 
 - `control.agent.model-requested` and `control.agent.decision-settled`: the
   request a model call was asked and the decision a classifier made, journaled

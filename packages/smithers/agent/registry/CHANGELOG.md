@@ -4,6 +4,10 @@
 
 ### Added
 
+- Flow model metadata accepts an ordered, non-empty seat list and preserves it
+  in execution identity and invocation. Invalid markdown lists are refused
+  with an `invalid_model` warning ([#1796](https://github.com/smithersai/smithers/issues/1796)).
+
 - `Executable.Refresh` rebuilds one entry of a catalog the host is already
   serving from: rescan discovery, load that flow's body from the bytes now on
   disk, register it, and swap it into the snapshot. No restart, and the

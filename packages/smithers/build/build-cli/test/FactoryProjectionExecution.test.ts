@@ -71,7 +71,7 @@ ${
 const reviewFlow = `---
 description: Reviews the uncommitted change and returns a verdict.
 capabilities: ["fs:read:**", "proc:spawn:git *"]
-model: openai:gpt-5.6-sol
+model: [openai:gpt-6-sol, anthropic:claude-opus-5-5]
 ---
 
 # Review the change
@@ -140,7 +140,7 @@ describe("FactoryProjection through the CLI", () => {
       kind: "mdx",
       path: "flows/review/flow.mdx",
       capabilities: ["fs:read:**", "proc:spawn:git *"],
-      model: "openai:gpt-5.6-sol",
+      model: ["openai:gpt-6-sol", "anthropic:claude-opus-5-5"],
       modelInvocable: true,
       inputSchema: expect.objectContaining({
         schema: expect.objectContaining({ properties: { args: { type: "string" } } })

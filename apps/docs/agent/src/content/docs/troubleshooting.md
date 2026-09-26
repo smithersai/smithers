@@ -138,7 +138,9 @@ failure the cell can route around.
 **What to change.** For a run that should wait for a person, the host fails the
 gate with a `HarnessError` carrying a `Permission.PermissionRequired`, or
 intercepts the call in `Agent.Options.authorize`; `AgentSession` does this
-through the control plane. For an unattended run, leave `approvalChannel`
+through the control plane. TUI and `smthrs serve` hosts forward
+`approvalChannel: true` to both whole agents and `AgentAction` steps. Custom
+compositions set `AgentAction.Host.approvalChannel`. For an unattended run, leave `approvalChannel`
 false: its `park` transitions are refused and answered in-frame rather than
 left waiting on an operator who is not there.
 
