@@ -257,6 +257,41 @@ export const handlePlatformProxy = (
   })
 
 /*
+ * `GET /api/user`, the ApplicationClient identity read (@smthrs/rpc
+ * ApplicationAuth). The local Bun host proxied it and this Worker answered the
+ * canonical 404, so a client pointed at smithers.sh could never learn who it
+ * was (release run 36077431281). A caller holding its own Smithers Cloud
+ * credential (the native app's PAT) is forwarded to that credential's issuer
+ * with the header it sent; a browser session goes through the same
+ * cookie-to-cloud-token bridge as every other platform read, so a signed-out
+ * visitor gets the 401 the client reads as "unauthenticated".
+ */
+export const handleAuthenticatedUser = (
+  request: Request,
+  url: URL
+): Effect.Effect<Response, never, Transport | ServerConfig> =>
+  Effect.gen(function* () {
+    const authorization = request.headers.get("authorization")
+    if (authorization === null) return yield* handlePlatformProxy(request, url)
+    const config = yield* ServerConfig
+    const target = new URL("/api/user", config.cloudApiBaseUrl)
+    const fetched = yield* Effect.result(
+      fetchWithDeadline("Smithers Cloud", target.toString(), { method: "GET", headers: { authorization, accept: "application/json" } }, config.upstreamTimeoutMs)
+    )
+    if (Result.isFailure(fetched)) return upstreamUnreachable("Smithers Cloud", fetched.failure)
+    const upstream = fetched.success
+    if (upstream.status >= 300) {
+      const detail = yield* readRefusalDetail(upstream)
+      const status = upstream.status === 401 || upstream.status === 403 ? upstream.status : 502
+      return json(status, { status: "error", message: platformFailureMessage(upstream.status, detail), ...machineReadableRefusal(detail) })
+    }
+    const out = new Headers({ "cache-control": "private, no-store" })
+    const upstreamType = upstream.headers.get("content-type")
+    if (upstreamType !== null) out.set("content-type", upstreamType)
+    return new Response(upstream.body, { status: upstream.status, headers: out })
+  })
+
+/*
  * The `/api/cloud/<inner>` bridge (apps/app/docs/web-mode/PLAN.md §0
  * correction 4). The product's cloud seams call CLOUD_ROUTE_PREFIX + path;
  * the Bun origin forwards that with its Smithers Cloud PAT, and this Worker answered

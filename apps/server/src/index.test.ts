@@ -3092,6 +3092,54 @@ describe("the browser tool route (§2d)", () => {
    * success to stream back: the page would get a bodyless 302 with no
    * Location. It is the refusal it is, and the host it names is never asked.
    */
+  test("GET /api/user answers identity: 401 signed out, the session's cloud user, and a caller's own token forwarded", async () => {
+    const env: WorkerEnv = {
+      ...assetsEnv(),
+      IDENTITY_UPSTREAM_URL: "https://identity.test",
+      IDENTITY_SERVICE_TOKEN: "svc",
+      SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
+    }
+    const cloudCalls: Array<{ url: string; authorization: string | null }> = []
+    const original = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (url.includes("/api/identity/validate")) {
+        return Response.json({ login: "will", allowlisted: true, admin: false, scopes: [] })
+      }
+      if (url.includes("/api/identity/cloud-token")) return Response.json({ found: true, token: "cloud-token-1" })
+      if (url.startsWith("https://cloud.test/")) {
+        const authorization = new Headers(init?.headers).get("authorization")
+        cloudCalls.push({ url, authorization })
+        if (authorization === "token bad") return Response.json({ message: "authentication required" }, { status: 401 })
+        return Response.json({ id: 1, username: "will", is_admin: false })
+      }
+      return new Response("unexpected", { status: 500 })
+    }) as unknown as typeof fetch
+    try {
+      const anonymous = await worker.fetch(new Request("https://mvp.test/api/user"), env)
+      expect(anonymous.status).toBe(401)
+      expect(cloudCalls).toEqual([])
+
+      const session = await worker.fetch(new Request("https://mvp.test/api/user", { headers: SESSION }), env)
+      expect(session.status).toBe(200)
+      expect(((await session.json()) as { username: string }).username).toBe("will")
+      expect(cloudCalls.at(-1)).toEqual({ url: "https://cloud.test/api/user", authorization: "Bearer cloud-token-1" })
+
+      const token = await worker.fetch(new Request("https://mvp.test/api/user", { headers: { authorization: "token pat-1" } }), env)
+      expect(token.status).toBe(200)
+      expect(token.headers.get("cache-control")).toBe("private, no-store")
+      expect(cloudCalls.at(-1)).toEqual({ url: "https://cloud.test/api/user", authorization: "token pat-1" })
+
+      const refused = await worker.fetch(new Request("https://mvp.test/api/user", { headers: { authorization: "token bad" } }), env)
+      expect(refused.status).toBe(401)
+
+      const write = await worker.fetch(new Request("https://mvp.test/api/user", { method: "PATCH", headers: SESSION }), env)
+      expect(write.status).toBe(404)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
   test("a platform redirect is refused, never followed or passed through", async () => {
     const env: WorkerEnv = {
       ...assetsEnv(),

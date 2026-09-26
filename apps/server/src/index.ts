@@ -27,6 +27,7 @@ import {
   WORKFLOW_TRIGGERS_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
+import { AUTHENTICATED_USER_PATH } from "@smthrs/rpc/ApplicationAuth"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { CLOUD_AUTH_SESSION_PATH, CLOUD_ROUTE_PREFIX, CLOUD_WS_ROUTE_PREFIX } from "@smthrs/rpc/CloudTunnel"
 import { handleTerminalRelay } from "./terminalRelay"
@@ -47,6 +48,7 @@ import {
   CLIENT_ERRORS_PATH,
   handleBrowserFetch,
   handleClientError,
+  handleAuthenticatedUser,
   handleCloudProxy,
   handlePlatformProxy,
   PLATFORM_PROXY_RULES,
@@ -472,6 +474,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     if (url.pathname === CLIENT_ERRORS_PATH && request.method === "POST") return yield* handleClientError(request)
     if (url.pathname.startsWith(CLOUD_WS_ROUTE_PREFIX)) return yield* handleTerminalRelay(request, url)
     if (url.pathname.startsWith(CLOUD_ROUTE_PREFIX)) return yield* handleCloudProxy(request, url)
+    if (url.pathname === AUTHENTICATED_USER_PATH && request.method === "GET") return yield* handleAuthenticatedUser(request, url)
     if (platformProxyMatch(url.pathname, request.method)) return yield* handlePlatformProxy(request, url)
     if (url.pathname.startsWith(BILLING_ROUTE_PREFIX)) return yield* proxyToBilling(request)
     if (url.pathname.startsWith(ADMIN_ROUTE_PREFIX)) return yield* handleAdmin(request, url)
