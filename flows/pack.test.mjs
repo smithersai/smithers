@@ -47,6 +47,7 @@ const run = (effect) => Effect.runPromise(effect.pipe(Effect.provide(platform)))
 const EXPECTED_FLOWS = [
   "checks/bundle",
   "checks/bundle-bun",
+  "checks/lint",
   "checks/native",
   "checks/native-bun",
   "checks/policy",

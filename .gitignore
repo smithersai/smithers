@@ -199,3 +199,4 @@ zz-*-repro.*
 .enrollment-*
 *.exit
 /apps/backend/backend
+__pycache__/

@@ -153,6 +153,7 @@ only.
 | `smithers/agent/integrations` | `Linear live contract (LINEAR_API_KEY)` | `describe.skipIf(LINEAR_API_KEY === undefined)` |
 | `smithers/agent/integrations` | `Telegram live contract (TELEGRAM_BOT_TOKEN)` | `describe.skipIf(TELEGRAM_BOT_TOKEN === undefined)` |
 | `smithers/agent/integrations` | `long-polls without confirming any update (TELEGRAM_CHAT_ID)` | `it.skipIf(TELEGRAM_CHAT_ID === undefined)` |
+| `smithers/build/targets` | `SecretProxy brokered origins over the network` | `describe.runIf(SMITHERS_E2E_NETWORK === "1")` |
 | `smithers/agent/model` | `OpenAIChatCompletions over Gemini` | `describe.skipIf(SMITHERS_LIVE_MODEL_TESTS !== "1" || GEMINI_API_KEY absent)` |
 | `smithers/migrate` | `migrates a single-file JSX project through the bin (${reason})` | `it.skip` when `SMITHERS_MIGRATE_SEAT` names no funded seat |
 | `smithers/migrate` | `records what a single-file project could not settle (${reason})` | `it.skip` when `SMITHERS_MIGRATE_SEAT` names no funded seat |
