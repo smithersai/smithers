@@ -7,7 +7,7 @@
  * that never answers. No live X account is involved.
  */
 import { Duration, Effect, Layer, Redacted } from "effect"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { AccessTokenSource } from "../src/core/AccessToken.ts"
 import type { Connection } from "../src/core/Connection.ts"
 import { IntegrationError, isIntegrationError } from "../src/core/IntegrationError.ts"
@@ -415,10 +415,12 @@ describe("X failures", () => {
 
     await restart()
     await serve(() => {})
-    const timedOut = await failure(client({ requestTimeout: "30 millis", maxRetries: 1 }).me)
-    expect(timedOut.message).toMatch(/timed out after 30 ms: GET \/users\/me( |$)/)
+    // The server never answers, so every attempt times out; the bound only has
+    // to be long enough for each attempt to reach the server on a loaded runner.
+    const timedOut = await failure(client({ requestTimeout: "250 millis", maxRetries: 1 }).me)
+    expect(timedOut.message).toMatch(/timed out after 250 ms: GET \/users\/me( |$)/)
     expect(timedOut.details).toMatchObject({ timedOut: true, retryable: true, outcomeUnknown: false })
-    expect(requests()).toHaveLength(2)
+    await vi.waitFor(() => expect(requests()).toHaveLength(2))
 
     await restart()
     await serve((_request, response) => {

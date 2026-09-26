@@ -328,11 +328,11 @@ const fakeCli = (faults: CliFaults = {}) => {
       // Guest pids live under a fixed guest path; on this host they live
       // under the test's own root instead.
       const remote = command.args[remoteIndex + 1]!.replaceAll("/tmp/.smthrs-sbx", `${root}/.pids`)
-      const input = Stream.isStream(command.options.stdin)
-        ? yield* Stream.runFold(command.options.stdin as Stream.Stream<Uint8Array>, () =>
-          "", (text, bytes) =>
-          text + new TextDecoder().decode(bytes))
-        : ""
+      const chunks = Stream.isStream(command.options.stdin)
+        ? yield* Stream.runCollect(command.options.stdin as Stream.Stream<Uint8Array>)
+        : undefined
+      const stdinBytes = chunks === undefined ? undefined : Buffer.concat([...chunks])
+      const input = stdinBytes === undefined ? "" : new TextDecoder().decode(stdinBytes)
       calls.push({ file: command.command, input, args: command.args, remote })
       const sessionId = `ecs-execute-command-${calls.length}`
       const wait = faults.wait?.(remote)
@@ -345,8 +345,7 @@ const fakeCli = (faults: CliFaults = {}) => {
           pid: 0 as never,
           exitCode: Effect.as(wait ?? Effect.void, ExitCode(0)),
           isRunning: Effect.succeed(false),
-          kill: () =>
-            Effect.void,
+          kill: () => Effect.void,
           stdin: Sink.drain,
           stdout: faults.removeResult === "missing" ? Stream.empty : Stream.make(encoder.encode(`\n${marker}1__\n`)),
           stderr: Stream.empty,
@@ -382,13 +381,16 @@ const fakeCli = (faults: CliFaults = {}) => {
       // `to-stderr` AFTER the sentinel, where `unframe` correctly discards it
       // as session footer, and the conformance suite saw a command's standard
       // error vanish. One descriptor, one order, no race.
+      // The recorded input reaches the shell from a file, not a pipe: a guest
+      // script that exits before reading its stdin (`exit 23`) would otherwise
+      // leave Bun's pipe writer with an unhandled EPIPE.
+      const stdinFile = stdinBytes === undefined ? undefined : join(root, `.stdin-${calls.length}`)
+      if (stdinFile !== undefined) writeFileSync(stdinFile, stdinBytes!)
       const child = yield* local.spawn(
-        ChildProcess.make("sh", ["-c", `exec 2>&1\n${remote}`], {
-          cwd: root,
-          ...Stream.isStream(command.options.stdin)
-            ? { stdin: command.options.stdin as Stream.Stream<Uint8Array> }
-            : {}
-        })
+        ChildProcess.make("sh", [
+          "-c",
+          `exec 2>&1${stdinFile === undefined ? "" : ` <'${stdinFile}'`}\n${remote}`
+        ], { cwd: root })
       )
       const banner = faults.noBanner === true
         ? Stream.empty
