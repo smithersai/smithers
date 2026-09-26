@@ -53,6 +53,9 @@ type Service interface {
 	// SetFallbackEmailSender binds the common product notification service before serving.
 	// A deployment-supplied sender remains authoritative.
 	SetFallbackEmailSender(EmailSender)
+	// CreditLedger is the exact credit ledger with this deployment's grants,
+	// shared by every platform-model charge.
+	CreditLedger() credits.Ledger
 }
 
 type Config struct {
@@ -93,6 +96,7 @@ func New(pool *pgxpool.Pool, client Client, cfg Config) (Service, error) {
 		return nil, err
 	}
 	p := cfg.Prices
+	ledger := credits.Ledger{DB: pool, SignupGrantNanos: cfg.SignupCreditGrantCents * credits.NanosPerCent}
 	service := services.NewBillingService(queries, client, services.BillingServiceConfig{
 		BaseURL: cfg.BaseURL, PortalReturnURL: cfg.PortalReturnURL,
 		CheckoutSuccessURL: cfg.CheckoutSuccessURL, CheckoutCancelURL: cfg.CheckoutCancelURL,
@@ -103,14 +107,17 @@ func New(pool *pgxpool.Pool, client Client, cfg Config) (Service, error) {
 		TeamMonthlyPriceID: p.TeamMonthly, TeamAnnualPriceID: p.TeamAnnual,
 		EnterpriseMonthlyPriceID: p.EnterpriseMonthly, EnterpriseAnnualPriceID: p.EnterpriseAnnual,
 		MonthlyCreditGrantCents: cfg.MonthlyCreditGrantCents,
-	}, services.WithBillingEmailSender(cfg.EmailSender), services.WithBillingCreditLedger(credits.Ledger{DB: pool, SignupGrantNanos: cfg.SignupCreditGrantCents * credits.NanosPerCent}))
-	return &authority{BillingService: service, emailSender: cfg.EmailSender}, nil
+	}, services.WithBillingEmailSender(cfg.EmailSender), services.WithBillingCreditLedger(ledger))
+	return &authority{BillingService: service, emailSender: cfg.EmailSender, ledger: ledger}, nil
 }
 
 type authority struct {
 	*services.BillingService
 	emailSender EmailSender
+	ledger      credits.Ledger
 }
+
+func (s *authority) CreditLedger() credits.Ledger { return s.ledger }
 
 func (s *authority) Capabilities() Capabilities { return s.CommerceCapabilities() }
 

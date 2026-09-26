@@ -1314,8 +1314,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	sshKeyService.SetRevocationPublisher(revocationPublisher)
 	deployKeyService.SetRevocationPublisher(revocationPublisher)
 	publicCatalog := routes.NewPublicRepositoryCatalog(queries)
-	// Every platform-key model call is metered in the exact credit ledger.
-	modelMeter := &modelproxy.Meter{Ledger: credits.Ledger{DB: pool}}
+	// Every platform-key model call is charged in the deployment's ledger,
+	// so a first call creates the account with its signup grant.
+	modelLedger := credits.Ledger{DB: pool}
+	if options.Commerce != nil {
+		modelLedger = options.Commerce.CreditLedger()
+	}
+	modelMeter := &modelproxy.Meter{Ledger: modelLedger}
 	var modelProxyHandler http.Handler
 	if len(modelSeats) > 0 {
 		modelProxyHandler = &modelproxy.Handler{Meter: *modelMeter, Keys: options.PlatformModelKeys, Callers: services.NewModelProxyCallers(queries, pool, webhookSecretCodec)}
