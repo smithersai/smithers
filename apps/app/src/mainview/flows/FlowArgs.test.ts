@@ -308,3 +308,11 @@ test("preparation retry carries the original schedule, JSON input and both limit
   const slash = `${draft.repo} --flow ${draft.flow} --slug ${draft.slug} --schedule ${draft.schedule} --input ${draft.input} --tokens ${draft.tokens} --minutes ${draft.minutes}`
   expect(payloadFor("triggers.register", slash)).toEqual(expected)
 })
+
+
+test("a run-open retry round-trips its durable request and rejects duplicate or empty request IDs", () => {
+  const input = { runId: "run-1", repo: "will/repo", requestId: "request-1" }
+  expect(payloadFor("runs.open", flowArgs("runs.open", input))).toEqual({ payload: input })
+  expect(payloadFor("runs.open", "requestId= run-1")).toHaveProperty("error")
+  expect(payloadFor("runs.open", "requestId=a requestId=b run-1")).toHaveProperty("error")
+})

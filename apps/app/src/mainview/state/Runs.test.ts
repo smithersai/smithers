@@ -273,6 +273,15 @@ const runListCard = (store: Awaited<ReturnType<typeof webStore>>): Extract<Card,
   return card?.kind === "run-list" ? card : undefined
 }
 
+const openMonitor = async (controller: AppController, store: Awaited<ReturnType<typeof webStore>>, args?: string) => {
+  const result = await controller.commands.run("runs.open", args)
+  if (result.status === "executed") {
+    await waitFor(() => (store.session().runOpenRequests ?? []).every(request => request.error !== undefined))
+    await store.settled?.()
+  }
+  return result
+}
+
 const listInventory = async (controller: AppController, store: Awaited<ReturnType<typeof webStore>>, flow: "runs.list" | "runs.attention", args?: string) => {
   const result = await controller.commands.run(flow, args)
   if (result.status === "executed") {
@@ -355,7 +364,7 @@ test("handoff drafts preserve edits across reopening and reload, without copying
   const double = relay({ runs: [{ runId: "run-handoff", flowId: "review-pr", status: "completed" }] })
   const controller = createAppController(store, silentAgent, double.services)
   await signIn(store)
-  await controller.commands.run("runs.open", "run-handoff")
+  await openMonitor(controller, store, "run-handoff")
   const run = [...store.collections.cards.values()].find(card => card.kind === "run-trace")!
   store.dispatch({ type: "card.updated", actor: "system", id: run.id, patch: { payload: {
     ...run.payload, input: { prompt: "Fix retries", apiKey: "secret-that-must-not-be-copied" }
@@ -492,8 +501,8 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
-    const opened = await controller.commands.run("runs.open", "run-9")
-    expect(said(opened)).toContain("run-opened run=run-9")
+    const opened = await openMonitor(controller, store, "run-9")
+    expect(said(opened)).toBe("Run requested: run-9.")
     const card = store.collections.cards.get("flow-run-run-9")
     expect(card?.kind === "run-trace" && card.payload.workflow).toBe("deploy")
     expect(card?.kind === "run-trace" && card.payload.repo).toBe(REPO)
@@ -510,7 +519,7 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
     })
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("runs.open", "run-done")
+    await openMonitor(controller, store, "run-done")
     await waitFor(() => {
       const card = store.collections.cards.get("flow-run-run-done")
       return card?.kind === "run-trace" && (card.payload.events?.length ?? 0) === 2
@@ -526,8 +535,9 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
     const double = relay({ runs: [] })
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
-    const opened = await controller.commands.run("runs.open", "run-absent")
-    expect(said(opened)).toContain("no run run-absent")
+    const opened = await openMonitor(controller, store, "run-absent")
+    expect(said(opened)).toBe("Run requested: run-absent.")
+    expect(store.session().runOpenRequests?.[0]?.error).toContain("no run run-absent")
   })
 
   test("runs.resume sends the control Resume with an idempotency key", async () => {
@@ -575,7 +585,7 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
     const double = relay({ runs: [{ runId: "run-4", flowId: "review-pr", status: "running" }] })
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("runs.open", "run-4")
+    await openMonitor(controller, store, "run-4")
 
     const steered = await controller.commands.run("runs.steer", "run-4 use the smaller diff")
     expect(said(steered)).toContain("steered run=run-4")
@@ -815,7 +825,7 @@ describe("runs.rerun — the same flow, the same input, or the honest refusal", 
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
     // Opened from the inbox: the client never saw this run's launch input.
-    await controller.commands.run("runs.open", "run-5")
+    await openMonitor(controller, store, "run-5")
     const before = double.state.launched.length
     const refused = await controller.commands.run("runs.rerun", "run-5")
     expect(said(refused)).toContain("nothing faithful to rerun")
@@ -838,7 +848,7 @@ describe("the run card's facets — transcript, follow, and the verbose events t
     })
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("runs.open", "run-6")
+    await openMonitor(controller, store, "run-6")
 
     const shown = await controller.commands.run("runs.logs", "run-6")
     expect(said(shown)).toBe("Transcript requested.")
@@ -878,7 +888,7 @@ describe("the run card's facets — transcript, follow, and the verbose events t
     })
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("runs.open", "run-7")
+    await openMonitor(controller, store, "run-7")
 
     const refused = await controller.commands.run("runs.events", "run-7")
     expect(said(refused)).toContain("/debug.verbose")
@@ -919,7 +929,7 @@ describe("the run trace's reader gestures and the pump's tail (spec 06 §5, §6)
     })
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("runs.open", "run-8")
+    await openMonitor(controller, store, "run-8")
     let card = store.collections.cards.get("flow-run-run-8")
     expect(card?.kind).toBe("run-trace")
     expect(card?.kind === "run-trace" && card.payload.kind).toBeUndefined()
@@ -970,7 +980,7 @@ describe("the run trace's reader gestures and the pump's tail (spec 06 §5, §6)
     })).toBe(true)
 
     // A re-open keeps the reader's view (§5): filter, selection, cursor and live tail survive.
-    await controller.commands.run("runs.open", "run-8")
+    await openMonitor(controller, store, "run-8")
     card = store.collections.cards.get("flow-run-run-8")
     expect(card?.kind === "run-trace" && card.payload).toMatchObject({ selection: "call-1", liveTail: false, cursorSeq: 2, filter: "failed", traceView: "timeline" })
     await controller.commands.runForAgent("runs.trace.live", "run-8")
@@ -1018,7 +1028,7 @@ describe("the run trace's reader gestures and the pump's tail (spec 06 §5, §6)
     })
     const controller = createAppController(guarded as typeof store, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("runs.open", "run-7")
+    await openMonitor(controller, store, "run-7")
     await waitFor(() => {
       const current = store.collections.cards.get("flow-run-run-7")
       return current?.kind === "run-trace" && (current.payload.events?.length ?? 0) === 1
@@ -1070,8 +1080,8 @@ describe("flow.run.stop-all — every live run, cancelled", () => {
     })
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("runs.open", "run-a")
-    await controller.commands.run("runs.open", "run-b")
+    await openMonitor(controller, store, "run-a")
+    await openMonitor(controller, store, "run-b")
 
     const stopped = await controller.commands.run("flow.run.stop-all")
     expect(said(stopped)).toContain("stopped=2 of 2")
@@ -1701,7 +1711,7 @@ describe("typed coding launch and plan inspection", () => {
     const double = relay({ runs: [{ runId: "run-1", flowId: "coding", status: "running" }] })
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("runs.open", `run-1 ${REPO}`)
+    await openMonitor(controller, store, `run-1 ${REPO}`)
     const original = store.collections.cards.get("flow-run-run-1") as Extract<Card, { kind: "run-trace" }>
     await store.dispatch({ type: "card.upsert", actor: "system", card: { ...original,
       payload: { ...original.payload, input: { prompt: CODING_PLAN.prompt }, events: preparedCodingJournal(), lastSeq: 5 } } })
@@ -1727,7 +1737,7 @@ describe("typed coding launch and plan inspection", () => {
     let card = runCardInScope(store, { repo: REPO, runId: "run-1" }) as Extract<Card, { kind: "run-trace" }>
     expect(card.payload.codingChangeId).toBe("memory")
     expect([...store.collections.transitions.values()].filter((row) => row.type === "card.upsert").sort((a, b) => a.revision - b.revision).at(-1)?.actor).toBe("smithers")
-    await controller.commands.run("runs.open", `run-1 ${REPO}`)
+    await openMonitor(controller, store, `run-1 ${REPO}`)
     card = runCardInScope(store, { repo: REPO, runId: "run-1" }) as typeof card
     expect(workflowInputOf(card)).toEqual({ plan: CODING_PLAN })
     expect(card.payload.codingChangeId).toBe("memory")
@@ -1853,7 +1863,7 @@ describe("workspace-bound run cards", () => {
     await signIn(store)
     await selectWorkspace(store, "ffffffff-ffff-ffff-ffff-ffffffffffff")
     await listInventory(controller, store, "runs.list", `completed sourceCard=${listId} ${REPO}`)
-    await controller.commands.run("runs.open", "listed")
+    await openMonitor(controller, store, "listed")
     await controller.commands.run("approvals.open", "gated")
     expect(runCardInScope(store, { repo: REPO, runId: "listed", workspaceId })).toMatchObject({ payload: { workspaceId } })
     expect(store.collections.cards.get(approvalCardIdFor(store, { repo: REPO, runId: "gated", workspaceId }, "gate-a"))).toMatchObject({ payload: { workspaceId } })
@@ -1914,7 +1924,7 @@ describe("workspace-bound run cards", () => {
     await signIn(store)
     await listInventory(controller, store, "runs.list", REPO)
     await selectWorkspace(store)
-    await controller.commands.run("runs.open", "legacy")
+    await openMonitor(controller, store, "legacy")
     await waitFor(() => runCardInScope(store, { repo: REPO, runId: "legacy" })?.payload.phase === "completed")
     // The settled run still reads its journal once.
     await waitFor(() => double.calls.some((call) => JSON.stringify(call.body).includes("\"run-events\"")))
@@ -2007,8 +2017,8 @@ describe("workspace-bound run cards", () => {
     expect(gatewayRunContextFor(store, "run-1")).toMatchObject({ error: expect.stringContaining("conflicting") })
     const callsBefore = a.calls.length + b.calls.length
     expect(said(await controller.commands.run("runs.resume", "run-1"))).toContain("conflicting")
-    expect(said(await controller.commands.run("runs.open", `sourceCard=${cardA.id} wrong-run`))).toContain("does not record")
-    expect(said(await controller.commands.run("runs.open", `sourceCard=${cardA.id} run-1 other/repo`))).toContain("another repository")
+    expect(said(await openMonitor(controller, store, `sourceCard=${cardA.id} wrong-run`))).toContain("does not record")
+    expect(said(await openMonitor(controller, store, `sourceCard=${cardA.id} run-1 other/repo`))).toContain("another repository")
     expect(a.calls.length + b.calls.length).toBe(callsBefore)
     for (const [card, double, seat] of [[cardA, a, "workspace A"], [cardB, b, "workspace B"]] as const) {
       const source = `sourceCard=${card.id} run-1`
@@ -2073,8 +2083,8 @@ describe("workspace-bound run cards", () => {
     const searchCard = store.collections.cards.get("search-search.runs")
     expect(searchCard?.kind === "search-results" && searchCard.payload.items).toHaveLength(2)
     const lastA = a.calls.length
-    expect((await controller.commands.run("runs.open", `sourceCard=${listA} run-1`)).status).toBe("executed")
-    expect((await controller.commands.run("runs.open", `sourceCard=${listB} run-1`)).status).toBe("executed")
+    expect((await openMonitor(controller, store, `sourceCard=${listA} run-1`)).status).toBe("executed")
+    expect((await openMonitor(controller, store, `sourceCard=${listB} run-1`)).status).toBe("executed")
     expect(runCardInScope(store, scopeA)?.id).toBe(cardA.id)
     expect(runCardInScope(store, scopeA)?.payload.filter).toBe("failed")
     await waitFor(() => runCardInScope(store, scopeA)?.payload.phase === "completed" && runCardInScope(store, scopeB)?.payload.phase === "completed", 10_000)
@@ -2125,7 +2135,7 @@ describe("workspace-bound run cards", () => {
     expect(store.collections.cards.get(listId)).toMatchObject({ payload: { gatewayBindingVersion: 1 } })
     expect(gatewayRunContextFor(store, "run-1")).toMatchObject({ error: expect.stringContaining("conflicting") })
     let before = double.calls.length
-    expect((await controller.commands.run("runs.open", `sourceCard=${listId} run-1`)).status).toBe("executed")
+    expect((await openMonitor(controller, store, `sourceCard=${listId} run-1`)).status).toBe("executed")
     const legacy = runCardInScope(store, { repo: REPO, runId: "run-1" })!
     expect(legacy.id).not.toBe(old.id)
     expect(store.collections.cards.get(old.id)).toMatchObject({ payload: { workspaceId } })
@@ -2134,16 +2144,16 @@ describe("workspace-bound run cards", () => {
     await settle()
     for (const call of double.calls.slice(before).filter((call) => call.path.startsWith("/api/workflow/"))) expect(call.body).not.toHaveProperty("workspaceId")
     const beforeNative = double.calls.length
-    expect(said(await controller.commands.run("runs.open", `sourceCard=${old.id} native-1`))).toContain("does not record")
+    expect(said(await openMonitor(controller, store, `sourceCard=${old.id} native-1`))).toContain("does not record")
     expect(double.calls.length).toBe(beforeNative)
     // Only an actual recorded agent/spawn child can use its parent's source.
     before = double.calls.length
-    expect((await controller.commands.run("runs.open", `sourceCard=${old.id} child-1`)).status).toBe("executed")
+    expect((await openMonitor(controller, store, `sourceCard=${old.id} child-1`)).status).toBe("executed")
     expect(runCardInScope(store, { repo: REPO, workspaceId, runId: "child-1" })).toBeDefined()
     await waitFor(() => runCardInScope(store, { repo: REPO, workspaceId, runId: "child-1" })?.payload.phase === "completed", 10_000)
     for (const call of double.calls.slice(before).filter((call) => call.path.startsWith("/api/workflow/"))) expect(call.body).toMatchObject({ workspaceId })
     before = double.calls.length
-    expect((await controller.commands.run("runs.open", `sourceCard=${old.id} run-1`)).status).toBe("executed")
+    expect((await openMonitor(controller, store, `sourceCard=${old.id} run-1`)).status).toBe("executed")
     expect(runCardInScope(store, { repo: REPO, workspaceId, runId: "run-1" })?.id).toBe(old.id)
     await waitFor(() => runCardInScope(store, { repo: REPO, workspaceId, runId: "run-1" })?.payload.phase === "completed")
     await waitFor(() => double.calls.slice(before).some((call) => JSON.stringify(call.body).includes("\"run-events\"")))
@@ -2192,7 +2202,7 @@ test("a late run snapshot cannot repopulate normalized state after account erasu
     return original(input, init)
   } })
   await signIn(store)
-  const opening = controller.commands.run("runs.open", `run ${REPO}`)
+  const opening = openMonitor(controller, store, `run ${REPO}`)
   await requested
   await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
   release()
@@ -2903,6 +2913,259 @@ describe("durable run-list reads", () => {
       saved.resolve()
       await waitFor(() => [...fixture.store.collections.toasts.values()].some(toast => toast.key.startsWith("runs.list.") && toast.status === "ok"))
     } finally { gate.resolve(); saved.resolve(); Object.assign(fixture.store, { dispatch }) }
+  })
+
+})
+
+
+describe("durable run opens", () => {
+  const ready = async (gate: Promise<void>, storage = memoryStorage(), toastDebounceMs = 0) => {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    await signIn(store)
+    const double = relay({ runs: [{ runId: "opened", flowId: "review-pr", status: "completed" }] })
+    let reads = 0
+    const services = { ...double.services, toastDebounceMs, fetchImpl: async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      if (body?.payload?.selector?._tag === "run-summary") { reads += 1; await gate }
+      return double.services.fetchImpl!(input, init)
+    } }
+    const controller = createAppController(store, silentAgent, services)
+    return { store, controller, double, services, storage, reads: () => reads }
+  }
+
+  test("opening acknowledges while the summary is held and keeps Chat usable", async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise)
+    let answered = false
+    const result = fixture.controller.commands.run("runs.open", "opened").then(result => { answered = true; return result })
+    try {
+      await waitFor(() => fixture.reads() === 1)
+      await waitFor(() => answered)
+      expect(said(await result)).toContain("requested")
+      await fixture.store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat while opening" }).isPersisted.promise
+      await waitFor(() => [...fixture.store.collections.toasts.values()].some(toast => toast.status === "running"))
+    } finally { gate.resolve(); await result }
+  })
+
+  test("reopening preserves the transcript snapshot and Follow choice", async () => {
+    const fixture = await ready(Promise.resolve())
+    await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: "flow-run-opened", kind: "run-trace", title: "Run", status: "acted", createdAt: 1, ordinal: 1,
+      payload: { repo: REPO, runId: "opened", workflow: "review-pr", phase: "completed", steps: [], result: null, lastSeq: 0,
+        facet: "transcript", follow: false, transcriptAtRevision: 3, transcriptRows: [{ sequence: 1, kind: "assistant", text: "Saved transcript" }] }
+    } }).isPersisted.promise
+    await fixture.controller.commands.run("runs.open", "opened")
+    await waitFor(() => fixture.reads() > 0)
+    await settle(30)
+    expect(fixture.store.collections.cards.get("flow-run-opened")).toMatchObject({ payload: {
+      follow: false, transcriptAtRevision: 3, transcriptRows: [{ sequence: 1, kind: "assistant", text: "Saved transcript" }]
+    } })
+  })
+
+  test("reload resumes the same admitted run open after identity confirmation", async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise)
+    let restored: Awaited<ReturnType<typeof webStore>> | undefined
+    let reopened: AppController | undefined
+    try {
+      await fixture.controller.commands.run("runs.open", "opened")
+      await waitFor(() => fixture.reads() === 1)
+      const request = fixture.store.session().runOpenRequests![0]!
+      await fixture.controller.dispose()
+      await fixture.store.dispose?.()
+      restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
+      reopened = createAppController(restored, silentAgent, fixture.services)
+      await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+      await waitFor(() => fixture.reads() === 2)
+      expect(restored.session().runOpenRequests![0]).toEqual(request)
+      gate.resolve()
+      await waitFor(() => restored!.session().runOpenRequests?.length === 0)
+      expect(restored.collections.cards.get(request.cardId)).toMatchObject({ kind: "run-trace", payload: { runId: "opened" } })
+    } finally { gate.resolve(); await reopened?.dispose(); await restored?.dispose?.() }
+  })
+
+  test("an old account's summary cannot create a monitor after sign-in changes", async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise)
+    try {
+      await fixture.controller.commands.run("runs.open", "opened")
+      await waitFor(() => fixture.reads() === 1)
+      await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+      gate.resolve()
+      await settle(30)
+      expect([...fixture.store.collections.cards.values()].filter(card => card.kind === "run-trace")).toHaveLength(0)
+      expect(fixture.store.session().runOpenRequests).toBeUndefined()
+    } finally { gate.resolve() }
+  })
+
+  test("duplicate user and agent opens wait for admission, then share one summary", async () => {
+    const gate = Promise.withResolvers<void>()
+    const saved = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise)
+    const dispatch = fixture.store.dispatch
+    let held = false
+    let answers = 0
+    Object.assign(fixture.store, { dispatch: (event: Parameters<typeof dispatch>[0]) => {
+      const write = dispatch(event)
+      if (event.type === "runs.open.requested") {
+        held = true
+        return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+      }
+      return write
+    } })
+    const first = fixture.controller.commands.run("runs.open", "opened").then(result => { answers += 1; return result })
+    try {
+      await waitFor(() => held)
+      const second = fixture.controller.commands.runForAgent("runs.open", "opened").then(result => { answers += 1; return result })
+      await settle(15)
+      expect(answers).toBe(0)
+      expect(fixture.reads()).toBe(0)
+      saved.resolve()
+      expect((await first).status).toBe("executed")
+      expect((await second).status).toBe("executed")
+      await waitFor(() => fixture.reads() === 1)
+      expect(fixture.store.session().runOpenRequests).toHaveLength(1)
+    } finally { saved.resolve(); gate.resolve(); Object.assign(fixture.store, { dispatch }); await first }
+  })
+
+  for (const boundary of ["monitor", "completion"] as const) {
+    test(`the opening toast stays running through the ${boundary} receipt and deduplicates input`, async () => {
+      const gate = Promise.withResolvers<void>()
+      const saved = Promise.withResolvers<void>()
+      const fixture = await ready(gate.promise)
+      const dispatch = fixture.store.dispatch
+      let held = false
+      Object.assign(fixture.store, { dispatch: (event: Parameters<typeof dispatch>[0]) => {
+        const write = dispatch(event)
+        if (!held && (boundary === "monitor" ? event.type === "card.upsert" && event.card.kind === "run-trace" : event.type === "runs.open.settled" && event.error === undefined)) {
+          held = true
+          return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+        }
+        return write
+      } })
+      const toast = () => [...fixture.store.collections.toasts.values()].find(row => row.key.startsWith("runs.open."))
+      try {
+        await fixture.controller.commands.run("runs.open", "opened")
+        await waitFor(() => toast()?.status === "running")
+        gate.resolve()
+        await waitFor(() => held)
+        const reads = fixture.reads()
+        await fixture.controller.commands.runForAgent("runs.open", "opened")
+        expect(fixture.reads()).toBe(reads)
+        expect(toast()?.status).toBe("running")
+        saved.resolve()
+        await waitFor(() => toast()?.status === "ok")
+      } finally { saved.resolve(); gate.resolve(); Object.assign(fixture.store, { dispatch }) }
+    })
+  }
+
+  test("a replaced monitor during its receipt cannot claim an opened run", async () => {
+    const saved = Promise.withResolvers<void>()
+    const fixture = await ready(Promise.resolve())
+    const dispatch = fixture.store.dispatch
+    let held = false
+    Object.assign(fixture.store, { dispatch: (event: Parameters<typeof dispatch>[0]) => {
+      const write = dispatch(event)
+      if (!held && event.type === "card.upsert" && event.card.kind === "run-trace") {
+        held = true
+        return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+      }
+      return write
+    } })
+    try {
+      await fixture.controller.commands.run("runs.open", "opened")
+      await waitFor(() => held)
+      const request = fixture.store.session().runOpenRequests![0]!
+      await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: {
+        id: request.cardId, kind: "run-list", title: "Replacement", createdAt: 1, ordinal: 1, status: "active",
+        payload: { repo: REPO, runs: [] }
+      } }).isPersisted.promise
+      saved.resolve()
+      await waitFor(() => fixture.store.session().runOpenRequests?.[0]?.error !== undefined)
+      expect(fixture.store.session().runOpenRequests![0]!.error).toContain("source run changed")
+      expect(fixture.store.collections.cards.get(request.cardId)?.kind).toBe("run-list")
+    } finally { saved.resolve(); Object.assign(fixture.store, { dispatch }) }
+  })
+
+  for (const boundary of ["admission", "monitor", "completion"] as const) {
+    test(`a real refused ${boundary} write fails visibly and retries`, async () => {
+      const backing = memoryStorage()
+      let armed = false
+      let refused = 0
+      const marker = JSON.stringify(`"kind":"run-trace"`).slice(1, -1)
+      const storage = { ...backing, setItem: (key: string, value: string) => {
+        if (armed && key.endsWith(".staged") && (boundary === "admission" ? value.includes("runOpenRequests") : boundary === "completion" ? value.includes("runs.open.settled") : value.includes(marker))) {
+          armed = false; refused += 1
+          throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError", code: 22 })
+        }
+        backing.setItem(key, value)
+      } }
+      const fixture = await ready(Promise.resolve(), storage)
+      armed = true
+      const result = await fixture.controller.commands.run("runs.open", "opened")
+      if (boundary === "admission") {
+        expect(result.status).toBe("failed")
+        expect(fixture.reads()).toBe(0)
+        expect(fixture.store.session().runOpenRequests ?? []).toHaveLength(0)
+      } else {
+        await waitFor(() => fixture.store.session().runOpenRequests?.[0]?.error !== undefined)
+        await waitFor(() => [...fixture.store.collections.toasts.values()].some(row => row.key.startsWith("runs.open.") && row.status === "failed"))
+        expect([...fixture.store.collections.cards.values()].filter(card => card.kind === "run-trace")).toHaveLength(boundary === "completion" ? 1 : 0)
+      }
+      expect(refused).toBe(1)
+      await openMonitor(fixture.controller, fixture.store, "opened")
+      expect(fixture.store.session().runOpenRequests).toHaveLength(0)
+      expect([...fixture.store.collections.cards.values()].filter(card => card.kind === "run-trace")).toHaveLength(1)
+    })
+  }
+
+  test("a failed open's Retry retains its original gateway after workspace selection changes", async () => {
+    const fixture = await ready(Promise.resolve())
+    // First ask names a missing run; the refusal and request survive as the retry address.
+    await openMonitor(fixture.controller, fixture.store, "missing")
+    const request = fixture.store.session().runOpenRequests![0]!
+    await waitFor(() => [...fixture.store.collections.toasts.values()].some(row => row.key.startsWith("runs.open.") && row.action !== undefined))
+    const retry = [...fixture.store.collections.toasts.values()].find(row => row.key.startsWith("runs.open."))!.action!
+    const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
+    await fixture.store.dispatch({ type: "workspace.updated", actor: "system", workspace: {
+      id: workspaceId, repoId: REPO, name: "Coding", status: "running", targetBookmark: "main",
+      provisioningStage: null, suspendedAt: null, createdAt: null, head: null
+    } }).isPersisted.promise
+    await fixture.store.dispatch({ type: "repo.selected", actor: "user", id: `${REPO}#workspace:${workspaceId}` }).isPersisted.promise
+    expect(fixture.store.session().activeRepoKey).toBe(`${REPO}#workspace:${workspaceId}`)
+    const before = fixture.double.calls.length
+    expect((await fixture.controller.commands.run(retry.flow, retry.args)).status).toBe("executed")
+    await waitFor(() => fixture.store.session().runOpenRequests?.[0]?.error !== undefined)
+    expect(fixture.store.session().runOpenRequests![0]).toMatchObject({ cardId: request.cardId, repo: REPO })
+    expect(fixture.store.session().runOpenRequests![0]!.workspaceId).toBeUndefined()
+    const calls = fixture.double.calls.slice(before).filter(call => call.path.startsWith("/api/workflow/"))
+    expect(calls.length).toBeGreaterThan(0)
+    for (const call of calls) expect(call.body).not.toHaveProperty("workspaceId")
+    expect((await fixture.controller.commands.run("runs.open", flowArgs("runs.open", { runId: "opened", requestId: request.id }))).status).toBe("failed")
+  })
+
+
+  test("a fast summary with a slow completion receipt still shows the debounced running toast", async () => {
+    const saved = Promise.withResolvers<void>()
+    const fixture = await ready(Promise.resolve(), memoryStorage(), 100)
+    const dispatch = fixture.store.dispatch
+    let held = false
+    Object.assign(fixture.store, { dispatch: (event: Parameters<typeof dispatch>[0]) => {
+      const write = dispatch(event)
+      if (event.type === "runs.open.settled" && event.error === undefined) {
+        held = true
+        return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+      }
+      return write
+    } })
+    const toast = () => [...fixture.store.collections.toasts.values()].find(row => row.key.startsWith("runs.open."))
+    try {
+      await fixture.controller.commands.run("runs.open", "opened")
+      await waitFor(() => held)
+      await waitFor(() => toast()?.status === "running")
+      saved.resolve()
+      await waitFor(() => toast()?.status === "ok")
+    } finally { saved.resolve(); Object.assign(fixture.store, { dispatch }) }
   })
 
 })

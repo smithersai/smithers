@@ -212,6 +212,7 @@ describe("a launch snapshots the plan onto the run it started", () => {
     await controller.commands.run("runs.graph.follow", `${RUN} on`)
     const before = runCard(store)?.payload
     await controller.commands.run("runs.open", RUN)
+    await waitFor(() => (store.session().runOpenRequests ?? []).length === 0)
     expect(runCard(store)?.payload).toMatchObject({
       traceView: "graph",
       graph: { follow: true },

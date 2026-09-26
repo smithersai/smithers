@@ -465,10 +465,14 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(payload)
   },
   "runs.open": (args, known) => {
-    const { rest, repo } = splitTrailingRepo(args, known)
+    const tokens = (args ?? "").trim().split(/\s+/)
+    const requests = tokens.filter(token => token.startsWith("requestId="))
+    if (requests.length > 1 || requests[0] === "requestId=") return no("The saved run request is invalid.")
+    const requestId = requests[0]?.slice("requestId=".length)
+    const { rest, repo } = splitTrailingRepo(tokens.filter(token => !token.startsWith("requestId=")).join(" "), known)
     const runId = rest.trim()
     if (runId === "" || /\s/.test(runId)) return no("runs.open needs a run id: /runs.open <runId> [owner/repo]")
-    return ok(repo === undefined ? { runId } : { runId, repo })
+    return ok({ runId, ...(repo === undefined ? {} : { repo }), ...(requestId === undefined ? {} : { requestId }) })
   },
   "runs.resume": (args) => required("runId", args, "runs.resume needs a run id"),
   "runs.rerun": (args) => required("runId", args, "runs.rerun needs a run id"),

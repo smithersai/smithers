@@ -22,13 +22,15 @@ import { runHandoff } from "../../cards/RunHandoff"
 import type { TraceFilter } from "../../cards/RunTrace"
 import { traceFromJournal } from "../../cards/RunTrace"
 import type { CommandResult } from "../../flows/Flows"
+import { flowArgs } from "../../flows/FlowArgs"
 import { framePath } from "../../runtime/FrameHistory"
+import { lostActRefusal, spokenLostAct } from "../BrowserWriteFailure"
 import { actorSharedState } from "../ActorBindings"
-import type { ApprovalsInboxRequest, Card } from "../AppState"
+import type { ApprovalsInboxRequest, Card, RunOpenRequest } from "../AppState"
 import { pendingWorkflowLaunch, workflowInputOf } from "../WorkflowLaunch"
 import { sameApproval } from "../ApprovalReference"
 import { gatewayBindingFor,gatewayRunContextFor } from "../RepoContext"
-import { approvalCardIdFor,cardContainsRun,runCardInScope,runScopeFromCard,sameRunScope,type RunScope } from "../RunReference"
+import { approvalCardIdFor,cardContainsRun,runCardIdFor,runCardInScope,runScopeFromCard,sameRunScope,type RunScope } from "../RunReference"
 import { reconcileRunApprovals } from "./approval-reconciliation"
 import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED } from "./failures"
@@ -55,7 +57,7 @@ export interface RunsController {
     readonly by?: string
     readonly repo?: string
   }) => Promise<CommandResult>
-  readonly openRun: (runId: string, repo?: string, sourceCard?: string) => Promise<CommandResult>
+  readonly openRun: (runId: string, repo?: string, sourceCard?: string, requestId?: string) => Promise<CommandResult>
   readonly resumeRun: (runId: string, sourceCard?: string) => Promise<CommandResult>
   readonly rerunRun: (runId: string, sourceCard?: string) => Promise<CommandResult>
   readonly signalRun: (runId: string, name: string, payload?: string, sourceCard?: string) => Promise<CommandResult>
@@ -92,6 +94,7 @@ export interface RunsController {
   readonly resumeApprovalRequests: () => void
   readonly resumeRunFacetRequests: () => void
   readonly resumeRunListRequests: () => void
+  readonly resumeRunOpenRequests: () => void
   readonly openApproval: (runId: string, sourceCard?: string) => Promise<CommandResult>
 }
 
@@ -109,7 +112,7 @@ export const createRunsController = (
   nextTranscriptOrdinal: () => number,
   workflows: WorkflowController,
   renderFlowForm?: FormsController["renderFlowForm"],
-  onRunListed?: (runId: string) => Promise<void>
+  onRunRead?: (runId: string) => Promise<void>
 ): RunsController => {
   const { store, gateway } = ctx
 
@@ -243,7 +246,7 @@ export const createRunsController = (
         } } }).isPersisted.promise
         for (const row of rows) {
           if (!current()) return TOAST_SUPERSEDED
-          await onRunListed?.(row.runId)
+          await onRunRead?.(row.runId)
         }
         return current() ? errors.length ? errors.join(" · ") : true : TOAST_SUPERSEDED
       } catch (error) {
@@ -351,38 +354,138 @@ export const createRunsController = (
     ctx.unref(timer)
   }
 
-  const openRun = async (runId: string, repoArg?: string, sourceCard?: string): Promise<CommandResult> => {
+  class OpenReadRefusal extends Error {}
+  const openReads = actorSharedState(ctx, "run-open-reads", () => ({
+    inFlight: new Map<string, { request: RunOpenRequest; epoch: number; work: Promise<unknown> }>(),
+    persisting: new Map<string, Promise<unknown>>()
+  }))
+  const openKey = (target: Pick<RunOpenRequest, "repo" | "workspaceId" | "runId" | "cardId">): string =>
+    JSON.stringify([target.repo, target.workspaceId ?? null, target.runId, target.cardId ?? null])
+  const openRequest = (id: string) => store.session().runOpenRequests?.find(row => row.id === id)
+  const openFailure = (request: RunOpenRequest, message: string): void => {
+    const key = `runs.open.${encodeURIComponent(openKey(request))}`
+    if (store.collections.toasts.get(`toast-${key}`) === undefined) store.dispatch({ type: "toast.shown", actor: "system", key, title: "Opening run" })
+    ctx.resolveToast(key, { status: "failed", detail: message,
+      action: { flow: "runs.open", args: flowArgs("runs.open", { runId: request.runId, repo: request.repo, requestId: request.id }), label: "Retry" } })
+  }
+  const readRunOpen = (request: RunOpenRequest): Promise<unknown> => {
+    const key = openKey(request)
+    const epoch = ctx.accountEpoch
+    const running = openReads.inFlight.get(key)
+    if (running?.request.id === request.id && running.epoch === epoch) return running.work
+    let settling = false
+    const ownsAccount = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === request.owner
+    const current = () => ownsAccount() && (openRequest(request.id) !== undefined || (settling && !(store.session().runOpenRequests ?? []).some(row => openKey(row) === key)))
+    const work = ctx.withToast(`runs.open.${encodeURIComponent(key)}`, "Opening run…", "Run opened", async () => {
+      try {
+        if (!current()) return TOAST_SUPERSEDED
+        const target: RunScope = { repo: request.repo, runId: request.runId, ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }) }
+        const binding = { workspaceId: request.workspaceId }
+        const provisioned = await workflows.provisionWorkspace(request.repo, binding)
+        if (!current()) return TOAST_SUPERSEDED
+        if (provisioned !== true) throw new OpenReadRefusal(provisioned)
+        const summary = await gateway.run(request.repo, request.runId, binding)
+        if (!current()) return TOAST_SUPERSEDED
+        if (summary.status !== "ok") throw new OpenReadRefusal(summary.message)
+        if (summary.value === undefined) throw new OpenReadRefusal(`There's no run ${request.runId} on ${request.repo}.`)
+        const checkSource = (required = request.requireExisting): void => {
+          const source = store.collections.cards.get(request.cardId)
+          if ((required || source !== undefined) && (source?.kind !== "run-trace" || !sameRunScope(source.payload, target))) throw new OpenReadRefusal("The source run changed. Open it again.")
+        }
+        checkSource()
+        await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: { scope: target, summary: summary.value, summaryCursor: summary.cursor } }).isPersisted.promise
+        if (!current()) return TOAST_SUPERSEDED
+        checkSource()
+        await workflows.upsertRunCard({ ...target, cardId: request.cardId, requireExisting: request.requireExisting, workflow: summary.value.flowId,
+          title: `${summary.value.flowId} — ${request.repo}`, firstStep: `Watching ${summary.value.flowId} (run ${request.runId}).`, observe: true })
+        if (!current()) return TOAST_SUPERSEDED
+        checkSource(true)
+        await onRunRead?.(request.runId)
+        if (!current()) return TOAST_SUPERSEDED
+        checkSource(true)
+        // The optimistic removal must not hide progress while its durable receipt is still held.
+        settling = true
+        await store.dispatch({ type: "runs.open.settled", actor: "system", id: request.id }).isPersisted.promise
+        return ownsAccount() ? true : TOAST_SUPERSEDED
+      } catch (error) {
+        if (!current()) return TOAST_SUPERSEDED
+        const message = error instanceof OpenReadRefusal ? error.message : lostActRefusal(error)
+        // Background completion has no command failure surface to speak for a refused write.
+        if (spokenLostAct(message)) {
+          try { await store.dispatch({ type: "message.appended", actor: "system", text: message }).isPersisted.promise } catch { /* The failed toast remains visible if storage still refuses. */ }
+          if (!current()) return TOAST_SUPERSEDED
+        }
+        try { await store.dispatch({ type: "runs.open.settled", actor: "system", id: request.id, error: message }).isPersisted.promise }
+        catch { return current() ? "The run monitor could not be saved. Retry opening it." : TOAST_SUPERSEDED }
+        return current() ? message : TOAST_SUPERSEDED
+      }
+    }, false, current)
+    const entry = { request, epoch, work }
+    openReads.inFlight.set(key, entry)
+    void work.then(outcome => {
+      if (typeof outcome === "string" && current() && openReads.inFlight.get(key) === entry) openFailure(request, outcome)
+    }).finally(() => { if (openReads.inFlight.get(key) === entry) openReads.inFlight.delete(key) })
+      .catch(error => ctx.failures.report("toast.work", error, key))
+    return work
+  }
+
+  const openRun: RunsController["openRun"] = async (runId, repoArg, sourceCard, requestId) => {
     const guard = workflows.workflowIdentityGuard()
     if (guard !== undefined) return guard
-    const target = resolveRun(runId, sourceCard, repoArg, true)
+    const owner = ctx.accountOwner()
+    if (typeof owner !== "string") return "Sign in with GitHub first."
+    const retry = requestId === undefined ? undefined : openRequest(requestId)
+    if (requestId !== undefined && (retry === undefined || retry.owner !== owner || retry.runId !== runId ||
+      (repoArg !== undefined && retry.repo !== repoArg) || sourceCard !== undefined)) return "The saved run request is unavailable. Open the run again."
+    const target = retry === undefined ? resolveRun(runId, sourceCard, repoArg, true)
+      : { repo: retry.repo, runId: retry.runId, ...(retry.workspaceId === undefined ? {} : { workspaceId: retry.workspaceId }) }
     if ("error" in target) return target.error
-    const repo = target.repo
-    const binding = { workspaceId: target.workspaceId }
-    const provisioned = await workflows.provisionWorkspace(repo, binding)
-    if (provisioned !== true) return provisioned
-    const summary = await gateway.run(repo, runId, binding)
-    if (summary.status !== "ok") return summary.message
-    if (summary.value === undefined) return `There's no run ${runId} on ${repo}.`
-    const row = summary.value
-    await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
-      scope: target, summary: row, summaryCursor: summary.cursor
-    } }).isPersisted.promise
-    workflows.upsertRunCard({
-      runId,
-      repo,
-      ...binding,
-      workflow: row.flowId,
-      title: `${row.flowId} — ${repo}`,
-      firstStep: `Watching ${row.flowId} (run ${runId}).`,
-      // A run that already settled still reads its recorded journal once.
-      observe: true
-      /*
-       * No `input`: this run was not launched from here, so its launch input
-       * is not recorded on this client — `runs.rerun` says so honestly rather
-       * than relaunching with a guessed one.
-       */
-    })
-    return { value: `run-opened run=${runId} repo=${repo}` }
+    const source = runCardFor(target, sourceCard)
+    const cardId = retry?.cardId ?? source?.id ?? runCardIdFor(store, target)
+    const requireExisting = retry === undefined ? source !== undefined : retry.requireExisting === true
+    const key = openKey({ ...target, cardId })
+    const epoch = ctx.accountEpoch
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
+    for (let saving = openReads.persisting.get(key); saving !== undefined; saving = openReads.persisting.get(key)) {
+      try { await saving } catch { /* The original command reports its refused admission. */ }
+      if (!current()) return "The account changed before the run was requested."
+    }
+    if (!current()) return "The account changed before the run was requested."
+    const recorded = store.session().runOpenRequests?.find(row => row.owner === owner && openKey(row) === key)
+    const running = openReads.inFlight.get(key)
+    const acknowledgment = { value: `Run requested: ${runId}.` }
+    if (recorded?.error === undefined && running?.epoch === epoch && running.request.owner === owner) return acknowledgment
+    if (recorded !== undefined && recorded.error === undefined) {
+      void readRunOpen(recorded)
+      return acknowledgment
+    }
+    const request = { id: crypto.randomUUID(), owner, ...target, cardId, ...(requireExisting ? { requireExisting: true } : {}) }
+    const saving = store.dispatch({ type: "runs.open.requested", actor: ctx.commandActor, request }).isPersisted.promise
+    openReads.persisting.set(key, saving)
+    try { await saving } finally { if (openReads.persisting.get(key) === saving) openReads.persisting.delete(key) }
+    const persisted = openRequest(request.id)
+    if (!current() || persisted === undefined) return "The account changed before the run was requested."
+    void readRunOpen(persisted)
+    return acknowledgment
+  }
+
+  const resumeRunOpenRequests = (): void => {
+    const epoch = ctx.accountEpoch
+    const owner = ctx.accountOwner()
+    if (ctx.disposed || typeof owner !== "string") return
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
+    const timer = setTimeout(() => {
+      if (!current()) return
+      void (store.settled?.() ?? Promise.resolve()).then(() => {
+        if (!current() || workflows.workflowIdentityGuard() !== undefined) return
+        for (const request of store.session().runOpenRequests ?? []) {
+          if (request.owner !== owner) continue
+          if (request.error !== undefined) openFailure(request, request.error)
+          else void readRunOpen(request)
+        }
+      }, () => {})
+    }, 0)
+    ctx.unref(timer)
   }
 
   const resumeRun = async (runId: string, sourceCard?: string): Promise<CommandResult> => {
@@ -1096,6 +1199,7 @@ export const createRunsController = (
     resumeApprovalRequests,
     resumeRunFacetRequests,
     resumeRunListRequests,
+    resumeRunOpenRequests,
     openApproval
   }
 }

@@ -66,6 +66,8 @@ export interface FieldOption {
 
 /** What a flow may say about one of its fields beyond what the schema already says. */
 export interface FieldHint {
+  /** Internal optional routing data supplied by an action, never asked of the person. */
+  readonly hidden?: boolean
   readonly label?: string
   readonly placeholder?: string
   readonly optionsFrom?: OptionProvider
@@ -176,16 +178,16 @@ const controlOf = (ast: SchemaAST.AST): Pick<FormField, "kind" | "options"> => {
 }
 
 /**
- * The form's fields, one per property of the flow's input struct, in schema
- * order. A schema that is not a struct (nothing in Flows.ts today) derives
- * nothing.
+ * The form's fields, in schema order, excluding explicitly hidden optional
+ * routing data. Required input always remains visible. A non-struct schema
+ * derives nothing.
  *
  * @category derivation
  */
 export const formFieldsFor = (input: Schema.Top, hints: FormHints | undefined): ReadonlyArray<FormField> => {
   const ast = input.ast
   if (ast._tag !== "Objects") return []
-  return ast.propertySignatures.map((signature) => {
+  return ast.propertySignatures.filter(signature => hints?.fields?.[String(signature.name)]?.hidden !== true || !unwrapOptional(signature.type).optional).map((signature) => {
     const name = String(signature.name)
     const { ast: inner, optional } = unwrapOptional(signature.type)
     const control = controlOf(inner)

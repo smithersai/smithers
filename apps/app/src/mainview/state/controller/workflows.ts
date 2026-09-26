@@ -11,7 +11,7 @@ import { sameApproval } from "../ApprovalReference"
 import { reconcileRunApprovals } from "./approval-reconciliation"
 import type { ControllerContext } from "./context"
 import type { GatewayWorkspaceBinding } from "./gateway"
-import { runCardIdFor, runScopeFromCard } from "../RunReference"
+import { runCardIdFor, runScopeFromCard, sameRunScope } from "../RunReference"
 import { gatewayBindingFor, resolveTargetRepo, type GatewayBinding } from "../RepoContext"
 import { repositoryJobWorkspace } from "../RepositoryJobs"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
@@ -79,6 +79,8 @@ export interface WorkflowController {
   readonly workflowTargetRepo: (preferred?: string) => { readonly repo: string } | { readonly error: string }
   readonly provisionWorkspace: (repo: string, binding?: GatewayWorkspaceBinding, signal?: AbortSignal) => Promise<true | string>
   readonly upsertRunCard: (args: {
+    readonly cardId?: string
+    readonly requireExisting?: boolean
     readonly runId: string
     readonly repo: string
     readonly workflow: string
@@ -90,7 +92,7 @@ export interface WorkflowController {
     readonly kind?: string
     /** Read the run once even when it already settled. */
     readonly observe?: boolean
-  }) => string
+  }) => Promise<string>
   readonly launchWorkflow: (args: {
     readonly repo: string
     readonly workflow: string
@@ -345,7 +347,9 @@ export const createWorkflowController = (
   ctx.observeFlowAuthoring = authoring.observe
   ctx.resumeFlowAuthoring = authoring.resume
 
-  const upsertRunCard = (args: {
+  const upsertRunCard = async (args: {
+    readonly cardId?: string
+    readonly requireExisting?: boolean
     readonly runId: string
     readonly repo: string
     readonly workflow: string
@@ -358,9 +362,11 @@ export const createWorkflowController = (
     readonly plan?: NonNullable<Extract<Card, { kind: "run-trace" }>["payload"]["plan"]>
     /** Read the run once even when it already settled (an opened run's recorded journal). */
     readonly observe?: boolean
-  }): string => {
-    const cardId = runCardIdFor(store, args)
+  }): Promise<string> => {
+    const epoch = ctx.accountEpoch
+    const cardId = args.cardId ?? runCardIdFor(store, args)
     const existing = store.collections.cards.get(cardId)
+    if (args.cardId !== undefined && (args.requireExisting || existing !== undefined) && (existing?.kind !== "run-trace" || !sameRunScope(existing.payload, args))) throw new Error("The source run changed. Open it again.")
     const held = existing?.kind === "run-trace" ? existing.payload : undefined
     const card: Card = {
       id: cardId,
@@ -370,6 +376,7 @@ export const createWorkflowController = (
       createdAt: existing?.createdAt ?? Date.now(),
       ordinal: existing?.ordinal ?? nextTranscriptOrdinal(),
       payload: {
+        ...held,
         repo: args.repo,
         gatewayBindingVersion: 1,
         ...(args.workspaceId === undefined ? {} : { workspaceId: args.workspaceId }),
@@ -385,29 +392,13 @@ export const createWorkflowController = (
         ...(args.kind === undefined ? {} : { kind: args.kind }),
         /* The launch's own plan snapshot; a re-open keeps the one already held. */
         ...(args.plan === undefined ? held?.plan === undefined ? {} : { plan: held.plan } : { plan: args.plan }),
-        /*
-         * The reader's view of the trace (spec 06 §5) survives a re-open: a
-         * card already in hand keeps its tab, filter, selection, cursor and
-         * live-tail flag. A new card starts on live tail, following the
-         * newest frame.
-         */
-        ...(held === undefined
-          ? { liveTail: true }
-          : {
-            ...(held.facet === undefined ? {} : { facet: held.facet }),
-            ...(held.filter === undefined ? {} : { filter: held.filter }),
-            ...(held.traceView === undefined ? {} : { traceView: held.traceView }),
-            ...(held.graph === undefined ? {} : { graph: held.graph }),
-            ...(held.codingChangeId === undefined ? {} : { codingChangeId: held.codingChangeId }),
-            ...(held.events === undefined ? {} : { events: held.events }),
-            ...(held.selection === undefined ? {} : { selection: held.selection }),
-            ...(held.cursorSeq === undefined ? {} : { cursorSeq: held.cursorSeq }),
-            ...(held.liveTail === undefined ? {} : { liveTail: held.liveTail })
-          })
+        // All saved reader choices, including transcript snapshots and pending facets, survive reopening.
+        ...(held === undefined ? { liveTail: true } : {})
       }
     }
-    store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
-    void pumpWorkflowRun(cardId, args.observe === true)
+    await store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card }).isPersisted.promise
+    const saved = store.collections.cards.get(cardId)
+    if (!ctx.disposed && ctx.accountEpoch === epoch && saved?.kind === "run-trace" && sameRunScope(saved.payload, args)) void pumpWorkflowRun(cardId, args.observe === true)
     return cardId
   }
 
@@ -695,7 +686,7 @@ export const createWorkflowController = (
      * been told the reasons for.
      */
     const planned = planCardSnapshot(launch.value)
-    upsertRunCard({
+    await upsertRunCard({
       runId,
       repo: args.repo,
       workflow: args.workflow,

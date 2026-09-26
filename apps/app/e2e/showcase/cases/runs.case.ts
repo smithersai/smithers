@@ -31,6 +31,9 @@ export default showcase({
     const steers: Array<{ kind: string; body?: string }> = []
     const cancelled = new Set<string>()
     const summaries = new Map<string, number>()
+    const openReceipt = Promise.withResolvers<void>()
+    let holdOpen = true
+    let refuseOpen = false
     const listReceipt = Promise.withResolvers<void>()
     let holdList = true
     let listReads = 0
@@ -64,7 +67,11 @@ export default showcase({
             return rows("workspace-runs", [row(REVIEW), row(CODING)])
           }
           if (selector._tag === "run-summary") summaries.set(selector.runId ?? REVIEW, (summaries.get(selector.runId ?? REVIEW) ?? 0) + 1)
-          if (selector._tag === "run-summary") return rows("run-summary", [row(selector.runId ?? REVIEW)])
+          if (selector._tag === "run-summary") {
+            if (selector.runId === CODING && holdOpen) await openReceipt.promise
+            if (selector.runId === CODING && refuseOpen) return route.fulfill({ json: { ok: false, error: { message: "Run summary unavailable" } } })
+            return rows("run-summary", [row(selector.runId ?? REVIEW)])
+          }
           if (selector._tag === "run-events" && JSON.stringify(call.payload).includes(CODING)) {
             return rows("run-events", journal.filter(event => event.sequence > (call.payload.after?.value ?? 0)))
           }
@@ -129,7 +136,32 @@ export default showcase({
     await app.beat(900)
 
     // A finished run reads as its recorded trace, and as its transcript.
-    await app.click(inbox.getByTestId(`runs-open-${CODING}`))
+    await inbox.getByTestId(`runs-open-${CODING}`).focus()
+    await page.keyboard.press("Enter")
+    const opening = page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Opening run" })
+    try {
+      await expect.poll(() => summaries.get(CODING) ?? 0).toBe(1)
+      await expect(opening).toHaveCount(1)
+      await page.keyboard.press("ControlOrMeta+k")
+      await page.getByTestId("composer-input").fill("Chat while opening a run")
+      await expect(page.getByTestId("composer-input")).toBeEditable()
+      await page.keyboard.press("Escape")
+      await inbox.getByTestId(`runs-open-${CODING}`).focus()
+      await page.keyboard.press("Enter")
+      expect(summaries.get(CODING)).toBe(1)
+      await page.reload()
+      await expect.poll(() => summaries.get(CODING) ?? 0).toBe(2)
+      await expect(opening).toHaveCount(1)
+      refuseOpen = true
+    } finally { holdOpen = false; openReceipt.resolve() }
+    const refusal = page.locator('.toast[data-toast-status="failed"]').filter({ hasText: "Run summary unavailable" })
+    await expect(refusal).toHaveCount(1)
+    await page.reload()
+    await expect(refusal).toHaveCount(1)
+    refuseOpen = false
+    await refusal.getByRole("button", { name: "Retry", exact: true }).focus()
+    await page.keyboard.press("Enter")
+    await expect(refusal).toHaveCount(0)
     const coding = page.getByTestId(`card-flow-run-${CODING}`)
     const trace = coding.getByTestId(`run-trace-${CODING}`)
     await expect(trace.locator("[data-frame-line]")).toHaveCount(2)

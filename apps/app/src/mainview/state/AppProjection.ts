@@ -218,6 +218,8 @@ export const APP_TRANSITION_TYPES = {
   "command.deferral.cleared": true,
   "approvals.inbox.requested": true,
   "approvals.inbox.settled": true,
+  "runs.open.requested": true,
+  "runs.open.settled": true,
   "command.ran": true,
   "toolcall.recorded": true,
   "hint.dismissed": true,
@@ -802,6 +804,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
     draft.pendingCommand = null
     delete draft.repositoryCommandEntry
     delete draft.approvalsInboxRequests
+    delete draft.runOpenRequests
     draft.phase = "idle"
     draft.composerOwner = "user"
     draft.turnTabId = null
@@ -1916,6 +1919,23 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             draft.approvalsInboxRequests = transition.error === undefined
               ? rows.filter((row) => row.id !== transition.id)
               : rows.map((row) => row.id === transition.id ? { ...row, error: transition.error } : row)
+          })
+          break
+
+        case "runs.open.requested":
+          collections.sessions.update(SESSION_ID, (draft) => {
+            const request = transition.request
+            const others = (draft.runOpenRequests ?? []).filter(row => row.repo !== request.repo || row.workspaceId !== request.workspaceId || row.runId !== request.runId || row.cardId !== request.cardId)
+            draft.runOpenRequests = [...others, { ...request, requestedAt: createdAt }]
+          })
+          break
+
+        case "runs.open.settled":
+          collections.sessions.update(SESSION_ID, (draft) => {
+            const rows = draft.runOpenRequests ?? []
+            if (!rows.some(row => row.id === transition.id)) return
+            draft.runOpenRequests = transition.error === undefined ? rows.filter(row => row.id !== transition.id)
+              : rows.map(row => row.id === transition.id ? { ...row, error: transition.error } : row)
           })
           break
 

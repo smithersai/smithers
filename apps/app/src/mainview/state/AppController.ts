@@ -1208,17 +1208,6 @@ export const createAppController = (
   const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController), select(renderFlowForm), select(librarianRuns).inspectLibrarianRun))
   const graph = actors.pair(ctx, (context, select) => createGraphController(context, select(filesSeam.readFile)))
   void librarianRuns.recoverLaunches()
-  /*
-   * A generated history run counts as read only after the existing run read
-   * rendered its monitor.
-   */
-  const monitoredRuns = actors.pair(ctx, (_context, select) => ({
-    openRun: async (...args: Parameters<RunsController["openRun"]>) => {
-      const result = await select(runs).openRun(...args)
-      if (typeof result === "object" && result !== null) await select(librarianRuns).inspectLibrarianRun(args[0])
-      return result
-    }
-  }))
   const {
     subscribeToAgent,
     send,
@@ -1674,7 +1663,7 @@ export const createAppController = (
     resumeWorkflowRuns,
     listRuns: runs.listRuns,
     prepareRunHandoff: runs.prepareRunHandoff,
-    openRun: monitoredRuns.openRun,
+    openRun: runs.openRun,
     resumeRun: runs.resumeRun,
     rerunRun: runs.rerunRun,
     signalRun: runs.signalRun,
@@ -2051,6 +2040,7 @@ export const createAppController = (
     runs.resumeApprovalRequests()
     runs.resumeRunFacetRequests()
     runs.resumeRunListRequests()
+    runs.resumeRunOpenRequests()
   })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
   const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => {

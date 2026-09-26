@@ -361,6 +361,7 @@ describe("the run graph's node drawer", () => {
     await controller.commands.run("runs.graph.select", `${RUN} gate`)
     await controller.commands.run("runs.graph.tab", `${RUN} declaration`)
     await controller.commands.run("runs.open", RUN)
+    await waitFor(() => (store.session().runOpenRequests ?? []).length === 0)
     expect(runCard(store)?.payload.graph).toEqual({ node: "gate", tab: "declaration" })
   })
 })

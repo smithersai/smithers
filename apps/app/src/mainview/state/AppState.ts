@@ -735,6 +735,10 @@ export const ApprovalsInboxRequestSchema = z.object({
 })
 export type ApprovalsInboxRequest = z.infer<typeof ApprovalsInboxRequestSchema>
 
+/** A monitor read is saved before its remote summary exists; failures stay retryable. */
+export const RunOpenRequestSchema = ApprovalsInboxRequestSchema.extend({ runId: z.string(), cardId: z.string(), requireExisting: z.boolean().optional() })
+export type RunOpenRequest = z.infer<typeof RunOpenRequestSchema>
+
 export const QueuedPromptSchema = z.object({ id: z.string(), text: z.string(), scope: z.string() })
 
 export const SessionSchema = z.object({
@@ -853,6 +857,7 @@ export const SessionSchema = z.object({
    * sessions parse without a schema reset; scrubbed with the account.
    */
   approvalsInboxRequests: z.array(ApprovalsInboxRequestSchema).optional(),
+  runOpenRequests: z.array(RunOpenRequestSchema).optional(),
   /*
    * The user's recently run visible commands, most recent first (capped in
    * the reducer): the slash menu's recency ranking past its cap. Optional
@@ -1375,6 +1380,17 @@ export type AppTransition =
   | {
     /* The read ended: received rows clear the request; a failure stays on it, visible and retryable. */
     type: "approvals.inbox.settled"
+    actor: "system"
+    id: string
+    error?: string
+  }
+  | {
+    type: "runs.open.requested"
+    actor: "user" | "smithers"
+    request: { id: string; repo: string; workspaceId?: string; owner: string; runId: string; cardId: string; requireExisting?: boolean }
+  }
+  | {
+    type: "runs.open.settled"
     actor: "system"
     id: string
     error?: string

@@ -695,8 +695,8 @@ describe("reopening a run whose watch went quiet or stopped re-reads its history
     const before = historyReads(double)
 
     expect((await controller.commands.run("runs.open", "run-w12")).status).toBe("executed")
-    expect(runCard(store)?.payload.observationError).toBeUndefined()
     await waitFor(() => historyReads(double) > before)
+    expect(runCard(store)?.payload.observationError).toBeUndefined()
   })
 })
 

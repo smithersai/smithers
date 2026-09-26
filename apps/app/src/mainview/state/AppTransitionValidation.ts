@@ -111,6 +111,8 @@ export const APP_TRANSITION_SCHEMAS = {
   "command.deferral.cleared": z.object({ "type": z.literal("command.deferral.cleared"), "actor": z.literal("system") }).strict(),
   "approvals.inbox.requested": z.object({ "type": z.literal("approvals.inbox.requested"), "actor": z.enum(["user", "smithers"]), "request": z.object({ id: z.string().min(1), repo: z.string().min(1), workspaceId: z.string().optional(), owner: z.string().min(1) }).strict() }).strict(),
   "approvals.inbox.settled": z.object({ "type": z.literal("approvals.inbox.settled"), "actor": z.literal("system"), "id": z.string().min(1), "error": z.string().optional() }).strict(),
+  "runs.open.requested": z.object({ type: z.literal("runs.open.requested"), actor: z.enum(["user", "smithers"]), request: z.object({ id: z.string().min(1), repo: z.string().min(1), workspaceId: z.string().optional(), owner: z.string().min(1), runId: z.string().min(1), cardId: z.string(), requireExisting: z.boolean().optional() }).strict() }).strict(),
+  "runs.open.settled": z.object({ type: z.literal("runs.open.settled"), actor: z.literal("system"), id: z.string().min(1), error: z.string().optional() }).strict(),
   "command.ran": z.object({ "type": z.literal("command.ran"), "actor": z.literal("user"), "name": z.string() }).strict(),
   "toolcall.recorded": z.object({ "type": z.literal("toolcall.recorded"), "actor": z.literal("smithers"), "turnId": z.string(), "name": z.string(), "arguments": z.string(), "result": z.string() }).strict(),
   "composer.control.changed": z.object({ "type": z.literal("composer.control.changed"), "actor": z.enum(["smithers", "system"]), "owner": SessionSchema.shape["composerOwner"], "draft": z.string().optional() }).strict(),

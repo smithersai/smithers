@@ -72,15 +72,16 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   }),
   flow({
     name: "runs.open",
+    form: { fields: { requestId: { hidden: true } } },
     summary: "Open a run as a card that tracks it",
     runtime: ["cloud"],
-    args: "[sourceCard=id] <runId> [owner/repo]",
+    args: "[sourceCard=id] [requestId=id] <runId> [owner/repo]",
     requires: ["signed-in"],
     input: Schema.Struct({
       sourceCard: Schema.optional(Schema.String), runId: Schema.String,
-      repo: Schema.optional(Schema.String)
+      repo: Schema.optional(Schema.String), requestId: Schema.optional(Schema.String)
     }),
-    handler: ({ runId, repo, sourceCard }) => actions.openRun(runId, repo, sourceCard)
+    handler: ({ runId, repo, sourceCard, requestId }) => actions.openRun(runId, repo, sourceCard, requestId)
   }),
   flow({
     name: "runs.resume",
