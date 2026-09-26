@@ -10,6 +10,9 @@ export const WorkflowLaunchSchema = z.object({
   workspaceId: z.string().optional(),
   workflow: z.string(),
   input: z.record(z.string(), z.unknown()),
+  /** A schedule dispatch resolves and pins its registered input in the background. */
+  triggerDispatch: z.object({ slug: z.string() }).optional(),
+  inputPrepared: z.literal(true).optional(),
   runId: z.string().optional(),
   preparationStartedAt: z.number().optional(),
   retryAt: z.number().optional(),

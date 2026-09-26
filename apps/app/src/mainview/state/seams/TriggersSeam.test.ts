@@ -6,6 +6,7 @@ import type { AppServices } from "../AppController"
 import { scopedControllers } from "../ControllerTestScope"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
+import { workflowLaunchOf } from "../WorkflowLaunch"
 import { waitFor } from "../TestFixtures"
 import { Schema } from "effect"
 import { initialSetup } from "@smthrs/rpc/RepositorySetup"
@@ -552,7 +553,8 @@ const workspaceAnswers = (
   Plan: (payload: Record<string, unknown>) =>
     payload.flowId === "nightly-lint"
       ? okFrame(PLAN)
-      : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) }),
+      : okFrame({ ...PLAN, planId: (payload.input as { operation?: string })?.operation === "fire"
+        ? `plan-fire-${(payload.input as { requestId: string }).requestId}` : "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) }),
   "Approval.Submit": () => okFrame({ decision: { _tag: "Accepted" } }),
   Run: () => okFrame({ runId: REGISTRAR_RUN }),
   "Projection.Snapshot": (payload: Record<string, unknown>) =>
@@ -1579,7 +1581,7 @@ describe("triggers seam: running a registered schedule now", () => {
     }))
 
   const dispatchCards = (store: AppStore) =>
-    [...store.collections.cards.values()].filter((card) => card.id.startsWith("trigger-run-"))
+    [...store.collections.cards.values()].filter((card) => workflowLaunchOf(card)?.triggerDispatch !== undefined)
       .flatMap((card) => card.kind === "run-trace" ? [card] : [])
 
   test("the door dispatches the registered schedule through the registrar's fire operation, and the run card carries it", async () => {
@@ -1588,7 +1590,7 @@ describe("triggers seam: running a registered schedule now", () => {
     const { store, controller } = await readyToRegister(ROUTES(calls, run))
     const outcome = await controller.commands.run("triggers.run", "nightly will/flows")
     expect(outcome.status).toBe("executed")
-    if (outcome.status === "executed") expect(outcome.value).toBe("Running nightly on will/flows.")
+    if (outcome.status === "executed") expect(outcome.value).toBe("Requested nightly on will/flows.")
     await waitFor(() => calls.some((call) => call.procedure === "Run"))
     const planned = calls.find((call) => call.procedure === "Plan")
     expect(planned?.payload).toMatchObject({
@@ -1607,6 +1609,163 @@ describe("triggers seam: running a registered schedule now", () => {
     run.status = "completed"
     run.verdict = "Dispatched nightly on will/flows."
     await waitFor(() => store.collections.toasts.get(running[0]!.id)?.status === "ok")
+  })
+
+  test("Run now acknowledges before lookup and keeps one toast through execution", async () => {
+    const calls: Array<RelayCall> = []
+    const lookup = Promise.withResolvers<Response>()
+    const run: HostRun = { status: "running", verdict: "" }
+    const { store, controller } = await readyToRegister({ ...watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: () => lookup.promise,
+      [RPC]: relayRoute(calls, workspaceAnswers({}, run))
+    })), toastDebounceMs: 300 })
+    let answered = false
+    const request = controller.commands.run("triggers.run", "nightly will/flows").then(outcome => { answered = true; return outcome })
+    try {
+      await new Promise(resolve => setTimeout(resolve, 100))
+      expect(answered).toBe(true)
+      expect((await request).status).toBe("executed")
+      expect(calls).toEqual([])
+      expect(store.collections.toasts.size).toBe(0)
+      expect(dispatchCards(store)[0]?.payload.phase).toBe("launching")
+      await store.dispatch({ type: "composer.changed", actor: "user", draft: "still chatting" }).isPersisted.promise
+      expect(store.session().draft).toBe("still chatting")
+      await waitFor(() => store.collections.toasts.size === 1)
+      const toast = [...store.collections.toasts.values()][0]!
+      expect(toast.sourceCard).toBe(dispatchCards(store)[0]?.id)
+      expect(toast.status).toBe("running")
+      lookup.resolve(json(200, REGISTERED))
+      await waitFor(() => dispatchCards(store)[0]?.payload.runId === REGISTRAR_RUN)
+      expect(store.collections.toasts.size).toBe(1)
+      expect(store.collections.toasts.get(toast.id)?.status).toBe("running")
+      run.status = "completed"
+      await waitFor(() => store.collections.toasts.get(toast.id)?.status === "ok")
+    } finally { lookup.resolve(json(200, REGISTERED)); await request }
+  })
+
+  for (const interrupted of ["lookup", "launch"] as const) test(`reload during ${interrupted} reconnects the same dispatch request`, async () => {
+    const storage = memoryStorage()
+    const calls: Array<RelayCall> = []
+    const held = Promise.withResolvers<void>()
+    let reading = false
+    const first = await readyToRegister(watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: async () => { reading = true; if (interrupted === "lookup") await held.promise; return json(200, REGISTERED) },
+      [RPC]: relayRoute(calls, workspaceAnswers({ Run: async () => { await held.promise; return okFrame({ runId: REGISTRAR_RUN }) } }))
+    })), await createAppStore({ kind: "localStorage", storage }))
+    await first.controller.commands.run("triggers.run", "nightly will/flows")
+    await waitFor(() => interrupted === "lookup" ? reading : calls.some(call => call.procedure === "Run"))
+    const original = workflowLaunchOf(dispatchCards(first.store)[0])!
+    await first.controller.dispose()
+    await first.store.dispose?.()
+    const nextRows = interrupted === "launch" ? { ...REGISTERED, rows: REGISTERED.rows.map(row => ({ ...row, flowId: "changed-after-launch" })) } : REGISTERED
+    const resumed = await ready(ROUTES(calls, { status: "running", verdict: "" }, nextRows), {
+      signedIn: true, store: await createAppStore({ kind: "localStorage", storage })
+    })
+    try {
+      await waitFor(() => dispatchCards(resumed.store)[0]?.payload.runId === REGISTRAR_RUN)
+      const request = workflowLaunchOf(dispatchCards(resumed.store)[0])!
+      expect(request.id).toBe(original.id)
+      expect(request.input.requestId).toBe(original.input.requestId)
+      expect(request.input.flow).toBe("nightly-lint")
+      expect(dispatchCards(resumed.store)).toHaveLength(1)
+      const plans = calls.filter(call => call.procedure === "Plan")
+      expect(plans).toHaveLength(interrupted === "launch" ? 2 : 1)
+      expect(new Set(plans.map(call => call.payload.idempotencyKey)).size).toBe(1)
+      expect(new Set(calls.filter(call => call.procedure === "Run").map(call => call.payload.idempotencyKey)).size).toBe(1)
+      if (interrupted === "launch") expect(plans[0]?.payload.input).toEqual(plans[1]?.payload.input)
+      held.resolve()
+      await new Promise(resolve => setTimeout(resolve, 30))
+      expect(calls.filter(call => call.procedure === "Run")).toHaveLength(interrupted === "launch" ? 2 : 1)
+    } finally { held.resolve() }
+  })
+
+  test("a failed lookup is visible and Retry retains the dispatch identity", async () => {
+    const calls: Array<RelayCall> = []
+    let available = false
+    const { store, controller } = await readyToRegister(watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: () => available ? json(200, REGISTERED) : json(503, { status: "error" }),
+      [RPC]: relayRoute(calls, workspaceAnswers())
+    })))
+    await controller.commands.run("triggers.run", "nightly will/flows")
+    await waitFor(() => dispatchCards(store)[0]?.payload.phase === "failed")
+    const card = dispatchCards(store)[0]!
+    const original = workflowLaunchOf(card)!
+    expect(original.error?.code).toBe("trigger_lookup_unavailable")
+    expect(card.payload.error).toBe("The schedules could not be read. Retry the request.")
+    expect(calls).toEqual([])
+    available = true
+    expect((await controller.commands.run("flow.run.retry", card.id)).status).toBe("executed")
+    await waitFor(() => dispatchCards(store)[0]?.payload.runId === REGISTRAR_RUN)
+    expect(workflowLaunchOf(dispatchCards(store)[0])?.id).toBe(original.id)
+    expect(calls.find(call => call.procedure === "Plan")?.payload.input).toMatchObject({ requestId: original.input.requestId })
+    expect(dispatchCards(store)).toHaveLength(1)
+  })
+
+  test("retrying a refused launch keeps its pinned registration and launch key", async () => {
+    const calls: Array<RelayCall> = []
+    let refused = true, lookups = 0
+    const { store, controller } = await readyToRegister(watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: () => { lookups++; return json(200, refused ? REGISTERED : { ...REGISTERED, rows: [] }) },
+      [RPC]: relayRoute(calls, workspaceAnswers({ Plan: () => refused ? refusedFrame("Workspace unavailable") : okFrame(PLAN) }))
+    })))
+    await controller.commands.run("triggers.run", "nightly will/flows")
+    await waitFor(() => dispatchCards(store)[0]?.payload.phase === "failed")
+    const card = dispatchCards(store)[0]!
+    expect(card.payload.error).toBe("Workspace unavailable")
+    refused = false
+    await controller.commands.run("flow.run.retry", card.id)
+    await waitFor(() => dispatchCards(store)[0]?.payload.runId === REGISTRAR_RUN)
+    const plans = calls.filter(call => call.procedure === "Plan")
+    expect(plans).toHaveLength(2)
+    expect(plans[0]?.payload).toEqual(plans[1]?.payload)
+    expect(lookups).toBe(1)
+    expect(calls.filter(call => call.procedure === "Run")).toHaveLength(1)
+    await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.sourceCard === card.id && toast.status === "running"))
+    expect([...store.collections.toasts.values()].filter(toast => toast.sourceCard === card.id)).toHaveLength(1)
+  })
+
+  test("a late lookup cannot launch a dispatch after sign-out", async () => {
+    const calls: Array<RelayCall> = []
+    const lookup = Promise.withResolvers<Response>()
+    let reading = false
+    const { store, controller } = await readyToRegister(watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: () => { reading = true; return lookup.promise },
+      [RPC]: relayRoute(calls, workspaceAnswers())
+    })))
+    await controller.commands.run("triggers.run", "nightly will/flows")
+    await waitFor(() => reading)
+    await signedOut(store)
+    lookup.resolve(json(200, REGISTERED))
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(calls).toEqual([])
+    expect(dispatchCards(store)).toEqual([])
+  })
+
+  test("completed dispatch settles even when its listing refresh never answers", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    const refresh = Promise.withResolvers<Response>()
+    let reads = 0
+    const { store, controller } = await readyToRegister(watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: () => ++reads === 1 ? json(200, REGISTERED) : refresh.promise,
+      [RPC]: relayRoute(calls, workspaceAnswers({}, run))
+    })))
+    try {
+      await controller.commands.run("triggers.run", "nightly will/flows")
+      await waitFor(() => dispatchCards(store)[0]?.payload.phase === "running")
+      await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.sourceCard === dispatchCards(store)[0]?.id))
+      const toast = [...store.collections.toasts.values()].find(toast => toast.sourceCard === dispatchCards(store)[0]?.id)!
+      run.status = "completed"
+      await waitFor(() => dispatchCards(store)[0]?.payload.phase === "completed")
+      await new Promise(resolve => setTimeout(resolve, 100))
+      expect(store.collections.toasts.get(toast.id)?.status).toBe("ok")
+    } finally { refresh.resolve(json(200, REGISTERED)) }
   })
 
   test("two presses dispatch twice", async () => {
@@ -1642,12 +1801,13 @@ describe("triggers seam: running a registered schedule now", () => {
     expect([...store.collections.toasts.values()].filter(t => t.status === "failed")).toEqual([])
   })
 
-  test("a name no schedule holds is refused before anything is asked of the workspace", async () => {
+  test("a name no schedule holds is retained as a background failure before any workspace request", async () => {
     const calls: Array<RelayCall> = []
-    const { controller } = await readyToRegister(ROUTES(calls, { status: "running", verdict: "" }, { status: "ok", repo: "will/flows", rows: [] }))
+    const { store, controller } = await readyToRegister(ROUTES(calls, { status: "running", verdict: "" }, { status: "ok", repo: "will/flows", rows: [] }))
     const outcome = await controller.commands.run("triggers.run", "nightly will/flows")
-    expect(outcome.status).toBe("failed")
-    if (outcome.status === "failed") expect(outcome.error).toBe('No schedule "nightly" is registered on will/flows.')
+    expect(outcome.status).toBe("executed")
+    await waitFor(() => dispatchCards(store)[0]?.payload.phase === "failed")
+    expect(dispatchCards(store)[0]?.payload.error).toBe('No schedule "nightly" is registered on will/flows.')
     expect(calls).toEqual([])
   })
 

@@ -68,9 +68,6 @@ const JOURNALLED_CODE = /^[a-z][a-z0-9_]*: /
 /** One registration attempt's run card; the same attempt never registers twice. */
 const registrationCardId = (requestId: string): string => `trigger-register-${requestId}`
 
-/** One manual dispatch's run card; every press is its own attempt, so every press is its own card. */
-const dispatchCardId = (requestId: string): string => `trigger-run-${requestId}`
-
 /** The run id a refused launch leaves on its card: the workspace named none. */
 const unlaunchedRunId = (requestId: string): string => `pending-${requestId}`
 
@@ -192,8 +189,8 @@ export interface TriggersSeam {
 }
 
 /**
- * The two pieces of the controller a registration needs, handed in rather
- * than rebuilt: the app's one run-watch and the app's one toast stack
+ * The controller services registration and dispatch share: durable launch,
+ * the app's one run-watch and its one toast stack
  * (state/controller/workflow-pump.ts, state/controller/failures.ts).
  *
  * Registering is slow work — six relayed calls and then a run on the
@@ -201,6 +198,7 @@ export interface TriggersSeam {
  * afterwards, which is what the instant-chat rule asks of every background act.
  */
 export interface TriggersRuntime {
+  readonly requestRun: (repo: string, slug: string) => Promise<string | { value: string }>
   /** Watch one run card; it settles when that run does. */
   readonly watchRun: (cardId: string) => Promise<void>
   /** Background work on the shared stack, under its 300 ms debounce; a string outcome is the failure line. */
@@ -215,7 +213,7 @@ const repoBase = (ctx: SeamContext, repo: string): string => {
   return `${ctx.baseUrl}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
 }
 
-const readJson = async (ctx: SeamContext, url: string): Promise<{ status: number; body: unknown }> => {
+const readJson = async (ctx: Pick<SeamContext, "http" | "baseUrl">, url: string): Promise<{ status: number; body: unknown }> => {
   try {
     const response = await ctx.http(url)
     const body: unknown = await response.json().catch(() => undefined)
@@ -398,7 +396,7 @@ const registrationRow = (value: unknown): TriggerRow | undefined => {
  * whether or not it holds a schedule; what the card calls listening is the
  * merge in `listTriggers`, which asks for a row.
  */
-export const readTriggerRegistrations = async (ctx: SeamContext, repo: string): Promise<LiveList> => {
+export const readTriggerRegistrations = async (ctx: Pick<SeamContext, "http" | "baseUrl">, repo: string): Promise<LiveList> => {
   const answer = await readJson(ctx, `${ctx.baseUrl}${TRIGGER_REGISTRATIONS_PATH}?repo=${encodeURIComponent(repo)}`)
   if (answer.status !== 200 || !isRecord(answer.body) || answer.body.status !== "ok") return NO_LIVE
   const triggers = (Array.isArray(answer.body.rows) ? answer.body.rows : [])
@@ -921,7 +919,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
   }
 
   /**
-   * The durable card of one attempt, registration or dispatch. It is the
+   * The durable card of one registration attempt. It is the
    * registrar run's own card, so the watch, the reconnect after a reload and
    * the trace are the ones every launched flow run already gets.
    *
@@ -1053,65 +1051,6 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
   }
 
   /**
-   * Fire a schedule that is already registered, once, now (triggers.run).
-   *
-   * The registrar's own `fire` operation is the dispatch: it reads the
-   * registration's revision and digest and asks Smithers Cloud to enqueue one
-   * manual run of exactly that registration (flows/repository/triggers.ts
-   * `Fire`). Each press mints its own request id, and the registrar derives
-   * the dispatch key from the run it is executing, so two presses enqueue two
-   * dispatches rather than returning the first one twice.
-   */
-  const dispatchTrigger = async (
-    repo: string,
-    slug: string,
-    flow: string,
-    schedule: string,
-    requestId: string
-  ): Promise<string | { readonly value: string } | typeof TOAST_CANCELLED> => {
-    const cardId = dispatchCardId(requestId)
-    const title = `Run ${slug} · ${repo}`
-    const refuse = async (message: string): Promise<string> => {
-      await putRunCard(cardId, title, repo, { runId: unlaunchedRunId(requestId), phase: "failed", error: message })
-      return message
-    }
-    /*
-     * No flow listing first: nothing here is previewed and nothing is
-     * approved, so there is no plan a person could approve that this app
-     * could not go on to fire — the reason the register door lists. A box
-     * without the registrar refuses the plan in its own words instead.
-     */
-    const planned = await relay(ctx, repo, "Plan", {
-      flowId: REGISTRAR_FLOW,
-      input: { requestId, operation: "fire", repo, slug, flow, schedule, input: {} },
-      idempotencyKey: `trigger:${requestId}:fire-plan`
-    })
-    if (!planned.ok) return refuse(planned.message)
-    const planId = typeof planned.value.planId === "string" ? planned.value.planId : undefined
-    const planDigest = typeof planned.value.digest === "string" ? planned.value.digest : undefined
-    if (planId === undefined || planDigest === undefined) return refuse("The workspace planned the dispatch but didn't name the plan.")
-    const granted = await relay(ctx, repo, "Approval.Submit", {
-      target: { _tag: "Plan", planId, digest: planDigest, envelope: planned.value.envelope },
-      scope: "run",
-      idempotencyKey: `approve:${planId}`,
-      decision: "approve"
-    })
-    if (!granted.ok) return refuse(granted.message)
-    const started = await relay(ctx, repo, "Run", {
-      _tag: "Plan",
-      planId,
-      digest: planDigest,
-      envelope: planned.value.envelope,
-      idempotencyKey: `trigger:${requestId}:fire-run`
-    })
-    if (!started.ok) return refuse(started.message)
-    const runId = typeof started.value.runId === "string" ? started.value.runId : undefined
-    if (runId === undefined) return refuse("The dispatch started but the workspace didn't name the run.")
-    await putRunCard(cardId, title, repo, { runId, phase: "running" })
-    return watchAttempt(cardId, repo, `${slug} was dispatched on ${repo}.`, `The dispatch of ${slug} on ${repo} is no longer being watched.`)
-  }
-
-  /**
    * The refusing party's own sentence for a failed run, read from the run's
    * journal rather than from the gateway's verdict.
    *
@@ -1209,30 +1148,11 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     return { value: `Registering ${slug} on ${repo}.` }
   }
 
-  /**
-   * The Run now door: one dispatch of a schedule this repository already
-   * holds, answered at once while the registrar run carries it (AGENTS.md,
-   * instant chat).
-   *
-   * The registration is read first so a name nothing holds is refused here,
-   * in the same words the pause door refuses one, instead of spending a plan
-   * and a run to learn it from the host.
-   */
-  const runTrigger = async (request: TriggerWrite, repo: string): Promise<string | void | { readonly value: string }> => {
+  /** Persist first; lookup, launch and execution share the durable workflow request. */
+  const runTrigger = async (request: TriggerWrite, repo: string): Promise<string | { readonly value: string }> => {
     const slug = request.slug ?? ""
     if (!SLUG.test(slug)) return "A schedule name is lower-case letters, digits and dashes, up to 64 characters."
-    const registered = await readTriggerRegistrations(ctx, repo)
-    const row = registered.triggers.find((trigger) => trigger.slug === slug)
-    if (row === undefined) return `No schedule "${slug}" is registered on ${repo}.`
-    const requestId = crypto.randomUUID()
-    void runtime.withToast(
-      `trigger.run.${repo}.${slug}.${requestId}`,
-      `Running ${slug} on ${repo}…`,
-      `${slug} dispatched`,
-      () => dispatchTrigger(repo, slug, row.flowId, row.cron, requestId),
-      false, undefined, dispatchCardId(requestId)
-    )
-    return { value: `Running ${slug} on ${repo}.` }
+    return runtime.requestRun(repo, slug)
   }
 
   /*

@@ -1,3 +1,4 @@
+import { readTriggerRegistrations } from "../seams/TriggersSeam"
 import { cloudFailure } from "../seams/CloudClient"
 import { outOfCreditRefusal, renderCreditExhausted, renderPlanLimit } from "../seams/BillingSeam"
 import type { ViewAction } from "../PreparedView"
@@ -46,6 +47,7 @@ export interface LaunchRefusal {
 
 export interface WorkflowController {
   readonly resumeWorkflowRequests: () => void
+  readonly requestTriggerRun: (repo: string, slug: string) => Promise<string | { value: string }>
   readonly retryWorkflowRequest: (cardId: string) => boolean
   readonly createWorkflow: (description: string, repo?: string) => Promise<string | void | { readonly value: string }>
   readonly listWorkspaceWorkflows: ViewAction<[repo?: string, sourceCard?: string]>
@@ -273,7 +275,25 @@ export const createWorkflowController = (
     )
   }
 
-  const requests = createWorkflowLaunchController(ctx, nextTranscriptOrdinal, pumpWorkflowRun, provisionWorkspaceImpl)
+  const requests = createWorkflowLaunchController(ctx, nextTranscriptOrdinal, pumpWorkflowRun, async (repo, binding, signal, request) => {
+    if (!request.triggerDispatch) return provisionWorkspaceImpl(repo, binding, signal)
+    if (request.inputPrepared) return true
+    const registered = await readTriggerRegistrations({ http: ctx.http, baseUrl: ctx.baseUrl }, repo)
+    if (!registered.live) return { code: "trigger_lookup_unavailable", message: "The schedules could not be read. Retry the request." }
+    const row = registered.triggers.find(trigger => trigger.slug === request.triggerDispatch!.slug)
+    if (!row) return { code: "trigger_not_found", message: `No schedule "${request.triggerDispatch.slug}" is registered on ${repo}.` }
+    return { input: { ...request.input, flow: row.flowId, schedule: row.cron } }
+  }, request => {
+    // Refresh the listing independently; the committed run settles its own toast.
+    if (request.triggerDispatch) void ctx.commands.run("triggers.list", request.repo, "automatic")
+      .catch(error => ctx.failures.report("command.boundary", error, request.id))
+  })
+  const requestTriggerRun: WorkflowController["requestTriggerRun"] = async (repo, slug) => {
+    const workspaceId = repositoryJobWorkspace(store.collections.cards.values(), repo, store.collections.identitySessions.get("identity")?.login ?? null)
+    const outcome = await requests.start({ repo, binding: { workspaceId }, workflow: "repository/trigger",
+      input: { requestId: crypto.randomUUID(), operation: "fire", repo, slug, input: {} }, triggerDispatch: { slug }, actor: ctx.commandActor })
+    return typeof outcome === "string" ? outcome : { value: `Requested ${slug} on ${repo}.` }
+  }
 
   const authoring = actorSharedState(ctx, "flow-authoring", () => createFlowAuthoringController(ctx, nextTranscriptOrdinal, provisionWorkspace, pumpWorkflowRun))
   ctx.observeFlowAuthoring = authoring.observe
@@ -1068,6 +1088,7 @@ export const createWorkflowController = (
   return {
     resumeWorkflowRequests: () => { requests.resume(); catalogs.resume() },
     retryWorkflowRequest: requests.retry,
+    requestTriggerRun,
     createWorkflow,
     listWorkspaceWorkflows,
     showFlows,

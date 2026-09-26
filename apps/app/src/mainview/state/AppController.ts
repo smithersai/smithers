@@ -906,7 +906,8 @@ export const createAppController = (
     return typeof result === "string" ? result : undefined
   }))
   /* A registration is a launched flow run: it rides the app's own run watch and the shared toast stack. */
-  const triggersSeam = actors.pair(seamCtx, (context) => createTriggersSeam(context, {
+  const triggersSeam = actors.pair(seamCtx, (context, select) => createTriggersSeam(context, {
+    requestRun: (repo, slug) => select(workflowController).requestTriggerRun(repo, slug),
     watchRun: (cardId) => pumpWorkflowRun(cardId),
     withToast
   }))

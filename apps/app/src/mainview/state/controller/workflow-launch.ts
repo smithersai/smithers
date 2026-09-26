@@ -29,7 +29,8 @@ export const createWorkflowLaunchController = (
   ctx: ControllerContext,
   nextOrdinal: () => number,
   pump: (cardId: string) => Promise<void>,
-  prepare: (repo: string, binding: GatewayWorkspaceBinding, signal: AbortSignal) => Promise<true | Refusal>
+  prepare: (repo: string, binding: GatewayWorkspaceBinding, signal: AbortSignal, request: WorkflowLaunch) => Promise<true | Refusal | { input: Record<string, unknown> }>,
+  completed?: (request: WorkflowLaunch) => void
 ) => actorSharedState(ctx, "workflow-launch", () => {
   const { store } = ctx
   const inFlight = new Map<string, { epoch: number; controller: AbortController; work: Promise<unknown> }>()
@@ -71,8 +72,9 @@ export const createWorkflowLaunchController = (
       } catch { throw new RequestPersistenceError() }
     }
     // A new request for the same work replaces its earlier failure on the shared stack.
-    const toastKey = `flow.request.${digest(requestKey(request))}`
-    const work = ctx.withToast(toastKey, request.workflow, `${request.workflow} completed`, async () => {
+    const toastKey = request.triggerDispatch ? `trigger.run.${request.repo}.${request.triggerDispatch.slug}.${request.id}` : `flow.request.${digest(requestKey(request))}`
+    const work = ctx.withToast(toastKey, request.triggerDispatch ? `Running ${request.triggerDispatch.slug} on ${request.repo}…` : request.workflow,
+      request.triggerDispatch ? `${request.triggerDispatch.slug} dispatched` : `${request.workflow} completed`, async () => {
       let stage: NonNullable<WorkflowLaunch["error"]>["stage"] = "preparation"
       const fail = async (failure: Refusal) => {
         if (!current()) return TOAST_SUPERSEDED
@@ -136,8 +138,14 @@ export const createWorkflowLaunchController = (
             if (retryAt !== undefined) await pause(retryAt - Date.now(), controller.signal)
             if (!current()) return TOAST_SUPERSEDED
             stage = "preparation"
-            const ready = await prepare(request.repo, binding, controller.signal)
+            let ready = await prepare(request.repo, binding, controller.signal, request)
             if (!current()) return TOAST_SUPERSEDED
+            if (ready !== true && "input" in ready) {
+              request = { ...request, input: ready.input, inputPrepared: true }
+              await publish(request)
+              if (!current()) return TOAST_SUPERSEDED
+              ready = true
+            }
             stage = ready === true ? "launch" : "preparation"
             const result = ready === true ? await ctx.gateway.launch(request.repo, request.workflow, request.input, binding,
               { idempotencyKey: request.id, stillCurrent: current }) : { status: "error" as const, ...ready }
@@ -194,7 +202,11 @@ export const createWorkflowLaunchController = (
           const card = read(id)!
           const summary = store.committedRuntimeRun(runtimeRunKey(card.payload))?.summary
           if (summary !== undefined && terminal.has(summary.status)) {
-            if (summary.status === "completed") return request.then === undefined ? true : await continueChange()
+            if (summary.status === "completed") {
+              completed?.(request)
+              if (!current()) return TOAST_SUPERSEDED
+              return request.then === undefined ? true : await continueChange()
+            }
             if (summary.status === "cancelled") return TOAST_CANCELLED
             return summary.verdict === "failed — no cause recorded in the journal"
               ? runFailureOf({ workflow: request.workflow, error: summary.verdict,
@@ -239,12 +251,12 @@ export const createWorkflowLaunchController = (
     void saving.then(() => send(id, next), () => {}).finally(() => persisting.delete(id))
     return true
   }
-  const requestCard = (id: string, request: WorkflowLaunch): RunCard => ({ id, kind: "run-trace", title: `${request.workflow} · ${request.repo}`,
+  const requestCard = (id: string, request: WorkflowLaunch): RunCard => ({ id, kind: "run-trace", title: `${request.triggerDispatch ? `Run ${request.triggerDispatch.slug}` : request.workflow} · ${request.repo}`,
     status: "active", createdAt: Date.now(), ordinal: nextOrdinal(), payload: { repo: request.repo,
       ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }), gatewayBindingVersion: 1,
       workflow: request.workflow, runId: `pending-${request.id}`, phase: "launching", steps: [], result: null, lastSeq: 0, liveTail: true,
       input: { ...request.input, _workflowLaunch: request } } })
-  const start = async (args: { repo: string; binding: GatewayWorkspaceBinding; workflow: string; input: Record<string, unknown>; actor: Actor; then?: "coding/vibe" }): Promise<string | { value: string }> => {
+  const start = async (args: { repo: string; binding: GatewayWorkspaceBinding; workflow: string; input: Record<string, unknown>; actor: Actor; then?: "coding/vibe"; triggerDispatch?: WorkflowLaunch["triggerDispatch"] }): Promise<string | { value: string }> => {
     const login = owner()
     if (!login) return "Sign in with GitHub first: flows run on your own workspace."
     // A request belongs to the account that made it: sign-out forgets its card, so no await may save it again.
@@ -268,7 +280,7 @@ export const createWorkflowLaunchController = (
       return { value: `run-requested workflow=${args.workflow} request=${held.id} repo=${args.repo}` }
     }
     const request: WorkflowLaunch = { version: 1, id: crypto.randomUUID(), owner: login, repo: args.repo, ...args.binding, workflow: args.workflow,
-      input, preparationStartedAt: Date.now(), ...(args.then === undefined ? {} : { then: args.then }) }
+      input, preparationStartedAt: Date.now(), ...(args.triggerDispatch === undefined ? {} : { triggerDispatch: args.triggerDispatch }), ...(args.then === undefined ? {} : { then: args.then }) }
     const id = `flow-request-${request.id}`
     const saving = store.dispatch({ type: "card.upsert", actor: args.actor, card: requestCard(id, request) }).isPersisted.promise
     persisting.set(key, saving)

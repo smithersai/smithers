@@ -110,8 +110,26 @@ export default showcase({
     await app.closeComposer()
     await app.show(dispatcher)
     await app.beat(500)
-    await app.click(dispatcher.getByTestId("trigger-run-nightly-review"))
+    const lookup = Promise.withResolvers<void>()
+    let reading = false
+    await page.route("**/api/workflow/trigger-registrations?*", async route => {
+      reading = true
+      await lookup.promise
+      await route.fallback()
+    })
     const dispatched = page.locator('[data-kind="run-trace"]').filter({ hasText: "Run nightly-review" })
+    try {
+      await app.click(dispatcher.getByTestId("trigger-run-nightly-review"))
+      await expect.poll(() => reading).toBe(true)
+      // The persisted card and Chat are usable before the registration read answers.
+      await expect(dispatched).toBeVisible()
+      await expect(dispatched).toHaveAttribute("data-run-id", /^pending-/)
+      await page.keyboard.press("ControlOrMeta+k")
+      await page.getByTestId("composer-input").fill("Chat while the schedule loads")
+      await expect(page.getByTestId("composer-input")).toHaveValue("Chat while the schedule loads")
+      await page.keyboard.press("Escape")
+      await expect(page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Running nightly-review" })).toHaveCount(1)
+    } finally { lookup.resolve() }
     await expect(dispatched).toContainText("Running", { timeout: 15_000 })
     await app.show(dispatched)
     await app.beat(500)
