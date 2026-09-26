@@ -214,7 +214,8 @@ const ErrorBody = Schema.Struct({
   error: Schema.optional(
     Schema.Struct({
       type: Schema.optional(Schema.String),
-      message: Schema.optional(Schema.String)
+      message: Schema.optional(Schema.String),
+      details: Schema.optional(Schema.Struct({ error_code: Schema.optional(Schema.String) }))
     })
   )
 })
@@ -1031,10 +1032,40 @@ const finalize = (state: State): ReadonlyArray<ModelEvent> => {
   return events
 }
 
+/**
+ * Anthropic's organization spend cap: HTTP 429 `rate_limit_error` whose
+ * `details.error_code` is `enforced_spend_limit_reached`, with no
+ * `retry-after`; access resumes at the time the message names, otherwise at
+ * 00:00 UTC on the first of next month
+ * (https://platform.claude.com/docs/en/api/rate-limits).
+ */
+const SPEND_CAP = "enforced_spend_limit_reached"
+
+const spendCapResetAt = (message: string, now: number): number => {
+  const named = /regain access on (\d{4})-(\d{2})-(\d{2}) at (\d{2}):(\d{2}) UTC/i.exec(message)
+  if (named !== null) {
+    const at = Date.UTC(Number(named[1]), Number(named[2]) - 1, Number(named[3]), Number(named[4]), Number(named[5]))
+    if (Number.isFinite(at) && at > now) return at
+  }
+  const today = new Date(now)
+  return Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1)
+}
+
 const classifyError = (status: number, body: string): ModelError => {
   const decoded = decodeErrorBody(body)
   const error = Option.isSome(decoded) ? decoded.value.error : undefined
   const message = error?.message ?? `Anthropic Messages request failed with HTTP ${status}`
+  if (error?.details?.error_code === SPEND_CAP) {
+    // An exhausted quota with a known reset parks the run; a rate limit
+    // would retry against a cap that no retry can clear.
+    return new ModelError({
+      code: "quota_exceeded",
+      message,
+      providerCode: SPEND_CAP,
+      httpStatus: status,
+      resetAtEpochMillis: spendCapResetAt(message, Date.now())
+    })
+  }
   return new ModelError({
     code: providerReason(status, error?.type, message),
     message,
