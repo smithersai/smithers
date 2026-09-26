@@ -483,7 +483,7 @@ export const layer = (options: Options) =>
           objective: paragraph(`Decide whether this change meets its acceptance criteria: ${assignment.objective}`),
           inputs: lines([
             "The diff, the check receipts from a fresh machine, and the builder's summary, in the context below.",
-            `${diff.files.length} file(s) changed, +${diff.added} -${diff.deleted}; configured checks ${checks.passed ? "passed" : "did not pass"}.`,
+            `${diff.files.length} file(s) changed, +${diff.added} -${diff.deleted} against commit ${diff.commit}; configured checks ${checks.passed ? "passed" : "did not pass"}.`,
             ...(assignment.checkerWorkspace
               ? [`The change is applied in the repository checkout at ${workdir} in a workspace machine of your own, removed after your turn: reproduce the criteria there.`]
               : [])
@@ -492,6 +492,7 @@ export const layer = (options: Options) =>
             ...assignment.acceptance.map((criterion) => `Criterion: ${criterion}`),
             "Read the output of every command you run before you answer: answer in a later reply than the commands, never in the same one.",
             "Return done only when every criterion is met and every configured check passed; otherwise return blocked with the unmet criteria as the summary.",
+            `Name a commit only as ${diff.commit.slice(0, 12)}; the machine's own commits exist nowhere else.`,
             "Fill every output field your charter declares."
           ]),
           evidence: ["Check receipts and diff references."],
@@ -521,7 +522,7 @@ export const layer = (options: Options) =>
             text: fence(`${build.principal}: ${describeResult(build)}`, 4_000)
           }
         ]
-      }))), { implementationVersion: "check-task/v5" }),
+      }))), { implementationVersion: "check-task/v6" }),
     CorrectTask.toLayer(({ result, stage, validation }) =>
       Clock.currentTimeMillis.pipe(Effect.map((at): Stage => ({
         ...stage,

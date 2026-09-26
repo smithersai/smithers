@@ -6,7 +6,10 @@
  * the role's name, and the thread is recorded: the owner's replies in it are
  * answered by the role (`organization/meetings-reply`) and become the
  * meeting's notes. Without Slack the run records `not connected` and the
- * note's Notes section is the meeting's only channel. The schedule starts it
+ * note's Notes section is the meeting's only channel. The owner is messaged
+ * only with a contact receipt the host mints for the slot
+ * (`Grants.canContactOwner`), so a run resumed after its slot records the
+ * refusal instead of posting. The schedule starts it
  * at the slot's start; `at` names another instant inside the slot.
  */
 import { Flow } from "@smthrs/flow"
@@ -38,7 +41,7 @@ export default Flow.make("organization/meetings-open", {
           if: Node.capture({ implementationVersion }, (seen) => seen.found),
           else: () => report({ key: occurrence.key, status: "not planned", summary: occurrence.reason, principal: payload.principal }),
           then: () =>
-            Node.all({ agenda: ReadAgenda.call({ occurrence }), direct: OpenDirect.call({ principal: payload.principal }) }).pipe(
+            Node.all({ agenda: ReadAgenda.call({ occurrence }), direct: OpenDirect.call({ principal: payload.principal, occurrence, ...(payload.at === undefined ? {} : { at: payload.at }) }) }).pipe(
               Node.bindPlanned(Node.capture({ implementationVersion }, (opened) =>
                 Node.branch(Node.succeed(opened), {
                   if: Node.capture({ implementationVersion }, (seen) => seen.direct.connected),

@@ -301,7 +301,7 @@ export const layerLedgerFile = (options: { readonly file: string }): Layer.Layer
           Effect.mapError(failed("directory could not be created"))
         )
         const temporary = `${options.file}.${process.pid}.tmp`
-        yield* fs.writeFileString(temporary, `${JSON.stringify(book)}\n`).pipe(
+        yield* fs.writeFileString(temporary, `${JSON.stringify(book)}\n`, { mode: 0o600 }).pipe(
           Effect.mapError(failed("could not be written"))
         )
         yield* fs.rename(temporary, options.file).pipe(Effect.mapError(failed("could not be replaced")))

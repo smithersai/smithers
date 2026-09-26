@@ -105,6 +105,46 @@ const one = (lines: ReadonlyArray<Line>, name: string) => {
   return found[0]!
 }
 
+/** A hire's charter sections, from the package's fixture roster. */
+const charter = readFileSync(
+  new URL("../../../packages/smithers/agent/organization/test/fixtures/org/Specialists/lead.research.md", import.meta.url),
+  "utf8"
+).split("\n---\n")[1]!
+
+const specialist = (slug: string, status: "active" | "retired") => `---
+id: lead.${slug}
+name: ${slug}
+kind: specialist
+status: ${status}
+version: 1.0.0
+reportsTo: lead
+seat: openai:gpt-6-sol
+grants:
+  tools: ${status === "retired" ? "[]" : "[wiki-read]"}
+  connections: []
+  knowledge: ${status === "retired" ? "[]" : "[\"Org/Roles/\"]"}
+  repositories: []
+  personalAccounts: false
+  contact: via-parent
+budget: { tokensPerTask: 1000, tasksPerDay: 1, concurrency: 1 }
+memory: { namespace: agent-lead.${slug} }
+skills: []
+cases: []
+identities: {}
+hiredBy: lead
+hiredAt: 2026-09-20T16:00:00Z
+${status === "retired" ? "retiredAt: 2026-09-21T16:00:00Z\n" : ""}---
+${charter}`
+
+test("counts roles and hires apart, and leaves retired hires out", async () => {
+  const dir = join(scratch, "hired-wiki")
+  await init({ dir, stateDir: `${dir}-state`, appName: "Smithers Org" })
+  writeFileSync(join(dir, "Org", "Specialists", "lead.active.md"), specialist("active", "active"))
+  writeFileSync(join(dir, "Org", "Specialists", "lead.gone.md"), specialist("gone", "retired"))
+  const lines = await doctor(healthy({ root: dir }))
+  assert.match(one(lines, "org").detail, /^4 roles, 1 hired, 1 skills, 0 gates/)
+})
+
 test("every check passes on a complete setup, in a stable order, without printing a secret", async () => {
   const lines = await doctor(healthy())
   assert.deepEqual(lines.map((line) => line.name), [

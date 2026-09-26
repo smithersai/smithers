@@ -13,7 +13,7 @@ import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Option, Schema, Stream } from "effect"
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Actions from "../src/Actions.ts"
@@ -262,6 +262,7 @@ describe("Budgets ledgers", () => {
     )
     await exercise(ledger)
     expect(Object.keys(JSON.parse(readFileSync(file, "utf8")))).toHaveLength(Budgets.retainedDays)
+    expect(statSync(file).mode & 0o777).toBe(0o600)
   })
 
   it("fails with the ledger's path when its file cannot be used", async () => {

@@ -42,6 +42,7 @@ import { fromKey as eventIdOf } from "../../packages/smithers/agent/integrations
 import * as SlackClient from "../../packages/smithers/agent/integrations/src/slack/SlackClient.ts"
 import * as Authority from "../../packages/smithers/agent/organization/src/Authority.ts"
 import * as Config from "../../packages/smithers/agent/organization/src/Config.ts"
+import * as Grants from "../../packages/smithers/agent/organization/src/Grants.ts"
 import * as Confined from "../../packages/smithers/agent/organization/src/internal/confined.ts"
 import * as Meetings from "../../packages/smithers/agent/organization/src/Meetings.ts"
 import * as Profile from "../../packages/smithers/agent/organization/src/Profile.ts"
@@ -180,8 +181,8 @@ export const WriteAgenda = Action.make("organization/meetings-write-agenda", {
 
 /** The owner's direct-message channel with the Slack app, or `not connected`. */
 export const OpenDirect = Action.make("organization/meetings-open-direct", {
-  implementationVersion: "meetings-open-direct/v1",
-  payload: { principal: Profile.PrincipalId },
+  implementationVersion: "meetings-open-direct/v2",
+  payload: { principal: Profile.PrincipalId, occurrence: Occurrence, at: Schema.optionalKey(Schema.Number) },
   success: Schema.Struct({ connected: Schema.Boolean, channel: Schema.String, reason: Schema.String }),
   nondeterministic: true
 })
@@ -619,6 +620,19 @@ export const layer = (options: Options) => {
       return { username: (snapshot.roster.profiles.get(principal)?.name ?? principal).slice(0, 80) }
     })
   const slack = options.owner === undefined ? undefined : SlackClient.make({}, options.environment)
+  // Contact with the owner is checked against a receipt this host mints for
+  // the one occasion it read: a scheduled slot, or a thread the owner wrote in.
+  const issuer = Grants.makeReceiptIssuer("organization/meetings")
+  const contactOwner = (principal: string, occasion: Omit<Grants.ContactReceipt, "issuedBy" | "principal">, nowMs: number) =>
+    Effect.gen(function*() {
+      const snapshot = yield* (yield* Authority.RosterRegistry).current
+      const profile = snapshot.roster.profiles.get(principal)
+      if (profile === undefined) return Result.fail(new Grants.Denied({ reason: "unknown-principal", message: `${principal} is not on the roster` }))
+      return Result.flatMap(
+        issuer.issue({ ...occasion, principal }),
+        (receipt) => Grants.canContactOwner(profile, receipt, { destination: occasion.destination, nowMs })
+      )
+    })
   const noteOf = (occurrence: Occurrence) => read(occurrence.notePath)
   const booked = (): ReadonlyArray<BookingEntry> => {
     const text = read(`${meetingsDir(options)}/bookings.json`)
@@ -834,7 +848,7 @@ export const layer = (options: Options) => {
         yield* write(occurrence.notePath, withSection(existing, "Agenda", agenda.map((item) => `- ${item}`).join("\n")))
         return { path: occurrence.notePath, agenda }
       }), { implementationVersion: "meetings-write-agenda/v1" }),
-    OpenDirect.toLayer(() =>
+    OpenDirect.toLayer(({ at, occurrence, principal }) =>
       Effect.gen(function*() {
         if (slack === undefined || options.owner === undefined) {
           return { connected: false, channel: "", reason: "Slack is not connected" }
@@ -842,10 +856,19 @@ export const layer = (options: Options) => {
         const opened = yield* Effect.result(slack.call("conversations.open", { users: options.owner }))
         if (Result.isFailure(opened)) return { connected: false, channel: "", reason: opened.failure.message }
         const channel = (opened.success["channel"] as { readonly id?: unknown } | undefined)?.id
-        return typeof channel === "string"
-          ? { connected: true, channel, reason: "" }
-          : { connected: false, channel: "", reason: "Slack opened no direct-message channel" }
-      }), { implementationVersion: "meetings-open-direct/v1" }),
+        if (typeof channel !== "string") return { connected: false, channel: "", reason: "Slack opened no direct-message channel" }
+        // The owner's direct messages are reached only inside the slot.
+        const contact = yield* contactOwner(principal, {
+          kind: "one-on-one",
+          destination: `slack:${channel}`,
+          // `FindOccurrence` opens a slot up to 15 minutes early.
+          windowStartMs: occurrence.startMs - 15 * minute,
+          windowEndMs: occurrence.endMs
+        }, at ?? (yield* Clock.currentTimeMillis))
+        return Result.isFailure(contact)
+          ? { connected: false, channel: "", reason: contact.failure.message }
+          : { connected: true, channel, reason: "" }
+      }), { implementationVersion: "meetings-open-direct/v2" }),
     ReadAgenda.toLayer(({ occurrence }) =>
       Effect.gen(function*() {
         const note = noteOf(occurrence)
@@ -959,6 +982,16 @@ export const layer = (options: Options) => {
         const registry = yield* Authority.RosterRegistry
         const { profile } = yield* registry.resolve(payload.revision, payload.principal)
         const at = yield* Clock.currentTimeMillis
+        // The owner wrote in this thread, which the host recorded for this role.
+        const contact = yield* contactOwner(profile.id, {
+          kind: "owner-thread",
+          destination: `slack:${payload.channel}/${payload.thread}`,
+          windowStartMs: at,
+          windowEndMs: at + 60_000
+        }, at)
+        if (Result.isFailure(contact)) {
+          return yield* new Authority.DispatchRefused({ reason: "inactive", message: contact.failure.message })
+        }
         let transcript = `Will: ${payload.text}`
         if (slack !== undefined) {
           const replies = yield* Effect.result(

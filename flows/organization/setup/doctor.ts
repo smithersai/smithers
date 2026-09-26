@@ -136,7 +136,9 @@ const organizationLine = async (root: string): Promise<[Line, Organization | und
   try {
     const organization = await loadOrganization(root)
     const { snapshot, loaded } = organization
-    const detail = `${snapshot.roster.profiles.size} roles, ${snapshot.skills.skills.size} skills, ` +
+    const current = [...snapshot.roster.profiles.values()].filter((profile) => profile.status !== "retired")
+    const hires = current.filter((profile) => profile.kind !== "core").length
+    const detail = `${current.length - hires} roles, ${hires === 0 ? "" : `${hires} hired, `}${snapshot.skills.skills.size} skills, ` +
       `${loaded.policy.gates.length} gates (${snapshot.revision.slice(0, 12)})`
     return [pass("org", detail), organization]
   } catch (error) {

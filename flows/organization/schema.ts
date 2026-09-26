@@ -217,7 +217,7 @@ export const BuildTask = Action.make("organization/build-task", {
 
 /** The checker's task: the diff and the fresh-machine check receipts, as data. */
 export const CheckTask = Action.make("organization/check-task", {
-  implementationVersion: "check-task/v5",
+  implementationVersion: "check-task/v6",
   payload: {
     request: Request,
     assignment: Assignment,
