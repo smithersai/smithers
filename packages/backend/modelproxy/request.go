@@ -168,19 +168,9 @@ func parseRequest(provider, path string, header http.Header, body []byte) (parse
 	input := int64(len(call.body)) + inputAllowance + int64(images)*imageAllowance
 	outputTotal := output * choices
 	call.maximum = func(price modelprice.Price) modelprice.Usage {
-		// Every input token is priced at the dearest input class, so any
-		// split the provider reports (cache reads, cache writes) costs no
-		// more than the bound.
-		usage := modelprice.Usage{OutputTokens: outputTotal}
-		switch max(price.InputPerMTok, price.CacheReadPerMTok, price.CacheWritePerMTok) {
-		case price.CacheWritePerMTok:
-			usage.CacheWriteTokens = input
-		case price.CacheReadPerMTok:
-			usage.CacheReadTokens = input
-		default:
-			usage.InputTokens = input
-		}
-		return usage
+		// The rate card follows the prompt bound, so a prompt that can
+		// cross a long-context threshold is reserved at the long rates.
+		return price.Maximum(input, outputTotal)
 	}
 	return call, nil
 }
@@ -382,7 +372,8 @@ func decodeUsage(raw json.RawMessage) (modelprice.Usage, error) {
 			CacheWrite *int64 `json:"cache_write_tokens"`
 		} `json:"prompt_tokens_details"`
 		InputDetails struct {
-			Cached *int64 `json:"cached_tokens"`
+			Cached     *int64 `json:"cached_tokens"`
+			CacheWrite *int64 `json:"cache_write_tokens"`
 		} `json:"input_tokens_details"`
 	}
 	if err := json.Unmarshal(raw, &u); err != nil {
@@ -402,7 +393,7 @@ func decodeUsage(raw json.RawMessage) (modelprice.Usage, error) {
 	pick(&out.InputTokens, u.InputTokens, u.PromptTokens)
 	pick(&out.OutputTokens, u.OutputTokens, u.CompletionTokens)
 	pick(&out.CacheReadTokens, u.CacheRead, u.PromptDetails.Cached, u.InputDetails.Cached)
-	pick(&out.CacheWriteTokens, u.CacheWrite, u.PromptDetails.CacheWrite)
+	pick(&out.CacheWriteTokens, u.CacheWrite, u.PromptDetails.CacheWrite, u.InputDetails.CacheWrite)
 	if !found {
 		return modelprice.Usage{}, errUsageMissing
 	}
@@ -411,8 +402,9 @@ func decodeUsage(raw json.RawMessage) (modelprice.Usage, error) {
 	if u.CacheRead == nil && (u.PromptDetails.Cached != nil || u.InputDetails.Cached != nil) && out.InputTokens >= out.CacheReadTokens {
 		out.InputTokens -= out.CacheReadTokens
 	}
-	// OpenRouter counts cache writes inside prompt_tokens too.
-	if u.CacheWrite == nil && u.PromptDetails.CacheWrite != nil && out.InputTokens >= out.CacheWriteTokens {
+	// OpenAI (GPT-5.6 and later) and OpenRouter count cache writes inside
+	// input_tokens / prompt_tokens too.
+	if u.CacheWrite == nil && (u.PromptDetails.CacheWrite != nil || u.InputDetails.CacheWrite != nil) && out.InputTokens >= out.CacheWriteTokens {
 		out.InputTokens -= out.CacheWriteTokens
 	}
 	return out, nil

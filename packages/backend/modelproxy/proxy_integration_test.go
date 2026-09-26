@@ -284,7 +284,7 @@ func TestProxy_StreamSettlesFromTheFinalUsageFrame(t *testing.T) {
 // cached tokens are not billed twice.
 func TestProxy_ChatStreamRequestsUsageAndSettlesOnDone(t *testing.T) {
 	f := newProxyFixture(t)
-	f.grant(1_000_000_000)
+	f.grant(5_000_000_000)
 	f.upstream = func(w http.ResponseWriter, _ *http.Request, body []byte) {
 		var doc struct {
 			StreamOptions struct {
@@ -385,6 +385,7 @@ func TestProxy_RefusesUnpricedAndUnboundedCalls(t *testing.T) {
 	for _, tc := range []struct{ path, body string }{
 		{"/model-proxy/anthropic/v1/messages", `{"model":"claude-imaginary-9","max_tokens":10,"messages":[]}`},
 		{"/model-proxy/cerebras/v1/chat/completions", `{"model":"claude-haiku-4-5","max_tokens":10,"messages":[]}`},
+		{"/model-proxy/cerebras/v1/chat/completions", `{"model":"qwen-3-coder-480b","max_tokens":10,"messages":[]}`},
 		{"/model-proxy/anthropic/v1/messages", `{"model":"claude-haiku-4-5","messages":[]}`},
 		{"/model-proxy/openai/v1/responses", `{"model":"gpt-5.5","previous_response_id":"resp_1","input":"hi"}`},
 		{"/model-proxy/openai/v1/responses", `{"model":"gpt-5.5","input":[{"role":"user","content":[{"type":"input_file","file_id":"file_1"}]}]}`},
@@ -503,4 +504,49 @@ func TestProxy_GatewayStatusIsUnknownAndKeyRefusalIsOpaque(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "leak")
 	require.Equal(t, before, f.balance())
 	require.Equal(t, "failed", f.rows()[1].outcome)
+}
+
+// A call whose prompt crosses the long-context threshold is reserved and
+// settled at the long rates; one below it at the standard rates.
+func TestProxy_LongContextPromptIsReservedAndSettledAtTheLongRates(t *testing.T) {
+	f := newProxyFixture(t)
+	f.grant(100_000_000_000)
+	price, ok := modelprice.Lookup("gpt-6-astra")
+	require.True(t, ok)
+	for _, tc := range []struct {
+		name   string
+		prompt int64
+		rates  modelprice.Rates
+	}{
+		{"below", modelprice.OpenAILongContextFrom - 1, price.Rates},
+		{"at", modelprice.OpenAILongContextFrom, price.LongContext},
+		{"above", modelprice.OpenAILongContextFrom + 1, price.LongContext},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cached, written := tc.prompt/2, int64(1000)
+			f.upstream = func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"object":"response","usage":{"input_tokens":%d,"output_tokens":700,"input_tokens_details":{"cached_tokens":%d,"cache_write_tokens":%d}}}`,
+					tc.prompt, cached, written)
+			}
+			before := len(f.rows())
+			body := responsesBody("gpt-6-astra", int(tc.prompt))
+			recorder := f.call("/model-proxy/openai/v1/responses", body)
+			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+			rows := f.rows()
+			require.Len(t, rows, before+1)
+			row := rows[len(rows)-1]
+			uncached := tc.prompt - cached - written
+			want := (uncached*tc.rates.InputPerMTok + cached*tc.rates.CacheReadPerMTok + written*tc.rates.CacheWritePerMTok + 700*tc.rates.OutputPerMTok + 999) / 1000
+			require.Equal(t, "succeeded", row.outcome)
+			require.Equal(t, want, row.charged)
+			require.Equal(t, uncached, row.input)
+			require.Equal(t, cached, row.cacheRead)
+			require.Equal(t, written, row.cacheWrite)
+			// The body is at least as long as the prompt, so the bound is at
+			// the long rates in every case and covers the charge.
+			require.Equal(t, boundFor(t, ProviderOpenAI, "v1/responses", body), row.reserved)
+			require.GreaterOrEqual(t, row.reserved, row.charged)
+		})
+	}
 }
