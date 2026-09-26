@@ -69,6 +69,7 @@ COPY patches patches
 COPY packages packages
 COPY flows flows
 COPY factory factory
+COPY .smithers/coding-project.json .smithers/coding-project.json
 COPY evals evals
 COPY apps apps
 COPY examples examples
