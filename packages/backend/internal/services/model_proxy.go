@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -43,16 +44,16 @@ func modelProxyTokenScopes(repositoryID int64, holder string) string {
 		middleware.WorkspaceRestrictionScope(holder)
 }
 
-// issueModelProxyToken mints holder's model credential for userID, revoking
-// the holder's earlier one first.
+// issueModelProxyToken mints holder's model credential for userID. The
+// holder's earlier credentials stay valid until the caller has installed the
+// new one and calls revokeModelProxyTokens with its id.
 func issueModelProxyToken(ctx context.Context, store accessTokenStore, userID, repositoryID int64, holder, restriction string) (temporaryRepoCloneToken, error) {
-	revokeModelProxyTokens(ctx, store, userID, holder)
 	return issueTemporaryRepoTokenWithTTL(ctx, store, userID, modelProxyTokenPrefix+holder,
 		modelProxyTokenScopes(repositoryID, restriction), modelProxyTokenTTL)
 }
 
-// revokeModelProxyTokens deletes holder's live model credentials.
-func revokeModelProxyTokens(ctx context.Context, store accessTokenStore, userID int64, holder string) {
+// revokeModelProxyTokens deletes holder's live model credentials except keep.
+func revokeModelProxyTokens(ctx context.Context, store accessTokenStore, userID int64, holder string, keep ...int64) {
 	lister, ok := store.(providerPoolTokenLister)
 	if !ok || userID <= 0 {
 		return
@@ -63,7 +64,7 @@ func revokeModelProxyTokens(ctx context.Context, store accessTokenStore, userID 
 		return
 	}
 	for _, token := range tokens {
-		if token.Name == modelProxyTokenPrefix+holder {
+		if token.Name == modelProxyTokenPrefix+holder && !slices.Contains(keep, token.ID) {
 			revokeTemporaryRepoCloneToken(ctx, store, userID, token.ID)
 		}
 	}
@@ -80,12 +81,15 @@ type modelProxyCallerQuerier interface {
 // owner; a workspace, a repo gateway, and a signed-in app call charge the
 // user.
 type ModelProxyCallers struct {
-	q    modelProxyCallerQuerier
-	pool *pgxpool.Pool
+	q     modelProxyCallerQuerier
+	pool  *pgxpool.Pool
+	codec flowhost.SecretCodec
 }
 
-func NewModelProxyCallers(q modelProxyCallerQuerier, pool *pgxpool.Pool) *ModelProxyCallers {
-	return &ModelProxyCallers{q: q, pool: pool}
+// NewModelProxyCallers resolves payers over product SQL. codec opens managed
+// Flow hosts' stored credentials (the Flow host store's codec).
+func NewModelProxyCallers(q modelProxyCallerQuerier, pool *pgxpool.Pool, codec flowhost.SecretCodec) *ModelProxyCallers {
+	return &ModelProxyCallers{q: q, pool: pool, codec: codec}
 }
 
 // ResolveModelCaller reads the credential the route's auth middleware
@@ -101,7 +105,7 @@ func (c *ModelProxyCallers) ResolveModelCaller(r *http.Request) (modelproxy.Call
 		return modelproxy.Caller{}, modelproxy.ErrForbidden
 	}
 	if token := bearerCredential(r); strings.HasPrefix(token, flowhost.ModelCredentialPrefix) {
-		binding, err := flowhost.VerifyModelCredential(ctx, c.pool, token)
+		binding, err := flowhost.VerifyModelCredential(ctx, c.pool, c.codec, token)
 		if err != nil {
 			if errors.Is(err, flowhost.ErrModelCredentialInvalid) {
 				return modelproxy.Caller{}, modelproxy.ErrUnauthenticated
@@ -121,7 +125,8 @@ func (c *ModelProxyCallers) ResolveModelCaller(r *http.Request) (modelproxy.Call
 	if !info.IsResourceBound() {
 		// The user's own token (the app's signed-in calls): the user pays.
 		// read:user spends model credit, as it did on the legacy proxy.
-		if !info.Scopes.Has(middleware.ScopeReadUser) {
+		// A third-party OAuth app never spends the user's credit.
+		if info.TokenSource == middleware.TokenSourceOAuth2AccessToken || !info.Scopes.Has(middleware.ScopeReadUser) {
 			return modelproxy.Caller{}, modelproxy.ErrForbidden
 		}
 		user.Source = modelproxy.SourceApp

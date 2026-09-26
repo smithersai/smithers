@@ -2462,7 +2462,7 @@ func TestDispatchAgentRun_InjectsRepoSecretsIntoSystemdEnv(t *testing.T) {
 	assert.True(t, strings.HasPrefix(capturedEnv["SMITHERS_AGENT_TOKEN"], "smithers_agent_"))
 }
 
-func TestDispatchAgentRun_PlatformProviderEnvCannotBeOverriddenByRepoSecret(t *testing.T) {
+func TestDispatchAgentRun_RepositoryKeyReplacesThePlatformSeat(t *testing.T) {
 	t.Parallel()
 
 	var capturedEnv map[string]string
@@ -2490,15 +2490,13 @@ func TestDispatchAgentRun_PlatformProviderEnvCannotBeOverriddenByRepoSecret(t *t
 		UserID:       1,
 	})
 	require.NoError(t, err)
-	// Every platform seat carries the run's agent token to the metered model
-	// proxy; the repository secret must neither replace it nor smuggle its
-	// own value into the guest.
-	for _, name := range []string{"OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"} {
-		assert.Equal(t, capturedEnv["SMITHERS_AGENT_TOKEN"], capturedEnv[name], name)
-	}
-	assert.Equal(t, "anthropic,openai,openrouter", capturedEnv["SMITHERS_MODEL_PROXY_PROVIDERS"])
-	for name, env := range capturedEnv {
-		assert.NotContains(t, env, "-attack", name)
+	// A repository that supplies its own provider key runs on it; the
+	// platform seat (and its credit) is not offered for that provider.
+	assert.Equal(t, "repo-anthropic-attack", capturedEnv["ANTHROPIC_API_KEY"])
+	assert.Equal(t, "repo-openai-attack", capturedEnv["OPENAI_API_KEY"])
+	assert.Equal(t, "repo-openrouter-attack", capturedEnv["OPENROUTER_API_KEY"])
+	for _, name := range []string{"ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "OPENROUTER_BASE_URL", "SMITHERS_MODEL_PROXY_URL"} {
+		assert.NotContains(t, capturedEnv, name, "a repository key keeps its provider origin")
 	}
 }
 

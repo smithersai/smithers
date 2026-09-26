@@ -278,3 +278,25 @@ func TestAgentDispatch_BindsBuildCacheWriteTokenThroughProxy(t *testing.T) {
 	assert.Equal(t, []string{"api.example.test"}, bound.Hosts)
 	assert.Equal(t, []string{"authorization"}, bound.MatchHeaders)
 }
+
+// A repository's own egress-bound provider key wins over the platform seat,
+// as it does in workspaces: the run spends the repository's key, not credit.
+func TestAgentDispatch_RepositoryBoundKeyKeepsItsProvider(t *testing.T) {
+	t.Parallel()
+	var created sandbox.CreateRequest
+	client := &mockSandboxVMClient{createVMFn: func(_ context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error) {
+		created = req
+		return sandbox.CreateResult{ID: "vm-own-key"}, nil
+	}}
+	dispatch := newEgressDispatch(t, client)
+	own, ok := ProviderCredentialEgressSecret("ANTHROPIC_API_KEY", "sk-ant-repository")
+	require.True(t, ok)
+	dispatch.svc.boundSecrets = &egressBoundSecretsStub{secrets: []sandbox.EgressProxySecret{own}}
+	require.NoError(t, dispatch.buildServiceSpec())
+	require.NoError(t, dispatch.injectSecrets())
+	require.NoError(t, dispatch.createVM())
+	assert.Equal(t, sandbox.EgressProxyPlaceholder("ANTHROPIC_API_KEY"), dispatch.agentServiceSpec.Env["ANTHROPIC_API_KEY"])
+	assert.NotContains(t, dispatch.agentServiceSpec.Env, "ANTHROPIC_BASE_URL")
+	assert.NotContains(t, dispatch.agentServiceSpec.Env, modelproxy.URLEnv)
+	assert.Contains(t, created.EgressProxy.Secrets, own)
+}

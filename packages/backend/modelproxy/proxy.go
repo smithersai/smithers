@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -195,10 +196,19 @@ func (h *Handler) forward(ctx context.Context, w http.ResponseWriter, r *http.Re
 	defer func() { _ = resp.Body.Close() }()
 	copyResponseHeaders(w.Header(), resp.Header)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// The provider refused: nothing was generated, nothing is charged.
+		outcome, err := credits.ModelFailed, error(ErrNotCharged)
+		if refusedAfterRunning(resp.StatusCode) {
+			// A gateway or timeout status can arrive after the model ran.
+			outcome, err = credits.ModelUnknown, fmt.Errorf("modelproxy: provider answered HTTP %d", resp.StatusCode)
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			// The provider's refusal of the platform key can quote part of it.
+			WriteError(w, provider, http.StatusBadGateway, "api_error", "The provider refused the platform credential.")
+			return Result{Outcome: outcome, Status: resp.StatusCode}, err
+		}
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, io.LimitReader(resp.Body, defaultMaxBody))
-		return Result{Outcome: credits.ModelFailed, Status: resp.StatusCode}, ErrNotCharged
+		return Result{Outcome: outcome, Status: resp.StatusCode}, err
 	}
 	w.WriteHeader(resp.StatusCode)
 	result := Result{Status: resp.StatusCode, Outcome: credits.ModelUnknown}
@@ -223,6 +233,16 @@ func (h *Handler) forward(ctx context.Context, w http.ResponseWriter, r *http.Re
 		result.Outcome, result.Usage = credits.ModelSucceeded, usage
 	}
 	return result, nil
+}
+
+// refusedAfterRunning reports a status that does not prove the provider
+// skipped the call: a gateway, timeout or unclassified server error.
+func refusedAfterRunning(status int) bool {
+	switch status {
+	case http.StatusRequestTimeout, 499, http.StatusBadGateway, http.StatusGatewayTimeout, 520, 522, 524:
+		return true
+	}
+	return status >= 500 && status != http.StatusServiceUnavailable && status != 529 && status != http.StatusNotImplemented
 }
 
 // relayStream copies SSE lines to the caller as they arrive and reads the

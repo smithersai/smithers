@@ -1318,7 +1318,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	modelMeter := &modelproxy.Meter{Ledger: credits.Ledger{DB: pool}}
 	var modelProxyHandler http.Handler
 	if len(modelSeats) > 0 {
-		modelProxyHandler = &modelproxy.Handler{Meter: *modelMeter, Keys: options.PlatformModelKeys, Callers: services.NewModelProxyCallers(queries, pool)}
+		modelProxyHandler = &modelproxy.Handler{Meter: *modelMeter, Keys: options.PlatformModelKeys, Callers: services.NewModelProxyCallers(queries, pool, webhookSecretCodec)}
 	}
 	var recommendationHandler *routes.RecommendationHandler
 	recommender := options.Recommender

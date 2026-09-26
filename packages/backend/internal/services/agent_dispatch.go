@@ -64,6 +64,10 @@ type agentDispatch struct {
 	egressSecrets []sandbox.EgressProxySecret
 	// replacedSeats are platform model providers a connected account serves.
 	replacedSeats map[string]struct{}
+	// repositorySeats are platform model providers the repository keys itself.
+	repositorySeats map[string]struct{}
+	// secretsInjected is set once repository secrets are in the service env.
+	secretsInjected bool
 	// guestFiles are placeholder-only files the connection binding plants in
 	// the guest (for example the Codex auth.json); never a credential.
 	guestFiles map[string]sandbox.SandboxFile
@@ -835,14 +839,17 @@ func (d *agentDispatch) bindModelSeats() {
 		delete(d.agentServiceSpec.Env, seat.BaseURLEnv)
 	}
 	proxyURL := modelProxyURL(d.svc.apiBaseURL)
-	if proxyURL == "" || d.plaintext == "" {
+	// Seats are chosen once the repository's own secrets are in place: a
+	// provider the repository supplies a key for keeps that key.
+	if proxyURL == "" || d.plaintext == "" || !d.secretsInjected {
 		return
 	}
 	var seats []modelproxy.Seat
 	for _, seat := range d.svc.sandboxConfig.ModelSeats {
-		if _, replaced := d.replacedSeats[seat.Provider]; !replaced {
-			seats = append(seats, seat)
+		if _, replaced := d.replacedSeats[seat.Provider]; replaced || d.repositoryDeclares(seat) {
+			continue
 		}
+		seats = append(seats, seat)
 	}
 	for _, seat := range seats {
 		d.unbindEgressSecret(seat.KeyEnv)
@@ -851,6 +858,25 @@ func (d *agentDispatch) bindModelSeats() {
 	for name, value := range modelproxy.GuestEnvironment(proxyURL, seats) {
 		d.agentServiceSpec.Env[name] = value
 	}
+}
+
+// repositoryDeclares reports whether the repository supplies its own key for
+// seat's provider, as a secret, a variable or an egress-bound secret.
+func (d *agentDispatch) repositoryDeclares(seat modelproxy.Seat) bool {
+	if _, declared := d.repositorySeats[seat.Provider]; declared {
+		return true
+	}
+	for _, name := range workspaceProviderFamily(seat.KeyEnv) {
+		value, set := d.agentServiceSpec.Env[name]
+		if set && value != d.plaintext && value != "" {
+			if d.repositorySeats == nil {
+				d.repositorySeats = map[string]struct{}{}
+			}
+			d.repositorySeats[seat.Provider] = struct{}{}
+			return true
+		}
+	}
+	return false
 }
 
 // replaceModelSeat takes a platform seat off the metered proxy because the
@@ -913,6 +939,7 @@ func (d *agentDispatch) injectSecrets() error {
 	// repo secret cannot redirect/replace the agent token, API base, or the
 	// per-run scoped jjhub token. The prod SecretInjector copies secrets
 	// unconditionally, so setting these before injection is not sufficient.
+	d.secretsInjected = true
 	d.applyReservedRuntimeEnv()
 	// A connected subscription wins over the platform credential for the same
 	// provider, and like every other credential it only ever reaches the

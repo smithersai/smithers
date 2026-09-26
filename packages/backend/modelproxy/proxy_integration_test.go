@@ -480,3 +480,27 @@ func TestProxy_NeverLeaksTheKey(t *testing.T) {
 	require.Equal(t, "succeeded", rows[2].outcome, "Jev is priced per call")
 	require.Equal(t, int64(2_000_000), rows[2].charged)
 }
+
+// A gateway status can arrive after the model ran, so it is charged the bound;
+// a provider 401 is answered without the provider's body.
+func TestProxy_GatewayStatusIsUnknownAndKeyRefusalIsOpaque(t *testing.T) {
+	f := newProxyFixture(t)
+	f.grant(1_000_000_000)
+	status := http.StatusBadGateway
+	f.upstream = func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided: sk-pl***leak"}}`))
+	}
+	body := anthropicBody(1000)
+	before := f.balance()
+	require.Equal(t, http.StatusBadGateway, f.call("/model-proxy/anthropic/v1/messages", body).Code)
+	require.Equal(t, before-boundFor(t, ProviderAnthropic, "v1/messages", body), f.balance())
+	require.Equal(t, "unknown", f.rows()[0].outcome)
+
+	status = http.StatusUnauthorized
+	before = f.balance()
+	recorder := f.call("/model-proxy/anthropic/v1/messages", body)
+	require.NotContains(t, recorder.Body.String(), "leak")
+	require.Equal(t, before, f.balance())
+	require.Equal(t, "failed", f.rows()[1].outcome)
+}

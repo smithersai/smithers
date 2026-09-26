@@ -49,6 +49,7 @@ var Table = map[string]Price{
 	// Anthropic (docs.anthropic.com pricing, 2026-06).
 	"claude-sonnet-5":   anthropic(2, 10),
 	"claude-sonnet-4-6": anthropic(3, 15),
+	"claude-sonnet-4-5": anthropic(3, 15),
 	"claude-opus-5":     anthropic(5, 25),
 	"claude-opus-4-8":   anthropic(5, 25),
 	"claude-opus-4-7":   anthropic(5, 25),

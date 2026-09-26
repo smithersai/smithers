@@ -232,6 +232,8 @@ func (s *WorkspaceService) bindWorkspaceModelProxy(ctx context.Context, workspac
 	if err != nil {
 		return pkgerrors.Internal("mint workspace model credential").WithCause(err)
 	}
+	// This boot's egress policy replaces the previous boot's.
+	revokeModelProxyTokens(ctx, s.q, workspace.UserID, holder, token.ID)
 	for _, seat := range seats {
 		binding.bind(sandbox.EgressProxySecret{Name: seat.KeyEnv, Value: token.Plaintext, Hosts: []string{host}, MatchHeaders: []string{"authorization", "x-api-key"}})
 	}

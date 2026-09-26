@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -835,6 +836,9 @@ func (s *RepoGatewayService) reuseGateway(ctx context.Context, gateway runtimepo
 				redeclareFailed = true
 			}
 		}
+		if !redeclareFailed {
+			s.retireGatewayModelCredentials(gatewayCtx, env, gateway.ID, input)
+		}
 		if redeclareFailed && s.healthProbeBaseURL == "" {
 			// "The liveness probe decides" is only true where a probe exists.
 			// With it disabled, falling through answers status:"running" for a
@@ -1271,6 +1275,7 @@ func (s *RepoGatewayService) finishGatewayProvision(
 	if err := s.startGatewayService(ctx, vm.ID, env); err != nil {
 		return fail(err)
 	}
+	s.retireGatewayModelCredentials(ctx, env, gatewayID, input)
 	// A provider service declaration is not readiness. Do not return a usable
 	// gateway until the same ingress the product will call answers health.
 	if err := s.probeGatewayHealth(ctx, vm.ID); err != nil {
@@ -1487,6 +1492,21 @@ func (s *RepoGatewayService) buildGatewayEnv(token string) map[string]string {
 	return env
 }
 
+// gatewayModelCredentialIDEnv carries the id (not the value) of the gateway's
+// current model credential, so earlier ones are revoked only once a service
+// holding the new one has been declared.
+const gatewayModelCredentialIDEnv = "SMITHERS_MODEL_CREDENTIAL_ID"
+
+// retireGatewayModelCredentials revokes the gateway's earlier model
+// credentials after its service was declared with env.
+func (s *RepoGatewayService) retireGatewayModelCredentials(ctx context.Context, env map[string]string, gatewayID string, input RepoGatewayConnectionInput) {
+	id, err := strconv.ParseInt(env[gatewayModelCredentialIDEnv], 10, 64)
+	if err != nil || id <= 0 {
+		return
+	}
+	revokeModelProxyTokens(ctx, s.q, input.UserID, "gateway-"+gatewayID, id)
+}
+
 // bindGatewayModelSeats mints the gateway's model credential, replacing its
 // earlier one, and points the platform seats at the metered model proxy. The
 // credential is confined to the proxy and spends only on the gateway user's
@@ -1506,6 +1526,7 @@ func (s *RepoGatewayService) bindGatewayModelSeats(ctx context.Context, env map[
 	for _, seat := range s.modelSeats {
 		env[seat.KeyEnv] = token.Plaintext
 	}
+	env[gatewayModelCredentialIDEnv] = strconv.FormatInt(token.ID, 10)
 	for name, value := range modelproxy.GuestEnvironment(proxyURL, s.modelSeats) {
 		env[name] = value
 	}

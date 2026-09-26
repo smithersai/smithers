@@ -94,7 +94,7 @@ func parseRequest(provider, path string, header http.Header, body []byte) (parse
 		return parsedCall{}, refuse("request body must be a JSON object")
 	}
 	call := parsedCall{}
-	if raw, ok := fields["model"]; !ok || json.Unmarshal(raw, &call.model) != nil || strings.TrimSpace(call.model) == "" {
+	if raw, ok := fields["model"]; !ok || json.Unmarshal(raw, &call.model) != nil || strings.TrimSpace(call.model) == "" || len(call.model) > 200 {
 		return parsedCall{}, refuse("model is required")
 	}
 	if provider == ProviderOpenRouter && strings.Contains(call.model, ":") {
@@ -288,7 +288,7 @@ func checkContent(value any, images *int) error {
 		}
 		kind, _ := v["type"].(string)
 		switch kind {
-		case "url", "file", "input_file", "input_audio":
+		case "url", "file", "input_file", "input_audio", "audio", "video", "video_url", "input_video", "container_upload":
 			return refuse("content of type " + kind + " is not offered on platform keys")
 		case "document":
 			if source, _ := v["source"].(map[string]any); source != nil {
@@ -303,6 +303,9 @@ func checkContent(value any, images *int) error {
 			if ttl, _ := control["ttl"].(string); ttl != "" && ttl != "5m" {
 				return refuse("cache lifetime " + ttl + " is not offered on platform keys")
 			}
+		}
+		if _, ok := v["video_url"]; ok {
+			return refuse("video is not offered on platform keys")
 		}
 		switch image := v["image_url"].(type) {
 		case string:
@@ -375,7 +378,8 @@ func decodeUsage(raw json.RawMessage) (modelprice.Usage, error) {
 		CacheRead        *int64 `json:"cache_read_input_tokens"`
 		CacheWrite       *int64 `json:"cache_creation_input_tokens"`
 		PromptDetails    struct {
-			Cached *int64 `json:"cached_tokens"`
+			Cached     *int64 `json:"cached_tokens"`
+			CacheWrite *int64 `json:"cache_write_tokens"`
 		} `json:"prompt_tokens_details"`
 		InputDetails struct {
 			Cached *int64 `json:"cached_tokens"`
@@ -398,7 +402,7 @@ func decodeUsage(raw json.RawMessage) (modelprice.Usage, error) {
 	pick(&out.InputTokens, u.InputTokens, u.PromptTokens)
 	pick(&out.OutputTokens, u.OutputTokens, u.CompletionTokens)
 	pick(&out.CacheReadTokens, u.CacheRead, u.PromptDetails.Cached, u.InputDetails.Cached)
-	pick(&out.CacheWriteTokens, u.CacheWrite)
+	pick(&out.CacheWriteTokens, u.CacheWrite, u.PromptDetails.CacheWrite)
 	if !found {
 		return modelprice.Usage{}, errUsageMissing
 	}
@@ -406,6 +410,10 @@ func decodeUsage(raw json.RawMessage) (modelprice.Usage, error) {
 	// input_tokens (Responses); Anthropic reports them separately.
 	if u.CacheRead == nil && (u.PromptDetails.Cached != nil || u.InputDetails.Cached != nil) && out.InputTokens >= out.CacheReadTokens {
 		out.InputTokens -= out.CacheReadTokens
+	}
+	// OpenRouter counts cache writes inside prompt_tokens too.
+	if u.CacheWrite == nil && u.PromptDetails.CacheWrite != nil && out.InputTokens >= out.CacheWriteTokens {
+		out.InputTokens -= out.CacheWriteTokens
 	}
 	return out, nil
 }

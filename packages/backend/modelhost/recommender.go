@@ -60,7 +60,7 @@ func (j *JevRecommender) Recommend(ctx context.Context, input ports.Recommendati
 			ModelID string `json:"modelId"`
 		}
 		if json.Unmarshal(input.Model, &binding) != nil || strings.TrimSpace(binding.ModelID) != ports.RecommendationModelID {
-			return ports.RecommendationResult{}, errors.New("recommendation model is not Jev")
+			return ports.RecommendationResult{}, errors.Join(modelproxy.ErrNotCharged, errors.New("recommendation model is not Jev"))
 		}
 	}
 	questions := make(map[string]any)
@@ -96,7 +96,7 @@ func (j *JevRecommender) Recommend(ctx context.Context, input ports.Recommendati
 	}
 	body, err := json.Marshal(map[string]any{"state": state, "questions": questions, "providerOptions": map[string]any{"gateway": map[string]bool{"zeroDataRetention": true}}})
 	if err != nil {
-		return ports.RecommendationResult{}, err
+		return ports.RecommendationResult{}, errors.Join(modelproxy.ErrNotCharged, err)
 	}
 	apiKey, err := j.keys.PlatformModelKey(ctx, modelproxy.ProviderVercel)
 	if err != nil || !modelproxy.UsableKey(apiKey) {

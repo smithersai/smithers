@@ -20,8 +20,10 @@ import (
 	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/flowhost"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
+	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/modelproxy"
 )
 
@@ -81,8 +83,8 @@ func TestModelProxyChargesTheRightPayerPostgres(t *testing.T) {
 	controlHash := sha256.Sum256([]byte(control))
 	_, err = pool.Exec(ctx, `INSERT INTO flow_runtime_host_bindings (id, tenant_id, principal_id, binding_kind, binding_id, repository_id, user_id, workspace_id,
 			catalog_key, service_name, runtime_artifact_digest, source_revision, owner_generation, credential_ciphertext, credential_hash, state)
-		VALUES ($1, 'repository:1', 'user:1', 'agent-session', 's-1', $2, $3, $4, 'coding', 'smithers-coding-host', $5, $6, 1, 'cipher', $7, 'running')`,
-		bindingID, orgRepo.ID, alice.ID, workspaceID, strings.Repeat("a", 64), strings.Repeat("b", 40), controlHash[:])
+		VALUES ($1, 'repository:1', 'user:1', 'agent-session', 's-1', $2, $3, $4, 'coding', 'smithers-coding-host', $5, $6, 1, $7, $8, 'running')`,
+		bindingID, orgRepo.ID, alice.ID, workspaceID, strings.Repeat("a", 64), strings.Repeat("b", 40), control, controlHash[:])
 	require.NoError(t, err)
 	hostCredential := flowhost.ModelCredential(bindingID, control)
 
@@ -101,7 +103,7 @@ func TestModelProxyChargesTheRightPayerPostgres(t *testing.T) {
 		require.NoError(t, ledger.Grant(ctx, account, "test", 1_000_000_000, nil))
 	}
 	handler := &modelproxy.Handler{Meter: modelproxy.Meter{Ledger: ledger}, Keys: modelproxy.StaticKeys{modelproxy.ProviderAnthropic: "sk-platform"},
-		Callers: services.NewModelProxyCallers(q, pool), Upstreams: map[string]string{modelproxy.ProviderAnthropic: upstream.URL}}
+		Callers: services.NewModelProxyCallers(q, pool, webhook.NoopSecretCodec{}), Upstreams: map[string]string{modelproxy.ProviderAnthropic: upstream.URL}}
 	router := chi.NewRouter()
 	mountModelProxy(router, q, testConfigAllFlagsOn(), handler)
 	router.Route("/api", func(r chi.Router) {
@@ -127,6 +129,15 @@ func TestModelProxyChargesTheRightPayerPostgres(t *testing.T) {
 		code := call(proxied, refused, "Authorization")
 		require.Contains(t, []int{http.StatusUnauthorized, http.StatusForbidden}, code, name)
 	}
+	// A forged host credential keyed by the stored digest alone is refused.
+	digestKeyed := flowhost.ModelCredential(bindingID, string(controlHash[:]))
+	require.Contains(t, []int{http.StatusUnauthorized, http.StatusForbidden}, call(proxied, digestKeyed, "Authorization"))
+	// A third-party OAuth app's token never spends the user's credit.
+	oauth := httptest.NewRequest(http.MethodPost, proxied, nil)
+	oauth = oauth.WithContext(middleware.ContextWithAuthInfo(oauth.Context(), &middleware.AuthInfo{User: &alice, IsTokenAuth: true,
+		TokenSource: middleware.TokenSourceOAuth2AccessToken, Scopes: middleware.ScopeSet{middleware.ScopeReadUser: {}}}))
+	_, err = services.NewModelProxyCallers(q, pool, webhook.NoopSecretCodec{}).ResolveModelCaller(oauth)
+	require.ErrorIs(t, err, modelproxy.ErrForbidden)
 	receipt := httptest.NewRecorder()
 	router.ServeHTTP(receipt, httptest.NewRequest(http.MethodGet, "/api/model/credential/receipt", nil))
 	require.Equal(t, http.StatusTeapot, receipt.Code, "the /api/model routes beside the proxy still resolve")

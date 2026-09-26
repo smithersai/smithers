@@ -96,6 +96,7 @@ func TestAgentDispatch_WorkspaceMode_CreateVMUsesBackendAndMergesBindings(t *tes
 	d.svc.sandboxMetrics = &egressMetricsStub{}
 	require.NoError(t, d.prepareRepoClone())
 	require.NoError(t, d.buildServiceSpec())
+	require.NoError(t, d.injectSecrets())
 	d.guestFiles = map[string]sandbox.SandboxFile{"/root/.codex/auth.json": {Content: "{}"}}
 	d.gitRepos = append(d.gitRepos, sandbox.GitRepositorySpec{Repo: "https://git.example/acme/lib", Path: defaultWorkspaceClonePath + "/acme/lib", Rev: "abc"})
 	require.NoError(t, d.createVM())
