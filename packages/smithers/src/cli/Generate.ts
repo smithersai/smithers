@@ -173,6 +173,7 @@ export const createGenerateCli = (config: RuntimeConfig = {}) =>
   Cli.create("generate", { description: "Scaffold apps, flows, packages, and CI configuration" })
     .command("app", {
       description: "Create an application from a bundled template",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ directory: z.string() }),
       options: z.object({ template: z.string().default("default") }),
       run: (c) =>
@@ -183,6 +184,7 @@ export const createGenerateCli = (config: RuntimeConfig = {}) =>
     })
     .command("flow", {
       description: "Create a durable Markdown flow without replacing an existing flow",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ name: z.string().min(1) }),
       options: localOptions,
       run: (c) =>
@@ -198,12 +200,14 @@ export const createGenerateCli = (config: RuntimeConfig = {}) =>
     })
     .command("package", {
       description: "Run the workspace's declared package scaffold with its configured defaults",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ name: z.string().min(1) }),
       options: generatorOptions,
       run: (c) => safe(c, () => generateTarget("package", c.options, config, c.args.name))
     })
     .command("ci", {
       description: "Generate CI files using the workspace's declared GitHub workflow target",
+      mcp: { annotations: { readOnlyHint: false } },
       options: generatorOptions,
       run: (c) => safe(c, () => generateTarget("ci", c.options, config))
     })

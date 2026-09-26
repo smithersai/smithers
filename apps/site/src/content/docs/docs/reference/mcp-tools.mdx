@@ -15,8 +15,8 @@ The server exposes these entry points:
 | --- | --- | --- |
 | `search_tools` | `query` (default empty), `limit` (1 to 20, default 5), `offset` (nonnegative, default 0) | Matching names, descriptions, annotations, and `nextOffset` when another page exists. |
 | `get_tool_details` | `name`, the exact discovered tool name | The input schema, optional output schema, annotations, and instructions. |
-| `call_read_tool` | `name` and `arguments` (an object, default empty) | Executes a tool explicitly marked read-only. |
-| `call_write_tool` | `name` and `arguments` (an object, default empty) | Executes a writable or unclassified tool. |
+| `call_read_tool` | `name` and `arguments` (an object, default empty) | Executes a tool whose `readOnlyHint` is `true`. |
+| `call_write_tool` | `name` and `arguments` (an object, default empty) | Executes a tool whose `readOnlyHint` is `false`. |
 
 An empty search query pages through all available tools. Use the returned `nextOffset` to continue.
 
@@ -40,7 +40,7 @@ Then call it with the arguments its schema accepts. For a project at `/work/proj
 {"name":"flow_list","arguments":{"root":"/work/project"}}
 ```
 
-Replace `/work/project` with the absolute project path. `flow_list` is currently unclassified, so it uses `call_write_tool` even though listing flows does not execute them. Choose the wrapper from the returned `readOnlyHint`, not from a guess about the command name.
+Replace `/work/project` with the absolute project path. `flow_list` is read-only, so call it through `call_read_tool`; a local listing reads the discovery snapshot and opens no project database. Every tool declares `readOnlyHint`, and each wrapper refuses the other kind, so choose the wrapper from that annotation. `flow_plan` is not read-only: it records the plan and its approval token.
 
 ## Command names
 

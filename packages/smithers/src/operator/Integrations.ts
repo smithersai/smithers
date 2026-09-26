@@ -221,12 +221,14 @@ export const createIntegrationsCli = () => {
   })
     .command("list", {
       description: "List configured integrations and credential references without making requests",
+      mcp: { annotations: { readOnlyHint: true } },
       options,
       run: (context) =>
         execute(context, async () => readIntegrations(localRoot(context.options), context.options.config))
     })
     .command("doctor", {
       description: "Check configured credentials and probe provider authentication",
+      mcp: { annotations: { readOnlyHint: true } },
       args,
       options: options.extend({
         offline: z.boolean().default(false),
@@ -264,6 +266,7 @@ export const createIntegrationsCli = () => {
     })
     .command("reconcile", {
       description: "Plan GitHub webhooks from .smithers/listeners.json; --apply writes owned hooks",
+      mcp: { annotations: { readOnlyHint: false } },
       args,
       options: options.extend({ apply: z.boolean().default(false), allowDelete: z.boolean().default(false) }),
       run: (context) =>

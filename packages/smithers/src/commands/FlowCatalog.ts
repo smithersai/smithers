@@ -1,13 +1,18 @@
 /**
- * The complete paged flow catalog, read the same way by `ls` and `doctor`.
+ * The complete flow catalog, read the same way by `ls`, `flow list`, and
+ * `doctor`: from a control plane's pages, or from the local discovery snapshot.
  *
  * @since 1.0.0
  */
 import { ControlSchema } from "@smthrs/control"
 import type { Service as ControlServiceShape } from "@smthrs/control/Control"
+import { inputDocument } from "@smthrs/registry/Descriptor"
+import * as Registry from "@smthrs/registry/Registry"
 import { Effect } from "effect"
 import * as CliError from "../CliError.ts"
 import * as BoundedEvents from "../internal/BoundedEvents.ts"
+import * as FeaturedFlows from "../internal/FeaturedFlows.ts"
+import * as Unsupported from "../Unsupported.ts"
 
 /**
  * One page of the flow listing.
@@ -73,3 +78,42 @@ export const read = (control: ControlServiceShape) =>
     }
     return { items, warnings }
   })
+
+/**
+ * The project's discovered flows, read from the discovery snapshot without
+ * opening the control or execution databases. Reserved `system/*` flows belong
+ * to the control plane, which lists them only for an empty registry; every
+ * listing hides them and `plan` and `up` refuse them.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const discovered: Effect.Effect<Pick<FlowPage, "items" | "warnings">, never, Registry.Registry> = Effect
+  .gen(function*() {
+    const registry = yield* Registry.Registry
+    const [descriptors, warnings] = yield* Effect.all([registry.list(), registry.warnings()])
+    return {
+      items: descriptors.map((descriptor) => {
+        const inputSchema = inputDocument(descriptor.input)
+        return {
+          flowId: descriptor.name,
+          description: descriptor.description,
+          ...(inputSchema === undefined ? {} : { inputSchema })
+        }
+      }),
+      warnings
+    }
+  })
+
+/**
+ * The listing document: reserved system flows removed, featured rows applied
+ * from the project's generated factory projection when one is checked in.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const listing = (items: FlowPage["items"], projectRoot: string) => ({
+  _tag: "flows" as const,
+  items: FeaturedFlows.present(
+    items.filter((item) => !Unsupported.isReservedFlow(item.flowId)),
+    FeaturedFlows.read(projectRoot)
+  )
+})

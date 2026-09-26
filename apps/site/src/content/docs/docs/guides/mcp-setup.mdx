@@ -46,10 +46,10 @@ Ask the agent to search for flow tools, inspect `flow_list`, and call it for you
 
 1. `search_tools` finds commands by capability.
 2. `get_tool_details` returns a selected command's schema.
-3. `call_read_tool` calls a tool explicitly marked read-only.
-4. `call_write_tool` calls a writable or unclassified tool.
+3. `call_read_tool` calls a tool whose `readOnlyHint` is `true`.
+4. `call_write_tool` calls a tool whose `readOnlyHint` is `false`.
 
-A command's annotations determine which call wrapper it accepts. For example, `flow_list` currently uses `call_write_tool` because it is unclassified; that classification does not cause the listing to launch a run.
+Every command declares `readOnlyHint`, and each wrapper refuses the other kind. `flow_list`, `runs_list`, and `runs_show` are read-only; `flow_plan` is not, because it records the plan and its approval token.
 
 The [MCP reference](/docs/reference/mcp-tools/) gives concrete request objects and command names.
 

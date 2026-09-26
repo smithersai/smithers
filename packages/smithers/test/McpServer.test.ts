@@ -1093,8 +1093,8 @@ describe("a real stdio round trip", () => {
           })
           const search = yield* client.callTool("search_tools", { query: "flow list" })
           const details = yield* client.callTool("get_tool_details", { name: "flow_list" })
-          const supported = yield* client.callTool("call_write_tool", { name: "flow_list", arguments: {} })
-          const refused = yield* client.callTool("call_write_tool", {
+          const supported = yield* client.callTool("call_read_tool", { name: "flow_list", arguments: {} })
+          const refused = yield* client.callTool("call_read_tool", {
             name: "runs_show",
             arguments: { run: "missing-run" }
           })
@@ -1108,9 +1108,9 @@ describe("a real stdio round trip", () => {
     expect(result.search.content[0]?.text).toContain("flow_list")
     expect(result.details.content[0]?.text).toContain("inputSchema")
 
-    // Progressive discovery wraps unclassified tools in call_write_tool;
-    // neither invocation here requests a mutation. Results may include CTA
-    // text after the JSON document, as specified by Incur's MCP adapter.
+    // Both read verbs declare readOnlyHint, so progressive discovery serves
+    // them through call_read_tool. Results may include CTA text after the
+    // JSON document, as specified by Incur's MCP adapter.
     expect(result.supported.content[0]?.text).toMatch(/"items":\s*\[\]/)
     expect(result.supported.isError).not.toBe(true)
     expect(result.refused.content[0]?.text).toContain("Unknown run missing-run")

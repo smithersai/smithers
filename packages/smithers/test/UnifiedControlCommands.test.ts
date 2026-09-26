@@ -1,5 +1,5 @@
 import * as Audience from "@smthrs/build-cli/Audience"
-import { Control, type ControlSchema } from "@smthrs/control"
+import { Control, ControlSchema } from "@smthrs/control"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect, Stream } from "effect"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
@@ -14,6 +14,7 @@ import * as Presentation from "../src/cli/Presentation.ts"
 const ports = vi.hoisted(() => ({
   invoke: vi.fn(),
   query: vi.fn(),
+  local: vi.fn(),
   events: vi.fn(),
   list: vi.fn(),
   cancel: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("../src/cli/ControlBridge.ts", async (load) => ({
   ...await load<typeof import("../src/cli/ControlBridge.ts")>(),
   invoke: ports.invoke,
   query: ports.query,
+  local: ports.local,
   events: ports.events
 }))
 vi.mock("../src/history/History.ts", async (load) => ({
@@ -235,29 +237,44 @@ describe("unified control dispatch", () => {
     expect(ports.invoke).not.toHaveBeenCalled()
   })
 
-  it("finds a flow after an empty page and preserves the catalog cursor exactly", async () => {
+  const remote = ["--remote", "https://control.invalid"]
+
+  it("finds a remote flow after an empty page and preserves the catalog cursor exactly", async () => {
     const flow = { flowId: "demo/ship", description: "Publish a release" }
     ports.list.mockReturnValueOnce(Effect.succeed({ _tag: "flows", items: [], nextCursor: "opaque/page:2" }))
       .mockReturnValueOnce(
-        Effect.succeed({
-          _tag: "flows",
-          items: [{ flowId: "other", description: "Other" }, flow],
-          nextCursor: "unused"
-        })
+        Effect.succeed({ _tag: "flows", items: [{ flowId: "other", description: "Other" }, flow] })
       )
-    const result = await invoke(["flow", "show", "demo/ship", "--json"])
+    const result = await invoke(["flow", "show", "demo/ship", ...remote, "--json"])
     expect(JSON.parse(result.stdout)).toEqual(flow)
-    expect(ports.list.mock.calls).toEqual([[{ _tag: "flows" }], [{ _tag: "flows", cursor: "opaque/page:2" }]])
+    expect(ports.list.mock.calls).toEqual([
+      [{ _tag: "flows", limit: ControlSchema.maxPageSize }],
+      [{ _tag: "flows", limit: ControlSchema.maxPageSize, cursor: "opaque/page:2" }]
+    ])
+    expect(ports.local).not.toHaveBeenCalled()
   })
 
   it.each([
     [{ _tag: "flows", items: [] }, "Unknown flow missing"],
-    [{ _tag: "runs", items: [] }, "Expected a flow catalog"]
+    [{ _tag: "runs", items: [] }, "the control plane returned a run page for a flow listing"]
   ])("reports missing or malformed catalogs instead of inventing a flow", async (page, message) => {
     ports.list.mockReturnValue(Effect.succeed(page))
-    const result = await invoke(["flow", "show", "missing", "--json"])
+    const result = await invoke(["flow", "show", "missing", ...remote, "--json"])
     expect(result.codes).toEqual([1])
     expect(result.stdout).toContain(message)
+  })
+
+  it("reads a local flow catalog from the discovery snapshot, never the control host", async () => {
+    const flow = { flowId: "demo/ship", description: "Publish a release" }
+    ports.local.mockResolvedValue({ items: [{ flowId: "other", description: "Other" }, flow], warnings: [] })
+    const shown = await invoke(["flow", "show", "demo/ship", "--json"])
+    expect(JSON.parse(shown.stdout)).toEqual(flow)
+    ports.local.mockResolvedValue({ _tag: "flows", items: [flow] })
+    const listed = await invoke(["flow", "list", "--json"])
+    expect(JSON.parse(listed.stdout)).toMatchObject({ _tag: "flows", items: [flow] })
+    expect(ports.local).toHaveBeenCalledTimes(2)
+    expect(ports.invoke).not.toHaveBeenCalled()
+    expect(ports.query).not.toHaveBeenCalled()
   })
 
   it.each([false, true])("reconciles local history before listing with filters=%s", async (filtered) => {
@@ -474,7 +491,7 @@ describe("unified control dispatch", () => {
     ["Authorization: Bearer private-fixture", "command_failed", 1],
     [null, "command_failed", 1]
   ])("keeps stable typed refusal codes and redacts credentials", async (cause, code, exitCode) => {
-    ports.invoke.mockRejectedValue(cause)
+    ports.local.mockRejectedValue(cause)
     const result = await invoke(["flow", "list", "--json"])
     expect(result.codes).toEqual([exitCode])
     expect(result.stdout).toContain(`"code": "${code}"`)
@@ -482,7 +499,7 @@ describe("unified control dispatch", () => {
   })
 
   it("lists flows one per line for a person, starring the featured rows", async () => {
-    ports.invoke.mockResolvedValue({
+    ports.local.mockResolvedValue({
       _tag: "flows",
       items: [
         { flowId: "review", description: "Reviews the change.", featured: true, summary: "Review the change." },
@@ -512,7 +529,7 @@ describe("unified control dispatch", () => {
 
   it("keeps the flow page document for agents and --json", async () => {
     const page = { _tag: "flows", items: [{ flowId: "review", description: "Reviews the change.", featured: true }] }
-    ports.invoke.mockResolvedValue(page)
+    ports.local.mockResolvedValue(page)
     const result = await invoke(["flow", "list", "--json"])
     expect(result.codes).toEqual([])
     expect(JSON.parse(result.stdout)).toMatchObject(page)

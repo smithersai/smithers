@@ -30,6 +30,7 @@ export const appendHistoryCommands = (cli: Cli.Cli, runtime: Bridge.Runtime = {}
   cli
     .command("inspect", {
       description: "Inspect the state and event counts recorded at one historical frame",
+      mcp: { annotations: { readOnlyHint: true } },
       args,
       options,
       run(c) {
@@ -49,6 +50,7 @@ export const appendHistoryCommands = (cli: Cli.Cli, runtime: Bridge.Runtime = {}
     })
     .command("replay", {
       description: "Replay committed history and sealed results without re-executing any actions",
+      mcp: { annotations: { readOnlyHint: true } },
       args,
       options,
       run(c) {
@@ -68,6 +70,7 @@ export const appendHistoryCommands = (cli: Cli.Cli, runtime: Bridge.Runtime = {}
     })
     .command("fork", {
       description: "Branch a parked run at a historical frame into a durable, isolated workspace",
+      mcp: { annotations: { readOnlyHint: false } },
       args,
       options: mutationOptions,
       run(c) {
@@ -87,6 +90,7 @@ export const appendHistoryCommands = (cli: Cli.Cli, runtime: Bridge.Runtime = {}
     })
     .command("rewind", {
       description: "Preview or archive a run's suffix and restore an earlier frame; requires --yes to mutate",
+      mcp: { annotations: { readOnlyHint: false } },
       args,
       options: mutationOptions.extend({
         preview: z.boolean().default(false).describe("Show the affected suffix and effects without changing anything"),

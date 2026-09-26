@@ -31,6 +31,7 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
   })
     .command("list", {
       description: "List evals/**/*.eval.ts modules without executing them",
+      mcp: { annotations: { readOnlyHint: true } },
       options: z.object(localOptions),
       run: (context) =>
         Presentation.guard(context, async () => ({
@@ -85,6 +86,7 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
     })
     .command("baseline", {
       description: "Write a committed baseline from a saved evaluation run",
+      mcp: { annotations: { readOnlyHint: false } },
       args: runArgument,
       options: z.object({
         ...localOptions,
@@ -110,6 +112,7 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
     })
     .command("compare", {
       description: "Compare a saved run with a baseline; exit 1 for regressions and 5 for inconclusive results",
+      mcp: { annotations: { readOnlyHint: false } },
       args: runArgument,
       options: z.object({
         ...localOptions,

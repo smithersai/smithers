@@ -131,6 +131,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     .command(createEvalCli(config))
     .command("init", {
       description: "Initialize workspace and target declarations plus a starter flow, preserving existing files",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ name: z.string().optional() }),
       options: z.object({
         root: z.string().optional().describe("Directory to initialize; defaults to cwd"),
@@ -145,6 +146,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     })
     .command("doctor", {
       description: "Check project discovery, providers, tools, and durable-state compatibility",
+      mcp: { annotations: { readOnlyHint: true } },
       options,
       run: (c) =>
         Presentation.guard(c, async () => {
@@ -186,6 +188,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     })
     .command("gc", {
       description: "Collect old terminal runs and compact their journals; separate from target caches",
+      mcp: { annotations: { readOnlyHint: false } },
       destructive: true,
       options: options.extend({ olderThan: z.string().default("30d"), dryRun: z.boolean().default(false) }),
       run: (c) =>
@@ -203,6 +206,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     })
     .command("suggest", {
       description: "Discover ways Smithers can help; interactively choose one to implement",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ path: z.string().optional() }),
       options: z.object({ root: z.string().optional(), seat: z.string().optional(), list: z.boolean().default(false) }),
       run: (c) =>
@@ -274,6 +278,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     })
     .command("migrate", {
       description: "Inventory, plan, or apply the 0.x-to-1.x source migration",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ path: z.string().optional() }),
       options: options.extend({
         scan: z.boolean().default(false),
@@ -331,6 +336,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     })
     .command("update", {
       description: "Check the registry for newer CLI versions; does not install them",
+      mcp: { annotations: { readOnlyHint: true } },
       options,
       run: (c) =>
         Presentation.guard(
@@ -341,6 +347,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     })
     .command("bug", {
       description: "Submit a redacted bug report to the configured endpoint",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ summary: z.array(z.string()).min(1) }),
       options: options.extend({
         run: z.string().optional(),

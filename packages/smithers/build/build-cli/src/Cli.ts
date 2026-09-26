@@ -982,6 +982,7 @@ const cacheCli = (config: RuntimeConfig) =>
   Cli.create("cache", { description: "Inspect and maintain local action-result caches" })
     .command("status", {
       description: "Report cache size and configured remote without exposing credentials",
+      mcp: { annotations: { readOnlyHint: true } },
       options: workspaceOption,
       async run(context) {
         try {
@@ -1004,6 +1005,7 @@ const cacheCli = (config: RuntimeConfig) =>
     })
     .command("prune", {
       description: "Remove local action results older than the retention window",
+      mcp: { annotations: { readOnlyHint: false } },
       options: workspaceOption.extend({
         olderThanDays: z.number().min(0).default(30),
         dryRun: z.boolean().default(false),
@@ -1026,6 +1028,7 @@ const cacheCli = (config: RuntimeConfig) =>
     })
     .command("clear", {
       description: "Remove all local action results; durable runs and artifacts are preserved",
+      mcp: { annotations: { readOnlyHint: false } },
       options: workspaceOption.extend({ dryRun: z.boolean().default(false), yes: z.boolean().default(false) }),
       async run(context) {
         try {
@@ -1060,6 +1063,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
       Cli.create("show", { description: "Inspect targets and workspace configuration" })
         .command("target", {
           description: "Show a target's inputs, outputs, dependencies, owners and cache identity",
+          mcp: { annotations: { readOnlyHint: true } },
           args: z.object({ label: z.string() }),
           options: workspaceOption.extend({
             verb: z.enum(["build", "test", "lint", "docs", "review", "run"]).optional()
@@ -1074,6 +1078,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
         })
         .command("workspace", {
           description: "Show the resolved workspace, toolchain, cache and sandbox configuration",
+          mcp: { annotations: { readOnlyHint: true } },
           options: workspaceOption,
           async run(context) {
             try {
@@ -1086,6 +1091,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     )
     .command("targets", {
       description: "List available targets with their kinds and summaries",
+      mcp: { annotations: { readOnlyHint: true } },
       args: optionalPattern,
       options: workspaceOption,
       async run(context) {
@@ -1103,6 +1109,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("info", {
       description: "Report workspace and host configuration for diagnosis",
+      mcp: { annotations: { readOnlyHint: true } },
       options: workspaceOption,
       async run(context) {
         try {
@@ -1114,6 +1121,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("explain", {
       description: "Explain a target's actual planned cache key and local cache state",
+      mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ label: z.string() }),
       options: workspaceOption.extend({ verb: z.enum(["build", "test", "lint", "docs", "review", "run"]).optional() }),
       async run(context) {
@@ -1126,6 +1134,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("affected", {
       description: "Execute targets affected by changed files, conservatively including ambient inputs",
+      mcp: { annotations: { readOnlyHint: false } },
       args: selectionArgs,
       options: executionOptions.extend({
         base: z.string().default("HEAD").describe("Git base revision"),
@@ -1174,6 +1183,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("clean", {
       description: "Execute only declared Clean targets selected by the pattern",
+      mcp: { annotations: { readOnlyHint: false } },
       args: optionalPattern,
       options: executionOptions,
       run: (context) =>
@@ -1258,6 +1268,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("install", {
       description: "Plan and execute the install Flow under the toolchain the workspace declares",
+      mcp: { annotations: { readOnlyHint: false } },
       options: workspaceOption,
       alias: { workspace: "w" },
       async run(context) {
@@ -1306,6 +1317,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("create-app", {
       description: "Scaffold a Smithers app from a @smthrs/create-app template",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ dir: z.string().describe("Directory to create; its name becomes the app name") }),
       options: z.object({
         template: z.string().default("default").describe("Template name")
@@ -1329,6 +1341,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("build", {
       description: "Execute the build targets selected by a pattern",
+      mcp: { annotations: { readOnlyHint: false } },
       args: patternArgument,
       options: executionOptions,
       alias: executionAlias,
@@ -1342,6 +1355,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("test", {
       description: "Execute test targets; wildcards omit exclusive tiers unless --include-exclusive is set",
+      mcp: { annotations: { readOnlyHint: false } },
       args: patternArgument,
       options: executionOptions,
       alias: executionAlias,
@@ -1355,6 +1369,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("lint", {
       description: "Execute the lint targets selected by a pattern",
+      mcp: { annotations: { readOnlyHint: false } },
       args: patternArgument,
       options: executionOptions.extend({
         fix: z.boolean().default(false).describe("Apply agent lint fixes inside the declared fixes write-set")
@@ -1371,6 +1386,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     .command("docs", {
       description:
         "Execute the documentation targets selected by a pattern: parity checks, freshness stamps, and Docs.Page writers",
+      mcp: { annotations: { readOnlyHint: false } },
       args: patternArgument,
       options: executionOptions.extend({
         write: z.boolean().default(false).describe(
@@ -1389,6 +1405,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     .command("review", {
       description:
         "Execute the model-review targets selected by a pattern (needs the engine CLI; skips where it is absent)",
+      mcp: { annotations: { readOnlyHint: false } },
       args: patternArgument,
       options: executionOptions,
       alias: executionAlias,
@@ -1402,6 +1419,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("run", {
       description: "Execute run targets selected by a pattern",
+      mcp: { annotations: { readOnlyHint: false } },
       args: patternArgument,
       options: runOptions,
       alias: { ...executionAlias, ...invocationAlias, name: "n" },
@@ -1415,6 +1433,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("target", {
       description: "Execute one PACKAGE.ts label with its flavor-implied verb (the bare-label form)",
+      mcp: { annotations: { readOnlyHint: false } },
       args: patternArgument,
       options: executionOptions.extend({
         write: z.boolean().default(false).describe("Apply Diff/Generate/CiGen targets instead of checking drift"),
@@ -1431,6 +1450,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     .command("git-hooks", {
       aliases: ["gitHooks"],
       description: "Check the WORKSPACE.ts gitHooks scripts against .git/hooks, or install them with --write",
+      mcp: { annotations: { readOnlyHint: false } },
       options: workspaceOption.extend({
         write: z.boolean().default(false).describe("Install the rendered hook scripts into .git/hooks")
       }),
@@ -1461,6 +1481,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     .command("ci", {
       description:
         "Execute build, test, lint, and documentation targets; wildcards omit exclusive tiers unless --include-exclusive is set",
+      mcp: { annotations: { readOnlyHint: false } },
       args: patternArgument,
       options: executionOptions,
       alias: executionAlias,
@@ -1474,6 +1495,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("query", {
       description: "List labels or evaluate deps(label), rdeps(label), or owners(label)",
+      mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ expr: z.string().describe("Label, pattern, deps(label), rdeps(label), or owners(label)") }),
       options: workspaceOption,
       alias: { workspace: "w" },
@@ -1490,6 +1512,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     .command("index", {
       description:
         "List every target a pattern selects as its declaration states it: rule, kinds, inputs, outputs, dependencies, and the declaring file",
+      mcp: { annotations: { readOnlyHint: true } },
       args: patternArgument,
       options: workspaceOption,
       alias: { workspace: "w" },
@@ -1505,6 +1528,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("owners", {
       description: "Resolve owners, reasons, and the agent policy for paths, or for the paths a diff touches",
+      mcp: { annotations: { readOnlyHint: true } },
       args: z.object({
         paths: z.array(z.string()).optional().describe("Workspace-relative paths; omit them and pass --diff instead")
       }),
@@ -1531,6 +1555,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
     })
     .command("graph", {
       description: "Print the target graph without executing it",
+      mcp: { annotations: { readOnlyHint: true } },
       args: patternArgument,
       options: workspaceOption.extend({
         mermaid: z.boolean().default(false).describe("Render Mermaid instead of a text tree")

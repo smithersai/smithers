@@ -63,6 +63,7 @@ export const createTriggersCli = (runtime: { readonly signal?: AbortSignal | und
   const cli = Cli.create("triggers", { description: "Manage durable schedules and manually queued occurrences" })
     .command("list", {
       description: "List all durable trigger registrations",
+      mcp: { annotations: { readOnlyHint: true } },
       options,
       run: (context) =>
         execute(context, () =>
@@ -83,6 +84,7 @@ export const createTriggersCli = (runtime: { readonly signal?: AbortSignal | und
     })
     .command("show", {
       description: "Show a trigger, its active run and the exact approval payload awaiting a decision",
+      mcp: { annotations: { readOnlyHint: true } },
       args,
       options,
       run: (context) =>
@@ -107,6 +109,7 @@ export const createTriggersCli = (runtime: { readonly signal?: AbortSignal | und
     })
     .command("register", {
       description: "Register or update a validated cron trigger from flags or a JSON file",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ id: z.string().min(1).optional() }),
       options: options.extend({
         file: z.string().optional().describe("JSON trigger declaration relative to the project root"),
@@ -148,6 +151,7 @@ export const createTriggersCli = (runtime: { readonly signal?: AbortSignal | und
     })
     .command("fire", {
       description: "Queue one manual occurrence for triggers serve or smthrs serve; approvals remain required",
+      mcp: { annotations: { readOnlyHint: false } },
       args,
       options: options.extend({
         occurrence: z.number().int().nonnegative().max(8_640_000_000_000_000).optional().describe(
@@ -191,6 +195,7 @@ export const createTriggersCli = (runtime: { readonly signal?: AbortSignal | und
   for (const [command, enabled] of [["enable", true], ["disable", false]] as const) {
     cli.command(command, {
       description: `${enabled ? "Enable" : "Disable"} future occurrences without cancelling an active run`,
+      mcp: { annotations: { readOnlyHint: false } },
       args,
       options,
       run: (context) =>

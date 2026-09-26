@@ -96,11 +96,13 @@ export const createCredentialsCli = () =>
   Cli.create("credentials", { description: "Manage encrypted local credentials without printing secret values" })
     .command("list", {
       description: "List credential IDs and connection names",
+      mcp: { annotations: { readOnlyHint: true } },
       options: z.object(localFields),
       run: (context) => execute(context, () => withCredentials(context.options, (service) => service.list()))
     })
     .command("add", {
       description: "Encrypt a credential using SMITHERS_CREDENTIAL_KEY",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ id: z.string().min(1) }),
       options: z.object({ ...localFields, ...secretFields, name: z.string().min(1) }),
       run: (context) =>
@@ -112,6 +114,7 @@ export const createCredentialsCli = () =>
     })
     .command("rotate", {
       description: "Replace an encrypted credential secret using a compare-and-set write",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ id: z.string().min(1) }),
       options: z.object({ ...localFields, ...secretFields }),
       run: (context) =>
@@ -125,6 +128,7 @@ export const createCredentialsCli = () =>
     })
     .command("revoke", {
       description: "Remove a stored credential reference and its encrypted secret",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ id: z.string().min(1) }),
       options: z.object(localFields),
       run: (context) =>

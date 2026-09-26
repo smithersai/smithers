@@ -5,7 +5,7 @@
  */
 import { Control as ControlService } from "@smthrs/control"
 import * as ResolveJj from "@smthrs/jj/node/resolveJjBinary"
-import * as Registry from "@smthrs/registry/Registry"
+import type * as Registry from "@smthrs/registry/Registry"
 import { Effect } from "effect"
 import * as Doctor from "../Doctor.ts"
 import * as Project from "../Project.ts"
@@ -47,14 +47,7 @@ export const report = (
 export const fromRegistry = (
   globals: Globals.Options
 ): Effect.Effect<Doctor.Report, never, Registry.Registry> =>
-  Effect.gen(function*() {
-    const registry = yield* Registry.Registry
-    const [descriptors, warnings] = yield* Effect.all([registry.list(), registry.warnings()])
-    return yield* report({
-      items: descriptors.map((descriptor) => ({ flowId: descriptor.name, description: descriptor.description })),
-      warnings
-    }, globals)
-  })
+  Effect.flatMap(FlowCatalog.discovered, (catalog) => report(catalog, globals))
 
 /**
  * Remote diagnostics read the catalog the selected control plane serves.

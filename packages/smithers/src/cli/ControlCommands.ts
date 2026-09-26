@@ -8,10 +8,13 @@ import { Effect } from "effect"
 import { Cli, z } from "incur"
 import { readFile } from "node:fs/promises"
 import { cancelAll } from "../commands/CancelAll.ts"
+import * as FlowCatalog from "../commands/FlowCatalog.ts"
+import * as Globals from "../commands/Globals.ts"
 import * as Forensics from "../Forensics.ts"
 import { defaultApprovalScope } from "../internal/ApprovalScope.ts"
 import * as BoundedEvents from "../internal/BoundedEvents.ts"
 import * as FeaturedFlows from "../internal/FeaturedFlows.ts"
+import * as Project from "../Project.ts"
 import * as Bridge from "./ControlBridge.ts"
 import { prepareHistoryRun, reconcileHistory } from "./HistoryCommands.ts"
 import * as Presentation from "./Presentation.ts"
@@ -32,6 +35,10 @@ const afterDecision = Presentation.runs({
 
 const dataArgs = (data: string | undefined) => data === undefined ? [] : ["--data", data]
 
+/** Whether this invocation targets a remote control plane. */
+const remote = (connection: Bridge.ConnectionOptions, runtime: Bridge.Runtime) =>
+  Bridge.configuration(connection, runtime).remote !== undefined
+
 /**
  * The flow catalog and explicit plan/start lifecycle.
  * @category constructors
@@ -43,11 +50,27 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
   })
     .command("list", {
       description: "List project flows",
+      mcp: { annotations: { readOnlyHint: true } },
       options,
+      // A local catalog read comes from the discovery snapshot, so listing flows
+      // never creates or migrates the project's control and execution databases.
       run: (c) =>
         guard(
           c,
-          () => Bridge.invoke(["ls"], c.options, runtime),
+          () =>
+            remote(c.options, runtime)
+              ? Bridge.invoke(["ls"], c.options, runtime)
+              : Bridge.local(
+                Effect.gen(function*() {
+                  yield* Globals.guard({
+                    credential: c.options.credential,
+                    environment: runtime.environment ?? process.env
+                  })
+                  return FlowCatalog.listing((yield* FlowCatalog.discovered).items, yield* Project.ProjectRoot)
+                }),
+                c.options,
+                runtime
+              ),
           // A person reads one line per flow, featured rows starred, so the
           // recommended set is visible without a table, then the same Next
           // actions every listing offers. Agents and `--json` keep the flow
@@ -73,29 +96,22 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
     })
     .command("show", {
       description: "Show a discovered flow's identity and description",
+      mcp: { annotations: { readOnlyHint: true } },
       args: flowArgs,
       options,
       run: (c) =>
-        guard(c, () =>
-          Bridge.query(
-            Effect.gen(function*() {
-              const control = yield* Control.Control
-              let cursor: string | undefined
-              do {
-                const page = yield* control.list({ _tag: "flows", ...(cursor === undefined ? {} : { cursor }) })
-                if (page._tag !== "flows") throw new Error("Expected a flow catalog")
-                const flow = page.items.find((entry) => entry.flowId === c.args.flow)
-                if (flow !== undefined) return flow
-                cursor = page.nextCursor
-              } while (cursor !== undefined)
-              throw new Error(`Unknown flow ${c.args.flow}`)
-            }),
-            c.options,
-            runtime
-          ))
+        guard(c, async () => {
+          const { items } = remote(c.options, runtime)
+            ? await Bridge.query(Effect.flatMap(Control.Control, FlowCatalog.read), c.options, runtime)
+            : await Bridge.local(FlowCatalog.discovered, c.options, runtime)
+          const flow = items.find((entry) => entry.flowId === c.args.flow)
+          if (flow === undefined) throw new Error(`Unknown flow ${c.args.flow}`)
+          return flow
+        })
     })
     .command("plan", {
       description: "Compile a flow plan and its approval payload without executing it",
+      mcp: { annotations: { readOnlyHint: false } },
       args: flowArgs.extend({ input: z.array(z.string()).default([]).describe("Input fields as key=value") }),
       options: options.extend({ data: z.string().optional().describe("JSON input object") }),
       run: (c) =>
@@ -126,6 +142,7 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
     })
     .command("execute", {
       description: "Execute a previously approved plan payload",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ approval: z.string().describe("Serialized payload or @file") }),
       options,
       run: (c) =>
@@ -144,6 +161,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
   })
     .command("list", {
       description: "List durable runs filtered by flow or status",
+      mcp: { annotations: { readOnlyHint: true } },
       options: options.extend({ flow: z.string().optional(), status: z.enum(statuses).optional() }),
       run: (c) =>
         guard(c, () => {
@@ -161,6 +179,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
     })
     .command("show", {
       description: "Show a run's current status and diagnosis",
+      mcp: { annotations: { readOnlyHint: true } },
       args: runArgs,
       options,
       run: (c) =>
@@ -185,6 +204,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
     })
     .command("logs", {
       description: "Read run events or follow new events as they commit",
+      mcp: { annotations: { readOnlyHint: true } },
       args: runArgs,
       options: options.extend({
         follow: z.boolean().default(false),
@@ -236,6 +256,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
     })
     .command("output", {
       description: "Read recorded outputs for one node or all nodes",
+      mcp: { annotations: { readOnlyHint: true } },
       args: runArgs.extend({ node: z.string().optional() }),
       options,
       run: (c) =>
@@ -243,12 +264,14 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
     })
     .command("cancel", {
       description: "Cancel one durable run",
+      mcp: { annotations: { readOnlyHint: false } },
       args: runArgs,
       options,
       run: (c) => guard(c, () => Bridge.invoke(["cancel", c.args.run], c.options, runtime))
     })
     .command("cancel-all", {
       description: "Cancel every nonterminal run in this project",
+      mcp: { annotations: { readOnlyHint: false } },
       options,
       destructive: true,
       run: (c) =>
@@ -259,6 +282,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
     })
     .command("resume", {
       description: "Resume a parked durable run",
+      mcp: { annotations: { readOnlyHint: false } },
       args: runArgs,
       options,
       run: (c) =>
@@ -270,12 +294,14 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
     })
     .command("signal", {
       description: "Deliver a durable JSON signal",
+      mcp: { annotations: { readOnlyHint: false } },
       args: runArgs.extend({ payload: z.string() }),
       options,
       run: (c) => guard(c, () => Bridge.invoke(["signal", c.args.run, c.args.payload], c.options, runtime))
     })
     .command("steer", {
       description: "Send an attributed operator message",
+      mcp: { annotations: { readOnlyHint: false } },
       args: runArgs,
       options: options.extend({ message: z.string().min(1) }),
       run: (c) =>
@@ -368,6 +394,7 @@ export const createApprovalsCli = (runtime: Bridge.Runtime = {}) =>
   Cli.create("approvals", { description: "Find and resolve pending approval requests" })
     .command("list", {
       description: "List pending in-run approvals with their exact authorization payloads",
+      mcp: { annotations: { readOnlyHint: true } },
       options: options.extend({ run: z.string().optional() }),
       run: (c) =>
         guard(c, () => Bridge.query(pendingApprovals(c.options.run), c.options, runtime), { next: afterDecision })

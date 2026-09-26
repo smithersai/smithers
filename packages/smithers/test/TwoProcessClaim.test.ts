@@ -118,8 +118,9 @@ describe("a second smithers process over one project root", { timeout: 240_000 }
   it("refuses to resume a run a live peer on this host owns, and leaves the row where it was", () => {
     const root = project()
     // A real command first, so the project has the migrated control database a
-    // peer would have left behind.
-    const listed = smithers(root, ["flow", "list", "--json"])
+    // peer would have left behind. `flow list` reads the discovery snapshot and
+    // opens no database, so the run listing is the command that migrates it.
+    const listed = smithers(root, ["runs", "list", "--json"])
     expect(listed.status).toBe(0)
 
     const peerPid = livePeer()

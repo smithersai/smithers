@@ -56,9 +56,14 @@ before the command tree parses anything.
 ## Canonical tools and independent approval
 
 The executable uses the unified command tree through Incur's MCP discovery
-tools: `search_tools`, `get_tool_details`, and `call_write_tool`. Discover
-canonical names such as `flow_list`, `flow_plan`, `flow_execute`, `runs_show`,
-and `approvals_list`; fetch their schema before invoking them.
+tools: `search_tools`, `get_tool_details`, `call_read_tool`, and
+`call_write_tool`. Discover canonical names such as `flow_list`, `flow_plan`,
+`flow_execute`, `runs_show`, and `approvals_list`; fetch their schema before
+invoking them. Every command declares `readOnlyHint`: call a `true` tool such
+as `flow_list` or `runs_show` through `call_read_tool`, and a `false` tool such
+as `flow_plan`, which records the plan and its approval token, through
+`call_write_tool`. A local `flow_list` reads the discovery snapshot and opens no
+project database.
 
 `approvals_approve`, `approvals_deny`, and `flow_start` are absent from both
 discovery and dispatch. `flow_start` is excluded because it implicitly approves

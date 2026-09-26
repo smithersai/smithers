@@ -68,6 +68,7 @@ export const createMemoryCli = () => {
   const notes = Cli.create("notes", { description: "Append-only notes, status gates, and supersession" })
     .command("list", {
       description: "List notes in a namespace",
+      mcp: { annotations: { readOnlyHint: true } },
       options: limited.extend({
         status: z.enum(["pending", "accepted", "rejected", "any"]).default("any"),
         includeSuperseded: z.boolean().default(false)
@@ -89,6 +90,7 @@ export const createMemoryCli = () => {
     })
     .command("get", {
       description: "Read one note by its globally unique ID",
+      mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ note: z.string() }),
       options: z.object(localFields),
       run: (context) =>
@@ -105,6 +107,7 @@ export const createMemoryCli = () => {
     })
     .command("add", {
       description: "Append a note, optionally superseding older notes",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ text: z.string().min(1) }),
       options: options.extend({
         noteId: z.string().optional(),
@@ -132,6 +135,7 @@ export const createMemoryCli = () => {
     })
     .command("status", {
       description: "Accept, reject, or return a note to pending review",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ note: z.string(), status: noteStatus }),
       options: z.object(localFields),
       run: (context) =>
@@ -147,6 +151,7 @@ export const createMemoryCli = () => {
     })
     .command("supersede", {
       description: "Mark an older note superseded by an existing note",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ note: z.string(), replacement: z.string() }),
       options: z.object(localFields),
       run: (context) =>
@@ -164,6 +169,7 @@ export const createMemoryCli = () => {
   const threads = Cli.create("threads", { description: "Inspect and maintain durable conversation history" })
     .command("list", {
       description: "List threads in a namespace",
+      mcp: { annotations: { readOnlyHint: true } },
       options,
       run: (context) =>
         execute(context, () =>
@@ -177,6 +183,7 @@ export const createMemoryCli = () => {
     })
     .command("create", {
       description: "Create a durable history thread",
+      mcp: { annotations: { readOnlyHint: false } },
       options: options.extend({ title: z.string().optional(), threadId: z.string().optional() }),
       run: (context) =>
         execute(context, () =>
@@ -194,6 +201,7 @@ export const createMemoryCli = () => {
     })
     .command("show", {
       description: "Show a thread and its ordered messages",
+      mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ thread: z.string() }),
       options: limited,
       run: (context) =>
@@ -213,6 +221,7 @@ export const createMemoryCli = () => {
     })
     .command("rm", {
       description: "Delete one thread and its messages",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ thread: z.string() }),
       options: z.object(localFields),
       run: (context) =>
@@ -232,6 +241,7 @@ export const createMemoryCli = () => {
   const messages = Cli.create("messages", { description: "Read and append thread messages" })
     .command("list", {
       description: "Read ordered messages with an optional exclusive cursor",
+      mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ thread: z.string() }),
       options: z.object({
         ...localFields,
@@ -261,6 +271,7 @@ export const createMemoryCli = () => {
     })
     .command("add", {
       description: "Append a message idempotently using its message ID",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ thread: z.string(), text: z.string() }),
       options: z.object({
         ...localFields,
@@ -290,6 +301,7 @@ export const createMemoryCli = () => {
   return Cli.create("memory", { description: "Durable facts, notes, recall, and conversation history" })
     .command("list", {
       description: "List facts in a namespace",
+      mcp: { annotations: { readOnlyHint: true } },
       options: limited.extend({ prefix: z.string().optional() }),
       run: (context) =>
         execute(context, () =>
@@ -307,6 +319,7 @@ export const createMemoryCli = () => {
     })
     .command("get", {
       description: "Read one fact",
+      mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ key: z.string() }),
       options,
       run: (context) =>
@@ -323,6 +336,7 @@ export const createMemoryCli = () => {
     })
     .command("set", {
       description: "Write JSON when valid, otherwise a string; --value-json requires valid JSON",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ key: z.string(), value: z.string() }),
       options: options.extend({
         valueJson: z.boolean().default(false),
@@ -357,6 +371,7 @@ export const createMemoryCli = () => {
     })
     .command("rm", {
       description: "Delete one fact",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ key: z.string() }),
       options,
       run: (context) =>
@@ -374,6 +389,7 @@ export const createMemoryCli = () => {
     })
     .command("recall", {
       description: "Search authoritative facts and accepted notes using keyword or SQLite FTS recall",
+      mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ query: z.string().min(1) }),
       options: options.extend({
         method: z.enum(["keyword", "fts"]).default("keyword"),
@@ -402,6 +418,7 @@ export const createMemoryCli = () => {
     })
     .command("compact", {
       description: "Replace selected thread messages with a supplied summary atomically",
+      mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ thread: z.string() }),
       options: z.object({
         ...localFields,

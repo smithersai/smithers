@@ -4418,10 +4418,10 @@ Ask the agent to search for flow tools, inspect `flow_list`, and call it for you
 
 1. `search_tools` finds commands by capability.
 2. `get_tool_details` returns a selected command's schema.
-3. `call_read_tool` calls a tool explicitly marked read-only.
-4. `call_write_tool` calls a writable or unclassified tool.
+3. `call_read_tool` calls a tool whose `readOnlyHint` is `true`.
+4. `call_write_tool` calls a tool whose `readOnlyHint` is `false`.
 
-A command's annotations determine which call wrapper it accepts. For example, `flow_list` currently uses `call_write_tool` because it is unclassified; that classification does not cause the listing to launch a run.
+Every command declares `readOnlyHint`, and each wrapper refuses the other kind. `flow_list`, `runs_list`, and `runs_show` are read-only; `flow_plan` is not, because it records the plan and its approval token.
 
 The [MCP reference](/docs/reference/mcp-tools/) gives concrete request objects and command names.
 
@@ -46619,8 +46619,8 @@ The server exposes these entry points:
 | --- | --- | --- |
 | `search_tools` | `query` (default empty), `limit` (1 to 20, default 5), `offset` (nonnegative, default 0) | Matching names, descriptions, annotations, and `nextOffset` when another page exists. |
 | `get_tool_details` | `name`, the exact discovered tool name | The input schema, optional output schema, annotations, and instructions. |
-| `call_read_tool` | `name` and `arguments` (an object, default empty) | Executes a tool explicitly marked read-only. |
-| `call_write_tool` | `name` and `arguments` (an object, default empty) | Executes a writable or unclassified tool. |
+| `call_read_tool` | `name` and `arguments` (an object, default empty) | Executes a tool whose `readOnlyHint` is `true`. |
+| `call_write_tool` | `name` and `arguments` (an object, default empty) | Executes a tool whose `readOnlyHint` is `false`. |
 
 An empty search query pages through all available tools. Use the returned `nextOffset` to continue.
 
@@ -46644,7 +46644,7 @@ Then call it with the arguments its schema accepts. For a project at `/work/proj
 {"name":"flow_list","arguments":{"root":"/work/project"}}
 ```
 
-Replace `/work/project` with the absolute project path. `flow_list` is currently unclassified, so it uses `call_write_tool` even though listing flows does not execute them. Choose the wrapper from the returned `readOnlyHint`, not from a guess about the command name.
+Replace `/work/project` with the absolute project path. `flow_list` is read-only, so call it through `call_read_tool`; a local listing reads the discovery snapshot and opens no project database. Every tool declares `readOnlyHint`, and each wrapper refuses the other kind, so choose the wrapper from that annotation. `flow_plan` is not read-only: it records the plan and its approval token.
 
 ## Command names
 

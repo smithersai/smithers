@@ -610,11 +610,7 @@ const listFlows = Effect.gen(function*() {
   // generated .smithers/factory.json when it is checked in; a project without
   // one lists exactly the discovered page. A person at a terminal reads one line
   // per flow with the featured rows starred; `--json` keeps the document.
-  const projectRoot = yield* Project.ProjectRoot
-  const items = FeaturedFlows.present(
-    catalog.items.filter((item) => !Unsupported.isReservedFlow(item.flowId)),
-    FeaturedFlows.read(projectRoot)
-  )
+  const { items } = FlowCatalog.listing(catalog.items, yield* Project.ProjectRoot)
   const root = yield* rootCommand
   yield* render(root.json ? { _tag: "flows", items } : FeaturedFlows.human(items).replace(/\n$/, ""))
 })
