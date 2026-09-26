@@ -6,7 +6,7 @@
 import type { Effect } from "effect"
 import { Schema } from "effect"
 import { compare, snapshot } from "./internal/Structural.ts"
-import type { ModelErrorLike, ModelEventLike, ModelRequestLike } from "./ModelLike.ts"
+import type { ModelErrorLike, ModelEventLike, ModelRequestLike, RecordedRequestLike } from "./ModelLike.ts"
 import { FixtureEncodingError } from "./TestingError.ts"
 
 /**
@@ -25,7 +25,7 @@ import { FixtureEncodingError } from "./TestingError.ts"
  * @since 0.0.0
  */
 export interface RecordedCall {
-  readonly request: ModelRequestLike
+  readonly request: RecordedRequestLike
   readonly model: string
   readonly events: ReadonlyArray<ModelEventLike>
   readonly failure?: ModelErrorLike | undefined
@@ -377,12 +377,15 @@ const optional = <K extends string, A>(key: K, value: A | undefined): { readonly
  * params are class instances. A recorder that stored one verbatim would write a
  * fixture whose shape depends on the class, and {@link canonicalRequestDigest}
  * rejects any value that is not a plain object. This copy keeps the recorded
- * request, the decoded fixture, and the digest input the same value.
+ * request, the decoded fixture, and the digest input the same value. The
+ * provider cache hints are not copied: they never reach the model, and
+ * `cacheKey` is keyed to the run, so storing either would make a fixture miss
+ * on the next run of the same conversation.
  *
  * @category encoding
  * @since 0.0.0
  */
-export const recordedRequest = (request: ModelRequestLike): ModelRequestLike => ({
+export const recordedRequest = (request: ModelRequestLike): RecordedRequestLike => ({
   modelId: request.modelId,
   system: request.system.map((part) => ({ type: part.type, text: part.text })),
   messages: request.messages.map((message) => {

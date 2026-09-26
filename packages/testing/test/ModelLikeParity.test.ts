@@ -17,12 +17,13 @@
  *
  * What follows is the complete comparison: the key set of every level of the
  * production request, every member of every union it contains, every member of
- * the event union, and the error's schema fields. Four differences are
+ * the event union, and the error's schema fields. Three differences are
  * deliberate and are exempted by name, once each: `Schema.Class` machinery on
- * `ModelError`, the optional `_tag` a fixture does not store, the JSON
- * narrowing on a tool's `parameters`, and the request's provider cache hints. A round-trip vector then carries every
+ * `ModelError`, the optional `_tag` a fixture does not store, and the JSON
+ * narrowing on a tool's `parameters`. A round-trip vector then carries every
  * optional field through `recordedRequest`, so a field the copies do have but
- * the projection forgets fails here too.
+ * the projection forgets fails here too. The one field set the projection
+ * drops on purpose, `ProviderCacheHint`, is dropped by name and asserted below.
  */
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
@@ -30,7 +31,13 @@ import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { describe, expect, it } from "vitest"
 import { canonicalRequestDigest, recordedRequest } from "../src/Fixture.ts"
-import { type ModelErrorLike, modelErrorTag, type ModelEventLike, type ModelRequestLike } from "../src/ModelLike.ts"
+import {
+  type ModelErrorLike,
+  modelErrorTag,
+  type ModelEventLike,
+  type ModelRequestLike,
+  type ProviderCacheHint
+} from "../src/ModelLike.ts"
 
 /** Mutual assignability, which is what makes an added field visible. */
 type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
@@ -59,13 +66,7 @@ type ProductionRequest = ModelRequest.ModelRequest
 type ProductionMessage = ProductionRequest["messages"][number]
 type LocalMessage = ModelRequestLike["messages"][number]
 
-// Exemption 4 of 4: `cacheKey` and `cacheBoundary` route a request to a
-// provider's prefix cache and never reach the model. `cacheKey` is keyed to the
-// run, so a fixture that stored it, or a replay digest that included it, would
-// miss on every later run of the same conversation. Every other request field
-// has to match.
-type ProviderCacheHint = "cacheKey" | "cacheBoundary"
-const _requestKeys: Keys<Omit<ProductionRequest, ProviderCacheHint>, ModelRequestLike> = true
+const _requestKeys: Keys<ProductionRequest, ModelRequestLike> = true
 const _systemKeys: Keys<ProductionRequest["system"][number], ModelRequestLike["system"][number]> = true
 const _toolChoice: Exact<ProductionRequest["toolChoice"], ModelRequestLike["toolChoice"]> = true
 const _serverToolKeys: Keys<
@@ -79,7 +80,7 @@ const _reasoningEfforts: Exact<
 > = true
 const _toolKeys: Keys<ProductionRequest["tools"][number], ModelRequestLike["tools"][number]> = true
 
-// Exemption 1 of 4: a tool's `parameters` is `JsonObject` upstream and
+// Exemption 1 of 3: a tool's `parameters` is `JsonObject` upstream and
 // `Record<string, unknown>` here, because a subject that implements `ModelLike`
 // holds a schema it has not proved is JSON. The widening is one-directional on
 // purpose, so it is asserted as an assignment rather than as `Exact`. The
@@ -147,7 +148,7 @@ const _settleStopReasons: Exact<
 // The error.
 // ---------------------------------------------------------------------------
 
-// Exemption 2 of 4: `ModelError` is a `Schema.TaggedError`, so `keyof` its
+// Exemption 2 of 3: `ModelError` is a `Schema.TaggedError`, so `keyof` its
 // instance carries `Error` and `Effect` machinery — `stack`, `pipe`, the
 // `retryable` getter, `~effect/*` brands and symbol keys. The schema's own
 // field set is the shape a fixture stores, so that is what is compared, which
@@ -155,7 +156,7 @@ const _settleStopReasons: Exact<
 // itself go stale.
 type ProductionErrorField = keyof typeof ModelError["fields"]
 
-// Exemption 3 of 4: a fixture stores a refusal's fields and not its `_tag`;
+// Exemption 3 of 3: a fixture stores a refusal's fields and not its `_tag`;
 // `RecordedModel` stamps the tag back on so a consumer that classifies a
 // provider refusal still recognizes it. Everything else has to match.
 const _errorKeys: Exact<Exclude<ProductionErrorField, "_tag">, Exclude<keyof ModelErrorLike, "_tag">> = true
@@ -228,6 +229,16 @@ const completeToolResult: Complete<LocalTool["content"][number]> = {
   addedToolNames: ["apply"]
 }
 
+/**
+ * The provider cache hints, populated. `ModelRequestLike` carries them, and the
+ * projection drops exactly these, so a fixture and its replay digest do not
+ * depend on the run that recorded them.
+ */
+const completeCacheHints: Complete<Pick<ModelRequestLike, ProviderCacheHint>> = {
+  cacheKey: "run_1",
+  cacheBoundary: 3
+}
+
 const completeProductionRequest = ModelRequest.ModelRequest.make({
   modelId: "openai:gpt-5-mini",
   system: [ModelRequest.SystemPart.make({ text: "You are a concise reviewer." })],
@@ -242,7 +253,8 @@ const completeProductionRequest = ModelRequest.ModelRequest.make({
   ],
   tools: [ModelRequest.ToolDefinition.make(completeTool)],
   params: ModelRequest.GenerationParams.make(completeParams),
-  toolChoice: "none"
+  toolChoice: "none",
+  ...completeCacheHints
 })
 
 /**
@@ -258,6 +270,11 @@ const plain = (value: unknown): unknown => {
   const record = value as Record<string, unknown>
   return Object.fromEntries(Object.keys(record).sort().map((key) => [key, plain(record[key])]))
 }
+
+/** The fully populated request as data, less the fields a fixture never stores. */
+const { cacheBoundary: _cacheBoundary, cacheKey: _cacheKey, ...modelFacingRequest } = plain(
+  completeProductionRequest
+) as Record<string, unknown>
 
 // Compile-time: a production value must be usable where the structural copy is
 // expected. Kept alongside the key comparisons above, which is what makes an
@@ -312,13 +329,22 @@ describe("ModelLike mirrors the production model contracts", () => {
     // Not a spot check: both sides are compared as complete data, so a field
     // the projection stops enumerating fails here even though the copy and the
     // production type still agree on it.
-    expect(plain(projected)).toStrictEqual(plain(completeProductionRequest))
+    expect(plain(projected)).toStrictEqual(modelFacingRequest)
+  })
+
+  it("drops the provider cache hints from the fixture and the replay digest", () => {
+    const projected: Record<string, unknown> = { ...recordedRequest(completeProductionRequest) }
+    expect(Object.keys(completeCacheHints).filter((key) => key in projected)).toStrictEqual([])
+    const otherRun = { ...completeProductionRequest, cacheKey: "run_2", cacheBoundary: 1 }
+    expect(canonicalRequestDigest(otherRun)).toBe(canonicalRequestDigest(completeProductionRequest))
   })
 
   it("notices a field the projection would have dropped or added", () => {
     const projected = { ...recordedRequest(completeProductionRequest) }
     const { toolChoice: _dropped, ...withoutToolChoice } = projected
-    expect(plain(withoutToolChoice)).not.toStrictEqual(plain(completeProductionRequest))
-    expect(plain({ ...projected, promptCacheKey: "k" })).not.toStrictEqual(plain(completeProductionRequest))
+    expect(plain(projected)).toStrictEqual(modelFacingRequest)
+    expect(plain(withoutToolChoice)).not.toStrictEqual(modelFacingRequest)
+    expect(plain({ ...projected, promptCacheKey: "k" })).not.toStrictEqual(modelFacingRequest)
+    expect(plain({ ...projected, ...completeCacheHints })).not.toStrictEqual(modelFacingRequest)
   })
 })

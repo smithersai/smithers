@@ -85,7 +85,40 @@ export interface ModelRequestLike {
   readonly serverTools?:
     | ReadonlyArray<{ readonly type: "web_search"; readonly allowedDomains?: ReadonlyArray<string> }>
     | undefined
+  /**
+   * The provider prefix-cache key, matching `/model/ModelRequest`. It never
+   * reaches the model and is keyed to the run, so a fixture does not store it:
+   * see {@link RecordedRequestLike}.
+   */
+  readonly cacheKey?: string | undefined
+  /**
+   * How many leading messages the next request in this conversation repeats
+   * unchanged; unset means all of them. Matches `/model/ModelRequest`, where
+   * protocols that cache automatically ignore it, and it never reaches the
+   * model, so a fixture does not store it: see {@link RecordedRequestLike}.
+   */
+  readonly cacheBoundary?: number | undefined
 }
+
+/**
+ * The request fields that steer a provider's prefix cache and never reach the
+ * model.
+ *
+ * @since 0.0.0
+ * @category models
+ */
+export type ProviderCacheHint = "cacheKey" | "cacheBoundary"
+
+/**
+ * The request a fixture stores and a replay digest covers: {@link ModelRequestLike}
+ * without its {@link ProviderCacheHint} fields. `cacheKey` is keyed to the run,
+ * so a fixture that stored it, or a digest that included it, would miss on
+ * every later run of the same conversation.
+ *
+ * @since 0.0.0
+ * @category models
+ */
+export type RecordedRequestLike = Omit<ModelRequestLike, ProviderCacheHint>
 
 /**
  * The public event shape of `/model/ModelEvent`, copied structurally

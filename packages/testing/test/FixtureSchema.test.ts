@@ -9,7 +9,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, type Schema } from "effect"
 import { decode, Fixture, type RecordedCall } from "../src/Fixture.ts"
-import type { ModelRequestLike } from "../src/ModelLike.ts"
+import type { ModelRequestLike, RecordedRequestLike } from "../src/ModelLike.ts"
 
 type Decoded = Schema.Schema.Type<typeof Fixture>
 type DecodedCall = Decoded["calls"][number]
@@ -39,7 +39,7 @@ type Keys<A, B> = Exact<keyof A, keyof B>
 
 const _fixtureKeys: Keys<Decoded, Fixture> = true
 const _callKeys: Keys<DecodedCall, RecordedCall> = true
-const _requestKeys: Keys<DecodedCall["request"], ModelRequestLike> = true
+const _requestKeys: Keys<DecodedCall["request"], RecordedRequestLike> = true
 const _paramsKeys: Keys<DecodedCall["request"]["params"], ModelRequestLike["params"]> = true
 const _toolKeys: Keys<DecodedCall["request"]["tools"][number], ModelRequestLike["tools"][number]> = true
 
