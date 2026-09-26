@@ -57,6 +57,33 @@ test("floating help clears nearby actions and caps its height at the viewport ed
   expect(parseFloat(bubble.style.maxHeight)).toBeLessThanOrEqual(274 - 16)
 })
 
+test("floating help stays inside an ancestor that clips it (#1755)", () => {
+  const viewport = Object.getOwnPropertyDescriptor(document.documentElement, "clientWidth")
+  Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 390 })
+  cleanups.push(() => { if (viewport) Object.defineProperty(document.documentElement, "clientWidth", viewport); else Reflect.deleteProperty(document.documentElement, "clientWidth") })
+  const bounds = spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const [x, y, width, height] = this.matches(".help-anchor") ? [200, 740, 60, 44]
+      : this.matches(".help-bubble") ? [0, 640, Math.min(340, parseFloat(this.style.width) || 340), 80]
+      : this.matches(".shell") ? [60, 0, 330, 800]
+      : this.matches("footer") ? [60, 730, 330, 60]
+      : [0, 0, 0, 0]
+    return DOMRect.fromRect({ x, y, width, height })
+  })
+  cleanups.push(() => bounds.mockRestore())
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
+  flushSync(() => root.render(<div className="shell" style={{ overflowX: "hidden" }}>
+    <footer><HelpBubble id="chat-help" open placement="above" content="Press Chat." onDismiss={() => {}}><button>Chat</button></HelpBubble></footer>
+  </div>))
+  const bubble = host.querySelector<HTMLElement>(".help-bubble")!
+  const width = parseFloat(bubble.style.width)
+  const left = 200 + parseFloat(bubble.style.left)
+  expect(left).toBeGreaterThanOrEqual(60)
+  expect(left + width).toBeLessThanOrEqual(390 - 16)
+})
+
 test("guidance does not steal focus, trap Tab, or activate its target", () => {
   const previous = document.createElement("button")
   document.body.append(previous)

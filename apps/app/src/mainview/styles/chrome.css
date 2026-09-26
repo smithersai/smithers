@@ -135,6 +135,8 @@
 /* Signup buttons stay uncovered by Chat guidance on a phone. */
 @media (max-width: 600px) {
 	.app-shell:has(.signup) .app-chat-controls .help-bubble { display: none; }
+	/* Beside the rail a phone leaves ~330px: tighten the bar so each control keeps one line. */
+	.app-chat-controls { flex-wrap: wrap; gap: var(--sp-2); padding-inline: var(--sp-3); }
 }
 /*
  * The bottom bar is GuideButton chrome OUTSIDE the guide shell, where the
@@ -151,6 +153,7 @@
 	color: var(--text-muted);
 	font-size: var(--fs-small);
 	border-radius: var(--r-sm);
+	white-space: nowrap;
 }
 .app-chat-controls .guide-button:hover:not(:disabled) {
 	background: var(--hover-subtle);

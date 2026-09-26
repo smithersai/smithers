@@ -37,13 +37,29 @@ export function HelpBubble({ id, open, content, onDismiss, children, placement =
     if (!node || !open || placement !== "above") return
     const obstacles = avoid ? Array.from(node.ownerDocument.querySelectorAll<HTMLElement>(avoid)) : []
     const boundary = below ? node.ownerDocument.querySelector<HTMLElement>(below) : null
+    // Ancestors that clip overflow (the app shell starts beside the navigation rail).
+    const clips: Array<HTMLElement> = []
+    for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+      const overflow = getComputedStyle(parent).overflowX
+      if (overflow !== "" && overflow !== "visible") clips.push(parent)
+    }
     const measure = () => {
       const tip = bubble.current
       if (!tip) return
       const bounds = node.getBoundingClientRect()
+      // Stay inside the viewport's 16px gutters and every clipping ancestor.
+      let minLeft = 16
+      let maxRight = document.documentElement.clientWidth - 16
+      for (const clip of clips) {
+        const box = clip.getBoundingClientRect()
+        minLeft = Math.max(minLeft, box.left)
+        maxRight = Math.min(maxRight, box.right)
+      }
+      const fitted = `${Math.max(0, Math.min(340, maxRight - minLeft))}px`
+      if (tip.style.width !== fitted) tip.style.width = fitted
       const { width, height } = tip.getBoundingClientRect()
       const center = bounds.left + bounds.width / 2
-      const left = Math.max(16, Math.min(center - width / 2, document.documentElement.clientWidth - width - 16))
+      const left = Math.max(minLeft, Math.min(center - width / 2, maxRight - width))
       tip.style.left = `${left - bounds.left}px`
       tip.style.setProperty("--help-tip-x", `${center - left}px`)
       // A wrapped footer may have other controls above this target. Clear the

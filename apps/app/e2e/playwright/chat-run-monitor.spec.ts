@@ -36,8 +36,22 @@ for (const width of [390, 900]) test(`chat monitor stays reachable during work a
   expect(hintBox!.x + hintBox!.width).toBeLessThanOrEqual(width - 16)
   expect(footerBox!.height).toBeLessThan(100)
   expect(hintBox!.y + hintBox!.height).toBeLessThanOrEqual(footerBox!.y)
+  // #1755: no ancestor clips the hint's edges, and each Chat control reads on one line.
+  expect(await hint.evaluate(node => {
+    const box = node.getBoundingClientRect()
+    const clipped: Array<string> = []
+    for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+      if (getComputedStyle(parent).overflowX === "visible") continue
+      const clip = parent.getBoundingClientRect()
+      if (box.left < clip.left || box.right > clip.right) clipped.push(parent.className)
+    }
+    return clipped
+  })).toEqual([])
+  for (const control of await page.getByRole("contentinfo", { name: "Chat controls" }).locator(".guide-button").all()) {
+    expect((await control.boundingBox())!.height).toBeLessThan(40)
+  }
   const dismiss = page.getByRole("button", { name: "Dismiss", exact: true })
-  if (await dismiss.isVisible()) await dismiss.click()
+  await dismiss.click()
   const composer = page.getByTestId("composer-input")
   await page.keyboard.press("Control+k")
   await composer.fill(`/runs.open ${runId} ${repo}`)
