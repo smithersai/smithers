@@ -178,6 +178,66 @@ describe("the organization page", () => {
     expect(on.vm.network).toBe(true)
   })
 
+  it("parses each repository's environment and converts it for the workspaces", async () => {
+    const page = organizationPage.replace(
+      "  maxConcurrentVMs: 2\n",
+      [
+        "  diskMib: 32768",
+        "  maxConcurrentVMs: 2",
+        "repositories:",
+        "  smithersai/smithers:",
+        "    prepare:",
+        "      run: npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile",
+        "      key: [pnpm-lock.yaml, package.json, patches]",
+        "      network: [registry.npmjs.org, '*.npmjs.org']",
+        "      timeoutMs: 1800000",
+        "    network: none",
+        "    checks:",
+        "      - name: changed packages",
+        "        run: CI=1 pnpm --filter '[HEAD]' run test",
+        "        timeoutMs: 1200000",
+        "  demo:",
+        "    network: all",
+        "  bare: {}",
+        ""
+      ].join("\n")
+    )
+    const organization = await run(Config.parseOrganization("o.md", page))
+    expect(organization.vm.diskMib).toBe(32_768)
+    const repositories = organization.repositories!
+    expect(Config.environmentOf(repositories["smithersai/smithers"]!)).toEqual({
+      prepare: {
+        run: "npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile",
+        key: ["pnpm-lock.yaml", "package.json", "patches"],
+        network: ["registry.npmjs.org", "*.npmjs.org"],
+        timeoutMs: 1_800_000
+      },
+      network: "none",
+      checks: [{
+        name: "changed packages",
+        argv: ["sh", "-c", "CI=1 pnpm --filter '[HEAD]' run test"],
+        timeoutMs: 1_200_000
+      }]
+    })
+    expect(Config.environmentOf(repositories["demo"]!)).toEqual({ network: "all" })
+    expect(Config.environmentOf(repositories["bare"]!)).toEqual({})
+    expect(Config.environmentOf({ checks: [{ name: "t", run: "true" }] })).toEqual({
+      checks: [{ name: "t", argv: ["sh", "-c", "true"] }]
+    })
+
+    // A path that climbs out of the repository, a URL for a domain, and a
+    // name that is not a repository are refused by field.
+    const refused = async (from: string, to: string) =>
+      (await flip(Config.parseOrganization("o.md", page.replace(from, to)))).field
+    expect(await refused("key: [pnpm-lock.yaml", "key: [../pnpm-lock.yaml")).toBe(
+      "repositories.smithersai/smithers.prepare.key[0]"
+    )
+    expect(await refused("[registry.npmjs.org,", "[https://registry.npmjs.org,")).toBe(
+      "repositories.smithersai/smithers.prepare.network[0]"
+    )
+    expect(await refused("  demo:", "  a/b/c:")).toBe("repositories.a/b/c")
+  })
+
   it("accepts Windows line endings", async () => {
     const organization = await run(Config.parseOrganization("o.md", organizationPage.replaceAll("\n", "\r\n")))
     expect(organization.assistant).toBe("assistant")

@@ -7,7 +7,8 @@
  *
  * - `Org/Organization.md` — {@link Organization}: owner and assistant, where
  *   the roster, skills, cases, and the other pages live, model seats, the VM
- *   defaults, spending limits, and generated-output settings;
+ *   defaults, each repository's environment ({@link RepositoryEnvironment}),
+ *   spending limits, and generated-output settings;
  * - `Org/Policy/Gates.md` — a `Gates.GatePolicy`. Only Approval and Review
  *   gates run; a policy naming another kind is refused here with a
  *   not-yet-supported error rather than loaded and ignored;
@@ -35,6 +36,7 @@ import * as Issues from "./internal/issues.ts"
 import * as KnowledgePath from "./internal/knowledgePath.ts"
 import * as Meeting from "./Meetings.ts"
 import * as Profile from "./Profile.ts"
+import * as Workspace from "./Workspace.ts"
 
 /**
  * Stable configuration failure codes.
@@ -115,6 +117,82 @@ export const Seats = Schema.Record(
 )
 
 /**
+ * A repository name as roster grants and the host's repository settings
+ * name it: `owner/name` or a bare name.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const RepositoryName = Schema.String.check(
+  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,99})?$/, {
+    expected: "a repository name (owner/name or name)"
+  })
+)
+
+/**
+ * One check every change to a repository runs: a name and a shell command
+ * run in the workspace root of a fresh machine.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const RepositoryCheck = Schema.Struct({
+  name: Text(100),
+  run: Text(4_096),
+  timeoutMs: Schema.optionalKey(Count(1, Workspace.maxCheckTimeoutMs))
+})
+
+/**
+ * One check every change to a repository runs.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RepositoryCheck = typeof RepositoryCheck.Type
+
+/**
+ * A repository's environment on the organization page: how its prepared
+ * base is made (`prepare`: the command, the key paths, and the network the
+ * command runs with), the network its builders and checks run with (default
+ * `none`), and the checks every change to it runs.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const RepositoryEnvironment = Schema.Struct({
+  prepare: Schema.optionalKey(Workspace.Prepare),
+  network: Schema.optionalKey(Workspace.Network),
+  checks: Schema.optionalKey(Schema.Array(RepositoryCheck))
+})
+
+/**
+ * A repository's environment on the organization page.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RepositoryEnvironment = typeof RepositoryEnvironment.Type
+
+/**
+ * The workspace environment a repository's page entry declares: each check
+ * runs as `sh -c <run>`.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const environmentOf = (entry: RepositoryEnvironment): Workspace.Environment => ({
+  ...(entry.prepare === undefined ? {} : { prepare: entry.prepare }),
+  ...(entry.network === undefined ? {} : { network: entry.network }),
+  ...(entry.checks === undefined ? {} : {
+    checks: entry.checks.map((check) => ({
+      name: check.name,
+      argv: ["sh", "-c", check.run] as const,
+      ...(check.timeoutMs === undefined ? {} : { timeoutMs: check.timeoutMs })
+    }))
+  })
+})
+
+/**
  * The organization page: `Org/Organization.md`.
  *
  * @category schemas
@@ -140,10 +218,13 @@ export const Organization = Schema.Struct({
     image: Schema.NullOr(Text(256)),
     cpus: Count(1, 64),
     memoryMib: Count(256, 1_048_576),
+    /** Root disk of an image-booted machine, in MiB. Default `Workspace.defaultDiskMib`. */
+    diskMib: Schema.optionalKey(Count(1_024, 1_048_576)),
     maxConcurrentVMs: Count(1, 64),
-    /** Guest networking for workspace and check machines. Default off. */
+    /** Guest networking for a repository without an environment. Default off. */
     network: Schema.optionalKey(Schema.Boolean)
   }),
+  repositories: Schema.optionalKey(Schema.Record(RepositoryName, RepositoryEnvironment)),
   limits: Schema.optionalKey(Schema.Struct({
     usdPerMonth: Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
   })),

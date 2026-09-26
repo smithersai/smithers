@@ -41,11 +41,32 @@ node flows/organization/cli.ts answer <gate> approve
 ```
 
 An approved change lands on an `organization/…` branch of the repository and
-is never pushed; its receipt is under `Org/Runs/`. Machines have no network
-and hold only the committed files, so builders and checks cannot install
-dependencies ([#1931](https://github.com/smithersai/smithers/issues/1931)). Slack intake and the
+is never pushed; its receipt is under `Org/Runs/`. Slack intake and the
 subscription options are in `flows/organization/setup/QUICKSTART.md` and
 `flows/organization/host.md`.
+
+## Give a repository its dependencies
+
+Machines hold only the committed files and have no network unless the
+repository has an environment in `Org/Organization.md`. For a pnpm
+repository:
+
+```yaml
+repositories:
+  example/demo:
+    prepare:
+      run: npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile
+      key: [pnpm-lock.yaml, package.json]
+      network: [registry.npmjs.org]
+    network: none
+    checks:
+      - name: tests
+        run: CI=1 pnpm test
+```
+
+The first task prepares a base VM with only the registry reachable and keeps
+its disk; later tasks with the same lockfile boot from it in seconds.
+Builders and the fresh check VM run offline on the prepared tree.
 
 ## Load and validate
 

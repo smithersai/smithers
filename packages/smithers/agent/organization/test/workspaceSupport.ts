@@ -12,7 +12,17 @@ import * as Stream from "effect/Stream"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs"
 import { dirname, join } from "node:path"
 import type * as Workspace from "../src/Workspace.ts"
 import { tempDir } from "./support.ts"
@@ -95,30 +105,40 @@ const slug = (key: string) => key.replaceAll(/[^A-Za-z0-9._-]/g, "-")
 
 /**
  * Host-directory machines under `root`: workspaces are directories that
- * survive their scope, fresh machines are removed when theirs closes. A
+ * survive their scope, fresh machines are removed when theirs closes, and a
+ * base is a captured directory a new machine starts as a copy of. A
  * workspace boundary for tests only, never an isolation boundary.
  */
-export const hostMachines = (root: string = tempDir()) => {
+export const hostMachines = (root: string = tempDir(), bases: string = tempDir()) => {
   const opened: Array<string> = []
+  const boots: Array<{ readonly key: string; readonly boot: Workspace.Boot | undefined }> = []
+  const open = (key: string, workdir: string, boot: Workspace.Boot | undefined) => {
+    if (!existsSync(workdir) && boot?.base !== undefined) cpSync(join(bases, boot.base), workdir, { recursive: true })
+    mkdirSync(workdir, { recursive: true })
+    opened.push(key)
+    boots.push({ key, boot })
+    return hostSession(key, workdir)
+  }
   const machines: Workspace.Machines = {
-    workspace: (key) =>
-      Effect.sync(() => {
-        const workdir = join(root, slug(key))
-        mkdirSync(workdir, { recursive: true })
-        opened.push(key)
-        return hostSession(key, workdir)
-      }),
-    fresh: (key) =>
+    workspace: (key, boot) => Effect.sync(() => open(key, join(root, slug(key)), boot)),
+    fresh: (key, boot) =>
       Effect.acquireRelease(
-        Effect.sync(() => {
-          const workdir = join(root, `fresh-${slug(key)}`)
-          mkdirSync(workdir, { recursive: true })
-          opened.push(key)
-          return hostSession(key, workdir)
-        }),
+        Effect.sync(() => open(key, join(root, `fresh-${slug(key)}`), boot)),
         (session) => Effect.sync(() => rmSync(session.workdir, { recursive: true, force: true }))
       ),
-    dispose: (remoteId) => Effect.sync(() => rmSync(remoteId, { recursive: true, force: true }))
+    dispose: (remoteId) => Effect.sync(() => rmSync(remoteId, { recursive: true, force: true })),
+    bases: {
+      identity: "host directories",
+      exists: (name) => Effect.sync(() => existsSync(join(bases, name))),
+      capture: (remoteId, name, family) =>
+        Effect.sync(() => {
+          renameSync(remoteId, join(bases, name))
+          const members = readdirSync(bases)
+            .filter((entry) => entry.startsWith(`${family}-`))
+            .sort((left, right) => statSync(join(bases, right)).mtimeMs - statSync(join(bases, left)).mtimeMs)
+          for (const stale of members.slice(2)) rmSync(join(bases, stale), { recursive: true, force: true })
+        })
+    }
   }
-  return { root, machines, opened }
+  return { root, bases, machines, opened, boots }
 }

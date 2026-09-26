@@ -85,6 +85,7 @@ interface ExecCall {
 }
 
 interface Recorded {
+  readonly stops: Array<string>
   readonly builds: Array<{ readonly name: string; readonly settings: Record<string, unknown> }>
   readonly execs: Array<ExecCall>
   readonly mkdirs: Array<string>
@@ -124,6 +125,8 @@ interface Controls {
   readonly listFailure?: (() => unknown) | undefined
   readonly refreshFailure?: ((name: string) => unknown) | undefined
   readonly configJson?: ((name: string) => string | undefined) | undefined
+  readonly snapshotFailure?: ((name: string) => unknown) | undefined
+  readonly snapshotReadFailure?: (() => unknown) | undefined
 }
 
 /** Every guest filesystem failure arrives as the SDK's one fs error kind. */
@@ -172,7 +175,9 @@ const signalGroup = (child: NodeChild, signal: number): void => {
 
 const fakeSdk = (controls: Controls = {}) => {
   const machines = new Map<string, Machine>()
+  const snapshots = new Map<string, { readonly name: string; readonly createdAt: Date; readonly source: string }>()
   const recorded: Recorded = {
+    stops: [],
     builds: [],
     execs: [],
     mkdirs: [],
@@ -379,10 +384,37 @@ const fakeSdk = (controls: Controls = {}) => {
       machine.labels = { ...machine.labels, ...labels }
       return { applied: true }
     },
+    stop: async () => {
+      recorded.stops.push(machine.name)
+      machine.status = "stopped"
+    },
+    snapshot: async (name) => {
+      const failed = controls.snapshotFailure?.(name)
+      if (failed !== undefined) throw failed
+      snapshots.set(name, { name, createdAt: new Date(Date.now() + snapshots.size), source: machine.name })
+    },
     destroy: (options) => destroy(machine, options)
   })
 
+  const snapshotEntry = (entry: { readonly name: string; readonly createdAt: Date }) => ({
+    name: entry.name,
+    createdAt: entry.createdAt
+  })
+
   const sdk: Sdk = {
+    Snapshot: {
+      get: async (name) => {
+        const failed = controls.snapshotReadFailure?.()
+        if (failed !== undefined) throw failed
+        const entry = snapshots.get(name)
+        if (entry === undefined) throw new Error(`GenericFailure [SnapshotNotFound] snapshot not found: ${name}`)
+        return snapshotEntry(entry)
+      },
+      list: async () => [...[...snapshots.values()].map(snapshotEntry), { name: null, createdAt: new Date(0) }],
+      remove: async (name) => {
+        snapshots.delete(name)
+      }
+    },
     Sandbox: {
       builder: (name) => {
         const settings: Record<string, unknown> = {}
@@ -447,6 +479,19 @@ const fakeSdk = (controls: Controls = {}) => {
             settings["disableNetwork"] = true
             return this
           },
+          rootDisk(value) {
+            settings["rootDisk"] = value
+            return this
+          },
+          network(configure) {
+            configure({
+              policy(value) {
+                settings["networkPolicy"] = value
+                return this
+              }
+            })
+            return this
+          },
           create: async () => {
             recorded.builds.push({ name, settings: { ...settings } })
             if (controls.createFailure !== undefined) throw controls.createFailure()
@@ -509,6 +554,7 @@ const fakeSdk = (controls: Controls = {}) => {
     sdk,
     recorded,
     machines,
+    snapshots,
     markStopped: (name: string): void => {
       machineAt(name).status = "stopped"
     },
@@ -827,6 +873,45 @@ describe("MicrosandboxSandbox", () => {
       })
       expect(fake.recorded.builds[0]?.settings["workdir"]).toBeUndefined()
       expect(fake.recorded.destroys).toHaveLength(2)
+    }))
+
+  it.effect("applies a network policy and a root disk to an image boot, and keeps a snapshot's own disk", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const policy: MicrosandboxSandbox.NetworkPolicy = {
+        defaultEgress: "deny",
+        defaultIngress: "deny",
+        rules: [{
+          direction: "egress",
+          destination: { kind: "domain", domain: "registry.npmjs.org" },
+          protocols: [],
+          ports: [],
+          action: "allow"
+        }]
+      }
+      const workdir = join(root, "policy-ws")
+      yield* inSession(
+        MicrosandboxSandbox.make({ sdk: fake.sdk, workdir, networkPolicy: policy, rootDiskMib: 32_768 }),
+        "policy-image",
+        () => Effect.void
+      )
+      yield* inSession(
+        MicrosandboxSandbox.make({ sdk: fake.sdk, workdir, snapshot: "base", rootDiskMib: 32_768 }),
+        "policy-snapshot",
+        () => Effect.void
+      )
+      // Disabling the network wins over a policy.
+      yield* inSession(
+        MicrosandboxSandbox.make({ sdk: fake.sdk, workdir, disableNetwork: true, networkPolicy: policy }),
+        "policy-off",
+        () => Effect.void
+      )
+      const [image, snapshot, off] = fake.recorded.builds.map(({ settings }) => settings)
+      expect(image).toMatchObject({ image: "oven/bun:1", rootDisk: 32_768, networkPolicy: policy })
+      expect(snapshot).toMatchObject({ snapshot: "base" })
+      expect(snapshot!["rootDisk"]).toBeUndefined()
+      expect(off).toMatchObject({ disableNetwork: true })
+      expect(off!["networkPolicy"]).toBeUndefined()
     }))
 
   it.effect("labels every machine with a default owner and a holder minted per provider", () =>
@@ -1660,4 +1745,63 @@ describe("MicrosandboxSandbox.reap", () => {
       MicrosandboxSandbox.holderLabel
     ]).toEqual(["smithers.provider", "microsandbox", "smithers.owner", "smithers.holder"])
   })
+})
+
+describe("MicrosandboxSandbox snapshots", () => {
+  it.effect("captures a running or stopped machine, removes it, and reports what exists", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      fake.plant("prepared", ownership("installation-a", "host"))
+      fake.plant("parked", ownership("installation-a", "host"), "stopped")
+      expect(yield* MicrosandboxSandbox.hasSnapshot(fake.sdk, "base-1")).toBe(false)
+      yield* MicrosandboxSandbox.captureSnapshot({ sdk: fake.sdk, machine: "prepared", name: "base-1" })
+      yield* MicrosandboxSandbox.captureSnapshot({
+        sdk: fake.sdk,
+        machine: "parked",
+        name: "base-2",
+        stopTimeoutMs: 1_000
+      })
+      expect(yield* MicrosandboxSandbox.hasSnapshot(fake.sdk, "base-1")).toBe(true)
+      expect(fake.recorded.stops).toEqual(["prepared"])
+      expect(fake.snapshots.get("base-1")?.source).toBe("prepared")
+      expect([...fake.machines.keys()]).toEqual([])
+      expect(fake.recorded.destroys).toEqual([
+        { name: "prepared", timeoutMs: 30_000, force: true },
+        { name: "parked", timeoutMs: 1_000, force: true }
+      ])
+    }))
+
+  it.effect("removes the machine even when the capture fails, and names both failures", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk({
+        snapshotFailure: () => new Error("disk busy"),
+        snapshotReadFailure: () => "index locked"
+      })
+      fake.plant("prepared", ownership("installation-a", "host"))
+      const captured = yield* Effect.flip(
+        MicrosandboxSandbox.captureSnapshot({ sdk: fake.sdk, machine: "prepared", name: "base-1" })
+      )
+      expect(captured.message).toBe("microsandbox: the microVM prepared could not be captured as base-1")
+      expect(fake.machines.has("prepared")).toBe(false)
+      const read = yield* Effect.flip(MicrosandboxSandbox.hasSnapshot(fake.sdk, "base-1"))
+      expect(read).toMatchObject({ code: "unavailable", message: "microsandbox: snapshot base-1 could not be read" })
+    }))
+
+  it.effect("prunes a family down to its newest members and leaves every other snapshot", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      for (const name of ["fam-a", "fam-b", "fam-c", "other-a"]) {
+        fake.plant(name, ownership("installation-a", "host"))
+        yield* MicrosandboxSandbox.captureSnapshot({ sdk: fake.sdk, machine: name, name })
+      }
+      expect(yield* MicrosandboxSandbox.pruneSnapshots(fake.sdk, "fam-", 1)).toEqual(["fam-b", "fam-a"])
+      expect([...fake.snapshots.keys()].sort()).toEqual(["fam-c", "other-a"])
+      expect(yield* MicrosandboxSandbox.pruneSnapshots(fake.sdk, "other-", -1)).toEqual(["other-a"])
+      const broken = {
+        ...fake.sdk,
+        Snapshot: { ...fake.sdk.Snapshot, list: () => Promise.reject(new Error("no index")) }
+      }
+      const failure = yield* Effect.flip(MicrosandboxSandbox.pruneSnapshots(broken, "fam-", 1))
+      expect(failure.message).toBe("microsandbox: the snapshots named fam-* could not be pruned")
+    }))
 })

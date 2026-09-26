@@ -21,7 +21,7 @@ import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
 import type { Session } from "../Sandbox/Session.ts"
 import { holderLabel, ownerLabel, providerLabel, providerName } from "./labels.ts"
-import type { Sdk } from "./Sdk.ts"
+import type { NetworkPolicy, Sdk } from "./Sdk.ts"
 
 const defaultImage = "oven/bun:1"
 const defaultNixImage = "nixos/nix"
@@ -127,8 +127,19 @@ export interface MicrosandboxSandboxOptions {
   readonly scripts?: Readonly<Record<string, string>> | undefined
   /** Run detached from the host process. Sticky sessions default to detached. */
   readonly detached?: boolean | undefined
-  /** Boot without guest networking. */
+  /** Boot without guest networking. Takes precedence over `networkPolicy`. */
   readonly disableNetwork?: boolean | undefined
+  /**
+   * The guest network policy, such as deny-by-default egress with a domain
+   * allowlist. Default: the vendor's own policy.
+   */
+  readonly networkPolicy?: NetworkPolicy | undefined
+  /**
+   * The root disk size in MiB for a machine booted from an image. A machine
+   * booted from a snapshot keeps the disk the snapshot captured. Default: the
+   * vendor's.
+   */
+  readonly rootDiskMib?: number | undefined
   /** The Nix environment every command runs under; see {@link NixEnvironment}. */
   readonly environment?: NixEnvironment | undefined
   /**
@@ -175,6 +186,9 @@ const configure = (
   let configured = options.snapshot === undefined
     ? builder.image(options.image ?? (options.environment === undefined ? defaultImage : defaultNixImage))
     : builder.fromSnapshot(options.snapshot)
+  if (options.snapshot === undefined && options.rootDiskMib !== undefined) {
+    configured = configured.rootDisk(options.rootDiskMib)
+  }
   if (options.cpus !== undefined) configured = configured.cpus(options.cpus)
   if (options.maxCpus !== undefined) configured = configured.maxCpus(options.maxCpus)
   if (options.memoryMib !== undefined) configured = configured.memory(options.memoryMib)
@@ -186,6 +200,10 @@ const configure = (
   if (options.maxDurationSecs !== undefined) configured = configured.maxDuration(options.maxDurationSecs)
   if (options.idleTimeoutSecs !== undefined) configured = configured.idleTimeout(options.idleTimeoutSecs)
   if (options.disableNetwork === true) configured = configured.disableNetwork()
+  else if (options.networkPolicy !== undefined) {
+    const policy = options.networkPolicy
+    configured = configured.network((network) => network.policy(policy))
+  }
   return configured.ephemeral(!sticky).detached(options.detached ?? sticky)
 }
 

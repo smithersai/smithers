@@ -10,14 +10,24 @@
  *   so later changes are exactly what the agent did. It is idempotent: a
  *   workspace already seeded at that commit is reused, and one seeded at any
  *   other commit is refused rather than overwritten.
+ * - A repository with an {@link Environment} that declares a `prepare`
+ *   command is seeded from a **prepared base** instead: a machine seeded at
+ *   a commit that ran the command (dependency installs, toolchain setup)
+ *   with the network the command needs, captured as a disk snapshot. The
+ *   base is keyed by the command, its network, and the content of the key
+ *   paths (lockfiles) at the requested commit, so a later task at another
+ *   commit with the same lockfile boots the same base and only syncs the
+ *   source difference. Builders and checks then run with the environment's
+ *   own network (default none).
  * - {@link Service.session} reattaches the workspace machine for one role
  *   task; `RoleHost` binds shell and file tools to it. It refuses a machine
  *   that holds no seeded workspace (one lost with its host, or never
  *   prepared) rather than letting a role work in an empty machine.
  * - {@link Service.collect} returns the change as a binary-safe unified diff
  *   with per-file statistics.
- * - {@link Service.runChecks} seeds a **fresh** machine at the same commit,
- *   applies the patch, runs each configured check, and returns bounded
+ * - {@link Service.runChecks} seeds a **fresh** machine at the same commit
+ *   (from the prepared base when there is one), applies the patch, runs the
+ *   environment's checks and then each requested check, and returns bounded
  *   stdout/stderr receipts; the fresh machine is removed afterwards.
  * - {@link Service.dispose} removes the workspace machine.
  * - {@link Service.applyChange} lands a patch on a named branch of the host
@@ -165,6 +175,110 @@ export const Check = Schema.Struct({
 export type Check = typeof Check.Type
 
 /**
+ * A domain a guest may reach: a host name, or `*.` and a suffix for every
+ * name under it.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Domain = Schema.String.check(
+  pattern(
+    /^(?:\*\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z][A-Za-z0-9-]{0,62}$/,
+    "a domain name, or *. and a domain suffix"
+  )
+)
+
+/**
+ * A guest network: `none`, `all` (the provider's full outbound network), or
+ * outbound HTTPS/HTTP and DNS to the listed domains only.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Network = Schema.Union([Schema.Literals(["none", "all"]), Schema.NonEmptyArray(Domain)])
+
+/**
+ * A guest network.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Network = typeof Network.Type
+
+/**
+ * A repository-relative path whose content keys a prepared base.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const KeyPath = Schema.String.check(
+  pattern(/^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._@+ /-]{1,512}$/, "a repository-relative path")
+)
+
+/**
+ * The longest a prepare command may run, in milliseconds.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maxPrepareTimeoutMs = 7_200_000
+
+/**
+ * The default deadline of a prepare command: thirty minutes.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultPrepareTimeoutMs = 1_800_000
+
+/**
+ * How a repository's prepared base is made: the shell command run in the
+ * seeded workspace root, the paths whose content keys the base, and the
+ * network the command runs with.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Prepare = Schema.Struct({
+  run: Schema.NonEmptyString,
+  key: Schema.NonEmptyArray(KeyPath),
+  network: Network,
+  timeoutMs: Schema.optionalKey(
+    Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(maxPrepareTimeoutMs))
+  )
+})
+
+/**
+ * How a repository's prepared base is made.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Prepare = typeof Prepare.Type
+
+/**
+ * A repository's environment: an optional prepared base, the network its
+ * workspace and check machines run with (default `none`), and the checks
+ * every change to it runs before the requested ones.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Environment = Schema.Struct({
+  prepare: Schema.optionalKey(Prepare),
+  network: Schema.optionalKey(Network),
+  checks: Schema.optionalKey(Schema.Array(Check))
+})
+
+/**
+ * A repository's environment.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Environment = typeof Environment.Type
+
+/**
  * The head of one output stream, its full size, and whether it was cut.
  *
  * @category schemas
@@ -259,6 +373,7 @@ export const WorkspaceErrorCode = Schema.Literals([
   "unavailable",
   "invalid-request",
   "not-a-commit",
+  "prepare-failed",
   "archive-failed",
   "too-large",
   "seed-failed",
@@ -291,20 +406,54 @@ export class WorkspaceError extends Schema.TaggedError<WorkspaceError>()(
 ) {}
 
 /**
+ * How a new machine boots: from a prepared base instead of the image, and
+ * with which network. A reattached machine keeps how it was booted.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Boot {
+  /** A base {@link Machines.bases} captured. Default: the image. */
+  readonly base?: string | undefined
+  /** Default: the machines' own default network. */
+  readonly network?: Network | undefined
+}
+
+/**
+ * Prepared bases: captured machine disks, by name.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Bases {
+  /** What else a base depends on, such as the image; part of every base's key. */
+  readonly identity: string
+  readonly exists: (name: string) => Effect.Effect<boolean, ProviderError>
+  /**
+   * Stops the workspace machine `remoteId`, captures its disk as base `name`,
+   * removes the machine, and drops the older bases of `family` beyond the
+   * newest few.
+   */
+  readonly capture: (remoteId: string, name: string, family: string) => Effect.Effect<void, ProviderError>
+}
+
+/**
  * Where workspace machines come from.
  *
  * `workspace` creates or reattaches the long-lived machine for a key and
  * leaves it running when the scope closes; `fresh` returns a new machine
  * removed when the scope closes; `dispose` removes a workspace machine by
- * its remote id and succeeds when it is already gone.
+ * its remote id and succeeds when it is already gone; `bases` holds the
+ * prepared bases machines boot from.
  *
  * @category models
  * @since 1.0.0
  */
 export interface Machines {
-  readonly workspace: (key: string) => Effect.Effect<Session, ProviderError, Scope.Scope>
-  readonly fresh: (key: string) => Effect.Effect<Session, ProviderError, Scope.Scope>
+  readonly workspace: (key: string, boot?: Boot) => Effect.Effect<Session, ProviderError, Scope.Scope>
+  readonly fresh: (key: string, boot?: Boot) => Effect.Effect<Session, ProviderError, Scope.Scope>
   readonly dispose: (remoteId: string) => Effect.Effect<void, ProviderError>
+  readonly bases: Bases
 }
 
 /**
@@ -320,7 +469,9 @@ export interface MicrosandboxOptions {
   readonly image: string
   readonly cpus?: number | undefined
   readonly memoryMib?: number | undefined
-  /** Guest networking. Default `false`: the machines boot without it. */
+  /** Root disk of an image-booted machine, in MiB. Default {@link defaultDiskMib}. */
+  readonly diskMib?: number | undefined
+  /** Guest networking when a boot names none. Default `false`: the machines boot without it. */
   readonly network?: boolean | undefined
   /** The installation these machines belong to; `reap` sweeps by it. */
   readonly owner: string
@@ -345,6 +496,55 @@ export interface MicrosandboxOptions {
 export const workspaceLabel = "smithers.workspace"
 
 /**
+ * The default root disk of an image-booted machine: 32 GiB. The disk is
+ * sparse, so only what a machine writes uses host space.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultDiskMib = 32_768
+
+/** How many prepared bases of one repository are kept. */
+const keptBases = 2
+
+/**
+ * The Microsandbox options a guest network boots with: no network, the
+ * vendor's own, or deny-by-default egress that allows DNS to the gateway and
+ * the listed domains.
+ */
+const networkOptions = (network: Network): {
+  readonly disableNetwork?: boolean
+  readonly networkPolicy?: MicrosandboxSandbox.NetworkPolicy
+} => {
+  if (network === "none") return { disableNetwork: true }
+  if (network === "all") return {}
+  return {
+    networkPolicy: {
+      defaultEgress: "deny",
+      defaultIngress: "deny",
+      rules: [
+        {
+          direction: "egress",
+          destination: { kind: "group", group: "host" },
+          protocols: ["udp", "tcp"],
+          ports: [{ start: 53, end: 53 }],
+          action: "allow"
+        },
+        ...network.map((domain) => ({
+          direction: "egress" as const,
+          destination: domain.startsWith("*.")
+            ? { kind: "domainSuffix" as const, suffix: domain.slice(2) }
+            : { kind: "domain" as const, domain },
+          protocols: [],
+          ports: [],
+          action: "allow" as const
+        }))
+      ]
+    }
+  }
+}
+
+/**
  * Local Microsandbox microVMs as {@link Machines}: sticky workspace machines
  * that survive between steps and host restarts, each labelled with its
  * workspace key ({@link workspaceLabel}), ephemeral fresh ones, and a forced
@@ -356,27 +556,32 @@ export const workspaceLabel = "smithers.workspace"
 export const microsandbox = (options: MicrosandboxOptions): Machines => {
   const shape = {
     sdk: options.sdk,
-    image: options.image,
     cpus: options.cpus,
     memoryMib: options.memoryMib,
-    disableNetwork: options.network !== true,
+    rootDiskMib: options.diskMib ?? defaultDiskMib,
     owner: options.owner,
     holder: options.holder,
-    labels: options.labels,
     maxDurationSecs: options.maxDurationSecs ?? 14_400,
     idleTimeoutSecs: options.idleTimeoutSecs ?? 3_600,
     pullPolicy: options.pullPolicy ?? "if-missing"
   }
-  const ephemeral = MicrosandboxSandbox.make({ ...shape, persistence: "ephemeral" })
+  // Bases are this installation's own: another owner's never collide.
+  const prefix = `smthrs-env-${sha256Hex(options.owner).slice(0, 8)}-`
+  const booted = (boot: Boot | undefined) => ({
+    ...shape,
+    ...(boot?.base === undefined ? { image: options.image } : { snapshot: `${prefix}${boot.base}` }),
+    ...networkOptions(boot?.network ?? (options.network === true ? "all" : "none"))
+  })
   return {
-    workspace: (key) =>
+    workspace: (key, boot) =>
       MicrosandboxSandbox.make({
-        ...shape,
+        ...booted(boot),
         labels: { ...options.labels, [workspaceLabel]: key },
         persistence: "sticky"
       })
         .acquire(key),
-    fresh: (key) => ephemeral.acquire(key),
+    fresh: (key, boot) =>
+      MicrosandboxSandbox.make({ ...booted(boot), labels: options.labels, persistence: "ephemeral" }).acquire(key),
     dispose: (remoteId) =>
       Effect.tryPromise({
         try: async () => {
@@ -396,7 +601,16 @@ export const microsandbox = (options: MicrosandboxOptions): Machines => {
               })
             )
         )
-      )
+      ),
+    bases: {
+      identity: `microsandbox ${options.image} disk ${shape.rootDiskMib}`,
+      exists: (name) => MicrosandboxSandbox.hasSnapshot(options.sdk, `${prefix}${name}`),
+      capture: (remoteId, name, family) =>
+        MicrosandboxSandbox.captureSnapshot({ sdk: options.sdk, machine: remoteId, name: `${prefix}${name}` }).pipe(
+          Effect.andThen(MicrosandboxSandbox.pruneSnapshots(options.sdk, `${prefix}${family}-`, keptBases)),
+          Effect.asVoid
+        )
+    }
   }
 }
 
@@ -452,6 +666,8 @@ export interface Options {
   readonly machines: Machines
   /** Machine operations running at once, across every workspace. */
   readonly maxConcurrentVMs: number
+  /** Each repository's environment, by its host path. A repository with none gets a bare checkout. */
+  readonly environments?: Readonly<Record<string, Environment>> | undefined
   readonly limits?: Partial<Limits> | undefined
   readonly identity?: Identity | undefined
 }
@@ -559,6 +775,10 @@ const unavailable = (what: string) => (error: ProviderError) => fail("unavailabl
 const excerpt = (collected: Process.Collected): string => Process.text(collected).trim().slice(0, 2_000)
 
 const seedName = ".smithers-seed.tar"
+const syncName = ".smithers-sync.patch"
+const filesName = ".git/smithers-files"
+const preparedPath = ".git/smithers-prepared"
+const prepareLog = ".git/smithers-prepare.log"
 const patchName = ".smithers-change.patch"
 const markerPath = ".git/smithers-base"
 const guestGit = "git -c user.name=smithers -c user.email=smithers@localhost -c commit.gpgsign=false"
@@ -599,6 +819,8 @@ export const make = (
     const limits: Limits = { ...defaultLimits, ...options.limits }
     const identity = options.identity ?? defaultIdentity
     const permits = yield* Semaphore.make(options.maxConcurrentVMs)
+    // One base is prepared at a time, so two tasks never prepare the same one.
+    const baking = yield* Semaphore.make(1)
     const machines = options.machines
 
     const host = (repo: string, args: ReadonlyArray<string>, limit: number, env?: Record<string, string>) =>
@@ -650,51 +872,254 @@ export const make = (
         }
       })
 
+    const environmentOf = (repo: string): Environment | undefined =>
+      options.environments !== undefined && Object.hasOwn(options.environments, repo)
+        ? options.environments[repo]
+        : undefined
+
+    /** The marker a seeded workspace records: the host commit and the guest baseline. */
+    const readMarker = (session: Session, file: string) =>
+      Effect.map(run(session, `cat ${file} 2>/dev/null || true`), (marker) => {
+        const [commit = "", base = ""] = Process.text(marker.stdout).trim().split(" ")
+        return { commit, base }
+      })
+
+    /**
+     * Seeds an empty or interrupted image-booted workspace from the archive of
+     * `commit` and records its baseline with every archived file tracked.
+     */
+    const seedFromArchive = (session: Session, repo: string, commit: string) =>
+      Effect.gen(function*() {
+        const tar = yield* archive(repo, commit)
+        // No baseline was recorded, so whatever is here is an interrupted
+        // seed of this same key; start it over.
+        const cleared = yield* run(session, "find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +")
+        if (cleared.exitCode !== 0) {
+          return yield* fail("seed-failed", `an interrupted seed could not be cleared: ${excerpt(cleared.stderr)}`)
+        }
+        yield* seed(session, tar)
+        return yield* record(session, commit, markerPath, ["git init -q", `${guestGit} add -A -f`])
+      })
+
+    /** Commits the tree as the guest baseline and writes `commit base` to `file`. */
+    const record = (session: Session, commit: string, file: string, stage: ReadonlyArray<string>) =>
+      Effect.gen(function*() {
+        const baseline = yield* run(
+          session,
+          [
+            ...stage,
+            `${guestGit} commit -q --no-verify --allow-empty -m 'smithers base ${commit}'`,
+            `base=$(git rev-parse HEAD)`,
+            `printf '%s %s' ${commit} "$base" > ${file}`,
+            `printf '%s' "$base"`
+          ].join(" && ")
+        )
+        const base = Process.text(baseline.stdout).trim()
+        if (baseline.exitCode !== 0 || !Schema.is(CommitId)(base)) {
+          return yield* fail("seed-failed", `the baseline commit could not be recorded: ${excerpt(baseline.stderr)}`)
+        }
+        return base
+      })
+
+    /** The name of the base `commit` of `repo` boots from under `prepare`, and the family it belongs to. */
+    const baseOf = (repo: string, commit: string, prepare: Prepare) =>
+      Effect.gen(function*() {
+        const keys: Array<string> = []
+        for (const path of prepare.key) {
+          const found = yield* host(
+            repo,
+            ["rev-parse", "--verify", "--quiet", "--end-of-options", `${commit}:${path}`],
+            4_096
+          )
+          keys.push(found.exitCode === 0 ? Process.text(found.stdout).trim() : "-")
+        }
+        const family = sha256Hex(`${machines.bases.identity}\0${repo}`).slice(0, 12)
+        const name = `${family}-${
+          sha256Hex(JSON.stringify(["base/v1", prepare.run, prepare.network, prepare.key, keys])).slice(0, 20)
+        }`
+        return { name, family }
+      })
+
+    /**
+     * The prepared base `commit` of `repo` boots from, captured now when it
+     * does not exist yet: the commit is seeded into a machine with the
+     * command's network, the command runs, and the machine's disk becomes the
+     * base.
+     */
+    const ensureBase = (repo: string, commit: string, prepare: Prepare) =>
+      Effect.gen(function*() {
+        const { family, name } = yield* baseOf(repo, commit, prepare)
+        const exists = machines.bases.exists(name).pipe(
+          Effect.mapError(unavailable("the prepared base could not be read"))
+        )
+        if (yield* exists) return name
+        return yield* baking.withPermit(Effect.gen(function*() {
+          if (yield* exists) return name
+          const started = Date.now()
+          const remoteId = yield* Effect.scoped(Effect.gen(function*() {
+            const session = yield* machines.workspace(`bases/${name}`, { network: prepare.network }).pipe(
+              Effect.mapError(unavailable("the machine a base is prepared in could not be opened"))
+            )
+            // Removed on any failure, so a broken preparation is never captured.
+            yield* Effect.addFinalizer((exit) =>
+              exit._tag === "Success" ? Effect.void : Effect.ignore(machines.dispose(session.remoteId))
+            )
+            yield* seedFromArchive(session, repo, commit)
+            const ran = yield* Process.guest(
+              session,
+              `(${prepare.run}) > ${prepareLog} 2>&1`,
+              { limit: 4_096, timeoutMs: prepare.timeoutMs ?? defaultPrepareTimeoutMs }
+            ).pipe(Effect.mapError(unavailable("the prepare command did not run")))
+            if (ran.exitCode !== 0) {
+              const tail = Process.text((yield* run(session, `tail -c 2000 ${prepareLog} 2>/dev/null || true`)).stdout)
+                .trim()
+              const reason = ran.timedOut
+                ? "the prepare command timed out"
+                : `the prepare command exited ${ran.exitCode}`
+              return yield* fail("prepare-failed", tail === "" ? reason : `${reason}: ${tail}`)
+            }
+            // What the command left that the repository does not ignore is part
+            // of the prepared tree, so it never shows up as a change.
+            // A machine booted from the base is not yet a seeded workspace.
+            yield* record(session, commit, preparedPath, [`rm -f ${markerPath}`, `${guestGit} add -A`])
+            return session.remoteId
+          }))
+          yield* machines.bases.capture(remoteId, name, family).pipe(
+            Effect.mapError(unavailable("the prepared base could not be captured"))
+          )
+          yield* Effect.logInfo(`prepared base ${name} of ${repo} in ${Date.now() - started} ms`)
+          return name
+        }))
+      })
+
+    /**
+     * Opens a machine booted from `base` and returns it with the commit and
+     * guest baseline the base was prepared at. A machine that holds no
+     * prepared tree (one booted before the base existed) is replaced once.
+     */
+    const openFromBase = (
+      open: (boot: Boot) => Effect.Effect<Session, ProviderError, Scope.Scope>,
+      boot: Boot,
+      replace: boolean
+    ) =>
+      Effect.gen(function*() {
+        const opening = open(boot).pipe(Effect.mapError(unavailable("the machine could not be opened")))
+        let session = yield* opening
+        let prepared = yield* readMarker(session, preparedPath)
+        if (replace && !Schema.is(CommitId)(prepared.base)) {
+          yield* machines.dispose(session.remoteId).pipe(
+            Effect.mapError(unavailable("a machine without its base could not be replaced"))
+          )
+          session = yield* opening
+          prepared = yield* readMarker(session, preparedPath)
+        }
+        if (!Schema.is(CommitId)(prepared.commit) || !Schema.is(CommitId)(prepared.base)) {
+          return yield* fail("seed-failed", "the machine booted from the prepared base holds no prepared tree")
+        }
+        return { session, prepared }
+      })
+
+    /**
+     * Moves a base-booted tree from the commit it was prepared at to `commit`
+     * and records `commit`'s baseline. The source difference is applied as a
+     * patch; when it cannot be, the tracked files are replaced from the
+     * archive. What the preparation installed stays in place either way.
+     */
+    const syncFromBase = (
+      session: Session,
+      repo: string,
+      prepared: { readonly commit: string; readonly base: string },
+      commit: string
+    ) =>
+      Effect.gen(function*() {
+        const reset = yield* run(session, `git reset -q --hard ${prepared.base} && git clean -fdq`)
+        if (reset.exitCode !== 0) {
+          return yield* fail("seed-failed", `the prepared tree could not be restored: ${excerpt(reset.stderr)}`)
+        }
+        if (prepared.commit !== commit) {
+          const diff = yield* host(
+            repo,
+            [
+              "diff",
+              "--binary",
+              "--full-index",
+              "--no-renames",
+              "--no-color",
+              "--no-ext-diff",
+              prepared.commit,
+              commit,
+              "--"
+            ],
+            limits.archiveBytes
+          )
+          let synced = false
+          if (diff.exitCode === 0 && !diff.stdout.truncated) {
+            yield* session.writeFile(`${session.workdir}/${syncName}`, diff.stdout.bytes).pipe(
+              Effect.mapError(unavailable("the source difference could not be copied into the machine"))
+            )
+            const applied = yield* run(
+              session,
+              `git apply --binary --whitespace=nowarn ${syncName}; code=$?; rm -f ${syncName}; exit $code`
+            )
+            synced = applied.exitCode === 0
+          }
+          if (!synced) {
+            const removed = yield* run(session, "git ls-files -z | xargs -0 rm -f --")
+            if (removed.exitCode !== 0) {
+              return yield* fail("seed-failed", `the prepared tree could not be cleared: ${excerpt(removed.stderr)}`)
+            }
+            yield* seed(session, yield* archive(repo, commit))
+          }
+        }
+        // Every file of the commit is tracked, even one the repository's own
+        // ignore rules match; what the preparation installed stays ignored.
+        const listed = yield* host(repo, ["ls-tree", "-r", "-z", "--full-tree", commit], limits.archiveBytes)
+        if (listed.exitCode !== 0 || listed.stdout.truncated) {
+          return yield* fail("archive-failed", `the files of ${commit} could not be listed: ${excerpt(listed.stderr)}`)
+        }
+        const files = Process.text(listed.stdout).split("\0").flatMap((entry) => {
+          const match = /^\d+ blob [0-9a-f]+\t([\s\S]+)$/.exec(entry)
+          return match === null ? [] : [`${match[1]!}\0`]
+        }).join("")
+        yield* session.writeFile(`${session.workdir}/${filesName}`, new TextEncoder().encode(files)).pipe(
+          Effect.mapError(unavailable("the file list could not be copied into the machine"))
+        )
+        return yield* record(session, commit, markerPath, [
+          `${guestGit} add -A`,
+          `xargs -0 sh -c 'for f; do if [ -e "$f" ] || [ -L "$f" ]; then printf "%s\\0" "$f"; fi; done' _ < ${filesName} > ${filesName}.present`,
+          `${guestGit} add -f --pathspec-from-file=${filesName}.present --pathspec-file-nul`,
+          `rm -f ${filesName} ${filesName}.present`
+        ])
+      })
+
     const prepare = (request: PrepareRequest) =>
       Effect.gen(function*() {
         if (!Schema.is(Key)(request.key)) return yield* fail("invalid-request", "the workspace key is malformed")
         const commit = yield* resolveCommit(request.repoPath, request.commit)
-        const tar = yield* archive(request.repoPath, commit)
+        const environment = environmentOf(request.repoPath)
+        const base = environment?.prepare === undefined
+          ? undefined
+          : yield* ensureBase(request.repoPath, commit, environment.prepare)
+        const boot: Boot = { base, network: environment?.network ?? (base === undefined ? undefined : "none") }
         return yield* Effect.scoped(Effect.gen(function*() {
-          const session = yield* machines.workspace(request.key).pipe(
+          const session = yield* machines.workspace(request.key, boot).pipe(
             Effect.mapError(unavailable("the workspace machine could not be opened"))
           )
-          const done = (base: string): Prepared => ({
+          const done = (live: Session, seededBase: string): Prepared => ({
             key: request.key,
-            remoteId: session.remoteId,
+            remoteId: live.remoteId,
             commit,
-            base,
-            workdir: session.workdir
+            base: seededBase,
+            workdir: live.workdir
           })
-          const marker = yield* run(session, `cat ${markerPath} 2>/dev/null || true`)
-          const [seededCommit = "", seededBase = ""] = Process.text(marker.stdout).trim().split(" ")
-          if (seededCommit === commit && Schema.is(CommitId)(seededBase)) return done(seededBase)
-          if (seededCommit.length > 0) {
+          const marker = yield* readMarker(session, markerPath)
+          if (marker.commit === commit && Schema.is(CommitId)(marker.base)) return done(session, marker.base)
+          if (marker.commit.length > 0) {
             return yield* fail("occupied", `workspace ${request.key} is already seeded at another commit`)
           }
-          // No baseline was recorded, so whatever is here is an interrupted
-          // seed of this same key; start it over.
-          const cleared = yield* run(session, "find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +")
-          if (cleared.exitCode !== 0) {
-            return yield* fail("seed-failed", `an interrupted seed could not be cleared: ${excerpt(cleared.stderr)}`)
-          }
-          yield* seed(session, tar)
-          const baseline = yield* run(
-            session,
-            [
-              "git init -q",
-              `${guestGit} add -A -f`,
-              `${guestGit} commit -q --no-verify --allow-empty -m 'smithers base ${commit}'`,
-              `base=$(git rev-parse HEAD)`,
-              `printf '%s %s' ${commit} "$base" > ${markerPath}`,
-              `printf '%s' "$base"`
-            ].join(" && ")
-          )
-          const base = Process.text(baseline.stdout).trim()
-          if (baseline.exitCode !== 0 || !Schema.is(CommitId)(base)) {
-            return yield* fail("seed-failed", `the baseline commit could not be recorded: ${excerpt(baseline.stderr)}`)
-          }
-          return done(base)
+          if (base === undefined) return done(session, yield* seedFromArchive(session, request.repoPath, commit))
+          const opened = yield* openFromBase((boot) => machines.workspace(request.key, boot), boot, true)
+          return done(opened.session, yield* syncFromBase(opened.session, request.repoPath, opened.prepared, commit))
         }))
       }).pipe(permits.withPermit)
 
@@ -763,17 +1188,30 @@ export const make = (
     const runChecks = (request: ChecksRequest) =>
       Effect.gen(function*() {
         if (!Schema.is(Key)(request.key)) return yield* fail("invalid-request", "the workspace key is malformed")
-        const checks = yield* Schema.decodeUnknownEffect(Schema.Array(Check))(request.checks).pipe(
+        const requested = yield* Schema.decodeUnknownEffect(Schema.Array(Check))(request.checks).pipe(
           Effect.mapError(() => fail("invalid-request", "a check is malformed"))
         )
         const commit = yield* resolveCommit(request.repoPath, request.commit)
-        const tar = yield* archive(request.repoPath, commit)
+        const environment = environmentOf(request.repoPath)
+        const checks = [...environment?.checks ?? [], ...requested]
+        const base = environment?.prepare === undefined
+          ? undefined
+          : yield* ensureBase(request.repoPath, commit, environment.prepare)
+        const boot: Boot = { base, network: environment?.network ?? (base === undefined ? undefined : "none") }
         const fresh = `${request.key}/checks-${globalThis.crypto.randomUUID()}`
+        const tar = base === undefined ? yield* archive(request.repoPath, commit) : undefined
         return yield* Effect.scoped(Effect.gen(function*() {
-          const session = yield* machines.fresh(fresh).pipe(
-            Effect.mapError(unavailable("the check machine could not be opened"))
-          )
-          yield* seed(session, tar)
+          let session: Session
+          if (tar === undefined) {
+            const opened = yield* openFromBase((boot) => machines.fresh(fresh, boot), boot, false)
+            session = opened.session
+            yield* syncFromBase(session, request.repoPath, opened.prepared, commit)
+          } else {
+            session = yield* machines.fresh(fresh, boot).pipe(
+              Effect.mapError(unavailable("the check machine could not be opened"))
+            )
+            yield* seed(session, tar)
+          }
           if (request.patch.length > 0) {
             yield* session.writeFile(`${session.workdir}/${patchName}`, new TextEncoder().encode(request.patch)).pipe(
               Effect.mapError(unavailable("the patch could not be copied into the machine"))

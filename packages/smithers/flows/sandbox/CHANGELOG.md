@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `MicrosandboxSandbox.make` takes `networkPolicy` (for example deny-by-default egress with a domain allowlist) and
+  `rootDiskMib`; `captureSnapshot`, `hasSnapshot`, and `pruneSnapshots` capture a prepared machine's disk and manage
+  the named snapshots machines boot from. The `Sdk` slice gains `rootDisk`, `network`, a handle's `stop` and
+  `snapshot`, and `Snapshot.get`/`list`/`remove`.
+
 ### Changed
 
 - **Breaking for custom `MicrosandboxSandbox.Sdk` implementations.** The

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Repository environments (#1931): `Config.Organization.repositories` declares per repository a `prepare` command
+  (with its key paths and network), a builder/check `network` (`none`, `all`, or a domain allowlist; default `none`),
+  and `checks`; `vm.diskMib` sizes image-booted machines. `Workspace.layer({ environments })` seeds such a
+  repository from a prepared base captured once per key and syncs later commits onto it, and `runChecks` runs the
+  environment's checks in a fresh machine booted from the same base. `Workspace.Machines` gains `bases` and a `Boot`
+  argument; `WorkspaceErrorCode` gains `prepare-failed`.
 - `Workspace.session(key, { commit? })` refuses a machine that holds no seeded workspace (`unseeded`) or one seeded
   from another commit (`occupied`); `Authority.TaskWorkspace` carries the optional `commit` it checks.
 - `Workspace.microsandbox` labels each workspace machine with its key (`workspaceLabel`), and

@@ -246,7 +246,8 @@ ctx.done(JSON.stringify(result))`
       workspace: {
         workspace: () => Effect.fail(new ProviderError({ code: "unavailable", message: "no machine" })),
         fresh: () => Effect.fail(new ProviderError({ code: "unavailable", message: "no machine" })),
-        dispose: () => Effect.void
+        dispose: () => Effect.void,
+        bases: { identity: "none", exists: () => Effect.succeed(false), capture: () => Effect.void }
       }
     })
     expect(refusal(unopenable.exit)).toContain("the workspace machine could not be opened: no machine")

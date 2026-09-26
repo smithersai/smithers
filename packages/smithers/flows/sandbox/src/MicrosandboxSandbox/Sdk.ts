@@ -61,6 +61,10 @@ interface Sandbox {
 interface SandboxHandle {
   readonly name: string
   readonly status: string
+  /** Stops the machine gracefully, keeping its disk. */
+  stop(): Promise<void>
+  /** Captures a stopped machine's disk as a named snapshot. */
+  snapshot(name: string): Promise<unknown>
   /** The persisted configuration as JSON, labels included. */
   readonly configJson: string
   connect(): Promise<Sandbox>
@@ -84,9 +88,50 @@ interface SandboxPage {
   readonly nextCursor?: string | undefined
 }
 
+/**
+ * One ordered egress or ingress rule of a guest network policy, in the
+ * vendor's own shape.
+ */
+interface NetworkRule {
+  readonly direction: "egress" | "ingress" | "any"
+  readonly destination:
+    | { readonly kind: "any" }
+    | { readonly kind: "cidr"; readonly cidr: string }
+    | { readonly kind: "domain"; readonly domain: string }
+    | { readonly kind: "domainSuffix"; readonly suffix: string }
+    | { readonly kind: "group"; readonly group: string }
+  readonly protocols: ReadonlyArray<"tcp" | "udp" | "icmpv4" | "icmpv6">
+  readonly ports: ReadonlyArray<{ readonly start: number; readonly end: number }>
+  readonly action: "allow" | "deny"
+}
+
+/**
+ * A guest network policy: per-direction defaults and ordered first-match
+ * rules, as the vendor evaluates them.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface NetworkPolicy {
+  readonly defaultEgress: "allow" | "deny"
+  readonly defaultIngress: "allow" | "deny"
+  readonly rules: ReadonlyArray<NetworkRule>
+}
+
+interface NetworkBuilder {
+  policy(policy: NetworkPolicy): this
+}
+
+interface SnapshotEntry {
+  readonly name: string | null
+  readonly createdAt: Date
+}
+
 interface SandboxBuilder {
   image(image: string): this
   fromSnapshot(pathOrName: string): this
+  rootDisk(sizeMib: number): this
+  network(configure: (builder: NetworkBuilder) => NetworkBuilder): this
   cpus(count: number): this
   maxCpus(count: number): this
   memory(mib: number): this
@@ -120,6 +165,12 @@ export interface Sdk {
     builder(name: string): SandboxBuilder
     get(name: string): Promise<SandboxHandle>
     listWith(configure: (list: SandboxList) => SandboxList): Promise<SandboxPage>
+  }
+  readonly Snapshot: {
+    /** The indexed snapshot of that name; rejects when there is none. */
+    get(name: string): Promise<SnapshotEntry>
+    list(): Promise<ReadonlyArray<SnapshotEntry>>
+    remove(name: string, options?: { readonly force?: boolean }): Promise<void>
   }
   defaultBackendKind(): "local" | "cloud"
   setDefaultBackend(backend: "local"): void

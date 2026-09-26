@@ -48,9 +48,10 @@ const faulty = (fault: RegExp, base = hostMachines().machines): Workspace.Machin
     spawn: (command, options) => session.spawn(fault.test(command) ? "echo injected >&2; exit 3" : command, options)
   })
   return {
-    workspace: (key) => Effect.map(base.workspace(key), wrap),
-    fresh: (key) => Effect.map(base.fresh(key), wrap),
-    dispose: base.dispose
+    workspace: (key, boot) => Effect.map(base.workspace(key, boot), wrap),
+    fresh: (key, boot) => Effect.map(base.fresh(key, boot), wrap),
+    dispose: base.dispose,
+    bases: base.bases
   }
 }
 
@@ -65,16 +66,18 @@ const failingSession = (operation: "spawn" | "writeFile", base = hostMachines().
     })
   })
   return {
-    workspace: (key) => Effect.map(base.workspace(key), wrap),
-    fresh: (key) => Effect.map(base.fresh(key), wrap),
-    dispose: base.dispose
+    workspace: (key, boot) => Effect.map(base.workspace(key, boot), wrap),
+    fresh: (key, boot) => Effect.map(base.fresh(key, boot), wrap),
+    dispose: base.dispose,
+    bases: base.bases
   }
 }
 
 const unopenable: Workspace.Machines = {
   workspace: () => broken("no machine"),
   fresh: () => broken("no machine"),
-  dispose: () => broken("no machine")
+  dispose: () => broken("no machine"),
+  bases: { identity: "none", exists: () => broken("no machine"), capture: () => broken("no machine") }
 }
 
 const prepare = (repoPath: string, commit: string, key = "run-1/example/demo/build") =>

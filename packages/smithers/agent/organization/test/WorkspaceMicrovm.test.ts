@@ -17,6 +17,9 @@ import * as MicrosandboxSandbox from "@smthrs/sandbox/MicrosandboxSandbox"
 import { Cause, Effect, Layer } from "effect"
 import * as Microsandbox from "microsandbox"
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as Actions from "../src/Actions.ts"
 import * as Authority from "../src/Authority.ts"
@@ -34,6 +37,7 @@ import {
   scripted,
   task
 } from "./dispatchSupport.ts"
+import { tempDir } from "./support.ts"
 import { checkoutState, fixtureRepo, git } from "./workspaceSupport.ts"
 
 const run = `organization-workspace-${process.pid}-${Date.now()}`
@@ -98,7 +102,16 @@ describe.skipIf(missing === undefined)("Workspace against real microVMs", () => 
 describe.skipIf(missing !== undefined)("Workspace against real microVMs", () => {
   afterAll(() =>
     Effect.runPromise(
-      MicrosandboxSandbox.reap({ sdk: Microsandbox, owner, isAlive: () => Effect.succeed(false) })
+      MicrosandboxSandbox.reap({ sdk: Microsandbox, owner, isAlive: () => Effect.succeed(false) }).pipe(
+        // The prepared bases this run captured are its own, by owner.
+        Effect.andThen(
+          MicrosandboxSandbox.pruneSnapshots(
+            Microsandbox,
+            `smthrs-env-${createHash("sha256").update(owner).digest("hex").slice(0, 8)}-`,
+            0
+          )
+        )
+      )
     ), 120_000)
 
   const services = Workspace.layer({ machines, maxConcurrentVMs: 2 }).pipe(Layer.provideMerge(NodeServices.layer))
@@ -213,6 +226,97 @@ describe.skipIf(missing !== undefined)("Workspace against real microVMs", () => 
     expect(gone).toBe(true)
   }, 900_000)
 
+  it("prepares a pnpm project once with its registry allowed, and checks a builder's fix offline", async () => {
+    const { commit, repo } = pnpmRepo()
+    const log = (line: string) => console.log(`[microvm-env] ${line}`)
+    const environment: Workspace.Environment = {
+      prepare: {
+        // The preparation proves its own allowlist: the registry answers,
+        // any other host does not.
+        run: "! curl -sS -o /dev/null --max-time 5 https://example.com && " +
+          "npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile",
+        key: ["pnpm-lock.yaml", "package.json"],
+        network: ["registry.npmjs.org"]
+      },
+      network: "none",
+      checks: [{ name: "tests", argv: ["sh", "-c", "pnpm test"], timeoutMs: 300_000 }]
+    }
+    const services = Workspace.layer({ machines, maxConcurrentVMs: 2, environments: { [repo]: environment } }).pipe(
+      Layer.provideMerge(NodeServices.layer)
+    )
+    const inEnvironment = <A, E>(effect: Effect.Effect<A, E, Workspace.Workspace>) =>
+      Effect.runPromise(effect.pipe(Effect.provide(services)))
+    const timed = async <A>(label: string, run: () => Promise<A>) => {
+      const started = Date.now()
+      const value = await run()
+      log(`${label} ${Date.now() - started} ms`)
+      return value
+    }
+
+    const key = `${run}/pnpm/build`
+    const prepared = await timed(
+      "prepare cold (base + workspace)",
+      () => inEnvironment(Effect.flatMap(Workspace.Workspace, (w) => w.prepare({ key, repoPath: repo, commit })))
+    )
+    await timed(
+      "prepare warm (workspace from the base)",
+      () =>
+        inEnvironment(
+          Effect.flatMap(Workspace.Workspace, (w) => w.prepare({ key: `${run}/pnpm/warm`, repoPath: repo, commit }))
+        )
+    )
+
+    // The builder works with the installed dependency and no network: it
+    // runs the failing test, fixes the code, and runs it again.
+    const built = await inEnvironment(Effect.scoped(Effect.gen(function*() {
+      const session = yield* (yield* Workspace.Workspace).session(key, { commit })
+      const step = (command: string) =>
+        Effect.map(
+          Process.guest(session, command, { limit: 16_384, timeoutMs: 120_000 }),
+          (result) => ({ exitCode: result.exitCode, output: Process.text(result.stdout) + Process.text(result.stderr) })
+        )
+      const offline = yield* step("curl -sS -o /dev/null --max-time 5 https://registry.npmjs.org/left-pad")
+      const before = yield* step("pnpm test")
+      const fixed = yield* step(`sed -i 's/3, " "/3, "0"/' src/code.js && cat src/code.js`)
+      const after = yield* step("pnpm test")
+      return { offline, before, fixed, after }
+    })))
+    log(
+      `builder: offline exit ${built.offline.exitCode}, tests before ${built.before.exitCode}, after ${built.after.exitCode}`
+    )
+    expect(built.offline.exitCode).not.toBe(0)
+    expect(built.before.exitCode).not.toBe(0)
+    expect(built.fixed.output).toContain(`leftPad(String(n), 3, "0")`)
+    expect(built.after.exitCode).toBe(0)
+
+    const diff = await inEnvironment(Effect.flatMap(Workspace.Workspace, (w) => w.collect(prepared)))
+    log(`diff files ${JSON.stringify(diff.files)}`)
+    expect(diff.files).toEqual([{ path: "src/code.js", added: 1, deleted: 1 }])
+
+    // A fresh check machine boots from the same base and runs the suite.
+    const passing = await timed(
+      "checks with the fix",
+      () =>
+        inEnvironment(
+          Effect.flatMap(Workspace.Workspace, (w) =>
+            w.runChecks({ key: `${run}/pnpm`, repoPath: repo, commit, patch: diff.patch, checks: [] }))
+        )
+    )
+    log(`checks with the fix: ${passing.receipts.map((r) => `${r.name} exit ${r.exitCode}`).join(", ")}`)
+    expect(passing.passed).toBe(true)
+    expect(passing.receipts[0]!.stdout.text).toMatch(/pass 1/)
+    const unfixed = await inEnvironment(
+      Effect.flatMap(
+        Workspace.Workspace,
+        (w) => w.runChecks({ key: `${run}/pnpm`, repoPath: repo, commit, patch: "", checks: [] })
+      )
+    )
+    expect(unfixed.passed).toBe(false)
+    expect(unfixed.receipts[0]!.stdout.text).toMatch(/fail 1/)
+
+    await inEnvironment(Effect.flatMap(Workspace.Workspace, (w) => w.dispose(prepared)))
+  }, 900_000)
+
   it("runs a builder's role task with shell and file tools inside the microVM", async () => {
     const { repo, commit } = fixtureRepo()
     const snapshot = await loadSnapshot()
@@ -271,3 +375,76 @@ const Build = Flow.make("test/microvm-build", {
   error: AgentAction.AgentFailure,
   body: (payload) => Actions.RoleTask.call(payload)
 })
+
+/**
+ * A pnpm project with one registry dependency and a failing test: the code
+ * pads with spaces, the test expects zeros.
+ */
+const pnpmRepo = () => {
+  const repo = tempDir()
+  mkdirSync(join(repo, "src"))
+  mkdirSync(join(repo, "test"))
+  const files: Record<string, string> = {
+    ".gitignore": "node_modules/\n",
+    "package.json": JSON.stringify(
+      {
+        name: "organization-pnpm-fixture",
+        private: true,
+        type: "module",
+        packageManager: "pnpm@11.25.0",
+        scripts: { test: "node --test" },
+        dependencies: { "left-pad": "1.3.0" }
+      },
+      null,
+      2
+    ) + "\n",
+    "pnpm-lock.yaml": [
+      "lockfileVersion: '9.0'",
+      "",
+      "settings:",
+      "  autoInstallPeers: true",
+      "  excludeLinksFromLockfile: false",
+      "",
+      "importers:",
+      "",
+      "  .:",
+      "    dependencies:",
+      "      left-pad:",
+      "        specifier: 1.3.0",
+      "        version: 1.3.0",
+      "",
+      "packages:",
+      "",
+      "  left-pad@1.3.0:",
+      "    resolution: {integrity: sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3bFlCBy/aVx2HrNcqQGsdot8ghrjyrvMCoEA==}",
+      "    deprecated: use String.prototype.padStart()",
+      "",
+      "snapshots:",
+      "",
+      "  left-pad@1.3.0: {}",
+      ""
+    ].join("\n"),
+    "src/code.js": [
+      `import leftPad from "left-pad"`,
+      "",
+      "/** A three-digit ticket code. */",
+      `export const code = (n) => leftPad(String(n), 3, " ")`,
+      ""
+    ].join("\n"),
+    "test/code.test.js": [
+      `import assert from "node:assert/strict"`,
+      `import { test } from "node:test"`,
+      `import { code } from "../src/code.js"`,
+      "",
+      `test("codes are zero-padded to three digits", () => {`,
+      `  assert.equal(code(7), "007")`,
+      "})",
+      ""
+    ].join("\n")
+  }
+  for (const [path, text] of Object.entries(files)) writeFileSync(join(repo, path), text)
+  git(repo, "init", "-q", "-b", "main")
+  git(repo, "add", "-A")
+  git(repo, "commit", "-q", "-m", "initial")
+  return { repo, commit: git(repo, "rev-parse", "HEAD") }
+}
