@@ -3,7 +3,7 @@ import type { StorageApi } from "@tanstack/db"
 import { afterEach,describe,expect,test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import type { ControllerContext } from "./context"
-import { createFailureController,humanCommandText } from "./failures"
+import { TOAST_CANCELLED, createFailureController,humanCommandText } from "./failures"
 
 /*
  * The toast run counter used to be write-only: every withToast set an entry
@@ -91,6 +91,20 @@ describe("the toast run counter's terminal cleanup", () => {
     expect(store.collections.toasts.get("toast-flow.ok")?.status).toBe("ok")
     await settled()
     expect(store.collections.toasts.get("toast-flow.ok")).toBeUndefined()
+  })
+
+  test("a confirmed cancellation stays neutral and dismisses without claiming completion", async () => {
+    const { ctx, store } = await fakeContext()
+    const failures = createFailureController(ctx)
+    const gate = Promise.withResolvers<typeof TOAST_CANCELLED>()
+    const pending = failures.withToast("flow.cancel", "Review", "Review completed", () => gate.promise)
+    await settled()
+    gate.resolve(TOAST_CANCELLED)
+    await pending
+    expect(store.collections.toasts.get("toast-flow.cancel")).toMatchObject({ status: "cancelled", title: "Review", detail: "Cancelled" })
+    expect(ctx.toastRuns.has("flow.cancel")).toBe(false)
+    await settled()
+    expect(store.collections.toasts.get("toast-flow.cancel")).toBeUndefined()
   })
 
   test("a failed run's entry leaves at settle even though its toast stays", async () => {

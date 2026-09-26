@@ -9,15 +9,16 @@ export const claimWorkToast = (store: ControllerContext["store"], cardId: string
   claims.set(cardId, key)
 }
 
-const phaseOf = (card: Card): "running" | "ok" | "failed" | undefined => {
+const phaseOf = (card: Card): "running" | "ok" | "failed" | "cancelled" | undefined => {
   if (card.kind === "agent") {
     const p = card.payload
-    if ("cloud" in p) return p.state === "completed" ? "ok" : p.state === "failed" || p.state === "cancelled" ? "failed" : "running"
+    if ("cloud" in p) return p.state === "completed" ? "ok" : p.state === "cancelled" ? "cancelled" : p.state === "failed" ? "failed" : "running"
     return p.phase === "running" ? "running" : p.exitCode === 0 ? "ok" : "failed"
   }
   if (card.kind === "run-trace" && card.payload.kind !== "change-plan") {
     return card.payload.phase === "completed" ? "ok"
-      : ["failed", "cancelled", "no-capacity"].includes(card.payload.phase) ? "failed" : "running"
+      : card.payload.phase === "cancelled" ? "cancelled"
+      : ["failed", "no-capacity"].includes(card.payload.phase) ? "failed" : "running"
   }
   return undefined
 }
@@ -66,7 +67,7 @@ export const observeBackgroundWork = (ctx: ControllerContext): void => {
         if (seen.get(card.id) === phase) continue
         seen.set(card.id, phase)
         if (toast) ctx.resolveToast(key, { status: phase, title: card.title,
-          detail: phase === "ok" ? "" : card.kind === "run-trace" ? card.payload.error ?? card.payload.phase
+          detail: phase === "ok" ? "" : phase === "cancelled" ? "Cancelled" : card.kind === "run-trace" ? card.payload.error ?? card.payload.phase
             : card.kind === "agent" && "cloud" in card.payload ? card.payload.error ?? card.payload.state : "Stopped" })
       }
     }

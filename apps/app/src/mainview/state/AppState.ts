@@ -598,7 +598,7 @@ export const ToastSchema = z.object({
   /** The work identity ("billing.balance.refresh"): one toast per background flow. */
   key: z.string(),
   title: z.string(),
-  status: z.enum(["running", "ok", "failed"]),
+  status: z.enum(["running", "ok", "failed", "cancelled"]),
   detail: z.string(),
   action: MessageActionSchema.extend({ flow: z.enum(FLOW_NAMES) }).optional(),
   answeredAction: AnsweredActionSchema.optional(),
@@ -1544,11 +1544,11 @@ export type AppTransition =
     action?: Toast["action"]
   }
   | {
-    /* Settled: ok resolves (auto-dismisses); failed stays honest until dismissed. */
+    /* Ok and cancelled auto-dismiss; failed stays until dismissed. */
     type: "toast.resolved"
     actor: "system"
     key: string
-    status: "ok" | "failed"
+    status: "ok" | "failed" | "cancelled"
     /** The settled title, so a done toast stops reading as still running. */
     title?: string
     detail: string

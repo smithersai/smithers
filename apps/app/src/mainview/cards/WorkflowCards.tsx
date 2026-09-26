@@ -473,8 +473,9 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
       /* A tutorial plan card wears the plan's state, not a run phase: pending until started, done once it is. */
       if (card.payload.kind === "change-plan") return card.status === "acted" ? "done" : "pending"
       if (card.payload.phase === "completed") return "done"
+      if (card.payload.phase === "cancelled") return "stopped"
       if (
-        card.payload.phase === "failed" || card.payload.phase === "cancelled" || card.payload.phase === "no-capacity"
+        card.payload.phase === "failed" || card.payload.phase === "no-capacity"
       ) {
         return "failed"
       }

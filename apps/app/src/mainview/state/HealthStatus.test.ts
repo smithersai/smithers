@@ -58,6 +58,7 @@ test("shared labels distinguish idle, human input, approval, stale activity, fai
   expect(statusPresentation(reading({ state: "waiting-approval", attention: "awaiting-approval" }), "running", 200).label).toBe("Waiting for approval")
   expect(statusPresentation(reading({ state: "exited", health: "unknown" }), "running", 200).label).toBe("Exited · Outcome unknown")
   expect(statusPresentation(reading({ state: "failed", health: "failing" }), "running", 200).label).toBe("Failed")
+  expect(statusPresentation(reading({ state: "cancelled", health: "failing" }), "stopped", 200)).toEqual({ status: "stopped", label: "Stopped" })
   expect(statusPresentation(reading({ state: "parked", health: "awaiting-human" }), "running", 200).label).toBe("Parked · Needs attention")
 })
 

@@ -94,7 +94,7 @@ const harness = async (
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const requests: Array<string> = []
   /* The controller's door (failures.ts), which is the only one that dismisses an ok toast. */
-  const resolved: Array<{ key: string; status: "ok" | "failed" }> = []
+  const resolved: Array<{ key: string; status: "ok" | "failed" | "cancelled" }> = []
   const ctx: SeamContext = {
     http: async (input, init) => {
       const method = init?.method ?? "GET"

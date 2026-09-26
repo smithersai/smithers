@@ -257,12 +257,20 @@ test("T1: launch a fixture flow, steer it, stop it, and see it in the run inbox"
     JSON.stringify(call.payload).includes("workspace-runs")
   )).toBe(true)
 
-  // Stop: the card's own act cancels the run, and the card says so.
-  await card.getByTestId(`flow-run-stop-${RUN_ID}`).click()
+  // Stop through the shared worker toast; the worker receipt settles its status.
+  const notice = page.locator(".toast").filter({ has: page.locator(".toast-title", { hasText: "review-pr" }) }).first()
+  await notice.getByRole("button", { name: "Stop", exact: true }).focus()
+  await page.keyboard.press("Enter")
   await expect.poll(() => rpc.some((call) => call.procedure === "Cancel")).toBe(true)
   const cancel = rpc.find((call) => call.procedure === "Cancel")!
   expect(cancel.payload.runId).toBe(RUN_ID)
   await expect(card.getByTestId(`run-outcome-${RUN_ID}`)).toHaveAttribute("data-phase", "cancelled")
+  await expect(card.locator(".smithers-card-header")).toContainText("Stopped")
+  await expect(notice).toHaveAttribute("data-toast-status", "cancelled")
+  await expect(notice).toHaveAttribute("role", "status")
+  await expect(notice.locator(".toast-detail")).toHaveText("Cancelled")
+  await expect(notice.locator(".toast-title")).not.toContainText("completed")
+  await page.screenshot({ path: test.info().outputPath("cancelled-run.png") })
 })
 
 

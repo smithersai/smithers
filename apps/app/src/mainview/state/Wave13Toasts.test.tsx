@@ -70,10 +70,10 @@ describe("wave 13 B-6 — a notification is a status, never an alert", () => {
     expect(dismissed).toEqual([])
   })
 
-  test("running and ok toasts render role=status — no alert surface", () => {
-    const host = renderToasts([toast("t1", "running"), toast("t2", "ok")])
+  test("running, ok and cancelled toasts render role=status — no alert surface", () => {
+    const host = renderToasts([toast("t1", "running"), toast("t2", "ok"), toast("t3", "cancelled")])
     expect(host.querySelectorAll("[role=\"alert\"]").length).toBe(0)
-    expect(host.querySelectorAll(".toast[role=\"status\"]").length).toBe(2)
+    expect(host.querySelectorAll(".toast[role=\"status\"]").length).toBe(3)
   })
 
   test("only a FAILED toast is an alert", () => {

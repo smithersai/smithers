@@ -280,7 +280,7 @@ describe("pure app event projection", () => {
       action: { flow: "workspace.view", args: "ws-1", label: "Open details" } })
     state = apply(state, { ...progress, title: undefined, detail: "Activating" }, 350)
     expect(state.toasts[0]!.title).toBe("Starting")
-    for (const status of ["ok", "failed"] as const) {
+    for (const status of ["ok", "failed", "cancelled"] as const) {
       state = apply(state, { type: "toast.resolved", actor: "system", key: "desktop", status, detail: "Settled" }, 400)
       const settled = state.toasts[0]
       state = apply(state, progress, 500)

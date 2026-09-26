@@ -24,6 +24,9 @@ export const ZERO_BALANCE_EXHAUSTED_TEXT =
  */
 export const TOAST_SUPERSEDED: unique symbol = Symbol("toast.superseded")
 
+/** The worker confirmed cancellation; this is neither completion nor failure. */
+export const TOAST_CANCELLED: unique symbol = Symbol("toast.cancelled")
+
 /** Readiness invalidates only the earlier "still preparing" notice for this workspace. */
 export const dismissReadyWorkspaceFailures = (
   ctx: ControllerContext, repo: string, workspaceId?: string
@@ -60,12 +63,12 @@ export interface FailureController {
     sourceCard?: string
   ) => Promise<T | string>
   /**
-   * Resolve the toast on `key`; an ok outcome dismisses itself after
+   * Resolve the toast on `key`; ok and cancelled outcomes dismiss after
    * toastAutoDismissMs. Every ok resolution goes through here.
    */
   readonly resolveToast: (
     key: string,
-    outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string; readonly action?: Toast["action"]; readonly autoDismissMs?: number }
+    outcome: { readonly status: "ok" | "failed" | "cancelled"; readonly title?: string; readonly detail: string; readonly action?: Toast["action"]; readonly autoDismissMs?: number }
   ) => void
   readonly dismissToast: (id: string) => void
   /**
@@ -122,7 +125,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
       detail: outcome.detail,
       action: outcome.action
     })
-    if (outcome.status !== "ok" && outcome.autoDismissMs === undefined) return
+    if (outcome.status === "failed" && outcome.autoDismissMs === undefined) return
     const resolvedAt = ctx.store.collections.toasts.get(id)?.updatedAt
     later(() => {
       const current = ctx.store.collections.toasts.get(id)
@@ -243,13 +246,15 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
       ctx.toastRuns.delete(key)
       return outcome
     }
-    // A string outcome is the honest failure line; anything else is success
+    // A cancellation has its own receipt; a string is the honest failure line.
+    // Other outcomes are success
     // (true, or a value the caller consumes — e.g. the browser tool's read).
     const ok = typeof outcome !== "string"
     // Settled work states its result, never the running sentence: an ok
     // toast reads as done for the seconds before it dismisses itself, and
     // a failure keeps the attempt's title with the honest line under it.
-    resolveToast(key, ok ? { status: "ok", title: doneTitle, detail: "" } : { status: "failed", detail: outcome as string })
+    resolveToast(key, outcome === TOAST_CANCELLED ? { status: "cancelled", title, detail: "Cancelled" }
+      : ok ? { status: "ok", title: doneTitle, detail: "" } : { status: "failed", detail: outcome as string })
     // The run is over either way, so its counter entry is terminal and
     // leaves now. The ok toast's self-dismissal is guarded by the toast's
     // own state in resolveToast, so no stale timer can claim the slot a

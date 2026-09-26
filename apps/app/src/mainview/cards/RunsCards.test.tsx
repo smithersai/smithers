@@ -4,7 +4,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { Card } from "../state/AppState"
-import { WorkflowRunCardBody } from "./WorkflowCards"
+import { workflowCardFamily, WorkflowRunCardBody } from "./WorkflowCards"
 import { ApprovalsInboxCardBody, RunListCardBody } from "./RunsCards"
 
 /*
@@ -270,6 +270,13 @@ describe("the run card, per phase and waiting reason", () => {
     )
     return { host, dispatched }
   }
+
+  test("cancellation uses the stopped badge while failures and capacity refusals stay failed", () => {
+    expect(workflowCardFamily["run-trace"].pill(runCard({ phase: "cancelled" }))).toBe("stopped")
+    for (const phase of ["failed", "no-capacity"] as const) {
+      expect(workflowCardFamily["run-trace"].pill(runCard({ phase }))).toBe("failed")
+    }
+  })
 
   test("a live phase offers Stop and the steer row", () => {
     const { host } = renderRun({ phase: "running" })

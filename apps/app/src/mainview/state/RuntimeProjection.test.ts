@@ -158,6 +158,15 @@ describe("normalized runtime observations", () => {
     expect(observed.decidedAt).toBeUndefined()
   })
 
+  test("a confirmed cancellation is settled, while an actual run failure remains an error", () => {
+    for (const status of ["cancelled", "failed"] as const) {
+      const run = observeRuntimeRun(undefined, { scope, summary: { ...summary(), status } }, 10, 1)
+      expect(projectRuntimeCard(trace, [run], [])).toMatchObject({
+        status: status === "cancelled" ? "acted" : "error", payload: { phase: status }
+      })
+    }
+  })
+
   test("current cards join normalized facts while historical cards keep their explicit revision", () => {
     const before = observeRuntimeRun(undefined, { scope, summary: summary() }, 10, 1)
     const frozen = snapshotRuntimeCard(trace, [before], [], 5)

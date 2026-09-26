@@ -143,7 +143,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "billing.unavailable": z.object({ "type": z.literal("billing.unavailable"), "actor": z.literal("system") }).strict(),
   "toast.shown": z.object({ "type": z.literal("toast.shown"), sourceCard: z.string().optional(), "actor": z.literal("system"), "key": z.string(), "title": z.string(), "action": ToastSchema.shape["action"].optional() }).strict(),
   "toast.progressed": z.object({ "type": z.literal("toast.progressed"), "actor": z.literal("system"), "key": z.string(), "detail": z.string(), "title": z.string().optional() }).strict(),
-  "toast.resolved": z.object({ "type": z.literal("toast.resolved"), "actor": z.literal("system"), "key": z.string(), "status": z.enum(["ok", "failed"]), "title": z.string().optional(), "detail": z.string(), "action": ToastSchema.shape["action"].optional() }).strict(),
+  "toast.resolved": z.object({ "type": z.literal("toast.resolved"), "actor": z.literal("system"), "key": z.string(), "status": z.enum(["ok", "failed", "cancelled"]), "title": z.string().optional(), "detail": z.string(), "action": ToastSchema.shape["action"].optional() }).strict(),
   "toast.dismissed": z.object({ "type": z.literal("toast.dismissed"), "actor": z.enum(["user", "system"]), "id": z.string() }).strict(),
   "card.removed": z.object({ "type": z.literal("card.removed"), "actor": ActorSchema, "id": z.string() }).strict(),
   "message.tool.executed": z.object({ "type": z.literal("message.tool.executed"), "actor": z.literal("smithers"), "turnId": z.string(), "text": z.string(), "answersTurn": MessageSchema.shape["answersTurn"] }).strict(),

@@ -4,7 +4,7 @@ import { canonicalStoredJsonValue } from "../EventValue"
 import { projectRuntimeCard, runtimeRunKey } from "../RuntimeProjection"
 import { workflowLaunchOf, type WorkflowLaunch } from "../WorkflowLaunch"
 import type { ControllerContext } from "./context"
-import { TOAST_SUPERSEDED } from "./failures"
+import { TOAST_CANCELLED, TOAST_SUPERSEDED } from "./failures"
 import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
 import { runtimeFlowAvailable } from "../KnowledgeFeatures"
 import { planCardSnapshot } from "../../cards/PlanNodes"
@@ -195,7 +195,7 @@ export const createWorkflowLaunchController = (
           const summary = store.committedRuntimeRun(runtimeRunKey(card.payload))?.summary
           if (summary !== undefined && terminal.has(summary.status)) {
             if (summary.status === "completed") return request.then === undefined ? true : await continueChange()
-            if (summary.status === "cancelled") return summary.verdict ?? "Run cancelled."
+            if (summary.status === "cancelled") return TOAST_CANCELLED
             return summary.verdict === "failed — no cause recorded in the journal"
               ? runFailureOf({ workflow: request.workflow, error: summary.verdict,
                 events: store.committedRuntimeRun(runtimeRunKey(card.payload))?.events }).message

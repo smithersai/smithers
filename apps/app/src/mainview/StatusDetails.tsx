@@ -10,6 +10,7 @@ export const statusPresentation = (input: StatusRollup | undefined, fallback: st
     return { status: fallback, label: formatStatus(fallback) }
   }
   const status = expireStatus(input, now)
+  if (status.state === "cancelled") return { status: "stopped", label: formatStatus("stopped") }
   const lifecycle = formatStatus(status.state)
   if (terminalStatus(status)) return { status: status.health === "failing" ? "failed" : status.state === "exited" ?
     status.health === "healthy" ? "completed" : "unknown" : status.state,

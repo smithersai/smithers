@@ -255,7 +255,7 @@ export const projectRuntimeCard = (card: Card, runs: ReadonlyArray<RuntimeRun>, 
     const phase = row === undefined ? card.payload.phase : row.status === "parked" && row.waitingReason === "approval" ? "waiting-approval" : phaseOf(row.status)
     const terminal = phase === "completed" || phase === "failed" || phase === "cancelled"
     const observation = run.observer?.state
-    return { ...card, runtimeView: { version: 1 }, status: terminal ? phase === "completed" ? "acted" : "error" : row === undefined ? card.status : "active",
+    return { ...card, runtimeView: { version: 1 }, status: terminal ? phase === "failed" ? "error" : "acted" : row === undefined ? card.status : "active",
       payload: { ...card.payload, phase: terminal || observation === undefined || observation === "connected" ? phase : observation,
         ...(row === undefined ? {} : { workflow: row.flowId, lastSeq: row.updatedAt, waiting: waitingOf(row), steeringPending: (row.steeringPending ?? 0) > 0,
           result: row.status === "completed" ? row.finalOutput ?? row.verdict : null, error: row.status === "failed" ? row.verdict : undefined,

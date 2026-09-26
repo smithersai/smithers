@@ -1,5 +1,5 @@
 import { Alert, AlertDescription, AlertTitle, Button, Spinner } from "@smthrs/ui"
-import { Check, X } from "lucide-react"
+import { Check, Square, X } from "lucide-react"
 import { ModalPopover } from "./ModalPopover"
 import { workerToastActions } from "./WorkerToastActions"
 import type { Card, Toast } from "./state/AppState"
@@ -44,6 +44,7 @@ export function ToastStack({
           role={toast.status === "failed" ? "alert" : "status"}
         >
           {toast.status === "running" ? <Spinner size="sm" className="toast-icon" aria-label="Working" />
+            : toast.status === "cancelled" ? <Square size={17} className="toast-icon" aria-hidden="true" />
             : toast.status === "ok" ? <Check size={17} className="toast-icon" aria-hidden="true" />
             : <X size={17} className="toast-icon" aria-hidden="true" />}
           <div className="toast-body">

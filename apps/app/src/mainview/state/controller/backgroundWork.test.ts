@@ -21,7 +21,7 @@ const fixture = async () => {
   return { store, ctx }
 }
 
-test("one debounced toast spans unresolved launch and execution, with controls from the real receipt", async () => {
+for (const status of ["failed", "cancelled"] as const) test(`one debounced toast spans launch and execution through ${status}, with real controls`, async () => {
   const { store, ctx } = await fixture()
   const remote = Promise.withResolvers<{ status: "ok"; value: { runId: string } }>()
   let launches = 0
@@ -47,11 +47,11 @@ test("one debounced toast spans unresolved launch and execution, with controls f
   expect(store.collections.toasts.get(toast.id)?.status).toBe("running")
   expect(workerToastActions(store.collections.cards.get(toast.sourceCard!)).map(a => a.label)).toContain("Stop")
   await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
-    scope: { repo: "owner/repo", runId: "run-1" }, summary: { runId: "run-1", flowId: "review", status: "failed",
+    scope: { repo: "owner/repo", runId: "run-1" }, summary: { runId: "run-1", flowId: "review", status,
       createdAt: 1, updatedAt: 2, turns: 0, calls: 0, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0,
       inputTokens: 0, outputTokens: 0, verdict: "offline", diagnosis: "offline" }
   } }).isPersisted.promise
-  await waitFor(() => store.collections.toasts.get(toast.id)?.status === "failed")
+  await waitFor(() => store.collections.toasts.get(toast.id)?.status === status)
   expect(workerToastActions(store.collections.cards.get(toast.sourceCard!)).map(a => a.label)).toEqual(["Open tab", "Run again"])
   expect(launches).toBe(1)
 })
@@ -73,4 +73,21 @@ test("recovered workers get controls, failures stay visible, and quick work stay
   await new Promise(resolve => setTimeout(resolve, 320))
   expect([...store.collections.toasts.values()].map(t => t.sourceCard)).toEqual([card.id])
   expect(store.collections.toasts.get(toast.id)?.detail).toBe("offline")
+})
+
+for (const kind of ["run-trace", "agent"] as const) test(`a recovered ${kind} cancellation settles neutrally`, async () => {
+  const { store, ctx } = await fixture()
+  const base = { id: "cancelled-worker", title: "Review", status: "active" as const, ordinal: 1, createdAt: Date.now() - 1000 }
+  const card: Card = kind === "run-trace"
+    ? { ...base, kind, payload: { repo: "owner/repo", workflow: "review", runId: "run-1", phase: "running", steps: [], result: null, lastSeq: 0 } }
+    : { ...base, kind, payload: { cloud: true, displayName: "Review", sessionId: "session-1", repo: "owner/repo", provider: null, workspaceId: null, state: "active", transcript: [] } }
+  await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+  observeBackgroundWork(ctx)
+  await waitFor(() => store.collections.toasts.size === 1)
+  const stopped: Card = card.kind === "run-trace"
+    ? { ...card, payload: { ...card.payload, phase: "cancelled" } }
+    : { ...card, payload: { ...card.payload, state: "cancelled" } }
+  await store.dispatch({ type: "card.upsert", actor: "system", card: stopped }).isPersisted.promise
+  await waitFor(() => [...store.collections.toasts.values()][0]?.status !== "running")
+  expect([...store.collections.toasts.values()][0]).toMatchObject({ status: "cancelled", detail: "Cancelled" })
 })
