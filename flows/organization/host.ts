@@ -320,6 +320,7 @@ const registrations = (
       root: settings.root,
       rosterDir: organization.rosterDir,
       weeklyMeeting: organization.weeklyMeeting ?? false,
+      hireSeats: organization.hireSeats,
       generatedDir: organization.wiki.generatedDir
     }),
     Meetings.layer({

@@ -68,8 +68,10 @@ owner-contact questions with a typed `Denied` reason.
 `Roster.validate` returns every broken invariant, each with a stable code:
 unique ids and memory namespaces, a `reportsTo` chain that reaches the owner
 without a cycle, one assistant, hires that carry a hire record, report to
-their hirer, stay inside its grants, and respect every ancestor's depth,
-children, persistent, and budget limits, helpers with a task scope and
+their hirer, stay inside its grants, skills, per-task tokens and
+concurrency, hold its seat (or one of the organization's `hireSeats`), and
+respect every ancestor's depth, children, persistent, and budget limits,
+helpers with a task scope and
 specialists without one, `*` containers only on the assistant, retired
 profiles without grants, weekly meetings when the policy asks for them,
 skills from the pinned pack, and unique output fields.

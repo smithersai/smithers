@@ -211,6 +211,8 @@ export const Organization = Schema.Struct({
   connectionsFile: Schema.optionalKey(WikiPath),
   meetingsFile: Schema.optionalKey(WikiPath),
   weeklyMeeting: Schema.optionalKey(Schema.Boolean),
+  /** Seats a hire may hold besides its hirer's own. */
+  hireSeats: Schema.optionalKey(Schema.Array(Profile.Seat)),
   seats: Seats,
   judge: Profile.Seat,
   vm: Schema.Struct({

@@ -218,6 +218,8 @@ export interface Options {
   readonly rosterDir: string
   /** Whether every active core role must hold a weekly meeting (the roster's validation policy). */
   readonly weeklyMeeting: boolean
+  /** Seats a hire may hold besides its hirer's own. */
+  readonly hireSeats?: ReadonlyArray<string> | undefined
   /** The generated directory accepted outputs are written under. */
   readonly generatedDir: string
 }
@@ -226,7 +228,8 @@ export interface Options {
 export const amend = (
   snapshot: Authority.Snapshot,
   stored: ReadonlyArray<Hiring.Stored>,
-  weeklyMeeting: boolean
+  weeklyMeeting: boolean,
+  hireSeats?: ReadonlyArray<string>
 ): Result.Result<Authority.Snapshot, Authority.AuthorityError> => {
   const profiles = new Map(snapshot.roster.profiles)
   const sources = new Map(snapshot.roster.sources.map((source) => [source.path, source.digest]))
@@ -238,7 +241,8 @@ export const amend = (
     roster: Roster.make(profiles.values(), [...sources].map(([path, digest]) => ({ path, digest }))),
     common: snapshot.common,
     skills: snapshot.skills,
-    weeklyMeeting
+    weeklyMeeting,
+    hireSeats
   })
 }
 
@@ -247,7 +251,7 @@ const specFields = [
   "`name`, `objective`, `responsibilities` (a list of lines).",
   "Optional: `kind` (`specialist`, persistent, the default; or `helper`, for this task only), `outputs` (a list of `{name, description}` output fields; default one `report`), `tools`, `knowledge`, `repositories`, `connections`, `skills`, `retrieval` (`{ allow, deny }` web domains for the `retrieval` tool; left out, the hire takes your scope), `budget` (`tokensPerTask`, `tasksPerDay`, `concurrency`), `boundaries`.",
   "Leave `budget` out for the default (100000 tokens per task, 5 tasks a day, one at a time, never more than yours); one task of a few model calls spends 30000 to 100000 tokens, and a task that runs out stops blocked.",
-  "Every grant must be one you hold yourself; ask for the narrowest the work needs. A hire never holds personal accounts or contacts the owner."
+  "Every grant and skill must be one you hold yourself, the budget no larger than yours, and the seat yours; ask for the narrowest the work needs. A hire never holds personal accounts or contacts the owner."
 ]
 
 const describeGrants = (profile: Profile.Profile): ReadonlyArray<string> => [
@@ -292,7 +296,7 @@ export const layer = (options: Options) =>
           }
           stored.push(yield* roster.write(profile, Option.isSome(existing) ? existing.value.digest : undefined))
         }
-        const amended = amend(yield* registry.current, stored, options.weeklyMeeting)
+        const amended = amend(yield* registry.current, stored, options.weeklyMeeting, options.hireSeats)
         if (Result.isFailure(amended)) {
           return yield* Effect.fail(amended.failure.violations.map((violation) => violation.message).join("; "))
         }
@@ -358,7 +362,8 @@ export const layer = (options: Options) =>
           if (Result.isFailure(request)) return refused("the hire request is malformed", request.failure)
           const proposed = Hiring.propose(request.success, current.roster, {
             weeklyMeeting: options.weeklyMeeting,
-            skills: [...current.skills.skills.keys()]
+            skills: [...current.skills.skills.keys()],
+            hireSeats: options.hireSeats
           })
           if (Result.isFailure(proposed)) {
             return refused(

@@ -90,7 +90,7 @@ describe("Hiring.propose", () => {
     const helper = ok(Hiring.propose(
       request({ kind: "helper", taskScope: "task-7", seat: "openai:gpt-6-luna", effort: "low" }),
       roster,
-      examplePolicy
+      { ...examplePolicy, hireSeats: ["openai:gpt-6-luna"] }
     ))
     expect(helper).toMatchObject({ kind: "helper", taskScope: "task-7", seat: "openai:gpt-6-luna", effort: "low" })
   })
@@ -158,6 +158,13 @@ describe("Hiring.propose", () => {
     expect(refusal({ budget: { tokensPerTask: 300_000, tasksPerDay: 30, concurrency: 1 } })).toEqual([
       "budget-exceeded:lead"
     ])
+  })
+
+  it("refuses a per-task ceiling, seat or skill beyond the parent's", () => {
+    expect(refusal({ budget: { tokensPerTask: lead.budget.tokensPerTask * 2, tasksPerDay: 1, concurrency: 1 } }))
+      .toEqual(["budget-exceeded:lead.docs"])
+    expect(refusal({ seat: "openai:gpt-6-luna" })).toEqual(["hire-widens:lead.docs"])
+    expect(refusal({ skills: ["debug"] })).toEqual(["hire-widens:lead.docs"])
   })
 
   it("refuses a reused id, even a retired one, and ignores unrelated existing problems", () => {

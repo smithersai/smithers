@@ -427,6 +427,25 @@ describe("Roster.validate", () => {
     expect(check([...base, greedy])).toEqual(["budget-exceeded:lead"])
   })
 
+  it("bounds a hire's per-task tokens, concurrency, seat and skills by its hirer's", () => {
+    const lead = profileOf(roster, "lead")
+    const one = (patch: Partial<Profile.Profile>) => check([...base, hire("lead.x", "lead", patch)])
+    expect(one({ budget: { tokensPerTask: lead.budget.tokensPerTask, tasksPerDay: 1, concurrency: 1 } })).toEqual([])
+    // One costly task a day fits the hirer's daily sum and still exceeds its per-task ceiling.
+    expect(one({ budget: { tokensPerTask: lead.budget.tokensPerTask + 1, tasksPerDay: 1, concurrency: 1 } }))
+      .toEqual(["budget-exceeded:lead.x"])
+    expect(one({ budget: { tokensPerTask: 1000, tasksPerDay: 1, concurrency: lead.budget.concurrency + 1 } }))
+      .toEqual(["budget-exceeded:lead.x"])
+    expect(one({ seat: "other:costly-model" })).toEqual(["hire-widens:lead.x"])
+    expect(Roster.validate([...base, hire("lead.x", "lead", { seat: "other:costly-model" })], {
+      ...examplePolicy,
+      hireSeats: ["other:costly-model"]
+    })).toEqual([])
+    const unheld = examplePolicy.skills.find((skill) => !lead.skills.includes(skill))!
+    expect(one({ skills: [unheld] })).toEqual(["hire-widens:lead.x"])
+    expect(one({ skills: lead.skills.slice(0, 1) })).toEqual([])
+  })
+
   it("keeps hires inside a USD-capped hirer's monthly budget", () => {
     const assistant = profileOf(roster, "assistant")
     const helper = (usdPerMonth?: number) =>
@@ -434,6 +453,8 @@ describe("Roster.validate", () => {
         kind: "helper",
         taskScope: "t1",
         grants: noGrants,
+        skills: [],
+        seat: assistant.seat,
         budget: {
           tokensPerTask: 1000,
           tasksPerDay: 1,

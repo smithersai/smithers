@@ -100,10 +100,12 @@ export const makeSnapshot = (input: {
   readonly common: Prompt.Common
   readonly skills: Skills.Pack
   readonly weeklyMeeting?: boolean | undefined
+  readonly hireSeats?: ReadonlyArray<string> | undefined
 }): Result.Result<Snapshot, AuthorityError> => {
   const violations = Roster.validate([...input.roster.profiles.values()], {
     weeklyMeeting: input.weeklyMeeting ?? false,
-    skills: [...input.skills.skills.keys()]
+    skills: [...input.skills.skills.keys()],
+    hireSeats: input.hireSeats
   })
   if (violations.length > 0) {
     return Result.fail(
@@ -172,7 +174,13 @@ export const loadSnapshot = (
       text
     }
     return yield* Effect.fromResult(
-      makeSnapshot({ roster, common, skills, weeklyMeeting: organization.weeklyMeeting })
+      makeSnapshot({
+        roster,
+        common,
+        skills,
+        weeklyMeeting: organization.weeklyMeeting,
+        hireSeats: organization.hireSeats
+      })
     )
   })
 

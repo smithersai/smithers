@@ -532,6 +532,7 @@ export const ViolationCode = Schema.Literals([
   "parent-inactive",
   "hiring-not-granted",
   "grants-widen",
+  "hire-widens",
   "depth-exceeded",
   "children-exceeded",
   "persistent-exceeded",
@@ -588,6 +589,8 @@ export type Violation = typeof Violation.Type
 export interface Policy {
   readonly weeklyMeeting: boolean
   readonly skills: ReadonlyArray<string>
+  /** Seats a hire may hold besides its hirer's own. Default none. */
+  readonly hireSeats?: ReadonlyArray<string> | undefined
 }
 
 const violation = (code: ViolationCode, principal: string, message: string): Violation => ({
@@ -713,7 +716,8 @@ const retirementViolations = (profile: Profile.Profile): ReadonlyArray<Violation
 
 const hiredViolations = (
   profile: Profile.Profile,
-  byId: ReadonlyMap<string, Profile.Profile>
+  byId: ReadonlyMap<string, Profile.Profile>,
+  policy: Policy
 ): ReadonlyArray<Violation> => {
   const found: Array<Violation> = []
   if (!isHired(profile)) {
@@ -759,6 +763,21 @@ const hiredViolations = (
   }
   for (const widening of Grants.widenings(profile.grants, parent.grants)) {
     found.push(violation("grants-widen", profile.id, `${widening.grant}: ${widening.detail}`))
+  }
+  for (const limit of ["tokensPerTask", "concurrency"] as const) {
+    if (profile.budget[limit] > parent.budget[limit]) {
+      found.push(
+        violation("budget-exceeded", profile.id, `${limit} ${profile.budget[limit]} exceeds ${hirer}'s ${parent.budget[limit]}`)
+      )
+    }
+  }
+  if (profile.seat !== parent.seat && !(policy.hireSeats ?? []).includes(profile.seat)) {
+    found.push(violation("hire-widens", profile.id, `seat ${profile.seat} is neither ${hirer}'s nor an allowed hire seat`))
+  }
+  const held = new Set(parent.skills)
+  const unheld = profile.skills.filter((skill) => !held.has(skill))
+  if (unheld.length > 0) {
+    found.push(violation("hire-widens", profile.id, `skills ${unheld.join(", ")} are not ${hirer}'s`))
   }
   const chain = hireChain(byId, profile.id)
   for (let index = 1; index < chain.length; index++) {
@@ -831,7 +850,8 @@ const budgetViolations = (
  * `owner-direct` principal, an active unhired core role; hired principals
  * never hold either, carry a hire record, are named `<hirer>.<slug>`, report
  * to their hirer, stay inside its grants, and respect every ancestor's
- * depth, children, persistent, and budget limits; helpers carry a task
+ * depth, children, persistent, and budget limits, and never exceed its
+ * per-task tokens, concurrency, seat or skills; helpers carry a task
  * scope and specialists do not; `*` containers only on the `owner-direct`
  * principal; retired profiles hold no grants; weekly meetings when the
  * policy requires them; skills from the pinned pack; unique output fields.
@@ -863,7 +883,7 @@ export const validate = (profiles: ReadonlyArray<Profile.Profile>, policy: Polic
     } else {
       namespaces.set(profile.memory.namespace, profile.id)
     }
-    found.push(...hiredViolations(profile, byId))
+    found.push(...hiredViolations(profile, byId, policy))
     found.push(...parentViolations(profile, profiles))
     found.push(...retirementViolations(profile))
     if (
