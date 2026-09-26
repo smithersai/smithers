@@ -1,7 +1,6 @@
 # flows
 
-This repository's own project flow directory and the inputs its migration and
-initialization flows read.
+This repository's own project flow directory.
 
 `smthrs flow list` discovers flows by walking `<project>/flows/**` for `flow.ts`,
 `flow.mdx`, or `SKILL.md`, parsing frontmatter and module metadata without
@@ -11,11 +10,12 @@ named by its path, so `flows/create-flow/scaffold/flow.mdx` is the flow
 
 ## The authoring bodies
 
-`create-flow/{clarify,design,scaffold,provision,fix,document}` and
-`create-skill/{clarify,design,scaffold,document}` are ten Markdown flows: the
+`create-flow`, its stages `create-flow/{clarify,provision,design,scaffold,fix,document}`,
+and `create-skill/{clarify,design,scaffold,document}` are Markdown flows: the
 prompt is the body, and the frontmatter declares the description and the
-capabilities the permission kernel grants. They are inputs to the
-`migrate-smithers-v1` flow and the init pack.
+capabilities the permission kernel grants. `create-flow` is the entry the app's
+`/flow.create` door launches; `packages/rpc/src/FlowAuthoring.ts` names it and
+its stages.
 
 Capability literals are load-bearing. `proc:spawn:*` grants a command;
 `proc:spawn: *`, with a leading space, grants only a command that starts with a

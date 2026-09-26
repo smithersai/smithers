@@ -1,10 +1,8 @@
 /**
- * The migration pack inputs, checked against the real registry and the real
- * migration detector.
+ * The prompt bodies under `flows/` and the 0.x fixture, checked against the
+ * real registry and the real migration detector.
  *
- * These files are data for the `migrate-smithers-v1` flow and the init pack.
- * Data that nothing runs
- * rots silently, so this suite runs the registry over the prompt bodies and the
+ * Data that nothing runs rots silently, so this suite runs the registry over the prompt bodies and the
  * detector over the fixture, both through their production entry points.
  *
  * Run: node --test flows/pack.test.mjs
@@ -39,8 +37,8 @@ const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
 const run = (effect) => Effect.runPromise(effect.pipe(Effect.provide(platform)));
 
 /**
- * The prompt bodies under `flows/`, by their path-derived flow name: the ten
- * authoring bodies the migration composes, the repository flows the
+ * The prompt bodies under `flows/`, by their path-derived flow name: the
+ * `create-flow` and `create-skill` authoring bodies, the repository flows the
  * smithers.sh tape runs, the issue research and proof-of-concept bodies,
  * and the `checks/*` bodies that pin a command for `coding/CommandCheck`.
  */
