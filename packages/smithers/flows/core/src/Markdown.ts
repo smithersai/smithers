@@ -49,7 +49,7 @@ export interface MarkdownFrontmatter {
    */
   readonly name: string
   readonly description?: string | undefined
-  readonly model?: string | readonly [string, ...string[]] | undefined
+  readonly model?: string | readonly [string, ...Array<string>] | undefined
   readonly flows?: ReadonlyArray<string> | undefined
   readonly capabilities?: ReadonlyArray<string> | undefined
   readonly effects?: {
