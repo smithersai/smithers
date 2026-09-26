@@ -5,6 +5,7 @@ import type { Card } from "./AppState"
 import { approvalActionId, parseApprovalActionId } from "./ApprovalReference"
 import { createAppStore, type AppStore } from "./AppStore"
 import { memoryStorage } from "./TestFixtures"
+import { runtimeApprovalKey } from "./RuntimeProjection"
 import { reconcileRunApprovals } from "./controller/approval-reconciliation"
 import { createWorkflowPumpController } from "./controller/workflow-pump"
 import type { ControllerContext } from "./controller/context"
@@ -50,6 +51,75 @@ test("approval action identities preserve punctuation and bind all three identif
 })
 
 describe("approval observation recovery", () => {
+  test("reset removes a decided observation whose insert has not committed", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+    try {
+      const observation = store.dispatch({ type: "gateway.approvals.observed", actor: "system",
+        scope: { repo, workspaceId: workspaceA, runId: "run" }, rows: [row("run", "deploy", "approved")] })
+      const reset = store.dispatch({ type: "app.reset", actor: "user" })
+      await observation.isPersisted.promise
+      await reset.isPersisted.promise
+      expect(store.collections.runtimeApprovals.size).toBe(0)
+      expect((await store.verifyState()).valid).toBe(true)
+    } finally { await store.dispose?.() }
+  })
+
+  for (const decision of ["approved", "denied"] as const) test(`${decision} is visible only after its local receipt survives reload`, async () => {
+    const storage = memoryStorage()
+    const store = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
+    const scope = { repo, workspaceId: workspaceA, runId: "run" }
+    const id = runtimeApprovalKey(scope, "deploy", "sha256:reviewed")
+    try {
+      await store.dispatch({ type: "card.upsert", actor: "system", card: card("a", workspaceA) }).isPersisted.promise
+      await store.dispatch({ type: "gateway.approvals.observed", actor: "system", scope, rows: [row()] }).isPersisted.promise
+      await store.dispatch({ type: "gateway.approval.submission.changed", actor: "user",
+        submission: { id, submissionId: "attempt", state: "pending" } }).isPersisted.promise
+      const receipt = store.dispatch({ type: "gateway.approval.submission.changed", actor: "user",
+        submission: { id, submissionId: "attempt", state: decision, decidedAt: 2 } })
+      const beforeSave = read(store, "a").payload
+      // Unrelated input must stay usable without exposing the queued decision.
+      const chat = store.dispatch({ type: "composer.changed", actor: "user", draft: "Still usable" })
+      const afterInput = read(store, "a").payload
+      await receipt.isPersisted.promise
+      await chat.isPersisted.promise
+      expect(beforeSave.decision).toBeUndefined()
+      expect(beforeSave.pending).toBe(true)
+      expect(afterInput.decision).toBeUndefined()
+      expect(read(store, "a").payload.decision).toBe(decision)
+      await store.dispose?.()
+      const restored = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
+      try {
+        expect(read(restored, "a").payload.decision).toBe(decision)
+        expect((await restored.verifyState()).valid).toBe(true)
+      } finally { await restored.dispose?.() }
+    } finally { await store.dispose?.() }
+  })
+
+  test("a failed decision save never presents a completed approval", async () => {
+    const storage = memoryStorage()
+    let rejectWrites = false
+    const store = await createAppStore({ kind: "localStorage", storage: { ...storage,
+      setItem: (key, value) => { if (rejectWrites) throw new Error("disk full"); storage.setItem(key, value) }
+    } }, { seedWiki: false })
+    const scope = { repo, workspaceId: workspaceA, runId: "run" }
+    const id = runtimeApprovalKey(scope, "deploy", "sha256:reviewed")
+    const displayed: string[] = []
+    const observer = store.collections.runtimeApprovals.subscribeChanges(changes => {
+      for (const change of changes) displayed.push(change.value.row.status)
+    })
+    try {
+      await store.dispatch({ type: "gateway.approvals.observed", actor: "system", scope, rows: [row()] }).isPersisted.promise
+      await store.dispatch({ type: "gateway.approval.submission.changed", actor: "user",
+        submission: { id, submissionId: "attempt", state: "pending" } }).isPersisted.promise
+      rejectWrites = true
+      const receipt = store.dispatch({ type: "gateway.approval.submission.changed", actor: "user",
+        submission: { id, submissionId: "attempt", state: "approved", decidedAt: 2 } })
+      await expect(receipt.isPersisted.promise).rejects.toThrow("disk full")
+      expect(displayed).not.toContain("approved")
+      expect(store.collections.runtimeApprovals.get(id)?.row.status).toBe("pending")
+    } finally { rejectWrites = false; observer.unsubscribe(); await store.dispose?.() }
+  })
+
   test("reload releases only interrupted submission guards, preserving the reviewed requests", async () => {
     const storage = memoryStorage()
     const store = await createAppStore({ kind: "localStorage", storage })

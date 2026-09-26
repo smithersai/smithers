@@ -720,7 +720,8 @@ export interface AppStore {
   readonly collections: AppCollections
   /**
    * Apply one transition. Its change is visible in `collections` when this
-   * returns, before it is saved. The returned transaction is the durability
+   * returns, before it is saved, except runtime approval decision updates, which become
+   * visible only after their durable receipt. The returned transaction is the durability
    * receipt: await `isPersisted.promise` before treating the change as saved,
    * for example before a reload or an outbound side effect.
    *
@@ -911,7 +912,7 @@ interface ProjectionWriter {
   readonly get: (key: string) => unknown
   readonly keys: () => Iterable<string>
   readonly insert: (row: unknown) => unknown
-  readonly update: (key: string, mutate: (draft: Record<string, unknown>) => void) => unknown
+  readonly update: (key: string, config: { optimistic: boolean }, mutate: (draft: Record<string, unknown>) => void) => unknown
   readonly delete: (keys: string[]) => unknown
 }
 
@@ -926,9 +927,16 @@ const installProjection = (collections: StoredCollections, snapshot: AppProjecti
     if (removed.length > 0) collection.delete(removed)
     for (const [key, row] of rows) {
       if (priorRows?.get(key) === row) continue
+      // A server receipt still needs a local commit before a reload can show
+      // it. Keep the pending projection until persistence confirms the row;
+      // a failed save must never flash an approved/denied gate. This applies
+      // to later writes of the same row too, so queued input cannot reveal it.
       const previous = storedRow(collection.get(key))
+      // Keep inserts visible to subsequent projection diffs: reset/signout
+      // must still find and delete a newly observed row before it commits.
       if (previous === undefined) collection.insert(structuredClone(row))
-      else if (JSON.stringify(previous) !== JSON.stringify(row)) collection.update(key, draft => {
+      else if (JSON.stringify(previous) !== JSON.stringify(row)) collection.update(key,
+        { optimistic: name !== "runtimeApprovals" || (row as RuntimeApproval).row.status === "pending" }, draft => {
         for (const field of Object.keys(draft)) if (!Object.hasOwn(row, field)) draft[field] = undefined
         Object.assign(draft, structuredClone(row))
       })

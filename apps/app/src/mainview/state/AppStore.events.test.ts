@@ -18,6 +18,7 @@ import { createAppStore,PERSISTED_COLLECTION_SPECS,type AppStore } from "./AppSt
 import { canonicalEventValue, decodeEventValue, encodeEventValue } from "./EventValue"
 import { memoryStorage } from "./TestFixtures"
 import { MAX_TRANSITION_PAYLOAD_BYTES } from "./TransitionDiagnostics"
+import { runtimeApprovalKey } from "./RuntimeProjection"
 
 const opened: AppStore[] = []
 const directories: string[] = []
@@ -40,10 +41,11 @@ const envelopeRows = (storage: StorageApi) => Object.fromEntries(Object.entries(
 ).map(([key, value]) => [key, JSON.parse(value)]))
 const privateKeys = new Set(["app-events", "app-event-heads", "app-event-checkpoints", "app-event-retirements"].map(id => `smithers-mvp.${id}`))
 
-const sqliteStore = async (path: string) => {
+const sqliteStore = async (path: string, beforeCommit?: () => Promise<void>) => {
   const db = new Database(path)
   const adapter = await openSqliteRowStorage({
     execute: async <Row>(sql: string, params: ReadonlyArray<unknown> = []) => {
+      if (/^\s*COMMIT\b/i.test(sql)) await beforeCommit?.()
       const statement = db.query(sql)
       if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<Row>
       statement.run(...params as []); return []
@@ -915,4 +917,43 @@ test("settled from a collection observer includes its committed runtime receipt"
     expect(await observed.promise).toBe("completed")
     await write.isPersisted.promise
   } finally { subscription.unsubscribe() }
+})
+
+
+test("an approval stays pending through a held SQLite commit and survives immediate reopen", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-approval-commit-")); directories.push(directory)
+  const path = join(directory, "app.sqlite")
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+  let hold = false
+  const { store } = await sqliteStore(path, async () => {
+    if (hold) { entered.resolve(); await release.promise }
+  })
+  opened.push(store)
+  const scope = { repo: "owner/repo", runId: "run" }
+  const id = runtimeApprovalKey(scope, "question", "sha256:reviewed")
+  await store.dispatch({ type: "gateway.approvals.observed", actor: "system", scope, rows: [{
+    runId: scope.runId, requestId: "question", title: "Owner?", request: { kind: "ask", prompt: "Owner?" },
+    requestedAt: 1, status: "pending", payload: { target: { _tag: "Node", runId: scope.runId, requestId: "question",
+      digest: "sha256:reviewed", envelope: { capabilities: [], flows: [], budget: {} } }, scope: "once", idempotencyKey: "question" }
+  }] }).isPersisted.promise
+  await store.dispatch({ type: "gateway.approval.submission.changed", actor: "user",
+    submission: { id, submissionId: "answer", state: "pending" } }).isPersisted.promise
+  hold = true
+  const receipt = store.dispatch({ type: "gateway.approval.submission.changed", actor: "user",
+    submission: { id, submissionId: "answer", state: "approved", decidedAt: 2 } })
+  try {
+    await entered.promise
+    expect(store.collections.runtimeApprovals.get(id)?.row.status).toBe("pending")
+    expect(store.collections.runtimeApprovals.get(id)?.pending).toBe(true)
+    const chat = store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat remains usable" })
+    expect(store.session().draft).toBe("Chat remains usable")
+    expect(store.collections.runtimeApprovals.get(id)?.row.status).toBe("pending")
+    release.resolve()
+    await receipt.isPersisted.promise
+    expect(store.collections.runtimeApprovals.get(id)?.row.status).toBe("approved")
+    await chat.isPersisted.promise
+  } finally { hold = false; release.resolve(); await store.dispose?.() }
+  const restored = await sqliteStore(path); opened.push(restored.store)
+  expect(restored.store.collections.runtimeApprovals.get(id)?.row.status).toBe("approved")
+  expect((await restored.store.verifyState()).valid).toBe(true)
 })
