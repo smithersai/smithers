@@ -57,6 +57,17 @@ test("T1: /workspace.open renders the card, streams starting→running, and expo
   })
   await page.route(`**/api/repos/${REPO}/workspace/sessions`, (route) =>
     route.fulfill(json([])))
+  const fileReads: string[] = []
+  await page.route((url) => url.pathname === `/api/repos/${REPO}/workspaces/ws-1/files`, (route) => {
+    const path = new URL(route.request().url()).searchParams.get("path")
+    return route.fulfill(json(path === "my docs"
+      ? [{ name: "read me.txt", path: "my docs/read me.txt", type: "file", size: 18 }]
+      : [{ name: "my docs", path: "my docs", type: "dir", size: 0 }]))
+  })
+  await page.route((url) => url.pathname === `/api/repos/${REPO}/workspaces/ws-1/files/content`, (route) => {
+    fileReads.push(new URL(route.request().url()).searchParams.get("path") ?? "")
+    return route.fulfill(json({ content: "Workspace contents", encoding: "utf-8" }))
+  })
   await page.goto("/")
 
   await fillComposer(page, "/workspace.open main smithersai/smithers")
@@ -79,6 +90,21 @@ test("T1: /workspace.open renders the card, streams starting→running, and expo
   await expect(card.getByRole("button", { name: "Suspend", exact: true })).toBeVisible()
   await expect(card.getByRole("button", { name: "Delete", exact: true })).toBeVisible()
 
+  const filesTab = card.getByRole("tab", { name: "Files", exact: true })
+  await filesTab.focus()
+  await page.keyboard.press("Enter")
+  const directory = card.getByRole("button", { name: "my docs", exact: true })
+  await expect(directory).toHaveAttribute("data-flow", "workspace.files")
+  await expect(directory).toHaveAttribute("data-flow-args", '"my docs" ws-1')
+  await directory.focus()
+  await page.keyboard.press("Enter")
+  const file = card.getByRole("button", { name: "read me.txt", exact: true })
+  await expect(file).toHaveAttribute("data-flow", "workspace.file")
+  await expect(file).toHaveAttribute("data-flow-args", '"my docs/read me.txt" ws-1')
+  await file.focus()
+  await page.keyboard.press("Enter")
+  await expect(page.getByTestId("card-workspace-file-ws-1-my docs/read me.txt")).toContainText("Workspace contents")
+  expect(fileReads).toEqual(["my docs/read me.txt"])
 })
 
 test("T1: a degraded sign-in refuses a workspace act with the exact enable wording", async ({ page }) => {

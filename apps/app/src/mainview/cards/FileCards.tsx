@@ -147,6 +147,14 @@ export interface FileCardActions {
   readonly onRunCommand: RunCommand
 }
 
+/** The listing's host determines both preloading and activation. */
+type FileListNavigation = {
+  readonly scope: string
+} & (
+  | { readonly list: "files.list"; readonly read: "files.read" }
+  | { readonly list: "workspace.files"; readonly read: "workspace.file" }
+)
+
 /** The entry's full path under the card's path — the argument the row's command takes. */
 const childPath = (parent: string, name: string): string => parent === "" ? name : `${parent}/${name}`
 
@@ -165,7 +173,8 @@ const FileCardHeader = (props: {
   readonly path: string
   readonly address?: string | undefined
   readonly readAt?: { readonly changeId: string | null; readonly commitId: string | null; readonly source?: "head" | "working-copy" | undefined } | undefined
-  readonly refreshCommand: "files.read" | "files.list"
+  readonly refreshCommand: "files.read" | FileListNavigation["list"]
+  readonly refreshScope?: string | undefined
   readonly onRunCommand: RunCommand
   readonly trailing?: ReactNode
 }) => {
@@ -182,6 +191,7 @@ export const FileCardAddressLine = ({
   readAt,
   head,
   refreshCommand,
+  refreshScope,
   onRunCommand,
   trailing
 }: {
@@ -191,7 +201,8 @@ export const FileCardAddressLine = ({
   readonly address?: string | undefined
   readonly readAt?: { readonly changeId: string | null; readonly commitId: string | null; readonly source?: "head" | "working-copy" | undefined } | undefined
   readonly head: { readonly changeId: string | null; readonly commitId: string | null } | null
-  readonly refreshCommand: "files.read" | "files.list"
+  readonly refreshCommand: "files.read" | FileListNavigation["list"]
+  readonly refreshScope?: string | undefined
   readonly onRunCommand: RunCommand
   /** Rendered at the end of the address line: the file card's language word. */
   readonly trailing?: ReactNode
@@ -199,7 +210,7 @@ export const FileCardAddressLine = ({
   // A working-copy read is pinned at the checkout's `@`, which is not the head by design: its drift is the origin chip's "N ahead", never "head moved".
   const moved = readAt?.source !== "working-copy" && head !== null && readAt?.commitId != null && head.commitId != null &&
     head.commitId !== readAt.commitId
-  const refreshArgs = fileArgs(path === "" ? "/" : path, localRepoId ?? repo)
+  const refreshArgs = fileArgs(path === "" ? "/" : path, refreshScope ?? localRepoId ?? repo)
   return (
     <div>
       <p className="world-card-path">
@@ -236,7 +247,8 @@ const FileCardHeaderLive = ({
   readonly path: string
   readonly address?: string | undefined
   readonly readAt?: { readonly changeId: string | null; readonly commitId: string | null; readonly source?: "head" | "working-copy" | undefined } | undefined
-  readonly refreshCommand: "files.read" | "files.list"
+  readonly refreshCommand: "files.read" | FileListNavigation["list"]
+  readonly refreshScope?: string | undefined
   readonly onRunCommand: RunCommand
   readonly trailing?: ReactNode
 }) => {
@@ -251,9 +263,14 @@ const FileCardHeaderLive = ({
 
 export const FileListCardBody = ({
   card,
+  navigation,
   onRunCommand
-}: { readonly card: Extract<Card, { kind: "file-list" }> } & FileCardActions) => {
+}: {
+  readonly card: Extract<Card, { kind: "file-list" }>
+  readonly navigation?: FileListNavigation
+} & FileCardActions) => {
   const { repo, path, entries } = card.payload
+  const { list, read, scope } = navigation ?? { list: "files.list", read: "files.read", scope: card.payload.localRepoId ?? repo }
   return (
     <div className="world-card-list world-card-panel">
       <FileCardHeader
@@ -262,7 +279,8 @@ export const FileListCardBody = ({
         path={path}
         address={card.payload.address}
         readAt={card.payload.readAt}
-        refreshCommand="files.list"
+        refreshCommand={list}
+        refreshScope={scope}
         onRunCommand={onRunCommand}
       />
       <ul className="world-card-list">
@@ -280,7 +298,7 @@ export const FileListCardBody = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      {...flowAction(onRunCommand, "files.list", fileArgs(childPath(path, entry.name), card.payload.localRepoId ?? repo))}
+                      {...flowAction(onRunCommand, list, fileArgs(childPath(path, entry.name), scope))}
                     >
                       <Folder size={12} aria-hidden="true" />
                       <span className="world-card-title">{entry.name}</span>
@@ -290,7 +308,7 @@ export const FileListCardBody = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      {...flowAction(onRunCommand, "files.read", fileArgs(childPath(path, entry.name), card.payload.localRepoId ?? repo))}
+                      {...flowAction(onRunCommand, read, fileArgs(childPath(path, entry.name), scope))}
                     >
                       <FileText size={12} aria-hidden="true" />
                       <span className="world-card-title">{entry.name}</span>

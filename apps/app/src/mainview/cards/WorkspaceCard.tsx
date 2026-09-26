@@ -3,7 +3,6 @@ import { Copy } from "lucide-react"
 import type { Refusal } from "@smthrs/rpc/Refusal"
 import { ViewSkeleton } from "../ViewSkeleton"
 import { flowAction, flowProps } from "../flows/FlowAction"
-import { fileArgs, parseFileArgs } from "../flows/FileArgs"
 /*
  * The workspace card (lane citc, ADR 0002; completed by lane L3): one
  * persistent cloud computer, reviewed in the transcript.
@@ -368,23 +367,11 @@ const WorkspaceFacetBody = ({
   if (facet === "desktop") return <WorkspaceDesktopBody payload={payload} onRunCommand={onRunCommand} />
   if (facet === "files") {
     if (payload.files === undefined) return null
-    /*
-     * The repository file card's listing, imported rather than copied. Its
-     * rows dispatch files.list / files.read; here the same click reads the
-     * WORKSPACE's copy, so the binding is retargeted to the workspace routes
-     * with the workspace id appended.
-     */
     return (
       <FileListCardBody
         card={listingCard(payload)}
-        onRunCommand={(name, args) => {
-          const parsed = parseFileArgs(args)
-          if ("error" in parsed) return
-          onRunCommand(
-            name === "files.list" ? "workspace.files" : "workspace.file",
-            fileArgs(parsed.tokens[0] ?? "", payload.workspaceId)
-          )
-        }}
+        navigation={{ list: "workspace.files", read: "workspace.file", scope: payload.workspaceId }}
+        onRunCommand={onRunCommand}
       />
     )
   }

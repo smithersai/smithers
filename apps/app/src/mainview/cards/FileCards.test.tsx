@@ -12,7 +12,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import type { Card } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
-import { contentKey, FileCardAddressLine, FileCardBody, isMarkdownPath } from "./FileCards"
+import { contentKey, FileCardAddressLine, FileCardBody, FileListCardBody, isMarkdownPath } from "./FileCards"
 
 /*
  * The file card's two renderings (will, 2026-09-01): a markdown file goes
@@ -498,4 +498,59 @@ describe("the address line's head-moved rule", () => {
   test("a working-copy read never reports head moved: its drift is the origin chip's N ahead", () => {
     expect(line("working-copy")).not.toContain("head moved")
   })
+})
+
+
+describe("file listing bindings", () => {
+  test.each([undefined, "checkout with spaces"])("lists and reads in its repository scope (%s)", (localRepoId) => {
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    mounted.push({ root, host })
+    const commands: Array<{ name: string; args?: string }> = []
+    flushSync(() => root.render(<FileListCardBody
+      card={{
+        id: "listing", kind: "file-list", title: "Files", status: "active", createdAt: 1, ordinal: 1,
+        payload: { repo: "smithersai/smithers", localRepoId, path: "my docs", entries: [
+          { name: "examples", kind: "dir" }, { name: "read me.md", kind: "file" }
+        ] }
+      }}
+      onRunCommand={(name, args) => { commands.push({ name, args }) }}
+    />))
+    const scope = localRepoId === undefined ? "smithersai/smithers" : '"checkout with spaces"'
+    const buttons = host.querySelectorAll("button")
+    const expected = [
+      { name: "files.list", args: `"my docs/examples" ${scope}` },
+      { name: "files.read", args: `"my docs/read me.md" ${scope}` }
+    ]
+    for (const [index, button] of Array.from(buttons).entries()) {
+      expect(button.dataset.flow).toBe(expected[index]!.name)
+      expect(button.dataset.flowArgs).toBe(expected[index]!.args)
+      button.click()
+    }
+    expect(commands).toEqual(expected)
+  })
+})
+
+
+test("a listing refresh uses its host's flow and scope", () => {
+  const host = document.createElement("div")
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  mounted.push({ root, host })
+  const commands: Array<{ name: string; args?: string }> = []
+  flushSync(() => root.render(<FileCardAddressLine
+    repo="smithersai/smithers"
+    path=""
+    readAt={{ changeId: "old", commitId: "aaaa" }}
+    head={{ changeId: "new", commitId: "bbbb" }}
+    refreshCommand="workspace.files"
+    refreshScope="workspace with spaces"
+    onRunCommand={(name, args) => { commands.push({ name, args }) }}
+  />))
+  const button = host.querySelector("button")!
+  expect(button.dataset.flow).toBe("workspace.files")
+  expect(button.dataset.flowArgs).toBe('/ "workspace with spaces"')
+  button.click()
+  expect(commands).toEqual([{ name: "workspace.files", args: '/ "workspace with spaces"' }])
 })

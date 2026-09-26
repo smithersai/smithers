@@ -7,6 +7,7 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { INFRA_NOT_YOUR_FAULT } from "@smthrs/rpc/RefusalCopy"
 import { ControllerTestProvider } from "../ControllerContext"
+import { bindFlowPreloading } from "../flows/FlowAction"
 
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
@@ -372,10 +373,22 @@ describe("the workspace card", () => {
     expect(text).toContain("README.md")
     // plue's third type has no row of its own in the shared listing; it lists as a file.
     expect(text).toContain("latest")
-    click(host, "src")
-    expect(commands[0]).toEqual({ name: "workspace.files", args: "src ws-1" })
-    click(host, "README.md")
-    expect(commands[1]).toEqual({ name: "workspace.file", args: "README.md ws-1" })
+    const preloads: Array<{ name: string; args?: string }> = []
+    const unbind = bindFlowPreloading(document, async (name, args) => { preloads.push({ name, args }) })
+    try {
+      for (const [label, name] of [["src", "workspace.files"], ["README.md", "workspace.file"], ["latest", "workspace.file"]] as const) {
+        const button = Array.from(host.querySelectorAll("button")).find((row) => row.textContent === label)!
+        const invocation = { name, args: `${label} ws-1` }
+        expect(button.getAttribute("data-flow")).toBe(invocation.name)
+        expect(button.getAttribute("data-flow-args")).toBe(invocation.args)
+        button.dispatchEvent(new FocusEvent("focusin", { bubbles: true }))
+        expect(preloads.at(-1)).toEqual(invocation)
+        click(host, label)
+        expect(commands.at(-1)).toEqual(invocation)
+      }
+    } finally {
+      unbind()
+    }
     host.remove()
   })
 
