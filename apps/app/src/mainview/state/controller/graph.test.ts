@@ -20,6 +20,9 @@ import { payloadFor } from "../../flows/SlashPayload"
 import { flowArgs } from "../../flows/FlowArgs"
 import { json, memoryStorage, settle, silentAgent, waitFor } from "../TestFixtures"
 import { triggerNodeId } from "../../cards/FlowGraphTriggerNode"
+import { createControllerContext } from "./context"
+import { createFailureController } from "./failures"
+import { createGraphController } from "./graph"
 
 const createAppController = scopedControllers()
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
@@ -100,6 +103,7 @@ const relay = (options: {
    */
   readonly revisionSource?: string
   readonly readGate?: Promise<void>
+  readonly sourceResponse?: (url: URL) => Promise<Response>
 } = {}) => {
   const reads: Array<string> = []
   let plans = 0
@@ -175,6 +179,7 @@ const relay = (options: {
       if (absolute.pathname.endsWith("/contents/.smithers/factory.json")) return json(404, { status: "error", message: "no projection" })
       if (absolute.pathname.includes("/contents/")) {
         reads.push(`${absolute.pathname}${absolute.search}`)
+        if (options.sourceResponse) return options.sourceResponse(absolute)
         await options.readGate
         const asked = absolute.searchParams.get("ref")
         const served = asked === null ? options.source : options.revisionSource ?? options.source
@@ -445,7 +450,6 @@ describe("the plan card's node drawer", () => {
     const trailing = store.nextOrdinal()
 
     await controller.commands.run("flow.plan.select", `${PLAN_CARD} steady`)
-    await controller.commands.run("flow.plan.tab", `${PLAN_CARD} code`)
     await settle(10)
 
     /* The same card, moved: one card on screen, anchored where the reader is. */
@@ -656,3 +660,166 @@ describe("the plan card's node drawer", () => {
     expect(planCard(store)?.payload.view).toEqual({ node: triggerNodeId("nightly") })
   })
 })
+
+test("a thrown declaration read stays visible even inside the toast debounce", async () => {
+  const { store } = await planned({ sites: [{ id: "gate", declaredAt: { path: "flows/review/flow.ts", line: 1 } }] })
+  const context = createControllerContext(store, silentAgent, { toastDebounceMs: 300 })
+  Object.assign(context, createFailureController(context))
+  const graph = createGraphController(context, async () => { throw new Error("read interrupted") })
+  try {
+    await graph.selectPlanNode(PLAN_CARD, "gate")
+    graph.planNodeTab(PLAN_CARD, "code")
+    await waitFor(() => planCard(store)?.payload.view?.codeError !== undefined)
+    expect(planCard(store)?.payload.view?.codeError?.message).toBe("The declaration could not be loaded. Try again.")
+    expect(context.failures.recent().some(failure => failure.seam === "toast.work")).toBe(true)
+  } finally { await context.dispose() }
+})
+
+for (const kind of ["plan", "run"] as const) {
+  const setup = async (options: Parameters<typeof relay>[0]) => {
+    const fixture = await (kind === "plan" ? planned(options) : launched(options))
+    const { store, controller } = fixture
+    return { ...fixture,
+      select: (node?: string) => kind === "plan" ? controller.selectPlanNode(PLAN_CARD, node) : controller.selectGraphNode(RUN, node),
+      code: () => kind === "plan" ? controller.planNodeTab(PLAN_CARD, "code") : controller.graphNodeTab(RUN, "code"),
+      view: () => kind === "plan" ? planCard(store)?.payload.view : runCard(store)?.payload.graph,
+    }
+  }
+  const sites = [
+    { id: "gate", declaredAt: { path: "flows/first/flow.ts", line: 1 } },
+    { id: "steady", declaredAt: { path: "flows/second/flow.ts", line: 2 } },
+  ]
+
+  test(`${kind}: selecting another node while Code is open reads its declaration and clears the previous refusal`, async () => {
+    const fixture = await setup({ sites, sourceResponse: async url => url.pathname.includes("/first/")
+      ? json(404, { message: "first missing" }) : json(200, { type: "file", encoding: "utf-8", content: "second source" }) })
+    await fixture.select("gate")
+    fixture.code()
+    await waitFor(() => fixture.view()?.codeError !== undefined)
+    await fixture.select("steady")
+    expect(fixture.view()?.codeError).toBeUndefined()
+    await settle(10)
+    expect(fixture.reads.some(path => path.includes("/second/"))).toBe(true)
+    expect([...fixture.store.collections.cards.values()].some(card => card.kind === "file" && card.payload.content === "second source")).toBe(true)
+    expect(fixture.view()?.node).toBe("steady")
+    expect(fixture.view()?.tab).toBe("code")
+  })
+
+  test(`${kind}: duplicate Code activation shares a pending read and leaves Chat usable`, async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await setup({ sites, readGate: gate.promise })
+    try {
+      await fixture.select("gate")
+      fixture.code()
+      fixture.code()
+      await waitFor(() => fixture.reads.length > 0)
+      await fixture.store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat during a declaration read" }).isPersisted.promise
+      expect(fixture.reads).toHaveLength(1)
+      gate.resolve()
+      await waitFor(() => fixture.view()?.codeError !== undefined)
+      fixture.code()
+      await waitFor(() => fixture.reads.length === 2)
+    } finally { gate.resolve() }
+  })
+
+  test(`${kind}: closing a drawer prevents a late declaration refusal from reopening its state`, async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await setup({ sites, readGate: gate.promise })
+    try {
+      await fixture.select("gate")
+      fixture.code()
+      await waitFor(() => fixture.reads.length === 1)
+      await fixture.select()
+      gate.resolve()
+      await settle(15)
+      expect(fixture.view()?.node).toBeUndefined()
+      expect(fixture.view()?.codeError).toBeUndefined()
+    } finally { gate.resolve() }
+  })
+
+  test(`${kind}: an old account's read cannot clear the replacement drawer's refusal`, async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await setup({ sites, readGate: gate.promise })
+    try {
+      await fixture.select("gate")
+      fixture.code()
+      await waitFor(() => fixture.reads.length === 1)
+      const previous = kind === "plan" ? planCard(fixture.store)! : runCard(fixture.store)!
+      await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+      const view = { node: "gate", tab: "code" as const, codeError: { path: sites[0]!.declaredAt.path, message: "Current account refusal" } }
+      const replacement = previous.kind === "flow-plan" ? { ...previous, payload: { ...previous.payload, view } }
+        : { ...previous, payload: { ...previous.payload, graph: view } }
+      await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: replacement }).isPersisted.promise
+      gate.resolve()
+      await settle(15)
+      expect(fixture.view()?.codeError?.message).toBe("Current account refusal")
+    } finally { gate.resolve() }
+  })
+
+  test(`${kind}: a response from the prior source revision cannot change the current drawer`, async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await setup({ sites, readGate: gate.promise })
+    try {
+      await fixture.select("gate")
+      fixture.code()
+      await waitFor(() => fixture.reads.length === 1)
+      const previous = kind === "plan" ? planCard(fixture.store)! : runCard(fixture.store)!
+      const codeError = { path: sites[0]!.declaredAt.path, message: "Current revision refusal" }
+      const card = previous.kind === "flow-plan"
+        ? { ...previous, payload: { ...previous.payload, view: { ...previous.payload.view, codeError }, graph: { ...previous.payload.graph!, sourceRevision: "c".repeat(40) } } }
+        : { ...previous, payload: { ...previous.payload, graph: { ...previous.payload.graph, codeError }, plan: { ...previous.payload.plan!, graph: { ...previous.payload.plan!.graph!, sourceRevision: "c".repeat(40) } } } }
+      await fixture.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+      gate.resolve()
+      await settle(15)
+      expect(fixture.view()?.codeError?.message).toBe("Current revision refusal")
+    } finally { gate.resolve() }
+  })
+
+  test(`${kind}: a slower selection commit cannot retire the newer node's read`, async () => {
+    const saved = Promise.withResolvers<void>()
+    const answered = Promise.withResolvers<void>()
+    const fixture = await setup({ sites, readGate: answered.promise })
+    await fixture.select("steady")
+    fixture.code()
+    await waitFor(() => fixture.reads.length === 1)
+    const dispatch = fixture.store.dispatch
+    Object.assign(fixture.store, { dispatch: (transition: Parameters<typeof dispatch>[0]) => {
+      const write = dispatch(transition)
+      if (transition.type === "card.upsert" &&
+        ((transition.card.kind === "flow-plan" && transition.card.payload.view?.node === "gate") ||
+          (transition.card.kind === "run-trace" && transition.card.payload.graph?.node === "gate"))) {
+        return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+      }
+      return write
+    } })
+    try {
+      const older = fixture.select("gate")
+      await fixture.select("steady")
+      saved.resolve()
+      await older
+      answered.resolve()
+      await waitFor(() => fixture.view()?.codeError !== undefined)
+      expect(fixture.view()?.codeError?.path).toBe(sites[1]!.declaredAt.path)
+      expect(fixture.reads).toHaveLength(1)
+    } finally { saved.resolve(); answered.resolve(); Object.assign(fixture.store, { dispatch }) }
+  })
+
+  test(`${kind}: a delayed old declaration cannot replace the current Code refusal`, async () => {
+    const first = Promise.withResolvers<void>()
+    const fixture = await setup({ sites, sourceResponse: async url => {
+      if (url.pathname.includes("/first/")) await first.promise
+      return json(404, { message: url.pathname.includes("/first/") ? "first missing" : "second missing" })
+    } })
+    try {
+      await fixture.select("gate")
+      fixture.code()
+      await waitFor(() => fixture.reads.length === 1)
+      await fixture.select("steady")
+      fixture.code()
+      await waitFor(() => fixture.view()?.codeError?.path === sites[1]!.declaredAt.path)
+      first.resolve()
+      await settle(15)
+      expect(fixture.view()?.codeError?.path).toBe(sites[1]!.declaredAt.path)
+    } finally { first.resolve() }
+  })
+}

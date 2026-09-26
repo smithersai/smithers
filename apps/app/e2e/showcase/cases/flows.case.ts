@@ -4,6 +4,7 @@ import { showcase } from "../showcase"
 const REPO = "smithersai/smithers"
 const FLOW = "review-pr"
 const DIGEST = "d".repeat(64)
+const REVISION = "a".repeat(40)
 const ENVELOPE = { capabilities: [], flows: [], budget: {} }
 
 /** One plan node in the control plane's own shape (state/controller/graph.test.ts). */
@@ -34,6 +35,10 @@ export default showcase({
     const preparationReceipt = Promise.withResolvers<void>()
     const previewReceipt = Promise.withResolvers<void>()
     const previewKeys: Array<string | undefined> = []
+    const declarationReceipt = Promise.withResolvers<void>()
+    const declarationReads: string[] = []
+    let checkReads = 0
+    let firstDeclarationFinished = false
     let planned = FLOW
     let resuming = false
     let resumed = false
@@ -44,6 +49,20 @@ export default showcase({
     const triggerOperations: Array<string | undefined> = []
     await backend.cloud({ capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
     await backend.json("/api/workflow/provision", { status: "ready", repo: REPO, gatewayId: "gw-1" })
+    await backend.route(url => url.pathname.startsWith(`/api/repos/${REPO}/contents/flows/`), async route => {
+      const url = new URL(route.request().url())
+      expect(url.searchParams.get("ref")).toBe(REVISION)
+      declarationReads.push(url.pathname)
+      if (url.pathname.includes("/read-diff/")) {
+        await declarationReceipt.promise
+        await route.fulfill({ status: 404, json: { message: "Missing old declaration" } })
+        firstDeclarationFinished = true
+        return
+      }
+      checkReads += 1
+      return checkReads === 1 ? route.fulfill({ status: 404, json: { message: "Missing current declaration" } })
+        : route.fulfill({ json: { type: "file", encoding: "utf-8", content: "export const check = true" } })
+    })
     await backend.json("/api/workflow/trigger-approval", { status: "ok", approvedAt: "2026-09-26T08:00:00Z", approvedBy: 1 })
     await backend.json("/api/workflow/triggers", { status: "ok", repo: REPO, live: true, triggers: [], webhooks: [{ name: "github-pull-request", flowId: FLOW }] })
     await backend.json("/api/workflow/trigger-registrations", () => ({ status: "ok", rows: [
@@ -80,7 +99,8 @@ export default showcase({
           if (planned === "repository/trigger") triggerOperations.push(call.payload.input?.operation)
           return ok({
           planId: `${planned}-plan`, flowId: planned, digest: DIGEST, inputSummary: "{}", envelope: ENVELOPE, deployClass: false, nodes: NODES,
-          graph: { edges: [{ from: "read-diff", to: "check", reason: "value" }, { from: "read-diff", to: "comment", reason: "value" }, { from: "check", to: "comment", reason: "value" }] },
+          graph: { sourceRevision: REVISION, nodes: NODES.map(node => ({ id: node.id, declaredAt: { path: `flows/${node.id}/flow.ts`, line: 1 } })),
+            edges: [{ from: "read-diff", to: "check", reason: "value" }, { from: "read-diff", to: "comment", reason: "value" }, { from: "check", to: "comment", reason: "value" }] },
           approval: { target: { _tag: "Plan", planId: `${planned}-plan`, digest: DIGEST, envelope: ENVELOPE }, scope: "run", idempotencyKey: `approve:${planned}-plan` }
         })
         case "Approval.Submit": return ok({ decision: { _tag: "Accepted", receiptId: "a" } })
@@ -154,6 +174,30 @@ export default showcase({
     await app.click(drawer.getByRole("button", { name: "read-diff", exact: true }))
     await expect(drawer).toContainText("review/ReadDiff")
     await app.beat(500)
+    try {
+      await drawer.getByRole("tab", { name: "Declaration", exact: true }).focus()
+      await page.keyboard.press("ArrowRight")
+      await expect(drawer.getByRole("tab", { name: "Code", exact: true })).toHaveAttribute("aria-selected", "true")
+      await expect.poll(() => declarationReads.length).toBe(1)
+      await drawer.getByRole("button", { name: "Open file", exact: true }).focus()
+      await page.keyboard.press("Enter")
+      await page.keyboard.press("ControlOrMeta+k")
+      await page.getByTestId("composer-input").fill("Chat during a declaration read")
+      await page.keyboard.press("Escape")
+      expect(declarationReads).toHaveLength(1)
+      await check.focus()
+      await page.keyboard.press("Enter")
+      await expect(drawer.getByRole("tab", { name: "Code", exact: true })).toHaveAttribute("aria-selected", "true")
+      await expect(drawer.locator(".flow-graph-code-error")).toContainText("flows/check/flow.ts")
+      declarationReceipt.resolve()
+      await expect.poll(() => firstDeclarationFinished).toBe(true)
+      await expect(drawer.locator(".flow-graph-code-error")).toContainText("flows/check/flow.ts")
+      await drawer.getByRole("button", { name: "Open file", exact: true }).focus()
+      await page.keyboard.press("Enter")
+      await expect(drawer.locator(".flow-graph-code")).toContainText("export const check = true")
+      await expect(drawer.locator(".flow-graph-code-error")).toHaveCount(0)
+      expect(checkReads).toBe(2)
+    } finally { declarationReceipt.resolve() }
     await app.click(plan.getByRole("button", { name: "Run", exact: true }))
     const run = page.locator('[data-kind="run-trace"][data-run-id="run-review-71"]')
     await expect(run).toContainText("Running", { timeout: 15_000 })

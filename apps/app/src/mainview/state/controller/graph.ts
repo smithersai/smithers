@@ -19,6 +19,8 @@ import { triggerNodeId } from "../../cards/FlowGraphTriggerNode"
 import type { CommandResult } from "../../flows/Flows"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
+import { actorSharedState } from "../ActorBindings"
+import { TOAST_SUPERSEDED } from "./failures"
 
 type RunTraceCard = Extract<Card, { kind: "run-trace" }>
 type FlowPlanCard = Extract<Card, { kind: "flow-plan" }>
@@ -69,32 +71,35 @@ export const createGraphController = (
   ) => Promise<unknown>
 ): GraphController => {
   const { store } = ctx
+  const reads = actorSharedState(ctx, "graph-declarations", () => new Map<string, { key: string; epoch: number }>())
   /** Writes, or clears, the refusal a Code tab is showing on whichever card it is. */
-  const stateCodeError = (
+  const stateCodeError = async (
     cardId: string,
     codeError: { readonly path: string; readonly message: string } | undefined
-  ): void => {
+  ): Promise<void> => {
     const card = store.collections.cards.get(cardId)
     if (card === undefined) return
     if (card.kind === "flow-plan") {
+      if (codeError === undefined && card.payload.view?.codeError === undefined) return
       const { codeError: _held, ...view } = card.payload.view ?? {}
       const next = codeError === undefined ? view : { ...view, codeError }
       /* `card.updated` MERGES, so a cleared refusal is a replacement, exactly as a closed drawer is. */
-      store.dispatch({
+      await store.dispatch({
         type: "card.upsert",
         actor: ctx.commandActor,
         card: { ...card, payload: { ...card.payload, view: next } }
-      })
+      }).isPersisted.promise
       return
     }
     if (card.kind !== "run-trace") return
+    if (codeError === undefined && card.payload.graph?.codeError === undefined) return
     const { codeError: _held, ...graph } = card.payload.graph ?? {}
     const next = codeError === undefined ? graph : { ...graph, codeError }
-    store.dispatch({
+    await store.dispatch({
       type: "card.upsert",
       actor: ctx.commandActor,
       card: { ...card, payload: { ...card.payload, graph: next } }
-    })
+    }).isPersisted.promise
   }
 
   /**
@@ -113,63 +118,70 @@ export const createGraphController = (
   const readDeclaration = (
     cardId: string,
     repo: string,
+    nodeId: string,
     site: {
       readonly declaredAt?: { readonly path: string; readonly line: number } | undefined
       readonly sourceRevision?: string | undefined
     }
   ): void => {
     const { declaredAt, sourceRevision } = site
-    if (readFile === undefined || declaredAt === undefined || sourceRevision === undefined) return
-    /*
-     * A file this conversation already holds AT THIS REVISION is already in
-     * the drawer: the Code tab renders that card's payload. Re-reading it on
-     * every tab switch would spend a request to redraw what is on screen. A
-     * card of the same path read at another revision — or at none, which is
-     * the working tree — is a different file and does not answer for this
-     * one. A read that failed left no card, so the next open retries.
-     */
-    const held = [...store.collections.cards.values()].find((card) =>
-      card.kind === "file" && card.payload.path === declaredAt.path &&
-      card.payload.ref === sourceRevision &&
-      (card.payload.repo === repo || card.payload.localRepoId === repo)
-    )
-    if (held !== undefined) {
-      /*
-       * The bytes are in hand; what this node asked for is its OWN line. So
-       * the anchor moves onto the held card and the card goes to the tail,
-       * which is the whole act — a door that did nothing here would not be
-       * an act at all. A card already on that line is already the answer,
-       * so nothing is dispatched and nothing jumps.
-       */
-      if (held.kind !== "file" || held.payload.line === declaredAt.line) return
-      /* The anchor is a line and, when one was asked for, a column; a move to a line has none. */
-      const { column: _column, ...payload } = held.payload
-      store.dispatch({
-        type: "card.upsert",
-        actor: ctx.commandActor,
-        card: { ...held, ordinal: store.nextOrdinal(), payload: { ...payload, line: declaredAt.line } }
-      })
-      return
+    if (ctx.disposed || readFile === undefined || declaredAt === undefined || sourceRevision === undefined) return
+    const epoch = ctx.accountEpoch
+    const key = JSON.stringify([repo, nodeId, declaredAt.path, declaredAt.line, sourceRevision])
+    const selected = () => {
+      if (ctx.disposed || ctx.accountEpoch !== epoch) return false
+      const card = store.collections.cards.get(cardId)
+      if (card?.kind !== "flow-plan" && card?.kind !== "run-trace") return false
+      const view = card.kind === "flow-plan" ? card.payload.view : card.payload.graph
+      const now = card.kind === "flow-plan" ? planSite(card, nodeId) : runSite(card, nodeId)
+      return card.payload.repo === repo && view?.node === nodeId && view.tab === "code" &&
+        now.sourceRevision === sourceRevision && now.declaredAt?.path === declaredAt.path && now.declaredAt.line === declaredAt.line
     }
+    // A slower selection commit must not retire the newer node's observer.
+    if (!selected()) return
+    const existing = reads.get(cardId)
+    if (existing?.epoch === epoch && existing.key === key) return
+    const request = { key, epoch }
+    reads.set(cardId, request)
+    const current = () => reads.get(cardId) === request && selected()
     void ctx.withToast(
       `files.read:${JSON.stringify([repo, declaredAt.path, sourceRevision])}`,
       `Reading ${declaredAt.path}`,
       `Read ${declaredAt.path}`,
       async () => {
-        const answer = await readFile(declaredAt.path, repo, { line: declaredAt.line }, sourceRevision)
-        /*
-         * A refusal is a sentence, and the card is where a reader sees it:
-         * work that settles inside the toast debounce never shows a toast at
-         * all, so a refusal that only resolved one would be silent. The
-         * drawer draws it with the door that asks again.
-         */
-        const message = typeof answer === "string" ? answer : undefined
-        stateCodeError(cardId, message === undefined ? undefined : { path: declaredAt.path, message })
-        return message ?? true
-      }
-    ).catch(() => {
-      /* `withToast` already stated it; a rejected background read is not a second failure. */
-    })
+        try {
+          if (!current()) return TOAST_SUPERSEDED
+          await stateCodeError(cardId, undefined)
+          if (!current()) return TOAST_SUPERSEDED
+          // Only bytes held at this revision can answer for the declaration.
+          const held = [...store.collections.cards.values()].find(card => card.kind === "file" &&
+            !card.loading && card.status !== "error" && card.payload.path === declaredAt.path && card.payload.ref === sourceRevision &&
+            (card.payload.repo === repo || card.payload.localRepoId === repo))
+          if (held?.kind === "file") {
+            if (held.payload.line !== declaredAt.line) {
+              const { column: _column, ...payload } = held.payload
+              await store.dispatch({ type: "card.upsert", actor: ctx.commandActor,
+                card: { ...held, ordinal: store.nextOrdinal(), payload: { ...payload, line: declaredAt.line } }
+              }).isPersisted.promise
+            }
+            return current() ? true : TOAST_SUPERSEDED
+          }
+          const answer = await readFile(declaredAt.path, repo, { line: declaredAt.line }, sourceRevision)
+          if (!current()) return TOAST_SUPERSEDED
+          const message = typeof answer === "string" ? answer : undefined
+          await stateCodeError(cardId, message === undefined ? undefined : { path: declaredAt.path, message })
+          return current() ? message ?? true : TOAST_SUPERSEDED
+        } catch (error) {
+          if (!current()) return TOAST_SUPERSEDED
+          ctx.failures.report("toast.work", error, key)
+          const message = "The declaration could not be loaded. Try again."
+          await stateCodeError(cardId, { path: declaredAt.path, message })
+          return current() ? message : TOAST_SUPERSEDED
+        }
+      }, false, current
+    ).finally(() => {
+      if (reads.get(cardId) === request) reads.delete(cardId)
+    }).catch(() => { /* The shared toast reports persistence failures. */ })
   }
 
   /*
@@ -230,7 +242,8 @@ export const createGraphController = (
      * would leave the node standing and a reload would open it again. The
      * camera is a different reader gesture and survives untouched.
      */
-    const { node: _node, tab: _tab, ...rest } = card.payload.graph ?? {}
+    const epoch = ctx.accountEpoch
+    const { node: _node, tab: _tab, codeError: _error, ...rest } = card.payload.graph ?? {}
     const graph = nodeId === undefined ? rest : { ...rest, node: nodeId, ...(_tab === undefined ? {} : { tab: _tab }) }
     const { graph: _graph, ...payload } = card.payload
     await store.dispatch({
@@ -238,6 +251,7 @@ export const createGraphController = (
       actor: ctx.commandActor,
       card: { ...card, payload: Object.keys(graph).length === 0 ? payload : { ...payload, graph } }
     }).isPersisted.promise
+    if (!ctx.disposed && ctx.accountEpoch === epoch && nodeId !== undefined && _tab === "code") readDeclaration(card.id, card.payload.repo, nodeId, runSite(card, nodeId))
     return { value: `graph-select run=${runId} node=${nodeId ?? "none"}` }
   }
 
@@ -253,7 +267,7 @@ export const createGraphController = (
       patch: { payload: { ...card.payload, graph: { ...graph, tab } } }
     })
     /* The Code tab is a viewer, so opening it reads what it shows. */
-    if (tab === "code") readDeclaration(card.id, card.payload.repo, runSite(card, graph.node))
+    if (tab === "code") readDeclaration(card.id, card.payload.repo, graph.node, runSite(card, graph.node))
     return { value: `graph-tab run=${runId} tab=${tab}` }
   }
 
@@ -302,7 +316,8 @@ export const createGraphController = (
     const card = planCardFor(cardId)
     if (card === undefined) return "Open the plan first: the graph lives on its card."
     if (nodeId !== undefined && !planNodeIds(card).has(nodeId)) return `That plan has no node ${nodeId}.`
-    const { node: _node, tab: held, ...rest } = card.payload.view ?? {}
+    const epoch = ctx.accountEpoch
+    const { node: _node, tab: held, codeError: _error, ...rest } = card.payload.view ?? {}
     const view = nodeId === undefined ? rest : { ...rest, node: nodeId, ...(held === undefined ? {} : { tab: held }) }
     const { view: _view, ...payload } = card.payload
     await store.dispatch({
@@ -310,6 +325,7 @@ export const createGraphController = (
       actor: ctx.commandActor,
       card: { ...card, payload: Object.keys(view).length === 0 ? payload : { ...payload, view } }
     }).isPersisted.promise
+    if (!ctx.disposed && ctx.accountEpoch === epoch && nodeId !== undefined && held === "code") readDeclaration(card.id, card.payload.repo, nodeId, planSite(card, nodeId))
     return { value: `plan-select card=${cardId} node=${nodeId ?? "none"}` }
   }
 
@@ -324,7 +340,7 @@ export const createGraphController = (
       id: card.id,
       patch: { payload: { ...card.payload, view: { ...view, tab } } }
     })
-    if (tab === "code") readDeclaration(card.id, card.payload.repo, planSite(card, view.node))
+    if (tab === "code") readDeclaration(card.id, card.payload.repo, view.node, planSite(card, view.node))
     return { value: `plan-tab card=${cardId} tab=${tab}` }
   }
 
