@@ -60,7 +60,9 @@ test("the boot probe runs a command in a real Linux guest and leaves no machine"
 
 test("doctor passes the real host checks against the example organization", { skip, timeout: 900_000 }, async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "org-probe-"))
-  const lines = await doctor({ root: exampleRoot, repos: [], stateDir: join(stateDir, "state"), env: {} })
+  // This machine's Node installations, and nothing else from the environment.
+  const env = { PATH: process.env.PATH, HOME: process.env.HOME }
+  const lines = await doctor({ root: exampleRoot, repos: [], stateDir: join(stateDir, "state"), env })
   rmSync(stateDir, { recursive: true, force: true })
   const status = Object.fromEntries(lines.map((line) => [line.name, line.status]))
   for (const name of ["node", "microsandbox", "hypervisor", "org", "image", "boot"]) {
