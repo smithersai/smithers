@@ -77,6 +77,11 @@ interface Excuse {
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
+    literal: "libc.so.6",
+    file: "e2e/native/MainProcess.ts",
+    reason: "The Linux C library the native probe calls through FFI to deliver cold-launch links from native code; named by the OS, not the app."
+  },
+  {
     literal: "user.name",
     file: "scripts/build-native.ts",
     reason: "Git configuration key for the packaged repository fixture; declared by Git, not the app flow registry."
