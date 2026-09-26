@@ -24,6 +24,8 @@ bootstrap_token="issue12-bootstrap-${suffix}-0123456789abcdef0123456789abcdef"
 owner_username=issue12owner
 owner_password="Issue12 acceptance password ${suffix}"
 repository_name="distribution-${suffix}"
+evidence_dir=${SMITHERS_DISTRIBUTION_EVIDENCE_DIR:-${TMPDIR:-/tmp}/smithers-image-evidence-${suffix}}
+mkdir -p "$evidence_dir"
 
 container_exists() { docker container inspect "$1" >/dev/null 2>&1; }
 
@@ -86,17 +88,16 @@ wait_postgres() {
   return 1
 }
 
-published_origin() {
-  local container=$1 mapping port
-  mapping=$(docker port "$container" 4000/tcp | head -n 1)
-  port=${mapping##*:}
-  printf 'http://127.0.0.1:%s\n' "$port"
-}
+# Drive HTTP from a peer on the isolated network. Internal Docker networks
+# do not publish host ports, and adding an external network would allow egress.
+http_request() { docker exec "$provider" curl "$@"; }
+
+container_origin() { printf 'http://%s:4000\n' "$1"; }
 
 wait_http() {
   local container=$1 origin=$2
   for _ in $(seq 1 120); do
-    if curl -fsS "$origin/readyz" >/dev/null 2>&1; then
+    if http_request -fsS "$origin/readyz" >/dev/null 2>&1; then
       return
     fi
     if [ "$(docker inspect -f '{{.State.Running}}' "$container")" != true ]; then
@@ -127,7 +128,6 @@ start_app() {
   local name=$1 volume=$2 database_host=$3
   docker run -d --name "$name" --network "$network" \
     --cap-drop ALL --security-opt no-new-privileges \
-    -p 127.0.0.1::4000 \
     -e DATABASE_URL="$(database_url "$database_host")" \
     -e SMITHERS_AUTH_BOOTSTRAP_TOKEN="$bootstrap_token" \
     -e SMITHERS_WORKSPACE_CODING_DEFAULT_MODEL=openai:scripted \
@@ -149,7 +149,13 @@ if [ "${SMITHERS_DOCKER_SKIP_BUILD:-0}" != 1 ]; then
   docker build --progress=plain --build-arg "BUILD_SHA=$build_sha" -f "$root/distribution/Dockerfile" -t "$image" "$root"
 fi
 
-docker network create "$network" >/dev/null
+# The scripted model/evaluator and PostgreSQL are the only external services
+# this deterministic journey needs. Deny all network egress, including every
+# managed Smithers hostname, for the entire installation and restore.
+docker network create --internal "$network" >/dev/null
+test "$(docker network inspect --format '{{.Internal}}' "$network")" = true
+docker network inspect "$network" >"$evidence_dir/network.json"
+image_id=$(docker image inspect --format '{{.Id}}' "$image")
 for volume in "$data_volume" "$restored_data_volume" "$postgres_volume" "$restored_postgres_volume" "$backup_volume"; do
   docker volume create "$volume" >/dev/null
 done
@@ -162,8 +168,26 @@ docker run --rm --user 0 -v "$backup_volume:/backups" \
 
 start_postgres "$postgres" "$postgres_volume"
 start_app "$app" "$data_volume" "$postgres"
-origin=$(published_origin "$app")
+origin=$(container_origin "$app")
 wait_http "$app" "$origin"
+
+docker exec -i "$app" /opt/smithers/bin/node --input-type=module >"$evidence_dir/managed-domain-denial.json" <<'NODE'
+const origins = ["https://smithers.sh", "https://canary.smithers.sh", "https://identity.smithers.sh", "https://billing.smithers.sh", "https://chat.smithers.sh", "https://api.jjhub.tech"]
+const probes = await Promise.all(origins.map(async (origin) => {
+  try {
+    const response = await fetch(origin, { redirect: "manual", signal: AbortSignal.timeout(3000) })
+    await response.body?.cancel()
+    return { origin, status: "reachable", httpStatus: response.status }
+  } catch (error) {
+    return { origin, status: "denied", reason: error.name === "TimeoutError" ? "timeout" : "connection-failed" }
+  }
+}))
+const status = probes.every((probe) => probe.status === "denied") ? "passed" : "failed"
+console.log(JSON.stringify({ schemaVersion: 1, kind: "managed-domain-denial", observedAt: new Date().toISOString(), networkPolicy: "docker-internal", status, probes }, null, 2))
+if (status !== "passed") process.exitCode = 1
+NODE
+docker exec "$app" cat /opt/smithers/bin/flow-hosts.json >"$evidence_dir/flow-hosts.json"
+docker exec "$app" sh -eu -c 'cd /opt/smithers/bin && sha256sum node smithers-backend smithers-jj-export jj smithers-coding-host smithers-librarian-host smithers-model-host' >"$evidence_dir/SHA256SUMS"
 
 test "$(docker exec "$app" id -u)" != 0
 if docker run --rm --entrypoint /bin/sh "$image" -c 'command -v python3 >/dev/null 2>&1'; then
@@ -201,45 +225,45 @@ docker exec "$app" sh -eu -c '
   jj git init --colocate >/dev/null
   jj log --no-graph -r @ -T commit_id >/dev/null
 '
-home_html=$(curl -fsS "$origin/")
+home_html=$(http_request -fsS "$origin/")
 case "$home_html" in
   *'<div id="root"'*) ;;
   *) printf 'unexpected web index: %.200s\n' "$home_html" >&2; exit 1 ;;
 esac
-curl -fsS "$origin/api/bootstrap" | grep '"apiVersion":1' >/dev/null
+http_request -fsS "$origin/api/bootstrap" | grep '"apiVersion":1' >/dev/null
 if [ -n "$build_sha" ]; then
-  curl -fsS "$origin/api/bootstrap" | grep -F "\"buildSha\":\"$build_sha\"" >/dev/null
+  http_request -fsS "$origin/api/bootstrap" | grep -F "\"buildSha\":\"$build_sha\"" >/dev/null
 fi
-curl -fsS "$origin/api/auth/local/status" | grep '"initialized":false' >/dev/null
-curl -fsS -X POST "$origin/api/auth/local/bootstrap" \
+http_request -fsS "$origin/api/auth/local/status" | grep '"initialized":false' >/dev/null
+http_request -fsS -X POST "$origin/api/auth/local/bootstrap" \
   -H 'Content-Type: application/json' \
   -H "X-Smithers-Bootstrap-Token: $bootstrap_token" \
   --data "{\"username\":\"$owner_username\",\"email\":\"$owner_username@example.test\",\"password\":\"$owner_password\"}" \
   | grep "\"username\":\"$owner_username\"" >/dev/null
-token_response=$(curl -fsS -X POST "$origin/api/auth/local/token" \
+token_response=$(http_request -fsS -X POST "$origin/api/auth/local/token" \
   -H 'Content-Type: application/json' \
   --data "{\"username\":\"$owner_username\",\"password\":\"$owner_password\",\"name\":\"distribution-acceptance\"}")
 api_token=$(printf '%s' "$token_response" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 test -n "$api_token"
-created_repository=$(curl -fsS -X POST "$origin/api/user/repos" \
+created_repository=$(http_request -fsS -X POST "$origin/api/user/repos" \
   -H 'Content-Type: application/json' \
   -H "Authorization: token $api_token" \
   --data "{\"name\":\"$repository_name\",\"description\":\"issue 12 image acceptance\",\"private\":true,\"auto_init\":true}")
 printf '%s' "$created_repository" | grep "\"full_name\":\"$owner_username/$repository_name\"" >/dev/null
-curl -fsS -H "Authorization: token $api_token" \
+http_request -fsS -H "Authorization: token $api_token" \
   "$origin/api/repos/$owner_username/$repository_name" \
   | grep "\"full_name\":\"$owner_username/$repository_name\"" >/dev/null
-session_response=$(curl -fsS -X POST "$origin/api/repos/$owner_username/$repository_name/agent/sessions" \
+session_response=$(http_request -fsS -X POST "$origin/api/repos/$owner_username/$repository_name/agent/sessions" \
   -H 'Content-Type: application/json' -H "Authorization: token $api_token" \
   --data '{"title":"Container coding proof"}')
 session_id=$(printf '%s' "$session_response" | sed -n 's/^{"id":"\([^"]*\)".*/\1/p')
 test -n "$session_id"
-curl -fsS -X POST "$origin/api/repos/$owner_username/$repository_name/agent/sessions/$session_id/messages" \
+http_request -fsS -X POST "$origin/api/repos/$owner_username/$repository_name/agent/sessions/$session_id/messages" \
   -H 'Content-Type: application/json' -H "Authorization: token $api_token" \
   --data '{"role":"user","parts":[{"type":"text","content":"Write flow-proof.txt with the requested proof text, then read it back."}],"agent_provider":"smithers","agent_transport":"workflow"}' >/dev/null
 flow_completed=0
 for _ in $(seq 1 120); do
-  session_response=$(curl -fsS -H "Authorization: token $api_token" \
+  session_response=$(http_request -fsS -H "Authorization: token $api_token" \
     "$origin/api/repos/$owner_username/$repository_name/agent/sessions/$session_id")
   case "$session_response" in
     *'"status":"completed"'*) flow_completed=1; break ;;
@@ -250,7 +274,7 @@ done
 test "$flow_completed" = 1 || { printf 'coding Flow did not complete: %s\n' "$session_response" >&2; exit 1; }
 workspace_id=$(printf '%s' "$session_response" | sed -n 's/.*"workspace_id":"\([^"]*\)".*/\1/p')
 test -n "$workspace_id"
-curl -fsS -H "Authorization: token $api_token" \
+http_request -fsS -H "Authorization: token $api_token" \
   "$origin/api/repos/$owner_username/$repository_name/workspaces/$workspace_id/files/content?path=flow-proof.txt" \
   | grep '"content":"The coding Flow wrote this file through the packaged host.\\n"' >/dev/null
 docker exec "$app" test -s /var/lib/smithers/config/secrets.json
@@ -259,10 +283,10 @@ table_count=$(docker exec "$postgres" psql -U "$database_user" -d "$database_nam
 test "$table_count" -gt 0
 
 docker restart "$app" >/dev/null
-origin=$(published_origin "$app")
+origin=$(container_origin "$app")
 wait_http "$app" "$origin"
 test "$(docker exec "$app" sha256sum /var/lib/smithers/config/secrets.json | awk '{print $1}')" = "$secret_checksum"
-curl -fsS -H "Authorization: token $api_token" \
+http_request -fsS -H "Authorization: token $api_token" \
   "$origin/api/repos/$owner_username/$repository_name" \
   | grep "\"full_name\":\"$owner_username/$repository_name\"" >/dev/null
 
@@ -286,6 +310,8 @@ backup_path=$(docker run --rm --network "$network" \
   --entrypoint /opt/smithers/backup.sh \
   "$image" | tail -n 1)
 case "$backup_path" in /backups/smithers-*) ;; *) printf 'unexpected backup path: %s\n' "$backup_path" >&2; exit 1 ;; esac
+docker run --rm --network none -v "$backup_volume:/backups:ro" --entrypoint /bin/cat \
+  "$image" "$backup_path/MANIFEST" >"$evidence_dir/backup-manifest.env"
 
 start_postgres "$restored_postgres" "$restored_postgres_volume"
 docker run --rm --network "$network" \
@@ -296,11 +322,11 @@ docker run --rm --network "$network" \
   "$image" "$backup_path" >/dev/null
 
 start_app "$restored_app" "$restored_data_volume" "$restored_postgres"
-restored_origin=$(published_origin "$restored_app")
+restored_origin=$(container_origin "$restored_app")
 wait_http "$restored_app" "$restored_origin"
 test "$(docker exec "$restored_app" sha256sum /var/lib/smithers/config/secrets.json | awk '{print $1}')" = "$secret_checksum"
-curl -fsS "$restored_origin/api/bootstrap" | grep '"apiVersion":1' >/dev/null
-curl -fsS -H "Authorization: token $api_token" \
+http_request -fsS "$restored_origin/api/bootstrap" | grep '"apiVersion":1' >/dev/null
+http_request -fsS -H "Authorization: token $api_token" \
   "$restored_origin/api/repos/$owner_username/$repository_name" \
   | grep "\"full_name\":\"$owner_username/$repository_name\"" >/dev/null
 
@@ -317,4 +343,23 @@ if docker run --name "$refusal_app" --network "$network" \
 fi
 docker logs "$refusal_app" 2>&1 | grep 'requires an explicit upgrade' >/dev/null
 
+docker run --rm -i --network none --entrypoint /opt/smithers/bin/node \
+  "$image" --input-type=module - "$build_sha" "$image_id" >"$evidence_dir/receipt.json" <<'NODE'
+import { readFileSync } from "node:fs"
+const [sourceRevision, imageId] = process.argv.slice(2)
+if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sourceRevision) || !/^sha256:[0-9a-f]{64}$/.test(imageId)) {
+  throw new Error("image acceptance requires an exact source revision and image ID")
+}
+console.log(JSON.stringify({
+  schemaVersion: 1, kind: "distribution-image-acceptance", status: "passed",
+  observedAt: new Date().toISOString(), sourceRevision, imageId,
+  versions: readFileSync("/opt/smithers/version.env", "utf8"),
+  assertions: ["repository-create-readback", "coding-flow-file-readback", "persistent-restart", "backup-lock-denial", "backup-restore-fresh-volumes", "upgrade-refusal"],
+  managedDomainDenial: "managed-domain-denial.json",
+  backupManifest: "backup-manifest.env", runtimeHashes: "SHA256SUMS",
+  restoreScope: "new containers and volumes on the same Docker host",
+  provider: "scripted", liveProviderSmoke: "not-run", productionRollout: "not-performed"
+}, null, 2))
+NODE
 printf 'IMAGE_ACCEPTANCE_OK image=%s origin=%s backup=%s\n' "$image" "$origin" "$backup_path"
+printf 'Image acceptance evidence: %s\n' "$evidence_dir"
