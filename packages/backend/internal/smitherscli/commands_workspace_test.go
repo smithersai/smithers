@@ -2,6 +2,7 @@ package smitherscli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -74,13 +75,20 @@ func TestNormalizeWorkspaceExecOptions(t *testing.T) {
 	}
 }
 
-func TestBuildWorkspaceExecRemoteScript(t *testing.T) {
-	if got := buildWorkspaceExecRemoteScript("pwd"); got != "cd '/home/developer/workspace' && pwd" {
-		t.Fatalf("buildWorkspaceExecRemoteScript(pwd) = %q", got)
+func TestBuildWorkspaceExecScript(t *testing.T) {
+	if got := buildWorkspaceExecScript("pwd", "", nil); got != "cd '/home/developer/workspace' 2>/dev/null || cd ~; exec /bin/bash -c 'pwd'" {
+		t.Fatalf("buildWorkspaceExecScript(pwd) = %q", got)
 	}
 	compound := "pwd && printf '%s\\n' ready; exit 7"
-	if got := buildWorkspaceExecRemoteScript(compound); got != "cd '/home/developer/workspace' && "+compound {
-		t.Fatalf("buildWorkspaceExecRemoteScript(compound) = %q", got)
+	want := "cd '/home/developer/workspace' 2>/dev/null || cd ~; exec /bin/bash -c 'pwd && printf '\\''%s\\n'\\'' ready; exit 7'"
+	if got := buildWorkspaceExecScript(compound, "", nil); got != want {
+		t.Fatalf("buildWorkspaceExecScript(compound) = %q, want %q", got, want)
+	}
+	multi := "set -o pipefail\nfor i in 1 2; do\n  echo $i\ndone"
+	got := buildWorkspaceExecScript(multi, "/app", []string{"DEBIAN_FRONTEND=noninteractive", "X=a b"})
+	want = "cd '/app' 2>/dev/null || cd ~; exec env 'DEBIAN_FRONTEND=noninteractive' 'X=a b' /bin/bash -c 'set -o pipefail\nfor i in 1 2; do\n  echo $i\ndone'"
+	if got != want {
+		t.Fatalf("buildWorkspaceExecScript(multi) = %q, want %q", got, want)
 	}
 }
 
@@ -113,6 +121,8 @@ func TestBuildSSHInvocationArgs(t *testing.T) {
 				"-o", "StrictHostKeyChecking=accept-new",
 				"-o", "UserKnownHostsFile=" + knownHosts,
 				"-o", "LogLevel=ERROR",
+				"-o", "ServerAliveInterval=30",
+				"-o", "ServerAliveCountMax=10",
 				"-i", "/tmp/key with space", "developer@example.com",
 			},
 		},
@@ -371,7 +381,7 @@ func TestBuildCodexAuthSeedRemoteScript_EscapesShellMetacharacters(t *testing.T)
 
 func TestRunRemoteStreamedCommand_EmptySSHCommand(t *testing.T) {
 	t.Parallel()
-	_, err := runRemoteStreamedCommand("", "echo hi", time.Second)
+	_, err := runRemoteStreamedCommandIO("", "echo hi", time.Second, nil, io.Discard, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error for an empty ssh command")
 	}

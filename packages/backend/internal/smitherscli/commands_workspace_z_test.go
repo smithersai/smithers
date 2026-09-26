@@ -162,7 +162,7 @@ func TestCommandsWorkspace_Z_CommandErrorBranches(t *testing.T) {
 
 	oldWait := waitForWorkspaceSSHInfoForCommand
 	t.Cleanup(func() { waitForWorkspaceSSHInfoForCommand = oldWait })
-	waitForWorkspaceSSHInfoForCommand = func(string, string, string) (map[string]any, error) {
+	waitForWorkspaceSSHInfoForCommand = func(string, string, string, string) (map[string]any, error) {
 		return map[string]any{"host": "only"}, nil
 	}
 	commandsWorkspaceZServe(t, "ssh", "ws-no-command", "--repo", "alice/demo")
@@ -580,24 +580,24 @@ func TestCommandsWorkspace_Z_AuthAndRemoteCommandBranches(t *testing.T) {
 	if _, err := runRemoteShellCommand(failingSSHCommand, "echo hi", "false label", false, 30*time.Second); err == nil {
 		t.Fatal("runRemoteShellCommand accepted non-exit classified error")
 	}
-	if _, err := runRemoteStreamedCommand(failingSSHCommand, "ignored", time.Second); err == nil {
-		t.Fatal("runRemoteStreamedCommand accepted non-exit classified error")
+	if _, err := runRemoteStreamedCommandIO(failingSSHCommand, "ignored", time.Second, nil, io.Discard, io.Discard); err == nil {
+		t.Fatal("runRemoteStreamedCommandIO accepted non-exit classified error")
 	}
 	workspaceExitErrorCode = oldExitErrorCode
 	if _, err := runRemoteShellCommand(sshCommand, "timeout-sleep", "instant", false, 0); err == nil || !strings.Contains(err.Error(), "timed out after 1s") {
 		t.Fatalf("runRemoteShellCommand zero timeout = %v", err)
 	}
-	if _, err := runRemoteStreamedCommand("", "echo hi", time.Second); err == nil || !strings.Contains(err.Error(), "empty") {
-		t.Fatalf("runRemoteStreamedCommand empty ssh = %v", err)
+	if _, err := runRemoteStreamedCommandIO("", "echo hi", time.Second, nil, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("runRemoteStreamedCommandIO empty ssh = %v", err)
 	}
-	if _, err := runRemoteStreamedCommand("missing-ssh-command", "echo hi", time.Second); err == nil {
-		t.Fatal("runRemoteStreamedCommand accepted missing executable")
+	if _, err := runRemoteStreamedCommandIO("missing-ssh-command", "echo hi", time.Second, nil, io.Discard, io.Discard); err == nil {
+		t.Fatal("runRemoteStreamedCommandIO accepted missing executable")
 	}
-	if code, err := runRemoteStreamedCommand(failingSSHCommand, "ignored", time.Second); err != nil || code == 0 {
-		t.Fatalf("runRemoteStreamedCommand exit code = %d %v", code, err)
+	if code, err := runRemoteStreamedCommandIO(failingSSHCommand, "ignored", time.Second, nil, io.Discard, io.Discard); err != nil || code == 0 {
+		t.Fatalf("runRemoteStreamedCommandIO exit code = %d %v", code, err)
 	}
-	if _, err := runRemoteStreamedCommand(sshCommand, "stream-sleep", 0); err == nil || !strings.Contains(err.Error(), "timed out after 1s") {
-		t.Fatalf("runRemoteStreamedCommand zero timeout = %v", err)
+	if code, err := runRemoteStreamedCommandIO(commandsWorkspaceHInstallFakeSSH(t), "stream-ok", 0, nil, io.Discard, io.Discard); err != nil || code != 0 {
+		t.Fatalf("runRemoteStreamedCommandIO zero timeout (no client timeout) = (%d, %v)", code, err)
 	}
 
 	sshCommand = commandsWorkspaceHInstallFakeSSH(t)
@@ -622,7 +622,7 @@ func TestCommandsWorkspace_Z_AuthAndRemoteCommandBranches(t *testing.T) {
 	}
 	t.Setenv("COMMANDS_WORKSPACE_H_JJ_LOG_FAIL", "")
 	oldWait := waitForWorkspaceSSHInfoForCommand
-	waitForWorkspaceSSHInfoForCommand = func(string, string, string) (map[string]any, error) {
+	waitForWorkspaceSSHInfoForCommand = func(string, string, string, string) (map[string]any, error) {
 		return nil, fmt.Errorf("issue ssh failed")
 	}
 	if _, err := runWorkspaceIssue(&incur.CommandContext{Args: map[string]any{"number": "11"}, Options: map[string]any{"repo": "alice/demo"}}); err == nil || !strings.Contains(err.Error(), "issue ssh failed") {

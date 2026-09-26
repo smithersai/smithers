@@ -2,6 +2,7 @@ package smitherscli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -55,8 +56,9 @@ var workspaceTerminalWrite = func(ctx context.Context, conn *websocket.Conn, mes
 	return conn.Write(ctx, messageType, data)
 }
 var workspaceUserHomeDir = os.UserHomeDir
-var waitForWorkspaceSSHInfoForCommand = waitForWorkspaceSSHInfo
+var waitForWorkspaceSSHInfoForCommand = waitForWorkspaceSSHInfoAs
 var runWorkspaceTerminalForCommand = runWorkspaceTerminal
+var runWorkspaceExecForCommand = runWorkspaceResumableCommandIO
 var workspaceJSONMarshal = json.Marshal
 var workspaceRuntimeGOOS = runtime.GOOS
 var workspaceExitErrorCode = func(err error) (int, bool) {
@@ -72,20 +74,49 @@ func workspaceCommand() *incur.Cli {
 	cmd.Command("create", &incur.CommandDef{
 		Description: "Create a workspace",
 		OptionsSchema: objectSchema(nil, map[string]*incur.JSONSchema{
-			"name":     {Type: "string", Description: "Workspace name", Default: ""},
-			"snapshot": stringSchema("Snapshot ID to restore from"),
-			"repo":     stringSchema("Repository (OWNER/REPO)"),
+			"name":        {Type: "string", Description: "Workspace name", Default: ""},
+			"snapshot":    stringSchema("Snapshot ID to restore from"),
+			"repo":        stringSchema("Repository (OWNER/REPO)"),
+			"image":       stringSchema("OCI image to boot instead of the default workspace image (e.g. docker.io/library/python:3.13-slim)"),
+			"cpus":        {Type: "number", Description: "vCPUs for the workspace"},
+			"memory":      {Type: "number", Description: "Memory in MiB"},
+			"disk":        {Type: "number", Description: "Writable disk in MiB"},
+			"network":     stringSchema("Egress mode: proxy (default), allowlist, none"),
+			"allow":       arraySchema("Hostname the workspace may reach (repeatable or comma-separated; implies --network allowlist)"),
+			"service":     arraySchema("Network service NAME=COMMAND started inside the workspace (repeatable)"),
+			"idleTimeout": {Type: "number", Description: "Seconds of inactivity before the workspace suspends (0 = never)"},
+			"wait":        booleanSchema("Wait until the workspace is running; exit non-zero with the failure code if provisioning fails", false),
+			"waitTimeout": numberSchema("Seconds to wait with --wait", 600),
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			owner, repo, err := ResolveRepoRef(stringValue(ctx.Options["repo"]))
 			if err != nil {
 				return nil, err
 			}
-			body := map[string]any{"name": stringValue(ctx.Options["name"])}
-			if snapshot := stringValue(ctx.Options["snapshot"]); snapshot != "" {
-				body["snapshot_id"] = snapshot
+			body, err := buildWorkspaceCreateBody(ctx.Options)
+			if err != nil {
+				return nil, err
 			}
-			return APIRequest("POST", fmt.Sprintf("/api/repos/%s/%s/workspaces", owner, repo), body, nil)
+			created, err := APIRequest("POST", fmt.Sprintf("/api/repos/%s/%s/workspaces", owner, repo), body, nil)
+			if err != nil {
+				return nil, err
+			}
+			if wait, _ := ctx.Options["wait"].(bool); !wait {
+				return created, nil
+			}
+			workspaceID := stringValue(objectValue(created)["id"])
+			if workspaceID == "" {
+				return nil, fmt.Errorf("created workspace response did not include id")
+			}
+			timeout := defaultWorkspaceCreateWaitTimeout
+			if seconds := intValue(ctx.Options["waitTimeout"], 0); seconds > 0 {
+				timeout = time.Duration(seconds) * time.Second
+			}
+			ws, err := waitForWorkspaceStatus(owner, repo, workspaceID, timeout)
+			if err != nil {
+				return nil, err
+			}
+			return ws, nil
 		},
 	})
 	cmd.Command("list", repoOnlyCommand("List workspaces", func(owner, repo string, ctx *incur.CommandContext) (any, error) {
@@ -138,7 +169,7 @@ func workspaceCommand() *incur.Cli {
 			if err != nil {
 				return nil, err
 			}
-			sshInfo, err := waitForWorkspaceSSHInfoForCommand(owner, repo, workspaceID)
+			sshInfo, err := waitForWorkspaceSSHInfoForCommand(owner, repo, workspaceID, "")
 			if err != nil {
 				return nil, err
 			}
@@ -267,8 +298,13 @@ func workspaceCommand() *incur.Cli {
 		ArgsSchema:  objectSchema(nil, map[string]*incur.JSONSchema{"id": stringSchema("Workspace ID (auto-detected if omitted)")}),
 		OptionsSchema: objectSchema([]string{"command"}, map[string]*incur.JSONSchema{
 			"repo":          stringSchema("Repository (OWNER/REPO)"),
-			"command":       stringSchema("Remote command to run"),
-			"timeout":       numberSchema("Timeout in seconds (default: 120)", 0),
+			"command":       stringSchema("Remote command to run (multi-line allowed; runs under bash)"),
+			"timeout":       numberSchema("Client timeout in seconds (default: 120; 0 = no limit)", nil),
+			"cwd":           stringSchema("Remote working directory (default: /home/developer/workspace, or the home directory when missing)"),
+			"env":           arraySchema("KEY=VALUE exported to the command (repeatable)"),
+			"user":          {Type: "string", Description: "Guest user to run as (developer or root)", Default: defaultRemoteWorkspaceUser},
+			"exec-id":       stringSchema("Durable command ID; reuse with the same command to reattach after a disconnect"),
+			"stdin":         booleanSchema("Forward the terminal's stdin (a pipe or file is always forwarded)", false),
 			"seedAgentAuth": stringSchema("Comma-separated list of agent auth to seed before running the command (claude, codex)"),
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
@@ -283,7 +319,15 @@ func workspaceCommand() *incur.Cli {
 			if err != nil {
 				return nil, err
 			}
-			sshInfo, err := waitForWorkspaceSSHInfoForCommand(owner, repo, workspaceID)
+			if _, set := ctx.Options["timeout"]; set && intValue(ctx.Options["timeout"], 0) == 0 {
+				timeout = 0 // an explicit --timeout 0 means no client-side limit
+			}
+			env, err := parseWorkspaceExecEnv(stringSliceValue(ctx.Options["env"]))
+			if err != nil {
+				return nil, err
+			}
+			user := strings.TrimSpace(stringValue(ctx.Options["user"]))
+			sshInfo, err := waitForWorkspaceSSHInfoForCommand(owner, repo, workspaceID, user)
 			if err != nil {
 				return nil, err
 			}
@@ -295,9 +339,33 @@ func workspaceCommand() *incur.Cli {
 			if err := seedWorkspaceAgentAuth(sshCommand, agents); err != nil {
 				return nil, err
 			}
-			exitCode, err := runRemoteStreamedCommand(sshCommand, buildWorkspaceExecRemoteScript(command), timeout)
+			refresh := func() (string, error) {
+				info, err := APIRequest("GET", workspaceSSHInfoPath(owner, repo, workspaceID, user), nil, nil)
+				if err != nil {
+					return "", err
+				}
+				return getWorkspaceSSHCommand(objectValue(info)), nil
+			}
+			script := buildWorkspaceExecScript(command, stringValue(ctx.Options["cwd"]), env)
+			forceStdin, _ := ctx.Options["stdin"].(bool)
+			stdin := workspaceExecStdin(forceStdin)
+			if ctx.Format == "json" {
+				var stdout, stderr bytes.Buffer
+				exitCode, err := runWorkspaceExecForCommand(sshCommand, stringValue(ctx.Options["exec-id"]), script, timeout, stdin, &stdout, &stderr, refresh)
+				if err != nil {
+					return nil, workspaceExecCLIError(err)
+				}
+				pendingProcessExitCode = exitCode
+				return map[string]any{
+					"workspace_id": workspaceID,
+					"exit_code":    exitCode,
+					"stdout":       stdout.String(),
+					"stderr":       stderr.String(),
+				}, nil
+			}
+			exitCode, err := runWorkspaceExecForCommand(sshCommand, stringValue(ctx.Options["exec-id"]), script, timeout, stdin, os.Stdout, os.Stderr, refresh)
 			if err != nil {
-				return nil, err
+				return nil, workspaceExecCLIError(err)
 			}
 			if exitCode != 0 {
 				return nil, incur.NewIncurError(incur.IncurErrorOptions{
@@ -446,21 +514,15 @@ func resolveWorkspaceID(ctx *incur.CommandContext) (owner, repo, workspaceID str
 	return owner, repo, workspaceID, nil
 }
 
-func waitForWorkspaceSSHInfo(owner, repo, workspaceID string) (map[string]any, error) {
-	return waitForWorkspaceSSHInfoAs(owner, repo, workspaceID, "")
-}
-
+// waitForWorkspaceSSHInfoAs polls the SSH info route for the given guest user
+// ("" or developer = the default login).
 func waitForWorkspaceSSHInfoAs(owner, repo, workspaceID, user string) (map[string]any, error) {
 	interval := parsePositiveDurationEnv("SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS", defaultWorkspaceSSHPollInterval)
 	timeout := parsePositiveDurationEnv("SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS", defaultWorkspaceSSHPollTimeout)
 	deadline := time.Now().Add(timeout)
 	var lastErr error
-	sshPath := fmt.Sprintf("/api/repos/%s/%s/workspaces/%s/ssh", owner, repo, url.PathEscape(workspaceID))
-	if user != "" && user != defaultRemoteWorkspaceUser {
-		sshPath += "?user=" + url.QueryEscape(user)
-	}
 	for time.Now().Before(deadline) || time.Now().Equal(deadline) {
-		sshInfo, err := APIRequest("GET", sshPath, nil, nil)
+		sshInfo, err := APIRequest("GET", workspaceSSHInfoPath(owner, repo, workspaceID, user), nil, nil)
 		if err == nil {
 			record := objectValue(sshInfo)
 			if getWorkspaceSSHCommand(record) != "" {
@@ -548,10 +610,6 @@ func tokenizeShellWords(input string) []string {
 
 func shellEscape(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-}
-
-func buildWorkspaceExecRemoteScript(command string) string {
-	return "cd " + shellEscape(defaultWorkspaceRemoteRoot) + " && " + command
 }
 
 func workspaceKnownHostsFile() string {
@@ -670,6 +728,8 @@ func buildSSHInvocationArgs(sshCommand string, forceTTY bool) ([]string, error) 
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "UserKnownHostsFile="+workspaceKnownHostsFile(),
 		"-o", "LogLevel=ERROR",
+		"-o", "ServerAliveInterval=30",
+		"-o", "ServerAliveCountMax=10",
 	)
 	return append(out, sshArgs[1:]...), nil
 }
@@ -983,7 +1043,7 @@ func runWorkspaceIssue(ctx *incur.CommandContext) (any, error) {
 		return nil, err
 	}
 	workspaceID := stringValue(objectValue(ws)["id"])
-	sshInfo, err := waitForWorkspaceSSHInfoForCommand(owner, repo, workspaceID)
+	sshInfo, err := waitForWorkspaceSSHInfoForCommand(owner, repo, workspaceID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -1382,6 +1442,9 @@ func runRemoteShellCommand(sshCommand, script, label string, streamOutputToStder
 	var stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	// A ProxyCommand descendant can inherit these pipes after SSH exits or is
+	// killed. Bound Wait's pipe drain so the requested timeout still returns.
+	cmd.WaitDelay = time.Second
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
@@ -1451,55 +1514,6 @@ func runRemoteProvisionCommand(sshCommand, script, label string) error {
 func runRemoteInteractiveCommand(sshCommand, script, label string) error {
 	_, err := runRemoteShellCommand(sshCommand, script, label, true, remoteShellTimeout("SMITHERS_WORKSPACE_CLAUDE_TIMEOUT_MS", defaultWorkspaceClaudeTimeout))
 	return err
-}
-
-// runRemoteStreamedCommand runs a single remote command over BatchMode SSH,
-// streaming stdout/stderr straight through to this process's stdout/stderr as
-// it runs (unlike runRemoteShellCommand, which buffers into strings.Builder
-// and dumps output only after the command exits). It is a thin wrapper
-// around the same SSH-invocation building block (buildSSHInvocationArgs) that
-// runRemoteCaptureCommand/runRemoteInteractiveCommand use, but skips their
-// marker-based session-script framing (needed there to strip PS1 prompts out
-// of an interactive shell) since a single non-interactive remote command can
-// propagate its exit code directly through ssh's own exit status.
-func runRemoteStreamedCommand(sshCommand, script string, timeout time.Duration) (int, error) {
-	sshArgs, err := buildSSHInvocationArgs(sshCommand, false)
-	if err != nil {
-		return -1, err
-	}
-	if len(sshArgs) == 0 {
-		return -1, fmt.Errorf("workspace ssh command was empty")
-	}
-	args := append(append([]string{}, sshArgs...), script)
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdin = nil
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return -1, err
-	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case err := <-done:
-		if err == nil {
-			return 0, nil
-		}
-		if code, ok := workspaceExitErrorCode(err); ok {
-			return code, nil
-		}
-		return -1, err
-	case <-time.After(timeout):
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		<-done
-		seconds := int((timeout + time.Second - 1) / time.Second)
-		if seconds < 1 {
-			seconds = 1
-		}
-		return -1, fmt.Errorf("workspace exec timed out after %ds", seconds)
-	}
 }
 
 func sortStrings(values []string) {

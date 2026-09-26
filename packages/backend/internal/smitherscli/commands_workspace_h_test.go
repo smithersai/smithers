@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -244,8 +245,17 @@ func TestCommandsWorkspace_H_CommandHandlersAndTerminal(t *testing.T) {
 	if !sessionDestroyed {
 		t.Fatal("workspace shell did not destroy the terminal session")
 	}
-	commandsWorkspaceHServe(t, "exec", "ws-exec", "--repo", "alice/demo", "--command", "stream-ok", "--timeout", "1", "--seedAgentAuth", "claude,codex", "--json")
-	commandsWorkspaceHServeWantErr(t, "remote command exited with code 6", "exec", "ws-exec", "--repo", "alice/demo", "--command", "stream-exit-6", "--timeout", "1", "--json")
+	// A piped stdin selects the streaming path the fake SSH answers.
+	commandsWorkspaceHWithEmptyStdin(t, func() {
+		commandsWorkspaceHServe(t, "exec", "ws-exec", "--repo", "alice/demo", "--command", "stream-ok", "--timeout", "1", "--seedAgentAuth", "claude,codex", "--json")
+		pendingProcessExitCode = 0
+		execOut := commandsWorkspaceHServe(t, "exec", "ws-exec", "--repo", "alice/demo", "--command", "stream-exit-6", "--timeout", "1", "--json")
+		if !strings.Contains(execOut, `"exit_code": 6`) || !strings.Contains(execOut, `"stdout": "stream failed\n"`) || pendingProcessExitCode != 6 {
+			t.Fatalf("workspace exec --json nonzero = %q (pending exit %d)", execOut, pendingProcessExitCode)
+		}
+		pendingProcessExitCode = 0
+		commandsWorkspaceHServeWantErr(t, "remote command exited with code 6", "exec", "ws-exec", "--repo", "alice/demo", "--command", "stream-exit-6", "--timeout", "1")
+	})
 	commandsWorkspaceHServe(t, "issue", "8", "--repo", "alice/demo", "--target", "main", "--json")
 	if landingBody["target_bookmark"] != "main" || len(arrayValue(landingBody["change_ids"])) != 2 {
 		t.Fatalf("landing body = %#v", landingBody)
@@ -324,7 +334,7 @@ func TestCommandsWorkspace_H_HelperBranchesAndErrors(t *testing.T) {
 	if _, _, _, err = resolveWorkspaceID(&incur.CommandContext{Options: map[string]any{"repo": "alice/missingid"}}); err == nil || !strings.Contains(err.Error(), "did not include id") {
 		t.Fatalf("resolveWorkspaceID missing id = %v", err)
 	}
-	if _, err = waitForWorkspaceSSHInfo("alice", "demo", "ws-timeout"); err == nil || !strings.Contains(err.Error(), "not become SSH-ready") {
+	if _, err = waitForWorkspaceSSHInfoAs("alice", "demo", "ws-timeout", ""); err == nil || !strings.Contains(err.Error(), "not become SSH-ready") {
 		t.Fatalf("waitForWorkspaceSSHInfo timeout = %v", err)
 	}
 	if _, err = streamWorkspaceEvents("alice", "demo", "ws-stream-status"); err == nil || !strings.Contains(err.Error(), "Failed to connect") {
@@ -444,11 +454,11 @@ func TestCommandsWorkspace_H_HelperBranchesAndErrors(t *testing.T) {
 	if _, err := runRemoteShellCommand(sshCommand, "fail-remote", "remote", true, time.Second); err == nil || !strings.Contains(err.Error(), "remote failed") {
 		t.Fatalf("runRemoteShellCommand streamed failure = %v", err)
 	}
-	if _, err := runRemoteStreamedCommand("missing-ssh-command", "stream-ok", time.Second); err == nil {
-		t.Fatal("runRemoteStreamedCommand accepted missing executable")
+	if _, err := runRemoteStreamedCommandIO("missing-ssh-command", "stream-ok", time.Second, nil, io.Discard, io.Discard); err == nil {
+		t.Fatal("runRemoteStreamedCommandIO accepted missing executable")
 	}
-	if _, err := runRemoteStreamedCommand(sshCommand, "stream-sleep", 10*time.Millisecond); err == nil || !strings.Contains(err.Error(), "workspace exec timed out") {
-		t.Fatalf("runRemoteStreamedCommand timeout = %v", err)
+	if _, err := runRemoteStreamedCommandIO(sshCommand, "stream-sleep", 10*time.Millisecond, nil, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "workspace exec timed out") {
+		t.Fatalf("runRemoteStreamedCommandIO timeout = %v", err)
 	}
 
 	t.Setenv("COMMANDS_WORKSPACE_H_AUTH_READY", "1")

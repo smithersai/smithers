@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -351,11 +352,11 @@ func TestCommandsWorkspace_Cov_HTTPWorkspaceFlows(t *testing.T) {
 		t.Fatalf("resolveWorkspaceID detected = (%q, %q, %q, %v)", owner, repo, workspaceID, err)
 	}
 
-	sshInfo, err := waitForWorkspaceSSHInfo("alice", "demo", "ws-poll")
+	sshInfo, err := waitForWorkspaceSSHInfoAs("alice", "demo", "ws-poll", "")
 	if err != nil || getWorkspaceSSHCommand(sshInfo) != sshCommand || sshPolls != 2 {
 		t.Fatalf("waitForWorkspaceSSHInfo = (%#v, %v), polls=%d", sshInfo, err, sshPolls)
 	}
-	if _, err = waitForWorkspaceSSHInfo("alice", "demo", "ws-denied"); err == nil || !strings.Contains(err.Error(), "denied") {
+	if _, err = waitForWorkspaceSSHInfoAs("alice", "demo", "ws-denied", ""); err == nil || !strings.Contains(err.Error(), "denied") {
 		t.Fatalf("waitForWorkspaceSSHInfo denied = %v", err)
 	}
 
@@ -408,16 +409,16 @@ func TestCommandsWorkspace_Cov_RemoteShellAndAgentAuth(t *testing.T) {
 	if _, err = runRemoteShellCommand(sshCommand, "fail-cov", "failure", false, time.Second); err == nil || !strings.Contains(err.Error(), "remote failed") {
 		t.Fatalf("runRemoteShellCommand failure = %v", err)
 	}
-	code, err := runRemoteStreamedCommand(sshCommand, "stream-ok", time.Second)
+	code, err := runRemoteStreamedCommandIO(sshCommand, "stream-ok", time.Second, nil, io.Discard, io.Discard)
 	if err != nil || code != 0 {
-		t.Fatalf("runRemoteStreamedCommand success = (%d, %v)", code, err)
+		t.Fatalf("runRemoteStreamedCommandIO success = (%d, %v)", code, err)
 	}
-	code, err = runRemoteStreamedCommand(sshCommand, "stream-exit-5", time.Second)
+	code, err = runRemoteStreamedCommandIO(sshCommand, "stream-exit-5", time.Second, nil, io.Discard, io.Discard)
 	if err != nil || code != 5 {
-		t.Fatalf("runRemoteStreamedCommand nonzero = (%d, %v)", code, err)
+		t.Fatalf("runRemoteStreamedCommandIO nonzero = (%d, %v)", code, err)
 	}
-	if _, err = runRemoteStreamedCommand(sshCommand, "stream-sleep", 20*time.Millisecond); err == nil || !strings.Contains(err.Error(), "timed out") {
-		t.Fatalf("runRemoteStreamedCommand timeout = %v", err)
+	if _, err = runRemoteStreamedCommandIO(sshCommand, "stream-sleep", 20*time.Millisecond, nil, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("runRemoteStreamedCommandIO timeout = %v", err)
 	}
 
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "anthropic-cov-token")
