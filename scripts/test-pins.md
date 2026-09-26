@@ -340,11 +340,8 @@ Agent-group packages are outside this register and outside the guard; F4's
 ## Known limitations
 
 The agent gateway does **not** automatically recover abandoned runs in the
-private alpha (audit P1-2). `@smthrs/gateway` exposes the `SuperviseRuntime`
-host contract, but its only bundled defaults are `makeNoop` and `layerNoop`:
-the default scan returns no candidates and the default resume performs no
-work. No production gateway layer connects that contract to the durable
-engine's run-driver sweep.
+private alpha (audit P1-2). `@smthrs/gateway` has no supervision port; no
+production gateway layer connects to the durable engine's run-driver sweep.
 
 Consequently, a run abandoned by its gateway host is not discovered, reclaimed,
 or resumed by the gateway. Operators must recover it explicitly, or use a host

@@ -49,7 +49,9 @@
     "./node/NodeGateway": "./src/node/NodeGateway.ts",
     "./bun/BunGateway": "./src/bun/BunGateway.ts",
     "./RunTrace": "./src/RunTrace.ts",
-    "./EngineTrace": "./src/EngineTrace.ts"
+    "./EngineTrace": "./src/EngineTrace.ts",
+    "./SuperviseRuntime": null,
+    "./test/TestSuperviseRuntime": null
   },
   "files": [
     "src/**/*.ts",
@@ -209,7 +211,9 @@
           "types": "./dist/cjs/EngineTrace.d.ts",
           "default": "./dist/cjs/EngineTrace.js"
         }
-      }
+      },
+      "./SuperviseRuntime": null,
+      "./test/TestSuperviseRuntime": null
     }
   },
   "scripts": {

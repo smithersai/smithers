@@ -425,6 +425,17 @@
       "reason": "Explicit offline completion-judge fixture shared by whole-host tests. It rejects unknown questions and malformed evidence; production hosts must supply their configured evaluator."
     },
     {
+      "name": "@smthrs/agent",
+      "subpath": "./SmithersPlugin",
+      "development": "./src/SmithersPlugin.ts",
+      "published": {
+        "types": "./dist/esm/SmithersPlugin.d.ts",
+        "import": "./dist/esm/SmithersPlugin.js",
+        "require": "./dist/cjs/SmithersPlugin.js"
+      },
+      "reason": "Cell plugin that teaches the core agent Smithers through the existing cellModelRequest and cellFlows hooks; the TUI composes it. It adds no second flow model and reaches flow runs only through host-supplied ports."
+    },
+    {
       "name": "@smthrs/harness",
       "subpath": "./CompletionClaim",
       "development": "./src/CompletionClaim.ts",
@@ -951,6 +962,50 @@
         "require": "./dist/cjs/x/XClient.js"
       },
       "reason": "X integration, read-only: client, scope capabilities, mention and direct-message change feeds into private source records. Writes are not durable actions yet."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./FailedCall",
+      "development": "./src/FailedCall.ts",
+      "published": {
+        "types": "./dist/esm/FailedCall.d.ts",
+        "import": "./dist/esm/FailedCall.js",
+        "require": "./dist/cjs/FailedCall.js"
+      },
+      "reason": "Refuses a cell's success claim when a call in the same cell failed; the harness index already re-exports it and the transcript and cell turn depend on it (0d0b24df4)."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./FailureCopy",
+      "development": "./src/FailureCopy.ts",
+      "published": {
+        "types": "./dist/esm/FailureCopy.d.ts",
+        "import": "./dist/esm/FailureCopy.js",
+        "require": "./dist/cjs/FailureCopy.js"
+      },
+      "reason": "Compact, safe copy for typed model and harness failures that the TUI renders on failure cards (26b84458c)."
+    },
+    {
+      "name": "@smthrs/create-app",
+      "subpath": "./worker",
+      "development": "./src/worker.ts",
+      "published": {
+        "types": "./dist/esm/worker.d.ts",
+        "import": "./dist/esm/worker.js",
+        "require": "./dist/cjs/worker.js"
+      },
+      "reason": "Turn host a scaffolded Worker serves POST /api/turn with; the default template imports it so a new app answers its first chat turn (b6875f96e)."
+    },
+    {
+      "name": "@smthrs/artifacts",
+      "subpath": "./FileLease",
+      "development": "./src/FileLease.ts",
+      "published": {
+        "types": "./dist/esm/FileLease.d.ts",
+        "import": "./dist/esm/FileLease.js",
+        "require": "./dist/cjs/FileLease.js"
+      },
+      "reason": "Cross-process lock-file lease that @smthrs/engine-store uses so a killed owner cannot hold the workspace commit lock forever (9194f67c4)."
     }
   ],
   "removed": [
@@ -973,6 +1028,16 @@
       "name": "@smthrs/plan",
       "subpath": "./PlanStore",
       "reason": "Append-only plan persistence moved to @smthrs/plan-store, so compiling a plan no longer installs a database. Import @smthrs/plan-store/PlanStore."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./SuperviseRuntime",
+      "reason": "Removed in 703ae262c: an unimplemented host port whose only bundled layers were no-ops, and no host composed it. Run recovery belongs to the durable engine driver."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./test/TestSuperviseRuntime",
+      "reason": "Removed in 703ae262c with the SuperviseRuntime port it doubled."
     }
   ],
   "packages": [

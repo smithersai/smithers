@@ -1,12 +1,6 @@
 {
   "entries": [
     {
-      "label": "//scripts/repo-contract:publicExportMaps",
-      "owner": "will",
-      "reason": "@smthrs/agent exports ./SmithersPlugin without a reviewed export-map addition.",
-      "expires": "2026-10-10"
-    },
-    {
       "label": "//scripts/repo-contract:uiCiTier",
       "owner": "will",
       "reason": "Expects no graph-lifecycle e2e script and a strict devkit typecheck skip; both changed on main.",
