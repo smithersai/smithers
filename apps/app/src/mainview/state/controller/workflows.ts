@@ -47,7 +47,7 @@ export interface LaunchRefusal {
 
 export interface WorkflowController {
   readonly resumeWorkflowRequests: () => void
-  readonly requestTriggerRun: (repo: string, slug: string) => Promise<string | { value: string }>
+  readonly requestTriggerRun: (repo: string, slug: string, operation?: "fire" | "resume") => Promise<string | { value: string }>
   readonly retryWorkflowRequest: (cardId: string) => boolean
   readonly createWorkflow: (description: string, repo?: string) => Promise<string | void | { readonly value: string }>
   readonly listWorkspaceWorkflows: ViewAction<[repo?: string, sourceCard?: string]>
@@ -282,16 +282,17 @@ export const createWorkflowController = (
     if (!registered.live) return { code: "trigger_lookup_unavailable", message: "The schedules could not be read. Retry the request." }
     const row = registered.triggers.find(trigger => trigger.slug === request.triggerDispatch!.slug)
     if (!row) return { code: "trigger_not_found", message: `No schedule "${request.triggerDispatch.slug}" is registered on ${repo}.` }
+    if (request.input.operation === "resume" && row.enabled) return { code: "trigger_already_enabled", message: `Schedule "${row.slug}" is already enabled.` }
     return { input: { ...request.input, flow: row.flowId, schedule: row.cron } }
   }, request => {
     // Refresh the listing independently; the committed run settles its own toast.
     if (request.triggerDispatch) void ctx.commands.run("triggers.list", request.repo, "automatic")
       .catch(error => ctx.failures.report("command.boundary", error, request.id))
   })
-  const requestTriggerRun: WorkflowController["requestTriggerRun"] = async (repo, slug) => {
+  const requestTriggerRun: WorkflowController["requestTriggerRun"] = async (repo, slug, operation = "fire") => {
     const workspaceId = repositoryJobWorkspace(store.collections.cards.values(), repo, store.collections.identitySessions.get("identity")?.login ?? null)
     const outcome = await requests.start({ repo, binding: { workspaceId }, workflow: "repository/trigger",
-      input: { requestId: crypto.randomUUID(), operation: "fire", repo, slug, input: {} }, triggerDispatch: { slug }, actor: ctx.commandActor })
+      input: { ...(operation === "fire" ? { requestId: crypto.randomUUID() } : {}), operation, repo, slug, input: {} }, triggerDispatch: { slug }, actor: ctx.commandActor })
     return typeof outcome === "string" ? outcome : { value: `Requested ${slug} on ${repo}.` }
   }
 

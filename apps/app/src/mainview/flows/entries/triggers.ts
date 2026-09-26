@@ -164,6 +164,21 @@ export const triggersFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
     handler: ({ repo, slug }) => actions.registerTrigger({ operation: "run", repo, slug })
   }),
   flow({
+    name: "triggers.resume",
+    summary: "Resume a paused schedule with its reviewed configuration",
+    runtime: ["cloud"],
+    args: "<name> [owner/repo]",
+    requires: ["signed-in"],
+    confirm: payload => `resume ${String(payload["slug"])}`,
+    input: RunTarget,
+    form: {
+      submitLabel: "Resume",
+      args: payload => line(text(payload, "slug"), text(payload, "repo")),
+      fields: { slug: { label: "Name" }, repo: { label: "Repository", optionsFrom: "cloud-repos", kind: "text" } }
+    },
+    handler: ({ repo, slug }) => actions.registerTrigger({ operation: "resume", repo, slug })
+  }),
+  flow({
     /* Stopping a schedule is consequential, so the agent asks and the human confirms. */
     name: "triggers.pause",
     summary: "Pause a schedule",

@@ -144,10 +144,11 @@ const TriggerPane = ({
           <Button
             variant="ghost"
             size="sm"
-            data-testid={`trigger-pause-${slug}`}
-            {...flowAction(onRunCommand, "triggers.pause", flowArgs("triggers.pause", { slug, repo }))}
+            data-testid={`trigger-${row.enabled ? "pause" : "resume"}-${slug}`}
+            {...flowAction(onRunCommand, row.enabled ? "triggers.pause" : "triggers.resume",
+                row.enabled ? flowArgs("triggers.pause", { slug, repo }) : flowArgs("triggers.resume", { slug, repo }))}
           >
-            Pause
+            {row.enabled ? "Pause" : "Resume"}
           </Button>
         </span>
       )}

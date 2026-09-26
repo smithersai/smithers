@@ -24,10 +24,12 @@ export default showcase({
   order: 105,
   title: "Flows",
   summary: "Plan a flow and inspect its graph, run it, write a new one; schedules in the Dispatcher.",
-  flows: ["flows", "flow.plan", "flow.plan.select", "flow.run", "flow.create", "triggers.list", "triggers.run", "triggers.pause"],
+  flows: ["flows", "flow.plan", "flow.plan.select", "flow.run", "flow.create", "triggers.list", "triggers.run", "triggers.pause", "triggers.resume"],
   run: async ({ page, app, backend }) => {
     let paused = false
     let planned = FLOW
+    let resuming = false
+    let resumed = false
     await backend.cloud({ capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
     await backend.json("/api/workflow/provision", { status: "ready", repo: REPO, gatewayId: "gw-1" })
     await backend.json("/api/workflow/triggers", { status: "ok", repo: REPO, live: true, triggers: [], webhooks: [{ name: "github-pull-request", flowId: FLOW }] })
@@ -36,24 +38,25 @@ export default showcase({
     ] }))
     await backend.route(url => url.pathname === "/api/workflow/trigger-pause", route => { paused = true; return route.fulfill({ json: { status: "ok", paused: 1 } }) })
     await backend.route(url => url.pathname === "/api/workflow/rpc", route => {
-      const call = route.request().postDataJSON() as { procedure: string; payload: { flowId?: string; selector?: { _tag?: string; runId?: string } } }
+      const call = route.request().postDataJSON() as { procedure: string; payload: { flowId?: string; input?: { operation?: string }; selector?: { _tag?: string; runId?: string } } }
       const ok = (payload: unknown) => route.fulfill({ json: { ok: true, payload } })
       switch (call.procedure) {
         case "List": return ok({ _tag: "flows", items: [
           { flowId: FLOW, description: "Review a pull request and comment on it" },
           { flowId: "triage-issue", description: "Label and route a new issue" }
         ] })
-        case "Plan": planned = call.payload.flowId ?? FLOW; return ok({
+        case "Plan": planned = call.payload.flowId ?? FLOW; resuming = call.payload.input?.operation === "resume"; return ok({
           planId: `${planned}-plan`, flowId: planned, digest: DIGEST, inputSummary: "{}", envelope: ENVELOPE, deployClass: false, nodes: NODES,
           graph: { edges: [{ from: "read-diff", to: "check", reason: "value" }, { from: "read-diff", to: "comment", reason: "value" }, { from: "check", to: "comment", reason: "value" }] },
           approval: { target: { _tag: "Plan", planId: `${planned}-plan`, digest: DIGEST, envelope: ENVELOPE }, scope: "run", idempotencyKey: `approve:${planned}-plan` }
         })
         case "Approval.Submit": return ok({ decision: { _tag: "Accepted", receiptId: "a" } })
-        case "Run": return ok({ _tag: "Accepted", receiptId: "r", runId: planned === FLOW ? "run-review-71" : "run-create-flow-3" })
+        case "Run": return ok({ _tag: "Accepted", receiptId: "r", runId: resuming ? "run-resume-1" : planned === FLOW ? "run-review-71" : "run-create-flow-3" })
         case "Projection.Snapshot": {
           const tag = call.payload.selector?._tag
           const runId = call.payload.selector?.runId ?? "run-review-71"
-          const rows = tag === "run-summary" ? [{ runId, flowId: runId === "run-review-71" ? FLOW : "create-flow", status: "running", createdAt: 1, updatedAt: 2,
+          if (runId === "run-resume-1" && resumed) paused = false
+          const rows = tag === "run-summary" ? [{ runId, flowId: runId === "run-review-71" ? FLOW : "create-flow", status: runId === "run-resume-1" && resumed ? "completed" : "running", createdAt: 1, updatedAt: 2,
             turns: 1, calls: 2, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0, verdict: "running", diagnosis: "running" }] : []
           return ok({ cursor: { projection: tag, runId: null, value: 0 }, rows })
         }
@@ -140,5 +143,19 @@ export default showcase({
     await app.click(dispatcher.getByTestId("trigger-pause-nightly-review"))
     await expect(dispatcher.getByTestId("trigger-state-reg-nightly")).toContainText("disabled", { timeout: 10_000 })
     await app.show(dispatcher)
+    const resume = dispatcher.getByTestId("trigger-resume-nightly-review")
+    await resume.focus()
+    await page.keyboard.press("Enter")
+    const resumeCard = page.locator('[data-kind="run-trace"][data-run-id="run-resume-1"]')
+    await expect(resumeCard).toContainText("Running", { timeout: 15_000 })
+    await resume.focus()
+    await page.keyboard.press("Enter")
+    await expect(resumeCard).toHaveCount(1)
+    const resumeToast = page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Resuming nightly-review" })
+    await expect(resumeToast).toHaveCount(1)
+    resumed = true
+    await expect(resumeCard).toContainText("Done", { timeout: 15_000 })
+    await expect(dispatcher.getByTestId("trigger-pause-nightly-review")).toBeVisible()
+    await expect(resumeToast).toHaveCount(0)
   }
 })

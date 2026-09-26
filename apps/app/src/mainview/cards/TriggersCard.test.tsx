@@ -274,3 +274,16 @@ describe("the dispatcher card", () => {
     expect(host.querySelector("[data-testid='trigger-pause-sweep']")).toBeNull()
   })
 })
+
+
+test("a paused named schedule offers Resume with its repository and slug", () => {
+  const raised: Array<[string, string | undefined]> = []
+  const host = render(triggerCard({ ...TWO_ROWS, triggers: [{ ...TWO_ROWS.triggers![0]!, enabled: false }] }),
+    (name, args) => { raised.push([name, args]) })
+  const button = host.querySelector<HTMLButtonElement>("[data-testid='trigger-resume-nightly']")!
+  expect(button.tagName).toBe("BUTTON")
+  expect(button.textContent).toBe("Resume")
+  button.click()
+  expect(raised).toEqual([["triggers.resume", `nightly ${REPO}`]])
+  expect(host.querySelector("[data-testid='trigger-pause-nightly']")).toBeNull()
+})

@@ -571,6 +571,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "flow.list": (args) => repoOnly("flow.list", args),
   "triggers.list": (args) => repoOnly("triggers.list", args),
   "triggers.register": (args) => triggerRegistration(args),
+  "triggers.resume": (args, known) => triggerRun(args, known),
   "triggers.run": (args, known) => triggerRun(args, known),
   "flow.run": (args) => flowTarget("flow.run", args),
   /*

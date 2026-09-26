@@ -211,3 +211,14 @@ test("MINIMAL TEXT: the panel is words to act on, never a sentence", () => {
   const host = render([boxRow({ fires: [{ occurrenceAt: FIRES[0]!, outcome: "completed", runId: "run-8" }] }), plueRow()])
   expect(host.textContent ?? "").not.toMatch(/\.(\s|$)/)
 })
+
+
+test("a paused graph schedule has the same Resume door", () => {
+  const raised: Array<[string, string | undefined]> = []
+  const host = render([plueRow({ enabled: false })], (name, args) => { raised.push([name, args]) })
+  const button = host.querySelector<HTMLButtonElement>("[data-testid='trigger-resume-nightly']")!
+  expect(button.tagName).toBe("BUTTON")
+  button.click()
+  expect(raised).toEqual([["triggers.resume", `nightly ${REPO}`]])
+  expect(host.querySelector("[data-testid='trigger-pause-nightly']")).toBeNull()
+})

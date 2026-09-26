@@ -74,6 +74,7 @@ export interface FlowInput {
   readonly "setup.work": { readonly cardId: string; readonly stepId: string; readonly field?: "prompt" | "source" | "number"; readonly value?: unknown }
   readonly "setup.run": { readonly cardId: string; readonly operation: "inspect" | "evaluate" | "trial" | "apply" | "pause" | "run"; readonly manual?: SetupManualRequest }
   /** `<name> [owner/repo]` — a schedule's name holds no whitespace, so the repository trails it. */
+  readonly "triggers.resume": { readonly slug: string; readonly repo?: string }
   readonly "triggers.run": { readonly slug: string; readonly repo?: string }
   /** Carried as JSON: `triggers.pause` declares `grammar: carried(...)`, which reads one object and refuses a positional line. */
   readonly "triggers.pause": { readonly slug: string; readonly repo?: string }
@@ -265,6 +266,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "model.state": (payload) => JSON.stringify(payload),
   "model.question": (payload) => JSON.stringify(payload),
   "model.option": (payload) => JSON.stringify(payload),
+  "triggers.resume": (payload) => line(token(payload, "slug"), token(payload, "repo")),
   "triggers.run": (payload) => line(token(payload, "slug"), token(payload, "repo")),
   "triggers.pause": (payload) => JSON.stringify(payload),
   "wiki.heading": (payload) => line(token(payload, "line"), token(payload, "cardId")),

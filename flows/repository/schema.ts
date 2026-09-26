@@ -131,7 +131,9 @@ export const TriggerRequest = Schema.Struct({
   approvedPlanDigest: Schema.optionalKey(Schema.String),
   /** A completed run of that exact plan, when the caller made one first. */
   testRunId: Schema.optionalKey(Schema.String),
-  operation: Schema.Literals(["register", "fire"])
+  operation: Schema.Literals(["register", "fire", "resume"]),
+  /** Resume must not overwrite a registration changed after its recovery read. */
+  expectedRevision: Schema.optionalKey(Schema.Int)
 })
 export type TriggerRequest = typeof TriggerRequest.Type
 export const TriggerRegistration = Schema.Struct({ registration_id: Schema.String, revision: Schema.Int, digest: Schema.String,

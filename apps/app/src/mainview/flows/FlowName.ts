@@ -287,6 +287,7 @@ export const FLOW_NAMES = [
   "triggers.list",
   "triggers.pause",
   "triggers.register",
+  "triggers.resume",
   "triggers.run",
   "wiki",
   "wiki.backlinks",

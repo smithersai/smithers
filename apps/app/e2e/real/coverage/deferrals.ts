@@ -54,7 +54,8 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
     "setup.retry", "setup.work",
     // Cloud stack writes/readback still need real-host receipts: https://github.com/smithersai/smithers/issues/1921.
     "stack.backfill", "stack.parallel", "stack.retry", "stack.show",
-    "tab.close.confirm", "triggers.approve", "triggers.pause", "triggers.run",
+    // Resume reuses the reviewed registration; authenticated host acceptance remains #1939.
+    "tab.close.confirm", "triggers.approve", "triggers.pause", "triggers.resume", "triggers.run",
     "workspace.desktop", "workspace.desktop.open", "workspace.desktop.rotate", "workspace.desktop.stop",
     "workspace.images", "workspace.list", "workspace.rename", "workspace.session.destroy"
   ]

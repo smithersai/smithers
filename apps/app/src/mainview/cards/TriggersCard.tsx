@@ -103,10 +103,11 @@ export const TriggerListCardBody = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      data-testid={`trigger-pause-${trigger.slug}`}
-                      {...flowAction(onRunCommand, "triggers.pause", flowArgs("triggers.pause", { slug: trigger.slug, repo }))}
+                      data-testid={`trigger-${trigger.enabled ? "pause" : "resume"}-${trigger.slug}`}
+                      {...flowAction(onRunCommand, trigger.enabled ? "triggers.pause" : "triggers.resume",
+                        trigger.enabled ? flowArgs("triggers.pause", { slug: trigger.slug, repo }) : flowArgs("triggers.resume", { slug: trigger.slug, repo }))}
                     >
-                      Pause
+                      {trigger.enabled ? "Pause" : "Resume"}
                     </Button>
                   </>
                 )}

@@ -1694,22 +1694,71 @@ describe("triggers seam: running a registered schedule now", () => {
     } finally { lookup.resolve(json(200, REGISTERED)); await request }
   })
 
-  for (const interrupted of ["lookup", "launch"] as const) test(`reload during ${interrupted} reconnects the same dispatch request`, async () => {
+  test("Resume acknowledges held lookup, deduplicates through preparation, and settles with execution", async () => {
+    const calls: Array<RelayCall> = []
+    const lookup = Promise.withResolvers<Response>()
+    const paused = { ...REGISTERED, rows: REGISTERED.rows.map(row => ({ ...row, enabled: false })) }
+    const run: HostRun = { status: "running", verdict: "" }
+    const { store, controller } = await readyToRegister({ ...watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: () => lookup.promise.then(response => response.clone()),
+      [RPC]: relayRoute(calls, workspaceAnswers({}, run))
+    })), toastDebounceMs: 300 })
+    try {
+      const outcome = await Promise.race([
+        controller.commands.run("triggers.resume", "nightly will/flows"),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Resume waited for lookup")), 100))
+      ])
+      expect(outcome.status).toBe("executed")
+      await controller.commands.run("triggers.resume", "nightly will/flows")
+      expect(calls).toEqual([])
+      expect(dispatchCards(store)).toHaveLength(1)
+      await store.dispatch({ type: "composer.changed", actor: "user", draft: "still chatting" }).isPersisted.promise
+      expect(store.session().draft).toBe("still chatting")
+      await waitFor(() => store.collections.toasts.size === 1)
+      const toast = [...store.collections.toasts.values()][0]!
+      expect(toast.status).toBe("running")
+      lookup.resolve(json(200, paused))
+      await waitFor(() => dispatchCards(store)[0]?.payload.phase === "running")
+      await controller.commands.run("triggers.resume", "nightly will/flows")
+      expect(dispatchCards(store)).toHaveLength(1)
+      expect(calls.filter(call => call.procedure === "Run")).toHaveLength(1)
+      expect(calls.find(call => call.procedure === "Plan")?.payload).toMatchObject({
+        flowId: "repository/trigger", input: { operation: "resume", slug: "nightly", flow: "nightly-lint", schedule: "0 9 * * 1-5" }
+      })
+      expect(dispatchCards(store)[0]?.title).toBe("Resume nightly · will/flows")
+      expect(store.collections.toasts.get(toast.id)?.status).toBe("running")
+      run.status = "completed"
+      await waitFor(() => store.collections.toasts.get(toast.id)?.status === "ok")
+    } finally { lookup.resolve(json(200, paused)) }
+  })
+
+  test("Resume refuses a schedule that was already enabled before lookup completed", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await readyToRegister(ROUTES(calls))
+    await controller.commands.run("triggers.resume", "nightly will/flows")
+    await waitFor(() => dispatchCards(store)[0]?.payload.phase === "failed")
+    expect(calls.some(call => call.procedure === "Run")).toBe(false)
+    expect(workflowLaunchOf(dispatchCards(store)[0])?.error?.message).toMatch(/already enabled/)
+  })
+
+  for (const command of ["triggers.run", "triggers.resume"] as const) for (const interrupted of ["lookup", "launch"] as const) test(`${command}: reload during ${interrupted} reconnects the same dispatch request`, async () => {
+    const registered = { ...REGISTERED, rows: REGISTERED.rows.map(row => ({ ...row, enabled: command !== "triggers.resume" })) }
     const storage = memoryStorage()
     const calls: Array<RelayCall> = []
     const held = Promise.withResolvers<void>()
     let reading = false
     const first = await readyToRegister(watched(backend({
       [PROJECTION]: projectionDocument(DAY_ONE),
-      [REGISTRATIONS]: async () => { reading = true; if (interrupted === "lookup") await held.promise; return json(200, REGISTERED) },
+      [REGISTRATIONS]: async () => { reading = true; if (interrupted === "lookup") await held.promise; return json(200, registered) },
       [RPC]: relayRoute(calls, workspaceAnswers({ Run: async () => { await held.promise; return okFrame({ runId: REGISTRAR_RUN }) } }))
     })), await createAppStore({ kind: "localStorage", storage }))
-    await first.controller.commands.run("triggers.run", "nightly will/flows")
+    await first.controller.commands.run(command, "nightly will/flows")
     await waitFor(() => interrupted === "lookup" ? reading : calls.some(call => call.procedure === "Run"))
     const original = workflowLaunchOf(dispatchCards(first.store)[0])!
     await first.controller.dispose()
     await first.store.dispose?.()
-    const nextRows = interrupted === "launch" ? { ...REGISTERED, rows: REGISTERED.rows.map(row => ({ ...row, flowId: "changed-after-launch" })) } : REGISTERED
+    const nextRows = interrupted === "launch" ? { ...registered, rows: registered.rows.map(row => ({ ...row, flowId: "changed-after-launch" })) } : registered
     const resumed = await ready(ROUTES(calls, { status: "running", verdict: "" }, nextRows), {
       signedIn: true, store: await createAppStore({ kind: "localStorage", storage })
     })
@@ -1876,14 +1925,14 @@ describe("triggers seam: running a registered schedule now", () => {
     expect(calls.map((call) => call.procedure)).toEqual(["Plan"])
   })
 
-  test("the door is the agent's to ask for and the human's to confirm, and asks for the name it was not given", async () => {
+  for (const command of ["triggers.run", "triggers.resume"] as const) test(`${command}: agent requests confirmation and missing input opens a form`, async () => {
     const calls: Array<RelayCall> = []
     const { store, controller } = await readyToRegister(ROUTES(calls))
-    const asked = await controller.commands.runForAgent("triggers.run", "nightly will/flows")
+    const asked = await controller.commands.runForAgent(command, "nightly will/flows")
     expect(asked.status).toBe("executed")
-    expect(lastAction(store)?.flow).toBe("triggers.run")
+    expect(lastAction(store)?.flow).toBe(command)
     expect(calls).toEqual([])
-    const form = await controller.commands.run("triggers.run")
+    const form = await controller.commands.run(command)
     expect(form.status).toBe("form")
     if (form.status === "form") expect(form.fields).toEqual(["slug"])
   })

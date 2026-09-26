@@ -37,6 +37,31 @@ const Planned = Schema.Struct({ planId: Schema.String, planDigest: Schema.String
   envelope: Schema.Json, sourceRevision: Schema.String, revision: Schema.Int, candidate: Schema.String,
   testRunId: Schema.optionalKey(Schema.String) })
 
+/** Recover only the exact saved, reviewed configuration, never defaults from the browser. */
+export const recoverTriggerRequest = (request: TriggerRequest, inventory: unknown, workspaceId: string): TriggerRequest | string => {
+  const row = rows(inventory).map(record).find(value => value.job === `flow:${request.slug}` && value.mode === "enabled")
+  if (!row) return "The paused schedule could not be found."
+  if (row.enabled !== false) return "The schedule is already enabled."
+  const saved = record(row.configuration)
+  const budget = record(record(saved.envelope).budget)
+  if (row.workspace_id !== workspaceId || saved.workspace_id !== workspaceId || saved.repo !== request.repo) return "Resume the schedule on its original workspace."
+  if (!Number.isSafeInteger(row.revision) || Number(row.revision) < 1 || saved.revision !== row.revision || saved.digest !== row.digest ||
+      saved.flow_id !== row.flow_id || saved.schedule !== row.schedule || !Object.hasOwn(saved, "input")) return "The saved schedule configuration could not be verified."
+  const recovered = Schema.decodeUnknownOption(TriggerRequest)({
+    ...request, operation: "register", flow: row.flow_id, schedule: row.schedule, input: saved.input,
+    workspaceId, budget: { tokens: budget.tokens, milliseconds: budget.milliseconds },
+    approvedPlanId: saved.approved_plan_id, approvedPlanDigest: saved.approved_plan_digest, expectedRevision: row.revision
+  })
+  if (Option.isNone(recovered) || !recovered.value.approvedPlanId || !recovered.value.approvedPlanDigest ||
+      triggerCandidate(recovered.value) !== row.digest) return "The saved schedule approval could not be verified. Review and register it again."
+  return recovered.value
+}
+
+const Recover = Action.make("repository/recover-trigger", {
+  payload: { request: TriggerRequest, deadlineAt: Schema.Number }, success: TriggerRequest, error: CodingError, nondeterministic: true
+})
+const RecoverTrigger = Flow.make("repository/RecoverTrigger", { payload: Recover.payloadSchema, success: TriggerRequest, error: CodingError, body: value => Recover.call(value) })
+
 const Prepare = Action.make("repository/prepare-trigger", {
   payload: { request: TriggerRequest, deadlineAt: Schema.Number }, success: Planned, error: CodingError, nondeterministic: true
 })
@@ -107,7 +132,14 @@ const currentRegistration = (slug: string) => Effect.gen(function*() {
 
 export const triggerLayers = Layer.mergeAll(
   Interpreter.layer(Trigger), Interpreter.layer(RunTrigger), Interpreter.layer(PrepareTrigger),
-  Interpreter.layer(ActivateTrigger), Interpreter.layer(FireTrigger),
+  Interpreter.layer(ActivateTrigger), Interpreter.layer(FireTrigger), Interpreter.layer(RecoverTrigger),
+  Recover.toLayer(({ request, deadlineAt }) => Effect.gen(function*() {
+    if (Date.now() >= deadlineAt) return yield* invalid("The resume request reached its configured time limit")
+    const remote = yield* requireRemote
+    if (remote.repo !== request.repo) return yield* invalid("The schedule belongs to another repository")
+    const recovered = recoverTriggerRequest(request, yield* remote.registrations, remote.workspaceId)
+    return typeof recovered === "string" ? yield* invalid(recovered) : recovered
+  })),
   RefuseTrigger.toLayer(() => Effect.fail(invalid("A schedule registration names one repository flow, one slug, one UTC cron schedule and the plan a person approved"))),
   Prepare.toLayer(({ request, deadlineAt }) => Effect.gen(function*() {
     if (Date.now() >= deadlineAt) return yield* invalid("The registration reached its configured time limit")
@@ -177,6 +209,7 @@ export const triggerLayers = Layer.mergeAll(
       }
     }
     const current = yield* currentRegistration(request.slug)
+    if (request.expectedRevision !== undefined && current.revision !== request.expectedRevision) return yield* invalid("The schedule changed while resuming. Read it again before retrying.")
     return { planId: card.planId, planDigest: card.digest, executionDigest: card.executionDigest,
       envelope: json({ ...card.envelope, budget }),
       sourceRevision: source.commitId, revision: current.revision + 1, candidate: triggerCandidate(request),
@@ -227,7 +260,9 @@ export const triggerLayers = Layer.mergeAll(
     const runtime = yield* FlowRuntime.FlowRuntime, instance = yield* FlowRuntime.FlowInstance
     const key = (part: string) => Digest.digest(Digest.canonical(["repository/trigger/v1", instance.executionId, request.slug, part]))
     if (request.operation === "fire") return yield* runtime.execute(FireTrigger, { executionId: key("fire"), payload: { request, dispatchKey: key("fire"), deadlineAt } })
-    const plan = yield* runtime.execute(PrepareTrigger, { executionId: key("prepare"), payload: { request, deadlineAt } })
-    return yield* runtime.execute(ActivateTrigger, { executionId: key("activate"), payload: { request, plan, deadlineAt } })
+    const registration = request.operation === "resume"
+      ? yield* runtime.execute(RecoverTrigger, { executionId: key("recover"), payload: { request, deadlineAt } }) : request
+    const plan = yield* runtime.execute(PrepareTrigger, { executionId: key("prepare"), payload: { request: registration, deadlineAt } })
+    return yield* runtime.execute(ActivateTrigger, { executionId: key("activate"), payload: { request: registration, plan, deadlineAt } })
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : new CodingError({ code: "execution", message: "The schedule registration did not complete; inspect the retained run" }))))
 ).pipe(Layer.provideMerge(RunCatalogRead.layer))

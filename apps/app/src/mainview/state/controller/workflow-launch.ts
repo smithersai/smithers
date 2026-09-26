@@ -21,7 +21,9 @@ const terminal = new Set(["completed", "failed", "cancelled"])
 const EVIDENCE_ROUNDS = 24
 /** The dedup identity of a request: a change request is not the same work as a bare run of its first flow. */
 const requestKey = (request: Pick<WorkflowLaunch, "owner" | "repo" | "workspaceId" | "workflow" | "input" | "then">): string =>
-  canonicalStoredJsonValue([request.owner, request.repo, request.workspaceId ?? null, request.workflow, request.input, ...(request.then === undefined ? [] : [request.then])])
+  canonicalStoredJsonValue([request.owner, request.repo, request.workspaceId ?? null, request.workflow,
+    request.workflow === "repository/trigger" && request.input.operation === "resume"
+      ? { operation: "resume", slug: request.input.slug } : request.input, ...(request.then === undefined ? [] : [request.then])])
 class RequestPersistenceError extends Error {}
 
 /** One durable request owns preparation, launch and observation through remote settlement. */
@@ -73,8 +75,8 @@ export const createWorkflowLaunchController = (
     }
     // A new request for the same work replaces its earlier failure on the shared stack.
     const toastKey = request.triggerDispatch ? `trigger.run.${request.repo}.${request.triggerDispatch.slug}.${request.id}` : `flow.request.${digest(requestKey(request))}`
-    const work = ctx.withToast(toastKey, request.triggerDispatch ? `Running ${request.triggerDispatch.slug} on ${request.repo}…` : request.workflow,
-      request.triggerDispatch ? `${request.triggerDispatch.slug} dispatched` : `${request.workflow} completed`, async () => {
+    const work = ctx.withToast(toastKey, request.triggerDispatch ? `${request.input.operation === "resume" ? "Resuming" : "Running"} ${request.triggerDispatch.slug} on ${request.repo}…` : request.workflow,
+      request.triggerDispatch ? `${request.triggerDispatch.slug} ${request.input.operation === "resume" ? "resumed" : "dispatched"}` : `${request.workflow} completed`, async () => {
       let stage: NonNullable<WorkflowLaunch["error"]>["stage"] = "preparation"
       const fail = async (failure: Refusal) => {
         if (!current()) return TOAST_SUPERSEDED
@@ -251,7 +253,7 @@ export const createWorkflowLaunchController = (
     void saving.then(() => send(id, next), () => {}).finally(() => persisting.delete(id))
     return true
   }
-  const requestCard = (id: string, request: WorkflowLaunch): RunCard => ({ id, kind: "run-trace", title: `${request.triggerDispatch ? `Run ${request.triggerDispatch.slug}` : request.workflow} · ${request.repo}`,
+  const requestCard = (id: string, request: WorkflowLaunch): RunCard => ({ id, kind: "run-trace", title: `${request.triggerDispatch ? `${request.input.operation === "resume" ? "Resume" : "Run"} ${request.triggerDispatch.slug}` : request.workflow} · ${request.repo}`,
     status: "active", createdAt: Date.now(), ordinal: nextOrdinal(), payload: { repo: request.repo,
       ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }), gatewayBindingVersion: 1,
       workflow: request.workflow, runId: `pending-${request.id}`, phase: "launching", steps: [], result: null, lastSeq: 0, liveTail: true,

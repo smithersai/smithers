@@ -206,7 +206,7 @@ const repositoryFixtures = ["apply-proof", "budget", "check-context", "check-rec
   "intake-screen", "jev-checks", "jev-duplicates", "jev-observation", "jev-reproduction", "jev-score",
   "native-error", "pause-integrity", "proposal-review", "push", "remote-source", "retention", "review-eval",
   "selection", "setup-policy", "setup-suggestion", "sources", "stored-registration", "trial-checks",
-  "trial-registration"] as const
+  "trial-registration", "trigger-resume"] as const
 const repository = Smithers.NodeTest({
   runtime: node,
   runner: Smithers.testRunner(repositoryFixtures.map(name => fixture(`repository-${name}.test.ts`)) as

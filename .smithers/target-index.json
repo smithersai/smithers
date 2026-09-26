@@ -11627,6 +11627,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/triggers/src/internal/WallClock.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/triggers/src/migrations/0001_triggers.ts"
       },
       {
@@ -14444,6 +14448,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/snapshots.ts"
       },
       {
         "kind": "file",
@@ -20390,6 +20398,10 @@
       {
         "kind": "file",
         "path": "flows/test/repository-trial-registration.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-trigger-resume.test.ts"
       },
       {
         "kind": "glob",

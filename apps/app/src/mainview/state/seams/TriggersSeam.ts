@@ -153,9 +153,9 @@ export interface TriggerWrite {
   /**
    * `register` prepares: it validates, plans the target flow, and offers the
    * human's approve button. `approve` is the human's alone. `run` fires a
-   * registered schedule once, now. `pause` stops a schedule they enabled.
+   * registered schedule once, now. `pause` stops a schedule they enabled; `resume` restores its reviewed configuration.
    */
-  readonly operation: "register" | "approve" | "run" | "pause"
+  readonly operation: "register" | "approve" | "run" | "pause" | "resume"
   readonly repo?: string
   readonly flow?: string
   readonly slug?: string
@@ -198,7 +198,7 @@ export interface TriggersSeam {
  * afterwards, which is what the instant-chat rule asks of every background act.
  */
 export interface TriggersRuntime {
-  readonly requestRun: (repo: string, slug: string) => Promise<string | { value: string }>
+  readonly requestRun: (repo: string, slug: string, operation?: "fire" | "resume") => Promise<string | { value: string }>
   /** Watch one run card; it settles when that run does. */
   readonly watchRun: (cardId: string) => Promise<void>
   /** Background work on the shared stack, under its 300 ms debounce; a string outcome is the failure line. */
@@ -1192,6 +1192,10 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     if ("error" in target) return target.error
     if (request.operation === "approve") return approveTrigger(request, target.repo)
     if (request.operation === "run") return runTrigger(request, target.repo)
+    if (request.operation === "resume") {
+      if (!SLUG.test(request.slug ?? "")) return "A schedule name is lower-case letters, digits and dashes, up to 64 characters."
+      return runtime.requestRun(target.repo, request.slug!, "resume")
+    }
     if (request.operation === "pause") return pauseTrigger(request, target.repo)
     return prepareTrigger(request, target.repo)
   }
