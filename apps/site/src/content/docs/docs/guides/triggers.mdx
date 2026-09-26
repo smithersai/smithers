@@ -131,13 +131,13 @@ Every occurrence ends with one recorded outcome:
 
 Signed in to Smithers, run `/triggers.list` or ask "list the triggers on owner/repo". The Dispatcher card prints one row per trigger: the schedule in words, the flow it runs, whether it is enabled, and when it last fired.
 
-The card reads the workspace's gateway. When that gateway does not serve its trigger store, the card prints the gateway's own reason instead of an empty list, and never a made-up row. Smithers Cloud workspaces do not serve the store yet, so today the card reports that and points you at `smthrs triggers list` on the host that runs the scheduler. Registering and editing triggers from the app is not available; use the CLI.
+The card reads declared factory rules and, when connected, live workspace registrations. **Register a rule** prepares a flow plan for human approval before the repository registrar writes the schedule. Named registrations offer **Run now** and **Pause**. See [Dispatcher](/docs/app/dispatcher/) for inputs, limits, and completion receipts. When the workspace or registrar is unavailable, the app reports that failure.
 
 ## Accept a verified webhook
 
 `@smthrs/triggers/Webhook` builds a webhook door in code. `Webhook.make` takes a channel configuration and a required credential reference, verifies the request signature over the raw bytes in constant time, and hands the decoded payload to Control's channel coordinator. It exposes `register` and `ingest` and no direct execution method, so a valid signature and valid JSON never bypass Control.
 
-There is no `smthrs webhooks` verb and no webhook row in the app yet. For the module contract, see [`@smthrs/triggers`](/docs/reference/api/triggers/#webhook). For GitHub webhooks that reconcile against `.smithers/listeners.json`, see `smthrs integrations reconcile` in the [CLI reference](/docs/reference/cli/).
+There is no `smthrs webhooks` verb. Dispatcher can display webhook channels returned by its connected workspace. For the module contract, see [`@smthrs/triggers`](/docs/reference/api/triggers/#webhook). For GitHub webhooks that reconcile against `.smithers/listeners.json`, see `smthrs integrations reconcile` in the [CLI reference](/docs/reference/cli/).
 
 ## Planned: repository events and PACKAGE.ts declarations
 
@@ -162,4 +162,4 @@ export const Package = S.Package({
 
 The planned selectors are `T.push` with branch and path filters, `T.review` for GitHub pull requests and Plue landing requests, `T.tag`, `T.schedule` as the declared form of today's cron trigger, `T.manual` with a typed input schema, `T.event` for authenticated external publishers, and `T.succeeded` to chain one automation after another. Filters combine with AND, list values with OR, and an exclusion always wins. The [Trigger reference](/docs/reference/triggers/) records the planned event fields and matching rules under the same disclaimer.
 
-Until that lands, the shipped way to start work from a repository event is a CI job: [Run flows in CI](/docs/guides/ci/) launches a flow from GitHub Actions, and the [`Smithers.GithubCiGen` target](/docs/reference/api/targets/) generates the workflow files that run `smthrs ci`.
+Repository events can already start backend workflows through [Smithers Cloud CI](/docs/guides/cloud-ci/). Those workflows and the integration listeners use their own declarations; they do not implement the proposed `S.Automation` API. For another CI host, [Run flows in CI](/docs/guides/ci/) shows how to launch a flow from a job.

@@ -1,55 +1,41 @@
 ---
 title: "Smithers Cloud CI"
-description: "The planned Smithers Cloud CI service: activation, execution, caching, and required results. Not shipped; recorded so the design is visible."
+description: "The backend workflow service's dispatch, sandbox execution, caches, artifacts, and completion results."
 editUrl: "https://github.com/smithersai/smithers/edit/main/apps/site/src/content/docs/docs/reference/cloud-ci.mdx"
 ---
 
-Smithers Cloud CI is not shipped. Smithers Cloud registers no repository subscriptions, starts no runs from repository events, and publishes no **Smithers CI** check. Everything below this paragraph is the planned design, kept here so that the intended contract is reviewable before it is built. For what runs `PACKAGE.ts` checks today, see [Run CI on Smithers Cloud](/docs/guides/cloud-ci/#what-runs-checks-today). For the shipped cron trigger, see the [Trigger reference](/docs/reference/triggers/).
+The common Go backend owns workflow discovery, event matching, durable run admission, sandbox execution, and result publication. A deployment supplies repository storage, sandbox provisioning, and optional GitHub App services. Source support does not establish that these services are configured for every installation.
 
-The declaration surface this design depends on, `S.Automation` and `Package.automations`, exists only as the type-level proof in [`apps/site/examples/cloud-triggers/contract.d.ts`](https://github.com/smithersai/smithers/blob/main/apps/site/examples/cloud-triggers/contract.d.ts). Its README states that it does not implement trigger registration, matching, dispatch, or the `S.Automation` runtime.
+For the repository's current workflow example, see [Run CI on Smithers Cloud](/docs/guides/cloud-ci/). The local cron library and scheduler are documented separately in [Triggers](/docs/reference/triggers/).
 
-## Planned defaults
+## Dispatch and execution
 
-| Setting | Planned value |
+| Surface | Current behavior |
 | --- | --- |
-| API origin | `https://api.jjhub.tech` |
-| CI automation selected during setup | `//:ci` |
-| Declaration | An `S.Automation` exported through `Package.automations`. |
-| Automatic events | Those declared in `on`; no events added by the name `ci`. |
-| Workspace | `.smithers/WORKSPACE.ts` and committed dependency lockfiles. |
-| Check name | **Smithers CI** |
-| Execution | Isolated Linux workers on Smithers Cloud's Plue infrastructure. |
-| Target selection | The complete dependency graph of the referenced target, with normal cache reuse. |
-| Review concurrency | A newer source revision cancels earlier unfinished CI for that review. |
+| Definitions | Repository workflows loaded for the event's source commit. |
+| Admission | Matching events create durable workflow runs and tasks. |
+| Execution plane | Every CI run is created on the sandbox plane. Agent runs use the separate agent plane. |
+| Job environment | NixOS VM jobs use the repository's registered closure image or the platform base closure. A repository does not need its own `.smithers/environment.nix` to enter CI. |
+| `runs-on` | Workflow metadata; it cannot select another execution plane. |
+| Graph checks | A job invokes `smthrs ci <pattern>` to run the `PACKAGE.ts` target graph. |
+| GitHub check | `smithers / <workflow name>`, when GitHub App publication is configured. |
 
-## Planned repository activation
+The backend's [execution-plane tests](https://github.com/smithersai/smithers/blob/main/packages/backend/internal/services/workflow_run_execution_plane_test.go) cover admission without a repository closure and refusal to select the agent plane through `runs-on`.
 
-Enabling CI would authorize the repository's automation and register its triggers from the default branch or bookmark. Activation would emit no repository event; the next matching event would start work. A target named `ci` without an automation would acquire no triggers.
+## Caches and artifacts
 
-The selected automation would have to resolve to executable work. Missing references, empty suites, unsupported worker requirements, and invalid declarations would fail CI. An enabled requirement would stay in effect if a revision deleted the automation or changed its triggers to exclude the review.
+Sandbox jobs receive credentials scoped to their repository, run, and task for workflow cache and artifact operations. Cache restoration and artifact publication belong to the workflow job lifecycle. They are separate from the target graph's action cache and the Flow engine's step cache.
 
-Routing would use the trusted registered selectors; the work would load from the event's execution revision, and the run would record both revisions. A review could change its checks but not rewrite its own routing policy or grant itself additional credentials.
+See the [sandbox CI implementation](https://github.com/smithersai/smithers/blob/main/packages/backend/internal/services/workflow_nix_ci.go) and [job credential tests](https://github.com/smithersai/smithers/blob/main/packages/backend/internal/services/workflow_nix_ci_job_credentials_test.go) for the enforced boundaries.
 
-## Planned execution and caching
+## Completion and GitHub results
 
-A worker would prepare the workspace, resolve declared tools, install dependencies from the lockfiles, and evaluate the work in isolation. Target dependencies would determine order; independent checks could execute concurrently within worker capacity. Cached results would be reused only when declared inputs, execution environment, and cache policy permit. Trigger path filters would decide whether to start work and would not replace target dependency tracking.
+The terminal publisher updates the run's commit status and GitHub check run, emits its `workflow_run` event, and dispatches eligible downstream workflows. Publication errors are logged; a successful local run does not prove GitHub received its result.
 
-Repository credentials would come from the Cloud connection and target or flow declarations. Repository code would not receive the service's infrastructure credentials. Fork execution would require an explicitly authorized isolated policy. A lost worker whose work cannot be recovered would fail the attempt; a rerun could reuse valid completed cache entries. The service deadline would bound queue time, execution, and approval waits.
+Inspect the run ID, tested commit, task results, and terminal status, then check the corresponding GitHub result when the repository requires one. Cancellation is distinct from failure. An accepted dispatch, queued task, or in-progress check is not completion.
 
-## Planned results and required checks
+The owning code is [workflow_run_terminal.go](https://github.com/smithersai/smithers/blob/main/packages/backend/internal/services/workflow_run_terminal.go); its tests cover sandbox-run completion and publication.
 
-The service would publish **Smithers CI** on the tested commit, on the Plue landing request or through the Smithers GitHub App with a link to the run.
+## Proposed target automation API
 
-| Result | Planned meaning |
-| --- | --- |
-| Pending | Work is queued, executing, or waiting for an authorized approval. |
-| Passed | Required work completed successfully, including valid cached target results. |
-| Failed | Configuration, workspace preparation, a check, or unrecoverable execution failed. |
-| Cancelled | A user cancelled the attempt or a newer review revision superseded it. |
-| Timed out | The run exceeded its deadline. |
-
-Only a passed result would satisfy a required check. For a review revision where CI is required, a selector or predicate that excluded it would produce a failure naming the unmatched requirement rather than an unexplained pending check. Results would stay bound to their attempt and commit; a late result from an earlier revision could not replace the current one. Review runs would test the source commit, not a merge result.
-
-## Status
-
-The shipped surfaces that this design would build on are the `PACKAGE.ts` target graph, `smthrs ci`, the `Smithers.GithubCiGen` target, the cron trigger store and scheduler in `@smthrs/triggers`, and the Smithers GitHub App connection used by the app. When the automation declaration and the event subscriptions land, this page drops the planned framing.
+`S.Automation` and `Package.automations` remain a [type-level proposal](https://github.com/smithersai/smithers/blob/main/apps/site/examples/cloud-triggers/contract.d.ts). They are not exported by the current packages. The existing backend workflow service does not make that proposed `PACKAGE.ts` syntax executable.

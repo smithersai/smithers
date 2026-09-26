@@ -77,15 +77,15 @@ The ledger has no CLI or app listing yet. Rows are readable in `.flows/control.d
 
 ## Reading triggers in the app
 
-The `triggers.list` flow (slash command `/triggers.list`, or ask the agent to list the triggers on a repository) renders the Dispatcher card: one row per trigger with the schedule in words, the flow it runs, `enabled` or `disabled`, and the last fire time. The card is read-only; registering and editing happen through the CLI.
+The `triggers.list` flow (slash command `/triggers.list`, or ask the agent to list the triggers on a repository) renders the Dispatcher card: declared factory rules and live rows with the schedule, flow, enabled state, and fire times. `/triggers.register` prepares a plan; human approval registers it through the repository registrar. Named registrations expose **Run now** and **Pause**. See [Dispatcher](/docs/app/dispatcher/).
 
-The card reads the workspace gateway. A gateway that does not serve its trigger store answers with a reason, and the card prints that reason verbatim instead of an empty list. Smithers Cloud workspaces do not serve the store yet, so the card reports that today. Signed-out visitors get the sign-in door.
+Live state requires a connected workspace. An unavailable gateway or registrar produces a visible failure. Signed-out visitors can inspect declared rules; writes require sign-in.
 
 ## Webhooks
 
 `Webhook.make` from `@smthrs/triggers/Webhook` builds a verified door in code. It requires a credential reference, verifies the signature header over a private copy of the raw request bytes in constant time, refuses an absent or empty signature before computing anything, and hands the decoded payload to Control's channel coordinator. It exposes `register` and `ingest` and no direct execution method. `ingest` does not register the channel; run `register` first.
 
-There is no `smthrs webhooks` verb, no persisted webhook registry, and no webhook row in the Dispatcher card. For the module contract, see [`@smthrs/triggers`](/docs/reference/api/triggers/#webhook).
+There is no `smthrs webhooks` verb. The Dispatcher card displays webhook channels when its workspace returns them. For the library's module contract, see [`@smthrs/triggers`](/docs/reference/api/triggers/#webhook).
 
 ## Planned: event selectors and automations
 
