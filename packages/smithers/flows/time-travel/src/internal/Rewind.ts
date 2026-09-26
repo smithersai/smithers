@@ -812,6 +812,11 @@ const preflight = (context: Context, progress: Progress) =>
         )
       )
     }
+    if (options.wholeRepo === true && plan.targetOperationId === undefined) {
+      return yield* Effect.fail(
+        error("irreversible", "rewind --whole-repo needs a jj operation recorded at or before the frame")
+      )
+    }
     yield* persist(context, progress, {
       phase: "preflight_complete",
       suffixCount: suffix.count,

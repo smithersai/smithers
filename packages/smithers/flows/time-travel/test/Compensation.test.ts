@@ -473,6 +473,49 @@ describe("Compensation.prepareWorkspace then restorePreparedWorkspace", () => {
       expect(calls).toEqual(["opRestore:target-op", "opRestore:current-op"])
     }))
 
+  it.effect("restores the whole repository even when no compensable effect was crossed", () =>
+    Effect.gen(function*() {
+      const calls: Array<string> = []
+      const plan = yield* Compensation.assess([], "target", { wholeRepo: true, targetOperationId: "target-op" }).pipe(
+        Effect.provide(cache()),
+        Effect.provide(registryOf([]))
+      )
+      yield* restoreWorkspace(plan, []).pipe(
+        Effect.provide(registryOf([])),
+        Effect.provide(jjOf({
+          snapshot: () => Effect.succeed({ commitId: "current", changeId: "current", operationId: "current-op" }),
+          opRestore: (operationId: string) => Effect.sync(() => void calls.push(operationId))
+        }))
+      )
+      expect(calls).toEqual(["target-op"])
+    }))
+
+  it.effect("rolls a failed whole-repository restore back to the current operation", () =>
+    Effect.gen(function*() {
+      const calls: Array<string> = []
+      const plan = yield* Compensation.assess([compensable], "target", {
+        wholeRepo: true,
+        targetOperationId: "target-op"
+      }).pipe(Effect.provide(cache()), Effect.provide(registryOf([])))
+      const failure = yield* Effect.flip(
+        restoreWorkspace(plan, []).pipe(
+          Effect.provide(registryOf([])),
+          Effect.provide(jjOf({
+            snapshot: () => Effect.succeed({ commitId: "current", changeId: "current", operationId: "current-op" }),
+            opRestore: (operationId: string) =>
+              Effect.suspend(() => {
+                calls.push(operationId)
+                return operationId === "target-op"
+                  ? Effect.fail(Jj.jjError({ code: "conflict", method: "opRestore" }))
+                  : Effect.void
+              })
+          }))
+        )
+      )
+      expect(failure.code).toBe("compensation_failed")
+      expect(calls).toEqual(["target-op", "current-op"])
+    }))
+
   it.effect("blocks a whole-repository restore to a frame with no recorded operation", () =>
     Effect.gen(function*() {
       const plan = yield* Compensation.assess([compensable], "target", { wholeRepo: true }).pipe(

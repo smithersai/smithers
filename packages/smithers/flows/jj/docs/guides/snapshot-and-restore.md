@@ -116,7 +116,8 @@ const rewindRepository = (operationId: string) =>
 `opRestore` runs `jj op restore`. Bookmarks, heads, and working-copy commits
 return to the operation's view, so bookmark moves, rebases, `describe`, and
 `abandon` made after the snapshot are undone along with the tree. The
-operations after it stay in `jj op log`.
+operations after it stay in `jj op log`. Node and Bun refuse with `conflict`
+when another workspace was added or moved after the operation.
 
 ## Which one to use
 

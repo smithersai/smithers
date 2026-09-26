@@ -182,9 +182,10 @@ the derived workspace name lands in. `retainWorkspace` keeps the child lane
 registered after the service scope closes. `detachedChildren` defaults to
 `"block"`. `wholeRepo` restores the jj operation the frame recorded instead of
 only its working-copy tree, so bookmark moves, rebases, `describe`, and
-`abandon` after the frame are undone too; it runs `jj op restore`, which also
-resets other workspaces' working-copy commits to that operation. A frame whose
-anchor recorded no operation refuses it with `irreversible`.
+`abandon` after the frame are undone too, even when no compensable effect was
+crossed. A frame whose anchor recorded no operation refuses it with
+`irreversible`, and a repository whose other workspaces changed after the
+operation refuses it with `compensation_failed`.
 
 `engineEvents` is the `EngineEvent.Consumer` from `@smthrs/journal` that a
 versioned engine record is decoded against: its `runId` and `lineageId` must

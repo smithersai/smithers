@@ -639,13 +639,33 @@ const operations = (run: Run, repositoryRoot?: string) => {
    * reads a lane named `-dash-lane` as a bundle of short flags and a lane path
    * of `--config-file=/tmp/x.toml` as a jj global option, rather than as the
    * value and the positional they are meant to be.
+   *
+   * A pinned lane opens a NEW change on the revision's parents and restores
+   * the revision's tree into it. A snapshot's commit id is usually a hidden
+   * earlier version of the parent's working-copy change; building on it would
+   * revive it beside the parent's current `@` as a divergent change.
    */
   const workspaceAdd = (name: string, path: string, revision?: string) =>
     Effect.asVoid(
       revision === undefined
         ? inRepository("workspaceAdd", ["workspace", "add", `--name=${name}`, "--", path])
         : Effect.flatMap(requireRevision("workspaceAdd", "jj workspace add", revision), (pinned) =>
-          inRepository("workspaceAdd", ["workspace", "add", `--name=${name}`, `--revision=${pinned}`, "--", path]))
+          inRepository("workspaceAdd", [
+            "workspace",
+            "add",
+            `--name=${name}`,
+            `--revision=parents(${pinned})`,
+            "--",
+            path
+          ]).pipe(
+            Effect.andThen(
+              run(
+                "workspaceAdd",
+                ["restore", "--from", pinned, "--color=never", "--config", "snapshot.max-new-file-size=0"],
+                resolve(repositoryRoot ?? process.cwd(), path)
+              )
+            )
+          ))
     )
 
   const workspaceForget = (name: string) =>
@@ -714,7 +734,43 @@ const operations = (run: Run, repositoryRoot?: string) => {
    */
   const opRestore = (operationId: string) =>
     /^[0-9a-f]+$/.test(operationId)
-      ? Effect.asVoid(repositoryCritical("opRestore", inRepository("opRestore", ["op", "restore", operationId])))
+      ? repositoryCritical(
+        "opRestore",
+        Effect.gen(function*() {
+          // `jj op restore` resets every workspace's working-copy commit and
+          // drops workspaces added after the operation. Refuse unless every
+          // other workspace is exactly as the operation recorded it.
+          const workspaces = (at: ReadonlyArray<string>) =>
+            inRepository("opRestore", [
+              "workspace",
+              "list",
+              ...at,
+              "-T",
+              "name ++ \" \" ++ if(target.current_working_copy(), \"@\", target.commit_id()) ++ \"\\n\""
+            ])
+          const now = yield* workspaces([])
+          const then = yield* workspaces([`--at-op=${operationId}`])
+          if (now !== then) {
+            const recorded = new Set(then.split("\n"))
+            const changed = now.split("\n").filter((line) => line !== "" && !recorded.has(line))
+              .map((line) => line.slice(0, line.lastIndexOf(" ")))
+            return yield* Effect.fail(
+              new JjError({
+                code: "conflict",
+                module: MODULE,
+                method: "opRestore",
+                command: "jj op restore",
+                message: `jj opRestore: workspace(s) changed after operation ${operationId.slice(0, 12)}: ${
+                  changed.join(", ").slice(0, 400)
+                }`
+              })
+            )
+          }
+          // `repo` only: what jj knows about remotes is not rolled back, so a
+          // push made after the operation is not forgotten.
+          yield* inRepository("opRestore", ["op", "restore", "--what=repo", operationId])
+        })
+      )
       : Effect.fail(
         new JjError({
           code: "invalid_ref",

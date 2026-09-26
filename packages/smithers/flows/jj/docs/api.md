@@ -83,7 +83,8 @@ Node and Bun report it, the browser layer does not.
 `restore` puts the working copy back to `revision`, replacing the tree rather
 than merging into it. `diff` is a git-format unified diff between two
 revisions. `workspaceAdd` adds a named workspace rooted at `path`, one lane per
-parallel agent, pinned at `revision` when one is given. `workspaceForget` drops
+parallel agent; with `revision` its new change holds that revision's tree on the
+revision's parents. `workspaceForget` drops
 a named workspace without touching the commits made in it or the directory on
 disk. `status` returns the working copy's status as jj prints it.
 
@@ -99,8 +100,11 @@ attempt".
 
 `opRestore` runs `jj op restore`: the whole repository view returns to the
 operation, so bookmark moves, rebases, `describe`, and `abandon` made after it
-are undone along with the tree. It accepts only a hex operation id, and an id
-jj does not know fails `invalid_ref`.
+are undone along with the tree. Node and Bun restore `--what=repo`, so what jj
+knows about remotes is kept, and refuse with `conflict` when any other
+workspace was added or moved after the operation, because the restore would
+reset or drop it. It accepts only a hex operation id, and an id jj does not
+know fails `invalid_ref`.
 
 `PlatformError` is in two error channels because the guarded implementation
 canonicalizes a path against the workspace root before it asks for a

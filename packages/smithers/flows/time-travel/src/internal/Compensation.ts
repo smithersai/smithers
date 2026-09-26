@@ -174,13 +174,13 @@ const compensableAssessment = (
       effect,
       classification: "revertible",
       reason: `The repository will be restored to jj operation ${whole.targetOperationId}.`,
-      residue: "Repository state after the target frame is discarded into the jj operation log."
+      residue: "Repository state after the target frame stays reachable only through `jj op log`."
     }
     : {
       effect,
       classification: "revertible",
       reason: `The workspace will be restored to jj change ${targetChangeId}.`,
-      residue: "Workspace state after the target frame is discarded into jj history."
+      residue: "Workspace state after the target frame stays reachable only through `jj evolog` and `jj op log`."
     }
 
 /**
@@ -409,7 +409,10 @@ export const prepareWorkspace = (
     )
     yield* assertExecutable(plan).pipe(Effect.tapError(() => cleanUp))
     const jj = yield* Jj
-    const needsRestore = plan.effects.some((effect) => effect.tier === "compensable")
+    // A whole-repository rewind restores even without a compensable effect:
+    // a bookmark move or rebase need not have come from a compensable step.
+    const needsRestore = plan.targetOperationId !== undefined ||
+      plan.effects.some((effect) => effect.tier === "compensable")
     if (!needsRestore) return { handlerReceipts }
     if (plan.targetChangeId === undefined) {
       yield* cleanUp

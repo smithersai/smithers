@@ -158,6 +158,21 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       expect(readFileSync(file, "utf8")).toBe("before\n")
     }))
 
+  it.effect("refuses to restore an operation that predates another workspace", () =>
+    Effect.gen(function*() {
+      const snapshot = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot()))
+      const lane = join(repository, "..", `later-${process.pid}`)
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceAdd("later", lane)))
+
+      const refused = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.opRestore!(snapshot.operationId!))))
+
+      expect(isJjError(refused) && refused.code).toBe("conflict")
+      expect(refused.message).toContain("later")
+      expect(execFileSync("jj", ["workspace", "list"], { cwd: repository, encoding: "utf8" })).toContain("later")
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceForget("later")))
+      yield* Effect.promise(() => rm(lane, { recursive: true, force: true }))
+    }))
+
   it.effect("refuses an operation id that is not hex without spawning jj, and one jj does not know", () =>
     Effect.gen(function*() {
       const flag = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.opRestore!("--what=repo"))))
@@ -433,6 +448,12 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       const lane = join(repository, "..", `pinned-${process.pid}`)
       yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceAdd("pinned", lane, commitId)))
       expect(readFileSync(join(lane, "pinned.txt"), "utf8")).toBe("first\n")
+      // The captured commit is an earlier version of this workspace's `@`;
+      // the lane must not revive it beside `@` as a divergent change.
+      expect(execFileSync("jj", ["log", "--no-graph", "-r", "divergent()", "-T", "change_id"], {
+        cwd: repository,
+        encoding: "utf8"
+      })).toBe("")
 
       yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceForget("pinned")))
       yield* Effect.promise(() => rm(lane, { recursive: true, force: true }))
