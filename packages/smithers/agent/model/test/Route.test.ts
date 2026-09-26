@@ -566,8 +566,13 @@ describe("Route.prepare", () => {
     expect(JSON.parse(led.bodyText).system).toHaveLength(1)
   })
 
-  it("fails a route whose credential is empty rather than sending an unauthenticated request", async () => {
-    const route = Result.getOrThrow(Route.anthropic({ apiKey: Redacted.make("") }))
+  it.each(
+    [
+      ["empty", { apiKey: Redacted.make("") }],
+      ["missing", {}]
+    ] as const
+  )("fails a route whose credential is %s rather than sending an unauthenticated request", async (_, input) => {
+    const route = Result.getOrThrow(Route.anthropic(input))
     const executor = RequestExecutor.RequestExecutor.of({
       execute: () => Effect.die(new Error("the request must never be sent"))
     })
@@ -1492,6 +1497,18 @@ describe("Endpoint.providerOrigin", () => {
     expect(Endpoint.providerOrigin(provider, { SMITHERS_MODEL_PROXY_URL: "http://p.test/m/" })).toBe(
       `http://p.test/m/${provider}`
     )
+    expect(
+      Endpoint.providerOrigin(provider, {
+        SMITHERS_MODEL_PROXY_URL: "http://p.test/m/",
+        SMITHERS_MODEL_PROXY_PROVIDERS: ` ${provider} , other`
+      })
+    ).toBe(`http://p.test/m/${provider}`)
+    expect(
+      Endpoint.providerOrigin(provider, {
+        SMITHERS_MODEL_PROXY_URL: "http://p.test/m/",
+        SMITHERS_MODEL_PROXY_PROVIDERS: "other"
+      })
+    ).toBe(origin)
   })
 
   it("proxies only the providers SMITHERS_MODEL_PROXY_PROVIDERS names", () => {

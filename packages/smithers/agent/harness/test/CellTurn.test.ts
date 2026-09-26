@@ -13,7 +13,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
 import * as Route from "@smthrs/model/Route"
 import { Descriptor } from "@smthrs/registry"
-import { Clock, Effect, Option, Redacted, Result, Schema, Stream } from "effect"
+import { Clock, Deferred, Effect, type Layer, Option, Redacted, Result, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import type * as Cell from "../src/Cell.ts"
@@ -21,7 +21,10 @@ import * as CellHistory from "../src/CellHistory.ts"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as Compaction from "../src/Compaction.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
+import { compactable } from "../src/internal/compactable.ts"
+import type * as compactionMarks from "../src/internal/compactionMarks.ts"
 import { printsObservation } from "../src/internal/printsObservation.ts"
+import * as Monitor from "../src/Monitor.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
@@ -195,6 +198,18 @@ describe("CellTurn", () => {
     // whole-evaluation backstop is armed and journaled with the rest.
     expect(armed[0]?.totalMs).toBe(Sandbox.defaultLimits.totalMs)
     expect(events[0]?._tag).toBe("discipline-armed")
+  })
+
+  it("journals the static stance only when the run has one", async () => {
+    const stanced = await run({ stance: "paranoid", script: [emits(`ctx.done("done")`)] })
+    expect(of(stanced.events, "discipline-armed")[0]?.stance).toBe("paranoid")
+    const plain = await run({ script: [emits(`ctx.done("done")`)] })
+    expect(of(plain.events, "discipline-armed")[0]).not.toHaveProperty("stance")
+  })
+
+  it("teaches the stance after the contract through the public API", () => {
+    const system = ContextWindow.render(CellTurn.teach(window, [], undefined, "careful")).system
+    expect(system[1]!.text).toBe(Monitor.carefulText)
   })
 
   it("records the source of every cell it executes for a host that keeps one", async () => {
@@ -2971,6 +2986,385 @@ describe("CellTurn compaction", () => {
     expect(engine.recorder.sealStep).toHaveLength(1)
     expect(of(events, "compaction-settled")).toHaveLength(0)
     expect(of(events, "resolved")).toHaveLength(1)
+  })
+})
+
+/** A compaction-ready state over `contextWindow`, with every demand disarmed. */
+const compactionState = (
+  contextWindow: ContextWindow.ContextWindow,
+  contextWindowTokens: number,
+  maxFrames: number = 2
+): CellTurn.State =>
+  CellTurn.make({
+    session: "session-1",
+    seat: "anthropic:test-model",
+    modelParams: ModelRequest.GenerationParams.make(),
+    layers: ["layer-a"],
+    capabilityEnvelope: ["fs:read:**", "fs:write:**", "proc:spawn:*"].map(pattern),
+    placement: Option.none(),
+    contextWindow,
+    contextWindowTokens,
+    maxFrames,
+    repeatCap: 0,
+    narrowingCap: 0,
+    unmovedCap: 0,
+    unresolvedCap: 0
+  })
+
+const isMarks = (request: Evaluator.Request): boolean => Object.hasOwn(request.questions, "remove_0")
+
+/**
+ * A Jev for judged compaction: each `remove_*`/`keep_*` item at the
+ * probabilities `mark` gives it, the completion brake confident, and the
+ * supervisor and relevance readings quiet unless `crossing` says the
+ * supervisor reading crosses. `asked` holds every mark request's items.
+ */
+const marksJudge = (
+  mark: (
+    item: compactionMarks.Item,
+    index: number
+  ) => { readonly remove: number; readonly keep: number } | "unreachable",
+  crossing: (request: Evaluator.Request) => boolean = () => false
+) => {
+  const asked: Array<ReadonlyArray<compactionMarks.Item>> = []
+  const layer = Evaluator.layerScripted((request) => {
+    if (Object.hasOwn(request.questions, "complete")) {
+      return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+    }
+    if (isMarks(request)) {
+      const items = (request.state as { readonly items: ReadonlyArray<compactionMarks.Item> }).items
+      asked.push(items)
+      const answers = items.map(mark)
+      if (answers.includes("unreachable")) {
+        return Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "No judge" }))
+      }
+      return Object.fromEntries(
+        answers.flatMap((answer, index) =>
+          answer === "unreachable" ? [] : [
+            [`remove_${index}`, { probability: answer.remove }],
+            [`keep_${index}`, { probability: answer.keep }]
+          ]
+        )
+      )
+    }
+    const crosses = crossing(request)
+    return Object.fromEntries(
+      Object.entries(request.questions).map(([id, question]) => [
+        id,
+        question.type === "boolean"
+          ? { probability: id === "on_target" ? 0.95 : id === "thrashing" && crosses ? 0.9 : 0.05 }
+          : question.type === "score"
+          ? { score: 0 }
+          : { choice: "none" }
+      ])
+    )
+  })
+  return { asked, layer }
+}
+
+/**
+ * Removes bulk `one`, keeps bulk `two`, squashes the rest. A bulk item's
+ * label is elided from its head, so it is known by its place in `crowded`.
+ */
+const oneTwo = (_: compactionMarks.Item, index: number) =>
+  index === 0
+    ? { remove: 0.95, keep: 0.05 }
+    : index === 1
+    ? { remove: 0.05, keep: 0.9 }
+    : { remove: 0.05, keep: 0.05 }
+
+const textsOf = (request: ModelRequest.ModelRequest | undefined): string =>
+  (request?.messages ?? []).flatMap((message) =>
+    message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
+  )
+    .join("\n")
+
+/** The window a recorded settlement rebuilds from `from`, and the projection of the journal up to it. */
+const replayed = (
+  from: ContextWindow.ContextWindow,
+  events: ReadonlyArray<AgentEvent.AgentEvent>
+) => {
+  const settled = of(events, "compaction-settled")[0]!
+  const step = Effect.runSync(
+    Compaction.declare(from, settled.marks?.length ?? Compaction.selectPrefix(from), {
+      identity: "flows/harness/CellTurn.compaction",
+      modelId: "test-model",
+      params: ModelRequest.GenerationParams.make()
+    }, settled.marks?.map((marked) => marked.mark))
+  )
+  const rebuilt = Effect.runSync(Compaction.apply(from, step, settled.summary))
+  const initial = new AgentEvent.SteeringDrained({
+    eventType: AgentEvent.eventType.steeringDrained,
+    messages: ContextWindow.render(from).messages
+  })
+  const boundary = events.findIndex((event) => event._tag === "compaction-settled")
+  const entries = [initial, ...events.slice(0, boundary + 1)].map((event, index) =>
+    entry(index + 1, event.eventType, event)
+  )
+  return { rebuilt, projected: Result.getOrThrow(Transcript.projectResult(entries)) }
+}
+
+const contextDigests = (events: ReadonlyArray<AgentEvent.AgentEvent>): ReadonlyArray<string> =>
+  of(events, "turn-opened").map((event) => event.contextDigest)
+
+describe("CellTurn compaction marks", () => {
+  // Room to keep bulk `two` beside the suffix, and still over the trigger.
+  const marking = () => compactionState(crowded, 70_000)
+  const script = (): ScriptedModel.Script => [prose("the compacted summary"), emits(`ctx.done("done")`)]
+
+  it("removes, keeps and squashes by Jev's marks, and summarizes only what it squashes", async () => {
+    const judge = marksJudge(oneTwo)
+    const { engine, events, failure, model } = await run({
+      script: script(),
+      state: marking(),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true
+    })
+    expect(failure).toBeUndefined()
+    expect(engine.recorder.records.filter((boundary) => boundary.name === "compaction-marks")).toHaveLength(1)
+    expect(judge.asked).toHaveLength(1)
+
+    const prefix = compactable(crowded.segments)
+    const settled = of(events, "compaction-settled")[0]!
+    expect(settled.marks).toEqual([
+      { digest: prefix[0]!.digest, mark: "remove" },
+      { digest: prefix[1]!.digest, mark: "keep" },
+      { digest: prefix[2]!.digest, mark: "squash" },
+      { digest: prefix[3]!.digest, mark: "squash" }
+    ])
+    expect(settled.kept).toEqual(prefix[1]!.content)
+    expect(settled.removedTokens).toBe(prefix[0]!.tokens.value)
+
+    const summarizer = textsOf(model.recorder.requests[0])
+    expect(summarizer).not.toContain("one: ")
+    expect(summarizer).not.toContain("two: ")
+    expect(summarizer).toContain("three: ")
+    const next = textsOf(model.recorder.requests[1])
+    expect(next).toContain(textsOf(ModelRequest.ModelRequest.make({
+      modelId: "test-model",
+      system: [],
+      messages: [...prefix[1]!.content as ReadonlyArray<ModelRequest.Message>],
+      tools: [],
+      params: ModelRequest.GenerationParams.make()
+    })))
+    expect(next).not.toContain("one: ")
+
+    const decided = of(events, "decision-settled").filter((event) => event.classifier === "compaction/marks")
+    expect(decided).toHaveLength(1)
+    expect(decided[0]).toMatchObject({ scope: "session-1", frame: 0, acted: true })
+
+    const { projected, rebuilt } = replayed(crowded, events)
+    expect(projected).toEqual(ContextWindow.render(rebuilt).messages)
+    expect(conversation(model.recorder.requests[1])).toEqual(ContextWindow.render(rebuilt).messages)
+  })
+
+  it("asks for no summary when nothing is squashed", async () => {
+    const judge = marksJudge((_, index) => index % 2 === 0 ? { remove: 0.95, keep: 0.05 } : { remove: 0.05, keep: 0.9 })
+    const { engine, events, failure, model } = await run({
+      script: [emits(`ctx.done("done")`)],
+      state: compactionState(crowded, 75_000),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true
+    })
+    expect(failure).toBeUndefined()
+    expect(engine.recorder.sealStep).toHaveLength(1)
+    const settled = of(events, "compaction-settled")[0]!
+    expect(settled.summary).toBeUndefined()
+    expect(settled.marks?.map((marked) => marked.mark)).toEqual(["remove", "keep", "remove", "keep"])
+    const { projected, rebuilt } = replayed(crowded, events)
+    expect(projected).toEqual(ContextWindow.render(rebuilt).messages)
+    expect(conversation(model.recorder.requests[0])).toEqual(ContextWindow.render(rebuilt).messages)
+  })
+
+  it("never removes the person's, a mutated or a still-failing segment, and does not pin a supervisor nudge as the person's", async () => {
+    // Each boundary waits for the reading of the frame before it, so frame
+    // 1's crossing reading is what frame 2's boundary delivers.
+    const gates = new Map<number, Deferred.Deferred<void>>()
+    const gate = (frame: number) => {
+      const held = gates.get(frame)
+      if (held !== undefined) return held
+      const made = Effect.runSync(Deferred.make<void>())
+      gates.set(frame, made)
+      return made
+    }
+    const steering: Layer.Layer<Steering.Source> = Steering.layer({
+      read: () => Effect.succeed(Steering.empty()),
+      drain: (input) => {
+        const frame = Number(input.boundary.split(":")[0])
+        return (frame === 0 ? Effect.void : Deferred.await(gate(frame - 1))).pipe(Effect.as({
+          inserts: frame === 0 ? [ModelRequest.Message.user("Also keep the parser tests green.")] : [],
+          seatChanges: [],
+          remaining: Steering.empty(),
+          queued: false,
+          duplicate: false
+        }))
+      }
+    })
+    const judge = marksJudge(
+      () => ({ remove: 0.99, keep: 0.01 }),
+      (request) =>
+        (request.state as { readonly frames: ReadonlyArray<{ readonly frame: number }> }).frames.at(-1)?.frame === 1
+    )
+    const big = `console.log("${"x".repeat(15_000)}")`
+    const { engine, events, failure, model } = await run({
+      script: [
+        emits(`console.log("reading")`),
+        emits(`await ctx.call("edit", { path: "a.ts" }); console.log("edited")`),
+        emits(`console.log("after the nudge")`),
+        emits(`await ctx.call("bash", { command: "pytest" }); console.log("red")`),
+        ...Array.from({ length: 5 }, () => emits(big)),
+        emits(`ctx.done("done")`)
+      ],
+      state: compactionState(window, 30_000, 10),
+      flows: [editor, check],
+      calls: [{ _tag: "Success", value: "ok" }, { _tag: "Success", value: { exitCode: 1, stdout: "1 failed" } }],
+      steering,
+      evaluator: judge.layer,
+      judged: true,
+      supervisor: { remember: false },
+      pinned: ["edit", "bash"],
+      observer: (event) =>
+        event._tag === "supervisor-settled" || event._tag === "supervisor-unjudged"
+          ? Effect.asVoid(Deferred.succeed(gate(event.frame), undefined))
+          : Effect.void
+    })
+    expect(failure).toBeUndefined()
+    const drained = of(events, "steering-drained")
+    expect(drained[0]!.messages).toHaveLength(1)
+    expect(drained[2]!.supervisor?.length).toBeGreaterThan(0)
+    const settled = of(events, "compaction-settled")
+    expect(settled).toHaveLength(1)
+    expect(settled[0]!.marks?.map(({ mark, pinned }) => ({ mark, pinned }))).toEqual([
+      { mark: "remove", pinned: undefined },
+      { mark: "keep", pinned: "person" },
+      { mark: "squash", pinned: "mutated" },
+      { mark: "remove", pinned: undefined },
+      { mark: "keep", pinned: "failing" }
+    ])
+    // Jev marks each settled segment but the person's from the supervisor's
+    // readings, a frame behind, while nothing the model is sent changes: each
+    // request's system prompt is the one before it, and its conversation
+    // extends the one before it, until the budget forces the compaction.
+    const summarizing = model.recorder.requests.findIndex((request) =>
+      request.system.some((part) => part.text === Compaction.summaryInstruction)
+    )
+    expect(summarizing).toBe(8)
+    const marked = of(events, "decision-settled").filter((event) => event.classifier === "compaction/marks")
+    expect(marked.map((event) => event.frame)).toEqual([0, 2, 3, 4, 5])
+    expect(marked.every((event) => !event.acted)).toBe(true)
+    for (let index = 1; index < summarizing; index++) {
+      const before = conversation(model.recorder.requests[index - 1])
+      expect(model.recorder.requests[index]!.system).toEqual(model.recorder.requests[index - 1]!.system)
+      expect(conversation(model.recorder.requests[index]).slice(0, before.length)).toEqual(before)
+    }
+    // Every segment was marked by then, so the compaction asked nothing; the
+    // mutated one's answer could not lower it below squash.
+    expect(engine.recorder.records.filter((boundary) => boundary.name === "compaction-marks")).toEqual([])
+    expect(judge.asked.flat().map((item) => item.cell).slice(0, 4)).toEqual([
+      "",
+      `await ctx.call("edit", { path: "a.ts" }); console.log("edited")`,
+      `console.log("after the nudge")`,
+      `await ctx.call("bash", { command: "pytest" }); console.log("red")`
+    ])
+  })
+
+  it("keeps its facts aligned through a second compaction, which squashes the first one's summary", async () => {
+    const judge = marksJudge(() => ({ remove: 0.05, keep: 0.05 }))
+    const { engine, events, failure } = await run({
+      script: [
+        prose("the first summary"),
+        emits(`console.log("looked")`),
+        prose("the second summary"),
+        emits(`ctx.done("done")`)
+      ],
+      state: compactionState(crowded, 30_000, 3),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true
+    })
+    expect(failure).toBeUndefined()
+    const settled = of(events, "compaction-settled")
+    expect(settled.map((event) => event.marks?.map(({ mark, pinned }) => ({ mark, pinned })))).toEqual([
+      Array.from({ length: 4 }, () => ({ mark: "squash", pinned: undefined })),
+      [{ mark: "squash", pinned: "summary" }]
+    ])
+    // The second prefix is all pinned, so Jev is not asked about it and
+    // nothing is recorded.
+    expect(judge.asked).toHaveLength(1)
+    expect(engine.recorder.records.filter((boundary) => boundary.name === "compaction-marks")).toHaveLength(1)
+  })
+
+  it("journals decision-unjudged and squashes everything, as an unarmed run does, when Jev cannot mark", async () => {
+    const judge = marksJudge(() => "unreachable")
+    const judged = await run({
+      script: script(),
+      state: marking(),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true
+    })
+    expect(judged.failure).toBeUndefined()
+    expect(judge.asked).toHaveLength(1)
+    expect(of(judged.events, "decision-unjudged")).toEqual([
+      expect.objectContaining({ classifier: "compaction/marks", reason: "unreachable", items: 4 })
+    ])
+    const settled = of(judged.events, "compaction-settled")[0]!
+    expect(settled.marks).toBeUndefined()
+    expect(settled.kept).toBeUndefined()
+
+    const unarmedJudge = marksJudge(oneTwo)
+    const unarmed = await run({ script: script(), state: marking(), flows: [], evaluator: unarmedJudge.layer })
+    expect(unarmedJudge.asked).toEqual([])
+    expect(of(unarmed.events, "compaction-settled")).toEqual([settled])
+    expect(contextDigests(judged.events)).toEqual(contextDigests(unarmed.events))
+    expect(judged.model.recorder.requests).toEqual(unarmed.model.recorder.requests)
+  })
+
+  it("squashes everything without asking when the state's facts predate marks", async () => {
+    const judge = marksJudge(oneTwo)
+    const legacy = new CellTurn.State({ ...marking(), segmentFacts: [] })
+    const { events, failure } = await run({
+      script: script(),
+      state: legacy,
+      flows: [],
+      evaluator: judge.layer,
+      judged: true
+    })
+    expect(failure).toBeUndefined()
+    expect(judge.asked).toEqual([])
+    expect(of(events, "compaction-settled")[0]).toMatchObject({ unaligned: true })
+    expect(of(events, "compaction-settled")[0]!.marks).toBeUndefined()
+    expect(of(events, "decision-unjudged")).toEqual([])
+  })
+
+  it("replays the recorded marks without asking, onto the same window and sealed keys", async () => {
+    const records = new Map<string, unknown>()
+    const first = await run({
+      script: script(),
+      state: marking(),
+      flows: [],
+      evaluator: marksJudge(oneTwo).layer,
+      judged: true,
+      records
+    })
+    const everything = marksJudge(() => ({ remove: 0.99, keep: 0.01 }))
+    const replay = await run({
+      script: script(),
+      state: marking(),
+      flows: [],
+      evaluator: everything.layer,
+      judged: true,
+      records
+    })
+    expect(replay.failure).toBeUndefined()
+    expect(everything.asked).toEqual([])
+    expect(contextDigests(replay.events)).toEqual(contextDigests(first.events))
+    expect(replay.engine.recorder.sealStep.map((step) => step.keyMaterial)).toEqual(
+      first.engine.recorder.sealStep.map((step) => step.keyMaterial)
+    )
+    expect(of(replay.events, "compaction-settled")).toEqual(of(first.events, "compaction-settled"))
   })
 })
 

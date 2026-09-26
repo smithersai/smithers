@@ -26,6 +26,7 @@ import * as CoreFlow from "@smthrs/core/Flow"
 import { Action } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as Registry from "@smthrs/registry/Registry"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -625,8 +626,10 @@ export const bindings = (options: {
 
 /**
  * The host every model-backed migration step shares: the standard filesystem
- * and shell flows over the services the caller guarded, this package's own two
- * flows, the capability envelope, and the sandbox budget.
+ * and shell flows over the services the caller guarded, the `jev` flow over
+ * the host's judge, this package's own two flows, the capability envelope,
+ * and the sandbox budget. Every step is judged: a migration host always holds
+ * a real judge.
  *
  * @category layers
  * @since 1.0.0-rc.0
@@ -637,13 +640,14 @@ export const hostLayer = (options: {
 }): Layer.Layer<
   AgentAction.Host,
   never,
-  FileSystem.FileSystem | Path.Path | ChildProcessSpawner
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner | Evaluator.Evaluator
 > =>
   Layer.effect(
     AgentAction.Host,
     Effect.gen(function*() {
       const filesystem = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
       const shell = yield* Effect.context<ChildProcessSpawner | Path.Path>()
+      const judge = yield* Effect.context<Evaluator.Evaluator>()
       const registry = yield* Registry.Registry
       const own = yield* bindings({ root: options.root, commands: options.commands })
       return AgentAction.makeHost({
@@ -652,10 +656,14 @@ export const hostLayer = (options: {
         flows: [
           StandardFlows.filesystem(filesystem),
           StandardFlows.shell(shell),
+          StandardFlows.jev(judge),
           own
         ],
         capabilityEnvelope: AgentSession.patterns(envelope()),
-        maxFrames
+        maxFrames,
+        // A migration always runs with a real judge: the host refuses to
+        // compose without one.
+        judged: true
       })
     })
   ).pipe(Layer.provide(Registry.layerFromDescriptors([])))

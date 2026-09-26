@@ -385,7 +385,7 @@ const grantsFor = (config: ValidatedConfig): Layer.Layer<GrantStore.GrantStore, 
 
 const hostFor = (
   config: ValidatedConfig
-): Layer.Layer<AgentAction.Host, never, never> => {
+): Layer.Layer<AgentAction.Host, never, Evaluator.Evaluator> => {
   const grants = grantsFor(config)
   // The kernel-guarded platform, as `@smthrs/cli`'s `layerGuardedPlatform`
   // builds it: descriptor-relative atomic access under a pinned root, with the
@@ -676,12 +676,11 @@ export const layerScripted = (config: NodeConfig & { readonly script: Script }) 
       Layer.provideMerge(layerSnapshotBoundary),
       Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(NodeServices.layer),
-      // The model is scripted, so the judge is too: the completion brake
-      // never falls back, and a scripted composition that reached for a
-      // gateway key would either fail every unit or leave the shell.
-      Layer.provideMerge(
-        ScriptedJudge.layer
-      )
+      // The model is scripted, so the judge is too, and it answers every
+      // classifier a judged step asks: the completion brake never falls
+      // back, and a scripted composition that reached for a gateway key
+      // would either fail every unit or leave the shell.
+      Layer.provideMerge(ScriptedJudge.layerAll)
     )
   }))
 

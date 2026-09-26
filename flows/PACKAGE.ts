@@ -220,8 +220,11 @@ const fixtures = Smithers.NodeTest({
   runtime: node,
   runner: Smithers.testRunner([fixture("wiki-reuse.test.ts"), fixture("wiki-jev-citations.test.ts"),
     fixture("content-jev-template.test.ts"), fixture("run-record.test.ts"), fixture("canary-coding-setup.test.mjs"),
-    fixture("invoke-native-host.test.ts"), fixture("librarian-state.test.ts"), fixture("product-host-source.test.mjs")]),
-  srcs: codingSources, deps: codingDependencies, cwd, timeout: "20m"
+    fixture("invoke-native-host.test.ts"), fixture("librarian-state.test.ts"), fixture("product-host-source.test.mjs"),
+    fixture("decide-with-jev-docs.test.ts")]),
+  // `decide-with-jev-docs` reads the guide.
+  srcs: [...codingSources, Smithers.file("//packages/smithers/agent/model/docs/guides/decide-with-jev.md")],
+  deps: codingDependencies, cwd, timeout: "20m"
 })
 
 // The standalone product gateway, built from source by the fixture itself.

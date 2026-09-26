@@ -42,6 +42,12 @@ export * as Seat from "./Seat.ts"
 export * as SeatResolver from "./SeatResolver.ts"
 
 /**
+ * @category services
+ * @since 1.0.0-rc.0
+ */
+export * as SeatRouter from "./SeatRouter.ts"
+
+/**
  * @category plugins
  * @since 0.1.0
  */

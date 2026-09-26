@@ -120,8 +120,8 @@ Anything outside it is not read, including the 0.x `SMITHERS_HOME`,
 | `SMITHERS_OPENAI_AUTH` | `api-key` or `chatgpt`, selecting how `openai` seats authenticate. |
 | `SMITHERS_TEST_COMMAND`, `SMITHERS_TEST_CONTAINER`, `SMITHERS_TEST_CWD`, `SMITHERS_TEST_TIMEOUT_MS` | What the `test` flow runs, where, and for how long. |
 | `SMITHERS_BASH_CONTAINER` | The one container `bash` may reach. Any other `bash` call fails with `outside_container`, and the host filesystem flows are not offered. |
-| `SMITHERS_SUPERVISOR_STEER` | `1` lets a supervisor reading nudge the run and insert recalled memory. Verdicts are journaled either way. |
 | `SMITHERS_MEMORY_DB` | Path of a separate SQLite file for the memory store. Runs that name the same file share one memory bank, and only then does the supervisor write accepted sentences to it. Without it, the bank is named after the workspace and the supervisor writes nothing. |
+| `SMITHERS_SUPERVISOR_STANCE` | `careful` or `paranoid`, the stance a judged run is taught. Unset is `careful`; any other value refuses to start. |
 | `SMITHERS_BUG_ENDPOINT` | Where `smthrs bug` posts its report. |
 | `SMITHERS_JJ_PATH` | Explicit path to the `jj` binary. |
 | `SMITHERS_PYTHON3` | Absolute CPython 3 path for the Node and Bun control hosts' filesystem helper. Unset or empty uses `/usr/bin/python3`; relative paths fail startup. `PATH` is never searched. |

@@ -15,7 +15,9 @@
  * context.
  */
 import * as NodePath from "@effect/platform-node/NodePath"
+import * as Digest from "@smthrs/core/Digest"
 import type { FlowRuntime } from "@smthrs/flow"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
@@ -36,6 +38,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import * as ChildFlows from "../src/ChildFlows.ts"
 import * as StandardFlows from "../src/StandardFlows.ts"
 
 /** The native path service, materialized once so bindings can be given a context. */
@@ -101,7 +104,10 @@ const promised: ReadonlyArray<{
   },
   { source: StandardFlows.shell(shellServices), flows: ["bash"] },
   { source: StandardFlows.tests(testServices), flows: ["test"] },
-  { source: StandardFlows.memory(memoryServices), flows: ["remember", "recall"] },
+  {
+    source: StandardFlows.memory(memoryServices, evaluatorServices(Evaluator.layerUnavailable())),
+    flows: ["remember", "recall"]
+  },
   { source: StandardFlows.jev(evaluatorServices(Evaluator.layerUnavailable())), flows: ["jev"] },
   { source: StandardFlows.clock(clockServices), flows: ["wait"] },
   { source: StandardFlows.approval(StandardFlows.askerNoop()), flows: ["ask"] }
@@ -264,6 +270,11 @@ describe("the standard capability catalog", () => {
       "engine/clock",
       "host/approval"
     ])
+  })
+
+  it("pins every standard and child source", () => {
+    const children = ChildFlows.source(ChildFlows.makeNoop())
+    expect([...promised.map((entry) => entry.source.name), children.name]).toEqual(StandardFlows.coreSources)
   })
 
   it("hands glob and grep the search the host supplied, not the bare filesystem context", async () => {
@@ -475,16 +486,13 @@ describe("the jev flow", () => {
     const catalog = await Effect.runPromise(
       FlowBinding.catalog([
         StandardFlows.filesystem(filesystemServices),
-        StandardFlows.shell(shellServices),
-        StandardFlows.memory(memoryServices)
+        StandardFlows.shell(shellServices)
       ])
     )
     expect(catalog.descriptors.map((entry) => entry.name)).not.toContain("jev")
+    const judge = evaluatorServices(Evaluator.layerUnavailable())
     const withJudge = await Effect.runPromise(
-      FlowBinding.catalog([
-        StandardFlows.memory(memoryServices),
-        StandardFlows.jev(evaluatorServices(Evaluator.layerUnavailable()))
-      ])
+      FlowBinding.catalog([StandardFlows.memory(memoryServices, judge), StandardFlows.jev(judge)])
     )
     expect(withJudge.descriptors.map((entry) => entry.name)).toEqual(["remember", "recall", "jev"])
     const jev = withJudge.descriptors.find((entry) => entry.name === "jev")!
@@ -492,5 +500,157 @@ describe("the jev flow", () => {
     expect(jev.capabilities).toEqual(["model:call:typesafe-ai/jev"])
     expect(jev.effects.tier).toBe("sealed")
     expect(jev.description).toContain("pack the items into one call")
+  })
+})
+
+describe("the recall flow", () => {
+  const rows = [
+    { bank: "notes", key: "deploy", text: "Deploys go through the release train.", score: 0.8 },
+    { bank: "notes", key: "auth", text: "Login tokens rotate hourly.", score: 0.6 }
+  ]
+  const recalling = Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoop()).pipe(
+    Context.add(Recall.Recall, Recall.Recall.of({ recall: () => Effect.succeed(rows) }))
+  )
+
+  const recall = async (
+    judge: Layer.Layer<Evaluator.Evaluator>,
+    services: Context.Context<MemoryStore.MemoryStore | Recall.Recall> = recalling
+  ) => {
+    const journaled: Array<AgentEvent.AgentEvent> = []
+    const bindings = await Effect.runPromise(StandardFlows.memory(services, evaluatorServices(judge)).bindings())
+    const result = await Effect.runPromise(
+      bindings.find((binding) => binding.descriptor.name === "recall")!
+        .run(callOf("recall", { banks: ["notes"], query: "why does login fail?" }))
+        .pipe(Effect.provideService(AgentEvent.Journal, (event) => Effect.sync(() => void journaled.push(event))))
+    )
+    return { ...result, journaled }
+  }
+
+  it("withholds only the rows Jev is confident the query does not need, lists them, and journals the reading", async () => {
+    const asked: Array<Evaluator.Request> = []
+    const result = await recall(Evaluator.layerScripted((request) => {
+      asked.push(request)
+      return { unnecessary_0: { probability: 0.95 }, unnecessary_1: { probability: 0.1 } }
+    }))
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.state).toMatchObject({ context: { task: "why does login fail?" } })
+    expect(result).toMatchObject({ outcome: "success" })
+    expect(result.value).toEqual({
+      rows: [rows[1]],
+      withheld: [{ key: "deploy", digest: Digest.digest(rows[0]!.text), p: 0.95 }]
+    })
+    expect(result.journaled.map((event) => event._tag)).toEqual(["decision-settled", "relevance-settled"])
+    expect(result.journaled[0]).toMatchObject({
+      scope: "session-1",
+      frame: 0,
+      classifier: "relevance/unnecessary",
+      acted: true
+    })
+    expect(result.journaled[1]).toMatchObject({
+      source: "recall",
+      withheld: [{ kind: "memory", id: "deploy", p: 0.95 }],
+      kept: [{ kind: "memory", id: "auth", p: 0.1 }]
+    })
+  })
+
+  it("asks nothing and journals nothing when nothing is recalled", async () => {
+    const asked: Array<Evaluator.Request> = []
+    const result = await recall(
+      Evaluator.layerScripted((request) => {
+        asked.push(request)
+        return {}
+      }),
+      Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoop()).pipe(
+        Context.add(Recall.Recall, Recall.Recall.of({ recall: () => Effect.succeed([]) }))
+      )
+    )
+    expect(result.value).toEqual({ rows: [], withheld: [] })
+    expect(asked).toEqual([])
+    expect(result.journaled).toEqual([])
+  })
+
+  it.each([
+    {
+      label: "a refusing gateway",
+      layer: Evaluator.layerScripted(() =>
+        Effect.fail(new Evaluator.EvaluatorError({ code: "refused", status: 503, message: "The gateway answered 503" }))
+      ),
+      unjudged: { reason: "refused", detail: "The gateway answered 503" }
+    },
+    {
+      label: "a timed-out gateway",
+      layer: Evaluator.layerScripted(() =>
+        Effect.fail(
+          new Evaluator.EvaluatorError({ code: "timeout", message: "The gateway did not answer within 1500 ms" })
+        )
+      ),
+      unjudged: { reason: "timeout", detail: "The gateway did not answer within 1500 ms" }
+    },
+    {
+      label: "no transport at all",
+      layer: Evaluator.layerUnavailable(),
+      unjudged: { reason: "unreachable", detail: Evaluator.unreachableMessage }
+    }
+  ])("keeps every row, says why, and journals decision-unjudged for $label", async ({ layer, unjudged }) => {
+    const result = await recall(layer)
+    expect(result).toMatchObject({ outcome: "success" })
+    expect(result.value).toEqual({ rows, withheld: [], unjudged })
+    expect(result.journaled).toEqual([
+      expect.objectContaining({
+        _tag: "decision-unjudged",
+        scope: "session-1",
+        frame: 0,
+        classifier: "relevance/unnecessary",
+        reason: unjudged.reason,
+        items: 2
+      })
+    ])
+  })
+
+  it("judges a scoped recall over the policy's own bank, and refuses a foreign one before any I/O", async () => {
+    const reached: Array<ReadonlyArray<string>> = []
+    const scoped = Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoop()).pipe(
+      Context.add(
+        Recall.Recall,
+        Recall.Recall.of({ recall: (input) => Effect.sync(() => (reached.push(input.banks), rows)) })
+      )
+    )
+    const judge = evaluatorServices(
+      Evaluator.layerScripted(() => ({ unnecessary_0: { probability: 0.95 }, unnecessary_1: { probability: 0.1 } }))
+    )
+    const bindings = await Effect.runPromise(
+      StandardFlows.memory(scoped, judge, {
+        policy: { namespace: { kind: "agent", id: "builder" }, maxTokens: 2048, retain: "on-complete" }
+      }).bindings()
+    )
+    const binding = bindings.find((entry) => entry.descriptor.name === "recall")!
+    expect(binding.descriptor.description).toContain("withheld and listed")
+    const journaled: Array<AgentEvent.AgentEvent> = []
+    const run = (banks: ReadonlyArray<string>) =>
+      Effect.runPromise(
+        binding.run(callOf("recall", { banks, query: "why does login fail?" })).pipe(
+          Effect.provideService(AgentEvent.Journal, (event) => Effect.sync(() => void journaled.push(event)))
+        )
+      )
+    const kept = await run([])
+    expect(reached).toEqual([["agent-builder"]])
+    expect(kept.value).toEqual({
+      rows: [rows[1]],
+      withheld: [{ key: "deploy", digest: Digest.digest(rows[0]!.text), p: 0.95 }]
+    })
+    expect(journaled.map((event) => event._tag)).toEqual(["decision-settled", "relevance-settled"])
+    const foreign = await run(["agent-checker"])
+    expect(foreign).toMatchObject({ outcome: "failure" })
+    expect(foreign.message).toContain("invalid_namespace")
+    expect(reached).toHaveLength(1)
+  })
+
+  it("declares recall's input and effects with the judged output", async () => {
+    const bindings = await Effect.runPromise(
+      StandardFlows.memory(recalling, evaluatorServices(Evaluator.layerUnavailable())).bindings()
+    )
+    const recall = bindings.find((binding) => binding.descriptor.name === "recall")!.descriptor
+    expect(recall.description).toContain("withheld and listed")
+    expect(recall.effects.tier).toBe("sealed")
   })
 })

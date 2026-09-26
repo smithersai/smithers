@@ -49,7 +49,6 @@ type MemoryServices = MemoryStore.MemoryStore | Recall.Recall
 /** A role's policy in the generic shape a host derives from its roster. */
 const policyFor = (id: string, overrides: Partial<WithMemory.Policy> = {}): WithMemory.Policy => ({
   namespace: { kind: "agent", id },
-  recall: "auto",
   maxTokens: 2048,
   retain: "on-complete",
   ...overrides
@@ -539,7 +538,7 @@ describe("StandardFlows.memory scope identity", () => {
       const policy of [
         policyFor("builder", { maxTokens: -1 }),
         { ...policyFor("builder"), namespace: { kind: "agent" as const, id: "" } },
-        { ...policyFor("builder"), recall: "sometimes" as unknown as "auto" }
+        { ...policyFor("builder"), recall: "sometimes" as unknown as "none" }
       ]
     ) {
       const error = await Effect.runPromise(

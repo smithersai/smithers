@@ -336,14 +336,22 @@ export const projectStateResult = (
     if (compaction !== undefined) {
       // Apply each boundary to the already-projected messages so repeated
       // compactions replace prior summaries without dropping the recent tail.
-      messages.splice(0, Math.max(0, messages.length - (compaction.retainedMessageCount ?? 0)), {
-        kind: "summary",
-        message: compaction.summary.role === "user"
-          ? compaction.summary
-          : ModelRequest.Message.user(
-            compaction.summary.content.filter((part): part is ModelRequest.TextPart => part.type === "text")
-          )
-      })
+      // A marked compaction carries the replaced messages it kept verbatim
+      // after its summary, and may carry no summary when nothing was squashed.
+      const summary = compaction.summary
+      messages.splice(
+        0,
+        Math.max(0, messages.length - (compaction.retainedMessageCount ?? 0)),
+        ...(summary === undefined ? [] : [{
+          kind: "summary" as const,
+          message: summary.role === "user"
+            ? summary
+            : ModelRequest.Message.user(
+              summary.content.filter((part): part is ModelRequest.TextPart => part.type === "text")
+            )
+        }]),
+        ...(compaction.kept ?? []).map((message) => ({ kind: "transcript" as const, message }))
+      )
       precedingPrint = undefined
       continue
     }

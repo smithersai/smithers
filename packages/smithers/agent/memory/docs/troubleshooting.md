@@ -78,6 +78,6 @@ Three causes cover nearly every case:
 
 ## The opening snapshot is empty
 
-`Source` degrades to empty text instead of failing: a fetch that exceeds two seconds or fails with a typed error yields `""` and a warning log. Check `memory source degraded` for elapsed milliseconds, requested bank counts, and each primer bank's candidate limit and observed row count (`null` means unfinished). Counts describe the bounded read, not the bank's total size.
+`Source` never answers empty text for a failure: a read that exceeds two seconds fails with `TimeoutError`, and a store or recall failure fails with its `MemoryError`. The host decides what the run does without its memory. A failed read is never frozen: a later read for the same identity retries, and with `SnapshotRecorder` it is not recorded either.
 
-A degraded fetch is never frozen: a later read for the same identity retries, and with `SnapshotRecorder` it is not recorded either. A `maxBytes` smaller than the fence itself also yields empty text without a degradation warning. Primer reads use a bounded newest-first candidate window; facts can occupy candidate slots but only notes render as primers. See [opening memory](./guides/agent-opening-context.md) for truncation order.
+An empty snapshot is a successful read that found no rows, or a `maxBytes` too small for the fence and the first row's label. Primer reads use a bounded newest-first candidate window; facts can occupy candidate slots but only notes render as primers. See [opening memory](./guides/agent-opening-context.md) for truncation order.

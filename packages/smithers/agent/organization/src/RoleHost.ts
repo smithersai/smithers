@@ -545,7 +545,6 @@ export const make = (options: Options): Effect.Effect<Built, HarnessError> =>
       memory = StandardFlows.memory(resources.memory, {
         policy: {
           namespace: { kind: namespace.kind, id: namespace.id },
-          recall: "auto",
           maxTokens: 2_048,
           retain: "on-complete"
         },

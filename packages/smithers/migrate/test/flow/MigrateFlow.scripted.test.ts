@@ -163,6 +163,24 @@ describe("apply over a single-file JSX project", () => {
       expect(project?.verification?.discovery?.skipped).toBeUndefined()
     }))
 
+  it.effect("judges every step, taught to call jev", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      committed(root)
+      const asked: Array<string> = []
+
+      yield* apply(root, {}, (root, written) => {
+        const inner = script(root, written)
+        return (text) => {
+          asked.push(text)
+          return inner(text)
+        }
+      })
+
+      expect(asked.length).toBeGreaterThan(0)
+      expect(asked.every((text) => text.includes(`await ctx.call("jev", {`))).toBe(true)
+    }))
+
   it.effect("keeps the old sources when the operator asks it to", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")

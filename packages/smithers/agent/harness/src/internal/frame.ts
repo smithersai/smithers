@@ -565,9 +565,9 @@ const handBack = (demand: CompletionDemand, decision?: AgentEvent.DecisionSettle
  * The prose the harness itself put in front of the run as its task.
  *
  * The `instructions` segments of the prefix zone and nothing else: `Agent`
- * writes the task there, and the host's memory when it has one, while the cell
- * contract and the flow catalog go in as `system` and the transcript goes in
- * the tail. So this is the closest thing the controller holds to the task as
+ * writes the task there, while the cell contract, the flow catalog, the
+ * project's instructions and the host's memory go in as `system` and the
+ * transcript goes in the tail. So this is the closest thing the controller holds to the task as
  * the person stated it, and it cannot pick up a sentence the model wrote.
  *
  * @since 1.0.0-rc.0

@@ -41,6 +41,7 @@
  *
  * @since 1.0.0-rc.0
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
@@ -286,8 +287,10 @@ export interface HostJudge {
 /**
  * The judge a native test host binds through `NativeControl.Platform.evaluator`.
  *
- * One layer, every classifier this host asks, dispatched by question id. A
- * question set this fixture does not script fails closed.
+ * One layer, every classifier this host asks, dispatched by question id. The
+ * agent's own relevance, compaction, routing and supervisor readings are
+ * answered by `ScriptedJudge.answer`. A question set neither scripts fails
+ * closed.
  * One per host, so what one case asked is not another's.
  *
  * @category fixtures
@@ -309,6 +312,8 @@ export const makeHostJudge = (): HostJudge => {
     }
     if (has(questions, "score")) return duplicates(request.state)
     if (has(questions, "support")) return citation(request.state)
+    const agent = ScriptedJudge.answererFor(Object.keys(questions))
+    if (agent !== undefined) return agent(request)
     return Effect.fail(unscripted(`this fixture scripts no answer for ${Object.keys(questions).sort().join(", ")}`))
   })
   return { layer, rulesJudged }

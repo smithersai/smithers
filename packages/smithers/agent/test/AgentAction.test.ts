@@ -10,17 +10,21 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
+import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
+import { Node } from "@smthrs/plan"
 import { make as makePlugin } from "@smthrs/plugin"
 import type { FlowsHooks } from "@smthrs/plugin"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
-import { Cause, Deferred, Effect, Fiber, Layer, Option, Schema, Stream } from "effect"
+import { Cause, Deferred, Effect, Fiber, Layer, ManagedRuntime, Option, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentAction from "../src/AgentAction.ts"
@@ -29,6 +33,8 @@ import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
+import * as SeatRouter from "../src/SeatRouter.ts"
+import * as StandardFlows from "../src/StandardFlows.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -856,6 +862,39 @@ describe("AgentAction refusals that never reach the provider", () => {
   })
 })
 
+/**
+ * A foreign runtime may execute an action without a native dispatch identity.
+ * Keep the real engine for every boundary, but reproduce that missing context
+ * only inside the named action's implementation.
+ */
+const legacyRuntime = (name: string) =>
+  Layer.effect(
+    FlowRuntime.FlowRuntime,
+    Effect.map(FlowRuntime.FlowRuntime, (runtime) => {
+      const legacy: FlowRuntime.FlowRuntime["Service"] = {
+        ...runtime,
+        register: (flow, handler) =>
+          runtime.register(
+            flow,
+            (payload, executionId) =>
+              handler(payload, executionId).pipe(Effect.provideService(FlowRuntime.FlowRuntime, legacy))
+          ),
+        actionExecute: (action, attempt) =>
+          runtime.actionExecute(
+            action.name !== name ? action : {
+              ...action,
+              execute: action.execute.pipe(Effect.provideService(Action.CurrentInvocationKey, undefined)),
+              executeEncoded: action.executeEncoded.pipe(
+                Effect.provideService(Action.CurrentInvocationKey, undefined)
+              )
+            },
+            attempt
+          )
+      }
+      return legacy
+    })
+  )
+
 describe("AgentAction event sink", () => {
   const decodes = answering(`{"approved":true,"issues":[]}`)
 
@@ -864,37 +903,10 @@ describe("AgentAction event sink", () => {
     async (kind) => {
       const requests: Array<string> = []
       const observed: Array<{ readonly event: string; readonly step: unknown }> = []
-      // A foreign runtime may execute the action without a native dispatch
-      // identity. Keep the real engine for every boundary, but reproduce that
-      // missing context only inside this action's implementation.
-      const legacyRuntime = Layer.effect(
-        FlowRuntime.FlowRuntime,
-        Effect.map(FlowRuntime.FlowRuntime, (runtime) => {
-          const legacy: FlowRuntime.FlowRuntime["Service"] = {
-            ...runtime,
-            register: (flow, handler) =>
-              runtime.register(
-                flow,
-                (payload, executionId) =>
-                  handler(payload, executionId).pipe(Effect.provideService(FlowRuntime.FlowRuntime, legacy))
-              ),
-            actionExecute: (action, attempt) =>
-              runtime.actionExecute(
-                action.name !== Reviewer.name ? action : {
-                  ...action,
-                  execute: action.execute.pipe(Effect.provideService(Action.CurrentInvocationKey, undefined)),
-                  executeEncoded: action.executeEncoded.pipe(
-                    Effect.provideService(Action.CurrentInvocationKey, undefined)
-                  )
-                },
-                attempt
-              )
-          }
-          return legacy
-        })
-      )
       const layers = stack(
-        Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)).pipe(Layer.provideMerge(legacyRuntime)),
+        Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)).pipe(
+          Layer.provideMerge(legacyRuntime(Reviewer.name))
+        ),
         host,
         scripted([decodes], requests)
       )
@@ -1062,6 +1074,34 @@ describe("AgentAction event sink", () => {
     expect(seen.slice(0, 4)).toEqual(["discipline-armed", "turn-opened", "model-requested", "model-delta"])
     expect(seen).toContain("transition-applied")
   })
+
+  it.each([true, false])("arms each step's own run with the host's judge (judged: %s)", async (judged) => {
+    const requests: Array<string> = []
+    const armed: Array<AgentEvent.DisciplineArmed> = []
+    const result = await Effect.runPromise(
+      ReviewFlow.execute({ diff: "-  old\n+  new" }, { executionId: `judged-${judged}` }).pipe(
+        Effect.provide(
+          Layer.merge(
+            stack(
+              Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)),
+              judged ? { ...host, judged, supervisor: { stance: "paranoid" } } : host,
+              scripted([decodes], requests)
+            ),
+            EventSink.layer({
+              emit: (event) => Effect.sync(() => event._tag === "discipline-armed" && void armed.push(event))
+            })
+          )
+        )
+      )
+    )
+
+    expect(result).toEqual({ approved: true, issues: [] })
+    expect(armed).toHaveLength(1)
+    expect(armed[0]?.supervisorSteer).toBeUndefined()
+    expect(armed[0]?.judged).toBe(judged ? true : undefined)
+    // The host's supervisor options reach each step: a judged step is taught its stance.
+    expect(armed[0]?.stance).toBe(judged ? "paranoid" : undefined)
+  })
 })
 
 describe("AgentAction payload-chosen seats", () => {
@@ -1139,5 +1179,371 @@ describe("AgentAction payload-chosen seats", () => {
       )
     }
     expect(asked).toEqual(["anthropic:first", "anthropic:second"])
+  })
+})
+
+describe("AgentAction seat auto", () => {
+  const decodes = answering(`{"approved":true,"issues":[]}`)
+  const candidates: ReadonlyArray<SeatRouter.Candidate> = [
+    { id: "anthropic:luna", description: "Cheap and fast." },
+    { id: "anthropic:sol", description: "Strong reasoning." }
+  ]
+  const catalog = SeatRouter.layer({ candidates: Effect.succeed(candidates), variants: SeatRouter.defaultVariants })
+
+  /**
+   * Jev: each `seat/route` request takes the next scripted pick and is
+   * recorded; every other question goes to the offline completion judge.
+   */
+  const judge = (picks: ReadonlyArray<string>, routed: Array<Evaluator.Request>) =>
+    Layer.effect(Evaluator.Evaluator)(Effect.gen(function*() {
+      const completion = yield* Effect.provide(
+        Effect.gen(function*() {
+          return yield* Evaluator.Evaluator
+        }),
+        scriptedCompletionJudge
+      )
+      const router = yield* Effect.provide(
+        Effect.gen(function*() {
+          return yield* Evaluator.Evaluator
+        }),
+        Evaluator.layerScripted((request) => {
+          routed.push(request)
+          return { seat: { choice: picks[routed.length - 1]! }, system: { choice: "answer" } }
+        })
+      )
+      return Evaluator.Evaluator.of({
+        evaluate: (request) => "seat" in request.questions ? router.evaluate(request) : completion.evaluate(request)
+      })
+    }))
+
+  /** Records every seat id the step asked the host's resolver for. */
+  const resolving = (model: Model.Model, asked: Array<string>): Layer.Layer<SeatResolver.SeatResolver> =>
+    SeatResolver.layer({
+      resolve: (id) => {
+        asked.push(id)
+        return Effect.succeed(
+          Seat.make({ id, modelId: Seat.modelIdOf(id), model, route, contextWindowTokens: 200_000 })
+        )
+      }
+    })
+
+  const routedStack = <ROut, RIn>(
+    step: Layer.Layer<ROut, never, RIn>,
+    model: Model.Model,
+    asked: Array<string>,
+    evaluator: Layer.Layer<Evaluator.Evaluator>,
+    routing: Layer.Layer<SeatRouter.Catalog> | Layer.Layer<never> = catalog
+  ) =>
+    step.pipe(
+      Layer.provideMerge(AgentAction.layerHost(host)),
+      Layer.provideMerge(resolving(model, asked)),
+      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, evaluator, routing)),
+      Layer.provideMerge(Safety.layer),
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(FlowEngine.layerMemory),
+      Layer.provideMerge(NodeCrypto.layer)
+    )
+
+  const Routed = AgentAction.make("agent/test/Routed", {
+    payload: { diff: Schema.String },
+    output: Review,
+    seat: Seat.auto,
+    system: ["You review diffs."],
+    prompt: ({ diff }) => `Review this diff:\n${diff}`
+  })
+  const RoutedFlow = Flow.make("agent/test/RoutedFlow", {
+    payload: { diff: Schema.String },
+    success: Review,
+    error: AgentAction.AgentFailure,
+    body: ({ diff }) => Routed.call({ diff })
+  })
+  const routedStep = Layer.mergeAll(Routed.layer, Interpreter.layer(RoutedFlow))
+
+  it("routes once per execution and hands the receipt to the sink before the first ask", async () => {
+    const routed: Array<Evaluator.Request> = []
+    const asked: Array<string> = []
+    const requests: Array<string> = []
+    const seen: Array<AgentEvent.AgentEvent> = []
+    const result = await Effect.runPromise(
+      RoutedFlow.execute({ diff: "-  old\n+  new" }, { executionId: "auto-once" }).pipe(
+        Effect.provide(Layer.merge(
+          routedStack(routedStep, scripted([decodes], requests), asked, judge(["anthropic:sol"], routed)),
+          EventSink.layer({ emit: (event) => Effect.sync(() => void seen.push(event)) })
+        ))
+      )
+    )
+
+    expect(result).toEqual({ approved: true, issues: [] })
+    expect(routed).toHaveLength(1)
+    expect((routed[0]!.state as SeatRouter.State).task).toBe("Review this diff:\n-  old\n+  new")
+    expect((routed[0]!.state as SeatRouter.State).flow).toBe("agent/test/Routed")
+    expect(asked).toEqual(["anthropic:sol"])
+    expect(seen.slice(0, 3).map((event) => event._tag)).toEqual(["seat-routed", "decision-settled", "discipline-armed"])
+    expect(seen[0]).toMatchObject({ declared: "auto", seat: "anthropic:sol", modelId: "sol", variant: "answer" })
+    // The picked variant's teaching sits after the host's and before the step's.
+    const answerVariant = SeatRouter.defaultVariants.find((variant) => variant.id === "answer")!.system[0]!
+    expect(requests[0]!.indexOf(answerVariant)).toBeGreaterThanOrEqual(0)
+    expect(requests[0]!.indexOf(answerVariant)).toBeLessThan(requests[0]!.indexOf("You review diffs."))
+  })
+
+  it("reuses the routed seat for a correction and the repair", async () => {
+    const Repaired = AgentAction.make("agent/test/Repaired", {
+      payload: { diff: Schema.String },
+      output: Review,
+      seat: Seat.auto,
+      corrections: 1,
+      prompt: ({ diff }) => `Review this diff:\n${diff}`,
+      repair: { prompt: () => "Repair the answer.", system: ["You repair answers."] }
+    })
+    const RepairedFlow = Flow.make("agent/test/RepairedFlow", {
+      payload: { diff: Schema.String },
+      success: Review,
+      error: AgentAction.AgentFailure,
+      body: ({ diff }) => Repaired.call({ diff })
+    })
+    const routed: Array<Evaluator.Request> = []
+    const asked: Array<string> = []
+    const requests: Array<string> = []
+    const miss = answering("Looks fine to me.")
+    const result = await Effect.runPromise(
+      RepairedFlow.execute({ diff: "diff" }, { executionId: "auto-repair" }).pipe(
+        Effect.provide(routedStack(
+          Layer.mergeAll(Repaired.layer, Interpreter.layer(RepairedFlow)),
+          scripted([miss, miss, decodes], requests),
+          asked,
+          judge(["anthropic:luna"], routed)
+        ))
+      )
+    )
+
+    expect(result).toEqual({ approved: true, issues: [] })
+    expect(requests).toHaveLength(3)
+    expect(routed).toHaveLength(1)
+    expect(asked).toEqual(["anthropic:luna"])
+    // The repair keeps the routed variant's teaching beside its own.
+    expect(requests[2]).toContain("You repair answers.")
+    expect(requests[2]).toContain(SeatRouter.defaultVariants.find((variant) => variant.id === "answer")!.system[0]!)
+  })
+
+  it("runs an explicit repair seat instead of the routed one", async () => {
+    const Overridden = AgentAction.make("agent/test/Overridden", {
+      payload: { diff: Schema.String },
+      output: Review,
+      seat: Seat.auto,
+      corrections: 0,
+      prompt: ({ diff }) => `Review this diff:\n${diff}`,
+      repair: { prompt: () => "Repair the answer.", seat: "anthropic:repairer" }
+    })
+    const OverriddenFlow = Flow.make("agent/test/OverriddenFlow", {
+      payload: { diff: Schema.String },
+      success: Review,
+      error: AgentAction.AgentFailure,
+      body: ({ diff }) => Overridden.call({ diff })
+    })
+    const routed: Array<Evaluator.Request> = []
+    const asked: Array<string> = []
+    const requests: Array<string> = []
+    const result = await Effect.runPromise(
+      OverriddenFlow.execute({ diff: "diff" }, { executionId: "auto-repair-seat" }).pipe(
+        Effect.provide(routedStack(
+          Layer.mergeAll(Overridden.layer, Interpreter.layer(OverriddenFlow)),
+          scripted([answering("Looks fine to me."), decodes], requests),
+          asked,
+          judge(["anthropic:sol"], routed)
+        ))
+      )
+    )
+
+    expect(result).toEqual({ approved: true, issues: [] })
+    expect(routed).toHaveLength(1)
+    expect(asked).toEqual(["anthropic:sol", "anthropic:repairer"])
+  })
+
+  it("routes two executions of one step independently", async () => {
+    const Chosen = AgentAction.make("agent/test/Chosen", {
+      payload: { diff: Schema.String, model: Schema.String },
+      output: Review,
+      seat: ({ model }) => model,
+      prompt: ({ diff }) => `Review this diff:\n${diff}`
+    })
+    const ChosenFlow = Flow.make("agent/test/ChosenFlow", {
+      payload: { diff: Schema.String, model: Schema.String },
+      success: Review,
+      error: AgentAction.AgentFailure,
+      body: (input) => Chosen.call(input)
+    })
+    const routed: Array<Evaluator.Request> = []
+    const asked: Array<string> = []
+    const layers = routedStack(
+      Layer.mergeAll(Chosen.layer, Interpreter.layer(ChosenFlow)),
+      scripted([decodes], []),
+      asked,
+      judge(["anthropic:luna", "anthropic:sol"], routed)
+    )
+    for (const [index, diff] of ["first", "second"].entries()) {
+      await Effect.runPromise(
+        ChosenFlow.execute({ diff, model: Seat.auto }, { executionId: `auto-child-${index}` }).pipe(
+          Effect.provide(layers)
+        )
+      )
+    }
+
+    expect(routed.map((request) => (request.state as SeatRouter.State).task)).toEqual([
+      "Review this diff:\nfirst",
+      "Review this diff:\nsecond"
+    ])
+    expect(asked).toEqual(["anthropic:luna", "anthropic:sol"])
+  })
+
+  it("serves a replayed execution its recorded seat without asking Jev", async () => {
+    const routed: Array<Evaluator.Request> = []
+    const asked: Array<string> = []
+    const requests: Array<string> = []
+    const runtime = ManagedRuntime.make(
+      routedStack(routedStep, scripted([decodes], requests), asked, judge(["anthropic:sol"], routed))
+    )
+    const first = await runtime.runPromise(RoutedFlow.execute({ diff: "diff" }, { executionId: "auto-replay" }))
+    const second = await runtime.runPromise(RoutedFlow.execute({ diff: "diff" }, { executionId: "auto-replay" }))
+    await runtime.dispose()
+
+    expect(second).toEqual(first)
+    expect(routed).toHaveLength(1)
+    expect(requests).toHaveLength(1)
+  })
+
+  it("routes a step dispatched without a durable identity by its tag", async () => {
+    const routed: Array<Evaluator.Request> = []
+    const seen: Array<{ readonly event: string; readonly step: unknown }> = []
+    const result = await Effect.runPromise(
+      RoutedFlow.execute({ diff: "diff" }, { executionId: "auto-legacy" }).pipe(
+        Effect.provide(Layer.merge(
+          routedStack(
+            routedStep.pipe(Layer.provideMerge(legacyRuntime(Routed.name))),
+            scripted([decodes], []),
+            [],
+            judge(["anthropic:sol"], routed)
+          ),
+          EventSink.layer({ emit: (event, step) => Effect.sync(() => void seen.push({ event: event._tag, step })) })
+        ))
+      )
+    )
+
+    expect(result).toEqual({ approved: true, issues: [] })
+    expect(routed).toHaveLength(1)
+    expect(seen[0]).toEqual({ event: "seat-routed", step: undefined })
+  })
+
+  const unrouted = async (routing: Layer.Layer<SeatRouter.Catalog> | Layer.Layer<never>, executionId: string) => {
+    const routed: Array<Evaluator.Request> = []
+    const requests: Array<string> = []
+    const exit = await Effect.runPromise(
+      RoutedFlow.execute({ diff: "diff" }, { executionId }).pipe(
+        Effect.provide(
+          routedStack(routedStep, scripted([decodes], requests), [], judge(["anthropic:sol"], routed), routing)
+        ),
+        Effect.exit
+      )
+    )
+    expect(requests).toEqual([])
+    return { exit, routed }
+  }
+
+  it("fails SeatUnrouted unconfigured when no catalog is bound, asking nothing", async () => {
+    const { exit, routed } = await unrouted(Layer.empty, "auto-no-catalog")
+
+    expect(routed).toEqual([])
+    const failure = exit._tag === "Failure" ? Cause.squash(exit.cause) : undefined
+    expect(failure).toBeInstanceOf(Seat.SeatUnrouted)
+    expect(failure).toMatchObject({ seat: "auto", reason: "unconfigured" })
+  })
+
+  it("fails SeatUnrouted when the catalog no longer offers the recorded variant", async () => {
+    let reads = 0
+    const shifting = SeatRouter.layer({
+      candidates: Effect.succeed(candidates),
+      // The router reads the variants it offers Jev; the step reads them again
+      // for the one Jev picked, and by then the catalog has dropped it.
+      get variants() {
+        reads++
+        return reads === 1 ? SeatRouter.defaultVariants : [SeatRouter.defaultVariants[0]!]
+      }
+    })
+    const { exit, routed } = await unrouted(shifting, "auto-variant-gone")
+
+    expect(routed).toHaveLength(1)
+    const failure = exit._tag === "Failure" ? Cause.squash(exit.cause) : undefined
+    expect(failure).toMatchObject({
+      _tag: "@smthrs/agent/Seat/SeatUnrouted",
+      reason: "unconfigured",
+      message: `The seat catalog no longer offers the variant "answer"`
+    })
+  })
+
+  it("gates each step's relevance on its own prompt under its own session", async () => {
+    const lookup = FlowBinding.source("host/lookup", [
+      FlowBinding.make({ flow: StandardFlows.askFlow, name: "lookup", handler: () => Effect.die("unused") })
+    ])
+    const relevance: Array<{ readonly task: string; readonly ids: ReadonlyArray<string> }> = []
+    const evaluator = Evaluator.layerScripted((request) => {
+      if (!Object.keys(request.questions).some((id) => id.startsWith("unnecessary_"))) {
+        return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+      }
+      const state = request.state as {
+        readonly context: { readonly task: string }
+        readonly items: ReadonlyArray<{ readonly id: string }>
+      }
+      relevance.push({ task: state.context.task, ids: state.items.map((item) => item.id) })
+      // The parent's task never needs the lookup; the child's does.
+      const p = state.context.task.includes("parent") ? 0.95 : 0.1
+      return Object.fromEntries(state.items.map((_, index) => [`unnecessary_${index}`, { probability: p }]))
+    })
+    const step = (name: string) =>
+      AgentAction.make(`agent/test/${name}`, {
+        payload: { diff: Schema.String },
+        output: Review,
+        seat: "anthropic:test-model",
+        prompt: ({ diff }) => `As the ${name.toLowerCase()}, review:\n${diff}`
+      })
+    const Parent = step("Parent")
+    const Child = step("Child")
+    const Nested = Flow.make("agent/test/Nested", {
+      payload: { diff: Schema.String },
+      success: Review,
+      error: AgentAction.AgentFailure,
+      body: ({ diff }) => Parent.call({ diff }).pipe(Node.bindPlanned(() => Child.call({ diff })))
+    })
+    const requests: Array<string> = []
+    const settled: Array<AgentEvent.RelevanceSettled> = []
+    const result = await Effect.runPromise(
+      Nested.execute({ diff: "diff" }, { executionId: "auto-isolation" }).pipe(
+        Effect.provide(Layer.merge(
+          Layer.mergeAll(Parent.layer, Child.layer, Interpreter.layer(Nested)).pipe(
+            Layer.provideMerge(AgentAction.layerHost({ ...host, judged: true, flows: [lookup] })),
+            Layer.provideMerge(seats(scripted([decodes], requests))),
+            Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, evaluator)),
+            Layer.provideMerge(Safety.layer),
+            Layer.provideMerge(Action.layerImplementations),
+            Layer.provideMerge(FlowEngine.layerMemory),
+            Layer.provideMerge(NodeCrypto.layer)
+          ),
+          EventSink.layer({
+            emit: (event) => Effect.sync(() => event._tag === "relevance-settled" && void settled.push(event))
+          })
+        ))
+      )
+    )
+
+    expect(result).toEqual({ approved: true, issues: [] })
+    expect(relevance).toEqual([
+      { task: "The task for this run:\n\nAs the parent, review:\ndiff", ids: ["lookup"] },
+      { task: "The task for this run:\n\nAs the child, review:\ndiff", ids: ["lookup"] }
+    ])
+    expect(settled.map((event) => event.withheld.map((item) => item.id))).toEqual([["lookup"], []])
+    expect(settled[0]!.scope).toContain("agent/test/Parent")
+    expect(settled[1]!.scope).toContain("agent/test/Child")
+    // The child's catalog still offers what the parent's reading withheld.
+    expect(requests).toHaveLength(2)
+    expect(requests[0]).not.toContain("lookup")
+    expect(requests[1]).toContain("lookup")
   })
 })

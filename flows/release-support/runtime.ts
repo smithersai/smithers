@@ -63,7 +63,8 @@ export const agentLayers = (
       limits: { memoryBytes: 128 * 1024 * 1024, steps: 25_000_000, calls: 8 },
       capabilityEnvelope: [],
       maxFrames: 8,
-      defaultCorrections: 2
+      defaultCorrections: 2,
+      judged: true
     }
   })).pipe(Layer.provide(Registry.layerFromDescriptors([])), Layer.provide(NodeServices.layer))
   return Layer.mergeAll(

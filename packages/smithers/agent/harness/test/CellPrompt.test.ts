@@ -6,6 +6,7 @@ import * as Cell from "../src/Cell.ts"
 import * as CellPrompt from "../src/internal/cellPrompt.ts"
 import { printsObservation } from "../src/internal/printsObservation.ts"
 import { untrustedData } from "../src/internal/untrustedData.ts"
+import * as Monitor from "../src/Monitor.ts"
 import * as Tokens from "../src/Tokens.ts"
 
 const projection = (
@@ -173,6 +174,13 @@ describe("cellPrompt", () => {
     // which precedes the catalog a frame can change.
     const sections = CellPrompt.make({})
     expect(sections.map((section) => section.id)).toEqual(["cell-contract", "cell-environment", "cell-catalog"])
+    // The jev teaching is constant for a run, so it precedes the catalog.
+    expect(CellPrompt.make({ jev: projection("jev", Option.none()) }).map((section) => section.id)).toEqual([
+      "cell-contract",
+      "cell-environment",
+      "cell-jev",
+      "cell-catalog"
+    ])
   })
 
   it("digests each section over its id and text", () => {
@@ -366,12 +374,6 @@ describe("cellPrompt", () => {
     //
     // Raised to 2,600 on 2026-09-22 for rule 10, the `jev` flow: +874
     // characters, +227 estimated tokens, landing the contract at exactly 2,600.
-    // The contract sat at 2,373 before it, so no rule of use fit under 2,400.
-    // Unlike the two r92 rules this one points the model at a tool rather
-    // than adding doctrine, and the same wave that measured every tool change
-    // paying is the reason it was admitted; its own price is not measured yet.
-    // A wave that reads this and finds it did not pay removes the rule and
-    // puts the number back.
     //
     // Raised to 2,760 on 2026-09-22 for the print budget in rule 4: +615
     // characters, +159 estimated tokens. Will asked for it after a TUI run
@@ -382,11 +384,33 @@ describe("cellPrompt", () => {
     // smaller mean; the first cell's print fell from the 16 KiB frame cap in
     // every run to 2.5 / 2.3 / 6.5 KB. Answer quality was not scored. A wave
     // that finds it costs verdicts removes the sentences and the 159 tokens.
-    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(2_760)
+    //
+    // Lowered to 2,490 on 2026-09-25: rule 10 and the rule-4 jev clause moved
+    // to cell-jev on 2026-09-25 (owner decision, #1929); a SWE-bench arm
+    // measures this wording and informs tuning, not reverting.
+    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(2_490)
     expect(Tokens.estimate(sectionOf("cell-environment", {}, { locale: "C.UTF-8", absentTools: ["rg", "ruff"] })))
       .toBeLessThanOrEqual(300)
   })
 })
+
+/**
+ * The deleted surface's vocabulary. The bare word `state` is its "file JSON
+ * into state". Since 2026-09-22 the `jev` flow's input field is also named
+ * `state`, after `Evaluator.Request`, so the teaching may write it only as the
+ * code token `` `state` `` or the object key `state:`; the guard still refuses
+ * the word as prose.
+ */
+const deletedSurface = [
+  /\bctx\.state\b/,
+  /(?<!`)\bstate\b(?!`|:)/i,
+  /\brender\b/i,
+  /\brecall\b/i,
+  /\bmanifest\b/i,
+  /\bintent\b/i,
+  /\btransition\b/i,
+  /async function/i
+]
 
 describe("the contract", () => {
   const replText = contractText
@@ -418,9 +442,12 @@ describe("the contract", () => {
     // It moved again the same day, 10,138 → 10,753, for rule 4's print
     // budget: prints stay in context, about 40 lines a cell, counts and paths
     // before rows. The token budget test carries its measurement.
-    expect(replText()).toHaveLength(10_753)
+    // It moved again on 2026-09-25, 10,753 → 9,715: rule 10 and the rule-4 jev
+    // clause moved to cell-jev on 2026-09-25 (owner decision, #1929); a
+    // SWE-bench arm measures this wording and informs tuning, not reverting.
+    expect(replText()).toHaveLength(9_715)
     expect(Digest.digest(replText()))
-      .toBe("966b883b23f42c764e7b3b163c85a760bbbf6f55942ded042e91b99b9d8e7450")
+      .toBe("7ad8b2ce63040d6c565a2fa2610c156ffabeeb90e6a435b73eb8b211d8d5eb69")
   })
 
   it("encourages the guard shape and leaves the unguarded completion legal", () => {
@@ -458,6 +485,8 @@ describe("the contract", () => {
   it("shows the guard in the worked example rather than only describing it", () => {
     const blocks = [...replText().matchAll(/```cell\n([\s\S]*?)```/g)].map((match) => match[1]!)
     expect(blocks).toHaveLength(2)
+    // The jev teaching is its own section, present only where the flow is.
+    expect(replText()).not.toContain("jev")
     // One cell, in order: the probe that must fail, the edit, the identical
     // probe replayed, and the completion behind a check of both exit codes.
     const fix = blocks[1]!
@@ -477,23 +506,7 @@ describe("the contract", () => {
     // `render`/`recall` pair, so a contract that still named any of them would
     // be teaching a mechanism the realm does not have. This is the assertion
     // that keeps the deleted surface from creeping back into the teaching.
-    // The bare word `state` is the deleted surface's vocabulary ("file JSON
-    // into state"). Since 2026-09-22 the `jev` flow's input field is also
-    // named `state`, after `Evaluator.Request`, so rule 10 may write it only
-    // as the code token `` `state` `` or the object key `state:`; the guard
-    // still refuses the word as prose.
-    for (
-      const absent of [
-        /\bctx\.state\b/,
-        /(?<!`)\bstate\b(?!`|:)/i,
-        /\brender\b/i,
-        /\brecall\b/i,
-        /\bmanifest\b/i,
-        /\bintent\b/i,
-        /\btransition\b/i,
-        /async function/i
-      ]
-    ) {
+    for (const absent of deletedSurface) {
       expect(replText()).not.toMatch(absent)
     }
   })
@@ -502,5 +515,78 @@ describe("the contract", () => {
     for (const named of ["ctx.done(output)", "ctx.park(reason, message)", "ctx.justify(", "console.log"]) {
       expect(replText()).toContain(named)
     }
+  })
+})
+
+describe("the jev teaching", () => {
+  const jevText = () => sectionOf("cell-jev", { jev: projection("jev", Option.none()) })
+
+  it("is taught only to a run whose catalog binds jev", () => {
+    expect(CellPrompt.make({}).some((section) => section.id === "cell-jev")).toBe(false)
+    expect(CellPrompt.make({ other: projection("other", Option.none()) }).some((section) => section.id === "cell-jev"))
+      .toBe(false)
+  })
+
+  it("is pinned to the byte, inside its token budget", () => {
+    // Rule 10 and the rule-4 jev clause moved here on 2026-09-25 (owner
+    // decision, #1929), with the owner's floors and one worked example. A
+    // SWE-bench arm measures this wording and informs tuning, not reverting.
+    expect(jevText()).toHaveLength(1_677)
+    expect(Digest.digest(jevText())).toBe("421fcbbc33411ebcdb2810914ee6ad30b5efded8fdab6eaf1e4088294a85f31b")
+    expect(Tokens.estimate(jevText())).toBeLessThanOrEqual(450)
+  })
+
+  it("teaches the owner's floors and one call, never a call per item", () => {
+    const text = jevText()
+    expect(text).toContain("`answers[id].probability >= 0.8`")
+    expect(text).toContain("`judged.confidence?.[id] >= 0.7`")
+    expect(text).toContain("Never make one call per item")
+    expect(text).toContain("do not decide in its place")
+  })
+
+  it("shows exactly one worked cell, which calls jev once and reads the probability", () => {
+    const blocks = [...jevText().matchAll(/```cell\n([\s\S]*?)```/g)].map((match) => match[1]!)
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]!.match(/ctx\.call\("jev"/g)).toHaveLength(1)
+    expect(blocks[0]).toContain(".probability")
+    expect(blocks[0]).toContain("judged.ok === false")
+  })
+
+  it("teaches none of the deleted surface's mechanics", () => {
+    for (const absent of deletedSurface) {
+      expect(jevText()).not.toMatch(absent)
+    }
+  })
+})
+
+describe("the stance", () => {
+  const ids = (sections: ReadonlyArray<CellPrompt.Section>) => sections.map((section) => section.id)
+
+  it("is taught only when the run has one, leaving every other section as it was", () => {
+    const flows = { jev: projection("jev", Option.none()) }
+    expect(ids(CellPrompt.make(flows))).toEqual(["cell-contract", "cell-environment", "cell-jev", "cell-catalog"])
+    expect(CellPrompt.make(flows, {}, undefined)).toEqual(CellPrompt.make(flows))
+    const stanced = CellPrompt.make(flows, {}, "careful")
+    expect(ids(stanced)).toEqual(["cell-contract", "cell-stance", "cell-environment", "cell-jev", "cell-catalog"])
+    expect(stanced.filter((section) => section.id !== "cell-stance")).toEqual(CellPrompt.make(flows))
+  })
+
+  it("is one line of the Monitor mood text, pinned, and byte-identical from frame to frame", () => {
+    const frames = [0, 1, 2, 3].map((frame) =>
+      CellPrompt.make(
+        Object.fromEntries(
+          Array.from({ length: frame }, (_, i) => [`flow${i}`, projection(`flow${i}`, Option.none())])
+        ),
+        {},
+        "paranoid"
+      ).find((section) => section.id === "cell-stance")!
+    )
+    for (const section of frames) expect(section).toEqual(frames[0])
+    expect(frames[0]!.text).toBe(
+      "Stance: paranoid. Treat your last result as wrong until a printed check shows it."
+    )
+    expect(frames[0]!.text).toBe(Monitor.paranoidText)
+    expect(sectionOf("cell-contract")).not.toContain("Stance:")
+    expect(CellPrompt.make({}, {}, "careful")[1]!.text).toBe(Monitor.carefulText)
   })
 })

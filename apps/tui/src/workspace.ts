@@ -5,6 +5,7 @@ import type * as Context from "./context.ts"
 import type * as Extension from "./extension.ts"
 import type * as Host from "./host.ts"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as Seat from "@smthrs/agent/Seat"
 import * as FailureCopy from "@smthrs/model/FailureCopy"
 import * as Lifecycle from "./lifecycle.ts"
 import { delegateModels, type DelegateModel } from "./models.ts"
@@ -190,6 +191,10 @@ export class Workspace {
     this.tabs.changed()
   }
   has = (id: string): boolean => this.tabs.has(id)
+  /** Whether a worker with no chosen model is routed by Jev; a replay drives its own seat. */
+  private get routes(): boolean {
+    return this.options.host.routes === true && !this.options.workerSeat.startsWith("replay:")
+  }
   snapshot = (): Snapshot => ({ tabs: this.tabs.values(), panels: [...this.panels.values()], cards: [...this.cards] })
   get busy(): boolean {
     return this.tabs.values().some((tab) => active(tab) || tab.status === "waiting" || tab.status === "queued" || tab.status === "parked")
@@ -284,7 +289,7 @@ export class Workspace {
   /**
    * Persists a request and returns its receipt. `kept` is a resumed or retried
    * tab's own seat; otherwise the seat is the request's model, then the agent's
-   * declared `model:`, then the worker seat.
+   * declared `model:`, then `Seat.auto` when the host routes, else the worker seat.
    */
   private open(request: Request, kept?: string, parent?: string, depth = 0, prior?: Tab, parks?: number): { id: string; status: Tab["status"] } {
     if (this.closed) throw new Error("Session closed")
@@ -293,7 +298,10 @@ export class Workspace {
       const same = existing.prompt === request.prompt && existing.agent?.name === request.agent && (
         existing.agent === undefined && existing.model === undefined
           // A tab saved before `model` was recorded is compared by seat.
-          ? existing.seat === (request.model === undefined ? this.options.workerSeat : delegateModels[request.model])
+          ? request.model === undefined
+            ? existing.seat === this.options.workerSeat ||
+              (this.routes && !Object.values<string>(delegateModels).includes(existing.seat))
+            : existing.seat === delegateModels[request.model]
           : existing.model === request.model
       )
       if (!same) throw new Error("Request id already belongs to another task")
@@ -318,7 +326,7 @@ export class Workspace {
       prompt: request.prompt,
       ...(parent === undefined ? {} : { parent }),
       depth,
-      seat: kept ?? (request.model === undefined ? declared ?? this.options.workerSeat : delegateModels[request.model]),
+      seat: kept ?? (request.model === undefined ? declared ?? this.unchosen() : delegateModels[request.model]),
       history,
       file: writer.file,
       startedAt: prior?.startedAt ?? Date.now(),
@@ -331,6 +339,10 @@ export class Workspace {
     if (tab.status === "queued") this.tabs.enqueue(tab.id, { writer, history, by })
     else queueMicrotask(() => this.start(tab, writer, history, by))
     return { id: tab.id, status: tab.status }
+  }
+  /** The seat of a worker nobody chose one for. */
+  private unchosen(): string {
+    return this.routes ? Seat.auto : this.options.workerSeat
   }
   private priorRecords(tab: Tab): ReadonlyArray<Session.Record> {
     try { return Session.load(tab.file).filter((record) => record.type !== "session") }
@@ -409,7 +421,8 @@ export class Workspace {
     if (now === undefined) return
     const ready: Tab = {
       ...now,
-      seat: now.model === undefined ? profile.seat ?? this.options.workerSeat : delegateModels[now.model],
+      // A routed tab keeps `auto`, or the seat a retry carries.
+      seat: now.model === undefined ? profile.seat ?? (this.routes ? now.seat : this.options.workerSeat) : delegateModels[now.model],
       agent: { name: profile.name, digest: profile.digest }
     }
     this.tabs.put(ready)
@@ -418,7 +431,7 @@ export class Workspace {
   private async describe(tab: Tab): Promise<void> {
     let description = tab.title.replace(/\s+/g, " ").trim().slice(0, 80)
     // The worker's own seat: the task never goes to a provider the user did not pick for it.
-    if (!tab.seat.startsWith("replay:")) {
+    if (!tab.seat.startsWith("replay:") && tab.seat !== Seat.auto) {
       try {
         const generated = await this.options.host.describe?.({ title: tab.title, prompt: tab.prompt, seat: tab.seat })
         description = generated?.replace(/\s+/g, " ").trim().slice(0, 80) || description
@@ -454,6 +467,11 @@ export class Workspace {
           read: (id) => this.read(id.startsWith(`${tab.id}/`) ? id : `${tab.id}/${id}`),
           list: () => this.snapshot().tabs.filter((child) => child.parent === tab.id),
           wait: (ids, signal) => this.wait(tab.id, ids, signal)
+        },
+        onSeat: (seat) => {
+          const current = this.tabs.get(tab.id)
+          // Retry and resume keep it, so the tab is never routed twice.
+          if (current?.file === writer.file) this.tabs.put({ ...current, seat })
         },
         onCaption: (prose) => {
           writer.append({ type: "caption", prose })

@@ -7,11 +7,13 @@
  * cases green. These runs go through `NodeControl.layerExecutor`, the
  * composition `smithers run` uses: a real flow, planned, approved and run
  * twice over one `SMITHERS_MEMORY_DB`. The provider is an Undici mock and the
- * judge is scripted, so nothing leaves the process.
+ * judge is scripted, so nothing leaves the process. No other environment arms
+ * delivery: the judge the host requires does.
  */
 import { NodeHttpClient } from "@effect/platform-node"
 import { MockAgent } from "@effect/platform-node/Undici"
 import { Control } from "@smthrs/control"
+import type * as Relevance from "@smthrs/harness/Relevance"
 import * as Supervisor from "@smthrs/harness/Supervisor"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -57,7 +59,7 @@ const sse = (text: string): string =>
 const cell = (source: string): string => `\`\`\`cell\n${source}\n\`\`\``
 
 describe("the shipped Node executor's supervisor memory", () => {
-  it("recalls a note run 1 remembered into run 2's supervisor snapshot", async () => {
+  it("recalls a note run 1 remembered into run 2's supervisor snapshot and delivers it", async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-native-memory-")))
     roots.add(root)
     const directory = join(root, "flows", "tox")
@@ -78,22 +80,34 @@ describe("the shipped Node executor's supervisor memory", () => {
 
     // Which run the provider and the judge are answering, and how many model
     // calls that run has made. Run 1 says the sentence on its first frame and
-    // finishes on its second; run 2 says something else and finishes.
+    // finishes on its second; run 2 says something else, looks again, and
+    // finishes on its third, which is the first to read frame 0's reading.
     type Phase = "run-1" | "run-2"
     let phase: Phase = "run-1"
     let frame = 0
     const snapshots: Record<Phase, Array<Supervisor.Snapshot>> = { "run-1": [], "run-2": [] }
-    const read = Deferred.makeUnsafe<void>()
+    const recalled: Record<Phase, Array<Relevance.Item>> = { "run-1": [], "run-2": [] }
+    const requests: Record<Phase, Array<string>> = { "run-1": [], "run-2": [] }
+    const reads: Record<Phase, Deferred.Deferred<void>> = {
+      "run-1": Deferred.makeUnsafe<void>(),
+      "run-2": Deferred.makeUnsafe<void>()
+    }
 
     const agent = new MockAgent()
     agents.add(agent)
     agent.disableNetConnect()
     agent.get("https://api.openai.com").intercept({ method: "POST", path: "/v1/responses" }).reply(
       200,
-      () => {
-        const first = frame++ === 0
+      (request) => {
+        requests[phase].push(new TextDecoder().decode(request.body as Uint8Array))
+        const index = frame++
         const prose = phase === "run-1" ? sentence : "Looking around first."
-        return sse(first ? `${prose}\n\n${cell("console.log('observed')")}` : cell("ctx.done('done')"))
+        const last = phase === "run-1" ? 1 : 2
+        return sse(
+          index === 0
+            ? `${prose}\n\n${cell("console.log('observed')")}`
+            : cell(index < last ? "console.log('again')" : "ctx.done('done')")
+        )
       },
       { headers: { "content-type": "text/event-stream" } }
     ).persist()
@@ -103,22 +117,30 @@ describe("the shipped Node executor's supervisor memory", () => {
     const inner = await Effect.runPromise(
       RequestExecutor.make.pipe(Effect.provideService(HttpClient.HttpClient, client))
     )
-    // Run 1's second frame waits for the supervisor to read its first, so the
-    // reading, and the note it decides to write, happen inside the run.
+    // Each run's second frame waits for the supervisor to read its first, so
+    // the reading, the note it writes and the row it shows happen inside
+    // the run, with a moment for the verdict to reach the mailbox.
     const executor = Layer.succeed(RequestExecutor.RequestExecutor, {
       execute: (request, options) =>
-        (phase === "run-1" && frame > 0 ? Deferred.await(read) : Effect.void).pipe(
-          Effect.andThen(inner.execute(request, options))
-        )
+        (frame === 1 ? Deferred.await(reads[phase]).pipe(Effect.andThen(Effect.sleep("100 millis"))) : Effect.void)
+          .pipe(
+            Effect.andThen(inner.execute(request, options))
+          )
     })
 
-    // Finishes every completion and accepts every memory candidate.
+    // Finishes every completion, accepts every memory candidate, and keeps
+    // every item relevance is asked about.
     const judge = Evaluator.layerScripted((request) => {
+      if (Object.hasOwn(request.questions, "unnecessary_0")) {
+        const items = (request.state as { readonly items: ReadonlyArray<Relevance.Item> }).items
+        recalled[phase].push(...items.filter((item) => item.kind === "memory"))
+        return Object.fromEntries(items.map((_, index) => [`unnecessary_${index}`, { probability: 0.01 }]))
+      }
       if (!Object.hasOwn(request.questions, "thrashing")) {
         return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
       }
       snapshots[phase].push(Schema.decodeUnknownSync(Supervisor.Snapshot)(request.state))
-      Deferred.doneUnsafe(read, Effect.void)
+      Deferred.doneUnsafe(reads[phase], Effect.void)
       return Object.fromEntries(
         Object.keys(request.questions).map((key) => [
           key,
@@ -126,7 +148,9 @@ describe("the shipped Node executor's supervisor memory", () => {
             ? { choice: "none" }
             : ["frustrated", "anxious", "scared", "confused", "confident"].includes(key)
             ? { score: 0 }
-            : { probability: key === "on_target" || key.startsWith("remember_") ? 0.99 : 0.01 }
+            : {
+              probability: key === "on_target" || key.startsWith("remember_") ? 0.99 : 0.01
+            }
         ])
       )
     })
@@ -159,12 +183,11 @@ describe("the shipped Node executor's supervisor memory", () => {
         }
         return yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
           Stream.takeUntil((event) => terminal.has(event.kind)),
-          Stream.runCollect,
-          Effect.map((events) => events.at(-1)?.kind)
+          Stream.runCollect
         )
       })
 
-    const statuses = await Effect.runPromise(
+    const outcomes = await Effect.runPromise(
       Effect.gen(function*() {
         const first = yield* run(1)
         phase = "run-2"
@@ -174,8 +197,18 @@ describe("the shipped Node executor's supervisor memory", () => {
       }).pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
     )
 
-    expect(statuses).toEqual(["control.run.completed", "control.run.completed"])
+    expect(outcomes.map((events) => events.at(-1)?.kind)).toEqual(["control.run.completed", "control.run.completed"])
+    for (const events of outcomes) {
+      expect(events.find((event) => event.kind === "control.agent.discipline-armed")?.payload).toMatchObject({
+        judged: true
+      })
+    }
     expect(snapshots["run-1"][0]?.candidates).toEqual([sentence])
-    expect(snapshots["run-2"][0]?.recalled.map((row) => row.text)).toContain(sentence)
+    expect(recalled["run-1"]).toEqual([])
+    expect(recalled["run-2"].map((item) => item.text)).toContain(sentence)
+    // Run 2's third frame reads the recalled row, with no env arming it.
+    expect(requests["run-2"]).toHaveLength(3)
+    expect(requests["run-2"][2]).toContain("From memory of this repository")
+    expect(requests["run-2"][1]).not.toContain("From memory of this repository")
   }, 60_000)
 })

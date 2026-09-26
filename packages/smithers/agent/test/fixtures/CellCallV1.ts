@@ -2,6 +2,7 @@ import { Schema } from "effect"
 
 // Archived wire declaration from 580c67600b^:packages/smithers/agent/harness/src/Cell.ts.
 // Keep this independent of the current Cell module: it writes the pre-A2 fixture.
+// flow_withheld added when CallFailureCode gained it (#1929).
 const CallFailureCode = Schema.Literals([
   "unknown_flow",
   "capability_refused",
@@ -15,7 +16,8 @@ const CallFailureCode = Schema.Literals([
   "checkpoint_exhausted",
   "checkpoint_readonly",
   "checkpoint_unsupported",
-  "flow_failed"
+  "flow_failed",
+  "flow_withheld"
 ])
 
 export class CallResult extends Schema.Class<CallResult>("flows/harness/Cell/CallResult")({
@@ -36,8 +38,8 @@ export const key = "key1_8ab2962732794ee8d8b3bf550657b41d475fd082ec9c8c7073b1d24
 // preimage carries the whole error union, so a new member is a new declaration
 // digest and a new sealed key. That is what the digest is for. In-flight runs
 // finish under the declaration they started on; a new run is keyed under this
-// one.
-export const effect115Key = "key1_824e8c645a1b3c6bcae2e2d1041e8017a791bde3dda10ce72e90d4631db41849"
+// one. Moved when CallFailureCode gained flow_withheld (#1929).
+export const effect115Key = "key1_0336839392318b217d1892c2ae94ae09d6a644dd695239675803285d5e475b14"
 
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.

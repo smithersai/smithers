@@ -22,6 +22,7 @@
  */
 import * as Endpoint from "@smthrs/model/Endpoint"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as ModelCatalog from "@smthrs/model/ModelCatalog"
 import * as CodexAuth from "./CodexAuth.ts"
 import * as Environment from "./Environment.ts"
 
@@ -178,6 +179,27 @@ export const seatAliases: Readonly<Record<string, string>> = {
   opus: "anthropic:claude-opus-5-5",
   fable: "anthropic:claude-fable-5-1",
   qwen: defaultSeat.cerebras
+}
+
+const contextWindow = (seat: string): string => {
+  const tokens = ModelCatalog.contextWindowTokensFor(seat.slice(seat.indexOf(":") + 1))
+  return tokens >= 1_000_000 ? `${tokens / 1_000_000}M context` : `${tokens / 1_000}K context`
+}
+
+/**
+ * One line per {@link seatAliases} entry: the model's label, its provider and
+ * its context window. What Jev reads when it picks a seat for a run.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const seatDescriptions: Readonly<Record<string, string>> = {
+  sol: `GPT-6 Sol, OpenAI, ${contextWindow(seatAliases.sol!)}`,
+  astra: `GPT-6 Astra, OpenAI, ${contextWindow(seatAliases.astra!)}`,
+  luna: `GPT-6 Luna, OpenAI, ${contextWindow(seatAliases.luna!)}`,
+  opus: `Claude Opus 5.5, Anthropic, ${contextWindow(seatAliases.opus!)}`,
+  fable: `Claude Fable 5.1, Anthropic, ${contextWindow(seatAliases.fable!)}`,
+  qwen: `Qwen 3.8, Cerebras, ${contextWindow(seatAliases.qwen!)}`
 }
 
 /**

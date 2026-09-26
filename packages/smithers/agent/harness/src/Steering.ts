@@ -7,7 +7,10 @@
  */
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Context, Effect, Layer, Schema } from "effect"
+import * as AgentEvent from "./AgentEvent.ts"
 import type { HarnessError } from "./HarnessError.ts"
+import * as compactionMarks from "./internal/compactionMarks.ts"
+import * as Monitor from "./Monitor.ts"
 
 /**
  * The boundary at which a transcript insertion may be promoted.
@@ -186,7 +189,27 @@ export const DrainRecord = Schema.Struct({
    * before the supervisor had a field of its own, and from boundaries it
    * delivered nothing at.
    */
-  supervisor: Schema.optional(Schema.Array(ModelRequest.Message))
+  supervisor: Schema.optional(Schema.Array(ModelRequest.Message)),
+  /**
+   * Keys of the memory rows among `supervisor`, which the run has now been
+   * shown. Absent from boundaries that delivered none.
+   */
+  memory: Schema.optional(Schema.Array(Schema.String)),
+  /** The monitor whose message leads `supervisor`, when one was delivered. */
+  monitor: Schema.optional(Schema.String),
+  /** Crossed monitors this boundary withheld, and why. Absent when none was. */
+  suppressed: Schema.optional(Schema.Array(Schema.Struct({ id: Schema.String, reason: AgentEvent.Suppression }))),
+  /**
+   * The monitor ledger after this boundary gated a reading, which the run
+   * carries into its next frame. Absent from boundaries that gated none.
+   */
+  monitorLedger: Schema.optional(Monitor.Ledger),
+  /**
+   * Jev's answers about transcript segments, by digest, which the run stores
+   * for its next compaction. The model is not sent them. Absent from
+   * boundaries that took none.
+   */
+  marks: Schema.optional(Schema.Array(compactionMarks.Marking))
 })
 
 /**

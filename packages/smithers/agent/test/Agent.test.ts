@@ -7,6 +7,7 @@
  * provider is not a smoke test.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { FlowEngine } from "@smthrs/engine"
@@ -16,12 +17,18 @@ import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
 import * as EngineLike from "@smthrs/harness/EngineLike"
+import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Monitor from "@smthrs/harness/Monitor"
+import type * as Relevance from "@smthrs/harness/Relevance"
 import * as Supervisor from "@smthrs/harness/Supervisor"
+import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as MemoryError from "@smthrs/memory/MemoryError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
+import type * as SnapshotRecorder from "@smthrs/memory/SnapshotRecorder"
 import * as MemorySource from "@smthrs/memory/Source"
+import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
@@ -39,13 +46,16 @@ import * as Registry from "@smthrs/registry/Registry"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
 import {
   Cause,
+  Context,
   Deferred,
   Effect,
   Exit,
+  FileSystem,
   Layer,
   Logger,
   Metric,
   Option,
+  Path,
   References,
   Schedule,
   Schema,
@@ -60,9 +70,10 @@ import type * as Budget from "../src/Budget.ts"
 import * as Checkpointed from "../src/Checkpointed.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as QuotaPolicy from "../src/QuotaPolicy.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
+import { layer as scriptedCompletionJudge, layerAll as scriptedJudgeAll } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
+import * as StandardFlows from "../src/StandardFlows.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -296,7 +307,7 @@ const collect = (options: {
   readonly authorize?: ((call: Cell.Call) => Effect.Effect<void, HarnessError>) | undefined
   readonly plugins?: PluginInput<FlowsHooks> | undefined
   readonly config?: FlowsConfig | undefined
-  readonly memory?: MemorySource.DeclaredText | undefined
+  readonly memory?: MemorySource.Declared | undefined
   readonly activeSeatSamples?: Array<number> | undefined
   /** Receives every event as it arrives, so a run that fails still shows what it emitted. */
   readonly sink?: Array<AgentEvent.AgentEvent> | undefined
@@ -305,6 +316,10 @@ const collect = (options: {
   readonly supervisor?: Agent.Options["supervisor"]
   /** Where the host pins trees; absent means it pins none. */
   readonly checkpoints?: Checkpoints.Checkpoints | undefined
+  readonly flows?: Agent.Options["flows"]
+  readonly judged?: boolean | undefined
+  readonly instructions?: Agent.Options["instructions"]
+  readonly pinnedSources?: Agent.Options["pinnedSources"]
 }) =>
   Effect.gen(function*() {
     const agent = yield* Agent.Agent
@@ -330,7 +345,11 @@ const collect = (options: {
       config: options.config,
       memory: options.memory,
       supervisor: options.supervisor,
-      maxFrames: options.maxFrames ?? 3
+      maxFrames: options.maxFrames ?? 3,
+      flows: options.flows,
+      judged: options.judged,
+      instructions: options.instructions,
+      pinnedSources: options.pinnedSources
     }).pipe(
       Stream.runForEach((event) =>
         Effect.sync(() => {
@@ -976,20 +995,21 @@ describe("capacity seat chain", () => {
 describe("supervisor memory through Agent.run", () => {
   it.each(
     [
-      { mode: "recall", options: { namespace: "repository", steer: false, remember: true } },
-      { mode: "absent", options: { namespace: "repository", steer: false, remember: true } },
-      { mode: "failed", options: { namespace: "repository", steer: false, remember: true } },
-      { mode: "typed-failed", options: { namespace: "repository", steer: false, remember: true } },
+      { mode: "recall", options: { namespace: "repository", remember: true } },
+      { mode: "absent", options: { namespace: "repository", remember: true } },
+      { mode: "failed", options: { namespace: "repository", remember: true } },
+      { mode: "typed-failed", options: { namespace: "repository", remember: true } },
       // No namespace: no bank is read or written, never one global bank.
-      { mode: "unnamed", options: { steer: false, remember: true } },
+      { mode: "unnamed", options: { remember: true } },
       // A namespace but no opt-in: recalled, never written.
-      { mode: "unopted", options: { namespace: "repository", steer: false } }
+      { mode: "unopted", options: { namespace: "repository" } }
     ] as const
   )("binds the host memory port when recall is $mode", async ({ mode, options }) => {
     const settled = Deferred.makeUnsafe<void>()
     const notes: Array<MemoryStore.PutNoteInput> = []
     const recalls: Array<Recall.Input> = []
     const snapshots: Array<Supervisor.Snapshot> = []
+    const judged: Array<ReadonlyArray<Relevance.Item>> = []
     const warnings: Array<string> = []
     const failures: Array<AgentEvent.SupervisorMemoryFailed> = []
     const namespace = "repository"
@@ -1029,6 +1049,11 @@ describe("supervisor memory through Agent.run", () => {
         })
     })
     const evaluator = Evaluator.layerScripted((request) => {
+      if (Object.hasOwn(request.questions, "unnecessary_0")) {
+        const items = (request.state as { readonly items: ReadonlyArray<Relevance.Item> }).items
+        judged.push(items)
+        return Object.fromEntries(items.map((_, index) => [`unnecessary_${index}`, { probability: 0.1 }]))
+      }
       if (!Object.hasOwn(request.questions, "thrashing")) {
         return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
       }
@@ -1080,11 +1105,12 @@ describe("supervisor memory through Agent.run", () => {
     )
     expect(outcome._tag).toBe("completed")
     expect(snapshots[0]?.candidates).toEqual([sentence])
-    expect(snapshots[0]?.recalled).toEqual(
+    // The recalled rows go through relevance, capped, as memory items keyed by row.
+    expect(judged[0] ?? []).toEqual(
       mode === "recall" || mode === "unopted"
         ? Array.from(
           { length: Supervisor.recalledLimit },
-          (_, index) => ({ key: `note-${index}`, text: `Fact ${index}` })
+          (_, index) => ({ kind: "memory", id: `note-${index}`, text: `Fact ${index}` })
         ) :
         []
     )
@@ -1122,6 +1148,54 @@ describe("supervisor memory through Agent.run", () => {
         ? ["The supervisor could not recall memory", "The supervisor could not write memory"] :
         []
     )
+  })
+})
+
+describe("the run-start relevance reading through Agent.run", () => {
+  it("never judges a core flow, judges a host source unless it is pinned, and shows instructions after the host system", async () => {
+    const asked: Array<ReadonlyArray<string>> = []
+    const evaluator = Evaluator.layerScripted((request) => {
+      if (!Object.keys(request.questions).some((id) => id.startsWith("unnecessary_"))) {
+        return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+      }
+      const items = (request.state as { readonly items: ReadonlyArray<Relevance.Item> }).items
+      asked.push(items.map((item) => item.id))
+      return Object.fromEntries(items.map((_, index) => [`unnecessary_${index}`, { probability: 0.1 }]))
+    })
+    const path = Effect.runSync(Effect.provide(Effect.context<Path.Path>(), NodePath.layer))
+    const host = (source: string, name: string) =>
+      FlowBinding.source(source, [
+        FlowBinding.make({ flow: StandardFlows.askFlow, name, handler: () => Effect.die("unused") })
+      ])
+    const requests: Array<string> = []
+    const sink: Array<AgentEvent.AgentEvent> = []
+    const outcome = await drive(collect({
+      registry: registryOf([]),
+      model: recordedCells(requests, ["ctx.done(\"done\")"]),
+      evaluator,
+      judged: true,
+      sink,
+      flows: [
+        StandardFlows.filesystem(Context.merge(Context.make(FileSystem.FileSystem, FileSystem.makeNoop({})), path)),
+        StandardFlows.shell(
+          Context.merge(Context.make(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.makeNoop()), path)
+        ),
+        StandardFlows.jev(Effect.runSync(Effect.provide(Effect.context<Evaluator.Evaluator>(), evaluator))),
+        host("host/lookup", "lookup"),
+        host("host/pinned", "pinned")
+      ],
+      pinnedSources: ["host/pinned"],
+      instructions: [{ path: "AGENTS.md", text: "- Use pnpm.\n" }]
+    }))
+
+    expect(outcome._tag).toBe("completed")
+    expect(asked).toEqual([["lookup", "AGENTS.md#0"]])
+    const pinned = sink.find((event) => event._tag === "discipline-armed")?.relevance?.pinned ?? []
+    expect(pinned).toEqual(expect.arrayContaining(["read", "bash", "jev", "pinned"]))
+    expect(pinned).not.toContain("lookup")
+    const opening = requests[0] ?? ""
+    expect(opening.indexOf("You are running inside a smoke test.")).toBeLessThan(opening.indexOf("- Use pnpm."))
+    expect(opening.indexOf("- Use pnpm.")).toBeLessThan(opening.indexOf("The task for this run"))
   })
 })
 
@@ -1287,7 +1361,8 @@ describe("Agent.run", () => {
           modelCallMs: 45_000,
           repeatCap: 0,
           claimCap: 0,
-          limits: { calls: 8 }
+          limits: { calls: 8 },
+          judged: true
         }).pipe(
           Stream.runForEach((event) => Effect.sync(() => events.push(event))),
           Effect.provide(Layer.merge(Agent.layerDefaults, scriptedCompletionJudge))
@@ -1312,7 +1387,14 @@ describe("Agent.run", () => {
     // constant the run records as if it were a choice, and a grader reading
     // `discipline-armed` cannot tell the two apart.
     const armed = events.find((event) => event._tag === "discipline-armed")
-    expect(armed).toMatchObject({ readOnlyCap: 5, modelCallMs: 45_000, repeatCap: 0, claimCap: 0, maxFrames: 2 })
+    expect(armed).toMatchObject({
+      readOnlyCap: 5,
+      modelCallMs: 45_000,
+      repeatCap: 0,
+      claimCap: 0,
+      maxFrames: 2,
+      judged: true
+    })
 
     // The declared layer set and session reach the call identity, which is what
     // the durable key is derived from.
@@ -1536,10 +1618,14 @@ describe("Agent.run", () => {
   })
 
   it("injects only an explicitly selected memory snapshot and keeps it across a durable restart", async () => {
-    const selectedText = "<flows_memory_context>\n[selected/fact] exact memory\n</flows_memory_context>"
+    const rows: ReadonlyArray<SnapshotRecorder.Row> = [
+      { origin: "primer", bank: "selected", key: "note-1", text: "use pnpm" },
+      { origin: "recall", bank: "selected", key: "deploy", text: "deploy from release" },
+      { origin: "recall", bank: "selected", key: "fact", text: "exact memory" }
+    ]
     const selected = await Effect.runPromise(
-      MemorySource.declaredText(
-        { read: () => Effect.succeed(selectedText) },
+      MemorySource.declared(
+        { read: () => Effect.succeed({ rows }) },
         { lineageId: "lineage-1", iteration: 0, banks: ["selected"], query: "task" }
       ).pipe(
         // The source is a literal; the declared store and recall services are
@@ -1548,6 +1634,19 @@ describe("Agent.run", () => {
         Effect.provideService(Recall.Recall, Recall.makeNoop())
       )
     )
+    const kept = MemorySource.render([rows[0]!, rows[2]!])
+    // Jev withholds the deploy row; every other item is kept.
+    const asked: Array<ReadonlyArray<Relevance.Item>> = []
+    const evaluator = Evaluator.layerScripted((request) => {
+      if (!Object.keys(request.questions).some((id) => id.startsWith("unnecessary_"))) {
+        return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+      }
+      const items = (request.state as { readonly items: ReadonlyArray<Relevance.Item> }).items
+      asked.push(items)
+      return Object.fromEntries(
+        items.map((item, index) => [`unnecessary_${index}`, { probability: item.id === "deploy" ? 0.95 : 0.1 }])
+      )
+    })
     const selectedRequests: Array<string> = []
     let permitted = false
     const selectedOutcome = await drive(
@@ -1577,7 +1676,9 @@ describe("Agent.run", () => {
               })
             )
           }),
-        memory: selected
+        memory: selected,
+        judged: true,
+        evaluator
       }),
       { resume: true }
     )
@@ -1592,8 +1693,88 @@ describe("Agent.run", () => {
     expect(selectedOutcome._tag).toBe("completed")
     expect(unselectedOutcome._tag).toBe("completed")
     expect(selectedRequests).toHaveLength(2)
-    expect(selectedRequests.every((request) => request.includes(selectedText))).toBe(true)
-    expect(unselectedRequests.every((request) => !request.includes(selectedText))).toBe(true)
+    expect(selectedRequests.every((request) => request.includes(kept))).toBe(true)
+    // The resumed frame opens on the byte-identical prefix the first attempt sent.
+    const opening = (request: string) => request.slice(0, request.indexOf("The task for this run"))
+    expect(opening(selectedRequests[1]!)).toBe(opening(selectedRequests[0]!))
+    expect(selectedRequests.every((request) => !request.includes("deploy from release"))).toBe(true)
+    // One reading across the first attempt and the resume.
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.filter((item) => item.kind === "memory").map((item) => item.id)).toEqual([
+      "note-1",
+      "deploy",
+      "fact"
+    ])
+    expect(unselectedRequests.every((request) => !request.includes("exact memory"))).toBe(true)
+  })
+
+  const noTestEdits = Monitor.make({
+    _tag: "Questioned",
+    id: "no_test_edits",
+    kind: "lint",
+    question: Classifier.boolean({
+      instructions: "Did the newest frames edit a test?",
+      criteria: { true: "a test file was edited", false: "no test file was edited" }
+    }),
+    say: () => "Leave the tests alone."
+  })
+
+  it("arms and asks a monitor a cellMonitors plugin adds", async () => {
+    const asked: Array<ReadonlyArray<string>> = []
+    const read = Deferred.makeUnsafe<void>()
+    const judge = Effect.runSync(Effect.provide(Effect.context<Evaluator.Evaluator>(), scriptedJudgeAll))
+    const evaluator = Layer.succeed(Evaluator.Evaluator)(Evaluator.Evaluator.of({
+      evaluate: (request) => {
+        const ids = Object.keys(request.questions)
+        if (ids.includes(Monitor.questionId("no_test_edits"))) {
+          asked.push(ids)
+          Deferred.doneUnsafe(read, Exit.void)
+        }
+        return Context.get(judge, Evaluator.Evaluator).evaluate(request)
+      }
+    }))
+    const cells = recordedCells([], ["console.log(\"one\")", "ctx.done(\"done\")"])
+    let ordinal = 0
+    const model = Model.make({
+      stream: (request) =>
+        ordinal++ === 0 ? cells.stream(request) : Stream.unwrap(Effect.as(Deferred.await(read), cells.stream(request)))
+    })
+    const sink: Array<AgentEvent.AgentEvent> = []
+    const outcome = await drive(collect({
+      registry: registryOf([]),
+      model,
+      evaluator,
+      judged: true,
+      sink,
+      plugins: [makePlugin<FlowsHooks>({
+        name: "monitors",
+        hooks: { cellMonitors: (monitors) => Effect.succeed([...monitors, noTestEdits]) }
+      })]
+    }))
+
+    expect(outcome._tag).toBe("completed")
+    const armed = sink.find((event) => event._tag === "discipline-armed")?.monitors?.map((monitor) => monitor.id)
+    expect(armed).toEqual([...Monitor.defaults().map((monitor) => monitor.id), "no_test_edits"])
+    expect(asked[0]).toContain("monitor_no_test_edits")
+  })
+
+  it("fails a run whose monitors repeat an id before any model request", async () => {
+    const requests: Array<string> = []
+    const outcome = await drive(collect({
+      registry: registryOf([]),
+      model: recorded(requests),
+      supervisor: { monitors: [noTestEdits] },
+      plugins: [makePlugin<FlowsHooks>({
+        name: "duplicate",
+        hooks: { cellMonitors: (monitors) => Effect.succeed([...monitors, noTestEdits]) }
+      })]
+    }))
+
+    expect(outcome).toMatchObject({
+      _tag: "failed",
+      error: { code: "assembly_failed", message: "id is declared twice", cause: { id: "no_test_edits" } }
+    })
+    expect(requests).toEqual([])
   })
 
   it("preserves a request-hook failure as typed plugin cause at the harness boundary", async () => {

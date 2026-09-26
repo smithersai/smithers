@@ -14,7 +14,7 @@ A delegated plan generates work its author never named, so the memory settings t
 | Field       | Values                     | Meaning                                       |
 | ----------- | -------------------------- | --------------------------------------------- |
 | `namespace` | a `Namespace`              | where memory this tree reads and writes lives |
-| `recall`    | `"auto"`, `"none"`         | whether recall runs at all                    |
+| `recall`    | `"none"`, or absent        | `"none"` refuses recall                       |
 | `maxTokens` | integer                    | the byte budget recall answers within         |
 | `retain`    | `"on-complete"`, `"never"` | whether writes are kept                       |
 

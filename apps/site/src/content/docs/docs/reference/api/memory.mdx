@@ -29,7 +29,7 @@ A delegated plan generates work its author never named, so the memory settings t
 | Field       | Values                     | Meaning                                       |
 | ----------- | -------------------------- | --------------------------------------------- |
 | `namespace` | a `Namespace`              | where memory this tree reads and writes lives |
-| `recall`    | `"auto"`, `"none"`         | whether recall runs at all                    |
+| `recall`    | `"none"`, or absent        | `"none"` refuses recall                       |
 | `maxTokens` | integer                    | the budget recall answers within              |
 | `retain`    | `"on-complete"`, `"never"` | whether writes are kept                       |
 
@@ -61,7 +61,6 @@ import { Effect } from "effect"
 
 const scoped = WithMemory.withMemory(Flows.recall, {
   namespace: { kind: "flow", id: "release-notes" },
-  recall: "auto",
   maxTokens: 2048,
   retain: "on-complete"
 })
@@ -103,7 +102,6 @@ const trellis = MemoryTrellis.make({
   envelope: { fuel: 6, depth: 3, fanout: 3 },
   memory: {
     namespace: { kind: "flow", id: "release-notes" },
-    recall: "auto",
     maxTokens: 2048,
     retain: "on-complete"
   }
@@ -121,7 +119,7 @@ These are the answers that surprise callers most often.
 - `listNotes` defaults `status` to `"accepted"`. Pending and rejected notes are hidden unless you ask for them by name or pass `"any"`.
 - A message id is unique within its thread, not globally. The same id in two threads is two messages. A same-thread retry whose `role`, `text`, or `at` differs fails with `idempotency_conflict` and a path to the first field that differs.
 - `appendMessage` creates a missing thread for you, in the `global` namespace under the id `history`. Call `createThread` first when the thread belongs somewhere else.
-- `maxTokens` is a UTF-8 byte ceiling over the serialized result array, not a token count. Bytes conservatively bound tokens without committing the package to one model's tokenizer. `Source.Input.maxBytes` is a separate ceiling on the rendered snapshot text.
+- `maxTokens` is a UTF-8 byte ceiling over the serialized result array, not a token count. Bytes conservatively bound tokens without committing the package to one model's tokenizer. `Source.Input.maxBytes` is a separate ceiling on the rendered snapshot.
 - `capRecallResults` drops rows with empty text before it fills the budget.
 - Fact values are stored as JSON, so the value `getFact` returns is the value `JSON.stringify` produced: `NaN` and `Infinity` become `null`, `undefined`, function, and symbol members disappear, and sparse arrays collapse. The value is serialized once at API entry, and the stored JSON, the search text, the retained tags, and any vector projection all come from that one snapshot.
 - `RecallKeyword` normalizes both query and row text to NFKC before matching. SQLite full text search does not, so the two bindings can disagree on compatibility-equivalent characters.
@@ -448,35 +446,39 @@ When memory shares a database with the engine or control plane, compose all requ
 
 ### `@smthrs/memory/Source`
 
-| Export         | Signature                                                                              | Behavior                                                                                                                                                                                                                                 |
-| -------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Input`        | interface                                                                              | `Recall.Input` plus `lineageId`, `iteration`, optional `primerBanks`, and optional `maxBytes` (default 16,384).                                                                                                                          |
-| `Source`       | interface                                                                              | `{ read(input): Effect<string, never, MemoryStore \| Recall> }`.                                                                                                                                                                         |
-| `DeclaredText` | interface                                                                              | `{ text, digest }`: the exact shape `Agent.Options.memory` accepts.                                                                                                                                                                      |
-| `make`         | `(options?: { capacity?: number }) => Source`                                          | Constructs a memoizing source. `capacity` defaults to 1,024 identities and must be a positive safe integer. Beyond it the least recently used identity is evicted and its next read refetches unless a `SnapshotRecorder` is in context. |
-| `source`       | `Source`                                                                               | The default source value.                                                                                                                                                                                                                |
-| `declaredText` | `(source: Source, input: Input) => Effect<DeclaredText, never, MemoryStore \| Recall>` | Reads the frozen snapshot and digests it. Fetches once per `(lineageId, iteration)` and degrades to empty text after a two-second timeout or typed failure.                                                                              |
+| Export     | Signature                                                                                                | Behavior                                                                                                                                                                                                                                                                                 |
+| ---------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Input`    | interface                                                                                                | `Recall.Input` plus `lineageId`, `iteration`, optional `primerBanks`, and optional `maxBytes` (default 16,384).                                                                                                                                                                          |
+| `Source`   | interface                                                                                                | `{ read(input): Effect<Snapshot, MemoryError \| TimeoutError, MemoryStore \| Recall> }`.                                                                                                                                                                                                 |
+| `Declared` | interface                                                                                                | `{ rows, digest }`: the exact shape `Agent.Options.memory` accepts; `digest` is the SHA-256 of `render(rows)`.                                                                                                                                                                           |
+| `readRows` | `(input: Input) => Effect<Snapshot, MemoryError \| TimeoutError, MemoryStore \| Recall>`                 | Reads primer notes, then recall, unrendered and bounded so their render fits `maxBytes`. Fails typed; a read over two seconds fails with `TimeoutError`.                                                                                                                                 |
+| `render`   | `(rows: ReadonlyArray<Row>) => string`                                                                   | Fences rows, one escaped line each; `""` for no rows.                                                                                                                                                                                                                                    |
+| `make`     | `(options?: { capacity?: number }) => Source`                                                            | Constructs a memoizing source. `capacity` defaults to 1,024 identities and must be a positive safe integer. Beyond it the least recently used identity is evicted and its next read refetches unless a `SnapshotRecorder` is in context. A failed read is neither memoized nor recorded. |
+| `source`   | `Source`                                                                                                 | The default source value.                                                                                                                                                                                                                                                                |
+| `declared` | `(source: Source, input: Input) => Effect<Declared, MemoryError \| TimeoutError, MemoryStore \| Recall>` | Reads the frozen snapshot once per `(lineageId, iteration)` and digests its render.                                                                                                                                                                                                      |
 
 ### `@smthrs/memory/SnapshotRecorder`
 
-| Export             | Signature                                              | Behavior                                                                                             |
-| ------------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `Identity`         | interface                                              | `{ lineageId, iteration }`: the stable identity of one opening snapshot.                             |
-| `Service`          | interface                                              | `{ record(identity, effect) }`: answer the recorded value, or evaluate, record, and answer `effect`. |
-| `SnapshotRecorder` | `Context.Service` tag `flows/memory/SnapshotRecorder`  | The optional recorder tag. With no service in context, `Source` keeps its process-local memo.        |
-| `layer`            | `(implementation: Service) => Layer<SnapshotRecorder>` | Provides a recorder.                                                                                 |
+| Export             | Signature                                              | Behavior                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Row`              | schema and type                                        | `{ origin: "primer" \| "recall", bank, key, text }`: one unrendered row. `key` is the note id (else the text's digest) for a primer and the recall key for a recalled row. |
+| `Snapshot`         | schema and type                                        | `{ rows }`: the value one snapshot holds.                                                                                                                                  |
+| `Identity`         | interface                                              | `{ lineageId, iteration }`: the stable identity of one opening snapshot.                                                                                                   |
+| `Service`          | interface                                              | `{ record(identity, effect) }`: answer the recorded `Snapshot`, or evaluate, record, and answer `effect`.                                                                  |
+| `SnapshotRecorder` | `Context.Service` tag `flows/memory/SnapshotRecorder`  | The optional recorder tag. With no service in context, `Source` keeps its process-local memo.                                                                              |
+| `layer`            | `(implementation: Service) => Layer<SnapshotRecorder>` | Provides a recorder.                                                                                                                                                       |
 
 ### `@smthrs/memory/WithMemory`
 
-| Export         | Signature                                                                                                                                                    | Behavior                                                                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Policy`       | schema and type                                                                                                                                              | `{ namespace, recall: "auto" \| "none", maxTokens, retain: "on-complete" \| "never" }`, with `maxTokens` capped at `Recall.MAX_RECALL_TOKENS`. |
-| `MemoryPolicy` | annotation key `flows/memory/Annotations/MemoryPolicy`                                                                                                       | The annotation key carrying the policy on a flow.                                                                                              |
-| `Declared`     | `Flow.Any \| DurableDeclaration`                                                                                                                             | A declaration a policy attaches to: a `@smthrs/core` signature, or the `@smthrs/flow` flow a pattern composes.                                 |
-| `references`   | `(flow: Declared) => ReadonlyArray<Flow.Reference>`                                                                                                          | The collaborators a flow declares, callable flows and unresolved registry names alike. A `@smthrs/flow` flow declares none.                    |
-| `children`     | `(flow: Declared) => ReadonlyArray<Flow.Any>`                                                                                                                | The callable flows a flow declares.                                                                                                            |
-| `policyOf`     | `(flow: Declared) => Policy \| undefined`                                                                                                                    | Reads the policy a flow carries.                                                                                                               |
-| `withMemory`   | `(flow: Flow<Input, Output, E>, policy: Policy) => Flow<Input, Output, E>`; also `(Flow.Any) => Flow.Any` and `(DurableFlow.Flow<…>) => DurableFlow.Flow<…>` | Returns a copy carrying the policy, with every declared flow carrying the same policy. Invalid policies throw `MemoryError` at the call.       |
+| Export         | Signature                                                                                                                                                    | Behavior                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `Policy`       | schema and type                                                                                                                                              | `{ namespace, recall?: "none", maxTokens, retain: "on-complete" \| "never" }`, with `maxTokens` capped at `Recall.MAX_RECALL_TOKENS`.    |
+| `MemoryPolicy` | annotation key `flows/memory/Annotations/MemoryPolicy`                                                                                                       | The annotation key carrying the policy on a flow.                                                                                        |
+| `Declared`     | `Flow.Any \| DurableDeclaration`                                                                                                                             | A declaration a policy attaches to: a `@smthrs/core` signature, or the `@smthrs/flow` flow a pattern composes.                           |
+| `references`   | `(flow: Declared) => ReadonlyArray<Flow.Reference>`                                                                                                          | The collaborators a flow declares, callable flows and unresolved registry names alike. A `@smthrs/flow` flow declares none.              |
+| `children`     | `(flow: Declared) => ReadonlyArray<Flow.Any>`                                                                                                                | The callable flows a flow declares.                                                                                                      |
+| `policyOf`     | `(flow: Declared) => Policy \| undefined`                                                                                                                    | Reads the policy a flow carries.                                                                                                         |
+| `withMemory`   | `(flow: Flow<Input, Output, E>, policy: Policy) => Flow<Input, Output, E>`; also `(Flow.Any) => Flow.Any` and `(DurableFlow.Flow<…>) => DurableFlow.Flow<…>` | Returns a copy carrying the policy, with every declared flow carrying the same policy. Invalid policies throw `MemoryError` at the call. |
 
 ### `@smthrs/memory/test/TestMemory`
 

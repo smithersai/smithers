@@ -6,14 +6,16 @@
  * evaluator tells the two classifiers apart by their questions: a request
  * carrying `complete` is the completion brake, which every case answers
  * confidently so the run can finish, and a request carrying `thrashing` is
- * the supervisor, which each case scripts for itself.
+ * the supervisor, which each case scripts for itself. A request carrying
+ * `unnecessary_0` is a relevance reading, which the recalled rows go through.
  *
  * The rule the cases pin: the loop never waits for the supervisor, the
  * supervisor is asked and answers off the hot path, a reading past its
  * threshold is delivered once at the next boundary and only when steering is
- * armed, a reading nobody could take inserts nothing and reports no level,
- * a replayed run re-delivers what it recorded without asking again, and
- * memory is written and inserted only for what Jev accepted.
+ * armed, a reading nobody could take nudges nothing and reports no level,
+ * a replayed run re-delivers what it recorded without asking again, memory
+ * is written only for what Jev accepted, and a recalled row is shown once
+ * unless relevance withholds it.
  *
  * The steering source in the delivery cases WAITS for the supervisor to
  * settle before it drains. That is the test harness holding the boundary
@@ -22,7 +24,9 @@
  * which the first case proves with an evaluator that never answers.
  */
 import { ModelRequest } from "@smthrs/model"
+import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Deferred, Effect, Layer, Option, Result, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
@@ -31,7 +35,9 @@ import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
 import { HarnessError } from "../src/HarnessError.ts"
 import * as Supervision from "../src/internal/supervision.ts"
+import * as Monitor from "../src/Monitor.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
+import type * as Relevance from "../src/Relevance.ts"
 import * as Steering from "../src/Steering.ts"
 import * as Supervisor from "../src/Supervisor.ts"
 import { descriptor, emits, of, prose, run } from "./fixtures/cellTurn.ts"
@@ -97,34 +103,106 @@ const calm = (
 
 const isSupervisor = (request: Evaluator.Request): boolean => Object.hasOwn(request.questions, "thrashing")
 
+/** Every monitor question a supervisor request carries, answered far below any threshold. */
+const quietMonitors = (request: Evaluator.Request): Readonly<Record<string, Evaluator.ScriptedAnswer>> =>
+  Object.fromEntries(
+    Object.keys(request.questions)
+      .filter((key) => key.startsWith(Supervisor.monitorPrefix))
+      .map((key) => [key, { probability: 0.05 }] as const)
+  )
+
+const isRelevance = (request: Evaluator.Request): boolean => Object.hasOwn(request.questions, "unnecessary_0")
+
+const isMarks = (request: Evaluator.Request): boolean => Object.hasOwn(request.questions, "remove_0")
+
+const itemsOf = (request: Evaluator.Request): ReadonlyArray<Relevance.Item> =>
+  (request.state as { readonly items: ReadonlyArray<Relevance.Item> }).items
+
 /**
- * An evaluator that answers the completion brake at once and the supervisor
- * from `answer`, recording every supervisor request it was contacted with.
+ * An evaluator that answers the completion brake at once, the supervisor
+ * from `answer`, each relevance item at the probability `unnecessary` gives
+ * it, or with `unnecessary` when it is a failure, and every compaction mark
+ * low. It records every supervisor request, every relevance request over
+ * memory rows and every marks request.
  */
 const scripted = (
   answer: (request: Evaluator.Request, ordinal: number) =>
     | Readonly<Record<string, Evaluator.ScriptedAnswer>>
-    | Effect.Effect<Readonly<Record<string, Evaluator.ScriptedAnswer>>, Evaluator.EvaluatorError>
+    | Effect.Effect<Readonly<Record<string, Evaluator.ScriptedAnswer>>, Evaluator.EvaluatorError>,
+  unnecessary: ((item: Relevance.Item) => number) | Evaluator.EvaluatorError = () => 0.1
 ) => {
   const contacted: Array<Evaluator.Request> = []
+  const relevance: Array<Evaluator.Request> = []
+  const marks: Array<Evaluator.Request> = []
   const layer = Evaluator.layerScripted((request) => {
+    if (isMarks(request)) {
+      marks.push(request)
+      return Object.fromEntries(Object.keys(request.questions).map((key) => [key, { probability: 0.1 }] as const))
+    }
+    if (isRelevance(request)) {
+      const items = itemsOf(request)
+      if (items.every((item) => item.kind === "memory")) relevance.push(request)
+      return typeof unnecessary === "function"
+        ? Object.fromEntries(items.map((item, index) => [`unnecessary_${index}`, { probability: unnecessary(item) }]))
+        : Effect.fail(unnecessary)
+    }
     if (!isSupervisor(request)) return confident
     contacted.push(request)
-    // A per-item question the case did not script is declined, so a case
+    // A per-candidate question the case did not script is declined, so a case
     // about the run's shape is not failed by the candidate the model fixture's
     // "Here is the next step." prose always offers.
-    const declined = Object.fromEntries(
-      Object.keys(request.questions)
-        .filter((key) => key.startsWith("remember_") || key.startsWith("insert_"))
-        .map((key) => [key, { probability: 0.1 }] as const)
-    )
+    const declined = {
+      ...Object.fromEntries(
+        Object.keys(request.questions)
+          .filter((key) => key.startsWith("remember_"))
+          .map((key) => [key, { probability: 0.1 }] as const)
+      ),
+      ...quietMonitors(request)
+    }
     const scripted = answer(request, contacted.length - 1)
     return Effect.isEffect(scripted)
       ? Effect.map(scripted, (answers) => ({ ...declined, ...answers }))
       : { ...declined, ...scripted }
   })
-  return { layer, contacted }
+  return { layer, contacted, relevance, marks }
 }
+
+/** A bound memory that recalls the first `limit` of `rows` on every reading and records what it is told to remember. */
+const recalling = (rows: ReadonlyArray<Supervisor.Recalled>) => {
+  const remembered: Array<string> = []
+  const memory: Supervisor.Memory = {
+    bound: true,
+    recall: (_, limit) => Effect.succeed(rows.slice(0, limit)),
+    remember: (text) => Effect.sync(() => void remembered.push(text))
+  }
+  return { memory, remembered }
+}
+
+const tests = { key: "tests", text: "Tests run with `python -m pytest -q`." }
+const layout = { key: "layout", text: "Sources live under src/." }
+
+/** Every row key each boundary delivered, one list per boundary that delivered any. */
+const shownBy = (events: ReadonlyArray<AgentEvent.AgentEvent>): ReadonlyArray<ReadonlyArray<string>> =>
+  of(events, "steering-drained").flatMap((event) => event.memory === undefined ? [] : [event.memory])
+
+/** What one frame's reading journaled, in order: decisions by classifier, the rest by tag. */
+const readingOf = (events: ReadonlyArray<AgentEvent.AgentEvent>, frame: number): ReadonlyArray<string> =>
+  events.flatMap((event) => {
+    switch (event._tag) {
+      case "decision-settled":
+        return event.frame === frame ? [event.classifier] : []
+      case "relevance-settled":
+      case "decision-unjudged":
+      case "supervisor-settled":
+      case "supervisor-unjudged":
+        return event.frame === frame ? [event._tag] : []
+      default:
+        return []
+    }
+  })
+
+const textsOf = (messages: ReadonlyArray<ModelRequest.Message>): ReadonlyArray<string> =>
+  messages.flatMap((message) => message.content.flatMap((part) => part.type === "text" ? [part.text] : []))
 
 /** A steering source that drains nothing and, when told to, waits first. */
 const steeringAfter = (wait: (boundary: string) => Effect.Effect<void>): Layer.Layer<Steering.Source> =>
@@ -148,7 +226,7 @@ const steeringAfter = (wait: (boundary: string) => Effect.Effect<void>): Layer.L
  * loop's: the loop under test still never awaits the fiber, which the first
  * case proves with an evaluator that never answers.
  */
-const untilRead = () => {
+const untilRead = (from = 0) => {
   const gates = new Map<number, Deferred.Deferred<void>>()
   // What the observer saw, which is the durable record: the stream a test
   // collects may lag the fiber's publish, and a run that ends right after a
@@ -173,12 +251,40 @@ const untilRead = () => {
       }),
     steering: steeringAfter((boundary) => {
       const frame = Number(boundary.split(":")[0])
-      return frame === 0 ? Effect.void : Deferred.await(gate(frame - 1))
+      return frame === from ? Effect.void : Deferred.await(gate(frame - 1))
     })
   }
 }
 
 const threeFrames = [emits(`console.log("one")`), emits(`console.log("two")`), emits(`ctx.done("done")`)]
+
+/** `frames - 1` cells that print, then a completion. */
+const framesOf = (frames: number) => [
+  ...Array.from({ length: frames - 1 }, (_, index) => emits(`console.log(${index})`)),
+  emits(`ctx.done("done")`)
+]
+
+/** How many texts carrying `needle` each sealed request held, in frame order. */
+const carrying = (engine: ScriptedEngine.Fixture, needle: string): ReadonlyArray<number> =>
+  engine.recorder.sealStep.map((step) => textsOf(step.request.messages).filter((text) => text.includes(needle)).length)
+
+/** The monitor each boundary delivered, in order. */
+const deliveredBy = (events: ReadonlyArray<AgentEvent.AgentEvent>): ReadonlyArray<string> =>
+  of(events, "steering-drained").flatMap((event) => event.monitor === undefined ? [] : [event.monitor])
+
+/** What each boundary withheld, one list per boundary. */
+const withheldBy = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
+  of(events, "steering-drained").map((event) => event.suppressed ?? [])
+
+/** The paranoid mood's evidence: suspect, and confident all the same. */
+const paranoid = () => calm({ suspect: { probability: 0.9 } })
+
+/** The legacy nudge, unchanged, for a thrashing reading of a first frame that changed nothing. */
+const legacyNudge = "Supervisor: a reading of this run's last 1 frames, through frame 0, finds it repeating itself " +
+  "(thrashing 0.90). Evidence at frame 0: 1 consecutive frames changed nothing; 0 frames changed the workspace. " +
+  "Before the next call, state in one sentence which mechanism you now believe is wrong and which single call " +
+  "would show it; then make that call. Do not re-run a check over an unchanged tree, and do not edit a test to " +
+  "make it pass."
 
 describe("Supervisor", () => {
   it("never waits for the supervisor: a run completes its frames while the evaluator never answers", async () => {
@@ -233,7 +339,7 @@ describe("Supervisor", () => {
     expect(snapshot.frames[0]?.transition).toBe("continue")
     expect(snapshot.signals.frame).toBe(0)
     expect(snapshot.signals.readOnlyFrames).toBe(1)
-    expect(snapshot.recalled).toEqual([])
+    expect(Object.keys(first.state as object)).not.toContain("recalled")
     // The model fixture's prose is one candidate, so one per-item question follows the eleven.
     expect(snapshot.candidates).toEqual(["Here is the next step."])
     expect(Object.keys(first.questions)).toEqual([
@@ -264,11 +370,18 @@ describe("Supervisor", () => {
       confused: "mild",
       confident: "none",
       needsHelp: "stuck",
-      crossed: false,
+      // A strong frustration crosses the step_back mood; unjudged, nothing is handed on.
+      crossed: true,
       nudged: false,
-      inserted: [],
       remembered: []
     })
+    expect(settled[0]?.monitors).toEqual([
+      { id: "supervisor", kind: "lint", p: 0, crossed: false },
+      { id: "paranoid", kind: "mood", p: 0, crossed: false },
+      { id: "careful", kind: "mood", p: 0, crossed: false },
+      { id: "step_back", kind: "mood", p: 1, crossed: true },
+      { id: "clarify", kind: "mood", p: 0, crossed: false }
+    ])
     // The full record beside it, under the supervisor's own classifier id.
     const decisions = of(read.seen, "decision-settled").filter((event) => event.classifier === "supervisor/turn")
     expect(decisions.length).toBeGreaterThanOrEqual(1)
@@ -291,7 +404,8 @@ describe("Supervisor", () => {
       ],
       evaluator: layer,
       ...read,
-      supervisor: { steer: true, remember: true }
+      supervisor: { remember: true },
+      judged: true
     })
     expect(failure).toBeUndefined()
     expect(contacted.length).toBeGreaterThanOrEqual(2)
@@ -300,10 +414,10 @@ describe("Supervisor", () => {
     const texts = drained.flatMap((message) =>
       message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
     )
-    expect(texts).toHaveLength(1)
-    expect(texts[0]).toContain("Supervisor")
-    expect(texts[0]).toContain("thrashing 0.90")
-    expect(texts[0]).toContain("1 consecutive frames changed nothing")
+    expect(of(events, "discipline-armed")[0]).toMatchObject({ judged: true })
+    expect(of(events, "discipline-armed")[0]).not.toHaveProperty("supervisorSteer")
+    expect(texts).toEqual([legacyNudge])
+    expect(deliveredBy(events)).toEqual(["supervisor"])
     // Frame 0 is offered by its own boundary and read during frame 1, so the
     // boundary closing frame 1 delivers it and frame 2 is the first to read it.
     const requests = engine.recorder.sealStep.map((step) =>
@@ -328,9 +442,253 @@ describe("Supervisor", () => {
       evaluator: layer,
       ...read
     })
-    expect(of(events, "discipline-armed")[0]?.supervisorSteer).toBe(false)
+    const armed = of(events, "discipline-armed")[0]
+    expect(armed?.supervisorSteer).toBeUndefined()
+    // An unjudged journal carries no `judged` key, so its bytes are unchanged.
+    expect(armed !== undefined && "judged" in armed).toBe(false)
     expect(of(events, "steering-drained").flatMap((event) => event.messages)).toEqual([])
-    expect(of(read.seen, "supervisor-settled")[0]).toMatchObject({ crossed: true, nudged: false })
+    expect(of(events, "steering-drained").every((event) => event.supervisor === undefined)).toBe(true)
+    expect(deliveredBy(events)).toEqual([])
+    expect(withheldBy(events).flat()).toEqual([])
+    const settled = of(read.seen, "supervisor-settled")[0]
+    expect(settled).toMatchObject({ crossed: true, nudged: false })
+    expect(settled?.monitors).toContainEqual({ id: "supervisor", kind: "lint", p: 1, crossed: true })
+  })
+
+  describe("monitors", () => {
+    it("delivers a mood once its streak holds, and withholds the next crossing for its cooldown", async () => {
+      const read = untilRead()
+      const { layer } = scripted(paranoid)
+      const { engine, events, failure } = await run({
+        state: state(6),
+        script: framesOf(6),
+        evaluator: layer,
+        ...read,
+        judged: true,
+        monitors: Monitor.moods()
+      })
+      expect(failure).toBeUndefined()
+      expect(of(events, "discipline-armed")[0]?.monitors?.map((monitor) => monitor.id)).toEqual([
+        "paranoid",
+        "careful",
+        "step_back",
+        "clarify"
+      ])
+      // Frame 0's reading is taken at frame 1's boundary and starts the
+      // streak; frame 1's, taken at frame 2's, completes it, so frame 3 is the
+      // first request to read it, and every later one reads it once.
+      expect(carrying(engine, Monitor.paranoidText)).toEqual([0, 0, 0, 1, 1, 1])
+      expect(deliveredBy(events)).toEqual(["paranoid"])
+      expect(withheldBy(events)).toEqual([
+        [],
+        [{ id: "paranoid", reason: "streak" }],
+        [],
+        [{ id: "paranoid", reason: "cooldown" }],
+        [{ id: "paranoid", reason: "cooldown" }],
+        []
+      ])
+      const settled = of(read.seen, "supervisor-settled")
+      expect(settled.every((event) => event.crossed && event.nudged)).toBe(true)
+      expect(settled[0]?.monitors).toContainEqual({ id: "paranoid", kind: "mood", p: 1, crossed: true })
+    })
+
+    it("gives the one slot to the lint and withholds a mood crossing beside it", async () => {
+      const read = untilRead()
+      const { layer } = scripted(() => calm({ thrashing: { probability: 0.9 }, suspect: { probability: 0.9 } }))
+      const { events, failure } = await run({
+        state: state(4),
+        script: framesOf(4),
+        evaluator: layer,
+        ...read,
+        judged: true
+      })
+      expect(failure).toBeUndefined()
+      expect(deliveredBy(events)).toEqual(["supervisor", "supervisor"])
+      expect(withheldBy(events)).toEqual([
+        [],
+        [{ id: "paranoid", reason: "streak" }],
+        [{ id: "paranoid", reason: "slot" }],
+        []
+      ])
+    })
+
+    it("asks a questioned monitor in the one reading and delivers what it says", async () => {
+      const read = untilRead()
+      const noTestEdits = Monitor.make({
+        _tag: "Questioned",
+        id: "no_test_edits",
+        kind: "lint",
+        question: Classifier.boolean({
+          instructions: "Did the newest frames edit a test?",
+          criteria: { true: "a test file was edited", false: "no test file was edited" }
+        }),
+        say: () => "Leave the tests alone."
+      })
+      const { contacted, layer } = scripted((_, ordinal) =>
+        ordinal === 0 ? calm({ monitor_no_test_edits: { probability: 0.9 } }) : calm()
+      )
+      const { engine, events, failure } = await run({
+        state: state(4),
+        script: framesOf(4),
+        evaluator: layer,
+        ...read,
+        judged: true,
+        monitors: [noTestEdits]
+      })
+      expect(failure).toBeUndefined()
+      expect(Object.keys(contacted[0]!.questions)).toContain("monitor_no_test_edits")
+      expect(carrying(engine, "Leave the tests alone.")).toEqual([0, 0, 1, 1])
+      expect(deliveredBy(events)).toEqual(["no_test_edits"])
+      const settled = of(read.seen, "supervisor-settled")
+      expect(settled[0]?.monitors).toEqual([{ id: "no_test_edits", kind: "lint", p: 0.9, crossed: true }])
+      expect(settled[1]?.monitors).toEqual([{ id: "no_test_edits", kind: "lint", p: 0.05, crossed: false }])
+    })
+
+    const skill = (name: string) =>
+      new Descriptor.FlowDescriptor({
+        ...descriptor(name),
+        body: new Descriptor.BodyRefMarkdown({ path: `/skills/${name}/SKILL.md`, baseDirectory: `/skills/${name}` })
+      })
+    const checklist = skill("review-checklist")
+    const skillQuestion = "monitor_skill_review_checklist"
+    const reminder = "Read skill `review-checklist` first"
+    /** Answers `id` at `p` whenever the request asks it. */
+    const answering = (id: string, p: number) => (request: Evaluator.Request) =>
+      calm(Object.hasOwn(request.questions, id) ? { [id]: { probability: p } } : {})
+    const snapshotOf = (request: Evaluator.Request) => Schema.decodeUnknownSync(Supervisor.Snapshot)(request.state)
+
+    it("reminds a never-called skill once and never again", async () => {
+      const read = untilRead()
+      const { contacted, layer } = scripted(answering(skillQuestion, 0.9))
+      const { engine, events, failure } = await run({
+        state: state(9),
+        script: framesOf(9),
+        flows: [descriptor("read"), checklist],
+        evaluator: layer,
+        ...read,
+        judged: true
+      })
+      expect(failure).toBeUndefined()
+      expect(contacted.every((request) => Object.hasOwn(request.questions, skillQuestion))).toBe(true)
+      expect(snapshotOf(contacted[0]!).skills.map((offered) => offered.path)).toEqual([
+        "/skills/review-checklist/SKILL.md"
+      ])
+      expect(carrying(engine, reminder)).toEqual([0, 0, 1, 1, 1, 1, 1, 1, 1])
+      expect(deliveredBy(events)).toEqual(["skill_review_checklist"])
+      expect(withheldBy(events).flat()).toContainEqual({ id: "skill_review_checklist", reason: "limit" })
+    })
+
+    it("stops asking about a skill once the cell has called it", async () => {
+      const read = untilRead()
+      const { contacted, layer } = scripted(answering(skillQuestion, 0.9))
+      const { events, failure } = await run({
+        state: state(3),
+        script: [
+          emits(`await ctx.call("review-checklist", { args: "" })`),
+          emits(`console.log("two")`),
+          emits(`ctx.done("done")`)
+        ],
+        calls: [{ _tag: "Success", value: "Check the diff." }],
+        flows: [descriptor("read"), checklist],
+        evaluator: layer,
+        ...read,
+        judged: true
+      })
+      expect(failure).toBeUndefined()
+      expect(contacted.length).toBeGreaterThanOrEqual(1)
+      expect(contacted.some((request) => Object.hasOwn(request.questions, skillQuestion))).toBe(false)
+      expect(snapshotOf(contacted[0]!)).toMatchObject({ skills: [], called: ["review-checklist"] })
+      expect(deliveredBy(events)).toEqual([])
+    })
+
+    it("asks about no skill when the catalog has no read flow", async () => {
+      const read = untilRead()
+      const { contacted, layer } = scripted(answering(skillQuestion, 0.9))
+      const { events, failure } = await run({
+        state: state(3),
+        script: threeFrames,
+        flows: [checklist],
+        evaluator: layer,
+        ...read,
+        judged: true
+      })
+      expect(failure).toBeUndefined()
+      expect(contacted.length).toBeGreaterThanOrEqual(1)
+      expect(contacted.flatMap((request) => Object.keys(request.questions)).filter((id) => id.includes("skill")))
+        .toEqual([])
+      expect(snapshotOf(contacted[0]!)).toMatchObject({ skills: [], jevAvailable: false })
+      expect(deliveredBy(events)).toEqual([])
+    })
+
+    it("offers the first skills by name and journals the cap", async () => {
+      const read = untilRead()
+      const { contacted, layer } = scripted(() => calm())
+      const names = Array.from({ length: 13 }, (_, index) => `skill-${String(index).padStart(2, "0")}`)
+      const { failure } = await run({
+        state: state(3),
+        script: framesOf(3),
+        flows: [descriptor("read"), ...[...names.slice(7), ...names.slice(0, 7)].reverse().map(skill)],
+        evaluator: layer,
+        ...read,
+        judged: true
+      })
+      expect(failure).toBeUndefined()
+      const asked = Object.keys(contacted[0]!.questions).filter((id) => id.startsWith("monitor_skill_"))
+      expect(asked).toHaveLength(Supervisor.skillLimit)
+      expect(snapshotOf(contacted[0]!).skills.map((offered) => offered.name)).toEqual(names.slice(0, 12))
+      const settled = of(read.seen, "supervisor-settled")
+      expect(settled[0]?.skillsCapped).toBe(true)
+      expect(settled[0]?.monitors?.filter((row) => row.kind === "skill")).toHaveLength(12)
+    })
+
+    it.each([[0.9, ["use_jev"]], [0.3, []]] as const)(
+      "asks use_jev only with jev in the catalog; at %s it delivers %j",
+      async (p, delivered) => {
+        const read = untilRead()
+        const { contacted, layer } = scripted(answering("monitor_use_jev", p))
+        const { engine, events, failure } = await run({
+          state: state(5),
+          script: framesOf(5),
+          flows: [descriptor("jev")],
+          evaluator: layer,
+          ...read,
+          judged: true
+        })
+        expect(failure).toBeUndefined()
+        expect(contacted.every((request) => Object.hasOwn(request.questions, "monitor_use_jev"))).toBe(true)
+        expect(deliveredBy(events)).toEqual(delivered)
+        expect(carrying(engine, Monitor.useJevText).some((count) => count > 0)).toBe(delivered.length > 0)
+      }
+    )
+
+    it("never asks use_jev without jev in the catalog", async () => {
+      const read = untilRead()
+      const { contacted, layer } = scripted(answering("monitor_use_jev", 0.9))
+      const { events } = await run({ state: state(3), script: threeFrames, evaluator: layer, ...read, judged: true })
+      expect(contacted.length).toBeGreaterThanOrEqual(1)
+      expect(contacted.some((request) => Object.hasOwn(request.questions, "monitor_use_jev"))).toBe(false)
+      expect(deliveredBy(events)).toEqual([])
+    })
+
+    it("gates nothing and leaves the ledger alone when no reading could be taken", async () => {
+      const read = untilRead()
+      const records = new Map<string, unknown>()
+      const { events } = await run({
+        state: state(3),
+        script: threeFrames,
+        evaluator: Evaluator.layerUnavailable(),
+        ...read,
+        judged: true,
+        records
+      })
+      expect(of(read.seen, "supervisor-unjudged").length).toBeGreaterThanOrEqual(1)
+      expect(of(events, "steering-drained").length).toBeGreaterThanOrEqual(2)
+      expect(deliveredBy(events)).toEqual([])
+      expect(withheldBy(events).flat()).toEqual([])
+      const drains = [...records.entries()].filter(([key]) => key.startsWith("steering-drain"))
+      expect(drains.length).toBeGreaterThanOrEqual(2)
+      for (const [, record] of drains) expect(record).not.toHaveProperty("monitorLedger")
+    })
   })
 
   it("journals a typed unjudged reading and inserts nothing when the evaluator fails", async () => {
@@ -343,7 +701,8 @@ describe("Supervisor", () => {
       script: threeFrames,
       evaluator: layer,
       ...read,
-      supervisor: { steer: true, remember: true }
+      supervisor: { remember: true },
+      judged: true
     })
     expect(failure).toBeUndefined()
     expect(contacted.length).toBeGreaterThanOrEqual(1)
@@ -368,30 +727,13 @@ describe("Supervisor", () => {
     expect(of(read.seen, "supervisor-unjudged")[0]?.reason).toBe("unreachable")
   })
 
-  it("writes only the candidates Jev accepted and inserts only the recalled rows it accepted", async () => {
-    const remembered: Array<string> = []
-    const memory: Supervisor.Memory = {
-      bound: true,
-      recall: () =>
-        Effect.succeed([
-          { key: "tests", text: "Tests run with `python -m pytest -q`." },
-          { key: "layout", text: "Sources live under src/." }
-        ]),
-      remember: (text) => Effect.sync(() => void remembered.push(text))
-    }
+  it("writes only the candidates Jev accepted and shows each recalled row relevance keeps once", async () => {
+    const { memory, remembered } = recalling([tests, layout])
     const read = untilRead()
-    const { contacted, layer } = scripted((_, ordinal) =>
-      // The first frame's reading accepts one candidate and one row; the
-      // frames after it decline everything, as a reading of a run that has
-      // already been shown the row would.
-      ordinal === 0
-        ? calm({
-          remember_0: { probability: 0.9 },
-          remember_1: { probability: 0.2 },
-          insert_0: { probability: 0.9 },
-          insert_1: { probability: 0.1 }
-        })
-        : calm()
+    const { contacted, layer, relevance } = scripted(
+      (_, ordinal) =>
+        ordinal === 0 ? calm({ remember_0: { probability: 0.9 }, remember_1: { probability: 0.2 } }) : calm(),
+      (item) => item.id === "tests" ? 0.95 : 0.3
     )
     const prose: ScriptedModel.Step = {
       events: [
@@ -406,12 +748,16 @@ describe("Supervisor", () => {
         { type: "settle", stopReason: "stop" }
       ].map((event) => event as never)
     }
-    const { events, failure } = await run({
-      state: state(3),
-      script: [prose, emits(`console.log("two")`), emits(`ctx.done("done")`)],
+    const { engine, events, failure } = await run({
+      // A frame to spare, so the completing boundary waits for frame 2's reading.
+      state: state(5),
+      script: [prose, emits(`console.log("two")`), emits(`console.log("three")`), emits(`ctx.done("done")`)],
       evaluator: layer,
       ...read,
-      supervisor: { steer: true, remember: true },
+      supervisor: { remember: true },
+      judged: true,
+      // Nothing for the run-start relevance reading, so every relevance row is the supervisor's.
+      pinned: ["fs/list"],
       memory
     })
     expect(failure).toBeUndefined()
@@ -421,15 +767,140 @@ describe("Supervisor", () => {
       "The suite is invoked through tox, never pytest directly.",
       "Next I will edit add()."
     ])
-    expect(snapshot.recalled.map((row) => row.key)).toEqual(["tests", "layout"])
-    expect(Object.keys(first.questions).filter((key) => key.startsWith("remember_") || key.startsWith("insert_")))
-      .toEqual(["remember_0", "remember_1", "insert_0", "insert_1"])
+    expect(Object.keys(first.questions).filter((key) => key.includes("_") && /_\d+$/.test(key))).toEqual([
+      "remember_0",
+      "remember_1"
+    ])
     expect(remembered).toEqual(["The suite is invoked through tox, never pytest directly."])
-    const texts = of(events, "steering-drained").flatMap((event) => event.supervisor ?? []).flatMap((message) =>
-      message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
+    // Rows are asked about by relevance, never by the supervisor, and a row
+    // once shown is never asked about again.
+    expect(Object.keys(relevance[0]!.questions)).toEqual(["unnecessary_0", "unnecessary_1"])
+    expect(relevance.map((request) => itemsOf(request).map((item) => item.id))).toEqual([
+      ["tests", "layout"],
+      ["tests", "layout"],
+      ["tests"]
+    ])
+    expect(itemsOf(relevance[0]!)[0]).toMatchObject({ kind: "memory", text: tests.text })
+    expect((relevance[0]!.state as { readonly context: Relevance.Context }).context).toEqual({
+      task: snapshot.task,
+      recent: "The suite is invoked through tox, never pytest directly.\n\nNext I will edit add()."
+    })
+    // Withheld at 0.95, kept at 0.3; delivered at the boundary after frame 0's
+    // reading, and not again after frame 1's reading recalled it once more.
+    expect(shownBy(events)).toEqual([["layout"]])
+    expect(of(events, "steering-drained").flatMap((event) => textsOf(event.supervisor ?? []))).toEqual([
+      Supervisor.recalledInsert(layout)
+    ])
+    const last = engine.recorder.sealStep.at(-1)!.request.messages
+    expect(textsOf(last).filter((text) => text.includes(layout.text))).toHaveLength(1)
+    const settled = of(read.seen, "supervisor-settled")
+    expect(settled[0]).toMatchObject({ remembered: [0], nudged: false })
+    expect(settled[0]).not.toHaveProperty("inserted")
+    expect(of(read.seen, "relevance-settled")[0]).toMatchObject({
+      source: "supervisor",
+      frame: 0,
+      kept: [{ kind: "memory", id: "layout", p: 0.3 }],
+      withheld: [{ kind: "memory", id: "tests", p: 0.95 }]
+    })
+    // The supervisor's decision, the memory decision and settlement, then the verdict.
+    expect(
+      readingOf(read.seen, 0)
+    ).toEqual([
+      "supervisor/turn",
+      "relevance/unnecessary",
+      "relevance-settled",
+      "compaction/marks",
+      "supervisor-settled"
+    ])
+  })
+
+  it("recalls past the rows already shown, so later readings surface new ones", async () => {
+    const rows = Array.from(
+      { length: Supervisor.recalledLimit + 2 },
+      (_, n) => ({ key: `row-${n}`, text: `fact ${n}` })
     )
-    expect(texts).toEqual([Supervisor.recalledInsert({ key: "tests", text: "Tests run with `python -m pytest -q`." })])
-    expect(of(read.seen, "supervisor-settled")[0]).toMatchObject({ inserted: [0], remembered: [0], nudged: false })
+    const { memory } = recalling(rows)
+    const read = untilRead()
+    const { layer } = scripted(() => calm(), () => 0.3)
+    const { events, failure } = await run({
+      state: state(7),
+      script: framesOf(6),
+      evaluator: layer,
+      ...read,
+      judged: true,
+      pinned: ["fs/list"],
+      memory
+    })
+    expect(failure).toBeUndefined()
+    expect(shownBy(events)).toEqual([
+      rows.slice(0, Supervisor.recalledLimit).map((row) => row.key),
+      rows.slice(Supervisor.recalledLimit).map((row) => row.key)
+    ])
+  })
+
+  it("journals the memory reading and delivers nothing when the host holds no real judge", async () => {
+    const { memory } = recalling([layout])
+    const read = untilRead()
+    const { layer, relevance } = scripted(() => calm())
+    const { events, failure } = await run({ state: state(3), script: threeFrames, evaluator: layer, ...read, memory })
+    expect(failure).toBeUndefined()
+    expect(relevance.length).toBeGreaterThanOrEqual(1)
+    expect(of(read.seen, "relevance-settled")[0]).toMatchObject({ source: "supervisor", kept: [{ id: "layout" }] })
+    expect(
+      of(events, "steering-drained").every((event) => event.supervisor === undefined && event.memory === undefined)
+    )
+      .toBe(true)
+  })
+
+  it("shows every recalled row when relevance cannot answer, and still settles the reading", async () => {
+    const { memory } = recalling([tests, layout])
+    const read = untilRead()
+    const { contacted, layer } = scripted(
+      () => calm(),
+      new Evaluator.EvaluatorError({ code: "unreachable", message: "down" })
+    )
+    const { events, failure } = await run({
+      state: state(3),
+      script: threeFrames,
+      evaluator: layer,
+      ...read,
+      judged: true,
+      pinned: ["fs/list"],
+      memory
+    })
+    expect(failure).toBeUndefined()
+    expect(contacted.length).toBeGreaterThanOrEqual(1)
+    expect(of(read.seen, "decision-unjudged")[0]).toMatchObject({
+      scope: "session-1",
+      frame: 0,
+      classifier: "relevance/unnecessary",
+      reason: "unreachable",
+      items: 2
+    })
+    expect(of(read.seen, "relevance-settled")).toEqual([])
+    expect(of(read.seen, "supervisor-settled")[0]).toMatchObject({ frame: 0 })
+    expect(shownBy(events)).toEqual([["tests", "layout"]])
+  })
+
+  it("shows the recalled rows relevance keeps when the supervisor cannot answer", async () => {
+    const { memory } = recalling([layout])
+    const read = untilRead()
+    const { layer } = scripted(() => Effect.fail(new Evaluator.EvaluatorError({ code: "refused", message: "no" })))
+    const { events, failure } = await run({
+      state: state(3),
+      script: threeFrames,
+      evaluator: layer,
+      ...read,
+      judged: true,
+      pinned: ["fs/list"],
+      memory
+    })
+    expect(failure).toBeUndefined()
+    expect(of(read.seen, "supervisor-unjudged")[0]).toMatchObject({ frame: 0, reason: "refused" })
+    expect(
+      readingOf(read.seen, 0)
+    ).toEqual(["relevance/unnecessary", "relevance-settled", "compaction/marks", "supervisor-unjudged"])
+    expect(shownBy(events)).toEqual([["layout"]])
   })
 
   describe("replay", () => {
@@ -455,7 +926,9 @@ describe("Supervisor", () => {
     const attempt = async (
       records: Map<string, unknown>,
       evaluator: Layer.Layer<Evaluator.Evaluator>,
-      read: ReturnType<typeof untilRead>
+      read: ReturnType<typeof untilRead>,
+      memory: Supervisor.Memory = Supervisor.memoryNone,
+      from: CellTurn.State = state(3)
     ) => {
       const model = ScriptedModel.make([
         emits(`console.log("a")`),
@@ -465,9 +938,10 @@ describe("Supervisor", () => {
       const events: Array<AgentEvent.AgentEvent> = []
       const engine = ScriptedEngine.make(model.model)
       await CellTurn.run({
-        state: state(3),
+        state: from,
         flows: [descriptor("fs/list")],
-        supervisor: { steer: true, remember: true }
+        supervisor: { remember: true },
+        judged: true
       })
         .pipe(
           Stream.runForEach((event) => Effect.sync(() => events.push(event))),
@@ -475,6 +949,7 @@ describe("Supervisor", () => {
           Effect.provide(QuickJSSandbox.layer),
           Effect.provide(read.steering),
           Effect.provideService(AgentEvent.Observer, read.observer),
+          Effect.provideService(Supervisor.Memory, memory),
           Effect.provide(evaluator),
           Effect.runPromise
         )
@@ -511,12 +986,91 @@ describe("Supervisor", () => {
       expect(replay.engine.recorder.sealStep.map((step) => step.request.messages.length))
         .toEqual(original.engine.recorder.sealStep.map((step) => step.request.messages.length))
     })
+
+    it("replays the rows it showed without asking again, and a resumed state never re-asks one", async () => {
+      const records = new Map<string, unknown>()
+      const { memory } = recalling([layout])
+      const first = scripted(() => calm(), () => 0.3)
+      const original = await attempt(records, first.layer, untilRead(), memory)
+      expect(first.relevance.length).toBeGreaterThanOrEqual(1)
+      expect(shownBy(original.events)).toEqual([["layout"]])
+
+      const again = scripted(() => calm(), () => 0.3)
+      const replay = await attempt(records, again.layer, untilRead(), memory)
+      expect(again.relevance).toEqual([])
+      expect(shownBy(replay.events)).toEqual(shownBy(original.events))
+
+      // The state a checkpoint after that delivery holds, through its codec.
+      const resumed = Schema.decodeUnknownSync(CellTurn.State)(
+        Schema.encodeUnknownSync(CellTurn.State)(
+          new CellTurn.State({ ...state(3), memoryShown: shownBy(original.events).flat() })
+        )
+      )
+      expect(resumed.memoryShown).toEqual(["layout"])
+      const fresh = scripted(() => calm(), () => 0.3)
+      const live = await attempt(new Map(), fresh.layer, untilRead(), memory, resumed)
+      expect(fresh.contacted.length).toBeGreaterThanOrEqual(1)
+      expect(fresh.relevance).toEqual([])
+      expect(shownBy(live.events)).toEqual([])
+    })
+
+    it("replays a monitor's delivery without asking again, and a resumed state keeps its cooldown", async () => {
+      const records = new Map<string, unknown>()
+      const armed = { judged: true, monitors: Monitor.moods(), script: framesOf(4) } as const
+      const first = scripted(paranoid)
+      const original = await run({ ...armed, state: state(4), evaluator: first.layer, ...untilRead(), records })
+      expect(original.failure).toBeUndefined()
+      expect(deliveredBy(original.events)).toEqual(["paranoid"])
+
+      // Every boundary replays: nothing is asked and the delivery is the recorded one.
+      const again = scripted(() => Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "asked" })))
+      const replay = await run({ ...armed, state: state(4), evaluator: again.layer, ...untilRead(), records })
+      expect(again.contacted).toEqual([])
+      expect(deliveredBy(replay.events)).toEqual(["paranoid"])
+      expect(carrying(replay.engine, Monitor.paranoidText)).toEqual(carrying(original.engine, Monitor.paranoidText))
+      expect(carrying(replay.engine, Monitor.paranoidText)).toEqual([0, 0, 0, 1])
+
+      // The state a checkpoint after the delivering boundary holds, through its codec.
+      const key = [...records.keys()].find((held) => held.startsWith("steering-drain\u0000session-1\u00002\u0000"))!
+      const drained = Schema.decodeUnknownSync(Steering.DrainRecord)(records.get(key))
+      expect(drained.monitor).toBe("paranoid")
+      const resumed = Schema.decodeUnknownSync(CellTurn.State)(
+        Schema.encodeUnknownSync(CellTurn.State)(
+          new CellTurn.State({ ...state(6), frame: 3, monitorLedger: drained.monitorLedger! })
+        )
+      )
+      expect(resumed.monitorLedger["paranoid"]).toEqual({ streak: 2, delivered: 1, lastFrame: 2 })
+      const fresh = scripted(paranoid)
+      const live = await run({ ...armed, script: framesOf(3), state: resumed, evaluator: fresh.layer, ...untilRead(3) })
+      expect(live.failure).toBeUndefined()
+      expect(fresh.contacted.length).toBeGreaterThanOrEqual(1)
+      expect(deliveredBy(live.events)).toEqual([])
+      expect(withheldBy(live.events)).toContainEqual([{ id: "paranoid", reason: "cooldown" }])
+    })
+
+    it("decodes a state written before the monitor ledger existed as having delivered nothing", () => {
+      const { monitorLedger: _, ...encoded } = Schema.encodeUnknownSync(CellTurn.State)(state(3)) as Record<
+        string,
+        unknown
+      >
+      expect(Schema.decodeUnknownSync(CellTurn.State)(encoded).monitorLedger).toEqual({})
+    })
+
+    it("decodes a state written before the shown set existed as having shown nothing", () => {
+      const { memoryShown: _, ...encoded } = Schema.encodeUnknownSync(CellTurn.State)(state(3)) as Record<
+        string,
+        unknown
+      >
+      expect(Schema.decodeUnknownSync(CellTurn.State)(encoded).memoryShown).toEqual([])
+    })
   })
 
   describe("handle", () => {
     const open = (
       evaluator: Layer.Layer<Evaluator.Evaluator>,
-      options: Supervisor.Options = { steer: true, remember: true }
+      options: Supervisor.Options = { remember: true },
+      memory: Supervisor.Memory = Supervisor.memoryNone,
+      monitors: ReadonlyArray<Monitor.Monitor> = Monitor.defaults()
     ) =>
       Effect.gen(function*() {
         const model = ScriptedModel.make([])
@@ -526,12 +1080,18 @@ describe("Supervisor", () => {
           session: "session-1",
           engine: engine.engine,
           emit: (event) => Effect.sync(() => void events.push(event)),
-          options
+          options,
+          monitors,
+          deliver: true
         })
         return { handle, events }
-      }).pipe(Effect.provide(evaluator))
+      }).pipe(Effect.provide(evaluator), Effect.provideService(Supervisor.Memory, memory))
 
-    const offer = (frame: number): Supervision.Offer => ({
+    const offer = (
+      frame: number,
+      shown: ReadonlyArray<string> = [],
+      unmarked: Supervision.Offer["unmarked"] = []
+    ): Supervision.Offer => ({
       frame,
       digest: `cell-${frame}`,
       current: { frame, cell: "console.log(1)", prose: "", printed: "1", transition: "continue", mutated: false },
@@ -557,9 +1117,20 @@ describe("Supervisor", () => {
           claimDemands: 0,
           sufficiencyStated: false
         },
-        candidates: []
-      }
+        candidates: [],
+        skills: [],
+        called: [],
+        jevAvailable: false
+      },
+      shown,
+      recent: "",
+      skillsCapped: false,
+      unmarked,
+      failing: []
     })
+
+    const delivering = { ledger: {}, shown: [], deliver: true } as const
+    const empty = { messages: [], memory: [], suppressed: [], marks: [] }
 
     it("keeps only the newest snapshot while a reading is in flight", async () => {
       const release = Effect.runSync(Deferred.make<void>())
@@ -592,17 +1163,62 @@ describe("Supervisor", () => {
         const { handle } = yield* open(layer)
         yield* handle.offer(offer(3))
         yield* Effect.sleep("20 millis")
-        expect(yield* handle.take(3)).toHaveLength(1)
+        expect((yield* handle.take(3, delivering)).messages).toHaveLength(1)
         // Taken once: the same boundary asked again gets nothing.
-        expect(yield* handle.take(3)).toEqual([])
+        expect(yield* handle.take(3, delivering)).toEqual(empty)
         yield* handle.offer(offer(4))
         yield* Effect.sleep("20 millis")
-        expect(yield* handle.take(5)).toHaveLength(1)
+        expect((yield* handle.take(5, delivering)).messages).toHaveLength(1)
         yield* handle.offer(offer(5))
         yield* Effect.sleep("20 millis")
         // A boundary two frames on is stale, and the stale verdict is dropped, not held.
-        expect(yield* handle.take(7)).toEqual([])
-        expect(yield* handle.take(6)).toEqual([])
+        expect((yield* handle.take(7, delivering)).messages).toEqual([])
+        expect((yield* handle.take(6, delivering)).messages).toEqual([])
+      })))
+    })
+
+    it("marks each segment once, keeps marks a later reading posts, and hands them to a stale boundary", async () => {
+      const { layer, marks } = scripted(() => calm())
+      const segment = (digest: string) => ({
+        digest,
+        item: { tokens: 10, cell: `cell ${digest}`, prose: "", observed: "" }
+      })
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const { events, handle } = yield* open(layer)
+        yield* handle.offer(offer(0, [], [segment("a")]))
+        yield* Effect.sleep("20 millis")
+        yield* handle.offer(offer(1, [], [segment("a"), segment("b")]))
+        yield* Effect.sleep("20 millis")
+        // Frame 1's reading replaced frame 0's, which no boundary took, and
+        // kept its marks; `a` was not asked about twice.
+        expect(marks.map((request) => (request.state as { readonly items: ReadonlyArray<{ cell: string }> }).items))
+          .toEqual([[expect.objectContaining({ cell: "cell a" })], [expect.objectContaining({ cell: "cell b" })]])
+        const stale = yield* handle.take(4, delivering)
+        expect(stale).toEqual({
+          ...empty,
+          marks: [{ digest: "a", remove: 0.1, keep: 0.1 }, { digest: "b", remove: 0.1, keep: 0.1 }]
+        })
+        expect(events.filter((event) => event._tag === "decision-settled" && event.classifier === "compaction/marks"))
+          .toHaveLength(2)
+      })))
+    })
+
+    it("journals decision-unjudged for marks Jev could not answer, and hands the boundary none", async () => {
+      const failing = Evaluator.layerScripted((request) =>
+        isMarks(request)
+          ? Effect.fail(new Evaluator.EvaluatorError({ code: "timeout", message: "late" }))
+          : isSupervisor(request)
+          ? calm()
+          : confident
+      )
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const { events, handle } = yield* open(failing)
+        yield* handle.offer(offer(0, [], [{ digest: "a", item: { tokens: 1, cell: "", prose: "", observed: "" } }]))
+        yield* Effect.sleep("20 millis")
+        expect((yield* handle.take(0, delivering)).marks).toEqual([])
+        expect(events.filter((event) => event._tag === "decision-unjudged")).toEqual([
+          expect.objectContaining({ classifier: "compaction/marks", reason: "timeout", items: 1 })
+        ])
       })))
     })
 
@@ -631,6 +1247,11 @@ describe("Supervisor", () => {
         yield* Effect.sleep("20 millis")
         const settled = events.find((event) => event._tag === "supervisor-settled")
         expect(settled).toMatchObject({ frame: 0, usage: { inputTokens: 321, outputTokens: 12 } })
+        // The decision row stays as it was journaled before `Judgement`: usage
+        // is priced from `supervisor-settled`, so it is never on both.
+        const decision = events.find((event) => event._tag === "decision-settled")
+        expect(decision).toBeDefined()
+        expect(decision).not.toHaveProperty("usage")
       })))
     })
 
@@ -655,7 +1276,9 @@ describe("Supervisor", () => {
                   : boundary.execute
             },
             emit: (event) => Effect.sync(() => void events.push(event)),
-            options: { steer: true, remember: true }
+            options: { remember: true },
+            monitors: Monitor.defaults(),
+            deliver: true
           })
           yield* handle.offer(offer(0))
           yield* Effect.sleep("20 millis")
@@ -667,19 +1290,62 @@ describe("Supervisor", () => {
             ["decision-settled", 1],
             ["supervisor-settled", 1]
           ])
-          expect(yield* handle.take(2)).toEqual([])
+          expect(yield* handle.take(2, delivering)).toMatchObject(empty)
         }).pipe(Effect.provide(layer))
       ))
       expect(contacted).toHaveLength(1)
     })
 
-    it("recalls only when a memory is bound and asks nothing per row when nothing was recalled", async () => {
-      const { contacted, layer } = scripted(() => calm())
+    it("recalls only when a memory is bound and asks relevance nothing when nothing was recalled", async () => {
+      const { contacted, layer, relevance } = scripted(() => calm())
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { handle } = yield* open(layer)
+        const { events, handle } = yield* open(layer)
         yield* handle.offer(offer(0))
         yield* Effect.sleep("20 millis")
-        expect(Object.keys(contacted[0]!.questions).some((key) => key.startsWith("insert_"))).toBe(false)
+        expect(contacted).toHaveLength(1)
+        expect(relevance).toEqual([])
+        expect(events.map((event) => event._tag)).toEqual(["decision-settled", "supervisor-settled"])
+      })))
+    })
+
+    it("never asks about a row shown by the offer, and drops at the boundary a row shown since", async () => {
+      const { layer, relevance } = scripted(() => calm(), () => 0.2)
+      const { memory } = recalling([tests, layout])
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const { handle } = yield* open(layer, { remember: false }, memory)
+        yield* handle.offer(offer(0, ["tests"]))
+        yield* Effect.sleep("20 millis")
+        expect(relevance.map((request) => itemsOf(request).map((item) => item.id))).toEqual([["layout"]])
+        expect(yield* handle.take(1, { ledger: {}, shown: ["tests", "layout"], deliver: true })).toMatchObject({
+          messages: [],
+          memory: []
+        })
+        yield* handle.offer(offer(1))
+        yield* Effect.sleep("20 millis")
+        // Undelivered while no real judge is held, and taken all the same.
+        expect(yield* handle.take(2, { ledger: {}, shown: [], deliver: false })).toEqual(empty)
+        expect(yield* handle.take(2, delivering)).toEqual(empty)
+        yield* handle.offer(offer(2))
+        yield* Effect.sleep("20 millis")
+        const taken = yield* handle.take(3, { ledger: {}, shown: ["tests"], deliver: true })
+        expect(taken.memory).toEqual(["layout"])
+        expect(textsOf(taken.messages)).toEqual([Supervisor.recalledInsert(layout)])
+      })))
+    })
+
+    it("puts the nudge ahead of the memory it delivers", async () => {
+      const { layer } = scripted(() => calm({ thrashing: { probability: 0.9 } }), () => 0.2)
+      const { memory } = recalling([layout])
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const { handle } = yield* open(layer, { remember: false }, memory)
+        yield* handle.offer(offer(0))
+        yield* Effect.sleep("20 millis")
+        const taken = yield* handle.take(1, delivering)
+        expect(taken.memory).toEqual(["layout"])
+        const texts = textsOf(taken.messages)
+        expect(texts).toHaveLength(2)
+        expect(texts[0]).toContain("Supervisor")
+        expect(texts[1]).toBe(Supervisor.recalledInsert(layout))
       })))
     })
   })
@@ -709,29 +1375,39 @@ describe("Supervisor", () => {
         sufficiencyStated: false
       },
       candidates: [],
-      recalled: []
+      skills: [],
+      called: [],
+      jevAvailable: false
     }
 
     it("names the host that bound no evaluator, without asking anything", async () => {
       // The requirement is satisfied by the type and delivered by nothing: the
       // one case the compiler cannot rule out, so the reading says so itself.
-      const result = await Effect.runPromise(
-        Effect.result(Supervisor.read(snapshot)) as Effect.Effect<
-          Result.Result<Supervisor.Reading, Supervisor.Unjudged>
-        >
-      )
+      const result = await Effect.runPromise(Effect.result(Supervisor.read(snapshot, {})))
       expect(result).toEqual(Result.fail({ reason: "unconfigured", detail: "No evaluator is installed on this host" }))
     })
 
+    it("adds each monitor question after the fixed ones, and declares again when one asks otherwise", () => {
+      const question = (instructions: string) =>
+        Classifier.boolean({ instructions, criteria: { true: "yes", false: "no" } })
+      const one = question("One?")
+      const held = Supervisor.classifierFor(0, { monitor_x: one })
+      expect(Supervisor.classifierFor(0, { monitor_x: one })).toBe(held)
+      expect(Object.keys(held.questions).at(-1)).toBe("monitor_x")
+      const other = Supervisor.classifierFor(0, { monitor_x: question("Two?") })
+      expect(other).not.toBe(held)
+      expect(other.digest).not.toBe(held.digest)
+      expect(Supervisor.classifierFor(0, {})).toBe(Supervisor.classifier)
+    })
+
     it("declares one classifier per snapshot shape and reuses it", () => {
-      expect(Supervisor.classifierFor(0, 0)).toBe(Supervisor.classifier)
-      expect(Supervisor.classifierFor(2, 1)).toBe(Supervisor.classifierFor(2, 1))
-      expect(Supervisor.classifierFor(2, 1).digest).not.toBe(Supervisor.classifier.digest)
-      // Bounded: a snapshot past the limits asks the limit's questions.
-      expect(Object.keys(Supervisor.classifierFor(99, 99).questions).filter((key) => key.startsWith("remember_")))
+      expect(Supervisor.classifierFor(0, {})).toBe(Supervisor.classifier)
+      expect(Supervisor.classifierFor(2, {})).toBe(Supervisor.classifierFor(2, {}))
+      expect(Supervisor.classifierFor(2, {}).digest).not.toBe(Supervisor.classifier.digest)
+      // Bounded: a snapshot past the limit asks the limit's questions, under one declaration.
+      expect(Supervisor.classifierFor(99, {})).toBe(Supervisor.classifierFor(Supervisor.candidateLimit, {}))
+      expect(Object.keys(Supervisor.classifierFor(99, {}).questions).filter((key) => key.startsWith("remember_")))
         .toHaveLength(Supervisor.candidateLimit)
-      expect(Object.keys(Supervisor.classifierFor(99, 99).questions).filter((key) => key.startsWith("insert_")))
-        .toHaveLength(Supervisor.recalledLimit)
     })
   })
 
@@ -770,10 +1446,23 @@ describe("Supervisor", () => {
             claimDemands: 0,
             sufficiencyStated: false
           },
-          candidates: []
-        }
+          candidates: [],
+          skills: [],
+          called: [],
+          jevAvailable: false
+        },
+        shown: [],
+        recent: "",
+        skillsCapped: false,
+        unmarked: [],
+        failing: []
       }))
-      expect(await Effect.runPromise(Supervision.none.take(0))).toEqual([])
+      expect(await Effect.runPromise(Supervision.none.take(0, { ledger: {}, shown: [], deliver: true }))).toEqual({
+        messages: [],
+        memory: [],
+        suppressed: [],
+        marks: []
+      })
     })
   })
 
@@ -812,7 +1501,7 @@ describe("Supervisor", () => {
       emotions: { frustrated: "none", anxious: "none", scared: "none", confused: "none", confident: "strong" },
       needsHelp: "none",
       remember: [],
-      insert: [],
+      monitors: {},
       latencyMs: 1,
       asked: { digest: "d", questions: {}, state: null, answers: {} },
       ...overrides
@@ -841,26 +1530,24 @@ describe("Supervisor", () => {
         sufficiencyStated: false
       },
       candidates: ["a", "b"],
-      recalled: [{ key: "k", text: "t" }]
+      skills: [],
+      called: [],
+      jevAvailable: false
     }
 
-    it("crosses on any of the three thresholds and nudges only when armed", () => {
-      expect(Supervisor.judge(snapshot, reading(), { steer: true, remember: true }).crossed).toBe(false)
+    it("crosses on any of the three thresholds and names the counts behind it", () => {
+      expect(Supervisor.crosses(reading())).toBe(false)
       for (const crossed of [{ thrashing: 0.5 }, { onTarget: 0.5 }, { suspect: 0.5 }] as const) {
-        const armed = Supervisor.judge(snapshot, reading(crossed), { steer: true, remember: true })
-        expect(armed.crossed).toBe(true)
-        expect(armed.nudge).toContain("1 check last reported failing")
-        expect(armed.nudge).toContain("2 consecutive frames repeated earlier calls")
-        const disarmed = Supervisor.judge(snapshot, reading(crossed), { steer: false, remember: true })
-        expect(disarmed.crossed).toBe(true)
-        expect(disarmed.nudge).toBeUndefined()
+        expect(Supervisor.crosses(reading(crossed))).toBe(true)
+        const text = Supervisor.nudge(snapshot, reading(crossed))
+        expect(text).toContain("1 check last reported failing")
+        expect(text).toContain("2 consecutive frames repeated earlier calls")
       }
       for (const obsolete of [{ outdatedContext: 0.9 }, { irrelevantContext: 0.9 }] as const) {
-        const armed = Supervisor.judge(snapshot, reading(obsolete), { steer: true, remember: true })
-        expect(armed.crossed).toBe(true)
-        expect(armed.nudge).toContain("Consider compacting the obsolete material")
-        expect(armed.nudge).toContain("stable cache prefix")
-        expect(Supervisor.judge(snapshot, reading(obsolete), { steer: false, remember: true }).nudge).toBeUndefined()
+        expect(Supervisor.crosses(reading(obsolete))).toBe(true)
+        const text = Supervisor.nudge(snapshot, reading(obsolete))
+        expect(text).toContain("Consider compacting the obsolete material")
+        expect(text).toContain("stable cache prefix")
       }
     })
 
@@ -886,7 +1573,6 @@ describe("Supervisor", () => {
         const read = reading(overrides)
         expect(Supervisor.triggered(read)).toEqual(fired)
         expect(Supervisor.crosses(read)).toBe(fired.length > 0)
-        expect(Supervisor.judge(snapshot, read, { steer: false, remember: false }).crossed).toBe(fired.length > 0)
       }
       expect(Object.keys(Supervisor.triggers)).toEqual([
         "thrashing",
@@ -928,25 +1614,14 @@ describe("Supervisor", () => {
       expect(plural).toContain("1 frame changed the workspace")
     })
 
-    it("needs_help never nudges on its own", () => {
-      const verdict = Supervisor.judge(snapshot, reading({ needsHelp: "risky_action" }), {
-        steer: true,
-        remember: true
-      })
-      expect(verdict.crossed).toBe(false)
-      expect(verdict.nudge).toBeUndefined()
+    it("needs_help never crosses on its own", () => {
+      expect(Supervisor.crosses(reading({ needsHelp: "risky_action" }))).toBe(false)
     })
 
-    it("gates memory writes and inserts on the options and the per-item answers", () => {
-      const accepted = reading({ remember: [true, false], insert: [true] })
-      expect(Supervisor.judge(snapshot, accepted, { steer: true, remember: true })).toMatchObject({
-        remembers: ["a"],
-        inserts: [Supervisor.recalledInsert({ key: "k", text: "t" })]
-      })
-      expect(Supervisor.judge(snapshot, accepted, { steer: false, remember: false })).toMatchObject({
-        remembers: [],
-        inserts: []
-      })
+    it("gates memory writes on the options and the per-candidate answers", () => {
+      const accepted = reading({ remember: [true, false] })
+      expect(Supervisor.judge(snapshot, accepted, { remember: true }).remembers).toEqual(["a"])
+      expect(Supervisor.judge(snapshot, accepted, { remember: false }).remembers).toEqual([])
     })
   })
 })
@@ -960,6 +1635,9 @@ describe("Supervisor inserts on the transcript", () => {
     const supervisor: Array<Evaluator.Request> = []
     const completion: Array<Evaluator.Request> = []
     const layer = Evaluator.layerScripted((request) => {
+      if (isMarks(request)) {
+        return Object.fromEntries(Object.keys(request.questions).map((key) => [key, { probability: 0.1 }] as const))
+      }
       if (!isSupervisor(request)) {
         completion.push(request)
         return confident
@@ -967,7 +1645,7 @@ describe("Supervisor inserts on the transcript", () => {
       supervisor.push(request)
       const declined = Object.fromEntries(
         Object.keys(request.questions)
-          .filter((key) => key.startsWith("remember_") || key.startsWith("insert_"))
+          .filter((key) => key.startsWith("remember_"))
           .map((key) => [key, { probability: 0.1 }] as const)
       )
       return { ...declined, ...(supervisor.length === 1 ? calm({ thrashing: { probability: 0.9 } }) : calm()) }
@@ -989,7 +1667,11 @@ describe("Supervisor inserts on the transcript", () => {
       ],
       evaluator: evaluator.layer,
       ...read,
-      supervisor: { steer: true, remember: false }
+      supervisor: { remember: false },
+      judged: true,
+      // Nothing for the run-start relevance reading, so every other request
+      // is the completion brake's.
+      pinned: ["fs/list"]
     })
     expect(failure).toBeUndefined()
     // The model read the nudge.
@@ -1036,7 +1718,8 @@ describe("Supervisor inserts on the transcript", () => {
       script: [emits(`console.log("a")`), frame, emits(`console.log("c")`), emits(`ctx.done("done")`)],
       evaluator: evaluator.layer,
       ...read,
-      supervisor: { steer: true, remember: false }
+      supervisor: { remember: false },
+      judged: true
     })
     expect(failure).toBeUndefined()
     // Frame 1's boundary delivers frame 0's reading; frame 2 is the first to read it.
@@ -1104,7 +1787,7 @@ describe("Supervisor inserts on the transcript", () => {
     expect(of(events, "supervisor-settled")).toHaveLength(contacted.length)
   })
 
-  it.each([false, true])("stamps every reading with the steer it ran under (steer: %s)", async (steer) => {
+  it.each([false, true])("stamps every reading with the delivery it ran under (judged: %s)", async (judged) => {
     const read = untilRead()
     const { layer } = scripted(() => calm())
     const { failure } = await run({
@@ -1112,14 +1795,15 @@ describe("Supervisor inserts on the transcript", () => {
       script: threeFrames,
       evaluator: layer,
       ...read,
-      supervisor: { steer, remember: false }
+      supervisor: { remember: false },
+      judged
     })
     expect(failure).toBeUndefined()
     const settled = of(read.seen, "supervisor-settled")
     expect(settled.length).toBeGreaterThanOrEqual(1)
     // `discipline-armed` is written once, at frame 0; a resumed run armed
     // differently is only on the record through the readings it takes.
-    expect(settled.map((event) => event.steer)).toEqual(settled.map(() => steer))
+    expect(settled.map((event) => event.steer)).toEqual(settled.map(() => judged))
   })
 
   it("journals a typed memory failure for a recall or a write the store refused", async () => {
@@ -1135,7 +1819,7 @@ describe("Supervisor inserts on the transcript", () => {
       script: threeFrames,
       evaluator: layer,
       ...read,
-      supervisor: { steer: false, remember: true },
+      supervisor: { remember: true },
       memory
     })
     expect(failure).toBeUndefined()

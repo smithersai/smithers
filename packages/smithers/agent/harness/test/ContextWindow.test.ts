@@ -685,6 +685,117 @@ describe("ContextWindow", () => {
     })
   })
 
+  describe("compactMarked", () => {
+    const turn = (text: string) =>
+      ({ kind: "transcript", zone: "tail", content: [Request.Message.user(text)] }) as const
+    const four = () =>
+      ContextWindow.make({
+        modelId: "test-model",
+        segments: [
+          { kind: "system", zone: "prefix", content: [system] },
+          turn("one"),
+          turn("two"),
+          turn("three"),
+          turn("four")
+        ],
+        activeTools: []
+      })
+
+    it("orders the summary, then the kept segments, then the suffix, and drops what is removed", () => {
+      const value = four()
+      const compacted = Result.getOrThrow(
+        ContextWindow.compactMarked(value, 3, ["squash", "keep", "remove"], Request.Message.user("summary"))
+      )
+      expect(compacted.segments.map((segment) => segment.kind)).toEqual([
+        "system",
+        "summary",
+        "transcript",
+        "transcript"
+      ])
+      expect(texts(ContextWindow.render(compacted))).toEqual(["summary", "two", "four"])
+      expect(compacted.segments[2]).toBe(value.segments[2])
+      expect(compacted.segments[2]?.digest).toBe(value.segments[2]?.digest)
+      expect(compacted.replaced).toBe(Result.getOrThrow(ContextWindow.prefixDigest(value, 3)))
+    })
+
+    it("adds no summary segment when nothing is squashed", () => {
+      const value = four()
+      const compacted = Result.getOrThrow(ContextWindow.compactMarked(value, 2, ["keep", "remove"], undefined))
+      expect(compacted.segments.some((segment) => segment.kind === "summary")).toBe(false)
+      expect(texts(ContextWindow.render(compacted))).toEqual(["one", "three", "four"])
+      expect(compacted.segments[1]).toBe(value.segments[1])
+    })
+
+    it("returns the identical window for a zero-length prefix", () => {
+      const value = four()
+      expect(Result.getOrThrow(ContextWindow.compactMarked(value, 0, [], undefined))).toBe(value)
+    })
+
+    it("refuses marks that do not fit the prefix or the summary", () => {
+      for (
+        const [marks, summary, message] of [
+          [["keep"], undefined, "Compaction marks must name every prefix segment once"],
+          [
+            ["keep", "remove"],
+            Request.Message.user("s"),
+            "A compaction summary is required exactly when a prefix segment is squashed"
+          ],
+          [["keep", "squash"], undefined, "A compaction summary is required exactly when a prefix segment is squashed"]
+        ] as const
+      ) {
+        const result = ContextWindow.compactMarked(four(), 2, marks, summary)
+        expect(Result.isFailure(result) && result.failure).toMatchObject({ code: "invalid_compaction_marks", message })
+      }
+      expect(Result.isFailure(ContextWindow.compactMarked(four(), 9, [], undefined))).toBe(true)
+    })
+
+    it("squashes every segment exactly as compactPrefix did", () => {
+      // compactPrefix before marks: the summary where the first replaced
+      // segment sat, then every other segment in order.
+      const previous = (
+        self: ContextWindow.ContextWindow,
+        prefixLength: number,
+        summary: ReadonlyArray<Request.Message>
+      ) => {
+        const replacedSegments = self.segments.filter((segment) =>
+          segment.kind === "transcript" || segment.kind === "summary" || segment.kind === "steering"
+        ).slice(0, prefixLength)
+        const first = self.segments.findIndex((segment) => replacedSegments.includes(segment))
+        return ContextWindow.make({
+          modelId: self.modelId,
+          segments: [
+            ...self.segments.slice(0, first),
+            ContextWindow.makeSegment({ kind: "summary", zone: "tail", content: summary }),
+            ...self.segments.slice(first).filter((segment) => !replacedSegments.includes(segment))
+          ],
+          activeTools: self.activeTools,
+          replaced: Result.getOrThrow(ContextWindow.prefixDigest(self, prefixLength))
+        })
+      }
+      const interleaved = ContextWindow.make({
+        modelId: "test-model",
+        segments: [
+          { kind: "system", zone: "prefix", content: [system] },
+          turn("one"),
+          { kind: "instructions", zone: "prefix", content: [Request.SystemPart.make({ text: "Mid" })] },
+          turn("two"),
+          turn("three")
+        ],
+        activeTools: ["read"]
+      })
+      for (const [value, length] of [[base(), 1], [base(), 2], [four(), 3], [interleaved, 2]] as const) {
+        const summary = [Request.Message.user("summary")]
+        const marked = Result.getOrThrow(
+          ContextWindow.compactMarked(value, length, Array.from({ length }, () => "squash" as const), summary)
+        )
+        const golden = previous(value, length, summary)
+        expect(marked.digest).toBe(golden.digest)
+        expect(marked).toEqual(golden)
+        expect(Result.getOrThrow(ContextWindow.compactPrefix(value, length, summary))).toEqual(golden)
+      }
+    })
+  })
+
   describe("compact", () => {
     it("retains the last compactable segment when more than one exists", () => {
       const compacted = Result.getOrThrow(ContextWindow.compact(base(), Request.Message.user("summary")))

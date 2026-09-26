@@ -1,6 +1,7 @@
 /** Private deployment recipe. Existing native host, catalog, agents and JJ ports. */
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as SeatRouter from "@smthrs/agent/SeatRouter"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import * as Digest from "@smthrs/core/Digest"
@@ -8,7 +9,7 @@ import { HumanTask, Interpreter } from "@smthrs/flow"
 import { Context, Effect, FileSystem, Layer } from "effect"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as NativeEquipment from "../../packages/smithers/src/internal/NativeEquipment.ts"
-import { seatRefusal } from "../../packages/smithers/src/Providers.ts"
+import { expandSeat, isDecisionSeat, seatAliases, seatDescriptions, seatRefusal } from "../../packages/smithers/src/Providers.ts"
 import type * as Application from "../../packages/smithers/src/Application.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { atomOperations, EditAtom } from "./atoms.ts"
@@ -141,12 +142,40 @@ const configured = (options: Options) => {
  * `seats` declaration (`.smithers/coding-project.json`) wins for every role it
  * names, and may name roles only its flows declare (`model: triage`).
  */
-export const roleResolver = (base: SeatResolver.Service, implementationModel: string,
-  models: Pick<Options, "planningModel" | "pocModel" | "wikiModel"> & { readonly seats?: Readonly<Record<string, string>> | undefined } = {}): SeatResolver.Service => {
-  const roles: Readonly<Record<string, string>> = { ...defaultRoles(implementationModel, models), ...models.seats }
+export const roleResolver = (base: SeatResolver.Service, implementationModel: string, models: RoleModels = {}): SeatResolver.Service => {
+  const roles = effectiveRoles(implementationModel, models)
   return SeatResolver.make({ resolve: id => base.resolve(Object.hasOwn(roles, id) ? roles[id]! : id).pipe(
     Effect.map(seat => Object.hasOwn(roles, id) ? Seat.make({ ...seat, id }) : seat)
   ) })
+}
+
+/**
+ * The seats Jev may route an undeclared or `model: auto` flow to: one role per
+ * configured model, keeping the first role that names it, so Jev picks only
+ * among the models the operator configured.
+ */
+export const roleCatalog = (implementationModel: string, models: RoleModels = {}): SeatRouter.Service => {
+  const roles = Object.entries(effectiveRoles(implementationModel, models)).map(([role, seat]) => [role, seat, expandSeat(seat)] as const)
+  const described = new Map(Object.entries(seatAliases).map(([alias, seat]) => [seat, seatDescriptions[alias]]))
+  return { variants: SeatRouter.defaultVariants, candidates: Effect.succeed(roles
+    .filter(([, , seat], index) => roles.findIndex(([, , other]) => other === seat) === index && !isDecisionSeat(seat))
+    .map(([role, declared, seat]) => ({ id: role, description: `${role}: ${described.get(seat) ?? declared}` }))) }
+}
+
+type RoleModels = Pick<Options, "planningModel" | "pocModel" | "wikiModel"> & { readonly seats?: Readonly<Record<string, string>> | undefined }
+
+/** Every role this host resolves: its defaults with the repository's and the operator's seats over them. */
+const effectiveRoles = (implementationModel: string, models: RoleModels): Readonly<Record<string, string>> =>
+  ({ ...defaultRoles(implementationModel, models), ...models.seats })
+
+/** The native host's seats: the role resolver over the credential route, and the role catalog beside it. */
+export const roleSeats = (options: Options, suppliedSeats?: SeatResolver.Service) => {
+  const models = { ...options, seats: effectiveSeats(options) }
+  return (environment: Readonly<Record<string, string | undefined>>) => Layer.merge(
+    Layer.effect(SeatResolver.SeatResolver)(
+      Effect.map(SeatResolver.SeatResolver, base => roleResolver(base, options.implementationModel, models))
+    ).pipe(Layer.provide(suppliedSeats === undefined ? NativeEquipment.layerSeatResolver(environment) : SeatResolver.layer(suppliedSeats))),
+    SeatRouter.layer(roleCatalog(options.implementationModel, models)))
 }
 
 const defaultRoles = (implementationModel: string,
@@ -184,9 +213,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       Effect.map(canonicalRoot => CodingFileSystem.make({ ...options, repositoryPath: root }, fs, spawner, canonicalRoot)),
       Effect.orDie
     )
-  }, environment => Layer.effect(SeatResolver.SeatResolver)(
-    Effect.map(SeatResolver.SeatResolver, base => roleResolver(base, options.implementationModel, { ...options, seats: effectiveSeats(options) }))
-  ).pipe(Layer.provide(suppliedSeats === undefined ? NativeEquipment.layerSeatResolver(environment) : SeatResolver.layer(suppliedSeats))),
+  }, roleSeats(options, suppliedSeats),
   options.planning === undefined ? undefined : routeMessages)
   return Layer.suspend(() => Layer.unwrap(Effect.gen(function*() {
     // Host-owned immutable wiki publication and scratch cleanup use the trusted

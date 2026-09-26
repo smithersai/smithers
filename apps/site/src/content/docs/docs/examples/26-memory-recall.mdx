@@ -72,7 +72,6 @@ export const bank: string = Recall.bankForNamespace(namespace)
 /** The policy every run below carries, before a refusal overrides a field. */
 export const basePolicy: WithMemory.Policy = {
   namespace,
-  recall: "auto",
   maxTokens: 2048,
   retain: "on-complete"
 }
@@ -82,9 +81,9 @@ export const basePolicy: WithMemory.Policy = {
  *
  * This is the shape `Flows.handlersFor` documents and the reason it exists: the
  * declaration a host binds is the policy-carrying COPY, and the handler is
- * built from that same copy. `StandardFlows.memory` is the same pairing over
- * the bare declarations, which is right for a host that has no policy to apply
- * and wrong for one that does.
+ * built from that same copy. `StandardFlows.memory` binds a different
+ * `recall`: the bare declaration, filtered by Jev (`JudgedRecallOutput`), so it
+ * needs a judge context and applies no policy.
  */
 export const memorySource = (
   services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,

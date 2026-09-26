@@ -28,6 +28,7 @@ import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Jj from "@smthrs/jj"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
@@ -56,6 +57,7 @@ import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
+import * as SeatRouter from "../src/SeatRouter.ts"
 import legacyCompaction from "./fixtures/legacyCompaction.json" with { type: "json" }
 import * as Safety from "./Safety.ts"
 
@@ -123,15 +125,24 @@ const seatlessDescriptor = new Descriptor.FlowDescriptor({
   path: "/flows/agents/seatless"
 })
 
+/** A prompt flow that leaves its seat to Jev. */
+const autoDescriptor = new Descriptor.FlowDescriptor({
+  ...agentDescriptor,
+  name: "agents/auto",
+  model: Option.some(Seat.auto),
+  path: "/flows/agents/auto"
+})
+
 const descriptors = new Map([
   [agentDescriptor.name, agentDescriptor],
   [effortDescriptor.name, effortDescriptor],
   [moduleDescriptor.name, moduleDescriptor],
-  [seatlessDescriptor.name, seatlessDescriptor]
+  [seatlessDescriptor.name, seatlessDescriptor],
+  [autoDescriptor.name, autoDescriptor]
 ])
 
 const registryService = Registry.makeNoop({
-  list: () => Effect.succeed([agentDescriptor, effortDescriptor, moduleDescriptor, seatlessDescriptor]),
+  list: () => Effect.succeed([agentDescriptor, effortDescriptor, moduleDescriptor, seatlessDescriptor, autoDescriptor]),
   visible: () => Effect.succeed([]),
   get: (name) =>
     descriptors.has(name)
@@ -179,6 +190,13 @@ const memoryFlows: ReadonlyArray<ControlRuntime.MemoryFlow> = [
     flowId: "agents/seatless",
     executionDigest: Descriptor.executionDigest(seatlessDescriptor),
     description: "A prompt flow with no model seat.",
+    deployClass: false,
+    envelope: { capabilities: [], flows: [], budget: {} }
+  },
+  {
+    flowId: "agents/auto",
+    executionDigest: Descriptor.executionDigest(autoDescriptor),
+    description: "A prompt flow whose seat Jev picks.",
     deployClass: false,
     envelope: { capabilities: [], flows: [], budget: {} }
   },
@@ -261,6 +279,14 @@ interface StackOptions {
   readonly bare?: boolean | undefined
   /** The host's reasoning-effort default, beneath a flow's own `effort:`. */
   readonly reasoningEffort?: ModelRequest.ReasoningEffort | undefined
+  /** Whether the host's evaluator is a real judge. */
+  readonly judged?: boolean | undefined
+  /** The host's judge, in place of the scripted completion judge. */
+  readonly judge?: Layer.Layer<Evaluator.Evaluator> | undefined
+  /** The seat catalog an undeclared or `auto` seat is routed over. */
+  readonly catalog?: SeatRouter.Service | undefined
+  /** The host's own system text. */
+  readonly system?: ReadonlyArray<string> | undefined
   /** Replaces methods of the control runtime the stack builds. */
   readonly wrapRuntime?: ((runtime: ControlRuntime.Service) => ControlRuntime.Service) | undefined
 }
@@ -312,7 +338,9 @@ const stack = (options: StackOptions) => {
     limits: { memoryBytes: 64 * 1024 * 1024, steps: 5_000_000 },
     maxFrames: options.maxFrames ?? 4,
     promptRunner: options.promptRunner,
-    reasoningEffort: options.reasoningEffort
+    reasoningEffort: options.reasoningEffort,
+    judged: options.judged,
+    system: options.system
   }).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provide(
@@ -324,7 +352,12 @@ const stack = (options: StackOptions) => {
     // The agent and the seat resolver are the executor's own dependencies;
     // everything else in its `Services` union comes from the engine stack.
     Layer.provide(
-      Layer.mergeAll(Agent.layer, SeatResolver.layer({ resolve: options.resolve }), scriptedCompletionJudge).pipe(
+      Layer.mergeAll(
+        Agent.layer,
+        SeatResolver.layer({ resolve: options.resolve }),
+        options.judge ?? scriptedCompletionJudge,
+        options.catalog === undefined ? Layer.empty : SeatRouter.layer(options.catalog)
+      ).pipe(
         Layer.provide(Safety.layer)
       )
     )
@@ -1027,7 +1060,7 @@ describe("AgentSession", () => {
       Effect.gen(function*() {
         const gate = yield* Deferred.make<void>()
         return yield* drive(gate).pipe(
-          Effect.provide(stack({ resolve: seat(capturing(captured)), notes, checks, gate }))
+          Effect.provide(stack({ resolve: seat(capturing(captured)), notes, checks, gate, judged: true }))
         )
       }).pipe(Effect.scoped) as Effect.Effect<Outcome>
     )
@@ -1035,6 +1068,9 @@ describe("AgentSession", () => {
     // Two provider calls, one per frame, and the resumed attempt replayed
     // both as sealed steps instead of asking the provider again.
     expect(captured).toHaveLength(2)
+    // The host's judge arms the run it launches.
+    expect(outcome.agentTrail.find((entry) => entry.eventType === "control.agent.discipline-armed")?.payload)
+      .toMatchObject({ judged: true })
     // The host check flow ran exactly once, from the cell that called it: the
     // controller has no private way to run commands of its own.
     expect(checks).toEqual(["npm test"])
@@ -1168,7 +1204,8 @@ describe("AgentSession", () => {
         const replay = yield* RecordedModel.make(fixture)
         const model = Model.make({ stream: replay.model.stream as Model.Model["stream"] })
         const driven = yield* drive(gate).pipe(
-          Effect.provide(stack({ resolve: seat(model), notes: replayNotes, gate }))
+          // Armed as the recording was, so the replayed requests teach its stance.
+          Effect.provide(stack({ resolve: seat(model), notes: replayNotes, gate, judged: true }))
         )
         const unconsumed = yield* replay.controller.unconsumed()
         return { driven, unconsumed }
@@ -2127,5 +2164,277 @@ describe("AgentSession", () => {
 
     expect(error).toBeInstanceOf(ControlError.LaunchFailed)
     expect((error as ControlError.LaunchFailed).message).toBe("No API key is configured")
+  })
+})
+
+const twoSeats: ReadonlyArray<SeatRouter.Candidate> = [
+  { id: "sol", description: "The strong seat." },
+  { id: "luna", description: "The cheap seat." }
+]
+
+const catalogOf = (candidates: ReadonlyArray<SeatRouter.Candidate>): SeatRouter.Service => ({
+  candidates: Effect.succeed(candidates),
+  variants: SeatRouter.defaultVariants
+})
+
+const investigate = SeatRouter.defaultVariants.find((variant) => variant.id === "investigate")!.system
+
+/**
+ * A judge that routes every run to `sol` for investigation, once `answered`
+ * completes, and passes every completion claim. Nothing else is scripted.
+ */
+const routingJudge = (
+  calls: { routed: number },
+  answered: Effect.Effect<void, Evaluator.EvaluatorError> = Effect.void
+): Layer.Layer<Evaluator.Evaluator> =>
+  Evaluator.layerScripted((request) => {
+    if ("seat" in request.questions) {
+      calls.routed += 1
+      return Effect.as(answered, { seat: { choice: "sol" }, system: { choice: "investigate" } })
+    }
+    return { complete: { probability: 0.95 }, overclaims: { probability: 0.05 }, invented: { probability: 0.02 } }
+  })
+
+interface Routed {
+  /** The launch's refusal, when it was refused. */
+  readonly refusal?: unknown
+  readonly status?: ControlSchema.RunStatus
+  /** Every seat id the host was asked to resolve, in order. */
+  readonly resolved: ReadonlyArray<string>
+  readonly requests: ReadonlyArray<ModelRequest.ModelRequest>
+  readonly trail: ReadonlyArray<JournalEvent.Entry>
+}
+
+const askThenDone = [
+  `const decision = await ctx.call("ask", { question: "go on?" })
+console.log("asked=" + decision.approved)`,
+  `ctx.done("routed")`
+]
+
+/** Launches one run of `flowId` on the full stack and reads it once it settles at `status`. */
+const routedRun = (options: {
+  readonly flowId: string
+  readonly judge: Layer.Layer<Evaluator.Evaluator>
+  readonly catalog?: SeatRouter.Service | undefined
+  readonly status: ControlSchema.RunStatus
+  /** The host's own system text. */
+  readonly system?: ReadonlyArray<string> | undefined
+  /** Parks once on an ask, and runs `beforeResume` before approving it. */
+  readonly park?: { readonly beforeResume: () => void } | undefined
+  /** Runs as soon as the launch is accepted, with the seats resolved so far. */
+  readonly accepted?: ((resolved: ReadonlyArray<string>) => Effect.Effect<void>) | undefined
+}): Promise<Routed> =>
+  Effect.runPromise(
+    Effect.gen(function*() {
+      const gate = yield* Deferred.make<void>()
+      const resolved: Array<string> = []
+      const captured: Array<Captured> = []
+      const model = scripted(options.park === undefined ? [`ctx.done("routed")`] : askThenDone, captured)
+      const resolve: SeatResolver.Service["resolve"] = (id) =>
+        Effect.suspend(() => {
+          resolved.push(id)
+          return seat(model)(id)
+        })
+      return yield* Effect.gen(function*() {
+        const control = yield* Control.Control
+        const runtime = yield* ControlRuntime.ControlRuntime
+        const journal = yield* Journal.Journal
+        const card = yield* control.plan({ flowId: options.flowId, input: {} })
+        yield* control.approve(card.approval)
+        const launched = yield* Effect.exit(control.run({
+          _tag: "Plan",
+          planId: card.planId,
+          digest: card.digest,
+          envelope: card.envelope,
+          idempotencyKey: `run:${options.flowId}`
+        }))
+        if (Exit.isFailure(launched)) {
+          return { refusal: Cause.squash(launched.cause), resolved, requests: [], trail: [] }
+        }
+        const receipt = launched.value
+        if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+          return yield* Effect.die("expected an accepted run")
+        }
+        const runId = receipt.runId
+        if (options.accepted !== undefined) yield* options.accepted([...resolved])
+        if (options.park !== undefined) {
+          yield* awaitStatus(runtime, runId, "waiting-approval")
+          options.park.beforeResume()
+          yield* approvePark(control, runtime, runId, 1)
+        }
+        yield* awaitStatus(runtime, runId, options.status)
+        yield* journal.flush
+        const page = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 1_000 })
+        return {
+          status: options.status,
+          resolved,
+          requests: captured.map((entry) => entry.request),
+          trail: page.entries
+        }
+      }).pipe(Effect.provide(stack({
+        resolve,
+        notes: [],
+        gate,
+        bare: true,
+        judge: options.judge,
+        catalog: options.catalog,
+        system: options.system
+      })))
+    }).pipe(Effect.scoped) as Effect.Effect<Routed, unknown>
+  )
+
+const seatRouted = (trail: ReadonlyArray<JournalEvent.Entry>) =>
+  trail.filter((entry) => entry.eventType === "control.agent.seat-routed")
+
+const routeSettled = (trail: ReadonlyArray<JournalEvent.Entry>) =>
+  trail.filter((entry) =>
+    entry.eventType === "control.agent.decision-settled" &&
+    (entry.payload as { readonly classifier?: unknown }).classifier === "seat/route"
+  )
+
+describe("AgentSession seat routing", () => {
+  it.each(["agents/auto", "agents/seatless"])("routes %s once, onto the seat Jev picked", async (flowId) => {
+    const calls = { routed: 0 }
+    const run = await routedRun({
+      flowId,
+      judge: routingJudge(calls),
+      catalog: catalogOf(twoSeats),
+      status: "completed",
+      system: ["Host rule."]
+    })
+
+    expect(calls.routed).toBe(1)
+    expect(run.resolved).toEqual(["sol"])
+    expect(seatRouted(run.trail)).toHaveLength(1)
+    expect(seatRouted(run.trail)[0]!.payload).toMatchObject({
+      declared: Seat.auto,
+      seat: "sol",
+      modelId: "test-model",
+      variant: "investigate",
+      candidates: ["sol", "luna"],
+      decidedBy: "jev"
+    })
+    expect(routeSettled(run.trail)).toHaveLength(1)
+    const system = run.requests[0]!.system.map((part) => part.text).join("\n")
+    expect(system.indexOf("Host rule.")).toBeGreaterThanOrEqual(0)
+    for (const line of investigate) expect(system.indexOf(line)).toBeGreaterThan(system.indexOf("Host rule."))
+  })
+
+  it("keeps the routed seat across a park, without asking again", async () => {
+    const calls = { routed: 0 }
+    let routedBeforePark = 0
+    const run = await routedRun({
+      flowId: "agents/auto",
+      judge: routingJudge(calls),
+      catalog: catalogOf(twoSeats),
+      status: "completed",
+      park: { beforeResume: () => (routedBeforePark = calls.routed) }
+    })
+
+    expect(routedBeforePark).toBe(1)
+    expect(calls.routed).toBe(1)
+    expect(run.resolved.length).toBeGreaterThanOrEqual(2)
+    expect(new Set(run.resolved)).toEqual(new Set(["sol"]))
+    expect(seatRouted(run.trail)).toHaveLength(1)
+    expect(routeSettled(run.trail)).toHaveLength(1)
+    // With no host system text, the variant is the whole of it.
+    expect(run.requests[0]!.system.map((part) => part.text).join("\n")).toContain(investigate[0]!)
+  })
+
+  it("accepts the launch before Jev answers, and never resolves `auto`", async () => {
+    const calls = { routed: 0 }
+    const answer = Deferred.makeUnsafe<void>()
+    let atAcceptance: ReadonlyArray<string> | undefined
+    const run = await routedRun({
+      flowId: "agents/auto",
+      judge: routingJudge(calls, Deferred.await(answer)),
+      catalog: catalogOf(twoSeats),
+      status: "completed",
+      accepted: (resolved) =>
+        Effect.sync(() => {
+          atAcceptance = resolved
+        }).pipe(Effect.andThen(Deferred.succeed(answer, undefined)))
+    })
+
+    expect(atAcceptance).toEqual([])
+    expect(run.resolved).toEqual(["sol"])
+    expect(run.resolved).not.toContain(Seat.auto)
+  })
+
+  it("fails the run as SeatUnrouted when Jev cannot answer", async () => {
+    const calls = { routed: 0 }
+    const run = await routedRun({
+      flowId: "agents/auto",
+      judge: routingJudge(
+        calls,
+        Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "No judge is reachable" }))
+      ),
+      catalog: catalogOf(twoSeats),
+      status: "failed"
+    })
+
+    expect(calls.routed).toBe(1)
+    expect(run.resolved).toEqual([])
+    expect(seatRouted(run.trail)).toHaveLength(0)
+    const failed = run.trail.find((entry) => entry.eventType === "control.run.failed")
+    expect(JSON.stringify(failed?.payload)).toContain("SeatUnrouted")
+  })
+
+  it("fails a resumed run whose catalog dropped the variant it started on", async () => {
+    let variants = SeatRouter.defaultVariants
+    const run = await routedRun({
+      flowId: "agents/auto",
+      judge: routingJudge({ routed: 0 }),
+      catalog: {
+        candidates: Effect.succeed(twoSeats),
+        get variants() {
+          return variants
+        }
+      },
+      status: "failed",
+      park: {
+        beforeResume: () => {
+          variants = variants.filter((variant) => variant.id !== "investigate")
+        }
+      }
+    })
+
+    const failed = run.trail.find((entry) => entry.eventType === "control.run.failed")
+    expect(JSON.stringify(failed?.payload)).toContain("no longer offers the variant investigate")
+  })
+
+  it.each([
+    { name: "an empty catalog", catalog: catalogOf([]), reason: "no_candidates" },
+    {
+      name: "a catalog that cannot list its seats",
+      catalog: {
+        candidates: Effect.fail(new Seat.SeatUnresolved({ seat: "sol", message: "No API key is configured" })),
+        variants: SeatRouter.defaultVariants
+      },
+      reason: "unconfigured"
+    },
+    { name: "no catalog", catalog: undefined, reason: "unconfigured" }
+  ])("refuses an `auto` launch over $name", async ({ catalog, reason }) => {
+    const calls = { routed: 0 }
+    const run = await routedRun({ flowId: "agents/auto", judge: routingJudge(calls), catalog, status: "failed" })
+
+    expect(run.refusal).toBeInstanceOf(ControlError.LaunchFailed)
+    expect((run.refusal as ControlError.LaunchFailed).cause).toEqual({ seat: Seat.auto, reason })
+    expect(calls.routed).toBe(0)
+    expect(run.resolved).toEqual([])
+  })
+
+  it("runs a declared seat as declared, asking Jev nothing", async () => {
+    const run = await routedRun({
+      flowId: "agents/notes",
+      judge: scriptedCompletionJudge,
+      catalog: catalogOf(twoSeats),
+      status: "completed"
+    })
+
+    // Once to refuse a missing key at launch, once when the run starts.
+    expect(run.resolved).toEqual(["anthropic:test-model", "anthropic:test-model"])
+    expect(seatRouted(run.trail)).toHaveLength(0)
+    expect(routeSettled(run.trail)).toHaveLength(0)
   })
 })

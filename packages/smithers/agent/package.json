@@ -54,6 +54,7 @@
     "./QuotaPolicy": "./src/QuotaPolicy.ts",
     "./Seat": "./src/Seat.ts",
     "./SeatResolver": "./src/SeatResolver.ts",
+    "./SeatRouter": "./src/SeatRouter.ts",
     "./SmithersPlugin": "./src/SmithersPlugin.ts",
     "./StandardFlows": "./src/StandardFlows.ts",
     "./WorkspaceObservation": "./src/WorkspaceObservation.ts",
@@ -258,6 +259,16 @@
         "require": {
           "types": "./dist/cjs/SeatResolver.d.ts",
           "default": "./dist/cjs/SeatResolver.js"
+        }
+      },
+      "./SeatRouter": {
+        "import": {
+          "types": "./dist/esm/SeatRouter.d.ts",
+          "default": "./dist/esm/SeatRouter.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SeatRouter.d.ts",
+          "default": "./dist/cjs/SeatRouter.js"
         }
       },
       "./SmithersPlugin": {

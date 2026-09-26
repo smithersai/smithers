@@ -6,7 +6,9 @@
  * `openai:*` seats run on the ChatGPT subscription, and a provider key makes
  * that provider's seats available.
  */
+import * as SeatRouter from "@smthrs/agent/SeatRouter"
 import * as Providers from "@smthrs/cli/Providers"
+import { Effect } from "effect"
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 
@@ -96,6 +98,28 @@ export const workerFallbackSeats = (requested: string, available: Available, env
 
 /** The short names an agent file's `model:` may use instead of `provider:modelId`. */
 export const aliases: Readonly<Record<string, string>> = Providers.seatAliases
+
+/**
+ * The seats Jev picks a worker's among, when it may pick: the host is judged
+ * and `SMITHERS_TUI_WORKER_SEAT`, an operator's explicit choice, is unset.
+ * Each available non-Cerebras seat once, by its alias when it has one, and
+ * the default system-prompt variants, picked in the same call.
+ */
+export const routing = (
+  available: Available,
+  environment: Readonly<Record<string, string | undefined>>,
+  judged: boolean
+): SeatRouter.Service | undefined => {
+  if (!judged || environment.SMITHERS_TUI_WORKER_SEAT !== undefined) return undefined
+  const candidates = [...new Map(available.models.flatMap((model) => {
+    if (model.seat.startsWith("cerebras:")) return []
+    const alias = Object.keys(aliases).find((name) => aliases[name] === model.seat)
+    const id = alias ?? model.seat
+    const description = alias === undefined ? undefined : Providers.seatDescriptions[alias]
+    return [[id, { id, description: description ?? model.label }] as const]
+  })).values()]
+  return { candidates: Effect.succeed(candidates), variants: SeatRouter.defaultVariants }
+}
 
 const providerOf = (seat: string): string => seat.slice(0, seat.indexOf(":"))
 /** Every provider a seat here names, plus the replay seat the tests drive. */

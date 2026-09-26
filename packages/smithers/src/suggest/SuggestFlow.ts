@@ -218,7 +218,7 @@ export class RelativeRoot extends Error {
 const grantsFor = (root: string): Layer.Layer<GrantStore.GrantStore> =>
   GrantStore.layer({ attended: false, rules: rules(root) }).pipe(Layer.provide(Workspace.layer(root)), Layer.orDie)
 
-const hostFor = (root: string): Layer.Layer<AgentAction.Host> => {
+const hostFor = (root: string): Layer.Layer<AgentAction.Host, never, Evaluator.Evaluator> => {
   const grants = grantsFor(root)
   const platform = Layer.orDie(KernelFileSystem.layer).pipe(
     Layer.provide([Workspace.layer(root), grants]),
@@ -228,13 +228,15 @@ const hostFor = (root: string): Layer.Layer<AgentAction.Host> => {
     AgentAction.Host,
     Effect.gen(function*() {
       const filesystem = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+      const judge = yield* Effect.context<Evaluator.Evaluator>()
       const registry = yield* Registry.Registry
       return AgentAction.makeHost({
         registry,
         limits,
-        flows: [StandardFlows.filesystem(filesystem)],
+        flows: [StandardFlows.filesystem(filesystem), StandardFlows.jev(judge)],
         capabilityEnvelope: AgentSession.patterns(envelope),
-        maxFrames
+        maxFrames,
+        judged: true
       })
     })
   ).pipe(Layer.provide(Registry.layerFromDescriptors([])), Layer.provide(platform))
@@ -417,12 +419,9 @@ export const layerScripted = (config: { readonly root: string; readonly script: 
         )
     })
     // The model is scripted, so the judge is too: this composition reaches
-    // no network, and the judge reads the commands recorded for the claim.
-    return composed(
-      config.root,
-      seats,
-      ScriptedJudge.layer
-    )
+    // no network, and the judge answers every classifier a judged run asks,
+    // reading the commands recorded for the claim.
+    return composed(config.root, seats, ScriptedJudge.layerAll)
   }))
 
 /**

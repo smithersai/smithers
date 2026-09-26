@@ -27,10 +27,11 @@
  * @since 1.0.0-rc.0
  */
 import { Effect, Exit, Option } from "effect"
-import { readFileSync, statSync } from "node:fs"
+import { statSync } from "node:fs"
 import { homedir } from "node:os"
 import * as CliError from "./CliError.ts"
 import type * as Environment from "./Environment.ts"
+import { readText } from "./internal/HostFiles.ts"
 import * as Providers from "./Providers.ts"
 import * as Brief from "./suggest/Brief.ts"
 import * as Checklist from "./suggest/Checklist.ts"
@@ -127,14 +128,6 @@ export interface Options {
   readonly implement?: Implement | undefined
   /** Where a `--json` document is written. Defaults to stdout. */
   readonly emit?: ((line: string) => void) | undefined
-}
-
-const readText = (path: string): string | undefined => {
-  try {
-    return readFileSync(path, "utf8")
-  } catch {
-    return undefined
-  }
 }
 
 const writeLine = (line: string): void => {

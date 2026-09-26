@@ -3,13 +3,12 @@
  *
  * @since 0.1.0
  */
+import * as Digest from "@smthrs/core/Digest"
 import { ModelRequest } from "@smthrs/model"
+import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import { Effect, Schema } from "effect"
 import * as ContextWindow from "./ContextWindow.ts"
-import { compactable } from "./internal/compactable.ts"
-
-const defaultReserve = 16_000
-const defaultKeepRecent = 20_000
+import { compactable, defaultKeepRecent, defaultReserve, pairBoundaries } from "./internal/compactable.ts"
 
 /**
  * Stable instruction for sealed summary steps.
@@ -75,6 +74,18 @@ export interface CompactionStep {
   readonly prefixLength: number
   readonly replacedPrefixDigest: string
   readonly summarizer: Summarizer
+  /**
+   * One mark per prefix segment. Absent, every segment is squashed.
+   *
+   * @since 1.0.0-rc.0
+   */
+  readonly marks?: ReadonlyArray<ContextWindow.Mark> | undefined
+  /**
+   * The digest of `marks`, present exactly when they are.
+   *
+   * @since 1.0.0-rc.0
+   */
+  readonly marksDigest?: string | undefined
 }
 
 /**
@@ -109,31 +120,6 @@ export const shouldCompact = (
   if (cw.contextWindow <= 0) return false
   if (!Number.isFinite(reserve) || !Number.isFinite(keepRecent)) return false
   return cw.total.value > cw.contextWindow - reserve
-}
-
-const pairBoundaries = (segments: ReadonlyArray<ContextWindow.Segment>): ReadonlySet<number> => {
-  const calls = new Map<string, number>()
-  const results = new Map<string, number>()
-  for (const [index, segment] of segments.entries()) {
-    for (const item of segment.content) {
-      if ("role" in item && item.role === "assistant") {
-        for (const part of item.content) {
-          if (part.type === "tool-call") calls.set(part.id, index)
-        }
-      } else if ("role" in item && item.role === "tool") {
-        for (const part of item.content) results.set(part.toolCallId, index)
-      }
-    }
-  }
-  const unsafe = new Set<number>()
-  for (const [callId, callIndex] of calls) {
-    const resultIndex = results.get(callId)
-    if (resultIndex === undefined) continue
-    const first = Math.min(callIndex, resultIndex)
-    const last = Math.max(callIndex, resultIndex)
-    for (let boundary = first + 1; boundary <= last; boundary++) unsafe.add(boundary)
-  }
-  return unsafe
 }
 
 /**
@@ -180,9 +166,12 @@ const prefix = (
   return Effect.succeed(segments.slice(0, prefixLength))
 }
 
+const marksDigest = (marks: ReadonlyArray<ContextWindow.Mark>): string => Digest.digest(CanonicalJson.stringify(marks))
+
 /**
  * Declares a compaction step without invoking a model or selecting a trigger.
- * Its input depends only on the exact replaced prefix and summarizer identity.
+ * Its input depends only on the exact replaced prefix, the summarizer identity
+ * and, when given, the marks, one per prefix segment.
  *
  * @category constructors
  * @since 0.1.0
@@ -191,9 +180,13 @@ const prefix = (
 export const declare = Effect.fn("flows/harness/Compaction.declare")(function*(
   window: ContextWindow.ContextWindow,
   prefixLength: number,
-  summarizer: Summarizer
+  summarizer: Summarizer,
+  marks?: ReadonlyArray<ContextWindow.Mark>
 ) {
   const segments = yield* prefix(window, prefixLength)
+  if (marks !== undefined && marks.length !== prefixLength) {
+    return yield* new InvalidStep({ message: "The compaction marks must name every prefix segment once" })
+  }
   const replacedPrefixDigest = yield* Effect.fromResult(
     ContextWindow.prefixDigest(window, segments.length)
   ).pipe(
@@ -204,8 +197,23 @@ export const declare = Effect.fn("flows/harness/Compaction.declare")(function*(
       })
     )
   )
-  return { kind: "compaction" as const, prefixLength, replacedPrefixDigest, summarizer }
+  return {
+    kind: "compaction" as const,
+    prefixLength,
+    replacedPrefixDigest,
+    summarizer,
+    ...(marks === undefined ? {} : { marks: [...marks], marksDigest: marksDigest(marks) })
+  } satisfies CompactionStep
 })
+
+/** The marks a step declared, every segment squashed when it declared none. */
+const stepMarks = (step: CompactionStep): Effect.Effect<ReadonlyArray<ContextWindow.Mark>, InvalidStep> => {
+  const marks = step.marks ?? Array.from({ length: step.prefixLength }, () => "squash" as const)
+  const declared = step.marks === undefined ? undefined : marksDigest(step.marks)
+  return declared === step.marksDigest && marks.length === step.prefixLength
+    ? Effect.succeed(marks)
+    : Effect.fail(new InvalidStep({ message: "The compaction marks do not match the declared marks digest" }))
+}
 
 /**
  * Confirms the window still carries the exact prefix a step was declared
@@ -239,10 +247,12 @@ const verifyPrefix = (
   })
 
 /**
- * Builds the model request input for a compaction step. Existing summary
- * segments are retained in the input so a later compaction extends, rather
- * than discards, the established summary. The request ends on a user turn
- * carrying {@link summaryTurn}, whatever role the prefix ended on.
+ * Builds the model request input for a compaction step from the messages of
+ * its squashed segments. Existing summary segments are retained in the input
+ * so a later compaction extends, rather than discards, the established
+ * summary. The request ends on a user turn carrying {@link summaryTurn},
+ * whatever role the prefix ended on. A step that squashes nothing has no
+ * summary to request and fails.
  *
  * @category operations
  * @since 0.1.0
@@ -254,8 +264,13 @@ export const summaryRequest = Effect.fn("flows/harness/Compaction.summaryRequest
 ) {
   const segments = yield* prefix(window, step.prefixLength)
   yield* verifyPrefix(window, step, "declared")
+  const marks = yield* stepMarks(step)
+  if (!marks.includes("squash")) {
+    return yield* new InvalidStep({ message: "A compaction that squashes nothing has no summary to request" })
+  }
   const messages: Array<ModelRequest.Message> = []
-  for (const segment of segments) {
+  for (const [index, segment] of segments.entries()) {
+    if (marks[index] !== "squash") continue
     for (const item of segment.content) if ("role" in item) messages.push(item)
   }
   messages.push(ModelRequest.Message.user(summaryTurn))
@@ -276,8 +291,9 @@ export const summaryRequest = Effect.fn("flows/harness/Compaction.summaryRequest
 })
 
 /**
- * Applies a recorded summary to a projected context window. The journal and
- * original window are never mutated.
+ * Applies a step's marks, and its recorded summary, to a projected context
+ * window. The summary is required exactly when the step squashes a segment.
+ * The journal and original window are never mutated.
  *
  * @category operations
  * @since 0.1.0
@@ -286,12 +302,20 @@ export const summaryRequest = Effect.fn("flows/harness/Compaction.summaryRequest
 export const apply = Effect.fn("flows/harness/Compaction.apply")(function*(
   window: ContextWindow.ContextWindow,
   step: CompactionStep,
-  recordedSummary: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>
+  recordedSummary?: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>
 ) {
   yield* prefix(window, step.prefixLength)
   yield* verifyPrefix(window, step, "recorded")
+  const marks = yield* stepMarks(step)
+  if (marks.includes("squash") !== (recordedSummary !== undefined)) {
+    return yield* new InvalidStep({
+      message: recordedSummary === undefined
+        ? "A compaction that squashes a segment requires its recorded summary"
+        : "A compaction that squashes nothing takes no summary"
+    })
+  }
   return yield* Effect.fromResult(
-    ContextWindow.compactPrefix(window, step.prefixLength, recordedSummary)
+    ContextWindow.compactMarked(window, step.prefixLength, marks, recordedSummary)
   ).pipe(
     Effect.mapError((cause) =>
       new InvalidStep({

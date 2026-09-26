@@ -168,6 +168,8 @@ on its own subpath, such as `@smthrs/model/Route`.
 - To consume the event stream, see
   [Read the stream](/guides/read-the-stream/).
 - To branch on failures, see [Handle failures](/guides/handle-failures/).
+- To make a decision inside a flow with Jev, see
+  [Decide with Jev](/guides/decide-with-jev/).
 - For the mental models, see
   [Schema-first model calls](/concepts/schema-first/) and
   [Streaming](/concepts/streaming/).

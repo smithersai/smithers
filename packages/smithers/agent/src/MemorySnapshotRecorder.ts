@@ -3,7 +3,8 @@
  *
  * Memory declares the port and remains below the harness. This adapter lives
  * in `@smthrs/agent`, which already depends on both packages, and translates a
- * snapshot identity into an `EngineLike.record` boundary.
+ * snapshot identity into an `EngineLike.record` boundary that holds the
+ * snapshot's rows.
  *
  * @since 0.1.0
  */
@@ -11,13 +12,12 @@ import * as EngineLike from "@smthrs/harness/EngineLike"
 import * as SnapshotRecorder from "@smthrs/memory/SnapshotRecorder"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Schema from "effect/Schema"
 
 const record = <R>(
   engine: EngineLike.EngineLike,
   identity: SnapshotRecorder.Identity,
-  effect: Effect.Effect<string, never, R>
-): Effect.Effect<string, never, R> =>
+  effect: Effect.Effect<SnapshotRecorder.Snapshot, never, R>
+): Effect.Effect<SnapshotRecorder.Snapshot, never, R> =>
   Effect.gen(function*() {
     const services = yield* Effect.context<R>()
     return yield* engine.record({
@@ -27,7 +27,7 @@ const record = <R>(
         frame: identity.iteration,
         boundary: "opening-context"
       },
-      success: Schema.String,
+      success: SnapshotRecorder.Snapshot,
       execute: Effect.provideContext(effect, services)
     }).pipe(
       // Continuing with a live value after the recorder fails would recreate

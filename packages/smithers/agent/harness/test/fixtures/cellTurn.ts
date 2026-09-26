@@ -2,12 +2,13 @@ import { Capability } from "@smthrs/kernel"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Descriptor } from "@smthrs/registry"
-import { Clock, Effect, type Layer, Option, Stream } from "effect"
+import { Clock, Effect, type Layer, Option, Schema, Stream } from "effect"
 import * as AgentEvent from "../../src/AgentEvent.ts"
 import * as CellHistory from "../../src/CellHistory.ts"
 import * as CellTurn from "../../src/CellTurn.ts"
 import * as ContextWindow from "../../src/ContextWindow.ts"
 import * as EngineLike from "../../src/EngineLike.ts"
+import { HarnessError } from "../../src/HarnessError.ts"
 import * as QuickJSSandbox from "../../src/QuickJSSandbox.ts"
 import type * as Sandbox from "../../src/Sandbox.ts"
 import * as Steering from "../../src/Steering.ts"
@@ -178,12 +179,59 @@ export interface Options {
    * engine is.
    */
   readonly resolve?: EngineLike.EngineLike["resolve"]
-  /** What the supervisor may do with a reading; omitted journals verdicts and nudges nothing. */
+  /** What the supervisor may do with a reading; omitted remembers nothing. */
   readonly supervisor?: Supervisor.Options | undefined
+  /** The monitors the supervisor scores and the boundaries gate; omitted takes the defaults. */
+  readonly monitors?: CellTurn.Input["monitors"]
+  /** Whether the evaluator is a real judge, which delivers monitors and inserts; omitted is false. */
+  readonly judged?: boolean | undefined
+  /** The static stance the run journals; omitted is none. */
+  readonly stance?: CellTurn.Input["stance"]
+  /** Instruction files the run-start relevance reading judges; omitted is none. */
+  readonly instructions?: CellTurn.Input["instructions"]
+  /** Flow names the run-start relevance reading never judges; omitted pins none. */
+  readonly pinned?: CellTurn.Input["pinned"]
   /** The memory the supervisor reads and writes; omitted binds none. */
   readonly memory?: Supervisor.Memory | undefined
   /** Observes every event before the controller advances; omitted observes nothing. */
   readonly observer?: ((event: AgentEvent.AgentEvent) => Effect.Effect<void>) | undefined
+  /**
+   * The journal of recorded boundaries, encoded and keyed by name, session,
+   * frame and boundary. A boundary it holds is replayed and one it lacks is
+   * executed and added; omitted executes every boundary.
+   */
+  readonly records?: Map<string, unknown> | undefined
+}
+
+const recordKey = (boundary: EngineLike.RecordBoundary<unknown>): string =>
+  `${boundary.name}\u0000${
+    boundary.identity.session ?? ""
+  }\u0000${boundary.identity.frame}\u0000${boundary.identity.boundary}`
+
+/**
+ * `record` over a journal that replays what it holds and keeps what it
+ * executes; every boundary is also listed in `seen`, replayed or not.
+ */
+const journaled = (
+  records: Map<string, unknown>,
+  seen: Array<EngineLike.RecordBoundary<unknown>>
+): EngineLike.EngineLike["record"] =>
+(boundary) => {
+  seen.push(boundary)
+  const held = records.get(recordKey(boundary))
+  if (held !== undefined) {
+    return Effect.fromResult(Schema.decodeUnknownResult(boundary.success)(held)).pipe(
+      Effect.mapError((cause) =>
+        new HarnessError({ code: "engine_failed", message: `Boundary ${boundary.name} did not decode`, cause })
+      )
+    )
+  }
+  const encode = Schema.encodeUnknownSync(
+    boundary.success as unknown as Schema.Schema<unknown> & { readonly "EncodingServices": never }
+  )
+  return boundary.execute.pipe(
+    Effect.tap((value) => Effect.sync(() => records.set(recordKey(boundary), encode(value))))
+  )
 }
 
 /**
@@ -244,13 +292,22 @@ export const run = async (options: Options): Promise<Run> => {
     state: options.state,
     flows: options.flows ?? [descriptor("fs/list", { capabilities: ["fs:read:**"] })],
     limits: options.limits,
-    supervisor: options.supervisor
+    supervisor: options.supervisor,
+    monitors: options.monitors,
+    judged: options.judged,
+    stance: options.stance,
+    instructions: options.instructions,
+    pinned: options.pinned
   }).pipe(
     Stream.runForEach((event) => Effect.sync(() => events.push(event))),
     Effect.provide(
-      options.resolve === undefined
+      options.resolve === undefined && options.records === undefined
         ? engine.layer
-        : EngineLike.layer({ ...engine.engine, resolve: options.resolve })
+        : EngineLike.layer({
+          ...engine.engine,
+          ...(options.resolve === undefined ? {} : { resolve: options.resolve }),
+          ...(options.records === undefined ? {} : { record: journaled(options.records, engine.recorder.records) })
+        })
     ),
     Effect.provide(QuickJSSandbox.layer),
     Effect.provide(options.steering ?? Steering.layerNoop()),

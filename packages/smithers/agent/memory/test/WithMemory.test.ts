@@ -19,7 +19,6 @@ import * as WithMemory from "../src/WithMemory.ts"
 
 const policy: WithMemory.Policy = {
   namespace: { kind: "flow", id: "trellis" },
-  recall: "auto",
   maxTokens: 2048,
   retain: "on-complete"
 }
@@ -80,9 +79,9 @@ describe("WithMemory", () => {
     const attached = WithMemory.policyOf(scopedRecall)!
 
     original.namespace.id = "mutated"
-    original.recall = "auto" as never
+    delete (original as { recall?: "none" }).recall
     original.retain = "on-complete" as never
-    expect(Reflect.set(attached as object, "recall", "auto")).toBe(false)
+    expect(Reflect.deleteProperty(attached as object, "recall")).toBe(false)
     expect(Reflect.set(attached.namespace as object, "id", "mutated-again")).toBe(false)
 
     const result = await Effect.runPromise(

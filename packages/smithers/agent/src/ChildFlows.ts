@@ -214,13 +214,21 @@ export const makeNoop = (overrides: Partial<Children> = {}): Children =>
   })
 
 /**
+ * The name of the {@link source} that binds the lifecycle flows.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const sourceName = "agent/children"
+
+/**
  * Detached child lifecycle, as three ordinary flows.
  *
  * @category constructors
  * @since 0.1.0
  */
 export const source = (children: Children): FlowBinding.Source =>
-  FlowBinding.source("agent/children", [
+  FlowBinding.source(sourceName, [
     FlowBinding.make({ flow: spawnFlow, handler: children.spawn, publicError: (error) => error.message }),
     FlowBinding.make({ flow: sendFlow, handler: children.send, publicError: (error) => error.message }),
     FlowBinding.make({ flow: awaitFlow, handler: children.await, publicError: (error) => error.message })

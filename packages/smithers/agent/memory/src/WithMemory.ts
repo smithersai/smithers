@@ -25,15 +25,16 @@ import { MaxTokens } from "./Recall.ts"
 
 /**
  * The memory policy a flow tree inherits: which namespace its memory lives in,
- * whether recall runs unasked, the byte budget recall answers within, and
- * whether writes are retained.
+ * whether recall is refused (`recall: "none"`; absent, recall answers when
+ * asked), the byte budget recall answers within, and whether writes are
+ * retained.
  *
  * @category schemas
  * @since 0.1.0
  */
 export const Policy = Schema.Struct({
   namespace: Namespace.Namespace,
-  recall: Schema.Literals(["auto", "none"]),
+  recall: Schema.optionalKey(Schema.Literal("none")),
   maxTokens: MaxTokens,
   retain: Schema.Literals(["on-complete", "never"])
 })

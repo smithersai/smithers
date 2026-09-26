@@ -2,13 +2,22 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
+import * as Seat from "@smthrs/agent/Seat"
 import * as Capability from "@smthrs/capability/Capability"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import type * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect } from "effect"
+import type * as FileSystem from "effect/FileSystem"
+import type * as Path from "effect/Path"
+import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as FailureCopy from "@smthrs/model/FailureCopy"
 import type * as Agents from "../src/agents.ts"
 import * as Approvals from "../src/approvals.ts"
 import * as Host from "../src/host.ts"
+import * as Runtime from "../src/runtime.ts"
 
 const roots: Array<string> = []
 afterEach(() => {
@@ -616,5 +625,259 @@ describe("turnOptions", () => {
     expect(await names(options.flows)).toEqual(["read", "write", "grep", "bash"])
     expect(options.capabilityEnvelope).toHaveLength(1)
     expect(options.capabilityEnvelope[0]!.action).toBe("*")
+  })
+})
+
+describe("workerSources", () => {
+  const services = Effect.runSync(
+    Effect.context<FileSystem.FileSystem | Path.Path | ChildProcessSpawner>().pipe(Effect.provide(NodeServices.layer))
+  )
+  const judge = Effect.runSync(
+    Effect.context<Evaluator.Evaluator>().pipe(Effect.provide(Evaluator.layerScripted(() => ({}))))
+  )
+  const names = async (sources: ReadonlyArray<FlowBinding.Source>) =>
+    (await Promise.all(sources.map((each) => Effect.runPromise(each.bindings())))).flat().map((binding) => binding.descriptor.name)
+
+  test("a judge binds jev after the shell flows; none leaves it absent", async () => {
+    const judged = await names(Host.workerSources(services, judge, "/repo", () => {}))
+    expect(judged.at(-1)).toBe("jev")
+    expect(judged).toContain("bash")
+    expect(await names(Host.workerSources(services, undefined, "/repo", () => {}))).not.toContain("jev")
+  })
+
+  test("an agent whose flows omit jev is narrowed like any other flow", async () => {
+    const input = {
+      prompt: "go",
+      seat: "test:worker",
+      role: "worker" as const,
+      history: [],
+      onEvent: () => {},
+      agent: { name: "review", digest: "d", system: "s", flows: ["read"], envelope: [] }
+    }
+    const options = Host.turnOptions(input, "/repo", Host.workerSources(services, judge, "/repo", () => {}))
+    expect(await names(options.flows)).toEqual(["read"])
+  })
+})
+
+describe("Host.run jev binding", () => {
+  const scripted = Evaluator.layerScripted((request) =>
+    Object.fromEntries(Object.entries(request.questions).map(([id, question]) => [
+      id,
+      question.type === "boolean"
+        ? { probability: 0.9 }
+        : question.type === "choice"
+        ? { choice: Object.keys(question.criteria)[0]! }
+        : { score: 0 }
+    ]))
+  )
+  /** The outcomes of the `jev` calls a turn settled. */
+  const run = async (role: "coordinator" | "worker", judge: typeof scripted | undefined) => {
+    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-jev-"))
+    roots.push(cwd)
+    const cell = "await ctx.call(\"jev\", { state: {}, questions: { q: { type: \"boolean\", instructions: \"Yes?\" } } }).catch(() => {}); ctx.done(\"ok\")"
+    const host = Host.make({ cwd, environment: {}, ...(judge === undefined ? {} : { judge }) })
+    const settled: Array<string> = []
+    const armed: Array<boolean | undefined> = []
+    try {
+      await host.run({
+        prompt: "judge",
+        role,
+        seat: `replay:${doneReplay(cwd, cell)}`,
+        history: [],
+        onEvent: (event) => {
+          if (event._tag === "cell-call-settled" && event.flowName === "jev") settled.push(event.result.outcome)
+          if (event._tag === "discipline-armed") armed.push(event.judged)
+        }
+      }).done
+      return { judged: host.judged, settled, armed }
+    } finally {
+      await host.dispose()
+    }
+  }
+
+  test("the judge seam alone judges the host, binds jev and arms a worker", async () => {
+    const { armed, judged, settled } = await run("worker", scripted)
+    expect(judged).toBe(true)
+    expect(settled[0]).toBe("success")
+    expect(armed).toEqual([true])
+  })
+
+  test("without a judge, or as coordinator, a turn has no jev and is not armed", async () => {
+    const unjudged = await run("worker", undefined)
+    expect(unjudged.judged).toBe(false)
+    expect(unjudged.settled).not.toContain("success")
+    expect(unjudged.armed).toEqual([undefined])
+    const coordinator = await run("coordinator", scripted)
+    expect(coordinator.settled).not.toContain("success")
+    // A judged host still never arms its coordinator.
+    expect(coordinator.armed).toEqual([undefined])
+  })
+})
+
+describe("Host.run instructions", () => {
+  const unrelated = "- Deploy the docs site with wrangler.\n"
+  const text = `# Rules\n\n- Answer briefly.\n${unrelated}`
+  /** Jev withholds the deploy bullet, keeps every other item, and lets the answer stand. */
+  const jev = (asked: Array<string>) =>
+    Evaluator.layerScripted((request) => {
+      if (!Object.keys(request.questions).some((id) => id.startsWith("unnecessary_"))) {
+        return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+      }
+      const items = (request.state as { readonly items: ReadonlyArray<{ readonly id: string; readonly text: string }> })
+        .items
+      asked.push(...items.map((item) => item.id))
+      return Object.fromEntries(
+        items.map((item, index) => [`unnecessary_${index}`, { probability: item.text === unrelated ? 0.95 : 0.1 }])
+      )
+    })
+  const run = async (role: "coordinator" | "worker") => {
+    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-instructions-"))
+    roots.push(cwd)
+    writeFileSync(join(cwd, "AGENTS.md"), text)
+    const asked: Array<string> = []
+    const host = Host.make({ cwd, environment: {}, judge: jev(asked) })
+    const events: Array<AgentEvent.AgentEvent> = []
+    try {
+      const outcome = await host.run({
+        prompt: "answer",
+        role,
+        runtime: { publish: () => {}, delegate: () => ({}), wait: () => Promise.resolve([]) },
+        seat: `replay:${doneReplay(cwd)}`,
+        history: [],
+        onEvent: (event) => events.push(event)
+      }).done
+      const opening = events.find((event) => event._tag === "model-requested" && event.frame === 0)
+      const system = opening?._tag === "model-requested"
+        ? opening.request.system.map((part) => part.text).join("\n")
+        : ""
+      return { cwd, outcome, asked, events, system }
+    } finally {
+      await host.dispose()
+    }
+  }
+
+  test("a judged worker withholds a bullet its task does not need and never judges pinned flows", async () => {
+    const { asked, cwd, events, outcome, system } = await run("worker")
+    expect(outcome._tag).toBe("done")
+    const chunk = `${join(cwd, "AGENTS.md")}#2`
+    expect(asked).toContain(chunk)
+    for (const pinned of ["ui.publish", "agent.delegate", "agent.wait", "jev", "read", "bash"]) {
+      expect(asked).not.toContain(pinned)
+    }
+    const settled = events.find((event) => event._tag === "relevance-settled")
+    expect(settled?._tag === "relevance-settled" && settled.withheld.map((item) => item.id)).toEqual([chunk])
+    expect(system).toContain("- Answer briefly.")
+    expect(system).not.toContain("wrangler")
+  })
+
+  test("the coordinator is never judged and sees every file whole", async () => {
+    const { asked, cwd, events, system } = await run("coordinator")
+    expect(asked).toEqual([])
+    expect(events.some((event) => event._tag === "relevance-settled")).toBe(false)
+    expect(system).toContain(`<project_instructions path="${join(cwd, "AGENTS.md")}">\n${text}\n</project_instructions>`)
+  })
+})
+
+describe("Host.run seat routing", () => {
+  const environment = { OPENAI_API_KEY: "sk-test" }
+  const make = (judged: boolean, extra: Readonly<Record<string, string>> = {}) => {
+    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-route-"))
+    roots.push(cwd)
+    return {
+      cwd,
+      host: Host.make({ cwd, environment: { ...environment, ...extra }, ...(judged ? { judge: ScriptedJudge.layerAll } : {}) })
+    }
+  }
+
+  test("an auto worker journals seat-routed and decision-settled through onEvent and reports the seat", async () => {
+    const { host } = make(true)
+    const events: Array<AgentEvent.AgentEvent> = []
+    const seats: Array<string> = []
+    try {
+      expect(host.routes).toBe(true)
+      const turn: Host.Turn = host.run({
+        prompt: "Look around.",
+        role: "worker",
+        seat: Seat.auto,
+        history: [],
+        onSeat: (seat) => seats.push(seat),
+        onEvent: (event) => {
+          events.push(event)
+          // Routing is what is under test; the routed provider is never called.
+          if (event._tag === "decision-settled") turn.cancel()
+        }
+      })
+      expect(await turn.done).toEqual({ _tag: "cancelled" })
+    } finally {
+      await host.dispose()
+    }
+    const routed = events.find((event) => event._tag === "seat-routed")
+    expect(routed?._tag === "seat-routed" && [routed.declared, routed.seat, routed.decidedBy, routed.modelId])
+      .toEqual([Seat.auto, "astra", "jev", "gpt-6-astra"])
+    expect(routed?._tag === "seat-routed" && routed.candidates).toEqual(["sol", "astra"])
+    // The system-prompt variant is picked in the same call.
+    expect(routed?._tag === "seat-routed" && routed.variant).toBe("investigate")
+    const decision = events.find((event) => event._tag === "decision-settled")
+    expect(decision?._tag === "decision-settled" && decision.classifier).toBe("seat/route")
+    expect(seats).toEqual(["astra"])
+  })
+
+  test("an auto worker on a host that does not route fails typed, never on a default seat", async () => {
+    const { host } = make(false)
+    const seats: Array<string> = []
+    try {
+      expect(host.routes).toBe(false)
+      const outcome = await host.run({
+        prompt: "Look around.",
+        role: "worker",
+        seat: Seat.auto,
+        history: [],
+        onSeat: (seat) => seats.push(seat),
+        onEvent: () => {}
+      }).done
+      expect(outcome._tag === "failed" && outcome.error).toBeInstanceOf(Seat.SeatUnrouted)
+    } finally {
+      await host.dispose()
+    }
+    expect(seats).toEqual([])
+  })
+
+  test("a judged worker is taught the operator's stance, and a stance that is neither refuses the host", async () => {
+    const { cwd, host } = make(true, { SMITHERS_SUPERVISOR_STANCE: "paranoid" })
+    const events: Array<AgentEvent.AgentEvent> = []
+    try {
+      await host.run({
+        prompt: "answer",
+        role: "worker",
+        seat: `replay:${doneReplay(cwd)}`,
+        history: [],
+        onEvent: (event) => events.push(event)
+      }).done
+    } finally {
+      await host.dispose()
+    }
+    const armed = events.find((event) => event._tag === "discipline-armed")
+    expect(armed?._tag === "discipline-armed" && armed.stance).toBe("paranoid")
+    expect(() => make(true, { SMITHERS_SUPERVISOR_STANCE: "calm" })).toThrow("SMITHERS_SUPERVISOR_STANCE")
+  })
+
+  test("a routing coordinator is taught the worker seat is auto", async () => {
+    const { cwd, host } = make(true)
+    const systems: Array<string> = []
+    try {
+      await host.run({
+        prompt: "answer",
+        role: "coordinator",
+        seat: `replay:${doneReplay(cwd)}`,
+        workerSeat: "openai:gpt-6-sol",
+        history: [],
+        onEvent: (event) => {
+          if (event._tag === "model-requested") systems.push(event.request.system.map((part) => part.text).join("\n"))
+        }
+      }).done
+    } finally {
+      await host.dispose()
+    }
+    expect(systems[0]).toContain(Runtime.coordinatorTeaching + Seat.auto)
   })
 })

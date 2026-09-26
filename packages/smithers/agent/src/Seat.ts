@@ -24,6 +24,7 @@
  *
  * @since 1.0.0-rc.0
  */
+import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import * as Schema from "effect/Schema"
 import type * as FlowEngineLike from "./FlowEngineLike.ts"
@@ -66,6 +67,39 @@ export class SeatUnresolved extends Schema.TaggedError<SeatUnresolved>()(
   "@smthrs/agent/Seat/SeatUnresolved",
   {
     seat: Schema.String,
+    message: Schema.String
+  }
+) {}
+
+/**
+ * The declared seat that asks Jev to pick the model: see
+ * {@link module:SeatRouter}.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const auto = "auto"
+
+/**
+ * A seat Jev could not pick. `reason` is `unconfigured` when no catalog or
+ * judge is bound, `no_candidates` or `too_many_candidates` when the catalog
+ * offers none or more than one question can list, and otherwise the judge's
+ * own failure. No default seat is ever chosen instead.
+ *
+ * @category errors
+ * @since 1.0.0-rc.0
+ */
+export class SeatUnrouted extends Schema.TaggedError<SeatUnrouted>()(
+  "@smthrs/agent/Seat/SeatUnrouted",
+  {
+    seat: Schema.String,
+    reason: Schema.Literals([
+      "unconfigured",
+      "interrupted",
+      "no_candidates",
+      "too_many_candidates",
+      ...Evaluator.EvaluatorErrorCode.literals
+    ]),
     message: Schema.String
   }
 ) {}

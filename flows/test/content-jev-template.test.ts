@@ -1,3 +1,4 @@
+import * as EventSink from "@smthrs/agent/EventSink"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
@@ -121,6 +122,10 @@ const runContent = async (t: TestContext, evaluator: Layer.Layer<Evaluator.Evalu
   const fixture = await repository(t)
   const counts: Record<string, number> = {}
   const prompts: string[] = []
+  const armed: Array<boolean | undefined> = []
+  const sink = Layer.succeed(EventSink.EventSink)(EventSink.make({
+    emit: (event) => Effect.sync(() => event._tag === "discipline-armed" && armed.push(event.judged))
+  }))
   const input = contentInput({ from: "v0.35.0", channels: { blog: false, thread: false } }, fixture.evidence.version)
   const host = NodeRuntime.layerHost({
     filename: join(fixture.root, ".flows", "engine.db"), workspaceRoot: fixture.root,
@@ -133,20 +138,21 @@ const runContent = async (t: TestContext, evaluator: Layer.Layer<Evaluator.Evalu
     // for a gateway outage at the seat.
     agentLayers(scriptedSeats(counts, { prompts }), 250_000, scriptedCompletion),
     HumanTask.layer, Interpreter.layer(ReleaseContent)
-  ).pipe(Layer.provideMerge(Action.layerImplementations)))
+  ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(sink)))
   const exit = await Effect.runPromise(Effect.scoped(Effect.exit(
     ReleaseContent.execute(input, { executionId }).pipe(Effect.provide(host)))))
   const brief = Exit.isSuccess(exit)
     ? (JSON.parse(await readFile(join(fixture.root, exit.value.artifact.directory, "bundle.json"), "utf8")) as
       { brief: { template: string; angle: string } }).brief
     : undefined
-  return { exit, counts, prompts, brief }
+  return { exit, counts, prompts, brief, armed }
 }
 
 for (const template of ["migration guide", "release roundup"] as const) {
   test(`Jev's ${template} reaches the writer's prompt and the brief`, { timeout: 90_000 }, async (t) => {
-    const { exit, prompts, brief } = await runContent(t, scriptedJev(template, 0.95), `jev-template-${template.split(" ")[0]}`)
+    const { exit, prompts, brief, armed } = await runContent(t, scriptedJev(template, 0.95), `jev-template-${template.split(" ")[0]}`)
     assert.equal(exit._tag, "Success", JSON.stringify(exit))
+    assert.ok(armed.length > 0 && armed.every((judged) => judged === true), "every writer step arms judged discipline")
     const asked = prompts.filter((prompt) => prompt.includes("this release calls for"))
     assert.equal(asked.length, 1, "the writer is asked to outline exactly once")
     assert.match(asked[0]!, new RegExp(template))

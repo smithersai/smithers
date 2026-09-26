@@ -206,6 +206,12 @@ The cell contract is the text the model is taught with, and its size is a cost
 the run pays every frame. The package pins a token ceiling on the rendered
 contract, so growing it is a deliberate act with a number attached.
 
+The `jev` teaching is a section of its own, rendered between the environment
+facts and the catalog only when the catalog binds `jev`. It carries the
+thresholds a cell acts on (a boolean at probability 0.8, a choice or score at
+the provider's confidence 0.7) and one worked example that the package runs
+verbatim. It is constant for a run, so the cached prefix holds.
+
 Enforced by `CellTurn.teach`, which renders the contract and the callable-flow
 catalog into the prefix zone of a `ContextWindow`, where every transition
 preserves them.

@@ -211,8 +211,13 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
   const { default: Wiki } = await import("../wiki/flow.ts")
   const { agentLayers } = await import("../wiki/runtime.ts")
   const { actionLayers } = await import("../wiki/runtime.ts")
+  const EventSink = await import("@smthrs/agent/EventSink")
   const f = await fixture(t), evidence = await run(f.ops.collect(f.spec))
   let calls = 0
+  const armed: Array<unknown> = []
+  const sink = Layer.succeed(EventSink.EventSink)(EventSink.make({
+    emit: (event) => Effect.sync(() => event._tag === "discipline-armed" && armed.push(event.judged))
+  }))
   const model = Model.make({ stream: () => Stream.suspend(() => {
     calls++
     const review = { sections: supported(evidence).sections.map((section) => ({ ...section,
@@ -229,7 +234,7 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
     route: { prepare: () => Effect.succeed({ routeId: "wiki-test", protocolId: "wiki-test", method: "POST", url: "https://example.invalid", publicHeaders: {}, body: new TextEncoder().encode("{}"), bodyText: "{}" }) }
   })) })
   const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }), agentLayers(seats, 10_000, citationsSupported), Interpreter.layer(Wiki)).pipe(
-    Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer))
+    Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer), Layer.provideMerge(sink))
   await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const input = { pages: [f.spec], mode: "verified" as const, reviewer: "scripted-test" }
     const first = yield* Wiki.execute(input, { executionId: "wiki-replay-test" })
@@ -238,6 +243,7 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
     assert.deepEqual(second, first)
   }).pipe(Effect.provide(layer))))
   assert.equal(calls, 2, "the invalid multiline quote consumes one schema correction; replay consumes no model call")
+  assert.deepEqual(armed, [true, true], "the review and its correction each arm judged discipline")
 })
 
 test("independent page reviews finish before exact citation assessment can fail", async (t) => {

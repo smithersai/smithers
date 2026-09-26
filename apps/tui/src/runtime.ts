@@ -179,7 +179,7 @@ export const source = (ports: Ports): FlowBinding.Source =>
     ...(ports.delegate === undefined ? [] : [
       bind(
         "agent.delegate",
-        "Request background work in a separate agent tab and return immediately. Six run at once by default; more queue FIFO. Reuse id to deduplicate. agent names one of the Agents in your context to run with its own prompt, model and flows. Workers may wait with agent.wait; the coordinator must not wait.",
+        "Request background work in a separate agent tab and return immediately. Six run at once by default; more queue FIFO. Reuse id to deduplicate. agent names one of the Agents in your context to run with its own prompt, model and flows. Workers may wait with agent.wait; the coordinator must not wait. Pass model only when the person names one.",
         Schema.Struct({
           id: short,
           title: short,

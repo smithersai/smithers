@@ -137,6 +137,8 @@ The Node composition for the command tree.
 | `EngineDurable` | `Application.Engine & { stores }` | The durable engine plus the shared database seam other stores hang off. |
 | `engineDurable` | `(root: string, registry?, authority?) => EngineDurable` | The real project engine. `authority` accepts `approvalAuthority`, `principal`, `credential`, and `stateRoot`. Open, migration, and journal startup failures are promoted to defects. |
 | `seatResolver`, `layerSeatResolver` | constructor, layer | Resolves a declared seat string into a credentialed model. |
+| `seatCandidates`, `layerSeatCatalog` | constructor, layer | The seats Jev routes an undeclared or `auto` run to: each alias whose provider the environment holds a credential for, by the rules `seatResolver` signs with, once per model, never Jev. |
+| `supervisorStance` | `(environment) => "careful" \| "paranoid"` | The stance a judged run on this host is taught: `SMITHERS_SUPERVISOR_STANCE`, `careful` when unset. Any other value throws a `UsageError`. |
 | `testRunner`, `testFlows`, `checkpointStore` | constructors | The `test` flow's runner, the flows it registers, and the checkpoint store. `testRunner(environment, root, workspaceRoot?)` declares the runner for `workspaceRoot`, named inside the mount `SMITHERS_TEST_CWD` gives `root`. |
 | `rebuildableTransport` | constructor | The replaceable HTTP dispatcher a model captures and uses after seat resolution returns. |
 | `environmentDispatcher`, `layerRebuildableRequestExecutor` | constructor, layer | The Undici connection pool an environment's proxy settings describe, and the model transport built over it. The executor throws the pool away after three consecutive transport failures and builds another, which is the only repair for a session the provider destroyed. Node hosts share this pool lifecycle. `RequestExecutor.layer` over a plain client cannot replace anything. |
@@ -444,6 +446,7 @@ Which seats this machine can run.
 | `Chosen`, `chooseSeat` | | The seat picked, and why. |
 | `compatible`, `compatibleKey` | | The provider compatibility table and its lookup. |
 | `defaultSeat` | `Record<Candidate, string>` | The seat string each candidate resolves to. |
+| `seatDescriptions` | `Record<string, string>` | One line per seat alias: label, provider, context window. |
 | `starterSeats` | `ReadonlyArray<readonly [variable: string, seat: string]>` | Ordered credential-variable and model-seat pairs used by scaffolding, aligned with the executor's supported provider routes. |
 | `NoSeatError`, `SeatSyntaxError`, `noSeatMessage` | | The two refusals, and the sentence that names what to set. |
 

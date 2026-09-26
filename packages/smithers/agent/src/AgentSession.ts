@@ -65,6 +65,7 @@ import type * as CellCalls from "@smthrs/harness/CellCalls"
 import * as CellTurn from "@smthrs/harness/CellTurn"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as HarnessError from "@smthrs/harness/HarnessError"
+import * as Judgement from "@smthrs/harness/Judgement"
 import * as Notifications from "@smthrs/harness/Notifications"
 import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
@@ -101,9 +102,12 @@ import { agentOutcome } from "./internal/AgentOutcome.ts"
 import { callId } from "./internal/CallIdentity.ts"
 import { failureJson } from "./internal/FailureJson.ts"
 import { failureSummary } from "./internal/FailureSummary.ts"
+import { unordered } from "./internal/TraceOrder.ts"
 import { waitingAnnotation } from "./internal/WaitingAnnotation.ts"
 import type * as QuotaPolicy from "./QuotaPolicy.ts"
+import * as Seat from "./Seat.ts"
 import { contextWindowResolver, SeatResolver } from "./SeatResolver.ts"
+import * as SeatRouter from "./SeatRouter.ts"
 import * as StandardFlows from "./StandardFlows.ts"
 
 /**
@@ -172,6 +176,8 @@ export interface Options {
   readonly readOnlyCap?: number | undefined
   /** What the supervisor may do with its readings; see `Agent.Options.supervisor`. */
   readonly supervisor?: AgentOptions["supervisor"]
+  /** Whether the host's `Evaluator` is a real judge; see `Agent.Options.judged`. */
+  readonly judged?: boolean | undefined
   /**
    * Wall-clock milliseconds one model call may spend before the boundary
    * interrupts it and re-issues it. Defaults to `CellTurn.defaultModelCallMs`;
@@ -307,7 +313,7 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["control.agent.cell-rejected-in-frame", new Set(["attempt", "code", "message"])],
   ["control.agent.narrow-only-demanded", new Set(["flow", "check", "targets", "currentDigest", "nextFrame"])],
   ["control.agent.read-only-demand-issued", new Set(["streak", "cap", "nextFrame"])],
-  ["control.agent.steering-drained", new Set(["messages", "supervisor"])],
+  ["control.agent.steering-drained", new Set(["messages", "supervisor", "monitor", "suppressed", "memory"])],
   ["control.agent.sufficiency-observed", new Set(["flow", "failed", "passed", "epoch", "nextFrame"])],
   // `refused` separates the reading that ended a run from the one that let a
   // claim stand, and it was added to an event type journals already carried.
@@ -315,36 +321,15 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // `false`, so a resumed run would derive a new identity for every
   // `claim-demanded` in its recorded prefix and publish the prefix twice.
   ["control.agent.claim-demanded", new Set(["refused"])],
-  // `supervisorSteer` was added to the one event every run journals first; a
-  // pre-supervisor record has no such key and decodes it `false`.
-  ["control.agent.discipline-armed", new Set(["supervisorSteer"])]
-])
-
-/**
- * Record types that take no ordinal in their frame.
- *
- * {@link traceIdentity} folds in an event's ordinal within its frame, so an
- * event type added in the MIDDLE of a frame moves every row after it: a run
- * journaled before the type existed and resumed after would re-derive its
- * whole recorded prefix one ordinal along, match none of it, and publish all
- * of it a second time. {@link lateFields} cannot help, because nothing about
- * the rows that moved has changed except where they sit.
- *
- * These two are therefore identified by what they say rather than by where
- * they sit, the way `prompt-rendered` is. Each carries its own coordinates in
- * its payload (`scope`, `frame`, and for a request `purpose` and `attempt`),
- * which no two records of one run share, and they are written at ordinal zero
- * without advancing the count the other rows are numbered by.
- */
-const unordered: ReadonlySet<string> = new Set([
-  "control.agent.model-requested",
-  "control.agent.decision-settled",
-  // Written by the supervisor fiber off the loop's hot path, at whatever
-  // ordinal the frame has reached when Jev answers; `scope` and `frame` are
-  // the coordinates, and no two readings of one run share them.
-  "control.agent.supervisor-settled",
-  "control.agent.supervisor-unjudged",
-  "control.agent.supervisor-memory-failed"
+  // `supervisorSteer` was added to the one event every run journals first,
+  // and later writers omit it again for `judged`; either way a record in a
+  // resumed prefix may or may not carry it.
+  ["control.agent.discipline-armed", new Set(["supervisorSteer", "judged", "relevance", "monitors", "stance"])],
+  // The Jev fields. `inserted` is listed because later writers omit it, which
+  // changes the payload of a reading a pre-change run already journaled.
+  ["control.agent.decision-settled", new Set(["usage"])],
+  ["control.agent.supervisor-settled", new Set(["inserted", "monitors", "skillsCapped"])],
+  ["control.agent.compaction-settled", new Set(["marks", "removedTokens", "unaligned"])]
 ])
 
 /** The exclusion set for an event type that has never been enriched. */
@@ -759,9 +744,12 @@ export const trace = (
           // needed" from "never armed".
           unmovedCap: event.unmovedCap,
           unresolvedCap: event.unresolvedCap,
-          // Whether a supervisor reading may nudge the run; verdicts are
-          // journaled either way, so a wave reads this to know which.
-          supervisorSteer: event.supervisorSteer,
+          // Whether Jev's readings run, and how the gates they feed are set.
+          // A real judge arms them; verdicts are journaled either way.
+          ...(event.judged === undefined ? {} : { judged: event.judged }),
+          ...(event.relevance === undefined ? {} : { relevance: event.relevance }),
+          ...(event.monitors === undefined ? {} : { monitors: event.monitors }),
+          ...(event.stance === undefined ? {} : { stance: event.stance }),
           calls: event.calls,
           memoryBytes: event.memoryBytes,
           steps: event.steps,
@@ -1043,16 +1031,66 @@ export const trace = (
           crossed: event.crossed,
           nudged: event.nudged,
           ...(event.steer === undefined ? {} : { steer: event.steer }),
-          inserted: event.inserted,
+          ...(event.inserted === undefined ? {} : { inserted: event.inserted }),
           remembered: event.remembered,
           latencyMs: event.latencyMs,
-          ...(event.usage === undefined ? {} : { usage: event.usage })
+          ...(event.usage === undefined ? {} : { usage: event.usage }),
+          ...(event.monitors === undefined ? {} : { monitors: event.monitors }),
+          ...(event.skillsCapped === undefined ? {} : { skillsCapped: event.skillsCapped })
         }
       }
     case "supervisor-unjudged":
       return {
         eventType: "control.agent.supervisor-unjudged",
         payload: { scope: event.scope, frame: event.frame, reason: event.reason, detail: event.detail }
+      }
+    case "decision-unjudged":
+      return {
+        eventType: "control.agent.decision-unjudged",
+        payload: {
+          scope: event.scope,
+          frame: event.frame,
+          classifier: event.classifier,
+          reason: event.reason,
+          detail: event.detail,
+          items: event.items
+        }
+      }
+    case "relevance-settled":
+      // Item ids are written as values, never as keys, for the redaction
+      // reason `decision-settled` gives below.
+      return {
+        eventType: "control.agent.relevance-settled",
+        payload: {
+          scope: event.scope,
+          frame: event.frame,
+          source: event.source,
+          withholdAt: event.withholdAt,
+          kept: event.kept,
+          withheld: event.withheld,
+          latencyMs: event.latencyMs,
+          ...(event.usage === undefined ? {} : { usage: event.usage })
+        }
+      }
+    case "relevance-restored":
+      return {
+        eventType: "control.agent.relevance-restored",
+        payload: { scope: event.scope, frame: event.frame, flow: event.flow }
+      }
+    case "seat-routed":
+      return {
+        eventType: "control.agent.seat-routed",
+        payload: {
+          scope: event.scope,
+          declared: event.declared,
+          seat: event.seat,
+          modelId: event.modelId,
+          variant: event.variant,
+          candidates: event.candidates,
+          decidedBy: event.decidedBy,
+          ...(event.confidence === undefined ? {} : { confidence: event.confidence }),
+          latencyMs: event.latencyMs
+        }
       }
     case "supervisor-memory-failed":
       // Counted by a wave's scorecard: a write lost to a locked store must
@@ -1108,6 +1146,7 @@ export const trace = (
           latencyMs: event.latencyMs,
           acted: event.acted,
           decidedBy: event.decidedBy,
+          ...(event.usage === undefined ? {} : { usage: event.usage }),
           ...truncatedMarker([
             [event.state, traced.state.field],
             [questions, traced.questions.field],
@@ -1155,7 +1194,19 @@ export const trace = (
     case "compaction-settled":
       return {
         eventType: "control.agent.compaction-settled",
-        payload: { replacedPrefixDigest: event.replacedPrefixDigest }
+        payload: {
+          replacedPrefixDigest: event.replacedPrefixDigest,
+          // Counts, not digests: the digests name messages the trail never carried.
+          ...(event.marks === undefined ? {} : {
+            marks: {
+              kept: event.marks.filter(({ mark }) => mark === "keep").length,
+              squashed: event.marks.filter(({ mark }) => mark === "squash").length,
+              removed: event.marks.filter(({ mark }) => mark === "remove").length
+            }
+          }),
+          ...(event.removedTokens === undefined ? {} : { removedTokens: event.removedTokens }),
+          ...(event.unaligned === undefined ? {} : { unaligned: event.unaligned })
+        }
       }
     case "steering-drained":
       // The operator's own words, which existed nowhere else in the journal:
@@ -1181,7 +1232,10 @@ export const trace = (
               role: message.role,
               text: tracedField(messageText(message))
             }))
-          })
+          }),
+          ...(event.monitor === undefined ? {} : { monitor: event.monitor }),
+          ...(event.suppressed === undefined ? {} : { suppressed: event.suppressed }),
+          ...(event.memory === undefined ? {} : { memory: event.memory })
         }
       }
     case "turn-closed":
@@ -2024,6 +2078,9 @@ export const make = (
     const executables = yield* Effect.serviceOption(Executable.Catalog)
     const engine = yield* FlowRuntime.FlowRuntime
     const seats = yield* SeatResolver
+    // Optional so every existing composition keeps its requirements: without
+    // a catalog, an undeclared seat is refused exactly as it always was.
+    const seatCatalog = yield* Effect.serviceOption(SeatRouter.Catalog)
     const agent = yield* Agent
     const engineRuns = yield* RunStore.RunStore
     const engineState = yield* DurableEngineState.DurableEngineState
@@ -2352,8 +2409,11 @@ export const make = (
     ): Effect.Effect<string, LaunchFailed> =>
       Effect.suspend(() => {
         // Validate the same executable fields at launch and on every resume.
-        // An identified prompt without a seat cannot be run by another host.
+        // A declared seat is a person's choice and wins. An undeclared one is
+        // Jev's to pick, at run start, from the host's catalog; a host with no
+        // catalog cannot run it at all.
         if (Option.isNone(descriptor.model)) {
+          if (Option.isSome(seatCatalog)) return Effect.succeed(Seat.auto)
           return Effect.fail(
             new LaunchFailed({
               runId,
@@ -2364,6 +2424,25 @@ export const make = (
           )
         }
         return Effect.succeed(descriptor.model.value)
+      })
+
+    /**
+     * The catalog an `auto` seat is routed over, with at least one seat in
+     * it. Checked at launch, so an unroutable run is refused before it is
+     * accepted, and again on every attempt, which is where Jev is asked.
+     */
+    const routingCatalog = (runId: string): Effect.Effect<SeatRouter.Service, LaunchFailed> =>
+      Effect.gen(function*() {
+        const refused = (reason: "unconfigured" | "no_candidates", message: string) =>
+          new LaunchFailed({ runId, message, cause: { seat: Seat.auto, reason } })
+        if (Option.isNone(seatCatalog)) {
+          return yield* refused("unconfigured", "This host has no seat catalog to route an `auto` seat over")
+        }
+        const candidates = yield* seatCatalog.value.candidates.pipe(
+          Effect.mapError((error) => refused("unconfigured", error.message))
+        )
+        if (candidates.length === 0) return yield* refused("no_candidates", "The seat catalog offers no seat")
+        return seatCatalog.value
       })
 
     const approvedModule = (
@@ -2443,7 +2522,6 @@ export const make = (
           )
         }
         const seatId = yield* approvedSeat(payload.runId, card, descriptor)
-        const seat = yield* seats.resolve(seatId)
         const steering = yield* Notifications.make({ runId: payload.runId, lineageId: payload.runId })
         // The three services a durable flow body already holds, captured
         // together: `StandardFlows.clock` hands them back to a `DurableClock`
@@ -2474,6 +2552,36 @@ export const make = (
         // where it sits: before every frame, and derived from the same
         // material on a resumed attempt, so the unique index deduplicates it.
         const rendered = prompt(flowBody.text, plan.decodedInput)
+        // Jev routes an `auto` seat once per run: the decision is a sealed
+        // step keyed by this execution, so a resumed attempt is served the
+        // seat and variant it first started on and asks nothing.
+        const routing = seatId === Seat.auto
+          ? yield* Effect.gen(function*() {
+            const catalog = yield* routingCatalog(payload.runId)
+            const decision = yield* SeatRouter.durable({
+              declared: seatId,
+              state: {
+                task: Judgement.task(rendered.text),
+                flow: card.flowId,
+                description: descriptor.description,
+                capabilities: card.envelope.capabilities
+              }
+            }, { executionId: payload.runId, purpose: "run" }).pipe(
+              Effect.provideService(SeatRouter.Catalog, catalog),
+              Effect.provide(engineServices)
+            )
+            const variant = SeatRouter.variantText(catalog.variants, decision.variant)
+            if (variant === undefined) {
+              return yield* new Seat.SeatUnrouted({
+                seat: seatId,
+                reason: "unconfigured",
+                message: `The seat catalog no longer offers the variant ${decision.variant} this run started on`
+              })
+            }
+            return { decision, variant }
+          })
+          : undefined
+        const seat = yield* seats.resolve(routing === undefined ? seatId : routing.decision.seat)
         const renderedRecord = promptRendered(rendered)
         const renderedMaterial = JSON.parse(JSON.stringify(renderedRecord.payload)) as Record<string, unknown>
         pending.push({
@@ -2558,7 +2666,9 @@ export const make = (
           }),
           capacity: options.capacity,
           prompt: rendered.text,
-          system: options.system,
+          // The host's own system text stays first; a routed run's variant
+          // follows it.
+          system: routing === undefined ? options.system : [...(options.system ?? []), ...routing.variant],
           registry,
           promptRunner: options.promptRunner,
           flows: [
@@ -2583,8 +2693,15 @@ export const make = (
           unmovedCap: options.unmovedCap,
           unresolvedCap: options.unresolvedCap,
           approvalChannel: options.approvalChannel ?? false,
-          supervisor: options.supervisor
+          supervisor: options.supervisor,
+          judged: options.judged
         }).pipe(
+          // A routed run's decision opens its trail; a declared seat adds nothing.
+          (stream) =>
+            routing === undefined ? stream : Stream.concat(
+              Stream.fromIterable(SeatRouter.events(routing.decision, { scope: payload.runId, modelId: seat.modelId })),
+              stream
+            ),
           (stream) => agentOutcome(stream, record),
           Effect.provide(options.budget(card.envelope)),
           Effect.provide(options.quotaPolicy),
@@ -3193,15 +3310,21 @@ export const make = (
           const seatId = yield* approvedSeat(input.run.runId, input.plan.card, descriptor.value)
           // Resolve the seat now, so a missing key refuses the launch as a
           // typed failure instead of failing the run after it was accepted.
-          yield* seats.resolve(seatId).pipe(
-            Effect.mapError((error) =>
-              new LaunchFailed({
-                runId: input.run.runId,
-                message: error.message,
-                cause: { seat: error.seat }
-              })
+          // An `auto` seat has no seat yet: Jev picks it when the run starts,
+          // never here, so the launch only checks there is something to pick.
+          if (seatId === Seat.auto) {
+            yield* routingCatalog(input.run.runId)
+          } else {
+            yield* seats.resolve(seatId).pipe(
+              Effect.mapError((error) =>
+                new LaunchFailed({
+                  runId: input.run.runId,
+                  message: error.message,
+                  cause: { seat: error.seat }
+                })
+              )
             )
-          )
+          }
         }
         const start = yield* Deferred.make<void>()
         const drive: Drive = { settled: false }

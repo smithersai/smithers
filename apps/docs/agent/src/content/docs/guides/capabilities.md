@@ -28,7 +28,7 @@ const run = agent.run({
     StandardFlows.filesystem(filesystemServices), // FileSystem | Path
     StandardFlows.shell(shellServices), // ChildProcessSpawner | Path
     StandardFlows.tests(testServices), // ChildProcessSpawner | Evaluator | TestRunner
-    StandardFlows.memory(memoryServices), // MemoryStore | Recall
+    StandardFlows.memory(memoryServices, judgeServices), // MemoryStore | Recall, Evaluator
     StandardFlows.jev(judgeServices), // Evaluator
     ChildFlows.source(children)
   ]
@@ -40,7 +40,7 @@ const run = agent.run({
 | `filesystem` | `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `FileSystem \| Path`                             |
 | `shell`      | `bash`                                                       | `ChildProcessSpawner \| Path`                    |
 | `tests`      | the project's test runner                                    | `ChildProcessSpawner \| Evaluator \| TestRunner` |
-| `memory`     | `remember`, `recall`                                         | `MemoryStore \| Recall`                          |
+| `memory`     | `remember`, `recall`                                         | `MemoryStore \| Recall`, plus `Evaluator`        |
 | `jev`        | `jev`                                                        | `Evaluator`                                      |
 | `clock`      | `wait`                                                       | `Crypto \| FlowRuntime \| FlowInstance`          |
 | `approval`   | `ask`                                                        | an `Asker` port, not a context                   |
@@ -53,12 +53,12 @@ transport, defaulting to the docker or podman CLI, which is what makes `bash`'s
 durable engine; nothing in `Agent` imports it, and `AgentSession` composes it
 for you.
 
-`memory` reaches any bank a call names. Pass a scope to confine a run to one
-namespace:
+`memory` reaches any bank a call names. Pass a scope, after the judge when
+there is one, to confine a run to one namespace:
 
 ```ts
-StandardFlows.memory(memoryServices, {
-  policy: { namespace: { kind: "agent", id: "builder" }, recall: "auto", maxTokens: 2048, retain: "on-complete" },
+StandardFlows.memory(memoryServices, judgeServices, {
+  policy: { namespace: { kind: "agent", id: "builder" }, maxTokens: 2048, retain: "on-complete" },
   provenance: { runId }
 })
 ```
@@ -123,7 +123,7 @@ const judged = await ctx.call("jev", {
     { type: "boolean", instructions: `Does files[${i}] implement or call authentication?` }
   ]))
 })
-const authFiles = files.filter((_, i) => judged.answers[String(i)].value)
+const authFiles = files.filter((_, i) => judged.answers[String(i)].probability >= 0.8)
 ```
 
 - `state` is any JSON up to 256 KiB (`defaultMaxJevStateBytes`; a host may
@@ -145,9 +145,13 @@ const authFiles = files.filter((_, i) => judged.answers[String(i)].value)
   no `jev` in its catalog rather than a stub. The native host binds it beside
   `memory`, with the judge the completion brake already uses.
 
-The cell contract's rule 10 tells the model to prefer `jev` for every
-enumerable judgment over many items and never for text generation; the flow's
-catalog description carries the details.
+Where `jev` is bound, the harness teaches it in a `cell-jev` prompt section
+with one worked example: use `jev` for every judgment over more than 3 items,
+make one call rather than one per item, never ask it for text, act on a boolean
+at `probability >= 0.8` and on a choice or score at the provider's
+`confidence >= 0.7`, and print the uncertain items instead of deciding them. A
+run without `jev` is not taught it. The flow's catalog description carries the
+details.
 
 ## How the catalog is composed
 

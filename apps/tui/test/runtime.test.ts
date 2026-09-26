@@ -268,6 +268,8 @@ it("accepts only named models in the delegate flow", async () => {
     list: () => []
   }).bindings())
   const delegate = bindings.find((binding) => binding.descriptor.name === "agent.delegate")!
+  // The coordinator's own pick is not a person's choice; an unnamed model is routed by Jev.
+  expect(delegate.descriptor.description).toEndWith(" Pass model only when the person names one.")
   const input = { id: "test", title: "Test", prompt: "Test work" }
   const call = (value: unknown) => delegate.run({ input: value } as Parameters<typeof delegate.run>[0])
   for (const model of Object.keys(Models.delegateModels)) {

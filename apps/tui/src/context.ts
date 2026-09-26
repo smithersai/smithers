@@ -1,6 +1,7 @@
 /**
- * What every turn is told before its task: the working directory, the
- * project's instruction files, and the conversation so far.
+ * What every turn is told before its task: the working directory and the
+ * conversation so far, then the project's instruction files, which the agent
+ * shows after the host's system text and a judged run may trim.
  *
  * Instruction files follow pi, bounded by the repository: in each directory
  * from the repository root (the nearest ancestor holding `.jj` or `.git`)
@@ -75,18 +76,20 @@ export const compactable = (history: ReadonlyArray<Entry>, tokens: number): numb
   return dropped
 }
 
+/**
+ * The instruction files a turn is given, with their text. They are the
+ * person's own files, so a judged worker withholds the chunks Jev is
+ * confident its task does not need; see `Agent.Options.instructions`.
+ */
+export const instructions = (cwd: string): ReadonlyArray<{ readonly path: string; readonly text: string }> =>
+  instructionFiles(cwd).map((path) => ({ path, text: readFileSync(path, "utf8") }))
+
+/** The host's own system text: the working directory, the jj rule and the conversation. */
 export const system = (cwd: string, history: ReadonlyArray<Entry>): Array<string> => {
   const parts = [
     `You are a coding agent working in ${cwd}. Read before you change, keep edits small, and verify with the repository's own commands. Paths are relative to ${cwd}.`
   ]
   if (jjManaged(cwd)) parts.push(jjRule)
-  const files = instructionFiles(cwd)
-  if (files.length > 0) {
-    parts.push(
-      "Project-specific instructions and guidelines:\n\n" +
-        files.map((path) => `<project_instructions path="${path}">\n${readFileSync(path, "utf8")}\n</project_instructions>`).join("\n\n")
-    )
-  }
   if (history.length > 0) {
     parts.push(
       "The conversation so far, oldest first:\n\n" + history.map(text).join("\n\n")

@@ -15,11 +15,12 @@ import * as Maintenance from "@smthrs/memory/Maintenance"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import type * as Recall from "@smthrs/memory/Recall"
 import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { SqlClient } from "effect/unstable/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
+import * as CliError from "../CliError.ts"
 import * as Environment from "../Environment.ts"
 
 /**
@@ -44,7 +45,9 @@ export const busyTimeoutMs = 10_000
  *
  * `remember` is on only when the operator opted into a memory database of
  * its own; a workspace's engine database is not a place a run's sentences
- * should accumulate unasked. `steer` is `SMITHERS_SUPERVISOR_STEER=1`.
+ * should accumulate unasked.
+ *
+ * `stance` is {@link stance}.
  *
  * @since 1.0.0
  * @private
@@ -52,13 +55,36 @@ export const busyTimeoutMs = 10_000
 export const options = (
   environment: Environment.Source,
   workspaceRoot: string
-): { readonly steer: boolean; readonly remember: boolean; readonly namespace: string } => {
+): {
+  readonly remember: boolean
+  readonly namespace: string
+  readonly stance: "careful" | "paranoid"
+} => {
   const database = Environment.read(environment, "SMITHERS_MEMORY_DB")
   const identity = resolve(database ?? workspaceRoot)
   return {
-    steer: Environment.read(environment, "SMITHERS_SUPERVISOR_STEER") === "1",
     remember: database !== undefined,
-    namespace: `project-${createHash("sha256").update(identity).digest("hex").slice(0, 16)}`
+    namespace: `project-${createHash("sha256").update(identity).digest("hex").slice(0, 16)}`,
+    stance: stance(environment)
+  }
+}
+
+/**
+ * The static stance a judged run is taught: `SMITHERS_SUPERVISOR_STANCE`,
+ * `careful` when unset. It arms nothing. Any other value refuses host
+ * composition with a `UsageError` naming the variable.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const stance = (environment: Environment.Source): "careful" | "paranoid" => {
+  const value = Environment.read(environment, "SMITHERS_SUPERVISOR_STANCE") ?? "careful"
+  try {
+    return Schema.decodeUnknownSync(Schema.Literals(["careful", "paranoid"]))(value)
+  } catch {
+    throw new CliError.UsageError({
+      message: `SMITHERS_SUPERVISOR_STANCE must be careful or paranoid, not ${JSON.stringify(value)}`
+    })
   }
 }
 

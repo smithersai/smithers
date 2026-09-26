@@ -1,8 +1,14 @@
 import * as CompletionClaim from "@smthrs/harness/CompletionClaim"
+import * as Monitor from "@smthrs/harness/Monitor"
+import * as Relevance from "@smthrs/harness/Relevance"
+import * as Supervisor from "@smthrs/harness/Supervisor"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { Effect } from "effect"
+import * as Descriptor from "@smthrs/registry/Descriptor"
+import { Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as ScriptedJudge from "../src/ScriptedJudge.ts"
+import * as Seat from "../src/Seat.ts"
+import * as SeatRouter from "../src/SeatRouter.ts"
 
 describe("the explicit offline completion judge", () => {
   it("rejects an invented command and accepts the same claim when its command is recorded", async () => {
@@ -65,5 +71,233 @@ describe("the explicit offline completion judge", () => {
     )
     expect(error.code).toBe("unreachable")
     expect(error.message).toContain("injection")
+  })
+})
+
+const boolean = (id: string) => Evaluator.BooleanQuestion.of({ instructions: id })
+
+const evaluate = (request: Evaluator.Request) =>
+  Effect.flatMap(Evaluator.Evaluator, (evaluator) => evaluator.evaluate(request)).pipe(
+    Effect.provide(ScriptedJudge.layerAll)
+  )
+
+const refused = (request: Evaluator.Request) => Effect.runPromise(Effect.flip(evaluate(request)))
+
+const signals: Supervisor.Signals = {
+  frame: 3,
+  maxFrames: 0,
+  readOnlyFrames: 0,
+  repeatFrames: 0,
+  mutations: 1,
+  remoteMutations: 0,
+  treeMoved: true,
+  paths: 1,
+  checksRun: 1,
+  checksFailing: 0,
+  failuresUnanswered: 0,
+  callsFailed: 0,
+  callsSettled: 2,
+  narrowingDemands: 0,
+  unmovedDemands: 0,
+  unresolvedDemands: 0,
+  claimDemands: 0,
+  sufficiencyStated: false
+}
+
+describe("the offline judge for every classifier", () => {
+  it("still refuses a completion claim that reports unrecorded work", async () => {
+    const reading = await Effect.runPromise(
+      CompletionClaim.read({ task: "Fix it", claim: "Ran `node test.mjs`; it passed.", treeMoved: true, checksRun: [] })
+        .pipe(Effect.provide(ScriptedJudge.layerAll))
+    )
+    expect(CompletionClaim.unrecorded(reading!)).toBe(true)
+  })
+
+  it("withholds items that share nothing with the task and keeps those that do", async () => {
+    const flow = (name: string, description: string) =>
+      Relevance.flowItem(
+        new Descriptor.FlowDescriptor({
+          name,
+          description,
+          body: new Descriptor.BodyRefModule({ path: `/flows/${name}/flow.ts` }),
+          input: new Descriptor.SchemaRefNone(),
+          output: new Descriptor.SchemaRefNone(),
+          model: Option.none(),
+          flows: [],
+          capabilities: ["fs:read:**"],
+          effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+          placement: Option.none(),
+          modelInvocable: true,
+          path: `/flows/${name}`,
+          frontmatter: {},
+          provenance: new Descriptor.Provenance({ source: "test", root: "/flows" })
+        })
+      )
+    const items: ReadonlyArray<Relevance.Item> = [
+      flow("deploy", "Ship a release to production."),
+      flow("grep", "Search files for a pattern."),
+      flow("lint", "Report style problems."),
+      { kind: "instruction", id: "AGENTS.md#0", text: "- Publish benchmark claims with artifacts." },
+      { kind: "instruction", id: "AGENTS.md#1", text: "- Keep failing tests visible." },
+      { kind: "memory", id: "m1", text: "The parser lives in src/parse.ts." },
+      { kind: "memory", id: "m2", text: "Deploys need a token." },
+      { kind: "instruction", id: "AGENTS.md#2", text: "---" }
+    ]
+    const reading = await Effect.runPromise(
+      Relevance.judge({ task: "Search the parser", query: "failing tests", recent: "run lint" }, items).pipe(
+        Effect.provide(ScriptedJudge.layerAll)
+      )
+    )
+    expect(reading.verdicts.map((verdict) => [verdict.item.id, verdict.withheld])).toEqual([
+      ["deploy", true],
+      ["grep", false],
+      ["lint", false],
+      ["AGENTS.md#0", true],
+      ["AGENTS.md#1", false],
+      ["m1", false],
+      ["m2", true],
+      ["AGENTS.md#2", true]
+    ])
+    const bare = await Effect.runPromise(
+      Relevance.judge({ task: "Deploy it" }, items.slice(0, 1)).pipe(Effect.provide(ScriptedJudge.layerAll))
+    )
+    expect(bare.verdicts[0]!.withheld).toBe(false)
+  })
+
+  it("removes a frame only when a later frame observed the same bytes, and keeps none verbatim", async () => {
+    const answered = await Effect.runPromise(evaluate({
+      state: {
+        context: { task: "Fix it", failing: [] },
+        items: [
+          { tokens: 10, cell: "a", prose: "", observed: "same" },
+          { tokens: 10, cell: "b", prose: "", observed: "other" },
+          { tokens: 10, cell: "c", prose: "", observed: "same" }
+        ]
+      },
+      questions: Object.fromEntries(
+        [0, 1, 2].flatMap((i) => [`remove_${i}`, `keep_${i}`]).map((id) => [id, boolean(id)])
+      )
+    }))
+    expect(answered.answers).toMatchObject({
+      remove_0: { probability: 0.9 },
+      remove_1: { probability: 0.1 },
+      remove_2: { probability: 0.1 },
+      keep_0: { probability: 0.1 }
+    })
+  })
+
+  const route = (task: string, candidates: ReadonlyArray<SeatRouter.Candidate>) =>
+    SeatRouter.route({
+      declared: Seat.auto,
+      state: { task, flow: "prompt", description: "", capabilities: [] }
+    }).pipe(
+      Effect.provide(
+        SeatRouter.layer({ candidates: Effect.succeed(candidates), variants: SeatRouter.defaultVariants })
+      ),
+      Effect.provide(ScriptedJudge.layerAll),
+      Effect.runPromise
+    )
+
+  it("routes to the sorted-first seat whose description shares a word with the task", async () => {
+    const candidates = [
+      { id: "strong", description: "Multi-file refactors and unfamiliar code." },
+      { id: "fast", description: "Small edits." },
+      { id: "cheap", description: "Quick lookups." }
+    ]
+    const change = await route("Fix the unfamiliar parser", candidates)
+    expect([change.seat, change.variant, change.decidedBy]).toEqual(["strong", "change", "jev"])
+    const fallback = await route("Explain the build", candidates)
+    expect([fallback.seat, fallback.variant]).toEqual(["cheap", "investigate"])
+    const only = await route("Fix the parser", [candidates[1]!])
+    expect([only.seat, only.variant, only.decidedBy]).toEqual(["fast", "change", "only"])
+  })
+
+  it("answers the seat alone when the catalog offers one variant, with its confidence", async () => {
+    const answered = await Effect.runPromise(evaluate({
+      state: { task: "Implement a feature", flow: "prompt", description: "", capabilities: [] },
+      questions: {
+        seat: new Evaluator.ChoiceQuestion({ instructions: "seat", criteria: { b: "Feature work.", a: "Docs." } })
+      }
+    }))
+    expect(answered.answers).toEqual({
+      seat: { type: "choice", choice: "b", probabilities: { b: 0.9 } }
+    })
+  })
+
+  it("refuses a seat that is not a choice", async () => {
+    const error = await refused({
+      state: { task: "Fix it", flow: "prompt", description: "", capabilities: [] },
+      questions: { seat: boolean("seat") }
+    })
+    expect(error.code).toBe("unreachable")
+  })
+
+  it.each([[0, 0.1], [2, 0.9]])("answers all eleven supervisor questions calmly at %s repeated frames", async (
+    repeatFrames,
+    thrashing
+  ) => {
+    const reading = await Effect.runPromise(
+      Supervisor.read({
+        task: "Fix it",
+        frames: [],
+        signals: { ...signals, repeatFrames },
+        candidates: ["The build uses pnpm."],
+        skills: [],
+        called: [],
+        jevAvailable: false
+      }, {}).pipe(Effect.provide(ScriptedJudge.layerAll))
+    )
+    expect(Object.keys(reading.asked.answers).sort()).toHaveLength(12)
+    expect(reading).toMatchObject({
+      thrashing,
+      onTarget: 0.9,
+      suspect: 0.1,
+      outdatedContext: 0.1,
+      irrelevantContext: 0.1,
+      emotions: { frustrated: "none", anxious: "none", scared: "none", confused: "none", confident: "none" },
+      needsHelp: "none",
+      remember: [false]
+    })
+  })
+
+  it("fires a skill monitor only while its skill is uncalled and keeps every other monitor quiet", async () => {
+    const snapshot: Supervisor.Snapshot = {
+      task: "Fix it",
+      frames: [],
+      signals,
+      candidates: [],
+      skills: [Supervisor.skill("review-checklist", "Review.", "/r.md"), Supervisor.skill("style", "Style.", "/s.md")],
+      called: ["style"],
+      jevAvailable: true
+    }
+    const monitors = [...Monitor.skills(snapshot), Monitor.useJev()]
+    const answered = await Effect.runPromise(evaluate({
+      state: Schema.encodeSync(Supervisor.Snapshot)(snapshot),
+      questions: {
+        ...Supervisor.classifier.questions,
+        ...Monitor.questions(monitors, snapshot),
+        monitor_reminder: boolean("monitor"),
+        monitor_skill_ghost: boolean("skills[7]"),
+        monitor_skill_loose: boolean("no index")
+      }
+    }))
+    expect(answered.answers["monitor_skill_review_checklist"]).toEqual({ type: "boolean", probability: 0.9 })
+    expect(answered.answers["monitor_skill_style"]).toEqual({ type: "boolean", probability: 0.05 })
+    expect(answered.answers["monitor_use_jev"]).toEqual({ type: "boolean", probability: 0.05 })
+    expect(answered.answers["monitor_reminder"]).toEqual({ type: "boolean", probability: 0.05 })
+    expect(answered.answers["monitor_skill_ghost"]).toEqual({ type: "boolean", probability: 0.05 })
+    expect(answered.answers["monitor_skill_loose"]).toEqual({ type: "boolean", probability: 0.05 })
+  })
+
+  it.each([
+    ["an unknown id set", { injection: boolean("injection") }, { claim: "" }],
+    ["an empty id set", {}, {}],
+    ["a supervisor set with a stranger", { thrashing: boolean("thrashing"), other: boolean("other") }, {}],
+    ["a seat beside a stranger", { seat: boolean("seat"), other: boolean("other") }, {}],
+    ["relevance with an unreadable state", { unnecessary_0: boolean("u") }, { context: {}, items: [] }],
+    ["compaction with an unreadable state", { remove_0: boolean("r"), keep_0: boolean("k") }, null]
+  ])("fails unreachable on %s", async (_, questions, state) => {
+    const error = await refused({ state, questions })
+    expect(error.code).toBe("unreachable")
   })
 })

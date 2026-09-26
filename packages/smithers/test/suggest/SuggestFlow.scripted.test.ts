@@ -3,7 +3,9 @@
  * everything else real: the kernel-guarded filesystem pinned to the root, the
  * grant store that denies `.git/` and `.flows/`, the envelope, the sandbox.
  */
-import { Effect } from "effect"
+import * as EventSink from "@smthrs/agent/EventSink"
+import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import { Effect, Layer } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -34,10 +36,23 @@ const suggestionOf = async (id: string, repository: Checklist.Repository): Promi
   throw new Error(`no ${id} suggestion`)
 }
 
-const execute = (directory: string, brief: string, script: SuggestFlow.Script) =>
+const execute = (
+  directory: string,
+  brief: string,
+  script: SuggestFlow.Script,
+  events: Array<AgentEvent.AgentEvent> = []
+) =>
   Effect.runPromise(
     SuggestFlow.run(brief).pipe(
-      Effect.provide(SuggestFlow.layerScripted({ root: directory, script }))
+      Effect.provide(
+        SuggestFlow.layerScripted({ root: directory, script }).pipe(
+          Layer.provideMerge(
+            Layer.succeed(EventSink.EventSink)(EventSink.make({
+              emit: (event) => Effect.sync(() => void events.push(event))
+            }))
+          )
+        )
+      )
     )
   )
 
@@ -48,13 +63,14 @@ describe("the suggest flow with a scripted model", { timeout: 120_000 }, () => {
     const context = { seat: "openai:gpt-5.6-sol", facts: Checklist.evidence(repository) }
     const suggestion = await suggestionOf("test-target", repository)
     const asked: Array<string> = []
+    const events: Array<AgentEvent.AgentEvent> = []
     const result = await execute(root, Brief.suggestion(context, suggestion), (prompt) => {
       asked.push(prompt)
       return [
         `await ctx.call("write", { path: "flows/test-target/flow.mdx", content: ${JSON.stringify(flowBody)} })`,
         SuggestFlow.done({ files: ["flows/test-target/flow.mdx"], command: "smthrs up test-target", notes: "scripted" })
       ].join("\n")
-    })
+    }, events)
 
     expect(result).toEqual({
       files: ["flows/test-target/flow.mdx"],
@@ -67,6 +83,10 @@ describe("the suggest flow with a scripted model", { timeout: 120_000 }, () => {
     expect(asked[0]).toContain("# Suggestion `test-target`: A test target that reruns only what changed")
     expect(asked[0]).toContain("Seat for the flow's `model:` line: `openai:gpt-5.6-sol`")
     expect(asked[0]).toContain("- test runner: vitest")
+    // The host's judge is real, so the run arms judged discipline and is
+    // taught to call jev.
+    expect(events.find((event) => event._tag === "discipline-armed")).toMatchObject({ judged: true })
+    expect(asked[0]).toContain(`await ctx.call("jev", {`)
   })
 
   it("refuses a write under .git through the grant store, so the agent cannot commit by hand", async () => {

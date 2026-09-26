@@ -71,7 +71,8 @@ export interface Prompt {
  *
  * A markdown flow is a prompt, so running one is a nested agent run rather than
  * a function call. The host supplies that runner; this module only resolves and
- * renders.
+ * renders. A runner whose child declares the `auto` model routes that child
+ * through `SeatRouter.durable` from `@smthrs/agent`, keyed by the child run.
  *
  * @category models
  * @since 0.1.0

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import * as Providers from "@smthrs/cli/Providers"
+import { Effect } from "effect"
 import * as Models from "../src/models.ts"
 
 describe("seatOf", () => {
@@ -21,5 +23,33 @@ describe("seatOf", () => {
     ["", undefined]
   ] as const)("%p resolves to %p", (declared, seat) => {
     expect(Models.seatOf(declared, available)).toBe(seat)
+  })
+})
+
+describe("routing", () => {
+  const available: Models.Available = {
+    models: [
+      { seat: "openai:gpt-6-sol", label: "GPT-6 Sol", provider: "OpenAI" },
+      { seat: "openai:gpt-6-sol", label: "GPT-6 Sol", provider: "OpenRouter" },
+      { seat: "cerebras:qwen", label: "Qwen", provider: "Cerebras" },
+      { seat: Models.delegateModels.cerebras, label: "Qwen 3.8", provider: "Cerebras" },
+      { seat: "gemini:gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "Gemini" }
+    ],
+    defaultSeat: undefined,
+    workerSeat: undefined,
+    environment: {}
+  }
+
+  test("offers each non-Cerebras seat once, by its alias when it has one", () => {
+    const service = Models.routing(available, {}, true)!
+    expect(Effect.runSync(service.candidates)).toEqual([
+      { id: "sol", description: Providers.seatDescriptions.sol! },
+      { id: "gemini:gemini-2.5-pro", description: "Gemini 2.5 Pro" }
+    ])
+  })
+
+  test("routes nothing unjudged or when the operator named the worker seat", () => {
+    expect(Models.routing(available, {}, false)).toBeUndefined()
+    expect(Models.routing(available, { SMITHERS_TUI_WORKER_SEAT: "openai:gpt-6-sol" }, true)).toBeUndefined()
   })
 })

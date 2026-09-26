@@ -7,10 +7,11 @@
  * journal's own span, the four token counters, USD from the committed price
  * table in `prices.ts`, and beside it what the run's Jev readings cost: calls,
  * tokens and `jevUsd`, from `claim-demanded` (the completion brake),
- * `supervisor-settled` (the per-frame supervisor) and the `jev` flow's own
- * `cell-call-settled` results. `usd` stays the seat's model spend; `totalUsd`
- * is both. `decision-settled` repeats a reading without usage and is not
- * priced.
+ * `supervisor-settled` (the per-frame supervisor), the `jev` flow's own
+ * `cell-call-settled` results and a gate classifier's `decision-settled`.
+ * `usd` stays the seat's model spend; `totalUsd` is both. Any other
+ * `decision-settled` repeats a reading already metered and is not priced;
+ * `jev-usage.ts` owns which rows are which.
  *
  * This reads the journal with `node:sqlite` and nothing else. It deliberately
  * does **not** go through `lib/journal-facts.mjs`, which imports the harness's
@@ -25,7 +26,7 @@
  * `unknown: true`, so the budget cannot mistake absent accounting for zero.
  */
 import { existsSync, statSync } from "node:fs"
-import { jevUsageOf } from "../jev-usage.ts"
+import { jevSources, jevUsageOf } from "../jev-usage.ts"
 import { journalRows } from "./journal-rows.mjs"
 import { jevModel, usd } from "../prices.ts"
 
@@ -34,9 +35,10 @@ const readJournalCost = (databasePath) => {
   // of a current run; `journalRows` reads both (see lib/journal-rows.mjs).
   const rows = journalRows(
     databasePath,
-    "event_type in ('control.agent.model-settled', 'control.agent.turn-opened',"
-      + " 'control.agent.claim-demanded', 'control.agent.supervisor-settled', 'control.agent.cell-call-settled',"
-      + " 'control.agent.supervisor-unjudged')"
+    `event_type in (${
+      ["control.agent.model-settled", "control.agent.turn-opened", "control.agent.supervisor-unjudged", ...jevSources]
+        .map((eventType) => `'${eventType}'`).join(", ")
+    })`
   )
 
   const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0 }

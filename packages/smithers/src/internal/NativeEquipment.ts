@@ -4,6 +4,7 @@
 import * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as SeatRouter from "@smthrs/agent/SeatRouter"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
@@ -21,11 +22,12 @@ import * as TestRunner from "@smthrs/std/TestRunner"
 import { Clock, Context, Effect, Layer, Redacted } from "effect"
 import type { Path, Result } from "effect"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import { existsSync } from "node:fs"
+import { homedir } from "node:os"
 import { isAbsolute, relative } from "node:path"
 import * as CodexAuth from "../CodexAuth.ts"
 import * as Environment_ from "../Environment.ts"
 import * as Providers from "../Providers.ts"
+import { readText } from "./HostFiles.ts"
 
 const apiKeyVariable: Readonly<Record<string, string>> = {
   anthropic: "ANTHROPIC_API_KEY",
@@ -125,6 +127,87 @@ const withAliases = (base: SeatResolver.Service): SeatResolver.Service =>
     }
   })
 
+/**
+ * How {@link seatResolver} signs one provider's seats on `host`, or why it
+ * cannot: the one statement of its credential rules, which the resolver
+ * routes by and {@link seatCandidates} offers by.
+ *
+ * `openai` runs in the mode `SMITHERS_OPENAI_AUTH` selects: a key, or the
+ * ChatGPT session behind the model proxy or on this machine. A Claude
+ * subscription stands in for the Anthropic key when no key is set. An empty
+ * variable is an unset one. An account pool with accounts for the provider's
+ * route signs ahead of all of these; see {@link poolRouteOf}.
+ */
+type Credential =
+  | { readonly _tag: "Compatible"; readonly key: string }
+  | { readonly _tag: "Pooled"; readonly key: string; readonly origin: string }
+  | { readonly _tag: "Session"; readonly file: string }
+  | { readonly _tag: "Subscription"; readonly token: string }
+  | { readonly _tag: "Key"; readonly key: string }
+  | { readonly _tag: "Refused"; readonly refusal: (seat: string) => string }
+
+const refused = (refusal: (seat: string) => string): Credential => ({ _tag: "Refused", refusal })
+
+const credential = (provider: string, host: Providers.Host): Credential => {
+  const environment = host.environment
+  // The OpenAI-compatible Chat Completions providers are routed by table
+  // (`Providers.compatible`). `Object.hasOwn`, so `constructor:x` finds no
+  // inherited function.
+  if (Object.hasOwn(Providers.compatible, provider)) {
+    const found = Providers.compatibleKey(provider, environment)
+    return found === undefined
+      ? refused((seat) => `Set ${Providers.compatible[provider]!.variables.join(" or ")} to run the ${seat} seat`)
+      : { _tag: "Compatible", key: found.key }
+  }
+  const variable = apiKeyVariable[provider]
+  if (variable === undefined) return refused(() => `No route is configured for the ${provider} provider`)
+  const configured = Environment_.read(environment, openaiAuthVariable)
+  const authMode = provider === "openai" && configured !== undefined && configured !== "" ? configured : "api-key"
+  if (authMode !== "api-key" && authMode !== "chatgpt") {
+    return refused((seat) => `${openaiAuthVariable} must be "api-key" or "chatgpt" to run the ${seat} seat`)
+  }
+  const value = environment[variable]
+  const key = value === undefined || value.length === 0 ? undefined : value
+  if (authMode === "chatgpt") {
+    // Behind the Smithers model proxy the ChatGPT seat carries the proxy
+    // credential as the `openai` seat's key.
+    const origin = Endpoint.proxyOrigin("chatgpt", environment)
+    if (origin !== undefined) {
+      return key === undefined
+        ? refused((seat) => `Set ${variable} to run the ${seat} seat through the model proxy`)
+        : { _tag: "Pooled", key, origin }
+    }
+    // The ChatGPT mode needs a provisioned session, not an API key: the
+    // refusal names the store so a detached lane fails before spending.
+    const file = CodexAuth.locate(environment, host.homeDirectory)
+    return host.readFile(file) === undefined
+      ? refused((seat) => `Sign in with \`codex login\` to run the ${seat} seat: no ChatGPT credentials at ${file}`)
+      : { _tag: "Session", file }
+  }
+  const subscription = provider === "anthropic" && key === undefined
+    ? anthropicSubscriptionVariables.map((name) => environment[name]).find((token) =>
+      token !== undefined && token.length > 0
+    )
+    : undefined
+  if (subscription !== undefined) return { _tag: "Subscription", token: subscription }
+  return key === undefined ? refused((seat) => `Set ${variable} to run the ${seat} seat`) : { _tag: "Key", key }
+}
+
+/**
+ * The account pool route a provider's seats may take: `anthropic` for the
+ * anthropic seat, and `chatgpt` for the openai seat unless
+ * `SMITHERS_OPENAI_AUTH` pins it to its key or names no valid mode.
+ */
+const poolRouteOf = (
+  provider: string,
+  environment: Readonly<Record<string, string | undefined>>
+): AccountPoolRoute | undefined => {
+  if (provider === "anthropic") return "anthropic"
+  if (provider !== "openai") return undefined
+  const configured = Environment_.read(environment, openaiAuthVariable)
+  return configured === undefined || configured === "" || configured === "chatgpt" ? "chatgpt" : undefined
+}
+
 const providerSeats = (
   environment: Readonly<Record<string, string | undefined>>,
   executor: RequestExecutor.RequestExecutor
@@ -157,72 +240,20 @@ const providerSeats = (
     }
     return store
   }
+  const host: Providers.Host = { environment, homeDirectory: homedir(), readFile: readText }
   return SeatResolver.make({
     resolve: (seat) =>
       Effect.gen(function*() {
         const separator = seat.indexOf(":")
         const provider = separator < 0 ? "anthropic" : seat.slice(0, separator)
         const modelId = Seat.modelIdOf(seat)
-        // The OpenAI-compatible Chat Completions providers are routed by
-        // table (`Providers.compatible`): the origin, the exact path, and the
-        // key variables read in order. `Object.hasOwn`, so `constructor:x`
-        // finds no inherited function.
-        if (Object.hasOwn(Providers.compatible, provider)) {
-          const entry = Providers.compatible[provider]!
-          const found = Providers.compatibleKey(provider, environment)
-          if (found === undefined) {
-            return yield* new Seat.SeatUnresolved({
-              seat,
-              message: `Set ${entry.variables.join(" or ")} to run the ${seat} seat`
-            })
-          }
-          return yield* seatOf(
-            Route.openaiChatCompatible({
-              id: provider,
-              // A provider the model proxy fronts honors SMITHERS_MODEL_PROXY_URL.
-              baseUrl: Object.hasOwn(Endpoint.providerOrigins, provider)
-                ? Endpoint.providerOrigin(provider as Endpoint.ProxiedProvider, environment)
-                : entry.baseUrl,
-              path: entry.path,
-              apiKey: Redacted.make(found.key)
-            }),
-            executor,
-            seat,
-            modelId
-          )
-        }
-        const variable = apiKeyVariable[provider]
-        if (variable === undefined) {
-          return yield* new Seat.SeatUnresolved({
-            seat,
-            message: `No route is configured for the ${provider} provider`
-          })
-        }
-        // An empty value is treated exactly like an unset variable, the same
-        // convention the key variables follow below.
-        const configured = Environment_.read(environment, openaiAuthVariable)
-        const authMode = provider === "openai" && configured !== undefined && configured !== ""
-          ? configured
-          : "api-key"
-        if (authMode !== "api-key" && authMode !== "chatgpt") {
-          return yield* new Seat.SeatUnresolved({
-            seat,
-            message: `${openaiAuthVariable} must be "api-key" or "chatgpt" to run the ${seat} seat`
-          })
-        }
         // Behind a Smithers account pool with accounts for this provider the
         // pool owns the credential: it picks an account per request and signs
         // it. The host holds only the pool credential.
-        // An explicit `SMITHERS_OPENAI_AUTH=api-key` keeps the openai seat on
-        // its key.
-        const poolRoute = provider === "anthropic"
-          ? "anthropic"
-          : provider === "openai" && configured !== "api-key"
-          ? "chatgpt"
-          : undefined
+        const poolRoute = poolRouteOf(provider, environment)
         const accounts = poolRoute === undefined ? undefined : yield* pooled(poolRoute, modelId)
         if (accounts !== undefined) {
-          return yield* provider === "anthropic"
+          return yield* poolRoute === "anthropic"
             ? seatOf(
               Route.anthropic({ apiKey: Redacted.make(accounts.key), baseUrl: `${accounts.origin}/anthropic` }),
               executor,
@@ -239,69 +270,51 @@ const providerSeats = (
               modelId
             )
         }
-        const chatgptOrigin = Endpoint.proxyOrigin("chatgpt", environment)
-        if (authMode === "chatgpt" && chatgptOrigin !== undefined) {
-          // Behind the Smithers model proxy the ChatGPT seat carries the
-          // proxy credential as the `openai` seat's key.
-          const key = environment[variable]
-          if (key === undefined || key.length === 0) {
-            return yield* new Seat.SeatUnresolved({
+        const signed = credential(provider, host)
+        switch (signed._tag) {
+          case "Refused":
+            return yield* new Seat.SeatUnresolved({ seat, message: signed.refusal(seat) })
+          case "Compatible":
+            return yield* seatOf(
+              Route.openaiChatCompatible({
+                id: provider,
+                // A provider the model proxy fronts honors SMITHERS_MODEL_PROXY_URL.
+                baseUrl: Object.hasOwn(Endpoint.providerOrigins, provider)
+                  ? Endpoint.providerOrigin(provider as Endpoint.ProxiedProvider, environment)
+                  : Providers.compatible[provider]!.baseUrl,
+                path: Providers.compatible[provider]!.path,
+                apiKey: Redacted.make(signed.key)
+              }),
+              executor,
               seat,
-              message: `Set ${variable} to run the ${seat} seat through the model proxy`
-            })
-          }
-          return yield* seatOf(
-            OpenAIChatGPT.make({
-              auth: Auth.bearer(Redacted.make(key)),
-              baseUrl: chatgptOrigin
-            }),
-            executor,
-            seat,
-            modelId
-          )
-        }
-        if (authMode === "chatgpt") {
-          // The ChatGPT mode needs a provisioned session, not an API key: the
-          // refusal names the store so a detached lane fails before spending.
-          const file = CodexAuth.locate(environment)
-          if (!existsSync(file)) {
-            return yield* new Seat.SeatUnresolved({
+              modelId
+            )
+          case "Pooled":
+            return yield* seatOf(
+              OpenAIChatGPT.make({ auth: Auth.bearer(Redacted.make(signed.key)), baseUrl: signed.origin }),
+              executor,
               seat,
-              message: `Sign in with \`codex login\` to run the ${seat} seat: no ChatGPT credentials at ${file}`
-            })
-          }
-          return yield* seatOf(
-            OpenAIChatGPT.make({ auth: codexStore(file).auth({ modelId }) }),
-            executor,
-            seat,
-            modelId
-          )
+              modelId
+            )
+          case "Session":
+            return yield* seatOf(
+              OpenAIChatGPT.make({ auth: codexStore(signed.file).auth({ modelId }) }),
+              executor,
+              seat,
+              modelId
+            )
+          case "Subscription":
+            return yield* seatOf(
+              Route.anthropic({
+                authToken: Redacted.make(signed.token),
+                baseUrl: Endpoint.providerOrigin("anthropic", environment)
+              }),
+              executor,
+              seat,
+              modelId
+            )
         }
-        const key = environment[variable]
-        // A Claude subscription (`claude setup-token` or the Claude Code OAuth
-        // token) stands in for the Anthropic API key when no key is set.
-        const subscription = provider === "anthropic" && (key === undefined || key.length === 0)
-          ? anthropicSubscriptionVariables.map((name) => environment[name]).find((value) =>
-            value !== undefined && value.length > 0
-          )
-          : undefined
-        if (subscription !== undefined) {
-          return yield* seatOf(
-            Route.anthropic({
-              authToken: Redacted.make(subscription),
-              baseUrl: Endpoint.providerOrigin("anthropic", environment)
-            }),
-            executor,
-            seat,
-            modelId
-          )
-        }
-        if (key === undefined || key.length === 0) {
-          return yield* new Seat.SeatUnresolved({
-            seat,
-            message: `Set ${variable} to run the ${seat} seat`
-          })
-        }
+        const key = signed.key
         // The provider routes have distinct body types, so each branch is
         // erased into the seat shape on its own rather than through a union.
         // OpenRouter is the OpenAI Responses surface at a different origin, so
@@ -409,6 +422,46 @@ export const layerSeatResolver = (
       return seatResolver(environment, executor)
     })
   )
+
+/**
+ * The seats Jev may route an `auto` run to on this host: every alias whose
+ * provider {@link seatResolver} holds a credential for, once per model, and
+ * never Jev. A description names the model, never a credential.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const seatCandidates = (host: Providers.Host): ReadonlyArray<SeatRouter.Candidate> => {
+  const pool = accountPoolOf(host.environment)
+  const offered = Object.entries(Providers.seatAliases).filter(([, seat]) => {
+    if (Providers.isDecisionSeat(seat)) return false
+    const provider = seat.slice(0, seat.indexOf(":"))
+    // A route the pool is configured for is offered: the pool is asked which
+    // routes have accounts when the seat resolves.
+    const route = poolRouteOf(provider, host.environment)
+    if (pool !== undefined && route !== undefined && pool.routes.includes(route)) return true
+    return credential(provider, host)._tag !== "Refused"
+  })
+  return offered
+    .filter(([, seat], index) => offered.findIndex(([, other]) => other === seat) === index)
+    .map(([alias]) => ({ id: alias, description: Providers.seatDescriptions[alias]! }))
+}
+
+/**
+ * Provides the {@link SeatRouter.Catalog} of {@link seatCandidates} over the
+ * given environment, read afresh each time a run is routed, with
+ * {@link SeatRouter.defaultVariants}.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerSeatCatalog = (
+  environment: Readonly<Record<string, string | undefined>>
+): Layer.Layer<SeatRouter.Catalog> =>
+  SeatRouter.layer({
+    candidates: Effect.sync(() => seatCandidates({ environment, homeDirectory: homedir(), readFile: readText })),
+    variants: SeatRouter.defaultVariants
+  })
 
 /**
  * The explicit sandbox budget every locally executed cell runs under. Never

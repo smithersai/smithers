@@ -15,6 +15,8 @@ import * as Agent from "@smthrs/agent/Agent"
 import * as AgentSession from "@smthrs/agent/AgentSession"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as Seat from "@smthrs/agent/Seat"
+import * as SeatRouter from "@smthrs/agent/SeatRouter"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
@@ -25,6 +27,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as Judgement from "@smthrs/harness/Judgement"
 import * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -34,7 +37,7 @@ import * as Classifier from "@smthrs/model/Classifier"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import { delegateModels, detect, workerFallbackSeats } from "./models.ts"
+import { aliases, delegateModels, detect, routing, workerFallbackSeats } from "./models.ts"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import * as NativeSearch from "@smthrs/std/NativeSearch"
@@ -69,7 +72,10 @@ export interface TurnInput {
   readonly background?: string
   readonly onCaption?: (prose: string) => void
   readonly onPatch?: (receipt: Changes.Receipt) => void
+  /** `Seat.auto` asks Jev for the seat when the run starts; see `Host.routes`. */
   readonly seat: string
+  /** The seat Jev routed an `auto` run to, before it resolves. */
+  readonly onSeat?: (seat: string) => void
   readonly fallbackSeats?: ReadonlyArray<string>
   /** A worker's remaining capacity parks; `QuotaPolicy.defaultMaxParks` when absent. Zero fails on the next refusal. */
   readonly maxParks?: number
@@ -103,8 +109,10 @@ export interface Host {
   }
   /** One short answer from `seat`, outside any turn; estimates, descriptions and monitor updates use it. */
   readonly complete?: (input: { system: string; prompt: string; seat: string }) => Promise<string>
-  /** Whether Jev judges completions; false when `AI_GATEWAY_API_KEY` is unset. */
+  /** Whether Jev judges completions and workers bind `jev`; false when `AI_GATEWAY_API_KEY` is unset. */
   readonly judged: boolean
+  /** Whether a worker with no chosen model runs on `Seat.auto`; false on test fakes. */
+  readonly routes?: boolean
   readonly run: (input: TurnInput) => Turn
   /** Absent on hosts that approve nothing, such as test fakes. */
   readonly approvals?: {
@@ -164,14 +172,19 @@ export const make = (options: {
   readonly callMs?: number
   /** Test seam for the frame backstop. */
   readonly totalMs?: number
+  /** Test seam for the judge; the environment's gateway key when absent. */
+  readonly judge?: Layer.Layer<Evaluator.Evaluator>
 }): Host => {
   const approvalMode = options.approvals ?? "ask"
   const env = options.environment
   const available = detect(env as NodeJS.ProcessEnv)
-  const judged = (env[Evaluator.environmentKey] ?? "").trim() !== ""
+  const judged = options.judge !== undefined || (env[Evaluator.environmentKey] ?? "").trim() !== ""
   const judge = judged
-    ? Evaluator.layerFromEnvironment(env, "smithers-tui").pipe(Layer.provide(FetchHttpClient.layer))
+    ? options.judge ?? Evaluator.layerFromEnvironment(env, "smithers-tui").pipe(Layer.provide(FetchHttpClient.layer))
     : Evaluator.layerUnavailable()
+  const catalog = routing(available, env, judged)
+  // The operator's stance, validated where `smithers run` validates it.
+  const stance = NodeControl.supervisorStance(env)
   const layer = Layer.mergeAll(
     Agent.layer.pipe(Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded()))),
     Agent.layerDefaults,
@@ -254,16 +267,46 @@ export const make = (options: {
   const run = (input: TurnInput): Turn => {
     const index = ++turns
     const callMs = options.callMs ?? Sandbox.defaultLimits.callMs
+    const session = `tui-${process.pid}-${index}`
     const program = Effect.gen(function*() {
-      const seat = input.seat.startsWith("replay:")
+      // Each worker routes on its own; a retry or resume is handed the seat it was routed to.
+      const decision = input.seat !== Seat.auto
+        ? undefined
+        : catalog === undefined
+        ? yield* new Seat.SeatUnrouted({ seat: Seat.auto, reason: "unconfigured", message: "No seat catalog" })
+        : yield* SeatRouter.route({
+          declared: Seat.auto,
+          state: {
+            task: Judgement.task(input.prompt),
+            flow: "tui/worker",
+            description: input.agent?.system.split("\n", 1)[0] ?? "",
+            capabilities: []
+          }
+        }).pipe(Effect.provideService(SeatRouter.Catalog, SeatRouter.Catalog.of(catalog)))
+      if (decision !== undefined) input.onSeat?.(decision.seat)
+      const variant = decision === undefined ? [] : SeatRouter.variantText(catalog!.variants, decision.variant)
+      if (variant === undefined) {
+        return yield* new Seat.SeatUnrouted({
+          seat: Seat.auto,
+          reason: "unconfigured",
+          message: `The seat catalog no longer offers the variant ${decision!.variant}`
+        })
+      }
+      const chosen = decision?.seat ?? input.seat
+      const seat = chosen.startsWith("replay:")
         ? Replay.seat({
-          file: input.seat.slice("replay:".length),
+          file: chosen.slice("replay:".length),
           holdMs: Number(env.SMITHERS_TUI_REPLAY_HOLD_MS ?? 0),
           speed: Number(env.SMITHERS_TUI_REPLAY_SPEED ?? 1)
         })
-        : yield* (yield* SeatResolver.SeatResolver).resolve(input.seat)
-      const fallbackSeats = input.role === "worker" && !input.seat.startsWith("replay:")
-        ? yield* Effect.forEach(input.fallbackSeats ?? workerFallbackSeats(input.seat, available, env),
+        : yield* (yield* SeatResolver.SeatResolver).resolve(chosen)
+      if (decision !== undefined) {
+        for (const event of SeatRouter.events(decision, { scope: session, modelId: seat.modelId })) {
+          yield* Effect.promise(() => Promise.resolve(input.onEvent(event)))
+        }
+      }
+      const fallbackSeats = input.role === "worker" && !chosen.startsWith("replay:")
+        ? yield* Effect.forEach(input.fallbackSeats ?? workerFallbackSeats(aliases[chosen] ?? chosen, available, env),
           (name) => Effect.flatMap(SeatResolver.SeatResolver, (resolver) => resolver.resolve(name)))
         : []
       const agent = yield* Agent.Agent
@@ -278,26 +321,28 @@ export const make = (options: {
       // Only the coordinator: its completion demands are all disarmed, so a
       // budget ending never carries a bounced answer this would drop.
       const receipts = input.role === "coordinator" ? Runtime.ledger(maxFrames) : (event: AgentEvent.AgentEvent) => event
-      // `rg` searches this repository in seconds; the in-process walk took
-      // longer than grep's 120 s ceiling. It stays the fallback without rg.
       const turn = turnOptions(
-        input,
+        // A coordinator's delegation without a model is routed at launch.
+        catalog === undefined ? input : { ...input, workerSeat: Seat.auto },
         options.cwd,
-        input.role === "coordinator" ? [] : [
-          Changes.capture(
-            StandardFlows.filesystem(services, Subprocess.which("rg") === null ? undefined : NativeSearch.make(services)),
+        input.role === "coordinator"
+          ? []
+          : workerSources(
+            services,
+            judged ? yield* Effect.context<Evaluator.Evaluator>() : undefined,
             options.cwd,
             input.onPatch ?? (() => {})
-          ),
-          Changes.capture(StandardFlows.shell(services), options.cwd, input.onPatch ?? (() => {}))
-        ]
+          )
       )
       const body = agent.run({
-        session: `tui-${process.pid}-${index}`,
+        session,
         seat,
         ...(input.role === "worker" ? { fallbackSeats, capacity: { park: true, ...(input.maxParks === undefined ? {} : { maxParks: input.maxParks }) } } : { capacity: { park: false } }),
         prompt: input.prompt,
-        system: turn.system,
+        system: [...turn.system, ...variant],
+        // The coordinator is never judged, so it is shown every file whole.
+        instructions: Context.instructions(options.cwd),
+        pinnedSources: turn.pinnedSources,
         ...(turn.reasoningEffort === undefined
           ? {}
           : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: turn.reasoningEffort }) }),
@@ -320,6 +365,10 @@ export const make = (options: {
           : judged
           ? {}
           : { claimCap: 0 }),
+        // Workers are armed by the host's judge. The coordinator never is:
+        // Jev's latency would sit in front of the chat's acknowledgment.
+        judged: input.role !== "coordinator" && judged,
+        supervisor: { stance },
         maxFrames
       }).pipe(
         Stream.provideService(Steering.Source, input.steering ?? Steering.makeNoop()),
@@ -378,6 +427,7 @@ export const make = (options: {
   return {
     cwd: options.cwd,
     judged,
+    routes: catalog !== undefined,
     compaction,
     run,
     approvals,
@@ -388,6 +438,28 @@ export const make = (options: {
   }
 }
 
+/**
+ * A worker's standard catalog: filesystem and shell, each capturing its
+ * patches, then `jev` when the host has a judge. Without one `jev` is absent,
+ * never a flow that refuses.
+ */
+export const workerSources = (
+  services: ServiceContext.Context<FileSystem.FileSystem | Path.Path | ChildProcessSpawner>,
+  judge: ServiceContext.Context<Evaluator.Evaluator> | undefined,
+  cwd: string,
+  onPatch: (receipt: Changes.Receipt) => void
+): ReadonlyArray<FlowBinding.Source> => [
+  // `rg` searches this repository in seconds; the in-process walk took
+  // longer than grep's 120 s ceiling. It stays the fallback without rg.
+  Changes.capture(
+    StandardFlows.filesystem(services, Subprocess.which("rg") === null ? undefined : NativeSearch.make(services)),
+    cwd,
+    onPatch
+  ),
+  Changes.capture(StandardFlows.shell(services), cwd, onPatch),
+  ...(judge === undefined ? [] : [StandardFlows.jev(judge)])
+]
+
 /** Keeps ordinary calls bounded while a worker can wait for children across resets. */
 const boundedCalls = (source: FlowBinding.Source, callMs: number): FlowBinding.Source => ({
   ...source,
@@ -397,9 +469,12 @@ const boundedCalls = (source: FlowBinding.Source, callMs: number): FlowBinding.S
 
 /**
  * The parts of a turn its input decides: the system prompt, the flows, the
- * capability envelope and the reasoning effort. `standard` is the worker's
- * filesystem and shell catalog; an agent's declared `flows` narrow it, and
- * its declared capabilities narrow the envelope.
+ * sources a judged run never withholds, the capability envelope and the
+ * reasoning effort. `standard` is the worker's filesystem and shell catalog;
+ * an agent's declared `flows` narrow it, and its declared capabilities narrow
+ * the envelope. The runtime's delegation, panel and monitor flows are the
+ * product's own, so they are pinned; filesystem, shell and jev are pinned as
+ * `StandardFlows.coreSources`.
  */
 export const turnOptions = (
   input: TurnInput,
@@ -408,6 +483,7 @@ export const turnOptions = (
 ): {
   readonly system: ReadonlyArray<string>
   readonly flows: ReadonlyArray<FlowBinding.Source>
+  readonly pinnedSources: ReadonlyArray<string>
   readonly capabilityEnvelope: ReadonlyArray<Capability.CapabilityPattern>
   readonly reasoningEffort?: ModelRequest.ReasoningEffort
 } => {
@@ -415,6 +491,7 @@ export const turnOptions = (
   const allowed = agent === undefined || agent.flows.length === 0 ? undefined : new Set(agent.flows)
   const reasoningEffort = input.thinking ?? agent?.thinking ??
     (input.role === "coordinator" && input.seat.startsWith("cerebras:") ? "low" : undefined)
+  const runtime = input.runtime === undefined ? [] : [Runtime.source(input.runtime)]
   return {
     system: [
       ...Context.system(cwd, input.history),
@@ -431,8 +508,9 @@ export const turnOptions = (
     ],
     flows: [
       ...(allowed === undefined ? standard : standard.map((source) => only(source, allowed))),
-      ...(input.runtime === undefined ? [] : [Runtime.source(input.runtime)])
+      ...runtime
     ],
+    pinnedSources: runtime.map((source) => source.name),
     capabilityEnvelope: agent === undefined || agent.envelope.length === 0
       ? [new Capability.CapabilityPattern({ action: "*", resource: "*" })]
       : AgentSession.patterns(agent.envelope),

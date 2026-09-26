@@ -7,7 +7,6 @@ import * as FactProjection from "../src/internal/FactProjection.ts"
 import * as FtsQuery from "../src/internal/FtsQuery.ts"
 import * as Ranking from "../src/internal/Ranking.ts"
 import * as Bank from "../src/internal/ResolveNamespace.ts"
-import * as Utf8 from "../src/internal/Utf8.ts"
 import * as VectorBytes from "../src/internal/VectorBytes.ts"
 import * as Namespace from "../src/Namespace.ts"
 
@@ -45,8 +44,6 @@ describe("memory internal helpers", () => {
       0,
       63
     ])
-    expect(Utf8.truncateBytes("a\u00E9\uD83D\uDE00z", 7)).toBe("a\u00E9\uD83D\uDE00")
-    expect(Utf8.truncateBytes("a\u00E9", 2)).toBe("a")
   })
 
   it("scores cosine similarity and recency decay at their boundaries", () => {
@@ -65,14 +62,6 @@ describe("memory internal helpers", () => {
     expect(Ranking.recency(0, 2_000, 1_000)).toBeCloseTo(0.25)
     expect(Ranking.recency(0, 3_000, 1_000)).toBeCloseTo(0.125)
     expect(Ranking.recency(0, 7 * 86_400_000, 7 * 86_400_000)).toBeCloseTo(0.5)
-  })
-
-  it("truncates to a byte budget without splitting a code point", () => {
-    expect(Utf8.truncateBytes("h\u00E9llo", 6)).toBe("h\u00E9llo")
-    expect(Utf8.truncateBytes("h\u00E9llo", 7)).toBe("h\u00E9llo")
-    expect(Utf8.truncateBytes("h\u00E9llo", 2)).toBe("h")
-    expect(Utf8.truncateBytes("h\u00E9llo", 0)).toBe("")
-    expect(Utf8.truncateBytes("\uD83D\uDE00\uD83D\uDE00", 4)).toBe("\uD83D\uDE00")
   })
 
   it("always treats FTS query text as data", () => {

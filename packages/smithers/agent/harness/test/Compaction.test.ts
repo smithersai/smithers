@@ -580,6 +580,89 @@ describe("Compaction", () => {
     })
   })
 
+  describe("marks", () => {
+    const texts = (messages: ReadonlyArray<ModelRequest.Message>) =>
+      messages.flatMap((item) => item.content.flatMap((part) => part.type === "text" ? [part.text] : []))
+
+    it("declares the marks and their digest, one per prefix segment", () => {
+      const step = Effect.runSync(Compaction.declare(window(), 2, summarizer, ["keep", "squash"]))
+      expect(step.marks).toEqual(["keep", "squash"])
+      expect(step.marksDigest).toEqual(expect.any(String))
+      expect(Effect.runSync(Compaction.declare(window(), 2, summarizer, ["squash", "keep"])).marksDigest).not.toBe(
+        step.marksDigest
+      )
+      expect(Effect.runSync(Compaction.declare(window(), 2, summarizer))).not.toHaveProperty("marksDigest")
+    })
+
+    it("rejects marks that do not name every prefix segment", () => {
+      for (const marks of [["keep"], ["keep", "squash", "remove"]] as const) {
+        const error = Effect.runSync(Compaction.declare(window(), 2, summarizer, marks).pipe(Effect.flip))
+        expect(error).toBeInstanceOf(Compaction.InvalidStep)
+        expect(error.message).toBe("The compaction marks must name every prefix segment once")
+      }
+    })
+
+    it("asks for a summary of the squashed segments only", () => {
+      const step = Effect.runSync(Compaction.declare(window(), 2, summarizer, ["keep", "squash"]))
+      const request = Effect.runSync(Compaction.summaryRequest(window(), step))
+      expect(texts(request.messages)).toEqual(["middle", Compaction.summaryTurn])
+    })
+
+    it("has no summary to request when nothing is squashed", () => {
+      const step = Effect.runSync(Compaction.declare(window(), 2, summarizer, ["keep", "remove"]))
+      const error = Effect.runSync(Compaction.summaryRequest(window(), step).pipe(Effect.flip))
+      expect(error.message).toBe("A compaction that squashes nothing has no summary to request")
+    })
+
+    it("applies keep, squash and remove", () => {
+      const input = window()
+      const step = Effect.runSync(Compaction.declare(input, 2, summarizer, ["remove", "keep"]))
+      const applied = Effect.runSync(Compaction.apply(input, step))
+      expect(applied.segments).toEqual([input.segments[1], input.segments[2]])
+      expect(applied.segments[0]).toBe(input.segments[1])
+      expect(applied.replaced).toBe(step.replacedPrefixDigest)
+      const squashed = Effect.runSync(Compaction.declare(input, 2, summarizer, ["squash", "keep"]))
+      expect(Effect.runSync(Compaction.apply(input, squashed, message("s"))).segments.map((item) => item.kind))
+        .toEqual(["summary", "transcript", "transcript"])
+    })
+
+    it("requires a summary exactly when a segment is squashed", () => {
+      const input = window()
+      const none = Effect.runSync(Compaction.declare(input, 2, summarizer, ["keep", "remove"]))
+      expect(Effect.runSync(Compaction.apply(input, none, message("s")).pipe(Effect.flip)).message).toBe(
+        "A compaction that squashes nothing takes no summary"
+      )
+      const some = Effect.runSync(Compaction.declare(input, 2, summarizer, ["keep", "squash"]))
+      expect(Effect.runSync(Compaction.apply(input, some).pipe(Effect.flip)).message).toBe(
+        "A compaction that squashes a segment requires its recorded summary"
+      )
+      const all = Effect.runSync(Compaction.declare(input, 2, summarizer))
+      expect(Effect.runSync(Compaction.apply(input, all).pipe(Effect.flip))).toBeInstanceOf(Compaction.InvalidStep)
+    })
+
+    it("refuses marks that do not match their digest", () => {
+      const input = window()
+      const step = Effect.runSync(Compaction.declare(input, 2, summarizer, ["keep", "squash"]))
+      const forged: ReadonlyArray<Compaction.CompactionStep> = [
+        { ...step, marks: ["squash", "squash"] },
+        { ...step, marks: undefined },
+        { ...Effect.runSync(Compaction.declare(input, 2, summarizer)), marksDigest: step.marksDigest },
+        { ...step, prefixLength: 1, replacedPrefixDigest: Result.getOrThrow(prefixDigest(input, 1)) }
+      ]
+      for (const bad of forged) {
+        for (
+          const error of [
+            Effect.runSync(Compaction.summaryRequest(input, bad).pipe(Effect.flip)),
+            Effect.runSync(Compaction.apply(input, bad, message("s")).pipe(Effect.flip))
+          ]
+        ) {
+          expect(error).toBeInstanceOf(Compaction.InvalidStep)
+          expect(error.message).toBe("The compaction marks do not match the declared marks digest")
+        }
+      }
+    })
+  })
+
   describe("the trigger, cut, and apply policy end to end", () => {
     it("declares and applies the prefix the policy selected", () => {
       const input = window()

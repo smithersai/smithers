@@ -34,6 +34,8 @@ import * as EngineLike from "./EngineLike.ts"
 import * as FailedCall from "./FailedCall.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as cellPrompt from "./internal/cellPrompt.ts"
+import { compactable, defaultKeepRecent, defaultReserve } from "./internal/compactable.ts"
+import * as compactionMarks from "./internal/compactionMarks.ts"
 import * as elide from "./internal/elide.ts"
 import * as Frame from "./internal/frame.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
@@ -41,7 +43,10 @@ import { printsObservation } from "./internal/printsObservation.ts"
 import { refusal } from "./internal/refusal.ts"
 import * as Supervision from "./internal/supervision.ts"
 import { untrustedData } from "./internal/untrustedData.ts"
+import * as Judgement from "./Judgement.ts"
+import * as Monitor from "./Monitor.ts"
 import * as NarrowedCheck from "./NarrowedCheck.ts"
+import * as Relevance from "./Relevance.ts"
 import * as Sandbox from "./Sandbox.ts"
 import * as Steering from "./Steering.ts"
 import * as Sufficiency from "./Sufficiency.ts"
@@ -829,6 +834,59 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
    */
   workspace: Schema.optional(Schema.Option(EngineLike.Observation)),
   /**
+   * Catalog flows and skills the run-start relevance reading withheld, and
+   * that no call has restored since.
+   *
+   * State rather than a per-frame detail because the reading is taken once,
+   * at frame 0, and every later frame's `ctx.flows` is filtered by it. A call
+   * to one of these names is refused as `flow_withheld` and restores it from
+   * the next frame. See {@link Input.judged}.
+   */
+  withheldFlows: Schema.Array(Schema.String).pipe(
+    Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<string>>([])),
+    Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<string>>([]))
+  ),
+  /**
+   * Keys of the memory rows the supervisor has shown this run, oldest first,
+   * the newest 256 kept.
+   *
+   * State rather than a supervisor detail because it is folded in from each
+   * recorded drain, so a replay rebuilds it, and a row shown once is never
+   * asked about or delivered again. See `Supervisor`.
+   */
+  memoryShown: Schema.Array(Schema.String).pipe(
+    Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<string>>([])),
+    Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<string>>([]))
+  ),
+  /**
+   * Each supervisor monitor's streak, deliveries and last delivery, by id.
+   *
+   * State because it is folded in only from each recorded drain, the one
+   * place a reading is gated, so a replay rebuilds it and a resumed run
+   * keeps its cooldowns and limits. See `Monitor.gate`.
+   */
+  monitorLedger: Monitor.Ledger.pipe(
+    Schema.withConstructorDefault(Effect.succeed<Monitor.Ledger>({})),
+    Schema.withDecodingDefaultKey(Effect.succeed<Monitor.Ledger>({}))
+  ),
+  /**
+   * What the run knows of its newest transcript segments, one entry each, in
+   * window order: the frame that wrote it, whether it carries the person's
+   * messages, whether that frame changed files, the checks it ran, and Jev's
+   * answer about it once a supervisor reading has marked it.
+   *
+   * State because a compaction's pins and marks read it long after the frame
+   * that wrote a segment; each compaction keeps the entries of the segments
+   * it keeps. Answers are folded in only from each recorded drain, so a
+   * replay rebuilds them. It is aligned when it describes every transcript
+   * segment; a run whose state predates it is not, and compacts every
+   * segment into the summary, as runs did before compaction marks.
+   */
+  segmentFacts: Schema.Array(compactionMarks.Facts).pipe(
+    Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<compactionMarks.Facts>>([])),
+    Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<compactionMarks.Facts>>([]))
+  ),
+  /**
    * Output this run has been handed as a fragment, by digest.
    *
    * The ledger is state rather than a per-frame detail because a cell may store
@@ -866,13 +924,117 @@ export interface Input {
   readonly limits?: Sandbox.Limits | undefined
   /**
    * What the supervisor may do with a reading; omitted takes
-   * `Supervisor.defaultOptions`, which journals every verdict and nudges
-   * nothing. Runtime configuration rather than durable state: what it says is
-   * journaled once on `discipline-armed`, and a resumed run is armed by the
-   * host that resumes it. See `Supervisor`.
+   * `Supervisor.defaultOptions`, which remembers nothing. Runtime
+   * configuration rather than durable state: what it says is journaled once
+   * on `discipline-armed`, and a resumed run is armed by the host that
+   * resumes it. See `Supervisor`.
    */
   readonly supervisor?: Supervisor.Options | undefined
+  /**
+   * The monitors each supervisor reading scores and each boundary gates;
+   * omitted takes `Monitor.defaults()`. Runtime configuration like
+   * {@link supervisor}. Nothing a monitor says reaches the run unless
+   * {@link judged}.
+   */
+  readonly monitors?: ReadonlyArray<Monitor.Monitor> | undefined
+  /**
+   * Whether the host's `Evaluator` is a real judge. True arms Jev's features,
+   * the supervisor's monitor messages and memory inserts among them; omitted is false.
+   * Runtime configuration like {@link supervisor}: a resumed run is armed by
+   * the host that resumes it.
+   */
+  readonly judged?: boolean | undefined
+  /**
+   * The static stance the run is taught and journals on `discipline-armed`;
+   * omitted teaches none. The window must already have been taught with it,
+   * so the loop's re-teach replaces the same segments.
+   */
+  readonly stance?: typeof AgentEvent.Stance.Type | undefined
+  /**
+   * Human-provided instruction files, such as `AGENTS.md`, as the window's
+   * {@link instructionsSegment} renders them. When {@link judged}, frame 0
+   * asks Jev which of their chunks the task does not need and drops those it
+   * is confident of from that segment.
+   */
+  readonly instructions?: ReadonlyArray<Relevance.Document> | undefined
+  /**
+   * Flow names the run-start relevance reading never judges: the ones a run
+   * cannot do without, such as `jev` and the core file and shell flows.
+   */
+  readonly pinned?: ReadonlyArray<string> | undefined
+  /**
+   * The opening memory rows the window's {@link memorySegment} renders. When
+   * {@link judged}, frame 0 asks Jev about each row in the same reading as
+   * the catalog and the instructions, and renders only the rows it keeps.
+   */
+  readonly memory?: Memory | undefined
 }
+
+/**
+ * One opening memory row: `key` is its relevance id.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface MemoryRow {
+  readonly key: string
+  readonly text: string
+}
+
+/**
+ * Opening memory as the host declared it: its rows, the digest the opening
+ * window's {@link memorySegment} declares, and how the host renders rows.
+ * `render` is only ever handed rows of `rows`, in order.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Memory {
+  readonly rows: ReadonlyArray<MemoryRow>
+  readonly digest: string
+  readonly render: (rows: ReadonlyArray<MemoryRow>) => string
+}
+
+/**
+ * The prefix segment that carries opening memory: rendered `text` under its
+ * declared `digest`.
+ *
+ * A `system` segment, like {@link instructionsSegment}: what the run
+ * remembers is not the task, and the run-start reading judges each row
+ * against a task that must not already contain it. The opening window and
+ * the run-start reading build it the same way, so the reading finds the
+ * opening's segment by digest.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const memorySegment = (text: string, digest: string): ContextWindow.SegmentInput => ({
+  kind: "system",
+  zone: "prefix",
+  declaredDigest: digest,
+  content: [ModelRequest.SystemPart.make({ text })]
+})
+
+/**
+ * The prefix segment that carries human-provided instruction files, every
+ * chunk not in `withheld` kept.
+ *
+ * A `system` segment, never `instructions`: the task is what the run's prefix
+ * `instructions` segments say, and a project's guidelines are not the task.
+ * The opening window and the run-start reading build it the same way, so the
+ * reading finds the opening's segment by digest.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const instructionsSegment = (
+  documents: ReadonlyArray<Relevance.Document>,
+  withheld: ReadonlySet<string>
+): ContextWindow.SegmentInput => ({
+  kind: "system",
+  zone: "prefix",
+  content: [ModelRequest.SystemPart.make({ text: Relevance.render(documents, withheld) })]
+})
 
 /**
  * Constructs an initial controller state.
@@ -972,6 +1134,13 @@ export const make = (options: {
     capabilityEnvelope: options.capabilityEnvelope,
     placement: options.placement,
     contextWindow: options.contextWindow,
+    // The opening transcript is the host's, written before any frame: no
+    // person's message, no change and no check.
+    segmentFacts: options.contextWindow.segments.flatMap((segment) =>
+      segment.kind === "transcript"
+        ? [{ frame: options.frame ?? 0, person: false, mutated: false, checks: [] }]
+        : []
+    ),
     contextWindowTokens: options.contextWindowTokens ?? 0,
     readOnlyCap: options.readOnlyCap ?? 0,
     modelCallMs: options.modelCallMs ?? modelCallMsFor(options.modelParams.reasoningEffort),
@@ -1030,6 +1199,9 @@ export type Environment = cellPrompt.Environment
  * transition preserves, so the teaching is stable for the run and a cell's
  * projected context never has to carry it.
  *
+ * `stance`, when set, adds the run's one-line static stance after the
+ * contract; see {@link Input.stance}.
+ *
  * @category constructors
  * @since 0.1.0
  * @slop
@@ -1037,7 +1209,8 @@ export type Environment = cellPrompt.Environment
 export const teach = (
   contextWindow: ContextWindow.ContextWindow,
   flows: ReadonlyArray<Descriptor.FlowDescriptor>,
-  environment?: Environment
+  environment?: Environment,
+  stance?: typeof AgentEvent.Stance.Type
 ): ContextWindow.ContextWindow => {
   const projections: Record<string, Cell.FlowProjection & Pick<Descriptor.FlowDescriptor, "provenance" | "path">> = {}
   for (const descriptor of flows) {
@@ -1047,7 +1220,7 @@ export const teach = (
       path: descriptor.path
     }
   }
-  const taught = cellPrompt.make(projections, environment).map((section) =>
+  const taught = cellPrompt.make(projections, environment, stance).map((section) =>
     ContextWindow.makeSegment({
       kind: "system",
       zone: "prefix",
@@ -1297,6 +1470,42 @@ const observedOn = (
   observation: string,
   echo: number
 ): ContextWindow.ContextWindow => appended(contextWindow, assistant, [ModelRequest.Message.user(observation)], echo)
+
+/** The most memory keys {@link State.memoryShown} keeps. */
+const memoryShownLimit = 256
+
+/**
+ * The shown set after a drain: the rows it delivered join it, newest last. A
+ * drain never delivers a row already shown, so nothing joins it twice.
+ */
+const shownAfter = (state: State, drained: Steering.DrainRecord): Frame.StateChanges =>
+  drained.memory === undefined
+    ? {}
+    : { memoryShown: [...state.memoryShown, ...drained.memory].slice(-memoryShownLimit) }
+
+/** The monitor ledger after a drain: the one it gated against, when it gated one. */
+const ledgerAfter = (drained: Steering.DrainRecord): Frame.StateChanges =>
+  drained.monitorLedger === undefined ? {} : { monitorLedger: drained.monitorLedger }
+
+/**
+ * The segment facts after a drain: each unmarked transcript segment a
+ * drained mark names by digest takes its answer. A mark for a segment a
+ * compaction has since replaced names nothing and is dropped.
+ */
+const marksAfter = (state: State, drained: Steering.DrainRecord): Frame.StateChanges => {
+  if (drained.marks === undefined) return {}
+  const answers = new Map(drained.marks.map(({ digest, ...answer }) => [digest, answer]))
+  const transcripts = compactable(state.contextWindow.segments).filter((segment) => segment.kind === "transcript")
+  // The entries describe the newest segments, so an unaligned run's are
+  // missing from the front.
+  const missing = transcripts.length - state.segmentFacts.length
+  return {
+    segmentFacts: state.segmentFacts.map((facts, at) => {
+      const answer = answers.get(transcripts[at + missing]!.digest)
+      return facts.answer !== undefined || answer === undefined ? facts : { ...facts, answer }
+    })
+  }
+}
 
 /** Whether one drain carried anything the next frame runs differently for. */
 const carries = (drained: Steering.DrainRecord): boolean => drained.inserts.length > 0 || drained.seatChanges.length > 0
@@ -1911,6 +2120,11 @@ const budgetMessage = (state: State): string =>
  * refused had its read-only streak cleared by a write that never happened, and
  * the cap stayed silent through the stall it exists to break.
  *
+ * `restored` collects every withheld flow a call named. The call is refused,
+ * because the frame's catalog is frozen, and the flow is back in `ctx.flows`
+ * from the next frame. The refusal reads only checkpointed state, so a
+ * replayed frame restores the same names.
+ *
  * `tree` counts the calls of this frame that may have written, in issue order.
  * A sealed reading of the live tree carries that count and the run's frame
  * clock as its `Cell.Call.epoch`, so a read after a write is a new question and
@@ -1927,6 +2141,7 @@ const callHandler = (
   engine: EngineLike.EngineLike,
   ledger: Array<TruncatedOutput.Capture>,
   performed: Set<number>,
+  restored: Set<string>,
   tree: { writes: number },
   callMs: number,
   replaying: boolean,
@@ -1934,6 +2149,13 @@ const callHandler = (
 ): Sandbox.Handler =>
 (invocation) =>
   Effect.gen(function*() {
+    if (state.withheldFlows.includes(invocation.flow)) {
+      restored.add(invocation.flow)
+      return refusal(
+        "flow_withheld",
+        `Flow ${invocation.flow} was withheld for this task. It is in ctx.flows from the next frame; reissue the call.`
+      )
+    }
     const descriptor = descriptors.get(invocation.flow)
     if (descriptor === undefined) {
       return refusal("unknown_flow", `Unknown flow ${invocation.flow}. Only the flows in ctx.flows are callable.`)
@@ -2012,7 +2234,8 @@ const callHandler = (
       invocation.ordinal,
       callMs,
       invocation.flow,
-      Effect.suspend(() => engine.call(call)),
+      // A flow that asks Jev journals its receipts into this run.
+      Effect.suspend(() => engine.call(call)).pipe(Effect.provideService(AgentEvent.Journal, emit)),
       replaying,
       call
     )
@@ -2066,44 +2289,14 @@ const requested = (
     )
   })
 
-/**
- * Compacts the frame's context before the model is asked anything.
- *
- * Compaction is a transition of the run, not a repair applied to a request on
- * its way out: the summary is produced by its own sealed step, so it is keyed
- * and journaled like every other model call, and the settlement is emitted as
- * `CompactionSettled`. Without that event a replay rebuilds the uncompacted
- * transcript, re-crosses the same threshold, and re-keys every later frame — so
- * emitting it is what makes the compacted window part of the run's durable
- * state rather than an artifact of when the process happened to notice.
- *
- * Nothing here is best-effort. A window that cannot be compacted stays as it
- * is; a compaction the model started and could not finish is a typed failure.
- */
-const compacted = (
+/** The sealed summary of what a compaction step squashes. */
+const summarized = (
   state: State,
   engine: EngineLike.EngineLike,
-  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
-): Effect.Effect<State, HarnessError | Model.ModelFailure> =>
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
+  step: Compaction.CompactionStep
+): Effect.Effect<ModelRequest.Message, HarnessError | Model.ModelFailure> =>
   Effect.gen(function*() {
-    const over = Compaction.shouldCompact({
-      total: state.contextWindow.tokens.total,
-      contextWindow: state.contextWindowTokens
-    })
-    if (!over) return state
-    const prefixLength = Compaction.selectPrefix(state.contextWindow)
-    // Nothing compactable is not a failure: a window that is all prefix has
-    // already given up everything it can, and the frame proceeds as declared.
-    if (prefixLength === 0) return state
-    // `InvalidStep` is discharged as a defect, not surfaced as a typed failure.
-    // All three calls below receive the same immutable window, `selectPrefix`'s
-    // own output, and the state's validated generation parameters. An invalid
-    // prefix, digest, or parameter value here would contradict those invariants.
-    const step = yield* Compaction.declare(state.contextWindow, prefixLength, {
-      identity: "flows/harness/CellTurn.compaction",
-      modelId: state.contextWindow.modelId,
-      params: state.modelParams
-    }).pipe(Effect.orDie)
     const summaryRequest = yield* Compaction.summaryRequest(state.contextWindow, step).pipe(Effect.orDie)
     const request = ModelRequest.ModelRequest.make({
       modelId: summaryRequest.modelId,
@@ -2143,23 +2336,244 @@ const compacted = (
         message: "The sealed compaction step returned no text summary"
       })
     }
-    const summary = ModelRequest.Message.user(
+    return ModelRequest.Message.user(
       untrustedData(text.map((part) => part.text).join("\n"), "compaction summary of conversation and tool output")
     )
+  })
+
+const messageText = (message: ModelRequest.Message): string =>
+  message.content.filter((part): part is ModelRequest.TextPart => part.type === "text").map((part) => part.text)
+    .join("\n")
+
+/** One old segment as the compaction reading shows it to Jev. */
+const markItem = (segment: ContextWindow.Segment): compactionMarks.Item => {
+  const messages = segment.content.filter((item): item is ModelRequest.Message => "role" in item)
+  const said = messages.filter((message) => message.role === "assistant").map(messageText).join("\n")
+  const extracted = Cell.extract(said)
+  return {
+    tokens: segment.tokens.value,
+    cell: extracted._tag === "Success" ? extracted.success.source.text : "",
+    prose: Supervision.prose(said),
+    observed: messages.filter((message) => message.role !== "assistant").map(messageText).join("\n\n")
+  }
+}
+
+/**
+ * {@link State.segmentFacts} beside each compactable segment, absent for a
+ * summary or steering segment; undefined when they do not describe every
+ * transcript segment.
+ */
+const alignedFacts = (
+  state: State,
+  segments: ReadonlyArray<ContextWindow.Segment>
+): ReadonlyArray<compactionMarks.Facts | undefined> | undefined => {
+  const transcripts = segments.filter((segment) => segment.kind === "transcript").length
+  if (transcripts !== state.segmentFacts.length) return undefined
+  let next = 0
+  return segments.map((segment) => segment.kind === "transcript" ? state.segmentFacts[next++] : undefined)
+}
+
+/**
+ * The transcript segments a supervisor reading is asked to mark: those with
+ * no answer yet, each once by digest. The person's are always kept and never
+ * asked about; a run whose facts are not aligned marks nothing.
+ */
+const unmarked = (state: State): Supervision.Offer["unmarked"] => {
+  const segments = compactable(state.contextWindow.segments)
+  const facts = alignedFacts(state, segments)
+  if (facts === undefined) return []
+  const open = segments.flatMap((segment, index) => {
+    const known = facts[index]
+    return known === undefined || known.person || known.answer !== undefined ? [] : [segment]
+  })
+  return [...new Map(open.map((segment) => [segment.digest, segment])).values()].map((segment) => ({
+    digest: segment.digest,
+    item: markItem(segment)
+  }))
+}
+
+/**
+ * {@link State.segmentFacts} after a compaction: the entries of the kept
+ * prefix segments and of the suffix, in order. `marks` absent squashes every
+ * prefix segment.
+ */
+const factsAfter = (
+  state: State,
+  prefixLength: number,
+  marks: ReadonlyArray<ContextWindow.Mark> | undefined
+): ReadonlyArray<compactionMarks.Facts> => {
+  const transcripts = compactable(state.contextWindow.segments).flatMap((segment, index) =>
+    segment.kind === "transcript" ? [index] : []
+  )
+  // The entries describe the newest segments, so an unaligned run's are
+  // missing from the front.
+  const missing = transcripts.length - state.segmentFacts.length
+  return transcripts.flatMap((index, at) => {
+    const facts = state.segmentFacts[at - missing]
+    return facts !== undefined && (index >= prefixLength || marks?.[index] === "keep") ? [facts] : []
+  })
+}
+
+/** What the compaction-marks reading records: the mark of every prefix segment. */
+const MarksRecord = Schema.Array(compactionMarks.Marked)
+
+/**
+ * The marks of a judged run's compaction, over its aligned `facts`: pins
+ * first, then the answers the run stored for what they leave open, resolved
+ * against the window. What is still unmarked is asked in one reading,
+ * recorded under the prefix it marks, so a replay re-keys the same summary;
+ * with nothing unmarked nothing is asked, and the stored answers, which
+ * each recorded drain rebuilds, resolve the same marks on replay. Undefined,
+ * and every segment squashed, when that reading could not be judged, which
+ * journals `decision-unjudged`.
+ */
+const marked = (
+  state: State,
+  facts: ReadonlyArray<compactionMarks.Facts | undefined>,
+  prefixLength: number,
+  engine: EngineLike.EngineLike,
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
+  taskOf: (window: ContextWindow.ContextWindow) => string
+): Effect.Effect<ReadonlyArray<compactionMarks.Marked> | undefined, HarnessError> =>
+  Effect.gen(function*() {
+    const segments = compactable(state.contextWindow.segments)
+    const failing = state.checks.filter((check) => check.failing).map((check) => check.label)
+    const pinned = compactionMarks.pins(segments, prefixLength, facts, failing)
+    const open = compactionMarks.unpinned(pinned)
+    const missing = open.filter((index) => facts[index]?.answer === undefined)
+    const budget: compactionMarks.Budget = {
+      contextWindow: state.contextWindowTokens,
+      reserve: defaultReserve,
+      keepRecent: defaultKeepRecent,
+      suffix: segments.slice(prefixLength).reduce((sum, segment) => sum + segment.tokens.value, 0),
+      tokens: segments.slice(0, prefixLength).map((segment) => segment.tokens.value)
+    }
+    // `InvalidStep` is a defect: one answer per open index, by construction.
+    const resolved = (answered: ReadonlyMap<number, compactionMarks.Answer>) =>
+      Effect.fromResult(compactionMarks.resolve(open.map((index) => answered.get(index)!), pinned, budget)).pipe(
+        Effect.orDie
+      )
+    const stored = new Map(open.flatMap((index) => {
+      const answer = facts[index]?.answer
+      return answer === undefined ? [] : [[index, answer] as const]
+    }))
+    if (missing.length === 0) return yield* resolved(stored)
+    const prefix = yield* Effect.fromResult(ContextWindow.prefixDigest(state.contextWindow, prefixLength)).pipe(
+      Effect.orDie
+    )
+    const record = yield* Judgement.recorded(
+      engine,
+      {
+        name: "compaction-marks",
+        identity: { session: state.session, frame: state.frame, boundary: `compaction-marks:${prefix}` },
+        classifier: "compaction/marks",
+        value: MarksRecord,
+        items: missing.length
+      },
+      compactionMarks.read(
+        { task: Judgement.task(taskOf(state.contextWindow)), failing },
+        missing.map((index) => markItem(segments[index]!))
+      ).pipe(Effect.flatMap((reading) =>
+        resolved(new Map([...stored, ...missing.map((index, at) => [index, reading.answers[at]!] as const)])).pipe(
+          Effect.map((value) => ({
+            value,
+            asked: reading.asked,
+            acted: value.some((mark) => mark.mark !== "squash")
+          }))
+        )
+      ))
+    )
+    yield* Judgement.emitRecorded(emit, record)
+    return record.value ?? undefined
+  })
+
+/**
+ * Compacts the frame's context before the model is asked anything.
+ *
+ * Compaction is a transition of the run, not a repair applied to a request on
+ * its way out: the summary is produced by its own sealed step, so it is keyed
+ * and journaled like every other model call, and the settlement is emitted as
+ * `CompactionSettled`. Without that event a replay rebuilds the uncompacted
+ * transcript, re-crosses the same threshold, and re-keys every later frame — so
+ * emitting it is what makes the compacted window part of the run's durable
+ * state rather than an artifact of when the process happened to notice.
+ *
+ * A judged run marks each replaced segment keep, squash or remove first, and
+ * only what it squashes is summarized; an unjudged one squashes all of them.
+ * Marks are stored as the supervisor reads them and applied only here, when
+ * the budget forces a compaction, so the prefix the model is sent never
+ * changes between compactions. A judged run whose facts are not aligned
+ * cannot be marked; its settlement says so as `unaligned`.
+ *
+ * Nothing here is best-effort. A window that cannot be compacted stays as it
+ * is; a compaction the model started and could not finish is a typed failure.
+ */
+const compacted = (
+  state: State,
+  engine: EngineLike.EngineLike,
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
+  judged: boolean,
+  taskOf: (window: ContextWindow.ContextWindow) => string
+): Effect.Effect<State, HarnessError | Model.ModelFailure> =>
+  Effect.gen(function*() {
+    const over = Compaction.shouldCompact({
+      total: state.contextWindow.tokens.total,
+      contextWindow: state.contextWindowTokens
+    })
+    if (!over) return state
+    const prefixLength = Compaction.selectPrefix(state.contextWindow)
+    // Nothing compactable is not a failure: a window that is all prefix has
+    // already given up everything it can, and the frame proceeds as declared.
+    if (prefixLength === 0) return state
+    const facts = judged ? alignedFacts(state, compactable(state.contextWindow.segments)) : undefined
+    const unaligned = judged && facts === undefined
+    const marks = facts === undefined ? undefined : yield* marked(state, facts, prefixLength, engine, emit, taskOf)
+    // `InvalidStep` is discharged as a defect, not surfaced as a typed failure.
+    // Every call below receives the same immutable window, `selectPrefix`'s
+    // own output, marks resolved one per prefix segment, and the state's
+    // validated generation parameters. An invalid prefix, digest, mark or
+    // parameter value here would contradict those invariants.
+    const step = yield* Compaction.declare(
+      state.contextWindow,
+      prefixLength,
+      {
+        identity: "flows/harness/CellTurn.compaction",
+        modelId: state.contextWindow.modelId,
+        params: state.modelParams
+      },
+      marks?.map((mark) => mark.mark)
+    ).pipe(Effect.orDie)
+    const summary = marks === undefined || marks.some((mark) => mark.mark === "squash")
+      ? yield* summarized(state, engine, emit, step)
+      : undefined
     const contextWindow = yield* Compaction.apply(state.contextWindow, step, summary).pipe(Effect.orDie)
+    const segments = compactable(state.contextWindow.segments)
+    const replaced = segments.slice(0, prefixLength)
     yield* emit(
       new AgentEvent.CompactionSettled({
         eventType: eventType.compactionSettled,
         replacedPrefixDigest: step.replacedPrefixDigest,
-        retainedMessageCount: state.contextWindow.segments
-          .filter((segment) => ["transcript", "summary", "steering"].includes(segment.kind))
-          .slice(step.prefixLength)
+        retainedMessageCount: segments
+          .slice(prefixLength)
           .flatMap((segment) => segment.content)
           .filter((item) => "role" in item).length,
-        summary
+        ...(summary === undefined ? {} : { summary }),
+        ...(unaligned ? { unaligned } : {}),
+        ...(marks === undefined ? {} : {
+          kept: replaced
+            .filter((_, index) => marks[index]!.mark === "keep")
+            .flatMap((segment) => segment.content.filter((item): item is ModelRequest.Message => "role" in item)),
+          marks: replaced.map((segment, index) => ({ digest: segment.digest, ...marks[index]! })),
+          removedTokens: replaced
+            .filter((_, index) => marks[index]!.mark === "remove")
+            .reduce((sum, segment) => sum + segment.tokens.value, 0)
+        })
       })
     )
-    return advance(state, { contextWindow })
+    return advance(state, {
+      contextWindow,
+      segmentFacts: factsAfter(state, prefixLength, marks?.map((mark) => mark.mark))
+    })
   })
 
 /**
@@ -2300,6 +2714,8 @@ interface Evaluated {
   readonly minted: ReadonlyArray<string>
   /** Output this run has been handed as a fragment, this frame's included. */
   readonly captures: ReadonlyArray<TruncatedOutput.Capture>
+  /** Withheld flows the cell called, which the next frame shows again. */
+  readonly restored: ReadonlySet<string>
 }
 
 /**
@@ -2330,6 +2746,8 @@ const evaluate = (
     const calls: Array<Frame.ObservedCall> = []
     /** Ordinals of the invocations that reached the engine this frame. */
     const performed = new Set<number>()
+    /** Withheld flows this frame's calls named; see {@link callHandler}. */
+    const restored = new Set<string>()
     /** Calls of this frame that may have written; see {@link callHandler}. */
     const tree = { writes: 0 }
     // The per-call ceiling this frame enforces, resolved once. It is applied
@@ -2338,7 +2756,19 @@ const evaluate = (
     const callMs = Sandbox.withDefaults(sandbox.capabilities, input.limits).callMs ?? Sandbox.defaultLimits.callMs
     let replaying = false
     const observing: Sandbox.Handler = (invocation) => {
-      const handle = callHandler(state, cell, descriptors, engine, captures, performed, tree, callMs, replaying, emit)
+      const handle = callHandler(
+        state,
+        cell,
+        descriptors,
+        engine,
+        captures,
+        performed,
+        restored,
+        tree,
+        callMs,
+        replaying,
+        emit
+      )
       return handle(invocation).pipe(
         Effect.tap((result) =>
           Effect.sync(() => {
@@ -2446,7 +2876,9 @@ const evaluate = (
           // what it compiled rather than parsing the same text again.
           program: produced.program,
           frame: state.frame,
-          flows: input.refreshFlows === undefined ? undefined : projections,
+          // A judged run's catalog can change without a refresh: the run-start
+          // relevance reading withholds flows and a call restores them.
+          flows: input.refreshFlows === undefined && input.judged !== true ? undefined : projections,
           call: observing,
           mint,
           replay,
@@ -2463,7 +2895,7 @@ const evaluate = (
         })
       }
     })
-    return { frame: settled, calls, minted, captures }
+    return { frame: settled, calls, minted, captures, restored }
   })
 
 /**
@@ -2531,6 +2963,8 @@ interface Settling {
   readonly printed: string
   /** The state every continuing exit carries; see `Frame.account`. */
   readonly facts: Frame.StateChanges
+  /** Whether the frame changed files, and the labels of the checks it ran. */
+  readonly written: { readonly mutated: boolean; readonly checks: ReadonlyArray<string> }
 }
 
 /**
@@ -2561,8 +2995,20 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
           Effect.flatMap((record) =>
             wouldIdle
               ? Effect.succeed(record)
-              : settling.supervision.take(state.frame).pipe(
-                Effect.map((messages) => messages.length === 0 ? record : { ...record, supervisor: messages })
+              : settling.supervision.take(state.frame, {
+                ledger: state.monitorLedger,
+                shown: state.memoryShown,
+                deliver: settling.input.judged ?? false
+              }).pipe(
+                Effect.map((taken) => ({
+                  ...record,
+                  ...(taken.messages.length === 0 ? {} : { supervisor: taken.messages }),
+                  ...(taken.memory.length === 0 ? {} : { memory: taken.memory }),
+                  ...(taken.monitor === undefined ? {} : { monitor: taken.monitor }),
+                  ...(taken.suppressed.length === 0 ? {} : { suppressed: taken.suppressed }),
+                  ...(taken.ledger === undefined ? {} : { monitorLedger: taken.ledger }),
+                  ...(taken.marks.length === 0 ? {} : { marks: taken.marks })
+                }))
               )
           ),
           // Executed, not replayed: the one fact that says this frame is the
@@ -2577,7 +3023,10 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
         messages: drained.inserts,
         ...(drained.supervisor === undefined || drained.supervisor.length === 0
           ? {}
-          : { supervisor: drained.supervisor })
+          : { supervisor: drained.supervisor }),
+        ...(drained.monitor === undefined ? {} : { monitor: drained.monitor }),
+        ...(drained.suppressed === undefined ? {} : { suppressed: drained.suppressed }),
+        ...(drained.memory === undefined ? {} : { memory: drained.memory })
       })
     )
     // The frame is offered to the supervisor from here, after its own take
@@ -2620,20 +3069,46 @@ const finish = (settling: Settling, step: Step): Effect.Effect<Step> =>
   )
 
 /**
- * The one way a frame continues the run: the next frame, carrying the facts
- * the frame measured and whatever its exit changes on top of them.
+ * The one way a frame continues the run: the next frame on `contextWindow`,
+ * carrying the facts the frame measured and whatever its exit changes on top
+ * of them.
+ *
+ * Every transcript segment the frame appended gets its entry in
+ * {@link State.segmentFacts}. The last carries the frame's own pair, and the
+ * person's messages when `person`; any before it are the in-frame re-asks of
+ * cells that never ran.
  */
-const continuing = (settling: Settling, changes: Frame.StateChanges): Continue => ({
-  _tag: "Continue",
-  // A frame carries no ask unless its own exit says how many it appended, so
-  // the default is zero and the two exits that intervene state their count.
-  state: advance(settling.state, {
-    frame: settling.state.frame + 1,
-    interventions: 0,
-    ...settling.facts,
-    ...changes
-  })
-})
+const continuing = (
+  settling: Settling,
+  contextWindow: ContextWindow.ContextWindow,
+  person: boolean,
+  changes: Frame.StateChanges
+): Continue => {
+  const transcripts = (window: ContextWindow.ContextWindow): number =>
+    window.segments.filter((segment) => segment.kind === "transcript").length
+  const frame = settling.state.frame
+  const reasks = transcripts(contextWindow) - transcripts(settling.state.contextWindow) - 1
+  // A drain's marks answer segments the frame opened on; the frame's own
+  // segments go after them, unmarked.
+  const { segmentFacts = settling.state.segmentFacts, ...rest } = changes
+  return {
+    _tag: "Continue",
+    // A frame carries no ask unless its own exit says how many it appended, so
+    // the default is zero and the two exits that intervene state their count.
+    state: advance(settling.state, {
+      frame: frame + 1,
+      interventions: 0,
+      ...settling.facts,
+      contextWindow,
+      segmentFacts: [
+        ...segmentFacts,
+        ...new Array<compactionMarks.Facts>(reasks).fill({ frame, person: false, mutated: false, checks: [] }),
+        { frame, person, ...settling.written }
+      ],
+      ...rest
+    })
+  }
+}
 
 /**
  * Everything a drain delivers to the model, in the order it reads them: the
@@ -2671,9 +3146,11 @@ const resumed = (
       ? [ModelRequest.Message.user(text === "" ? ask : `${text}\n\n${ask}`)]
       : [...(text === "" ? [] : [ModelRequest.Message.user(text)]), ...inserts, ModelRequest.Message.user(ask)]
     const context = appended(settling.contextWindow, settling.answer, messages, echo)
-    return continuing(settling, {
+    return continuing(settling, windowOn(state, settings.seat, context), drained.inserts.length > 0, {
       ...settings,
-      contextWindow: windowOn(state, settings.seat, context),
+      ...shownAfter(state, drained),
+      ...ledgerAfter(drained),
+      ...marksAfter(state, drained),
       ...changes
     })
   })
@@ -2707,7 +3184,7 @@ const frame = (
   Effect.gen(function*() {
     // Compaction happens before the turn opens, so the digest the turn records
     // is the one the sealed step is actually keyed on.
-    const state = yield* compacted(input.state, engine, emit)
+    const state = yield* compacted(input.state, engine, emit, input.judged ?? false, taskOf)
 
     yield* emit(
       new AgentEvent.TurnOpened({
@@ -2724,6 +3201,7 @@ const frame = (
       boundary: string,
       printed: string,
       facts: Frame.StateChanges,
+      written: Settling["written"],
       offer: Effect.Effect<void> = Effect.void
     ): Settling => ({
       input,
@@ -2738,7 +3216,8 @@ const frame = (
       answer,
       boundary,
       printed,
-      facts
+      facts,
+      written
     })
 
     if (sealed._tag === "Failure") {
@@ -2765,7 +3244,7 @@ const frame = (
       const rejected = settling(contextWindow.digest, "", {
         truncatedOutputs: TruncatedOutput.retain(state.truncatedOutputs),
         readOnlyFrames: rejectedFrames
-      })
+      }, { mutated: false, checks: [] })
       const step = yield* observe(rejected, rejection.message, {}, deadCellEcho)
       return yield* finish(rejected, step)
     }
@@ -2828,10 +3307,18 @@ const frame = (
     const written = Supervision.prose(assistantText(answer))
     const { mutated } = accounting
     const { readOnlyFrames } = accounting.facts
+    const facts: Frame.StateChanges = ran.restored.size === 0 ? accounting.facts : {
+      ...accounting.facts,
+      withheldFlows: state.withheldFlows.filter((name) => !ran.restored.has(name))
+    }
+    // Read from the catalog this frame showed, so a skill the relevance gate
+    // withheld is never reminded; a direct call restores it.
+    const { capped: skillsCapped, ...offered } = Supervision.catalog(input.flows, accounting.facts.callLedger)
     const exit = settling(
       cell.digest,
       printed,
-      accounting.facts,
+      facts,
+      { mutated, checks: accounting.frameChecks.map((check) => check.label) },
       supervision.offer({
         frame: state.frame,
         digest: cell.digest,
@@ -2844,10 +3331,16 @@ const frame = (
           mutated
         },
         snapshot: {
-          task: Supervisor.task(taskOf(contextWindow)),
+          task: Judgement.task(taskOf(contextWindow)),
           signals: Supervision.signals(state, accounting.facts, accounting.workspaceDigest, accounting.observed.paths),
-          candidates: Supervisor.candidates(written)
-        }
+          candidates: Supervisor.candidates(written),
+          ...offered
+        },
+        shown: state.memoryShown,
+        recent: Supervisor.head(written),
+        skillsCapped,
+        unmarked: input.judged === true ? unmarked(state) : [],
+        failing: accounting.facts.checks.filter((check) => check.failing).map((check) => check.label)
       })
     )
 
@@ -3125,23 +3618,23 @@ const frame = (
         if (exit.live.value) yield* exit.offer
         yield* emit(demanded.event)
         yield* close(exit, "continue")
-        return continuing(exit, {
-          // The demand is an in-frame observation appended to what the run
-          // was already holding, not a projected context: a completion names
-          // no context for a next frame, and a run answering this one needs
-          // the frame it just wrote.
-          //
-          // A completion written before its own calls returned is shown what
-          // they printed first, the way a continuing frame is: reading them
-          // is the whole of what the demand asks. See `UnobservedCall`.
-          contextWindow: demanded.event._tag === "unobserved-demanded"
-            ? appended(
-              contextWindow,
-              answer,
-              [ModelRequest.Message.user(printed), ModelRequest.Message.user(demanded.note)],
-              liveCellEcho
-            )
-            : observedOn(contextWindow, answer, demanded.note, liveCellEcho),
+        // The demand is an in-frame observation appended to what the run was
+        // already holding, not a projected context: a completion names no
+        // context for a next frame, and a run answering this one needs the
+        // frame it just wrote. A demand follows a drain that carried nothing.
+        //
+        // A completion written before its own calls returned is shown what
+        // they printed first, the way a continuing frame is: reading them is
+        // the whole of what the demand asks. See `UnobservedCall`.
+        const demandedWindow = demanded.event._tag === "unobserved-demanded"
+          ? appended(
+            contextWindow,
+            answer,
+            [ModelRequest.Message.user(printed), ModelRequest.Message.user(demanded.note)],
+            liveCellEcho
+          )
+          : observedOn(contextWindow, answer, demanded.note, liveCellEcho)
+        return continuing(exit, demandedWindow, false, {
           // The note is the ask this frame appended; the run's memory goes
           // above it. See `withStateSection`.
           interventions: 1,
@@ -3200,16 +3693,120 @@ const frame = (
       [ModelRequest.Message.user(printed), ...delivered(drained), ...disciplined.messages],
       liveCellEcho
     )
-    return continuing(exit, {
+    return continuing(exit, windowOn(state, seat, context), drained.inserts.length > 0, {
       seat,
       modelParams,
       modelCallMs,
       contextWindowTokens,
-      contextWindow: windowOn(state, seat, context),
+      ...shownAfter(state, drained),
+      ...ledgerAfter(drained),
+      ...marksAfter(state, drained),
       // Whatever this frame earned is what the next one answers, so the run's
       // memory goes above it. See `withStateSection`.
       interventions: disciplined.messages.length,
       ...disciplined.changes
+    })
+  })
+
+/** What the run-start relevance reading records. */
+const RelevanceRecord = Schema.Struct({ settled: AgentEvent.RelevanceSettled })
+
+/**
+ * The run-start relevance reading, taken once at frame 0 of a judged run.
+ *
+ * Every model-invocable flow and skill of the frame's catalog that is not
+ * pinned, every chunk of the instruction files, and every opening memory row
+ * is one item. What Jev is confident the task does not need is withheld: its
+ * flows leave `ctx.flows`, its chunks leave the instructions segment, and its
+ * rows leave the memory segment. A reading that could not be judged withholds
+ * nothing, and its `decision-unjudged` row is the record.
+ * The reading is a recorded boundary, so a replay is served what it withheld.
+ */
+const withheld = (
+  state: State,
+  catalog: ReadonlyArray<Descriptor.FlowDescriptor>,
+  input: Input,
+  engine: EngineLike.EngineLike,
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
+  taskOf: (window: ContextWindow.ContextWindow) => string
+): Effect.Effect<State, HarnessError> =>
+  Effect.gen(function*() {
+    const pinned = input.pinned ?? []
+    const documents = input.instructions ?? []
+    const rows = input.memory?.rows ?? []
+    const items: ReadonlyArray<Relevance.Item> = [
+      ...catalog
+        .filter((descriptor) => descriptor.modelInvocable && !pinned.includes(descriptor.name))
+        .map(Relevance.flowItem)
+        // Catalog names are unique, so no two items tie.
+        .sort((left, right) => left.id < right.id ? -1 : 1),
+      ...Relevance.chunks(documents).map((chunk): Relevance.Item => ({
+        kind: "instruction",
+        id: chunk.id,
+        text: chunk.text
+      })),
+      ...rows.map((row): Relevance.Item => ({ kind: "memory", id: row.key, text: row.text }))
+    ]
+    if (items.length === 0) return state
+    const record = yield* Judgement.recorded(
+      engine,
+      {
+        name: "relevance",
+        identity: { session: state.session, frame: 0, boundary: "relevance" },
+        classifier: "relevance/unnecessary",
+        value: RelevanceRecord,
+        items: items.length
+      },
+      Effect.map(Relevance.judge({ task: Judgement.task(taskOf(state.contextWindow)) }, items), (reading) => ({
+        value: { settled: Relevance.settled(reading, { scope: state.session, frame: 0, source: "run" }) },
+        asked: reading.asked,
+        acted: reading.verdicts.some((verdict) => verdict.withheld)
+      }))
+    )
+    yield* Judgement.emitRecorded(emit, record)
+    if (record.value === null) return state
+    const { settled } = record.value
+    yield* emit(settled)
+    // A chunk is its id and its text: a replay served against an edited file
+    // keeps the chunk now at that id, which nobody judged.
+    const judgedChunks = new Set(
+      settled.withheld.filter((item) => item.kind === "instruction").map((item) => `${item.id}\u0000${item.digest}`)
+    )
+    const chunks = new Set(
+      Relevance.chunks(documents).flatMap((chunk) =>
+        judgedChunks.has(`${chunk.id}\u0000${Digest.digest(chunk.text)}`) ? [chunk.id] : []
+      )
+    )
+    // A row is its key and its text, so two rows alike in both are one row.
+    const dropped = new Set(
+      settled.withheld.filter((item) => item.kind === "memory").map((item) => `${item.id}\u0000${item.digest}`)
+    )
+    const replaced = new Map<string, ReadonlyArray<ContextWindow.Segment>>()
+    if (chunks.size > 0) {
+      const text = Relevance.render(documents, chunks)
+      replaced.set(
+        ContextWindow.makeSegment(instructionsSegment(documents, new Set())).digest,
+        text === "" ? [] : [ContextWindow.makeSegment(instructionsSegment(documents, chunks))]
+      )
+    }
+    if (input.memory !== undefined && dropped.size > 0) {
+      const { digest, render } = input.memory
+      const text = render(rows.filter((row) => !dropped.has(`${row.key}\u0000${Digest.digest(row.text)}`)))
+      replaced.set(
+        ContextWindow.makeSegment(memorySegment(render(rows), digest)).digest,
+        text === "" ? [] : [ContextWindow.makeSegment(memorySegment(text, Digest.digest(text)))]
+      )
+    }
+    return advance(state, {
+      withheldFlows: settled.withheld.filter((item) => item.kind === "flow" || item.kind === "skill").map((item) =>
+        item.id
+      ),
+      ...(replaced.size === 0 ? {} : {
+        contextWindow: ContextWindow.make({
+          ...state.contextWindow,
+          segments: state.contextWindow.segments.flatMap((segment) => replaced.get(segment.digest) ?? [segment])
+        })
+      })
     })
   })
 
@@ -3260,13 +3857,18 @@ export const run = (
     // task and every later instruction the run accepted from the person.
     const taskOf = (window: ContextWindow.ContextWindow): string => completionTask(Frame.taskText(window), instructions)
     const supervisorOptions = input.supervisor ?? Supervisor.defaultOptions
+    const monitors = input.monitors ?? Monitor.defaults()
+    const judged = input.judged ?? false
+    const pinned = input.pinned ?? []
     const loop = Effect.gen(function*() {
       const engine = yield* EngineLike.EngineLike
       const sandbox = yield* Sandbox.Sandbox
       const steering = yield* Steering.Source
 
       let current = input.state
-      let flows = input.flows
+      // The catalog the window teaches: a resumed run's window already
+      // leaves out what the run-start reading withheld.
+      let flows = input.flows.filter((descriptor) => !current.withheldFlows.includes(descriptor.name))
       if (current.journalVersion !== journalVersion) {
         return yield* new HarnessError({
           code: "incompatible_journal",
@@ -3291,7 +3893,23 @@ export const run = (
             unresolvedCap: current.unresolvedCap,
             claimCap: current.claimCap,
             revalidations: current.revalidations,
-            supervisorSteer: supervisorOptions.steer,
+            // Written only when armed, so an unjudged journal keeps the bytes
+            // it had before the switch existed.
+            ...(judged
+              ? {
+                judged,
+                relevance: { withholdAt: Relevance.withholdAt, pinned: [...pinned] },
+                monitors: monitors.map(({ at, consecutive, cooldownFrames, id, kind, limit }) => ({
+                  id,
+                  kind,
+                  at,
+                  consecutive,
+                  cooldownFrames,
+                  limit
+                }))
+              }
+              : {}),
+            ...(input.stance === undefined ? {} : { stance: input.stance }),
             ...limits
           })
         )
@@ -3302,7 +3920,9 @@ export const run = (
         session: current.session,
         engine,
         emit,
-        options: supervisorOptions
+        options: supervisorOptions,
+        monitors,
+        deliver: judged
       })
       // The run's realm: an `acquireRelease` on this loop's scope rather than
       // on one evaluation, so teardown is still scope closure and cancellation
@@ -3342,17 +3962,23 @@ export const run = (
           )
           return
         }
-        if (input.refreshFlows !== undefined) {
-          const refreshed = yield* engine.record({
-            name: "flow-catalog",
-            identity: { session: current.session, frame: current.frame, boundary: "flow-catalog" },
-            success: Schema.Array(Descriptor.FlowDescriptor),
-            execute: input.refreshFlows
-          })
+        const catalog = input.refreshFlows === undefined ? input.flows : yield* engine.record({
+          name: "flow-catalog",
+          identity: { session: current.session, frame: current.frame, boundary: "flow-catalog" },
+          success: Schema.Array(Descriptor.FlowDescriptor),
+          execute: input.refreshFlows
+        })
+        current = judged && current.frame === 0
+          ? yield* withheld(current, catalog, input, engine, emit, taskOf)
+          : current
+        // The journaled catalog stays whole; what the frame shows leaves out
+        // what the run-start reading withheld.
+        const shown = catalog.filter((descriptor) => !current.withheldFlows.includes(descriptor.name))
+        if (input.refreshFlows !== undefined || shown.length !== flows.length) {
           // Replace only the teaching we supplied, preserving the host's
           // prefix and the accumulated transcript. Rebuild before compaction
           // so token accounting and the sealed request use this snapshot too.
-          const previous = teach(ContextWindow.empty(current.contextWindow.modelId), flows)
+          const previous = teach(ContextWindow.empty(current.contextWindow.modelId), flows, undefined, input.stance)
           const digests = new Set(previous.segments.map((segment) => segment.digest))
           current = advance(current, {
             contextWindow: teach(
@@ -3360,10 +3986,12 @@ export const run = (
                 ...current.contextWindow,
                 segments: current.contextWindow.segments.filter((segment) => !digests.has(segment.digest))
               }),
-              refreshed
+              shown,
+              undefined,
+              input.stance
             )
           })
-          flows = refreshed
+          flows = shown
         }
         const step = yield* frame(
           { ...input, state: current, flows },
@@ -3433,6 +4061,17 @@ export const run = (
         if (step._tag === "Suspend") {
           yield* emit(new AgentEvent.Suspended({ eventType: eventType.suspended, reason: step.reason }))
           return yield* engine.suspend(step.reason)
+        }
+        for (const flow of current.withheldFlows) {
+          if (step.state.withheldFlows.includes(flow)) continue
+          yield* emit(
+            new AgentEvent.RelevanceRestored({
+              eventType: eventType.relevanceRestored,
+              scope: current.session,
+              frame: current.frame,
+              flow
+            })
+          )
         }
         current = step.state
       }

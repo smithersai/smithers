@@ -95,17 +95,6 @@ if [ "$MEMORY" = "repo" ]; then
   mkdir -p "$S/memory"
 fi
 
-# The supervisor's steering arm, off by default. The harness journals a
-# supervisor verdict on every frame whenever a judge is bound; SWB_SUPERVISOR_STEER=1
-# additionally lets a verdict past its threshold nudge the run and insert
-# recalled memory. Stamped into the timings beside the memory condition, because
-# a wave with it on is measuring the nudge and not only the harness.
-SUPERVISOR_STEER="${SWB_SUPERVISOR_STEER:-0}"
-case "$SUPERVISOR_STEER" in
-  0|1) ;;
-  *) echo "[$INSTANCE] SWB_SUPERVISOR_STEER must be unset, 0 or 1, got '$SUPERVISOR_STEER'"; exit 2 ;;
-esac
-
 # The subject the wave measures, pinned by ./preflight.sh. It is stamped into
 # this instance's timings record so the scorecard can state which bytes each
 # instance ran, and refuse to average two subjects into one wave.
@@ -309,14 +298,10 @@ else
     export SMITHERS_TEST_CONTAINER="$CONTAINER"
     export SMITHERS_TEST_CWD="/testbed"
     export SMITHERS_OPENAI_AUTH="$OPENAI_AUTH"
-    # Both conditional, and each on a line of its own so
-    # fixtures/check-env-names.mjs sees the name and holds it against the
-    # CLI's list.
+    # Conditional, and on a line of its own so fixtures/check-env-names.mjs
+    # sees the name and holds it against the CLI's list.
     if [ "$MEMORY" = "repo" ]; then
       export SMITHERS_MEMORY_DB="$S/memory/$REPO.db"
-    fi
-    if [ "$SUPERVISOR_STEER" = "1" ]; then
-      export SMITHERS_SUPERVISOR_STEER=1
     fi
     A=$("$S/flows.sh" --json plan fix | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).approval))}catch{process.exit(1)}})') || exit 1
     "$S/flows.sh" --json approve "$A" --scope run >/dev/null 2>&1 || {
@@ -338,11 +323,12 @@ else
   # printing a claim; the ledger row and every scoreboard downstream carry the
   # observation. `hostShell` is the condition the agent's host-side shell ran
   # under; `allowed` is the only value an agent run can have today. `memory`
-  # and `supervisorSteer` are the two conditions declared above; a report that
-  # pools a memory-on run with the independent-instance score reads them.
-  printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "seat": "%s",\n  "openaiAuth": "%s",\n  "subject": "%s",\n  "budgetSeconds": %s,\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "hostShell": "%s",\n  "memory": "%s",\n  "supervisorSteer": %s,\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s,\n  "exitStatus": %s,\n  "timedOut": %s\n}\n' \
+  # is the condition declared above; a report that pools a memory-on run with
+  # the independent-instance score reads it. Whether the supervisor delivered
+  # is the run's own `discipline-armed.judged`.
+  printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "seat": "%s",\n  "openaiAuth": "%s",\n  "subject": "%s",\n  "budgetSeconds": %s,\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "hostShell": "%s",\n  "memory": "%s",\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s,\n  "exitStatus": %s,\n  "timedOut": %s\n}\n' \
     "$INSTANCE" "$RUN_ID" "$RUN_INDEX" "$SEAT" "$OPENAI_AUTH" "$SUBJECT" "$BUDGET" \
-    "$TESTBED_NETWORK" "$TESTBED_OBSERVED" "$HOST_SHELL" "$MEMORY" "$([ "$SUPERVISOR_STEER" = "1" ] && printf true || printf false)" "$((START*1000))" "$((END*1000))" "$((END-START))" \
+    "$TESTBED_NETWORK" "$TESTBED_OBSERVED" "$HOST_SHELL" "$MEMORY" "$((START*1000))" "$((END*1000))" "$((END-START))" \
     "$RUN_STATUS" "$([ "$RUN_STATUS" -eq 124 ] && printf true || printf false)" \
     > "$TIMINGS"
 fi

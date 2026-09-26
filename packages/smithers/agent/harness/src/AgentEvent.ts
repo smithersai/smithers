@@ -12,6 +12,7 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Context, Effect, Schema } from "effect"
 import * as Cell from "./Cell.ts"
 import * as EngineLike from "./EngineLike.ts"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 import * as Sandbox from "./Sandbox.ts"
 
 /**
@@ -24,6 +25,79 @@ export const Observer = Context.Reference<(event: AgentEvent) => Effect.Effect<v
   "@smthrs/harness/AgentEvent/Observer",
   { defaultValue: () => () => Effect.void }
 )
+
+/**
+ * Journals an event into the run whose cell called the current flow. The
+ * controller provides it around each flow call, so a flow that asks Jev
+ * itself journals its receipts beside the run's own. Outside a run there is
+ * no journal, and it does nothing.
+ * @category services
+ * @since 1.0.0-rc.0
+ */
+export const Journal = Context.Reference<(event: AgentEvent) => Effect.Effect<void>>(
+  "@smthrs/harness/AgentEvent/Journal",
+  { defaultValue: () => () => Effect.void }
+)
+
+/**
+ * The kind of a human-provided item a relevance reading may withhold.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const RelevanceKind = Schema.Literals(["flow", "skill", "instruction", "memory"])
+
+/**
+ * What a compaction reading did with one replaced message.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const CompactionMark = Schema.Literals(["keep", "squash", "remove"])
+
+/**
+ * The invariant that kept a message from being removed, whatever it was marked.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const CompactionPin = Schema.Literals(["summary", "person", "steering", "mutated", "failing", "pair", "budget"])
+
+/**
+ * What a supervisor monitor watches for.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const MonitorKind = Schema.Literals(["mood", "skill", "lint"])
+
+/**
+ * The static stance a run's monitors deliver under.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const Stance = Schema.Literals(["careful", "paranoid"])
+
+/**
+ * Why a crossed monitor was not delivered.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const Suppression = Schema.Literals(["streak", "cooldown", "limit", "slot"])
+
+/**
+ * Why a reading could not be judged: `unconfigured`, `interrupted`, or the
+ * transport's own error code.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const UnjudgedReason = Schema.Literals(["unconfigured", "interrupted", ...Evaluator.EvaluatorErrorCode.literals])
+
+/** Token usage an evaluator reported for one reading. */
+const Usage = Schema.Struct({ inputTokens: Schema.Number, outputTokens: Schema.Number })
 
 /**
  * The loop discipline a run was armed with, journaled once when it starts.
@@ -122,15 +196,11 @@ export class DisciplineArmed extends Schema.TaggedClass<DisciplineArmed>(
     Schema.withDecodingDefaultKey(Effect.succeed(0))
   ),
   /**
-   * Whether a supervisor reading past its threshold may nudge the run and
-   * insert recalled memory. False journals verdicts only. Defaulted so
-   * journals written before the supervisor existed decode unchanged. See
-   * `Supervisor`.
+   * Whether a supervisor reading could nudge the run, as journals written
+   * before {@link judged} said it. Later writers omit it: `judged` says the
+   * same.
    */
-  supervisorSteer: Schema.Boolean.pipe(
-    Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
-  ),
+  supervisorSteer: Schema.optional(Schema.Boolean),
   /** Maximum calls per cell, when this binding can enforce one. */
   calls: Schema.optional(Schema.Number),
   /** Maximum sandbox heap, when this binding can enforce one. */
@@ -142,7 +212,26 @@ export class DisciplineArmed extends Schema.TaggedClass<DisciplineArmed>(
   /** Maximum whole-evaluation time, when this binding can enforce one. */
   totalMs: Schema.optional(Schema.Number),
   /** Maximum wall-clock time for one flow call. */
-  callMs: Schema.optional(Schema.Number)
+  callMs: Schema.optional(Schema.Number),
+  /** Whether a judge was bound, so Jev's readings run. Absent before it existed. */
+  judged: Schema.optional(Schema.Boolean),
+  /** The relevance gate: the withhold threshold and the item ids never offered to it. */
+  relevance: Schema.optional(Schema.Struct({ withholdAt: Schema.Number, pinned: Schema.Array(Schema.String) })),
+  /** The supervisor monitors armed, with their delivery gates. */
+  monitors: Schema.optional(Schema.Array(Schema.Struct({
+    id: Schema.String,
+    kind: MonitorKind,
+    /** The probability at or above which the monitor crosses. */
+    at: Schema.Number,
+    /** Consecutive crossed readings required before a delivery. */
+    consecutive: NonNegativeSafeInt,
+    /** Frames after a delivery during which the monitor is not delivered again. */
+    cooldownFrames: NonNegativeSafeInt,
+    /** Deliveries allowed in one run. */
+    limit: NonNegativeSafeInt
+  }))),
+  /** The static stance the monitors deliver under. */
+  stance: Schema.optional(Stance)
 }) {}
 
 /**
@@ -907,7 +996,9 @@ export class DecisionSettled extends Schema.TaggedClass<DecisionSettled>(
   /** Whether this decision changed what the run did next. */
   acted: Schema.Boolean,
   /** Who answered. */
-  decidedBy: Schema.Literals(["jev", "seat", "human"])
+  decidedBy: Schema.Literals(["jev", "seat", "human"]),
+  /** Token usage reported by the evaluator, absent when it supplied none. */
+  usage: Schema.optional(Usage)
 }) {}
 
 const Level = Schema.Literals(["none", "mild", "strong"])
@@ -927,10 +1018,11 @@ const Level = Schema.Literals(["none", "mild", "strong"])
  * a failed reading fills in, because a failed reading writes
  * {@link SupervisorUnjudged} and never this. `crossed` says whether the
  * reading passed a nudge threshold; `nudged` whether a nudge was handed to
- * the next boundary, which needs the host to have armed steering. `inserted`
- * and `remembered` are the indexes of the recalled rows handed over and the
- * candidates written to memory. `decision-settled` beside this carries the
- * snapshot and every answer.
+ * the next boundary, which needs the host to have armed steering.
+ * `remembered` holds the indexes of the candidates written to memory; the
+ * recalled rows are judged by Relevance and journaled beside this as
+ * `relevance-settled`. `decision-settled` beside this carries the snapshot
+ * and every answer.
  *
  * @category events
  * @since 1.0.0-rc.0
@@ -971,14 +1063,26 @@ export class SupervisorSettled extends Schema.TaggedClass<SupervisorSettled>(
    * Absent from readings journaled before it existed.
    */
   steer: Schema.optional(Schema.Boolean),
-  /** Indexes of recalled rows handed to the next boundary. */
-  inserted: Schema.Array(Schema.Int),
+  /** Indexes of recalled rows handed to the next boundary; later writers omit it. */
+  inserted: Schema.optional(Schema.Array(Schema.Int)),
   /** Indexes of candidates written to memory. */
   remembered: Schema.Array(Schema.Int),
+  /**
+   * Whether the snapshot had more uncalled skills than `Supervisor.skillLimit`,
+   * so some were not scored. Absent when every one was.
+   */
+  skillsCapped: Schema.optional(Schema.Boolean),
   /** Wall-clock milliseconds the evaluation took. */
   latencyMs: Schema.Int,
   /** Token usage reported by the evaluator, absent when it supplied none. */
-  usage: Schema.optional(Schema.Struct({ inputTokens: Schema.Number, outputTokens: Schema.Number }))
+  usage: Schema.optional(Usage),
+  /** Each armed monitor's probability in this reading, and whether it crossed. */
+  monitors: Schema.optional(Schema.Array(Schema.Struct({
+    id: Schema.String,
+    kind: MonitorKind,
+    p: Schema.Number,
+    crossed: Schema.Boolean
+  })))
 }) {}
 
 /**
@@ -1004,9 +1108,129 @@ export class SupervisorUnjudged extends Schema.TaggedClass<SupervisorUnjudged>(
   /** The frame the snapshot was built from. */
   frame: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   /** `unconfigured`, `interrupted`, or the transport's own error code. */
-  reason: Schema.Literals(["unconfigured", "interrupted", ...Evaluator.EvaluatorErrorCode.literals]),
+  reason: UnjudgedReason,
   /** What went wrong, safe to journal: see `Evaluator.publicMessage`. */
   detail: Schema.String
+}) {}
+
+/**
+ * A Jev reading that could not be judged, outside the supervisor.
+ *
+ * Written by a relevance, compaction or routing reading instead of its
+ * settlement. The caller then keeps everything it would have filtered, so the
+ * receipt is what says the filter did not run. `items` is how many items the
+ * failed reading covered.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class DecisionUnjudged extends Schema.TaggedClass<DecisionUnjudged>(
+  "flows/harness/AgentEvent/DecisionUnjudged"
+)("decision-unjudged", {
+  eventType: Schema.Literal("flows.harness.decision-unjudged.v1"),
+  /** The run's session. */
+  scope: Schema.String,
+  /** The frame the reading was asked in. */
+  frame: NonNegativeSafeInt,
+  /** The classifier's stable id. */
+  classifier: Schema.String,
+  /** `unconfigured`, `interrupted`, or the transport's own error code. */
+  reason: UnjudgedReason,
+  /** What went wrong, safe to journal: see `Evaluator.publicMessage`. */
+  detail: Schema.String,
+  /** Items the failed reading covered. */
+  items: NonNegativeSafeInt
+}) {}
+
+const RelevanceItem = Schema.Struct({
+  kind: RelevanceKind,
+  id: Schema.String,
+  /** Digest of the item's text; the text itself is never journaled. */
+  digest: Schema.String,
+  /** Probability the item is unnecessary for the task as stated. */
+  p: Schema.Number
+})
+
+/**
+ * Which human-provided items a relevance reading kept and which it withheld.
+ *
+ * An item is withheld only at or above `withholdAt`. Ids and digests, never
+ * item text.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class RelevanceSettled extends Schema.TaggedClass<RelevanceSettled>(
+  "flows/harness/AgentEvent/RelevanceSettled"
+)("relevance-settled", {
+  eventType: Schema.Literal("flows.harness.relevance-settled.v1"),
+  /** The run's session. */
+  scope: Schema.String,
+  /** The frame the reading was asked in. */
+  frame: NonNegativeSafeInt,
+  /**
+   * `run` for the gate at run start, `supervisor` for recalled memory,
+   * `recall` for a recall the model called.
+   */
+  source: Schema.Literals(["run", "supervisor", "recall"]),
+  /** The probability at or above which an item is withheld. */
+  withholdAt: Schema.Number,
+  kept: Schema.Array(RelevanceItem),
+  withheld: Schema.Array(RelevanceItem),
+  /** Wall-clock milliseconds the evaluation took. */
+  latencyMs: NonNegativeSafeInt,
+  /** Token usage reported by the evaluator, absent when it supplied none. */
+  usage: Schema.optional(Usage)
+}) {}
+
+/**
+ * A withheld flow restored because the run called it by name.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class RelevanceRestored extends Schema.TaggedClass<RelevanceRestored>(
+  "flows/harness/AgentEvent/RelevanceRestored"
+)("relevance-restored", {
+  eventType: Schema.Literal("flows.harness.relevance-restored.v1"),
+  /** The run's session. */
+  scope: Schema.String,
+  /** The frame whose call restored it. */
+  frame: NonNegativeSafeInt,
+  /** The flow restored. */
+  flow: Schema.String
+}) {}
+
+/**
+ * The seat a run with no declared model was routed to, and who chose it.
+ *
+ * `decidedBy` is `jev` when Jev chose among `candidates` and `only` when a
+ * single candidate left nothing to choose.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class SeatRouted extends Schema.TaggedClass<SeatRouted>(
+  "flows/harness/AgentEvent/SeatRouted"
+)("seat-routed", {
+  eventType: Schema.Literal("flows.harness.seat-routed.v1"),
+  /** The run's session. */
+  scope: Schema.String,
+  /** What the flow declared, such as `auto`. */
+  declared: Schema.String,
+  /** The seat chosen. */
+  seat: Schema.String,
+  /** The chosen seat's model. */
+  modelId: Schema.String,
+  /** The system-prompt variant chosen with it, when one was. */
+  variant: Schema.NullOr(Schema.String),
+  /** The seats offered. */
+  candidates: Schema.Array(Schema.String),
+  decidedBy: Schema.Literals(["jev", "only"]),
+  /** The provider's own number, absent when it sent none. */
+  confidence: Schema.optional(Schema.Number),
+  /** Wall-clock milliseconds the routing took. */
+  latencyMs: NonNegativeSafeInt
 }) {}
 
 /**
@@ -1228,7 +1452,25 @@ export class CompactionSettled extends Schema.TaggedClass<CompactionSettled>(
   // Counts messages, not segments: one live transcript segment can contain
   // both an assistant turn and its observations. Absent in older journals.
   retainedMessageCount: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  summary: ModelRequest.Message
+  /** Absent when nothing replaced was squashed. */
+  summary: Schema.optional(ModelRequest.Message),
+  /** Replaced messages carried over verbatim, after the summary. */
+  kept: Schema.optional(Schema.Array(ModelRequest.Message)),
+  /** What a reading marked each replaced message, by message digest. */
+  marks: Schema.optional(Schema.Array(Schema.Struct({
+    digest: Schema.String,
+    mark: CompactionMark,
+    /** The invariant that overrode a `remove`, when one did. */
+    pinned: Schema.optional(CompactionPin)
+  }))),
+  /** Estimated tokens the removed messages held. */
+  removedTokens: Schema.optional(NonNegativeSafeInt),
+  /**
+   * True when a judged run could not mark: its facts do not describe every
+   * transcript segment, as in state written before marks, so every replaced
+   * message was squashed.
+   */
+  unaligned: Schema.optional(Schema.Boolean)
 }) {}
 
 /**
@@ -1249,7 +1491,13 @@ export class SteeringDrained extends Schema.TaggedClass<SteeringDrained>(
    * recalled row. The model reads these above the person's messages; they
    * never join the task the completion brake or the supervisor reads.
    */
-  supervisor: Schema.optional(Schema.Array(ModelRequest.Message))
+  supervisor: Schema.optional(Schema.Array(ModelRequest.Message)),
+  /** The monitor whose delivery `supervisor` carries, when one's does. */
+  monitor: Schema.optional(Schema.String),
+  /** Crossed monitors not delivered at this boundary, and why. */
+  suppressed: Schema.optional(Schema.Array(Schema.Struct({ id: Schema.String, reason: Suppression }))),
+  /** Keys of the memory rows delivered at this boundary. */
+  memory: Schema.optional(Schema.Array(Schema.String))
 }) {}
 
 /**
@@ -1349,6 +1597,10 @@ export const AgentEvent = Schema.Union([
   SupervisorSettled,
   SupervisorUnjudged,
   SupervisorMemoryFailed,
+  DecisionUnjudged,
+  RelevanceSettled,
+  RelevanceRestored,
+  SeatRouted,
   SufficiencyObserved,
   VacuousVerificationObserved,
   Suspended,
@@ -1395,6 +1647,7 @@ export const eventType = {
   claimDemanded: "flows.harness.claim-demanded.v1",
   compactionSettled: "flows.harness.compaction-settled.v1",
   decisionSettled: "flows.harness.decision-settled.v1",
+  decisionUnjudged: "flows.harness.decision-unjudged.v1",
   disciplineArmed: "flows.harness.discipline-armed.v1",
   modelDelta: "flows.harness.model-delta.v1",
   modelRequested: "flows.harness.model-requested.v1",
@@ -1409,8 +1662,11 @@ export const eventType = {
   permissionRequired: "flows.harness.permission-required.v1",
   readOnlyDemandIssued: "flows.harness.read-only-demand-issued.v1",
   readOnlyDemanded: "flows.harness.read-only-demanded.v1",
+  relevanceRestored: "flows.harness.relevance-restored.v1",
+  relevanceSettled: "flows.harness.relevance-settled.v1",
   repeatDemanded: "flows.harness.repeat-demanded.v1",
   resolved: "flows.harness.resolved.v1",
+  seatRouted: "flows.harness.seat-routed.v1",
   steeringDrained: "flows.harness.steering-drained.v1",
   sufficiencyObserved: "flows.harness.sufficiency-observed.v1",
   supervisorSettled: "flows.harness.supervisor-settled.v1",

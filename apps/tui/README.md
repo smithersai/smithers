@@ -130,7 +130,9 @@ error and stack.
 Each turn is told the working directory, instruction files (the first of
 `AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md` in every directory from the
 repository root down, or the working directory alone outside a repository,
-after `~/.smithers/agent/AGENTS.md`), and the conversation so far.
+after `~/.smithers/agent/AGENTS.md`), and the conversation so far. A judged
+worker leaves out each instruction chunk Jev is at least 90% sure its task does
+not need; the coordinator sees every file whole.
 Sessions are owner-only JSONL under `~/.smithers/tui/sessions/<cwd>--<hash>/`
 (`SMITHERS_TUI_SESSION_DIR` overrides). A torn last line is dropped; a file
 damaged earlier is renamed `.damaged` and left out of the list. Credential

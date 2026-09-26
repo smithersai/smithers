@@ -158,15 +158,15 @@
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as AgentEvent from "./AgentEvent.ts"
+import type * as AgentEvent from "./AgentEvent.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as bytes from "./internal/bytes.ts"
 import * as DemandText from "./internal/demandText.ts"
 import * as elide from "./internal/elide.ts"
+import * as Judgement from "./Judgement.ts"
 
 /**
  * The most of one check's result the brake sends, in UTF-8 bytes.
@@ -534,7 +534,7 @@ export const newest = (text: string): string => {
  * @category models
  * @since 1.0.0-rc.0
  */
-export type UnjudgedReason = "unconfigured" | Evaluator.EvaluatorErrorCode
+export type UnjudgedReason = Exclude<Judgement.Unjudged["reason"], "interrupted">
 
 /**
  * The failure an unjudged completion ends the turn with.
@@ -544,7 +544,8 @@ export type UnjudgedReason = "unconfigured" | Evaluator.EvaluatorErrorCode
  * word. The message then quotes the completion through {@link refused}, as
  * {@link unproven} does: a judge outage fails closed, and the person whose
  * run did the work is still owed its answer. `cause` carries the transport's
- * own error where there was one.
+ * code and status where there was one; `detail` is the transport's text only
+ * where it is safe to show: see `Evaluator.publicMessage`.
  *
  * @category constructors
  * @since 1.0.0-rc.0
@@ -654,52 +655,28 @@ export const read = (
     // the compiler, and the one that says `unconfigured`.
     const bound = yield* Effect.serviceOption(Evaluator.Evaluator)
     if (Option.isNone(bound)) {
-      return yield* Effect.fail(unjudged("unconfigured", "No evaluator is installed on this host", evidence.claim))
+      return yield* Effect.fail(unjudged("unconfigured", Judgement.unconfigured.detail, evidence.claim))
     }
-    // The classifier returns answers. Keep the transport's accounting at
-    // its service boundary so the durable reading can carry both. The
-    // provider's own confidence is kept the same way and for the same reason:
-    // the classifier drops it, and `decision-settled` may report no other.
-    // The state is read off the request for the reason the other two are read
-    // off the response: what crossed the boundary is the encoded evidence, and
-    // a record of what was asked has to be of that and not of a second encoding.
-    let usage: Evaluator.Usage | undefined
-    let confidence: Readonly<Record<string, number>> | undefined
-    let sent: Schema.Json = null
-    const metered = Evaluator.Evaluator.of({
-      evaluate: (request) =>
-        bound.value.evaluate(request).pipe(Effect.tap((response) =>
-          Effect.sync(() => {
-            usage = response.usage
-            confidence = response.confidence
-            // `Evidence` is a struct of JSON members, so its encoding is JSON.
-            sent = request.state as Schema.Json
-          })
-        ))
-    })
-    const settled = yield* classifier.evaluate(evidence).pipe(
-      Effect.provideService(Evaluator.Evaluator, metered),
-      Effect.timed,
+    const { answers, asked } = yield* Judgement.measured(classifier, evidence).pipe(
+      Effect.provideService(Evaluator.Evaluator, bound.value),
       // `ClassifierError.code` is `EvaluatorErrorCode` verbatim, so the
-      // reason a journal reads is the transport's own.
+      // reason a journal reads is the transport's own. An unreachable
+      // transport's own message can name hosts and URLs, so the message is
+      // the public one and the cause keeps only the structured facts.
       Effect.mapError((error) =>
-        unjudged(error.code, error.message, evidence.claim, {
+        unjudged(error.code, Evaluator.publicMessage(error), evidence.claim, {
           code: error.code,
-          ...(error.status === undefined ? {} : { status: error.status }),
-          // Schema.Defect decodes any object with `message` to a bare Error,
-          // discarding custom fields. Keep the structured transport facts.
-          detail: error.message
+          ...(error.status === undefined ? {} : { status: error.status })
         })
       )
     )
-    const [elapsed, answers] = settled
     return {
       complete: answers.complete.probability,
       overclaims: answers.overclaims.probability,
       invented: answers.invented.probability,
-      latencyMs: Math.round(Duration.toMillis(elapsed)),
-      ...(usage === undefined ? {} : { usage }),
-      asked: { state: sent, answers: AgentEvent.decisionAnswers(answers, confidence) }
+      latencyMs: asked.latencyMs,
+      ...(asked.usage === undefined ? {} : { usage: asked.usage }),
+      asked: { state: asked.state, answers: asked.answers }
     }
   })
 

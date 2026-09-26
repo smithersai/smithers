@@ -7,10 +7,12 @@ import { Effect, Layer } from "effect"
 import { NodeServices } from "@effect/platform-node"
 import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
 import * as Model from "@smthrs/model/Model"
-import type * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as Seat from "@smthrs/agent/Seat"
+import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as SeatRouter from "@smthrs/agent/SeatRouter"
 import { platform } from "../../packages/smithers/src/internal/NodeControlHost.ts"
 import { Landing } from "../coding/landing.ts"
-import { configuredCodingRoutes, layer, roleResolver } from "../coding/host.ts"
+import { configuredCodingRoutes, layer, roleCatalog, roleResolver, roleSeats } from "../coding/host.ts"
 import { loadProject } from "../coding/project-config.ts"
 
 /** Configuration never calls the adapter; every method refuses if a layer is built. */
@@ -99,4 +101,51 @@ test("repository seats win for the roles they name and add roles its flows decla
     assert.equal((await Effect.runPromise(roles.resolve(id))).id, id)
   }
   assert.deepEqual(resolved, ["luna", "sol", "test:implementation", "luna", "astra", "test:implementation"])
+})
+
+test("the role catalog offers one role per configured model, never Jev", async () => {
+  const catalog = roleCatalog("sol", { planningModel: "openai:gpt-6-sol", wikiModel: "opus",
+    seats: { triage: "test:triage", jev: "jev" } })
+  assert.deepEqual(await Effect.runPromise(catalog.candidates), [
+    { id: "coding/implement", description: "coding/implement: GPT-6 Sol, OpenAI, 400K context" },
+    { id: "wiki/reviewer", description: "wiki/reviewer: Claude Opus 5.5, Anthropic, 1M context" },
+    { id: "triage", description: "triage: test:triage" }
+  ])
+  assert.equal(catalog.variants, SeatRouter.defaultVariants)
+})
+
+test("a host with one model still routes an auto flow to a variant", async () => {
+  const decision = await Effect.runPromise(SeatRouter.route({
+    declared: Seat.auto,
+    state: { task: "Fix the parser", flow: "chore", description: "", capabilities: [] }
+  }).pipe(Effect.provide(Layer.merge(SeatRouter.layer(roleCatalog("sol")), makeHostJudge().layer))))
+  assert.deepEqual([decision.seat, decision.variant, decision.decidedBy], ["coding/implement", "change", "only"])
+})
+
+test("an undeclared or auto flow routes to a role seat, and a declared role is kept", async () => {
+  const model = Model.make({ stream: () => { throw new Error("seat resolution must not invoke a provider") } })
+  const base: SeatResolver.Service = { resolve: id => Effect.succeed({ id, model, modelId: id, contextWindowTokens: 16_000,
+    route: { prepare: () => { throw new Error("seat resolution must not prepare provider requests") } } }) }
+  const options = { repositoryPath: "/unused", gatewayId: "11111111-1111-4111-8111-111111111111", implementationModel: "sol",
+    planningModel: "luna", seats: { "wiki/reviewer": "opus" } }
+  const judge = makeHostJudge().layer
+  const state = (task: string) => ({ task, flow: "chore", description: "", capabilities: [] })
+  const routed = (declared: string, task: string) => Effect.runPromise(Effect.gen(function*() {
+    const decision = yield* SeatRouter.route({ declared, state: state(task) })
+    const seats = yield* SeatResolver.SeatResolver
+    return { decision, seat: yield* seats.resolve(decision.seat) }
+  }).pipe(Effect.provide(Layer.merge(roleSeats(options, base)({}).pipe(Layer.provide(platform.requestExecutor)), judge))))
+  // AgentSession routes a flow with no `model:` exactly as `model: auto`.
+  const undeclared = await routed(Seat.auto, "Rename one variable")
+  assert.equal(undeclared.decision.decidedBy, "jev")
+  assert.deepEqual(undeclared.decision.candidates, ["coding/implement", "coding/plan", "wiki/reviewer"])
+  assert.equal(undeclared.seat.id, "coding/implement")
+  assert.equal(undeclared.seat.modelId, "sol")
+  const auto = await routed(Seat.auto, "Summarize the Anthropic thread")
+  assert.equal(auto.seat.id, "wiki/reviewer")
+  assert.equal(auto.seat.modelId, "opus")
+  const declared = await routed("coding/plan", "Summarize the Anthropic thread")
+  assert.equal(declared.decision.decidedBy, "declared")
+  assert.equal(declared.seat.id, "coding/plan")
+  assert.equal(declared.seat.modelId, "luna")
 })

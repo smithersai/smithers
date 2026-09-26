@@ -86,6 +86,9 @@ const judge = Evaluator.Evaluator.of({
     })
 })
 
+/** The attribution judge, as the context a binding is handed. */
+const judgeServices = Context.make(Evaluator.Evaluator, judge)
+
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
   protocolId: "test-protocol",
@@ -401,7 +404,8 @@ describe("standard capabilities are flows", () => {
                     remembered.push({ key: input.key, text: (input.value as { readonly content: string }).content })
                   })
               })
-            ).pipe(Context.add(Recall.Recall, Recall.makeNoop()))
+            ).pipe(Context.add(Recall.Recall, Recall.makeNoop())),
+            judgeServices
           )
         ],
         cells: [
@@ -589,6 +593,12 @@ ctx.done(JSON.stringify([a.content, b.content]))`
                     })
                 })
               )
+            ),
+            Effect.runSync(
+              Effect.provide(
+                Effect.context<Evaluator.Evaluator>(),
+                Evaluator.layerScripted(() => ({ unnecessary_0: { probability: 0.1 } }))
+              )
             )
           )
         ],
@@ -605,7 +615,7 @@ ctx.done([
   grepped.matches.length,
   edited.replacements,
   patched.added.join(","),
-  recalled[0].text
+  recalled.rows[0].text
 ].join("|"))`
         ]
       })
@@ -634,6 +644,11 @@ ctx.done([
     expect(filesystem.contents.get("/repo/alpha.md")).toBe("first line\nedited line")
     expect(filesystem.contents.get("/repo/gamma.md")).toBe("gamma\n")
     expect(asked).toEqual(["notes:alpha"])
+    // The recall's own Jev reading is journaled into the run that called it.
+    expect(collected.find((event) => event._tag === "relevance-settled")).toMatchObject({
+      source: "recall",
+      kept: [{ kind: "memory", id: "k1" }]
+    })
   })
 
   it("routes a containerised bash call through the transport the shell binding supplies", async () => {
@@ -943,7 +958,8 @@ ctx.done(caught)`
               MemoryStore.makeNoop({
                 putFact: (input) => Effect.sync(() => void remembered.push(input.key))
               })
-            ).pipe(Context.add(Recall.Recall, Recall.makeNoop()))
+            ).pipe(Context.add(Recall.Recall, Recall.makeNoop())),
+            judgeServices
           )
         ],
         authorize: (call) =>
@@ -1195,6 +1211,7 @@ describe("plugin-contributed flows", () => {
       configResolved: "parallel",
       cellRegistry: "waterfall",
       cellFlows: "waterfall",
+      cellMonitors: "waterfall",
       cellModelRequest: "waterfall"
     })
   })
@@ -1762,8 +1779,11 @@ describe("jev is a flow", () => {
     return undefined
   }
 
-  /** A judge that answers from the state it is shown and records each request. */
-  const judgeByState = () => {
+  /**
+   * A judge that answers from the state it is shown and records each request.
+   * A question id named in `byId` is answered with that probability.
+   */
+  const judgeByState = (byId: Readonly<Record<string, number>> = {}) => {
     const asked: Array<Evaluator.Request> = []
     const services = Context.make(
       Evaluator.Evaluator,
@@ -1778,6 +1798,7 @@ describe("jev is a flow", () => {
             }
             return Object.fromEntries(
               Object.keys(request.questions).map((id) => {
+                if (byId[id] !== undefined) return [id, { probability: byId[id] }]
                 if (state.files !== undefined) {
                   return [id, { probability: state.files[Number(id)]!.path.includes("auth") ? 0.95 : 0.05 }]
                 }
@@ -1819,6 +1840,48 @@ ctx.done(files.filter((_, i) => judged.answers[String(i)].value).map((f) => f.pa
       ["2", true]
     ])
     expect(completionOf(outcome)).toBe("src/auth/login.py,src/auth/session.py")
+  })
+
+  it("runs the taught jev example verbatim: one call, the confident file kept, the unsure one printed", async () => {
+    // The example is read off the prompt the run is actually shown, so the
+    // test fails the moment the teaching stops running as written.
+    const requests: Array<string> = []
+    const shown = await drive(collect({
+      requests,
+      flows: [StandardFlows.jev(judgeByState().services)],
+      cells: [`ctx.done("shown")`]
+    }))
+    expect(shown._tag).toBe("completed")
+    const example = /```cell\n([\s\S]*?)```/.exec(requests[0]!.slice(requests[0]!.indexOf("Hundreds fit in one call")))
+    expect(example).not.toBeNull()
+
+    const match = (file: string) => ({ file, line: 1, text: "timeout", before: [], after: [] })
+    const search = Search.make({
+      grep: () =>
+        Effect.succeed({
+          matches: [match("src/session.py"), match("src/session.py"), match("src/config.py"), match("src/clock.py")],
+          files: ["src/session.py", "src/config.py", "src/clock.py"],
+          filesSearched: 3,
+          skippedBinary: 0,
+          truncated: false
+        }),
+      glob: () => Effect.fail(new StdError({ code: "provider_unavailable", message: "unused" }))
+    })
+    const judge = judgeByState({ "src/session.py": 0.9, "src/config.py": 0.6, "src/clock.py": 0.05 })
+    const printed: Array<string> = []
+    const outcome = await drive(collect({
+      requests: printed,
+      flows: [StandardFlows.filesystem(files({}).services, search), StandardFlows.jev(judge.services)],
+      cells: [example![1]!, `ctx.done(JSON.stringify({ kept, uncertain }))`]
+    }))
+
+    expect(outcome._tag).toBe("completed")
+    const settled = settledCalls(eventsOf(outcome))
+    expect(settled.map((event) => event.flowName)).toEqual(["grep", "jev"])
+    expect(judge.asked).toHaveLength(1)
+    expect(Object.keys(judge.asked[0]!.questions)).toEqual(["src/session.py", "src/config.py", "src/clock.py"])
+    expect(printed[1]).toContain("src/config.py")
+    expect(completionOf(outcome)).toBe(JSON.stringify({ kept: ["src/session.py"], uncertain: ["src/config.py"] }))
   })
 
   it("settles many concurrent calls from one cell, each of which reaches the judge", async () => {

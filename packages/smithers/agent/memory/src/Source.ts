@@ -1,29 +1,32 @@
 /**
  * Advisory memory context source for an agent's opening context.
  *
- * Values returned by {@link declaredText} are accepted as
- * `Agent.Options.memory`. The source fetches primers and recall once per
- * `(lineageId, iteration)`, freezes successful snapshots for retries, fences
- * it, caps it, and degrades to no text after a two-second timeout or typed
- * failure.
+ * {@link readRows} fetches primer notes and recall once, bounded to the fenced
+ * byte budget, and returns the rows unrendered; {@link render} fences them.
+ * A read that fails or passes its two-second timeout fails with the typed
+ * cause: there is no empty-text stand-in, so the host decides what a run
+ * without its memory does. Values returned by {@link declared} are accepted
+ * as `Agent.Options.memory`, which renders them into the opening context and
+ * lets a judged run's relevance reading withhold rows.
  *
  * The fence is a delimiter, not a trust boundary. Rows are model-written, so
  * fence tokens, attribution prefixes, and line terminators inside a row are
  * rendered as visible `\uXXXX` escapes: one row is always one line, and only
- * this function writes a fence or a `[primer:bank]` / `[bank/key]` label.
+ * {@link render} writes a fence or a `[primer:bank]` / `[bank/key]` label.
  *
  * ## What "once per `(lineageId, iteration)`" actually promises
  *
  * Every source has an in-process memo. With no
  * {@link SnapshotRecorder.SnapshotRecorder} in the Effect context, that is the
  * whole guarantee: two reads through one source return the same successful
- * text, a degraded read is retried, and a second source refetches live memory. This is the documented default for
- * compositions that use `@smthrs/memory` alone.
+ * rows, a failed read is retried, and a second source refetches live memory.
+ * This is the documented default for compositions that use `@smthrs/memory`
+ * alone.
  *
- * When a recorder is present, the first fetch for an identity goes through its
- * boundary. A degraded fetch is not recorded and can be retried. A second
- * source, including one built by a resumed process, receives
- * that recorded text instead of refetching memory. The production adapter is
+ * When a recorder is present, the first read for an identity goes through its
+ * boundary. A failed read is not recorded and can be retried. A second
+ * source, including one built by a resumed process, receives the recorded
+ * rows instead of refetching memory. The production adapter is
  * `@smthrs/agent/MemorySnapshotRecorder.layer`; it implements this package's
  * port through `@smthrs/harness` `EngineLike.record`. The dependency therefore
  * points from agent to memory and harness, while memory imports neither.
@@ -41,14 +44,12 @@
  * @since 0.1.0
  */
 import type * as Cause from "effect/Cause"
-import * as Clock from "effect/Clock"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import { canonicalJson } from "./internal/Canonical.ts"
 import { digest } from "./internal/Digest.ts"
 import { resolveBanks } from "./internal/ResolveNamespace.ts"
-import { truncateBytes } from "./internal/Utf8.ts"
 import type { MemoryError } from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Recall from "./Recall.ts"
@@ -61,7 +62,7 @@ import * as SnapshotRecorder from "./SnapshotRecorder.ts"
  * tag groups, primer banks, and both budgets are honored only by the first
  * read for that identity; later differences are warned and ignored.
  * `maxTokens` caps recalled rows in conservative UTF-8 bytes, while
- * `maxBytes` caps the complete fenced snapshot rendered here.
+ * `maxBytes` caps the complete fenced snapshot {@link render} writes.
  *
  * @category models
  * @since 0.1.0
@@ -81,69 +82,120 @@ export interface Input extends Recall.Input {
  * @since 0.1.0
  */
 export interface Source {
-  readonly read: (input: Input) => Effect.Effect<string, never, MemoryStore.MemoryStore | Recall.Recall>
+  readonly read: (
+    input: Input
+  ) => Effect.Effect<
+    SnapshotRecorder.Snapshot,
+    MemoryError | Cause.TimeoutError,
+    MemoryStore.MemoryStore | Recall.Recall
+  >
 }
 
 /**
- * Exact declared-text shape consumed by the memory segment an agent's opening
- * context builds (`packages/smithers/agent/src/Agent.ts`, `opening()`), passed in as
- * `Agent.Options.memory`.
+ * Exact shape `Agent.Options.memory` accepts: a snapshot's rows and the
+ * digest of their whole {@link render}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
-export interface DeclaredText {
-  readonly text: string
+export interface Declared extends SnapshotRecorder.Snapshot {
   readonly digest: string
 }
 
 const encoder = new TextEncoder()
 const openingFence = "<flows_memory_context>"
 const closingFence = "</flows_memory_context>"
+const shellBytes = encoder.encode(`${openingFence}\n\n${closingFence}`).byteLength
+const defaultMaxBytes = 16 * 1024
 
 // Memory rows are model-written, so every character that could open a fence,
 // start an attribution label, or end the row is replaced with its visible
 // `\uXXXX` escape before rendering. `\` is in the set, so an escape written
 // here can never be confused with one the row already contained.
 const textEscapes = /[\\<[\r\n\u0085\u2028\u2029]/g
+const textEscape = /[\\<[\r\n\u0085\u2028\u2029]/
 const labelEscapes = /[\\<[\]:/\r\n\u0085\u2028\u2029]/g
 const escapeUnit = (character: string): string => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`
 const escapeText = (text: string): string => text.replace(textEscapes, escapeUnit)
 const escapeLabel = (label: string): string => label.replace(labelEscapes, escapeUnit)
+const bytes = (text: string): number => encoder.encode(text).byteLength
 
-const render = (
-  primers: ReadonlyArray<{ readonly bank: string; readonly text: string }>,
-  recalled: Recall.Output,
+const label = (row: SnapshotRecorder.Row): string =>
+  row.origin === "primer"
+    ? `[primer:${escapeLabel(row.bank)}] `
+    : `[${escapeLabel(row.bank)}/${escapeLabel(row.key)}] `
+
+/** The longest head of `text` whose escaped form fits in `limit` bytes. */
+const fit = (text: string, limit: number): string => {
+  let used = 0
+  let end = 0
+  for (const character of text) {
+    used += textEscape.test(character) ? escapeUnit(character).length : bytes(character)
+    if (used > limit) break
+    end += character.length
+  }
+  return text.slice(0, end)
+}
+
+/**
+ * The rows whose fenced render fits in `maxBytes`, in order. The first row
+ * that does not fit whole is cut to what does, and ends the list.
+ */
+const bounded = (
+  rows: ReadonlyArray<SnapshotRecorder.Row>,
   maxBytes: number
-): string => {
-  const lines = [
-    ...primers.map((primer) => `[primer:${escapeLabel(primer.bank)}] ${escapeText(primer.text)}`),
-    ...recalled.map((result) => `[${escapeLabel(result.bank)}/${escapeLabel(result.key)}] ${escapeText(result.text)}`)
-  ]
-  if (lines.length === 0) return ""
-  const shell = `${openingFence}\n\n${closingFence}`
-  if (encoder.encode(shell).byteLength > maxBytes) return ""
-  const available = maxBytes - encoder.encode(shell).byteLength
-  const body = truncateBytes(lines.join("\n"), available)
-  return `${openingFence}\n${body}\n${closingFence}`
+): ReadonlyArray<SnapshotRecorder.Row> => {
+  const kept: Array<SnapshotRecorder.Row> = []
+  let available = maxBytes - shellBytes
+  for (const row of rows) {
+    const room = available - (kept.length === 0 ? 0 : 1) - bytes(label(row))
+    const text = fit(row.text, Math.max(0, room))
+    if (room < 0 || (text === "" && row.text !== "")) break
+    kept.push(text === row.text ? row : { ...row, text })
+    if (text !== row.text) break
+    available = room - bytes(escapeText(text))
+  }
+  return kept
 }
 
-interface BankRead {
-  readonly bank: string
-  readonly limit: number
-  rowsRead: number | null
-}
+/**
+ * Fences rows as the opening memory block, one escaped line each; `""` for
+ * no rows. Rows from {@link readRows} already fit its byte budget, and so
+ * does any subset of them.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const render = (rows: ReadonlyArray<SnapshotRecorder.Row>): string =>
+  rows.length === 0
+    ? ""
+    : `${openingFence}\n${rows.map((row) => `${label(row)}${escapeText(row.text)}`).join("\n")}\n${closingFence}`
 
-const fetch = (
-  input: Input,
-  bankReads: Array<BankRead>
-): Effect.Effect<string, MemoryError | Cause.TimeoutError, MemoryStore.MemoryStore | Recall.Recall> =>
+/** A primer note's relevance key: its id, else the digest of its text. */
+const primerKey = (row: { readonly id?: string | undefined; readonly text: string }): string =>
+  row.id === undefined || row.id === "" ? digest(row.text) : row.id
+
+/**
+ * Reads primer notes and recall for `input`, unrendered, bounded to its
+ * fenced byte budget. Fails with the store's or recall's typed error, or a
+ * `TimeoutError` after two seconds.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const readRows = (
+  input: Input
+): Effect.Effect<
+  SnapshotRecorder.Snapshot,
+  MemoryError | Cause.TimeoutError,
+  MemoryStore.MemoryStore | Recall.Recall
+> =>
   Effect.gen(function*() {
     const store = yield* MemoryStore.MemoryStore
     const recall = yield* Recall.Recall
-    const requestedBytes = input.maxBytes ?? 16 * 1024
-    const maxBytes = Number.isFinite(requestedBytes) ? Math.max(0, Math.floor(requestedBytes)) : 16 * 1024
-    const available = Math.max(0, maxBytes - encoder.encode(`${openingFence}\n\n${closingFence}`).byteLength)
+    const requestedBytes = input.maxBytes ?? defaultMaxBytes
+    const maxBytes = Number.isFinite(requestedBytes) ? Math.max(0, Math.floor(requestedBytes)) : defaultMaxBytes
+    const available = Math.max(0, maxBytes - shellBytes)
     const primerBanks = input.primerBanks ?? input.banks
     const resolvedPrimerBanks = yield* resolveBanks(primerBanks)
     const primers = yield* Effect.all(
@@ -152,24 +204,36 @@ const fetch = (
         // contains enough candidates to fill the body, without reading a bank
         // in full. searchRows orders newest-first; facts use candidate slots
         // but are never rendered as primers.
-        const minimumLineBytes = encoder.encode(`[primer:${escapeLabel(bank)}] `).byteLength + 1
-        const progress: BankRead = {
-          bank,
-          limit: Math.max(1, Math.ceil((available + 1) / minimumLineBytes)),
-          rowsRead: null
-        }
-        bankReads.push(progress)
-        return store.searchRows({ namespace, status: "accepted", limit: progress.limit }).pipe(
-          Effect.map((rows) => {
-            progress.rowsRead = rows.length
-            return rows.filter((row) => row.kind === "note").map((row) => ({ bank, text: row.text }))
-          })
+        const minimumLineBytes = bytes(`[primer:${escapeLabel(bank)}] `) + 1
+        return store.searchRows({
+          namespace,
+          status: "accepted",
+          limit: Math.max(1, Math.ceil((available + 1) / minimumLineBytes))
+        }).pipe(
+          Effect.map((rows) =>
+            rows.filter((row) => row.kind === "note").map((row): SnapshotRecorder.Row => ({
+              origin: "primer",
+              bank,
+              key: primerKey(row),
+              text: row.text
+            }))
+          )
         )
       }),
       { concurrency: 4 }
     )
     const recalled = yield* recall.recall(input)
-    return render(primers.flat(), recalled, maxBytes)
+    return {
+      rows: bounded([
+        ...primers.flat(),
+        ...recalled.map((result): SnapshotRecorder.Row => ({
+          origin: "recall",
+          bank: result.bank,
+          key: result.key,
+          text: result.text
+        }))
+      ], maxBytes)
+    }
   }).pipe(Effect.timeout("2 seconds"))
 
 /**
@@ -177,9 +241,9 @@ const fetch = (
  *
  * The closure memo is always present. When
  * {@link SnapshotRecorder.SnapshotRecorder} is absent, it is the process-local
- * default. When a recorder is composed, the memoized fetch first asks that
+ * default. When a recorder is composed, the memoized read first asks that
  * recorder for the durable value of the same `(lineageId, iteration)`
- * identity.
+ * identity. A failed read is neither memoized nor recorded.
  *
  * @category constructors
  * @since 0.1.0
@@ -189,8 +253,9 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
   if (!Number.isSafeInteger(capacity) || capacity < 1) {
     throw new TypeError("memory source capacity must be a positive safe integer")
   }
+  type Read = ReturnType<Source["read"]>
   const snapshots = new Map<string, {
-    readonly effect: Effect.Effect<string, never, MemoryStore.MemoryStore | Recall.Recall>
+    readonly effect: Read
     readonly fields: Readonly<Record<string, string>>
   }>()
   const fields = (input: Input): Readonly<Record<string, string>> => ({
@@ -221,24 +286,22 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
         lineageId: input.lineageId,
         iteration: input.iteration
       }
-      const current: Effect.Effect<string, never, MemoryStore.MemoryStore | Recall.Recall> = Effect.runSync(
+      const current: Read = Effect.runSync(
         Effect.cached(
           Effect.gen(function*() {
-            const started = yield* Clock.currentTimeMillis
-            const bankReads: Array<BankRead> = []
             const recorder = yield* Effect.serviceOption(SnapshotRecorder.SnapshotRecorder)
-            const attempt = Option.match(recorder, {
-              onNone: () => fetch(input, bankReads),
+            return yield* Option.match(recorder, {
+              onNone: () => readRows(input),
               onSome: (recorder) =>
                 Effect.gen(function*() {
-                  // The recorder port accepts an infallible string effect. Send
-                  // typed failures outside that boundary and cancel its pending
-                  // read, so a degraded empty string is never a recorded success.
+                  // The recorder port accepts an infallible effect. Send typed
+                  // failures outside that boundary and cancel its pending
+                  // read, so a failure is never recorded.
                   const failed = yield* Deferred.make<never, MemoryError | Cause.TimeoutError>()
                   return yield* Effect.raceFirst(
                     recorder.record(
                       identity,
-                      fetch(input, bankReads).pipe(
+                      readRows(input).pipe(
                         Effect.catch((cause) => Deferred.fail(failed, cause).pipe(Effect.andThen(Effect.never)))
                       )
                     ),
@@ -246,23 +309,15 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
                   )
                 })
             })
-            return yield* attempt.pipe(
-              Effect.catch((cause) =>
-                Effect.gen(function*() {
-                  const elapsedMs = (yield* Clock.currentTimeMillis) - started
-                  // Only successful snapshots are frozen, with or without a
-                  // recorder, so a retry of this identity refetches.
-                  if (snapshots.get(key)?.effect === current) snapshots.delete(key)
-                  yield* Effect.logWarning(
-                    `memory source degraded: ${String(cause)}; elapsedMs=${elapsedMs}; `
-                      + `primerBanks=${(input.primerBanks ?? input.banks).length}; recallBanks=${input.banks.length}; `
-                      + `bankReads=${JSON.stringify(bankReads)}`
-                  )
-                  return ""
-                })
-              )
+          }).pipe(
+            // Only successful snapshots are frozen, with or without a
+            // recorder, so a retry of this identity reads again.
+            Effect.onError(() =>
+              Effect.sync(() => {
+                if (snapshots.get(key)?.effect === current) snapshots.delete(key)
+              })
             )
-          })
+          )
         )
       )
       snapshots.set(key, { effect: current, fields: fields(input) })
@@ -281,14 +336,14 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
 export const source = make()
 
 /**
- * Converts a source snapshot into the exact {@link DeclaredText} shape
+ * Reads a source snapshot as the exact {@link Declared} shape
  * `Agent.Options.memory` accepts.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
-export const declaredText = (
+export const declared = (
   memorySource: Source,
   input: Input
-): Effect.Effect<DeclaredText, never, MemoryStore.MemoryStore | Recall.Recall> =>
-  memorySource.read(input).pipe(Effect.map((text) => ({ text, digest: digest(text) })))
+): Effect.Effect<Declared, MemoryError | Cause.TimeoutError, MemoryStore.MemoryStore | Recall.Recall> =>
+  memorySource.read(input).pipe(Effect.map(({ rows }) => ({ rows, digest: digest(render(rows)) })))

@@ -144,6 +144,17 @@ describe("context", () => {
     expect(Context.instructionFiles(loose, home)).toEqual([join(loose, "AGENTS.md")])
   })
 
+  it("hands the instruction files to the agent with their text, never inside the host system text", () => {
+    const root = mkdtempSync(join(tmpdir(), "tui-instructions-"))
+    mkdirSync(join(root, ".git"))
+    writeFileSync(join(root, "AGENTS.md"), "- Use pnpm.\n")
+    expect(Context.instructions(root).map((file) => file.path)).toEqual([...Context.instructionFiles(root)])
+    expect(Context.instructions(root).at(-1)).toEqual({ path: join(root, "AGENTS.md"), text: "- Use pnpm.\n" })
+    const system = Context.system(root, []).join("\n")
+    expect(system).not.toContain("project_instructions")
+    expect(system).not.toContain("Use pnpm")
+  })
+
   it("tells a turn in a jj checkout to use jj, and says nothing of jj elsewhere", () => {
     const root = mkdtempSync(join(tmpdir(), "tui-jj-"))
     const nested = join(root, "apps", "tui")

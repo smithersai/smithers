@@ -10363,6 +10363,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/harness/src/Judgement.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/src/Monitor.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/harness/src/NarrowedCheck.ts"
       },
       {
@@ -10376,6 +10384,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/agent/harness/src/QuickJSSandbox.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/src/Relevance.ts"
       },
       {
         "kind": "file",
@@ -10440,6 +10452,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/agent/harness/src/internal/compactable.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/src/internal/compactionMarks.ts"
       },
       {
         "kind": "file",
@@ -10951,10 +10967,6 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/agent/memory/src/internal/Utf8.ts"
-      },
-      {
-        "kind": "file",
         "path": "packages/smithers/agent/memory/src/internal/VectorBytes.ts"
       },
       {
@@ -11323,6 +11335,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/src/SeatRouter.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/src/SmithersPlugin.ts"
       },
       {
@@ -11364,6 +11380,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/agent/src/internal/StepTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/src/internal/TraceOrder.ts"
       },
       {
         "kind": "file",
@@ -15835,6 +15855,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/src/internal/HostFiles.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/src/internal/LocalControl.ts"
       },
       {
@@ -20025,6 +20049,10 @@
         "path": "flows/test/product-host-source.test.mjs"
       },
       {
+        "kind": "file",
+        "path": "flows/test/decide-with-jev-docs.test.ts"
+      },
+      {
         "kind": "glob",
         "pattern": "flows/**/*.ts",
         "exclude": []
@@ -20050,6 +20078,10 @@
       {
         "kind": "file",
         "path": "flows/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model/docs/guides/decide-with-jev.md"
       }
     ],
     "outputs": [],

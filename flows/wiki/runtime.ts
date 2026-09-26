@@ -29,7 +29,7 @@ export const agentLayers = (
 ) => {
   const host = Layer.effect(AgentAction.Host, Effect.gen(function*() {
     const registry = yield* Registry.Registry
-    return { registry, limits: { memoryBytes: 128 * 1024 * 1024, steps: 25_000_000, calls: 8 }, capabilityEnvelope: [], maxFrames: 8, defaultCorrections: 2 }
+    return { registry, limits: { memoryBytes: 128 * 1024 * 1024, steps: 25_000_000, calls: 8 }, capabilityEnvelope: [], maxFrames: 8, defaultCorrections: 2, judged: true }
   })).pipe(Layer.provide(Registry.layerFromDescriptors([])))
   return ReviewPage.layer.pipe(
     Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),

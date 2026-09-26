@@ -2,15 +2,16 @@
  * Cell-harness hooks hosted by the shared Smithers plugin kernel.
  *
  * The plugin package deliberately leaves its hook catalog open for host
- * augmentation. This module adds the three cell dispatch points needed by the
+ * augmentation. This module adds the cell dispatch points needed by the
  * production composition: registry and executable-flow waterfalls before
- * disclosure, plus a provider-neutral request waterfall immediately before a
- * sealed model step.
+ * disclosure, a monitor waterfall before the first frame, plus a
+ * provider-neutral request waterfall immediately before a sealed model step.
  *
  * @since 0.1.0
  */
 import * as Digest from "@smthrs/core/Digest"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
+import type * as Monitor from "@smthrs/harness/Monitor"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import type { Apply, FlowsHooks, FlowsPlugin, PluginInput, WaterfallHook } from "@smthrs/plugin"
@@ -41,6 +42,15 @@ declare module "@smthrs/plugin" {
         bindings: ReadonlyArray<FlowBinding.Binding>
       ) => Effect.Effect<ReadonlyArray<FlowBinding.Binding> | void, unknown>
     >
+    /**
+     * Adds or transforms the monitors the supervisor scores; the result is
+     * validated before the first frame.
+     */
+    readonly cellMonitors: WaterfallHook<
+      (
+        monitors: ReadonlyArray<Monitor.Monitor>
+      ) => Effect.Effect<ReadonlyArray<Monitor.Monitor> | void, unknown>
+    >
     /** Transforms a provider-neutral request before its sealed model step. */
     readonly cellModelRequest: WaterfallHook<
       (request: ModelRequest.ModelRequest) => Effect.Effect<ModelRequest.ModelRequest | void, unknown>
@@ -59,6 +69,7 @@ export const hooks = Object.freeze(
     ...engineHooks,
     cellRegistry: "waterfall",
     cellFlows: "waterfall",
+    cellMonitors: "waterfall",
     cellModelRequest: "waterfall"
   } as const
 )
@@ -100,6 +111,17 @@ export const flows = (
   plugins: Plugins.Service<FlowsHooks>,
   initial: ReadonlyArray<FlowBinding.Binding>
 ) => plugins.waterfall("cellFlows", initial, (_previous, next) => next)
+
+/**
+ * Runs the ordered monitor waterfall.
+ *
+ * @category dispatch
+ * @since 1.0.0-rc.0
+ */
+export const monitors = (
+  plugins: Plugins.Service<FlowsHooks>,
+  initial: ReadonlyArray<Monitor.Monitor>
+) => plugins.waterfall("cellMonitors", initial, (_previous, next) => next)
 
 /**
  * Authors a harness plugin that contributes executable flows.

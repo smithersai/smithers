@@ -66,16 +66,39 @@ in the [API reference](../api.md#agentsessionoptions). Two deserve a note:
 1. The executor looks the planned flow up in the registry. A flow this
    composition does not know stays `pending`, because another host may run it.
    A flow with a module body also stays `pending`: only prompt flows run on the
-   agent. A prompt flow with no `model:` frontmatter is refused with
-   `LaunchFailed`, because no agent host can ever run one.
-2. The declared seat is resolved at launch, so a missing key refuses the launch
-   as a typed failure instead of failing the run after it was accepted.
+   agent.
+2. A declared `model:` is resolved at launch, so a missing key refuses the
+   launch as a typed failure instead of failing the run after it was accepted.
+   A flow with no `model:`, or `model: auto`, is routed instead (below).
 3. The driver waits for the control plane's own `running` transition, then
    starts the engine on the one durable flow every agent run executes,
    `agent/run`, with the execution id equal to the control run id.
 4. Status writes stay fenced: `waiting-approval` when the execution parks, and
    the terminal status when it settles, with a terminal `failed` carrying the
    rendered cause into the journal.
+
+## Seat routing
+
+A declared `model:` is a person's choice and always wins. A prompt flow with no
+`model:`, or with `model: auto`, runs on a seat Jev picks from the host's
+`SeatRouter.Catalog`:
+
+- The launch never asks Jev. It only checks that the host binds a catalog with
+  at least one seat, and refuses with `LaunchFailed` whose cause is
+  `{ seat: "auto", reason: "unconfigured" }` or `reason: "no_candidates"`. A
+  host with no catalog refuses a flow with no `model:` as before.
+- The run asks once, at its start, and picks the seat and the system variant
+  in one reading. The decision is a sealed step keyed by the run, so a resumed
+  run keeps its seat and asks nothing.
+- The variant's system text follows the host's own `system`.
+- The trail opens with `control.agent.seat-routed` and the
+  `control.agent.decision-settled` row of the `seat/route` reading. A declared
+  seat adds neither.
+- A judge that cannot answer fails the run as `SeatUnrouted`. No default seat
+  is ever picked.
+
+Approving such a flow approves a seat Jev picks from this host's catalog; the
+`seat-routed` row journals the candidates it picked from.
 
 ## The approval gate
 

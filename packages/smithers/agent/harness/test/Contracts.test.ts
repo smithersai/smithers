@@ -55,6 +55,118 @@ const permissionRequest = new Permission.PermissionRequired({
   meta: {}
 })
 
+const relevanceItem = { kind: "flow", id: "deploy", digest: "item-digest", p: 0.95 } as const
+
+// One of each event a Jev reading writes, every optional field present.
+const jevEvents: ReadonlyArray<AgentEvent.AgentEvent> = [
+  new AgentEvent.DecisionUnjudged({
+    eventType: "flows.harness.decision-unjudged.v1",
+    scope: "session-1",
+    frame: 2,
+    classifier: "relevance/unnecessary",
+    reason: "unconfigured",
+    detail: "No evaluator is bound",
+    items: 5
+  }),
+  new AgentEvent.RelevanceSettled({
+    eventType: "flows.harness.relevance-settled.v1",
+    scope: "session-1",
+    frame: 0,
+    source: "run",
+    withholdAt: 0.9,
+    kept: [{ ...relevanceItem, kind: "instruction", id: "agents-md/3", p: 0.2 }],
+    withheld: [relevanceItem],
+    latencyMs: 90,
+    usage: { inputTokens: 300, outputTokens: 4 }
+  }),
+  new AgentEvent.RelevanceRestored({
+    eventType: "flows.harness.relevance-restored.v1",
+    scope: "session-1",
+    frame: 4,
+    flow: "deploy"
+  }),
+  new AgentEvent.SeatRouted({
+    eventType: "flows.harness.seat-routed.v1",
+    scope: "session-1",
+    declared: "auto",
+    seat: "fast",
+    modelId: "model-a",
+    variant: null,
+    candidates: ["fast", "deep"],
+    decidedBy: "jev",
+    confidence: 0.8,
+    latencyMs: 70
+  }),
+  new AgentEvent.CompactionSettled({
+    eventType: "flows.harness.compaction-settled.v1",
+    replacedPrefixDigest: "prefix-digest",
+    retainedMessageCount: 1,
+    kept: [ModelRequest.Message.user("keep me")],
+    marks: [
+      { digest: "a", mark: "keep" },
+      { digest: "b", mark: "remove", pinned: "failing" },
+      { digest: "c", mark: "squash" }
+    ],
+    removedTokens: 1200
+  }),
+  new AgentEvent.SupervisorSettled({
+    eventType: "flows.harness.supervisor-settled.v1",
+    scope: "session-1",
+    frame: 3,
+    thrashing: 0.1,
+    onTarget: 0.9,
+    suspect: 0.1,
+    frustrated: "none",
+    anxious: "none",
+    scared: "none",
+    confused: "none",
+    confident: "mild",
+    needsHelp: "none",
+    crossed: false,
+    nudged: false,
+    remembered: [],
+    latencyMs: 200,
+    monitors: [{ id: "mood/frustrated", kind: "mood", p: 0.3, crossed: false }]
+  }),
+  new AgentEvent.DisciplineArmed({
+    eventType: "flows.harness.discipline-armed.v1",
+    readOnlyCap: 3,
+    maxFrames: 100,
+    approvalChannel: true,
+    modelCallMs: 300_000,
+    repeatCap: 4,
+    narrowingCap: 1,
+    unmovedCap: 1,
+    unresolvedCap: 1,
+    judged: true,
+    relevance: { withholdAt: 0.9, pinned: ["jev", "bash"] },
+    monitors: [{ id: "skill/tdd", kind: "skill", at: 0.8, consecutive: 2, cooldownFrames: 5, limit: 3 }],
+    stance: "paranoid"
+  }),
+  new AgentEvent.SteeringDrained({
+    eventType: "flows.harness.steering-drained.v1",
+    messages: [],
+    supervisor: [ModelRequest.Message.user("Slow down.")],
+    monitor: "mood/anxious",
+    suppressed: [{ id: "lint/any", reason: "cooldown" }],
+    memory: ["row-1"]
+  }),
+  new AgentEvent.DecisionSettled({
+    eventType: "flows.harness.decision-settled.v1",
+    scope: "session-1",
+    frame: 0,
+    classifier: "relevance/unnecessary",
+    digest: "classifier-digest",
+    state: { task: "fix the bug" },
+    questions: { deploy: Evaluator.BooleanQuestion.of({ instructions: "Unnecessary?" }) },
+    answers: { deploy: { kind: "boolean", p: 0.95 } },
+    latencyMs: 90,
+    acted: true,
+    decidedBy: "jev",
+    usage: { inputTokens: 300, outputTokens: 4 }
+  })
+]
+
 describe("AgentEvent", () => {
   it("round-trips every stable event variant", () => {
     const events: ReadonlyArray<AgentEvent.AgentEvent> = [
@@ -378,7 +490,8 @@ describe("AgentEvent", () => {
         check: "pytest tests",
         callDigest: "call-digest",
         nextFrame: 7
-      })
+      }),
+      ...jevEvents
     ]
 
     for (const event of events) {
@@ -512,6 +625,96 @@ describe("AgentEvent", () => {
     }
     expect("calls" in events[0]!).toBe(false)
     expect("verification" in events[1]!).toBe(false)
+  })
+
+  it("reuses one reason set for every unjudged reading", () => {
+    expect(AgentEvent.SupervisorUnjudged.fields.reason).toBe(AgentEvent.UnjudgedReason)
+    expect(AgentEvent.DecisionUnjudged.fields.reason).toBe(AgentEvent.UnjudgedReason)
+    expect(AgentEvent.UnjudgedReason.literals).toEqual([
+      "unconfigured",
+      "interrupted",
+      ...Evaluator.EvaluatorErrorCode.literals
+    ])
+  })
+
+  // Journals written before the Jev fields existed must decode unchanged:
+  // every added field is optional, and none is filled in on the way back.
+  it.each([
+    {
+      _tag: "compaction-settled",
+      eventType: "flows.harness.compaction-settled.v1",
+      replacedPrefixDigest: "prefix",
+      retainedMessageCount: 2,
+      summary: { role: "user", content: [{ type: "text", text: "summary" }] }
+    },
+    {
+      _tag: "supervisor-settled",
+      eventType: "flows.harness.supervisor-settled.v1",
+      scope: "session-1",
+      frame: 3,
+      thrashing: 0.6,
+      onTarget: 0.4,
+      suspect: 0.1,
+      frustrated: "strong",
+      anxious: "mild",
+      scared: "none",
+      confused: "none",
+      confident: "none",
+      needsHelp: "stuck",
+      crossed: true,
+      nudged: true,
+      steer: true,
+      inserted: [0],
+      remembered: [],
+      latencyMs: 310
+    },
+    {
+      _tag: "discipline-armed",
+      eventType: "flows.harness.discipline-armed.v1",
+      readOnlyCap: 3,
+      maxFrames: 100,
+      approvalChannel: true,
+      modelCallMs: 300000,
+      repeatCap: 4,
+      narrowingCap: 1,
+      unmovedCap: 1,
+      revalidations: 1,
+      unresolvedCap: 1,
+      claimCap: 1
+    },
+    {
+      _tag: "steering-drained",
+      eventType: "flows.harness.steering-drained.v1",
+      messages: [{ role: "user", content: [{ type: "text", text: "continue" }] }],
+      supervisor: [{ role: "user", content: [{ type: "text", text: "nudge" }] }]
+    },
+    {
+      _tag: "decision-settled",
+      eventType: "flows.harness.decision-settled.v1",
+      scope: "session-1",
+      frame: 0,
+      classifier: "completion/claim",
+      digest: "digest",
+      state: { claim: "done" },
+      questions: { done: { type: "boolean", instructions: "Done?" } },
+      answers: { done: { kind: "boolean", p: 0.9 } },
+      latencyMs: 12,
+      acted: false,
+      decidedBy: "jev"
+    }
+  ])("decodes a pre-Jev $_tag payload unchanged", (payload) => {
+    const decoded = Schema.decodeUnknownSync(AgentEvent.AgentEvent)(payload)
+    expect(decoded._tag).toBe(payload._tag)
+    expect(Schema.encodeSync(AgentEvent.AgentEvent)(decoded)).toEqual(payload)
+  })
+
+  it("decodes a compaction without a summary and a reading without inserted rows", () => {
+    const [compaction, supervisor] = [jevEvents[4]!, jevEvents[5]!]
+    for (const event of [compaction, supervisor]) {
+      const encoded = Schema.encodeSync(AgentEvent.AgentEvent)(event) as Record<string, unknown>
+      expect("summary" in encoded || "inserted" in encoded).toBe(false)
+      expect(Schema.decodeUnknownSync(AgentEvent.AgentEvent)(encoded)).toEqual(event)
+    }
   })
 
   it("decodes a legacy cell settlement without inventing an execution frontier", () => {

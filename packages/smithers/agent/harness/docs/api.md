@@ -26,7 +26,7 @@ that outlives the frame; the only authority the program holds is
 
 | Import                           | What it is                                                                                                           |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `@smthrs/harness`                | The root barrel: the 27 namespaces listed in the module index.                                                       |
+| `@smthrs/harness`                | The root barrel: the 32 namespaces listed in the module index.                                                       |
 | `@smthrs/harness/<Module>`       | Any top-level module directly, for example `@smthrs/harness/CellTurn`.                                               |
 | `@smthrs/harness/QuickJSSandbox` | The QuickJS-WASM `Sandbox` binding. Not re-exported from the root, because it carries an embedded WebAssembly build. |
 | `@smthrs/harness/package.json`   | The package manifest.                                                                                                |
@@ -35,42 +35,45 @@ The `./internal/*` and `./*/index` subpaths map to `null` and do not resolve.
 
 ## Module index
 
-28 public modules, 375 documented exports. Each module's full export table is
+33 public modules, 496 documented exports. Each module's full export table is
 in the [module and export inventory](./reference.md); the sections below state
 behavior and signatures.
 
-| Module                       | Public exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | What it is                                                                                               |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `HarnessError`               | `HarnessErrorCode`, `HarnessError`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Stable failures reported at the harness translation boundary.                                            |
-| `AgentEvent`                 | `DisciplineArmed`, `TurnOpened`, `ModelRequested`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `FailedCallDemanded`, `UnobservedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `DecisionAnswer`, `decisionAnswers`, `DecisionSettled`, `SupervisorSettled`, `SupervisorUnjudged`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters.                                                         |
-| `Plan`                       | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Local structural plan nodes used at the harness-to-engine boundary.                                      |
-| `EngineLike`                 | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `Binding`, `Resolved`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `resolve`, `makeNoop`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Narrow engine port consumed by the built-in harness.                                                     |
-| `Tokens`                     | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Deterministic token accounting for context windows.                                                      |
-| `ContextWindow`              | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactPrefix`, `compact`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The immutable, provider-neutral context assembled for one model request.                                 |
-| `Transcript`                 | `journalVersion`, `validateJournal`, `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Transcript projection from durable journal entries.                                                      |
-| `Compaction`                 | `summaryInstruction`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `selectPrefix`, `declare`, `summaryRequest`, `apply`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Declarations for sealed transcript-summary steps.                                                        |
-| `Steering`                   | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `empty`, `enqueue`, `drainAtClose`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Turn-boundary steering values and their source contract.                                                 |
-| `Notifications`              | `Options`, `make`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Adapter from the durable notification queue to harness turn boundaries.                                  |
-| `Cell`                       | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `CallIdentity`, `declarationDigest`, `Call`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract`                                                                                                                                                                                                                                                            | The cell contract.                                                                                       |
-| `Sandbox`                    | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `Intent`, `replTransition`, `RealmEvaluation`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome`                                                                                                                                                                                                                                                                 | The deterministic script sandbox port.                                                                   |
-| `CellTurn`                   | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `make`, `teach`, `run`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The cell-first controller.                                                                               |
-| `CellHistory`                | `ExecutedCell`, `Service`, `CellHistory`, `make`, `makeCells`, `makeNoop`, `layer`, `layerCells`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The source of every cell the current turn executed.                                                      |
-| `CellCalls`                  | `Implementation`, `Prompt`, `PromptRunner`, `Options`, `Resolver`, `make`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Registry-backed resolution for the flow calls a cell makes.                                              |
-| `FlowBinding`                | `Declared`, `DescriptorOptions`, `descriptorOf`, `Binding`, `Options`, `make`, `provide`, `Source`, `source`, `Catalog`, `empty`, `catalogResult`, `catalog`, `registry`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The executable-flow binding contract.                                                                    |
-| `StructuredOutput`           | `StructuredOutputFailureCode`, `OutputIssueCode`, `OutputIssue`, `StructuredOutputFailure`, `maxIssues`, `jsonSchema`, `digest`, `instructions`, `issuesDigest`, `correction`, `lastBalanced`, `candidates`, `decode`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Turning one agent's final text into a value the declared output schema accepts, or into a typed failure. |
-| `TruncatedOutput`            | `flagSuffix`, `droppedSuffix`, `flagKey`, `minimumBytes`, `retained`, `Capture`, `Reuse`, `captures`, `reuse`, `refusal`, `retain`, `Ledger`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The truncation ledger: which bytes this run was handed as a fragment.                                    |
-| `CallLedger`                 | `bound`, `width`, `members`, `Entry`, `Ledger`, `subject`, `target`, `digest`, `payload`, `Settlement`, `entry`, `settled`, `remember`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The call ledger: what this run has already asked, rendered every frame.                                  |
-| `NarrowedCheck`              | `retained`, `maxTerms`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The narrowing ledger: which checks this run has run, and over which tree.                                |
-| `CellValidation`             | `Validation`, `normalize`, `validate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Cell validation at the boundary.                                                                         |
-| `CompletionClaim`            | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `unjudged`, `unproven`, `read`, `demand`, `quote`, `prose`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The completion nothing in the record contradicts.                                                        |
-| `Supervisor`                 | `frameBytes`, `recentFrames`, `candidateLimit`, `recalledLimit`, `taskBytes`, `thrashingAt`, `offTargetAt`, `suspectAt`, `acceptAt`, `Level`, `levels`, `Help`, `emotions`, `Emotion`, `Frame`, `Signals`, `Recalled`, `Snapshot`, `classifierFor`, `classifier`, `Reading`, `UnjudgedReason`, `Unjudged`, `read`, `Options`, `defaultOptions`, `Memory`, `memoryNone`, `Verdict`, `nudge`, `recalledInsert`, `judge`, `head`, `tail`, `task`, `candidates`                                                                                                                                                                                                                                                                                                                               | The reading Jev takes of a run while it is still running.                                                |
-| `UnmovedTree`                | `Unmoved`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The completion with nothing behind it.                                                                   |
-| `UnresolvedFailure`          | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The failing check a completion stepped around.                                                           |
-| `FailedCall`                 | `cap`, `heading`, `stated`, `Failure`, `reason`, `inspects`, `find`, `demand`, `state`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | The completion its own cell wrote before a call in it failed.                                            |
-| `Sufficiency`                | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The evidence that is already complete.                                                                   |
-| `VacuousVerification`        | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The proof that was already true before anything changed. Not wired into `CellTurn`.                      |
-| `VariablesPanel`             | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The variables panel: what the realm holds, stated every frame.                                           |
-| `QuickJSSandbox` _(subpath)_ | `cacheSuccessful`, `VariantService`, `Variant`, `layerVariantLive`, `layerVariant`, `ComputeClockService`, `ComputeClock`, `layerClockLive`, `loadModule`, `makeWithVariant`, `makeWithClock`, `make`, `layerWithVariant`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | The QuickJS-WASM sandbox binding.                                                                        |
+| Module                       | Public exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | What it is                                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `HarnessError`               | `HarnessErrorCode`, `HarnessError`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Stable failures reported at the harness translation boundary.                                            |
+| `AgentEvent`                 | `Observer`, `Journal`, `RelevanceKind`, `CompactionMark`, `CompactionPin`, `MonitorKind`, `Stance`, `Suppression`, `UnjudgedReason`, `DisciplineArmed`, `TurnOpened`, `ModelRequested`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `FailedCallDemanded`, `UnobservedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `DecisionAnswer`, `decisionAnswers`, `DecisionSettled`, `SupervisorSettled`, `SupervisorUnjudged`, `DecisionUnjudged`, `RelevanceSettled`, `RelevanceRestored`, `SeatRouted`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters.                                                         |
+| `Plan`                       | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Local structural plan nodes used at the harness-to-engine boundary.                                      |
+| `EngineLike`                 | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `Binding`, `Resolved`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `resolve`, `makeNoop`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Narrow engine port consumed by the built-in harness.                                                     |
+| `Tokens`                     | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Deterministic token accounting for context windows.                                                      |
+| `ContextWindow`              | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `Mark`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactMarked`, `compactPrefix`, `compact`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The immutable, provider-neutral context assembled for one model request.                                 |
+| `Transcript`                 | `journalVersion`, `validateJournal`, `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Transcript projection from durable journal entries.                                                      |
+| `Compaction`                 | `summaryInstruction`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `selectPrefix`, `declare`, `summaryRequest`, `apply`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Declarations for sealed transcript-summary steps.                                                        |
+| `Steering`                   | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `empty`, `enqueue`, `drainAtClose`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Turn-boundary steering values and their source contract.                                                 |
+| `Notifications`              | `Options`, `make`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Adapter from the durable notification queue to harness turn boundaries.                                  |
+| `Cell`                       | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `CallIdentity`, `declarationDigest`, `Call`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract`                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The cell contract.                                                                                       |
+| `Sandbox`                    | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `Intent`, `replTransition`, `RealmEvaluation`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The deterministic script sandbox port.                                                                   |
+| `CellTurn`                   | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `MemoryRow`, `Memory`, `make`, `teach`, `instructionsSegment`, `memorySegment`, `run`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The cell-first controller.                                                                               |
+| `CellHistory`                | `ExecutedCell`, `Service`, `CellHistory`, `make`, `makeCells`, `makeNoop`, `layer`, `layerCells`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The source of every cell the current turn executed.                                                      |
+| `CellCalls`                  | `Implementation`, `Prompt`, `PromptRunner`, `Options`, `Resolver`, `make`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Registry-backed resolution for the flow calls a cell makes.                                              |
+| `FlowBinding`                | `Declared`, `DescriptorOptions`, `descriptorOf`, `Binding`, `Options`, `make`, `provide`, `Source`, `source`, `Catalog`, `empty`, `catalogResult`, `catalog`, `registry`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The executable-flow binding contract.                                                                    |
+| `StructuredOutput`           | `StructuredOutputFailureCode`, `OutputIssueCode`, `OutputIssue`, `StructuredOutputFailure`, `maxIssues`, `jsonSchema`, `digest`, `instructions`, `issuesDigest`, `correction`, `lastBalanced`, `candidates`, `decode`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Turning one agent's final text into a value the declared output schema accepts, or into a typed failure. |
+| `TruncatedOutput`            | `flagSuffix`, `droppedSuffix`, `flagKey`, `minimumBytes`, `retained`, `Capture`, `Reuse`, `captures`, `reuse`, `refusal`, `retain`, `Ledger`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The truncation ledger: which bytes this run was handed as a fragment.                                    |
+| `CallLedger`                 | `bound`, `width`, `members`, `Entry`, `Ledger`, `subject`, `target`, `digest`, `payload`, `Settlement`, `entry`, `settled`, `remember`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The call ledger: what this run has already asked, rendered every frame.                                  |
+| `NarrowedCheck`              | `retained`, `maxTerms`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The narrowing ledger: which checks this run has run, and over which tree.                                |
+| `CellValidation`             | `Validation`, `normalize`, `validate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Cell validation at the boundary.                                                                         |
+| `CompletionClaim`            | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `unjudged`, `unproven`, `read`, `demand`, `quote`, `prose`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The completion nothing in the record contradicts.                                                        |
+| `Supervisor`                 | `frameBytes`, `recentFrames`, `candidateLimit`, `recalledLimit`, `thrashingAt`, `offTargetAt`, `suspectAt`, `acceptAt`, `Level`, `levels`, `Help`, `emotions`, `Emotion`, `Frame`, `Signals`, `Recalled`, `skillLimit`, `skillBytes`, `calledLimit`, `Skill`, `skill`, `Snapshot`, `monitorPrefix`, `MonitorQuestions`, `classifierFor`, `classifier`, `Reading`, `read`, `Options`, `defaultOptions`, `Memory`, `memoryNone`, `Verdict`, `nudge`, `recalledInsert`, `judge`, `head`, `tail`, `candidates`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The reading Jev takes of a run while it is still running.                                                |
+| `Monitor`                    | `Kind`, `Common`, `Questioned`, `Derived`, `Monitor`, `Budget`, `Input`, `budgets`, `idPattern`, `questionId`, `make`, `InvalidMonitor`, `validate`, `lint`, `paranoidText`, `carefulText`, `stepBackText`, `clarifyText`, `moods`, `defaults`, `skillText`, `skills`, `useJevText`, `useJev`, `questions`, `Row`, `Candidate`, `Evaluation`, `evaluate`, `Entry`, `Ledger`, `fresh`, `Gated`, `gate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | What one supervisor reading can put in front of the run, and when.                                       |
+| `Judgement`                  | `Unjudged`, `unconfigured`, `Asked`, `Read`, `measured`, `read`, `maxStateBytes`, `ItemQuestions`, `ItemAnswers`, `PerItemOptions`, `ItemState`, `ItemsRead`, `PerItem`, `perItem`, `decision`, `unjudgedEvent`, `Recorded`, `recorded`, `emitRecorded`, `taskBytes`, `task`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The one way this package asks Jev a question.                                                            |
+| `Relevance`                  | `Kind`, `Item`, `Context`, `withholdAt`, `itemBytes`, `reader`, `Verdict`, `Reading`, `judge`, `settled`, `flowItem`, `Document`, `Chunk`, `chunks`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | What a run is shown of the human-provided items it could be shown.                                       |
+| `UnmovedTree`                | `Unmoved`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The completion with nothing behind it.                                                                   |
+| `UnresolvedFailure`          | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The failing check a completion stepped around.                                                           |
+| `FailedCall`                 | `cap`, `heading`, `stated`, `Failure`, `reason`, `inspects`, `find`, `demand`, `state`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | The completion its own cell wrote before a call in it failed.                                            |
+| `Sufficiency`                | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The evidence that is already complete.                                                                   |
+| `VacuousVerification`        | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The proof that was already true before anything changed. Not wired into `CellTurn`.                      |
+| `VariablesPanel`             | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The variables panel: what the realm holds, stated every frame.                                           |
+| `QuickJSSandbox` _(subpath)_ | `cacheSuccessful`, `VariantService`, `Variant`, `layerVariantLive`, `layerVariant`, `ComputeClockService`, `ComputeClock`, `layerClockLive`, `loadModule`, `makeWithVariant`, `makeWithClock`, `make`, `layerWithVariant`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | The QuickJS-WASM sandbox binding.                                                                        |
 
 ## Durability
 
@@ -201,8 +204,75 @@ export const run: (
 `run` executes the loop until it completes, parks, or exhausts its budget.
 Cancellation is fiber interruption: interrupting the stream tears down the
 sandbox through scope closure and reports one abort. `Input` is
-`{ state, flows, limits? }`, where `flows` is the frame's
-`FlowDescriptor` list, already narrowed by seat visibility.
+`{ state, flows, limits?, supervisor?, monitors?, judged?, stance?, instructions?, pinned?, memory? }`,
+where `flows` is the frame's `FlowDescriptor` list, already narrowed by seat
+visibility, and `monitors` (default `Monitor.defaults()`) are what each
+supervisor reading scores. `judged` (default false) is true only when the
+host's `Evaluator` is a real judge, and it arms Jev's features: the
+supervisor delivers what its monitors gate through and its inserts, frame 0
+takes the run-start relevance reading, and the supervisor marks segments for
+compaction. It is runtime configuration, not `State`, so a resumed run is
+armed by the host that resumes it. `DisciplineArmed` journals it, only when
+true, as `judged`, `relevance` (`{ withholdAt, pinned }`) and `monitors`
+(each id, kind and gate), so an unjudged journal is unchanged;
+`supervisorSteer` is read only from journals written before `judged`. `stance`
+(`careful` or `paranoid`) is the static stance the run is taught; pass the
+window taught with it. `DisciplineArmed.stance` records it when set.
+
+**Run-start relevance.** At frame 0 of a judged run, once the frame's catalog
+is known, every model-invocable flow not in `pinned` (as `Relevance.flowItem`,
+sorted by name), every chunk of `instructions` (`Relevance.Document`s) and
+every row of `memory` (kind `memory`, id its `key`) is one item of a single
+`relevance/unnecessary` reading, recorded under the boundary `relevance`. Nothing to judge asks nothing. `decision-settled` rows are
+followed by `relevance-settled` (`source: "run"`). Withheld flows and skills
+go to `State.withheldFlows` and leave every frame's taught catalog and
+`ctx.flows`; the recorded `flow-catalog` stays whole. Withheld chunks leave
+the window's instructions segment, found by the digest of
+`instructionsSegment(instructions, new Set())`, which is how the host must
+build it; a segment left empty is removed. A chunk is matched by id and text,
+so a replay against an edited file keeps a chunk whose text the reading never
+judged. Withheld rows leave the memory
+segment, found by the digest of `memorySegment(memory.render(memory.rows),
+memory.digest)`: it becomes `memory.render` of the kept rows, or is removed
+when none is kept. A reading nobody could judge withholds nothing and
+journals `decision-unjudged`. A call to a withheld flow
+settles `flow_withheld` and restores it: the next frame shows it, and
+`relevance-restored` names it. A replay is served the recorded reading.
+
+**Compaction marks.** Marking is separate from compacting. In a judged run
+each supervisor reading also asks `compaction/marks` about the transcript
+segments not yet marked, the person's excepted, and the next boundary stores
+the answers, by segment digest, on `State.segmentFacts` inside its recorded
+drain (`Steering.DrainRecord.marks`). Marking changes nothing the model is
+sent: the prefix a request is sent stays byte-stable until the budget forces
+a compaction. A frame compacts only when the window crosses its budget
+(`Compaction.shouldCompact` and `selectPrefix` at their defaults); a judged
+run then marks each prefix segment `keep`, `squash` or `remove`. Pins, read
+from `State.segmentFacts` and the still-failing checks, fix what must
+survive: a summary is squashed; steering, the person's segments and the
+newest segment that ran each still-failing check are kept; a segment that
+changed files is never removed. The stored answers resolve the rest against
+the budget; segments still unmarked are asked in one `compaction/marks`
+reading, recorded under the boundary `compaction-marks:<prefix digest>`, so
+a replay asks nothing and re-keys the same summary. Only squashed segments
+reach the sealed summary step, which is skipped when nothing is squashed;
+kept segments stay verbatim after the summary. `decision-settled` rows
+precede `compaction-settled`, which carries `summary?`, `kept`, `marks`
+(segment digest, mark, `pinned?`) and `removedTokens`. An unjudged run and a
+reading nobody could judge (journaled `decision-unjudged`) squash every
+prefix segment; so does a judged run whose facts do not describe every
+transcript segment, and its `compaction-settled` says `unaligned`.
+
+`instructionsSegment(documents, withheld)` is the prefix `system` segment of
+`Relevance.render(documents, withheld)`. It is `system`, not `instructions`,
+because the task is what the prefix `instructions` segments say.
+
+`Memory` is `{ rows, digest, render }`: the opening memory rows
+(`MemoryRow`, `{ key, text }`), the digest the opening declares, and the
+host's render, which is only handed rows of `rows`, in order.
+`memorySegment(text, digest)` is the prefix `system` segment of rendered
+memory under that declared digest: what a run remembers is not its task, and
+each row is judged against a task that does not contain it.
 
 `CellTurn.make` constructs the initial `State`:
 
@@ -269,7 +339,10 @@ run with nobody to answer it refuses the transition in-frame.
 `State` is a schema class carrying the controller's view of the run across
 frames: the panel of realm names, the call ledger, the checks and failures
 ledgers, the truncated-output ledger, the checkpoint ids, the opening
-workspace digest, every budget and its counter, and the context window. It
+workspace digest, every budget and its counter, the context window, and
+`segmentFacts`: per transcript segment, the frame that wrote it, whether it
+carries the person's messages (a supervisor insert does not count), whether
+that frame changed files, and the checks it ran. It
 serializes into the journal; the realm itself is not in it and cannot be,
 because a live JavaScript context is rebuilt on resume by re-executing the
 cells that built it.
@@ -281,9 +354,12 @@ logical seats such as `reviewer`; direct harness callers without a callback use
 the model-id catalog. The callback lives outside serializable `State`; the
 resolved token count is carried in state across frames.
 
-`CellTurn.teach(contextWindow, flows, environment?)` prepends the cell contract and the
+`CellTurn.teach(contextWindow, flows, environment?, stance?)` prepends the cell contract and the
 callable-flow catalog to a context window as prefix segments. The optional
 `CellTurn.Environment` supplies the host's measured `locale` and `absentTools`.
+A `stance` adds a one-line `cell-stance` section after the contract,
+`Monitor.carefulText` or `Monitor.paranoidText` verbatim; it is constant for
+the run, so the cached prefix holds.
 Catalog metadata is escaped inside an `untrusted-data` block with each
 source, root and repository path. Metadata and tool output cannot grant
 authority or change the task. Printed observations and controller-generated
@@ -617,7 +693,10 @@ the current turn closes).
 `Steering.empty`, `enqueue`, and `drainAtClose(queue, cutoff)` operate on it
 without mutation. `Steering.Drain` is
 what one boundary promoted; `Steering.DrainRecord` and `drainRecord` project
-it into its journaled record.
+it into its journaled record, which also carries what the supervisor delivered
+there: its messages, the memory keys, the monitor delivered, the monitors
+withheld, the monitor ledger after gating, and the compaction marks the run
+stores.
 
 ```ts
 export interface Source {
@@ -685,7 +764,8 @@ export interface Resolver {
 export const make: (options: Options) => Resolver
 ```
 
-Resolution order: the registry must know the name (`unknown_flow`), the
+A name the run-start relevance reading withheld is refused first, as
+`flow_withheld`, by `CellTurn` before resolution. Resolution order: the registry must know the name (`unknown_flow`), the
 descriptor must be model-invocable (`capability_refused`), and its
 re-derived declaration digest must equal the call's
 (`declaration_changed`). An executable binding then answers first, after an
@@ -782,7 +862,7 @@ serves a fixed list; `makeNoop` records nothing; `layer`, `layerCells`, and
 `import * as AgentEvent from "@smthrs/harness/AgentEvent"`
 
 The serializable events a harness adapter emits, one schema class per event
-and `AgentEvent.AgentEvent` as the tagged union of all 41. The controller
+and `AgentEvent.AgentEvent` as the tagged union of all 45. The controller
 journals them in order: `DisciplineArmed` once at the start, the frame cycle
 (`TurnOpened`, `ModelRequested`, `ModelDelta`, `ModelRetried`, `ModelSettled`,
 `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`,
@@ -827,9 +907,36 @@ ask it again:
   builds the record's answers from decoded `Classifier.Answer`s.
 
 Both are emitted through the same `Observer` every other event takes, so a
-durable host checkpoints them inside the step that produced them. A completion
+durable host checkpoints them inside the step that produced them. The
+controller provides `Journal` around each flow call: a flow that asks Jev
+itself, such as the agent's `recall`, journals its receipts into the run that
+called it. Outside a run `Journal` does nothing. A completion
 judgement recorded before `DecisionSettled` existed replays with no decision:
 the record is absent, never reconstructed.
+
+Jev's other readings write these:
+
+- `RelevanceSettled`: the human-provided items (`RelevanceKind`: `flow`,
+  `skill`, `instruction`, `memory`) one reading kept and withheld, by id and
+  digest, never text. `source` is `run`, `supervisor`, or `recall` for a
+  recall the model called; an item is withheld only at or above
+  `withholdAt`.
+- `RelevanceRestored`: a withheld `flow` the run called by name.
+- `SeatRouted`: the `seat`, `modelId` and prompt `variant` a run that
+  `declared` no model was routed to, from `candidates`. `decidedBy` is `jev`,
+  or `only` for a single candidate, whose variant Jev may still have picked.
+- `DecisionUnjudged`: a reading nobody could judge, with `UnjudgedReason`
+  (shared with `SupervisorUnjudged`) and the `items` it covered.
+
+Fields later writers add to existing events are optional, so older journals
+decode unchanged: `DecisionSettled.usage`; `CompactionSettled.kept`, `marks`
+(`CompactionMark` `keep`, `squash` or `remove`, with the `CompactionPin` that
+overrode a removal), `removedTokens` and `unaligned`, with `summary`
+optional; `SupervisorSettled.monitors` (`MonitorKind` `mood`, `skill` or
+`lint`) and `skillsCapped`, with `inserted` optional; `DisciplineArmed.judged`,
+`relevance`, `monitors` and `stance` (`careful` or `paranoid`), with
+`supervisorSteer` optional; `SteeringDrained.monitor`, `suppressed`
+(each with a `Suppression` reason) and `memory`.
 
 Every member's `_tag` is the kebab-case discriminant `switch` and
 `Stream.filter` match on. `AgentEvent.eventType` is keyed by the camelCase
@@ -849,6 +956,7 @@ writes and `Transcript` reads:
 | `claim-demanded`                | `claimDemanded`               | `flows.harness.claim-demanded.v1`                |
 | `compaction-settled`            | `compactionSettled`           | `flows.harness.compaction-settled.v1`            |
 | `decision-settled`              | `decisionSettled`             | `flows.harness.decision-settled.v1`              |
+| `decision-unjudged`             | `decisionUnjudged`            | `flows.harness.decision-unjudged.v1`             |
 | `discipline-armed`              | `disciplineArmed`             | `flows.harness.discipline-armed.v1`              |
 | `model-delta`                   | `modelDelta`                  | `flows.harness.model-delta.v1`                   |
 | `model-requested`               | `modelRequested`              | `flows.harness.model-requested.v1`               |
@@ -863,8 +971,11 @@ writes and `Transcript` reads:
 | `permission-required`           | `permissionRequired`          | `flows.harness.permission-required.v1`           |
 | `read-only-demand-issued`       | `readOnlyDemandIssued`        | `flows.harness.read-only-demand-issued.v1`       |
 | `read-only-demanded`            | `readOnlyDemanded`            | `flows.harness.read-only-demanded.v1`            |
+| `relevance-restored`            | `relevanceRestored`           | `flows.harness.relevance-restored.v1`            |
+| `relevance-settled`             | `relevanceSettled`            | `flows.harness.relevance-settled.v1`             |
 | `repeat-demanded`               | `repeatDemanded`              | `flows.harness.repeat-demanded.v1`               |
 | `resolved`                      | `resolved`                    | `flows.harness.resolved.v1`                      |
+| `seat-routed`                   | `seatRouted`                  | `flows.harness.seat-routed.v1`                   |
 | `steering-drained`              | `steeringDrained`             | `flows.harness.steering-drained.v1`              |
 | `sufficiency-observed`          | `sufficiencyObserved`         | `flows.harness.sufficiency-observed.v1`          |
 | `suspended`                     | `suspended`                   | `flows.harness.suspended.v1`                     |
@@ -965,7 +1076,12 @@ estimated token count computed once at construction. `appendTurn` appends one
 settled assistant message; `prefixDigest`, `compactPrefix`, and
 `compact` replace an exact compactable prefix while retaining every suffix
 segment, failing with a `ContextWindowError` when the declared prefix does not
-match. `render` projects the window into the `ModelRequest` of
+match. `compactMarked(window, prefixLength, marks, summary)` applies one
+`Mark` per prefix segment, `keep`, `squash` or `remove`: the result holds the
+segments before the prefix, one summary segment when any segment is squashed,
+the kept segments as the same objects, then the suffix. The summary is required
+exactly when a segment is squashed. `compactPrefix` is `compactMarked` with
+every segment squashed. `render` projects the window into the `ModelRequest` of
 [`@smthrs/model`](/api/model).
 
 `appendTurn` and `compact` are dual, so each one takes the window first or
@@ -1030,7 +1146,12 @@ invoking a model; `summaryRequest` builds the model request input for the
 step, with `summaryInstruction` as its stable instruction; and `apply`
 splices a recorded summary into a projected window, failing with
 `InvalidStep` when the declaration does not match the window it is applied
-to. `Summarizer.params` is an optional `ModelRequest.GenerationParams`.
+to. `declare(window, prefixLength, summarizer, marks?)` takes one
+`ContextWindow.Mark` per prefix segment and records them with a `marksDigest`;
+without marks every segment is squashed. `summaryRequest` carries only the
+squashed segments' messages and fails when nothing is squashed, and
+`apply(window, step, summary?)` requires a summary exactly when a segment is
+squashed. A length or digest mismatch is `InvalidStep`. `Summarizer.params` is an optional `ModelRequest.GenerationParams`.
 `summaryRequest` schema-decodes supplied parameters, including JSON-round-tripped
 values, and returns `InvalidStep` for invalid values or unknown parameter keys.
 Defaults apply only when `params` is absent.
@@ -1265,6 +1386,74 @@ a composition. See the [whole-host scripted judge](https://github.com/smithersai
 Constant approval is not a judge. `layerUnavailable()` is an explicit outage
 fixture for classifier tests. The five deterministic brakes still run unchanged.
 
+## Judgement
+
+`import * as Judgement from "@smthrs/harness/Judgement"`
+
+The one way this package asks Jev a question. Every reading goes through it:
+the supervisor's and the completion brake's, and every relevance, compaction,
+monitor and routing reading.
+
+`measured(classifier, state)` asks through the bound `Evaluator` and returns a
+`Read`: the decoded answers and an `Asked` (classifier id, digest, questions,
+the state as it was sent, `DecisionAnswer`s with the provider's own
+confidence, integer `latencyMs`, and `usage` when the transport reported any).
+It fails with the transport's own `ClassifierError`. `read` is the fail-closed
+layer over it and needs no `Evaluator` in its type: a host that binds none
+fails `unconfigured`, and a transport failure fails as `Unjudged` with the
+transport's code and `Evaluator.publicMessage` as its `detail`.
+
+`perItem({ id, description, context, item, questions, concurrency?, maxStateBytes? })`
+asks the same questions about each of many items. Each question is built from
+the item's index, and its id is `${key}_${index}`. `classifierFor(n)` is the
+classifier for `n` items, the same object for the same `n`. Its state is
+`{ context, items }`. `read(context, items)` packs items in order, greedily,
+into requests whose encoded state fits `maxStateBytes` (by default 262,144
+bytes, the `jev` flow's ceiling). Each request numbers its items from 0, and
+requests run at most `concurrency` (`Classifier.defaultConcurrency`) at once.
+Answers come back one record per item in input order, with every request's
+`Asked`. The first failed request fails the reading, and partial answers are
+never returned. No items send no request. An item too large to send alone
+fails `invalid_question`.
+
+`recorded(engine, { name, identity, classifier, value, items }, execute)`
+takes a reading inside a run through `EngineLike.record`. A success records
+the value and one `decision-settled` row per request (`decision`: decided by
+`jev`, usage carried). A failure records `value: null` and one
+`decision-unjudged` row over `items` (`unjudgedEvent`). A replayed frame is
+served the record and asks nothing. `emitRecorded` journals the decisions in
+order, then the unjudged row. `task` bounds a run's task to `taskBytes`
+(4,096) with both ends kept.
+
+## Relevance
+
+`import * as Relevance from "@smthrs/harness/Relevance"`
+
+What a run is shown of the human-provided items it could be shown: catalog
+flows and skills, chunks of instruction files such as `AGENTS.md`, and memory
+rows. Each is an `Item` (`{ kind, id, text }`, `Kind` being
+`AgentEvent.RelevanceKind`).
+
+`judge(context, items)` asks Jev, through `reader` (a `Judgement.perItem`
+reading with classifier `relevance/unnecessary` and one boolean
+`unnecessary_<i>` per item), whether each item is unnecessary for
+`context.task`. An item is withheld only at a probability at or above
+`withholdAt` (0.9); everything else is kept. Each item's text is sent
+head-kept to `itemBytes` (1,024). The `Reading` holds a `Verdict` per item in
+input order (`p`, `withheld`, and the digest of the whole text), every
+request's `Asked`, `latencyMs` and summed `usage`. It fails as
+`Judgement.Unjudged`, and the caller then keeps every item and journals
+`decision-unjudged`.
+
+`settled(reading, { scope, frame, source })` is the `relevance-settled` row:
+ids and digests, never text. `flowItem(descriptor)` is a catalog entry as an
+item, `skill` for a markdown body and `flow` otherwise, its description
+marked untrusted. `chunks(documents)` splits `Document`s (`{ path, text }`)
+into `Chunk`s with ids `${path}#${n}`: one per markdown heading and per
+top-level list item, never inside a fence. `render(documents, withheld)` is the
+project-instructions block of every chunk not withheld; `""` when nothing is
+left.
+
 ## Supervisor
 
 `import * as Supervisor from "@smthrs/harness/Supervisor"`
@@ -1278,57 +1467,138 @@ a `Snapshot` the controller assembles from what it already holds: the task
 `frameBytes`, the transition, whether the frame moved the tree), the counts the
 deterministic controls keep as `Signals` (read-only and repeat streaks,
 mutations, checks run and failing, unanswered failures, failed calls, demands
-spent), up to `candidateLimit` (4) sentences the run wrote that might be worth
-remembering, and up to `recalledLimit` (6) rows recalled from memory. Nothing
-is re-derived: the supervisor reads the harness's evidence and never measures
-a second time.
+spent), and up to `candidateLimit` (4) sentences the run wrote that might be
+worth remembering. It also carries `skills`: up to `skillLimit` (12)
+Markdown skills from the frame's relevance-filtered catalog the model may
+call and has not, sorted by name and offered only when `read` is in that
+catalog, each a `Skill` of name, Markdown body path and the description's
+first `skillBytes` (256) wrapped as untrusted data (`skill`); `called`, the
+newest `calledLimit` (64) distinct flows the call ledger names; and
+`jevAvailable`, whether the catalog has `jev`. A skill the relevance gate
+withheld is never offered. Nothing is re-derived: the supervisor reads the
+harness's evidence and never measures a second time.
 
 One Jev call per snapshot answers every question at once; eleven are fixed.
-Five are about the run and decide a nudge, the `triggers`: `thrashing` (at or
+Five are about the run, the `triggers`: `thrashing` (at or
 above `thrashingAt`, 0.5), `off_target` (`on_target` at or below
 `offTargetAt`, 0.5), `suspect` (at or above `suspectAt`, 0.5),
 `outdated_context` and `irrelevant_context` (each at or above `acceptAt`,
 0.5). `crosses(reading)` is any trigger firing and `triggered(reading)` names
-the ones that did; `judge` and the offline replay both call them. Five are
+the ones that did; the `supervisor` lint monitor and the offline replay both
+call them, and `nudge` names the counts behind them. Five are
 operational states scored on `Level` (`none`, `mild`, `strong`), each naming
 the evidence it reads: `frustrated`, `anxious`, `scared`, `confused`,
 `confident`. `needs_help` is a choice over `Help` (`none`, `clarification`,
 `permission`, `stuck`, `risky_action`): the one word a person is shown, and it
-never steers the run. One boolean per candidate (`remember_<i>`) and per
-recalled row (`insert_<j>`) decides what is written to `Memory` and what is
-inserted; `classifierFor(candidates, recalled)` is the classifier for that
-shape and `classifier` the bare one.
+never steers the run. One boolean per candidate (`remember_<i>`) decides what
+is written to `Memory`, and each monitor question the run's `Monitor`s add is
+one more boolean, keyed `monitor_<id>` (`monitorPrefix`; `MonitorQuestions`).
+`read(snapshot, extra)` asks them all and puts each monitor's probability on
+`Reading.monitors` by monitor id. `classifierFor(candidates, extra)` is the
+classifier for that shape, declared once per count and set of monitor ids,
+and `classifier` the bare one; with no monitor questions the digest is the
+one the eleven fixed questions always had.
+
+Recalled memory goes through `Relevance`, not `supervisor/turn`. Beside each
+reading the fiber recalls past every row whose key the run has already been
+shown, keeps the first `recalledLimit` (6) it has not, and asks
+`Relevance.judge` about the rest as `memory` items keyed by row, with the
+task and the head of the frame's prose as `recent`; the two readings run
+concurrently. Rows Jev is confident the run does not need are withheld; the
+rest, or every row when relevance cannot answer, go to the next boundary,
+rendered by `recalledInsert`. That boundary drops any row shown since the
+offer, records the keys it delivered on `SteeringDrained.memory`, and folds
+them into `CellTurn.State.memoryShown`, so a row is shown to a run once.
 
 `CellTurn` offers each frame's snapshot from the frame's own live turn
 boundary to a one-slot sliding queue and continues at once; a forked fiber on
 the loop's scope takes the newest snapshot, recalls, asks through
 `EngineLike.record` (keyed on the session, the frame and the cell digest),
-and journals `AgentEvent.SupervisorSettled` beside a `DecisionSettled` that
-carries the snapshot and every answer. `judge` turns a `Reading` into a
-`Verdict` under `Options`: `steer` (default off) arms the `nudge`, a concise
-message naming the counts behind the reading and the frame they were read at,
-and the insertion of accepted recalled rows. Both are delivered by the next
-boundary that executes, in the drain's own `supervisor` field rather than
-among the person's steering inserts, and dropped as stale after that. The
-model reads them above the frame's ask; the task the completion brake and
-later snapshots read never includes them. Each `SupervisorSettled` states the
-`steer` it ran under. `remember` (default off) writes accepted candidates to
-the bound `Memory`, a port with `memoryNone` behind it unless the host adapts
+and journals, in order, the supervisor's `DecisionSettled` (the snapshot and
+every answer), the memory reading's `DecisionSettled` rows, its
+`RelevanceSettled` (`source: "supervisor"`) or a `DecisionUnjudged` for
+`relevance/unnecessary`, the marks reading's `DecisionSettled` rows or a
+`DecisionUnjudged` for `compaction/marks`, and last
+`AgentEvent.SupervisorSettled`, whose `monitors` holds each monitor's value
+and whether it crossed, and whose `skillsCapped` is true when more than
+`skillLimit` skills could have been offered. Each reading scores the run's monitors, then
+`Monitor.skills` of its snapshot, then `Monitor.useJev()`. `judge` turns a
+`Reading` into a `Verdict` under `Options`: the candidates to remember. What
+the run is told is the monitors' to decide: the reading records each
+monitor's raw value and every crossed monitor's message, and the next
+boundary that executes gates them with `Monitor.gate` against
+`CellTurn.State.monitorLedger` inside its own recorded drain, only when
+`CellTurn.Input.judged`. At most one monitor message is delivered, then the
+recalled rows, in the drain's own `supervisor` field rather than among the
+person's steering inserts; a reading is dropped as stale after that boundary.
+A reading that fails on one side still delivers the other. The model reads
+them above the frame's ask; the task the completion brake and later snapshots
+read never includes them. Each `SupervisorSettled` states the delivery it ran
+under as `steer`. `Options` is `{ remember }`: `remember` (default off) writes accepted
+candidates to the bound `Memory`, a port with `memoryNone` behind it unless the host adapts
 a store. A `Memory` read or write that fails is journaled as
 `AgentEvent.SupervisorMemoryFailed` and the reading goes on.
-`defaultOptions` journals verdicts, nudges nothing and writes nothing.
+`defaultOptions` writes nothing.
 
 It never falls back. A snapshot nobody could judge is journaled as
 `AgentEvent.SupervisorUnjudged` with `UnjudgedReason` (`unconfigured`,
 `interrupted`, or the transport's own code; an `unreachable` detail is
-`Evaluator.unreachableMessage`, never the transport's text) and inserts
-nothing, remembers nothing and reports no level. A replayed frame is never
-offered, so a resumed run re-asks nothing and re-delivers exactly the inserts
-its recorded drains hold. A reading in flight when the run ends gets
+`Evaluator.unreachableMessage`, never the transport's text), gates no
+monitor, leaves the ledger alone, remembers nothing and reports no level. A replayed frame is never
+offered, so a resumed run re-asks nothing and re-delivers exactly what its
+recorded drains hold. A reading in flight when the run ends gets
 `closeGraceMs` (1,500) to settle; one still unanswered is interrupted and
 journaled `interrupted`, and the run never waits longer. The offline replay over
-archived journals that measures the nudge's precision is
+archived journals that measures the triggers' precision is
 `evals/swebench/lib/jev-replay.mjs`.
+
+## Monitor
+
+`import * as Monitor from "@smthrs/harness/Monitor"`
+
+What one supervisor reading can put in front of the run, and when. A
+`Monitor` turns a `Supervisor.Reading` into a probability and a sentence: a
+`Questioned` monitor adds one boolean question (`questionId(id)`,
+`monitor_<id>`) to the supervisor's single Jev call, asked of a snapshot when
+its `applies` holds; a `Derived` monitor scores answers the supervisor already
+asks and costs nothing. `make(input)` fills a monitor's budget from its
+kind's `budgets`: `at` (crosses when `p >= at`), `consecutive` crossed
+readings before delivery, `cooldownFrames` after a delivery, `limit`
+deliveries per run, and `priority`. `validate` admits a set or fails with
+`InvalidMonitor` naming the first id that cannot run (`idPattern`, a duplicate
+id, an id each reading adds itself (`skill_*`, `use_jev`),
+`at` outside `(0, 1]`, or a count that is not a non-negative integer).
+
+`lint()` is the supervisor's legacy nudge: it crosses exactly when
+`Supervisor.crosses` does and says `Supervisor.nudge`, with no streak,
+cooldown or limit. `moods()` are the stance monitors `paranoid`, `careful`,
+`step_back` and `clarify` over the emotions and help the reading already
+holds, saying `paranoidText`, `carefulText`, `stepBackText` and `clarifyText`.
+`defaults()` is both, and what `CellTurn.Input.monitors` takes when omitted.
+
+Every reading adds two more. `skills(snapshot)` is one `skill` monitor per
+offered skill (at 0.85, limit 1), id `skill_<name made safe>` with a digest
+suffix when two names collide, asking whether reading `skills[i]` now would
+change what the run does next; it says `skillText(name, path)`, which names
+the skill and a `read` call for its body and never quotes its description.
+`useJev()` is the `use_jev` lint (at 0.85, limit 2), asked only while
+`jevAvailable`, for frames that print lists and choose among them by hand; it
+says `useJevText`.
+
+`questions(monitors, snapshot)` is what a snapshot adds to the call.
+`evaluate` runs at reading time: a `Row` per monitor with a value, and a
+`Candidate` with its rendered text per crossed one. `gate` runs at the
+recorded steering drain against the durable `Ledger` (an `Entry` of
+`streak`, `delivered` and `lastFrame` per id; `fresh` when absent): each row
+moves its streak, each candidate is withheld for `streak`, `cooldown` or
+`limit` in that order, and of the rest the highest priority takes the one
+slot and the others are withheld for `slot`. `Gated` is the message, the
+suppressions and the next ledger. Both halves are pure: nothing here asks,
+journals or steers. `CellTurn` records the delivered id and the
+suppressions on `SteeringDrained.monitor` and `suppressed`, and the ledger
+on the drain, so a replay delivers exactly what it delivered the first time
+and a resumed run keeps its cooldowns and limits. Delivery is silent unless
+the run is judged; `DisciplineArmed.monitors` lists the armed monitors then.
 
 ## Sufficiency
 

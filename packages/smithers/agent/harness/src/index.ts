@@ -30,6 +30,24 @@ export * as CompletionClaim from "./CompletionClaim.ts"
 export * as Supervisor from "./Supervisor.ts"
 
 /**
+ * @category controls
+ * @since 1.0.0-rc.0
+ */
+export * as Monitor from "./Monitor.ts"
+
+/**
+ * @category controls
+ * @since 1.0.0-rc.0
+ */
+export * as Judgement from "./Judgement.ts"
+
+/**
+ * @category controls
+ * @since 1.0.0-rc.0
+ */
+export * as Relevance from "./Relevance.ts"
+
+/**
  * @category models
  * @since 0.1.0
  */

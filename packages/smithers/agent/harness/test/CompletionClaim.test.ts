@@ -174,6 +174,8 @@ describe("the claim brake", () => {
 
     expect(error.code).toBe("completion_unjudged")
     expect(error.message).toContain("unreachable")
+    expect(error.message).toContain(Evaluator.unreachableMessage)
+    expect(error.message).not.toContain("No evaluator is installed on this host")
   })
 
   it("hands back a completion Jev reads as unproven, once, and spends its own cap", async () => {
@@ -411,8 +413,14 @@ describe("the claim brake", () => {
 
       expect(error.code, code).toBe("completion_unjudged")
       expect(error.message, code).toContain(code)
-      // The transport's own words survive into the journal line.
-      expect(error.message, code).toContain(`scripted ${code}`)
+      // The transport's own words survive into the journal line, except an
+      // unreachable transport's, which can name hosts and URLs.
+      if (code === "unreachable") {
+        expect(error.message).toContain(Evaluator.unreachableMessage)
+        expect(error.message).not.toContain(`scripted ${code}`)
+      } else {
+        expect(error.message, code).toContain(`scripted ${code}`)
+      }
       expect(jev.asked, code).toHaveLength(1)
     }
   })
@@ -426,13 +434,43 @@ describe("the claim brake", () => {
     }
   })
 
-  it("carries the transport's error as the cause, so nothing is laundered", async () => {
-    const failure = new Evaluator.EvaluatorError({ code: "refused", status: 503, message: "gateway down" })
+  it("carries the transport's code and status as the cause, and never its text", async () => {
+    const failure = new Evaluator.EvaluatorError({
+      code: "unreachable",
+      status: 503,
+      message: "connect ECONNREFUSED judge.internal:8443"
+    })
     const error = await unjudged({ layer: refusing(failure).layer })
 
-    expect((error.cause as Record<string, unknown> | undefined)?.["code"]).toBe("refused")
+    expect(error.cause).toEqual({ code: "unreachable", status: 503 })
+    expect(error.message).not.toContain("judge.internal")
     const persisted = Schema.decodeSync(HarnessError)(Schema.encodeSync(HarnessError)(error))
-    expect(persisted.cause).toMatchObject({ code: "refused", status: 503, detail: "gateway down" })
+    expect(persisted.cause).toEqual({ code: "unreachable", status: 503 })
+    const bare = await unjudged({
+      layer: refusing(new Evaluator.EvaluatorError({ code: "timeout", message: "late" })).layer
+    })
+    expect(bare.cause).toEqual({ code: "timeout" })
+  })
+
+  it("journals its decision without the transport's usage, which claim-demanded carries", async () => {
+    const metered = Layer.succeed(Evaluator.Evaluator)(
+      Evaluator.Evaluator.of({
+        evaluate: () =>
+          Effect.succeed({
+            answers: {
+              complete: { type: "boolean", probability: 0.9 },
+              overclaims: { type: "boolean", probability: 0.1 },
+              invented: { type: "boolean", probability: 0.05 }
+            },
+            latencyMs: 7,
+            usage: { inputTokens: 321, outputTokens: 12 }
+          })
+      })
+    )
+    const judged = await settled({ layer: metered })
+
+    expect(judged.decision).toMatchObject({ _tag: "decision-settled", classifier: "completion/claim" })
+    expect(judged.decision).not.toHaveProperty("usage")
   })
 
   it("is never consulted when a deterministic brake already named something", async () => {

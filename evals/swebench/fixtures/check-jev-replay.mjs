@@ -13,23 +13,41 @@
  * asserted field by field against what `CellTurn` would have offered. The scoreboard is then fed hand-written
  * readings so precision and recall are checked on numbers a person can add up.
  *
+ * `jev-gates-journal.json` is then replayed through the command line: two
+ * relevance decisions, three monitor readings, one delivery and one restore.
+ * The printed withheld, crossing, delivered and resolved rates are asserted,
+ * every reading is checked against `Monitor.lint`, and `scorecard.ts` is run
+ * over the same journal for its gate counts.
+ *
  * Offline, spends nothing, needs no docker.
  *
  * @since 0.1.0
  */
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { parseArguments, replay, scoreboard, snapshots } from "../lib/jev-replay.mjs"
+import { fileURLToPath } from "node:url"
+import {
+  emptyGates,
+  gates,
+  gatesMarkdown,
+  lintAgrees,
+  parseArguments,
+  replay,
+  scoreboard,
+  snapshots,
+  withholdThresholds
+} from "../lib/jev-replay.mjs"
 import { read } from "../lib/journal-facts.mjs"
 
 const temporary = mkdtempSync(join(tmpdir(), "flows-swebench-jev-replay-"))
 
 /** Writes one journal database out of a list of `[type, payload]` events. */
-const journal = (name, events) => {
-  const directory = join(temporary, name)
+const journal = (name, events, root = temporary) => {
+  const directory = join(root, name)
   mkdirSync(directory, { recursive: true })
   const path = join(directory, "engine.db")
   const database = new DatabaseSync(path)
@@ -71,7 +89,7 @@ try {
   const rejected = ["control.agent.cell-settled", { cell: "", outcome: { _tag: "rejected", code: "no_cell", message: "No cell was found" } }]
   const path = journal("one__one-1", [
     // The arming the first frame journals: the budget and no approval channel.
-    ["control.agent.discipline-armed", { maxFrames: 10, approvalChannel: false, supervisorSteer: false }],
+    ["control.agent.discipline-armed", { maxFrames: 10, approvalChannel: false }],
     // Frame 0: the task travels in the first request's last system text. A
     // grep that changes nothing.
     requested(0, ["cell contract", "flow catalog", "The task for this run:\n\nFix add()."]),
@@ -155,7 +173,7 @@ try {
   assert.equal(built[2].frames.length, 3, "the third snapshot carries the newest three frames")
   assert.deepEqual(built[4].frames.map((frame) => frame.frame), [2, 3, 5], "recent frames are offered frames")
   assert.equal(built[2].task, facts.task)
-  assert.deepEqual(built[2].recalled, [])
+  assert.equal("recalled" in built[2], false)
   assert.equal(built[2].frames[2].transition, "continue")
   assert.equal(built[2].frames[1].mutated, true)
   // The fenced cell is stripped, as the live supervisor strips it, and the
@@ -279,6 +297,107 @@ try {
 
   // Without a key the live path refuses before reading a journal.
   await assert.rejects(replay(parseArguments([temporary]), {}), /AI_GATEWAY_API_KEY/)
+
+  // The gates, from the committed synthetic journal, through the command line.
+  const here = dirname(fileURLToPath(import.meta.url))
+  const gateEvents = JSON.parse(readFileSync(join(here, "jev-gates-journal.json"), "utf8"))
+  const gateRoot = join(temporary, "gates")
+  const gatePath = journal("gates__gates-1", gateEvents, gateRoot)
+  assert.deepEqual(withholdThresholds, [0.8, 0.9, 0.95], "the live withholdAt is the middle threshold")
+  const replayed = spawnSync(process.execPath, [join(here, "..", "lib", "jev-replay.mjs"), gateRoot, "--dry-run", "--suffix", "-1"], {
+    encoding: "utf8",
+    timeout: 60_000
+  })
+  assert.equal(replayed.status, 0, replayed.stderr)
+  for (const line of [
+    "decisions: 2, unreadable: 0",
+    "| flow | 1 | 100% | 100% | 100% |",
+    "| instruction | 1 | 0% | 0% | 0% |",
+    "| memory | 2 | 50% | 50% | 0% |",
+    "| skill | 1 | 100% | 0% | 0% |",
+    "readings checked against Monitor.lint: 3",
+    "| supervisor | 0 | 3 | 67% | 50% | 100% | cooldown:1 |",
+    "| use_jev | 1 | 3 | 67% | 0% | - | streak:2 |"
+  ]) assert.ok(replayed.stdout.includes(line), `the replay prints ${line}\n${replayed.stdout}`)
+  const gateReport = await replay(parseArguments([gateRoot, "--dry-run"]), {})
+  assert.equal(gateReport.gates.lintChecked, 3)
+  assert.equal(gateReport.gates.monitors.supervisor.resolved, 1, "frame 1 passed the failing check")
+
+  // The lint monitor and the replay's rule agree on every reading, crossing or not.
+  const supervisorReadings = gateEvents.filter(([type]) => type === "control.agent.supervisor-settled")
+    .map(([, payload]) => payload)
+  assert.deepEqual(supervisorReadings.map(lintAgrees), [1, 0, 1])
+  for (const at of [reading(0.5, 0.9), reading(0.1, 0.5), reading(0.49, 0.51), reading(0.1, 0.9, "none", "none", { irrelevantContext: 0.5 })]) {
+    lintAgrees(at)
+  }
+
+  // A delivery resolved by an `on_target` rise, one left unresolved, a bounded
+  // decision and an item of no kind, folded directly.
+  const rows = (events) => events.map(([type, payload], seq) => ({ seq, type, payload }))
+  const noChecks = { frames: [0, 1, 2, 3, 4, 5].map(() => ({ frameChecks: [], ledgerBefore: [] })) }
+  const turn = ["control.agent.turn-opened", {}]
+  const readAt = (frame, onTarget) => ["control.agent.supervisor-settled", {
+    frame, thrashing: 0.1, onTarget, suspect: 0.1, monitors: [{ id: "careful", kind: "mood", p: 1, crossed: true }]
+  }]
+  const deliver = ["control.agent.steering-drained", { messages: [], monitor: "careful" }]
+  const direct = gates(noChecks, rows([
+    turn, readAt(0, 0.6), deliver, turn, readAt(1, 0.7), turn, deliver,
+    ["control.agent.decision-settled", { classifier: "relevance/unnecessary", state: { truncated: true }, answers: [] }],
+    ["control.agent.decision-settled", {
+      classifier: "relevance/unnecessary",
+      state: { items: [] },
+      answers: [{ id: "unnecessary_0", kind: "boolean", p: 0.99 }, { id: "other", kind: "boolean", p: 1 }]
+    }],
+    ["control.agent.decision-settled", { classifier: "supervisor/turn", answers: { truncated: true } }],
+    ["control.agent.decision-settled", { classifier: "seat/route", answers: [] }]
+  ]))
+  assert.equal(direct.monitors.careful.delivered, 2)
+  assert.equal(direct.monitors.careful.resolved, 1, "on_target rose after the first delivery; nothing followed the second")
+  assert.deepEqual(direct.relevance, {
+    decisions: 2,
+    unreadable: 1,
+    kinds: { unknown: { items: 1, withheld: { 0.8: 1, 0.9: 1, 0.95: 1 } } }
+  })
+  assert.ok(gatesMarkdown(emptyGates()).includes("decisions: 0, unreadable: 0"))
+  // A newly passing check resolves with no reading at all; one already passing does not.
+  const passing = (signature) => ({ signature, passing: true })
+  const checked = (before, ran) => gates(
+    { frames: [{ frameChecks: [], ledgerBefore: [] }, { frameChecks: [passing(ran)], ledgerBefore: [passing(before)] }] },
+    rows([turn, deliver])
+  ).monitors.careful.resolved
+  assert.equal(checked("a", "b"), 1)
+  assert.equal(checked("a", "a"), 0)
+
+  // The scorecard counts what the gates did.
+  const work = join(temporary, "work", "gates__gates", ".flows")
+  mkdirSync(work, { recursive: true })
+  const copy = new DatabaseSync(join(work, "engine.db"))
+  copy.exec(`attach database '${gatePath}' as source`)
+  copy.exec("create table flows_journal_events as select * from source.flows_journal_events")
+  copy.close()
+  writeFileSync(join(temporary, "report.json"), JSON.stringify({ resolved_ids: ["gates__gates"] }))
+  const scored = spawnSync(process.execPath, [
+    join(here, "..", "scorecard.ts"),
+    "--work", join(temporary, "work"),
+    "--patches", join(temporary, "patches"),
+    "--timings", join(temporary, "timings"),
+    "--report", join(temporary, "report.json"),
+    "--subject", join(temporary, "subject.json"),
+    "--out", temporary,
+    "--instances", "gates__gates"
+  ], { encoding: "utf8", timeout: 60_000 })
+  assert.equal(scored.status, 0, scored.stderr)
+  const card = JSON.parse(readFileSync(join(temporary, "scorecard.json"), "utf8"))
+  assert.deepEqual(card.instances[0].gates, {
+    relevanceWithheld: { flow: 1, memory: 1 },
+    relevanceRestored: 1,
+    monitorsDelivered: { supervisor: 1 },
+    memoryDelivered: 1,
+    compactionRemoved: 2
+  })
+  assert.ok(
+    readFileSync(join(temporary, "scorecard.md"), "utf8").includes("| gates__gates | flow:1 memory:1 | 1 | supervisor:1 | 1 | 2 |")
+  )
 
   console.log("check-jev-replay: ok")
 } finally {

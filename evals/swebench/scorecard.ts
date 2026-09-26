@@ -18,10 +18,15 @@
  *   agent process, because the journal's span ends at the last journaled event;
  * - USD from the committed price table in `prices.ts`, the seat's model turns
  *   and, in a column of its own, the run's Jev readings: the completion brake
- *   (`claim-demanded`), the per-frame supervisor (`supervisor-settled`) and
- *   the agent's own `jev` flow calls (`cell-call-settled`), priced under the
- *   `typesafe-ai/jev` row. The codex arm asks Jev nothing, so its column is
- *   model-only either way.
+ *   (`claim-demanded`), the per-frame supervisor (`supervisor-settled`), the
+ *   agent's own `jev` flow calls (`cell-call-settled`) and the gates
+ *   (`decision-settled` of a gate classifier), priced under the
+ *   `typesafe-ai/jev` row and counted per caller. The codex arm asks Jev
+ *   nothing, so its column is model-only either way;
+ * - what the gates did, as counts: items `relevance-settled` withheld per
+ *   kind, flows `relevance-restored`, deliveries per monitor and memory rows
+ *   delivered from `steering-drained`, and messages `compaction-settled`
+ *   removed. `lib/jev-replay.mjs` turns the same rows into rates.
  *
  * Per-call latency is reported when the journal carries it and reported as
  * unavailable when it does not. The current harness writes `durationMillis`;
@@ -42,7 +47,7 @@ import { fileURLToPath } from "node:url"
 import type { ControlSchema } from "../../packages/smithers/control/src/index.ts"
 import type * as AgentEvent from "../../packages/smithers/agent/harness/src/AgentEvent.ts"
 import * as Forensics from "../../packages/smithers/src/Forensics.ts"
-import { jevUsageOf } from "./jev-usage.ts"
+import { jevCaller, jevCellQuestionsOf, jevUsageOf } from "./jev-usage.ts"
 import { jevModel, usd } from "./prices.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -182,13 +187,30 @@ interface RunNumbers {
   readonly inputTokens: number
   readonly cachedInputTokens: number
   readonly outputTokens: number
-  readonly jevCalls: number
+  readonly jevCellCalls: number
+  readonly jevCellQuestions: number
+  /** Successful `jev` calls whose recorded result the journal bounded to a marker. */
+  readonly jevCellQuestionsUnknown: number
+  readonly jevBrakeReadings: number
+  readonly jevSupervisorReadings: number
+  readonly jevGateReadings: number
+  readonly cellsWithJev: number
+  readonly cells: number
+  /** `decision-unjudged` plus `supervisor-unjudged`. */
+  readonly jevUnjudged: number
   readonly jevInputTokens: number
   readonly jevOutputTokens: number
   /** Supervisor readings journaled unjudged, by reason; `interrupted` ones were asked and went unmetered. */
   readonly supervisorUnjudged: Readonly<Record<string, number>>
   /** Memory reads and writes the supervisor's store refused. */
   readonly supervisorMemoryFailures: number
+  /** Items `relevance-settled` withheld, by kind. */
+  readonly relevanceWithheld: Readonly<Record<string, number>>
+  readonly relevanceRestored: number
+  /** `steering-drained` deliveries, by monitor id. */
+  readonly monitorsDelivered: Readonly<Record<string, number>>
+  readonly memoryDelivered: number
+  readonly compactionRemoved: number
   readonly journalSeconds: number | undefined
   readonly callLatencyMs: ReadonlyArray<number>
 }
@@ -238,10 +260,18 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
   // from the same `model-settled` payloads the digest already counted.
   let cachedInputTokens = 0
   const callLatencyMs: Array<number> = []
-  // Jev is metered on three other event types; `lib/run-cost.mjs` owns which
-  // ones and where each keeps its usage, so the scorecard and the full
-  // benchmark's ledger cannot disagree about what a reading cost.
-  let jevCalls = 0
+  // Jev is metered on four other event types; `jev-usage.ts` owns which ones,
+  // which caller each is and where each keeps its usage, so the scorecard and
+  // the full benchmark's ledger cannot disagree about what a reading cost.
+  const readings = { cell: 0, brake: 0, supervisor: 0, gate: 0 }
+  let jevCellQuestions = 0
+  let jevCellQuestionsUnknown = 0
+  let jevUnjudged = 0
+  // A cell's calls sit between its `cell-produced` and its `cell-settled`.
+  let cells = 0
+  let cellsWithJev = 0
+  let cellRun: string | undefined
+  let cellCalledJev = false
   let jevInputTokens = 0
   let jevOutputTokens = 0
   // The supervisor's own faults, counted rather than left to a log: a reading
@@ -250,8 +280,32 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
   // nothing.
   const supervisorUnjudged: Record<string, number> = {}
   let supervisorMemoryFailures = 0
+  const relevanceWithheld: Record<string, number> = {}
+  let relevanceRestored = 0
+  const monitorsDelivered: Record<string, number> = {}
+  let memoryDelivered = 0
+  let compactionRemoved = 0
+  const tally = (counts: Record<string, number>, key: unknown) => {
+    const name = typeof key === "string" ? key : "unknown"
+    counts[name] = (counts[name] ?? 0) + 1
+  }
   for (const row of rows) {
+    if (row.run_id !== cellRun) {
+      cellRun = row.run_id
+      cellCalledJev = false
+    }
+    if (row.event_type === "control.agent.cell-settled") {
+      cells += 1
+      if (cellCalledJev) cellsWithJev += 1
+      cellCalledJev = false
+      continue
+    }
+    if (row.event_type === "control.agent.decision-unjudged") {
+      jevUnjudged += 1
+      continue
+    }
     if (row.event_type === "control.agent.supervisor-unjudged") {
+      jevUnjudged += 1
       const reason = asRecord(JSON.parse(row.payload_json)).reason
       const key = typeof reason === "string" ? reason : "unknown"
       supervisorUnjudged[key] = (supervisorUnjudged[key] ?? 0) + 1
@@ -261,12 +315,39 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
       supervisorMemoryFailures += 1
       continue
     }
+    if (row.event_type === "control.agent.relevance-settled") {
+      const withheld = asRecord(JSON.parse(row.payload_json)).withheld
+      for (const item of Array.isArray(withheld) ? withheld : []) tally(relevanceWithheld, asRecord(item).kind)
+      continue
+    }
+    if (row.event_type === "control.agent.relevance-restored") {
+      relevanceRestored += 1
+      continue
+    }
+    if (row.event_type === "control.agent.steering-drained") {
+      const payload = asRecord(JSON.parse(row.payload_json))
+      if (payload.monitor !== undefined) tally(monitorsDelivered, payload.monitor)
+      if (Array.isArray(payload.memory)) memoryDelivered += payload.memory.length
+      continue
+    }
+    if (row.event_type === "control.agent.compaction-settled") {
+      const removed = asRecord(asRecord(JSON.parse(row.payload_json)).marks).removed
+      if (typeof removed === "number") compactionRemoved += removed
+      continue
+    }
     if (row.event_type !== "control.agent.model-settled") {
-      const metered = jevUsageOf(row.event_type, asRecord(JSON.parse(row.payload_json)))
-      if (metered !== undefined) {
-        jevCalls += 1
-        jevInputTokens += metered.inputTokens
-        jevOutputTokens += metered.outputTokens
+      const payload = asRecord(JSON.parse(row.payload_json))
+      const caller = jevCaller(row.event_type, payload)
+      if (caller === "cell") cellCalledJev = true
+      const metered = jevUsageOf(row.event_type, payload)
+      if (caller === undefined || metered === undefined) continue
+      readings[caller] += 1
+      jevInputTokens += metered.inputTokens
+      jevOutputTokens += metered.outputTokens
+      if (caller === "cell") {
+        const questions = jevCellQuestionsOf(payload)
+        if (questions === undefined) jevCellQuestionsUnknown += 1
+        else jevCellQuestions += questions
       }
       continue
     }
@@ -292,11 +373,24 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
     inputTokens,
     cachedInputTokens,
     outputTokens,
-    jevCalls,
+    jevCellCalls: readings.cell,
+    jevCellQuestions,
+    jevCellQuestionsUnknown,
+    jevBrakeReadings: readings.brake,
+    jevSupervisorReadings: readings.supervisor,
+    jevGateReadings: readings.gate,
+    cellsWithJev,
+    cells,
+    jevUnjudged,
     jevInputTokens,
     jevOutputTokens,
     supervisorUnjudged,
     supervisorMemoryFailures,
+    relevanceWithheld,
+    relevanceRestored,
+    monitorsDelivered,
+    memoryDelivered,
+    compactionRemoved,
     journalSeconds: startedAt === undefined || endedAt === undefined
       ? undefined
       : Math.round((endedAt - startedAt) / 1000),
@@ -419,7 +513,15 @@ const rows = instances.map((id) => {
       priceSource: priced.source,
       // The run's Jev readings, priced apart from the seat: `usd` above stays
       // the model's spend, and this is what judging it cost.
-      jevCalls: numbers?.jevCalls ?? 0,
+      jevCellCalls: numbers?.jevCellCalls ?? 0,
+      jevCellQuestions: numbers?.jevCellQuestions ?? 0,
+      jevCellQuestionsUnknown: numbers?.jevCellQuestionsUnknown ?? 0,
+      jevBrakeReadings: numbers?.jevBrakeReadings ?? 0,
+      jevSupervisorReadings: numbers?.jevSupervisorReadings ?? 0,
+      jevGateReadings: numbers?.jevGateReadings ?? 0,
+      cellsWithJev: numbers?.cellsWithJev ?? 0,
+      cells: numbers?.cells ?? 0,
+      jevUnjudged: numbers?.jevUnjudged ?? 0,
       jevInputTokens: jevTokens.inputTokens,
       jevOutputTokens: jevTokens.outputTokens,
       jevUsd: jevPriced.usd,
@@ -440,6 +542,13 @@ const rows = instances.map((id) => {
       patchBytes: codexRow.patchBytes,
       usd: codexPriced.usd,
       priceSource: codexPriced.source
+    },
+    gates: {
+      relevanceWithheld: numbers?.relevanceWithheld ?? {},
+      relevanceRestored: numbers?.relevanceRestored ?? 0,
+      monitorsDelivered: numbers?.monitorsDelivered ?? {},
+      memoryDelivered: numbers?.memoryDelivered ?? 0,
+      compactionRemoved: numbers?.compactionRemoved ?? 0
     },
     subject: timing.subject,
     callout: codexRow === undefined ? "no baseline" : callout(verdict, codexRow.verdict),
@@ -463,7 +572,9 @@ const aggregate = {
   flowsTokens: sum(rows.map((row) => row.cost.inputTokens + row.cost.outputTokens)),
   codexTokens: sum(rows.map((row) => row.baseline?.tokens)),
   flowsUsd: Math.round(sum(rows.map((row) => row.cost.usd)) * 10_000) / 10_000,
-  flowsJevCalls: sum(rows.map((row) => row.cost.jevCalls)),
+  flowsJevReadings: sum(rows.map((row) =>
+    row.cost.jevCellCalls + row.cost.jevBrakeReadings + row.cost.jevSupervisorReadings + row.cost.jevGateReadings
+  )),
   flowsJevTokens: sum(rows.map((row) => row.cost.jevInputTokens + row.cost.jevOutputTokens)),
   flowsJevUsd: Math.round(sum(rows.map((row) => row.cost.jevUsd)) * 10_000) / 10_000,
   flowsJevInterrupted: sum(rows.map((row) => row.cost.jevInterrupted)),
@@ -534,6 +645,12 @@ writeFileSync(
 const show = (value: number | string | undefined, suffix = ""): string =>
   value === undefined ? "—" : `${typeof value === "number" ? value.toLocaleString("en-US") : value}${suffix}`
 
+/** Counts by name, `name:count` sorted by name, or `0`. */
+const counts = (byName: Readonly<Record<string, number>>): string => {
+  const entries = Object.entries(byName).sort(([a], [b]) => a.localeCompare(b))
+  return entries.length === 0 ? "0" : entries.map(([name, count]) => `${name}:${count}`).join(" ")
+}
+
 const money = (value: number | undefined): string => value === undefined ? "—" : `$${value.toFixed(4)}`
 
 const markdown = [
@@ -596,26 +713,45 @@ const markdown = [
   "",
   "## Cost",
   "",
-  "| Instance | Input | Cached | Output | flows USD | Jev calls | Jev tokens | Jev USD | flows total | codex tokens | codex USD (floor) |",
-  "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+  "| Instance | Input | Cached | Output | flows USD | Jev tokens | Jev USD | flows total | codex tokens | codex USD (floor) |",
+  "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ...rows.map((row) =>
     `| ${row.instanceId} | ${show(row.cost.inputTokens)} | ${show(row.cost.cachedInputTokens)} | `
-    + `${show(row.cost.outputTokens)} | ${money(row.cost.usd)} | ${show(row.cost.jevCalls)} | `
+    + `${show(row.cost.outputTokens)} | ${money(row.cost.usd)} | `
     + `${show(row.cost.jevInputTokens + row.cost.jevOutputTokens)} | ${money(row.cost.jevUsd)} | `
     + `${money(row.cost.totalUsd)} | ${show(row.baseline?.tokens)} | ${money(row.baseline?.usd)} |`
   ),
   "",
-  `Totals: flows ${money(aggregate.flowsUsd)} model + ${money(aggregate.flowsJevUsd)} Jev (${aggregate.flowsJevCalls} readings) = ${
+  `Totals: flows ${money(aggregate.flowsUsd)} model + ${money(aggregate.flowsJevUsd)} Jev (${aggregate.flowsJevReadings} readings) = ${
     money(aggregate.flowsTotalUsd)
   } · codex ${money(aggregate.codexUsdFloor)} (floor).`,
   "",
   "Prices come from the committed table in `prices.ts`. `flows USD` is the seat's"
   + " model turns; `Jev USD` is every reading the run took of Jev (the completion"
-  + " brake, the per-frame supervisor and the agent's own `jev` calls), priced"
-  + " under the `typesafe-ai/jev` row, and `flows total` is both. The codex arm"
-  + " asks Jev nothing. The codex figure is a"
-  + " floor: the committed baseline records one total token count per instance,"
-  + " with no input/output split, so it is priced entirely at the input rate.",
+  + " brake, the per-frame supervisor, the agent's own `jev` calls and the"
+  + " gates), priced under the `typesafe-ai/jev` row, and `flows total` is both."
+  + " The codex arm asks Jev nothing. The codex figure is a floor: the committed"
+  + " baseline records one total token count per instance, with no input/output"
+  + " split, so it is priced entirely at the input rate.",
+  "",
+  "## Jev",
+  "",
+  "| Instance | Cell calls | Cell questions | Questions unknown | Brake | Supervisor | Gates | Cells with Jev | Unjudged |",
+  "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+  ...rows.map((row) =>
+    `| ${row.instanceId} | ${row.cost.jevCellCalls} | ${row.cost.jevCellQuestions} | `
+    + `${row.cost.jevCellQuestionsUnknown} | ${row.cost.jevBrakeReadings} | ${row.cost.jevSupervisorReadings} | `
+    + `${row.cost.jevGateReadings} | ${row.cost.cellsWithJev}/${row.cost.cells} | ${row.cost.jevUnjudged} |`
+  ),
+  "",
+  "## Gates",
+  "",
+  "| Instance | Withheld | Restored | Monitors delivered | Memory delivered | Compaction removed |",
+  "| --- | --- | --- | --- | --- | --- |",
+  ...rows.map((row) =>
+    `| ${row.instanceId} | ${counts(row.gates.relevanceWithheld)} | ${row.gates.relevanceRestored} | `
+    + `${counts(row.gates.monitorsDelivered)} | ${row.gates.memoryDelivered} | ${row.gates.compactionRemoved} |`
+  ),
   ""
 ].join("\n")
 

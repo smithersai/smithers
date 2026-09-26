@@ -1,0 +1,204 @@
+[
+  ["control.agent.turn-opened", { "seat": "openai:gpt-5.6-sol" }],
+  ["control.agent.decision-settled", {
+    "scope": "s",
+    "frame": 0,
+    "classifier": "relevance/unnecessary",
+    "digest": "sha256:relevance-3",
+    "state": {
+      "context": { "task": "Fix add()." },
+      "items": [
+        { "kind": "flow", "id": "lint_docs", "text": "lint_docs" },
+        { "kind": "skill", "id": "deploy", "text": "deploy" },
+        { "kind": "instruction", "id": "AGENTS.md#0", "text": "# Rules" }
+      ]
+    },
+    "stateDigest": "sha256:state-0",
+    "questions": [],
+    "questionsDigest": "sha256:questions-0",
+    "answers": [
+      { "id": "unnecessary_0", "kind": "boolean", "p": 0.95 },
+      { "id": "unnecessary_1", "kind": "boolean", "p": 0.85 },
+      { "id": "unnecessary_2", "kind": "boolean", "p": 0.5 }
+    ],
+    "answersDigest": "sha256:answers-0",
+    "latencyMs": 200,
+    "acted": true,
+    "decidedBy": "jev",
+    "usage": { "inputTokens": 500, "outputTokens": 0 }
+  }],
+  ["control.agent.relevance-settled", {
+    "scope": "s",
+    "frame": 0,
+    "source": "run",
+    "withholdAt": 0.9,
+    "kept": [
+      { "kind": "skill", "id": "deploy", "digest": "sha256:deploy", "p": 0.85 },
+      { "kind": "instruction", "id": "AGENTS.md#0", "digest": "sha256:rules", "p": 0.5 }
+    ],
+    "withheld": [{ "kind": "flow", "id": "lint_docs", "digest": "sha256:lint", "p": 0.95 }],
+    "latencyMs": 200
+  }],
+  ["control.agent.cell-produced", { "language": "js", "digest": "c0", "text": "await ctx.call('bash', {command:'pytest'})" }],
+  ["control.agent.cell-call-started", { "flowName": "bash", "input": { "command": "pytest" } }],
+  ["control.agent.cell-call-settled", { "flowName": "bash", "outcome": "success", "value": { "exitCode": 1, "stdout": "1 failed" } }],
+  ["control.agent.cell-settled", { "outcome": { "_tag": "settled" } }],
+  ["control.agent.transition-applied", { "transition": { "_tag": "continue" } }],
+  ["control.agent.supervisor-settled", {
+    "scope": "s",
+    "frame": 0,
+    "thrashing": 0.1,
+    "onTarget": 0.4,
+    "suspect": 0.1,
+    "outdatedContext": 0.1,
+    "irrelevantContext": 0.1,
+    "frustrated": "none",
+    "anxious": "none",
+    "scared": "none",
+    "confused": "none",
+    "confident": "none",
+    "needsHelp": "none",
+    "crossed": true,
+    "nudged": true,
+    "remembered": [],
+    "latencyMs": 300,
+    "usage": { "inputTokens": 600, "outputTokens": 0 },
+    "monitors": [
+      { "id": "supervisor", "kind": "lint", "p": 1, "crossed": true },
+      { "id": "use_jev", "kind": "skill", "p": 0.3, "crossed": false }
+    ]
+  }],
+  ["control.agent.decision-settled", {
+    "scope": "s",
+    "frame": 0,
+    "classifier": "supervisor/turn",
+    "digest": "sha256:supervisor",
+    "state": {},
+    "stateDigest": "sha256:state-1",
+    "questions": [],
+    "questionsDigest": "sha256:questions-1",
+    "answers": [
+      { "id": "thrashing", "kind": "boolean", "p": 0.1 },
+      { "id": "monitor_use_jev", "kind": "boolean", "p": 0.3 }
+    ],
+    "answersDigest": "sha256:answers-1",
+    "latencyMs": 300,
+    "acted": true,
+    "decidedBy": "jev"
+  }],
+  ["control.agent.steering-drained", {
+    "messages": [],
+    "supervisor": [{ "role": "user", "text": "Off target." }, { "role": "user", "text": "Remembered: m1" }],
+    "monitor": "supervisor",
+    "memory": ["m1"]
+  }],
+  ["control.agent.turn-opened", { "seat": "openai:gpt-5.6-sol" }],
+  ["control.agent.cell-produced", { "language": "js", "digest": "c1", "text": "await ctx.call('bash', {command:'pytest'})" }],
+  ["control.agent.cell-call-started", { "flowName": "bash", "input": { "command": "pytest" } }],
+  ["control.agent.cell-call-settled", { "flowName": "bash", "outcome": "success", "value": { "exitCode": 0, "stdout": "1 passed" } }],
+  ["control.agent.cell-settled", { "outcome": { "_tag": "settled" } }],
+  ["control.agent.transition-applied", { "transition": { "_tag": "continue" } }],
+  ["control.agent.supervisor-settled", {
+    "scope": "s",
+    "frame": 1,
+    "thrashing": 0.1,
+    "onTarget": 0.9,
+    "suspect": 0.1,
+    "outdatedContext": 0.1,
+    "irrelevantContext": 0.1,
+    "frustrated": "none",
+    "anxious": "none",
+    "scared": "none",
+    "confused": "none",
+    "confident": "mild",
+    "needsHelp": "none",
+    "crossed": false,
+    "nudged": false,
+    "remembered": [],
+    "latencyMs": 300,
+    "usage": { "inputTokens": 600, "outputTokens": 0 },
+    "monitors": [
+      { "id": "supervisor", "kind": "lint", "p": 0, "crossed": false },
+      { "id": "use_jev", "kind": "skill", "p": 0.8, "crossed": true }
+    ]
+  }],
+  ["control.agent.steering-drained", { "messages": [], "suppressed": [{ "id": "use_jev", "reason": "streak" }] }],
+  ["control.agent.turn-opened", { "seat": "openai:gpt-5.6-sol" }],
+  ["control.agent.cell-produced", { "language": "js", "digest": "c2", "text": "await ctx.call('lint_docs', {})" }],
+  ["control.agent.relevance-restored", { "scope": "s", "frame": 2, "flow": "lint_docs" }],
+  ["control.agent.cell-call-started", { "flowName": "lint_docs", "input": {} }],
+  ["control.agent.cell-call-settled", { "flowName": "lint_docs", "outcome": "success", "value": {} }],
+  ["control.agent.cell-settled", { "outcome": { "_tag": "settled" } }],
+  ["control.agent.transition-applied", { "transition": { "_tag": "continue" } }],
+  ["control.agent.decision-settled", {
+    "scope": "s",
+    "frame": 2,
+    "classifier": "relevance/unnecessary",
+    "digest": "sha256:relevance-2",
+    "state": {
+      "context": { "task": "Fix add().", "recent": "pytest passes" },
+      "items": [
+        { "kind": "memory", "id": "m2", "text": "The docs build uses mkdocs." },
+        { "kind": "memory", "id": "m3", "text": "Tests run with pytest -q." }
+      ]
+    },
+    "stateDigest": "sha256:state-2",
+    "questions": [],
+    "questionsDigest": "sha256:questions-2",
+    "answers": [
+      { "id": "unnecessary_0", "kind": "boolean", "p": 0.92 },
+      { "id": "unnecessary_1", "kind": "boolean", "p": 0.1 }
+    ],
+    "answersDigest": "sha256:answers-2",
+    "latencyMs": 200,
+    "acted": true,
+    "decidedBy": "jev",
+    "usage": { "inputTokens": 400, "outputTokens": 0 }
+  }],
+  ["control.agent.relevance-settled", {
+    "scope": "s",
+    "frame": 2,
+    "source": "supervisor",
+    "withholdAt": 0.9,
+    "kept": [{ "kind": "memory", "id": "m3", "digest": "sha256:m3", "p": 0.1 }],
+    "withheld": [{ "kind": "memory", "id": "m2", "digest": "sha256:m2", "p": 0.92 }],
+    "latencyMs": 200
+  }],
+  ["control.agent.supervisor-settled", {
+    "scope": "s",
+    "frame": 2,
+    "thrashing": 0.6,
+    "onTarget": 0.9,
+    "suspect": 0.1,
+    "outdatedContext": 0.1,
+    "irrelevantContext": 0.1,
+    "frustrated": "none",
+    "anxious": "none",
+    "scared": "none",
+    "confused": "none",
+    "confident": "none",
+    "needsHelp": "none",
+    "crossed": true,
+    "nudged": false,
+    "remembered": [],
+    "latencyMs": 300,
+    "usage": { "inputTokens": 600, "outputTokens": 0 },
+    "monitors": [
+      { "id": "supervisor", "kind": "lint", "p": 1, "crossed": true },
+      { "id": "use_jev", "kind": "skill", "p": 0.85, "crossed": true }
+    ]
+  }],
+  ["control.agent.steering-drained", {
+    "messages": [],
+    "suppressed": [{ "id": "supervisor", "reason": "cooldown" }, { "id": "use_jev", "reason": "streak" }]
+  }],
+  ["control.agent.compaction-settled", {
+    "replacedPrefixDigest": "sha256:prefix",
+    "marks": { "kept": 1, "squashed": 1, "removed": 2 },
+    "removedTokens": 300
+  }],
+  ["control.agent.turn-opened", { "seat": "openai:gpt-5.6-sol" }],
+  ["control.agent.cell-produced", { "language": "js", "digest": "c3", "text": "ctx.done('fixed')" }],
+  ["control.agent.cell-settled", { "outcome": { "_tag": "settled" } }],
+  ["control.agent.transition-applied", { "transition": { "_tag": "complete" } }]
+]

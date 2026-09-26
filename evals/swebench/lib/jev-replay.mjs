@@ -22,10 +22,10 @@
  * a count read here is the count the run had. Three things the archive cannot
  * give are stated rather than guessed at:
  *
- * - `recalled` is empty. Offline there is no memory to recall from, so no
- *   `insert_*` question is asked. `candidates` are read from the frame's
- *   prose exactly as the live supervisor reads them, so the eleven fixed
- *   questions and the same `remember_*` questions are.
+ * - No memory is recalled. Recalled rows are judged by a separate relevance
+ *   reading, not by `supervisor/turn`. `candidates` are read from the
+ *   frame's prose exactly as the live supervisor reads them, so the eleven
+ *   fixed questions and the same `remember_*` questions are asked.
  * - `remoteMutations` is zero. The journal records container writes only on
  *   the call that made them, and the r9x waves ran no container-side edits.
  * - `task` is the last system text of the first frame's `model-requested`
@@ -34,9 +34,16 @@
  *   has no task text, and its snapshots say so with an empty string rather
  *   than with the dataset's problem statement, which is not what the run read.
  *
- * `--dry-run` builds every snapshot and prints their counts without asking
- * Jev; `fixtures/check-jev-replay.mjs` runs it that way over a synthetic
- * journal. A live run needs `AI_GATEWAY_API_KEY` and reaches the gateway
+ * Beside the supervisor, the journal's own Jev gates are replayed without
+ * asking anything (`gates`): each `relevance/unnecessary` decision is
+ * re-thresholded per item kind at {@link withholdThresholds}, and each
+ * monitor's readings, deliveries and suppressions are counted, with the
+ * deliveries a run answered within {@link resolvedWithin} frames by a newly
+ * passing check or a rise in `on_target`.
+ *
+ * `--dry-run` builds every snapshot and prints their counts and the gates
+ * without asking Jev; `fixtures/check-jev-replay.mjs` runs it that way over
+ * synthetic journals. A live run needs `AI_GATEWAY_API_KEY` and reaches the gateway
  * through the same egress client the CLI's own judge uses, at most four
  * requests in flight.
  *
@@ -51,10 +58,14 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as Evaluator from "../../../packages/smithers/agent/model/src/Evaluator.ts"
 import * as Supervision from "../../../packages/smithers/agent/harness/src/internal/supervision.ts"
+import * as Judgement from "../../../packages/smithers/agent/harness/src/Judgement.ts"
+import * as Monitor from "../../../packages/smithers/agent/harness/src/Monitor.ts"
+import * as Relevance from "../../../packages/smithers/agent/harness/src/Relevance.ts"
 import * as Supervisor from "../../../packages/smithers/agent/harness/src/Supervisor.ts"
 import * as UnmovedTree from "../../../packages/smithers/agent/harness/src/UnmovedTree.ts"
 import { read as readManifest } from "./fullbench-manifest.mjs"
 import { read as readFacts } from "./journal-facts.mjs"
+import { journalRows } from "./journal-rows.mjs"
 
 const usage = "usage: node lib/jev-replay.mjs <journals-dir> --manifest <manifest.jsonl> [--suffix S] [--limit N] [--json] [--dry-run]"
 
@@ -189,7 +200,7 @@ export const snapshots = (facts) => {
     const frames = [...recent.slice(-(Supervisor.recentFrames - 1)), current]
     recent.push(current)
     out.push({
-      task: Supervisor.task(facts.task ?? ""),
+      task: Judgement.task(facts.task ?? ""),
       frames,
       signals: {
         frame: frame.index,
@@ -210,7 +221,10 @@ export const snapshots = (facts) => {
         sufficiencyStated: facts.sufficiencyEvents.some((event) => event.seq <= seq)
       },
       candidates: Supervisor.candidates(written),
-      recalled: []
+      // An archived journal records no catalog, so no skill or use-jev monitor is rebuilt.
+      skills: [],
+      called: [],
+      jevAvailable: false
     })
   }
   return out
@@ -318,6 +332,203 @@ export const scoreboard = (runs) => {
   return { labelled: labelled.length, unresolved: labelled.filter((run) => run.label === "unresolved").length, rows }
 }
 
+/**
+ * The probabilities of "unnecessary" a relevance decision is re-thresholded
+ * at; the middle one is `Relevance.withholdAt`, the live rule.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const withholdThresholds = [0.8, Relevance.withholdAt, 0.95]
+
+/**
+ * Frames, the delivering one first, in which a delivery counts as resolved.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const resolvedWithin = 3
+
+const lintMonitor = Monitor.lint()[0]
+
+/**
+ * `Supervisor.crosses` as a 0 or 1, after asserting `Monitor.lint` scores the
+ * reading the same: the replay's rule and the live monitor's are one rule.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const lintAgrees = (reading) => {
+  const rule = Supervisor.crosses(reading) ? 1 : 0
+  const scored = lintMonitor.score(reading, undefined)
+  if (scored !== rule) throw new Error(`Monitor.lint scored ${scored} where Supervisor.crosses gives ${rule}`)
+  return rule
+}
+
+/**
+ * An empty gates board.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const emptyGates = () => ({
+  relevance: { decisions: 0, unreadable: 0, kinds: {} },
+  monitors: {},
+  lintChecked: 0
+})
+
+const gateTypes = [
+  "control.agent.turn-opened",
+  "control.agent.decision-settled",
+  "control.agent.supervisor-settled",
+  "control.agent.steering-drained"
+]
+
+/**
+ * The rows `gates` reads from one archived journal, payloads parsed.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const readGates = (databasePath) =>
+  journalRows(databasePath, `event_type in (${gateTypes.map((type) => `'${type}'`).join(", ")})`)
+    .map((row) => ({ seq: row.seq, type: row.event_type, payload: JSON.parse(row.payload_json) }))
+
+const monitorOf = (board, id) =>
+  board.monitors[id] ??= { asked: 0, readings: 0, crossed: 0, delivered: 0, resolved: 0, suppressed: {} }
+
+const unnecessary = /^unnecessary_(\d+)$/
+
+/** One `relevance/unnecessary` decision's items as `{ kind, p }`, or nothing when the journal bounded it. */
+const relevanceItems = (payload) => {
+  const items = payload.state?.items
+  if (!Array.isArray(items) || !Array.isArray(payload.answers)) return undefined
+  return payload.answers.flatMap((answer) => {
+    const index = unnecessary.exec(answer?.id ?? "")?.[1]
+    if (index === undefined || typeof answer.p !== "number") return []
+    const kind = items[Number(index)]?.kind
+    return [{ kind: typeof kind === "string" ? kind : "unknown", p: answer.p }]
+  })
+}
+
+/**
+ * Folds one run's gate rows into `board`.
+ *
+ * `facts` is `journal-facts.mjs`'s read of the same journal, whose frames
+ * carry the checks each frame ran. A drain is delivered to the frame after
+ * the turn-opened rows before it. A delivery resolves when one of the
+ * {@link resolvedWithin} frames from there runs a check passing that was not
+ * passing when it was delivered, or when a supervisor reading of one of those
+ * frames puts `on_target` above the last reading before them.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const gates = (facts, rows, board = emptyGates()) => {
+  const readings = []
+  const deliveries = []
+  let opened = 0
+  for (const { type, payload } of rows) {
+    if (type === "control.agent.turn-opened") {
+      opened++
+    } else if (type === "control.agent.decision-settled" && payload.classifier === "relevance/unnecessary") {
+      board.relevance.decisions++
+      const items = relevanceItems(payload)
+      if (items === undefined) {
+        board.relevance.unreadable++
+        continue
+      }
+      for (const { kind, p } of items) {
+        const row = board.relevance.kinds[kind] ??= {
+          items: 0,
+          withheld: Object.fromEntries(withholdThresholds.map((at) => [at, 0]))
+        }
+        row.items++
+        for (const at of withholdThresholds) if (p >= at) row.withheld[at]++
+      }
+    } else if (type === "control.agent.decision-settled" && payload.classifier === "supervisor/turn") {
+      if (!Array.isArray(payload.answers)) continue
+      for (const answer of payload.answers) {
+        if (answer?.id?.startsWith(Supervisor.monitorPrefix)) {
+          monitorOf(board, answer.id.slice(Supervisor.monitorPrefix.length)).asked++
+        }
+      }
+    } else if (type === "control.agent.supervisor-settled") {
+      lintAgrees(payload)
+      board.lintChecked++
+      readings.push({ frame: payload.frame, onTarget: payload.onTarget })
+      for (const monitor of payload.monitors ?? []) {
+        const row = monitorOf(board, monitor.id)
+        row.readings++
+        if (monitor.crossed) row.crossed++
+      }
+    } else if (type === "control.agent.steering-drained") {
+      for (const { id, reason } of payload.suppressed ?? []) {
+        const row = monitorOf(board, id)
+        row.suppressed[reason] = (row.suppressed[reason] ?? 0) + 1
+      }
+      if (payload.monitor !== undefined) {
+        monitorOf(board, payload.monitor).delivered++
+        deliveries.push({ id: payload.monitor, frame: opened })
+      }
+    }
+  }
+  for (const { id, frame } of deliveries) {
+    const window = facts.frames.slice(frame, frame + resolvedWithin)
+    const before = facts.frames[frame]?.ledgerBefore ?? []
+    const passing = new Set(before.filter((check) => check.passing).map((check) => check.signature))
+    const checked = window.some((entry) =>
+      entry.frameChecks.some((check) => check.passing && !passing.has(check.signature))
+    )
+    const last = readings.filter((reading) => reading.frame < frame).at(-1)
+    const rose = last !== undefined && readings.some((reading) =>
+      reading.frame >= frame && reading.frame < frame + resolvedWithin && reading.onTarget > last.onTarget
+    )
+    if (checked || rose) board.monitors[id].resolved++
+  }
+  return board
+}
+
+/** `part` of `whole` as a percentage, or `-` when there is no whole. */
+const rate = (part, whole) => whole === 0 ? "-" : percent(part / whole)
+
+/**
+ * The gates board as markdown: relevance withheld rates per kind and
+ * threshold, then per monitor its crossing, delivered and delivered-then-
+ * resolved rates and its suppressions.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const gatesMarkdown = (board) => {
+  const lines = [`## Relevance`, ``]
+  lines.push(`decisions: ${board.relevance.decisions}, unreadable: ${board.relevance.unreadable}`, ``)
+  lines.push(
+    `| kind | items | ${withholdThresholds.map((at) => `withheld >= ${at}`).join(" | ")} |`,
+    `| --- | ---: | ${withholdThresholds.map(() => "---:").join(" | ")} |`
+  )
+  for (const [kind, row] of Object.entries(board.relevance.kinds).sort(([a], [b]) => a.localeCompare(b))) {
+    lines.push(
+      `| ${kind} | ${row.items} | ${withholdThresholds.map((at) => rate(row.withheld[at], row.items)).join(" | ")} |`
+    )
+  }
+  lines.push(``, `## Monitors`, ``, `readings checked against Monitor.lint: ${board.lintChecked}`, ``)
+  lines.push(
+    `| monitor | asked | readings | crossed | delivered | resolved | suppressed |`,
+    `| --- | ---: | ---: | ---: | ---: | ---: | --- |`
+  )
+  for (const [id, row] of Object.entries(board.monitors).sort(([a], [b]) => a.localeCompare(b))) {
+    const suppressed = Object.entries(row.suppressed).sort(([a], [b]) => a.localeCompare(b))
+      .map(([reason, count]) => `${reason}:${count}`).join(" ")
+    lines.push(
+      `| ${id} | ${row.asked} | ${row.readings} | ${rate(row.crossed, row.readings)} | ${
+        rate(row.delivered, row.crossed)
+      } | ${rate(row.resolved, row.delivered)} | ${suppressed === "" ? "-" : suppressed} |`
+    )
+  }
+  return lines.join("\n")
+}
+
 const percent = (value) => `${(value * 100).toFixed(0)}%`
 
 const markdown = (report) => {
@@ -348,6 +559,7 @@ const markdown = (report) => {
       `| ${run.id} | ${run.label ?? "-"} | ${run.frames} | ${last.thrashing.toFixed(2)} | ${run.maxThrashing.toFixed(2)} | ${last.onTarget.toFixed(2)} | ${run.minOnTarget.toFixed(2)} | ${last.suspect.toFixed(2)} | ${last.needsHelp} | ${emotions} |`
     )
   }
+  lines.push(``, gatesMarkdown(report.gates))
   return lines.join("\n")
 }
 
@@ -377,15 +589,17 @@ export const replay = async (options, environment = process.env) => {
   const layer = options.dryRun ? undefined : evaluatorLayer(environment)
 
   const ask = (snapshot) =>
-    Supervisor.read(snapshot).pipe(
+    Supervisor.read(snapshot, {}).pipe(
       Effect.map((reading) => ({ _tag: "read", reading })),
       Effect.catch((failure) => Effect.succeed({ _tag: "unjudged", failure })),
       Effect.provide(layer)
     )
 
   const runs = []
+  const board = emptyGates()
   for (const journal of journals) {
     const facts = readFacts(journal.path)
+    gates(facts, readGates(journal.path), board)
     const built = snapshots(facts)
     frames += built.length
     const run = {
@@ -402,6 +616,7 @@ export const replay = async (options, environment = process.env) => {
       const outcomes = await Effect.runPromise(Effect.forEach(built, ask, { concurrency: 4 }))
       for (const outcome of outcomes) {
         if (outcome._tag === "read") {
+          lintAgrees(outcome.reading)
           readings++
           run.readings.push(outcome.reading)
           run.maxThrashing = Math.max(run.maxThrashing, outcome.reading.thrashing)
@@ -422,6 +637,7 @@ export const replay = async (options, environment = process.env) => {
     unjudgedTotal,
     unjudged,
     board: scoreboard(runs),
+    gates: board,
     runs
   }
 }
@@ -445,6 +661,7 @@ const main = async () => {
         `${run.id}: ${run.frames} frames, verdict ${run.label ?? "-"}, last signals ${JSON.stringify(last?.signals ?? null)}\n`
       )
     }
+    process.stdout.write(`\n${gatesMarkdown(report.gates)}\n`)
   } else {
     process.stdout.write(markdown(report) + "\n")
   }

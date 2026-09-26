@@ -2,7 +2,7 @@ import * as EngineLike from "@smthrs/harness/EngineLike"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as Source from "@smthrs/memory/Source"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as MemorySnapshotRecorder from "../src/MemorySnapshotRecorder.ts"
 
@@ -15,8 +15,12 @@ describe("MemorySnapshotRecorder", () => {
         Effect.suspend(() => {
           boundaries.push(boundary as EngineLike.RecordBoundary<unknown>)
           const key = JSON.stringify([boundary.name, boundary.identity])
-          if (records.has(key)) return Effect.succeed(records.get(key) as A)
-          return boundary.execute.pipe(Effect.tap((value) => Effect.sync(() => records.set(key, value))))
+          // Held encoded, as a journal holds it, so a resume decodes the rows.
+          const codec = boundary.success as unknown as Schema.Codec<A, unknown>
+          if (records.has(key)) return Effect.succeed(Schema.decodeUnknownSync(codec)(records.get(key)))
+          return boundary.execute.pipe(
+            Effect.tap((value) => Effect.sync(() => records.set(key, Schema.encodeUnknownSync(codec)(value))))
+          )
         })
     })
     const recorder = MemorySnapshotRecorder.layer.pipe(Layer.provide(EngineLike.layer(engine)))
@@ -41,7 +45,7 @@ describe("MemorySnapshotRecorder", () => {
     const input = { lineageId: "run-1", iteration: 7, banks: ["bank"], query: "q" }
     const read = (source: Source.Source) =>
       Effect.runPromise(
-        Source.declaredText(source, input).pipe(
+        Source.declared(source, input).pipe(
           Effect.provideService(MemoryStore.MemoryStore, store),
           Effect.provideService(Recall.Recall, Recall.makeNoop()),
           Effect.provide(recorder)
@@ -53,8 +57,7 @@ describe("MemorySnapshotRecorder", () => {
     const resumed = await read(Source.make())
 
     expect(resumed).toEqual(first)
-    expect(resumed.text).toContain("memory before the crash")
-    expect(resumed.text).not.toContain("memory after the crash")
+    expect(resumed.rows).toEqual([{ origin: "primer", bank: "bank", key: "note", text: "memory before the crash" }])
     expect(reads).toBe(1)
     expect(boundaries).toHaveLength(2)
     expect(boundaries[0]).toMatchObject({

@@ -14,9 +14,9 @@
  * counts the deterministic controls keep — read-only streak, repeat streak,
  * mutations, checks run and failing, unanswered failures, demands spent. It
  * re-derives none of them. Beside the run's state it carries a bounded list
- * of sentences the run wrote that might be worth keeping, and a bounded list
- * of rows recalled from memory that might be worth showing the run. One Jev
- * call per snapshot answers every question at once.
+ * of sentences the run wrote that might be worth keeping, the skills it has
+ * not called, the flows it has, and whether it can call `jev`. One Jev call per
+ * snapshot answers every question at once.
  *
  * Eleven questions are fixed. Five are about the run: whether it is
  * thrashing, whether it is still on the task, whether its evidence is
@@ -25,43 +25,52 @@
  * `none`, `mild` or `strong` against evidence the snapshot names, and
  * `needs_help` is the one word a person is shown. The five about the run are
  * the {@link triggers}: any one past its threshold crosses. A boolean per
- * candidate sentence and per recalled row decides what is written to memory
- * and what is inserted.
+ * candidate sentence decides what is written to memory, and each monitor the
+ * host arms may add one boolean of its own, under {@link monitorPrefix}.
+ *
+ * Rows recalled from {@link Memory} are not asked about here. Beside each
+ * reading, the supervisor asks `Relevance` which of up to
+ * {@link recalledLimit} rows, none already shown to the run, are unnecessary
+ * for the task; the rest are shown at the next boundary as
+ * {@link recalledInsert} renders them, and a row is shown to a run once.
  *
  * It is a supervisor and not a brake: nothing here ends a run, refuses a
  * completion, or decides anything on the cell loop's hot path. `CellTurn`
  * offers each frame's snapshot to a one-slot sliding queue and continues; a
  * forked fiber takes the newest snapshot, asks, journals what came back, and
- * hands any nudge to the *next* turn boundary as an ordinary steering insert.
- * A reading that arrives after the boundary it was for is journaled and
- * never delivered, and a snapshot the fiber never reached is dropped: the run
- * is never told something about a frame two frames gone.
+ * hands the monitors' values and any memory to the *next* turn boundary,
+ * which decides there what the run is told. A reading that arrives after the boundary it was for is
+ * journaled and never delivered, and a snapshot the fiber never reached is
+ * dropped: the run is never told something about a frame two frames gone.
  *
  * It never falls back. A snapshot Jev could not read is journaled as
  * {@link AgentEvent.SupervisorUnjudged} with the transport's own reason; it
- * inserts nothing, remembers nothing, and is never counted as a reading that
+ * nudges nothing, remembers nothing, and is never counted as a reading that
  * found the run calm or on target. Nothing here is a default value: every
  * level and every word on the settled event came back from the transport.
  *
- * Nudges and memory insertion are behind {@link Options.steer}, off until an
- * offline replay of archived journals has measured their precision
+ * What a reading says is delivered wherever the host holds a real judge
+ * (`CellTurn.Input.judged`), and only through a monitor that crossed and
+ * passed its gates; the text of the legacy nudge is {@link nudge}, which the
+ * `supervisor` lint monitor says. The offline replay of archived journals
  * (`evals/swebench/lib/jev-replay.mjs`, which scores {@link triggers} itself
- * rather than a copy of it). The verdict is journaled whenever an `Evaluator`
- * is bound. Remembering is behind {@link Options.remember}, off unless the
- * host opts in, and writes nothing unless a {@link Memory} is bound.
+ * rather than a copy of it) measures their precision. The verdict is
+ * journaled whenever an `Evaluator` is bound. Remembering is behind
+ * {@link Options.remember}, off unless the host opts in, and writes nothing
+ * unless a {@link Memory} is bound.
  *
  * @since 1.0.0-rc.0
  */
 import * as Classifier from "@smthrs/model/Classifier"
-import * as Evaluator from "@smthrs/model/Evaluator"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as Context from "effect/Context"
-import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as AgentEvent from "./AgentEvent.ts"
+import type * as AgentEvent from "./AgentEvent.ts"
 import * as elide from "./internal/elide.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
+import { untrustedData } from "./internal/untrustedData.ts"
+import * as Judgement from "./Judgement.ts"
 
 /**
  * The most of one frame's cell, prose or prints the snapshot carries, in
@@ -90,21 +99,12 @@ export const recentFrames = 3
 export const candidateLimit = 4
 
 /**
- * The most recalled rows one snapshot offers for insertion.
+ * The most rows one reading recalls from {@link Memory}.
  *
  * @category constants
  * @since 1.0.0-rc.0
  */
 export const recalledLimit = 6
-
-/**
- * The most of the task the snapshot carries, in UTF-8 bytes; both ends kept,
- * for the reason `CompletionClaim` keeps both.
- *
- * @category constants
- * @since 1.0.0-rc.0
- */
-export const taskBytes = 4096
 
 /**
  * How long a run that ends with a reading in flight waits for it to settle
@@ -118,7 +118,7 @@ export const taskBytes = 4096
 export const closeGraceMs = 1_500
 
 /**
- * At or above this probability of `thrashing`, a nudge is issued.
+ * At or above this probability of `thrashing`, the reading crosses.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -126,7 +126,7 @@ export const closeGraceMs = 1_500
 export const thrashingAt = 0.5
 
 /**
- * At or below this probability of `on_target`, a nudge is issued.
+ * At or below this probability of `on_target`, the reading crosses.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -134,7 +134,7 @@ export const thrashingAt = 0.5
 export const offTargetAt = 0.5
 
 /**
- * At or above this probability of `suspect`, a nudge is issued.
+ * At or above this probability of `suspect`, the reading crosses.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -142,7 +142,7 @@ export const offTargetAt = 0.5
 export const suspectAt = 0.5
 
 /**
- * At or above this probability, a candidate is remembered or a row inserted.
+ * At or above this probability, a candidate is remembered.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -275,7 +275,7 @@ export const Signals = Schema.Struct({
 export type Signals = typeof Signals.Type
 
 /**
- * One row recalled from memory, offered for insertion.
+ * One row recalled from memory.
  *
  * @category schemas
  * @since 1.0.0-rc.0
@@ -294,6 +294,63 @@ export const Recalled = Schema.Struct({
 export type Recalled = typeof Recalled.Type
 
 /**
+ * The most skills one snapshot offers.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const skillLimit = 12
+
+/**
+ * The most of one skill's description a snapshot carries, in UTF-8 bytes.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const skillBytes = 256
+
+/**
+ * The most distinct flow names {@link Snapshot} `called` carries.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const calledLimit = 64
+
+/**
+ * One skill the run could read and has not called.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const Skill = Schema.Struct({
+  name: Schema.String,
+  description: Schema.String.annotate({ description: "The description's head, wrapped as untrusted data" }),
+  path: Schema.String.annotate({ description: "Where the skill's Markdown body is" })
+})
+
+/**
+ * The decoded form of {@link Skill}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Skill = typeof Skill.Type
+
+/**
+ * One skill as a snapshot offers it: its description's head within
+ * {@link skillBytes}, wrapped as untrusted data.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const skill = (name: string, description: string, path: string): Skill => ({
+  name,
+  description: untrustedData(elide.head(description, skillBytes, "clipped"), `description of skill ${name}`),
+  path
+})
+
+/**
  * Everything one supervisor reading is a reading of.
  *
  * @category schemas
@@ -306,9 +363,9 @@ export const Snapshot = Schema.Struct({
   candidates: Schema.Array(Schema.String).annotate({
     description: "Sentences the run wrote that might be worth remembering across runs, by index"
   }),
-  recalled: Schema.Array(Recalled).annotate({
-    description: "Rows recalled from memory that might be worth showing the run, by index"
-  })
+  skills: Schema.Array(Skill).annotate({ description: "Skills the run could read and has not called, by index" }),
+  called: Schema.Array(Schema.String).annotate({ description: "Distinct flows the run has called" }),
+  jevAvailable: Schema.Boolean.annotate({ description: "Whether the run can call the jev flow" })
 })
 
 /**
@@ -417,20 +474,25 @@ const candidateQuestion = (index: number) =>
     }
   })
 
-const recalledQuestion = (index: number) =>
-  Classifier.boolean({
-    instructions: `Would showing recalled[${index}] to the run now help it with the task as stated?`,
-    criteria: {
-      true: "it names a fact about this repository the newest frames are missing or rediscovering",
-      false: "it is about something else, or the run already knows it"
-    }
-  })
+/**
+ * The prefix of every question a monitor adds to a reading; the rest of the
+ * id is the monitor's own.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const monitorPrefix = "monitor_"
 
 /**
- * The map of questions a snapshot with these many candidates and recalled
- * rows is asked.
+ * The questions a snapshot's monitors add, by `monitor_<id>`.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
  */
-const questionsFor = (candidates: number, recalled: number) => ({
+export type MonitorQuestions = Readonly<Record<`${typeof monitorPrefix}${string}`, Classifier.BooleanQuestion>>
+
+/** The map of questions a snapshot with these many candidates and these monitors is asked. */
+const questionsFor = (candidates: number, extra: MonitorQuestions) => ({
   ...fixedQuestions,
   ...Object.fromEntries(
     Array.from({ length: Math.min(candidates, candidateLimit) }, (_, index) => [
@@ -438,53 +500,52 @@ const questionsFor = (candidates: number, recalled: number) => ({
       candidateQuestion(index)
     ])
   ),
-  ...Object.fromEntries(
-    Array.from(
-      { length: Math.min(recalled, recalledLimit) },
-      (_, index) => [`insert_${index}`, recalledQuestion(index)]
-    )
-  )
+  ...extra
 })
 
-const cache = new Map<string, ReturnType<typeof declare>>()
-
-const declare = (candidates: number, recalled: number) =>
+const declare = (candidates: number, extra: MonitorQuestions) =>
   Classifier.make("supervisor/turn", {
     description:
-      "Read one running agent's newest frames and the counts its harness keeps: whether it is thrashing, on the task and honest; its operational state in five scored words; what it needs from a person; and which sentences to remember and which recalled rows to show it.",
+      "Read one running agent's newest frames and the counts its harness keeps: whether it is thrashing, on the task and honest; its operational state in five scored words; what it needs from a person; and which sentences to remember.",
     state: Snapshot,
-    questions: questionsFor(candidates, recalled)
+    questions: questionsFor(candidates, extra)
   })
 
+const cache = new Map<string, { readonly extra: MonitorQuestions; readonly made: ReturnType<typeof declare> }>()
+
 /**
- * The classifier for a snapshot with these many candidates and recalled rows.
+ * The classifier for a snapshot with this many candidates and these monitor
+ * questions.
  *
- * The fixed questions are the same for every snapshot and the per-item
- * booleans are added by index, so a snapshot with no candidates and nothing
- * recalled asks the eleven fixed questions and no others. Declared once per
- * shape, because the digest is the canonical hash of the questions and the
- * journal names it.
+ * The fixed questions are the same for every snapshot, the per-candidate
+ * booleans are added by index and the monitors' after them, so a snapshot
+ * with no candidates and no monitor questions asks the eleven fixed
+ * questions and no others. Declared once per count and set of monitor ids,
+ * and again when a monitor id asks a different question, because the digest
+ * is the canonical hash of the questions and the journal names it.
  *
  * @category classifiers
  * @since 1.0.0-rc.0
  */
-export const classifierFor = (candidates: number, recalled: number): ReturnType<typeof declare> => {
-  const key = `${Math.min(candidates, candidateLimit)}:${Math.min(recalled, recalledLimit)}`
+export const classifierFor = (candidates: number, extra: MonitorQuestions): ReturnType<typeof declare> => {
+  const count = Math.min(candidates, candidateLimit)
+  const ids = Object.keys(extra).sort() as Array<keyof MonitorQuestions>
+  const key = `${count}:${ids.join(",")}`
   const held = cache.get(key)
-  if (held !== undefined) return held
-  const made = declare(candidates, recalled)
-  cache.set(key, made)
+  if (held !== undefined && ids.every((id) => held.extra[id] === extra[id])) return held.made
+  const made = declare(count, extra)
+  cache.set(key, { extra, made })
   return made
 }
 
 /**
  * The classifier over a bare snapshot: the eleven fixed questions and no
- * per-item booleans. Its id is the id every shape shares.
+ * per-candidate or monitor booleans. Its id is the id every shape shares.
  *
  * @category classifiers
  * @since 1.0.0-rc.0
  */
-export const classifier = classifierFor(0, 0)
+export const classifier = classifierFor(0, {})
 
 /**
  * What one evaluation came back with, decoded.
@@ -502,8 +563,8 @@ export interface Reading {
   readonly needsHelp: Help
   /** One entry per candidate, in order: whether it is worth remembering. */
   readonly remember: ReadonlyArray<boolean>
-  /** One entry per recalled row, in order: whether to show it to the run. */
-  readonly insert: ReadonlyArray<boolean>
+  /** The probability of each monitor question asked, by monitor id. */
+  readonly monitors: Readonly<Record<string, number>>
   readonly latencyMs: number
   readonly usage?: Evaluator.Usage | undefined
   /** What was asked and what came back, for `decision-settled`. */
@@ -516,29 +577,7 @@ export interface Reading {
 }
 
 /**
- * Why one snapshot went unjudged: the host bound no `Evaluator`, the run
- * ended with the reading in flight past {@link closeGraceMs}, or the
- * transport's own word for what went wrong.
- *
- * @category models
- * @since 1.0.0-rc.0
- */
-export type UnjudgedReason = "unconfigured" | "interrupted" | Evaluator.EvaluatorErrorCode
-
-/**
- * The typed failure a snapshot nobody could judge settles with. Never thrown:
- * the fiber that asked journals it and moves on.
- *
- * @category models
- * @since 1.0.0-rc.0
- */
-export interface Unjudged {
-  readonly reason: UnjudgedReason
-  readonly detail: string
-}
-
-/**
- * Asks Jev about one snapshot.
+ * Asks Jev about one snapshot, and the monitor questions `extra` adds.
  *
  * Fails, typed, whenever an answer could not be obtained: no evaluator bound,
  * a transport refusal, a deadline, an answer that does not decode. There is
@@ -547,36 +586,12 @@ export interface Unjudged {
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const read = (snapshot: Snapshot): Effect.Effect<Reading, Unjudged, Evaluator.Evaluator> =>
+export const read = (snapshot: Snapshot, extra: MonitorQuestions): Effect.Effect<Reading, Judgement.Unjudged> =>
   Effect.gen(function*() {
-    const bound = yield* Effect.serviceOption(Evaluator.Evaluator)
-    if (Option.isNone(bound)) {
-      return yield* Effect.fail<Unjudged>({ reason: "unconfigured", detail: "No evaluator is installed on this host" })
-    }
-    const declared = classifierFor(snapshot.candidates.length, snapshot.recalled.length)
-    let usage: Evaluator.Usage | undefined
-    let confidence: Readonly<Record<string, number>> | undefined
-    let sent: Schema.Json = null
-    const metered = Evaluator.Evaluator.of({
-      evaluate: (request) =>
-        bound.value.evaluate(request).pipe(Effect.tap((response) =>
-          Effect.sync(() => {
-            usage = response.usage
-            confidence = response.confidence
-            sent = request.state as Schema.Json
-          })
-        ))
-    })
-    const [elapsed, answers] = yield* declared.evaluate(snapshot).pipe(
-      Effect.provideService(Evaluator.Evaluator, metered),
-      Effect.timed,
-      // The same masked text the `jev` flow shows a cell: an unreachable
-      // transport's own message can name hosts and URLs.
-      Effect.mapError((error): Unjudged => ({ reason: error.code, detail: Evaluator.publicMessage(error) }))
-    )
+    const { answers, asked } = yield* Judgement.read(classifierFor(snapshot.candidates.length, extra), snapshot)
     const all = answers as Readonly<Record<string, Classifier.Answer>>
     // Every declared question is answered or the decode above failed, and a
-    // per-item question is declared exactly for the indexes read below.
+    // per-candidate or monitor question is declared exactly for the ids read below.
     const bool = (id: string): number => (all[id] as Classifier.BooleanAnswer).probability
     return {
       thrashing: answers.thrashing.probability,
@@ -593,15 +608,10 @@ export const read = (snapshot: Snapshot): Effect.Effect<Reading, Unjudged, Evalu
       },
       needsHelp: answers.needs_help.value,
       remember: snapshot.candidates.slice(0, candidateLimit).map((_, index) => bool(`remember_${index}`) >= acceptAt),
-      insert: snapshot.recalled.slice(0, recalledLimit).map((_, index) => bool(`insert_${index}`) >= acceptAt),
-      latencyMs: Math.round(Duration.toMillis(elapsed)),
-      ...(usage === undefined ? {} : { usage }),
-      asked: {
-        digest: declared.digest,
-        questions: declared.questions,
-        state: sent,
-        answers: AgentEvent.decisionAnswers(all, confidence)
-      }
+      monitors: Object.fromEntries(Object.keys(extra).map((id) => [id.slice(monitorPrefix.length), bool(id)])),
+      latencyMs: asked.latencyMs,
+      ...(asked.usage === undefined ? {} : { usage: asked.usage }),
+      asked: { digest: asked.digest, questions: asked.questions, state: asked.state, answers: asked.answers }
     }
   })
 
@@ -613,13 +623,6 @@ export const read = (snapshot: Snapshot): Effect.Effect<Reading, Unjudged, Evalu
  */
 export interface Options {
   /**
-   * Whether a reading past its threshold may nudge the run, and whether a
-   * recalled row Jev accepts may be inserted. Off by default: the verdict is
-   * journaled either way, and the offline replay decides when the nudge has
-   * earned its place in front of a model.
-   */
-  readonly steer: boolean
-  /**
    * Whether a candidate Jev accepts is written to the bound {@link Memory}.
    * Off by default: a host opts in. A host with no memory bound writes
    * nothing whatever this says.
@@ -628,12 +631,12 @@ export interface Options {
 }
 
 /**
- * Verdicts journaled, nudges off, memory writes off.
+ * Memory writes off.
  *
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const defaultOptions: Options = { steer: false, remember: false }
+export const defaultOptions: Options = { remember: false }
 
 /**
  * The memory a supervisor reads rows from and writes accepted sentences to.
@@ -690,26 +693,22 @@ export const Memory = Context.Reference<Memory>("@smthrs/harness/Supervisor/Memo
 })
 
 /**
- * What one reading does to the run, decided from the reading and the options.
+ * What one reading writes to memory, decided from the reading and the
+ * options. What it tells the run is the monitors' to decide.
  *
  * @category models
  * @since 1.0.0-rc.0
  */
 export interface Verdict {
-  /** Whether the reading crossed a nudge threshold, whether or not steering is armed. */
-  readonly crossed: boolean
-  /** The nudge delivered at the next boundary; absent unless armed and crossed. */
-  readonly nudge: string | undefined
-  /** Recalled rows delivered at the next boundary; empty unless armed. */
-  readonly inserts: ReadonlyArray<string>
   /** Candidates written to memory; empty unless remembering is on. */
   readonly remembers: ReadonlyArray<string>
 }
 
 /**
  * The five readings that cross, by name, each with the inequality that fires
- * it. The one rule: {@link judge} crosses on it, {@link nudge} names from it,
- * and the offline replay scores it, so the three cannot drift apart.
+ * it. The one rule: the `supervisor` lint monitor crosses on it, {@link nudge}
+ * names from it, and the offline replay scores it, so the three cannot drift
+ * apart.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -812,22 +811,14 @@ export const nudge = (snapshot: Snapshot, reading: Reading): string => {
 export const recalledInsert = (row: Recalled): string => `From memory of this repository (${row.key}):\n${row.text}`
 
 /**
- * Decides what one reading does, under the options the host armed.
+ * Decides what one reading writes to memory, under the options the host armed.
  *
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const judge = (snapshot: Snapshot, reading: Reading, options: Options): Verdict => {
-  const crossed = crosses(reading)
-  return {
-    crossed,
-    nudge: options.steer && crossed ? nudge(snapshot, reading) : undefined,
-    inserts: options.steer
-      ? snapshot.recalled.filter((_, index) => reading.insert[index] === true).map(recalledInsert)
-      : [],
-    remembers: options.remember ? snapshot.candidates.filter((_, index) => reading.remember[index] === true) : []
-  }
-}
+export const judge = (snapshot: Snapshot, reading: Reading, options: Options): Verdict => ({
+  remembers: options.remember ? snapshot.candidates.filter((_, index) => reading.remember[index] === true) : []
+})
 
 /**
  * The head of a frame's cell or prose, bounded by {@link frameBytes}.
@@ -848,14 +839,6 @@ export const tail = (text: string): string => {
   const kept = elide.tailSlice(trimmed, frameBytes)
   return kept.length === trimmed.length ? trimmed : `[… older bytes elided]\n${kept}`
 }
-
-/**
- * The task as the snapshot carries it, both ends kept.
- *
- * @category conversions
- * @since 1.0.0-rc.0
- */
-export const task = (text: string): string => elide.middle(text.trim(), taskBytes, "the run record has the whole task")
 
 /**
  * The sentences a frame wrote that might be worth keeping: its prose outside

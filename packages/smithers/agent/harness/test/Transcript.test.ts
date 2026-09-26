@@ -232,6 +232,50 @@ describe("Transcript", () => {
     ])).toEqual([ModelRequest.Message.user("all summarized")])
   })
 
+  describe("marked compaction", () => {
+    const [first, second, third] = ["first", "second", "third"].map((text) => ModelRequest.Message.user(text))
+    const drained = entry(1, AgentEvent.eventType.steeringDrained, {
+      _tag: "steering-drained",
+      eventType: AgentEvent.eventType.steeringDrained,
+      messages: [first, second, third]
+    })
+    const compacted = (fields: Record<string, unknown>) =>
+      Result.getOrThrow(Transcript.projectStateResult([
+        drained,
+        entry(2, AgentEvent.eventType.compactionSettled, {
+          _tag: "compaction-settled",
+          eventType: AgentEvent.eventType.compactionSettled,
+          replacedPrefixDigest: "marked",
+          ...fields
+        })
+      ])).messages
+
+    it.each([
+      {
+        name: "summary and kept",
+        fields: { retainedMessageCount: 1, summary: ModelRequest.Message.user("squashed"), kept: [second] },
+        expected: [["summary", ModelRequest.Message.user("squashed")], ["transcript", second], ["steering", third]]
+      },
+      {
+        name: "kept only",
+        fields: { retainedMessageCount: 1, kept: [first] },
+        expected: [["transcript", first], ["steering", third]]
+      },
+      {
+        name: "summary only",
+        fields: { retainedMessageCount: 2, summary: ModelRequest.Message.user("squashed") },
+        expected: [["summary", ModelRequest.Message.user("squashed")], ["steering", second], ["steering", third]]
+      },
+      {
+        name: "a legacy entry without a boundary",
+        fields: { summary: ModelRequest.Message.user("legacy"), kept: [first] },
+        expected: [["summary", ModelRequest.Message.user("legacy")], ["transcript", first]]
+      }
+    ])("projects $name in place of the replaced prefix", ({ expected, fields }) => {
+      expect(compacted(fields).map(({ kind, message }) => [kind, message])).toEqual(expected)
+    })
+  })
+
   it("retains messages after a legacy summary when a later compaction supplies a boundary", () => {
     const entries = [...journal()]
     const recent = project(entries)[1]!

@@ -19,6 +19,7 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Option, Result } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
+import { unordered } from "../src/internal/TraceOrder.ts"
 
 const identity = new Cell.CallIdentity({
   session: "session-1",
@@ -182,7 +183,13 @@ describe("trace", () => {
       remembered: [0],
       latencyMs: 23,
       ...(present
-        ? { outdatedContext: 0, irrelevantContext: 0.8, steer, usage: { inputTokens: 7, outputTokens: 3 } }
+        ? {
+          outdatedContext: 0,
+          irrelevantContext: 0.8,
+          steer,
+          usage: { inputTokens: 7, outputTokens: 3 },
+          skillsCapped: true
+        }
         : {})
     }
     const event = new AgentEvent.SupervisorSettled({ eventType: "flows.harness.supervisor-settled.v1", ...payload })
@@ -256,10 +263,6 @@ describe("trace", () => {
             // — journaled for the same reason and read the same way.
             unmovedCap: 1,
             unresolvedCap: 1,
-            // Whether the supervisor's readings may nudge the run. Verdicts
-            // are journaled either way, so this is what tells a wave which
-            // runs' readings were ever put in front of the model.
-            supervisorSteer: false,
             calls: 64,
             memoryBytes: 134_217_728,
             steps: 1_000,
@@ -1659,5 +1662,372 @@ describe("the request and the decision behind a step", () => {
     expect(journaled.stateDigest).toBe(digestOf(evidence))
     expect(digestOf(journaled.questions)).toBe(journaled.questionsDigest)
     expect(digestOf(journaled.answers)).toBe(journaled.answersDigest)
+  })
+})
+
+describe("Jev receipts", () => {
+  const item = { kind: "flow", id: "auth", digest: "item-digest", p: 0.95 } as const
+  const receipts = [
+    [
+      new AgentEvent.DecisionUnjudged({
+        eventType: "flows.harness.decision-unjudged.v1",
+        scope: "run-1",
+        frame: 0,
+        classifier: "relevance/unnecessary",
+        reason: "timeout",
+        detail: "The gateway did not answer",
+        items: 3
+      }),
+      {
+        eventType: "control.agent.decision-unjudged",
+        payload: {
+          scope: "run-1",
+          frame: 0,
+          classifier: "relevance/unnecessary",
+          reason: "timeout",
+          detail: "The gateway did not answer",
+          items: 3
+        }
+      }
+    ],
+    [
+      new AgentEvent.RelevanceSettled({
+        eventType: "flows.harness.relevance-settled.v1",
+        scope: "run-1",
+        frame: 0,
+        source: "run",
+        withholdAt: 0.9,
+        kept: [{ ...item, id: "session", p: 0.1 }],
+        withheld: [item],
+        latencyMs: 80,
+        usage: { inputTokens: 200, outputTokens: 2 }
+      }),
+      {
+        eventType: "control.agent.relevance-settled",
+        payload: {
+          scope: "run-1",
+          frame: 0,
+          source: "run",
+          withholdAt: 0.9,
+          kept: [{ ...item, id: "session", p: 0.1 }],
+          withheld: [item],
+          latencyMs: 80,
+          usage: { inputTokens: 200, outputTokens: 2 }
+        }
+      }
+    ],
+    [
+      new AgentEvent.RelevanceSettled({
+        eventType: "flows.harness.relevance-settled.v1",
+        scope: "run-1",
+        frame: 2,
+        source: "supervisor",
+        withholdAt: 0.9,
+        kept: [],
+        withheld: [],
+        latencyMs: 0
+      }),
+      {
+        eventType: "control.agent.relevance-settled",
+        payload: {
+          scope: "run-1",
+          frame: 2,
+          source: "supervisor",
+          withholdAt: 0.9,
+          kept: [],
+          withheld: [],
+          latencyMs: 0
+        }
+      }
+    ],
+    [
+      new AgentEvent.RelevanceRestored({
+        eventType: "flows.harness.relevance-restored.v1",
+        scope: "run-1",
+        frame: 4,
+        flow: "auth"
+      }),
+      { eventType: "control.agent.relevance-restored", payload: { scope: "run-1", frame: 4, flow: "auth" } }
+    ],
+    [
+      new AgentEvent.SeatRouted({
+        eventType: "flows.harness.seat-routed.v1",
+        scope: "run-1",
+        declared: "auto",
+        seat: "auth",
+        modelId: "model-a",
+        variant: "terse",
+        candidates: ["auth", "session"],
+        decidedBy: "jev",
+        confidence: 0.7,
+        latencyMs: 60
+      }),
+      {
+        eventType: "control.agent.seat-routed",
+        payload: {
+          scope: "run-1",
+          declared: "auto",
+          seat: "auth",
+          modelId: "model-a",
+          variant: "terse",
+          candidates: ["auth", "session"],
+          decidedBy: "jev",
+          confidence: 0.7,
+          latencyMs: 60
+        }
+      }
+    ],
+    [
+      new AgentEvent.SeatRouted({
+        eventType: "flows.harness.seat-routed.v1",
+        scope: "run-1",
+        declared: "auto",
+        seat: "only",
+        modelId: "model-b",
+        variant: null,
+        candidates: ["only"],
+        decidedBy: "only",
+        latencyMs: 0
+      }),
+      {
+        eventType: "control.agent.seat-routed",
+        payload: {
+          scope: "run-1",
+          declared: "auto",
+          seat: "only",
+          modelId: "model-b",
+          variant: null,
+          candidates: ["only"],
+          decidedBy: "only",
+          latencyMs: 0
+        }
+      }
+    ]
+  ] as const
+
+  it.each(receipts)("projects %s with every name as a value", (event, expected) => {
+    const projected = AgentSession.trace(event)
+    expect(projected).toEqual(expected)
+    // `auth` is a name the journal redacts under as a key; as a value it survives.
+    const payload = JSON.parse(JSON.stringify(projected!.payload)) as Record<string, unknown>
+    expect(Redaction.make()(payload)).toEqual(payload)
+  })
+
+  it("takes no ordinal for any Jev receipt", () => {
+    for (const [event] of receipts) {
+      expect(unordered.has(AgentSession.trace(event)!.eventType)).toBe(true)
+    }
+  })
+
+  it("projects the Jev fields of the events that gained them", () => {
+    const monitor = {
+      id: "mood/frustrated",
+      kind: "mood",
+      at: 0.8,
+      consecutive: 2,
+      cooldownFrames: 5,
+      limit: 3
+    } as const
+    expect(
+      AgentSession.trace(
+        new AgentEvent.DisciplineArmed({
+          eventType: "flows.harness.discipline-armed.v1",
+          readOnlyCap: 1,
+          maxFrames: 2,
+          approvalChannel: false,
+          modelCallMs: 0,
+          repeatCap: 0,
+          narrowingCap: 0,
+          unmovedCap: 0,
+          unresolvedCap: 0,
+          judged: true,
+          relevance: { withholdAt: 0.9, pinned: ["jev"] },
+          monitors: [monitor],
+          stance: "careful"
+        })
+      )!.payload
+    ).toMatchObject({
+      judged: true,
+      relevance: { withholdAt: 0.9, pinned: ["jev"] },
+      monitors: [monitor],
+      stance: "careful"
+    })
+
+    const reading = AgentSession.trace(
+      new AgentEvent.SupervisorSettled({
+        eventType: "flows.harness.supervisor-settled.v1",
+        scope: "run-1",
+        frame: 2,
+        thrashing: 0,
+        onTarget: 1,
+        suspect: 0,
+        frustrated: "none",
+        anxious: "none",
+        scared: "none",
+        confused: "none",
+        confident: "strong",
+        needsHelp: "none",
+        crossed: false,
+        nudged: false,
+        remembered: [],
+        latencyMs: 5,
+        monitors: [{ id: "mood/frustrated", kind: "mood", p: 0.2, crossed: false }]
+      })
+    )!.payload as Record<string, unknown>
+    expect(Object.hasOwn(reading, "inserted")).toBe(false)
+    expect(reading.monitors).toEqual([{ id: "mood/frustrated", kind: "mood", p: 0.2, crossed: false }])
+
+    expect(
+      AgentSession.trace(
+        new AgentEvent.CompactionSettled({
+          eventType: "flows.harness.compaction-settled.v1",
+          replacedPrefixDigest: "prefix",
+          retainedMessageCount: 1,
+          kept: [ModelRequest.Message.user("kept")],
+          marks: [
+            { digest: "a", mark: "keep" },
+            { digest: "b", mark: "squash" },
+            { digest: "c", mark: "remove" },
+            { digest: "d", mark: "remove" }
+          ],
+          removedTokens: 900
+        })
+      )
+    ).toEqual({
+      eventType: "control.agent.compaction-settled",
+      payload: { replacedPrefixDigest: "prefix", marks: { kept: 1, squashed: 1, removed: 2 }, removedTokens: 900 }
+    })
+    expect(
+      AgentSession.trace(
+        new AgentEvent.CompactionSettled({
+          eventType: "flows.harness.compaction-settled.v1",
+          replacedPrefixDigest: "prefix",
+          unaligned: true
+        })
+      )
+    ).toEqual({
+      eventType: "control.agent.compaction-settled",
+      payload: { replacedPrefixDigest: "prefix", unaligned: true }
+    })
+
+    expect(
+      AgentSession.trace(
+        new AgentEvent.SteeringDrained({
+          eventType: "flows.harness.steering-drained.v1",
+          messages: [],
+          supervisor: [ModelRequest.Message.user("Slow down.")],
+          monitor: "mood/frustrated",
+          suppressed: [{ id: "lint/any", reason: "cooldown" }],
+          memory: ["row-1"]
+        })
+      )!.payload
+    ).toEqual({
+      messages: [],
+      supervisor: [{ role: "user", text: "Slow down." }],
+      monitor: "mood/frustrated",
+      suppressed: [{ id: "lint/any", reason: "cooldown" }],
+      memory: ["row-1"]
+    })
+  })
+
+  it("keeps a pre-Jev record on the identity it was journaled under", () => {
+    const armed = {
+      eventType: "flows.harness.discipline-armed.v1",
+      readOnlyCap: 1,
+      maxFrames: 2,
+      approvalChannel: false,
+      modelCallMs: 0,
+      repeatCap: 0,
+      narrowingCap: 0,
+      unmovedCap: 0,
+      unresolvedCap: 0
+    } as const
+    const decision = {
+      eventType: "flows.harness.decision-settled.v1",
+      scope: "run-1",
+      frame: 4,
+      classifier: "completion/claim",
+      digest: "classifier-digest",
+      state: { claim: "done" },
+      questions: { done: Evaluator.BooleanQuestion.of({ instructions: "Done?" }) },
+      answers: { done: { kind: "boolean", p: 0.9 } },
+      latencyMs: 12,
+      acted: false,
+      decidedBy: "jev"
+    } as const
+    const reading = {
+      eventType: "flows.harness.supervisor-settled.v1",
+      scope: "run-1",
+      frame: 2,
+      thrashing: 0,
+      onTarget: 1,
+      suspect: 0,
+      frustrated: "none",
+      anxious: "none",
+      scared: "none",
+      confused: "none",
+      confident: "strong",
+      needsHelp: "none",
+      crossed: false,
+      nudged: false,
+      remembered: [],
+      latencyMs: 5
+    } as const
+    const pairs: ReadonlyArray<readonly [AgentEvent.AgentEvent, AgentEvent.AgentEvent]> = [
+      [
+        new AgentEvent.DisciplineArmed(armed),
+        new AgentEvent.DisciplineArmed({
+          ...armed,
+          judged: true,
+          relevance: { withholdAt: 0.9, pinned: [] },
+          monitors: [],
+          stance: "paranoid"
+        })
+      ],
+      [
+        new AgentEvent.DecisionSettled(decision),
+        new AgentEvent.DecisionSettled({ ...decision, usage: { inputTokens: 1, outputTokens: 1 } })
+      ],
+      [
+        new AgentEvent.CompactionSettled({
+          eventType: "flows.harness.compaction-settled.v1",
+          replacedPrefixDigest: "prefix",
+          summary: ModelRequest.Message.user("summary")
+        }),
+        new AgentEvent.CompactionSettled({
+          eventType: "flows.harness.compaction-settled.v1",
+          replacedPrefixDigest: "prefix",
+          marks: [{ digest: "a", mark: "remove" }],
+          removedTokens: 10
+        })
+      ],
+      [
+        new AgentEvent.SupervisorSettled({ ...reading, inserted: [0] }),
+        new AgentEvent.SupervisorSettled({ ...reading, monitors: [{ id: "m", kind: "lint", p: 1, crossed: true }] })
+      ],
+      [
+        new AgentEvent.SteeringDrained({ eventType: "flows.harness.steering-drained.v1", messages: [] }),
+        new AgentEvent.SteeringDrained({
+          eventType: "flows.harness.steering-drained.v1",
+          messages: [],
+          monitor: "mood/anxious",
+          suppressed: [],
+          memory: []
+        })
+      ]
+    ]
+    const identity = (event: AgentEvent.AgentEvent) => {
+      const projected = AgentSession.trace(event)!
+      return AgentSession.traceIdentity(
+        1,
+        0,
+        cell.digest,
+        projected.eventType,
+        JSON.parse(JSON.stringify(projected.payload)) as Record<string, unknown>
+      )
+    }
+    for (const [before, after] of pairs) {
+      expect(identity(after)).toBe(identity(before))
+    }
   })
 })

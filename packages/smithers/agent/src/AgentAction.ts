@@ -50,6 +50,7 @@ import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Judgement from "@smthrs/harness/Judgement"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import type * as Steering from "@smthrs/harness/Steering"
 import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
@@ -73,7 +74,7 @@ import * as Option from "effect/Option"
 import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { Agent } from "./Agent.ts"
+import { Agent, type Options as AgentOptions } from "./Agent.ts"
 import * as Budget from "./Budget.ts"
 import { EventSink } from "./EventSink.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
@@ -82,6 +83,7 @@ import { failureJson } from "./internal/FailureJson.ts"
 import * as QuotaPolicy from "./QuotaPolicy.ts"
 import * as Seat from "./Seat.ts"
 import { contextWindowResolver, SeatResolver } from "./SeatResolver.ts"
+import * as SeatRouter from "./SeatRouter.ts"
 
 /**
  * The host composition every model-backed action in a run shares.
@@ -155,6 +157,18 @@ export interface Host {
    * with a full allowance, because the correction is a different question.
    */
   readonly maxQuotaParks?: number | undefined
+  /**
+   * Whether the host's `Evaluator` is a real judge. Forwarded to each step's
+   * `Agent.Options.judged`, so every subagent is armed on its own session.
+   */
+  readonly judged?: boolean | undefined
+  /**
+   * What each step's supervisor may do: its memory bank, whether it writes,
+   * its monitors and its stance. Forwarded to each step's
+   * `Agent.Options.supervisor`, so a subagent recalls from the run's bank and
+   * is taught the operator's stance.
+   */
+  readonly supervisor?: AgentOptions["supervisor"]
 }
 
 /**
@@ -198,7 +212,8 @@ export const layerHost = (host: Host): Layer.Layer<Host> => Layer.succeed(Host)(
  *
  * `StructuredOutputFailure` is the one an author handles: the model answered
  * and the answer did not fit the declared schema after its correction budget.
- * `SeatUnresolved` is the host having no model for the declared seat.
+ * `SeatUnresolved` is the host having no model for the declared seat, and
+ * `SeatUnrouted` is Jev not picking one for a step that declared `auto`.
  * `BudgetExceeded` is the run having spent what it was approved for, reported
  * at the step that would have overspent. `Budget.Skipped` is every later model
  * call in a run whose budget declared `skip-remaining`: a verdict no retry can
@@ -211,6 +226,7 @@ export const layerHost = (host: Host): Layer.Layer<Host> => Layer.succeed(Host)(
 export const AgentFailure = Schema.Union([
   StructuredOutput.StructuredOutputFailure,
   Seat.SeatUnresolved,
+  Seat.SeatUnrouted,
   Budget.BudgetExceeded,
   Budget.Skipped,
   HarnessError,
@@ -286,6 +302,11 @@ export interface Options<
    * neither is a fact the declaration can know. It changes nothing else — the
    * answer is still one opaque seat id the host's resolver owns, and a
    * declaration that writes a constant is the same declaration it was.
+   *
+   * `"auto"` ({@link Seat.auto}), written or returned, asks Jev through
+   * {@link module:SeatRouter} once per execution for the seat and the system
+   * variant, so each subagent routes on its own prompt. Every correction and
+   * the repair run on the routed seat unless {@link Repair.seat} names one.
    */
   readonly seat: string | ((payload: PayloadSchemaOf<Payload>["Type"]) => string)
   /** The task, built from the decoded payload. */
@@ -489,6 +510,38 @@ const encodableFailure = (failure: AgentFailure): AgentFailure => {
 }
 
 /**
+ * Routes one execution of a step that declared {@link Seat.auto}.
+ *
+ * The decision is keyed by the execution and the dispatch, so every rung of
+ * the step reuses it. A composition that binds no catalog fails the step as
+ * `unconfigured`, and a recorded variant the catalog no longer offers fails it
+ * rather than running without the teaching it was picked for.
+ */
+const routeSeat = (
+  tag: string,
+  task: string,
+  executionId: string,
+  stepId: string | undefined
+) =>
+  Effect.gen(function*() {
+    const unrouted = (message: string) => new Seat.SeatUnrouted({ seat: Seat.auto, reason: "unconfigured", message })
+    const catalog = yield* Effect.serviceOption(SeatRouter.Catalog)
+    if (Option.isNone(catalog)) return yield* unrouted(`The agent action "${tag}" has no seat catalog to route in`)
+    const decision = yield* SeatRouter.durable(
+      {
+        declared: Seat.auto,
+        state: { task: Judgement.task(task), flow: tag, description: tag, capabilities: [] }
+      },
+      { executionId, purpose: stepId ?? tag }
+    ).pipe(Effect.provideService(SeatRouter.Catalog, catalog.value))
+    const variant = SeatRouter.variantText(catalog.value.variants, decision.variant)
+    if (variant === undefined) {
+      return yield* unrouted(`The seat catalog no longer offers the variant "${decision.variant}"`)
+    }
+    return { decision, variant }
+  })
+
+/**
  * Declares a model-backed action and ships its implementation.
  *
  * The returned value is used exactly like any other declared action — `.call()`
@@ -555,18 +608,42 @@ export const make = <
           message: "Agent monitoring requires a durable dispatch identity"
         })
       }
+      const task = options.prompt(payload)
       // One resolution per execution: the declared seat may be a function of
       // the payload, and every later rung compares against the id it chose.
-      const seatId = typeof options.seat === "function" ? options.seat(payload) : options.seat
+      const declaredSeat = typeof options.seat === "function" ? options.seat(payload) : options.seat
+      // `auto` asks Jev once per execution, as a sealed step, so each subagent
+      // routes on its own prompt and a replay is served the seat it ran on.
+      const routed = declaredSeat === Seat.auto ? yield* routeSeat(tag, task, instance.executionId, stepId) : undefined
+      const seatId = routed?.decision.seat ?? declaredSeat
       const seat = yield* seats.resolve(seatId)
+      /** The trace coordinates of one ask, when the dispatch has an identity. */
+      const stepOf = (ask: StepFact.Step["ask"], retry: number, scope: string): StepFact.Step | undefined =>
+        stepId === undefined ? undefined : {
+          stepId,
+          executionId: instance.executionId,
+          action: tag,
+          attempt: dispatchAttempt,
+          ask,
+          retry,
+          scope
+        }
+      if (routed !== undefined && Option.isSome(sink)) {
+        // The routing receipt reaches the sink ahead of the first ask's events.
+        const step = stepOf(0, yield* Action.CurrentAttempt, sessionRoot)
+        for (const event of SeatRouter.events(routed.decision, { scope: sessionRoot, modelId: seat.modelId })) {
+          yield* sink.value.emit(event, step)
+        }
+      }
       const quota = yield* QuotaPolicy.current
       const maxParks = host.maxQuotaParks ?? QuotaPolicy.defaultMaxParks
-      const task = options.prompt(payload)
       // The declaration decides, the composition supplies the default, and one
       // is the floor. Zero is a declared decision, so `??` and not `||`.
       const limit = options.corrections ?? host.defaultCorrections ?? 1
+      const variant = routed?.variant ?? []
       const system = [
         ...(host.system ?? []),
+        ...variant,
         ...(options.system ?? []),
         StructuredOutput.instructions(options.output)
       ]
@@ -685,16 +762,7 @@ export const make = <
         waitOutQuota(
           session,
           Effect.gen(function*() {
-            const retry = yield* Action.CurrentAttempt
-            const step: StepFact.Step | undefined = stepId === undefined ? undefined : {
-              stepId,
-              executionId: instance.executionId,
-              action: tag,
-              attempt: dispatchAttempt,
-              ask: correction ?? "repair",
-              retry,
-              scope: session
-            }
+            const step = stepOf(correction ?? "repair", yield* Action.CurrentAttempt, session)
             const observe = (event: AgentEvent.AgentEvent): Effect.Effect<void> =>
               Option.isNone(sink) ? Effect.void : sink.value.emit(event, step)
             const atSource = Option.isSome(sink) && sink.value.atSource === true
@@ -720,7 +788,9 @@ export const make = <
               maxFrames: options.maxFrames ?? host.maxFrames,
               readOnlyCap: options.readOnlyCap,
               claimCap: host.claimCap,
-              serverTools: host.serverTools
+              serverTools: host.serverTools,
+              judged: host.judged,
+              supervisor: host.supervisor
             }).pipe(
               Stream.provideService(AgentEvent.Observer, atSource ? observe : () => Effect.void),
               (stream) => agentOutcome(stream, atSource ? () => Effect.void : observe)
@@ -766,6 +836,7 @@ export const make = <
           declaredRepair.prompt(failure, payload),
           declaredRepair.system === undefined ? system : [
             ...(host.system ?? []),
+            ...variant,
             ...declaredRepair.system,
             StructuredOutput.instructions(options.output)
           ],

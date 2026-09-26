@@ -49,6 +49,7 @@ import * as ContextWindow from "@smthrs/harness/ContextWindow"
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Monitor from "@smthrs/harness/Monitor"
 import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
@@ -57,7 +58,7 @@ import * as Redaction from "@smthrs/journal/Redaction"
 import * as MemoryError from "@smthrs/memory/MemoryError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
-import type * as MemorySource from "@smthrs/memory/Source"
+import * as MemorySource from "@smthrs/memory/Source"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
@@ -88,6 +89,7 @@ import * as Checkpointed from "./Checkpointed.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
 import * as QuotaPolicy from "./QuotaPolicy.ts"
 import type * as Seat from "./Seat.ts"
+import * as StandardFlows from "./StandardFlows.ts"
 
 /**
  * Everything one assembled cell run declares.
@@ -139,11 +141,14 @@ export interface Options {
   /**
    * One explicitly selected memory snapshot.
    *
-   * The host obtains this value from `memory/Source.declaredText`; omitting it
-   * injects no memory. The composition never reads a memory store or worldview
-   * on its own.
+   * The host obtains this value from `memory/Source.declared`, which reads
+   * `Source.readRows` and freezes the rows with the snapshot recorder;
+   * omitting it injects no memory. The opening context renders every row
+   * with `Source.render`, and when {@link judged} the run-start relevance
+   * reading judges each row beside the catalog and the instructions. The
+   * composition never reads a memory store or worldview on its own.
    */
-  readonly memory?: MemorySource.DeclaredText | undefined
+  readonly memory?: MemorySource.Declared | undefined
   /**
    * Ordered executable-flow sources composed into the run's catalog.
    *
@@ -263,20 +268,43 @@ export interface Options {
    * What the supervisor may do with its readings; see `Supervisor`.
    *
    * Verdicts are journaled whenever an `Evaluator` is bound, whatever this
-   * says. `steer` arms nudges and memory insertion, and is off until the
-   * offline replay has measured their precision. `remember` writes accepted
-   * sentences to the bound memory store, redacted the way the journal
-   * redacts; it is off unless the host opts in, and a host with no store
-   * bound writes nothing. `namespace` is the memory bank read from and
+   * says; {@link judged} arms nudges and memory insertion. `remember` writes
+   * accepted sentences to the bound memory store, redacted the way the
+   * journal redacts; it is off unless the host opts in, and a host with no
+   * store bound writes nothing. `namespace` is the memory bank read from and
    * written to, one per project or repository. With no namespace the
    * supervisor reads and writes no memory at all: there is no global bank a
-   * run of one repository could share with another's.
+   * run of one repository could share with another's. `monitors` follow
+   * `Monitor.defaults()` into the `cellMonitors` plugin hook. `stance` is the
+   * static stance a {@link judged} run is taught, `careful` when omitted; an
+   * unjudged run is taught none.
    */
   readonly supervisor?: {
-    readonly steer?: boolean | undefined
     readonly remember?: boolean | undefined
     readonly namespace?: string | undefined
+    readonly monitors?: ReadonlyArray<Monitor.Monitor> | undefined
+    readonly stance?: "careful" | "paranoid" | undefined
   } | undefined
+  /**
+   * Whether the host's `Evaluator` is a real judge, which arms Jev's features
+   * on this run; see `CellTurn.Input.judged`. Omitted is false.
+   */
+  readonly judged?: boolean | undefined
+  /**
+   * Human-provided instruction files, such as a repository's `AGENTS.md`.
+   * They are shown after `system`; a judged run drops the chunks Jev is
+   * confident the task does not need. See `CellTurn.Input.instructions`.
+   *
+   * @since 1.0.0-rc.0
+   */
+  readonly instructions?: ReadonlyArray<{ readonly path: string; readonly text: string }> | undefined
+  /**
+   * Names of `flows` sources whose flows a judged run never withholds, beside
+   * `StandardFlows.coreSources`.
+   *
+   * @since 1.0.0-rc.0
+   */
+  readonly pinnedSources?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -348,6 +376,23 @@ const supervisorMemory = (options: Options): Effect.Effect<Supervisor.Memory> =>
   })
 
 /**
+ * The static stance a run is taught: the chosen one, `careful` by default,
+ * and only when judged.
+ */
+const stanceOf = (options: Options): "careful" | "paranoid" | undefined =>
+  options.judged === true ? options.supervisor?.stance ?? "careful" : undefined
+
+/**
+ * The opening memory the run-start relevance reading judges. The rows it is
+ * handed back are rows of `declared`, so they render as the host's rows.
+ */
+const openingMemory = (declared: MemorySource.Declared): CellTurn.Memory => ({
+  rows: declared.rows,
+  digest: declared.digest,
+  render: (kept) => MemorySource.render(declared.rows.filter((row) => kept.includes(row)))
+})
+
+/**
  * Assembles the initial context window for a run.
  *
  * The cell contract and the callable-flow catalog are added by
@@ -369,13 +414,12 @@ const opening = (
     zone: "prefix",
     content: [ModelRequest.SystemPart.make({ text })]
   }))
-  if (options.memory !== undefined && options.memory.text.length > 0) {
-    declared.push({
-      kind: "instructions",
-      zone: "prefix",
-      declaredDigest: options.memory.digest,
-      content: [ModelRequest.SystemPart.make({ text: options.memory.text })]
-    })
+  if (options.instructions !== undefined && options.instructions.length > 0) {
+    declared.push(CellTurn.instructionsSegment(options.instructions, new Set()))
+  }
+  const memory = MemorySource.render(options.memory?.rows ?? [])
+  if (options.memory !== undefined && memory.length > 0) {
+    declared.push(CellTurn.memorySegment(memory, options.memory.digest))
   }
   return CellTurn.teach(
     ContextWindow.make({
@@ -402,7 +446,9 @@ const opening = (
         }
       ]
     }),
-    flows
+    flows,
+    undefined,
+    stanceOf(options)
   )
 }
 
@@ -712,9 +758,30 @@ const runProductionUnmeasured: Service["run"] = (options) =>
       return Stream.unwrap(
         Effect.gen(function*() {
           const discovered = yield* CellPlugin.registry(kernel.plugins, options.registry)
-          const composed = yield* FlowBinding.catalog(options.flows ?? [])
+          // Each source is resolved once: its bindings are both the catalog
+          // and, for a pinned source, the names the relevance reading skips.
+          const sources = yield* Effect.forEach(
+            options.flows ?? [],
+            (source) => Effect.map(source.bindings(), (bindings) => ({ name: source.name, bindings }))
+          )
+          const composed = yield* Effect.fromResult(
+            FlowBinding.catalogResult(sources.flatMap((source) => source.bindings))
+          )
+          const pinnedSources = new Set([...StandardFlows.coreSources, ...(options.pinnedSources ?? [])])
+          const pinned = sources.filter((source) => pinnedSources.has(source.name))
+            .flatMap((source) => source.bindings.map((binding) => binding.descriptor.name))
           const contributed = yield* CellPlugin.flows(kernel.plugins, composed.entries)
           const catalog = yield* Effect.fromResult(FlowBinding.catalogResult(contributed))
+          const monitors = yield* CellPlugin.monitors(kernel.plugins, [
+            ...Monitor.defaults(),
+            ...(options.supervisor?.monitors ?? [])
+          ]).pipe(
+            Effect.flatMap(Monitor.validate),
+            Effect.catchTag(
+              "@smthrs/harness/Monitor/InvalidMonitor",
+              (cause) => Effect.fail(new HarnessError({ code: "assembly_failed", message: cause.message, cause }))
+            )
+          )
           // The controller journals a fresh visible snapshot at each frame.
           // Call resolution still verifies the declaration digest against this
           // registry before executing, so a mid-frame change is refused.
@@ -792,10 +859,13 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             ),
             limits: options.limits,
             contextWindowTokensFor: options.contextWindowTokensFor,
-            supervisor: {
-              steer: options.supervisor?.steer ?? false,
-              remember: options.supervisor?.remember ?? false
-            }
+            supervisor: { remember: options.supervisor?.remember ?? false },
+            judged: options.judged,
+            stance: stanceOf(options),
+            instructions: options.instructions,
+            pinned,
+            monitors,
+            ...(options.memory === undefined ? {} : { memory: openingMemory(options.memory) })
           }).pipe(
             Stream.provideService(EngineLike.EngineLike, withRequestPlugins(port, kernel.plugins)),
             Stream.provideService(Supervisor.Memory, memory)

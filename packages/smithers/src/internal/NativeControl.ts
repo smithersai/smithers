@@ -7,6 +7,7 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as AgentSession from "@smthrs/agent/AgentSession"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import type * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
@@ -88,6 +89,7 @@ import * as ModuleAuthority from "./ModuleAuthority.ts"
 import {
   cellLimits,
   checkpointStore,
+  layerSeatCatalog,
   layerSeatResolver,
   sealedContainer,
   testFlows,
@@ -230,13 +232,25 @@ const secureSqliteFiles = (file: string) =>
     }
   }).pipe(Effect.orDie)
 
+/**
+ * The seats a native host resolves, and the catalog Jev routes an `auto` run
+ * over: the aliases whose provider the same environment holds a credential for.
+ */
+const nativeSeats = (environment: Readonly<Record<string, string | undefined>>) =>
+  Layer.merge(layerSeatResolver(environment), layerSeatCatalog(environment))
+
 /** Binds one control composition to the already-existing Node or Bun services.
+ *
+ * `seats` provides the `SeatResolver`, and a `SeatRouter.Catalog` beside it
+ * when the host routes undeclared and `auto` seats.
  * @since 1.0.0
  * @private
  */
 export const make = (
   native: Platform,
-  seats = layerSeatResolver,
+  seats: (
+    environment: Readonly<Record<string, string | undefined>>
+  ) => Layer.Layer<SeatResolver.SeatResolver, never, RequestExecutor.RequestExecutor> = nativeSeats,
   decorateNotifications?: LocalControl.NotificationDecorator
 ) => {
   /**
@@ -952,7 +966,7 @@ export const make = (
         const sources = [
           ...(sealedTo === undefined ? [StandardFlows.filesystem(filesystemServices, nativeSearch)] : []),
           StandardFlows.shell(shellServices, container, { sealedTo }),
-          StandardFlows.memory(memoryServices),
+          StandardFlows.memory(memoryServices, judge),
           // The same judge the completion brake and `test` use, offered to the
           // cell directly. A host that starts runs always holds a live judge
           // (`evaluatorFor` refuses to boot without one), so the flow is never
@@ -961,10 +975,18 @@ export const make = (
           ...testFlows(Context.merge(shellServices, judge), container, runner),
           ...mcp
         ]
+        // The judge `evaluatorFor` requires arms nudges and memory insertion
+        // in the run and in every subagent step; memory writes wait for a
+        // memory database of the operator's own.
+        const supervisorOptions = SupervisorMemory.options(environment, workspaceRoot)
         const actionHost = AgentAction.makeHost({
           registry: yield* Registry.Registry,
           limits: cellLimits,
-          flows: sources
+          flows: sources,
+          // A host that starts runs holds a real judge: `evaluatorFor`
+          // refuses to boot one without it.
+          judged: true,
+          supervisor: supervisorOptions
         })
         const catalogReady = yield* Deferred.make<Executable.Catalog>()
         const authority = modules === undefined
@@ -1136,10 +1158,8 @@ export const make = (
           budget: Budget.layerFromEnvelope,
           orderTerminalStatus: supervisor.awaitSettled,
           approvalChannel: options.approvalChannel,
-          // Verdicts are journaled whenever a judge is bound; only the nudge
-          // and memory insertion wait for `SMITHERS_SUPERVISOR_STEER=1`, and
-          // memory writes for a memory database of the operator's own.
-          supervisor: SupervisorMemory.options(environment, workspaceRoot)
+          supervisor: supervisorOptions,
+          judged: true
         })
         const executor = yield* (catalog === undefined ? session : session.pipe(
           Effect.provideService(Executable.Catalog, catalog)
@@ -1172,6 +1192,8 @@ export const make = (
         // so a `test` call fails saying so and a run fails at its first
         // completion, rather than either reporting something nothing judged.
         evaluator,
+        // The seat resolver, and the catalog an undeclared or `auto` seat is
+        // routed over at run start.
         seats(environment).pipe(Layer.provide(requestExecutor))
       ])
     )

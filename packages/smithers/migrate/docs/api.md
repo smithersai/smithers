@@ -1363,23 +1363,23 @@ They need the optional `@smthrs/*` dependencies a default install brings.
 `@smthrs/migrate/flow/Transform`. The model-backed rewrite and the host it runs
 inside.
 
-| Export                      | Signature                                                                           | What it is                                                                 |
-| --------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `action`                    | `AgentAction.AgentAction<"smithers/migrate-v1/Transform", ...>`                     | The rewrite step.                                                          |
-| `layer`                     | `Layer`                                                                             | Its implementation.                                                        |
-| `captureAction`             | `Action.Declared<"smithers/migrate-v1/Capture", ...>`                               | The step that reads a unit's sources at its checkpoint.                    |
-| `captureLayer`              | `Layer`                                                                             | Its implementation.                                                        |
-| `outline`                   | `(result, unit, options, expectFlows?) => UnitOutline`                              | One unit as the flow's payload carries it.                                 |
-| `capture`                   | `(outlined, checkpoint, current?) => Effect<Contract.UnitBrief, MigrateError, ...>` | The brief built from captured source.                                      |
-| `UnitOutline`, `UnitResult` | `Schema.Struct`                                                                     | What a unit is asked to do, and what it answered.                          |
-| `runStatePaths`             | `(result: Scan.ScanResult) => ReadonlyArray<string>`                                | The paths the grant rules deny.                                            |
-| `approvedPackages`          | `ReadonlyArray<string>`                                                             | The only packages a rewrite may install.                                   |
-| `seat`                      | `"migrate"`                                                                         | The declared seat. No model id is hard coded anywhere.                     |
-| `maxFrames`                 | `60`                                                                                | The frame cap for one unit's rewrite.                                      |
-| `limits`                    | `Sandbox.Limits`                                                                    | The sandbox budget it runs under.                                          |
-| `envelope`                  | `() => ReadonlyArray<string>`                                                       | The capability envelope the bound flows need.                              |
-| `bindings`, `hostLayer`     | `(options) => ...`                                                                  | The flows the rewrite may call, and the host that binds them.              |
-| `mappingFlow`, `verifyFlow` | `CoreFlow.Flow`                                                                     | The two capabilities the rewrite reaches: mapping lookup and verification. |
+| Export                      | Signature                                                                           | What it is                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `action`                    | `AgentAction.AgentAction<"smithers/migrate-v1/Transform", ...>`                     | The rewrite step.                                                               |
+| `layer`                     | `Layer`                                                                             | Its implementation.                                                             |
+| `captureAction`             | `Action.Declared<"smithers/migrate-v1/Capture", ...>`                               | The step that reads a unit's sources at its checkpoint.                         |
+| `captureLayer`              | `Layer`                                                                             | Its implementation.                                                             |
+| `outline`                   | `(result, unit, options, expectFlows?) => UnitOutline`                              | One unit as the flow's payload carries it.                                      |
+| `capture`                   | `(outlined, checkpoint, current?) => Effect<Contract.UnitBrief, MigrateError, ...>` | The brief built from captured source.                                           |
+| `UnitOutline`, `UnitResult` | `Schema.Struct`                                                                     | What a unit is asked to do, and what it answered.                               |
+| `runStatePaths`             | `(result: Scan.ScanResult) => ReadonlyArray<string>`                                | The paths the grant rules deny.                                                 |
+| `approvedPackages`          | `ReadonlyArray<string>`                                                             | The only packages a rewrite may install.                                        |
+| `seat`                      | `"migrate"`                                                                         | The declared seat. No model id is hard coded anywhere.                          |
+| `maxFrames`                 | `60`                                                                                | The frame cap for one unit's rewrite.                                           |
+| `limits`                    | `Sandbox.Limits`                                                                    | The sandbox budget it runs under.                                               |
+| `envelope`                  | `() => ReadonlyArray<string>`                                                       | The capability envelope the bound flows need.                                   |
+| `bindings`, `hostLayer`     | `(options) => ...`                                                                  | The flows the rewrite may call, and the judged host that binds them with `jev`. |
+| `mappingFlow`, `verifyFlow` | `CoreFlow.Flow`                                                                     | The two capabilities the rewrite reaches: mapping lookup and verification.      |
 
 ### Repair
 

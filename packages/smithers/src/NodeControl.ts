@@ -47,6 +47,7 @@ import type { EngineDurable, ModuleRegistration } from "./internal/NativeControl
 import * as CommandStatus from "./internal/CommandStatus.ts"
 
 import * as NodeWebSocket from "./internal/NodeWebSocket.ts"
+import * as SupervisorMemory from "./internal/SupervisorMemory.ts"
 import * as Output from "./Output.ts"
 import * as Project from "./Project.ts"
 import * as Serve from "./Serve.ts"
@@ -234,7 +235,15 @@ const websocketLayer = (remote: string, credential: string | undefined) => {
 }
 
 export type { EngineDurable, ModuleRegistration } from "./internal/NativeControl.ts"
-export { checkpointStore, layerSeatResolver, seatResolver, testFlows, testRunner } from "./internal/NativeEquipment.ts"
+export {
+  checkpointStore,
+  layerSeatCatalog,
+  layerSeatResolver,
+  seatCandidates,
+  seatResolver,
+  testFlows,
+  testRunner
+} from "./internal/NativeEquipment.ts"
 
 export {
   environmentDispatcher,
@@ -242,6 +251,16 @@ export {
   layerRebuildableRequestExecutor,
   rebuildableTransport
 } from "./internal/NodeControlHost.ts"
+
+/**
+ * The static stance a judged run on this host is taught:
+ * `SMITHERS_SUPERVISOR_STANCE`, `careful` when unset. Any other value throws
+ * a `UsageError` naming the variable, so a host refuses to start on it.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const supervisorStance = SupervisorMemory.stance
 
 /**
  * The flow sources a local CLI discovers: the project `flows/` directory, whose

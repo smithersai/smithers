@@ -16,6 +16,7 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
+import type * as Relevance from "@smthrs/harness/Relevance"
 import * as Supervisor from "@smthrs/harness/Supervisor"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -31,6 +32,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
+import * as CliError from "../src/CliError.ts"
 import { platform } from "../src/internal/NodeControlHost.ts"
 import * as SupervisorMemory from "../src/internal/SupervisorMemory.ts"
 
@@ -80,9 +82,17 @@ const cells = (prose: string, sources: ReadonlyArray<string>, held: Deferred.Def
   })
 }
 
-/** A judge that finishes every completion and accepts every memory candidate. */
-const judge = (snapshots: Array<Supervisor.Snapshot>) =>
+/**
+ * A judge that finishes every completion, accepts every memory candidate and
+ * keeps every recalled row, recording the rows relevance was asked about.
+ */
+const judge = (snapshots: Array<Supervisor.Snapshot>, recalled: Array<Relevance.Item>) =>
   Evaluator.layerScripted((request) => {
+    if (Object.hasOwn(request.questions, "unnecessary_0")) {
+      const items = (request.state as { readonly items: ReadonlyArray<Relevance.Item> }).items
+      recalled.push(...items)
+      return Object.fromEntries(items.map((_, index) => [`unnecessary_${index}`, { probability: 0.01 }]))
+    }
     if (!Object.hasOwn(request.questions, "thrashing")) {
       return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
     }
@@ -113,6 +123,7 @@ const agentRun = (input: {
   readonly memory: Layer.Layer<MemoryStore.MemoryStore | import("@smthrs/memory/Recall").Recall>
   readonly supervisor: Agent.Options["supervisor"]
   readonly snapshots: Array<Supervisor.Snapshot>
+  readonly recalled?: Array<Relevance.Item>
 }) =>
   Effect.gen(function*() {
     const engine = yield* FlowRuntime.FlowRuntime
@@ -144,7 +155,7 @@ const agentRun = (input: {
             ? Deferred.succeed(held, undefined)
             : Effect.void
         ),
-        Effect.provide(Layer.merge(Agent.layerDefaults, judge(input.snapshots)))
+        Effect.provide(Layer.merge(Agent.layerDefaults, judge(input.snapshots, input.recalled ?? [])))
       )
     }).pipe(
       Effect.provide(Agent.layer),
@@ -182,15 +193,16 @@ describe("SupervisorMemory", () => {
     await agentRun({ session: "run-1", prose: sentence, memory: memory(), supervisor: first, snapshots: written })
     expect(written[0]?.candidates).toEqual([sentence])
 
-    const read: Array<Supervisor.Snapshot> = []
+    const recalled: Array<Relevance.Item> = []
     await agentRun({
       session: "run-2",
       prose: "Looking around first.",
       memory: memory(),
       supervisor: second,
-      snapshots: read
+      snapshots: [],
+      recalled
     })
-    expect(read[0]?.recalled.map((row) => row.text)).toContain(sentence)
+    expect(recalled.filter((item) => item.kind === "memory").map((item) => item.text)).toContain(sentence)
   })
 
   it("names memory per repository, never one global bank, and writes only when the host opted in", () => {
@@ -200,14 +212,26 @@ describe("SupervisorMemory", () => {
     expect(one.namespace).not.toEqual(other.namespace)
     expect(one.namespace).not.toBe("supervisor")
     expect(one.namespace).toMatch(/^project-[0-9a-f]{16}$/)
-    expect(one.remember).toBe(false)
-    expect(one.steer).toBe(false)
-    const opted = SupervisorMemory.options(
-      { SMITHERS_MEMORY_DB: join(root, "m.db"), SMITHERS_SUPERVISOR_STEER: "1" },
-      join(root, "a")
-    )
+    expect(one).toEqual({ remember: false, namespace: one.namespace, stance: "careful" })
+    const opted = SupervisorMemory.options({ SMITHERS_MEMORY_DB: join(root, "m.db") }, join(root, "a"))
     expect(opted.remember).toBe(true)
-    expect(opted.steer).toBe(true)
+  })
+
+  it("selects the static stance from SMITHERS_SUPERVISOR_STANCE, careful when unset, and refuses any other", () => {
+    const root = join(tmpdir(), "stance")
+    expect(SupervisorMemory.options({ SMITHERS_SUPERVISOR_STANCE: "paranoid" }, root).stance).toBe("paranoid")
+    expect(SupervisorMemory.options({}, root).stance).toBe("careful")
+    let refused: unknown
+    try {
+      SupervisorMemory.options({ SMITHERS_SUPERVISOR_STANCE: "foo" }, root)
+    } catch (error) {
+      refused = error
+    }
+    expect(refused).toBeInstanceOf(CliError.UsageError)
+    expect(refused).toMatchObject({
+      _tag: "/cli/UsageError",
+      message: "SMITHERS_SUPERVISOR_STANCE must be careful or paranoid, not \"foo\""
+    })
   })
 
   it("persists every write when two processes write one memory database at once", async () => {

@@ -201,12 +201,11 @@ The whole sample, one harness at a time:
 Both run scripts take an optional trailing **run index**, which is how one
 instance carries five attempts at once. See [Best-of-n](#best-of-n).
 
-Two conditions on the flows side are off unless a lane turns them on, and both
-are stamped into `timings/<id>.json` so a report can separate them:
+One condition on the flows side is off unless a lane turns it on, and it is
+stamped into `timings/<id>.json` so a report can separate it:
 
 ```sh
-SWB_MEMORY=repo ./run-instance.sh django__django-16612          # "memory": "repo"
-SWB_SUPERVISOR_STEER=1 ./run-instance.sh django__django-16612   # "supervisorSteer": true
+SWB_MEMORY=repo ./run-instance.sh django__django-16612   # "memory": "repo"
 ```
 
 `SWB_MEMORY=repo` points the CLI's memory store (`SMITHERS_MEMORY_DB`) at
@@ -223,11 +222,10 @@ named after that file. A write or recall the store refused is journaled as
 `control.agent.supervisor-memory-failed` and counted in the scorecard's
 `supervisorMemoryFailures`.
 
-`SWB_SUPERVISOR_STEER=1` exports `SMITHERS_SUPERVISOR_STEER=1`. The harness
-journals a supervisor verdict on every frame whenever a judge is bound; this
-additionally lets a verdict past its threshold nudge the run at the next turn
-boundary and insert recalled memory. It stays off until the replay below has
-measured the verdict's precision.
+The supervisor needs no switch. The CLI always runs with a judge, so every run
+journals a verdict on every frame, and a verdict past its threshold nudges the
+run at the next turn boundary and inserts recalled memory. The run's
+`control.agent.discipline-armed` row records this as `judged`.
 
 ## The sealed testbed
 
@@ -880,6 +878,18 @@ reason and never scored as calm. It needs `AI_GATEWAY_API_KEY`; `--dry-run`
 builds the snapshots and asks nothing, and `--limit N` bounds the journals
 read. `fixtures/check-jev-replay.mjs` runs the dry run over a synthetic
 journal inside `./verify.sh`.
+
+The same run also replays the journal's gates, which needs no Jev call and
+happens even under `--dry-run`. For relevance, each `relevance/unnecessary`
+decision is re-thresholded, and the withheld rate is shown per item kind at
+0.8, 0.9 (the live `withholdAt`) and 0.95. For each monitor, it shows the
+crossing rate, the delivered rate (deliveries per crossing), the suppression
+reasons and the delivered-then-resolved rate. A delivery counts as resolved
+when, within 3 frames, a check newly passes or `on_target` rises. Every
+supervisor reading is also checked to confirm that `Monitor.lint` scores it
+exactly as `Supervisor.crosses` does. `fixtures/jev-gates-journal.json` is the
+synthetic journal that pins these numbers. `scorecard.ts` records the same rows
+as counts only.
 
 ### Two rig faults the r90 benchmark found, and what closes them
 

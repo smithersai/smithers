@@ -21,7 +21,11 @@ import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
 import { HarnessError } from "@smthrs/harness/HarnessError"
-import type * as MemorySource from "@smthrs/memory/Source"
+import * as Monitor from "@smthrs/harness/Monitor"
+import type * as Relevance from "@smthrs/harness/Relevance"
+import type * as SnapshotRecorder from "@smthrs/memory/SnapshotRecorder"
+import * as MemorySource from "@smthrs/memory/Source"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
@@ -168,10 +172,12 @@ type RunOptions = Omit<Agent.Options, "session" | "seat" | "prompt" | "registry"
   readonly registry: Registry.Registry
   readonly model: Model.Model
   readonly contextWindowTokens?: number | undefined
+  /** The judge; the offline completion judge when omitted. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
 }
 
 /** Runs the production agent with exactly the options a case declares. */
-const collect = (options: RunOptions) =>
+const collect = ({ evaluator, ...options }: RunOptions) =>
   Effect.gen(function*() {
     const agent = yield* Agent.Agent
     const events: Array<AgentEvent.AgentEvent> = []
@@ -188,7 +194,7 @@ const collect = (options: RunOptions) =>
       })
     }).pipe(
       Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-      Effect.provide(Layer.merge(Agent.layerDefaults, scriptedCompletionJudge))
+      Effect.provide(Layer.merge(Agent.layerDefaults, evaluator ?? scriptedCompletionJudge))
     )
     return events
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
@@ -231,13 +237,16 @@ const keepGoing = `var seen = (typeof seen === "number" ? seen : 0) + 1
 console.log("again " + seen)`
 
 const memoryText = "<flows_memory_context>\n[bank/fact] remembered\n</flows_memory_context>"
-const memory: MemorySource.DeclaredText = { text: memoryText, digest: "memory-digest" }
-const emptyMemory: MemorySource.DeclaredText = { text: "", digest: "empty-digest" }
+const memory: MemorySource.Declared = {
+  rows: [{ origin: "recall", bank: "bank", key: "fact", text: "remembered" }],
+  digest: "memory-digest"
+}
+const emptyMemory: MemorySource.Declared = { rows: [], digest: "empty-digest" }
 
 describe("system teaching crossed with memory", () => {
   const run = (declared: {
     readonly system?: ReadonlyArray<string> | undefined
-    readonly memory?: MemorySource.DeclaredText | undefined
+    readonly memory?: MemorySource.Declared | undefined
   }) => {
     const requests: Array<ModelRequest.ModelRequest> = []
     return drive(
@@ -297,6 +306,125 @@ describe("system teaching crossed with memory", () => {
 
   it("injects nothing for an empty memory snapshot declared with no system teaching", async () => {
     expect(await run({ memory: emptyMemory })).toEqual(await run({}))
+  })
+})
+
+describe("opening memory in the run-start relevance reading", () => {
+  const rows: ReadonlyArray<SnapshotRecorder.Row> = [
+    { origin: "primer", bank: "bank", key: "note-1", text: "use pnpm" },
+    { origin: "recall", bank: "bank", key: "deploy", text: "deploy from the release branch" },
+    { origin: "recall", bank: "bank", key: "parser", text: "the parser lives in src/parse" }
+  ]
+  const declared: MemorySource.Declared = { rows, digest: "memory-digest" }
+  const completion = {
+    complete: { probability: 0.99 },
+    overclaims: { probability: 0.01 },
+    invented: { probability: 0.01 }
+  }
+  const run = (relevance: (items: ReadonlyArray<Relevance.Item>) => ReturnType<Evaluator.Script>) => {
+    const asked: Array<ReadonlyArray<Relevance.Item>> = []
+    const requests: Array<ModelRequest.ModelRequest> = []
+    const evaluator = Evaluator.layerScripted((request) => {
+      if (!Object.keys(request.questions).some((id) => id.startsWith("unnecessary_"))) return completion
+      const items = (request.state as { readonly items: ReadonlyArray<Relevance.Item> }).items
+      asked.push(items)
+      return relevance(items)
+    })
+    return drive(
+      collect({
+        registry: registryOf([descriptor("lookup")]),
+        model: scripted([complete], requests),
+        maxFrames: 2,
+        judged: true,
+        instructions: [{ path: "AGENTS.md", text: "- Use pnpm.\n" }],
+        memory: declared,
+        evaluator
+      })
+    ).then((outcome) => ({ events: events(outcome), asked, texts: systemTexts(requests[0]!) }))
+  }
+
+  it("renders only the rows Jev keeps, judged in the one reading beside flows and instructions", async () => {
+    const { asked, events: settled, texts } = await run((items) =>
+      Object.fromEntries(
+        items.map((item, index) => [`unnecessary_${index}`, { probability: item.id === "deploy" ? 0.95 : 0.1 }])
+      )
+    )
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.map((item) => [item.kind, item.id])).toEqual([
+      ["flow", "lookup"],
+      ["instruction", "AGENTS.md#0"],
+      ["memory", "note-1"],
+      ["memory", "deploy"],
+      ["memory", "parser"]
+    ])
+    const kept = MemorySource.render([rows[0]!, rows[2]!])
+    expect(texts).toContain(kept)
+    expect(kept).toMatch(
+      /^<flows_memory_context>\n\[primer:bank\] use pnpm\n\[bank\/parser\] .*\n<\/flows_memory_context>$/
+    )
+    expect(texts.join("\n")).not.toContain("deploy from the release branch")
+    expect(texts.findIndex((text) => text === kept)).toBeLessThan(
+      texts.findIndex((text) => text.includes("do the task"))
+    )
+    const relevance = settled.find((event) => event._tag === "relevance-settled")
+    expect(relevance?._tag === "relevance-settled" ? relevance.withheld : []).toEqual([
+      expect.objectContaining({ kind: "memory", id: "deploy" })
+    ])
+  })
+
+  it("drops the memory segment when every row is withheld", async () => {
+    const { texts } = await run((items) =>
+      Object.fromEntries(
+        items.map((item, index) => [`unnecessary_${index}`, { probability: item.kind === "memory" ? 0.99 : 0 }])
+      )
+    )
+    expect(texts.some((text) => text.includes("<flows_memory_context>"))).toBe(false)
+    expect(texts.some((text) => text.includes("- Use pnpm."))).toBe(true)
+  })
+
+  it("keeps every row and journals decision-unjudged when Jev cannot answer", async () => {
+    const { events: settled, texts } = await run(() =>
+      Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "down" }))
+    )
+    expect(texts).toContain(MemorySource.render(rows))
+    expect(settled.filter((event) => event._tag === "decision-unjudged")).toEqual([
+      expect.objectContaining({ classifier: "relevance/unnecessary", frame: 0, items: 5 })
+    ])
+    expect(settled.some((event) => event._tag === "relevance-settled")).toBe(false)
+  })
+})
+
+describe("the static stance", () => {
+  const run = (declared: Pick<RunOptions, "judged" | "supervisor">) => {
+    const requests: Array<ModelRequest.ModelRequest> = []
+    return drive(
+      collect({ registry: registryOf([]), model: scripted([keepGoing, complete], requests), maxFrames: 3, ...declared })
+    ).then((outcome) => {
+      const armed = events(outcome).find((event) => event._tag === "discipline-armed")
+      return {
+        stance: armed?._tag === "discipline-armed" ? armed.stance : undefined,
+        taught: requests.map((request) => systemTexts(request).filter((text) => text.startsWith("Stance: ")))
+      }
+    })
+  }
+
+  it("teaches a judged run careful by default, every frame, and journals it", async () => {
+    const { stance, taught } = await run({ judged: true })
+    expect(stance).toBe("careful")
+    expect(taught.length).toBeGreaterThanOrEqual(2)
+    for (const texts of taught) expect(texts).toEqual([Monitor.carefulText])
+  })
+
+  it("teaches the stance a judged run selects", async () => {
+    const { stance, taught } = await run({ judged: true, supervisor: { stance: "paranoid" } })
+    expect(stance).toBe("paranoid")
+    expect(taught[0]).toEqual([Monitor.paranoidText])
+  })
+
+  it("teaches an unjudged run no stance, whatever it selects", async () => {
+    const { stance, taught } = await run({ supervisor: { stance: "paranoid" } })
+    expect(stance).toBeUndefined()
+    for (const texts of taught) expect(texts).toEqual([])
   })
 })
 

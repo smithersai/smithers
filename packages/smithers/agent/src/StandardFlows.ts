@@ -37,8 +37,12 @@ import * as Digest from "@smthrs/core/Digest"
 import * as Flow from "@smthrs/core/Flow"
 import { DurableClock } from "@smthrs/flow"
 import type { FlowRuntime } from "@smthrs/flow"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
+import type * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Judgement from "@smthrs/harness/Judgement"
+import * as Relevance from "@smthrs/harness/Relevance"
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import type * as Path from "@smthrs/kernel/Path"
 import * as MemoryFlows from "@smthrs/memory/Flows"
@@ -70,6 +74,7 @@ import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
+import * as ChildFlows from "./ChildFlows.ts"
 
 /** These refusal classes carry host-authored text separately from diagnostic causes. */
 const publicRefusal = (error: { readonly message: string }): string => error.message
@@ -91,6 +96,15 @@ const publicSearchError = (error: StdError): string | undefined => {
   }
   return publicExecutionError(error)
 }
+
+/** Source names of the helpers below; see {@link coreSources}. */
+const filesystemSource = "std/filesystem"
+const shellSource = "std/shell"
+const testsSource = "std/tests"
+const memorySource = "memory"
+const jevSource = "model/jev"
+const clockSource = "engine/clock"
+const approvalSource = "host/approval"
 
 /**
  * The default longest wait a cell may request, in seconds.
@@ -127,7 +141,7 @@ export const filesystem = (
   search: Search.Search = PortableSearch.make(services)
 ): FlowBinding.Source => {
   const searchServices = Context.add(services, Search.Search, search)
-  return FlowBinding.source("std/filesystem", [
+  return FlowBinding.source(filesystemSource, [
     FlowBinding.provide(
       FlowBinding.make({
         flow: Read.flow,
@@ -227,7 +241,7 @@ export const shell = (
   container: Container.Container = Container.makeCommand(),
   options?: { readonly sealedTo?: string | undefined }
 ): FlowBinding.Source =>
-  FlowBinding.source("std/shell", [
+  FlowBinding.source(shellSource, [
     FlowBinding.provide(
       FlowBinding.make({
         flow: Bash.flow,
@@ -261,7 +275,7 @@ export const tests = (
     ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | TestRunner.TestRunner
   >
 ): FlowBinding.Source =>
-  FlowBinding.source("std/tests", [
+  FlowBinding.source(testsSource, [
     FlowBinding.provide(
       FlowBinding.make({
         flow: TestRun.flow,
@@ -273,6 +287,39 @@ export const tests = (
       services
     )
   ])
+
+/**
+/**
+ * Output for the agent's `recall` flow: the rows kept, and the rows Jev
+ * withheld as unneeded.
+ *
+ * `unjudged` is present when Jev could not answer. Every row is then kept, and
+ * this field, journaled with the call's settled result, is the receipt.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const JudgedRecallOutput = Schema.Struct({
+  rows: MemoryFlows.RecallOutput,
+  withheld: Schema.Array(Schema.Struct({ key: Schema.String, digest: Schema.String, p: Schema.Number })),
+  unjudged: Schema.optional(Schema.Struct({ reason: AgentEvent.UnjudgedReason, detail: Schema.String }))
+})
+
+/**
+ * The agent's `recall` declaration: `@smthrs/memory`'s recall, filtered by
+ * `Relevance`.
+ *
+ * @category flows
+ * @since 1.0.0-rc.0
+ */
+export const recallFlow = Flow.make({
+  name: MemoryFlows.recallName,
+  description:
+    `${MemoryFlows.recallDescription} Rows Jev is at least 90% sure the query does not need are withheld and listed.`,
+  input: MemoryFlows.RecallInput,
+  output: JudgedRecallOutput,
+  effects: MemoryFlows.recallEffects
+})
 
 /**
  * The one memory namespace a run's model-facing `remember` and `recall` may
@@ -293,18 +340,75 @@ export interface MemoryScope {
   readonly provenance?: MemoryStore.Provenance | undefined
 }
 
+type RecallRows = typeof MemoryFlows.RecallOutput.Type
+
+/**
+ * Asks `judge` which recalled rows `input.query` does not need, and journals
+ * the reading into the calling run. See {@link memory}.
+ */
+const judgedRows = (
+  input: typeof MemoryFlows.RecallInput.Type,
+  call: Cell.Call,
+  rows: RecallRows,
+  judge: Context.Context<Evaluator.Evaluator>
+) =>
+  Effect.gen(function*() {
+    if (rows.length === 0) return { rows, withheld: [] }
+    const journal = yield* AgentEvent.Journal
+    const at = { scope: call.identity.session, frame: call.identity.frame }
+    const judged = yield* Effect.result(
+      Relevance.judge(
+        { task: input.query },
+        rows.map((row) => ({ kind: "memory" as const, id: row.key, text: row.text }))
+      ).pipe(Effect.provideContext(judge))
+    )
+    if (judged._tag === "Failure") {
+      yield* journal(
+        Judgement.unjudgedEvent(judged.failure, {
+          ...at,
+          classifier: "relevance/unnecessary",
+          items: rows.length
+        })
+      )
+      return { rows, withheld: [], unjudged: judged.failure }
+    }
+    const reading = judged.success
+    const acted = reading.verdicts.some((verdict) => verdict.withheld)
+    for (const asked of reading.asked) yield* journal(Judgement.decision(asked, { ...at, acted }))
+    yield* journal(Relevance.settled(reading, { ...at, source: "recall" }))
+    return {
+      rows: rows.filter((_, index) => !reading.verdicts[index]!.withheld),
+      withheld: reading.verdicts.filter((verdict) => verdict.withheld).map((verdict) => ({
+        key: verdict.item.id,
+        digest: verdict.digest,
+        p: verdict.p
+      }))
+    }
+  })
+
 const unscopedMemory = (
-  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>
+  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
+  judge: Context.Context<Evaluator.Evaluator> | undefined
 ): FlowBinding.Source =>
-  FlowBinding.source("memory", [
+  FlowBinding.source(memorySource, [
     FlowBinding.provide(
       FlowBinding.make({ flow: MemoryFlows.remember, handler: MemoryFlows.runRemember, publicError: publicRefusal }),
       services
     ),
-    FlowBinding.provide(
-      FlowBinding.make({ flow: MemoryFlows.recall, handler: MemoryFlows.runRecall, publicError: publicRefusal }),
-      services
-    )
+    judge === undefined
+      ? FlowBinding.provide(
+        FlowBinding.make({ flow: MemoryFlows.recall, handler: MemoryFlows.runRecall, publicError: publicRefusal }),
+        services
+      )
+      : FlowBinding.provide(
+        FlowBinding.make({
+          flow: recallFlow,
+          publicError: publicRefusal,
+          handler: (input, call) =>
+            MemoryFlows.runRecall(input).pipe(Effect.flatMap((rows) => judgedRows(input, call, rows, judge)))
+        }),
+        services
+      )
   ])
 
 /**
@@ -328,7 +432,7 @@ const scopedRefusal = (bank: string) => (error: MemoryError): string =>
  * iteration cannot change or break the identity.
  */
 const scopedBodyDigest = (
-  handler: (input: never) => unknown,
+  handler: (...args: never) => unknown,
   policy: WithMemory.Policy,
   provenance: MemoryStore.Provenance
 ): string =>
@@ -342,6 +446,7 @@ const decodePolicy = Schema.decodeUnknownResult(WithMemory.Policy)
 
 const scopedMemory = (
   services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
+  judge: Context.Context<Evaluator.Evaluator> | undefined,
   scope: MemoryScope
 ): FlowBinding.Source => {
   const decoded = decodePolicy(scope.policy)
@@ -352,25 +457,45 @@ const scopedMemory = (
       message: "The memory scope's policy is invalid, so no memory flows were bound.",
       cause: decoded.failure
     })
-    return { name: "memory", bindings: () => Effect.fail(refused) }
+    return { name: memorySource, bindings: () => Effect.fail(refused) }
   }
   const policy = decoded.success
   const provenance = scope.provenance ?? {}
   const remember = WithMemory.withMemory(MemoryFlows.remember, policy)
-  const recall = WithMemory.withMemory(MemoryFlows.recall, policy)
   const rememberHandler = MemoryFlows.handlersFor(remember, provenance).remember
-  const recallHandler = MemoryFlows.handlersFor(recall).recall
   const publicError = scopedRefusal(Recall.bankForNamespace(policy.namespace))
-  return FlowBinding.source("memory", [
-    FlowBinding.provide(
-      FlowBinding.make({
-        flow: remember,
-        handler: rememberHandler,
-        publicError,
-        bodyDigest: scopedBodyDigest(rememberHandler, policy, provenance)
-      }),
-      services
-    ),
+  const rememberBinding = FlowBinding.provide(
+    FlowBinding.make({
+      flow: remember,
+      handler: rememberHandler,
+      publicError,
+      bodyDigest: scopedBodyDigest(rememberHandler, policy, provenance)
+    }),
+    services
+  )
+  if (judge === undefined) {
+    const recall = WithMemory.withMemory(MemoryFlows.recall, policy)
+    const recallHandler = MemoryFlows.handlersFor(recall).recall
+    return FlowBinding.source(memorySource, [
+      rememberBinding,
+      FlowBinding.provide(
+        FlowBinding.make({
+          flow: recall,
+          handler: recallHandler,
+          publicError,
+          bodyDigest: scopedBodyDigest(recallHandler, policy, provenance)
+        }),
+        services
+      )
+    ])
+  }
+  // The same policy enforcement, then the same Relevance reading the
+  // unscoped `recall` takes.
+  const recall = WithMemory.withMemory(recallFlow, policy)
+  const recallHandler = (input: typeof MemoryFlows.RecallInput.Type, call: Cell.Call) =>
+    MemoryFlows.runRecallFor(recall, input).pipe(Effect.flatMap((rows) => judgedRows(input, call, rows, judge)))
+  return FlowBinding.source(memorySource, [
+    rememberBinding,
     FlowBinding.provide(
       FlowBinding.make({
         flow: recall,
@@ -385,6 +510,15 @@ const scopedMemory = (
 
 /**
  * Durable memory, as two ordinary flows.
+ *
+ * With a `judge`, `recall` asks it which recalled rows the query does not
+ * need, as `memory` items with the query as the task, and returns the rest. A
+ * row is withheld only at `Relevance.withholdAt`; a reading Jev cannot make
+ * keeps every row and says so in `unjudged`. Either way the reading is
+ * journaled into the calling run through `AgentEvent.Journal`: its
+ * `decision-settled` rows and a `relevance-settled` row with source `recall`,
+ * or its `decision-unjudged` row. Without one, `recall` answers the rows
+ * `@smthrs/memory` recalls.
  *
  * Without a `scope` the two flows reach any bank a call names. With one, they
  * are bound the way `@smthrs/memory` binds model-facing memory,
@@ -401,10 +535,23 @@ const scopedMemory = (
  * @category constructors
  * @since 0.1.0
  */
-export const memory = (
+export function memory(
   services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
   scope?: MemoryScope | undefined
-): FlowBinding.Source => scope === undefined ? unscopedMemory(services) : scopedMemory(services, scope)
+): FlowBinding.Source
+export function memory(
+  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
+  judge: Context.Context<Evaluator.Evaluator>,
+  scope?: MemoryScope | undefined
+): FlowBinding.Source
+export function memory(
+  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
+  judgeOrScope?: Context.Context<Evaluator.Evaluator> | MemoryScope | undefined,
+  scoped?: MemoryScope | undefined
+): FlowBinding.Source {
+  const [judge, scope] = Context.isContext(judgeOrScope) ? [judgeOrScope, scoped] : [undefined, judgeOrScope]
+  return scope === undefined ? unscopedMemory(services, judge) : scopedMemory(services, judge, scope)
+}
 
 /**
  * The largest `state` one `jev` call sends, in UTF-8 bytes of its JSON, when
@@ -417,7 +564,7 @@ export const memory = (
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const defaultMaxJevStateBytes = 262_144
+export const defaultMaxJevStateBytes = Judgement.maxStateBytes
 
 /**
  * Input for the `jev` flow.
@@ -533,7 +680,7 @@ export const jev = (
   const maxStateBytes = requested === undefined || !Number.isFinite(requested) || requested > defaultMaxJevStateBytes
     ? defaultMaxJevStateBytes
     : requested
-  return FlowBinding.source("model/jev", [
+  return FlowBinding.source(jevSource, [
     FlowBinding.provide(
       FlowBinding.make({
         flow: jevFlow,
@@ -658,7 +805,7 @@ export const clock = (
   const maxSeconds = requested === undefined || !Number.isFinite(requested) || requested > defaultMaxWaitSeconds
     ? defaultMaxWaitSeconds
     : requested
-  return FlowBinding.source("engine/clock", [
+  return FlowBinding.source(clockSource, [
     FlowBinding.provide(
       FlowBinding.make({
         flow: waitFlow,
@@ -768,7 +915,7 @@ export interface Asker {
  * @since 0.1.0
  */
 export const approval = (asker: Asker): FlowBinding.Source =>
-  FlowBinding.source("host/approval", [
+  FlowBinding.source(approvalSource, [
     FlowBinding.make({ flow: askFlow, handler: asker.ask, publicError: publicRefusal })
   ])
 
@@ -786,3 +933,22 @@ export const askerNoop = (): Asker => ({
       })
     )
 })
+
+/**
+ * The source names of every helper here and of `ChildFlows.source`: the
+ * sources whose flows a run cannot do without. A host pins their flows, so
+ * the run-start relevance reading never withholds them.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const coreSources: ReadonlyArray<string> = [
+  filesystemSource,
+  shellSource,
+  testsSource,
+  memorySource,
+  jevSource,
+  clockSource,
+  approvalSource,
+  ChildFlows.sourceName
+]

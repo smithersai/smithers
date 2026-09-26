@@ -50,10 +50,13 @@
     "./EngineLike": "./src/EngineLike.ts",
     "./FlowBinding": "./src/FlowBinding.ts",
     "./HarnessError": "./src/HarnessError.ts",
+    "./Judgement": "./src/Judgement.ts",
+    "./Monitor": "./src/Monitor.ts",
     "./NarrowedCheck": "./src/NarrowedCheck.ts",
     "./Notifications": "./src/Notifications.ts",
     "./Plan": "./src/Plan.ts",
     "./QuickJSSandbox": "./src/QuickJSSandbox.ts",
+    "./Relevance": "./src/Relevance.ts",
     "./Sandbox": "./src/Sandbox.ts",
     "./Steering": "./src/Steering.ts",
     "./StructuredOutput": "./src/StructuredOutput.ts",
@@ -229,6 +232,26 @@
           "default": "./dist/cjs/HarnessError.js"
         }
       },
+      "./Judgement": {
+        "import": {
+          "types": "./dist/esm/Judgement.d.ts",
+          "default": "./dist/esm/Judgement.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Judgement.d.ts",
+          "default": "./dist/cjs/Judgement.js"
+        }
+      },
+      "./Monitor": {
+        "import": {
+          "types": "./dist/esm/Monitor.d.ts",
+          "default": "./dist/esm/Monitor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Monitor.d.ts",
+          "default": "./dist/cjs/Monitor.js"
+        }
+      },
       "./NarrowedCheck": {
         "import": {
           "types": "./dist/esm/NarrowedCheck.d.ts",
@@ -267,6 +290,16 @@
         "require": {
           "types": "./dist/cjs/QuickJSSandbox.d.ts",
           "default": "./dist/cjs/QuickJSSandbox.js"
+        }
+      },
+      "./Relevance": {
+        "import": {
+          "types": "./dist/esm/Relevance.d.ts",
+          "default": "./dist/esm/Relevance.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Relevance.d.ts",
+          "default": "./dist/cjs/Relevance.js"
         }
       },
       "./Sandbox": {

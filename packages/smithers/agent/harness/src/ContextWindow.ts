@@ -105,13 +105,30 @@ export const Content = Schema.Array(
 export type Content = typeof Content.Type
 
 /**
+ * What a compaction does with one prefix segment: `keep` it as it is,
+ * `squash` it into the summary, or `remove` it outright.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const Mark = Schema.Literals(["keep", "squash", "remove"])
+
+/**
+ * The decoded form of {@link Mark}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Mark = typeof Mark.Type
+
+/**
  * The failure vocabulary of a context window operation.
  *
  * @category models
  * @since 0.1.0
  * @slop
  */
-export const ContextWindowErrorCode = Schema.Literal("invalid_compaction_prefix")
+export const ContextWindowErrorCode = Schema.Literals(["invalid_compaction_prefix", "invalid_compaction_marks"])
 
 /**
  * The decoded form of {@link ContextWindowErrorCode}.
@@ -522,8 +539,52 @@ export const prefixDigest = (
 ): Result.Result<string, ContextWindowError> =>
   Result.map(selectedPrefix(self, prefixLength), (segments) => digest(segments.map((segment) => segment.digest)))
 
+const marksError = (message: string): Result.Result<never, ContextWindowError> =>
+  Result.fail(new ContextWindowError({ code: "invalid_compaction_marks", message }))
+
 /**
- * Replaces an exact compactable prefix while retaining every suffix segment.
+ * Compacts an exact compactable prefix by its marks, one per prefix segment.
+ *
+ * The result holds, in order: the segments before the prefix; one `summary`
+ * segment of `summary` when any segment is squashed; the kept segments, as
+ * the same objects, so their digests are stable; then the suffix. Removed
+ * segments are dropped. `summary` is required exactly when a segment is
+ * squashed.
+ *
+ * @category combinators
+ * @since 1.0.0-rc.0
+ */
+export const compactMarked = (
+  self: ContextWindow,
+  prefixLength: number,
+  marks: ReadonlyArray<Mark>,
+  summary: ModelRequest.Message | ReadonlyArray<ModelRequest.Message> | undefined
+): Result.Result<ContextWindow, ContextWindowError> =>
+  Result.gen(function*() {
+    const replacedSegments = yield* selectedPrefix(self, prefixLength)
+    if (marks.length !== replacedSegments.length) {
+      return yield* marksError("Compaction marks must name every prefix segment once")
+    }
+    if (marks.includes("squash") !== (summary !== undefined)) {
+      return yield* marksError("A compaction summary is required exactly when a prefix segment is squashed")
+    }
+    if (replacedSegments.length === 0) return self
+    const replaced = digest(replacedSegments.map((segment) => segment.digest))
+    const first = self.segments.findIndex((segment) => replacedSegments.includes(segment))
+    const segments = [
+      ...self.segments.slice(0, first),
+      ...(summary === undefined ? [] : [
+        makeSegment({ kind: "summary", zone: "tail", content: summaryMessages(summary) })
+      ]),
+      ...replacedSegments.filter((_, index) => marks[index] === "keep"),
+      ...self.segments.slice(first).filter((segment) => !replacedSegments.includes(segment))
+    ]
+    return construct({ modelId: self.modelId, segments, activeTools: self.activeTools, replaced })
+  })
+
+/**
+ * Replaces an exact compactable prefix while retaining every suffix segment:
+ * {@link compactMarked} with every segment squashed.
  *
  * @category combinators
  * @since 0.1.0
@@ -534,19 +595,13 @@ export const compactPrefix = (
   prefixLength: number,
   summary: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>
 ): Result.Result<ContextWindow, ContextWindowError> =>
-  Result.gen(function*() {
-    const replacedSegments = yield* selectedPrefix(self, prefixLength)
-    if (replacedSegments.length === 0) return self
-    const replaced = digest(replacedSegments.map((segment) => segment.digest))
-    const compacted = makeSegment({ kind: "summary", zone: "tail", content: summaryMessages(summary) })
-    const first = self.segments.findIndex((segment) => replacedSegments.includes(segment))
-    const segments = [
-      ...self.segments.slice(0, first),
-      compacted,
-      ...self.segments.slice(first).filter((segment) => !replacedSegments.includes(segment))
-    ]
-    return construct({ modelId: self.modelId, segments, activeTools: self.activeTools, replaced })
-  })
+  Result.flatMap(selectedPrefix(self, prefixLength), (replacedSegments) =>
+    compactMarked(
+      self,
+      prefixLength,
+      replacedSegments.map(() => "squash"),
+      replacedSegments.length === 0 ? undefined : summary
+    ))
 
 /** Replaces the compactable transcript prefix with a summary segment.
  *
