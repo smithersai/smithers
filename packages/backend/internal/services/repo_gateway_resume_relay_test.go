@@ -255,7 +255,8 @@ func TestRepoGatewayService_IdleSuspendResumeRelay_ServesTheSameVMAgain(t *testi
 	require.Len(t, vm.systemdSpecs, 1, "a resumed VM boots with no gateway process; resume must re-declare it")
 	assert.Equal(t, token, vm.systemdSpecs[0].Env["SMITHERS_API_KEY"],
 		"the re-declare carries the real operator token, not the durable '[redacted]' shape")
-	assertGatewayModelSeat(t, vm.systemdSpecs[0].Env)
+	require.NotEmpty(t, vm.startReqs)
+	assertGatewayModelSeat(t, vm.systemdSpecs[0].Env, vm.startReqs[len(vm.startReqs)-1].EgressProxy)
 
 	powered, serving := guest.state()
 	assert.True(t, powered)

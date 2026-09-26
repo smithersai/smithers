@@ -76,7 +76,7 @@ func TestRepoGateway_Cov_OptionsCreateVMAndEnvBranches(t *testing.T) {
 		)
 
 		svc.productHostPath = "testdata/product-gateway-fixture.mjs"
-		resp, err := svc.createGatewayVM(ctx)
+		resp, err := svc.createGatewayVM(ctx, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "vm-bare", resp.ID)
 		assert.Equal(t, 2, createCalls)
@@ -99,7 +99,7 @@ func TestRepoGateway_Cov_OptionsCreateVMAndEnvBranches(t *testing.T) {
 		)
 
 		svc.productHostPath = "testdata/product-gateway-fixture.mjs"
-		_, err := svc.createGatewayVM(ctx)
+		_, err := svc.createGatewayVM(ctx, nil)
 		assert.Equal(t, 500, apiStatus(t, err))
 		assert.Equal(t, "error", metricStatus)
 	})

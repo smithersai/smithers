@@ -51,11 +51,14 @@ func (s *RepoGatewayService) gatewayHasProductHost(ctx context.Context, vmID str
 	return resp.StatusCode != nil && *resp.StatusCode == 0, nil
 }
 
-func (s *RepoGatewayService) productGatewayEnv(ctx context.Context, token, gatewayID string, input RepoGatewayConnectionInput) map[string]string {
+// productGatewayEnv returns the gateway service environment and the model
+// seat credentials its egress proxy must hold; the environment carries only
+// their placeholders.
+func (s *RepoGatewayService) productGatewayEnv(ctx context.Context, token, gatewayID string, input RepoGatewayConnectionInput) (map[string]string, []sandbox.EgressProxySecret) {
 	env := s.buildGatewayEnv(token)
-	s.bindGatewayModelSeats(ctx, env, gatewayID, input)
+	secrets := s.bindGatewayModelSeats(ctx, env, gatewayID, input)
 	env["SMITHERS_GATEWAY_ID"] = gatewayID
 	env["SMITHERS_PRODUCT_API_URL"] = strings.TrimRight(s.gitBaseURL, "/")
 	env["SMITHERS_REPO"] = input.RepoOwner + "/" + input.RepoName
-	return env
+	return env, secrets
 }

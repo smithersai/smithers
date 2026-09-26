@@ -27,12 +27,31 @@ func fastRepoGatewaySleep(svc *RepoGatewayService) {
 var testGatewayModelSeats = []modelproxy.Seat{modelproxy.Seats[2], modelproxy.Seats[4]}
 
 // assertGatewayModelSeat checks that a gateway reaches its platform seats
-// through the metered model proxy with a minted model credential.
-func assertGatewayModelSeat(t *testing.T, env map[string]string) {
+// through the metered model proxy as egress-proxy placeholders. The minted
+// model credential lives only in the gateway's egress proxy, swapped in on
+// requests to the Smithers API host, so code the repository runs in the VM
+// cannot read it from /proc/*/environ and spend the owner's credit from
+// elsewhere. The platform key never enters at all.
+func assertGatewayModelSeat(t *testing.T, env map[string]string, egress *sandbox.EgressProxyPolicy) {
 	t.Helper()
-	credential := env["CEREBRAS_API_KEY"]
-	assert.True(t, strings.HasPrefix(credential, "smithers_"), "the seat carries a Smithers model credential")
-	assert.Equal(t, credential, env["AI_GATEWAY_API_KEY"])
+	require.NotNil(t, egress, "the VM (re)start must bind the seats at its egress proxy")
+	require.True(t, egress.Enabled)
+	require.NoError(t, egress.Validate())
+	bound := map[string]sandbox.EgressProxySecret{}
+	for _, secret := range egress.Secrets {
+		bound[secret.Name] = secret
+	}
+	credential := bound["CEREBRAS_API_KEY"].Value
+	assert.True(t, strings.HasPrefix(credential, "smithers_"), "the seat is bound to a Smithers model credential")
+	for _, name := range []string{"CEREBRAS_API_KEY", "AI_GATEWAY_API_KEY"} {
+		assert.Equal(t, sandbox.EgressProxyPlaceholder(name), env[name], "the guest holds only the placeholder")
+		assert.Equal(t, credential, bound[name].Value, name)
+		assert.Equal(t, []string{"jjhub.example"}, bound[name].Hosts, "the credential is swapped only toward the Smithers API host")
+		assert.ElementsMatch(t, []string{"authorization", "x-api-key"}, bound[name].MatchHeaders)
+	}
+	for name, value := range env {
+		assert.NotEqual(t, credential, value, "%s must not carry the model credential", name)
+	}
 	assert.Equal(t, "https://jjhub.example/model-proxy", env[modelproxy.URLEnv])
 	assert.Equal(t, "cerebras,vercel", env[modelproxy.ProvidersEnv])
 	assert.Equal(t, "https://jjhub.example/model-proxy/vercel/v4/ai/evaluation-model", env["SMITHERS_EVALUATOR_BASE_URL"])
@@ -54,7 +73,8 @@ func TestRepoGatewayProvision_PlatformSeatsUseTheMeteredModelProxy(t *testing.T)
 		assert.NotContains(t, req.Command, "SMITHERS_GATEWAY_ENGINE_PATCH")
 	}
 	require.Len(t, vm.systemdSpecs, 1)
-	assertGatewayModelSeat(t, vm.systemdSpecs[0].Env)
+	require.Len(t, vm.createVMReqs, 1)
+	assertGatewayModelSeat(t, vm.systemdSpecs[0].Env, vm.createVMReqs[0].EgressProxy)
 	var minted []string
 	for _, token := range q.accessTokens {
 		if strings.HasPrefix(token.Name, "model-proxy-gateway-") {
@@ -128,7 +148,8 @@ func TestRepoGatewayReuse_LegacyGatewayReprovisions(t *testing.T) {
 	assert.Contains(t, q.getSoftDeleted(), "gw-old")
 	// The replacement carries the seat.
 	require.NotEmpty(t, vm.systemdSpecs)
-	assertGatewayModelSeat(t, vm.systemdSpecs[len(vm.systemdSpecs)-1].Env)
+	require.NotEmpty(t, vm.createVMReqs)
+	assertGatewayModelSeat(t, vm.systemdSpecs[len(vm.systemdSpecs)-1].Env, vm.createVMReqs[len(vm.createVMReqs)-1].EgressProxy)
 }
 
 func TestRepoGatewayReuse_HostCheckTransportErrorDoesNotDiscard(t *testing.T) {
@@ -383,4 +404,18 @@ func TestRepoGatewayVMRequest_MemSize(t *testing.T) {
 	require.NotEmpty(t, vm.createVMReqs)
 	require.NotNil(t, vm.createVMReqs[0].MemSizeMB, "the 512MiB default OOM-killed the gateway under the stock verify step")
 	assert.Equal(t, int32(2048), *vm.createVMReqs[0].MemSizeMB)
+}
+
+// Every gateway VM gets its own egress proxy; with no seats it binds nothing.
+func TestRepoGatewayProvision_NoSeatStillOwnsAnEgressProxy(t *testing.T) {
+	t.Parallel()
+
+	vm := &fakeRepoGatewayVMClient{}
+	svc := newTestRepoGatewayService(&fakeRepoGatewayQuerier{}, vm)
+	_, err := svc.GetRepoGatewayConnectionInfo(context.Background(), testRepoGatewayInput())
+	require.NoError(t, err)
+	require.Len(t, vm.createVMReqs, 1)
+	require.NotNil(t, vm.createVMReqs[0].EgressProxy)
+	assert.True(t, vm.createVMReqs[0].EgressProxy.Enabled)
+	assert.Empty(t, vm.createVMReqs[0].EgressProxy.Secrets)
 }

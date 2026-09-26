@@ -757,9 +757,16 @@ func (s *RepoGatewayService) reuseGateway(ctx context.Context, gateway runtimepo
 		// resume on its own", and that assumption is exactly what wedged wave 11.
 		// The re-declare below is what actually brings the process back.
 		waitForReady := false
+		// Stopping the guest dropped its proxy credentials. Mint the model
+		// seats again and hand them to the proxy before the guest boots; the
+		// re-declared service below sees only their placeholders.
+		env, egressSecrets := s.productGatewayEnv(ctx, token, gateway.ID, input)
 		resumeRequest := sandbox.StartRequest{
 			IdleTimeoutSeconds: &s.idleTimeoutSeconds,
 			WaitForReady:       &waitForReady,
+		}
+		if len(egressSecrets) > 0 {
+			resumeRequest.EgressProxy = &sandbox.EgressProxyPolicy{Enabled: true, Secrets: egressSecrets}
 		}
 		resume := func() error {
 			resumeCtx, cancel := context.WithTimeout(ctx, repoGatewayResumeTimeout)
@@ -826,7 +833,6 @@ func (s *RepoGatewayService) reuseGateway(ctx context.Context, gateway runtimepo
 		// with its persistent workspace and every parked run on it, which is the
 		// exact harm this path exists to stop. Retry once, the same way the
 		// resume above absorbs a transient provider failure, then fall through.
-		env := s.productGatewayEnv(gatewayCtx, token, gateway.ID, input)
 		if err := s.startGatewayService(gatewayCtx, gateway.VmID, env); err != nil {
 			slog.Warn("repo gateway service re-declare on resume failed; retrying once",
 				"gateway_id", gateway.ID, "vm_id", gateway.VmID, "error", err)
@@ -1084,9 +1090,9 @@ func (s *RepoGatewayService) provisionGateway(ctx context.Context, input RepoGat
 		return RepoGatewayConnectionInfo{}, pkgerrors.Internal("encrypt gateway token: " + err.Error())
 	}
 
-	env := s.productGatewayEnv(ctx, token, gateway.ID, input)
+	env, egressSecrets := s.productGatewayEnv(ctx, token, gateway.ID, input)
 
-	vm, err := s.createGatewayVM(ctx, gateway.ID)
+	vm, err := s.createGatewayVM(ctx, egressSecrets, gateway.ID)
 	if err != nil {
 		s.markGatewayFailed(ctx, gateway.ID)
 		return RepoGatewayConnectionInfo{}, err
@@ -1309,7 +1315,7 @@ func (s *RepoGatewayService) finishGatewayProvision(
 	}, nil
 }
 
-func (s *RepoGatewayService) createGatewayVM(ctx context.Context, gatewayIDs ...string) (sandbox.CreateResult, error) {
+func (s *RepoGatewayService) createGatewayVM(ctx context.Context, egressSecrets []sandbox.EgressProxySecret, gatewayIDs ...string) (sandbox.CreateResult, error) {
 	gatewayID := ""
 	if len(gatewayIDs) > 0 {
 		gatewayID = strings.TrimSpace(gatewayIDs[0])
@@ -1324,6 +1330,9 @@ func (s *RepoGatewayService) createGatewayVM(ctx context.Context, gatewayIDs ...
 	}
 	req := sandbox.CreateRequest{
 		Files: files,
+		// Every gateway gets its own egress proxy, as workspaces do. Model
+		// seats ride it as placeholders; see bindGatewayModelSeats.
+		EgressProxy: &sandbox.EgressProxyPolicy{Enabled: true, Secrets: egressSecrets},
 		// The golden workspace snapshot (when baked) carries the full
 		// toolchain — bun, jj, node, git — so the runtime-install exec step
 		// becomes a fast verify instead of cold downloads.
@@ -1509,27 +1518,42 @@ func (s *RepoGatewayService) retireGatewayModelCredentials(ctx context.Context, 
 
 // bindGatewayModelSeats mints the gateway's model credential, replacing its
 // earlier one, and points the platform seats at the metered model proxy. The
-// credential is confined to the proxy and spends only on the gateway user's
-// credit. A mint failure leaves the seats unset rather than failing the
-// gateway; its model nodes then fail for lack of a provider.
-func (s *RepoGatewayService) bindGatewayModelSeats(ctx context.Context, env map[string]string, gatewayID string, input RepoGatewayConnectionInput) {
+// credential spends only on the gateway user's credit. The service
+// environment is readable by the repository's own flows (the gateway runs
+// them as root), so it carries only each seat's placeholder: the credential
+// is bound at the VM's egress proxy and swapped in only on requests to the
+// Smithers API host, so injected code can use a seat through the proxy but
+// cannot carry the credential out and spend the owner's credit elsewhere. A
+// mint failure, or no bindable API host (a dotless dev host such as
+// localhost), leaves the seats unset rather than failing the gateway; its
+// model nodes then fail for lack of a provider.
+func (s *RepoGatewayService) bindGatewayModelSeats(ctx context.Context, env map[string]string, gatewayID string, input RepoGatewayConnectionInput) []sandbox.EgressProxySecret {
 	proxyURL := modelProxyURL(s.gitBaseURL)
-	if proxyURL == "" || len(s.modelSeats) == 0 || input.UserID <= 0 || input.RepositoryID <= 0 {
-		return
+	host := apiHost(s.gitBaseURL)
+	if proxyURL == "" || len(s.modelSeats) == 0 || input.UserID <= 0 || input.RepositoryID <= 0 || !sandbox.ValidEgressHost(host) {
+		return nil
 	}
 	holder := "gateway-" + gatewayID
 	token, err := issueModelProxyToken(ctx, s.q, input.UserID, input.RepositoryID, holder, holder)
 	if err != nil {
 		slog.Warn("mint gateway model credential failed", "gateway_id", gatewayID, "error", err)
-		return
+		return nil
 	}
+	secrets := make([]sandbox.EgressProxySecret, 0, len(s.modelSeats))
 	for _, seat := range s.modelSeats {
-		env[seat.KeyEnv] = token.Plaintext
+		env[seat.KeyEnv] = sandbox.EgressProxyPlaceholder(seat.KeyEnv)
+		secrets = append(secrets, sandbox.EgressProxySecret{
+			Name:         seat.KeyEnv,
+			Value:        token.Plaintext,
+			Hosts:        []string{host},
+			MatchHeaders: []string{"authorization", "x-api-key"},
+		})
 	}
 	env[gatewayModelCredentialIDEnv] = strconv.FormatInt(token.ID, 10)
 	for name, value := range modelproxy.GuestEnvironment(proxyURL, s.modelSeats) {
 		env[name] = value
 	}
+	return secrets
 }
 
 func (s *RepoGatewayService) startGatewayService(ctx context.Context, vmID string, env map[string]string) error {

@@ -104,7 +104,7 @@ func TestRepoGateway_Z_GoldenSnapshotWorkspaceAndReaperBranches(t *testing.T) {
 		deleteVMFn: func(context.Context, string) error { return errors.New("delete orphan failed") },
 	}
 	svc := newTestRepoGatewayService(&fakeRepoGatewayQuerier{}, vm, WithRepoGatewayGoldenSnapshots(golden))
-	created, err := svc.createGatewayVM(ctx)
+	created, err := svc.createGatewayVM(ctx, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "vm-bare", created.ID)
 	assert.Equal(t, 2, createCalls)

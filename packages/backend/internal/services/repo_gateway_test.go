@@ -194,6 +194,7 @@ type fakeRepoGatewayVMClient struct {
 	systemdSpecs      []sandbox.ServiceSpec
 	execAwaitReqs     []sandbox.ExecRequest
 	startedVMIDs      []string
+	startReqs         []sandbox.StartRequest
 	deletedVMIDs      []string
 	getVMRequestedIDs []string
 	mappedDomains     []string
@@ -234,6 +235,7 @@ func (f *fakeRepoGatewayVMClient) InspectSandbox(ctx context.Context, vmID strin
 
 func (f *fakeRepoGatewayVMClient) StartSandbox(ctx context.Context, vmID string, req sandbox.StartRequest) (sandbox.StartResult, error) {
 	f.startedVMIDs = append(f.startedVMIDs, vmID)
+	f.startReqs = append(f.startReqs, req)
 	if f.startVMFn != nil {
 		return f.startVMFn(ctx, vmID, req)
 	}
@@ -675,7 +677,8 @@ func TestRepoGatewayService_Reuse_SuspendedVM_RedeclaresServiceWithSecrets(t *te
 	require.Len(t, vm.systemdSpecs, 1, "resume must re-declare the gateway service")
 	spec := vm.systemdSpecs[0]
 	assert.Equal(t, "smithers_gateway_cafe", spec.Env["SMITHERS_API_KEY"])
-	assertGatewayModelSeat(t, spec.Env)
+	require.NotEmpty(t, vm.startReqs)
+	assertGatewayModelSeat(t, spec.Env, vm.startReqs[len(vm.startReqs)-1].EgressProxy)
 
 	assert.Equal(t, "alice/demo", spec.Env["SMITHERS_REPO"])
 	assert.Equal(t, "gw-idle-seated", spec.Env["SMITHERS_GATEWAY_ID"])
@@ -733,7 +736,8 @@ func TestRepoGatewayService_Reuse_TransientServiceDeclareFailure_RetriesInPlace(
 	require.Len(t, vm.systemdSpecs, 2)
 	assert.Equal(t, "smithers_gateway_cafe", vm.systemdSpecs[1].Env["SMITHERS_API_KEY"],
 		"the retry carries the same full env, not a degraded one")
-	assertGatewayModelSeat(t, vm.systemdSpecs[1].Env)
+	require.NotEmpty(t, vm.startReqs)
+	assertGatewayModelSeat(t, vm.systemdSpecs[1].Env, vm.startReqs[len(vm.startReqs)-1].EgressProxy)
 }
 
 func TestRepoGatewayService_Reuse_TransientHardResumeFailure_RetriesInPlace(t *testing.T) {
