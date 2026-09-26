@@ -1,12 +1,6 @@
 {
   "entries": [
     {
-      "label": "//scripts:dependencyBoundaries",
-      "owner": "will",
-      "reason": "Undeclared imports (effect in apps/docs, @effect/platform-node in flows, apps/model-host reaching into apps/app).",
-      "expires": "2026-10-10"
-    },
-    {
       "label": "//:fmt",
       "platforms": [
         "win32"
