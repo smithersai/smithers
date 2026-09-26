@@ -1248,9 +1248,13 @@ result. The controller refuses that completion once per run, journals
 continues the frame: the next model turn reads what the cell printed, the
 call results, and "Answer after reading the calls' output". A cell whose
 program reads a result in a condition, in another call's input, or in the
-completion itself (`if (after.exitCode === 0) ctx.done(…)`), and a cell whose
-calls are effects with discarded results, are spared. `FailedCallDemanded`
-takes precedence, and with no frame left the answer stands.
+completion itself (`if (after.exitCode === 0) ctx.done(…)`,
+`ctx.done((await ctx.call(…)).stdout)`), a cell that hands a result to
+anything the parse cannot see through (a function of its own, a `.then`
+callback, an alias), and a cell whose calls are effects with discarded
+results, are spared. `FailedCallDemanded` takes precedence, and with no frame
+left the answer stands; a refused answer is also what the run ends on when
+the budget runs out before it completes again.
 
 ## UnresolvedFailure
 

@@ -767,12 +767,18 @@ const hiredViolations = (
   for (const limit of ["tokensPerTask", "concurrency"] as const) {
     if (profile.budget[limit] > parent.budget[limit]) {
       found.push(
-        violation("budget-exceeded", profile.id, `${limit} ${profile.budget[limit]} exceeds ${hirer}'s ${parent.budget[limit]}`)
+        violation(
+          "budget-exceeded",
+          profile.id,
+          `${limit} ${profile.budget[limit]} exceeds ${hirer}'s ${parent.budget[limit]}`
+        )
       )
     }
   }
   if (profile.seat !== parent.seat && !(policy.hireSeats ?? []).includes(profile.seat)) {
-    found.push(violation("hire-widens", profile.id, `seat ${profile.seat} is neither ${hirer}'s nor an allowed hire seat`))
+    found.push(
+      violation("hire-widens", profile.id, `seat ${profile.seat} is neither ${hirer}'s nor an allowed hire seat`)
+    )
   }
   const held = new Set(parent.skills)
   const unheld = profile.skills.filter((skill) => !held.has(skill))
