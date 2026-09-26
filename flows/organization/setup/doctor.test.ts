@@ -8,6 +8,7 @@ import { after, before, test } from "node:test"
 import { atLeast, command, doctor, type DoctorOptions, hypervisorLine, type Line, render } from "./doctor.ts"
 import { init } from "./init.ts"
 import type { Install } from "./microsandbox.ts"
+import type { System as NodeSystem } from "./node.ts"
 import type { Io } from "./settings.ts"
 
 const scratch = mkdtempSync(join(tmpdir(), "org-doctor-"))
@@ -85,13 +86,22 @@ const healthyEnv = () => ({
   SMITHERS_SLACK_API_BASE_URL: slackUrl
 })
 
+/** One Homebrew Node reporting `version`, and nothing else installed. */
+const fakeNode = (version: string): NodeSystem => ({
+  exists: (path) => path === "/fake/node" || path === "/opt/homebrew/bin/brew",
+  list: () => [],
+  version: () => version,
+  real: (path) => path,
+  homebrew: ["/fake/node"]
+})
+
 const healthy = (overrides: Partial<DoctorOptions> = {}): DoctorOptions => ({
   root,
   repos: [`example/demo=${repo}`],
   stateDir,
   env: healthyEnv(),
   checkout,
-  nodeVersion: "26.5.0",
+  node: fakeNode("26.5.0"),
   install,
   hypervisor: () => ({ name: "hypervisor", status: "pass", detail: "fixture" }),
   probe: async (image) => ({ ok: true, detail: `${image} booted`, durationMs: 1 }),
@@ -220,8 +230,11 @@ test("a missing jj fails naming the install", async () => {
 })
 
 test("host prerequisites fail with the command that fixes them", async () => {
-  const old = await doctor(healthy({ nodeVersion: "26.3.9" }))
-  assert.match(one(old, "node").detail, /older than 26\.4\.0/)
+  const old = await doctor(healthy({ node: fakeNode("26.3.9") }))
+  assert.match(one(old, "node").detail, /^v26\.3\.9 is older than 26\.4\.0$/)
+  assert.equal(one(old, "node").fix, "brew install node@26")
+  const none = await doctor(healthy({ node: { ...fakeNode("26.5.0"), homebrew: [] } }))
+  assert.match(one(none, "node").detail, /^no Node >= 26\.4\.0$/)
   const missing = await doctor(healthy({ install: null }))
   assert.equal(one(missing, "microsandbox").status, "fail")
   assert.match(one(missing, "microsandbox").fix!, /pnpm -C .* install/)

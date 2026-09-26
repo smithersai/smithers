@@ -11,8 +11,11 @@ pnpm install
 cargo +1.98.0 build --release --locked -p smithers-ffi --bin smithers-jj-export
 ```
 
-Node must be at least `.node-version`. `doctor` pulls the VM image
-(`node:26-bookworm`) when it is not cached.
+Node must be at least `.node-version`, installed from Homebrew, fnm, Volta
+or nvm (or on `PATH`, or named by `SMITHERS_ORG_NODE`); `doctor` names the
+one it found, or the command that installs one, and `install-service` runs
+the host with it. `doctor` pulls the VM image (`node:26-bookworm`) when it is
+not cached.
 
 ## 2. Create the organization
 

@@ -151,16 +151,26 @@ test("the commands read the state directory's .env and refuse off macOS", async 
   assert.throws(() => optionsOf({}, capture(env).io), /\.env is missing; run init first/)
   mkdirSync(stateDir, { recursive: true })
   writeFileSync(join(stateDir, ".env"), "SMITHERS_ORG_ROOT=wiki\n")
-  const resolved = optionsOf({}, capture(env).io)
+  // The Node where it is installed, not this process's.
+  const installed = {
+    exists: (path: string) => path === "/opt/node/bin/node",
+    list: () => [],
+    version: () => "99.0.0",
+    real: (path: string) => path,
+    homebrew: ["/opt/node/bin/node"]
+  }
+  assert.throws(() => optionsOf({}, capture(env).io, { ...installed, homebrew: [] }), /^Error: no Node >= \d+\.\d+\.\d+; /)
+  const resolved = optionsOf({}, capture(env).io, installed)
   assert.equal(resolved.workingDirectory, join(scratch, "wiki"))
-  assert.equal(resolved.node, process.execPath)
+  assert.equal(resolved.node, "/opt/node/bin/node")
+  assert.equal(resolved.path.split(":")[0], "/opt/node/bin")
   assert.equal(resolved.stateDir, stateDir)
   writeFileSync(join(stateDir, ".env"), "# no root\n")
-  assert.equal(optionsOf({}, capture(env).io).workingDirectory, stateDir)
+  assert.equal(optionsOf({}, capture(env).io, installed).workingDirectory, stateDir)
 
   const agents = join(scratch, "cmd-agents")
   const { system } = fakeLaunchd(agents)
-  const [installCommand, uninstallCommand] = commands(() => system, "darwin")
+  const [installCommand, uninstallCommand] = commands(() => system, "darwin", installed)
   const run = capture(env)
   assert.equal(await installCommand.run([], run.io), 0)
   assert.deepEqual(run.out, [`installed ${label}`, `installed ${cleanLabel}`, `logs ${join(stateDir, "logs")}`])

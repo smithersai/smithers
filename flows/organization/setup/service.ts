@@ -4,7 +4,8 @@
  *
  * Two agents in `~/Library/LaunchAgents`:
  *
- * - `sh.smithers.org` runs `serve` for one state directory, with this Node,
+ * - `sh.smithers.org` runs `serve` for one state directory, with the Node
+ *   `setup/node.ts` finds (at least `.node-version`, where Node is installed),
  *   `jj` and `git` on `PATH`, the organization root as its working
  *   directory, and its output in `<state>/logs/host.log`. It restarts after
  *   a crash, no sooner than {@link throttleSeconds} apart.
@@ -19,7 +20,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { homedir } from "node:os"
 import { delimiter, dirname, join } from "node:path"
 import { parseArgs } from "node:util"
-import { atLeast } from "./doctor.ts"
+import * as NodeResolve from "./node.ts"
 import {
   absolute,
   checkoutRoot,
@@ -231,20 +232,26 @@ export const uninstall = (system: Launchd): ReadonlyArray<readonly [string, Outc
 ]
 
 /** The options this process would install: its Node, this checkout, and the state directory's `.env`. */
-export const optionsOf = (flags: { readonly "state-dir"?: string | undefined }, io: Io): ServiceOptions => {
+export const optionsOf = (
+  flags: { readonly "state-dir"?: string | undefined },
+  io: Io,
+  on: NodeResolve.System = NodeResolve.system
+): ServiceOptions => {
   const stateDir = absolute(io.cwd, nonEmpty(flags["state-dir"]) ?? stateDirOf(io.env))
   const env = withEnvFile(io.env, join(stateDir, ".env"))
   if (!existsSync(join(stateDir, ".env"))) throw new Error(`${join(stateDir, ".env")} is missing; run init first`)
   const wanted = readFileSync(join(checkoutRoot, ".node-version"), "utf8").trim()
-  if (!atLeast(process.versions.node, wanted)) throw new Error(`Node ${process.versions.node} is older than ${wanted}; run with Node ${wanted}`)
+  const home = io.env.HOME ?? homedir()
+  const resolved = NodeResolve.resolve(env, home, wanted, on)
+  if (resolved._tag === "Missing") throw new Error(`no Node >= ${wanted}; ${resolved.fix}`)
   const root = nonEmpty(env.SMITHERS_ORG_ROOT)
   return {
-    node: process.execPath,
+    node: resolved.node.path,
     checkout: checkoutRoot.replace(/\/$/, ""),
     stateDir,
     workingDirectory: root === undefined ? stateDir : absolute(io.cwd, root),
-    path: servicePath(process.execPath, io.env.PATH ?? ""),
-    home: io.env.HOME ?? homedir()
+    path: servicePath(resolved.node.path, io.env.PATH ?? ""),
+    home
   }
 }
 
@@ -259,14 +266,18 @@ const refuseOffMac = (io: Io, platform: NodeJS.Platform): boolean => {
 }
 
 /** The commands, over a launchd a test can replace. */
-export const commands = (system: () => Launchd = launchd, platform: NodeJS.Platform = process.platform) => {
+export const commands = (
+  system: () => Launchd = launchd,
+  platform: NodeJS.Platform = process.platform,
+  node: NodeResolve.System = NodeResolve.system
+) => {
   const installCommand: Command = {
     name: "install-service",
     usage: "install-service [--state-dir <dir>]",
     run: async (argv, io) => {
       const { values } = parseArgs({ args: [...argv], options: { "state-dir": { type: "string" } } })
       if (refuseOffMac(io, platform)) return 1
-      const options = optionsOf(values, io)
+      const options = optionsOf(values, io, node)
       report(io, install(options, system()))
       io.out(`logs ${logsDir(options.stateDir)}`)
       return 0

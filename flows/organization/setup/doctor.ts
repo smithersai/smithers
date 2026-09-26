@@ -7,6 +7,7 @@
 import { Effect } from "effect"
 import { spawnSync } from "node:child_process"
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { parseArgs } from "node:util"
 import * as RequestExecutor from "../../../packages/smithers/agent/model/src/RequestExecutor.ts"
@@ -27,8 +28,10 @@ import {
   withEnvFile,
   workspaceGrants
 } from "./settings.ts"
+import * as NodeResolve from "./node.ts"
 import * as Subscriptions from "./subscriptions.ts"
 import { modelSeats } from "./templates.ts"
+import { atLeast } from "./version.ts"
 
 export type Status = "pass" | "fail" | "skip"
 
@@ -54,7 +57,8 @@ export interface DoctorOptions {
   readonly env: Readonly<Record<string, string | undefined>>
   /** The public checkout: `.node-version` and `target/release/`. */
   readonly checkout?: string | undefined
-  readonly nodeVersion?: string | undefined
+  /** How the host's Node is found; a test replaces it. */
+  readonly node?: NodeResolve.System | undefined
   readonly platform?: NodeJS.Platform | undefined
   readonly fetch?: Fetch | undefined
   /** The `jj` executable. Default `jj` on `PATH`. */
@@ -75,25 +79,20 @@ const pass = (name: string, detail: string): Line => ({ name, status: "pass", de
 const fail = (name: string, detail: string, fix: string): Line => ({ name, status: "fail", detail, fix })
 const skip = (name: string, detail: string): Line => ({ name, status: "skip", detail })
 
-const versionParts = (version: string) => version.trim().replace(/^v/, "").split(".").map((part) => Number(part))
+export { atLeast }
 
-/** `true` when `actual` is at least `wanted`, compared as dotted numbers. */
-export const atLeast = (actual: string, wanted: string): boolean => {
-  const a = versionParts(actual), w = versionParts(wanted)
-  for (let index = 0; index < Math.max(a.length, w.length); index++) {
-    const left = a[index] ?? 0, right = w[index] ?? 0
-    if (left !== right) return left > right
-  }
-  return true
-}
-
-const nodeLine = (checkout: string, actual: string): Line => {
+/** The Node the service would run: found where Node is installed, not only this process's. */
+const nodeLine = (checkout: string, env: DoctorOptions["env"], on: NodeResolve.System | undefined): Line => {
   const file = join(checkout, ".node-version")
   if (!existsSync(file)) return fail("node", `${file} is missing`, `git -C ${checkout} status`)
   const wanted = readFileSync(file, "utf8").trim()
-  return atLeast(actual, wanted)
-    ? pass("node", `v${actual} (>= ${wanted})`)
-    : fail("node", `v${actual} is older than ${wanted}`, `install Node ${wanted} (e.g. fnm install ${wanted})`)
+  const resolved = NodeResolve.resolve(env, env.HOME ?? homedir(), wanted, on)
+  if (resolved._tag === "Found") return pass("node", `v${resolved.node.version} (>= ${wanted}) ${resolved.node.path}`)
+  return fail(
+    "node",
+    resolved.newest === undefined ? `no Node >= ${wanted}` : `v${resolved.newest.version} is older than ${wanted}`,
+    resolved.fix
+  )
 }
 
 const microsandboxLine = (install: Install | undefined): Line => {
@@ -364,7 +363,7 @@ const stateLine = (stateDir: string): Line => {
 export const doctor = async (options: DoctorOptions): Promise<Array<Line>> => {
   const checkout = options.checkout ?? checkoutRoot
   const install = options.install === undefined ? locate() : options.install ?? undefined
-  const lines: Array<Line> = [nodeLine(checkout, options.nodeVersion ?? process.versions.node)]
+  const lines: Array<Line> = [nodeLine(checkout, options.env, options.node)]
   const sandbox = microsandboxLine(install)
   lines.push(sandbox)
   const hypervisor = (options.hypervisor ?? (() => hypervisorLine(options.platform ?? process.platform)))()
