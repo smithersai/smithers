@@ -99,6 +99,13 @@ export interface WorkflowController {
     readonly binding?: GatewayWorkspaceBinding
     readonly kind?: string
   }) => Promise<{ readonly runId: string } | LaunchRefusal>
+  readonly requestRerun: (args: {
+    readonly repo: string
+    readonly binding: GatewayWorkspaceBinding
+    readonly runId: string
+    readonly workflow: string
+    readonly input: Record<string, unknown>
+  }) => Promise<string | { readonly value: string }>
   /** A decision made on the workspace approvals inbox, for a gate whose own card never landed. */
   readonly forwardInboxApprovalDecision: (
     cardId: string,
@@ -869,6 +876,16 @@ export const createWorkflowController = (
     return listWorkspaceWorkflows()
   }
 
+  const requestRerun: WorkflowController["requestRerun"] = async ({ runId, ...args }) => {
+    const guard = workflowIdentityGuard()
+    if (guard !== undefined) return guard
+    if (args.binding.workspaceId === undefined) {
+      const balanceGuard = zeroBalanceGuard()
+      if (balanceGuard !== undefined) return balanceGuard
+    }
+    return requests.start({ ...args, rerunOf: runId, actor: ctx.commandActor })
+  }
+
   const runWorkflow = async (name: string, repoArg?: string, inputArg?: Record<string, unknown>, sourceCard?: string): Promise<string | void | { readonly value: string }> => {
     const input = inputArg ?? {}
     const guard = workflowIdentityGuard()
@@ -1209,6 +1226,7 @@ export const createWorkflowController = (
     provisionWorkspace,
     upsertRunCard,
     launchWorkflow,
+    requestRerun,
     forwardInboxApprovalDecision
   }
 }

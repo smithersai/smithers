@@ -109,6 +109,7 @@ const AGENT_ROWS: ReadonlyArray<{ readonly name: string; readonly args?: string;
   { name: "workspace.facet", args: "ws-1 files", confirm: false },
   { name: "change.facet", args: "c1 diff", confirm: false },
   { name: "flow.run.retry", args: "card-1", confirm: true },
+  { name: "runs.rerun", args: "sourceCard=card-1 run-1", confirm: true },
   { name: "cloud.prompt", confirm: false },
   /* Agents as data (custom-agents.md): listing and the form render cards; defining what spends money confirms. */
   { name: "agent.list", confirm: false },

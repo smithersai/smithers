@@ -325,26 +325,20 @@ export const createRunsController = (
     if (guard !== undefined) return guard
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
-    const card = runCardFor(target)
+    const card = runCardFor(target, sourceCard)
     if (card === undefined) {
       return `Open the run first (runs.open ${runId}) — rerunning needs the card that knows the flow and its launch input.`
     }
     if (card.payload.input === undefined) {
       return `This run's launch input isn't recorded on this client, so there's nothing faithful to rerun — start the flow fresh with flow.run ${card.payload.workflow}.`
     }
-    const repo = card.payload.repo
-    const binding = { workspaceId: target.workspaceId }
-    const provisioned = await workflows.provisionWorkspace(repo, binding)
-    if (provisioned !== true) return provisioned
-    const launched = await workflows.launchWorkflow({
-      repo,
-      binding,
+    return workflows.requestRerun({
+      repo: target.repo,
+      binding: { workspaceId: target.workspaceId },
+      runId,
       workflow: card.payload.workflow,
-      input: workflowInputOf(card)!,
-      title: `${card.payload.workflow} — ${repo}`
+      input: workflowInputOf(card)!
     })
-    if ("message" in launched) return launched.message
-    return { value: `run-started workflow=${card.payload.workflow} run=${launched.runId} repo=${repo}` }
   }
 
   const signalRun = async (runId: string, name: string, payloadText?: string, sourceCard?: string): Promise<CommandResult> => {

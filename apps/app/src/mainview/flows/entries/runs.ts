@@ -95,6 +95,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     /* A relaunch is real work on the user's workspace: the launch capability. */
     name: "runs.rerun",
+    confirm: "run the flow again",
     summary: "Run a run's flow again with the same input",
     runtime: ["cloud"],
     args: "[sourceCard=id] <runId>",

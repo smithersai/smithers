@@ -15,12 +15,15 @@ export default showcase({
   summary: "A flow launch returns at once; its toast runs until the job really finishes.",
   flows: ["flow.run", "runs.rerun"],
   run: async ({ page, app, backend }) => {
-    const preparation = gate(), launch = gate()
+    const preparation = gate(), launch = gate(), rerunPreparation = gate()
     let complete = false
+    let rerunComplete = false
+    let rerunProvisions = 0
     let runs = 0
     await backend.cloud({ capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
     await backend.route(url => url.pathname === "/api/workflow/provision", async route => {
-      await preparation.promise
+      if (runs > 0) { rerunProvisions += 1; await rerunPreparation.promise }
+      else await preparation.promise
       await route.fulfill({ json: { status: "ready" } })
     })
     await backend.route(url => url.pathname === "/api/workflow/rpc", async route => {
@@ -29,7 +32,7 @@ export default showcase({
       if (call.procedure === "Plan") payload = { planId: "plan-background", digest: "digest", envelope: { capabilities: [], flows: [], budget: {} } }
       if (call.procedure === "Run") { await launch.promise; runs += 1; payload = { runId: runs === 1 ? "run-review-70" : "run-review-72" } }
       const runId = (call.payload.selector as { runId?: string } | undefined)?.runId ?? "run-review-70"
-      const done = complete && runId === "run-review-70"
+      const done = runId === "run-review-70" ? complete : rerunComplete
       if (call.procedure === "Projection.Snapshot") payload = { rows: call.payload.selector?._tag === "run-summary" ? [{
         runId, flowId: "review-pr", status: done ? "completed" : "running", createdAt: 1, updatedAt: done ? 3 : 2,
         turns: 3, calls: 7, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 1, outputTokens: 1,
@@ -75,9 +78,34 @@ export default showcase({
     await app.show(card)
 
     // Run again: the same flow and input, a new run and a new card.
-    await app.click(card.first().getByRole("button", { name: "Run again" }))
+    const rerun = card.first().getByRole("button", { name: "Run again" })
+    try {
+      await rerun.focus()
+      await page.keyboard.press("Enter")
+      await expect.poll(() => rerunProvisions).toBe(1)
+      await expect(card).toHaveCount(2)
+      await expect(card.last()).toContainText("Requested")
+      await expect(toast).toBeVisible()
+      await page.keyboard.press("ControlOrMeta+k")
+      await input.fill("Chat during rerun preparation")
+      await expect(input).toBeEditable()
+      await page.keyboard.press("Escape")
+      await rerun.focus()
+      await page.keyboard.press("Enter")
+      await expect(card).toHaveCount(2)
+      expect(runs).toBe(1)
+      await page.reload()
+      await expect.poll(() => rerunProvisions).toBe(2)
+      await expect(card).toHaveCount(2)
+      await expect(toast).toBeVisible()
+    } finally { rerunPreparation.release() }
     const again = page.locator('[data-kind="run-trace"][data-run-id="run-review-72"]')
     await expect(again).toContainText("Running", { timeout: 15_000 })
     await app.show(again)
+    await expect(toast).toBeVisible()
+    expect(runs).toBe(2)
+    rerunComplete = true
+    await expect(again).toContainText("Done", { timeout: 15_000 })
+    await expect(toast).toHaveCount(0)
   }
 })

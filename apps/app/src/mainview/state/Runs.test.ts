@@ -1,4 +1,4 @@
-import { workflowInputOf } from "./WorkflowLaunch"
+import { workflowLaunchOf, workflowInputOf } from "./WorkflowLaunch"
 import { decodeEventValue } from "./EventValue"
 import { flowArgs } from "../flows/FlowArgs"
 import { runtimeRunKey } from "./RuntimeProjection"
@@ -582,6 +582,201 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
   })
 })
 
+describe("source-bound durable reruns", () => {
+  const source = (id: string, input?: Record<string, unknown>): Extract<Card, { kind: "run-trace" }> => ({
+    id, kind: "run-trace", title: id, status: "acted", createdAt: 1, ordinal: 1,
+    payload: { repo: REPO, runId: "original", workflow: "review-pr", phase: "completed", steps: [], result: null,
+      lastSeq: 0, gatewayBindingVersion: 1, ...(input === undefined ? {} : { input }) }
+  })
+  const ready = async (services?: AppServices, storage = memoryStorage()) => {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    await signIn(store)
+    for (const id of ["a", "b"]) await store.dispatch({ type: "card.upsert", actor: "system", card: source(id, { args: id }) }).isPersisted.promise
+    const double = relay()
+    const controller = createAppController(store, silentAgent, services ?? double.services)
+    return { store, controller, double, storage }
+  }
+  const requests = (store: Awaited<ReturnType<typeof webStore>>) => [...store.collections.cards.values()]
+    .map(workflowLaunchOf).filter(request => request !== undefined)
+
+  test("the explicit view supplies the rerun's input", async () => {
+    const { controller, double } = await ready()
+    const result = await controller.commands.run("runs.rerun", "sourceCard=b original")
+    expect(result.status).toBe("executed")
+    await waitFor(() => double.state.launched.length === 1)
+    expect(double.state.launched[0]).toMatchObject({ input: { args: "b" } })
+  })
+
+  test("rerun metadata never replaces colliding keys in the flow's input", async () => {
+    const { store, controller, double } = await ready()
+    const input = { args: "b", rerunOf: "user value", _workflowLaunch: { user: "input" } }
+    await store.dispatch({ type: "card.upsert", actor: "system", card: source("b", input) }).isPersisted.promise
+    await controller.commands.run("runs.rerun", "sourceCard=b original")
+    await waitFor(() => double.state.launched.length === 1)
+    expect(double.state.launched[0]?.input).toEqual(input)
+    await waitFor(() => requests(store)[0]?.runId === "run-1")
+    expect(workflowInputOf(runCardInScope(store, { repo: REPO, runId: "run-1" })!)).toEqual(input)
+  })
+
+  test("a refused rerun launch remains retryable with the same saved input", async () => {
+    const refusals: Record<string, string> = { Plan: "Launch unavailable" }
+    const double = relay({ refusals })
+    const { store, controller } = await ready(double.services)
+    await controller.commands.run("runs.rerun", "sourceCard=b original")
+    await waitFor(() => requests(store)[0]?.error !== undefined)
+    const request = requests(store)[0]!
+    expect(request.error?.message).toContain("Launch unavailable")
+    expect(double.state.launched).toHaveLength(0)
+    delete refusals.Plan
+    await controller.commands.run("flow.run.retry", `flow-request-${request.id}`)
+    await waitFor(() => double.state.launched.length === 1)
+    expect(requests(store)[0]?.id).toBe(request.id)
+    expect(double.state.launched[0]?.input).toEqual({ args: "b" })
+  })
+
+  test("a view without input cannot borrow another view's input", async () => {
+    const { store, controller, double } = await ready()
+    await store.dispatch({ type: "card.upsert", actor: "system", card: source("b") }).isPersisted.promise
+    const result = await controller.commands.run("runs.rerun", "sourceCard=b original")
+    expect(result.status).toBe("failed")
+    expect(said(result)).toContain("nothing faithful to rerun")
+    expect(double.state.launched).toHaveLength(0)
+  })
+
+  test("a rerun acknowledges its saved request while provisioning waits and shares duplicate input", async () => {
+    const gate = Promise.withResolvers<void>()
+    const double = relay()
+    let provisions = 0
+    const fixture = await ready({ ...double.services, fetchImpl: async (input, init) => {
+      if (String(input).endsWith("/api/workflow/provision")) { provisions += 1; await gate.promise }
+      return double.services.fetchImpl!(input, init)
+    } })
+    let answered = false
+    const result = fixture.controller.commands.run("runs.rerun", "sourceCard=b original").then(result => { answered = true; return result })
+    try {
+      await waitFor(() => provisions === 1)
+      await waitFor(() => answered)
+      expect(said(await result)).toContain("run-requested")
+      expect(requests(fixture.store)).toHaveLength(1)
+      expect(requests(fixture.store)[0]?.input).toEqual({ args: "b" })
+      await fixture.controller.commands.run("runs.rerun", "sourceCard=b original")
+      expect(requests(fixture.store)).toHaveLength(1)
+      expect(provisions).toBe(1)
+      await fixture.store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat while rerunning" }).isPersisted.promise
+      expect(double.state.launched).toHaveLength(0)
+      gate.resolve()
+      await waitFor(() => double.state.launched.length === 1)
+    } finally { gate.resolve(); await result }
+  })
+
+  test("the agent asks before launching the selected view's input", async () => {
+    const { store, controller, double } = await ready()
+    const result = await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({
+      action: "execute", name: "runs.rerun", args: "sourceCard=b original"
+    }) })
+    expect(result).toContain("asked the user to confirm")
+    expect(requests(store)).toHaveLength(0)
+    expect(double.state.launched).toHaveLength(0)
+    const action = [...store.collections.messages.values()].find(message => message.action?.flow === "runs.rerun")?.action
+    expect(action?.args).toBe("sourceCard=b original")
+    await controller.commands.run(action!.flow, action!.args)
+    await waitFor(() => double.state.launched.length === 1)
+    expect(double.state.launched[0]?.input).toEqual({ args: "b" })
+  })
+
+  for (const args of ["sourceCard=missing original", "sourceCard=b another-run"]) {
+    test(`invalid rerun source refuses: ${args}`, async () => {
+      const { store, controller, double } = await ready()
+      expect((await controller.commands.run("runs.rerun", args)).status).toBe("failed")
+      expect(requests(store)).toHaveLength(0)
+      expect(double.state.launched).toHaveLength(0)
+    })
+  }
+
+  test("a refused admission saves no request, launches nothing, and can retry", async () => {
+    const backing = memoryStorage()
+    let armed = false
+    let refused = 0
+    const storage = { ...backing, setItem: (key: string, value: string) => {
+      if (armed && key.endsWith(".staged") && value.includes("rerunOf")) {
+        armed = false; refused += 1
+        throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError", code: 22 })
+      }
+      backing.setItem(key, value)
+    } }
+    const { store, controller, double } = await ready(undefined, storage)
+    armed = true
+    const result = await controller.commands.run("runs.rerun", "sourceCard=b original")
+    expect(result.status).toBe("failed")
+    expect(said(result)).toContain("could not be saved")
+    expect(refused).toBe(1)
+    expect(requests(store)).toHaveLength(0)
+    expect(double.state.launched).toHaveLength(0)
+    await controller.commands.run("runs.rerun", "sourceCard=b original")
+    await waitFor(() => double.state.launched.length === 1)
+    expect(double.state.launched[0]?.input).toEqual({ args: "b" })
+  })
+
+  test("reload resumes the same rerun request and its saved input", async () => {
+    const gate = Promise.withResolvers<void>()
+    const double = relay()
+    let provisions = 0
+    const services = { ...double.services, fetchImpl: async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/api/workflow/provision")) { provisions += 1; await gate.promise }
+      return double.services.fetchImpl!(input, init)
+    } }
+    const fixture = await ready(services)
+    let restored: Awaited<ReturnType<typeof webStore>> | undefined
+    let reopened: AppController | undefined
+    try {
+      await fixture.controller.commands.run("runs.rerun", "sourceCard=b original")
+      await waitFor(() => provisions === 1)
+      const id = requests(fixture.store)[0]!.id
+      await fixture.controller.dispose()
+      await fixture.store.dispose?.()
+      restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
+      reopened = createAppController(restored, silentAgent, services)
+      await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+      await waitFor(() => provisions === 2)
+      expect(requests(restored)[0]?.id).toBe(id)
+      expect(requests(restored)[0]?.rerunOf).toBe("original")
+      gate.resolve()
+      await waitFor(() => double.state.launched.length === 1)
+      await waitFor(() => requests(restored!)[0]?.runId === "run-1")
+      expect(double.state.launched[0]?.input).toEqual({ args: "b" })
+    } finally { gate.resolve(); await reopened?.dispose(); await restored?.dispose?.() }
+  })
+
+  for (const change of ["source", "account"] as const) {
+    test(`held rerun preparation respects a later ${change} change`, async () => {
+      const gate = Promise.withResolvers<void>()
+      const double = relay()
+      let entered = false
+      let returned = false
+      const fixture = await ready({ ...double.services, fetchImpl: async (input, init) => {
+        if (String(input).endsWith("/api/workflow/provision")) { entered = true; await gate.promise; returned = true }
+        return double.services.fetchImpl!(input, init)
+      } })
+      try {
+        await fixture.controller.commands.run("runs.rerun", "sourceCard=b original")
+        await waitFor(() => entered)
+        if (change === "account") await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+        else await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: source("b", { args: "changed later" }) }).isPersisted.promise
+        gate.resolve()
+        await waitFor(() => returned)
+        if (change === "account") {
+          await settle(30)
+          expect(double.state.launched).toHaveLength(0)
+        } else {
+          // The admitted request owns its snapshot independently of the original view.
+          await waitFor(() => double.state.launched.length === 1)
+          expect(double.state.launched[0]?.input).toEqual({ args: "b" })
+        }
+      } finally { gate.resolve() }
+    })
+  }
+})
+
 describe("runs.rerun — the same flow, the same input, or the honest refusal", () => {
   test("a run launched from here reruns with its recorded input as a NEW run", async () => {
     const store = await webStore()
@@ -595,7 +790,8 @@ describe("runs.rerun — the same flow, the same input, or the honest refusal", 
     await waitFor(() => runCardInScope(store, { repo: REPO, runId: firstRunId }) !== undefined)
 
     const reran = await controller.commands.run("runs.rerun", firstRunId)
-    expect(said(reran)).toContain("run-started")
+    expect(said(reran)).toContain("run-requested")
+    await waitFor(() => double.state.launched.length === 2)
     expect(double.state.launched).toHaveLength(2)
     expect(double.state.launched[1]).toMatchObject({
       workflow: "review-pr",
@@ -1758,6 +1954,7 @@ describe("workspace-bound run cards", () => {
       if (command === "flow.run") {
         const rerun = await controller.commands.run("runs.rerun", "run-1")
         expect(rerun.status).toBe("executed")
+        await waitFor(() => runCardInScope(store, { repo: REPO, runId: "run-2", workspaceId }) !== undefined)
         expect(runCardInScope(store, { repo: REPO, runId: "run-2", workspaceId })).toMatchObject({ payload: { workspaceId } })
         const launches = double.calls.filter((call) => (call.body as { procedure?: string })?.procedure === "Run")
         expect(launches).toHaveLength(2)
