@@ -850,6 +850,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	)
 	cronSchedulerWorker := services.NewCronSchedulerWorker(queries, workflowRunService)
 	workflowLogBudgetBackfiller := services.NewWorkflowLogBudgetBackfiller(queries)
+	workflowRunTerminalPublisher, ok := workflowRunService.(services.WorkflowRunTerminalPublisher)
+	if !ok {
+		return errors.New("workflow run service does not publish terminal run outcomes")
+	}
 	var workflowSandboxSchedulerWorker *services.WorkflowSandboxSchedulerWorker
 	if runtimeStores.WorkflowScheduler != nil && workflowSandboxClient != nil {
 		workflowSandboxSchedulerWorker = services.NewWorkflowSandboxSchedulerWorker(
@@ -861,6 +865,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			// NixOS CI: a sandbox-plane run with a rendered job graph runs each job
 			// in its own kind=vm guest, built by the same code a workspace uses.
 			services.WithWorkflowSandboxSchedulerCIGuests(workspaceService),
+			// The run service settles the commit status, check run and
+			// workflow_run webhook it announced when it created the run.
+			services.WithWorkflowSandboxSchedulerTerminalPublisher(workflowRunTerminalPublisher),
 		)
 	}
 	gitHubWebhookEventWorker := services.NewGitHubWebhookEventWorker(queries, workflowRunService)

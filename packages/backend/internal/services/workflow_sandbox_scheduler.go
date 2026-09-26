@@ -149,6 +149,10 @@ type WorkflowSandboxSchedulerWorker struct {
 	ciGuests WorkflowCIGuestProvisioner
 	// ciPollInterval is the live-log flush cadence for NixOS CI guests.
 	ciPollInterval time.Duration
+
+	// terminalPublisher settles the commit status, check run and workflow_run
+	// webhook the run announced at creation, and fires downstream triggers.
+	terminalPublisher WorkflowRunTerminalPublisher
 }
 
 func WithWorkflowSandboxSchedulerLogger(logger *slog.Logger) WorkflowSandboxSchedulerOption {
@@ -189,6 +193,15 @@ func WithWorkflowSandboxSchedulerCIPollInterval(interval time.Duration) Workflow
 func WithWorkflowSandboxSchedulerCIGuests(provisioner WorkflowCIGuestProvisioner) WorkflowSandboxSchedulerOption {
 	return func(w *WorkflowSandboxSchedulerWorker) {
 		w.ciGuests = provisioner
+	}
+}
+
+// WithWorkflowSandboxSchedulerTerminalPublisher wires the publisher that every
+// won terminal transition calls. The workflow run service supplies it, so a
+// run's external announcements are settled by the service that made them.
+func WithWorkflowSandboxSchedulerTerminalPublisher(publisher WorkflowRunTerminalPublisher) WorkflowSandboxSchedulerOption {
+	return func(w *WorkflowSandboxSchedulerWorker) {
+		w.terminalPublisher = publisher
 	}
 }
 
@@ -688,7 +701,8 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 		return w.finalizeFailure(finalizeCtx, claim, step.ID, "workflow execution failed")
 	}
 
-	if _, err := w.queries.MarkWorkflowRunSuccess(finalizeCtx, claim.successParams()); err != nil {
+	terminal, err := w.queries.MarkWorkflowRunSuccess(finalizeCtx, claim.successParams())
+	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			// The run left this token/generation underneath us (for example a
 			// cancel, resume, or lease reclaim). Do not overwrite step state or
@@ -705,7 +719,17 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 	RevokeWorkflowRunCredentials(finalizeCtx, w.queries, run.ID, run.RepositoryID)
 	w.cancelRunTasks(finalizeCtx, run.ID)
 	NotifyWorkflowRunEvent(finalizeCtx, w.queries, run.ID, "workflow_sandbox.success")
+	w.publishTerminal(finalizeCtx, terminal)
 	return nil
+}
+
+// publishTerminal settles the run's external announcements. Call it only
+// after this worker's claim-fenced write moved the run to a terminal status;
+// a lost fence means the run's new owner publishes instead.
+func (w *WorkflowSandboxSchedulerWorker) publishTerminal(ctx context.Context, run db.WorkflowRun) {
+	if w.terminalPublisher != nil {
+		w.terminalPublisher.PublishWorkflowRunTerminal(ctx, run)
+	}
 }
 
 // cancelRunTasks terminalizes any dispatched runner tasks still active for a
@@ -790,6 +814,7 @@ func (w *WorkflowSandboxSchedulerWorker) finalizeFailure(ctx context.Context, cl
 	RevokeWorkflowRunCredentials(ctx, w.queries, runID, run.RepositoryID)
 	w.cancelRunTasks(ctx, runID)
 	NotifyWorkflowRunEvent(ctx, w.queries, runID, "workflow_sandbox.failure")
+	w.publishTerminal(ctx, run)
 	return stdErrors.New(message)
 }
 

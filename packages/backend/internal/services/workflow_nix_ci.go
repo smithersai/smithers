@@ -416,11 +416,13 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCIRun(
 	case nixCITaskCancelled:
 		return w.finalizeFailure(finalizeCtx, claim, 0, "workflow execution was cancelled")
 	}
-	if _, err := w.queries.MarkWorkflowRunSuccess(finalizeCtx, claim.successParams()); err != nil {
+	terminal, err := w.queries.MarkWorkflowRunSuccess(finalizeCtx, claim.successParams())
+	if err != nil {
 		return err
 	}
 	RevokeWorkflowRunCredentials(finalizeCtx, w.queries, run.ID, run.RepositoryID)
 	NotifyWorkflowRunEvent(finalizeCtx, w.queries, run.ID, "workflow_sandbox.success")
+	w.publishTerminal(finalizeCtx, terminal)
 	return nil
 }
 

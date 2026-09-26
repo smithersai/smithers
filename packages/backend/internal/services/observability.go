@@ -14,8 +14,20 @@ type AgentSessionMetricsObserver interface {
 	ObserveAgentSessionTimeout()
 }
 
+// ObserveWorkflowRunCompletion counts a run's transition to status. run is the
+// row loaded before the transition; a run that was already terminal was
+// counted when it got there.
 func ObserveWorkflowRunCompletion(observer WorkflowRunMetricsObserver, run db.WorkflowRun, status string) {
-	if observer == nil || run.ID <= 0 || !IsTerminalWorkflowRunStatus(status) || IsTerminalWorkflowRunStatus(run.Status) {
+	if IsTerminalWorkflowRunStatus(run.Status) {
+		return
+	}
+	recordWorkflowRunCompletion(observer, run, status)
+}
+
+// recordWorkflowRunCompletion counts a completion the caller knows is the
+// run's only one, such as a claim-fenced terminal write.
+func recordWorkflowRunCompletion(observer WorkflowRunMetricsObserver, run db.WorkflowRun, status string) {
+	if observer == nil || run.ID <= 0 || !IsTerminalWorkflowRunStatus(status) {
 		return
 	}
 
