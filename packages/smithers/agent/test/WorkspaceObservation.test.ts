@@ -117,6 +117,25 @@ describe("WorkspaceObservation", () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  it("omits exact runtime paths without hiding similarly named project files", async () => {
+    const root = workspace()
+    const options = { excludePaths: ["runtime/sessions", "runtime/tui.log"] }
+    try {
+      write(root, "runtime/sessions-source/kept.ts", "one")
+      write(root, "source/runtime/sessions/kept.ts", "two")
+      write(root, "runtime/tui.log.ts", "three")
+      const before = await measured(root, options)
+      expect(before.paths).toBe(3)
+      write(root, "runtime/sessions/worker/events.jsonl", "journal")
+      write(root, "runtime/tui.log", "diagnostic")
+      expect(await measured(root, options)).toEqual(before)
+      write(root, "source/runtime/sessions/kept.ts", "changed source")
+      expect((await measured(root, options)).digest).not.toBe(before.digest)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("stops at the path bound and reports the measurement as partial", async () => {
     const root = workspace()
     write(root, "a.py", "one")

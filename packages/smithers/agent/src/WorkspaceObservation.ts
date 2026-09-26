@@ -120,6 +120,8 @@ export interface Options {
   readonly prune?: ReadonlyArray<string> | undefined
   /** Name suffixes skipped. Defaults to {@link defaultIgnoreSuffixes}. */
   readonly ignoreSuffixes?: ReadonlyArray<string> | undefined
+  /** Exact root-relative paths to omit, including a directory's descendants. Uses `/` separators. */
+  readonly excludePaths?: ReadonlyArray<string> | undefined
   /**
    * The largest number of files one measurement will cover.
    *
@@ -256,6 +258,7 @@ export const observeHost = (
   Effect.gen(function*() {
     const prune = new Set(options.prune ?? defaultPrune)
     const suffixes = options.ignoreSuffixes ?? defaultIgnoreSuffixes
+    const excluded = new Set(options.excludePaths)
     const maxPaths = options.maxPaths ?? defaultMaxPaths
     const keep = (name: string): boolean => !prune.has(name) && !ignored(name, suffixes)
     const lines: Array<string> = []
@@ -272,9 +275,10 @@ export const observeHost = (
         unreadable = true
         yield* Effect.logWarning(`Workspace observation could not ${method} ${path}`, cause)
       })
-    const walk = (directory: string): Effect.Effect<void> =>
+    const walk = (directory: string, relative = ""): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const entries = yield* host.entries(directory, keep).pipe(
+        const within = (name: string): string => relative === "" ? name : `${relative}/${name}`
+        const entries = yield* host.entries(directory, (name) => keep(name) && !excluded.has(within(name))).pipe(
           Effect.catch((cause) => failed("readDirectory", directory, cause).pipe(Effect.as([])))
         )
         // Names in one directory are unique, so the order is total. `<` is the
@@ -286,7 +290,7 @@ export const observeHost = (
           }
           const path = `${directory}/${name}`
           if (measured._tag === "Failed") yield* failed(measured.method, path, measured.cause)
-          else if (measured._tag === "Directory") yield* walk(path)
+          else if (measured._tag === "Directory") yield* walk(path, within(name))
           else if (measured._tag === "File") lines.push(`${measured.size} ${measured.modified} ${JSON.stringify(path)}`)
         }
       })

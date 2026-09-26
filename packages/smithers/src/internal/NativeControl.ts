@@ -398,8 +398,8 @@ export const make = (
    * @category layers
    * @since 0.1.0
    */
-  const layerObserver = (root: string): Layer.Layer<WorkspaceObservation.Observer> =>
-    WorkspaceObservation.layerHost(NodeWorkspaceObservation.host, root)
+  const layerObserver = (root: string, options?: WorkspaceObservation.Options): Layer.Layer<WorkspaceObservation.Observer> =>
+    WorkspaceObservation.layerHost(NodeWorkspaceObservation.host, root, options)
 
   /**
    * Provides the native flow registry the local CLI discovers flows with.
@@ -986,7 +986,8 @@ export const make = (
           // A host that starts runs holds a real judge: `evaluatorFor`
           // refuses to boot one without it.
           judged: true,
-          supervisor: supervisorOptions
+          supervisor: supervisorOptions,
+          approvalChannel: options.approvalChannel
         })
         const catalogReady = yield* Deferred.make<Executable.Catalog>()
         const authority = modules === undefined
