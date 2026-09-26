@@ -55,4 +55,8 @@ if [ ! -f "$BUILT" ]; then
   exit 1
 fi
 
+# A wave is unattended: an `ask` the model sends a person refuses at once
+# (ApprovalUnavailable, journalled) instead of parking the run on an approval
+# nobody will grant until its budget runs out. evals/harbor sets the same.
+export SMITHERS_ASKS=refuse
 exec node "$BIN" "$@"
