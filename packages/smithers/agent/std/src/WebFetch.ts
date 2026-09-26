@@ -3,7 +3,8 @@
  *
  * The handler fetches through the permission-checked `HttpClient`, follows at
  * most ten redirects, refuses a body over 5 MiB, and returns the final URL,
- * status, and content type beside the rendered body.
+ * status, and content type beside the rendered body. The rendered body keeps
+ * its first 60,000 bytes and reports any cut with `truncated` and `notice`.
  *
  * @since 1.0.0
  */
@@ -14,7 +15,7 @@ import * as Schema from "effect/Schema"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import { capability, envelope } from "./internal/Declaration.ts"
 import { toMarkdown, toText } from "./internal/Html.ts"
-import { header, MAX_RESPONSE_BYTES, readBounded } from "./internal/Http.ts"
+import { capOutput, header, MAX_RESPONSE_BYTES, readBounded } from "./internal/Http.ts"
 import { parseHttpUrl } from "./internal/Url.ts"
 import * as StdError from "./StdError.ts"
 
@@ -65,7 +66,9 @@ export const Output = Schema.Struct({
   url: Schema.String.annotate({ description: "Final URL after redirects" }),
   status: Schema.Int.annotate({ description: "HTTP status code, including error statuses" }),
   contentType: Schema.String.annotate({ description: "Response Content-Type header, or an empty string when absent" }),
-  content: Schema.String.annotate({ description: "Response body rendered in the requested format" })
+  content: Schema.String.annotate({ description: "Response body rendered in the requested format" }),
+  truncated: Schema.Boolean.annotate({ description: "Whether the rendered body exceeded the display budget" }),
+  notice: Schema.optional(Schema.String.annotate({ description: "Truncation disclosure" }))
 })
 /**
  * Decoded output returned by the `webfetch` flow.
@@ -182,12 +185,14 @@ export const run = Effect.fn("WebFetch.run")(function*(
     )
     const raw = new TextDecoder().decode(body)
     const format = input.format ?? "markdown"
-    const content = format === "html" || !normalizedContentType.includes("html")
-      ? raw
-      : format === "text"
-      ? toText(raw)
-      : toMarkdown(raw)
-    return { url: url.toString(), status: response.status, contentType, content }
+    const { text: content, ...disclosure } = capOutput(
+      format === "html" || !normalizedContentType.includes("html")
+        ? raw
+        : format === "text"
+        ? toText(raw)
+        : toMarkdown(raw)
+    )
+    return { url: url.toString(), status: response.status, contentType, content, ...disclosure }
   }
   return yield* Effect.fail(error("request_failed", "Web fetch exceeded the redirect limit"))
 })

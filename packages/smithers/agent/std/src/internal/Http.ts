@@ -132,6 +132,26 @@ export const withDeadline = <A, E, R>(
   })
 }
 
+/**
+ * Keeps the head of rendered response text within the shared output budget and
+ * discloses the cut.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const capOutput = (
+  text: string
+): { readonly text: string; readonly truncated: boolean; readonly notice?: string } => {
+  const rendered = truncateBytes(text, MAX_OUTPUT_BYTES, { keep: "head" })
+  return {
+    text: rendered.text,
+    truncated: rendered.truncated,
+    ...(rendered.truncated
+      ? { notice: notice("bytes", rendered.keptBytes, rendered.keptBytes + rendered.droppedBytes) }
+      : {})
+  }
+}
+
 /** Shared response contract for the GET and POST tools.
  * @since 1.0.0
  * @private
@@ -178,13 +198,6 @@ export const execute = Effect.fn("Http.execute")(function*(
     input.url,
     input.timeout
   )
-  const rendered = truncateBytes(new TextDecoder().decode(bytes), MAX_OUTPUT_BYTES, { keep: "head" })
-  return {
-    status,
-    body: rendered.text,
-    truncated: rendered.truncated,
-    ...(rendered.truncated
-      ? { notice: notice("bytes", rendered.keptBytes, rendered.keptBytes + rendered.droppedBytes) }
-      : {})
-  }
+  const { text, ...disclosure } = capOutput(new TextDecoder().decode(bytes))
+  return { status, body: text, ...disclosure }
 })

@@ -69,14 +69,14 @@ const page = WebFetch.run({
   timeout: 30
 })
 // page.url is the final URL after redirects
-// page.status, page.contentType, page.content
+// page.status, page.contentType, page.content, page.truncated, page.notice
 ```
 
 `format` is `markdown` (the default), `text`, or `html`. HTML is converted only
 when the response is actually HTML; anything else is passed through as it
 arrived.
 
-Four behaviors are worth knowing:
+Five behaviors are worth knowing:
 
 - Up to 10 redirects are followed, and `page.url` is where it ended. Crossing an
   origin drops the `authorization` and `cookie` headers.
@@ -86,6 +86,8 @@ Four behaviors are worth knowing:
   request and the body read, and expiry is a `timeout` failure.
 - A response past 5 MiB is `response_too_large`, checked against
   `content-length` first and then while reading.
+- The rendered `content` keeps its first 60,000 bytes. A longer page sets
+  `truncated: true` and a `notice` with the kept and total bytes.
 
 ## Search the web
 

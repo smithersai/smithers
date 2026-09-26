@@ -414,12 +414,14 @@ it composes.
 | `format`  | `"text"`, `"markdown"`, or `"html"`, optional | Defaults to `markdown`.                                  |
 | `timeout` | number above 0, optional                      | Seconds, defaults to 30, capped at 120.                  |
 
-| Output        | Type    | Meaning                                        |
-| ------------- | ------- | ---------------------------------------------- |
-| `url`         | string  | Final URL after redirects.                     |
-| `status`      | integer | HTTP status, including error statuses.         |
-| `contentType` | string  | The `Content-Type` header, or an empty string. |
-| `content`     | string  | Body rendered in the requested format.         |
+| Output        | Type             | Meaning                                                        |
+| ------------- | ---------------- | -------------------------------------------------------------- |
+| `url`         | string           | Final URL after redirects.                                     |
+| `status`      | integer          | HTTP status, including error statuses.                         |
+| `contentType` | string           | The `Content-Type` header, or an empty string.                 |
+| `content`     | string           | Body rendered in the requested format, capped at 60,000 bytes. |
+| `truncated`   | boolean          | Whether the rendered body exceeded the display budget.         |
+| `notice`      | string, optional | The truncation disclosure.                                     |
 
 Follows up to 10 redirects, dropping `authorization` and `cookie` when the
 origin changes. Fails with `invalid_input`, `timeout`,

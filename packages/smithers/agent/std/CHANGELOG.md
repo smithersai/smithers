@@ -4,6 +4,10 @@
 
 ### Changed
 
+- `webfetch` caps its rendered `content` at the shared 60,000-byte head budget
+  and reports the cut through `truncated` and `notice`, matching `fetch` and
+  `http-post`. It previously returned up to 5 MiB of text to the model. The
+  5 MiB network read limit is unchanged.
 - `bash` measures the tree a containerised command runs in. For an
   `unhermetic` call that names a `container`, the flow runs
   `TreeFingerprint.script` through the container transport in the command's

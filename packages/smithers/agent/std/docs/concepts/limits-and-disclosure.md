@@ -12,8 +12,9 @@ has not.
 
 Three disclosure shapes cover the library:
 
-- `truncated` plus an optional `notice` string, on the paged flows. The notice
-  reads `Showing 3 of 40 lines; output was truncated.`
+- `truncated` plus an optional `notice` string, on the paged and HTTP flows.
+  The notice reads `Showing 3 of 40 lines; output was truncated.`, or
+  `Showing 60000 of 1048576 bytes; output was truncated.` on the HTTP flows.
 - `<stream>Truncated` plus `<stream>DroppedBytes`, on the flows that capture a
   process.
 - A typed refusal, where handing back a fragment would be worse than answering
@@ -33,7 +34,7 @@ handlers apply:
 | Entries per page      | 1,000                       | one `ls` or `glob` page                                    |
 | Matches per call      | 200                         | one `grep` call                                            |
 | Match line preview    | 500 characters              | one `grep` match or context line                           |
-| Rendered text payload | 60,000 bytes                | one `read` page, `fetch` body, or `http-post` body         |
+| Rendered text payload | 60,000 bytes                | one `read` page, `fetch`/`http-post` body, `webfetch` page |
 | Shell stream capture  | 30,000 bytes                | each captured `bash` stream                                |
 | HTTP response body    | 5 MiB                       | `fetch`, `http-post`, and `webfetch`, refused past the cap |
 | Redirects             | 10                          | one `webfetch` call                                        |

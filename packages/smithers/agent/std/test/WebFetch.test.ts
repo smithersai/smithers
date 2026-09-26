@@ -125,6 +125,42 @@ describe("WebFetch", () => {
     expect(output.content).toBe("ok")
   })
 
+  it("keeps the 60 KB head of a 1 MiB response and discloses the cut", async () => {
+    const body = "x".repeat(1024 * 1024)
+    const output = await Effect.runPromise(
+      WebFetch.run({ url: "https://example.test/big", format: "text" }).pipe(
+        Effect.provide(responseLayer(body, { "content-type": "text/plain" }))
+      )
+    )
+
+    expect(output.content).toBe("x".repeat(60_000))
+    expect(output.truncated).toBe(true)
+    expect(output.notice).toBe("Showing 60000 of 1048576 bytes; output was truncated.")
+  })
+
+  it("caps the rendered page, not the raw HTML", async () => {
+    const html = `<script>${"x".repeat(70_000)}</script><p>Hello</p>`
+    const output = await Effect.runPromise(
+      WebFetch.run({ url: "https://example.test/scripted" }).pipe(
+        Effect.provide(responseLayer(html, { "content-type": "text/html" }))
+      )
+    )
+
+    expect(output).toMatchObject({ content: "Hello", truncated: false })
+    expect(output).not.toHaveProperty("notice")
+  })
+
+  it("reports an untruncated body without a notice", async () => {
+    const output = await Effect.runPromise(
+      WebFetch.run({ url: "https://example.test/small" }).pipe(
+        Effect.provide(responseLayer("ok", { "content-type": "text/plain" }))
+      )
+    )
+
+    expect(output).toMatchObject({ content: "ok", truncated: false })
+    expect(output).not.toHaveProperty("notice")
+  })
+
   it("stops streaming once a response exceeds the byte cap", async () => {
     const failure = await Effect.runPromise(
       Effect.flip(
