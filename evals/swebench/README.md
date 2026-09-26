@@ -822,6 +822,18 @@ HARNESS=codex ./evaluate.sh r1-codex astropy__astropy-8707
 It writes `preds-<run-id>.json` and the evaluator's own
 `<model-name>.<run-id>.json` report into this directory.
 
+It reads `patches/` (or `patches-codex/` with `HARNESS=codex`) under
+`SWB_ARTIFACT_ROOT` when that is set, derived by `lib/run-paths.sh --roots`, so
+a wave run off the checkout is graded where it was written. A requested
+instance with no patch file refuses the whole grading and names each missing
+path: a missing file is a run that never finished or a directory the run did
+not write to, never an empty prediction. A 0-byte patch file is an empty
+prediction, graded `empty patch` — the agent changed nothing. Every writer
+(`run-instance.sh`, `run-instance-codex.sh`, the full-benchmark archives,
+`select-candidate.mjs`) writes the file, empty or not, once a run finishes.
+`SWB_PREDS_ONLY=1` writes the predictions file and stops before grading.
+`fixtures/check-make-preds.mjs`, in `verify.sh`, pins all of it.
+
 `SWB_EVAL_WORKERS` sets the evaluator's concurrency (default 1; raising it loses
 the report — see the script). `SWB_CACHE_LEVEL` sets `--cache_level` (default
 `env`, which deletes each official instance image once it is graded); use
@@ -837,7 +849,9 @@ It is an environment cost, identical for both arms and for any patch.
 Three overrides exist for the best-of-n matrix, where one instance has n patches
 and the evaluator's predictions can only ever be keyed by instance id:
 `SWB_PATCH_SUFFIX=-r3` grades `<id>-r3.patch` as `<id>`'s prediction,
-`SWB_PATCHES=selected` grades a different directory, and `SWB_MODEL_NAME`
+`SWB_PATCHES=selected` grades a different directory (absolute, or relative to
+this one; the full benchmark passes its archive's absolute path, so `FB_DIR`
+may sit outside the rig), and `SWB_MODEL_NAME`
 changes the name the report is filed under. `grade-matrix.sh` drives all three.
 
 ### Supervisor replay
@@ -1062,6 +1076,10 @@ drive this derivation without writing into the artifacts of the checkout it runs
 in — `fixtures/check-matrix.mjs` replays the scheduler over fixed stub instance
 ids, and two of those replays at once would otherwise write, measure and delete
 one another's `patches/stub__*.patch`.
+
+The readers follow it too: `evaluate.sh` and `grade-matrix.sh` take their roots
+from `lib/run-paths.sh <harness> --roots`, which prints only the root keys, so a
+wave run under `SWB_ARTIFACT_ROOT` is selected and graded where it was written.
 
 The journal archive carries the **patch's** suffix rather than the run index, so
 the journal and the patch a selection is made from always come from one run. Key

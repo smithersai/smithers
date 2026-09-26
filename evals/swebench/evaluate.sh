@@ -4,6 +4,10 @@
 #   evaluate.sh <run-id> <instance_id> [<instance_id> ...]
 #
 # Reads patches/ by default; set HARNESS=codex to grade patches-codex/ instead.
+# Both defaults sit under SWB_ARTIFACT_ROOT when it is set, derived by
+# `lib/run-paths.sh --roots` — the same derivation the run scripts write
+# through — so a wave run off the checkout is graded where it was written
+# rather than as a set of missing (and so refused) predictions.
 # Writes preds-<run-id>.json and the evaluator's own report,
 # <model-name>.<run-id>.json, into this directory. Both are transient and
 # gitignored; the scorecard reads the report.
@@ -12,7 +16,8 @@
 # the evaluator's predictions can only be keyed by instance id:
 #
 #   SWB_PATCH_SUFFIX=-r3   grade <id>-r3.patch as <id>'s prediction
-#   SWB_PATCHES=selected   grade a different directory (relative to this one)
+#   SWB_PATCHES=selected   grade a different directory: absolute, or relative
+#                          to this one
 #   SWB_MODEL_NAME=...     the model name the report is filed under
 #
 # So a 25-run flows matrix grades as five run ids, one per round, and the
@@ -94,12 +99,20 @@ case "$CACHE_LEVEL" in
   *) echo "SWB_CACHE_LEVEL must be none, base, env or instance"; exit 2 ;;
 esac
 
-if [ "$HARNESS" = "codex" ]; then
-  PATCHES="$S/patches-codex"; MODEL="codex-cli"
-else
-  PATCHES="$S/patches"; MODEL="flows-cell-harness"
-fi
-if [ -n "${SWB_PATCHES:-}" ]; then PATCHES="$S/${SWB_PATCHES}"; fi
+case "$HARNESS" in
+  codex) MODEL="codex-cli" ;;
+  flows) MODEL="flows-cell-harness" ;;
+  *) echo "HARNESS must be flows or codex"; exit 2 ;;
+esac
+ROOTS="$("$S/lib/run-paths.sh" "$HARNESS" --roots)" || exit 2
+PATCH_ROOT=""
+eval "$ROOTS"
+PATCHES="$PATCH_ROOT"
+case "${SWB_PATCHES:-}" in
+  '') ;;
+  /*) PATCHES="$SWB_PATCHES" ;;
+  *) PATCHES="$S/$SWB_PATCHES" ;;
+esac
 if [ -n "${SWB_MODEL_NAME:-}" ]; then MODEL="${SWB_MODEL_NAME}"; fi
 SUFFIX="${SWB_PATCH_SUFFIX:-}"
 case "$SUFFIX" in
@@ -110,11 +123,24 @@ if [ ! -d "$PATCHES" ]; then
   echo "no patches directory at $PATCHES"; exit 1
 fi
 
+# A requested instance with no patch file refuses the whole grading: it is a run
+# that never finished or a directory that is not where the run wrote, and
+# grading it as an empty prediction would report a rig fault as a zero.
+if ! node "$S/lib/make-preds.mjs" "$PATCHES" "$MODEL" "$SUFFIX" "$@" > "$S/preds-$RUN_ID.json"; then
+  rm -f "$S/preds-$RUN_ID.json"
+  echo "evaluate.sh: refusing to grade; see the missing patch files above"
+  exit 1
+fi
+# SWB_PREDS_ONLY=1 stops here, with preds-<run-id>.json written and nothing
+# graded: a look at exactly what the evaluator would be handed, and the seam
+# `fixtures/check-make-preds.mjs` resolves the patches directory through.
+if [ "${SWB_PREDS_ONLY:-0}" = "1" ]; then
+  echo "evaluate.sh: wrote $S/preds-$RUN_ID.json from $PATCHES; not grading (SWB_PREDS_ONLY=1)"
+  exit 0
+fi
 if [ ! -x "$S/.venv-swb/bin/python" ]; then
   echo "no evaluator venv at $S/.venv-swb — run ./bootstrap.sh first"; exit 1
 fi
-
-node "$S/lib/make-preds.mjs" "$PATCHES" "$MODEL" "$SUFFIX" "$@" > "$S/preds-$RUN_ID.json"
 cd "$S" || exit 1
 
 # The httpbin the psf/requests family is graded against. Decided from the

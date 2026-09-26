@@ -140,13 +140,11 @@ for ARG in "$@"; do
       if [ -z "$AGGREGATE_IDS" ]; then
         echo "fullbench.sh: nothing has been graded yet"; exit 1
       fi
-      REL_PATCHES="${FB#"$S/"}/patches"
-      if [ "$REL_PATCHES" = "$FB/patches" ]; then
-        echo "fullbench.sh: FB_DIR ($FB) is outside the rig; the evaluator resolves patches inside it"
-        exit 1
-      fi
+      # Absolute, so an FB_DIR outside the rig grades from where it was written.
+      ABS_PATCHES="$(cd "$FB/patches" && pwd)" || {
+        echo "fullbench.sh: no patches directory under FB_DIR ($FB)"; exit 1; }
       echo "fullbench.sh: aggregating $(printf '%s' "$AGGREGATE_IDS" | wc -w | tr -d ' ') graded instances into $MODEL_NAME.$RUN_ID.json"
-      SWB_PATCHES="$REL_PATCHES" SWB_MODEL_NAME="$MODEL_NAME" SWB_CACHE_LEVEL=instance \
+      SWB_PATCHES="$ABS_PATCHES" SWB_MODEL_NAME="$MODEL_NAME" SWB_CACHE_LEVEL=instance \
         exec "$S/evaluate.sh" "$RUN_ID" $AGGREGATE_IDS ;;
     --help|-h) sed -n '2,44p' "$0"; exit 0 ;;
     *) echo "fullbench.sh: unknown argument '$ARG'"; exit 2 ;;

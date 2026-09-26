@@ -74,7 +74,7 @@
 # Spends no tokens, needs no docker, needs no dataset. Run it after touching
 # scorecard.ts, prices.ts, the journal's event shapes, patch capture,
 # flows.sh, run-instance.sh, lib/subject.mjs, lib/check-liveness.mjs, lib/write-flow.mjs,
-# lib/write-prompt-codex.mjs, lib/run-paths.sh, lib/lock.sh,
+# lib/write-prompt-codex.mjs, lib/run-paths.sh, lib/make-preds.mjs, evaluate.sh, lib/lock.sh,
 # lib/journal-facts.mjs, select-candidate.mjs, run-matrix.sh, matrix-report.mjs,
 # fullbench.sh, fullbench-report.mjs, lib/grade.py, lib/httpbin.sh,
 # lib/rerun-queue.mjs, run-45.sh, compare-runs.mjs, three-way.mjs, regrade.sh,
@@ -159,6 +159,9 @@ node "$S/fixtures/check-prompts.mjs"
 
 echo "== per-run artifact names"
 node "$S/fixtures/check-run-paths.mjs"
+
+echo "== the patches the evaluator is handed: missing refused, empty empty, artifact root honoured"
+node "$S/fixtures/check-make-preds.mjs"
 
 echo "== the harness's own snapshots stay out of the task repository"
 "$S/fixtures/check-hidden-vcs.sh"

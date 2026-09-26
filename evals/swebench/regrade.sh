@@ -227,12 +227,12 @@ for ID in $IDS; do
     continue
   fi
 
-  # `evaluate.sh` resolves SWB_PATCHES against the rig directory.
-  REL_PATCHES="${PATCH_ROOT#"$S/"}"
-  if [ "$REL_PATCHES" = "$PATCH_ROOT" ]; then
+  # An absolute SWB_PATCHES, so an FB_DIR inside or outside the rig grades from
+  # the archive the benchmark wrote.
+  if ! ABS_PATCHES="$(cd "$PATCH_ROOT" && pwd)"; then
     "$S/lib/lock.sh" release "$S/.grade-lock" --owner $$ --quiet || true
     "$S/lib/lock.sh" release "$CLAIM" --owner $$ --quiet || true
-    log "$ID" "FB_DIR ($FB) is outside the rig, and the evaluator resolves its patches inside it"
+    log "$ID" "no patches directory at $PATCH_ROOT"
     FAILURES=$((FAILURES + 1))
     continue
   fi
@@ -258,7 +258,7 @@ for ID in $IDS; do
   if [ "$KEEP_IMAGE" = "1" ]; then CACHE_LEVEL=instance; else CACHE_LEVEL=env; fi
   log "$ID" "re-grading as $EVAL_RUN_ID (cache_level $CACHE_LEVEL)"
   mkdir -p "$FB/logs"
-  HARNESS="$HARNESS" SWB_PATCHES="$REL_PATCHES" SWB_MODEL_NAME="$MODEL_NAME" \
+  HARNESS="$HARNESS" SWB_PATCHES="$ABS_PATCHES" SWB_MODEL_NAME="$MODEL_NAME" \
     SWB_CACHE_LEVEL="$CACHE_LEVEL" SWB_GRADE_LOCK_HELD=1 \
     "$S/evaluate.sh" "$EVAL_RUN_ID" "$ID" > "$FB/logs/$ID.regrade.log" 2>&1
   GRADE_STATUS=$?

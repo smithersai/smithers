@@ -53,11 +53,18 @@ process.stdout.write(s.instances.slice(0,Number(process.argv[2])).join(" "));
 
 STATUS=0
 
+# The flows roots the matrix wrote into, SWB_ARTIFACT_ROOT included, so the
+# selector reads and writes where the runs did and `evaluate.sh` grades there.
+ROOTS="$("$S/lib/run-paths.sh" flows --roots)" || exit 2
+eval "$ROOTS"
+SELECTED="$ARTIFACT_ROOT/selected"
+
 select_candidates() {
   echo "== selecting, from journals and patches only"
-  mkdir -p "$S/selected"
+  mkdir -p "$SELECTED"
   for ID in $IDS; do
-    node "$S/select-candidate.mjs" "$ID" --journals journals --patches patches --out selected || STATUS=$?
+    node "$S/select-candidate.mjs" "$ID" --journals "$JOURNAL_ROOT" --patches "$PATCH_ROOT" \
+      --out "$SELECTED" || STATUS=$?
   done
 }
 
@@ -72,7 +79,7 @@ grade_rounds() {
 
 grade_selected() {
   echo "== grading the selected patches as $PREFIX-selected"
-  SWB_PATCHES=selected "$S/evaluate.sh" "$PREFIX-selected" $IDS || STATUS=$?
+  SWB_PATCHES="$SELECTED" "$S/evaluate.sh" "$PREFIX-selected" $IDS || STATUS=$?
 }
 
 case "$GROUP" in

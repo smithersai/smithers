@@ -408,16 +408,12 @@ else
   if [ -n "${SWB_GRADE_CMD:-}" ]; then
     "$SWB_GRADE_CMD" "$EVAL_RUN_ID" "$ID" >> "$FB/logs/$ID.grade.log" 2>&1
   else
-    # `evaluate.sh` resolves SWB_PATCHES against the rig directory, so the
-    # archive it grades has to be inside it. Stripping the rig prefix off FB is
-    # how that is checked: a prefix that did not strip is a directory the
-    # evaluator would look for in the wrong place.
-    REL_PATCHES="${FB#"$S/"}/patches"
-    if [ "$REL_PATCHES" = "$FB/patches" ]; then
+    # An absolute SWB_PATCHES, so an FB_DIR inside or outside the rig grades
+    # from the archive this worker just wrote.
+    ABS_PATCHES="$(cd "$FB/patches" && pwd)" || {
       "$S/lib/lock.sh" release "$GRADE_LOCK" --owner $$ --quiet || true
-      fail "FB_DIR ($FB) is outside the rig, and the evaluator resolves its patches inside it"
-    fi
-    SWB_PATCHES="$REL_PATCHES" SWB_MODEL_NAME="$MODEL" SWB_CACHE_LEVEL="$CACHE_LEVEL" \
+      fail "no patches directory under FB_DIR ($FB)"; }
+    SWB_PATCHES="$ABS_PATCHES" SWB_MODEL_NAME="$MODEL" SWB_CACHE_LEVEL="$CACHE_LEVEL" \
       SWB_GRADE_LOCK_HELD=1 \
       "$S/evaluate.sh" "$EVAL_RUN_ID" "$ID" >> "$FB/logs/$ID.grade.log" 2>&1
   fi
