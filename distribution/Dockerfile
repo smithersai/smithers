@@ -79,7 +79,9 @@ COPY --from=flows-jj /src/packages/smithers/flows/jj/wasm/flows_jj.wasm packages
 RUN npm install --global pnpm@11.25.0 --ignore-scripts --no-audit --no-fund \
   && node --version && pnpm --version && bun --version \
   && pnpm install --frozen-lockfile
-RUN pnpm --dir apps/app run build:web
+ARG BUILD_SHA
+RUN printf '%s' "$BUILD_SHA" | grep -Eq '^[0-9a-f]{40,64}$' \
+  && SMITHERS_BUILD_SHA="$BUILD_SHA" pnpm --dir apps/app run build:web
 RUN pnpm --dir flows run typecheck
 RUN node flows/coding/build.mjs /out/flow-hosts/smithers-coding-host \
   && node flows/librarian/build.mjs /out/flow-hosts/smithers-librarian-host \

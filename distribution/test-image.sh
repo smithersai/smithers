@@ -206,10 +206,27 @@ case "$home_html" in
   *'<div id="root"'*) ;;
   *) printf 'unexpected web index: %.200s\n' "$home_html" >&2; exit 1 ;;
 esac
-curl -fsS "$origin/api/bootstrap" | grep '"apiVersion":1' >/dev/null
-if [ -n "$build_sha" ]; then
-  curl -fsS "$origin/api/bootstrap" | grep -F "\"buildSha\":\"$build_sha\"" >/dev/null
-fi
+docker exec -i "$app" /opt/smithers/bin/node --input-type=module - "$build_sha" <<'NODE'
+import assert from 'node:assert/strict';
+const read = async path => {
+  const response = await fetch(`http://127.0.0.1:4000${path}`);
+  assert.equal(response.status, 200, `${path} must be served`);
+  return response.text();
+};
+const [bootstrapText, stampText, html] = await Promise.all([
+  read('/api/bootstrap'), read('/__build.json'), read('/')
+]);
+const bootstrap = JSON.parse(bootstrapText);
+const stamp = JSON.parse(stampText);
+assert.equal(bootstrap.apiVersion, 1);
+assert.match(bootstrap.buildSha, /^[0-9a-f]{40,64}$/, 'backend must identify its source');
+assert.equal(stamp.app, 'smithers-app');
+assert.equal(stamp.gitSha, bootstrap.buildSha, 'web and backend revisions must agree');
+if (process.argv[2]) assert.equal(stamp.gitSha, process.argv[2], 'image must match the requested revision');
+const meta = (html.match(/<meta\b[^>]*>/gi) ?? []).find(tag => /\bname=["']smithers-build-sha["']/i.test(tag));
+assert.equal(meta?.match(/\bcontent=["']([^"']*)["']/i)?.[1], stamp.gitSha, 'HTML and build asset revisions must agree');
+console.log(`BUILD_STAMP_OK revision=${stamp.gitSha}`);
+NODE
 curl -fsS "$origin/api/auth/local/status" | grep '"initialized":false' >/dev/null
 curl -fsS -X POST "$origin/api/auth/local/bootstrap" \
   -H 'Content-Type: application/json' \
