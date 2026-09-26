@@ -21,6 +21,7 @@ import {
   Attrs,
   Gate,
   GithubCiGen,
+  independentGate,
   Job,
   MatrixRow,
   render,
@@ -46,12 +47,37 @@ const bareNode = CiToolchain.Node({ runtime, release: "26.4.0", cachePackageStor
 const rust = CiToolchain.Rust({ toolchain: RustToolchain.Pinned({}) })
 
 describe("CI concurrency", () => {
-  it("cancels superseded PR and push runs in separate groups", () => {
+  it("cancels superseded PR runs and gives every pushed commit its own group", () => {
     const workflow = render(goldenAttrs)
+    // GitHub replaces a PENDING run in the same group even with
+    // cancel-in-progress false, so a ref-keyed group dropped most main pushes
+    // (#2071). A commit-keyed group is never shared by two pushes.
     expect(workflow).toContain(
-      "concurrency:\n  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('ref-{0}', github.ref) }}\n  cancel-in-progress: true\n"
+      "concurrency:\n  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('sha-{0}', github.sha) }}\n  cancel-in-progress: true\n"
     )
+    expect(workflow).not.toContain("github.ref)")
     expect(render({ ...goldenAttrs, cancelInProgress: false })).toContain("cancel-in-progress: false")
+  })
+})
+
+describe("independent gate steps", () => {
+  it("runs every gate after a red one, but never after failed setup", () => {
+    const workflow = parseWorkflow(render(goldenAttrs))
+    const isGate = (step: { readonly run?: string | undefined }): boolean => step.run?.includes(" smthrs ") === true
+    for (const job of workflow.jobs) {
+      const first = job.steps.findIndex(isGate)
+      const gates = job.steps.filter(isGate)
+      // A red `//packages/...` step must not hide a later drift gate (#2071),
+      // and `!cancelled()` alone would also run the gates over a failed install.
+      expect(gates.map((step) => step.condition)).toEqual(gates.map(() => independentGate))
+      // The setup step the gates read is the last step before them, and runs
+      // under the implicit success(), so any earlier setup failure skips it.
+      expect(job.steps[first - 1]).toMatchObject({ id: "setup", condition: undefined })
+      expect(job.steps.filter((step) => step.id === "setup")).toHaveLength(1)
+      expect(job.steps.slice(0, first).map((step) => step.condition))
+        .toEqual(job.steps.slice(0, first).map(() => undefined))
+    }
+    expect(workflow.jobs.find((job) => job.id === "test")!.steps.filter(isGate).length).toBeGreaterThan(1)
   })
 })
 
@@ -132,6 +158,9 @@ describe("CiToolchain.Needs", () => {
   )
 })
 
+/** Any `if:` other than the one every independent gate step carries. */
+const otherCondition = new RegExp(`if: (?!${independentGate.replace(/[$()[\]{}|.*+?^\\]/g, "\\$&")}$)`, "m")
+
 /** The golden pipeline `write` mode renders. */
 const goldenAttrs = {
   packageManager,
@@ -186,7 +215,7 @@ on:
   pull_request:
   workflow_dispatch:
 concurrency:
-  group: ci-\${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('ref-{0}', github.ref) }}
+  group: ci-\${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('sha-{0}', github.sha) }}
   cancel-in-progress: true
 jobs:
   "test":
@@ -209,10 +238,13 @@ jobs:
         with:
           "tool": "jj-cli@0.39.0"
       - name: "Initialize colocated jj repository"
+        id: setup
         run: "jj git init --colocate"
       - name: "Workspace targets"
+        if: \${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"
       - name: "Script gates"
+        if: \${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//scripts/...' --verbose"
   "browser":
     runs-on: "ubuntu-latest"
@@ -224,8 +256,10 @@ jobs:
         with:
           "node-version": "26.4.0"
           "cache": "pnpm"
-      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - id: setup
+        run: "pnpm install --frozen-lockfile --ignore-scripts"
       - name: "Browser bundle guard"
+        if: \${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//scripts:browserContract' --verbose"
   "rust":
     runs-on: "ubuntu-latest"
@@ -241,8 +275,10 @@ jobs:
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
       - name: "Install pinned Rust toolchain"
         run: "rustup toolchain install"
-      - uses: "${actions.rustCache}"
+      - id: setup
+        uses: "${actions.rustCache}"
       - name: "Cargo gates"
+        if: \${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//crates/flows-jj' --verbose"
 `
 
@@ -838,7 +874,8 @@ describe("render", () => {
           steps: [{ verb: Verb.Test, pattern }]
         }]
       }))
-      expect(rendered).toContain(`      - run: "pnpm exec smthrs test '${pattern}' --verbose"
+      expect(rendered).toContain(`      - if: \${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '${pattern}' --verbose"
 `)
       expect(parseWorkflow(rendered).jobs[0]!.steps.map((step) => step.run))
         .toContain(`pnpm exec smthrs test '${pattern}' --verbose`)
@@ -1038,11 +1075,11 @@ describe("render", () => {
     expect(rendered).not.toContain("2>/dev/null || true")
     expect(rendered).toContain("          \"if-no-files-found\": \"ignore\"\n")
     const steps = parseWorkflow(rendered).jobs.find((job) => job.id === "e2e")!.steps
-    expect(steps.filter((step) => step.condition !== undefined).map((step) => [step.name, step.condition])).toEqual([
+    expect(steps.filter((step) => step.condition === "always()").map((step) => [step.name, step.condition])).toEqual([
       ["Collect e2e-artifacts", "always()"],
       ["Upload e2e-artifacts", "always()"]
     ])
-    expect(steps.find((step) => step.run?.includes("smthrs test"))?.condition).toBeUndefined()
+    expect(steps.find((step) => step.run?.includes("smthrs test"))?.condition).toBe(independentGate)
   })
 
   it("installs and verifies the certified npm after Node and before workspace gates", () => {
@@ -1322,7 +1359,7 @@ describe("the split cache credential", () => {
     // only, no write entry, no guard.
     expect(readerBlock).toContain("          \"CACHE_READ_TOKEN\": \"${{ secrets.CACHE_READ_TOKEN }}\"")
     expect(readerBlock).not.toContain("CACHE_WRITE_TOKEN")
-    expect(readerBlock).not.toContain("    if:")
+    expect(readerBlock).not.toMatch(/^    if:/m)
     expect(() => parseWorkflow(rendered)).not.toThrow()
   })
 
@@ -1471,7 +1508,7 @@ describe("a platform matrix", () => {
     // Every row runs the same steps, rendered once.
     expect(rendered.split("smthrs test '//packages/...'").length - 1).toBe(1)
     // The rule the whole module rests on survives the new key.
-    expect(rendered).not.toContain("if:")
+    expect(rendered).not.toMatch(otherCondition)
   })
 
   it("renders deterministically and reads back as one job", () => {
@@ -1624,7 +1661,7 @@ describe("system packages", () => {
     expect(rendered).toContain("shell: \"bash\"")
     expect(rendered).toContain("if command -v apt-get >/dev/null 2>&1; then")
     expect(rendered).toContain("sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'iproute2'")
-    expect(rendered).not.toContain("if: ")
+    expect(rendered).not.toMatch(otherCondition)
   })
 
   it("turns the containerd image store on for a job that declares it, under bash, with no if key", () => {
@@ -1643,7 +1680,7 @@ describe("system packages", () => {
     expect(rendered).toContain("shell: \"bash\"")
     expect(rendered).toContain("containerd-snapshotter")
     expect(rendered).toContain("sudo systemctl restart docker")
-    expect(rendered).not.toContain("if: ")
+    expect(rendered).not.toMatch(otherCondition)
     const without = render({
       ...goldenAttrs,
       jobs: [{

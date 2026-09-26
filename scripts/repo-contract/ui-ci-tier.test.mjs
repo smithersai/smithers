@@ -41,7 +41,7 @@ describe("required PR selection", () => {
       "pnpm exec smthrs test '//apps/app:browserE2e' --known-red '.github/ci-known-red.json' --verbose"
     ])
     for (const step of targets) {
-      assert.equal(step.if, undefined)
+      assert.equal(step.if, "${{ !cancelled() && steps.setup.conclusion == 'success' }}")
       assert.equal(step["continue-on-error"], undefined)
       const occurrences = Object.values(workflow.jobs).flatMap((job) => job.steps)
         .filter((entry) => entry.run === step.run)

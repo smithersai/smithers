@@ -48,6 +48,8 @@ export const maximumWorkflowBytes = 1024 * 1024
  */
 export interface WorkflowStep {
   readonly name: string | undefined
+  /** The step's `id:`, which a later step's `steps.<id>` expression reads. */
+  readonly id: string | undefined
   readonly uses: string | undefined
   readonly run: string | undefined
   /** The declared run shell, or `undefined` for the GitHub runner default. */
@@ -125,11 +127,11 @@ const isEmptyNode = (node: unknown): boolean =>
  * A field's text.
  *
  * Every field this reader carries is compared as source text: a gate matches a
- * command string and `alwaysRuns` matches the `true` literal, so a value YAML
+ * command string and `alwaysRuns` matches its few accepted conditions, so a value YAML
  * decoded to a boolean or a number is rendered back to the spelling GitHub
  * reads. A field that is not a scalar — a mapping under `if:`, a sequence
  * under `run:` — reads as the empty string, which matches no gate and no
- * always-true literal, so a value this reader cannot verify fails closed.
+ * accepted condition, so a value this reader cannot verify fails closed.
  */
 const scalarText = (node: unknown): string => {
   if (!Yaml.isScalar(node)) return ""
@@ -266,6 +268,7 @@ const readStep = (node: unknown, job: string, counter: Yaml.LineCounter): Workfl
   }
   return {
     name: field("name"),
+    id: field("id"),
     uses,
     run,
     shell,
@@ -820,21 +823,42 @@ export const usesAction = (uses: string, command: string): boolean => {
 }
 
 /**
- * Whether a parsed `if:` is provably always true.
- *
- * Only the literal is accepted. Anything else — `false`, a context expression,
- * a value the scanner could not read — leaves the job or step conditional, and
- * a conditional job or step is not proof that a required gate runs.
+ * The one step condition that proves a gate as well as no `if:` does, given an
+ * earlier unconditional step with `id: setup`: it runs whenever the implicit
+ * `success()` would, and also after an earlier gate went red. Generated CI
+ * puts it on every gate step.
  *
  * @category verification
  * @since 0.1.0
  */
-export const alwaysRuns = (condition: string | undefined): boolean => {
-  if (condition === undefined) return true
+export const independentGateCondition = "!cancelled() && steps.setup.conclusion == 'success'" as const
+
+const expressionBody = (condition: string): string => {
   const normalized = condition.trim()
-  if (normalized === "true") return true
-  const expression = normalized.match(/^\$\{\{\s*(.*?)\s*\}\}$/)
-  return expression !== null && expression[1] === "true"
+  return normalized.match(/^\$\{\{\s*(.*?)\s*\}\}$/)?.[1] ?? normalized
+}
+
+/**
+ * Whether a parsed `if:` is provably always true.
+ *
+ * Only the `true` literal is accepted. Anything else — `false`, a context
+ * expression, a value the scanner could not read — leaves the job or step
+ * conditional, and a conditional job or step is not proof that a required
+ * gate runs. {@link missingGates} additionally accepts
+ * {@link independentGateCondition} on a step, where it can check the setup step.
+ *
+ * @category verification
+ * @since 0.1.0
+ */
+export const alwaysRuns = (condition: string | undefined): boolean =>
+  condition === undefined || expressionBody(condition) === "true"
+
+/** Whether a step runs whenever its job does, reading the steps before it. */
+const stepAlwaysRuns = (steps: ReadonlyArray<WorkflowStep>, index: number): boolean => {
+  const condition = steps[index]!.condition
+  if (alwaysRuns(condition)) return true
+  return expressionBody(condition!) === independentGateCondition &&
+    steps.slice(0, index).some((step) => step.id === "setup" && step.condition === undefined)
 }
 
 /** Shell declarations for which the scanner can prove a `run` body executes. */
@@ -901,7 +925,7 @@ export const missingGates = (
       ? workflow.jobs
       : workflow.jobs.filter((job) => job.id === gate.job)).filter((job) => alwaysRuns(job.condition))
     return !jobs.some((job) =>
-      job.steps.filter((step) => alwaysRuns(step.condition)).some((step) =>
+      job.steps.filter((_, index) => stepAlwaysRuns(job.steps, index)).some((step) =>
         (step.run !== undefined && executesRunScript(step.shell) && runsCommand(step.run, gate.command)) ||
         (step.uses !== undefined && usesAction(step.uses, gate.command))
       )

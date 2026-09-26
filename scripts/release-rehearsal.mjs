@@ -160,6 +160,12 @@ const parseExpression = (tokens, state, contexts) => {
       state.index += 2
       return true
     }
+    // A rehearsal that is interrupted stops outright; it never evaluates a
+    // condition while cancelled.
+    if (token.value === "cancelled" && tokens[state.index]?.value === "(" && tokens[state.index + 1]?.value === ")") {
+      state.index += 2
+      return false
+    }
     if (token.value === "true") return true
     if (token.value === "false") return false
     if (token.value === "null") return null
@@ -357,7 +363,8 @@ export const rehearsalContexts = ({ tag, publish = false, runnerTemp = "/tmp/run
   github: { event_name: "workflow_dispatch", ref_name: tag, run_attempt: "1", workflow: workflowName },
   inputs: { releaseTag: tag, dryRun: !publish },
   runner: { temp: runnerTemp },
-  env: {}
+  env: {},
+  steps: {}
 })
 
 export const main = async (argv) => {
@@ -390,6 +397,12 @@ export const main = async (argv) => {
     const name = step.name ?? step.uses ?? "(unnamed step)"
     const record = { name, status: "ran", exitCode: 0, durationMs: 0 }
     results.push(record)
+    // `steps.<id>.conclusion` for later conditions. A step skipped because the
+    // operator or this machine already provides it counts as a success; a
+    // step skipped by its condition or an earlier failure does not.
+    const conclude = (conclusion) => {
+      if (step.id !== undefined) contexts.steps[step.id] = { conclusion, outcome: conclusion }
+    }
     const announce = (status, detail) => {
       record.status = status
       const line = `\n=== ${status.toUpperCase()}: ${name}${detail === undefined ? "" : ` (${detail})`}\n`
@@ -398,14 +411,17 @@ export const main = async (argv) => {
     }
     if (options.skip.some((fragment) => name.includes(fragment))) {
       announce("skipped", "--skip")
+      conclude("success")
       continue
     }
     if (options.only.length > 0 && !options.only.some((fragment) => name.includes(fragment))) {
       announce("skipped", "--only")
+      conclude("success")
       continue
     }
     if (name === "Initialize colocated jj repository" && existsSync(join(repoRoot, ".jj"))) {
       announce("skipped", "repository is already colocated")
+      conclude("success")
       continue
     }
     if (step.uses !== undefined) {
@@ -418,9 +434,11 @@ export const main = async (argv) => {
           pathPrefix = [resolve(pinned)]
           announce("skipped", `GitHub action, locally: PATH now resolves Node ${version} from ${pathPrefix[0]}`)
         }
+        conclude("success")
         continue
       }
       announce("skipped", `GitHub action, locally: ${localEquivalent(step.uses)}`)
+      conclude("success")
       continue
     }
     if (step.if !== undefined) {
@@ -428,12 +446,16 @@ export const main = async (argv) => {
       const condition = String(step.if).replaceAll(/\$\{\{|\}\}/g, "")
       if (!truthy(evaluateExpression(condition, contexts))) {
         announce("skipped", `if: ${step.if}`)
+        conclude("skipped")
         continue
       }
     }
-    const diagnostic = String(step.if).replaceAll(/\$\{\{|\}\}/g, "").trim() === "always()"
-    if (failed && !options.keepGoing && !diagnostic) {
+    // GitHub adds an implicit success() only to a condition that calls no
+    // status function, so `always()` and `!cancelled()` steps run after a failure.
+    const statusChecked = /\b(?:always|cancelled)\(\)/.test(String(step.if ?? ""))
+    if (failed && !options.keepGoing && !statusChecked) {
       announce("skipped", "an earlier step failed")
+      conclude("skipped")
       continue
     }
     const stepEnv = { ...process.env, ...contexts.env, GITHUB_ENV: githubEnvFile, RUNNER_TEMP: runnerTemp }
@@ -446,6 +468,7 @@ export const main = async (argv) => {
     record.exitCode = outcome.exitCode
     record.durationMs = outcome.durationMs
     record.status = outcome.exitCode === 0 ? "passed" : "failed"
+    conclude(outcome.exitCode === 0 ? "success" : "failure")
     if (outcome.exitCode !== 0) failed = true
     // Steps export variables to later steps by appending to $GITHUB_ENV.
     for (const line of readFileSync(githubEnvFile, "utf8").split("\n")) {

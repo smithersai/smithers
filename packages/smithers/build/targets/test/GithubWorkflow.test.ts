@@ -8,6 +8,7 @@ import { tmpdir } from "node:os"
 import * as NodePath from "node:path"
 import { describe, expect, it } from "vitest"
 import {
+  independentGateCondition,
   isSupportedInstall,
   maximumWorkflowBytes,
   missingGates,
@@ -984,6 +985,44 @@ describe("missingGates", () => {
     ).toEqual(["typecheck", "lint"])
     // The one narrowly provable literal still counts.
     expect(missingGates(conditional, [{ name: "circular", command: "pnpm run circular", job: "test" }])).toEqual([])
+  })
+
+  /**
+   * `!cancelled() && steps.setup.conclusion == 'success'` runs a gate whenever
+   * the implicit `success()` would, and also after an earlier gate went red,
+   * provided `setup` is an earlier unconditional step. Generated CI puts it on
+   * every gate of a multi-gate job (#2071). `!cancelled()` alone also runs
+   * after a failed install, so it proves nothing.
+   */
+  it("accepts a setup-gated step as proof of an unconditional gate only after the setup step", () => {
+    const gated = (setup: ReadonlyArray<string>, condition: string): ReturnType<typeof parseWorkflow> =>
+      parseWorkflow(
+        [
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          ...setup,
+          `      - if: ${condition}`,
+          "        run: pnpm run check",
+          ""
+        ].join("\n")
+      )
+    const setup = ["      - id: setup", "        run: pnpm install"]
+    const condition = "${{ !cancelled() && steps.setup.conclusion == 'success' }}"
+    const typecheck = [{ name: "typecheck", command: "pnpm run check" }]
+    expect(gated(setup, condition).jobs[0]!.steps[0]!.id).toBe("setup")
+    expect(missingGates(gated(setup, condition), typecheck)).toEqual([])
+    expect(missingGates(gated(setup, `"${independentGateCondition}"`), typecheck)).toEqual([])
+    const refused = [
+      gated([], condition),
+      gated(["      - id: setup", "        if: false", "        run: pnpm install"], condition),
+      gated(setup, "${{ !cancelled() }}"),
+      gated(setup, "${{ !cancelled() && steps.setup.conclusion == 'success' && false }}")
+    ]
+    for (const workflow of refused) {
+      expect(missingGates(workflow, typecheck).map((gate) => gate.name)).toEqual(["typecheck"])
+    }
   })
 
   /**

@@ -352,7 +352,12 @@ describe("ci conformance", () => {
         : undefined)
       for (const step of job.steps) {
         const artifact = /^(?:Collect|Upload) (?:ci-test-tier-evidence|apps-e2e-artifacts)$/.test(step.name ?? "")
-        assert.equal(step.if, artifact ? "always()" : undefined)
+        // A gate runs after an earlier red gate, never after failed setup (#2071).
+        const gate = step.run?.startsWith("pnpm exec smthrs ") === true
+        assert.equal(
+          step.if,
+          artifact ? "always()" : gate ? "${{ !cancelled() && steps.setup.conclusion == 'success' }}" : undefined
+        )
       }
     }
   })

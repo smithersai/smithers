@@ -524,6 +524,10 @@ back to the commit SHA for other events. With the default
 `cancelInProgress: true`, a new PR run cancels the previous run for that PR;
 each pushed commit retains its own run and verdict. Set
 `cancelInProgress: false` to disable cancellation.
+The last setup step renders `id: setup`, and every target step renders
+`if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}`: a red gate
+does not skip the independent gates after it, a failed setup step skips them
+all, and the job still fails.
 
 `Smithers.CiToolchain.Artifacts({ artifact, sources })` collects and uploads
 files after a generated job's targets run, including after failure. Each source

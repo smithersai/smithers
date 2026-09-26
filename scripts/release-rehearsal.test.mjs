@@ -51,6 +51,9 @@ const jobEnv = (contexts) =>
     Object.entries(release.jobs.publish.env).map(([key, value]) => [key, interpolate(value, contexts)])
   )
 
+/** The condition every generated and mirrored gate step carries. */
+const gateCondition = "${{ !cancelled() && steps.setup.conclusion == 'success' }}"
+
 const step = (name) => release.jobs.publish.steps.find((candidate) => candidate.name === name)
 
 const condition = (source, contexts) =>
@@ -228,8 +231,14 @@ test("publication tolerates tag checkouts and bounded registry throttling", () =
 })
 
 test("only the re-run guard, candidate preparation and publication select a path; diagnostics survive failure", () => {
+  // Every gate runs after an earlier red gate but never after failed setup,
+  // exactly as the generated ci.yml renders it (#2071).
+  const gates = release.jobs.publish.steps.filter((candidate) => /pnpm exec smthrs /.test(candidate.run ?? ""))
+  assert.ok(gates.length > 30)
+  assert.deepEqual(gates.filter((candidate) => candidate.if !== gateCondition).map((candidate) => candidate.name), [])
+  assert.deepEqual(release.jobs.publish.steps.filter((candidate) => candidate.id === "setup").map((candidate) => candidate.if), [undefined])
   const conditional = release.jobs.publish.steps
-    .filter((candidate) => candidate.if !== undefined)
+    .filter((candidate) => candidate.if !== undefined && !gates.includes(candidate))
     .map((candidate) => candidate.name)
 
   assert.deepEqual(conditional, [
@@ -394,7 +403,7 @@ test("CI gates the server's checks and tests in the required test job", () => {
   const ci = parseWorkflow(readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8"))
   const server = ci.jobs.test.steps.find((entry) => entry.name === "Server typecheck and tests")
   assert.equal(server?.run, "pnpm exec smthrs ci '//apps/server/...' --known-red '.github/ci-known-red.json' --verbose")
-  assert.equal(server?.if, undefined)
+  assert.equal(server?.if, gateCondition)
 })
 
 test("ordinary PR CI gates executable examples before workspace checks", () => {
@@ -404,7 +413,7 @@ test("ordinary PR CI gates executable examples before workspace checks", () => {
   assert.equal(Object.hasOwn(ci.on, "pull_request"), true)
   assert.equal(ci.jobs.test["continue-on-error"], undefined)
   assert.equal(examples?.run, "pnpm exec smthrs ci '//examples/...' --known-red '.github/ci-known-red.json' --verbose")
-  assert.equal(examples?.if, undefined)
+  assert.equal(examples?.if, gateCondition)
   assert.ok(steps.indexOf(examples) < steps.indexOf(steps.find((entry) => entry.name === "Workspace targets")))
 })
 
@@ -437,13 +446,48 @@ test("a failed gate retains diagnostic files and failure status while skipping l
   }
 })
 
+test("a red gate does not skip a later setup-gated gate, and failed setup skips them all", () => {
+  const rehearse = (setupExit) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "release-independent-gates-")))
+    try {
+      installDriver(root)
+      writeFileSync(join(root, "workflow.yml"), [
+        "name: Fixture", "jobs:", "  publish:", "    steps:",
+        "      - name: Setup",
+        "        id: setup",
+        `        run: exit ${setupExit}`,
+        "      - name: Failing gate",
+        `        if: ${gateCondition}`,
+        "        run: exit 23",
+        "      - name: Later gate",
+        `        if: ${gateCondition}`,
+        "        run: exit 0",
+        "      - name: Publish",
+        "        run: exit 0"
+      ].join("\n"))
+      const result = spawnSync(process.execPath, [
+        join(root, "scripts/release-rehearsal.mjs"), "--workflow", "workflow.yml",
+        "--runner-temp", join(root, "runner"), "--transcript", join(root, "transcript.json")
+      ], { encoding: "utf8", timeout: 30_000 })
+      assert.equal(result.status, 1, result.stdout + result.stderr)
+      return JSON.parse(readFileSync(join(root, "transcript.json"), "utf8")).steps.map((entry) => entry.status)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+  assert.deepEqual(rehearse(0), ["passed", "failed", "passed", "skipped"])
+  assert.deepEqual(rehearse(9), ["failed", "skipped", "skipped", "skipped"])
+})
+
 test("release rebuilds and byte-compares the committed wasm before packing", () => {
   const ci = parseWorkflow(readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8"))
   const steps = release.jobs.publish.steps
   const pack = steps.indexOf(step("Pack and smoke-test release artifacts"))
   const install = step("Install pinned Rust toolchain")
   assert.ok(install, "release must install the pinned Rust toolchain")
-  assert.deepEqual(install, ci.jobs["wasm-repro"].steps.find((entry) => entry.name === install.name))
+  // `id: setup` marks the last setup step of each ci.yml job; the release marks its own.
+  const { id: _, ...ciInstall } = ci.jobs["wasm-repro"].steps.find((entry) => entry.name === install.name)
+  assert.deepEqual(install, ciInstall)
   const mirrored = ci.jobs["wasm-repro"].steps.filter((entry) => /pnpm exec (?:smithers-build|smthrs) /.test(entry.run ?? ""))
   assert.equal(mirrored.length, 2, "the wasm mirror must cover both smthrs steps; an executable rename must not empty it")
   for (const ciStep of mirrored) {
@@ -454,7 +498,7 @@ test("release rebuilds and byte-compares the committed wasm before packing", () 
     assert.deepEqual(actual, expected)
     assert.ok(steps.indexOf(install) < steps.indexOf(actual))
     assert.ok(steps.indexOf(actual) < pack)
-    assert.equal(actual.if, undefined)
+    assert.equal(actual.if, gateCondition)
   }
 })
 

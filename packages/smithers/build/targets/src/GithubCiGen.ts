@@ -24,6 +24,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as CiToolchain from "./CiToolchain.ts"
 import { DriftError, generateFile, resolveOutputPath, WriteFileError } from "./GeneratedFile.ts"
+import { independentGateCondition } from "./GithubWorkflow.ts"
 import * as Input from "./Input.ts"
 import * as Nix from "./Nix.ts"
 import * as PackageManager from "./PackageManager.ts"
@@ -514,6 +515,15 @@ const mapping = (
 ): ReadonlyArray<string> => Object.entries(entries).map(([key, value]) => `${indent}${scalar(key)}: ${scalar(value)}`)
 
 /**
+ * The `if:` of every gate step: it runs after an earlier gate went
+ * red, but never after a failed setup step or a cancellation.
+ *
+ * @category rendering
+ * @since 0.1.0
+ */
+export const independentGate = `\${{ ${independentGateCondition} }}` as const
+
+/**
  * One rendered YAML step.
  *
  * Deliberately not exported and deliberately not part of {@link Attrs}: this is
@@ -522,8 +532,13 @@ const mapping = (
  */
 interface RenderedStep {
   readonly name?: string
-  /** Diagnostic collection/upload must survive a failed required gate. */
-  readonly always?: true
+  /** Marks the last setup step, whose conclusion {@link independentGate} reads. */
+  readonly id?: "setup"
+  /**
+   * The step's `if:`. Diagnostic collection/upload runs `always()`: it must
+   * survive a failed required gate. Every gate runs {@link independentGate}.
+   */
+  readonly condition?: "always()" | typeof independentGate
   readonly uses?: string
   readonly run?: string
   /** The shell that runs `run`. Unset, GitHub picks bash on Linux and macOS and pwsh on Windows. */
@@ -547,13 +562,14 @@ export const renderStep = (step: RenderedStep, indent: string): ReadonlyArray<st
   const lines: Array<string> = []
   const fields: Array<string> = []
   if (step.name !== undefined) fields.push(`name: ${scalar(step.name)}`)
-  if (step.always === true) fields.push("if: always()")
+  if (step.id !== undefined) fields.push(`id: ${step.id}`)
+  if (step.condition !== undefined) fields.push(`if: ${step.condition}`)
   if (step.uses !== undefined) fields.push(`uses: ${scalar(step.uses)}`)
   if (step.run !== undefined) {
     fields.push(step.run.includes("\n") ? "run: |" : `run: ${scalar(step.run)}`)
   }
   if (step.shell !== undefined) fields.push(`shell: ${scalar(step.shell)}`)
-  if (fields.length === 0) {
+  if (step.uses === undefined && step.run === undefined) {
     throw new Error("a CI step must declare uses or run")
   }
   lines.push(`${indent}- ${fields[0]}`)
@@ -1028,10 +1044,10 @@ export const artifactSteps = (upload: CiToolchain.ArtifactUpload): ReadonlyArray
     return `for f in ${from}; do if [ -e "$f" ]; then cp -R -- "$f" ${destination}; fi; done`
   })
   return [
-    { name: `Collect ${upload.artifact}`, always: true, run: [`mkdir -p ${root}`, ...copies].join("\n") },
+    { name: `Collect ${upload.artifact}`, condition: "always()", run: [`mkdir -p ${root}`, ...copies].join("\n") },
     {
       name: `Upload ${upload.artifact}`,
-      always: true,
+      condition: "always()",
       uses: actions.uploadArtifact,
       with: {
         name: artifact,
@@ -1388,7 +1404,10 @@ export const render = (attrs: Attrs): string => {
     "on:",
     ...triggers,
     "concurrency:",
-    "  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('ref-{0}', github.ref) }}",
+    // GitHub replaces a pending run in the same group even when
+    // cancel-in-progress is false, so a group shared by pushes drops commits.
+    // Every non-PR run is keyed by its commit and never superseded.
+    "  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('sha-{0}', github.sha) }}",
     `  cancel-in-progress: ${attrs.cancelInProgress}`,
     "jobs:"
   ]
@@ -1443,9 +1462,15 @@ export const render = (attrs: Attrs): string => {
     }
     lines.push("    steps:")
     const rendered: Array<RenderedStep> = [...toolchainSteps(attrs, job)]
+    // Gates are independent, so a red one must not skip the ones after it. No
+    // setup step declares an `if:`, so the last one concludes `success` only
+    // when every setup step did: gates never run over a failed install. Every
+    // job renders the same shape, so release.yml copies any gate verbatim.
+    rendered.push({ ...rendered.pop()!, id: "setup" })
     for (const step of job.steps) {
       rendered.push({
         ...(step.name === undefined ? {} : { name: step.name }),
+        condition: independentGate,
         run: stepCommand(attrs, step, job.toolchain.nix),
         ...(hasJobEnv ? { env: jobEnv } : {})
       })

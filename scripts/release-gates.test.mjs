@@ -267,7 +267,7 @@ const withUnlistedStep = (source, name, command) => {
 
 /** A copy of a workflow with one named gate step removed. */
 const withoutStep = (source, name) => {
-  const pattern = new RegExp(`      - name: "?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"?\\n        run: [^\\n]+\\n(?:        env:\\n(?:          [^\\n]+\\n)*)?`)
+  const pattern = new RegExp(`      - name: "?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"?\\n(?:        if: [^\\n]+\\n)?        run: [^\\n]+\\n(?:        env:\\n(?:          [^\\n]+\\n)*)?`)
   assert.match(source, pattern, `${name} is a step`)
   return source.replace(pattern, "")
 }
