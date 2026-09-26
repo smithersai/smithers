@@ -137,9 +137,19 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
       detachedStopped = true
     } else {
       // A timer intentionally keeps the CLI alive, unlike an approval. Crash
-      // the real process only once the actual engine wait is committed.
+      // the real process only once the actual engine wait is committed. The
+      // live CLI keeps polling its parked run, and each poll re-drives it, so
+      // the park is read again with the process stopped: a kill that lands
+      // mid-poll would leave the run claimed rather than parked.
+      const parked = () => engineRow()?.waiting_reason === "timer" && engineRow()?.status === "suspended"
       await waitFor(
-        () => engineRow()?.waiting_reason === "timer" && engineRow()?.status === "suspended",
+        () => {
+          if (!parked()) return false
+          process.kill(detachedPid!, "SIGSTOP")
+          if (parked()) return true
+          process.kill(detachedPid!, "SIGCONT")
+          return false
+        },
         () =>
           `Agent did not persist a timer park; row=${JSON.stringify(engineRow())}; processes=${
             JSON.stringify(records())
