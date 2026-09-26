@@ -154,6 +154,18 @@ describe("Fixture", () => {
       .not.toBe(canonicalRequestDigest(request()))
   })
 
+  it("carries server tools in the request digest and records them as given", () => {
+    const searching = request({ serverTools: [{ type: "web_search", allowedDomains: ["smithers.sh"] }] })
+    expect(canonicalRequestDigest(searching)).not.toBe(canonicalRequestDigest(request()))
+    expect(canonicalRequestDigest(request({ serverTools: [{ type: "web_search" }] })))
+      .not.toBe(canonicalRequestDigest(searching))
+    expect(recordedRequest(request())).not.toHaveProperty("serverTools")
+    expect(recordedRequest(searching).serverTools).toEqual([{ type: "web_search", allowedDomains: ["smithers.sh"] }])
+    expect(recordedRequest(request({ serverTools: [{ type: "web_search" }] })).serverTools).toEqual([
+      { type: "web_search" }
+    ])
+  })
+
   it("omits an absent toolChoice rather than recording it as null", () => {
     expect(recordedRequest(request())).not.toHaveProperty("toolChoice")
     expect(recordedRequest(request({ toolChoice: "none" })).toolChoice).toBe("none")

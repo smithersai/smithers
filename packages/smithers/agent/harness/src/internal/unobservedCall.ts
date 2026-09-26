@@ -3,7 +3,7 @@
  *
  * Several `cell` blocks in one reply run as one program, and the model writes
  * the whole program before any call in it settles. A reply that probes and
- * answers — `const seen = await ctx.call("bash", …)`, `console.log(seen)`,
+ * answers — `const seen = await ctx.call("bash", …)`, a `console.log` of `seen`,
  * then `ctx.done(…)` — therefore completes the run before the model has read
  * a byte of what it asked to see. Real seats do this about once in three
  * deliveries even when their prompt says to answer in a later reply, and the

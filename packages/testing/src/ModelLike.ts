@@ -78,6 +78,13 @@ export interface ModelRequestLike {
    * must not share a replay digest.
    */
   readonly toolChoice?: "none" | undefined
+  /**
+   * Provider-run tools the model may use, matching `/model/ModelRequest`. A web
+   * search changes what the model can answer, so it is part of the call.
+   */
+  readonly serverTools?:
+    | ReadonlyArray<{ readonly type: "web_search"; readonly allowedDomains?: ReadonlyArray<string> }>
+    | undefined
 }
 
 /**

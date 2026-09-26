@@ -183,7 +183,11 @@ const requestSchema = Schema.Struct({
   messages: Schema.Array(messageSchema),
   tools: Schema.Array(toolSchema),
   params: paramsSchema,
-  toolChoice: Schema.optional(Schema.Literal("none"))
+  toolChoice: Schema.optional(Schema.Literal("none")),
+  serverTools: Schema.optional(Schema.Array(Schema.Struct({
+    type: Schema.Literal("web_search"),
+    allowedDomains: Schema.optionalKey(Schema.Array(Schema.String))
+  })))
 })
 
 // The codes are exactly `/model/ModelError`'s `ModelErrorCode`. Permission and
@@ -444,7 +448,14 @@ export const recordedRequest = (request: ModelRequestLike): ModelRequestLike => 
     ...optional("thinkingBudget", request.params.thinkingBudget),
     ...optional("reasoningEffort", request.params.reasoningEffort)
   },
-  ...optional("toolChoice", request.toolChoice)
+  ...optional("toolChoice", request.toolChoice),
+  ...optional(
+    "serverTools",
+    request.serverTools?.map((tool) => ({
+      type: tool.type,
+      ...(tool.allowedDomains === undefined ? {} : { allowedDomains: [...tool.allowedDomains] })
+    }))
+  )
 })
 
 const canonicalize = (value: unknown, path = "$", ancestors = new Set<object>(), depth = 0): unknown => {

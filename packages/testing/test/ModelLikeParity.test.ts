@@ -68,6 +68,10 @@ type ProviderCacheHint = "cacheKey" | "cacheBoundary"
 const _requestKeys: Keys<Omit<ProductionRequest, ProviderCacheHint>, ModelRequestLike> = true
 const _systemKeys: Keys<ProductionRequest["system"][number], ModelRequestLike["system"][number]> = true
 const _toolChoice: Exact<ProductionRequest["toolChoice"], ModelRequestLike["toolChoice"]> = true
+const _serverToolKeys: Keys<
+  NonNullable<ProductionRequest["serverTools"]>[number],
+  NonNullable<ModelRequestLike["serverTools"]>[number]
+> = true
 const _paramsKeys: Keys<ProductionRequest["params"], ModelRequestLike["params"]> = true
 const _reasoningEfforts: Exact<
   NonNullable<ProductionRequest["params"]["reasoningEffort"]>,
