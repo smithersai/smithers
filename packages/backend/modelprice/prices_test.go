@@ -1,6 +1,9 @@
 package modelprice
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestCostNanosPreservesSubCentAndRejectsOverflow(t *testing.T) {
 	price, ok := Lookup("gpt-oss-120b")
@@ -176,5 +179,29 @@ func TestSonnet45LongContextPremiumAtBelowAndAboveThreshold(t *testing.T) {
 		if err != nil || got != want {
 			t.Errorf("prompt=%d: got %d want %d", tc.prompt, got, want)
 		}
+	}
+}
+
+// Gemini 3.8 Flash: introductory through 2026-12-31, doubled from 2027-01-01
+// (smithersai/plue#528, plue c4b62fd2b).
+func TestDatedPriceChangesAtItsPublishedDate(t *testing.T) {
+	change := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		at   time.Time
+		want Rates
+	}{
+		{change.Add(-time.Nanosecond), Rates{usd(0.75), usd(3.75), usd(0.075), usd(0.75)}},
+		{change, Rates{usd(1.50), usd(7.50), usd(0.15), usd(1.50)}},
+	} {
+		price, ok := LookupAt("gemini-3.8-flash", tc.at)
+		if !ok || price.Provider != "google" || price.Rates != tc.want || (price.Next == nil) != !tc.at.Before(change) {
+			t.Errorf("at %s: %+v ok=%v, want %+v", tc.at, price, ok, tc.want)
+		}
+	}
+	if now, ok := Lookup("gemini-3.8-flash"); !ok || (time.Now().Before(change) && now.InputPerMTok != usd(0.75)) {
+		t.Fatalf("current price %+v ok=%v", now, ok)
+	}
+	if _, ok := Lookup("gemini-2.0-flash-001"); ok {
+		t.Fatal("the shut-down gemini-2.0-flash-001 is priced")
 	}
 }

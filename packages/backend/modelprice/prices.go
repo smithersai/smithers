@@ -12,6 +12,7 @@ import (
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 )
 
 // Rates is one rate card. Every class a provider can report is priced; a
@@ -54,6 +55,10 @@ type Price struct {
 	// FlatPerCall is charged once per call for endpoints that report no
 	// token usage (the Jev evaluation model).
 	FlatPerCall int64
+	// Next replaces this price from NextFrom on: a published, dated change
+	// such as the end of an introductory price.
+	NextFrom time.Time
+	Next     *Price
 }
 
 // Usage is what a provider reported for one call.
@@ -98,6 +103,9 @@ const OpenAILongContextFrom = 272_000
 //     131k/128k per https://inference-docs.cerebras.ai/models/overview).
 //     No cache price is published, so cached tokens are charged as input.
 //   - OpenRouter: https://openrouter.ai/api/v1/models.
+//   - Google: https://ai.google.dev/gemini-api/docs/pricing (paid tier).
+//     No cache-write price is published, so cache writes are charged as
+//     input.
 var Table = map[string]Price{
 	"claude-fable-5-1":  anthropic(10, 50, 0.025),
 	"claude-fable-5":    anthropic(10, 50, 0.1),
@@ -130,6 +138,9 @@ var Table = map[string]Price{
 	// OpenRouter lists 0.15/0.60 (cache read 0.075); the ceiling sent with
 	// the call is this row, so no routed provider costs more.
 	"gpt-oss-120b@openrouter": flat("openrouter", 0.35, 0.75),
+
+	// Introductory through 2026-12-31, doubled from 2027-01-01.
+	"gemini-3.8-flash": dated(flatCached("google", 0.75, 3.75, 0.075), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), flatCached("google", 1.50, 7.50, 0.15)),
 
 	// Vercel AI Gateway evaluation model: no token usage on the wire, flat
 	// per call (VERIFY against the gateway invoice).
@@ -171,10 +182,26 @@ func flat(provider string, in, out float64) Price {
 	return Price{Provider: provider, Context: ContextFlat, Rates: Rates{InputPerMTok: usd(in), OutputPerMTok: usd(out), CacheReadPerMTok: usd(in), CacheWritePerMTok: usd(in)}}
 }
 
-// Lookup returns the price for a model id. Provider-prefixed ids such as
-// "anthropic/claude-sonnet-5" (OpenRouter and the Vercel gateway) resolve to
-// the bare id. A model whose context pricing is unknown is not found.
-func Lookup(model string) (Price, bool) {
+// flatCached is one rate card with a published cache-read discount.
+func flatCached(provider string, in, out, cacheRead float64) Price {
+	price := flat(provider, in, out)
+	price.CacheReadPerMTok = usd(cacheRead)
+	return price
+}
+
+func dated(current Price, from time.Time, next Price) Price {
+	current.NextFrom, current.Next = from, &next
+	return current
+}
+
+// Lookup returns the price in effect now for a model id. Provider-prefixed
+// ids such as "anthropic/claude-sonnet-5" (OpenRouter and the Vercel gateway)
+// resolve to the bare id. A model whose context pricing is unknown is not
+// found.
+func Lookup(model string) (Price, bool) { return LookupAt(model, time.Now()) }
+
+// LookupAt returns the price in effect at a given time.
+func LookupAt(model string, at time.Time) (Price, bool) {
 	model = strings.TrimSpace(model)
 	price, ok := Table[model]
 	if !ok {
@@ -182,7 +209,13 @@ func Lookup(model string) (Price, bool) {
 			price, ok = Table[model[i+1:]]
 		}
 	}
-	if !ok || !price.known() {
+	if !ok {
+		return Price{}, false
+	}
+	for price.Next != nil && !at.Before(price.NextFrom) {
+		price = *price.Next
+	}
+	if !price.known() {
 		return Price{}, false
 	}
 	return price, true
