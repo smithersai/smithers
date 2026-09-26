@@ -262,7 +262,8 @@ describe("Budgets ledgers", () => {
     )
     await exercise(ledger)
     expect(Object.keys(JSON.parse(readFileSync(file, "utf8")))).toHaveLength(Budgets.retainedDays)
-    expect(statSync(file).mode & 0o777).toBe(0o600)
+    // Windows keeps no POSIX permission bits; Node reports a writable file as 0o666 there.
+    expect(statSync(file).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o600)
   })
 
   it("fails with the ledger's path when its file cannot be used", async () => {
