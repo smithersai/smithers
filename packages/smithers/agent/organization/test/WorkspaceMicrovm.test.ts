@@ -261,6 +261,28 @@ describe.skipIf(missing !== undefined)("Workspace against real microVMs", () => 
     await within(Effect.flatMap(Workspace.Workspace, (w) => w.dispose(prepared)))
   }, 300_000)
 
+  it("runs hundreds of commands in one session without its machine refusing them or restarting", async () => {
+    const { repo, commit } = fixtureRepo()
+    const key = `${run}/fixture/many`
+    const prepared = await within(
+      Effect.flatMap(Workspace.Workspace, (w) => w.prepare({ key, repoPath: repo, commit }))
+    )
+    // /tmp is the guest's memory: a restarted machine comes back without it.
+    const outcome = await within(Effect.scoped(Effect.gen(function*() {
+      const session = yield* (yield* Workspace.Workspace).session(key, { commit })
+      yield* Process.guest(session, "echo kept > /tmp/marker", { limit: 1_024 })
+      let failed = 0
+      for (let n = 0; n < 400; n++) {
+        const result = yield* Process.guest(session, `test -f README.md`, { limit: 1_024 })
+        if (result.exitCode !== 0) failed++
+      }
+      const marker = yield* Process.guest(session, "cat /tmp/marker", { limit: 1_024 })
+      return { failed, marker: Process.text(marker.stdout) }
+    })))
+    expect(outcome).toEqual({ failed: 0, marker: "kept\n" })
+    await within(Effect.flatMap(Workspace.Workspace, (w) => w.dispose(prepared)))
+  }, 300_000)
+
   /**
    * `SMITHERS_VM_STRESS=<cycles>`: prepare, two sessions of commands, collect
    * and dispose, `<cycles>` times one after another and again two at a time,

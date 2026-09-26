@@ -253,7 +253,10 @@ repositories:
 - Rust, `jj`, `rg`, `fd` and `jq` are not in `node:26-bookworm`; install
   them in the prepare command from pinned, checksummed releases (the example
   organization shows how) and list them in `tools`.
-- **Machine failures.** A workspace VM whose guest dies is started again on
+- **Machine failures.** The Microsandbox SDK gives a finished command's guest
+  session back only when its handle is garbage collected, and a machine
+  refuses new commands after about 140 uncollected ones; the provider
+  collects every 64 command starts. A workspace VM whose guest dies is started again on
   its own disk the next time a step or command reaches it, and a check VM
   that goes away is replaced once; a seeded workspace is flushed to disk
   before the builder works in it.

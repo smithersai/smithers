@@ -16,6 +16,7 @@ import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { concat } from "./concat.ts"
 import { elapsed } from "./deadline.ts"
+import { execHandles } from "./execHandles.ts"
 import { finalizeWithin } from "./finalizeWithin.ts"
 import { hostKillScript } from "./killScript.ts"
 import { linuxSignalNumber } from "./linuxSignals.ts"
@@ -79,6 +80,7 @@ const start = (
 ): Effect.Effect<ExecHandle, ProviderError> =>
   Effect.callback<ExecHandle, ProviderError>((resume) => {
     let abandoned = false
+    execHandles.started()
     sandbox.execStreamWith(request.program, (builder) => {
       const configured = builder.args([...request.args]).cwd(request.cwd).envs(request.env)
       return request.stdin === undefined ? configured : configured.stdinBytes(request.stdin)

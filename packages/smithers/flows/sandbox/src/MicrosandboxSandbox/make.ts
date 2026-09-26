@@ -9,6 +9,7 @@ import { attemptIn } from "../internal/attempt.ts"
 import { elapsed } from "../internal/deadline.ts"
 import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
+import { execHandles } from "../internal/execHandles.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
 import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
@@ -296,9 +297,16 @@ const revive = (
     async () => {
       let handle = await options.sdk.Sandbox.get(name)
       if (handle.status === "running") {
+        // Finished commands the guest still holds sessions for are given back
+        // first; a guest that then answers a command needs no restart.
+        execHandles.release()
         try {
           const connected = await handle.connect()
           await connected.fs().mkdir(workdir)
+          const probe = await connected.execStreamWith("/bin/sh", (builder) => builder.args(["-c", "true"]))
+          while ((await probe.recv()) !== null) {
+            // Drained: the guest ran a command.
+          }
           return connected
         } catch (cause) {
           if (!isTransient(cause)) throw cause
