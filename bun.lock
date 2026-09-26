@@ -552,6 +552,20 @@
         "typescript": "~5.9.3",
       },
     },
+    "apps/docs/organization": {
+      "name": "@smithers/docs-organization",
+      "version": "0.0.1",
+      "dependencies": {
+        "@astrojs/starlight": "^0.42.0",
+        "astro": "^7.3.1",
+      },
+      "devDependencies": {
+        "@astrojs/check": "^0.9.10",
+        "@smithers/docs-shared": "workspace:*",
+        "alchemy": "2.0.0-beta.76",
+        "typescript": "~5.9.3",
+      },
+    },
     "apps/docs/plan": {
       "name": "@smithers/docs-plan",
       "version": "0.0.1",
@@ -819,6 +833,7 @@
       "name": "smithers-model-host",
       "dependencies": {
         "@smthrs/model-host": "workspace:*",
+        "@smthrs/rpc": "workspace:*",
         "effect": "4.0.0-rc.115",
       },
       "devDependencies": {
@@ -845,7 +860,6 @@
         "@smthrs/kernel": "workspace:*",
         "@smthrs/model": "workspace:*",
         "@smthrs/plan": "workspace:*",
-        "@smthrs/platform-node": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/ui-styleguide": "workspace:*",
         "effect": "4.0.0-rc.115",
@@ -907,6 +921,7 @@
         "@smthrs/model": "workspace:*",
         "@smthrs/observability": "workspace:*",
         "@smthrs/plan": "workspace:*",
+        "@smthrs/platform-node": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/run-store": "workspace:*",
         "@smthrs/sandbox": "workspace:*",
@@ -942,6 +957,7 @@
         "@smthrs/model": "workspace:*",
         "@smthrs/plan": "workspace:*",
         "@smthrs/registry": "workspace:*",
+        "@smthrs/rpc": "workspace:*",
         "@smthrs/std": "workspace:*",
         "diff": "9.0.0",
         "effect": "4.0.0-rc.115",
@@ -951,6 +967,30 @@
         "@types/react": "19.2.18",
         "@xterm/headless": "6.0.0",
         "bun-types": "^1.4.0",
+        "typescript": "~5.9.3",
+      },
+    },
+    "apps/tui-docs": {
+      "name": "@smithers/tui-docs",
+      "version": "0.0.1",
+      "dependencies": {
+        "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
+        "@smthrs/agent": "workspace:*",
+        "@smthrs/engine": "workspace:*",
+        "@smthrs/flow": "workspace:*",
+        "@smthrs/harness": "workspace:*",
+        "@smthrs/model": "workspace:*",
+        "@smthrs/plan": "workspace:*",
+        "@smthrs/registry": "workspace:*",
+        "astro": "^7.3.1",
+        "effect": "4.0.0-rc.115",
+        "quickjs-emscripten-core": "0.32.0",
+      },
+      "devDependencies": {
+        "@astrojs/check": "^0.9.10",
+        "@types/node": "26.4.1",
+        "@xterm/headless": "6.0.0",
+        "playwright": "1.62.1",
         "typescript": "~5.9.3",
       },
     },
@@ -1093,6 +1133,7 @@
         "@smthrs/run-store": "workspace:*",
         "@smthrs/targets": "workspace:*",
         "effect": "4.0.0-rc.115",
+        "microsandbox": "0.6.16",
         "playwright": "1.62.1",
       },
       "devDependencies": {
@@ -1569,6 +1610,53 @@
         "vitest": "5.0.0",
       },
     },
+    "packages/smithers/agent/organization": {
+      "name": "@smthrs/organization",
+      "version": "1.0.0-rc.1",
+      "dependencies": {
+        "@smthrs/agent": "1.0.0-rc.1",
+        "@smthrs/canonical": "1.0.0-rc.1",
+        "@smthrs/capability": "1.0.0-rc.1",
+        "@smthrs/core": "1.0.0-rc.1",
+        "@smthrs/engine": "1.0.0-rc.1",
+        "@smthrs/flow": "1.0.0-rc.1",
+        "@smthrs/harness": "1.0.0-rc.1",
+        "@smthrs/kernel": "1.0.0-rc.1",
+        "@smthrs/memory": "1.0.0-rc.1",
+        "@smthrs/plan": "1.0.0-rc.1",
+        "@smthrs/registry": "1.0.0-rc.1",
+        "@smthrs/sandbox": "1.0.0-rc.1",
+        "@smthrs/std": "1.0.0-rc.1",
+        "yaml": "2.9.0",
+      },
+      "devDependencies": {
+        "@effect/language-service": "0.87.2",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
+        "@eslint/js": "9.39.5",
+        "@smthrs/engine-store": "1.0.0-rc.1",
+        "@smthrs/flows": "1.0.0-rc.1",
+        "@smthrs/model": "1.0.0-rc.1",
+        "@types/node": "26.4.1",
+        "@vitest/coverage-v8": "5.0.0",
+        "dprint": "0.57.1",
+        "effect": "4.0.0-rc.115",
+        "esbuild": "0.28.2",
+        "eslint": "9.39.5",
+        "eslint-import-resolver-typescript": "4.4.5",
+        "eslint-plugin-import": "2.32.0",
+        "eslint-plugin-jsdoc": "64.3.4",
+        "eslint-plugin-unicorn": "65.0.0",
+        "madge": "8.0.0",
+        "microsandbox": "0.6.16",
+        "typescript": "5.9.3",
+        "typescript-eslint": "8.69.0",
+        "vitest": "5.0.0",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
     "packages/smithers/agent/plugin": {
       "name": "@smthrs/plugin",
       "version": "1.0.0-rc.1",
@@ -1617,6 +1705,7 @@
         "@smthrs/engine-store": "1.0.0-rc.1",
         "@smthrs/journal": "1.0.0-rc.1",
         "@smthrs/kernel": "1.0.0-rc.1",
+        "@smthrs/platform-node": "1.0.0-rc.1",
         "@smthrs/run-store": "1.0.0-rc.1",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
@@ -1824,6 +1913,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "alchemy": "2.0.0-beta.76",
+        "aws4fetch": "1.0.20",
         "dprint": "0.55.2",
         "effect": "4.0.0-rc.115",
         "eslint": "9.39.1",
@@ -2913,6 +3003,7 @@
         "@smthrs/flows": "1.0.0-rc.1",
         "@smthrs/kernel": "1.0.0-rc.1",
         "@smthrs/notifications": "1.0.0-rc.1",
+        "@smthrs/platform-node": "1.0.0-rc.1",
         "@smthrs/run-store": "1.0.0-rc.1",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
@@ -3174,11 +3265,16 @@
     },
   },
   "patchedDependencies": {
-    "@distilled.cloud/aws@1.0.0-rc.8": "patches/@distilled.cloud__aws@1.0.0-rc.8.patch",
-    "@distilled.cloud/cloudflare@1.0.0-rc.8": "patches/@distilled.cloud__cloudflare@1.0.0-rc.8.patch",
-    "@distilled.cloud/core@1.0.0-rc.8": "patches/@distilled.cloud__core@1.0.0-rc.8.patch",
-    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch",
     "@alchemy.run/cloudflare-runtime@2.0.0-beta.76": "patches/@alchemy.run__cloudflare-runtime@2.0.0-beta.76.patch",
+    "@distilled.cloud/axiom@1.0.0-rc.8": "patches/@distilled.cloud__axiom@1.0.0-rc.8.patch",
+    "@distilled.cloud/hetzner@1.0.0-rc.8": "patches/@distilled.cloud__hetzner@1.0.0-rc.8.patch",
+    "@distilled.cloud/cloudflare@1.0.0-rc.8": "patches/@distilled.cloud__cloudflare@1.0.0-rc.8.patch",
+    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch",
+    "@distilled.cloud/fly-io@1.0.0-rc.8": "patches/@distilled.cloud__fly-io@1.0.0-rc.8.patch",
+    "@distilled.cloud/railway@1.0.0-rc.8": "patches/@distilled.cloud__railway@1.0.0-rc.8.patch",
+    "@distilled.cloud/planetscale@1.0.0-rc.8": "patches/@distilled.cloud__planetscale@1.0.0-rc.8.patch",
+    "@distilled.cloud/core@1.0.0-rc.8": "patches/@distilled.cloud__core@1.0.0-rc.8.patch",
+    "@distilled.cloud/aws@1.0.0-rc.8": "patches/@distilled.cloud__aws@1.0.0-rc.8.patch",
   },
   "overrides": {
     "@effect/opentelemetry": "4.0.0-rc.115",
@@ -4351,6 +4447,8 @@
 
     "@smithers/docs-observability": ["@smithers/docs-observability@workspace:apps/docs/observability"],
 
+    "@smithers/docs-organization": ["@smithers/docs-organization@workspace:apps/docs/organization"],
+
     "@smithers/docs-plan": ["@smithers/docs-plan@workspace:apps/docs/plan"],
 
     "@smithers/docs-plan-store": ["@smithers/docs-plan-store@workspace:apps/docs/plan-store"],
@@ -4392,6 +4490,8 @@
     "@smithers/release-workflows": ["@smithers/release-workflows@workspace:flows"],
 
     "@smithers/site": ["@smithers/site@workspace:apps/site"],
+
+    "@smithers/tui-docs": ["@smithers/tui-docs@workspace:apps/tui-docs"],
 
     "@smithy/core": ["@smithy/core@3.35.0", "", { "dependencies": { "@smithy/types": "^4.19.0", "tslib": "^2.6.2" } }, "sha512-zRMhfkByhT2snNdr1si24vJitU6Cr9ix2MikUfWmkAgp4jrNP0GcKSP5YvwQ+TlI8AZXER5QOGJn3JsVtSD9/A=="],
 
@@ -4502,6 +4602,8 @@
     "@smthrs/notifications": ["@smthrs/notifications@workspace:packages/smithers/notifications"],
 
     "@smthrs/observability": ["@smthrs/observability@workspace:packages/smithers/flows/observability"],
+
+    "@smthrs/organization": ["@smthrs/organization@workspace:packages/smithers/agent/organization"],
 
     "@smthrs/patterns": ["@smthrs/patterns@workspace:packages/smithers/flows/patterns"],
 

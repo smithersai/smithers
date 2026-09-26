@@ -19,12 +19,6 @@
       "expires": "2026-10-10"
     },
     {
-      "label": "//scripts:lockfileParity",
-      "owner": "will",
-      "reason": "bun.lock disagrees with 7 manifest entries.",
-      "expires": "2026-10-10"
-    },
-    {
       "label": "//scripts:releasePack",
       "owner": "will",
       "reason": "Red in a local reproduction of the ci.yml step on 2026-09-26; CI has not reached this step since //packages went red. Not triaged; may be environment-specific.",
