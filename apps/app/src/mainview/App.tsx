@@ -425,7 +425,7 @@ function AppContent() {
             const last = current.paletteLastQuery ?? ""
             if (event.shiftKey && last !== "") controller.runCommand("palette.open", last)
             else controller.runCommand("palette.open")
-            requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
+            composerWrapRef.current?.querySelector("textarea")?.focus()
           }
           return
         }
@@ -597,7 +597,8 @@ function AppContent() {
       <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
         <FirstSightHint id="chat" placement="above" content={<ChatHint />}><GuideButton ref={chatTriggerRef} shortcut={GUIDE_KEYS.chat} {...flowProps("chat.open")} onClick={() => {
           controller.runCommand("chat.open")
-          requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
+          // Focus an already-open input now; Composer owns focus on opening.
+          composerWrapRef.current?.querySelector("textarea")?.focus()
         }}>Chat</GuideButton></FirstSightHint>
         <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />
         <ChatFilterMenu open={session.chatFilterMenuOpen === true} filter={session.chatFilter ?? allChat} lanes={lanes} onRunCommand={controller.runCommand} />

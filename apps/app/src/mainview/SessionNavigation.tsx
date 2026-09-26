@@ -33,7 +33,7 @@ export function SessionNavigation() {
       }
       else {
         controller.runCommand('chat.open')
-        requestAnimationFrame(() => doc.querySelector<HTMLTextAreaElement>('.app-shell [data-testid="composer-input"]')?.focus())
+        doc.querySelector<HTMLTextAreaElement>('.app-shell [data-testid="composer-input"]')?.focus()
       }
     }
     const pressActions = bindPressActions({ root,

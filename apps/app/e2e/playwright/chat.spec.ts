@@ -20,8 +20,7 @@ const expectReadableTurn = async (page: Page, text: string) => {
   }
 }
 
-for (const dismissal of ['Escape', 'Control+k', 'backdrop']) test(`closing Chat with ${dismissal} preserves a newer focus choice`, async ({ page }) => {
-  await page.addInitScript(() => {
+const installFocusFrameProbe = (page: Page) => page.addInitScript(() => {
     const request = window.requestAnimationFrame.bind(window)
     const cancel = window.cancelAnimationFrame.bind(window)
     const held = new Map<number, FrameRequestCallback>()
@@ -37,7 +36,37 @@ for (const dismissal of ['Escape', 'Control+k', 'backdrop']) test(`closing Chat 
       return id
     }
     window.cancelAnimationFrame = id => { held.delete(id); cancel(id) }
-  })
+})
+
+for (const opening of ['button', 'shortcut', 'already open']) test(`opening Chat by ${opening} preserves a newer focus choice`, async ({ page }) => {
+  await installFocusFrameProbe(page)
+  await page.goto('/')
+  const chat = page.getByRole('button', { name: 'Chat', exact: true })
+  const input = page.getByTestId('composer-input')
+  await expect(chat).toBeVisible()
+  if (opening === 'already open') {
+    await chat.click()
+    await input.fill('keep this draft')
+  }
+  await page.evaluate(() => { (window as any).chatFocusFrames.armed = true })
+  try {
+    if (opening === 'shortcut') await page.keyboard.press('Control+k')
+    else await chat.click()
+    await expect(input).toBeFocused()
+    await page.keyboard.type(' ready')
+    await expect(input).toHaveValue(opening === 'already open' ? 'keep this draft ready' : ' ready')
+    await page.evaluate(() => (window as any).chatFocusFrames.frame())
+    const next = page.getByRole('button', { name: 'Mode: Normal', exact: true })
+    await next.focus()
+    await page.evaluate(() => (window as any).chatFocusFrames.release())
+    await expect(next).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('menuitemradio', { name: 'Normal', exact: true })).toBeFocused()
+  } finally { await page.evaluate(() => (window as any).chatFocusFrames.release()) }
+})
+
+for (const dismissal of ['Escape', 'Control+k', 'backdrop']) test(`closing Chat with ${dismissal} preserves a newer focus choice`, async ({ page }) => {
+  await installFocusFrameProbe(page)
   await page.goto('/')
   await page.getByRole('button', { name: 'Chat', exact: true }).click()
   const input = page.getByTestId('composer-input')
