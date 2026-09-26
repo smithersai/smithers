@@ -76,8 +76,8 @@ export const PlanningInput = Schema.Struct({
   // request: the host then never generates the wiki for this request.
   wiki: Schema.optionalKey(Schema.NullOr(SuppliedWiki))
 })
-/** The mythical stack tip a request starts from: an exact commit the stack
- * service retained into this workspace's source ref. */
+/** The exact commit a request starts from, retained into this workspace's
+ * source ref: the mythical stack tip, or the caller's pushed ref. */
 export const StackBase = Schema.Struct({
   commitId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)),
   ref: Schema.String.check(Schema.isPattern(/^refs\/smithers\/workspaces\/[0-9a-f-]{36}\/sources\/[0-9a-f]{40}$/))

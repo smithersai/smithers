@@ -3,7 +3,7 @@ import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { json, memoryStorage, scriptedToolAgent, waitFor } from "../TestFixtures"
 import { scopedControllers } from "../ControllerTestScope"
-import { workflowLaunchOf } from "../WorkflowLaunch"
+import { launchSourceOf, workflowLaunchOf } from "../WorkflowLaunch"
 import { createControllerContext } from "./context"
 import { createFailureController } from "./failures"
 import { createWorkflowLaunchController } from "./workflow-launch"
@@ -143,6 +143,8 @@ test("change.request returns before an unresolved launch, keeps Chat usable, ded
     const path = String(url)
     if (path.endsWith("/api/auth/session")) return json(200, { login: "owner", allowlisted: true, admin: false })
     if (path.endsWith("/api/workflow/provision")) return json(200, { status: "ready" })
+    // No pushed head: the change starts from the workspace as it is.
+    if (path.endsWith(`/workspaces/${workspaceId}/user-source`)) return json(200, { name: "head", base: null })
     if (!path.endsWith("/api/workflow/rpc")) return json(404, {})
     const body = JSON.parse(String(init?.body))
     procedures.push(body)
@@ -162,6 +164,69 @@ test("change.request returns before an unresolved launch, keeps Chat usable, ded
     await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.status === "running"))
     await waitFor(() => procedures.some(call => call.procedure === "Plan"))
     expect(procedures.filter(call => call.procedure === "Plan")).toEqual([expect.objectContaining({ workspaceId, payload: expect.objectContaining({ flowId: "coding/request", input: { prompt: "Fix the README typo" } }) })])
+  } finally {
+    gate.resolve(json(503, { message: "closing" }))
+    await controller.dispose(); await store.dispose?.()
+  }
+})
+
+const sourceBase = { commitId: "c".repeat(40), ref: `refs/smithers/workspaces/${workspaceId}/sources/${"c".repeat(40)}` }
+
+test("change.request starts from the caller's pushed ref: pinned once as coding/request's base, named on the card", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: repo, org: "owner", ownerKind: "user", name: "repo", head: null }] }).isPersisted.promise
+  await store.dispatch({ type: "workspaces.loaded", actor: "system", workspaces: [{ id: workspaceId, repoId: repo, name: "Coding", targetBookmark: "main", status: "running", provisioningStage: null, suspendedAt: null, createdAt: null }] }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: `${repo}#workspace:${workspaceId}` }).isPersisted.promise
+  const gate = deferred<Response>()
+  const pin = deferred<Response>()
+  const plans: Array<Record<string, unknown>> = []
+  const pins: Array<Record<string, unknown>> = []
+  const controller = createAppController(store, scriptedToolAgent([]).agent, { workflowPollMs: 5, toastAutoDismissMs: 60_000, fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(url)
+    if (path.endsWith("/api/auth/session")) return json(200, { login: "owner", allowlisted: true, admin: false })
+    if (path.endsWith("/api/workflow/provision")) return json(200, { status: "ready" })
+    if (path.endsWith(`/api/repos/owner/repo/workspaces/${workspaceId}/user-source`)) {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      pins.push(body)
+      return body.name === "spike" ? pin.promise : json(404, { code: "user_ref_missing", message: "refs/smithers/users/7/gone does not exist or expired" })
+    }
+    if (!path.endsWith("/api/workflow/rpc")) return json(404, {})
+    const body = JSON.parse(String(init?.body))
+    if (body.procedure === "Plan") { plans.push(body.payload); return gate.promise }
+    return json(200, { ok: true, payload: { rows: [], items: [] } })
+  } })
+  const cards = () => [...store.collections.cards.values()].filter(card => card.kind === "run-trace")
+  try {
+    // The command returns while the pin is still unresolved.
+    const result = await Promise.race([controller.commands.run("change.request", `Fix the README from: the notes from:spike ${repo}`), new Promise(resolve => setTimeout(() => resolve("blocked"), 100))])
+    expect(result).toMatchObject({ status: "executed", value: expect.stringContaining("run-requested workflow=coding/request") })
+    expect(workflowLaunchOf(cards()[0])).toMatchObject({ input: { prompt: "Fix the README from: the notes" }, source: { name: "spike", explicit: true } })
+    await waitFor(() => pins.length === 1)
+    expect(pins).toEqual([{ name: "spike" }])
+    pin.resolve(json(200, { name: "spike", base: sourceBase }))
+    await waitFor(() => plans.length === 1)
+    expect(plans[0]).toMatchObject({ flowId: "coding/request", input: { prompt: "Fix the README from: the notes", base: sourceBase } })
+    const launched = cards()[0]!
+    expect(workflowLaunchOf(launched)?.source).toEqual({ name: "spike", explicit: true, commitId: sourceBase.commitId })
+    expect(launchSourceOf(launched)).toBe("spike")
+    // Asking again is the same request: no second pin, no second card.
+    await controller.commands.run("change.request", `Fix the README from: the notes from:spike ${repo}`)
+    expect(cards()).toHaveLength(1)
+    expect(pins).toHaveLength(1)
+
+    // A named ref the caller never pushed fails visibly on its card.
+    await controller.commands.run("change.request", `Tidy the docs from:gone ${repo}`)
+    await waitFor(() => cards().some(card => card.status === "error"))
+    const failed = cards().find(card => card.status === "error")!
+    expect(workflowLaunchOf(failed)?.error).toMatchObject({ stage: "preparation", code: "user_ref_missing" })
+    expect(launchSourceOf(failed)).toBeUndefined()
+    expect(plans).toHaveLength(1)
+
+    // A name git would refuse never becomes a request: the form asks again.
+    const before = cards().length
+    expect(await controller.commands.run("change.request", `Tidy the docs from:../x ${repo}`)).toMatchObject({ status: "form" })
+    expect(cards()).toHaveLength(before)
   } finally {
     gate.resolve(json(503, { message: "closing" }))
     await controller.dispose(); await store.dispose?.()

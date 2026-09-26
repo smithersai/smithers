@@ -18,7 +18,9 @@ export const changeFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
    * A change asked for in words: the workspace's coding/request plans,
    * implements and checks it, and a validated request continues into
    * coding/vibe, which commits and lands it on main. It lands code, so the
-   * agent's door confirms.
+   * agent's door confirms. It starts from the caller's pushed ref `from`
+   * (`smithers repo push --name <from>`), else their `head` when they pushed
+   * one; that local work lands with the change.
    */
   flow({
     name: "change.request",
@@ -27,15 +29,18 @@ export const changeFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
         prompt: { label: "Change", kind: "textarea" },
         repo: { optionsFrom: "cloud-repos", kind: "text" }
       },
-      args: (payload) => line(text(payload, "prompt"), text(payload, "repo"))
+      args: (payload) => {
+        const from = text(payload, "from")
+        return line(text(payload, "prompt"), from === undefined ? undefined : `from:${from}`, text(payload, "repo"))
+      }
     },
     summary: "Make a code change in a repository and land it on main: the Cloud workspace plans, implements, checks and lands it",
     runtime: ["cloud"],
-    confirm: (payload) => `make and land this change${typeof payload.repo === "string" ? ` on ${payload.repo}` : ""}`,
-    args: "<what to change…> [owner/repo]",
+    confirm: (payload) => `make and land this change${typeof payload.from === "string" ? ` from ${payload.from}` : ""}${typeof payload.repo === "string" ? ` on ${payload.repo}` : ""}`,
+    args: "<what to change…> [from:<pushed ref>] [owner/repo]",
     requires: ["signed-in"],
-    input: Schema.Struct({ prompt: Schema.String, repo: Schema.optional(Schema.String) }),
-    handler: ({ prompt, repo }) => actions.requestChange(prompt, repo)
+    input: Schema.Struct({ prompt: Schema.String, from: Schema.optional(Schema.String), repo: Schema.optional(Schema.String) }),
+    handler: ({ prompt, from, repo }) => actions.requestChange(prompt, repo, from)
   }),
   /*
    * Lane change (ADR 0003): the change is the unit. `change.view` renders

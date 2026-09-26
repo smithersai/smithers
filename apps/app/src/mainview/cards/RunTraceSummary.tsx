@@ -5,6 +5,7 @@ import { runSourceCommand } from "../flows/RunCommand"
 import type { TraceModel } from "./RunTrace"
 import { latestNeedsHelp, NEEDS_HELP_LABELS } from "./RunNeedsHelp"
 import { traceStatus } from "./RunTraceStatus"
+import { launchSourceOf } from "../state/WorkflowLaunch"
 
 const words: Readonly<Record<string, string>> = {
   launching: "Starting…", running: "Running", "waiting-approval": "Approval needed",
@@ -31,6 +32,9 @@ export const RunTraceSummary = ({ card, model, facts, onRunCommand: send }: {
   const activity = verdict === undefined && (phase === "running" || phase === "waiting-approval") ? current.activity : undefined
   const needsHelp = latestNeedsHelp(model.journal)
   const onRunCommand = runSourceCommand(card.id, send)
+  // A change that started from the caller's pushed ref (#1964) says which.
+  const source = launchSourceOf(card)
+  const shown = source === undefined ? facts : [`from ${source}`, ...facts]
   return <header className="run-outcome" data-phase={status} data-testid={`run-outcome-${runId}`} aria-label="Current run status">
     <span className="run-outcome-dot" data-status={status} aria-hidden />
     <span className="run-outcome-words">{verdict === undefined ? activity ?? words[phase] ?? phase : words[verdict]}</span>
@@ -47,6 +51,6 @@ export const RunTraceSummary = ({ card, model, facts, onRunCommand: send }: {
     )}
     {action === "approval" ? <button type="button" className="run-trace-filter" {...flowAction(onRunCommand, "approvals.open", runId)}>Review approval</button>
       : action === "resume" ? <button type="button" className="run-trace-filter" data-testid={`flow-run-resume-${runId}`} {...flowAction(onRunCommand, "runs.resume", runId)}>Resume</button> : null}
-    {facts.length === 0 ? null : <span className="run-outcome-facts">{facts.join(" · ")}</span>}
+    {shown.length === 0 ? null : <span className="run-outcome-facts">{shown.join(" · ")}</span>}
   </header>
 }

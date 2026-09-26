@@ -61,6 +61,8 @@ const graphObject = (args: string | undefined, target: "runId" | "cardId", value
 
 /** The empty payload every no-argument flow takes. */
 const NONE: Parsed = { payload: {} }
+/** A name under refs/smithers/users/<id>/ (packages/backend repohost.UserIDFromRef). */
+const PUSHED_REF_NAME = /^(?!.*\.\.)(?!.*(?:^|\/)\.)(?!.*\.(?:\/|$))(?!.*\.lock(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/
 
 const trimmed = (args: string | undefined): string => (args ?? "").trim()
 
@@ -714,8 +716,14 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
    */
   "change.request": (args, known) => {
     const { rest, repo } = splitTrailingRepo(args, known)
+    // Only a trailing `from:<name>` names the pushed ref; "from:" inside the
+    // request is prose.
+    const from = /(?:^|\s)from:(\S*)$/.exec(rest)
+    const prompt = from === null ? rest : rest.slice(0, from.index).trim()
+    if (from !== null && !PUSHED_REF_NAME.test(from[1]!)) return no("change.request's from: names a ref pushed with `smithers repo push --name <name>`")
     const payload: Record<string, unknown> = {}
-    if (rest !== "") payload["prompt"] = rest
+    if (prompt !== "") payload["prompt"] = prompt
+    if (from !== null) payload["from"] = from[1]
     if (repo !== undefined) payload["repo"] = repo
     return ok(payload)
   },

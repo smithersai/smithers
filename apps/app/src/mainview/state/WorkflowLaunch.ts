@@ -26,6 +26,12 @@ export const WorkflowLaunchSchema = z.object({
   retryAt: z.number().optional(),
   /** A change request (change.request): a validated coding/request continues into coding/vibe. */
   then: z.literal("coding/vibe").optional(),
+  /**
+   * Where a change request starts: the caller's pushed ref `name`, asked for
+   * (`explicit`) or their default head. `commitId` is set once preparation
+   * pinned it as coding/request's base, null when there was none to use.
+   */
+  source: z.object({ name: z.string(), explicit: z.boolean(), commitId: z.string().nullable().optional() }).optional(),
   /** The follow-up request this one started, so a reload never starts it twice. */
   next: z.string().optional(),
   error: z.object({ stage: z.enum(["preparation", "launch", "persistence"]), code: z.string(), message: z.string() }).optional()
@@ -36,6 +42,17 @@ export const workflowLaunchOf = (card: Card | undefined): WorkflowLaunch | undef
   if (card?.kind !== "run-trace" || card.runtimeView?.revision !== undefined) return
   const parsed = WorkflowLaunchSchema.safeParse(card.payload.input?._workflowLaunch)
   return parsed.success && card.id === `flow-request-${parsed.data.id}` ? parsed.data : undefined
+}
+
+/**
+ * The pushed ref a change request started from, once preparation pinned it.
+ * Read from the card's input itself: the run's later projection keeps it.
+ */
+export const launchSourceOf = (card: Card | undefined): string | undefined => {
+  if (card?.kind !== "run-trace") return
+  const launch = card.payload.input?._workflowLaunch
+  const parsed = WorkflowLaunchSchema.shape.source.safeParse(typeof launch === "object" && launch !== null ? (launch as { source?: unknown }).source : undefined)
+  return parsed.success && typeof parsed.data?.commitId === "string" ? parsed.data.name : undefined
 }
 
 /** A flow's exact input stays separate from client metadata, including colliding keys. */

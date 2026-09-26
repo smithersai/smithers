@@ -1,6 +1,7 @@
 import { prepareTriggerRegistration, readTriggerRegistrations } from "../seams/TriggersSeam"
 import type { TriggerRegistration } from "../WorkflowLaunch"
 import { cloudFailure } from "../seams/CloudClient"
+import { pinUserRefSource } from "../seams/UserRefSource"
 import { outOfCreditRefusal, renderCreditExhausted, renderPlanLimit } from "../seams/BillingSeam"
 import type { ViewAction } from "../PreparedView"
 import { createWorkflowCatalogController } from "./workflow-catalog"
@@ -57,7 +58,7 @@ export interface WorkflowController {
   readonly showFlows: () => Promise<string | void | { readonly value: string }>
   readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string) => Promise<string | void | { readonly value: string }>
   /** `change.request`: coding/request on the prompt, continuing into coding/vibe once it validates. */
-  readonly requestChange: (prompt: string, repo?: string) => Promise<string | void | { readonly value: string }>
+  readonly requestChange: (prompt: string, repo?: string, from?: string) => Promise<string | void | { readonly value: string }>
   /** What a flow WOULD run: the plan card, filled in the background. */
   readonly planFlow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string, against?: string) => Promise<string | void | { readonly value: string }>
   readonly chooseWorkflowRepo: (fullName: string) => Promise<string | void | { readonly value: string }>
@@ -284,6 +285,21 @@ export const createWorkflowController = (
       if (request.inputPrepared) return true
       return prepareTriggerRegistration({ baseUrl: ctx.baseUrl, http: (url, init) => ctx.boundedFetch(url, { ...init, signal }) },
         repo, request.triggerRegistration, binding.workspaceId, current)
+    }
+    /*
+     * A change request starts from the caller's pushed ref: once the box is
+     * ready, Cloud pins it as coding/request's base, once per request; a
+     * reload keeps the pinned (or absent) base.
+     */
+    if (request.source !== undefined && request.workflow === "coding/request") {
+      const provisioned = await provisionWorkspaceImpl(repo, binding, signal)
+      if (provisioned !== true || request.inputPrepared || binding.workspaceId === undefined) return provisioned
+      const pinned = await pinUserRefSource({ http: (url, init) => ctx.boundedFetch(url, { ...init, signal }), baseUrl: ctx.baseUrl },
+        repo, binding.workspaceId, request.source, signal)
+      if (!current()) return { code: "request_superseded", message: "This request belongs to a previous session." }
+      if ("code" in pinned) return pinned
+      return { input: pinned.base === null ? request.input : { ...request.input, base: pinned.base },
+        source: { ...request.source, commitId: pinned.base?.commitId ?? null } }
     }
     if (!request.triggerDispatch) return provisionWorkspaceImpl(repo, binding, signal)
     if (request.inputPrepared) return true
@@ -893,7 +909,7 @@ export const createWorkflowController = (
    * workspace's preparation, the run and the hand-over to vibe continue in
    * the background under the shared toast, and each stage has its own card.
    */
-  const requestChange = async (prompt: string, repoArg?: string): Promise<string | void | { readonly value: string }> => {
+  const requestChange = async (prompt: string, repoArg?: string, from?: string): Promise<string | void | { readonly value: string }> => {
     const what = prompt.trim()
     if (what === "") return "change.request needs what to change"
     if (what.length > 32_768) return "The change request exceeds the coding request limit of 32,768 characters."
@@ -903,7 +919,8 @@ export const createWorkflowController = (
     if ("error" in target) return target.error
     const { repo, binding } = target
     if (binding.workspaceId === undefined) return `Open a cloud workspace for ${repo} with /workspace.open, select it, then request the change again.`
-    return requests.start({ repo, binding, workflow: "coding/request", input: { prompt: what }, actor: ctx.commandActor, then: "coding/vibe" })
+    return requests.start({ repo, binding, workflow: "coding/request", input: { prompt: what }, actor: ctx.commandActor, then: "coding/vibe",
+      source: { name: from ?? "head", explicit: from !== undefined } })
   }
 
   /**

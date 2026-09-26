@@ -19,10 +19,17 @@ const terminal = new Set(["completed", "failed", "cancelled"])
 /** Polls a completed request waits for its journal before judging whether it validated. */
 const EVIDENCE_ROUNDS = 24
 /** The dedup identity of a request: a change request is not the same work as a bare run of its first flow. */
-const requestKey = (request: Pick<WorkflowLaunch, "owner" | "repo" | "workspaceId" | "workflow" | "input" | "then" | "triggerRegistration">): string =>
+const requestKey = (request: Pick<WorkflowLaunch, "owner" | "repo" | "workspaceId" | "workflow" | "input" | "then" | "triggerRegistration" | "source">): string =>
   canonicalStoredJsonValue([request.owner, request.repo, request.workspaceId ?? null, request.workflow,
     request.triggerRegistration ?? (request.workflow === "repository/trigger" && request.input.operation === "resume"
-      ? { operation: "resume", slug: request.input.slug } : request.input), ...(request.then === undefined ? [] : [request.then])])
+      ? { operation: "resume", slug: request.input.slug } : sourceFree(request)), ...(request.then === undefined ? [] : [request.then]),
+    // The asked-for source is the request; the base preparation pins from it is not.
+    ...(request.source === undefined ? [] : [{ from: request.source.explicit ? request.source.name : null }])])
+const sourceFree = (request: Pick<WorkflowLaunch, "input" | "source">): Record<string, unknown> => {
+  if (request.source === undefined) return request.input
+  const { base: _base, ...rest } = request.input
+  return rest
+}
 class RequestPersistenceError extends Error {}
 
 /** One durable request owns preparation, launch and observation through remote settlement. */
@@ -30,7 +37,7 @@ export const createWorkflowLaunchController = (
   ctx: ControllerContext,
   nextOrdinal: () => number,
   pump: (cardId: string) => Promise<void>,
-  prepare: (repo: string, binding: GatewayWorkspaceBinding, signal: AbortSignal, request: WorkflowLaunch, current: () => boolean) => Promise<true | Refusal | { input: Record<string, unknown> }>,
+  prepare: (repo: string, binding: GatewayWorkspaceBinding, signal: AbortSignal, request: WorkflowLaunch, current: () => boolean) => Promise<true | Refusal | { input: Record<string, unknown>; source?: WorkflowLaunch["source"] }>,
   completed?: (request: WorkflowLaunch) => void
 ) => actorSharedState(ctx, "workflow-launch", () => {
   const { store } = ctx
@@ -147,7 +154,7 @@ export const createWorkflowLaunchController = (
             let ready = await prepare(request.repo, binding, controller.signal, request, current)
             if (!current()) return TOAST_SUPERSEDED
             if (ready !== true && "input" in ready) {
-              request = { ...request, input: ready.input, inputPrepared: true }
+              request = { ...request, input: ready.input, inputPrepared: true, ...(ready.source === undefined ? {} : { source: ready.source }) }
               await publish(request)
               if (!current()) return TOAST_SUPERSEDED
               ready = true
@@ -271,7 +278,7 @@ export const createWorkflowLaunchController = (
       ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }), gatewayBindingVersion: 1,
       workflow: request.workflow, runId: `pending-${request.id}`, phase: "launching", steps: [], result: null, lastSeq: 0, liveTail: true,
       input: { ...request.input, _workflowLaunch: request } } })
-  const start = async (args: { repo: string; binding: GatewayWorkspaceBinding; workflow: string; input: Record<string, unknown>; actor: Actor; then?: "coding/vibe"; triggerDispatch?: WorkflowLaunch["triggerDispatch"]; triggerRegistration?: WorkflowLaunch["triggerRegistration"] }): Promise<string | { value: string }> => {
+  const start = async (args: { repo: string; binding: GatewayWorkspaceBinding; workflow: string; input: Record<string, unknown>; actor: Actor; then?: "coding/vibe"; triggerDispatch?: WorkflowLaunch["triggerDispatch"]; triggerRegistration?: WorkflowLaunch["triggerRegistration"]; source?: WorkflowLaunch["source"] }): Promise<string | { value: string }> => {
     const login = owner()
     if (!login) return "Sign in with GitHub first: flows run on your own workspace."
     // A request belongs to the account that made it: sign-out forgets its card, so no await may save it again.
@@ -279,7 +286,7 @@ export const createWorkflowLaunchController = (
     const admitted = () => !ctx.disposed && ctx.accountEpoch === epoch && owner() === login
     const ended = "The account changed before the run was requested."
     const input = JSON.parse(canonicalStoredJsonValue(args.input)) as Record<string, unknown>
-    const key = requestKey({ owner: login, repo: args.repo, workspaceId: args.binding.workspaceId, workflow: args.workflow, input, then: args.then, triggerRegistration: args.triggerRegistration })
+    const key = requestKey({ owner: login, repo: args.repo, workspaceId: args.binding.workspaceId, workflow: args.workflow, input, then: args.then, triggerRegistration: args.triggerRegistration, source: args.source })
     // Admission is serialized through persistence, shared by button, slash and agent bindings.
     while (persisting.has(key)) await persisting.get(key)
     if (!admitted()) return ended
@@ -295,7 +302,7 @@ export const createWorkflowLaunchController = (
       return { value: `run-requested workflow=${args.workflow} request=${held.id} repo=${args.repo}` }
     }
     const request: WorkflowLaunch = { version: 1, id: crypto.randomUUID(), owner: login, repo: args.repo, ...args.binding, workflow: args.workflow,
-      input, preparationStartedAt: Date.now(), ...(args.triggerRegistration === undefined ? {} : { triggerRegistration: args.triggerRegistration }), ...(args.triggerDispatch === undefined ? {} : { triggerDispatch: args.triggerDispatch }), ...(args.then === undefined ? {} : { then: args.then }) }
+      input, preparationStartedAt: Date.now(), ...(args.triggerRegistration === undefined ? {} : { triggerRegistration: args.triggerRegistration }), ...(args.triggerDispatch === undefined ? {} : { triggerDispatch: args.triggerDispatch }), ...(args.then === undefined ? {} : { then: args.then }), ...(args.source === undefined ? {} : { source: args.source }) }
     const id = `flow-request-${request.id}`
     const saving = store.dispatch({ type: "card.upsert", actor: args.actor, card: requestCard(id, request) }).isPersisted.promise
     persisting.set(key, saving)
