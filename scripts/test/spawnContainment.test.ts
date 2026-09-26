@@ -100,6 +100,14 @@ describe("child-process containment conformance", () => {
       + "flow execution inside the TUI composes its own host."
     ],
     [
+      "smithers/src/commands/Open.ts",
+      "`smthrs open`: an interactive CLI hand-off outside a durable flow. It reads the "
+      + "checkout's remote with `git`/`jj` (piped, no timeout) and then launches the installed "
+      + "app with `open -a` or the checkout's `pnpm dev` in the foreground terminal, awaiting "
+      + "the direct child's exit status; Ctrl+C belongs to that child. Open.test.ts drives a "
+      + "scripted host. No durable process ledger or hard-kill recovery guarantee."
+    ],
+    [
       "smithers/src/Detached.ts",
       "`smithers up -d`, the one launcher whose child must OUTLIVE the process that "
       + "started it. Routing it through the host spawner would kill the engine on the "

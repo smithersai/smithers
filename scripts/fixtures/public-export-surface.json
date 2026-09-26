@@ -1006,6 +1006,17 @@
         "require": "./dist/cjs/FileLease.js"
       },
       "reason": "Cross-process lock-file lease that @smthrs/engine-store uses so a killed owner cannot hold the workspace commit lock forever (9194f67c4)."
+    },
+    {
+      "name": "@smthrs/flow",
+      "subpath": "./Stall",
+      "development": "./src/Stall.ts",
+      "published": {
+        "types": "./dist/esm/Stall.d.ts",
+        "import": "./dist/esm/Stall.js",
+        "require": "./dist/cjs/Stall.js"
+      },
+      "reason": "The stall breaker Loop, ReviewLoop and Supervisor share to end a round loop whose signals stopped moving (b58bf93b8, #1692)."
     }
   ],
   "removed": [
