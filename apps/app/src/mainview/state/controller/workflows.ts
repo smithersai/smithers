@@ -1,4 +1,5 @@
-import { readTriggerRegistrations } from "../seams/TriggersSeam"
+import { prepareTriggerRegistration, readTriggerRegistrations } from "../seams/TriggersSeam"
+import type { TriggerRegistration } from "../WorkflowLaunch"
 import { cloudFailure } from "../seams/CloudClient"
 import { outOfCreditRefusal, renderCreditExhausted, renderPlanLimit } from "../seams/BillingSeam"
 import type { ViewAction } from "../PreparedView"
@@ -47,6 +48,7 @@ export interface LaunchRefusal {
 
 export interface WorkflowController {
   readonly resumeWorkflowRequests: () => void
+  readonly requestTriggerRegistration: (repo: string, request: TriggerRegistration) => Promise<string | { value: string }>
   readonly requestTriggerRun: (repo: string, slug: string, operation?: "fire" | "resume") => Promise<string | { value: string }>
   readonly retryWorkflowRequest: (cardId: string) => boolean
   readonly createWorkflow: (description: string, repo?: string) => Promise<string | void | { readonly value: string }>
@@ -275,7 +277,12 @@ export const createWorkflowController = (
     )
   }
 
-  const requests = createWorkflowLaunchController(ctx, nextTranscriptOrdinal, pumpWorkflowRun, async (repo, binding, signal, request) => {
+  const requests = createWorkflowLaunchController(ctx, nextTranscriptOrdinal, pumpWorkflowRun, async (repo, binding, signal, request, current) => {
+    if (request.triggerRegistration) {
+      if (request.inputPrepared) return true
+      return prepareTriggerRegistration({ baseUrl: ctx.baseUrl, http: (url, init) => ctx.boundedFetch(url, { ...init, signal }) },
+        repo, request.triggerRegistration, binding.workspaceId, current)
+    }
     if (!request.triggerDispatch) return provisionWorkspaceImpl(repo, binding, signal)
     if (request.inputPrepared) return true
     const registered = await readTriggerRegistrations({ http: ctx.http, baseUrl: ctx.baseUrl }, repo)
@@ -287,9 +294,21 @@ export const createWorkflowController = (
     return { input: { ...request.input, flow: row.flowId, schedule: row.cron } }
   }, request => {
     // Refresh the listing independently; the committed run settles its own toast.
-    if (request.triggerDispatch) void ctx.commands.run("triggers.list", request.repo, "automatic")
+    if (request.triggerRegistration) {
+      void ctx.withToast(`trigger.refresh.${request.repo}`, `Dispatcher · ${request.repo}`, `Dispatcher · ${request.repo}`, async () => {
+        const result = await ctx.commands.run("triggers.list", request.repo, "automatic")
+        return result.status === "failed" ? result.error : undefined
+      }, true)
+    } else if (request.triggerDispatch) void ctx.commands.run("triggers.list", request.repo, "automatic")
       .catch(error => ctx.failures.report("command.boundary", error, request.id))
   })
+  const requestTriggerRegistration: WorkflowController["requestTriggerRegistration"] = async (repo, request) => {
+    const workspaceId = repositoryJobWorkspace(store.collections.cards.values(), repo, store.collections.identitySessions.get("identity")?.login ?? null)
+    const outcome = await requests.start({ repo, binding: { workspaceId }, workflow: "repository/trigger", input: {},
+      triggerRegistration: request, actor: ctx.commandActor })
+    return typeof outcome === "string" ? outcome : { value: `Registration requested for ${request.slug} on ${repo}.` }
+  }
+
   const requestTriggerRun: WorkflowController["requestTriggerRun"] = async (repo, slug, operation = "fire") => {
     const workspaceId = repositoryJobWorkspace(store.collections.cards.values(), repo, store.collections.identitySessions.get("identity")?.login ?? null)
     const outcome = await requests.start({ repo, binding: { workspaceId }, workflow: "repository/trigger",
@@ -1091,6 +1110,7 @@ export const createWorkflowController = (
     resumeWorkflowRequests: () => { requests.resume(); catalogs.resume() },
     retryWorkflowRequest: requests.retry,
     requestTriggerRun,
+    requestTriggerRegistration,
     createWorkflow,
     listWorkspaceWorkflows,
     showFlows,

@@ -35,9 +35,14 @@ export default showcase({
     let planned = FLOW
     let resuming = false
     let resumed = false
+    let registering = false
+    let registered = false
+    let registrationRuns = 0
+    const registrationReceipt = Promise.withResolvers<void>()
     const triggerOperations: Array<string | undefined> = []
     await backend.cloud({ capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
     await backend.json("/api/workflow/provision", { status: "ready", repo: REPO, gatewayId: "gw-1" })
+    await backend.json("/api/workflow/trigger-approval", { status: "ok", approvedAt: "2026-09-26T08:00:00Z", approvedBy: 1 })
     await backend.json("/api/workflow/triggers", { status: "ok", repo: REPO, live: true, triggers: [], webhooks: [{ name: "github-pull-request", flowId: FLOW }] })
     await backend.json("/api/workflow/trigger-registrations", () => ({ status: "ok", rows: [
       { registrationId: "reg-nightly", slug: "nightly-review", flowId: FLOW, schedule: "0 3 * * *", enabled: !paused, ...(paused ? {} : { nextFireAt: "2026-09-26T03:00:00Z" }) }
@@ -65,6 +70,7 @@ export default showcase({
           }
           planned = call.payload.flowId ?? FLOW
           resuming = call.payload.input?.operation === "resume"
+          registering = call.payload.input?.operation === "register"
           if (planned === "repository/trigger") triggerOperations.push(call.payload.input?.operation)
           return ok({
           planId: `${planned}-plan`, flowId: planned, digest: DIGEST, inputSummary: "{}", envelope: ENVELOPE, deployClass: false, nodes: NODES,
@@ -72,12 +78,14 @@ export default showcase({
           approval: { target: { _tag: "Plan", planId: `${planned}-plan`, digest: DIGEST, envelope: ENVELOPE }, scope: "run", idempotencyKey: `approve:${planned}-plan` }
         })
         case "Approval.Submit": return ok({ decision: { _tag: "Accepted", receiptId: "a" } })
-        case "Run": return ok({ _tag: "Accepted", receiptId: "r", runId: resuming ? "run-resume-1" : planned === FLOW ? "run-review-71" : "run-create-flow-3" })
+        case "Run":
+          if (registering) { registrationRuns += 1; await registrationReceipt.promise }
+          return ok({ _tag: "Accepted", receiptId: "r", runId: registering ? "run-register-1" : resuming ? "run-resume-1" : planned === FLOW ? "run-review-71" : "run-create-flow-3" })
         case "Projection.Snapshot": {
           const tag = call.payload.selector?._tag
           const runId = call.payload.selector?.runId ?? "run-review-71"
           if (runId === "run-resume-1" && resumed) paused = false
-          const rows = tag === "run-summary" ? [{ runId, flowId: runId === "run-review-71" ? FLOW : "create-flow", status: runId === "run-resume-1" && resumed ? "completed" : "running", createdAt: 1, updatedAt: 2,
+          const rows = tag === "run-summary" ? [{ runId, flowId: runId === "run-review-71" ? FLOW : "create-flow", status: (runId === "run-resume-1" && resumed) || (runId === "run-register-1" && registered) ? "completed" : "running", createdAt: 1, updatedAt: 2,
             turns: 1, calls: 2, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0, verdict: "running", diagnosis: "running" }] : []
           return ok({ cursor: { projection: tag, runId: null, value: 0 }, rows })
         }
@@ -226,5 +234,29 @@ export default showcase({
     await approveSchedule.focus()
     await expect(approveSchedule).toBeFocused()
     await expect(page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Preparing review-schedule" })).toHaveCount(0)
+    const registrationCard = page.locator('[data-kind="run-trace"]').filter({ hasText: "Register review-schedule" })
+    const registrationToast = page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Registering review-schedule" })
+    await page.keyboard.press("Enter")
+    try {
+      await expect.poll(() => registrationRuns).toBe(1)
+      await expect(registrationCard).toHaveCount(1)
+      await expect(registrationCard).toHaveAttribute("data-run-id", /^pending-/)
+      await approveSchedule.focus()
+      await page.keyboard.press("Enter")
+      await page.keyboard.press("ControlOrMeta+k")
+      await page.getByTestId("composer-input").fill("Chat while registration launches")
+      await expect(page.getByTestId("composer-input")).toHaveValue("Chat while registration launches")
+      await page.keyboard.press("Escape")
+      await expect(registrationToast).toHaveCount(1)
+      expect(registrationRuns).toBe(1)
+    } finally { registrationReceipt.resolve() }
+    await expect(registrationCard).toHaveAttribute("data-run-id", "run-register-1")
+    await expect(registrationCard).toContainText("Running")
+    await expect(registrationToast).toHaveCount(1)
+    registered = true
+    await expect(registrationCard).toContainText("Done", { timeout: 15_000 })
+    await expect(registrationToast).toHaveCount(0)
+    expect(registrationRuns).toBe(1)
+    expect(triggerOperations).toEqual(["fire", "resume", "register"])
   }
 })

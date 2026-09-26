@@ -1,6 +1,13 @@
 import { z } from "zod"
 import type { Card } from "./AppState"
 
+/** The exact reviewed registration the human approved, retained through launch recovery. */
+export const TriggerRegistrationSchema = z.object({
+  requestId: z.string(), flow: z.string(), slug: z.string(), schedule: z.string(), input: z.string(),
+  tokens: z.number().optional(), minutes: z.number().optional(), planId: z.string(), planDigest: z.string()
+})
+export type TriggerRegistration = z.infer<typeof TriggerRegistrationSchema>
+
 /** Client request metadata uses the same persisted input slot as tutorial requests. */
 export const WorkflowLaunchSchema = z.object({
   version: z.literal(1),
@@ -12,6 +19,7 @@ export const WorkflowLaunchSchema = z.object({
   input: z.record(z.string(), z.unknown()),
   /** A schedule dispatch resolves and pins its registered input in the background. */
   triggerDispatch: z.object({ slug: z.string() }).optional(),
+  triggerRegistration: TriggerRegistrationSchema.optional(),
   inputPrepared: z.literal(true).optional(),
   runId: z.string().optional(),
   preparationStartedAt: z.number().optional(),

@@ -305,7 +305,7 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
       flowId: string,
       input: Record<string, unknown>,
       requestedBinding?: GatewayWorkspaceBinding,
-      request?: string | { readonly idempotencyKey: string; readonly stillCurrent: () => boolean }
+      request?: string | { readonly idempotencyKey: string; readonly stillCurrent: () => boolean; readonly planKey?: string; readonly runKey?: string }
     ): Promise<GatewayResult<{
       readonly runId: string
       readonly workspaceId?: string
@@ -322,7 +322,7 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
       const current = () => owned() && (typeof request === "string" ? true : request?.stillCurrent() ?? true)
       const superseded = { status: "error" as const, code: "request_superseded", message: "This launch belongs to a previous session." }
       // Preserve persisted authoring keys and the background launch controller's keys.
-      const requestKey = typeof request === "string" ? `author:${request}` : request === undefined ? undefined : `plan:${request.idempotencyKey}`
+      const requestKey = typeof request === "string" ? `author:${request}` : request === undefined ? undefined : request.planKey ?? `plan:${request.idempotencyKey}`
       if (!current()) return superseded
       const planned = await call(repo, "Plan", { flowId, input, ...(requestKey === undefined ? {} : { idempotencyKey: requestKey }) }, binding)
       if (!current()) return superseded
@@ -350,7 +350,7 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
         planId,
         digest,
         envelope: card.envelope,
-        idempotencyKey: `run:${planId}`
+        idempotencyKey: typeof request === "object" && request.runKey !== undefined ? request.runKey : `run:${planId}`
       }, binding)
       if (!current()) return superseded
       if (started.status !== "ok") return started

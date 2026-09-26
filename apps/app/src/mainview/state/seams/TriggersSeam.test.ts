@@ -574,7 +574,7 @@ const registrationToast = (store: AppStore, slug = "nightly") =>
   [...store.collections.toasts.values()].find(toast => toast.key.startsWith(`trigger.register.will/flows.${slug}.`))
 
 const registrationRun = (store: AppStore, requestId: string) => {
-  const card = store.collections.cards.get(`trigger-register-${requestId}`)
+  const card = [...store.collections.cards.values()].find(card => workflowLaunchOf(card)?.triggerRegistration?.requestId === requestId)
   return card?.kind === "run-trace" ? card : undefined
 }
 
@@ -616,7 +616,188 @@ const registrationResult = async (controller: AppController, request: TriggerWri
   return latest()?.phase === "failed" ? latest()?.error : answer
 }
 
+const REGISTRATION_STAGES = ["discovery", "review", "review-approval", "receipt", "registrar-plan", "registrar-approval", "run"] as const
+type RegistrationStage = typeof REGISTRATION_STAGES[number]
+const registrationBackend = (calls: RelayCall[], run: HostRun, observe: (stage: RegistrationStage) => Promise<void>) => {
+  const answers: Record<string, (payload: Record<string, unknown>) => unknown> = workspaceAnswers({}, run)
+  return watched(backend({
+    [PROJECTION]: projectionDocument(DAY_ONE),
+    [APPROVAL]: async () => { await observe("receipt"); return json(200, { status: "ok", approvedAt: "2026-09-26T08:00:00Z", approvedBy: 1 }) },
+    [REGISTRATIONS]: json(200, { status: "ok", rows: [] }),
+    [RPC]: relayRoute(calls, Object.fromEntries(Object.entries(answers).map(([procedure, answer]) => [procedure, async (payload: Record<string, unknown>) => {
+      const stage = procedure === "List" ? "discovery" : procedure === "Plan" ? payload.flowId === "nightly-lint" ? "review" : "registrar-plan"
+        : procedure === "Approval.Submit" ? (payload.target as { planId: string }).planId === "plan-1" ? "review-approval" : "registrar-approval"
+        : procedure === "Run" ? "run" : undefined
+      if (stage) await observe(stage)
+      return answer(payload)
+    }])))
+  }))
+}
+
 describe("triggers seam: registering a repository flow on a schedule", () => {
+  test.each(["List", "Run"])("approval saves one launch request before unresolved %s and keeps Chat usable", async stage => {
+    const held = Promise.withResolvers<void>()
+    const calls: Array<RelayCall> = []
+    const answers = workspaceAnswers()
+    let holding = false
+    const { store, controller } = await readyToRegister({ ...watched(backend({
+      [APPROVAL]: json(200, { status: "ok", approvedAt: "2026-09-26T08:00:00Z", approvedBy: 1 }),
+      [RPC]: relayRoute(calls, { ...answers, [stage]: async () => {
+        if (holding) await held.promise
+        return answers[stage]!()
+      } })
+    })), toastDebounceMs: 300 })
+    await registrationResult(controller, REQUEST)
+    const args = lastAction(store)!.args!
+    holding = true
+    try {
+      await controller.commands.run("triggers.approve", args)
+      const launches = () => [...store.collections.cards.values()].filter(card => card.kind === "run-trace" && card.payload.workflow === "repository/trigger")
+      expect(launches()).toHaveLength(1)
+      await controller.commands.run("triggers.approve", args)
+      expect(launches()).toHaveLength(1)
+      await store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat during registration" }).isPersisted.promise
+      await waitFor(() => registrationToast(store)?.status === "running")
+      expect(calls.filter(call => call.procedure === "Run")).toHaveLength(stage === "Run" ? 1 : 0)
+    } finally { held.resolve(); await controller.dispose() }
+  })
+
+  test.each([...REGISTRATION_STAGES])("reload during registration %s reconnects the same approval and wire keys", async stage => {
+    const storage = memoryStorage()
+    const held = Promise.withResolvers<void>()
+    const calls: RelayCall[] = []
+    const run: HostRun = { status: "running", verdict: "" }
+    let armed = false, entered = false
+    const first = await readyToRegister(registrationBackend(calls, run, async at => {
+      if (armed && at === stage) { entered = true; await held.promise }
+    }), await createAppStore({ kind: "localStorage", storage }))
+    await registrationResult(first.controller, REQUEST)
+    const args = lastAction(first.store)!.args!
+    const requestId = JSON.parse(args).requestId as string
+    armed = true
+    await first.controller.commands.run("triggers.approve", args)
+    await waitFor(() => entered)
+    const original = workflowLaunchOf(registrationRun(first.store, requestId))!
+    await first.controller.dispose()
+    await first.store.dispose?.()
+    const next = await ready(registrationBackend(calls, run, async () => {}), {
+      signedIn: true, store: await createAppStore({ kind: "localStorage", storage })
+    })
+    try {
+      await waitFor(() => registrationRun(next.store, requestId)?.payload.phase === "running")
+      const recovered = workflowLaunchOf(registrationRun(next.store, requestId))!
+      expect(recovered.id).toBe(original.id)
+      expect(recovered.triggerRegistration).toEqual(original.triggerRegistration)
+      expect(recovered.workspaceId).toBe(JOB_WORKSPACE)
+      await next.controller.commands.run("triggers.approve", args)
+      held.resolve()
+      await settled()
+      expect(calls.filter(call => call.procedure === "Run")).toHaveLength(stage === "run" ? 2 : 1)
+      expect(new Set(calls.filter(call => call.procedure === "Run").map(call => call.payload.idempotencyKey)))
+        .toEqual(new Set([`trigger:${requestId}:register-run`]))
+      expect(new Set(calls.filter(call => call.procedure === "Plan" && call.payload.flowId === "repository/trigger").map(call => call.payload.idempotencyKey)))
+        .toEqual(new Set([`trigger:${requestId}:register-plan`]))
+      expect(new Set(calls.map(call => call.workspaceId))).toEqual(new Set([JOB_WORKSPACE]))
+      expect([...next.store.collections.cards.values()].filter(card => workflowLaunchOf(card)?.triggerRegistration?.requestId === requestId)).toHaveLength(1)
+    } finally { held.resolve(); await next.controller.dispose() }
+  })
+
+  test.each([...REGISTRATION_STAGES])("sign-out during registration %s fences the remaining calls and late receipt", async stage => {
+    const held = Promise.withResolvers<void>()
+    const calls: RelayCall[] = []
+    let armed = false, entered = false
+    const stages: RegistrationStage[] = []
+    const { store, controller } = await readyToRegister(registrationBackend(calls, { status: "running", verdict: "" }, async at => {
+      stages.push(at)
+      if (armed && at === stage) { entered = true; await held.promise }
+    }))
+    await registrationResult(controller, REQUEST)
+    const args = lastAction(store)!.args!
+    armed = true
+    await controller.commands.run("triggers.approve", args)
+    await waitFor(() => entered)
+    await signedOut(store)
+    const count = stages.length
+    held.resolve()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(stages).toHaveLength(count)
+    expect([...store.collections.cards.values()].some(card => workflowLaunchOf(card)?.triggerRegistration !== undefined)).toBe(false)
+    expect([...store.collections.toasts.values()].some(toast => toast.title === "nightly registered")).toBe(false)
+    await controller.dispose()
+  })
+
+  test("every registration call stays on the approved workspace after another is selected", async () => {
+    const held = Promise.withResolvers<void>()
+    const calls: RelayCall[] = []
+    let armed = false, entered = false
+    const { store, controller } = await readyToRegister(registrationBackend(calls, { status: "running", verdict: "" }, async stage => {
+      if (armed && stage === "review") { entered = true; await held.promise }
+    }))
+    await registrationResult(controller, REQUEST)
+    const args = lastAction(store)!.args!
+    const requestId = JSON.parse(args).requestId as string
+    armed = true
+    await controller.commands.run("triggers.approve", args)
+    await waitFor(() => entered)
+    await jobSetUp(store, "will/flows", "e5973059-58bc-41ca-aa78-a57c3fc4b032")
+    held.resolve()
+    await waitFor(() => registrationRun(store, requestId)?.payload.phase === "running")
+    expect(new Set(calls.map(call => call.workspaceId))).toEqual(new Set([JOB_WORKSPACE]))
+    expect(registrationRun(store, requestId)?.payload.workspaceId).toBe(JOB_WORKSPACE)
+    await controller.dispose()
+  })
+
+  test.each(["input", "tokens", "planDigest"])("an altered approved %s is refused before saving or launching", async field => {
+    const calls: RelayCall[] = []
+    const { store, controller } = await readyToRegister(registrationBackend(calls, { status: "running", verdict: "" }, async () => {}))
+    await registrationResult(controller, REQUEST)
+    const args = JSON.parse(lastAction(store)!.args!)
+    const count = calls.length
+    const result = await controller.registerTrigger({ ...args, operation: "approve", [field]: field === "tokens" ? 1000 : field === "input" ? '{"changed":true}' : "changed" })
+    expect(result).toBe("The registration changed since you reviewed it. Prepare it again.")
+    expect(calls).toHaveLength(count)
+    expect(registrationRun(store, args.requestId)).toBeUndefined()
+    await controller.dispose()
+  })
+
+  test("a completed registration's approval never launches it twice", async () => {
+    const calls: RelayCall[] = []
+    const { store, controller } = await readyToRegister(registrationBackend(calls, { status: "completed", verdict: "Registered" }, async () => {}))
+    await registrationResult(controller, REQUEST)
+    const args = lastAction(store)!.args!
+    const requestId = JSON.parse(args).requestId as string
+    await controller.commands.run("triggers.approve", args)
+    await waitFor(() => registrationRun(store, requestId)?.payload.phase === "completed")
+    const id = registrationRun(store, requestId)!.id
+    await controller.commands.run("triggers.approve", args)
+    await settled()
+    expect(registrationRun(store, requestId)!.id).toBe(id)
+    expect(calls.filter(call => call.procedure === "Run")).toHaveLength(1)
+    await controller.dispose()
+  })
+
+  test("approval whose request cannot be saved makes no remote calls", async () => {
+    const original = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    let reject = true
+    const store: AppStore = { ...original, dispatch: transition => {
+      if (reject && transition.type === "card.upsert" && workflowLaunchOf(transition.card)?.triggerRegistration) {
+        return { isPersisted: { promise: Promise.reject(new Error("disk full")) } } as ReturnType<AppStore["dispatch"]>
+      }
+      return original.dispatch(transition)
+    } }
+    const calls: RelayCall[] = []
+    const { controller } = await readyToRegister(registrationBackend(calls, { status: "running", verdict: "" }, async () => {}), store)
+    await registrationResult(controller, REQUEST)
+    const args = lastAction(store)!.args!
+    const count = calls.length
+    expect((await controller.commands.run("triggers.approve", args)).status).toBe("failed")
+    expect(calls).toHaveLength(count)
+    reject = false
+    await controller.commands.run("triggers.approve", args)
+    await waitFor(() => calls.some(call => call.procedure === "Run"))
+    await controller.dispose()
+  })
+
   test.each(["List", "Plan"])("preparation acknowledges while %s is unresolved and shares one toast", async heldProcedure => {
     const held = Promise.withResolvers<void>()
     const calls: Array<RelayCall> = []
@@ -1332,16 +1513,18 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
 
   test("a plan that no longer reproduces refuses rather than registering something else", async () => {
     const calls: Array<RelayCall> = []
+    let changed = false
     const { store, controller } = await readyToRegister(
       watched(backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
-        [RPC]: relayRoute(calls, workspaceAnswers())
+        [RPC]: relayRoute(calls, workspaceAnswers({ Plan: () => okFrame({ ...PLAN, digest: changed ? "a".repeat(64) : PLAN_DIGEST }) }))
       }))
     )
     await registrationResult(controller, REQUEST)
     const args = JSON.parse(lastAction(store)?.args ?? "{}") as Record<string, unknown>
     const requestId = preparedId(store)
-    await controller.commands.run("triggers.approve", JSON.stringify({ ...args, planDigest: "a".repeat(64) }))
+    changed = true
+    await controller.commands.run("triggers.approve", JSON.stringify(args))
     await waitFor(() => registrationRun(store, requestId)?.payload.phase === "failed")
     expect(registrationRun(store, requestId)?.payload.error).toContain("changed")
     expect(calls.filter((call) => call.procedure === "Run")).toEqual([])
@@ -1380,7 +1563,7 @@ describe("triggers seam: watching the registration run", () => {
     const args = lastAction(store)?.args ?? "{}"
     const outcome = await controller.commands.run("triggers.approve", args)
     expect(outcome.status).toBe("executed")
-    if (outcome.status === "executed") expect(outcome.value).toBe("Registering nightly on will/flows.")
+    if (outcome.status === "executed") expect(outcome.value).toBe("Registration requested for nightly on will/flows.")
     return String((JSON.parse(args) as Record<string, unknown>).requestId)
   }
 
@@ -1619,8 +1802,8 @@ describe("triggers seam: watching the registration run", () => {
       signedIn: true, store: await createAppStore({ kind: "localStorage", storage })
     })
     resumed.controller.resumeWorkflowRuns()
-    /* No card names a run the workspace never started, so nothing reconnects to one. */
-    expect(registrationRun(resumed.store, requestId)).toBeUndefined()
+    /* Reload resumes the saved request; repeated approval joins that same launch. */
+    expect(workflowLaunchOf(registrationRun(resumed.store, requestId))?.triggerRegistration?.requestId).toBe(requestId)
     /* The press the reloaded page offers is the same prepared registration, so a person presses what they see. */
     const reloaded = lastAction(resumed.store)?.args
     expect(reloaded).toBe(args)
