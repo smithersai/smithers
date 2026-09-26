@@ -122,7 +122,7 @@ describe("child-process containment conformance", () => {
       "smithers/flows/platform-node/src/internal/WindowsProcessJob.ts",
       "The Windows job guardian `ProcessSupervisor` attaches to a target before it activates. "
       + "It is part of the contained spawner, so it cannot route through that spawner. Bounded: "
-      + "the trusted helper runs with an empty environment and no shell, its status stream is "
+      + "the trusted helper runs with an empty environment and no shell, its unframed status is "
       + "capped at 4 KiB, readiness is awaited under the supervisor's startup deadline, and "
       + "closing its control pipe, including host death, terminates the job."
     ],

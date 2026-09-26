@@ -479,7 +479,7 @@ test("published adapters remain optional while executable SQLite and Bun host pr
   const optional = {
     "@smthrs/database": { "@effect/sql-sqlite-node": "4.0.0-rc.115" },
     "@smthrs/gateway": { "@effect/platform-node": "4.0.0-rc.115", "@effect/platform-bun": "4.0.0-rc.115" },
-    "@smthrs/flows": { "@smthrs/platform-node": releaseVersion },
+    "@smthrs/flows": { "@smthrs/platform-node": releaseVersion, "@effect/platform-node": "4.0.0-rc.115" },
     "@smthrs/create-app": { "@smthrs/testing": releaseVersion },
     "@smthrs/observability": {
       "@opentelemetry/exporter-logs-otlp-http": "0.222.0", "@opentelemetry/exporter-metrics-otlp-http": "0.222.0",
