@@ -32,6 +32,8 @@ export default showcase({
     let preparationMode = false
     let preparationCalls = 0
     const preparationReceipt = Promise.withResolvers<void>()
+    const previewReceipt = Promise.withResolvers<void>()
+    const previewKeys: Array<string | undefined> = []
     let planned = FLOW
     let resuming = false
     let resumed = false
@@ -54,7 +56,7 @@ export default showcase({
       return route.fulfill({ json: { status: "ok", paused: 1 } })
     })
     await backend.route(url => url.pathname === "/api/workflow/rpc", async route => {
-      const call = route.request().postDataJSON() as { procedure: string; payload: { flowId?: string; input?: { operation?: string }; selector?: { _tag?: string; runId?: string; flowId?: string } } }
+      const call = route.request().postDataJSON() as { procedure: string; payload: { idempotencyKey?: string; flowId?: string; input?: { operation?: string }; selector?: { _tag?: string; runId?: string; flowId?: string } } }
       const ok = (payload: unknown) => route.fulfill({ json: { ok: true, payload } })
       switch (call.procedure) {
         case "List": return ok({ _tag: "flows", items: [
@@ -63,6 +65,10 @@ export default showcase({
           { flowId: "repository/trigger", description: "Register a reviewed schedule" }
         ] })
         case "Plan":
+          if (!preparationMode && call.payload.flowId === FLOW) {
+            previewKeys.push(call.payload.idempotencyKey)
+            if (previewKeys.length <= 2) await previewReceipt.promise
+          }
           if (preparationMode) {
             preparationCalls += 1
             if (preparationCalls === 1) return route.fulfill({ json: { ok: false, error: { message: "The workspace is unavailable." } } })
@@ -106,6 +112,34 @@ export default showcase({
     await list.getByRole("button", { name: "Plan" }).first().focus()
     await page.keyboard.press("Enter")
     const plan = page.locator('[data-kind="flow-plan"]').last()
+    try {
+      await expect.poll(() => previewKeys.length).toBe(1)
+      await expect(plan).toHaveCount(1)
+      await page.keyboard.press("ControlOrMeta+k")
+      await page.getByTestId("composer-input").fill("Chat while Plan is pending")
+      await expect(page.getByTestId("composer-input")).toHaveValue("Chat while Plan is pending")
+      await page.keyboard.press("Escape")
+      await expect(page.locator('.toast[data-toast-status="running"]').filter({ hasText: `Planning ${FLOW}` })).toHaveCount(1)
+      const departing = Promise.withResolvers<void>()
+      const browserNavigation = await page.context().newCDPSession(page)
+      let navigating = false
+      await page.route("**/interrupted-navigation", async route => {
+        navigating = true
+        await departing.promise
+        await route.abort()
+      })
+      try {
+        await page.evaluate(() => { setTimeout(() => window.location.assign("/interrupted-navigation"), 0) })
+        await expect.poll(() => navigating).toBe(true)
+        await browserNavigation.send("Page.stopLoading")
+        await expect.poll(() => previewKeys.length).toBe(2)
+      } finally { departing.resolve(); await browserNavigation.detach() }
+      await page.reload()
+      await page.getByRole("button", { name: "Chat", exact: true }).waitFor({ timeout: 20_000 })
+      await expect.poll(() => previewKeys.length).toBe(3)
+      expect(previewKeys[0]).toMatch(/^plan:/)
+      expect(new Set(previewKeys).size).toBe(1)
+    } finally { previewReceipt.resolve() }
     await expect(plan.locator(".flow-plan-count")).toHaveText("3")
     await expect(plan.locator(".flow-plan-eta")).toHaveText("~6.0s")
     await app.show(plan)

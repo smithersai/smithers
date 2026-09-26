@@ -223,7 +223,7 @@ export const createControllerContext = (
     withToast: undefined as unknown as ControllerContext["withToast"],
     resolveToast: undefined as unknown as ControllerContext["resolveToast"],
     unref,
-    get disposed() { return disposed },
+    get disposed() { return disposed || services.pageLifetime?.aborted === true },
     onDispose: (finalizer) => {
       // Registering after disposal runs the finalizer at once, so a late
       // acquisition never leaks either.

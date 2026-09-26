@@ -8,7 +8,7 @@
  * request, not two.
  */
 import { describe, expect, test } from "bun:test"
-import { createAppStore } from "./AppStore"
+import { createAppStore, type AppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { json, memoryStorage, settle, silentAgent } from "./TestFixtures"
 import type { Card } from "./AppState"
@@ -85,8 +85,8 @@ const scriptedRelay = (answer: () => unknown) => {
   }
 }
 
-const readyController = async (relay: ReturnType<typeof scriptedRelay>, storage = memoryStorage()) => {
-  const store = await createAppStore({ kind: "localStorage", storage })
+const readyController = async (relay: ReturnType<typeof scriptedRelay>, storage = memoryStorage(), supplied?: AppStore, pageLifetime?: AbortSignal) => {
+  const store = supplied ?? await createAppStore({ kind: "localStorage", storage })
   await store.dispatch({
     type: "identity.session.loaded", actor: "system", state: "signed-in",
     login: "will", allowlisted: true, admin: false, scopesPlain: null
@@ -97,6 +97,7 @@ const readyController = async (relay: ReturnType<typeof scriptedRelay>, storage 
   }).isPersisted.promise
   const controller = createAppController(store, silentAgent, {
     fetchImpl: relay.fetchImpl,
+    pageLifetime,
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000
   })
@@ -108,37 +109,38 @@ const held = (store: Awaited<ReturnType<typeof createAppStore>>): Extract<Card, 
   return card?.kind === "flow-plan" ? card : undefined
 }
 
-/*
- * The in-flight guard and the attempt counter live in this controller's
- * memory, so a reload is the end of the request they were tracking. A card
- * left saying "pending" would be a claim about work nobody is doing, and
- * while it says pending the body offers Run instead of Plan (AGENTS.md: a
- * persisted request either reconnects or settles, and a failure stays visible
- * and retryable).
- */
-describe("a reload settles the plans it cannot reconnect", () => {
-  test("a pending plan card reopens as a failure with the door that asks again", async () => {
+describe("reload reconnects admitted plans", () => {
+  test("a pending plan recovers its saved request and stable Plan key", async () => {
     const storage = memoryStorage()
-    const relay = scriptedRelay(() => ({ ok: true, payload: planCard({ nodes: [NODE] }) }))
-    const first = await readyController(relay, storage)
-
+    const departure = new AbortController()
+    const relay = scriptedRelay(() => { throw new TypeError("Failed to fetch") })
+    const first = await readyController(relay, storage, undefined, departure.signal)
     await first.controller.planFlow(FLOW, REPO)
-    await settle(4)
+    await settle(10)
+    const request = held(first.store)?.payload.planRequest
+    const key = (relay.plans[0] as { idempotencyKey: string }).idempotencyKey
+    departure.abort()
+    relay.release()
+    await settle(10)
     expect(held(first.store)?.payload.status).toBe("pending")
     await first.controller.dispose()
-
-    // Same storage, new controller: the reload.
-    const second = await readyController(scriptedRelay(() => ({ ok: true, payload: planCard({}) })), storage)
-    const card = held(second.store)
-    expect(card?.payload.status).toBe("failed")
-    expect(card?.payload.error).toBeTypeOf("string")
-    expect(card?.payload.planId).toBeUndefined()
-    expect(card?.payload.nodes).toBeUndefined()
-
-    // Retryable on the door it now offers, on the card it already has.
-    await second.controller.planFlow(FLOW, REPO)
-    expect(held(second.store)?.payload.status).toBe("pending")
-    expect([...second.store.collections.cards.values()].filter((row) => row.kind === "flow-plan")).toHaveLength(1)
+    await first.store.dispose?.()
+    const nextRelay = scriptedRelay(() => ({ ok: true, payload: planCard({ nodes: [NODE] }) }))
+    const second = await readyController(nextRelay, storage)
+    try {
+      await settle(15)
+      expect(held(second.store)?.payload.status).toBe("pending")
+      expect(held(second.store)?.payload.planRequest).toEqual(request)
+      await second.controller.planFlow(FLOW, REPO)
+      expect(nextRelay.plans).toHaveLength(1)
+      expect((nextRelay.plans[0] as { idempotencyKey: string }).idempotencyKey).toBe(key)
+      nextRelay.release()
+      relay.release()
+      await settle(15)
+      expect(held(second.store)?.payload.status).toBe("done")
+      expect(held(second.store)?.payload.planRequest).toBeUndefined()
+      expect([...second.store.collections.cards.values()].filter(row => row.kind === "flow-plan")).toHaveLength(1)
+    } finally { relay.release(); nextRelay.release() }
   })
 
   test("a settled plan card reopens exactly as it was", async () => {
@@ -395,4 +397,221 @@ test("a default-gateway plan cannot replace an older card bound to another works
     expect(held(store)?.payload.workspaceId).toBeUndefined()
     expect(held(store)?.payload.planId).toBe("plan-1")
   } finally { relay.release() }
+})
+
+
+test("Plan waits for its request commit before acknowledgment and network work", async () => {
+  const gate = Promise.withResolvers<void>()
+  const original = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const store: AppStore = { ...original, dispatch: transition => {
+    if (transition.type === "card.upsert" && transition.card.kind === "flow-plan") {
+      return { isPersisted: { promise: gate.promise.then(() => original.dispatch(transition).isPersisted.promise) } } as ReturnType<AppStore["dispatch"]>
+    }
+    return original.dispatch(transition)
+  } }
+  const relay = scriptedRelay(() => ({ ok: true, payload: planCard({}) }))
+  const { controller } = await readyController(relay, memoryStorage(), store)
+  let answer: unknown
+  const request = controller.planFlow(FLOW, REPO).then(value => { answer = value })
+  try {
+    await settle(10)
+    expect(answer).toBeUndefined()
+    expect(relay.plans).toHaveLength(0)
+  } finally { gate.resolve(); relay.release(); await request }
+})
+
+test("an unsaved Plan request makes no remote call and can be retried", async () => {
+  const original = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let reject = true
+  const store: AppStore = { ...original, dispatch: transition => {
+    if (reject && transition.type === "card.upsert" && transition.card.kind === "flow-plan") {
+      return { isPersisted: { promise: Promise.reject(new Error("disk full")) } } as ReturnType<AppStore["dispatch"]>
+    }
+    return original.dispatch(transition)
+  } }
+  const relay = scriptedRelay(() => ({ ok: true, payload: planCard({}) }))
+  const { controller } = await readyController(relay, memoryStorage(), store)
+  try {
+    expect(await controller.planFlow(FLOW, REPO)).toBe("The plan request could not be saved. Try again.")
+    expect(relay.plans).toHaveLength(0)
+    reject = false
+    await controller.planFlow(FLOW, REPO)
+    await settle(10)
+    expect(relay.plans).toHaveLength(1)
+  } finally { relay.release() }
+})
+
+test("the Plan toast waits for the result commit and duplicate input stays one request", async () => {
+  const gate = Promise.withResolvers<void>()
+  let saving = false
+  const original = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const store: AppStore = { ...original, dispatch: transition => {
+    if (transition.type === "card.upsert" && transition.card.kind === "flow-plan" && transition.card.payload.status === "done") {
+      saving = true
+      return { isPersisted: { promise: gate.promise.then(() => original.dispatch(transition).isPersisted.promise) } } as ReturnType<AppStore["dispatch"]>
+    }
+    return original.dispatch(transition)
+  } }
+  const relay = scriptedRelay(() => ({ ok: true, payload: planCard({ nodes: [NODE] }) }))
+  const { controller } = await readyController(relay, memoryStorage(), store)
+  try {
+    await controller.planFlow(FLOW, REPO)
+    relay.release()
+    await settle(15)
+    expect(saving).toBe(true)
+    expect(store.collections.toasts.get(TOAST)?.status).toBe("running")
+    expect(held(store)?.payload.status).toBe("pending")
+    await controller.planFlow(FLOW, REPO)
+    expect(relay.plans).toHaveLength(1)
+    await store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat during storage" }).isPersisted.promise
+    gate.resolve()
+    await settle(15)
+    expect(held(store)?.payload.status).toBe("done")
+    expect(store.collections.toasts.get(TOAST)?.status).toBe("ok")
+  } finally { gate.resolve(); relay.release() }
+})
+
+test("a refused result commit leaves a retryable failure with the original Plan key", async () => {
+  let reject = true
+  const original = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const store: AppStore = { ...original, dispatch: transition => {
+    if (reject && transition.type === "card.upsert" && transition.card.kind === "flow-plan" && transition.card.payload.status === "done") {
+      return { isPersisted: { promise: Promise.reject(new Error("disk full")) } } as ReturnType<AppStore["dispatch"]>
+    }
+    return original.dispatch(transition)
+  } }
+  const relay = scriptedRelay(() => ({ ok: true, payload: planCard({ nodes: [NODE] }) }))
+  const { controller } = await readyController(relay, memoryStorage(), store)
+  await controller.planFlow(FLOW, REPO)
+  const request = held(store)?.payload.planRequest
+  relay.release()
+  await settle(15)
+  expect(held(store)?.payload.status).toBe("failed")
+  expect(held(store)?.payload.planRequest).toEqual(request)
+  expect(store.collections.toasts.get(TOAST)?.status).toBe("failed")
+  reject = false
+  await controller.planFlow(FLOW, REPO)
+  await settle(15)
+  expect(held(store)?.payload.status).toBe("done")
+  expect(new Set(relay.plans.map(plan => (plan as { idempotencyKey: string }).idempotencyKey))).toEqual(new Set([`plan:${request!.id}`]))
+})
+
+test("retrying a refused comparison retains its original card and Plan key", async () => {
+  let refuse = true
+  const relay = scriptedRelay(() => refuse ? { ok: false, error: { message: "Try again" } } : { ok: true, payload: planCard({}) })
+  const { store, controller } = await readyController(relay)
+  await store.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: "original-preview", kind: "flow-plan", title: "Plan", status: "active", createdAt: 1, ordinal: 1,
+    payload: { repo: REPO, flowId: FLOW, status: "done", planId: "old-plan", digest: "a".repeat(64), nodes: [] }
+  } }).isPersisted.promise
+  relay.release()
+  await controller.planFlow(FLOW, REPO, {}, undefined, "old-plan")
+  await settle(15)
+  const failed = store.collections.cards.get("original-preview")
+  expect(failed?.kind === "flow-plan" && failed.payload.status).toBe("failed")
+  refuse = false
+  await controller.planFlow(FLOW, REPO, {}, undefined, "old-plan")
+  await settle(15)
+  const done = store.collections.cards.get("original-preview")
+  expect(done?.kind === "flow-plan" && done.payload.status).toBe("done")
+  expect(done?.kind === "flow-plan" && done.payload.against).toBe("old-plan")
+  expect([...store.collections.cards.values()].filter(card => card.kind === "flow-plan")).toHaveLength(1)
+  expect(relay.plans).toHaveLength(2)
+  expect(new Set(relay.plans.map(plan => (plan as { idempotencyKey: string }).idempotencyKey)).size).toBe(1)
+})
+
+test("Plan snapshots the caller's input before delayed provisioning", async () => {
+  const gate = Promise.withResolvers<void>()
+  const relay = scriptedRelay(() => ({ ok: true, payload: planCard({}) }))
+  const { store, controller } = await readyController({ ...relay, fetchImpl: async (url, init) => {
+    if (String(url).endsWith("/api/workflow/provision")) await gate.promise
+    return relay.fetchImpl(url, init)
+  } })
+  const input = { nested: { issue: 1 } }
+  await controller.planFlow(FLOW, REPO, input)
+  input.nested.issue = 99
+  gate.resolve()
+  await settle(15)
+  expect((relay.plans[0] as { input: unknown }).input).toEqual({ nested: { issue: 1 } })
+  const plan = [...store.collections.cards.values()].find(card => card.kind === "flow-plan")
+  expect(plan?.kind === "flow-plan" && plan.payload.input).toEqual({ nested: { issue: 1 } })
+  relay.release()
+})
+
+test("reload during provisioning resumes the saved Plan on its pinned workspace", async () => {
+  const storage = memoryStorage()
+  const gate = Promise.withResolvers<void>()
+  const relay = scriptedRelay(() => ({ ok: true, payload: planCard({}) }))
+  const first = await readyController({ ...relay, fetchImpl: async (url, init) => {
+    if (String(url).endsWith("/api/workflow/provision")) await gate.promise
+    return relay.fetchImpl(url, init)
+  } }, storage)
+  await first.store.dispatch({ type: "card.upsert", actor: "system", card: { id: "source", kind: "flow-plan", title: "Source", status: "active", createdAt: 1, ordinal: 1,
+    payload: { repo: REPO, flowId: FLOW, status: "done", workspaceId: WORKSPACES[0] } } }).isPersisted.promise
+  await first.controller.planFlow(FLOW, REPO, { issue: 1 }, "source")
+  const pending = [...first.store.collections.cards.values()].find(card => card.kind === "flow-plan" && card.payload.status === "pending")!
+  expect(pending.kind === "flow-plan" && pending.payload.planRequest).toBeDefined()
+  await first.controller.dispose()
+  await first.store.dispose?.()
+  const nextRelay = scriptedRelay(() => ({ ok: true, payload: planCard({}) }))
+  const scopes: unknown[] = []
+  const second = await readyController({ ...nextRelay, fetchImpl: async (url, init) => {
+    if (String(url).endsWith("/api/workflow/rpc")) scopes.push(JSON.parse(String(init?.body)).workspaceId)
+    return nextRelay.fetchImpl(url, init)
+  } }, storage)
+  try {
+    nextRelay.release()
+    gate.resolve()
+    await settle(20)
+    const restored = second.store.collections.cards.get(pending.id)
+    expect(restored?.kind === "flow-plan" && restored.payload.status).toBe("done")
+    expect(nextRelay.plans).toHaveLength(1)
+    expect(relay.plans).toHaveLength(0)
+    expect(new Set(scopes)).toEqual(new Set([WORKSPACES[0]]))
+    expect((nextRelay.plans[0] as { input: unknown }).input).toEqual({ issue: 1 })
+  } finally { gate.resolve(); relay.release(); nextRelay.release() }
+})
+
+test("a legacy pending plan without admission remains visibly retryable after reload", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await store.dispatch({ type: "card.upsert", actor: "system", card: { id: CARD, kind: "flow-plan", title: "Earlier plan", status: "active", createdAt: 1, ordinal: 1,
+    payload: { repo: REPO, flowId: FLOW, status: "pending" } } }).isPersisted.promise
+  const relay = scriptedRelay(() => ({ ok: true, payload: planCard({}) }))
+  const { controller } = await readyController(relay, memoryStorage(), store)
+  expect(held(store)?.payload.status).toBe("failed")
+  expect(relay.plans).toHaveLength(0)
+  await controller.planFlow(FLOW, REPO)
+  expect(held(store)?.payload.planRequest).toBeDefined()
+  relay.release()
+})
+
+test("Retry while a failed result write is settling starts the same request again", async () => {
+  const failedCommit = Promise.withResolvers<void>()
+  const original = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const store: AppStore = { ...original, dispatch: transition => {
+    const write = original.dispatch(transition)
+    if (transition.type === "card.upsert" && transition.card.kind === "flow-plan" && transition.card.payload.status === "failed") {
+      return { isPersisted: { promise: write.isPersisted.promise.then(() => failedCommit.promise) } } as ReturnType<AppStore["dispatch"]>
+    }
+    return write
+  } }
+  let failed = true
+  const relay = scriptedRelay(() => failed ? { ok: false, error: { message: "Try later" } } : { ok: true, payload: planCard({}) })
+  const { controller } = await readyController(relay, memoryStorage(), store)
+  try {
+    await controller.planFlow(FLOW, REPO)
+    relay.release()
+    await settle(15)
+    expect(held(store)?.payload.status).toBe("failed")
+    const request = held(store)?.payload.planRequest
+    failed = false
+    await controller.planFlow(FLOW, REPO)
+    await settle(15)
+    expect(relay.plans).toHaveLength(2)
+    failedCommit.resolve()
+    await settle(10)
+    expect(held(store)?.payload.status).toBe("done")
+    expect(store.collections.toasts.get(TOAST)?.status).toBe("ok")
+    expect(new Set(relay.plans.map(plan => (plan as { idempotencyKey: string }).idempotencyKey))).toEqual(new Set([`plan:${request!.id}`]))
+  } finally { failedCommit.resolve(); relay.release() }
 })

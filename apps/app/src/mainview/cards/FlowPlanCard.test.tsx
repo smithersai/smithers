@@ -356,3 +356,8 @@ test("a plan estimates from its own workspace and never from default-gateway his
     expect(host.querySelector(".flow-plan-eta")?.textContent).toBe(expected)
   }
 })
+
+test("retrying a refused comparison retains its comparison target", () => {
+  const host = render(<FlowPlanCardBody card={card({ status: "failed", error: "Try again", against: "run-previous", input: { pr: 4821 } })} onRunCommand={() => {}} />)
+  expect(host.querySelector('[data-flow="flow.plan"]')?.getAttribute("data-flow-args")).toContain("against=run-previous")
+})

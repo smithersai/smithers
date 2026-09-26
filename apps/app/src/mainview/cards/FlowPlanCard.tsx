@@ -120,7 +120,7 @@ export const FlowPlanCardBody = ({
           * stands beside it, and the door that runs what was planned does not.
           */}
         {state.kind === "refused"
-          ? <Button size="sm" variant="outline" {...flowAction(onRunCommand, "flow.plan", flowArgs("flow.plan", args))}>Plan</Button>
+          ? <Button size="sm" variant="outline" {...flowAction(onRunCommand, "flow.plan", flowArgs("flow.plan", { ...args, ...(card.payload.against === undefined ? {} : { against: card.payload.against }) }))}>Plan</Button>
           : <Button size="sm" variant="outline" {...flowAction(onRunCommand, "flow.run", flowArgs("flow.run", args))}>Run</Button>}
       </div>
       {state.kind !== "refused" || state.sentence === undefined

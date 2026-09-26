@@ -39,6 +39,20 @@ const deferred = () => {
 }
 
 describe("controller shutdown has an awaitable completion boundary", () => {
+  test("page departure fences observers before releasing the visible collections", async () => {
+    const lifetime = new AbortController()
+    const context = createControllerContext(await store(), agent, { pageLifetime: lifetime.signal })
+    let releases = 0
+    context.onDispose(() => { releases++ })
+    expect(context.disposed).toBe(false)
+    lifetime.abort()
+    expect(context.disposed).toBe(true)
+    expect(releases).toBe(0)
+    await context.dispose()
+    await context.dispose()
+    expect(releases).toBe(1)
+  })
+
   test("immediate shutdown joins automatic startup without late writes or model/tool starts", async () => {
     const actual = await store()
     let shuttingDown = false

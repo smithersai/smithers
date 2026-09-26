@@ -281,11 +281,12 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
       repo: string,
       flowId: string,
       input: Record<string, unknown>,
-      requestedBinding?: GatewayWorkspaceBinding
+      requestedBinding?: GatewayWorkspaceBinding,
+      idempotencyKey?: string
     ): Promise<GatewayResult<PlannedFlow>> => {
       const binding = requestedBinding ?? transport.bindingFor?.(repo) ?? {}
       if ("error" in binding) return { status: "error", message: binding.error }
-      const planned = await call(repo, "Plan", { flowId, input }, binding)
+      const planned = await call(repo, "Plan", { flowId, input, ...(idempotencyKey === undefined ? {} : { idempotencyKey }) }, binding)
       if (planned.status !== "ok") return planned
       const card = decodePlanCard(planned.value)
       return Option.isNone(card)

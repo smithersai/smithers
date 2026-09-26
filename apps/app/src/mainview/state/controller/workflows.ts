@@ -30,6 +30,7 @@ import { foldRunGraph, runGraphOf } from "../../cards/FlowGraphStatus"
 import { rekeySummary, type PreviewNode, type RekeySummary } from "../../cards/flowGraph/Rekey"
 import { runtimeRunKey } from "../RuntimeProjection"
 import { isTriggerNodeId } from "../../cards/FlowGraphTriggerNode"
+import { canonicalStoredJsonValue } from "../EventValue"
 import { actorSharedState } from "../ActorBindings"
 import { authoredSources } from "../FlowAuthoringReceipts"
 import { createFlowAuthoringController } from "./flowAuthoring"
@@ -407,20 +408,11 @@ export const createWorkflowController = (
    * initializer, so it runs once, at boot, and never against a plan the user
    * copy has in flight.
    */
-  const { planning, planAttempts } = actorSharedState(ctx, "flow-plan", () => {
-    /*
-     * A plan the reload outlived.
-     *
-     * The maps below are memory, so a `pending` plan card read back from
-     * storage has nothing behind it: no request is in flight, nothing will
-     * ever settle it, and the body offers Run over a graph it never drew.
-     * Planning is cheap and idempotent, but a silent re-issue would also be a
-     * launch nobody asked for on this visit, so the card settles to the
-     * failure it already is and keeps the Plan door that asks again.
-     */
+  const { planning, planAttempts, planSaving } = actorSharedState(ctx, "flow-plan", () => {
+    // Legacy cards have no admitted request to reconnect. Keep their explicit retry.
     for (const card of store.collections.cards.values()) {
       if (card.kind !== "flow-plan" || card.payload.status !== "pending") continue
-      if (card.payload.sourceReceipt !== undefined) continue
+      if (card.payload.planRequest !== undefined || card.payload.sourceReceipt !== undefined) continue
       store.dispatch({
         type: "card.upsert",
         actor: "system",
@@ -435,7 +427,8 @@ export const createWorkflowController = (
       /** The account generation of each in-flight plan, by card id. */
       planning: new Map<string, number>(),
       /** The newest ask per card, so an older answer that lands late writes nothing. */
-      planAttempts: new Map<string, number>()
+      planAttempts: new Map<string, number>(),
+      planSaving: new Map<string, Promise<unknown>>()
     }
   })
 
@@ -494,13 +487,15 @@ export const createWorkflowController = (
     readonly input: Record<string, unknown>
     readonly attempt: number
     readonly epoch: number
+    readonly request: NonNullable<Extract<Card, { kind: "flow-plan" }>["payload"]["planRequest"]>
     /** The run this plan was asked to be compared against (the re-key preview). */
     readonly against?: string
     readonly previousPlan?: Extract<Card, { kind: "flow-plan" }>["payload"]["previousPlan"]
     readonly sourceReceipt?: Extract<Card, { kind: "flow-plan" }>["payload"]["sourceReceipt"]
   }): Promise<void> => {
-    const current = () => !ctx.disposed && ctx.accountEpoch === args.epoch && planAttempts.get(args.id) === args.attempt
-    const settle = (patch: Extract<Card, { kind: "flow-plan" }>["payload"]): string | void => {
+    const current = () => !ctx.disposed && ctx.accountEpoch === args.epoch && ctx.accountOwner() === args.request.owner && planAttempts.get(args.id) === args.attempt
+    let writing = false
+    const settle = async (patch: Extract<Card, { kind: "flow-plan" }>["payload"]): Promise<string | void> => {
       // An answer to an older ask, or to a controller that has since closed,
       // writes nothing: the card belongs to whatever was asked last.
       if (!current()) return
@@ -517,7 +512,8 @@ export const createWorkflowController = (
       const drawn = (node: string): boolean =>
         isTriggerNodeId(node) || (patch.nodes ?? []).some((candidate) => candidate.id === node)
       const kept = held?.node !== undefined && drawn(held.node) ? held : undefined
-      store.dispatch({
+      writing = true
+      await store.dispatch({
         type: "card.upsert",
         actor: ctx.commandActor,
         card: {
@@ -525,72 +521,111 @@ export const createWorkflowController = (
           status: patch.status === "failed" ? "error" : "active",
           payload: kept === undefined ? patch : { ...patch, view: kept }
         }
-      })
+      }).isPersisted.promise
+      writing = false
       return patch.status === "failed" ? patch.error : undefined
     }
     try {
-      await withToast(`flow.plan:${args.id}`, `Planning ${args.name}`, `Planned ${args.name}`, async () => {
-        if (!current()) return TOAST_SUPERSEDED
-        const provisioned = await provisionWorkspaceImpl(args.repo, args.binding)
-        if (!current()) return TOAST_SUPERSEDED
-        if (provisioned !== true) return settle(refusedPlan(args, provisioned.message)) ?? provisioned.message
-        const planned = await gateway.plan(args.repo, args.name, args.input, args.binding)
-        if (!current()) return TOAST_SUPERSEDED
-        if (planned.status !== "ok") return settle(refusedPlan(args, planned.message)) ?? planned.message
-        const nodes = planned.value.nodes.map(planCardNode)
-        /*
-         * A comparison reads the flow's measured history BEFORE it is
-         * computed. The estimate is a number off that history, and a read
-         * fired beside the preview would answer after the card had already
-         * frozen, so the first ask of a session would ship counts with no
-         * estimate while the gateway held every row. The reader swallows
-         * every refusal (controller/flowDurations.ts), so a box that will not
-         * serve the projection costs the preview its estimate and nothing
-         * else.
-         */
-        if (args.against !== undefined) await readFlowDurations?.(args.repo, args.name, args.binding)
-        if (!current()) return TOAST_SUPERSEDED
-        /* The comparison is over evidence already on the card and in the
-         * collections, so it happens here, with the fresh plan in hand. */
-        const rekey = args.against === undefined ? undefined : previewRekey(args.repo, args.name, args.binding, args.against, nodes)
-        settle({
-          repo: args.repo,
-          flowId: args.name,
-          status: "done",
-          ...(args.binding.workspaceId === undefined ? {} : { workspaceId: args.binding.workspaceId }),
-          ...(Object.keys(args.input).length === 0 ? {} : { input: args.input }),
-          planId: planned.value.planId,
-          digest: planned.value.digest,
-          nodes,
+      const outcome = await withToast(`flow.plan:${args.id}`, `Planning ${args.name}`, `Planned ${args.name}`, async () => {
+        try {
+          if (!current()) return TOAST_SUPERSEDED
+          const provisioned = await provisionWorkspaceImpl(args.repo, args.binding)
+          if (!current()) return TOAST_SUPERSEDED
+          if (provisioned !== true) return (await settle(refusedPlan(args, provisioned.message))) ?? provisioned.message
+          const planned = await gateway.plan(args.repo, args.name, args.input, args.binding, `plan:${args.request.id}`)
+          if (!current()) return TOAST_SUPERSEDED
+          if (planned.status !== "ok") return (await settle(refusedPlan(args, planned.message))) ?? planned.message
+          const nodes = planned.value.nodes.map(planCardNode)
           /*
-           * The labelled edges, where each node was declared, and the
-           * revision those sites were read at — the same reduction the
-           * launch path writes onto a run (cards/PlanNodes.ts), so a plan
-           * card and a run's plan snapshot carry one shape.
+           * A comparison reads the flow's measured history BEFORE it is
+           * computed. The estimate is a number off that history, and a read
+           * fired beside the preview would answer after the card had already
+           * frozen, so the first ask of a session would ship counts with no
+           * estimate while the gateway held every row. The reader swallows
+           * every refusal (controller/flowDurations.ts), so a box that will not
+           * serve the projection costs the preview its estimate and nothing
+           * else.
            */
-          ...(planned.value.graph === undefined ? {} : { graph: planCardGraph(planned.value.graph) }),
-          ...(args.against === undefined ? {} : { against: args.against }),
-          ...(args.previousPlan === undefined ? {} : { previousPlan: args.previousPlan }),
-          ...(args.sourceReceipt === undefined ? {} : { sourceReceipt: args.sourceReceipt }),
-          ...(rekey === undefined ? {} : { rekey })
-        })
-        // The graph is drawn, so its predictions are worth reading: one
-        // call, off the toast's path, whose refusal shows as no numbers. A
-        // comparison has already read them, above.
-        if (args.against === undefined) void readFlowDurations?.(args.repo, args.name, args.binding)
-        // Not a string: `withToast` reads a string outcome as the honest
-        // failure line, so a drawn graph that answered with one would resolve
-        // its own toast as a failure. The card is the claim surface anyway.
-        return true
+          if (args.against !== undefined) await readFlowDurations?.(args.repo, args.name, args.binding)
+          if (!current()) return TOAST_SUPERSEDED
+          /* The comparison is over evidence already on the card and in the
+           * collections, so it happens here, with the fresh plan in hand. */
+          const rekey = args.against === undefined ? undefined : previewRekey(args.repo, args.name, args.binding, args.against, nodes)
+          await settle({
+            repo: args.repo,
+            flowId: args.name,
+            status: "done",
+            ...(args.binding.workspaceId === undefined ? {} : { workspaceId: args.binding.workspaceId }),
+            ...(Object.keys(args.input).length === 0 ? {} : { input: args.input }),
+            planId: planned.value.planId,
+            digest: planned.value.digest,
+            nodes,
+            /*
+             * The labelled edges, where each node was declared, and the
+             * revision those sites were read at — the same reduction the
+             * launch path writes onto a run (cards/PlanNodes.ts), so a plan
+             * card and a run's plan snapshot carry one shape.
+             */
+            ...(planned.value.graph === undefined ? {} : { graph: planCardGraph(planned.value.graph) }),
+            ...(args.against === undefined ? {} : { against: args.against }),
+            ...(args.previousPlan === undefined ? {} : { previousPlan: args.previousPlan }),
+            ...(args.sourceReceipt === undefined ? {} : { sourceReceipt: args.sourceReceipt }),
+            ...(rekey === undefined ? {} : { rekey })
+          })
+          if (!current()) return TOAST_SUPERSEDED
+          // The graph is drawn, so its predictions are worth reading: one
+          // call, off the toast's path, whose refusal shows as no numbers. A
+          // comparison has already read them, above.
+          if (args.against === undefined) void readFlowDurations?.(args.repo, args.name, args.binding)
+          // Not a string: `withToast` reads a string outcome as the honest
+          // failure line, so a drawn graph that answered with one would resolve
+          // its own toast as a failure. The card is the claim surface anyway.
+          return true
+        } catch {
+          if (!current()) return TOAST_SUPERSEDED
+          const message = writing ? "The plan could not be saved. Try Plan again." : "The workspace did not answer. Try Plan again."
+          try { await settle(refusedPlan(args, message)) } catch { /* The shared toast reports a refused write even when the card cannot. */ }
+          return current() ? message : TOAST_SUPERSEDED
+        }
       }, false, current)
+      // A fast persistence failure still needs a visible, retryable explanation.
+      if (typeof outcome === "string" && current() && !store.collections.toasts.has(`toast-flow.plan:${args.id}`)) {
+        store.dispatch({ type: "toast.shown", actor: "system", key: `flow.plan:${args.id}`, title: `Planning ${args.name}` })
+        ctx.resolveToast(`flow.plan:${args.id}`, { status: "failed", detail: outcome })
+      }
     } finally {
       if (planAttempts.get(args.id) === args.attempt) planning.delete(args.id)
     }
   }
 
+  const startPlan = (card: Extract<Card, { kind: "flow-plan" }>) => {
+    const request = card.payload.planRequest
+    const epoch = ctx.accountEpoch
+    if (!request || ctx.disposed || ctx.accountOwner() !== request.owner || planning.get(card.id) === epoch) return
+    const attempt = (planAttempts.get(card.id) ?? 0) + 1
+    planAttempts.set(card.id, attempt)
+    planning.set(card.id, epoch)
+    const { repo, workspaceId, flowId: name, input = {}, against, previousPlan, sourceReceipt } = card.payload
+    void fillPlanCard({ id: card.id, repo, binding: { workspaceId }, name, input, attempt, epoch, request, against, previousPlan, sourceReceipt })
+  }
+  const resumePlans = () => {
+    if (workflowIdentityGuard() !== undefined) return
+    const epoch = ctx.accountEpoch
+    const owner = ctx.accountOwner()
+    const timer = setTimeout(() => {
+      void (store.settled?.() ?? Promise.resolve()).then(() => {
+        if (ctx.disposed || ctx.accountEpoch !== epoch || ctx.accountOwner() !== owner) return
+        for (const card of store.collections.cards.values()) {
+          if (card.kind === "flow-plan" && card.payload.status === "pending" && card.payload.planRequest?.owner === owner && !planSaving.has(card.id)) startPlan(card)
+        }
+      }, () => {})
+    }, 0)
+    unref(timer)
+  }
+
   /** The plan card's payload for a refusal, keeping whatever graph it already drew. */
   const refusedPlan = (
-    args: { readonly id: string; readonly repo: string; readonly binding: GatewayWorkspaceBinding; readonly name: string; readonly input: Record<string, unknown> },
+    args: { readonly id: string; readonly repo: string; readonly binding: GatewayWorkspaceBinding; readonly name: string; readonly input: Record<string, unknown>; readonly request?: NonNullable<Extract<Card, { kind: "flow-plan" }>["payload"]["planRequest"]> },
     message: string
   ): Extract<Card, { kind: "flow-plan" }>["payload"] => {
     const card = store.collections.cards.get(args.id)
@@ -600,6 +635,7 @@ export const createWorkflowController = (
       repo: args.repo,
       flowId: args.name,
       status: "failed",
+      ...(args.request === undefined ? {} : { planRequest: args.request }),
       error: message,
       ...(args.binding.workspaceId === undefined ? {} : { workspaceId: args.binding.workspaceId }),
       ...(Object.keys(args.input).length === 0 ? {} : { input: args.input })
@@ -885,7 +921,7 @@ export const createWorkflowController = (
     const target = workflowScope(repoArg, sourceCard)
     if ("error" in target) return target.error
     const { repo, binding } = target
-    const input = inputArg ?? {}
+    const input = JSON.parse(canonicalStoredJsonValue(inputArg ?? {})) as Record<string, unknown>
     // One card per (repo, workspace, flow, input): asking twice for the same plan moves
     // the card rather than growing a second one, and a second ask while the
     // first is in flight is the same request, not a second durable Plan.
@@ -896,12 +932,17 @@ export const createWorkflowController = (
     const prior = previousCard?.kind === "flow-plan" ? previousCard.payload : undefined
     const previousPlan = prior?.planId === undefined || prior.digest === undefined || prior.nodes === undefined ? undefined
       : { planId: prior.planId, digest: prior.digest, nodes: prior.nodes }
-    const id = previousCard?.id ?? planCardId(repo, name, input, against, binding.workspaceId)
     const epoch = ctx.accountEpoch
-    if (planning.get(id) === epoch) return { value: `plan-requested flow=${name} repo=${repo}` }
-    const attempt = (planAttempts.get(id) ?? 0) + 1
-    planAttempts.set(id, attempt)
-    planning.set(id, epoch)
+    const owner = ctx.accountOwner()!
+    // Comparison previews reuse their original card, including after a refusal
+    // has replaced its old planId with the admitted request.
+    const admitted = [...store.collections.cards.values()].find(card => card.kind === "flow-plan" &&
+      card.payload.planRequest?.owner === owner && card.payload.repo === repo && card.payload.workspaceId === binding.workspaceId &&
+      card.payload.flowId === name && card.payload.against === against && canonicalStoredJsonValue(card.payload.input ?? {}) === canonicalStoredJsonValue(input))
+    const id = admitted?.id ?? previousCard?.id ?? planCardId(repo, name, input, against, binding.workspaceId)
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
+    for (let saving = planSaving.get(id); saving; saving = planSaving.get(id)) await saving.catch(() => {})
+    if (!current()) return "The account changed before the plan was requested."
     const existing = store.collections.cards.get(id)
     const held = existing?.kind === "flow-plan" ? existing.payload : undefined
     const source = sourceCard === undefined ? undefined : store.collections.cards.get(sourceCard)
@@ -909,34 +950,51 @@ export const createWorkflowController = (
       ? authoredSources(store.committedRuntimeRun(runtimeRunKey(source.payload))?.events ?? []).filter(receipt => receipt.flowId === name).at(-1)
       : undefined
     const sourceReceipt = receipt === undefined || source === undefined ? held?.sourceReceipt : { runCardId: source.id, receipt: receipt.receipt }
-    store.dispatch({
-      type: "card.upsert",
-      actor: ctx.commandActor,
-      card: {
-        id,
-        kind: "flow-plan",
-        title: `${name} — ${repo}`,
-        status: "active",
-        createdAt: existing?.createdAt ?? Date.now(),
-        ordinal: sourceReceipt !== undefined && source?.kind === "run-trace" ? Math.max(0, source.ordinal - 1) : existing?.ordinal ?? nextTranscriptOrdinal(),
-        payload: {
-          repo,
-          flowId: name,
-          status: "pending",
-          ...(binding.workspaceId === undefined ? {} : { workspaceId: binding.workspaceId }),
-          ...(Object.keys(input).length === 0 ? {} : { input }),
-          // A re-plan keeps the graph it last drew, and the drawer the reader
-          // has open on it, until a new one lands.
-          ...(held?.nodes === undefined ? {} : { nodes: held.nodes }),
-          ...(held?.graph === undefined ? {} : { graph: held.graph }),
-          ...(held?.view === undefined ? {} : { view: held.view }),
-          ...(against === undefined ? {} : { against }),
-          ...(previousPlan === undefined ? held?.previousPlan === undefined ? {} : { previousPlan: held.previousPlan } : { previousPlan }),
-          ...(sourceReceipt === undefined ? {} : { sourceReceipt })
-        }
+    const sameRequest = held !== undefined && canonicalStoredJsonValue(held.input ?? {}) === canonicalStoredJsonValue(input) &&
+      held.against === against && held.sourceReceipt?.receipt === sourceReceipt?.receipt && held.sourceReceipt?.runCardId === sourceReceipt?.runCardId
+    if (planning.get(id) === epoch) {
+      if (sameRequest && held?.status !== "failed") return { value: `plan-requested flow=${name} repo=${repo}` }
+      // Retry or a newer source receipt retires the old observer before committing its replacement.
+      planAttempts.set(id, (planAttempts.get(id) ?? 0) + 1)
+      planning.delete(id)
+    }
+    if (sameRequest && held?.status === "pending" && held.planRequest?.owner === owner && existing?.kind === "flow-plan") {
+      startPlan(existing)
+      return { value: `plan-requested flow=${name} repo=${repo}` }
+    }
+    const request = sameRequest && held?.planRequest?.owner === owner ? held.planRequest : { id: crypto.randomUUID(), owner }
+    const card: Extract<Card, { kind: "flow-plan" }> = {
+      id,
+      kind: "flow-plan",
+      title: `${name} — ${repo}`,
+      status: "active",
+      createdAt: existing?.createdAt ?? Date.now(),
+      ordinal: sourceReceipt !== undefined && source?.kind === "run-trace" ? Math.max(0, source.ordinal - 1) : existing?.ordinal ?? nextTranscriptOrdinal(),
+      payload: {
+        repo,
+        flowId: name,
+        status: "pending",
+        planRequest: request,
+        ...(binding.workspaceId === undefined ? {} : { workspaceId: binding.workspaceId }),
+        ...(Object.keys(input).length === 0 ? {} : { input }),
+        // A re-plan keeps the graph it last drew, and the drawer the reader
+        // has open on it, until a new one lands.
+        ...(held?.nodes === undefined ? {} : { nodes: held.nodes }),
+        ...(held?.graph === undefined ? {} : { graph: held.graph }),
+        ...(held?.view === undefined ? {} : { view: held.view }),
+        ...(against === undefined ? {} : { against }),
+        ...(previousPlan === undefined ? held?.previousPlan === undefined ? {} : { previousPlan: held.previousPlan } : { previousPlan }),
+        ...(sourceReceipt === undefined ? {} : { sourceReceipt })
       }
-    })
-    void fillPlanCard({ id, repo, binding, name, input, attempt, epoch, previousPlan: previousPlan ?? held?.previousPlan, sourceReceipt, ...(against === undefined ? {} : { against }) })
+    }
+    let saved: Promise<unknown>
+    try { saved = store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card }).isPersisted.promise }
+    catch { return "The plan request could not be saved. Try again." }
+    planSaving.set(id, saved)
+    try { await saved } catch { return "The plan request could not be saved. Try again." }
+    finally { if (planSaving.get(id) === saved) planSaving.delete(id) }
+    if (!current()) return "The account changed before the plan was requested."
+    startPlan(card)
     return { value: `plan-requested flow=${name} repo=${repo}` }
   }
 
@@ -1116,7 +1174,7 @@ export const createWorkflowController = (
     })
   }
   return {
-    resumeWorkflowRequests: () => { requests.resume(); catalogs.resume() },
+    resumeWorkflowRequests: () => { requests.resume(); catalogs.resume(); resumePlans() },
     retryWorkflowRequest: requests.retry,
     requestTriggerRun,
     requestTriggerRegistration,

@@ -1014,6 +1014,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       workspaceId: gatewayWorkspaceId,
       flowId: "review",
       input: { pr: 4821 },
+      planRequest: { id: "plan-request-1", owner: "will" },
       // A re-plan that was refused keeps the graph it last drew, so the card
       // states the refusal without blanking what the person was reading.
       status: "failed",

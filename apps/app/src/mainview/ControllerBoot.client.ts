@@ -60,12 +60,14 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
       ...(nativeShellAvailable ? { nativeOpenExternal } : {})
     }))
     const agent = yield* Effect.sync(() => runtime.backend.agent ?? unavailableAgent())
+    const pageLifetime = new AbortController()
     const controller = yield* Effect.sync(() =>
       createAppController(
         store,
         agent,
         {
           fetchImpl: runtime.http,
+          pageLifetime: pageLifetime.signal,
           clientErrors: options.clientErrors,
           baseUrl: client.baseUrl,
           applicationTarget: client.target,
@@ -82,6 +84,32 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
         }
       )
     )
+
+    // Chromium can reject interrupted fetches before pagehide. Fence their
+    // observers first; release collections only once the page is hidden.
+    window.addEventListener("beforeunload", () => pageLifetime.abort())
+    window.addEventListener("pagehide", () => {
+      pageLifetime.abort()
+      void controller.dispose().catch(() => {})
+    })
+    // A history-cache restore must reconnect durable work with a fresh scope.
+    window.addEventListener("pageshow", event => {
+      if (event.persisted && pageLifetime.signal.aborted) window.location.reload()
+    })
+    // Stop can cancel a navigation after beforeunload without hiding this
+    // document. Reconnect its retired scope, unless another page is replacing it.
+    type NavigationAttempt = Event & { readonly signal: AbortSignal; readonly destination: { readonly sameDocument: boolean } }
+    const navigation = (window as Window & { readonly navigation?: EventTarget }).navigation
+    let navigating: NavigationAttempt | undefined
+    navigation?.addEventListener("navigate", raw => {
+      const attempt = raw as NavigationAttempt
+      navigating = attempt
+      attempt.signal.addEventListener("abort", () => {
+        setTimeout(() => {
+          if (pageLifetime.signal.aborted && (navigating === attempt || navigating?.destination.sameDocument)) window.location.reload()
+        }, 0)
+      }, { once: true })
+    })
 
     if (!hasCapability(bootstrap, "identity")) {
       yield* promiseEffect("record unavailable identity", () => controller.adoptSession({

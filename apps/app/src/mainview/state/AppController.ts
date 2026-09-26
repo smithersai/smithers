@@ -662,6 +662,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
  */
 export interface AppServices {
   readonly clientErrors?: ClientErrorReporter
+  /** Fence late observations as soon as the embedding page starts leaving. */
+  readonly pageLifetime?: AbortSignal
   /** Trusted local handoff, injectable by the embedding host; never projected as a tool. */
   readonly storageRecoveryHost?: StorageRecoveryHost
   readonly fetchImpl?: FetchLike

@@ -1245,6 +1245,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       flowId: z.string(),
       /** The input the plan was taken on, so the Run door launches the same thing. */
       input: z.record(z.string(), z.unknown()).optional(),
+      /** Durable client admission; retained on failure so retry uses the same Plan key. */
+      planRequest: z.object({ id: z.string(), owner: z.string() }).optional(),
       status: z.enum(["pending", "done", "failed"]),
       /** The workspace's own sentence when the plan was refused. */
       error: z.string().optional(),
