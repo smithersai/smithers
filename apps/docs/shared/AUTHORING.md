@@ -1,13 +1,15 @@
 # Authoring package docs
 
-Every published package carries its own documentation and its own docs site.
-`<pkg>/docs/` is the only place you write. The site at
+Package documentation lives in `<pkg>/docs/`. Packages in the docs manifest
+also have a generated site. The site at
 `https://<slug>.smithers.sh` is stitched from those files by
 `apps/docs/shared/sync-content.mjs` and deployed by Alchemy; you never edit
 anything under `apps/docs/`.
 
 The manifest at `apps/docs/shared/manifest.mjs` maps each package to its slug
 (for example `@smthrs/flow` is `flow`, so its site is `flow.smithers.sh`).
+Build, build-cli, and targets have no standalone sites in this fleet; their
+aggregate references are on smithers.sh under `/docs/reference/api/`.
 
 ## Where files go and what they become
 

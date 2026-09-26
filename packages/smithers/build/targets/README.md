@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://targets.smithers.sh
+**Documentation:** https://smithers.sh/docs/reference/api/targets/
 
 `@smthrs/targets` defines the pure authoring surface used by `PACKAGE.ts` files.
 Target calls perform no filesystem reads and start no processes. They return

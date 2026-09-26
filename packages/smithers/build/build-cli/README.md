@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://build-cli.smithers.sh
+**Documentation:** https://smithers.sh/docs/reference/api/build-cli/
 
 `smithers-build` executes target graphs. A verb selects a set of targets by
 label or pattern, the CLI plans them, consults a content-addressed cache, and
@@ -34,7 +34,8 @@ Install the current release candidate with
 
 ## Documentation
 
-The full site is at https://build-cli.smithers.sh, generated from
+The API reference is at https://smithers.sh/docs/reference/api/build-cli/;
+the full documentation lives in
 [`docs/`](./docs/README.md):
 
 - [Installation](./docs/installation.md) and

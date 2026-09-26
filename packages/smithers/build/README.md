@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://smithers-build.smithers.sh
+**Documentation:** https://smithers.sh/docs/reference/api/build/
 
 `@smthrs/build` expresses dependency installation as a keyed flow, and holds a
 host to the interpreter and package manager the workspace declared. It is one

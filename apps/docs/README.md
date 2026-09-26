@@ -1,6 +1,6 @@
 # Package documentation sites
 
-The 48 entries in `shared/manifest.mjs` each have an Astro Starlight site on
+The 50 entries in `shared/manifest.mjs` each have an Astro Starlight site on
 their own subdomain: `@smthrs/flow` documents at `flow.smithers.sh`,
 `@smthrs/agent` at `agent.smithers.sh`, and so on. The main site in `apps/site`
 is separate. This fleet has no standalone build, build-cli, or targets site;

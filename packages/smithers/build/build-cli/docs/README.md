@@ -70,7 +70,9 @@ planning, querying, and that cached rerun.
 
 ## Where this package sits
 
-Three packages make up smithers build, and each one has its own site.
+Three packages make up smithers build. Their source guides live in each
+package's `docs/` tree; aggregate API references are on smithers.sh. They have
+no standalone sites in the package docs fleet.
 
 | Package                                                                                               | What it holds                                                                                               |
 | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
