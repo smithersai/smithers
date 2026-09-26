@@ -31,10 +31,10 @@ const { SqlJournal } = JournalPackage
 
 ## The authoring model is flat, on purpose
 
-[`@smthrs/flow`](/api/flow) is the one package re-exported flat. All fourteen of
+[`@smthrs/flow`](/api/flow) is the one package re-exported flat. All fifteen of
 `Action`, `DurableClock`, `DurableDeferred`, `DurableQueue`, `Flow`,
 `FlowRuntime`, `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`,
-`Sleep`, `StepIdentity`, and `WaitFor` sit at the top level beside the
+`Sleep`, `Stall`, `StepIdentity`, and `WaitFor` sit at the top level beside the
 infrastructure namespaces.
 
 Writing a flow is the point of the library, and `Flows.Flow.Flow.make` would be
