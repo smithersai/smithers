@@ -113,7 +113,6 @@ func handlerCovChannel(prefix string) string {
 // terminate, on the prepared test database.
 func handlerCovPoolWithApplicationName(t *testing.T, applicationName string) *pgxpool.Pool {
 	t.Helper()
-	covPrepareDatabase(t)
 	cfg := covPoolConfig(t)
 	if cfg.ConnConfig.RuntimeParams == nil {
 		cfg.ConnConfig.RuntimeParams = make(map[string]string)

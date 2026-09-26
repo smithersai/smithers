@@ -6,24 +6,18 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"os"
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
-
-const defaultGitHubWebhookRouteTestDatabaseURL = "postgres://smithers:smithers@127.0.0.1:5432/smithers_test_routes?sslmode=disable"
 
 func TestGitHubWebhookHandler_PostGitHubWebhook_EndToEnd(t *testing.T) {
 	pool := setupGitHubWebhookRouteTestPool(t)
@@ -169,87 +163,8 @@ func postGitHubWebhookForRouteTest(
 
 func setupGitHubWebhookRouteTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-
-	if testing.Short() {
-		t.Skip("skipping DB integration test in short mode")
-	}
-
-	pool, err := resetGitHubWebhookRouteTestDatabase(gitHubWebhookRouteTestDatabaseURL())
-	if err != nil {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatalf("required routes database unavailable: %v", err)
-		}
-		t.Skipf("skipping DB integration test: %v", err)
-	}
-	t.Cleanup(func() { pool.Close() })
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	return pool
-}
-
-func gitHubWebhookRouteTestDatabaseURL() string {
-	if v := strings.TrimSpace(os.Getenv("SMITHERS_ROUTES_TEST_DATABASE_URL")); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL")); v != "" {
-		return v
-	}
-	return defaultGitHubWebhookRouteTestDatabaseURL
-}
-
-func resetGitHubWebhookRouteTestDatabase(databaseURL string) (*pgxpool.Pool, error) {
-	parsed, err := url.Parse(databaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("bad database URL: %w", err)
-	}
-
-	dbName := strings.TrimPrefix(parsed.Path, "/")
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-
-	adminConn, err := pgx.Connect(context.Background(), adminURL.String())
-	if err != nil {
-		return nil, fmt.Errorf("cannot connect to admin database: %w", err)
-	}
-	defer adminConn.Close(context.Background())
-
-	var exists bool
-	if err := adminConn.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, dbName).Scan(&exists); err != nil {
-		return nil, fmt.Errorf("check database existence: %w", err)
-	}
-	if !exists {
-		if _, err := adminConn.Exec(context.Background(), `CREATE DATABASE "`+strings.ReplaceAll(dbName, `"`, `""`)+`"`); err != nil {
-			return nil, fmt.Errorf("create database: %w", err)
-		}
-	}
-
-	schemaConn, err := pgx.Connect(context.Background(), databaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("connect to test database: %w", err)
-	}
-	defer schemaConn.Close(context.Background())
-
-	if _, err := schemaConn.Exec(context.Background(), `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`); err != nil {
-		return nil, fmt.Errorf("terminate existing connections: %w", err)
-	}
-
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`
-	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
-		return nil, fmt.Errorf("reset schema: %w", err)
-	}
-
-	cfg, err := pgxpool.ParseConfig(databaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("bad pool config: %w", err)
-	}
-
-	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
-	if err != nil {
-		return nil, err
-	}
-	if err := product.Apply(context.Background(), pool); err != nil {
-		pool.Close()
-		return nil, err
-	}
-	return pool, nil
 }
 
 func signRouteGitHubWebhookBody(body []byte, secret string) string {

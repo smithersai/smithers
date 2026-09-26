@@ -3,15 +3,15 @@ package db
 import (
 	"context"
 	"github.com/jackc/pgx/v5"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/stretchr/testify/require"
-	"os"
 	"testing"
 	"time"
+
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 func TestAdminNeverStartedQueryGuardsAndPreservesMetadata(t *testing.T) {
-	pool, _ := postgresfixture.NewProductDatabase(t, resolveDBTestDatabaseURL(os.Getenv))
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	ctx := context.Background()
 	var userID, repoID int64
 	err := pool.QueryRow(ctx, `INSERT INTO users(username,lower_username,email,lower_email,display_name) VALUES ('sessionowner','sessionowner','sessionowner@example.test','sessionowner@example.test','Session owner') RETURNING id`).Scan(&userID)

@@ -2,110 +2,25 @@ package webhook
 
 import (
 	"context"
-	"flag"
-	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
-const defaultWebhookTestDatabaseURL = "postgres://smithers:smithers@localhost:5432/smithers_test_webhook?sslmode=disable"
-
-var webhookTestPool *pgxpool.Pool
-var webhookDBUnavailableReason string
-
-// resolveWebhookTestDatabaseURL returns the database URL for webhook package tests.
-// Precedence: SMITHERS_TEST_WEBHOOK_DATABASE_URL -> SMITHERS_TEST_DATABASE_URL -> default.
-func resolveWebhookTestDatabaseURL(getenv func(string) string) string {
-	if v := getenv("SMITHERS_TEST_WEBHOOK_DATABASE_URL"); v != "" {
-		return v
-	}
-	if v := getenv("SMITHERS_TEST_DATABASE_URL"); v != "" {
-		return v
-	}
-	return defaultWebhookTestDatabaseURL
-}
+// webhookSuite is this test binary's own product database.
+var webhookSuite = postgresfixture.Suite{MaxConns: 5}
 
 func TestMain(m *testing.M) {
-	flag.Parse()
-	// Unit tests must not create or reset a database just because a local
-	// PostgreSQL server happens to be reachable.
-	if testing.Short() {
-		os.Exit(m.Run())
-	}
-	databaseURL := resolveWebhookTestDatabaseURL(os.Getenv)
-
-	parsed, err := url.Parse(databaseURL)
-	if err != nil {
-		webhookDBUnavailableReason = fmt.Sprintf("bad database URL: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-	dbName := strings.TrimPrefix(parsed.Path, "/")
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-	adminConn, err := pgx.Connect(context.Background(), adminURL.String())
-	if err != nil {
-		webhookDBUnavailableReason = fmt.Sprintf("cannot connect to admin database: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-	var exists bool
-	_ = adminConn.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, dbName).Scan(&exists)
-	if !exists {
-		_, _ = adminConn.Exec(context.Background(), `CREATE DATABASE "`+strings.ReplaceAll(dbName, `"`, `""`)+`"`)
-	}
-	adminConn.Close(context.Background())
-
-	schemaConn, err := pgx.Connect(context.Background(), databaseURL)
-	if err != nil {
-		webhookDBUnavailableReason = fmt.Sprintf("cannot connect to test db for schema setup: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`
-	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
-		webhookDBUnavailableReason = fmt.Sprintf("schema setup failed: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-	schemaConn.Close(context.Background())
-
-	cfg, err := pgxpool.ParseConfig(databaseURL)
-	if err != nil {
-		webhookDBUnavailableReason = fmt.Sprintf("bad pool config: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-	cfg.MaxConns = 5
-	cfg.MinConns = 1
-	webhookTestPool, err = pgxpool.NewWithConfig(context.Background(), cfg)
-	if err != nil {
-		webhookDBUnavailableReason = fmt.Sprintf("cannot create pool: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-
-	if err := product.Apply(context.Background(), webhookTestPool); err != nil {
-		fmt.Fprintf(os.Stderr, "product migration setup failed: %v\n", err)
-		webhookTestPool.Close()
-		os.Exit(1)
-	}
-
-	code := m.Run()
-	webhookTestPool.Close()
-	os.Exit(code)
+	os.Exit(webhookSuite.Run(m))
 }
 
 func TestPollQueue_SkipsLockedRows(t *testing.T) {
@@ -227,14 +142,9 @@ func TestUpdateTaskStatus_SetsRetryAndFinalFailure(t *testing.T) {
 
 func newWebhookQueries(t *testing.T) (*db.Queries, *pgxpool.Pool) {
 	t.Helper()
-	if webhookTestPool == nil {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatalf("required product database unavailable: %s", webhookDBUnavailableReason)
-		}
-		t.Skipf("webhook integration DB unavailable: %s", webhookDBUnavailableReason)
-	}
-	truncateWebhookTables(t, webhookTestPool)
-	return db.New(webhookTestPool), webhookTestPool
+	pool := webhookSuite.Pool(t)
+	truncateWebhookTables(t, pool)
+	return db.New(pool), pool
 }
 
 func truncateWebhookTables(t *testing.T, pool *pgxpool.Pool) {

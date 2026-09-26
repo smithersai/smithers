@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,15 +20,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/testkit/testdb"
 )
 
 // Exercises the public API of the actual apps/backend composition and listener.
 func TestOwnerChatHTTPIntegration(t *testing.T) {
-	adminURL := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if adminURL == "" {
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL")
+	if testdb.ServerURL() == "" {
+		testdb.Unavailable(t, testdb.ErrNotConfigured)
 	}
 	node, err := exec.LookPath("node")
 	require.NoError(t, err)
@@ -77,19 +76,7 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	manifestPath := filepath.Join(bundleDir, "flow-hosts.json")
 	require.NoError(t, os.WriteFile(manifestPath, manifestBytes, 0o600))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
-	defer cancel()
-	admin, err := pgx.Connect(ctx, adminURL)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = admin.Close(context.Background()) })
-	dbName := "l3b_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	_, err = admin.Exec(ctx, `CREATE DATABASE `+dbName)
-	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = admin.Exec(context.Background(), `DROP DATABASE IF EXISTS `+dbName+` WITH (FORCE)`) })
-	databaseConfig, err := url.Parse(adminURL)
-	require.NoError(t, err)
-	databaseConfig.Path = "/" + dbName
-	databaseURL := databaseConfig.String()
+	databaseURL := testdb.New(t).URL
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := listener.Addr().String()

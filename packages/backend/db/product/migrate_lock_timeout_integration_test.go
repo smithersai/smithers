@@ -2,11 +2,7 @@ package product
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
-	"net/url"
-	"os"
 	"slices"
 	"testing"
 	"time"
@@ -14,48 +10,28 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/internal/database"
+	"github.com/smithersai/smithers/packages/backend/testkit/testdb"
 )
 
+// newProductTestPool opens a pool on an empty database that exists for the
+// duration of the test.
 func newProductTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_PRODUCT_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
-	}
-	ctx := context.Background()
-	adminURL, err := url.Parse(raw)
+	config, err := pgxpool.ParseConfig(testdb.New(t).URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminURL.Path = "/postgres"
-	admin, err := pgx.Connect(ctx, adminURL.String())
+	config.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
+		database.ConfigureSQLCTypes(conn.TypeMap())
+		return nil
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var random [8]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		t.Fatal(err)
-	}
-	name := "smithers_product_" + hex.EncodeToString(random[:])
-	if _, err := admin.Exec(ctx, `CREATE DATABASE "`+name+`"`); err != nil {
-		t.Fatal(err)
-	}
-	dbURL := *adminURL
-	dbURL.Path = "/" + name
-	pool, err := pgxpool.New(ctx, dbURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		pool.Close()
-		if _, err := admin.Exec(ctx, `DROP DATABASE "`+name+`" WITH (FORCE)`); err != nil {
-			t.Errorf("drop test database: %v", err)
-		}
-		_ = admin.Close(ctx)
-	})
+	t.Cleanup(pool.Close)
 	return pool
 }
 

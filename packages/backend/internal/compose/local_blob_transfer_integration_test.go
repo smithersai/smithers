@@ -2,24 +2,20 @@ package compose
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/repository"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 // This test deliberately enters the ordinary local composition. It catches
@@ -27,17 +23,11 @@ import (
 // missing transfer route, missing native cross-origin preflight, and a leaked
 // filesystem ownership lock on in-process shutdown.
 func TestLocalBlobTransferComposed(t *testing.T) {
-	adminDSN := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
 	ffi := os.Getenv("SMITHERS_FFI_LIBRARY_PATH")
-	if adminDSN == "" || ffi == "" {
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL and SMITHERS_FFI_LIBRARY_PATH")
+	if ffi == "" {
+		t.Skip("set SMITHERS_FFI_LIBRARY_PATH")
 	}
-	ctx, stopSetup := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer stopSetup()
-	dbURL := localBlobTestDatabase(t, ctx, adminDSN)
-	migrationPool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	require.NoError(t, product.Apply(ctx, migrationPool))
+	migrationPool, dbURL := postgresfixture.NewProductDatabase(t)
 	migrationPool.Close()
 
 	local, err := repository.OpenLocal(repository.Config{
@@ -179,31 +169,4 @@ func TestLocalBlobTransferComposed(t *testing.T) {
 	require.Equal(t, http.StatusOK, restartedDownload.Code, "persisted signing key must keep issued URLs valid after restart")
 	require.Equal(t, "durable", restartedDownload.Body.String())
 	require.NoError(t, reopened.Close())
-}
-
-func localBlobTestDatabase(t *testing.T, ctx context.Context, rawDSN string) string {
-	t.Helper()
-	parsed, err := url.Parse(rawDSN)
-	require.NoError(t, err)
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-	admin, err := pgx.Connect(ctx, adminURL.String())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = admin.Close(closeCtx)
-	})
-	name := fmt.Sprintf("smithers_local_blob_%d", time.Now().UnixNano())
-	_, err = admin.Exec(ctx, `CREATE DATABASE "`+name+`"`)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		dropCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		_, err := admin.Exec(dropCtx, `DROP DATABASE "`+name+`" WITH (FORCE)`)
-		require.NoError(t, err)
-	})
-	productURL := *parsed
-	productURL.Path = "/" + name
-	return productURL.String()
 }

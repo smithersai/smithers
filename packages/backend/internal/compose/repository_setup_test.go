@@ -17,20 +17,14 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 func TestRepositorySetupHTTPPersistsAndReconnectsWithoutRuntimeLaunch(t *testing.T) {
-	dsn := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if dsn == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("product PostgreSQL URL required")
-		}
-		t.Skip("product PostgreSQL URL unavailable")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, dsn)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	ctx := context.Background()
 	var userID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES('owner','owner') RETURNING id`).Scan(&userID))

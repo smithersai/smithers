@@ -2,7 +2,6 @@ package revocation_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
+	"github.com/smithersai/smithers/packages/backend/testkit/testdb"
 )
 
 // Promoted from reviews/release-2026-09-13/evidence/shutdown_repro.go.txt
@@ -20,11 +20,7 @@ import (
 // reproduction showed pool.Close blocking for as long as the context stayed
 // uncancelled, which is what production's context.Background() parent did.
 func TestReleaseReviewPoolClosesAfterListenerStops(t *testing.T) {
-	dsn := os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("SMITHERS_TEST_DATABASE_URL is unset; this test needs PostgreSQL")
-	}
-	pool, err := pgxpool.New(context.Background(), dsn)
+	pool, err := pgxpool.New(context.Background(), testdb.New(t).URL)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

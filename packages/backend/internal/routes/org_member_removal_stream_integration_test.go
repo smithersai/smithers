@@ -15,11 +15,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
@@ -33,21 +31,9 @@ import (
 // member through OrgService.RemoveOrgMember, and the established stream must
 // end with a "revoked" event within the documented five-second bound.
 func TestOrgMemberRemoval_EndsPrivateRepositoryStream(t *testing.T) {
-	pool, err := resetRoutesIntegrationDatabase(routesIntegrationDatabaseURL())
-	require.NoError(t, err)
-	// Use the same type registration as database.NewPool: generated repository
-	// search vectors are strings, while pgx otherwise reads binary tsvectors.
-	poolConfig := pool.Config()
-	pool.Close()
-	poolConfig.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
-		database.ConfigureSQLCTypes(conn.TypeMap())
-		return nil
-	}
+	pool := setupRoutesIntegrationPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err = pgxpool.NewWithConfig(ctx, poolConfig)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
 	queries := db.New(pool)
 
 	owner := routesIntegrationCreateUser(t, pool, "org_owner")

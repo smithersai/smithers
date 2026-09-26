@@ -5,18 +5,20 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"fmt"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/admission"
 	"github.com/smithersai/smithers/packages/backend/commerce"
 	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/stretchr/testify/require"
-	"os"
-	"strings"
-	"testing"
-	"time"
+
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
+	"github.com/smithersai/smithers/packages/backend/testkit/testdb"
 )
 
 var _ routes.BillingRouteService = (commerce.Routes)(nil)
@@ -24,31 +26,11 @@ var _ commerce.Routes = (routes.BillingRouteService)(nil)
 
 func database(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_ADMISSION_TEST_ADMIN_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_ADMISSION_TEST_ADMIN_URL is required")
-		}
-		t.Skip("SMITHERS_ADMISSION_TEST_ADMIN_URL is not configured")
-	}
 	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, raw)
+	// Concurrent admission cases hold more connections than the default pool.
+	pool, err := postgresfixture.Open(ctx, testdb.New(t).URL, 8)
 	require.NoError(t, err)
-	name := "admission_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	_, err = admin.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize())
-	require.NoError(t, err)
-	cfg, err := pgxpool.ParseConfig(raw)
-	require.NoError(t, err)
-	cfg.ConnConfig.Database = name
-	cfg.MaxConns = 8
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		pool.Close()
-		_, err := admin.Exec(ctx, "DROP DATABASE "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
-		require.NoError(t, err)
-		require.NoError(t, admin.Close(ctx))
-	})
+	t.Cleanup(pool.Close)
 	require.NoError(t, product.Apply(ctx, pool))
 	return pool
 }

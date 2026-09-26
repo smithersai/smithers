@@ -992,8 +992,7 @@ func TestLanding_F_PureHelpers(t *testing.T) {
 
 // TestLanding_F_BeginCreateTxError drives the pgx tx-manager Begin failure path.
 func TestLanding_F_BeginCreateTxError(t *testing.T) {
-	_ = getAgentTestPool(t) // gate on DB availability
-	cfg, err := pgxpool.ParseConfig(getTestDatabaseURL())
+	cfg, err := pgxpool.ParseConfig(servicesSuite.URL(t))
 	require.NoError(t, err)
 	closed, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	require.NoError(t, err)

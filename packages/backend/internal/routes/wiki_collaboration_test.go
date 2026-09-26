@@ -6,14 +6,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -21,6 +19,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
+	"github.com/smithersai/smithers/packages/backend/testkit/testdb"
 )
 
 type wikiRoutesFixture struct {
@@ -93,28 +92,9 @@ func TestWikiCollaborationHTTPBodyAndCursor(t *testing.T) {
 }
 
 func TestWikiCollaborationSSEReplayLiveAndRevocation(t *testing.T) {
-	databaseURL := os.Getenv("SMITHERS_WIKI_STREAM_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_WIKI_STREAM_TEST_DATABASE_URL is required")
-		}
-		t.Skip("SMITHERS_WIKI_STREAM_TEST_DATABASE_URL opts into real broker integration")
-	}
+	databaseURL := testdb.New(t).URL
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	config, err := pgxpool.ParseConfig(databaseURL)
-	require.NoError(t, err)
-	adminConfig := config.Copy()
-	adminConfig.ConnConfig.Database = "postgres"
-	admin, err := pgxpool.NewWithConfig(ctx, adminConfig)
-	require.NoError(t, err)
-	defer admin.Close()
-	var exists bool
-	require.NoError(t, admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname=$1)`, config.ConnConfig.Database).Scan(&exists))
-	if !exists {
-		_, err = admin.Exec(ctx, `CREATE DATABASE `+pgx.Identifier{config.ConnConfig.Database}.Sanitize())
-		require.NoError(t, err)
-	}
 	pool, err := pgxpool.New(ctx, databaseURL)
 	require.NoError(t, err)
 	defer pool.Close()

@@ -52,9 +52,8 @@ func TestWikiCollaboration_PostgresNativeLifecycle(t *testing.T) {
 	if library == "" {
 		t.Skip("SMITHERS_WIKI_TEST_FFI opts into native+Postgres integration")
 	}
-	require.NotNil(t, agentTestDB, "requested native integration requires a working Postgres schema")
 	ctx := context.Background()
-	pool := agentTestDB
+	pool := getAgentTestPool(t)
 	q := db.New(pool)
 	userID, repoID := setupTestUserAndRepo(t, pool)
 	actor, err := q.GetUserByID(ctx, userID)
@@ -190,9 +189,8 @@ func TestWikiCollaboration_ProjectionFencesParentRename(t *testing.T) {
 	if os.Getenv("SMITHERS_WIKI_TEST_FFI") == "" {
 		t.Skip("native integration opt-in")
 	}
-	require.NotNil(t, agentTestDB)
 	ctx := context.Background()
-	pool := agentTestDB
+	pool := getAgentTestPool(t)
 	q := db.New(pool)
 	user, repo := setupTestUserAndRepo(t, pool)
 	page, err := q.CreateWikiPage(ctx, db.CreateWikiPageParams{RepositoryID: repo, AuthorID: user, Slug: "home", Title: "Home"})

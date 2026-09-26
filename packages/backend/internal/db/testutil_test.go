@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -18,106 +17,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/db/product"
-	"github.com/smithersai/smithers/packages/backend/internal/database"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
-const defaultTestDatabaseURL = "postgres://smithers:smithers@localhost:5432/smithers_test?sslmode=disable"
-
-// sharedPool is initialized once in TestMain and reused across all tests.
-var sharedPool *pgxpool.Pool
-
-// resolveDBTestDatabaseURL returns the database URL for db package tests.
-// Precedence: SMITHERS_TEST_DB_DATABASE_URL -> SMITHERS_TEST_DATABASE_URL -> default.
-func resolveDBTestDatabaseURL(getenv func(string) string) string {
-	if v := getenv("SMITHERS_TEST_DB_DATABASE_URL"); v != "" {
-		return v
-	}
-	if v := getenv("SMITHERS_TEST_DATABASE_URL"); v != "" {
-		return v
-	}
-	return defaultTestDatabaseURL
-}
+// dbSuite is this test binary's own product database; sharedPool is its pool,
+// reused across all tests.
+var (
+	dbSuite    = postgresfixture.Suite{MaxConns: 20, Whole: true}
+	sharedPool *pgxpool.Pool
+)
 
 func TestMain(m *testing.M) {
-	databaseURL := resolveDBTestDatabaseURL(os.Getenv)
-
-	// Ensure the test database exists.
-	parsed, err := url.Parse(databaseURL)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bad database URL: %v\n", err)
-		os.Exit(1)
-	}
-	dbName := strings.TrimPrefix(parsed.Path, "/")
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-	adminConn, err := pgx.Connect(context.Background(), adminURL.String())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot connect to admin database: %v\n", err)
-		os.Exit(1)
-	}
-	var exists bool
-	_ = adminConn.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, dbName).Scan(&exists)
-	if !exists {
-		_, _ = adminConn.Exec(context.Background(), `CREATE DATABASE "`+strings.ReplaceAll(dbName, `"`, `""`)+`"`)
-	}
-	adminConn.Close(context.Background())
-
-	// Each canonical query test starts from exactly the product migrations.
-	schemaConn, err := pgx.Connect(context.Background(), databaseURL)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot connect to test db for schema setup: %v\n", err)
-		os.Exit(1)
-	}
-	// Terminate all other connections to the test database before dropping the
-	// schema. Concurrent connections holding any lock on public-schema objects
-	// will cause DROP SCHEMA CASCADE to deadlock.
-	_, _ = schemaConn.Exec(context.Background(),
-		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`)
-	if _, err := schemaConn.Exec(context.Background(), `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`); err != nil {
-		fmt.Fprintf(os.Stderr, "schema setup failed: %v\n", err)
-		os.Exit(1)
-	}
-	schemaConn.Close(context.Background())
-
-	// Create a shared pool for all tests.
-	cfg, err := pgxpool.ParseConfig(databaseURL)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bad pool config: %v\n", err)
-		os.Exit(1)
-	}
-	cfg.MaxConns = 20
-	cfg.MinConns = 2
-	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
-		database.ConfigureSQLCTypes(conn.TypeMap())
-		return nil
-	}
-	sharedPool, err = pgxpool.NewWithConfig(context.Background(), cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot create pool: %v\n", err)
-		os.Exit(1)
-	}
-	if err := product.Apply(context.Background(), sharedPool); err != nil {
-		fmt.Fprintf(os.Stderr, "product migration setup failed: %v\n", err)
-		sharedPool.Close()
-		os.Exit(1)
-	}
-
-	if err := resetTestData(context.Background(), sharedPool); err != nil {
-		fmt.Fprintf(os.Stderr, "initial test database cleanup failed: %v\n", err)
-		sharedPool.Close()
-		os.Exit(1)
-	}
-
-	code := m.Run()
-
-	if err := resetTestData(context.Background(), sharedPool); err != nil {
-		fmt.Fprintf(os.Stderr, "final test database cleanup failed: %v\n", err)
-		code = 1
-	}
-
-	sharedPool.Close()
-	os.Exit(code)
+	os.Exit(dbSuite.Run(m, func(ctx context.Context, pool *pgxpool.Pool) error {
+		sharedPool = pool
+		return resetTestData(ctx, pool)
+	}))
 }
 
 func resetTestData(ctx context.Context, db DBTX) error {

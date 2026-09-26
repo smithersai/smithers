@@ -12,19 +12,12 @@ import (
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/app"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/repository"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 func TestStartServesReadyAndBootstrapFromProductPostgres(t *testing.T) {
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_PRODUCT_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
-	}
-	_, databaseURL := postgresfixture.NewProductDatabase(t, raw)
+	_, databaseURL := postgresfixture.NewProductDatabase(t)
 	ffi := os.Getenv("SMITHERS_FFI_LIBRARY_PATH")
 	if ffi == "" {
 		t.Fatal("SMITHERS_FFI_LIBRARY_PATH is required for the real repository engine")

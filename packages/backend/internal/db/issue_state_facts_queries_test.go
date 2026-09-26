@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -81,7 +80,7 @@ func TestIssueStateFactsSerializeCommittedCounterAndNotify(t *testing.T) {
 	require.NoError(t, err)
 	second, err := q.CreateIssue(ctx, CreateIssueParams{RepositoryID: repo, AuthorID: user, Title: "two"})
 	require.NoError(t, err)
-	listener, err := pgx.Connect(ctx, resolveDBTestDatabaseURL(os.Getenv))
+	listener, err := pgx.Connect(ctx, dbSuite.URL(t))
 	require.NoError(t, err)
 	defer listener.Close(ctx)
 	_, err = listener.Exec(ctx, fmt.Sprintf("LISTEN issue_state_facts_%d", repo))

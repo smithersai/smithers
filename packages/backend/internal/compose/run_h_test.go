@@ -4,30 +4,25 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/email"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 // ---------------------------------------------------------------------------
@@ -64,104 +59,21 @@ func (b *syncBuffer) String() string {
 }
 
 // ---------------------------------------------------------------------------
-// DB fixture (mirrors internal/db/testutil_test.go)
+// DB fixture
 // ---------------------------------------------------------------------------
 
-const defaultCmdServerTestDatabaseURL = "postgres://smithers:smithers@localhost:5432/smithers_test_cmdserver?sslmode=disable"
+// composeTestDatabase is this test binary's own product database.
+var composeTestDatabase postgresfixture.Suite
 
-var (
-	cmdServerSchemaOnce sync.Once
-	cmdServerSchemaErr  error
-)
-
-func resolveCmdServerTestDatabaseURL() string {
-	if v := os.Getenv("SMITHERS_TEST_CMDSERVER_DATABASE_URL"); v != "" {
-		return v
-	}
-	if v := os.Getenv("SMITHERS_TEST_DATABASE_URL"); v != "" {
-		return v
-	}
-	return defaultCmdServerTestDatabaseURL
+func TestMain(m *testing.M) {
+	os.Exit(composeTestDatabase.Run(m))
 }
 
-// testDatabaseURL resolves the cmd/server test database URL, creates the
-// database if missing and applies the product migrations once. If Postgres is
-// unreachable the calling test is skipped (coverage is only measured with
-// SMITHERS_TEST_DATABASE_URL).
+// testDatabaseURL returns the package's product database, skipping the test
+// (or failing it when database tests are required) without a server.
 func testDatabaseURL(t *testing.T) string {
 	t.Helper()
-	dsn := resolveCmdServerTestDatabaseURL()
-
-	cmdServerSchemaOnce.Do(func() {
-		cmdServerSchemaErr = setupCmdServerSchema(dsn)
-	})
-	if cmdServerSchemaErr != nil {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatalf("required compose Postgres unavailable: %v", cmdServerSchemaErr)
-		}
-		t.Skipf("skipping run() test: Postgres unavailable: %v", cmdServerSchemaErr)
-	}
-	return dsn
-}
-
-func setupCmdServerSchema(dsn string) error {
-	parsed, err := url.Parse(dsn)
-	if err != nil {
-		return fmt.Errorf("bad database URL: %w", err)
-	}
-	dbName := strings.TrimPrefix(parsed.Path, "/")
-
-	// This shared Postgres may be under concurrent load from sibling coverage
-	// runs, so use a generous deadline and retry once on lock contention.
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		lastErr = applyCmdServerSchemaOnce(dsn, parsed, dbName)
-		if lastErr == nil {
-			return nil
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return lastErr
-}
-
-func applyCmdServerSchemaOnce(dsn string, parsed *url.URL, dbName string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-	adminConn, err := pgx.Connect(ctx, adminURL.String())
-	if err != nil {
-		return fmt.Errorf("connect admin db: %w", err)
-	}
-	var exists bool
-	_ = adminConn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, dbName).Scan(&exists)
-	if !exists {
-		_, _ = adminConn.Exec(ctx, `CREATE DATABASE "`+strings.ReplaceAll(dbName, `"`, `""`)+`"`)
-	}
-	// Terminate any lingering backends on the target DB (from a previous run)
-	// so DROP SCHEMA does not block on their locks.
-	_, _ = adminConn.Exec(ctx,
-		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`, dbName)
-	_ = adminConn.Close(ctx)
-
-	schemaConn, err := pgx.Connect(ctx, dsn)
-	if err != nil {
-		return fmt.Errorf("connect test db: %w", err)
-	}
-	defer schemaConn.Close(ctx)
-	// Fail fast on lock contention instead of hanging for the full deadline.
-	_, _ = schemaConn.Exec(ctx, `SET lock_timeout = '10s'`)
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`
-	if _, err := schemaConn.Exec(ctx, combined); err != nil {
-		return fmt.Errorf("apply schema: %w", err)
-	}
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-	return product.Apply(ctx, pool)
+	return composeTestDatabase.URL(t)
 }
 
 // ---------------------------------------------------------------------------

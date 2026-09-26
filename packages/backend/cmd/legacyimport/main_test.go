@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 const testArchive = `{
@@ -42,14 +42,7 @@ func runCLI(t *testing.T, args ...string) (report, error) {
 }
 
 func TestLegacyImportCommand(t *testing.T) {
-	raw := os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_TEST_DATABASE_URL for PostgreSQL import tests")
-	}
-	_, dbURL := postgresfixture.NewProductDatabase(t, raw)
+	_, dbURL := postgresfixture.NewProductDatabase(t)
 	t.Setenv("DATABASE_URL", dbURL)
 	path := filepath.Join(t.TempDir(), "archive.json")
 	if err := os.WriteFile(path, []byte(testArchive), 0o600); err != nil {

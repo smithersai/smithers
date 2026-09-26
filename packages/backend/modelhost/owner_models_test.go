@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,10 +13,10 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/modelhost"
 	"github.com/smithersai/smithers/packages/backend/ports"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 const ownerModelsSecretKey = "owner-models-test-key"
@@ -32,14 +31,7 @@ type ownerModelsFixture struct {
 
 func newOwnerModelsFixture(t *testing.T) ownerModelsFixture {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_PRODUCT_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
-	}
-	pool, url := postgresfixture.NewProductDatabase(t, raw)
+	pool, url := postgresfixture.NewProductDatabase(t)
 	ctx := context.Background()
 	var owner, repo int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users (username,lower_username) VALUES ('modelowner','modelowner') RETURNING id`).Scan(&owner))

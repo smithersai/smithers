@@ -17,13 +17,11 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
-	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
@@ -47,18 +45,7 @@ type sseTicketRevocationFixture struct {
 func setupSSETicketRevocationFixture(t *testing.T) *sseTicketRevocationFixture {
 	t.Helper()
 
-	pool, err := resetRoutesIntegrationDatabase(routesIntegrationDatabaseURL())
-	require.NoError(t, err)
-	// The shared reset helper omits the production sqlc codecs.
-	poolConfig := pool.Config()
-	pool.Close()
-	poolConfig.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
-		database.ConfigureSQLCTypes(conn.TypeMap())
-		return nil
-	}
-	pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
+	pool := setupRoutesIntegrationPool(t)
 	queries := db.New(pool)
 
 	ctx, cancel := context.WithCancel(context.Background())

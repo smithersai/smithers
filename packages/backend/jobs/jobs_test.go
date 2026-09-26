@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -17,93 +15,26 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
-var (
-	jobsTestDatabase    *pgxpool.Pool
-	jobsTestDatabaseURL string
-)
+// jobsSuite is this test binary's own database; each test adds a schema.
+var jobsSuite = postgresfixture.Suite{Empty: true}
 
-func TestMain(main *testing.M) {
-	flag.Parse()
-	dsn := strings.TrimSpace(os.Getenv("SMITHERS_JOBS_TEST_DATABASE_URL"))
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL"))
-	}
-	if dsn == "" || testing.Short() {
-		os.Exit(main.Run())
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	targetConfig, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		cancel()
-		fmt.Fprintf(os.Stderr, "jobs test PostgreSQL configuration invalid: %v\n", err)
-		os.Exit(1)
-	}
-	databaseName := "smithers_issue1661_jobs_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	adminConfig, err := pgx.ParseConfig(dsn)
-	if err != nil {
-		cancel()
-		fmt.Fprintf(os.Stderr, "jobs test PostgreSQL admin configuration invalid: %v\n", err)
-		os.Exit(1)
-	}
-	adminConfig.Database = "postgres"
-	admin, err := pgx.ConnectConfig(ctx, adminConfig)
-	databaseCreated := false
-	if err == nil {
-		_, err = admin.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{databaseName}.Sanitize())
-		databaseCreated = err == nil
-	}
-	if err == nil {
-		targetConfig.ConnConfig.Database = databaseName
-		parsedURL, parseURLErr := url.Parse(dsn)
-		if parseURLErr != nil {
-			err = parseURLErr
-		} else {
-			parsedURL.Path = "/" + databaseName
-			jobsTestDatabaseURL = parsedURL.String()
-			jobsTestDatabase, err = pgxpool.NewWithConfig(ctx, targetConfig)
-		}
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "jobs test database setup failed: %v\n", err)
-		if admin != nil {
-			if databaseCreated {
-				_, _ = admin.Exec(ctx, "DROP DATABASE "+pgx.Identifier{databaseName}.Sanitize()+" WITH (FORCE)")
-			}
-			_ = admin.Close(context.Background())
-		}
-		os.Exit(1)
-	}
-	cancel()
-	code := main.Run()
-	jobsTestDatabase.Close()
-	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), 60*time.Second)
-	if _, dropErr := admin.Exec(cleanupContext, "DROP DATABASE "+pgx.Identifier{databaseName}.Sanitize()+" WITH (FORCE)"); dropErr != nil {
-		fmt.Fprintf(os.Stderr, "jobs test database cleanup failed: %v\n", dropErr)
-		if code == 0 {
-			code = 1
-		}
-	}
-	cleanupCancel()
-	_ = admin.Close(context.Background())
-	os.Exit(code)
+func TestMain(m *testing.M) {
+	os.Exit(jobsSuite.Run(m))
 }
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	if jobsTestDatabase == nil {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("requires SMITHERS_JOBS_TEST_DATABASE_URL or SMITHERS_TEST_DATABASE_URL")
-		}
-		t.Skip("requires SMITHERS_JOBS_TEST_DATABASE_URL or SMITHERS_TEST_DATABASE_URL")
-	}
+	suitePool := jobsSuite.Pool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	schemaName := "case_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	_, err := jobsTestDatabase.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schemaName}.Sanitize())
+	_, err := suitePool.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schemaName}.Sanitize())
 	require.NoError(t, err)
-	targetConfig, err := pgxpool.ParseConfig(jobsTestDatabaseURL)
+	targetConfig, err := pgxpool.ParseConfig(jobsSuite.URL(t))
 	require.NoError(t, err)
 	targetConfig.ConnConfig.RuntimeParams["search_path"] = schemaName
 	pool, err := pgxpool.NewWithConfig(ctx, targetConfig)
@@ -117,7 +48,7 @@ func newTestStore(t *testing.T) *Store {
 		pool.Close()
 		dropContext, dropCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer dropCancel()
-		_, _ = jobsTestDatabase.Exec(dropContext, "DROP SCHEMA "+pgx.Identifier{schemaName}.Sanitize()+" CASCADE")
+		_, _ = suitePool.Exec(dropContext, "DROP SCHEMA "+pgx.Identifier{schemaName}.Sanitize()+" CASCADE")
 	})
 	return store
 }

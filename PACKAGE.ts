@@ -203,9 +203,9 @@ const go = Smithers.CiToolchain.Go({ release: "1.26.8" })
 const foundry = Smithers.CiToolchain.Foundry({ release: "v1.8.1" })
 const dockerImageStore = Smithers.CiToolchain.Docker({ imageStore: "containerd" })
 
-// Hosted Go adapters need a real database; each package uses a separate name
-// because its TestMain may rebuild the schema. This target runs only in the
-// required Linux backend job, not in the cross-platform package matrix.
+// Hosted Go adapters need a real database server; each test suite creates its
+// own database on it. This target runs only in the required Linux backend job,
+// not in the cross-platform package matrix.
 const backendPostgres = Smithers.Docker.Service({
   image: "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
   env: { POSTGRES_USER: "smithers", POSTGRES_PASSWORD: "smithers-backend-test" },
@@ -216,9 +216,6 @@ const backendPostgres = Smithers.Docker.Service({
   },
   stop: { signal: "SIGTERM", grace: "10s" }
 })
-
-const backendDatabaseURL = (name: string) =>
-  `postgres://smithers:smithers-backend-test@127.0.0.1:55435/${name}?sslmode=disable`
 
 // Native FFI needs its own compiler floor. The flows-jj wasm artifact keeps
 // the repository's 1.89.0 pin; `rustup run 1.98.0 cargo` cannot change it.
@@ -246,35 +243,14 @@ const backendGoModules = Smithers.Go.ModDownload({
 })
 
 const backendGo = Smithers.Shell.Test({
-  // Services TestMain prepares the shared cluster fixture before clusterservices
-  // attaches. Only Plue-owned Terraform/monitoring source tests live in infra.
-  shell: "export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; python3 -B -m unittest scripts/test_check_go_boundaries.py || exit $?; bash scripts/check-public-backend-boundary.sh || exit $?; unformatted=$(gofmt -l packages/backend apps/backend distribution) || exit $?; test -z \"$unformatted\" || { printf 'gofmt -w needed:\\n%s\\n' \"$unformatted\"; exit 1; }; go build ./packages/backend/... ./apps/backend/... ./distribution/... || exit $?; go test -count=1 ./packages/backend/internal/services || exit $?; packages=$(go list ./packages/backend/...) || exit $?; shared=$(printf '%s\\n' \"$packages\" | grep -vE '/internal/infra(/alerts)?$|/internal/services$') || exit $?; test -n \"$shared\" || exit 1; go vet $shared ./apps/backend/... ./distribution/... || exit $?; go test -count=1 $shared ./apps/backend/... ./distribution/...",
+  shell: "export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; python3 -B -m unittest scripts/test_check_go_boundaries.py || exit $?; bash scripts/check-public-backend-boundary.sh || exit $?; unformatted=$(gofmt -l packages/backend apps/backend distribution) || exit $?; test -z \"$unformatted\" || { printf 'gofmt -w needed:\\n%s\\n' \"$unformatted\"; exit 1; }; go build ./packages/backend/... ./apps/backend/... ./distribution/... || exit $?; go vet ./packages/backend/... ./apps/backend/... ./distribution/... || exit $?; go test -count=1 ./packages/backend/... ./apps/backend/... ./distribution/...",
   env: {
-    GOFLAGS: "-p=1 -buildvcs=false -mod=readonly",
+    GOFLAGS: "-buildvcs=false -mod=readonly",
     GOMAXPROCS: "2",
     SMITHERS_REQUIRE_DATABASE_TESTS: "1",
     GOPROXY: "off",
-    // The composition test creates its own isolated database through this admin connection.
-    SMITHERS_PRODUCT_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
-    SMITHERS_ADMISSION_TEST_ADMIN_URL: backendDatabaseURL("postgres"),
-    SMITHERS_TEST_DEPLOYMENTDB_DATABASE_URL: backendDatabaseURL("backend_deploymentdb"),
-    SMITHERS_TEST_DB_DATABASE_URL: backendDatabaseURL("backend_db"),
-    SMITHERS_ROUTES_TEST_DATABASE_URL: backendDatabaseURL("backend_routes"),
-    SMITHERS_PROCESS_RUNTIME_TEST_DATABASE_URL: backendDatabaseURL("backend_routes"),
-    SMITHERS_WIKI_STREAM_TEST_DATABASE_URL: backendDatabaseURL("backend_wiki_stream"),
-    SMITHERS_TEST_DATABASE_URL: backendDatabaseURL("backend_control"),
-    SMITHERS_TEST_CMDSERVER_DATABASE_URL: backendDatabaseURL("backend_compose"),
-    SMITHERS_RUNNER_TEST_DATABASE_URL: backendDatabaseURL("backend_runner"),
-    SMITHERS_SERVICES_TEST_DATABASE_URL: backendDatabaseURL("backend_services"),
-    SMITHERS_TEST_ADMIN_CLI_DATABASE_URL: backendDatabaseURL("backend_services"),
-    SMITHERS_CLUSTER_TEST_DATABASE_URL: backendDatabaseURL("backend_services"),
-    // Each suite isolates itself: flowdispatch in a fresh schema, flowhost and
-    // jobs in a fresh database created through this admin connection.
-    SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
-    SMITHERS_FLOWHOST_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
-    SMITHERS_JOBS_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
-    // The chat suite creates and drops its own database through this admin connection.
-    SMITHERS_CHAT_TEST_DATABASE_URL: backendDatabaseURL("postgres")
+    // Every suite creates and drops its own databases through this server.
+    SMITHERS_TEST_DATABASE_URL: "postgres://smithers:smithers-backend-test@127.0.0.1:55435/postgres?sslmode=disable"
   },
   data: [
     backendGoModules,

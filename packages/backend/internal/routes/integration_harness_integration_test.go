@@ -13,30 +13,26 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
-	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 const (
 	routesIntegrationApprovalDecidePerMin = 10
-	routesIntegrationDefaultDatabaseURL   = "postgres://smithers:smithers@127.0.0.1:5432/smithers_test_routes?sslmode=disable"
 )
 
 type routesIntegrationServerOptions struct {
@@ -63,117 +59,8 @@ type routesIntegrationRepo struct {
 
 func setupRoutesIntegrationPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-
-	if testing.Short() {
-		t.Skip("skipping DB integration test in short mode")
-	}
-
-	pool, err := resetRoutesIntegrationDatabase(routesIntegrationDatabaseURL())
-	if err != nil {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatalf("required routes database unavailable: %v", err)
-		}
-		t.Skipf("skipping DB integration test: %v", err)
-	}
-	t.Cleanup(func() { pool.Close() })
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	return pool
-}
-
-func routesIntegrationDatabaseURL() string {
-	if v := strings.TrimSpace(os.Getenv("SMITHERS_ROUTES_TEST_DATABASE_URL")); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL")); v != "" {
-		return v
-	}
-	return routesIntegrationDefaultDatabaseURL
-}
-
-func resetRoutesIntegrationDatabase(databaseURL string) (*pgxpool.Pool, error) {
-	parsed, err := url.Parse(databaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("bad database URL: %w", err)
-	}
-
-	dbName := strings.TrimPrefix(parsed.Path, "/")
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-
-	adminConn, err := pgx.Connect(context.Background(), adminURL.String())
-	if err != nil {
-		return nil, fmt.Errorf("cannot connect to admin database: %w", err)
-	}
-	defer adminConn.Close(context.Background())
-
-	var exists bool
-	if err := adminConn.QueryRow(
-		context.Background(),
-		`SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`,
-		dbName,
-	).Scan(&exists); err != nil {
-		return nil, fmt.Errorf("check database existence: %w", err)
-	}
-	if !exists {
-		if _, err := adminConn.Exec(
-			context.Background(),
-			`CREATE DATABASE "`+strings.ReplaceAll(dbName, `"`, `""`)+`"`,
-		); err != nil {
-			return nil, fmt.Errorf("create database: %w", err)
-		}
-	}
-
-	schemaBytes, err := os.ReadFile(routesIntegrationSchemaPath())
-	if err != nil {
-		return nil, fmt.Errorf("read schema: %w", err)
-	}
-
-	schemaConn, err := pgx.Connect(context.Background(), databaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("connect to test database: %w", err)
-	}
-	defer schemaConn.Close(context.Background())
-
-	if _, err := schemaConn.Exec(
-		context.Background(),
-		`SELECT pg_terminate_backend(pid)
-		 FROM pg_stat_activity
-		 WHERE datname = current_database()
-		   AND pid <> pg_backend_pid()`,
-	); err != nil {
-		return nil, fmt.Errorf("terminate existing connections: %w", err)
-	}
-
-	combined := `DROP SCHEMA IF EXISTS plue_storage CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
-	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
-		return nil, fmt.Errorf("reset schema: %w", err)
-	}
-
-	cfg, err := pgxpool.ParseConfig(databaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("bad pool config: %w", err)
-	}
-	// Register the sqlc-specific codecs (tsvector and friends) exactly as the
-	// production pool does; without them repository lookups through the real
-	// queries fail to scan and every route under test answers 500.
-	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
-		database.ConfigureSQLCTypes(conn.TypeMap())
-		return nil
-	}
-
-	return pgxpool.NewWithConfig(context.Background(), cfg)
-}
-
-func routesIntegrationSchemaPath() string {
-	candidates := []string{
-		filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"),
-		filepath.Join("db", "cluster", "sqlc_schema.sql"),
-	}
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-	return candidates[0]
 }
 
 func setupRoutesIntegrationServer(t *testing.T, queries *db.Queries, opts routesIntegrationServerOptions) (*httptest.Server, *http.Client) {

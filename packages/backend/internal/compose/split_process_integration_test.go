@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,7 +19,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 // splitProcessEnvironment configures a single-owner product whose repository
@@ -32,14 +31,7 @@ func splitProcessEnvironment(t *testing.T) (repositoryURL string, repositoryHeal
 
 func splitProcessDatabase(t *testing.T) (repositoryURL string, repositoryHealthChecks *atomic.Int32, pool *pgxpool.Pool) {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_PRODUCT_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
-	}
-	pool, databaseURL := postgresfixture.NewProductDatabase(t, raw)
+	pool, databaseURL := postgresfixture.NewProductDatabase(t)
 	var checks atomic.Int32
 	repoHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {

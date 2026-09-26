@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,20 +11,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/modelprice"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_TEST_DATABASE_URL for PostgreSQL credit tests")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	return pool
 }
 

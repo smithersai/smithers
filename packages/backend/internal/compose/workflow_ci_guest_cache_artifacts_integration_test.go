@@ -27,9 +27,9 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/runtimeports"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 // smithers#1768: a sandbox-plane CI job restores and saves its `cache:`
@@ -38,22 +38,12 @@ import (
 // real start and poll commands with bash in a private directory, so the
 // shipped job script and the smithers-ci helper are what execute.
 func TestNixCIGuestCacheAndArtifactsPostgres(t *testing.T) {
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		raw = os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	}
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("PostgreSQL required")
-		}
-		t.Skip("PostgreSQL not configured")
-	}
 	for _, tool := range []string{"bash", "python3", "tail"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s is required to run the fake CI guest", tool)
 		}
 	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	ctx := context.Background()
 	q := db.New(pool)
 

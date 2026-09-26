@@ -54,6 +54,8 @@ another product composition root.
 - `packages/backend/ssh`
 - `packages/backend/telemetry`
 - `packages/backend/testkit`
+- `packages/backend/testkit/postgresfixture`
+- `packages/backend/testkit/testdb`
 - `packages/backend/webapp`
 - `packages/backend/webhooks`
 - `packages/backend/workspace`
@@ -98,7 +100,6 @@ needed by adapters without copying product queries or schemas.
 - `packages/backend/internal/smitherscli`
 - `packages/backend/internal/sse`
 - `packages/backend/internal/ssh`
-- `packages/backend/internal/testutil/postgresfixture`
 - `packages/backend/internal/webhook`
 - `packages/backend/internal/webhooks`
 

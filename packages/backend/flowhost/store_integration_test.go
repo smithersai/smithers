@@ -3,7 +3,6 @@ package flowhost
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -15,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 type testCodec struct{}
@@ -34,14 +33,7 @@ func (f stopFunc) StopFlowHost(ctx context.Context, b Binding) error { return f(
 
 func hostTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_FLOWHOST_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_FLOWHOST_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_FLOWHOST_TEST_DATABASE_URL for real PostgreSQL acceptance")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	return pool
 }
 func hostFixture(t *testing.T, pool *pgxpool.Pool) (Authority, Catalog) {

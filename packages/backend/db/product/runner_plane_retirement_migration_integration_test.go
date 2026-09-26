@@ -2,58 +2,18 @@ package product
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"net/url"
-	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Migration 0031 retires the runner plane: every runner-plane run moves to the
 // sandbox plane, a run a runner was executing is requeued with the tasks the
 // runner held, and settled tasks and finished runs keep their results.
 func TestRunnerPlaneRetirementMigrationMovesRunsToSandbox(t *testing.T) {
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_PRODUCT_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
-	}
+	pool := newProductTestPool(t)
 	ctx := context.Background()
-	adminURL, err := url.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	adminURL.Path = "/postgres"
-	admin, err := pgx.Connect(ctx, adminURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Close(ctx)
-	var random [8]byte
-	if _, err = rand.Read(random[:]); err != nil {
-		t.Fatal(err)
-	}
-	name := "smithers_runner_plane_migration_" + hex.EncodeToString(random[:])
-	if _, err = admin.Exec(ctx, `CREATE DATABASE "`+name+`"`); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if _, err := admin.Exec(ctx, `DROP DATABASE "`+name+`" WITH (FORCE)`); err != nil {
-			t.Errorf("drop test database: %v", err)
-		}
-	}()
-	dbURL := *adminURL
-	dbURL.Path = "/" + name
-	pool, err := pgxpool.New(ctx, dbURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	var err error
 
 	registered, err := registeredMigrations()
 	if err != nil {

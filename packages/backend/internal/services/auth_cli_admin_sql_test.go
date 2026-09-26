@@ -2,27 +2,22 @@ package services
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 // Exercise the generated CTE against PostgreSQL, including an audit failure.
 // An isolated database applies the canonical schema, including token provenance.
 func TestAdminCLITokenSQLAtomicAudit(t *testing.T) {
-	databaseURL := os.Getenv("SMITHERS_TEST_ADMIN_CLI_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("SMITHERS_TEST_ADMIN_CLI_DATABASE_URL is not configured")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	conn, _ := postgresfixture.NewProductDatabase(t, databaseURL)
+	conn, _ := postgresfixture.NewProductDatabase(t)
 	_, err := conn.Exec(ctx, `INSERT INTO users(id,username,lower_username,email,lower_email,display_name) VALUES (7,'operator','operator','operator@example.test','operator@example.test','Operator')`)
 	require.NoError(t, err)
 	q := db.New(conn)

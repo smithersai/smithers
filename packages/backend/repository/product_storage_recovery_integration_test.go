@@ -12,24 +12,21 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 // The same product journal settles a delete, committed transfer, and rolled
 // back transfer after the app and embedded jj service have both restarted.
 func TestProductRepositoryStorageOperationsSurviveRestart(t *testing.T) {
-	adminDSN, ffi := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL"), os.Getenv("SMITHERS_FFI_LIBRARY_PATH")
-	if adminDSN == "" || ffi == "" {
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL and SMITHERS_FFI_LIBRARY_PATH")
+	ffi := os.Getenv("SMITHERS_FFI_LIBRARY_PATH")
+	if ffi == "" {
+		t.Skip("set SMITHERS_FFI_LIBRARY_PATH")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	pool := newProductProvisionTestPool(t, ctx, adminDSN)
-	if err := product.Apply(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	alice := createProductProvisionUser(t, ctx, pool, "alice")
 	bob := createProductProvisionUser(t, ctx, pool, "bob")
 	storage := t.TempDir()

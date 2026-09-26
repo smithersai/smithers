@@ -36,6 +36,7 @@ PRIVATE_PACKAGE_ROOTS = (
     "packages/backend/cloud",
 )
 TESTKIT_IMPORT = "github.com/smithersai/smithers/packages/backend/testkit"
+TESTKIT_ROOT = "packages/backend/testkit"
 
 # These journals and placement tables are owned by Plue. Exporting a neutral
 # collaborator is fine; embedding SQL against its private schema is not.
@@ -99,9 +100,12 @@ def source_imports(root: Path = ROOT) -> list[str]:
                 for table in private_sql_references(path.read_text()):
                     failures.append(f"{path.relative_to(root)}: SQL table {table} belongs to Plue")
             # A helper package importing testkit could otherwise hide it from
-            # a check of executable entry points. Only Go test files may use it.
-            if not path.name.endswith("_test.go") and re.search(
-                r'"' + re.escape(TESTKIT_IMPORT) + r'"', path.read_text()
+            # a check of executable entry points. Only Go test files and
+            # testkit's own packages may use it.
+            if (
+                not path.name.endswith("_test.go")
+                and not path.relative_to(root).as_posix().startswith(TESTKIT_ROOT + "/")
+                and re.search(r'"' + re.escape(TESTKIT_IMPORT) + r'(?:/[^"]*)?"', path.read_text())
             ):
                 failures.append(f"{path.relative_to(root)}: production source imports testkit")
     return failures
@@ -121,7 +125,7 @@ def local_graph(root: Path = ROOT) -> list[str]:
         for name in result.stdout.splitlines()
         if name.startswith(FORBIDDEN_LOCAL_GRAPH)
     ]
-    if TESTKIT_IMPORT in result.stdout.splitlines():
+    if any(name == TESTKIT_IMPORT or name.startswith(TESTKIT_IMPORT + "/") for name in result.stdout.splitlines()):
         failures.append("default backend imports testkit")
     return failures
 

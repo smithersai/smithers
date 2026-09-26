@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,9 +21,9 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/modelproxy"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 // The mounted proxy, its auth and its payer resolution over product SQL: a
@@ -32,14 +31,7 @@ import (
 // workspace or gateway model credential and a user's own token charge the
 // user; every other credential is refused before any credit moves.
 func TestModelProxyChargesTheRightPayerPostgres(t *testing.T) {
-	raw := os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("PostgreSQL required")
-		}
-		t.Skip("PostgreSQL not configured")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	ctx := context.Background()
 	q := db.New(pool)
 	alice, err := q.CreateUser(ctx, db.CreateUserParams{Username: "alice", LowerUsername: "alice", DisplayName: "Alice"})
@@ -169,14 +161,7 @@ func TestModelProxyChargesTheRightPayerPostgres(t *testing.T) {
 // when it has a paid plan, and otherwise the user the run or host acts for
 // (smithersai/plue#528, plue 0511eb46e).
 func TestModelProxyChargesActingUserForFreeOrganizationPostgres(t *testing.T) {
-	raw := os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("PostgreSQL required")
-		}
-		t.Skip("PostgreSQL not configured")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	ctx := context.Background()
 	q := db.New(pool)
 	alice, err := q.CreateUser(ctx, db.CreateUserParams{Username: "alice", LowerUsername: "alice", DisplayName: "Alice"})

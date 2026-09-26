@@ -52,6 +52,15 @@ class BoundaryTests(unittest.TestCase):
         (self.root / "packages/helper/helper.go").rename(self.root / "packages/helper/helper_test.go")
         self.assertEqual(boundaries.source_imports(self.root), [])
 
+    def test_testkit_subpackages_are_testkit(self):
+        self.write("packages/helper/helper.go", f'package helper\nimport "{boundaries.TESTKIT_IMPORT}/testdb"\n')
+        self.assertEqual(boundaries.source_imports(self.root), [
+            "packages/helper/helper.go: production source imports testkit",
+        ])
+        (self.root / "packages/helper/helper.go").unlink()
+        self.write(f"{boundaries.TESTKIT_ROOT}/postgresfixture/product.go", f'package postgresfixture\nimport "{boundaries.TESTKIT_IMPORT}/testdb"\n')
+        self.assertEqual(boundaries.source_imports(self.root), [])
+
     def test_test_imports_cannot_reintroduce_cloud_sdks(self):
         self.write("packages/backend/auth_test.go", 'package backend\nimport crypto "github.com/ethereum/go-ethereum/crypto"\n')
         self.assertEqual(len(boundaries.source_imports(self.root)), 1)

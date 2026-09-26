@@ -2,10 +2,6 @@ package product
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"net/url"
-	"os"
 	"testing"
 	"time"
 
@@ -20,36 +16,8 @@ import (
 // product migrations up to version (0 means every migration).
 func reviewDatabase(t *testing.T, version int) *pgxpool.Pool {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_PRODUCT_TEST_DATABASE_URL is required")
-		}
-		t.Skip("PostgreSQL URL required")
-	}
-	u, err := url.Parse(raw)
-	require.NoError(t, err)
-	u.Path = "/postgres"
+	pool := newProductTestPool(t)
 	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, u.String())
-	require.NoError(t, err)
-	var suffix [8]byte
-	_, err = rand.Read(suffix[:])
-	require.NoError(t, err)
-	name := "smithers_schema_review_" + hex.EncodeToString(suffix[:])
-	_, err = admin.Exec(ctx, `CREATE DATABASE "`+name+`"`)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, err := admin.Exec(ctx, `DROP DATABASE "`+name+`" WITH (FORCE)`)
-		require.NoError(t, err)
-		_ = admin.Close(ctx)
-	})
-	u.Path = "/" + name
-	cfg, err := pgxpool.ParseConfig(u.String())
-	require.NoError(t, err)
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
 	migrations, err := registeredMigrations()
 	require.NoError(t, err)
 	if version > 0 {

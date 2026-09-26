@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -15,9 +14,9 @@ import (
 	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/ports"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 type catalogSource struct{ rows []db.PublicRepository }
@@ -73,11 +72,7 @@ func TestPublicRepositoryCatalog_ReadsTheProductSource(t *testing.T) {
 
 func recommendationMeter(t *testing.T) (*modelproxy.Meter, int64) {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	if raw == "" {
-		t.Skip("set SMITHERS_TEST_DATABASE_URL for metered recommendation tests")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	ledger := credits.Ledger{DB: pool}
 	account, err := ledger.EnsureAccount(context.Background(), "user", 42)
 	require.NoError(t, err)

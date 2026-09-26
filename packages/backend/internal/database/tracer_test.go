@@ -5,8 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,9 +22,8 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/testkit/testdb"
 )
-
-const defaultDatabaseTracerTestURL = "postgres://smithers:smithers@127.0.0.1:5432/smithers_test?sslmode=disable"
 
 type dbQueryObservation struct {
 	query   string
@@ -234,10 +231,7 @@ func TestMetricsTracer_ConcurrentQueriesAreGoroutineSafe(t *testing.T) {
 }
 
 func TestNewPool_AttachesTracerAndRecordsQueryDuration(t *testing.T) {
-	databaseURL := resolveDatabaseTracerTestURL(t)
-	if err := ensureTracerTestDatabaseExists(databaseURL); err != nil {
-		t.Skipf("database unavailable for integration test: %v", err)
-	}
+	databaseURL := testdb.New(t).URL
 
 	metrics := &dbQueryMetricsStub{}
 	cfg := config.DatabaseConfig{
@@ -261,50 +255,6 @@ func TestNewPool_AttachesTracerAndRecordsQueryDuration(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 
 	assert.True(t, metrics.containsQuery("SELECT"))
-}
-
-func resolveDatabaseTracerTestURL(t *testing.T) string {
-	t.Helper()
-
-	if v := strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL")); v != "" {
-		return v
-	}
-
-	return defaultDatabaseTracerTestURL
-}
-
-func ensureTracerTestDatabaseExists(databaseURL string) error {
-	parsed, err := url.Parse(databaseURL)
-	if err != nil {
-		return err
-	}
-
-	dbName := strings.TrimPrefix(parsed.Path, "/")
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-
-	adminConfig, err := pgx.ParseConfig(adminURL.String())
-	if err != nil {
-		return err
-	}
-	adminConfig.ConnectTimeout = 2 * time.Second
-
-	adminConn, err := pgx.ConnectConfig(context.Background(), adminConfig)
-	if err != nil {
-		return err
-	}
-	defer adminConn.Close(context.Background())
-
-	var exists bool
-	if err := adminConn.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, dbName).Scan(&exists); err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-
-	_, err = adminConn.Exec(context.Background(), `CREATE DATABASE "`+strings.ReplaceAll(dbName, `"`, `""`)+`"`)
-	return err
 }
 
 // ---------------------------------------------------------------------------
@@ -509,10 +459,7 @@ func TestMetricsTracer_GeneratedQueryThroughPostgres(t *testing.T) {
 	// Same convention as the other PostgreSQL-backed tests in this package:
 	// the unit gate runs without a database and skips; the PostgreSQL step
 	// runs the package with SMITHERS_TEST_DATABASE_URL set.
-	databaseURL := resolveDatabaseTracerTestURL(t)
-	if err := ensureTracerTestDatabaseExists(databaseURL); err != nil {
-		t.Skipf("database unavailable for integration test: %v", err)
-	}
+	databaseURL := testdb.New(t).URL
 	metrics := &dbQueryMetricsStub{}
 	pool, err := NewPool(ctx, config.DatabaseConfig{URL: databaseURL, MaxConns: 2, MaxConnLifetime: 60, MaxConnIdleTime: 30}, metrics)
 	require.NoError(t, err)

@@ -3,11 +3,10 @@ package canonicalimport
 import (
 	"context"
 	"errors"
-	"os"
 	"sync"
 	"testing"
 
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 func archive() []Row {
@@ -20,14 +19,7 @@ func archive() []Row {
 }
 
 func TestCanonicalImportReplayVerifyAndConflicts(t *testing.T) {
-	raw := os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_TEST_DATABASE_URL for PostgreSQL import tests")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	i := Importer{DB: pool}
 	ctx := context.Background()
 	rows := archive()

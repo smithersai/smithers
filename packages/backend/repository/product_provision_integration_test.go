@@ -3,7 +3,6 @@ package repository_test
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,34 +10,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/smithersai/smithers/packages/backend/db/product"
-	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/repository"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 // This test uses a fresh product-only PostgreSQL database and the real jj FFI.
 // A reservation is committed, the service is lost, and another service finishes
 // the exact same operation without making a second row or repository.
 func TestProductRepositoryCreationSurvivesCrashes(t *testing.T) {
-	adminDSN := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
 	ffi := os.Getenv("SMITHERS_FFI_LIBRARY_PATH")
-	if adminDSN == "" || ffi == "" {
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL and SMITHERS_FFI_LIBRARY_PATH")
+	if ffi == "" {
+		t.Skip("set SMITHERS_FFI_LIBRARY_PATH")
 	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	pool := newProductProvisionTestPool(t, ctx, adminDSN)
-	if err := product.Apply(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	owner := createProductProvisionUser(t, ctx, pool, "owner")
 	forker := createProductProvisionUser(t, ctx, pool, "forker")
 	storage := t.TempDir()
@@ -209,51 +202,6 @@ type denyingPrivateRepoPolicy struct {
 func (p *denyingPrivateRepoPolicy) AuthorizePrivateRepo(context.Context, string, int64) error {
 	p.calls++
 	return fmt.Errorf("private repository quota exceeded")
-}
-
-func newProductProvisionTestPool(t *testing.T, ctx context.Context, raw string) *pgxpool.Pool {
-	t.Helper()
-	adminURL, err := url.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	adminURL.Path = "/postgres"
-	admin, err := pgx.Connect(ctx, adminURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		_ = admin.Close(cleanupCtx)
-	})
-	name := fmt.Sprintf("smithers_repo_creation_%d", time.Now().UnixNano())
-	if _, err := admin.Exec(ctx, `CREATE DATABASE "`+name+`"`); err != nil {
-		t.Fatal(err)
-	}
-	dbURL := *adminURL
-	dbURL.Path = "/" + name
-	config, err := pgxpool.ParseConfig(dbURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
-		database.ConfigureSQLCTypes(conn.TypeMap())
-		return nil
-	}
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		pool.Close()
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if _, err := admin.Exec(cleanupCtx, `DROP DATABASE "`+name+`" WITH (FORCE)`); err != nil {
-			t.Errorf("drop test DB: %v", err)
-		}
-	})
-	return pool
 }
 
 func createProductProvisionUser(t *testing.T, ctx context.Context, pool *pgxpool.Pool, prefix string) db.User {

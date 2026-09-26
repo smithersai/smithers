@@ -5,17 +5,17 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"net"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/repository"
 	productssh "github.com/smithersai/smithers/packages/backend/ssh"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
+
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 func TestNewRejectsAbsentProductDependencies(t *testing.T) {
@@ -24,11 +24,7 @@ func TestNewRejectsAbsentProductDependencies(t *testing.T) {
 }
 
 func TestProductSSHUsesCanonicalKeyAndRepositoryAuthorization(t *testing.T) {
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		t.Fatal("SMITHERS_PRODUCT_TEST_DATABASE_URL is required for real SSH authorization")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	ctx := context.Background()
 	queries := db.New(pool)
 	user, err := queries.CreateUser(ctx, db.CreateUserParams{Username: "ssh-fixture", LowerUsername: "ssh-fixture"})

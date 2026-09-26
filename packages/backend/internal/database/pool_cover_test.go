@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/testkit/testdb"
 )
 
 // poolCoverStatsObserver is a goroutine-safe DBPoolStatsObserver stub that
@@ -127,10 +128,7 @@ func TestPool_NewPool_PingError(t *testing.T) {
 // TestPool_NewPool_NilMetricsVariadic verifies that passing an explicit nil
 // metrics observer does not attach a tracer and still succeeds.
 func TestPool_NewPool_NilMetricsVariadic(t *testing.T) {
-	databaseURL := resolveDatabaseTracerTestURL(t)
-	if err := ensureTracerTestDatabaseExists(databaseURL); err != nil {
-		t.Skipf("database unavailable for integration test: %v", err)
-	}
+	databaseURL := testdb.New(t).URL
 
 	cfg := config.DatabaseConfig{
 		URL:             databaseURL,
@@ -155,10 +153,7 @@ func TestPool_NewPool_NilMetricsVariadic(t *testing.T) {
 // collector reports pool statistics on each tick and that canceling the context
 // stops the goroutine.
 func TestPool_StartPoolStatsCollector_ReportsAndStops(t *testing.T) {
-	databaseURL := resolveDatabaseTracerTestURL(t)
-	if err := ensureTracerTestDatabaseExists(databaseURL); err != nil {
-		t.Skipf("database unavailable for integration test: %v", err)
-	}
+	databaseURL := testdb.New(t).URL
 
 	cfg := config.DatabaseConfig{
 		URL:             databaseURL,

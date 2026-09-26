@@ -2,16 +2,8 @@ package product
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"net/url"
-	"os"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 )
@@ -20,52 +12,8 @@ import (
 // survive a durable round trip, because a restarted SSH pod replays missed
 // events from revocation_events rather than from NOTIFY.
 func TestSSHKeyRevokedEventRoundTripsThroughRevocationEvents(t *testing.T) {
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_PRODUCT_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
-	}
+	pool := newProductTestPool(t)
 	ctx := context.Background()
-	adminURL, err := url.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	adminURL.Path = "/postgres"
-	admin, err := pgx.Connect(ctx, adminURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Close(ctx)
-	var random [8]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		t.Fatal(err)
-	}
-	name := "smithers_revocation_" + hex.EncodeToString(random[:])
-	if _, err := admin.Exec(ctx, `CREATE DATABASE "`+name+`"`); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if _, err := admin.Exec(ctx, `DROP DATABASE "`+name+`" WITH (FORCE)`); err != nil {
-			t.Errorf("drop test database: %v", err)
-		}
-	}()
-	dbURL := *adminURL
-	dbURL.Path = "/" + name
-	poolConfig, err := pgxpool.ParseConfig(dbURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	poolConfig.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
-		database.ConfigureSQLCTypes(conn.TypeMap())
-		return nil
-	}
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
 	if err := Apply(ctx, pool); err != nil {
 		t.Fatalf("product migration: %v", err)
 	}

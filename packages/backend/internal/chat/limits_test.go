@@ -145,19 +145,6 @@ func TestTurnRequestOverRouteCapIsTooLarge(t *testing.T) {
 	}
 }
 
-func TestTestDatabaseNamesCarryTheirAge(t *testing.T) {
-	now := time.Unix(1_800_000_000, 0)
-	created, ok := testDatabaseCreated(testDatabaseName(now))
-	if !ok || !created.Equal(now) {
-		t.Fatalf("created = %v ok=%v", created, ok)
-	}
-	for _, name := range []string{"smithers_chat_0123abcd", "smithers_chat_x_y", "other_1_2"} {
-		if _, ok := testDatabaseCreated(name); ok {
-			t.Fatalf("%s parsed as a dated test database", name)
-		}
-	}
-}
-
 // validIdentity admits any UTF-8 string of up to maxIdentityBytes, and the
 // canonical encoding escapes a control character to six bytes. Every
 // mandatory terminal receipt must still fit the reserve, or the backend

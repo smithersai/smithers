@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -18,61 +17,25 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
-var (
-	flowDispatchTestPool *pgxpool.Pool
-	flowDispatchTestURL  string
-	// flowDispatchTestError records why the configured server was unusable.
-	flowDispatchTestError error
-)
+// dispatchSuite is this test binary's own database; each test adds a schema.
+var dispatchSuite = postgresfixture.Suite{Empty: true}
 
-func TestMain(main *testing.M) {
-	dsn := strings.TrimSpace(os.Getenv("SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL"))
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("SMITHERS_JOBS_TEST_DATABASE_URL"))
-	}
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL"))
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	config, err := pgxpool.ParseConfig(dsn)
-	if err == nil {
-		flowDispatchTestURL = dsn
-		flowDispatchTestPool, err = pgxpool.NewWithConfig(ctx, config)
-	}
-	if err == nil {
-		err = flowDispatchTestPool.Ping(ctx)
-	}
-	cancel()
-	if err != nil {
-		if flowDispatchTestPool != nil {
-			flowDispatchTestPool.Close()
-		}
-		flowDispatchTestPool = nil
-		flowDispatchTestError = err
-	}
-	code := main.Run()
-	if flowDispatchTestPool != nil {
-		flowDispatchTestPool.Close()
-	}
-	os.Exit(code)
+func TestMain(m *testing.M) {
+	os.Exit(dispatchSuite.Run(m))
 }
 
 func newFlowDispatchStore(t *testing.T) (*jobs.Store, *pgxpool.Pool) {
 	t.Helper()
-	if flowDispatchTestPool == nil {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatalf("flowdispatch PostgreSQL test server is required (set SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL): %v", flowDispatchTestError)
-		}
-		t.Skip("set SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL for PostgreSQL integration tests")
-	}
+	suitePool := dispatchSuite.Pool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	schema := "flow_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	_, err := flowDispatchTestPool.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize())
+	_, err := suitePool.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize())
 	require.NoError(t, err)
-	config, err := pgxpool.ParseConfig(flowDispatchTestURL)
+	config, err := pgxpool.ParseConfig(dispatchSuite.URL(t))
 	require.NoError(t, err)
 	config.ConnConfig.RuntimeParams["search_path"] = schema
 	pool, err := pgxpool.NewWithConfig(ctx, config)
@@ -86,7 +49,7 @@ func newFlowDispatchStore(t *testing.T) (*jobs.Store, *pgxpool.Pool) {
 		pool.Close()
 		dropContext, dropCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer dropCancel()
-		_, _ = flowDispatchTestPool.Exec(dropContext, "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
+		_, _ = suitePool.Exec(dropContext, "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
 	})
 	return store, pool
 }
@@ -528,15 +491,4 @@ func TestParkedLaunchCancellationIsDeliveredToCanonicalRuntime(t *testing.T) {
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
 	require.True(t, runtime.denied)
-}
-
-func TestDatabaseURLRemainsParseableForRealHostSuite(t *testing.T) {
-	if flowDispatchTestPool == nil {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatalf("flowdispatch PostgreSQL test server is required (set SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL): %v", flowDispatchTestError)
-		}
-		t.Skip("set SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL for PostgreSQL integration tests")
-	}
-	_, err := url.Parse(flowDispatchTestURL)
-	require.NoError(t, err)
 }

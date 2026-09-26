@@ -10,9 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,11 +19,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 var testStore *Store
@@ -36,93 +34,20 @@ const dbWait = 10 * time.Second
 
 var scopeID atomic.Int64
 
+var chatSuite = postgresfixture.Suite{Empty: true}
+
 func TestMain(m *testing.M) {
-	base := os.Getenv("SMITHERS_CHAT_TEST_DATABASE_URL")
-	if base == "" {
-		os.Exit(m.Run())
-	}
-	ctx := context.Background()
-	admin, err := pgxpool.New(ctx, base)
-	if err != nil {
-		panic(err)
-	}
-	sweepStaleDatabases(ctx, admin, time.Now())
-	database := testDatabaseName(time.Now())
-	if _, err = admin.Exec(ctx, `CREATE DATABASE `+database); err != nil {
-		panic(err)
-	}
-	parsed, err := url.Parse(base)
-	if err != nil {
-		panic(err)
-	}
-	parsed.Path = "/" + database
-	pool, err := pgxpool.New(ctx, parsed.String())
-	if err != nil {
-		panic(err)
-	}
-	schema, err := Schema()
-	if err != nil {
-		panic(err)
-	}
-	if _, err = pool.Exec(ctx, string(schema)); err != nil {
-		panic(err)
-	}
-	testStore, err = NewStore(pool)
-	if err != nil {
-		panic(err)
-	}
-	code := m.Run()
-	pool.Close()
-	drop, stop := context.WithTimeout(ctx, time.Minute)
-	if _, err = admin.Exec(drop, `DROP DATABASE `+database+` WITH (FORCE)`); err != nil {
-		fmt.Fprintf(os.Stderr, "chat test database %s was not dropped; the next run sweeps it: %v\n", database, err)
-	}
-	stop()
-	admin.Close()
-	os.Exit(code)
-}
-
-// staleTestDatabase is the age after which a run's database is an orphan: a
-// test panic or a killed process skipped its drop.
-const staleTestDatabase = time.Hour
-
-const testDatabasePrefix = "smithers_chat_"
-
-func testDatabaseName(now time.Time) string {
-	return fmt.Sprintf("%s%d_%s", testDatabasePrefix, now.Unix(), strings.ReplaceAll(uuid.NewString(), "-", ""))
-}
-
-// sweepStaleDatabases drops the databases of earlier runs that never dropped
-// their own. Only names older than staleTestDatabase are touched, so a
-// concurrent run keeps its database.
-func sweepStaleDatabases(ctx context.Context, admin *pgxpool.Pool, now time.Time) {
-	rows, err := admin.Query(ctx, `SELECT datname FROM pg_database WHERE starts_with(datname,$1)`, testDatabasePrefix)
-	if err != nil {
-		return
-	}
-	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return
-	}
-	for _, name := range names {
-		created, ok := testDatabaseCreated(name)
-		if !ok || now.Sub(created) < staleTestDatabase {
-			continue
+	os.Exit(chatSuite.Run(m, func(ctx context.Context, pool *pgxpool.Pool) error {
+		schema, err := Schema()
+		if err != nil {
+			return err
 		}
-		_, _ = admin.Exec(ctx, `DROP DATABASE IF EXISTS `+pgx.Identifier{name}.Sanitize()+` WITH (FORCE)`)
-	}
-}
-
-func testDatabaseCreated(name string) (time.Time, bool) {
-	stamp, _, ok := strings.Cut(strings.TrimPrefix(name, testDatabasePrefix), "_")
-	if !ok || !strings.HasPrefix(name, testDatabasePrefix) {
-		return time.Time{}, false
-	}
-	seconds, err := strconv.ParseInt(stamp, 10, 64)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return time.Unix(seconds, 0), true
+		if _, err := pool.Exec(ctx, string(schema)); err != nil {
+			return err
+		}
+		testStore, err = NewStore(pool)
+		return err
+	}))
 }
 
 // testClock is a store clock a test moves by hand.
@@ -152,12 +77,7 @@ func clockedStore(shared *Store) (*Store, *testClock) {
 
 func needStore(t *testing.T) *Store {
 	t.Helper()
-	if testStore == nil {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("chat PostgreSQL tests are required: set SMITHERS_CHAT_TEST_DATABASE_URL")
-		}
-		t.Skip("set SMITHERS_CHAT_TEST_DATABASE_URL for PostgreSQL protocol tests")
-	}
+	chatSuite.Pool(t) // skips, or fails when required, if setup did not finish
 	return testStore
 }
 

@@ -2,16 +2,12 @@ package product
 
 import (
 	"context"
-	"fmt"
-	"net/url"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/stretchr/testify/require"
 )
@@ -70,31 +66,8 @@ func TestServicesBMentionBackfillUsesUnambiguousContext(t *testing.T) {
 
 func servicesBDatabase(t *testing.T, version int) *pgxpool.Pool {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		t.Skip("PostgreSQL URL required")
-	}
-	u, err := url.Parse(raw)
-	require.NoError(t, err)
-	u.Path = "/postgres"
+	pool := newProductTestPool(t)
 	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, u.String())
-	require.NoError(t, err)
-	name := fmt.Sprintf("services_b_%d", time.Now().UnixNano())
-	_, err = admin.Exec(ctx, `CREATE DATABASE "`+name+`"`)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, err := admin.Exec(ctx, `DROP DATABASE "`+name+`" WITH (FORCE)`)
-		require.NoError(t, err)
-		_ = admin.Close(ctx)
-	})
-	u.Path = "/" + name
-	cfg, err := pgxpool.ParseConfig(u.String())
-	require.NoError(t, err)
-	cfg.AfterConnect = func(_ context.Context, c *pgx.Conn) error { database.ConfigureSQLCTypes(c.TypeMap()); return nil }
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
 	specs, err := registeredMigrations()
 	require.NoError(t, err)
 	if version > 0 {

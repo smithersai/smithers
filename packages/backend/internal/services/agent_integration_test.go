@@ -18,19 +18,10 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
-// setupTestPool creates a new pool for integration tests.
-// Uses the shared pool from TestMain if available, otherwise skips the test.
+// setupTestPool returns the shared pool from TestMain, or skips the test.
 func setupTestPool(t *testing.T) *pgxpool.Pool {
-	if testing.Short() {
-		t.Skip("skipping DB integration test in short mode")
-	}
-	// Use shared pool from TestMain if available
-	if agentTestDB != nil {
-		return agentTestDB
-	}
-	// Database unavailable - skip gracefully instead of failing
-	t.Skip("skipping DB integration test: database unavailable")
-	return nil
+	t.Helper()
+	return servicesSuite.Pool(t)
 }
 
 // setupTestUserAndRepo creates a test user and repo for agent session tests.

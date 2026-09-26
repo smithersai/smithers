@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,9 +17,10 @@ import (
 	"github.com/smithersai/smithers/packages/backend/flowhost"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 // Only the external launch transport is a test endpoint. It refuses every
@@ -48,14 +48,7 @@ func (refusingHostTransport) ResolveFlowHostSource(context.Context, flowhost.Aut
 func (refusingHostTransport) StopFlowHost(context.Context, flowhost.Binding) error { return nil }
 
 func TestFlowWorkerRechecksMeteredAdmissionBeforeHostLaunch(t *testing.T) {
-	raw := os.Getenv("SMITHERS_ADMISSION_TEST_ADMIN_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_ADMISSION_TEST_ADMIN_URL is required")
-		}
-		t.Skip("PostgreSQL not configured")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 	var owner, repo, otherRepo int64

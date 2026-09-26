@@ -10,12 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -26,6 +23,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 func sha256Hex(s string) string {
@@ -179,17 +177,7 @@ func TestOAuth2Integration_SystemIssuedTokenCannotAuthorize(t *testing.T) {
 
 func newGrantSecurityPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		raw = os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	}
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("grant security regressions require PostgreSQL")
-		}
-		t.Skip("PostgreSQL database not configured")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	return pool
 }
 func grantSecurityCreateUser(t *testing.T, pool *pgxpool.Pool, name string) db.User {

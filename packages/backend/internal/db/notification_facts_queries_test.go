@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -73,7 +72,7 @@ func TestNotificationFactsCommittedPositionsAndWakeup(t *testing.T) {
 	require.NoError(t, err)
 	n2, err := q.CreateNotification(ctx, CreateNotificationParams{UserID: user, SourceType: "issue"})
 	require.NoError(t, err)
-	listener, err := pgx.Connect(ctx, resolveDBTestDatabaseURL(os.Getenv))
+	listener, err := pgx.Connect(ctx, dbSuite.URL(t))
 	require.NoError(t, err)
 	defer listener.Close(ctx)
 	_, err = listener.Exec(ctx, fmt.Sprintf("LISTEN notification_facts_%d", user))

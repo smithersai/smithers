@@ -3,111 +3,24 @@ package webhooks
 import (
 	"context"
 	"encoding/json"
-	"flag"
-	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
-const defaultDispatcherTestDatabaseURL = "postgres://smithers:smithers@localhost:5432/smithers_test_dispatcher?sslmode=disable"
-
-var dispatcherTestPool *pgxpool.Pool
-var dispatcherDBUnavailableReason string
-
-// resolveDispatcherTestDatabaseURL returns the database URL for webhooks dispatcher package tests.
-// Precedence: SMITHERS_TEST_WEBHOOKS_DATABASE_URL -> SMITHERS_TEST_DATABASE_URL -> default.
-func resolveDispatcherTestDatabaseURL(getenv func(string) string) string {
-	if v := getenv("SMITHERS_TEST_WEBHOOKS_DATABASE_URL"); v != "" {
-		return v
-	}
-	if v := getenv("SMITHERS_TEST_DATABASE_URL"); v != "" {
-		return v
-	}
-	return defaultDispatcherTestDatabaseURL
-}
+// dispatcherSuite is this test binary's own product database.
+var dispatcherSuite = postgresfixture.Suite{MaxConns: 5}
 
 func TestMain(m *testing.M) {
-	flag.Parse()
-	// Unit tests must not create or reset a database just because a local
-	// PostgreSQL server happens to be reachable.
-	if testing.Short() {
-		os.Exit(m.Run())
-	}
-	databaseURL := resolveDispatcherTestDatabaseURL(os.Getenv)
-
-	parsed, err := url.Parse(databaseURL)
-	if err != nil {
-		dispatcherDBUnavailableReason = fmt.Sprintf("bad database URL: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-
-	dbName := strings.TrimPrefix(parsed.Path, "/")
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-	adminConn, err := pgx.Connect(context.Background(), adminURL.String())
-	if err != nil {
-		dispatcherDBUnavailableReason = fmt.Sprintf("cannot connect to admin database: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-
-	var exists bool
-	_ = adminConn.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, dbName).Scan(&exists)
-	if !exists {
-		_, _ = adminConn.Exec(context.Background(), `CREATE DATABASE "`+strings.ReplaceAll(dbName, `"`, `""`)+`"`)
-	}
-	adminConn.Close(context.Background())
-
-	schemaConn, err := pgx.Connect(context.Background(), databaseURL)
-	if err != nil {
-		dispatcherDBUnavailableReason = fmt.Sprintf("cannot connect to test db for schema setup: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`
-	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
-		dispatcherDBUnavailableReason = fmt.Sprintf("schema setup failed: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-	schemaConn.Close(context.Background())
-
-	cfg, err := pgxpool.ParseConfig(databaseURL)
-	if err != nil {
-		dispatcherDBUnavailableReason = fmt.Sprintf("bad pool config: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-	cfg.MaxConns = 5
-	cfg.MinConns = 1
-	dispatcherTestPool, err = pgxpool.NewWithConfig(context.Background(), cfg)
-	if err != nil {
-		dispatcherDBUnavailableReason = fmt.Sprintf("cannot create pool: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-
-	if err := product.Apply(context.Background(), dispatcherTestPool); err != nil {
-		fmt.Fprintf(os.Stderr, "product migration setup failed: %v\n", err)
-		dispatcherTestPool.Close()
-		os.Exit(1)
-	}
-
-	code := m.Run()
-	dispatcherTestPool.Close()
-	os.Exit(code)
+	os.Exit(dispatcherSuite.Run(m))
 }
 
 type mockDispatcherStore struct {
@@ -431,14 +344,9 @@ func TestDispatchEvent_IntegrationStatusPayload_PersistsSenderLogin(t *testing.T
 
 func newDispatcherQueries(t *testing.T) (*db.Queries, *pgxpool.Pool) {
 	t.Helper()
-	if dispatcherTestPool == nil {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatalf("required product database unavailable: %s", dispatcherDBUnavailableReason)
-		}
-		t.Skipf("dispatcher integration DB unavailable: %s", dispatcherDBUnavailableReason)
-	}
-	truncateDispatcherTables(t, dispatcherTestPool)
-	return db.New(dispatcherTestPool), dispatcherTestPool
+	pool := dispatcherSuite.Pool(t)
+	truncateDispatcherTables(t, pool)
+	return db.New(pool), pool
 }
 
 func truncateDispatcherTables(t *testing.T, pool *pgxpool.Pool) {

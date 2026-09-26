@@ -19,7 +19,6 @@ var brokerCovChannelSeq uint64
 // cov_database_test.go for the readiness budget it connects under).
 func brokerCovPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	covPrepareDatabase(t)
 	return covOpenPool(t, covPoolConfig(t))
 }
 

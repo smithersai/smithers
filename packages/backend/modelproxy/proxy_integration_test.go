@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,8 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/credits"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"github.com/smithersai/smithers/packages/backend/modelprice"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 const platformKey = "sk-platform-SECRET-do-not-leak"
@@ -67,14 +66,7 @@ func (b *lockedBuffer) String() string {
 
 func newProxyFixture(t *testing.T) *proxyFixture {
 	t.Helper()
-	raw := os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	if raw == "" {
-		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
-			t.Fatal("SMITHERS_TEST_DATABASE_URL is required")
-		}
-		t.Skip("set SMITHERS_TEST_DATABASE_URL for model proxy tests")
-	}
-	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	f := &proxyFixture{t: t, pool: pool, ledger: credits.Ledger{DB: pool}, logs: &lockedBuffer{}}
 	var err error
 	f.account, err = f.ledger.EnsureAccount(context.Background(), "user", 7)

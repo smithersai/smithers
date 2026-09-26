@@ -17,13 +17,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/chat"
-	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
@@ -31,14 +27,15 @@ import (
 	"github.com/smithersai/smithers/packages/backend/modelhost"
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/process"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
+	"github.com/smithersai/smithers/packages/backend/testkit/testdb"
 )
 
 // Exercises the local composition's actual dispatcher, process workspace,
 // packaged TypeScript host, encrypted product secret store and journal.
 func TestLocalChatComposedModelTurn(t *testing.T) {
-	adminDSN := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if adminDSN == "" {
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for composed chat integration")
+	if testdb.ServerURL() == "" {
+		testdb.Unavailable(t, testdb.ErrNotConfigured)
 	}
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -63,14 +60,7 @@ func TestLocalChatComposedModelTurn(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	databaseURL := localBlobTestDatabase(t, ctx, adminDSN)
-	poolConfig, err := pgxpool.ParseConfig(databaseURL)
-	require.NoError(t, err)
-	poolConfig.AfterConnect = func(_ context.Context, conn *pgx.Conn) error { database.ConfigureSQLCTypes(conn.TypeMap()); return nil }
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
-	require.NoError(t, err)
-	defer pool.Close()
-	require.NoError(t, product.Apply(ctx, pool))
+	pool, databaseURL := postgresfixture.NewProductDatabase(t)
 
 	var ownerID, repoID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users (username,lower_username) VALUES ('chatowner','chatowner') RETURNING id`).Scan(&ownerID))

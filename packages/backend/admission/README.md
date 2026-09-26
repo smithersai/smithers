@@ -26,11 +26,12 @@ steps. A hosted worker needs this metered policy and durable billing projections
 it does not need checkout, portal, webhook, or payment credentials. Only an
 explicit trusted single-owner composition may select unlimited admission.
 
-Run real PostgreSQL regressions with a disposable admin database:
+Run real PostgreSQL regressions against any server whose user can create
+databases:
 
 ```sh
-SMITHERS_ADMISSION_TEST_ADMIN_URL=postgres://.../postgres \
-  go test -p 1 ./packages/backend/admission
+SMITHERS_TEST_DATABASE_URL=postgres://.../postgres \
+  go test ./packages/backend/admission
 ```
 
 The tests create and drop their own databases and apply the real product

@@ -24,17 +24,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
-	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	processruntime "github.com/smithersai/smithers/packages/backend/process"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 const workspacePreviewHelperEnv = "SMITHERS_WORKSPACE_PREVIEW_HELPER"
@@ -304,47 +302,7 @@ func routesIntegrationReadBodyOnFailure(t *testing.T, response *http.Response) [
 
 func setupProcessWorkspacePool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	databaseURL := strings.TrimSpace(os.Getenv("SMITHERS_PROCESS_RUNTIME_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("SMITHERS_PROCESS_RUNTIME_TEST_DATABASE_URL is required for the process workspace request-path test")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	parsed, err := url.Parse(databaseURL)
-	require.NoError(t, err)
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-	admin, err := pgx.Connect(ctx, adminURL.String())
-	require.NoError(t, err)
-	defer admin.Close(context.Background())
-	databaseName := "process_workspace_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	_, err = admin.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{databaseName}.Sanitize())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		cleanupCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
-		defer stop()
-		cleanup, err := pgx.Connect(cleanupCtx, adminURL.String())
-		if err != nil {
-			t.Errorf("connect for test database cleanup: %v", err)
-			return
-		}
-		defer cleanup.Close(cleanupCtx)
-		_, err = cleanup.Exec(cleanupCtx, "DROP DATABASE "+pgx.Identifier{databaseName}.Sanitize()+" WITH (FORCE)")
-		if err != nil {
-			t.Errorf("drop test database: %v", err)
-		}
-	})
-	parsed.Path = "/" + databaseName
-	poolConfig, err := pgxpool.ParseConfig(parsed.String())
-	require.NoError(t, err)
-	poolConfig.AfterConnect = func(_ context.Context, connection *pgx.Conn) error {
-		database.ConfigureSQLCTypes(connection.TypeMap())
-		return nil
-	}
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	require.NoError(t, product.Apply(ctx, pool))
+	pool, _ := postgresfixture.NewProductDatabase(t)
 	return pool
 }
 

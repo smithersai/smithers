@@ -197,13 +197,13 @@ func TestWorkspaceCoding_NativePostgresProjection(t *testing.T) {
 	if helper == "" {
 		t.Skip("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY must name the built native helper")
 	}
-	require.NotNil(t, agentTestDB)
+	pool := getAgentTestPool(t)
 	ctx := context.Background()
-	q := db.New(agentTestDB)
-	userID, repoID := setupTestUserAndRepo(t, agentTestDB)
+	q := db.New(pool)
+	userID, repoID := setupTestUserAndRepo(t, pool)
 	workspace, err := q.CreateWorkspace(ctx, db.CreateWorkspaceParams{RepositoryID: repoID, UserID: userID, Name: "coding", TargetBookmark: "main", Kind: "vm", Status: "running"})
 	require.NoError(t, err)
-	_, err = agentTestDB.Exec(ctx, `UPDATE workspaces SET vm_id='coding-test-vm' WHERE id=$1`, workspace.ID)
+	_, err = pool.Exec(ctx, `UPDATE workspaces SET vm_id='coding-test-vm' WHERE id=$1`, workspace.ID)
 	require.NoError(t, err)
 	repo := t.TempDir()
 	command := exec.Command("jj", "git", "init", repo)
@@ -298,7 +298,7 @@ func TestWorkspaceCoding_NativePostgresProjection(t *testing.T) {
 	_, err = os.Stat("/tmp/smithers-coding-injection")
 	require.True(t, os.IsNotExist(err))
 	// A different actor cannot take over an already projected native operation.
-	otherID, _ := setupTestUserAndRepo(t, agentTestDB)
+	otherID, _ := setupTestUserAndRepo(t, pool)
 	_, err = q.RecordWorkspaceCodingOperation(ctx, db.RecordWorkspaceCodingOperationParams{RepositoryID: repoID, OperationID: result.OperationID, OperationType: "coding/create", UserID: otherID, WorkspaceID: workspace.ID, ParentOperationID: result.ParentOperationID, ChangeIds: stored.ChangeIds, CreatedAt: result.Timestamp})
 	require.Error(t, err)
 }
