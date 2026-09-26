@@ -11,7 +11,10 @@
  * from an owner (`Approval.decision`); anything else leaves the gate
  * pending. Which run a thread belongs to and which prompt a button belongs
  * to are kept in `slack.json` in the state directory, so both survive a
- * restart.
+ * restart. An owner's message in a thread a one-on-one was opened in
+ * (`meetings.ts` records them in `meetings.json`) starts
+ * `organization/meetings-reply` for that meeting's role instead of a
+ * delivery.
  */
 import { Duration, Effect, Schedule } from "effect"
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
@@ -22,6 +25,7 @@ import type * as Payload from "../../packages/smithers/agent/integrations/src/sl
 import * as SlackClient from "../../packages/smithers/agent/integrations/src/slack/SlackClient.ts"
 import * as SocketSource from "../../packages/smithers/agent/integrations/src/slack/SocketSource.ts"
 import { type Control, operations } from "./client.ts"
+import { meetingThread } from "./meetings.ts"
 import type { Request } from "./schema.ts"
 
 /** What the host remembers about Slack between restarts. */
@@ -103,6 +107,24 @@ export const run = (options: Options) =>
         if (event.eventName === "integration:slack:block_actions") return yield* onPress(event.payload)
         const request = requestOf(event)
         if (request === undefined) return
+        // An owner's message in a one-on-one's thread is answered by its role, not delivered.
+        const meeting = request.conversation === undefined
+          ? undefined
+          : meetingThread(options.stateDir, request.conversation.channel, request.conversation.thread)
+        if (meeting !== undefined && request.conversation !== undefined) {
+          if (request.user === undefined || !owners.includes(request.user)) return
+          const replied = yield* Effect.tryPromise(() =>
+            ops.start("organization/meetings-reply", {
+              key: request.key,
+              principal: meeting.principal,
+              channel: request.conversation!.channel,
+              thread: request.conversation!.thread,
+              text: request.text
+            }, request.key)
+          )
+          yield* Effect.logInfo("organization meeting reply", { runId: replied.runId, joined: replied.joined })
+          return
+        }
         const started = yield* Effect.tryPromise(() => ops.submit(request))
         update((current) => ({ ...current, threads: { ...current.threads, [started.runId]: request.conversation! } }))
         yield* Effect.logInfo("organization intake", { runId: started.runId, joined: started.joined })

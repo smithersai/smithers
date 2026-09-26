@@ -10,6 +10,7 @@ import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, sta
 import { join } from "node:path"
 import { parseArgs } from "node:util"
 import * as RequestExecutor from "../../../packages/smithers/agent/model/src/RequestExecutor.ts"
+import type * as Workspace from "../../../packages/smithers/agent/organization/src/Workspace.ts"
 import { parseRepository } from "../settings.ts"
 import { bootProbe, type Install, locate, msb, type Probe, sdkOf } from "./microsandbox.ts"
 import {
@@ -311,6 +312,36 @@ const repoLines = (entries: ReadonlyArray<string>, cwd: string, organization: Or
   })
 }
 
+const networkText = (network: Workspace.Network): string =>
+  network === "none" ? "offline" : network === "all" ? "full network" : network.join(" ")
+
+/**
+ * One line per configured repository the organization page gives an
+ * environment: its prepare key paths must exist at `HEAD`. A repository
+ * without an environment prints nothing.
+ */
+export const environmentLines = (
+  entries: ReadonlyArray<string>,
+  cwd: string,
+  organization: Organization | undefined
+): Array<Line> => {
+  const declared = organization?.loaded.organization.repositories ?? {}
+  return entries.flatMap((entry) => {
+    const [name, repo] = parseRepository(cwd, entry)
+    if (!Object.hasOwn(declared, name)) return []
+    const environment = declared[name]!
+    const missing = (environment.prepare?.key ?? []).filter((path) =>
+      spawnSync("git", ["-C", repo, "cat-file", "-e", `HEAD:${path}`], { stdio: "ignore" }).status !== 0
+    )
+    if (missing.length > 0) {
+      return [fail("env", `${name}: ${missing.join(", ")} not at HEAD`, `fix repositories.${name}.prepare.key in Org/Organization.md`)]
+    }
+    const prepare = environment.prepare === undefined ? "no prepare" : `prepare ${networkText(environment.prepare.network)}`
+    const checks = environment.checks?.length ?? 0
+    return [pass("env", `${name}: ${prepare}; builders ${networkText(environment.network ?? "none")}; ${checks} check${checks === 1 ? "" : "s"}`)]
+  })
+}
+
 const stateLine = (stateDir: string): Line => {
   const fix = `mkdir -p ${stateDir} && chmod 700 ${stateDir}`
   try {
@@ -352,6 +383,7 @@ export const doctor = async (options: DoctorOptions): Promise<Array<Line>> => {
   lines.push(await seatsLine(organization, options.env, options.claudeCredentials))
   lines.push(...await slackLines(options.env, options.fetch ?? fetch))
   lines.push(...repoLines(options.repos, options.cwd ?? process.cwd(), organization))
+  lines.push(...environmentLines(options.repos, options.cwd ?? process.cwd(), organization))
   lines.push(stateLine(options.stateDir))
   return lines
 }

@@ -876,6 +876,19 @@
       "modelInvocable": false
     },
     {
+      "id": "organization/delegate",
+      "description": "Hand one task to a specialist the parent hired, run it under the specialist's own grants and budget, have the parent review the output before it counts, and write the accepted output to the wiki with a receipt.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/delegate/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
       "id": "organization/deliver",
       "description": "Deliver one admitted owner request through the organization: the assistant routes it, a lead writes the contract, a builder changes the repository in a microVM workspace, the change is checked in a fresh microVM and judged by an independent checker, and an approved change lands on a branch with a receipt.",
       "summary": null,
@@ -889,12 +902,129 @@
       "modelInvocable": false
     },
     {
+      "id": "organization/hire",
+      "description": "Have a principal hire a specialist for a need: its structured hire request is validated against the hiring rules, written to the roster with a receipt, and optionally handed its first task.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/hire/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
       "id": "organization/intake",
       "description": "Admit one owner request from Slack or the local CLI under the host's configuration, acknowledge it in its thread, and deliver it.",
       "summary": null,
       "featured": false,
       "kind": "ts",
       "path": "flows/organization/intake/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/meetings-book",
+      "description": "Book extra time with the owner for a role, as the assistant: the first free slot in the owner's working window, written to the wiki and to the calendar when one is connected.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/meetings-book/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/meetings-follow-up",
+      "description": "Turn a role's weekly one-on-one notes (its Slack thread and its meeting note) into tasks on its open task list, or record the slot as not held.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/meetings-follow-up/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/meetings-open",
+      "description": "Open a role's weekly one-on-one at its slot: post its agenda in the owner's private Slack conversation with the app under the role's name, or record that Slack is not connected.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/meetings-open/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/meetings-plan",
+      "description": "Plan the weekly one-on-ones from the meetings page: the back-to-back block, each slot's calendar event when a calendar is connected, and each role's prepare, open, and follow-up schedule.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/meetings-plan/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/meetings-prepare",
+      "description": "Have a role prepare its next weekly one-on-one: an agenda from its receipts, open tasks, blockers, and decisions needed, written to its private meeting note before the slot.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/meetings-prepare/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/meetings-reply",
+      "description": "Answer the owner's message in a role's one-on-one Slack thread as that role.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/meetings-reply/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/qualify",
+      "description": "Run one qualification attempt: one principal's task over fixture context, answered under its own seat, checked against its charter, and recorded as a receipt.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/qualify/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/retire",
+      "description": "Retire a hired principal and everything it hired: grants revoked, retirement recorded in the roster with a receipt, and every later dispatch refused.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/retire/flow.ts",
       "capabilities": [
         "*"
       ],

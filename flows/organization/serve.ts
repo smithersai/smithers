@@ -7,7 +7,7 @@
  * the microVMs a dead host process of this installation left behind, except
  * the workspace machines of runs the engine database says are unfinished,
  * which those runs reattach when they resume; build the host; serve the
- * gateway; and, when both Slack tokens are set, run the Slack intake beside
+ * gateway behind the state directory's credential ({@link credentialOf}); and, when both Slack tokens are set, run the Slack intake beside
  * it. Runs a previous process parked (an approval gate, a model call cut
  * short) resume from the engine database; Ctrl-C stops the process and leaves
  * them parked.
@@ -16,9 +16,9 @@ import type * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Control } from "@smthrs/control"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { Effect, Logger, References } from "effect"
-import { randomUUID } from "node:crypto"
+import { randomBytes, randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync } from "node:fs"
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs"
 import { hostname } from "node:os"
 import { join } from "node:path"
 import * as Actions from "../../packages/smithers/agent/organization/src/Actions.ts"
@@ -29,7 +29,7 @@ import { executionDatabasePath } from "../../packages/smithers/src/internal/Exec
 import type * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import type { Control as ControlPort } from "./client.ts"
-import { ControlRefused } from "./client.ts"
+import { ControlRefused, credentialFile, readCredential } from "./client.ts"
 import { executionRoot, layer } from "./host.ts"
 import type { Settings } from "./settings.ts"
 import * as SetupMicrosandbox from "./setup/microsandbox.ts"
@@ -104,6 +104,30 @@ export const unfinished = (platform: NativeControl.Platform, stateDir: string): 
   }).pipe(Effect.scoped, Effect.provide(platform.database(file))))
 }
 
+/**
+ * The state directory's host credential, created (mode 600) on first start.
+ * A credential file another user can read is refused rather than served: it
+ * may already have leaked, so the operator removes it, which rotates it.
+ */
+export const credentialOf = (stateDir: string): string => {
+  const file = credentialFile(stateDir)
+  if (!existsSync(file)) {
+    try {
+      writeFileSync(file, `${randomBytes(32).toString("base64url")}\n`, { mode: 0o600, flag: "wx" })
+    } catch (error) {
+      // Another process created it first: use that one.
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+    }
+  }
+  const stat = statSync(file)
+  if ((stat.mode & 0o077) !== 0 || (typeof process.getuid === "function" && stat.uid !== process.getuid())) {
+    throw new Error(`${file} is readable by other users; remove it and start the host again to rotate it`)
+  }
+  const credential = readCredential(stateDir)
+  if (credential === undefined) throw new Error(`${file} is empty; remove it and start the host again to rotate it`)
+  return credential
+}
+
 /** Options for {@link start}. */
 export interface StartOptions {
   readonly settings: Settings
@@ -157,7 +181,10 @@ export const start = async (options: StartOptions) => {
   const slack = (environment.SMITHERS_SLACK_BOT_TOKEN ?? "") !== "" && (environment.SMITHERS_SLACK_APP_TOKEN ?? "") !== ""
   // Refuses a policy that admits nobody before anything opens.
   const policy = slack ? SlackConfig.policy(environment) : undefined
-  const bind: Serve.Bind = { host: settings.host, port: settings.port, listen: false, credential: undefined }
+  // Every `/rpc`, `/projections`, and `/sync` request must present it; the
+  // Slack intake calls the control plane in process and needs none.
+  const credential = credentialOf(settings.stateDir)
+  const bind: Serve.Bind = { host: settings.host, port: settings.port, listen: false, credential }
   const refusal = Serve.refuse(bind)
   if (refusal !== undefined) throw refusal
   const program = Effect.gen(function*() {
@@ -175,7 +202,7 @@ export const start = async (options: StartOptions) => {
     return yield* Serve.host(bind, settings.root)
   }).pipe(
     Effect.scoped,
-    Effect.provide(layer(options.platform, { settings, sdk, holder, slack, environment }, options.seats)),
+    Effect.provide(layer(options.platform, { settings, sdk, holder, slack, environment, credential }, options.seats)),
     Effect.provide(Logger.layer([hostLogger(log), Logger.tracerLogger]))
   )
   return program

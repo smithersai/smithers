@@ -10,6 +10,8 @@
  * in-process control plane, the CLI passes {@link rpc}.
  */
 import { randomUUID } from "node:crypto"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import * as Gates from "../../packages/smithers/agent/organization/src/Gates.ts"
 import type { Request } from "./schema.ts"
 
@@ -29,7 +31,26 @@ export class ControlRefused extends Error {
   }
 }
 
-/** The loopback gateway's control RPC at `base`, such as `http://127.0.0.1:7433`. */
+/**
+ * The file in a state directory holding the host's bearer credential: the
+ * host writes it on first start (mode 600), every `/rpc`, `/projections`, and
+ * `/sync` request must present it, and client commands read it from here.
+ * Removing it and restarting the host rotates it.
+ */
+export const credentialFile = (stateDir: string): string => join(stateDir, "credential")
+
+/** The host credential a state directory holds, or `undefined` before its host's first start. */
+export const readCredential = (stateDir: string): string | undefined => {
+  try {
+    const credential = readFileSync(credentialFile(stateDir), "utf8").trim()
+    return credential === "" ? undefined : credential
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    throw error
+  }
+}
+
+/** The loopback gateway's control RPC at `base`, such as `http://127.0.0.1:7433`, as `credential`. */
 export const rpc = (base: string, credential?: string): Control => {
   let id = 0
   return {

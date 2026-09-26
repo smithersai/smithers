@@ -20,7 +20,7 @@ import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, FileSystem, Layer, Option, Schema } from "effect"
 import { createHash } from "node:crypto"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -28,6 +28,7 @@ import * as SlackActions from "../../packages/smithers/agent/integrations/src/sl
 import * as SlackConnections from "../../packages/smithers/agent/integrations/src/slack/Connections.ts"
 import * as Actions from "../../packages/smithers/agent/organization/src/Actions.ts"
 import * as Authority from "../../packages/smithers/agent/organization/src/Authority.ts"
+import * as Budgets from "../../packages/smithers/agent/organization/src/Budgets.ts"
 import * as GatesLive from "../../packages/smithers/agent/organization/src/GatesLive.ts"
 import * as RoleHost from "../../packages/smithers/agent/organization/src/RoleHost.ts"
 import * as Workspace from "../../packages/smithers/agent/organization/src/Workspace.ts"
@@ -36,9 +37,22 @@ import * as NativeControl from "../../packages/smithers/src/internal/NativeContr
 import * as SupervisorMemory from "../../packages/smithers/src/internal/SupervisorMemory.ts"
 import * as OrganizationActions from "./actions.ts"
 import deliver from "./deliver/flow.ts"
+import delegate from "./delegate/flow.ts"
+import hire from "./hire/flow.ts"
 import intake from "./intake/flow.ts"
 import type { Settings } from "./settings.ts"
 import * as Subscriptions from "./setup/subscriptions.ts"
+import qualify from "./qualify/flow.ts"
+import retire from "./retire/flow.ts"
+import * as Staff from "./staff.ts"
+import * as Meetings from "./meetings.ts"
+import meetingsBook from "./meetings-book/flow.ts"
+import meetingsFollowUp from "./meetings-follow-up/flow.ts"
+import meetingsOpen from "./meetings-open/flow.ts"
+import meetingsPlan from "./meetings-plan/flow.ts"
+import meetingsPrepare from "./meetings-prepare/flow.ts"
+import meetingsReply from "./meetings-reply/flow.ts"
+import * as Schedule from "./schedule.ts"
 import status from "./status/flow.ts"
 
 /**
@@ -47,10 +61,37 @@ import status from "./status/flow.ts"
  * child of an intake, whose admission the host decided, so no client can
  * hand it a policy, a branch, or a principal of its own.
  */
-export const flows = [["intake", intake], ["status", status]] as const
+export const flows = [
+  ["intake", intake],
+  ["status", status],
+  ["qualify", qualify],
+  ["hire", hire],
+  ["delegate", delegate],
+  ["retire", retire],
+  ["meetings-plan", meetingsPlan],
+  ["meetings-prepare", meetingsPrepare],
+  ["meetings-open", meetingsOpen],
+  ["meetings-follow-up", meetingsFollowUp],
+  ["meetings-reply", meetingsReply],
+  ["meetings-book", meetingsBook]
+] as const
 
 /** Every flow the host registers with its engine. */
-const registered = [intake, deliver, status] as const
+const registered = [
+  intake,
+  deliver,
+  status,
+  qualify,
+  hire,
+  delegate,
+  retire,
+  meetingsPlan,
+  meetingsPrepare,
+  meetingsOpen,
+  meetingsFollowUp,
+  meetingsReply,
+  meetingsBook
+] as const
 
 /** Everything the host was started with. */
 export interface Options {
@@ -63,6 +104,8 @@ export interface Options {
   readonly slack: boolean
   /** The process environment over `.env`: it carries the Slack tokens, so it is never logged. */
   readonly environment: Readonly<Record<string, string | undefined>>
+  /** The gateway's bearer credential; its principal may decide what the local operator may. */
+  readonly credential: string
 }
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex")
@@ -77,18 +120,54 @@ const sha = (value: string) => createHash("sha256").update(value).digest("hex")
  */
 export const executionRoot = (settings: Pick<Settings, "stateDir">) => join(settings.stateDir, "execution")
 
+/** Where the catalog files are now: under the state directory. */
+const catalogDirectory = (settings: Pick<Settings, "stateDir">) => join(settings.stateDir, "catalog")
+
+/**
+ * Where the catalog's descriptors say their files are: the catalog directory
+ * at the host's first start, recorded in `catalog/root`. A descriptor's paths
+ * are part of every run's approved flow identity, so a state directory
+ * restored somewhere else keeps them, and its parked runs resume.
+ */
+export const catalogRoot = async (settings: Pick<Settings, "stateDir">) => {
+  const directory = catalogDirectory(settings)
+  await mkdir(directory, { recursive: true })
+  const file = join(directory, "root")
+  try {
+    await writeFile(file, `${directory}\n`, { flag: "wx", mode: 0o444 })
+    return directory
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+    return (await readFile(file, "utf8")).trim()
+  }
+}
+
+/**
+ * The host services, reading a catalog file named under `root` from where
+ * the catalog is now. Unchanged when the state directory never moved.
+ */
+const relocated = (host: Layer.Layer<NodeServices.NodeServices>, root: string, directory: string) =>
+  root === directory ? host : Layer.effectContext(
+    Effect.map(Effect.context<NodeServices.NodeServices>(), (context) => {
+      const fs = Context.get(context, FileSystem.FileSystem)
+      const moved = (path: string) => path.startsWith(`${root}/`) ? join(directory, path.slice(root.length + 1)) : path
+      return Context.add(context, FileSystem.FileSystem, { ...fs, readFile: (path) => fs.readFile(moved(path)) })
+    })
+  ).pipe(Layer.provide(host))
+
 /** The host's catalog: one descriptor per organization flow, pinned under the state directory. */
 export const catalog = async (options: Pick<Options, "settings">) => {
-  const directory = join(options.settings.stateDir, "catalog")
-  await mkdir(directory, { recursive: true })
+  const directory = catalogDirectory(options.settings)
+  const root = await catalogRoot(options.settings)
   return Promise.all(flows.map(async ([name, declaration]) => {
-    const path = join(directory, `${name}.json`)
+    const file = join(directory, `${name}.json`)
+    const path = join(root, `${name}.json`)
     const source = JSON.stringify({ flow: `organization/${name}`, version: 1 })
     try {
-      await writeFile(path, source, { flag: "wx", mode: 0o444 })
+      await writeFile(file, source, { flag: "wx", mode: 0o444 })
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
-      if (await readFile(path, "utf8") !== source) throw new Error("Organization flow identity was modified; refusing to serve")
+      if (await readFile(file, "utf8") !== source) throw new Error("Organization flow identity was modified; refusing to serve")
     }
     const descriptor = new Descriptor.FlowDescriptor({
       name: `organization/${name}`,
@@ -112,7 +191,7 @@ export const catalog = async (options: Pick<Options, "settings">) => {
       // this repository does not offer them; this host implements them.
       modelInvocable: true,
       frontmatter: {},
-      provenance: new Descriptor.Provenance({ source: "organization", root: directory })
+      provenance: new Descriptor.Provenance({ source: "organization", root })
     })
     return { descriptor, declaration }
   }))
@@ -130,6 +209,7 @@ const resources = (platform: NativeControl.Platform, settings: Settings) =>
     return RoleHost.layerResources({
       memory,
       wiki: { root: settings.root, services: files },
+      retrieval: { logDir: join(settings.stateDir, "retrieval") },
       // A role result is an answer, not a workspace claim, when no judge is configured.
       ...(settings.organization.judge === "none" ? { claimCap: 0 } : {})
     })
@@ -143,13 +223,30 @@ const withoutUnmoved = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<
       run: (options: Agent.Options) => agent.value.run({ ...options, unmovedCap: 0 })
     })))
 
+/** Role tasks this host runs at once when `SMITHERS_ORG_MAX_CONCURRENT_TASKS` does not say. */
+export const defaultMaxConcurrentTasks = 4
+
+/** The host's cap on concurrent role tasks, from `SMITHERS_ORG_MAX_CONCURRENT_TASKS`. */
+export const maxConcurrentTasks = (environment: Readonly<Record<string, string | undefined>>): number => {
+  const text = environment.SMITHERS_ORG_MAX_CONCURRENT_TASKS
+  if (text === undefined || text.trim() === "") return defaultMaxConcurrentTasks
+  const parsed = Number(text)
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 64) {
+    throw new Error("SMITHERS_ORG_MAX_CONCURRENT_TASKS must be an integer from 1 to 64")
+  }
+  return parsed
+}
+
 /**
- * Role tasks with the unmoved brake disarmed. The brake measures the host's
- * served root, where no role acts: a builder acts in its machine and every
- * other role answers. The flow checks each result against its charter, and
- * the diff and the checks are what judge a build.
+ * Role tasks under their principal's budget (`Budgets.layer`: daily tasks
+ * charged up the hiring chain, tokens per task over the run's budget, the
+ * principal's and the host's concurrency), with the unmoved brake disarmed.
+ * The brake measures the host's served root, where no role acts: a builder
+ * acts in its machine and every other role answers. The flow checks each
+ * result against its charter, and the diff and the checks are what judge a
+ * build.
  */
-const roleTasks = Authority.layer(Actions.RoleTask.layer).pipe(
+const roleTasks = (tasks: number) => Authority.layer(Budgets.layer(Actions.RoleTask.layer, { maxConcurrentTasks: tasks })).pipe(
   Layer.provide(Layer.unwrap(Effect.gen(function*() {
     const runtime = yield* FlowRuntime.FlowRuntime
     const table = yield* Action.Implementations
@@ -179,7 +276,11 @@ const roleTasks = Authority.layer(Actions.RoleTask.layer).pipe(
 )
 
 /** The organization's actions, gates, role tasks, and flows, registered over one implementation table. */
-const registrations = (platform: NativeControl.Platform, options: Options) => {
+const registrations = (
+  platform: NativeControl.Platform,
+  options: Options,
+  triggers: ReturnType<typeof Schedule.store>
+) => {
   const { settings } = options
   const organization = settings.organization
   const machines = Workspace.microsandbox({
@@ -187,6 +288,7 @@ const registrations = (platform: NativeControl.Platform, options: Options) => {
     image: organization.vm.image ?? "node:26-bookworm",
     cpus: organization.vm.cpus,
     memoryMib: organization.vm.memoryMib,
+    diskMib: organization.vm.diskMib,
     network: organization.vm.network === true,
     owner: settings.installation,
     holder: options.holder
@@ -201,7 +303,7 @@ const registrations = (platform: NativeControl.Platform, options: Options) => {
       repositories: settings.repositories,
       wiki: { root: settings.root, generatedDir: organization.wiki.generatedDir }
     }),
-    roleTasks,
+    roleTasks(maxConcurrentTasks(options.environment)),
     GatesLive.layer({ review: Actions.reviewHandler() }),
     OrganizationActions.layer({
       root: settings.root,
@@ -214,13 +316,40 @@ const registrations = (platform: NativeControl.Platform, options: Options) => {
       generatedDir: organization.wiki.generatedDir,
       statusFile: organization.wiki.statusFile
     }),
+    Staff.layer({
+      root: settings.root,
+      rosterDir: organization.rosterDir,
+      weeklyMeeting: organization.weeklyMeeting ?? false,
+      generatedDir: organization.wiki.generatedDir
+    }),
+    Meetings.layer({
+      root: settings.root,
+      stateDir: settings.stateDir,
+      generatedDir: organization.wiki.generatedDir,
+      meetingsFile: organization.meetingsFile,
+      assistant: organization.assistant,
+      owner: options.slack ? settings.owners[0] : undefined,
+      environment: options.environment,
+      calendar: Meetings.calendarOf(options.environment)
+    }),
     slack,
     ...registered.map((declaration) => Interpreter.layer(declaration as never))
   ).pipe(
     Layer.provideMerge(Layer.mergeAll(
       Authority.layerRegistry(settings.snapshot),
+      triggers,
+      Budgets.layerLedgerFile({ file: join(settings.stateDir, "budget-ledger.json") }).pipe(
+        Layer.provide(NodeServices.layer)
+      ),
       resources(platform, settings),
-      Workspace.layer({ machines, maxConcurrentVMs: settings.maxConcurrentVMs }).pipe(
+      Workspace.layer({
+        machines,
+        maxConcurrentVMs: settings.maxConcurrentVMs,
+        // The workspaces know repositories by host path; the page names them.
+        environments: Object.fromEntries(
+          Object.entries(settings.environments).map(([name, environment]) => [settings.repositories[name]!, environment])
+        )
+      }).pipe(
         Layer.provide(NodeServices.layer)
       )
     )),
@@ -253,9 +382,15 @@ export const layer = (platform: NativeControl.Platform, options: Options, seats?
     : Evaluator.layerFromEnvironment(options.environment, "smithers organization serve").pipe(
       Layer.provide(platform.httpClient)
     )
-  return Layer.unwrap(Effect.promise(() => catalog(options)).pipe(Effect.map((entries) => {
+  const catalogued = Effect.promise(async () => ({
+    entries: await catalog(options),
+    root: await catalogRoot(settings)
+  }))
+  const triggers = Schedule.store(platform, settings.stateDir)
+  return Layer.unwrap(catalogued.pipe(Effect.map(({ entries, root }) => {
+    const host = relocated(platform.host, root, catalogDirectory(settings))
     const registry = Registry.layerFromDescriptors(entries.map((entry) => entry.descriptor)).pipe(
-      Layer.provide(platform.host)
+      Layer.provide(host)
     )
     // Each module default-exports the flow it declares, so nothing is
     // registered by name and nothing is loaded from disk.
@@ -270,7 +405,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, seats?
       }
     }
     const modules = Layer.unwrap(Executable.catalog(executableOptions).pipe(
-      Effect.provide(platform.host),
+      Effect.provide(host),
       Effect.map((built) =>
         Layer.mergeAll(
           Executable.layerRefreshable(built, executableOptions),
@@ -278,16 +413,18 @@ export const layer = (platform: NativeControl.Platform, options: Options, seats?
         )
       )
     )).pipe(
-      Layer.provideMerge(registrations(platform, options)),
+      Layer.provideMerge(registrations(platform, options, triggers)),
       Layer.provide(registry),
       Layer.orDie
     )
     // The dynamically built catalog layer erases its requirement set; every
     // service it names is one the registration phase provides.
-    return native.layerHost(
-      { root: settings.root, stateRoot: settings.stateDir, evaluator: judge },
+    const served = native.layerHost(
+      { root: settings.root, stateRoot: settings.stateDir, evaluator: judge, credential: options.credential },
       modules as unknown as NativeControl.ModuleRegistration,
       registry
     )
+    // The scheduler launches through the served control plane.
+    return Schedule.layer().pipe(Layer.provide(triggers), Layer.provideMerge(served))
   })))
 }

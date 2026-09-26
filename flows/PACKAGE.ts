@@ -250,15 +250,22 @@ const organizationFixture = Smithers.Filegroup({ cwd: "packages/smithers/agent/i
   srcs: [Smithers.file("test/SlackFixture.ts")] })
 const organizationHost = Smithers.NodeTest({
   runtime: node,
-  runner: Smithers.testRunner([fixture("organization-host.test.mjs"), fixture("organization-host-slack.test.mjs")]),
+  runner: Smithers.testRunner([fixture("organization-host.test.mjs"), fixture("organization-host-slack.test.mjs"),
+    fixture("organization-host-document.test.mjs"), fixture("organization-host-relocate.test.mjs"),
+    fixture("organization-hiring.test.mjs"), fixture("organization-meetings.test.mjs"),
+    fixture("organization-host-qualify.test.mjs")]),
   srcs: codingSources, deps: [...codingDependencies, ...organizationPackages, organizationFixture], cwd, timeout: "20m"
 })
-// `init` and `doctor`, the organization's local setup commands; the probe
-// case boots one real microVM and names its skip where none can boot.
+// The organization's local commands: setup (`init`, `doctor`, subscriptions,
+// the service, backups, hygiene) and the client commands against a stand-in control RPC;
+// the probe case boots one real microVM and names its skip where none can boot.
 const organizationSetup = Smithers.NodeTest({
   runtime: node,
   runner: Smithers.testRunner([Smithers.file("//flows/organization/setup/init.test.ts"),
-    Smithers.file("//flows/organization/setup/doctor.test.ts"), Smithers.file("//flows/organization/setup/probe.test.ts")]),
+    Smithers.file("//flows/organization/setup/doctor.test.ts"), Smithers.file("//flows/organization/setup/probe.test.ts"),
+    Smithers.file("//flows/organization/setup/service.test.ts"), Smithers.file("//flows/organization/setup/backup.test.ts"),
+    Smithers.file("//flows/organization/setup/hygiene.test.ts"), Smithers.file("//flows/organization/setup/subscriptions.test.ts"),
+    Smithers.file("//flows/organization/setup/environment-doctor.test.ts"), Smithers.file("//flows/organization/cli.test.ts")]),
   srcs: codingSources, deps: [...codingDependencies, ...organizationPackages], cwd, timeout: "20m"
 })
 

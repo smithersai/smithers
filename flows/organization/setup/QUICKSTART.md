@@ -69,5 +69,12 @@ node flows/organization/cli.ts answer <gate> approve
 
 Or DM the app a small task. Approved changes land on `organization/…`
 branches of the repository, never pushed; receipts are under `Org/Runs/`.
-Machines have no network and hold only the committed files: builders and
-checks cannot install dependencies (#1931).
+
+## 7. Dependencies and tests
+
+Machines hold only the committed files and have no network until the
+repository has an environment under `repositories` in `Org/Organization.md`:
+a `prepare` command run once per lockfile with the network it names, the
+network builders get (default none), and the checks every change runs. See
+`flows/organization/host.md#repository-environments`; `doctor` prints an
+`env` line for it.

@@ -10,11 +10,12 @@ import { createHash } from "node:crypto"
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { Clock, Effect, Layer } from "effect"
+import { ReceiptFailed, runDirectory } from "../../packages/smithers/agent/organization/src/Actions.ts"
 import * as Authority from "../../packages/smithers/agent/organization/src/Authority.ts"
 import type * as Gates from "../../packages/smithers/agent/organization/src/Gates.ts"
 import type * as Profile from "../../packages/smithers/agent/organization/src/Profile.ts"
 import type * as Prompt from "../../packages/smithers/agent/organization/src/Prompt.ts"
-import type * as Workspace from "../../packages/smithers/agent/organization/src/Workspace.ts"
+import * as Workspace from "../../packages/smithers/agent/organization/src/Workspace.ts"
 import {
   Admit,
   type Answer,
@@ -34,6 +35,10 @@ import {
   Settle,
   type Stage,
   StatusFailed,
+  DisposeWorkspaces,
+  type HostAsk,
+  ReadAsk,
+  WriteDocument,
   WriteStatus
 } from "./schema.ts"
 
@@ -114,7 +119,97 @@ const describeResult = (answer: Answer): string =>
     ? answer.result.summary
     : `${answer.result.summary} (${answer.principal} broke its charter: ${answer.violations.join("; ")})`
 
+/** A child run's key under its delivery's: `<key>.<suffix>`, within a request key's length. */
+export const childKey = (key: string, suffix: string) => `${key.slice(0, 127 - suffix.length)}.${suffix}`
+
+/** Whether `principal` was hired by `parent`, directly or below one of its hires. */
+const hiredUnder = (snapshot: Authority.Snapshot, principal: string, parent: string) => {
+  let current = snapshot.roster.profiles.get(principal)
+  for (let depth = 0; current?.hiredBy !== undefined && depth <= snapshot.roster.profiles.size; depth++) {
+    if (current.hiredBy === parent) return true
+    current = snapshot.roster.profiles.get(current.hiredBy)
+  }
+  return false
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+/** What a valid `done` answer's host fields ask for (`schema.ts`, {@link HostAsk}). */
+export const readAsk = (key: string, answer: Answer): HostAsk => {
+  const none: HostAsk = { kind: "none", reason: "", hire: null, meeting: null }
+  if (!answer.valid || answer.result.status !== "done") return none
+  const { hire, meeting } = answer.result.fields
+  const invalid = (reason: string): HostAsk => ({ ...none, kind: "invalid", reason: `${answer.principal}: ${reason}` })
+  if (hire !== undefined && hire !== null) {
+    if (!isRecord(hire) || typeof hire.need !== "string" || hire.need.trim() === "") {
+      return invalid("fields.hire needs a need, the work the hire is for")
+    }
+    const task = typeof hire.task === "string" && hire.task.trim() !== "" ? paragraph(hire.task) : undefined
+    const acceptance = Array.isArray(hire.acceptance) ? lines(hire.acceptance.filter((item) => typeof item === "string")) : []
+    return {
+      ...none,
+      kind: "hire",
+      hire: {
+        key: childKey(key, "hire"),
+        parent: answer.principal,
+        need: paragraph(hire.need),
+        ...(task === undefined ? {} : { task, ...(acceptance.length === 0 ? {} : { acceptance }) })
+      }
+    }
+  }
+  if (meeting !== undefined && meeting !== null) {
+    const minutes = isRecord(meeting) ? Number(meeting.minutes) : Number.NaN
+    if (!isRecord(meeting) || typeof meeting.purpose !== "string" || meeting.purpose.trim() === "") {
+      return invalid("fields.meeting needs a purpose")
+    }
+    if (!Number.isInteger(minutes) || minutes < 5 || minutes > 240) {
+      return invalid("fields.meeting needs minutes, a whole number from 5 to 240")
+    }
+    return {
+      ...none,
+      kind: "meeting",
+      meeting: { key: childKey(key, "meeting"), requestedBy: answer.principal, purpose: line(meeting.purpose), minutes }
+    }
+  }
+  return none
+}
+
+/** The host fields a principal may use, as task acceptance lines. */
+const askLines = (profile: Profile.Profile): ReadonlyArray<string> => [
+  ...(profile.grants.tools.includes("delegate") && (profile.grants.hiring?.maxChildren ?? 0) > 0
+    ? ["To hire a specialist for this instead, return done with no handoffs and `fields.hire`: `{ need, task, acceptance }` (the work the hire is for, its first task, and that task's criteria)."]
+    : []),
+  "To ask for time with the owner instead, return done with no handoffs and `fields.meeting`: `{ purpose, minutes }`."
+]
+
+/** A role's answer as a wiki page: the summary, each output field, and the evidence it cites. */
+export const renderDocument = (answer: Answer): string => {
+  const value = (field: unknown): string =>
+    typeof field === "string"
+      ? field.trim()
+      : Array.isArray(field) && field.every((item) => typeof item === "string")
+      ? field.map((item) => `- ${item}`).join("\n")
+      : `\`\`\`json\n${JSON.stringify(field, null, 2)}\n\`\`\``
+  const { result } = answer
+  return [
+    `# ${line(result.summary, 200)}`,
+    "",
+    `${answer.principal} · ${result.status}`,
+    ...Object.entries(result.fields).flatMap(([name, field]) => ["", `## ${name}`, "", value(field)]),
+    ...(result.evidence.length === 0
+      ? []
+      : ["", "## Evidence", "", ...result.evidence.map((item) => `- ${item.kind} \`${item.ref}\`${item.detail === "" ? "" : `: ${line(item.detail, 400)}`}`)]),
+    ...(result.handoffs.length === 0 ? [] : ["", "## Handoffs", "", ...result.handoffs.map((item) => `- ${item.to}: ${line(item.objective, 400)}`)]),
+    ...(result.escalations.length === 0 ? [] : ["", "## Escalations", "", ...result.escalations.map((item) => `- ${item.to}: ${line(item.reason, 400)}`)]),
+    ""
+  ].join("\n")
+}
+
 const negativeVerdict = /^(?:request-changes|changes-requested|reject(?:ed)?|fail(?:ed)?|blocked|inconclusive)$/i
+
+/** The last `max` characters of `text`, marked when cut. */
+const tail = (text: string, max: number) => text.length <= max ? text : `…${text.slice(text.length - max + 1)}`
 
 const fence = (text: string, max: number) => text.length <= max ? text : `${text.slice(0, max)}\n… (${text.length - max} more characters not shown)`
 
@@ -191,7 +286,7 @@ export const layer = (options: Options) =>
     RouteTask.toLayer(({ assistant, request, revision }) =>
       Effect.gen(function*() {
         const registry = yield* Authority.RosterRegistry
-        const { snapshot } = yield* registry.resolve(revision, assistant)
+        const { profile, snapshot } = yield* registry.resolve(revision, assistant)
         const at = yield* Clock.currentTimeMillis
         return {
           proceed: true,
@@ -210,6 +305,7 @@ export const layer = (options: Options) =>
               "Return done.",
               "When the request needs work, include exactly one handoff: `to` is the accountable role's id from the inputs, `objective` restates the request, and `inputs` lists what the role needs.",
               "When it needs no work, include no handoff and put the answer in the summary.",
+              ...askLines(profile),
               "Fill every output field your charter declares."
             ]),
             evidence: ["The request text and the routing reason."],
@@ -218,7 +314,7 @@ export const layer = (options: Options) =>
           },
           context: [requestContext(request, at)]
         }
-      }), { implementationVersion: "route-task/v1" }),
+      }), { implementationVersion: "route-task/v2" }),
     LeadTask.toLayer(({ repository, request, revision, routed }) =>
       Effect.gen(function*() {
         const registry = yield* Authority.RosterRegistry
@@ -240,7 +336,7 @@ export const layer = (options: Options) =>
           return stop(routed.principal, "blocked", `${routed.principal} handed the request to itself`, placeholder)
         }
         // An inactive or unknown lead is a refusal, not a quiet stop.
-        yield* registry.resolve(revision, handoff.to)
+        const lead = (yield* registry.resolve(revision, handoff.to)).profile
         return {
           proceed: true,
           outcome: "blocked" as const,
@@ -257,9 +353,15 @@ export const layer = (options: Options) =>
               )
             ]),
             acceptance: lines([
-              "Return done with exactly two handoffs.",
+              `When the request changes ${repository}, return done with exactly two handoffs.`,
               `The first hands the change to the role that builds it: \`objective\` is the one change to make in ${repository}, and \`inputs\` are its acceptance criteria, one per entry.`,
               "The second hands the finished change to a different role that independently checks it against those criteria.",
+              ...(lead.grants.tools.includes("wiki-write")
+                ? [
+                  "When the request's output is a document or a reply rather than a repository change (a brief, a triage, a draft, a review), do the work yourself from the request, its context and what you can read, and return done with no handoffs. The host writes your summary and output fields to the organization wiki as the document; you need no tool to write or post it."
+                ]
+                : []),
+              ...askLines(lead),
               "Fill every output field your charter declares."
             ]),
             evidence: ["The request and the checks the acceptance relies on."],
@@ -268,8 +370,8 @@ export const layer = (options: Options) =>
           },
           context: [requestContext(request, at)]
         }
-      }), { implementationVersion: "lead-task/v2" }),
-    Assign.toLayer(({ contract, repository, revision }) =>
+      }), { implementationVersion: "lead-task/v5" }),
+    Assign.toLayer(({ contract, key, repository, revision }) =>
       Effect.gen(function*() {
         const registry = yield* Authority.RosterRegistry
         const blocked = (reason: string): Assignment => ({
@@ -281,11 +383,39 @@ export const layer = (options: Options) =>
           objective: "",
           acceptance: [],
           message: "No change",
-          checkerWorkspace: false
+          checkerWorkspace: false,
+          delegate: null
         })
         if (!contract.valid) return blocked(describeResult(contract))
         if (contract.result.status !== "done") return blocked(contract.result.summary)
         const [build, check] = contract.result.handoffs
+        // A handoff to a specialist the lead hired is a delegation: the hire
+        // works under its own grants and the lead reviews it.
+        if (build !== undefined) {
+          const snapshot = yield* registry.get(revision)
+          if (hiredUnder(snapshot, build.to, contract.principal)) {
+            const specialist = (yield* registry.resolve(revision, build.to)).profile
+            return {
+              proceed: true,
+              reason: "",
+              lead: contract.principal,
+              builder: specialist.id,
+              checker: contract.principal,
+              objective: line(build.objective, 7_900),
+              acceptance: lines(build.inputs),
+              message: line(build.objective, 72),
+              checkerWorkspace: false,
+              delegate: {
+                key: childKey(key, "delegate"),
+                parent: contract.principal,
+                specialist: specialist.id,
+                objective: paragraph(build.objective),
+                inputs: [],
+                acceptance: lines(build.inputs)
+              }
+            }
+          }
+        }
         if (build === undefined || check === undefined) {
           return blocked(`${contract.principal}'s contract names no builder and checker`)
         }
@@ -306,9 +436,10 @@ export const layer = (options: Options) =>
           objective,
           acceptance: lines(build.inputs),
           message: line(objective, 72),
-          checkerWorkspace: holdsRepository(checker, repository)
+          checkerWorkspace: holdsRepository(checker, repository),
+          delegate: null
         }
-      }), { implementationVersion: "assign/v3" }),
+      }), { implementationVersion: "assign/v4" }),
     BuildTask.toLayer(({ assignment, findings, request, round, workdir }) =>
       Clock.currentTimeMillis.pipe(Effect.map((at): Stage => ({
         proceed: true,
@@ -325,6 +456,7 @@ export const layer = (options: Options) =>
           acceptance: lines([
             ...assignment.acceptance,
             "Change only what these criteria require, inside the workspace.",
+            "Read the output of every command you run before you answer: answer in a later reply than the commands, never in the same one.",
             "Return done with every output field your charter declares and the commands you ran as evidence."
           ]),
           evidence: ["Command output from the workspace."],
@@ -339,7 +471,7 @@ export const layer = (options: Options) =>
             text: findings.join("\n")
           }])
         ]
-      }))), { implementationVersion: "build-task/v1" }),
+      }))), { implementationVersion: "build-task/v2" }),
     CheckTask.toLayer(({ assignment, build, checks, diff, request, round, workdir }) =>
       Clock.currentTimeMillis.pipe(Effect.map((at): Stage => ({
         proceed: true,
@@ -353,11 +485,12 @@ export const layer = (options: Options) =>
             "The diff, the check receipts from a fresh machine, and the builder's summary, in the context below.",
             `${diff.files.length} file(s) changed, +${diff.added} -${diff.deleted}; configured checks ${checks.passed ? "passed" : "did not pass"}.`,
             ...(assignment.checkerWorkspace
-              ? [`The change is applied in the repository checkout at ${workdir} in your workspace machine: reproduce the criteria there, and change nothing.`]
+              ? [`The change is applied in the repository checkout at ${workdir} in a workspace machine of your own, removed after your turn: reproduce the criteria there.`]
               : [])
           ]),
           acceptance: lines([
             ...assignment.acceptance.map((criterion) => `Criterion: ${criterion}`),
+            "Read the output of every command you run before you answer: answer in a later reply than the commands, never in the same one.",
             "Return done only when every criterion is met and every configured check passed; otherwise return blocked with the unmet criteria as the summary.",
             "Fill every output field your charter declares."
           ]),
@@ -388,7 +521,7 @@ export const layer = (options: Options) =>
             text: fence(`${build.principal}: ${describeResult(build)}`, 4_000)
           }
         ]
-      }))), { implementationVersion: "check-task/v3" }),
+      }))), { implementationVersion: "check-task/v5" }),
     CorrectTask.toLayer(({ result, stage, validation }) =>
       Clock.currentTimeMillis.pipe(Effect.map((at): Stage => ({
         ...stage,
@@ -406,6 +539,33 @@ export const layer = (options: Options) =>
           }
         ]
       }))), { implementationVersion: "correct-task/v1" }),
+    ReadAsk.toLayer(({ answer, key }) => Effect.sync(() => readAsk(key, answer)), { implementationVersion: "read-ask/v1" }),
+    DisposeWorkspaces.toLayer(({ workspaces }) =>
+      Effect.flatMap(Workspace.Workspace, (service) =>
+        Effect.forEach(
+          workspaces.filter((workspace): workspace is Workspace.Prepared => workspace !== null),
+          (workspace) => service.dispose(workspace),
+          { discard: true }
+        )), { implementationVersion: "dispose-workspaces/v1" }),
+    WriteDocument.toLayer(({ answer, key, revision }) =>
+      Effect.gen(function*() {
+        const registry = yield* Authority.RosterRegistry
+        const snapshot = yield* registry.get(revision)
+        const profile = snapshot.roster.profiles.get(answer.principal)
+        if (profile === undefined || !profile.grants.tools.includes("wiki-write")) {
+          return { written: false, path: "", reason: `${answer.principal} holds no wiki-write` }
+        }
+        const path = yield* Effect.tryPromise({
+          try: () =>
+            atomicWrite(
+              options.root,
+              join(options.generatedDir, runDirectory(key), `${answer.principal}.md`),
+              renderDocument(answer)
+            ),
+          catch: (cause) => new ReceiptFailed({ message: cause instanceof Error ? cause.message : String(cause) })
+        })
+        return { written: true, path, reason: "" }
+      }), { implementationVersion: "write-document/v1" }),
     Decide.toLayer(({ build, check, checks, diff }) =>
       Effect.sync(() => {
         const findings: Array<string> = []
@@ -419,8 +579,18 @@ export const layer = (options: Options) =>
         const verdicts = Object.values(check.result.fields).filter((value): value is string => typeof value === "string")
         const refused = verdicts.some((value) => negativeVerdict.test(value.trim()))
         if (!check.valid || check.result.status !== "done" || refused) findings.push(`${check.principal}: ${describeResult(check)}`)
-        return { approved: findings.length === 0 && checks.passed, findings: lines(findings) }
-      }), { implementationVersion: "decide/v2" }),
+        return {
+          approved: findings.length === 0 && checks.passed,
+          findings: lines(findings),
+          checks: checks.receipts.map((receipt) => ({
+            name: receipt.name,
+            exitCode: receipt.exitCode,
+            timedOut: receipt.timedOut,
+            durationMs: receipt.durationMs,
+            tail: tail(`${receipt.stdout.text}${receipt.stderr.text}`, 1_500)
+          }))
+        }
+      }), { implementationVersion: "decide/v3" }),
     RenderReply.toLayer(({ speaker, text }) =>
       Effect.gen(function*() {
         const registry = yield* Authority.RosterRegistry

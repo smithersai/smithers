@@ -11,6 +11,8 @@
  *   `.env` (default `~/.smithers/org`);
  * - `SMITHERS_ORG_REPOS` / `--repo`: comma-separated repositories, each
  *   `name=path` or a bare path (see {@link repositoryName});
+ *   each repository's environment (its prepared base, network, and checks)
+ *   comes from the organization page's `repositories.<name>`;
  * - `SMITHERS_ORG_MAX_CONCURRENT_VMS`: overrides the organization page's
  *   `vm.maxConcurrentVMs`;
  * - `SMITHERS_ORG_CHECKS` / `--check`: newline-separated `name=command`
@@ -53,6 +55,8 @@ export interface Settings {
   readonly snapshot: Authority.Snapshot
   /** Repository names, as the roster grants them, to host paths. */
   readonly repositories: Readonly<Record<string, string>>
+  /** Each configured repository's environment, by name, from the organization page. */
+  readonly environments: Readonly<Record<string, Workspace.Environment>>
   readonly checks: ReadonlyArray<Workspace.Check>
   readonly owners: ReadonlyArray<string>
   readonly maxRounds: number
@@ -164,6 +168,11 @@ export const resolve = async (
   })
   mkdirSync(stateDir, { recursive: true, mode: 0o700 })
   const organization = loaded.loaded.organization
+  const environments = Object.fromEntries(
+    Object.entries(organization.repositories ?? {})
+      .filter(([name]) => Object.hasOwn(repositories, name))
+      .map(([name, entry]) => [name, Config.environmentOf(entry)])
+  )
   const port = positive("--port", flags.port, defaultPort, 65_535)
   return {
     root,
@@ -173,6 +182,7 @@ export const resolve = async (
     policy: loaded.loaded.policy,
     snapshot: loaded.snapshot,
     repositories,
+    environments,
     checks,
     owners: list(env.SMITHERS_SLACK_USER_IDS),
     maxRounds: positive("--max-rounds", flags["max-rounds"] ?? env.SMITHERS_ORG_MAX_ROUNDS, 2, 5),

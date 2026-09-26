@@ -23,6 +23,9 @@
  *   with a receipt saying so, and nothing lands.
  * - A client cannot start the delivery flow itself, and a request claiming a
  *   Slack author who is not an owner is refused before any role sees it.
+ * - `/rpc` and `/projections` refuse a call without the credential the host
+ *   wrote to its state directory (mode 600), or with a stale one after
+ *   removing it rotated it; the CLI presents the current one.
  *
  * The suite skips, by name, only on a host that cannot boot a microVM. Every
  * machine it boots carries its own installation's owner label, and the sweep
@@ -31,11 +34,11 @@
  * Run: node --test flows/test/organization-host.test.mjs
  */
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, describe, it } from "node:test"
-import { ControlRefused, rpc } from "../organization/client.ts"
+import { ControlRefused, credentialFile, rpc } from "../organization/client.ts"
 import {
   branches,
   cleanup,
@@ -96,7 +99,7 @@ describe("the organization host", { skip: missing === undefined ? false : `skipp
     // `status` lists the run; `--write` runs the status flow over the receipts.
     const listed = run(handle, "status", "--write")
     assert.match(listed, /^status page written by \S+$/m)
-    assert.match(listed, new RegExp(`^${runId}\\s+organization/intake\\s+completed$`, "m"))
+    assert.match(listed, /^running 0  parked 0  failed 0  done [1-9]\d*$/m)
     const page = readFileSync(join(root, "Org/Status.md"), "utf8")
     assert.match(page, /^1 deliveries\.$/m)
     assert.match(page, new RegExp(`\\| cli:e2e-land \\| landed \\| ${branch} ${report.applied.commit.slice(0, 12)} \\|`))
@@ -197,6 +200,20 @@ describe("the organization host", { skip: missing === undefined ? false : `skipp
     await handle.stop()
   })
 
+  it("refuses a checker's answer written in the reply that probed, and lands on the answer it gives after reading", { timeout: 300_000 }, async () => {
+    const root = organization()
+    const handle = await host(root, repo, { SMITHERS_ORGANIZATION_SCRIPTED_CHECK_PROBES: "1" })
+    await handle.start()
+    const runId = /^started (\S+)$/.exec(run(handle, "submit", "Add a line to README.md", "--key", "e2e-probe"))?.[1]
+    assert.ok(runId)
+    assert.equal((await settled(handle, runId)).status, "completed", handle.output())
+    const report = receipt(root, "cli:e2e-probe").report
+    assert.equal(report.status, "landed", JSON.stringify(report))
+    assert.equal(report.summary, `Read after the refusal: ${line}`)
+    assert.equal(git(repo, "show", `${report.applied.branch}:README.md`), `# Demo\n${line}`)
+    await handle.stop()
+  })
+
   it("blocks a role that breaks its charter twice, and the receipt names the field", { timeout: 300_000 }, async () => {
     const root = organization()
     const handle = await host(root, repo, {
@@ -258,7 +275,7 @@ describe("the organization host", { skip: missing === undefined ? false : `skipp
     const root = organization()
     const handle = await host(root, repo)
     await handle.start()
-    const control = rpc(handle.base)
+    const control = rpc(handle.base, handle.credential())
 
     // The delivery flow is not a client's to start: its admission is the host's.
     await assert.rejects(
@@ -285,6 +302,59 @@ describe("the organization host", { skip: missing === undefined ? false : `skipp
     assert.equal(existsSync(join(root, "Org/Runs/slack-T1-Ev-forged")), false)
     assert.equal(branches(repo).filter((name) => name.includes("forged")).length, 0)
     assert.equal(git(repo, "rev-parse", "main"), main)
+    await handle.stop()
+  })
+
+  it("refuses calls without the state directory's credential, and rotates it", { timeout: 300_000 }, async () => {
+    const root = organization()
+    const handle = await host(root, repo)
+    await handle.start()
+    const file = credentialFile(handle.stateDir)
+    assert.equal(statSync(file).mode & 0o777, 0o600)
+    const first = handle.credential()
+    assert.match(first, /^[A-Za-z0-9_-]{43}$/)
+    const list = { _tag: "runs", filters: {} }
+    const unauthorized = (error) => error instanceof ControlRefused && error.tag === "/control/Unauthorized"
+
+    await assert.rejects(rpc(handle.base).call("List", list), unauthorized)
+    await assert.rejects(rpc(handle.base, `${first}x`).call("List", list), unauthorized)
+    const snapshot = `${JSON.stringify({ _tag: "Request", id: "1", tag: "Projection.Snapshot",
+      payload: { selector: { _tag: "run-summary", runId: "none" } }, headers: [] })}\n`
+    const projections = (headers = {}) =>
+      fetch(`${handle.base}/projections`, { method: "POST", headers: { "content-type": "application/ndjson", ...headers }, body: snapshot })
+    assert.equal((await projections()).status, 401)
+    assert.equal((await projections({ authorization: `Bearer ${first}x` })).status, 401)
+    assert.equal((await projections({ authorization: `Bearer ${first}` })).status, 200)
+    assert.equal((await fetch(`${handle.base}/health`)).status, 200)
+
+    // The CLI reads the credential from the state directory, and says where it looked when there is none.
+    assert.equal(run(handle, "status"), "no runs")
+    const elsewhere = mkdtempSync(join(tmpdir(), "organization-e2e-nostate-"))
+    try {
+      const refused = invoke(handle, "status", "--state-dir", elsewhere)
+      assert.equal(refused.status, 1)
+      assert.ok(refused.stderr.includes(`no host credential at ${credentialFile(elsewhere)}`), refused.stderr)
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true })
+    }
+
+    // Removing the file and restarting rotates it: the old one is refused.
+    await handle.stop()
+    rmSync(file)
+    await handle.start()
+    const second = handle.credential()
+    assert.notEqual(second, first)
+    await assert.rejects(rpc(handle.base, first).call("List", list), unauthorized)
+    assert.deepEqual((await rpc(handle.base, second).call("List", list)).items, [])
+    assert.equal(run(handle, "status"), "no runs")
+
+    // A credential file other users can read is refused rather than served.
+    await handle.stop()
+    chmodSync(file, 0o644)
+    await assert.rejects(handle.start(), /is readable by other users/)
+    chmodSync(file, 0o600)
+    await handle.start()
+    assert.equal(handle.credential(), second)
     await handle.stop()
   })
 })

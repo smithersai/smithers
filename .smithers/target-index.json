@@ -10475,6 +10475,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/harness/src/internal/unobservedCall.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/harness/src/internal/untrustedData.ts"
       },
       {
@@ -20073,6 +20077,26 @@
         "path": "flows/test/organization-host-slack.test.mjs"
       },
       {
+        "kind": "file",
+        "path": "flows/test/organization-host-document.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/organization-host-relocate.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/organization-hiring.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/organization-meetings.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/organization-host-qualify.test.mjs"
+      },
+      {
         "kind": "glob",
         "pattern": "flows/**/*.ts",
         "exclude": []
@@ -20127,6 +20151,30 @@
       {
         "kind": "file",
         "path": "flows/organization/setup/probe.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/organization/setup/service.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/organization/setup/backup.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/organization/setup/hygiene.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/organization/setup/subscriptions.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/organization/setup/environment-doctor.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/organization/cli.test.ts"
       },
       {
         "kind": "glob",

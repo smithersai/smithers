@@ -13,7 +13,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import * as MicrosandboxSandbox from "../../../packages/smithers/flows/sandbox/src/MicrosandboxSandbox/index.ts"
-import { operations, rpc } from "../client.ts"
+import { operations, readCredential, rpc } from "../client.ts"
 import * as Setup from "../setup/microsandbox.ts"
 
 const flowsRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
@@ -95,12 +95,15 @@ export const host = async (root, repo, environment = {}, repository = "example/d
   const base = `http://127.0.0.1:${port}`
   let child
   let output = ""
+  // The host writes its credential at its first start; each call reads the current one.
+  const credential = () => readCredential(stateDir)
   const handle = {
     base,
     port,
     stateDir,
+    credential,
     output: () => output,
-    ops: operations(rpc(base)),
+    ops: operations({ call: (tag, payload) => rpc(base, credential()).call(tag, payload) }),
     start: async () => {
       child = spawn(process.execPath, [scriptedHost, "serve", "--standalone", "--root", root, "--state-dir", stateDir,
         "--repo", `${repository}=${repo}`, "--port", String(port), "--check", `readme=grep -qx '${line}' README.md`], {
@@ -132,9 +135,9 @@ export const host = async (root, repo, environment = {}, repository = "example/d
   return handle
 }
 
-/** Runs the CLI against a host and returns its exit status and output. */
+/** Runs the CLI against a host, with its state directory's credential, and returns its exit status and output. */
 export const invoke = (handle, ...args) =>
-  spawnSync(process.execPath, [cli, ...args, "--port", String(handle.port)], {
+  spawnSync(process.execPath, [cli, ...args, "--port", String(handle.port), ...(args.includes("--state-dir") ? [] : ["--state-dir", handle.stateDir])], {
     cwd: checkout,
     env: childEnvironment(),
     encoding: "utf8",

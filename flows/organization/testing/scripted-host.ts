@@ -15,7 +15,10 @@
  * The parts are the public example roster's (`assistant` routes to `lead`,
  * which contracts `builder` and `checker`) unless
  * `SMITHERS_ORGANIZATION_SCRIPTED_ROLES` names others, as JSON from principal
- * id to `route:<to>`, `contract:<builder>,<checker>`, `build`, or `check`, so
+ * id to `route:<to>`, `contract:<builder>,<checker>`, `build`, `check`, or
+ * `document` (the role answers the request itself, with no handoff),
+ * `ask-hire` (it asks the host for a hire with a first task), or `ask-meeting`
+ * (it asks for thirty minutes with the owner), so
  * the same script drives any roster.
  *
  * With `SMITHERS_ORGANIZATION_SCRIPTED_HOLD=<file>` set and that file
@@ -31,6 +34,24 @@
  * `{ field, asks }`, makes that principal leave `field` out of its first
  * `asks` answers to a task (1: only the first ask; 2: the correction too),
  * the way a model forgets a charter field.
+ *
+ * With `SMITHERS_ORGANIZATION_SCRIPTED_READ=<wiki path>` every role but a
+ * builder first reads that page with `wiki-read` in a cell of its own, with
+ * no `try`, and answers in the next cell; `SMITHERS_ORGANIZATION_SCRIPTED_RECALL=<query>`
+ * does the same with a `recall` of its memory.
+ *
+ * With `SMITHERS_ORGANIZATION_SCRIPTED_CHECK_SHOWS=1` the checker reads the
+ * last line of `README.md` in its workspace and puts what it saw in its
+ * summary.
+ *
+ * With `SMITHERS_ORGANIZATION_SCRIPTED_CHECK_PROBES=1` the checker's first
+ * reply probes `README.md` with `bash` and answers "blocked: output not
+ * observed" in the same reply, as real seats do; its next turn approves with
+ * `Read after the refusal: <line>` only if the probe's output reached it.
+ *
+ * `SMITHERS_ORGANIZATION_SCRIPTED_EXTRA`, the same shape, makes a principal
+ * the script does not serve decline with an undeclared field on its first
+ * `asks` answers.
  *
  * `node flows/organization/testing/scripted-host.ts serve --standalone ...`
  * takes `serve`'s flags.
@@ -53,7 +74,7 @@ import { environmentOf, resolve } from "../settings.ts"
 /** The line the scripted builder appends. */
 export const scriptedLine = "hello from the organization"
 
-const done = (fields: Record<string, string>, summary: string, handoffs: ReadonlyArray<unknown> = []) => ({
+const done = (fields: Record<string, unknown>, summary: string, handoffs: ReadonlyArray<unknown> = []) => ({
   status: "done",
   summary,
   fields,
@@ -74,13 +95,18 @@ type Part =
   | { readonly kind: "contract"; readonly builder: string; readonly checker: string }
   | { readonly kind: "build" }
   | { readonly kind: "check" }
+  | { readonly kind: "document" }
+  | { readonly kind: "ask-hire" }
+  | { readonly kind: "ask-meeting" }
 
 const partOf = (spec: string): Part => {
   const [kind = "", rest = ""] = spec.split(":")
   if (kind === "route" && rest !== "") return { kind, to: rest }
   const [builder = "", checker = ""] = rest.split(",")
   if (kind === "contract" && builder !== "" && checker !== "") return { kind, builder, checker }
-  if (kind === "build" || kind === "check") return { kind }
+  if (kind === "build" || kind === "check" || kind === "document" || kind === "ask-hire" || kind === "ask-meeting") {
+    return { kind }
+  }
   throw new Error(`SMITHERS_ORGANIZATION_SCRIPTED_ROLES: ${spec} is not a part`)
 }
 
@@ -106,6 +132,18 @@ const omissions = new Map(
   )
 )
 
+const extras = new Map(
+  Object.entries(
+    JSON.parse(process.env.SMITHERS_ORGANIZATION_SCRIPTED_EXTRA ?? "{}") as Record<string, { field: string; asks: number }>
+  )
+)
+
+/** A field the charter does not declare, on the first `asks` answers of a principal scripted to add one. */
+const extra = (system: string): Record<string, string> => {
+  const added = extras.get(principalOf(system) ?? "")
+  return added !== undefined && ask <= added.asks ? { [added.field]: "not in the charter" } : {}
+}
+
 /** Which ask of its task the current model call answers: 1, or 2 once the host has sent a correction. */
 let ask = 1
 
@@ -126,9 +164,67 @@ const heldBuilder = (system: string, turn: number, holdFile: string): string | u
   return answering(done(filled(system, "README.md now ends with the line."), "Appended the line to README.md."))
 }
 
+/**
+ * Host tasks answer by their task id, whatever the principal's part: a hire
+ * decision with the principal's spec from `SMITHERS_ORGANIZATION_SCRIPTED_HIRE`
+ * (JSON from request key or principal id to a hire spec; null or absent: no hire), a
+ * delegated task with every charter field filled, a review with `accept`
+ * (`revise` on round 1 when `SMITHERS_ORGANIZATION_SCRIPTED_REVISE=1`), a
+ * meeting agenda, a meeting reply that notes the owner's last line, and a
+ * meeting follow-up with one task from the owner's note line.
+ */
+const hostTask = (system: string, principal: string): string | undefined => {
+  const task = /^# Task (\S+)$/m.exec(system)?.[1] ?? ""
+  if (task.endsWith("/hire")) {
+    const specs = JSON.parse(process.env.SMITHERS_ORGANIZATION_SCRIPTED_HIRE ?? "{}") as Record<string, unknown>
+    const key = task.slice(0, -"/hire".length)
+    return answering(done({ hire: specs[key] ?? specs[principal] ?? null }, `${principal} decided the hire.`))
+  }
+  if (/\/work-\d+$/.test(task)) return answering(done(filled(system, `Brief by ${principal}: Cursor Pro $20/month (source: pricing page, 2026-09-25).`), `${principal} wrote the brief.`))
+  const review = /\/review-(\d+)$/.exec(task)
+  if (review !== null) {
+    const revise = process.env.SMITHERS_ORGANIZATION_SCRIPTED_REVISE === "1" && review[1] === "1"
+    return answering(done({ verdict: revise ? "revise" : "accept" }, revise ? "Add the source date to every row." : "Verified against the pricing page."))
+  }
+  if (task.endsWith("/prepare")) {
+    return answering(done({ agenda: [`${principal}: progress`, "Decision needed: none"] }, `${principal}'s agenda is ready.`))
+  }
+  if (task.endsWith("/reply")) {
+    const said = [...system.matchAll(/^Will: (.+)$/gm)].at(-1)?.[1] ?? ""
+    return answering(done({ reply: `Noted: ${said}` }, `${principal} answered.`))
+  }
+  if (task.endsWith("/follow-up")) {
+    const notes = /Will: (.+)$/m.exec(system)?.[1] ?? "no notes"
+    return answering(done({ tasks: [{ title: notes, owner: principal }] }, `${principal} turned the notes into tasks.`))
+  }
+  return undefined
+}
+
+/**
+ * The checker's reply the way real seats sometimes write it: a probe and a
+ * blind answer in one reply, which the harness refuses. Its next turn answers
+ * from the probe's output that the refusal delivered, and blocks if it saw none.
+ */
+const probedCheck = (system: string, turn: number, observed: string): string => {
+  if (turn === 0) {
+    return `const probe = await ctx.call("bash", { command: "tail -n 1 /workspace/README.md" });
+console.log(probe.stdout)
+\`\`\`
+\`\`\`cell
+ctx.done(${JSON.stringify(JSON.stringify(done(filled(system, "blocked"), "blocked: output not observed")))})`
+  }
+  const seen = observed.includes(scriptedLine)
+  return answering({
+    ...done(filled(system, seen ? "approve" : "blocked"), seen ? `Read after the refusal: ${scriptedLine}` : "No output delivered."),
+    status: seen ? "done" : "blocked"
+  })
+}
+
 /** The one cell each principal answers with, by its part. */
-const cellFor = (system: string, turn: number): string | undefined => {
+const cellFor = (system: string, turn: number, observed = ""): string | undefined => {
   const principal = principalOf(system)
+  const hosted = principal === undefined ? undefined : hostTask(system, principal)
+  if (hosted !== undefined) return hosted
   const part = principal === undefined ? undefined : parts.get(principal)
   switch (part?.kind) {
     case "route":
@@ -158,13 +254,36 @@ const cellFor = (system: string, turn: number): string | undefined => {
       return `await ctx.call("edit", ${JSON.stringify({ path: "/workspace/README.md", oldString: "# Demo\n", newString: `# Demo\n${scriptedLine}\n` })});
 ctx.done(${JSON.stringify(JSON.stringify(result))})`
     }
-    case "check":
-      return answering(done(filled(system, "approve"), "The README change meets its criterion."))
+    case "check": {
+      const result = done(filled(system, "approve"), "The README change meets its criterion.")
+      if (probesThenAnswers) return probedCheck(system, turn, observed)
+      if (!showsCheckout) return answering(result)
+      // Reads the checkout it was given and says what it saw.
+      return `const seen = await ctx.call("bash", { command: "tail -n 1 /workspace/README.md" });
+const result = ${JSON.stringify(result)};
+result.summary = "Seen: " + JSON.stringify(seen);
+ctx.done(JSON.stringify(result))`
+    }
+    case "ask-hire":
+      return answering(done(
+        {
+          ...filled(system, "A hire does this."),
+          hire: { need: "A sourced competitor pricing brief.", task: "Write a sourced pricing brief.", acceptance: ["Every row has a source and a date."] }
+        },
+        "A researcher should do this."
+      ))
+    case "ask-meeting":
+      return answering(done(
+        { ...filled(system, "Needs the owner."), meeting: { purpose: "Decide the launch scope.", minutes: 30 } },
+        "This needs thirty minutes with the owner."
+      ))
+    case "document":
+      return answering(done(filled(system, "Drafted in the wiki."), "The brief is written."))
     default:
       return answering({
         status: "declined",
         summary: "The scripted seat does not serve this role.",
-        fields: {},
+        fields: extra(system),
         evidence: [],
         handoffs: [],
         escalations: [],
@@ -188,6 +307,16 @@ const route: FlowEngineLike.RouteResolver = { prepare: () => Effect.succeed(prep
 export const refusal = "Your credit balance is too low to access the API."
 
 const refuses = process.env.SMITHERS_ORGANIZATION_SCRIPTED_REFUSE === "1"
+const reading = process.env.SMITHERS_ORGANIZATION_SCRIPTED_READ
+const recalling = process.env.SMITHERS_ORGANIZATION_SCRIPTED_RECALL
+/** The call every role but a builder makes, uncaught, in a first cell of its own. */
+const firstCall = reading !== undefined
+  ? { flow: "wiki-read", input: { path: reading } }
+  : recalling !== undefined
+  ? { flow: "recall", input: { banks: [], query: recalling } }
+  : undefined
+const showsCheckout = process.env.SMITHERS_ORGANIZATION_SCRIPTED_CHECK_SHOWS === "1"
+const probesThenAnswers = process.env.SMITHERS_ORGANIZATION_SCRIPTED_CHECK_PROBES === "1"
 
 let cells = 0
 const model = Model.make({
@@ -201,7 +330,15 @@ const model = Model.make({
       const system = request.system.map((part) => part.text).join("\n")
       // The task and its context, a correction included, are in the system prompt.
       ask = system.includes("broke your charter") ? 2 : 1
-      const text = cellFor(system, turn)
+      // A scripted first read of a page the role may not hold, left uncaught, as a model's cell might.
+      const text = firstCall !== undefined && turn === 0 && parts.get(principalOf(system) ?? "")?.kind !== "build"
+        ? `await ctx.call(${JSON.stringify(firstCall.flow)}, ${JSON.stringify(firstCall.input)});`
+        : cellFor(
+          system,
+          firstCall === undefined ? turn : Math.max(0, turn - 1),
+          // What the harness last put in front of the model, for a part that answers from it.
+          JSON.stringify(request.messages.at(-1)?.content ?? [])
+        )
       if (text === undefined) return Stream.never
       return Stream.fromIterable([
         ModelEvent.ModelEvent.TextStart({ type: "text-start", id }),

@@ -118,7 +118,7 @@ export const CorrectTask = Action.make("organization/correct-task", {
 
 /** The assistant's routing task for a request. */
 export const RouteTask = Action.make("organization/route-task", {
-  implementationVersion: "route-task/v1",
+  implementationVersion: "route-task/v2",
   payload: { revision: Schema.NonEmptyString, assistant: Profile.PrincipalId, request: Request },
   success: Stage,
   error: Authority.DispatchRefused
@@ -126,7 +126,7 @@ export const RouteTask = Action.make("organization/route-task", {
 
 /** The lead's contract task, for the role the assistant handed the request to. */
 export const LeadTask = Action.make("organization/lead-task", {
-  implementationVersion: "lead-task/v2",
+  implementationVersion: "lead-task/v5",
   payload: { revision: Schema.NonEmptyString, request: Request, repository: Profile.Container, routed: Answer },
   success: Stage,
   error: Authority.DispatchRefused
@@ -144,21 +144,67 @@ export const Assignment = Schema.Struct({
   /** The landed commit's message. */
   message: Schema.NonEmptyString,
   /** Whether the checker holds a workspace in the repository, to reproduce the change in. */
-  checkerWorkspace: Schema.Boolean
+  checkerWorkspace: Schema.Boolean,
+  /**
+   * The lead's handoff to a specialist it hired (directly or below), run as
+   * an `organization/delegate` child instead of a build; `null` for a build.
+   */
+  delegate: Schema.NullOr(Schema.Struct({
+    key: RequestKey,
+    parent: Profile.PrincipalId,
+    specialist: Profile.PrincipalId,
+    objective: Schema.String,
+    inputs: Schema.Array(Schema.String),
+    acceptance: Schema.Array(Schema.String)
+  }))
 })
 export type Assignment = typeof Assignment.Type
 
+/** The host fields a role result may carry besides its charter's: asks the host acts on. */
+export const hostFields = ["hire", "meeting"] as const
+
+/**
+ * What a result asks the host for: a hire (`fields.hire`: `{ need, task?,
+ * acceptance? }`), extra time with the owner (`fields.meeting`: `{ purpose,
+ * minutes }`), nothing, or a malformed ask and why.
+ */
+export const HostAsk = Schema.Struct({
+  kind: Schema.Literals(["hire", "meeting", "none", "invalid"]),
+  reason: Schema.String,
+  hire: Schema.NullOr(Schema.Struct({
+    key: RequestKey,
+    parent: Profile.PrincipalId,
+    need: Schema.String,
+    task: Schema.optionalKey(Schema.String),
+    acceptance: Schema.optionalKey(Schema.Array(Schema.String))
+  })),
+  meeting: Schema.NullOr(Schema.Struct({
+    key: RequestKey,
+    requestedBy: Profile.PrincipalId,
+    purpose: Schema.String,
+    minutes: Schema.Int
+  }))
+})
+export type HostAsk = typeof HostAsk.Type
+
+/** Reads a valid `done` answer's host fields into the child flow payload they ask for. */
+export const ReadAsk = Action.make("organization/read-ask", {
+  implementationVersion: "read-ask/v1",
+  payload: { key: RequestKey, answer: Answer },
+  success: HostAsk
+})
+
 /** Resolves the lead's contract into the builder and checker it names. */
 export const Assign = Action.make("organization/assign", {
-  implementationVersion: "assign/v3",
-  payload: { revision: Schema.NonEmptyString, repository: Profile.Container, contract: Answer },
+  implementationVersion: "assign/v4",
+  payload: { revision: Schema.NonEmptyString, key: RequestKey, repository: Profile.Container, contract: Answer },
   success: Assignment,
   error: Authority.DispatchRefused
 })
 
 /** The builder's task for one round, with the checker's findings from the round before. */
 export const BuildTask = Action.make("organization/build-task", {
-  implementationVersion: "build-task/v1",
+  implementationVersion: "build-task/v2",
   payload: {
     request: Request,
     assignment: Assignment,
@@ -171,7 +217,7 @@ export const BuildTask = Action.make("organization/build-task", {
 
 /** The checker's task: the diff and the fresh-machine check receipts, as data. */
 export const CheckTask = Action.make("organization/check-task", {
-  implementationVersion: "check-task/v3",
+  implementationVersion: "check-task/v5",
   payload: {
     request: Request,
     assignment: Assignment,
@@ -185,18 +231,55 @@ export const CheckTask = Action.make("organization/check-task", {
 })
 
 /** What the checker decided about one round. */
+/** One configured check as a receipt shows it: what ran, how it ended, and the end of its output. */
+export const CheckSummary = Schema.Struct({
+  name: Schema.String,
+  exitCode: Schema.NullOr(Schema.Int),
+  timedOut: Schema.Boolean,
+  durationMs: Schema.Number,
+  tail: Schema.String
+})
+export type CheckSummary = typeof CheckSummary.Type
+
 export const Verdict = Schema.Struct({
   approved: Schema.Boolean,
   /** Why not, as lines the next round's builder reads. */
-  findings: Schema.Array(Schema.String)
+  findings: Schema.Array(Schema.String),
+  /** The round's configured checks. */
+  checks: Schema.Array(CheckSummary)
 })
 export type Verdict = typeof Verdict.Type
 
 /** Reads the checker's answer and the check receipts into a verdict. Only a valid `done` over passing checks approves. */
 export const Decide = Action.make("organization/decide", {
-  implementationVersion: "decide/v2",
+  implementationVersion: "decide/v3",
   payload: { build: Answer, check: Answer, checks: Workspace.Checks, diff: Workspace.Diff },
   success: Verdict
+})
+
+/**
+ * Writes a role's own answer as a wiki document under the organization's
+ * generated directory: for a request whose output is a brief, a triage, a
+ * reply, or any page rather than a repository change. Only a principal
+ * holding `wiki-write` at the pinned revision may own one; otherwise nothing
+ * is written and `reason` says why.
+ */
+export const WriteDocument = Action.make("organization/write-document", {
+  implementationVersion: "write-document/v1",
+  payload: { revision: Schema.NonEmptyString, key: RequestKey, answer: Answer },
+  success: Schema.Struct({ written: Schema.Boolean, path: Schema.String, reason: Schema.String }),
+  error: Schema.Union([Authority.DispatchRefused, Actions.ReceiptFailed])
+})
+
+/**
+ * Removes every workspace machine a delivery prepared: the builder's and each
+ * round's checker's (`null` for a round whose checker held none). A machine
+ * already gone is not an error, so every ending may call it.
+ */
+export const DisposeWorkspaces = Action.make("organization/dispose-workspaces", {
+  implementationVersion: "dispose-workspaces/v1",
+  payload: { workspaces: Schema.Array(Schema.NullOr(Workspace.Prepared)) },
+  error: Workspace.WorkspaceError
 })
 
 /** The delivery's report: what happened, who did it, and the receipts it rests on. */
@@ -207,8 +290,19 @@ export const Report = Schema.Struct({
   principals: Schema.Record(Schema.String, Schema.String),
   rounds: Schema.Int,
   applied: Schema.optionalKey(Workspace.Applied),
+  /** The wiki document an answered request produced, relative to the organization root. */
+  document: Schema.optionalKey(Schema.String),
   /** The last round's findings, for a change the checker never approved. */
   findings: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** The last round's configured checks. */
+  checks: Schema.optionalKey(Schema.Array(CheckSummary)),
+  /** The hire, delegation, or booking a delivery handed to its child flow, as that flow reported it. */
+  child: Schema.optionalKey(Schema.Struct({
+    flow: Schema.String,
+    status: Schema.String,
+    summary: Schema.String,
+    paths: Schema.Array(Schema.String)
+  })),
   receipt: Schema.optionalKey(Schema.String)
 })
 export type Report = typeof Report.Type
