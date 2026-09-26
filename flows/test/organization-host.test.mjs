@@ -20,6 +20,10 @@
  * - A builder whose turn leaves no change is asked again once and the run
  *   lands the change it then makes; one that leaves none twice blocks the
  *   delivery with a failing `change` check, and nothing is checked or lands.
+ * - A repository whose base is `origin/main` starts each task from that
+ *   branch fetched from a remote that moved ahead of the checkout, lands on
+ *   it, and leaves the checkout's HEAD, index and tree alone; a base that
+ *   cannot be fetched blocks the delivery with a receipt saying so.
  * - A provider refusing every model call (no credits) fails the run, and its
  *   cause reaches the receipt and `submit --wait`'s output.
  * - A contract naming a retired builder is refused at dispatch: the run fails
@@ -270,6 +274,56 @@ describe("the organization host", { skip: missing === undefined ? false : `skipp
     assert.equal(report.applied, undefined)
     assert.equal(branches(repo).filter((name) => name.includes("e2e-no-change")).length, 0)
     await handle.stop()
+  })
+
+  it("starts a task from the fetched base branch and leaves the checkout alone; an unfetchable base blocks", { timeout: 300_000 }, async () => {
+    const checkout = repository()
+    const remote = mkdtempSync(join(tmpdir(), "organization-e2e-remote-"))
+    git(remote, "init", "-q", "--bare", "-b", "main")
+    git(checkout, "remote", "add", "origin", remote)
+    git(checkout, "push", "-q", "origin", "main")
+    const upstream = mkdtempSync(join(tmpdir(), "organization-e2e-upstream-"))
+    git(upstream, "clone", "-q", remote, ".")
+    writeFileSync(join(upstream, "NOTES.md"), "moved ahead\n")
+    git(upstream, "add", "NOTES.md")
+    git(upstream, "-c", "user.name=Upstream", "-c", "user.email=upstream@example.invalid", "commit", "-qm", "Ahead")
+    git(upstream, "push", "-q", "origin", "main")
+    const ahead = git(upstream, "rev-parse", "HEAD")
+    const head = git(checkout, "rev-parse", "HEAD")
+    writeFileSync(join(checkout, "scratch.txt"), "untracked\n")
+    const status = git(checkout, "status", "--porcelain")
+
+    const based = (base) => organization((org) => {
+      const page = join(org, "Organization.md")
+      writeFileSync(page, readFileSync(page, "utf8").replace("wiki:\n", `repositories:\n  example/demo:\n    base: ${base}\nwiki:\n`))
+    })
+    const root = based("origin/main")
+    const handle = await host(root, checkout)
+    await handle.start()
+    const runId = /^started (\S+)$/.exec(run(handle, "submit", "Add a line to README.md", "--key", "e2e-base"))?.[1]
+    assert.ok(runId)
+    assert.equal((await settled(handle, runId)).status, "completed", handle.output())
+    const report = receipt(root, "cli:e2e-base").report
+    assert.equal(report.status, "landed", JSON.stringify(report))
+    assert.equal(report.applied.parent, ahead)
+    assert.equal(git(checkout, "rev-parse", `${report.applied.branch}^`), ahead)
+    assert.equal(git(checkout, "show", `${report.applied.branch}:NOTES.md`), "moved ahead")
+    assert.equal(git(checkout, "rev-parse", "HEAD"), head)
+    assert.equal(git(checkout, "status", "--porcelain"), status)
+    await handle.stop()
+
+    const unreachable = based("origin/gone")
+    const refusing = await host(unreachable, checkout)
+    await refusing.start()
+    const waited = invoke(refusing, "submit", "Add a line to README.md", "--key", "e2e-no-base", "--wait", "--root", unreachable)
+    assert.equal(waited.status, 1, `${waited.stdout}${waited.stderr}`)
+    const blocked = receipt(unreachable, "cli:e2e-no-base").report
+    assert.equal(blocked.status, "blocked", JSON.stringify(blocked))
+    assert.match(blocked.summary, /^the base could not be resolved: git fetch origin gone failed: /)
+    assert.equal(branches(checkout).filter((name) => name.includes("e2e-no-base")).length, 0)
+    await refusing.stop()
+    rmSync(remote, { recursive: true, force: true })
+    rmSync(upstream, { recursive: true, force: true })
   })
 
   it("reports a provider's refusal with its cause in the receipt and the CLI", { timeout: 300_000 }, async () => {

@@ -186,11 +186,13 @@ describe("the organization page", () => {
         "  maxConcurrentVMs: 2",
         "repositories:",
         "  smithersai/smithers:",
+        "    base: origin/main",
         "    prepare:",
         "      run: npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile",
         "      key: [pnpm-lock.yaml, package.json, patches]",
         "      network: [registry.npmjs.org, '*.npmjs.org']",
         "      timeoutMs: 1800000",
+        "      tools: [rg, fd, jq]",
         "    network: none",
         "    checks:",
         "      - name: changed packages",
@@ -206,11 +208,13 @@ describe("the organization page", () => {
     expect(organization.vm.diskMib).toBe(32_768)
     const repositories = organization.repositories!
     expect(Config.environmentOf(repositories["smithersai/smithers"]!)).toEqual({
+      base: "origin/main",
       prepare: {
         run: "npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile",
         key: ["pnpm-lock.yaml", "package.json", "patches"],
         network: ["registry.npmjs.org", "*.npmjs.org"],
-        timeoutMs: 1_800_000
+        timeoutMs: 1_800_000,
+        tools: ["rg", "fd", "jq"]
       },
       network: "none",
       checks: [{
@@ -236,6 +240,12 @@ describe("the organization page", () => {
       "repositories.smithersai/smithers.prepare.network[0]"
     )
     expect(await refused("  demo:", "  a/b/c:")).toBe("repositories.a/b/c")
+    for (const base of ["-main", "origin/../main", "origin/", "origin//main", "a b"]) {
+      expect(await refused("base: origin/main", `base: '${base}'`)).toBe("repositories.smithersai/smithers.base")
+    }
+    expect(await refused("tools: [rg, fd, jq]", "tools: [rg, 'fd;rm']")).toBe(
+      "repositories.smithersai/smithers.prepare.tools[1]"
+    )
   })
 
   it("accepts Windows line endings", async () => {

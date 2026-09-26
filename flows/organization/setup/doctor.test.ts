@@ -329,3 +329,41 @@ test("the command reads the state dir's .env, exits 1 on a failure, and renders 
   assert.ok(out.some((line) => /^FAIL {2}repo +no repository configured$/.test(line)))
   assert.ok(out.some((line) => /^ +fix: set SMITHERS_ORG_REPOS/.test(line)))
 })
+
+test("each repository with an environment gets its base and tools lines, with machines only for declared tools on a host that boots", async () => {
+  const dir = join(scratch, "environment-wiki")
+  await init({ dir, stateDir: `${dir}-state`, appName: "Smithers Org" })
+  const page = join(dir, "Org", "Organization.md")
+  const locked = join(scratch, "locked-repo")
+  mkdirSync(locked)
+  spawnSync("git", ["init", "-q", locked])
+  writeFileSync(join(locked, "deps.lock"), "x\n")
+  spawnSync("git", ["-C", locked, "add", "-A"])
+  spawnSync("git", ["-C", locked, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"])
+  const environment = (tools: string) =>
+    readFileSync(page, "utf8").replace(
+      /\nwiki:\n/,
+      `\nrepositories:\n  example/demo:\n    base: origin/main\n    prepare:\n      run: "true"\n      key: [deps.lock]\n      network: none\n${tools}wiki:\n`
+    )
+  const seen: Array<{ readonly name: string; readonly machines: boolean; readonly base: string | undefined }> = []
+  const bases: DoctorOptions["bases"] = async (check) => {
+    seen.push({ name: check.name, machines: check.machines !== undefined, base: check.environment.base })
+    return [{ name: "base", status: "pass", detail: `${check.name}: origin/main → fixture` }]
+  }
+  writeFileSync(page, environment(""))
+  const plain = await doctor(healthy({ root: dir, bases, repos: [`example/demo=${locked}`] }))
+  assert.deepEqual(plain.map((line) => line.name).slice(-4), ["repo", "env", "base", "state"])
+  assert.deepEqual(seen, [{ name: "example/demo", machines: false, base: "origin/main" }])
+  // Declared tools on a host that does not boot: no machines to look in.
+  writeFileSync(page, environment("      tools: [rg]\n"))
+  await doctor(healthy({
+    root: dir,
+    bases,
+    repos: [`example/demo=${locked}`],
+    probe: async () => ({ ok: false, detail: "no", durationMs: 1 })
+  }))
+  assert.deepEqual(seen.at(-1), { name: "example/demo", machines: false, base: "origin/main" })
+  // A repository whose environment line failed gets no base line.
+  const missingKey = await doctor(healthy({ root: dir, bases, repos: [`example/demo=${scratch}`] }))
+  assert.equal(byName(missingKey, "base").length, 0)
+})

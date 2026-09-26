@@ -207,17 +207,25 @@ vm:
   maxConcurrentVMs: 4     # a task uses a builder VM and a fresh check VM
 repositories:
   smithersai/smithers:
+    base: origin/main                 # default: the checkout's HEAD
     prepare:
       run: npm install -g pnpm@11.25.0 && pnpm install --frozen-lockfile
       key: [pnpm-lock.yaml, pnpm-workspace.yaml, package.json, patches]
       network: [registry.npmjs.org]   # none | all | domain list (*.suffix allowed)
       timeoutMs: 1800000              # default 30 minutes
+      tools: [git, node, pnpm]        # the base must provide these
     network: none                     # builders and checks; default none
     checks:
       - name: changed packages
         run: CI=1 pnpm --filter '[HEAD]' run test
 ```
 
+- **Task base.** Each delivery starts from `base`: a `<remote>/<branch>` of a
+  configured remote is fetched on the host first (two minutes at most; a
+  failed fetch blocks the delivery with a receipt saying so), and its commit
+  seeds the workspace, the checks, and the landing's parent. Only that
+  remote-tracking ref moves; the checkout's HEAD, index and working tree are
+  never read or touched. `doctor` prints the resolved commit.
 - **Prepared base.** The first task at a commit seeds a VM with the commit,
   runs `prepare.run` in the workspace root with only `prepare.network`
   reachable (deny-by-default egress, DNS to the gateway), and captures the VM
@@ -227,7 +235,9 @@ repositories:
   only the source difference to its commit is applied (the archive when the
   difference does not apply). The newest two bases per repository are kept
   (`msb` lists them as `smthrs-env-…` snapshots); a failed preparation is
-  never captured and the delivery fails with the command's last output.
+  never captured and the delivery fails with the command's last output. A
+  base without one of `prepare.tools` is not captured either, and `doctor`
+  boots the base (preparing it first when missing) and finds each tool.
 - **Builders and checks** boot from the base with `network` (default `none`):
   dependencies are installed, the registry is not reachable. What the
   preparation left in the tree is part of the baseline, so it never shows up
@@ -240,8 +250,13 @@ repositories:
   2.3 s; the check VM ran the changed package's tests in 3.6 s.
 - A repository without an entry is seeded with `git archive` alone and boots
   without network (`vm.network: true` turns it on for all of them).
-- Rust and `jj` are not in `node:26-bookworm`; a check that needs them fails
-  until the image or the prepare command installs them.
+- Rust, `jj`, `rg`, `fd` and `jq` are not in `node:26-bookworm`; install
+  them in the prepare command from pinned, checksummed releases (the example
+  organization shows how) and list them in `tools`.
+- **Machine failures.** A workspace VM whose guest dies is started again on
+  its own disk the next time a step or command reaches it, and a check VM
+  that goes away is replaced once; a seeded workspace is flushed to disk
+  before the builder works in it.
 
 `doctor` prints one `env` line per configured repository with an entry and
 fails when a `key` path is missing at `HEAD`.

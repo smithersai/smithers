@@ -168,6 +168,22 @@ export const PrepareWorkspace = Action.make("organization/prepare-workspace", {
 })
 
 /**
+ * The commit a task in a repository starts from: `commit`, where `HEAD`
+ * names the repository's configured `base`, fetched first when it is a
+ * remote branch. Nondeterministic: the recorded commit is what a replay sees.
+ *
+ * @category actions
+ * @since 1.0.0
+ */
+export const ResolveBase = Action.make("organization/resolve-base", {
+  implementationVersion: "resolve-base/v1",
+  payload: { repository: Repository, commit: Schema.NonEmptyString },
+  success: Schema.Struct({ ref: Schema.String, commit: Workspace.CommitId, fetched: Schema.Boolean }),
+  error: Workspace.WorkspaceError,
+  nondeterministic: true
+})
+
+/**
  * Collects a workspace's change.
  *
  * @category actions
@@ -422,6 +438,15 @@ export const layer = (options: Options) => {
           })
         }),
       { implementationVersion: "prepare-workspace/v1" }
+    ),
+    ResolveBase.toLayer(
+      (payload) =>
+        Effect.gen(function*() {
+          const workspace = yield* Workspace.Workspace
+          const repoPath = yield* repositoryPath(payload.repository)
+          return yield* workspace.resolveBase({ repoPath, commit: payload.commit })
+        }),
+      { implementationVersion: "resolve-base/v1" }
     ),
     CollectDiff.toLayer(
       (payload) => Effect.flatMap(Workspace.Workspace, (workspace) => workspace.collect(payload.workspace)),

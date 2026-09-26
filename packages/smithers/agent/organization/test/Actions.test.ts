@@ -211,6 +211,12 @@ const PrepareChecking = step(
   Workspace.Prepared,
   (payload) => Actions.PrepareWorkspace.call({ ...payload, slug: "check-1" })
 )
+const Resolve = step(
+  "resolve",
+  { repository: Schema.String, commit: Schema.String },
+  Schema.Struct({ ref: Schema.String, commit: Workspace.CommitId, fetched: Schema.Boolean }),
+  (payload) => Actions.ResolveBase.call(payload)
+)
 const Collect = step(
   "collect",
   { workspace: Workspace.Prepared },
@@ -254,6 +260,11 @@ describe("workspace steps", () => {
         executionId: "exec-7"
       })
     )
+    expect(value(await execute(Resolve, { repository: "example/demo", commit: "HEAD" }, snapshot, options))).toEqual({
+      ref: "HEAD",
+      commit,
+      fetched: false
+    })
     expect(prepared.key).toBe("exec-7/example/demo/build")
     expect(prepared.commit).toBe(commit)
     const diff = value(await execute(Collect, { workspace: prepared }, snapshot, options))

@@ -556,6 +556,133 @@ describe("prepared environments", () => {
   })
 })
 
+describe("task bases", () => {
+  /** A checkout of a bare remote, the checkout left behind while the remote advances. */
+  const withRemote = () => {
+    const remote = tempDir()
+    git(remote, "init", "-q", "--bare", "-b", "main")
+    const { repo, commit } = environmentRepo()
+    git(repo, "remote", "add", "origin", remote)
+    git(repo, "push", "-q", "origin", "main")
+    const upstream = tempDir()
+    git(upstream, "clone", "-q", remote, ".")
+    const advanced = commitAll(upstream, "advance", () => writeFileSync(join(upstream, "lib.txt"), "hello world\n"))
+    git(upstream, "push", "-q", "origin", "main")
+    return { repo, commit, remote, advanced }
+  }
+  const resolved = (
+    repo: string,
+    environment: Workspace.Environment | undefined,
+    commit?: string,
+    options: Partial<Workspace.Options> = {}
+  ) =>
+    within(Effect.flatMap(service, (w) => w.resolveBase({ repoPath: repo, commit })), {
+      machines: hostMachines().machines,
+      environments: environment === undefined ? {} : { [repo]: environment },
+      ...options
+    })
+
+  it("starts from the fetched remote branch, leaving the checkout's HEAD, index, and tree alone", async () => {
+    const { repo, commit, advanced } = withRemote()
+    writeFileSync(join(repo, "README.md"), "# Local edit\n")
+    git(repo, "add", "README.md")
+    writeFileSync(join(repo, "lib.txt"), "unstaged\n")
+    const status = git(repo, "status", "--porcelain")
+
+    expect(await resolved(repo, undefined)).toEqual({ ref: "HEAD", commit, fetched: false })
+    expect(await resolved(repo, { base: "origin/main" })).toEqual({
+      ref: "origin/main",
+      commit: advanced,
+      fetched: true
+    })
+    expect(git(repo, "rev-parse", "HEAD")).toBe(commit)
+    expect(git(repo, "status", "--porcelain")).toBe(status)
+    expect(readFileSync(join(repo, "lib.txt"), "utf8")).toBe("unstaged\n")
+
+    // An explicit commit is what it names; a base that is no remote's branch
+    // is resolved without fetching.
+    expect(await resolved(repo, { base: "origin/main" }, commit)).toEqual({ ref: commit, commit, fetched: false })
+    git(repo, "branch", "feature/x", commit)
+    expect(await resolved(repo, { base: "feature/x" })).toEqual({ ref: "feature/x", commit, fetched: false })
+    expect(await resolved(repo, { base: "main" })).toEqual({ ref: "main", commit, fetched: false })
+  })
+
+  it("fails a base whose fetch fails or does not finish, and one that names no commit", async () => {
+    const { repo, remote } = withRemote()
+    const refused = (environment: Workspace.Environment, options: Partial<Workspace.Options> = {}) =>
+      failing(Effect.flatMap(service, (w) => w.resolveBase({ repoPath: repo })), {
+        machines: hostMachines().machines,
+        environments: { [repo]: environment },
+        ...options
+      })
+    const gone = await refused({ base: "origin/gone" })
+    expect(gone.code).toBe("fetch-failed")
+    expect(gone.message).toContain("git fetch origin gone failed: fatal: couldn't find remote ref refs/heads/gone")
+    git(repo, "config", "remote.origin.uploadpack", "sleep 5; git-upload-pack")
+    const slow = await refused({ base: "origin/main" }, { fetchTimeoutMs: 200 })
+    expect(slow).toMatchObject({ code: "fetch-failed", message: "git fetch origin main did not finish in 200 ms" })
+    git(repo, "config", "--unset", "remote.origin.uploadpack")
+    rmSync(remote, { recursive: true, force: true })
+    expect((await refused({ base: "origin/main" })).code).toBe("fetch-failed")
+    expect((await refused({ base: "nowhere/main" })).code).toBe("not-a-commit")
+  })
+})
+
+describe("prepared tools", () => {
+  const tools = (environment: Workspace.Environment, key = "doctor/tools", machines = hostMachines().machines) => {
+    const { repo, commit } = environmentRepo()
+    return {
+      repo,
+      found: () =>
+        within(Effect.flatMap(service, (w) => w.findTools({ key, repoPath: repo, commit })), {
+          machines,
+          environments: { [repo]: environment }
+        }),
+      refused: () =>
+        failing(Effect.flatMap(service, (w) => w.findTools({ key, repoPath: repo, commit })), {
+          machines,
+          environments: { [repo]: environment }
+        })
+    }
+  }
+
+  it("finds each declared tool in a machine booted from the prepared base", async () => {
+    const counter = join(tempDir(), "runs")
+    const found = await tools(environment(counter, { tools: ["git", "sh"] })).found()
+    expect(found.base).toEqual(expect.any(String))
+    expect(found.tools).toEqual([
+      { name: "git", path: expect.stringMatching(/\/git$/) },
+      { name: "sh", path: expect.stringMatching(/\/sh$/) }
+    ])
+    expect(await tools(environment(counter)).found()).toEqual({ base: expect.any(String), tools: [] })
+    expect(await tools({ network: "none" }).found()).toEqual({ base: undefined, tools: [] })
+  })
+
+  it("refuses to capture a base that lacks a declared tool, and reports what it could not do", async () => {
+    const counter = join(tempDir(), "runs")
+    const missing = await tools(environment(counter, { tools: ["git", "smithers-no-such-tool"] })).refused()
+    expect(missing).toMatchObject({ code: "prepare-failed", message: "the prepared base lacks smithers-no-such-tool" })
+    expect((await tools(environment(counter), "").refused()).code).toBe("invalid-request")
+
+    // Found in the base's own machine: one that cannot boot is unavailable.
+    const base = hostMachines()
+    const booting = tools(environment(counter, { tools: ["git"] }), "doctor/tools", base.machines)
+    await booting.found()
+    const unbootable: Workspace.Machines = {
+      ...base.machines,
+      fresh: (key, boot) =>
+        key.includes("/tools-")
+          ? Effect.fail(new ProviderError({ code: "unavailable", message: "no machine" }))
+          : base.machines.fresh(key, boot)
+    }
+    const refused = await failing(
+      Effect.flatMap(service, (w) => w.findTools({ key: "doctor/tools", repoPath: booting.repo, commit: "HEAD" })),
+      { machines: unbootable, environments: { [booting.repo]: environment(counter, { tools: ["git"] }) } }
+    )
+    expect(refused.message).toBe("a machine could not be booted from the prepared base: no machine")
+  })
+})
+
 describe("microsandbox machines with environments", () => {
   it("boots from the image or a base with the declared network, and keeps its bases", async () => {
     const builds: Array<Record<string, unknown>> = []

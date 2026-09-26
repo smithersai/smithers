@@ -232,6 +232,24 @@ export const maxPrepareTimeoutMs = 7_200_000
 export const defaultPrepareTimeoutMs = 1_800_000
 
 /**
+ * A command a prepared base provides, by name.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Tool = Schema.String.check(pattern(/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/, "a command name"))
+
+/**
+ * A ref a repository's tasks start from, such as `origin/main`.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const BaseRef = Schema.String.check(
+  pattern(/^(?!-)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/-]{1,200}(?<![./])$/, "a ref such as origin/main")
+)
+
+/**
  * How a repository's prepared base is made: the shell command run in the
  * seeded workspace root, the paths whose content keys the base, and the
  * network the command runs with.
@@ -245,7 +263,9 @@ export const Prepare = Schema.Struct({
   network: Network,
   timeoutMs: Schema.optionalKey(
     Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(maxPrepareTimeoutMs))
-  )
+  ),
+  /** Commands the prepared base must provide, such as `rg`; a base without one is not captured. */
+  tools: Schema.optionalKey(Schema.Array(Tool))
 })
 
 /**
@@ -257,14 +277,20 @@ export const Prepare = Schema.Struct({
 export type Prepare = typeof Prepare.Type
 
 /**
- * A repository's environment: an optional prepared base, the network its
- * workspace and check machines run with (default `none`), and the checks
- * every change to it runs before the requested ones.
+ * A repository's environment: the ref its tasks start from, an optional
+ * prepared base, the network its workspace and check machines run with
+ * (default `none`), and the checks every change to it runs before the
+ * requested ones.
  *
  * @category schemas
  * @since 1.0.0
  */
 export const Environment = Schema.Struct({
+  /**
+   * The ref a task starts from; `HEAD` of the checkout by default. A
+   * `<remote>/<branch>` of a configured remote is fetched first.
+   */
+  base: Schema.optionalKey(BaseRef),
   prepare: Schema.optionalKey(Prepare),
   network: Schema.optionalKey(Network),
   checks: Schema.optionalKey(Schema.Array(Check))
@@ -383,7 +409,8 @@ export const WorkspaceErrorCode = Schema.Literals([
   "patch-does-not-apply",
   "moved-parent",
   "checked-out",
-  "git-failed"
+  "git-failed",
+  "fetch-failed"
 ])
 
 /**
@@ -693,6 +720,8 @@ export interface Options {
   readonly environments?: Readonly<Record<string, Environment>> | undefined
   readonly limits?: Partial<Limits> | undefined
   readonly identity?: Identity | undefined
+  /** How long a base's remote branch may take to fetch. Default {@link fetchTimeoutMs}. */
+  readonly fetchTimeoutMs?: number | undefined
 }
 
 /**
@@ -762,12 +791,68 @@ export interface SessionOptions {
 }
 
 /**
+ * The commit a repository's task starts from, and how it was found.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ResolvedBase {
+  /** What was resolved: the environment's `base`, or the commit-ish asked for. */
+  readonly ref: string
+  readonly commit: string
+  /** Whether a remote branch was fetched first. */
+  readonly fetched: boolean
+}
+
+/**
+ * The commands a repository's prepared base declares, each with where a
+ * machine booted from the base finds it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ToolsFound {
+  /** The prepared base's name; `undefined` for a repository without one. */
+  readonly base: string | undefined
+  readonly tools: ReadonlyArray<{ readonly name: string; readonly path: string }>
+}
+
+/**
+ * The longest a base's remote branch may take to fetch: two minutes.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const fetchTimeoutMs = 120_000
+
+/**
  * The workspace service.
  *
  * @category models
  * @since 1.0.0
  */
 export interface Service {
+  /**
+   * The commit a task in `repoPath` starts from. `HEAD`, the default, names
+   * the repository's environment `base` when it has one: a `<remote>/<branch>`
+   * of a configured remote is fetched first (bounded by
+   * {@link fetchTimeoutMs}; `fetch-failed` otherwise). Nothing but that
+   * remote-tracking ref changes in the repository: never its HEAD, index, or
+   * working tree.
+   */
+  readonly resolveBase: (request: {
+    readonly repoPath: string
+    readonly commit?: string | undefined
+  }) => Effect.Effect<ResolvedBase, WorkspaceError>
+  /**
+   * Boots a machine from the prepared base of `commit` (preparing it when
+   * missing) and finds each tool its `prepare.tools` declares.
+   */
+  readonly findTools: (request: {
+    readonly key: string
+    readonly repoPath: string
+    readonly commit: string
+  }) => Effect.Effect<ToolsFound, WorkspaceError>
   readonly prepare: (request: PrepareRequest) => Effect.Effect<Prepared, WorkspaceError>
   /**
    * Reattaches the workspace machine for `key` and holds a machine permit for
@@ -823,6 +908,10 @@ const guestGit = "git -c user.name=smithers -c user.email=smithers@localhost -c 
 
 const lineSafe = /^[^\r\n\0]+$/
 
+/** A guest command printing `<tool>\t<path>` for each tool, the path empty when there is none. */
+const lookup = (tools: ReadonlyArray<string>): string =>
+  `for t in ${tools.join(" ")}; do printf '%s\\t%s\\n' "$t" "$(command -v "$t" 2>/dev/null)"; done`
+
 /**
  * Parses `git diff --numstat -z` output.
  *
@@ -857,6 +946,7 @@ export const make = (
     const limits: Limits = { ...defaultLimits, ...options.limits }
     const identity = options.identity ?? defaultIdentity
     const permits = yield* Semaphore.make(options.maxConcurrentVMs)
+    const fetchWithin = options.fetchTimeoutMs ?? fetchTimeoutMs
     // One base is prepared at a time, so two tasks never prepare the same one.
     const baking = yield* Semaphore.make(1)
     // Bases known to hold their prepared tree, and bases a machine is about to
@@ -888,6 +978,40 @@ export const make = (
           return yield* fail("not-a-commit", `${commit} is not a commit of the repository`)
         }
         return id
+      })
+
+    const resolveBase = (request: { readonly repoPath: string; readonly commit?: string | undefined }) =>
+      Effect.gen(function*() {
+        const asked = request.commit ?? "HEAD"
+        const configured = asked === "HEAD" ? environmentOf(request.repoPath)?.base : undefined
+        const ref = configured ?? asked
+        let fetched = false
+        const slash = ref.indexOf("/")
+        if (configured !== undefined && slash > 0) {
+          const remote = ref.slice(0, slash)
+          const branch = ref.slice(slash + 1)
+          const known = yield* host(request.repoPath, ["remote"], 65_536)
+          if (Process.text(known.stdout).split("\n").includes(remote)) {
+            const ran = yield* host(request.repoPath, [
+              "fetch",
+              "--quiet",
+              "--no-tags",
+              "--no-recurse-submodules",
+              "--no-write-fetch-head",
+              "--",
+              remote,
+              `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`
+            ], 65_536).pipe(Effect.timeoutOption(fetchWithin))
+            if (ran._tag === "None") {
+              return yield* fail("fetch-failed", `git fetch ${remote} ${branch} did not finish in ${fetchWithin} ms`)
+            }
+            if (ran.value.exitCode !== 0) {
+              return yield* fail("fetch-failed", `git fetch ${remote} ${branch} failed: ${excerpt(ran.value.stderr)}`)
+            }
+            fetched = true
+          }
+        }
+        return { ref, commit: yield* resolveCommit(request.repoPath, ref), fetched }
       })
 
     const archive = (repo: string, commit: string) =>
@@ -977,7 +1101,15 @@ export const make = (
         }
         const family = sha256Hex(`${machines.bases.identity}\0${repo}`).slice(0, 12)
         const name = `${family}-${
-          sha256Hex(JSON.stringify(["base/v1", prepare.run, prepare.network, prepare.key, keys])).slice(0, 20)
+          sha256Hex(JSON.stringify([
+            "base/v1",
+            prepare.run,
+            prepare.network,
+            prepare.key,
+            keys,
+            // Declared tools join the key, so declaring one prepares the base again.
+            ...(prepare.tools === undefined || prepare.tools.length === 0 ? [] : [prepare.tools])
+          ])).slice(0, 20)
         }`
         return { name, family }
       })
@@ -1068,6 +1200,10 @@ export const make = (
               : `the prepare command exited ${ran.exitCode}`
             return yield* fail("prepare-failed", tail === "" ? reason : `${reason}: ${tail}`)
           }
+          const missing = yield* missingTools(session, prepare.tools ?? [])
+          if (missing.length > 0) {
+            return yield* fail("prepare-failed", `the prepared base lacks ${missing.join(", ")}`)
+          }
           // What the command left that the repository does not ignore is part
           // of the prepared tree, so it never shows up as a change.
           // A machine booted from the base is not yet a seeded workspace.
@@ -1085,6 +1221,16 @@ export const make = (
         )
         yield* Effect.logInfo(`prepared base ${name} of ${repo} in ${Date.now() - started} ms`)
       })
+
+    /** The tools a machine does not find, in the order given. */
+    const missingTools = (session: Session, tools: ReadonlyArray<string>) =>
+      tools.length === 0 ?
+        Effect.succeed([]) :
+        Effect.map(run(session, lookup(tools)), (found) =>
+          Process.text(found.stdout).split("\n").flatMap((line) => {
+            const [name = "", path = ""] = line.split("\t")
+            return name !== "" && path === "" ? [name] : []
+          }))
 
     /** Lets pruning remove a base {@link ensureBase} handed out again. */
     const release = (base: string | undefined) =>
@@ -1498,7 +1644,37 @@ export const make = (
         return { branch: request.branch, commit, parent, created: true }
       })).pipe(Effect.provide(services))
 
-    return { prepare, session, collect, runChecks, dispose, applyChange }
+    const findTools = (request: { readonly key: string; readonly repoPath: string; readonly commit: string }) =>
+      Effect.gen(function*() {
+        if (!Schema.is(Key)(request.key)) return yield* fail("invalid-request", "the workspace key is malformed")
+        const commit = yield* resolveCommit(request.repoPath, request.commit)
+        const prepare = environmentOf(request.repoPath)?.prepare
+        if (prepare === undefined) return { base: undefined, tools: [] }
+        const base = yield* ensureBase(request.repoPath, commit, prepare)
+        yield* Effect.addFinalizer(() => release(base))
+        const tools = prepare.tools ?? []
+        if (tools.length === 0) return { base, tools: [] }
+        const found = yield* Effect.scoped(Effect.gen(function*() {
+          const session = yield* machines.fresh(`${request.key}/tools-${globalThis.crypto.randomUUID()}`, {
+            base,
+            network: "none"
+          }).pipe(Effect.mapError(unavailable("a machine could not be booted from the prepared base")))
+          return yield* run(session, lookup(tools))
+        }))
+        const paths = new Map(
+          Process.text(found.stdout).split("\n").map((line) => {
+            const [name = "", path = ""] = line.split("\t")
+            return [name, path] as const
+          })
+        )
+        return {
+          base,
+          // The base was not captured without every tool, so each has a path.
+          tools: tools.map((name) => ({ name, path: paths.get(name)! }))
+        }
+      }).pipe(Effect.scoped, permits.withPermit)
+
+    return { resolveBase, findTools, prepare, session, collect, runChecks, dispose, applyChange }
   })
 
 /**

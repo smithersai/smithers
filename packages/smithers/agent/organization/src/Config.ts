@@ -160,6 +160,7 @@ export type RepositoryCheck = typeof RepositoryCheck.Type
  * @since 1.0.0
  */
 export const RepositoryEnvironment = Schema.Struct({
+  base: Schema.optionalKey(Workspace.BaseRef),
   prepare: Schema.optionalKey(Workspace.Prepare),
   network: Schema.optionalKey(Workspace.Network),
   checks: Schema.optionalKey(Schema.Array(RepositoryCheck))
@@ -181,6 +182,7 @@ export type RepositoryEnvironment = typeof RepositoryEnvironment.Type
  * @since 1.0.0
  */
 export const environmentOf = (entry: RepositoryEnvironment): Workspace.Environment => ({
+  ...(entry.base === undefined ? {} : { base: entry.base }),
   ...(entry.prepare === undefined ? {} : { prepare: entry.prepare }),
   ...(entry.network === undefined ? {} : { network: entry.network }),
   ...(entry.checks === undefined ? {} : {

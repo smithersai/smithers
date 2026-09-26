@@ -11,8 +11,10 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { parseArgs } from "node:util"
 import * as RequestExecutor from "../../../packages/smithers/agent/model/src/RequestExecutor.ts"
+import * as Config from "../../../packages/smithers/agent/organization/src/Config.ts"
 import type * as Workspace from "../../../packages/smithers/agent/organization/src/Workspace.ts"
-import { parseRepository } from "../settings.ts"
+import { installationOf, parseRepository } from "../settings.ts"
+import { type BaseCheck, baseLines, installationMachines } from "./base.ts"
 import { bootProbe, type Install, locate, msb, type Probe, sdkOf } from "./microsandbox.ts"
 import {
   absolute,
@@ -73,6 +75,8 @@ export interface DoctorOptions {
   readonly progress?: ((line: string) => void) | undefined
   /** Replaces the real boot probe. */
   readonly probe?: ((image: string) => Promise<Probe>) | undefined
+  /** Replaces the `base` and `tools` lines of a repository. */
+  readonly bases?: ((check: BaseCheck) => Promise<Array<Line>>) | undefined
 }
 
 const pass = (name: string, detail: string): Line => ({ name, status: "pass", detail })
@@ -384,7 +388,39 @@ export const doctor = async (options: DoctorOptions): Promise<Array<Line>> => {
   lines.push(await seatsLine(organization, options.env, options.claudeCredentials))
   lines.push(...await slackLines(options.env, options.fetch ?? fetch))
   lines.push(...repoLines(options.repos, options.cwd ?? process.cwd(), organization))
-  lines.push(...environmentLines(options.repos, options.cwd ?? process.cwd(), organization))
+  const environments = environmentLines(options.repos, options.cwd ?? process.cwd(), organization)
+  lines.push(...environments)
+  // Each repository whose environment line passed: the commit its next task
+  // starts from, and its prepared base's tools, in a microVM when one boots.
+  const declared = organization?.loaded.organization.repositories ?? {}
+  const vm = organization?.loaded.organization.vm
+  const booted = lines.find((line) => line.name === "boot")?.status === "pass"
+  for (const entry of options.repos) {
+    const [name, repo] = parseRepository(options.cwd ?? process.cwd(), entry)
+    if (!Object.hasOwn(declared, name)) continue
+    if (environments.find((line) => line.detail.startsWith(`${name}:`))?.status !== "pass") continue
+    const environment = Config.environmentOf(declared[name]!)
+    // Machines only for a base that declares tools, and only on a host that boots.
+    const machines = booted && vm !== undefined && install !== undefined && reference !== undefined &&
+        (environment.prepare?.tools?.length ?? 0) > 0
+      ? installationMachines({
+        sdk: await sdkOf(install),
+        image: reference,
+        cpus: vm.cpus,
+        memoryMib: vm.memoryMib,
+        diskMib: vm.diskMib,
+        installation: installationOf(options.stateDir)
+      })
+      : undefined
+    options.progress?.(`checking ${name}'s base…`)
+    lines.push(...await (options.bases ?? baseLines)({
+      name,
+      repo,
+      environment,
+      machines,
+      key: `doctor-${process.pid}/${name}`
+    }))
+  }
   lines.push(stateLine(options.stateDir))
   return lines
 }

@@ -59,7 +59,7 @@ import Hire from "../hire/flow.ts"
 import MeetingsBook from "../meetings-book/flow.ts"
 import { slackConnection } from "../slack-connection.ts"
 
-const implementationVersion = "organization/deliver/v8"
+const implementationVersion = "organization/deliver/v9"
 
 /** Why a builder whose turn left no change is asked again. */
 const noChangeAgain =
@@ -379,9 +379,20 @@ const work = (payload: Payload) => {
                               admission.gates,
                               taskGate,
                               { request: request.text, assignment },
+                              based(payload).pipe(
+                                Node.branch({
+                                  if: Node.capture({ implementationVersion }, (base) => base.commit !== null),
+                                  else: (base) =>
+                                    report(payload, {
+                                      status: "blocked",
+                                      summary: base.reason,
+                                      principals: { assistant: admission.assistant, lead: contract.principal },
+                                      rounds: 0
+                                    }),
+                                  then: (base) =>
                               Actions.PrepareWorkspace.call({
                                 repository: admission.repository,
-                                commit: admission.commit,
+                                commit: base.commit as Planned.Planned<string>,
                                 slug: "build"
                               }).pipe(
                                 Node.bindPlanned(Node.capture({ implementationVersion }, (prepared) =>
@@ -396,6 +407,8 @@ const work = (payload: Payload) => {
                                     })
                                   )))
                               )
+                                })
+                              )
                             ))
                           )
                           }))
@@ -409,6 +422,27 @@ const work = (payload: Payload) => {
       )))
   )
 }
+
+/**
+ * The commit the task starts from, or why there is none: a base that could
+ * not be fetched blocks the delivery before any machine boots.
+ */
+const based = (payload: Payload) =>
+  Actions.ResolveBase.call({ repository: payload.admission.repository, commit: payload.admission.commit }).pipe(
+    Node.map(Node.capture({ implementationVersion }, (resolved): { commit: string | null; reason: string } => ({
+      commit: resolved.commit,
+      reason: ""
+    }))),
+    Node.catch({
+      onFailure: Node.capture({ implementationVersion }, (failure) =>
+        Node.succeed(failure as Planned.Planned<{ readonly message: string }>).pipe(
+          Node.map(Node.capture({ implementationVersion }, (refused): { commit: string | null; reason: string } => ({
+            commit: null,
+            reason: `the base could not be resolved: ${refused.message}`
+          })))
+        ))
+    })
+  )
 
 /**
  * A child flow's ending as the delivery's: its summary answers the request,
