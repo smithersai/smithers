@@ -273,6 +273,45 @@ describe("AgentAction.make", () => {
     )
   })
 
+  it("stops an idle run at its read-only cap before the frame budget", async () => {
+    const Idler = AgentAction.make("agent/test/Idler", {
+      payload: { diff: Schema.String },
+      output: Review,
+      seat: "anthropic:test-model",
+      prompt: ({ diff }) => `Edit for this diff:\n${diff}`,
+      maxFrames: 20,
+      readOnlyCap: 1
+    })
+    const Idling = Flow.make("agent/test/Idling", {
+      payload: { diff: Schema.String },
+      success: Review,
+      error: AgentAction.AgentFailure,
+      body: ({ diff }) => Idler.call({ diff })
+    })
+    const requests: Array<string> = []
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Idling.execute({ diff: "-  old\n+  new" }, { executionId: "idle-1" }).pipe(
+          Effect.provide(
+            Layer.mergeAll(Idler.layer, Interpreter.layer(Idling)).pipe(
+              Layer.provideMerge(AgentAction.layerHost(host)),
+              Layer.provideMerge(seats(scripted(Array.from({ length: 20 }, () => ""), requests))),
+              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
+              Layer.provideMerge(Safety.layer),
+              Layer.provideMerge(Action.layerImplementations),
+              Layer.provideMerge(FlowEngine.layerMemory),
+              Layer.provideMerge(NodeCrypto.layer)
+            )
+          )
+        )
+      )
+    )
+
+    expect(exit._tag).toBe("Failure")
+    expect(JSON.stringify(exit)).toContain("read_only_cap")
+    expect(requests.length).toBeLessThan(20)
+  })
+
   it("fails typed when the correction budget is exhausted", async () => {
     const requests: Array<string> = []
     const exit = await Effect.runPromise(

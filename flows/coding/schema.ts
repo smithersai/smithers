@@ -1,6 +1,7 @@
 /** Coding policy is ordinary flow input; the engine remains its durable store. */
 import { Schema } from "effect"
 import * as Digest from "@smthrs/core/Digest"
+import * as Stall from "@smthrs/flow/Stall"
 
 const Text = Schema.NonEmptyString
 const Id = Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,199}$/))
@@ -116,12 +117,14 @@ export type Result = typeof Result.Type
 export const CorrectionResult = Schema.Struct({
   status: Schema.Literals(["validated", "changes-requested", "blocked"]),
   rounds: Schema.Int, result: Schema.NullOr(Result),
-  blocked: Schema.NullOr(Schema.Struct({ executionId: Schema.String, message: Schema.String }))
+  blocked: Schema.NullOr(Schema.Struct({ executionId: Schema.String, message: Schema.String })),
+  // Present when the stall breaker ended the correction (Stall in @smthrs/flow).
+  stalled: Schema.optionalKey(Stall.Stalled)
 })
 export const RequestResult = Schema.Struct({ plan: Plan, outcome: CorrectionResult })
 export class CodingError extends Schema.TaggedError<CodingError>()("coding/Error", {
   code: Schema.Literals(["invalid_plan", "invalid_request", "fast_gate", "stale_revision", "invalid_receipt", "unavailable", "execution",
-    "source_missing", "source_changed", "source_refused", "source_unavailable", "declined"]),
+    "source_missing", "source_changed", "source_refused", "source_unavailable", "declined", "stalled"]),
   message: Text
 }) {}
 

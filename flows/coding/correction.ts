@@ -1,7 +1,7 @@
 /** Bounded owner repair over the existing native flow journal and JJ identities. */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Digest from "@smthrs/core/Digest"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, Stall } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Layer, Schema } from "effect"
 import { ApplyNative, NativeCodingError, Operation, OperationResult, ReadResult, readNative, requestIdFor } from "./native.ts"
@@ -11,10 +11,38 @@ import { EarlyFeedback, FeedbackError, ObservePlan, RecordGate, RecordSlow, ackn
 import { Assess, FastGate, Implement, RunCheck } from "./workflow.ts"
 
 const MaxRounds = Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(8))
-const Input = Schema.Struct({ plan: Plan, maxRounds: MaxRounds })
-const Cursor = Schema.Struct({ ...Input.fields, round: Schema.Int, previous: Schema.NullOr(Result) })
+/** Two rounds in a row with the same trees, failing checks or findings park the correction for a person. */
+export const defaultStall: Stall.Policy = { rounds: 2, on: "park" }
+const Input = Schema.Struct({ plan: Plan, maxRounds: MaxRounds, stall: Schema.optionalKey(Stall.Policy) })
+const Cursor = Schema.Struct({ plan: Plan, maxRounds: MaxRounds, stall: Stall.Policy, streaks: Stall.State, round: Schema.Int, previous: Schema.NullOr(Result) })
 const Blocked = Schema.Struct({ executionId: Schema.String, message: Schema.String })
-const RoundOutcome = Schema.Struct({ result: Schema.NullOr(Result), blocked: Schema.NullOr(Blocked) })
+const RoundOutcome = Schema.Struct({ result: Schema.NullOr(Result), blocked: Schema.NullOr(Blocked), streaks: Stall.State, stalled: Schema.NullOr(Stall.Stalled) })
+type Cursor = typeof Cursor.Type
+type RoundOutcome = typeof RoundOutcome.Type
+type Pass = Pick<RoundOutcome, "result" | "blocked">
+
+/** A round's stall signals: every atom's JJ tree, the failing checks, and the findings the next repair would get. */
+export const roundSignals = (result: Result): Stall.Observation => ({
+  tree: JSON.stringify(result.changes.map(group => group.implementation.atoms.map(atom => atom.treeId))),
+  checks: result.changes.flatMap(group => group.receipts.filter(receipt => receipt.status === "failed").map(receipt => `${receipt.change}/${receipt.checkId}`)),
+  output: result.findings
+})
+
+/** Folds a settled pass into the stall streaks; a parked stall blocks the round on its pass. */
+export const observeRound = (cursor: Pick<Cursor, "stall" | "streaks">, executionId: string, outcome: Pass): RoundOutcome => {
+  if (outcome.result === null || outcome.blocked !== null || outcome.result.status === "validated") return { ...outcome, streaks: cursor.streaks, stalled: null }
+  const { state, stalled } = Stall.observe(cursor.stall, cursor.streaks, roundSignals(outcome.result))
+  if (stalled === undefined) return { ...outcome, streaks: state, stalled: null }
+  const blocked = stalled.on === "park" ? { executionId, message: `Correction stalled: the same ${stalled.signal} for ${stalled.rounds} rounds` } : null
+  return { result: outcome.result, blocked, streaks: state, stalled }
+}
+
+/** The correction's result; an escalated stall fails instead. */
+export const finishRound = (cursor: Pick<Cursor, "round" | "previous">, outcome: RoundOutcome): Effect.Effect<typeof CorrectionResult.Type, CodingError> =>
+  outcome.stalled?.on === "escalate"
+    ? Effect.fail(new CodingError({ code: "stalled", message: `Correction stalled: the same ${outcome.stalled.signal} for ${outcome.stalled.rounds} rounds` }))
+    : Effect.succeed({ status: outcome.blocked ? "blocked" as const : outcome.result!.status, rounds: cursor.round, result: outcome.result ?? cursor.previous,
+      blocked: outcome.blocked, ...(outcome.stalled === null ? {} : { stalled: outcome.stalled }) })
 const Selection = Schema.Struct({ changeId: Schema.NonEmptyString, intent: Schema.NonEmptyString })
 const Context = Schema.Struct({
   owner: Change, implementation: Implementation, findings: Schema.Array(Finding), index: Schema.Int
@@ -155,9 +183,9 @@ type RoundFlow = Flow.Flow<"coding/CorrectionRound", typeof Cursor, typeof Corre
 const Round: RoundFlow = Flow.make("coding/CorrectionRound", {
   payload: Cursor, success: CorrectionResult, error: CodingError, maxRounds: 8,
   body: cursor => RunRound.call(cursor).pipe(Node.branch({
-    if: outcome => outcome.blocked !== null || outcome.result?.status === "validated" || cursor.round >= cursor.maxRounds,
+    if: outcome => outcome.blocked !== null || outcome.stalled !== null || outcome.result?.status === "validated" || cursor.round >= cursor.maxRounds,
     then: outcome => Finish.call({ cursor, outcome }).pipe(Node.bindPlanned(result => Flow.done(result))),
-    else: outcome => Round.to({ ...cursor, round: cursor.round + 1, previous: outcome.result })
+    else: outcome => Round.to({ ...cursor, round: cursor.round + 1, previous: outcome.result, streaks: outcome.streaks })
   }))
 })
 
@@ -170,8 +198,8 @@ export const CorrectPlan = Flow.make("coding/CorrectPlan", {
 export const correctionLayers = Layer.mergeAll(
   feedbackLayers, Interpreter.layer(CorrectPlan), Interpreter.layer(Round), Interpreter.layer(RepairPass), Interpreter.layer(Recheck),
   ReadHistory.toLayer(({ changeIds }) => readNative(changeIds)),
-  Begin.toLayer(input => Effect.succeed({ ...input, round: 1, previous: null })),
-  Finish.toLayer(({ cursor, outcome }) => Effect.succeed({ status: outcome.blocked ? "blocked" as const : outcome.result!.status, rounds: cursor.round, result: outcome.result ?? cursor.previous, blocked: outcome.blocked })),
+  Begin.toLayer(input => Effect.succeed({ plan: input.plan, maxRounds: input.maxRounds, stall: input.stall ?? defaultStall, streaks: Stall.initial, round: 1, previous: null })),
+  Finish.toLayer(({ cursor, outcome }) => finishRound(cursor, outcome)),
   PrepareContext.toLayer(({ plan, previous, read }) => policy(() => {
     if (previous.status !== "changes-requested" || !previous.findings.length || previous.changes.length !== plan.changes.length) throw stale("Only a result with all native implementations and actionable findings can request correction")
     const index = Math.min(...previous.findings.map(finding => plan.changes.findIndex(change => change.id === finding.owner)))
@@ -210,19 +238,20 @@ export const correctionLayers = Layer.mergeAll(
     const execute: Effect.Effect<Result, typeof Error.Type | FlowRuntime.FlowCycleDetected> = cursor.previous === null
       ? runtime.execute(ObservePlan, { executionId, payload: { plan: cursor.plan } })
       : runtime.execute(RepairPass, { executionId, payload: { plan: cursor.plan, previous: cursor.previous } })
-    return yield* execute.pipe(Effect.flatMap(Schema.decodeUnknownEffect(Result)), Effect.map((result): typeof RoundOutcome.Type => ({ result, blocked: null })),
+    const settled = execute.pipe(Effect.flatMap(Schema.decodeUnknownEffect(Result)), Effect.map((result): Pass => ({ result, blocked: null })),
       Effect.catchCause(cause => {
         if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
         const early = cause.reasons.find(reason => Cause.isFailReason(reason) && reason.error instanceof EarlyFeedback)
         if (early && Cause.isFailReason(early) && early.error instanceof EarlyFeedback) {
           const result = early.error.result
           return acknowledgeFeedback(cursor.previous === null ? ObservePlan : RepairPass, executionId).pipe(
-            Effect.as<typeof RoundOutcome.Type>({ result, blocked: null }),
-            Effect.catchCause(ack => Cause.hasInterruptsOnly(ack) ? Effect.interrupt : Effect.succeed<typeof RoundOutcome.Type>({ result,
+            Effect.as<Pass>({ result, blocked: null }),
+            Effect.catchCause(ack => Cause.hasInterruptsOnly(ack) ? Effect.interrupt : Effect.succeed<Pass>({ result,
               blocked: { executionId, message: `Obsolete checks have not acknowledged cancellation: ${Cause.pretty(ack).slice(0, 8192)}` } }))
           )
         }
-        return Effect.succeed<typeof RoundOutcome.Type>({ result: null, blocked: { executionId, message: Cause.pretty(cause).slice(0, 8192) } })
+        return Effect.succeed<Pass>({ result: null, blocked: { executionId, message: Cause.pretty(cause).slice(0, 8192) } })
       }))
+    return observeRound(cursor, executionId, yield* settled)
   }))
 )

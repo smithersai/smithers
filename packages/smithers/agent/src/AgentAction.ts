@@ -313,6 +313,13 @@ export interface Options<
   readonly repair?: Repair<PayloadSchemaOf<Payload>["Type"]> | undefined
   readonly modelParams?: ModelRequest.GenerationParams | undefined
   readonly maxFrames?: number | undefined
+  /**
+   * The idle bound for an action whose frames are meant to change files:
+   * consecutive frames that write nothing before the run is asked for an
+   * edit, and twice that before it fails `read_only_cap`. Omitted disarms it,
+   * which is right for an action that only answers.
+   */
+  readonly readOnlyCap?: number | undefined
 }
 
 /**
@@ -706,6 +713,7 @@ export const make = <
               capabilityEnvelope: host.capabilityEnvelope,
               limits: host.limits,
               maxFrames: options.maxFrames ?? host.maxFrames,
+              readOnlyCap: options.readOnlyCap,
               claimCap: host.claimCap
             }).pipe(
               Stream.provideService(AgentEvent.Observer, atSource ? observe : () => Effect.void),

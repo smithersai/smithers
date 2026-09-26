@@ -25,10 +25,16 @@ export const Observe = Action.make("coding/observe-atom", {
 })
 
 /** The host supplies its existing tool bindings, seats, capabilities and budget. */
+/** Consecutive frames without a workspace write the implement agent may spend; the harness default for task runs. */
+export const implementIdleFrames = 12
+
 export const EditAtom = AgentAction.make("coding/edit-atom", {
   payload: { atom: AtomicPlan, parent: Revision, revision: Revision, memoryRevision: Schema.String },
   output: EditReport,
   seat: "coding/implement",
+  // Idle breaker: an edit run that writes nothing for this many frames is
+  // asked for an edit, and fails at twice it.
+  readOnlyCap: implementIdleFrames,
   system: [
     "Implement the single atomic change in the owning workspace using the provided filesystem tools.",
     "The workflow owns JJ operations: do not invoke JJ, Git, create commits, or switch workspaces.",
