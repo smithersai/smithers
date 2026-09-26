@@ -85,17 +85,26 @@ describe("FlowCatalog.rows", () => {
     discovered("create-flow/scaffold"),
     discovered("lint", { modelInvocable: false }),
     discovered("review", { kind: "skill", path: "flows/review/SKILL.md", capabilities: [] }),
-    discovered("alpha")
+    discovered("alpha"),
+    discovered("beta")
   ]
 
   it("orders featured rows first in declaration order, then declared rows, then the rest by id", () => {
     const rows = FlowCatalog.rows(found, [lint, notes, review])
-    expect(rows.map((row) => row.id)).toEqual(["lint", "review", "release-notes", "alpha", "create-flow/scaffold"])
-    expect(rows.map((row) => row.featured)).toEqual([true, true, false, false, false])
+    expect(rows.map((row) => row.id)).toEqual([
+      "lint",
+      "review",
+      "release-notes",
+      "alpha",
+      "beta",
+      "create-flow/scaffold"
+    ])
+    expect(rows.map((row) => row.featured)).toEqual([true, true, false, false, false, false])
     expect(rows.map((row) => row.summary)).toEqual([
       "Lint the named files.",
       "Review the change.",
       "Draft the notes.",
+      null,
       null,
       null
     ])

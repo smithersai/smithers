@@ -92,6 +92,10 @@ describe("Node/npm PACKAGE.ts constructors", () => {
       changes: [".github/workflows/**"]
     })
     expect(Target.metadata(ci).target).toBe("Github.CiGen")
+    const bare = S.Github.Ci({ workflows: { manual: { on: {}, run: [check, check] } } })
+    const attrs = Target.metadata(bare).attrs as { readonly workflows: ReadonlyArray<Target.AnyTarget> }
+    expect(Object.keys(attrs)).toEqual(["workflows"])
+    expect(Target.metadata(attrs.workflows[0]!).attrs).toMatchObject({ name: "manual", on: {}, run: [check, check] })
     expect(() => S.Github.Ci({ workflows: {}, typo: true } as never)).toThrow(/no excess property[\s\S]*typo/)
     expect(() => S.Github.Ci({ workflows: { test: { on: { push: "main" }, run: check } } } as never))
       .toThrow(/Github\.Ci declaration/)

@@ -61,12 +61,6 @@
       "expires": "2026-10-10"
     },
     {
-      "label": "//packages/smithers/build/targets:test",
-      "owner": "will",
-      "reason": "Branch coverage 96.98% against a 97% floor on ubuntu (run 36205719266); 97.03% locally.",
-      "expires": "2026-10-10"
-    },
-    {
       "label": "//:fmt",
       "platforms": [
         "win32"

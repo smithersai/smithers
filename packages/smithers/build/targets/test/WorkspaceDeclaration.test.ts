@@ -57,6 +57,36 @@ describe("Workspace refusal types", () => {
       "Workspace received unknown option \"typo\""
     ],
     [
+      "a non-object discovery",
+      () => WorkspaceDeclaration.Workspace("fixture", { ...options, discovery: 42 } as never),
+      TypeError,
+      "Workspace discovery must be an object"
+    ],
+    [
+      "an unknown discovery option",
+      () => WorkspaceDeclaration.Workspace("fixture", { ...options, discovery: { skip: [] } } as never),
+      TypeError,
+      "Workspace discovery received unknown option \"skip\""
+    ],
+    [
+      "a non-array discovery prune",
+      () => WorkspaceDeclaration.Workspace("fixture", { ...options, discovery: { prune: "dist" } } as never),
+      TypeError,
+      "Workspace discovery prune must be an array of workspace-relative paths"
+    ],
+    [
+      "a non-string discovery prune path",
+      () => WorkspaceDeclaration.Workspace("fixture", { ...options, discovery: { prune: [1] } } as never),
+      TypeError,
+      "Workspace discovery prune must be an array of workspace-relative paths"
+    ],
+    [
+      "a repeated discovery prune path",
+      () => WorkspaceDeclaration.Workspace("fixture", { ...options, discovery: { prune: ["dist", "dist/"] } }),
+      TypeError,
+      "Workspace discovery prune paths must be distinct: \"dist\""
+    ],
+    [
       "a non-string repository",
       () => WorkspaceDeclaration.Workspace("fixture", { ...options, repository: 42 } as never),
       TypeError,

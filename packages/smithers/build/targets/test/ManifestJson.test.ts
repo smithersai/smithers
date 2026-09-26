@@ -20,6 +20,14 @@ describe("ManifestJson primitive refusals", () => {
 })
 
 describe("ManifestJson collection refusals", () => {
+  it("copies null, both booleans and a multi-element array unchanged", () => {
+    const value = [null, true, false, ["a", 1]]
+    const copied = ManifestJson.cloneValue(value)
+    expect(copied).toEqual(value)
+    expect(copied).not.toBe(value)
+    expect(Object.isFrozen(copied)).toBe(true)
+  })
+
   it("rejects array subclasses even when their elements are ordinary JSON", () => {
     class Values extends Array<string> {}
 

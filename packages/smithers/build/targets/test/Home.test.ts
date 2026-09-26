@@ -59,6 +59,10 @@ describe("the home blocks", () => {
     expect(() => Home.Links({ links: [{ label: "x", url: "/relative" }] })).toThrow()
     expect(() => Home.Text({ text: "x", html: "<div/>" } as never)).toThrow(/unknown option "html"/)
     expect(() => Home.Text(null as never)).toThrow(/plain object/)
+    expect(Home.Text({ title: undefined, text: "x" })).toEqual({ type: "text", text: "x" })
+    expect(() => Home.Text(Object.defineProperty({ text: "x" }, "title", { get: () => "T", enumerable: true })))
+      .toThrow(/title must be an enumerable data property/)
+    expect(() => Home.Home({ blocks: [7] as never })).toThrow(/block 0 must be a declared block.*not number/)
   })
 
   it("keeps markdown paths inside the repository", () => {
