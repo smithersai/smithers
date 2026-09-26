@@ -953,30 +953,53 @@ describe("AnthropicMessages body lowering", () => {
   // access resumes. It is an exhausted quota with a known reset, so the run
   // parks until then instead of retrying as a rate limit.
   it("classifies the Anthropic spend-cap 429 as an exhausted quota that resets", () => {
-    const capped = AnthropicMessages.protocol.classifyError(429, JSON.stringify({
-      type: "error",
-      error: {
-        type: "rate_limit_error",
-        message:
-          "You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set based on your organization's API tier. You will regain access on 2026-10-01 at 00:00 UTC.",
-        details: { error_code: "enforced_spend_limit_reached" }
-      },
-      request_id: "req_1"
-    }))
+    const capped = AnthropicMessages.protocol.classifyError(
+      429,
+      JSON.stringify({
+        type: "error",
+        error: {
+          type: "rate_limit_error",
+          message:
+            "You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set based on your organization's API tier. You will regain access on 2099-10-01 at 00:00 UTC.",
+          details: { error_code: "enforced_spend_limit_reached" }
+        },
+        request_id: "req_1"
+      })
+    )
     expect(capped).toMatchObject({
       code: "quota_exceeded",
       providerCode: "enforced_spend_limit_reached",
       httpStatus: 429,
-      resetAtEpochMillis: Date.UTC(2026, 9, 1)
+      resetAtEpochMillis: Date.UTC(2099, 9, 1)
     })
 
-    const undated = AnthropicMessages.protocol.classifyError(429, JSON.stringify({
-      error: { type: "rate_limit_error", message: "usage limits", details: { error_code: "enforced_spend_limit_reached" } }
-    }))
+    const undated = AnthropicMessages.protocol.classifyError(
+      429,
+      JSON.stringify({
+        error: {
+          type: "rate_limit_error",
+          message: "usage limits",
+          details: { error_code: "enforced_spend_limit_reached" }
+        }
+      })
+    )
     expect(undated.code).toBe("quota_exceeded")
     const reset = new Date(undated.resetAtEpochMillis ?? 0)
     expect(reset.getTime()).toBeGreaterThan(Date.now())
     expect([reset.getUTCDate(), reset.getUTCHours(), reset.getUTCMinutes()]).toEqual([1, 0, 0])
+
+    // A named reset already in the past falls back to the next month's first.
+    const stale = AnthropicMessages.protocol.classifyError(
+      429,
+      JSON.stringify({
+        error: {
+          type: "rate_limit_error",
+          message: "You will regain access on 2000-01-01 at 00:00 UTC.",
+          details: { error_code: "enforced_spend_limit_reached" }
+        }
+      })
+    )
+    expect(stale.resetAtEpochMillis).toBe(undated.resetAtEpochMillis)
   })
 
   it("classifies every HTTP failure shape, including bodies it cannot parse", () => {
