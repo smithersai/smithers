@@ -119,6 +119,8 @@ interface Controls {
   readonly exitedDelayMs?: ((line: string) => number | undefined) | undefined
   /** Ends a matching command's stream right after it starts, without an exit event. */
   readonly loseOn?: ((line: string) => boolean) | undefined
+  /** Rejects the handle's `signal` for a matching command line. */
+  readonly signalFailure?: ((line: string) => unknown) | undefined
   /** Rejects the handle's `kill` for a matching command line, which then keeps running. */
   readonly killFailure?: ((line: string) => unknown) | undefined
   /** Rejects `recv` right after a matching command starts. */
@@ -271,6 +273,8 @@ const fakeSdk = (controls: Controls = {}) => {
       recv: () => recvFailure === undefined ? events.next() : Promise.reject(recvFailure),
       signal: async (signal) => {
         recorded.signals.push({ name: machine.name, signal })
+        const refused = controls.signalFailure?.(line)
+        if (refused !== undefined) throw refused
         signalGroup(child, signal)
       },
       kill: async () => {
@@ -1100,6 +1104,32 @@ describe("MicrosandboxSandbox", () => {
           expect(existsSync(join(workdir, "survived"))).toBe(false)
         }))
     }), 30_000)
+
+  it.live(
+    "logs a teardown signal neither the walk nor the group delivers, and leaves the command to the machine",
+    () =>
+      Effect.gen(function*() {
+        const fake = fakeSdk({
+          execFailure: (line) => line.includes("p=") ? new Error("walk refused") : undefined,
+          signalFailure: () => new Error("group refused")
+        })
+        const workdir = join(root, "undeliverable-ws")
+        const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+        yield* inSession(provider, "undeliverable", (session) =>
+          Effect.gen(function*() {
+            const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
+              session.spawn("printf started > started; sleep 30", {}),
+              (running) => running.exitCode
+            )))
+            while (!existsSync(join(workdir, "started"))) yield* elapsed(20)
+            yield* Fiber.interrupt(fiber)
+            // SIGTERM, then SIGKILL after the grace: both refused, both logged.
+            expect(fake.recorded.signals.map(({ signal }) => signal)).toEqual([15, 9])
+          }))
+        expect(fake.recorded.destroys).toHaveLength(1)
+      }),
+    30_000
+  )
 
   it.live("kills a command whose start the caller abandoned, once its handle arrives", () =>
     Effect.gen(function*() {
