@@ -1050,6 +1050,9 @@ export const makeHosted = (host: Host): Service => {
     materialize: Effect.fn("WorkspaceSandbox.materialize")(
       function*<Output>(accepted: Accepted<Output>) {
         yield* Effect.annotateCurrentSpan({ changes: accepted.result.files.length })
+        // Nothing to copy back needs no commit: a body that changed nothing
+        // (a sealed read) must not need write authority over the root.
+        if (accepted.result.files.length === 0) return
         yield* host.commit(accepted.result.files)
       },
       (effect) =>

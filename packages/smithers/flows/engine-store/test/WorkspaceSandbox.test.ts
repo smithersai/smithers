@@ -1177,6 +1177,36 @@ describe("WorkspaceSandbox filesystem host", () => {
  * for in-process rollback. Competing commits wait through rollback, including
  * failures that leave partial changes for the caller to reconcile.
  */
+describe("WorkspaceSandbox empty materialization", () => {
+  it.effect("materializes a body that changed nothing without touching the host", () =>
+    Effect.gen(function*() {
+      const touched: Array<string> = []
+      const refuse = (operation: string) => () =>
+        Effect.sync(() => void touched.push(operation)).pipe(
+          Effect.andThen(Effect.fail(PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: operation,
+            description: "outside capability ceiling"
+          })))
+        )
+      const fs = FileSystem.makeNoop({
+        makeDirectory: refuse("makeDirectory"),
+        writeFile: refuse("writeFile"),
+        open: refuse("open")
+      })
+      const sandbox = WorkspaceSandbox.makeFileSystem(isolated(fs), ArtifactStore.makeNoop(), "")
+      const accepted = yield* withCrypto(sandbox.execute({
+        descriptor: descriptor(),
+        workflow: Effect.succeed("read")
+      }))
+      if (accepted._tag !== "Accepted") throw new Error("expected an accepted execution")
+      expect(accepted.result.files).toEqual([])
+      yield* withCrypto(sandbox.materialize(accepted))
+      expect(touched).toEqual([])
+    }))
+})
+
 describe("WorkspaceSandbox filesystem host atomicity", () => {
   for (const failRollback of [false, true]) {
     it.effect(`serializes separate sandboxes through ${failRollback ? "a failed rollback" : "apply"}`, () =>
