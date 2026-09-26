@@ -92,10 +92,10 @@ test("coverage failure reaches Vitest and the real target runner despite passing
 test("browser assertion failure travels through the PR entrypoint, Playwright and NodeTest", () => {
   const directory = fixture("apps/app/node_modules")
   try {
-    // The PR entrypoint runs its auth and probe tiers before Playwright; keep
+    // The PR entrypoint runs its auth, probe and graph-lifecycle tiers before Playwright; keep
     // this sentinel focused on propagation of a real browser assertion failure,
     // so every tier the wrapper runs is stubbed as an immediate success.
-    write(directory, "package.json", JSON.stringify({ type: "module", packageManager: "pnpm@11.25.0", scripts: { "test:e2e:auth": "node -e 'process.exit(0)'", "test:e2e:probes": "node -e 'process.exit(0)'" } }) + "\n")
+    write(directory, "package.json", JSON.stringify({ type: "module", packageManager: "pnpm@11.25.0", scripts: { "test:e2e:auth": "node -e 'process.exit(0)'", "test:e2e:probes": "node -e 'process.exit(0)'", "test:e2e:graph-lifecycle": "node -e 'process.exit(0)'" } }) + "\n")
     declaration(directory, 'S.NodeTest({ runner: S.entrypoint(S.file("scripts/run-pr-e2e.mjs")), srcs: [S.glob("tests/**"), S.file("playwright.config.ts")], deps: [] })')
     write(directory, "scripts/run-pr-e2e.mjs", readFileSync(join(root, "apps/app/scripts/run-pr-e2e.mjs")))
     write(directory, "playwright.config.ts", 'export default { testDir: "tests", workers: 1, retries: 0, reporter: [["list"], ["json", { outputFile: "browser-results.json" }]], use: { headless: true } }\n')
