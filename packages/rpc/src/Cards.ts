@@ -1299,16 +1299,26 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       repo: z.string(),
       /** Preparation outbox: the plan receipt is durable before its approval message is published. */
       preparations: z.array(z.object({
-        id: z.string(), owner: z.string(), workspaceId: GatewayWorkspaceIdSchema.optional(),
+        id: z.string(),
+        owner: z.string(),
+        workspaceId: GatewayWorkspaceIdSchema.optional(),
         phase: z.enum(["requested", "planning", "ready", "prepared", "failed"]),
-        draft: z.object({ flow: z.string(), slug: z.string(), schedule: z.string(), input: z.string(),
-          tokens: z.number().optional(), minutes: z.number().optional() }),
+        draft: z.object({
+          flow: z.string(),
+          slug: z.string(),
+          schedule: z.string(),
+          input: z.string(),
+          tokens: z.number().optional(),
+          minutes: z.number().optional()
+        }),
         receipt: z.object({ text: z.string(), args: z.string() }).optional(),
         error: z.string().optional()
       })).optional(),
       /** Durable HTTP pause requests; reconnect by observing before offering an explicit retry. */
       pauseRequests: z.array(z.object({
-        id: z.string(), slug: z.string(), owner: z.string(),
+        id: z.string(),
+        slug: z.string(),
+        owner: z.string(),
         phase: z.enum(["requested", "sending", "completed", "failed"]),
         error: z.string().optional()
       })).optional(),
@@ -2661,40 +2671,43 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({
     ...cardBaseShape,
     kind: z.literal("agents"),
-    payload: z.union([z.object({
-      /** False on the web host: no local harnesses, so nothing local is listed. */
-      native: z.boolean(),
-      agents: z.array(
-        z.object({
-          id: AgentRoleIdSchema,
-          label: z.string(),
-          purpose: z.string(),
-          harness: z.enum(HARNESS_IDS),
-          /** The harness's display name from the table; the id when the table lacks it. */
-          harnessName: z.string(),
-          model: AgentRoleModelSchema,
-          builtin: z.boolean(),
-          available: z.boolean(),
-          /** Why it cannot launch here (roleMenuEntries); empty when available. */
-          reason: z.string(),
-          /** The account the harness reports; empty when none. */
-          account: z.string()
-        })
-      ),
-      /** The last act's honest refusal, kept on the card. */
-      error: z.string().optional()
-    }), z.object({
-      cloud: z.literal(true),
-      repo: z.string(),
-      sessions: z.array(z.object({
-        id: z.string(),
-        title: z.string(),
-        status: z.string(),
-        messageCount: z.number().int().nonnegative(),
-        createdAt: z.string().nullable(),
-        workspaceId: z.string().nullable()
-      }))
-    })])
+    payload: z.union([
+      z.object({
+        /** False on the web host: no local harnesses, so nothing local is listed. */
+        native: z.boolean(),
+        agents: z.array(
+          z.object({
+            id: AgentRoleIdSchema,
+            label: z.string(),
+            purpose: z.string(),
+            harness: z.enum(HARNESS_IDS),
+            /** The harness's display name from the table; the id when the table lacks it. */
+            harnessName: z.string(),
+            model: AgentRoleModelSchema,
+            builtin: z.boolean(),
+            available: z.boolean(),
+            /** Why it cannot launch here (roleMenuEntries); empty when available. */
+            reason: z.string(),
+            /** The account the harness reports; empty when none. */
+            account: z.string()
+          })
+        ),
+        /** The last act's honest refusal, kept on the card. */
+        error: z.string().optional()
+      }),
+      z.object({
+        cloud: z.literal(true),
+        repo: z.string(),
+        sessions: z.array(z.object({
+          id: z.string(),
+          title: z.string(),
+          status: z.string(),
+          messageCount: z.number().int().nonnegative(),
+          createdAt: z.string().nullable(),
+          workspaceId: z.string().nullable()
+        }))
+      })
+    ])
   }),
   /*
    * THE FORM LAW (apps/app/AGENTS.md;

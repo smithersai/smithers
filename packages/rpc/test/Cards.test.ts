@@ -1065,6 +1065,16 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     minimal: { repo: "smithersai/smithers", triggers: [] },
     full: {
       repo: "smithersai/smithers",
+      preparations: [{
+        id: "prep-1",
+        owner: "will",
+        workspaceId: "0b5e8c1a-2f3d-4e6a-9b7c-1d2e3f4a5b6c",
+        phase: "ready",
+        draft: { flow: "ci", slug: "nightly", schedule: "0 * * * *", input: "{}", tokens: 1200, minutes: 3 },
+        receipt: { text: "prepared", args: "--slug nightly" },
+        error: ""
+      }],
+      pauseRequests: [{ id: "pause-1", slug: "nightly", owner: "will", phase: "completed" }],
       declared: [{ event: "push", flow: "ci", description: "run ci on every push" }],
       live: true,
       triggers: [{
@@ -2562,8 +2572,28 @@ describe("every persisted card kind", () => {
     expect(Object.keys(FIXTURES).sort()).toEqual([...kinds].sort())
   })
 
+  test("agents: the local roster and a repository's cloud sessions parse, and neither takes the other's fields", () => {
+    const cloud = {
+      cloud: true,
+      repo: "smithersai/smithers",
+      sessions: [{
+        id: "s-1",
+        title: "Fix CI",
+        status: "running",
+        messageCount: 3,
+        createdAt: null,
+        workspaceId: "ws-1"
+      }]
+    }
+    const read = CardSchema.parse(card("agents", cloud))
+    expect(read.payload).toEqual(cloud)
+    expect(CardSchema.safeParse(card("agents", { ...cloud, cloud: false })).success).toBe(false)
+    expect(CardSchema.safeParse(card("agents", { cloud: true, repo: "smithersai/smithers" })).success).toBe(false)
+    expect(CardSchema.safeParse(card("agents", { native: true })).success).toBe(false)
+  })
+
   test("every union payload has an explicit branch audit below", () => {
-    expect(kinds.filter((kind) => payloadFields(kind) === null)).toEqual(["agent"])
+    expect(kinds.filter((kind) => payloadFields(kind) === null)).toEqual(["agent", "agents"])
   })
 
   test.each(objectKinds)("%s: the fixtures name every field the payload declares, and no more", (kind) => {
