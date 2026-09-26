@@ -134,9 +134,8 @@ OFFSET sqlc.arg(page_offset);
 
 
 -- name: CreateWorkflowRun :one
--- execution_plane defaults to 'runner' when the caller passes an empty string,
--- so legacy callers deterministically land on the standard-CI runner plane
--- (the safe default: the sandbox scheduler never claims a 'runner' run).
+-- execution_plane defaults to 'sandbox' when the caller passes an empty string;
+-- it is immutable afterwards.
 INSERT INTO workflow_runs (repository_id, workflow_definition_id, status, trigger_event, trigger_ref, trigger_commit_sha, dispatch_inputs, execution_plane)
 SELECT
     sqlc.arg(repository_id),
@@ -146,7 +145,7 @@ SELECT
     sqlc.arg(trigger_ref),
     sqlc.arg(trigger_commit_sha),
     sqlc.arg(dispatch_inputs),
-    COALESCE(NULLIF(sqlc.arg(execution_plane)::varchar, ''), 'runner')
+    COALESCE(NULLIF(sqlc.arg(execution_plane)::varchar, ''), 'sandbox')
 WHERE EXISTS (
     SELECT 1
     FROM workflow_definitions AS wd

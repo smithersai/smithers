@@ -64,6 +64,7 @@ var migrationRegistry = []migrationSpec{
 	{28, "migrations/0028_canonical_import_receipts.sql"},
 	{29, "migrations/0029_mythical_lane_accounts.sql"},
 	{30, "migrations/0030_model_usage.sql"},
+	{31, "migrations/0031_retire_runner_plane.sql"},
 }
 
 type migration struct {

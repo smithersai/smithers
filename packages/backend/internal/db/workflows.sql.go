@@ -236,7 +236,7 @@ SELECT
     $5,
     $6,
     $7,
-    COALESCE(NULLIF($8::varchar, ''), 'runner')
+    COALESCE(NULLIF($8::varchar, ''), 'sandbox')
 WHERE EXISTS (
     SELECT 1
     FROM workflow_definitions AS wd
@@ -257,9 +257,8 @@ type CreateWorkflowRunParams struct {
 	ExecutionPlane       string `json:"execution_plane"`
 }
 
-// execution_plane defaults to 'runner' when the caller passes an empty string,
-// so legacy callers deterministically land on the standard-CI runner plane
-// (the safe default: the sandbox scheduler never claims a 'runner' run).
+// execution_plane defaults to 'sandbox' when the caller passes an empty string;
+// it is immutable afterwards.
 func (q *Queries) CreateWorkflowRun(ctx context.Context, arg CreateWorkflowRunParams) (WorkflowRun, error) {
 	row := q.db.QueryRow(ctx, createWorkflowRun,
 		arg.RepositoryID,

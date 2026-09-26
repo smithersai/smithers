@@ -130,11 +130,16 @@ const (
 // createWorkflowRunRows writes one workflow_step + one workflow_task per job,
 // while InvokeWorkflow (the whole-workflow smithers-orchestrator path) writes
 // the run row alone. A run with tasks is a CI DAG whose jobs this executor runs
-// one guest each; a run without tasks keeps the legacy single-VM orchestrator
-// path, which cancels any leftover tasks precisely because it assumes none.
-func runHasTaskGraph(ctx context.Context, q nixCITaskQuerier, runID int64) bool {
+// one guest each; a run without tasks keeps the single-VM orchestrator path,
+// which cancels any leftover tasks precisely because it assumes none. A lookup
+// error is returned rather than read as "no tasks", so a CI run can never be
+// handed to the orchestrator path by a failed query.
+func runHasTaskGraph(ctx context.Context, q nixCITaskQuerier, runID int64) (bool, error) {
 	rows, err := q.ListTaskStepInfoForRun(ctx, runID)
-	return err == nil && len(rows) > 0
+	if err != nil {
+		return false, err
+	}
+	return len(rows) > 0, nil
 }
 
 // loadNixCITasks reads the run's job graph. Tasks whose payload cannot be

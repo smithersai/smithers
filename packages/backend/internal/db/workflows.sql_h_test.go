@@ -106,10 +106,11 @@ func TestWorkflowsSQL_H_DefinitionsRunsTasksAndStatusesRoundTrip(t *testing.T) {
 	_, err = q.UpdateWorkflowStepStatusTerminal(ctx, UpdateWorkflowStepStatusTerminalParams{Status: "success", StepID: canaryStep.ID})
 	require.NoError(t, err)
 
-	assigned := workflowsSQLHCreateTask(t, q, run.ID, buildStep.ID, repoID, "assigned", `{"task":"assigned"}`)
-	runnerID := int64(4242)
-	mustExec(t, pool, `UPDATE workflow_tasks SET runner_id = $1, assigned_at = NOW() WHERE id = $2`, runnerID, assigned.ID)
-	affected, err := q.MarkWorkflowTaskRunning(ctx, MarkWorkflowTaskRunningParams{ID: assigned.ID, RunnerID: pgtype.Int8{Int64: runnerID, Valid: true}})
+	assigned := workflowsSQLHCreateTask(t, q, run.ID, buildStep.ID, repoID, "pending", `{"task":"assigned"}`)
+	affected, err := q.MarkWorkflowTaskVMRunning(ctx, MarkWorkflowTaskVMRunningParams{
+		VmID: pgtype.Text{String: "vm-h-0", Valid: true},
+		ID:   assigned.ID,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), affected)
 	terminalRunID, err := q.MarkWorkflowTaskTerminalByID(ctx, MarkWorkflowTaskTerminalByIDParams{

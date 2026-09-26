@@ -26,7 +26,6 @@ const (
 	AlertRemediationTriggerEvent = services.AlertRemediationTriggerEvent
 	MaxInjectedEnvEntries        = services.MaxInjectedEnvEntries
 	SecretEnvKeysRuntimeMarker   = services.SecretEnvKeysRuntimeMarker
-	WorkflowRunPlaneRunner       = services.WorkflowRunPlaneRunner
 )
 
 func AdminAuditActorFromContext(ctx context.Context) (AdminAuditActor, bool) {

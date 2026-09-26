@@ -419,7 +419,9 @@ func TestNixCIRun_RunWithoutTaskGraphKeepsTheOrchestratorPath(t *testing.T) {
 	assert.Equal(t, []int64{42}, queries.markSuccessIDs)
 }
 
-func TestNixCIRun_WithoutAProvisionerEveryRunKeepsTheOrchestratorPath(t *testing.T) {
+// A CI run never falls back to the whole-workflow orchestrator VM: without a
+// CI guest provisioner, or when its job graph cannot be read, it fails.
+func TestNixCIRun_WithoutAProvisionerCIRunFails(t *testing.T) {
 	queries := nixCIQuerier([]db.WorkflowTask{nixCITaskRow(1, 11, "build", nil)})
 	client := &mockWorkflowSandboxVMClient{}
 	worker := NewWorkflowSandboxSchedulerWorker(queries, client,
@@ -427,8 +429,25 @@ func TestNixCIRun_WithoutAProvisionerEveryRunKeepsTheOrchestratorPath(t *testing
 
 	require.NoError(t, worker.PollOnce(context.Background()))
 
-	require.Len(t, client.createCalls, 1)
-	assert.Equal(t, "", client.createCalls[0].Kind, "the legacy whole-workflow VM request is unchanged")
+	assert.Empty(t, client.createCalls, "no orchestrator VM is booted for a CI run")
+	assert.Equal(t, []int64{42}, queries.markFailureIDs)
+}
+
+func TestNixCIRun_JobGraphLookupErrorFailsTheRun(t *testing.T) {
+	queries := nixCIQuerier([]db.WorkflowTask{nixCITaskRow(1, 11, "build", nil)})
+	queries.listTaskStepInfoForRunFn = func(context.Context, int64) ([]db.ListTaskStepInfoForRunRow, error) {
+		return nil, errors.New("connection reset")
+	}
+	guests := &fakeNixCIGuests{polls: map[string]int{}, scripts: map[string]nixCIGuestScript{}}
+	client := guests.client(t)
+	worker := NewWorkflowSandboxSchedulerWorker(queries, client,
+		WithWorkflowSandboxSchedulerGitBaseURL("https://git.example.test"),
+		WithWorkflowSandboxSchedulerCIGuests(guests))
+
+	require.NoError(t, worker.PollOnce(context.Background()))
+
+	assert.Empty(t, client.createCalls, "a failed lookup never boots the orchestrator VM")
+	assert.Equal(t, []int64{42}, queries.markFailureIDs)
 }
 
 // ------------------------------------------------------------------ helpers

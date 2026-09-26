@@ -634,3 +634,30 @@ func TestDevelopmentWorkspaceHasDependencyAndCheckDiskSpace(t *testing.T) {
 	require.NotNil(t, req.RootfsSizeMB)
 	assert.EqualValues(t, 32*1024, *req.RootfsSizeMB)
 }
+
+// A repository without its own registered closure still gets CI: its job
+// guests boot the platform base closure through the same workspace request.
+func TestCIGuestVMRequestBootsBaseClosureForRepositoryWithoutImage(t *testing.T) {
+	images := NewSandboxEnvironmentImageService(&fakeEnvironmentImageQuerier{rows: []runtimeports.SandboxEnvironmentImage{
+		{ID: "base-vm", Kind: "vm", ClosureHash: "b", Image: "reg/nixos-guest:base-b", Status: "ready"},
+	}})
+	svc := NewWorkspaceService(&mockWorkspaceQuerier{}, WithWorkspaceEnvironmentImages(images))
+	checkout := []sandbox.GitRepositorySpec{{Repo: "https://git.example.test/acme/app.git", Path: nixCITaskWorkdir, Rev: "cafebabe"}}
+
+	req, err := svc.CIGuestVMRequest(context.Background(), 8, checkout)
+	require.NoError(t, err)
+	assert.Equal(t, "vm", req.Kind)
+	assert.Equal(t, "reg/nixos-guest:base-b", req.Image)
+	assert.Nil(t, req.Packages, "the toolchain comes from the closure, never apt")
+	assert.Equal(t, checkout, req.GitRepos)
+}
+
+// With no image registered at all the guest cannot boot; provisioning fails
+// the job visibly instead of leaving the run queued.
+func TestCIGuestVMRequestWithoutAnyImageIsUnavailable(t *testing.T) {
+	images := NewSandboxEnvironmentImageService(&fakeEnvironmentImageQuerier{})
+	svc := NewWorkspaceService(&mockWorkspaceQuerier{}, WithWorkspaceEnvironmentImages(images))
+
+	_, err := svc.CIGuestVMRequest(context.Background(), 8, nil)
+	assertAPIStatus(t, err, 409)
+}

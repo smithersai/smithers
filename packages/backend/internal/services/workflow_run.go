@@ -106,11 +106,9 @@ type workflowRunCredentialRevoker interface {
 //
 // This is safe to call for every terminalization path (cancel, complete,
 // sandbox finalize): resumed runs (cancelled/failed -> queued) need no stored
-// per-run token because the trusted gVisor runner mints a signed, task-scoped
-// callback token only after claiming a task; the shared pod credential never
-// enters the workflow child. GetTaskRuntimeEnvironment returns that caller's
-// task token, the sandbox scheduler never injects the per-run agent token, and
-// agent dispatch mints a fresh token per dispatch. So clearing the stored
+// per-run token because the sandbox scheduler never injects the per-run agent
+// token and mints its own per-run credentials when it claims a run, and agent
+// dispatch mints a fresh token per dispatch. So clearing the stored
 // credentials here never breaks a legitimate resume.
 //
 // All work is best-effort: failures are logged, not returned, so credential
@@ -240,12 +238,11 @@ type WorkflowStepResult struct {
 }
 
 // Workflow run execution planes. Exactly one consumer claims work per run:
-// runner-plane tasks are claimed by the gVisor task runner (ClaimPendingTask),
-// sandbox-plane runs are claimed whole by the sandbox workflow scheduler
-// (ClaimQueuedWorkflowRuns), and agent-plane runs are driven solely by agent
-// dispatch. The plane is fixed at run creation and never changes.
+// sandbox-plane runs (CI and invoked workflows) are claimed whole by the
+// sandbox workflow scheduler (ClaimQueuedWorkflowRuns), and agent-plane runs
+// are driven solely by agent dispatch. The plane is fixed at run creation and
+// never changes.
 const (
-	WorkflowRunPlaneRunner  = "runner"
 	WorkflowRunPlaneSandbox = "sandbox"
 	WorkflowRunPlaneAgent   = "agent"
 )
@@ -259,7 +256,7 @@ type JobConfig struct {
 	If     string       `json:"if,omitempty"`
 	// Secrets is nil for the legacy expose-all behavior. An explicit empty
 	// list creates a credential-free task; otherwise only named repository
-	// secrets/variables are delivered to the runner process.
+	// secrets/variables are delivered to the job's guest.
 	Secrets *[]string                 `json:"secrets,omitempty"`
 	Cache   []WorkflowCacheDescriptor `json:"cache,omitempty"`
 }
@@ -290,14 +287,12 @@ type workflowRunService struct {
 	metrics              WorkflowRunMetricsObserver
 	billing              BillingPolicy
 	secretInjector       *SecretInjector
-	repoFileProbe        WorkflowRunRepoFileProbe
-	environmentImages    WorkflowRunEnvironmentImageResolver
 }
 
 // WorkflowDefinitionCommitLoader loads workflow definitions from one immutable
 // repository snapshot without consulting or mutating the persisted definition
 // cache. Alert remediation uses it to bind the executed config to the same
-// commit that the runner checks out.
+// commit that the CI guest checks out.
 type WorkflowDefinitionCommitLoader interface {
 	LoadDefinitionsFromCommit(ctx context.Context, repoID int64, commitSHA string) (WorkflowLoadResult, error)
 }
@@ -316,18 +311,6 @@ type WorkflowRunServiceOption func(*workflowRunService)
 func WithWorkflowRunWebhookDispatcher(dispatcher webhooks.Dispatcher) WorkflowRunServiceOption {
 	return func(s *workflowRunService) {
 		s.dispatcher = dispatcher
-	}
-}
-
-// WithWorkflowRunEnvironmentRouting wires the two lookups ResolveCIExecutionPlane
-// needs to route a CI run onto a NixOS guest: the repository file probe that
-// answers "does this commit declare .smithers/environment.nix" and the closure
-// image registry that answers "has that environment been built". Without both,
-// every CI run stays on the Debian runner plane.
-func WithWorkflowRunEnvironmentRouting(probe WorkflowRunRepoFileProbe, images WorkflowRunEnvironmentImageResolver) WorkflowRunServiceOption {
-	return func(s *workflowRunService) {
-		s.repoFileProbe = probe
-		s.environmentImages = images
 	}
 }
 
@@ -564,7 +547,7 @@ func (s *workflowRunService) createRunForDefinition(
 
 	// Schedule, workflow_dispatch, issue, and other ref-backed triggers do not
 	// carry a commit SHA. A workflow commit status cannot be created without a
-	// SHA or jj change ID, while terminal runner completion updates every run by
+	// SHA or jj change ID, while terminal publication updates every run by
 	// workflow_run_id. Resolve the authoritative bookmark target before writing
 	// any rows so these runs are commit-backed just like push-triggered runs.
 	if s.commitStatusWriter != nil && strings.TrimSpace(input.Event.CommitSHA) == "" && strings.TrimSpace(input.Event.ChangeID) == "" {
@@ -592,13 +575,6 @@ func (s *workflowRunService) createRunForDefinition(
 		dispatchInputs, _ = json.Marshal(input.Event.Inputs)
 	}
 
-	executionPlane := ResolveCIExecutionPlane(ctx, s.repoFileProbe, s.environmentImages, CIExecutionPlaneInput{
-		RepositoryID: input.RepositoryID,
-		Owner:        repoOwner,
-		Repo:         repository.Name,
-		CommitSHA:    input.Event.CommitSHA,
-	})
-
 	tx, txQueries, transactional, err := BeginWorkflowQueryTx(ctx, s.queries)
 	if err != nil {
 		return WorkflowRunResult{}, pkgerrors.Internal("failed to begin workflow run transaction").WithCause(err)
@@ -607,7 +583,7 @@ func (s *workflowRunService) createRunForDefinition(
 	var run db.WorkflowRun
 	if transactional {
 		defer func() { _ = tx.Rollback(context.Background()) }()
-		result, run, err = createWorkflowRunRows(ctx, txQueries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, s.commitStatusWriter != nil, executionPlane)
+		result, run, err = createWorkflowRunRows(ctx, txQueries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, s.commitStatusWriter != nil)
 		if err != nil {
 			return WorkflowRunResult{}, err
 		}
@@ -615,7 +591,7 @@ func (s *workflowRunService) createRunForDefinition(
 			return WorkflowRunResult{}, pkgerrors.Internal("failed to commit workflow run").WithCause(err)
 		}
 	} else {
-		result, run, err = createWorkflowRunRows(ctx, s.queries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, s.commitStatusWriter != nil, executionPlane)
+		result, run, err = createWorkflowRunRows(ctx, s.queries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, s.commitStatusWriter != nil)
 		if err != nil {
 			if result.WorkflowRunID > 0 {
 				abortWorkflowRunDispatch(ctx, s.queries, result.WorkflowRunID)
@@ -629,7 +605,7 @@ func (s *workflowRunService) createRunForDefinition(
 	// run is the last writer for the concurrency group. Without this, seven
 	// consecutive pushes to one repository queued seven full runs at once
 	// (2026-09-15: runs 11751-11757, six grouped tasks each) and starved every
-	// other repository on the shared runner pool for over an hour.
+	// other repository on the shared CI capacity for over an hour.
 	s.cancelSupersededRuns(ctx, run, configJSON)
 
 	// All database rows are durable before publishing external state. A
@@ -830,7 +806,6 @@ func createWorkflowRunRows(
 	dispatchInputs []byte,
 	jobs []preparedWorkflowJob,
 	createPendingCommitStatus bool,
-	executionPlane string,
 ) (WorkflowRunResult, db.WorkflowRun, error) {
 	result := WorkflowRunResult{WorkflowDefinitionID: def.ID}
 	run, err := queries.CreateWorkflowRun(ctx, db.CreateWorkflowRunParams{
@@ -841,15 +816,12 @@ func createWorkflowRunRows(
 		TriggerRef:           triggerRef,
 		TriggerCommitSha:     input.Event.CommitSHA,
 		DispatchInputs:       dispatchInputs,
-		// Owner decision (2026-09-15): a repository that declares
-		// .smithers/environment.nix AND has a registered kind=vm closure image
-		// runs its CI in NixOS guests on the sandbox plane; everything else
-		// stays on the Debian gVisor runner pool, which is the fallback until
-		// every active repository has a closure and the pool is retired. The
-		// decision is ResolveCIExecutionPlane's alone — `runs-on` is workflow
-		// metadata and still must not select a plane, so untrusted CI can
-		// never redirect itself into the agent/workspace plane.
-		ExecutionPlane: normalizeCIExecutionPlane(executionPlane),
+		// Every CI run executes on the sandbox plane: each job in its own
+		// NixOS kind=vm guest booted from the repository's closure image, or
+		// the platform base closure when the repository has not registered
+		// one. `runs-on` is workflow metadata and never selects a plane, so
+		// untrusted CI can never redirect itself into the agent plane.
+		ExecutionPlane: WorkflowRunPlaneSandbox,
 	})
 	if err != nil {
 		return result, db.WorkflowRun{}, pkgerrors.Internal(fmt.Sprintf("failed to create workflow run: %v", err))
@@ -908,9 +880,9 @@ func createWorkflowRunRows(
 			"event":   input.Event.Type,
 			"ref":     triggerRef,
 			"commit":  input.Event.CommitSHA,
-			// agent_token is intentionally absent from the DB-persisted payload.
-			// The runner fetches it at task-start time from /internal/tasks/:id/env,
-			// authenticated with its own SMITHERS_AGENT_TOKEN pod credential.
+			// No credential is ever persisted in the payload: the sandbox
+			// scheduler mints each guest's clone token and injects the
+			// repository secrets the job allows when the guest boots.
 			"default_bookmark":  repository.DefaultBookmark,
 			"resolved_bookmark": resolvedBookmark,
 			"workflow_path":     def.Path,

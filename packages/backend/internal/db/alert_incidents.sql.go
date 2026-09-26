@@ -14,7 +14,6 @@ const findAlertRemediationWorkflowRun = `-- name: FindAlertRemediationWorkflowRu
 SELECT wr.id, wr.repository_id, wr.workflow_definition_id, wr.status, wr.trigger_event, wr.trigger_ref, wr.trigger_commit_sha, wr.dispatch_inputs, wr.agent_token_hash, wr.agent_token_expires_at, wr.jjhub_token_id, wr.check_run_id, wr.check_run_url, wr.started_at, wr.completed_at, wr.created_at, wr.updated_at, wr.execution_plane, wr.log_bytes, wr.log_entry_count, wr.cancel_reason
 FROM workflow_runs AS wr
 WHERE wr.trigger_event = 'monitoring_alert'
-  AND wr.execution_plane = 'runner'
   AND wr.dispatch_inputs ->> 'remediation_job_id' = $1::text
   AND wr.dispatch_inputs ->> 'remediation_dispatch_token' = $2
 ORDER BY wr.id ASC
@@ -64,7 +63,6 @@ SELECT EXISTS (
     SELECT 1
     FROM workflow_runs AS wr
     WHERE wr.trigger_event = 'monitoring_alert'
-      AND wr.execution_plane = 'runner'
       AND NOT (wr.dispatch_inputs ? 'remediation_dispatch_token')
       AND wr.dispatch_inputs ->> 'incident_row_id' = $1::text
       AND wr.dispatch_inputs ->> 'incident_id' = $2::text

@@ -521,11 +521,17 @@ func (w *WorkflowSandboxSchedulerWorker) failUnstartedClaimedRuns(ctx context.Co
 func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim workflowSandboxRunClaim) error {
 	run := claim.Run
 
-	// Owner decision (2026-09-15): a sandbox-plane run that carries a rendered
-	// job graph is Cloud CI and runs one NixOS kind=vm guest per job. A run
-	// without tasks is an InvokeWorkflow run and keeps the legacy single-VM
-	// smithers-orchestrator path below. See runHasTaskGraph.
-	nixCI := w.ciGuests != nil && runHasTaskGraph(ctx, w.queries, run.ID)
+	// A sandbox-plane run that carries a rendered job graph is CI and runs one
+	// NixOS kind=vm guest per job. A run without tasks is an InvokeWorkflow run
+	// and keeps the single-VM smithers-orchestrator path below. See
+	// runHasTaskGraph.
+	nixCI, err := runHasTaskGraph(ctx, w.queries, run.ID)
+	if err != nil {
+		return w.failRun(ctx, claim, 0, "failed to load workflow job graph")
+	}
+	if nixCI && w.ciGuests == nil {
+		return w.failRun(ctx, claim, 0, "CI guests are not configured on this deployment")
+	}
 
 	budget := w.timeout
 	if nixCI {

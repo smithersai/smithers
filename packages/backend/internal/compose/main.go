@@ -760,12 +760,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		environmentImageService = services.NewSandboxEnvironmentImageService(runtimeStores.EnvironmentImages,
 			services.WithSandboxEnvironmentImageGoldenSnapshots(goldenSnapshotService, workspaceService.NixBakeVMRequest))
 		services.WithWorkspaceEnvironmentImages(environmentImageService)(workspaceService)
-		// NixOS CI routing: a repository whose trigger commit declares
-		// .smithers/environment.nix and has a registered kind=vm closure image runs
-		// its CI in NixOS guests on the sandbox plane instead of the Debian runner
-		// pool. Bound here because the image registry is constructed after the run
-		// service.
-		services.BindWorkflowRunEnvironmentRouting(workflowRunService, repoHostClient, environmentImageService)
 	}
 
 	// Smithers Pair sessions: the server-authoritative pairing backend
