@@ -10,6 +10,7 @@
  *
  * @since 0.1.0
  */
+import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
@@ -52,6 +53,35 @@ const MODULE = "ChildProcess"
 const signalWithin = Duration.seconds(5)
 
 const platformError = platformFailure
+
+const ambient = new Set(ChildProcessEnvironment.inheritedNames)
+
+/**
+ * A command's environment as a remote guest receives it.
+ *
+ * A caller that builds a least-authority environment for a local child
+ * (`ChildProcessEnvironment.make`) carries this process's own `PATH`, `HOME`,
+ * `TMPDIR`, `USER`, `SHELL`, `LANG`, `TERM` and locale. Those name places and
+ * identities on this machine, not in the guest: a guest handed the host's
+ * `HOME` looks for its caches under a directory it does not have, and one
+ * handed the host's `TMPDIR` writes temporary files where it cannot. An entry
+ * that only repeats this process's ambient value is dropped, so the guest
+ * keeps its own; a value set on purpose (one that differs), a removal, and
+ * every other name cross unchanged.
+ */
+const guestEnvironment = (
+  env: Readonly<Record<string, string | undefined>> | undefined
+): Record<string, string | undefined> | undefined => {
+  if (env === undefined) return undefined
+  const host = globalThis.process.env
+  const guest: Record<string, string | undefined> = {}
+  for (const [name, value] of Object.entries(env)) {
+    const upper = name.toUpperCase()
+    const hostAmbient = (ambient.has(upper) || upper.startsWith("LC_")) && value !== undefined && host[name] === value
+    if (!hostAmbient) guest[name] = value
+  }
+  return guest
+}
 
 const noStdin = (command: string): PlatformError.PlatformError =>
   PlatformError.badArgument({
@@ -348,7 +378,7 @@ export const makeOpened = (
         const stdin = input === undefined ? undefined : yield* collectStdin(rendered, input)
         const started = yield* provider.spawn(rendered, {
           cwd: CommandLine.cwd(command),
-          env: CommandLine.env(command),
+          env: guestEnvironment(CommandLine.env(command)),
           ...stdin === undefined ? {} : { stdin }
         }).pipe(Effect.mapError(platformError("spawn", rendered)))
         return yield* handleOf(rendered, command, started, allocatePid, provider)

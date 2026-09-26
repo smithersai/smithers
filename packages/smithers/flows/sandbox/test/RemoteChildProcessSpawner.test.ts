@@ -33,6 +33,43 @@ describe("RemoteChildProcessSpawner", () => {
       expect(provider.state.commands).toEqual(["greet", "greet"])
     }))
 
+  it.effect("keeps this process's ambient environment out of the guest and passes chosen values", () =>
+    Effect.gen(function*() {
+      const seen: Array<Record<string, string | undefined> | undefined> = []
+      const scripted = RemoteChildProcessSpawner.TestRemote.make({ scripts: { probe: { stdout: "ok" } } })
+      const provider: RemoteChildProcessSpawner.Provider = {
+        ...scripted,
+        spawn: (command, options) => {
+          seen.push(options.env)
+          return scripted.spawn(command, options)
+        }
+      }
+      const host = process.env
+      const env = {
+        PATH: host.PATH ?? "/host/bin",
+        HOME: host.HOME ?? "/host/home",
+        TMPDIR: "/guest/tmp",
+        LANG: host.LANG ?? "C",
+        FEATURE: "on",
+        DROPPED: undefined
+      }
+      yield* Effect.flatMap(
+        ChildProcessSpawner,
+        (spawner) => spawner.string(ChildProcess.make("probe", [], { env, extendEnv: false }))
+      ).pipe(Effect.provide(RemoteChildProcessSpawner.layer(provider)))
+      const received = seen[0]!
+      // The host's own PATH, HOME and LANG stay here; the guest keeps its own.
+      for (const name of ["PATH", "HOME", "LANG"]) {
+        expect(Object.hasOwn(received, name), name).toBe(host[name] === undefined)
+      }
+      expect(received).toMatchObject({ TMPDIR: "/guest/tmp", FEATURE: "on" })
+      expect(Object.hasOwn(received, "DROPPED") && received.DROPPED === undefined).toBe(true)
+      yield* Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.string(ChildProcess.make("probe"))).pipe(
+        Effect.provide(RemoteChildProcessSpawner.layer(provider))
+      )
+      expect(seen[1]).toBeUndefined()
+    }))
+
   it.effect("renders arguments and a pipeline into the command the provider receives", () =>
     Effect.gen(function*() {
       const provider = RemoteChildProcessSpawner.TestRemote.make({
