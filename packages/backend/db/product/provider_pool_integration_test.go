@@ -84,7 +84,7 @@ func newPoolFixture(t *testing.T) poolFixture {
 	repoID := servicesBRepo(t, p)
 	ref := &poolRefresher{}
 	q := db.New(p)
-	return poolFixture{pool: p, q: q, svc: services.NewProviderConnectionService(q, poolCodec{}, ref), ref: ref, repoID: repoID, alice: &db.User{ID: 1, Username: "alice"}}
+	return poolFixture{pool: p, q: q, svc: services.NewProviderConnectionService(q, poolCodec{}, ref, services.WithSubscriptionConnectionsEnabled(true)), ref: ref, repoID: repoID, alice: &db.User{ID: 1, Username: "alice"}}
 }
 
 func (f poolFixture) connect(t *testing.T, label string) string {
@@ -232,6 +232,20 @@ func TestProviderPoolScope(t *testing.T) {
 	pick, err = f.svc.PickForModelCall(ctx, 1, f.repoID, "codex", nil)
 	require.NoError(t, err)
 	require.False(t, pick.Pooled, "pools never cross providers")
+	// With the deployment flag off (the hosted default) the stored account is
+	// inert: no pool, no pick.
+	disabled := services.NewProviderConnectionService(f.q, poolCodec{}, f.ref)
+	has, err = disabled.HasPool(ctx, 1, f.repoID, "claude")
+	require.NoError(t, err)
+	require.False(t, has, "subscription connections disabled")
+	pick, err = disabled.PickForModelCall(ctx, 1, f.repoID, "claude", nil)
+	require.NoError(t, err)
+	require.False(t, pick.Pooled, "subscription connections disabled")
+	// A subscription serves only its account holder's own runs.
+	require.NoError(t, f.svc.SetRepositoryPreference(ctx, f.repoID, services.ProviderConnectionPreferenceOrgOnly))
+	pick, err = f.svc.PickForModelCall(ctx, 1, f.repoID, "claude", nil)
+	require.NoError(t, err)
+	require.False(t, pick.Pooled, "org_only never draws on a user's subscription")
 	require.NoError(t, f.svc.SetRepositoryPreference(ctx, f.repoID, services.ProviderConnectionPreferencePlatformOnly))
 	pick, err = f.svc.PickForModelCall(ctx, 1, f.repoID, "claude", nil)
 	require.NoError(t, err)

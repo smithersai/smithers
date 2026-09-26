@@ -3,7 +3,9 @@ package smitherscli
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,9 +154,21 @@ func providerConnectionsPath(org string) string {
 	return "/api/user/provider-connections"
 }
 
+// providerConnectionsRequest calls the connections API and turns the feature
+// gate's 403 into a plain statement: the hosted product never stores
+// subscription logins, and a self-hosted server must opt in.
+func providerConnectionsRequest(method, path string, body any) (any, error) {
+	result, err := APIRequest(method, path, body, nil)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusForbidden && strings.Contains(apiErr.Detail, "feature not available") {
+		return nil, fmt.Errorf("subscription connections are not available on this deployment; a self-hosted server enables them with SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS=true, for each user's own subscription only")
+	}
+	return result, err
+}
+
 func registerProviderConnectionCommands(cmd *incur.Cli) {
 	cmd.Command("connect", &incur.CommandDef{
-		Description: "Connect a Claude or Codex subscription for agent runs (imports the vendor CLI's login, or a pasted Claude setup token)",
+		Description: "Connect your own Claude or Codex subscription for your own agent runs on a self-hosted server (imports the vendor CLI's login, or a pasted Claude setup token)",
 		ArgsSchema: objectSchema([]string{"provider"}, map[string]*incur.JSONSchema{
 			"provider": stringSchema("claude or codex"),
 		}),
@@ -162,7 +176,6 @@ func registerProviderConnectionCommands(cmd *incur.Cli) {
 			"setup-token": booleanSchema("Read a Claude setup token from stdin (`claude setup-token`) instead of importing the local login", false),
 			"config-dir":  stringSchema("Claude config directory (CLAUDE_CONFIG_DIR) or Codex home (CODEX_HOME) to import from"),
 			"label":       stringSchema("Display label for the connection"),
-			"org":         stringSchema("Connect for an organization you own instead of yourself"),
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			provider := strings.ToLower(strings.TrimSpace(stringValue(ctx.Args["provider"])))
@@ -195,7 +208,7 @@ func registerProviderConnectionCommands(cmd *incur.Cli) {
 				return nil, err
 			}
 			payload.Label = stringValue(ctx.Options["label"])
-			result, err := APIRequest("POST", providerConnectionsPath(stringValue(ctx.Options["org"])), payload, nil)
+			result, err := providerConnectionsRequest("POST", providerConnectionsPath(""), payload)
 			if err != nil {
 				return nil, err
 			}
@@ -211,7 +224,7 @@ func registerProviderConnectionCommands(cmd *incur.Cli) {
 			"org": stringSchema("List an organization's connections"),
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
-			return APIRequest("GET", providerConnectionsPath(stringValue(ctx.Options["org"])), nil, nil)
+			return providerConnectionsRequest("GET", providerConnectionsPath(stringValue(ctx.Options["org"])), nil)
 		},
 	})
 	cmd.Command("revoke", &incur.CommandDef{
@@ -224,7 +237,7 @@ func registerProviderConnectionCommands(cmd *incur.Cli) {
 			if id == "" {
 				return nil, fmt.Errorf("connection id is required")
 			}
-			if _, err := APIRequest("DELETE", "/api/user/provider-connections/"+id, nil, nil); err != nil {
+			if _, err := providerConnectionsRequest("DELETE", "/api/user/provider-connections/"+id, nil); err != nil {
 				return nil, err
 			}
 			return map[string]any{"status": "revoked", "id": id}, nil

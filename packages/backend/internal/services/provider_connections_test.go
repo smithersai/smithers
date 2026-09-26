@@ -238,7 +238,7 @@ func (s *stubRefresher) Refresh(context.Context, string, string) (RefreshedToken
 }
 
 func newPCService(q *fakeProviderConnectionQuerier, r ProviderTokenRefresher) *ProviderConnectionService {
-	return NewProviderConnectionService(q, plainCodec{}, r)
+	return NewProviderConnectionService(q, plainCodec{}, r, WithSubscriptionConnectionsEnabled(true))
 }
 
 func TestProviderConnection_ConnectValidatesKindsAndTokens(t *testing.T) {
@@ -289,57 +289,63 @@ func TestProviderConnection_WebRequestIsIdempotentAndAccountScoped(t *testing.T)
 	assert.Equal(t, 2, len(q.rows))
 }
 
-func TestProviderConnection_OrgConnectRequiresOwner(t *testing.T) {
+// A subscription serves only its account holder's own runs, so nobody can
+// connect one for an organization, and a legacy organization row never
+// resolves for a member's run.
+func TestProviderConnection_OrganizationConnectionsNeverServeRuns(t *testing.T) {
 	q := newFakePCQ()
+	q.repos[1] = db.Repository{ID: 1, OrgID: pgtype.Int8{Int64: 3, Valid: true}}
 	q.orgs["acme"] = db.Organization{ID: 3, Name: "acme", LowerName: "acme"}
 	q.members[[2]int64{3, 7}] = "member"
 	q.members[[2]int64{3, 8}] = "owner"
 	svc := newPCService(q, nil)
-	_, err := svc.ConnectForOrg(context.Background(), &db.User{ID: 7}, "acme", ConnectProviderInput{Provider: "claude", AccessToken: "sk-ant-oat01-x"})
+	_, err := svc.ConnectForOrg(context.Background(), &db.User{ID: 8}, "acme", ConnectProviderInput{Provider: "claude", AccessToken: "sk-ant-oat01-x"})
 	require.Error(t, err)
-	out, err := svc.ConnectForOrg(context.Background(), &db.User{ID: 8}, "acme", ConnectProviderInput{Provider: "claude", AccessToken: "sk-ant-oat01-x"})
+	assert.Contains(t, err.Error(), "own runs")
+	assert.Empty(t, q.rows)
+
+	_, err = q.CreateProviderConnection(context.Background(), db.CreateProviderConnectionParams{OwnerType: "org", OrgID: pgtype.Int8{Int64: 3, Valid: true}, Provider: "claude", Kind: "setup_token", AccessTokenEncrypted: []byte("enc:sk-ant-oat01-org")})
 	require.NoError(t, err)
-	assert.Equal(t, "org", out.OwnerType)
-	// A member may list, and a non-member may not.
+	for _, preference := range []string{ProviderConnectionPreferenceOrgFirst, ProviderConnectionPreferenceOrgOnly, ProviderConnectionPreferenceUserFirst} {
+		require.NoError(t, svc.SetRepositoryPreference(context.Background(), 1, preference))
+		resolved, err := svc.ResolveForRun(context.Background(), 7, 1, "claude")
+		require.NoError(t, err)
+		assert.Nil(t, resolved, preference)
+	}
+	// A member may still list legacy rows so an owner can revoke them.
 	_, err = svc.ListForOrg(context.Background(), &db.User{ID: 7}, "acme")
 	require.NoError(t, err)
 	_, err = svc.ListForOrg(context.Background(), &db.User{ID: 9}, "acme")
 	require.Error(t, err)
 }
 
-func TestProviderConnection_ResolvePrecedence(t *testing.T) {
+func TestProviderConnection_ResolveOnlyTheRunUsersOwnConnection(t *testing.T) {
 	q := newFakePCQ()
 	q.repos[1] = db.Repository{ID: 1, OrgID: pgtype.Int8{Int64: 3, Valid: true}}
 	q.repos[2] = db.Repository{ID: 2, UserID: pgtype.Int8{Int64: 7, Valid: true}}
-	q.orgs["acme"] = db.Organization{ID: 3, LowerName: "acme"}
-	q.members[[2]int64{3, 8}] = "owner"
 	svc := newPCService(q, nil)
-	owner := &db.User{ID: 8}
 	user := &db.User{ID: 7}
-	orgConn, err := svc.ConnectForOrg(context.Background(), owner, "acme", ConnectProviderInput{Provider: "claude", AccessToken: "sk-ant-oat01-org"})
-	require.NoError(t, err)
 	userConn, err := svc.ConnectForUser(context.Background(), user, ConnectProviderInput{Provider: "claude", AccessToken: "sk-ant-oat01-user"})
 	require.NoError(t, err)
 
-	// Org repo, default org_first: the org connection wins.
+	// Org repo without a grant: nothing.
 	resolved, err := svc.ResolveForRun(context.Background(), 7, 1, "smithers")
 	require.NoError(t, err)
-	require.NotNil(t, resolved)
-	assert.Equal(t, orgConn.ID, resolved.ConnectionID)
-	assert.Equal(t, "sk-ant-oat01-org", resolved.AccessToken)
+	assert.Nil(t, resolved)
 
-	// user_first on the org repo: the user has no grant, so still the org.
-	require.NoError(t, svc.SetRepositoryPreference(context.Background(), 1, ProviderConnectionPreferenceUserFirst))
-	resolved, err = svc.ResolveForRun(context.Background(), 7, 1, "smithers")
-	require.NoError(t, err)
-	assert.Equal(t, orgConn.ID, resolved.ConnectionID)
-
-	// With an org grant the user connection wins under user_first.
+	// With an org grant the user's own run on the org repo uses it.
 	_, err = svc.AddGrant(context.Background(), user, userConn.ID, ProviderConnectionGrantInput{OrgID: ptrInt64(3)})
 	require.NoError(t, err)
 	resolved, err = svc.ResolveForRun(context.Background(), 7, 1, "smithers")
 	require.NoError(t, err)
+	require.NotNil(t, resolved)
 	assert.Equal(t, userConn.ID, resolved.ConnectionID)
+	assert.Equal(t, "sk-ant-oat01-user", resolved.AccessToken)
+
+	// Another user's run on the same repo never gets it.
+	resolved, err = svc.ResolveForRun(context.Background(), 9, 1, "smithers")
+	require.NoError(t, err)
+	assert.Nil(t, resolved)
 
 	// The user's own repo needs no grant.
 	resolved, err = svc.ResolveForRun(context.Background(), 7, 2, "smithers")
@@ -356,10 +362,59 @@ func TestProviderConnection_ResolvePrecedence(t *testing.T) {
 	assert.Nil(t, resolved)
 
 	// A revoked connection is skipped.
+	require.NoError(t, svc.SetRepositoryPreference(context.Background(), 2, ProviderConnectionPreferenceUserFirst))
 	require.NoError(t, svc.Revoke(context.Background(), user, userConn.ID))
 	resolved, err = svc.ResolveForRun(context.Background(), 7, 2, "smithers")
 	require.NoError(t, err)
 	assert.Nil(t, resolved)
+}
+
+// With the deployment flag off (the hosted default) a stored connection is
+// inert: no run resolves it, the worker never refreshes it, and the service
+// refuses new ones even if a route gate were missing.
+func TestProviderConnection_DisabledDeploymentResolvesNothing(t *testing.T) {
+	q := newFakePCQ()
+	q.repos[2] = db.Repository{ID: 2, UserID: pgtype.Int8{Int64: 7, Valid: true}}
+	soon := time.Now().Add(time.Minute)
+	_, err := newPCService(q, nil).ConnectForUser(context.Background(), &db.User{ID: 7}, ConnectProviderInput{Provider: "claude", AccessToken: "sk-ant-oat01-user", RefreshToken: "r", AccessExpiresAt: &soon})
+	require.NoError(t, err)
+
+	refresher := &stubRefresher{tokens: RefreshedTokens{AccessToken: "fresh", ExpiresAt: time.Now().Add(time.Hour)}}
+	for name, svc := range map[string]*ProviderConnectionService{
+		"default":  NewProviderConnectionService(q, plainCodec{}, refresher),
+		"explicit": NewProviderConnectionService(q, plainCodec{}, refresher, WithSubscriptionConnectionsEnabled(false)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			resolved, err := svc.ResolveForRun(context.Background(), 7, 2, "claude")
+			require.NoError(t, err)
+			assert.Nil(t, resolved)
+
+			did, err := svc.RefreshDue(context.Background())
+			require.NoError(t, err)
+			assert.False(t, did)
+			assert.Zero(t, refresher.calls)
+
+			_, err = svc.ConnectForUser(context.Background(), &db.User{ID: 7}, ConnectProviderInput{Provider: "codex", AccessToken: "at", RefreshToken: "rt", AccountID: "acct"})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "not available")
+		})
+	}
+}
+
+// The refresh worker is not started when the flag is off.
+func TestProviderConnectionRefreshWorker_DisabledReturnsImmediately(t *testing.T) {
+	q := newFakePCQ()
+	worker := NewProviderConnectionRefreshWorker(NewProviderConnectionService(q, plainCodec{}, nil), time.Hour, nil)
+	done := make(chan struct{})
+	go func() {
+		worker.Start(context.Background())
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("refresh worker kept running with subscription connections disabled")
+	}
 }
 
 func TestProviderConnection_RevocationDuringResolutionFailsClosed(t *testing.T) {

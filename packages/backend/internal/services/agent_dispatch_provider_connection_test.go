@@ -6,9 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -155,4 +157,32 @@ func assertNoSubscriptionTokenOutsideProxy(t *testing.T, created sandbox.CreateR
 	for name, value := range started.Env {
 		assert.False(t, strings.Contains(value, token), "env %s carries the token", name)
 	}
+}
+
+// The hosted default: the resolver is wired but the deployment flag is off,
+// so a user with a stored Claude subscription still runs on the platform
+// binding and the token never reaches the create request.
+func TestAgentDispatch_DisabledSubscriptionConnectionsBindNoToken(t *testing.T) {
+	t.Parallel()
+	q := newFakePCQ()
+	q.repos[42] = db.Repository{ID: 42, UserID: pgtype.Int8{Int64: 7, Valid: true}}
+	_, err := newPCService(q, nil).ConnectForUser(context.Background(), &db.User{ID: 7}, ConnectProviderInput{Provider: "claude", AccessToken: "sk-ant-oat01-subscription"})
+	require.NoError(t, err)
+
+	disabled := NewProviderConnectionService(q, plainCodec{}, nil)
+	created, started := runProviderConnectionDispatch(t, disabled, "smithers")
+	assert.ElementsMatch(t, []string{"ANTHROPIC_API_KEY", "SMITHERS_AGENT_TOKEN"}, created.EgressProxy.SecretNames())
+	_, hasOAuth := started.Env["CLAUDE_CODE_OAUTH_TOKEN"]
+	assert.False(t, hasOAuth)
+	raw, err := json.Marshal(struct {
+		C sandbox.CreateRequest
+		S sandbox.ServiceSpec
+	}{created, started})
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "sk-ant-oat01-subscription")
+
+	// Flag on, same user and repository: the subscription binds.
+	created, started = runProviderConnectionDispatch(t, newPCService(q, nil), "smithers")
+	assert.ElementsMatch(t, []string{"ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "SMITHERS_AGENT_TOKEN"}, created.EgressProxy.SecretNames())
+	assert.Equal(t, "CLAUDE_CODE_OAUTH_TOKEN", started.Env["CLAUDE_CODE_OAUTH_TOKEN"])
 }

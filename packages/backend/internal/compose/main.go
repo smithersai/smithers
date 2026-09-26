@@ -675,8 +675,19 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			CodexClientID:  cfg.ProviderConnections.CodexClientID,
 		}, nil),
 		services.WithProviderConnectionAudit(auditService),
+		services.WithSubscriptionConnectionsEnabled(cfg.FeatureFlags.SubscriptionConnections),
 	)
 	providerConnectionRefreshWorker := services.NewProviderConnectionRefreshWorker(providerConnectionService, time.Minute, slog.Default())
+	// Self-host only: with feature_flags.subscription_connections off (the
+	// hosted product) no run or workspace is handed a resolver, so a stored
+	// subscription token can never bind. Keep these nil interfaces, not typed
+	// nil pointers.
+	var subscriptionResolver services.AgentProviderConnectionResolver
+	var subscriptionPool services.WorkspaceProviderPool
+	if cfg.FeatureFlags.SubscriptionConnections {
+		subscriptionResolver = providerConnectionService
+		subscriptionPool = providerConnectionService
+	}
 	neverStartedTimeout, _ := time.ParseDuration(cfg.Agents.NeverStartedTimeout)
 	agentService := services.NewAgentServiceWithPool(queries, pool,
 		services.WithAgentDispatchQuerier(runtimeStores.AgentDispatch),
@@ -698,7 +709,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		}),
 		services.WithAgentEnvironmentVariables(agentEnvironmentService),
 		services.WithAgentEnvironmentBoundSecrets(agentEnvironmentService),
-		services.WithAgentProviderConnections(providerConnectionService),
+		services.WithAgentProviderConnections(subscriptionResolver),
 		services.WithAgentSandboxMetrics(smithersMetrics),
 		services.WithAgentWorkflowMetrics(smithersMetrics),
 		services.WithAgentSessionMetrics(smithersMetrics),
@@ -739,7 +750,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// repository workspace VMs; secrets exist only during the setup phase
 		// and are stripped before the agent runs.
 		services.WithWorkspaceAgentEnvironment(agentEnvironmentService),
-		services.WithWorkspaceProviderConnections(providerConnectionService),
+		services.WithWorkspaceProviderConnections(subscriptionPool),
 		services.WithWorkspaceProviderBootstrap(modelSeats, cfg.Sandbox.WorkspaceCodingDefaultModel),
 	)
 
@@ -1582,7 +1593,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		launchWorker(func() {
 			services.RunRuntimeMetricsCollector(workerCtx, queries, smithersMetrics, services.RuntimeMetricsInterval)
 		})
-		launchWorker(func() { providerConnectionRefreshWorker.Start(workerCtx) })
+		if cfg.FeatureFlags.SubscriptionConnections {
+			launchWorker(func() { providerConnectionRefreshWorker.Start(workerCtx) })
+		}
 		launchWorker(func() { workflowLogBudgetBackfiller.Start(workerCtx) })
 	}
 	var gitHubImportWorker *joinedBackgroundWorker

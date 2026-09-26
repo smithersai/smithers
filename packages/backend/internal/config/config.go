@@ -176,6 +176,16 @@ type FeatureFlagsConfig struct {
 	// Changesets gates /orgs/{org}/changesets: cross-repository changesets
 	// landed through the organization superproject. Default false.
 	Changesets bool `mapstructure:"changesets"`
+	// SubscriptionConnections lets each user connect their own Claude or
+	// ChatGPT (Codex) subscription login so their own agent runs and
+	// workspaces authenticate with it through the egress proxy. Default false,
+	// and the hosted product keeps it false: storing subscription logins is for
+	// self-hosters running their own subscriptions, never a service offered to
+	// others. When false the /provider-connections routes and the account pool
+	// return 403, the refresh worker does not start, and no run or workspace
+	// resolves a stored token.
+	// Env: SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS.
+	SubscriptionConnections bool `mapstructure:"subscription_connections"`
 	// ProtectedBookmarks gates branch / bookmark protection rules. Default false.
 	ProtectedBookmarks bool `mapstructure:"protected_bookmarks"`
 	// Notifications gates /notifications and /notifications/list. Default false.
@@ -617,6 +627,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("feature_flags.agents", false)
 	v.SetDefault("feature_flags.web_dashboard", false)
 	v.SetDefault("feature_flags.changesets", false)
+	v.SetDefault("feature_flags.subscription_connections", false)
 	v.SetDefault("feature_flags.protected_bookmarks", false)
 	v.SetDefault("feature_flags.notifications", false)
 	v.SetDefault("feature_flags.wiki", false)
@@ -756,6 +767,7 @@ func Load(configFile string) (*Config, error) {
 		{"feature_flags.agents", "SMITHERS_FEATURE_FLAGS_AGENTS"},
 		{"feature_flags.web_dashboard", "SMITHERS_FEATURE_FLAGS_WEB_DASHBOARD"},
 		{"feature_flags.changesets", "SMITHERS_FEATURE_FLAGS_CHANGESETS"},
+		{"feature_flags.subscription_connections", "SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS"},
 		{"feature_flags.protected_bookmarks", "SMITHERS_FEATURE_FLAGS_PROTECTED_BOOKMARKS"},
 		{"feature_flags.notifications", "SMITHERS_FEATURE_FLAGS_NOTIFICATIONS"},
 		{"feature_flags.wiki", "SMITHERS_FEATURE_FLAGS_WIKI"},

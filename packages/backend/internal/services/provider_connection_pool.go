@@ -48,113 +48,88 @@ type ProviderPoolPick struct {
 // PickForModelCall selects the next account of the run's pool for one model
 // request, skipping excluded connection ids (accounts this request already
 // tried). A zero pick with Pooled false means the scope has no connections.
+// The pool is the run user's own connections only: a subscription serves only
+// its account holder's own runs.
 func (s *ProviderConnectionService) PickForModelCall(ctx context.Context, userID, repositoryID int64, provider string, excluded []string) (ProviderPoolPick, error) {
-	if s == nil || repositoryID <= 0 {
+	if s == nil || repositoryID <= 0 || userID <= 0 {
 		return ProviderPoolPick{}, nil
 	}
 	provider, err := normalizeProviderConnectionProvider(provider)
 	if err != nil {
 		return ProviderPoolPick{}, nil
 	}
-	order, repo, err := s.connectionSources(ctx, repositoryID)
-	if err != nil || len(order) == 0 {
+	if use, err := s.usesUserConnections(ctx, repositoryID); err != nil || !use {
 		return ProviderPoolPick{}, err
 	}
 	tried := append([]string{}, excluded...)
-	for _, source := range order {
-		status := db.ProviderConnectionPoolStatusParams{Provider: provider, Source: source, UserID: userID, RepositoryID: repositoryID}
-		if source == "org" {
-			if !repo.OrgID.Valid {
-				continue
-			}
-			status.OrgID = repo.OrgID.Int64
-		} else if userID <= 0 {
-			continue
+	status := db.ProviderConnectionPoolStatusParams{Provider: provider, Source: "user", UserID: userID, RepositoryID: repositoryID}
+	counts, err := s.q.ProviderConnectionPoolStatus(ctx, status)
+	if err != nil {
+		return ProviderPoolPick{}, fmt.Errorf("provider pool status: %w", err)
+	}
+	if counts.Active+counts.Reconnect == 0 {
+		return ProviderPoolPick{}, nil
+	}
+	pick := ProviderPoolPick{Pooled: true, Reconnect: counts.Active == 0}
+	if counts.NextReset.After(time.Unix(0, 0)) {
+		pick.NextReset = counts.NextReset
+	}
+	for {
+		params := db.PickProviderConnectionParams{
+			Provider: provider, Excluded: tried, Source: "user", UserID: userID, RepositoryID: repositoryID,
 		}
-		counts, err := s.q.ProviderConnectionPoolStatus(ctx, status)
-		if err != nil {
-			return ProviderPoolPick{}, fmt.Errorf("provider pool status: %w", err)
+		row, err := s.q.PickProviderConnection(ctx, params)
+		// SKIP LOCKED also skips rows concurrent picks are stamping this
+		// instant (a lock that lasts one statement): look again briefly,
+		// then wait for one rather than report an empty pool.
+		for retry := 1; errors.Is(err, pgx.ErrNoRows) && counts.Usable > 0 && retry <= providerPoolLockedRetries; retry++ {
+			time.Sleep(time.Duration(retry) * time.Millisecond)
+			row, err = s.q.PickProviderConnection(ctx, params)
 		}
-		if counts.Active+counts.Reconnect == 0 {
-			continue
+		if errors.Is(err, pgx.ErrNoRows) && counts.Usable > 0 {
+			row, err = s.q.PickProviderConnectionWaiting(ctx, db.PickProviderConnectionWaitingParams(params))
 		}
-		pick := ProviderPoolPick{Pooled: true, Reconnect: counts.Active == 0}
-		if counts.NextReset.After(time.Unix(0, 0)) {
-			pick.NextReset = counts.NextReset
-		}
-		for {
-			params := db.PickProviderConnectionParams{
-				Provider: provider, Excluded: tried, Source: source, OrgID: status.OrgID, UserID: userID, RepositoryID: repositoryID,
-			}
-			row, err := s.q.PickProviderConnection(ctx, params)
-			// SKIP LOCKED also skips rows concurrent picks are stamping this
-			// instant (a lock that lasts one statement): look again briefly,
-			// then wait for one rather than report an empty pool.
-			for retry := 1; errors.Is(err, pgx.ErrNoRows) && counts.Usable > 0 && retry <= providerPoolLockedRetries; retry++ {
-				time.Sleep(time.Duration(retry) * time.Millisecond)
-				row, err = s.q.PickProviderConnection(ctx, params)
-			}
-			if errors.Is(err, pgx.ErrNoRows) && counts.Usable > 0 {
-				row, err = s.q.PickProviderConnectionWaiting(ctx, db.PickProviderConnectionWaitingParams(params))
-			}
-			if errors.Is(err, pgx.ErrNoRows) {
-				return pick, nil
-			}
-			if err != nil {
-				return ProviderPoolPick{}, fmt.Errorf("pick provider connection: %w", err)
-			}
-			tried = append(tried, row.ID)
-			resolved, err := s.materialize(ctx, row)
-			if err != nil {
-				s.logger.Warn("provider connection unusable for model call", "connection_id", row.ID, "provider", provider, "error", err)
-				continue
-			}
-			// Refresh and decrypt may wait on a provider while the owner revokes
-			// the connection; recheck before handing the token out.
-			current, err := s.q.GetProviderConnection(ctx, row.ID)
-			if err != nil || current.State != ProviderConnectionStateActive {
-				continue
-			}
-			pick.Connection = resolved
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pick, nil
 		}
+		if err != nil {
+			return ProviderPoolPick{}, fmt.Errorf("pick provider connection: %w", err)
+		}
+		tried = append(tried, row.ID)
+		resolved, err := s.materialize(ctx, row)
+		if err != nil {
+			s.logger.Warn("provider connection unusable for model call", "connection_id", row.ID, "provider", provider, "error", err)
+			continue
+		}
+		// Refresh and decrypt may wait on a provider while the owner revokes
+		// the connection; recheck before handing the token out.
+		current, err := s.q.GetProviderConnection(ctx, row.ID)
+		if err != nil || current.State != ProviderConnectionStateActive {
+			continue
+		}
+		pick.Connection = resolved
+		return pick, nil
 	}
-	return ProviderPoolPick{}, nil
 }
 
-// HasPool reports whether a run's scope has any connection for the
-// provider, limited or not; such a run's calls are served by the pool.
+// HasPool reports whether the run user has any connection for the provider,
+// limited or not; such a run's calls are served by the pool.
 func (s *ProviderConnectionService) HasPool(ctx context.Context, userID, repositoryID int64, provider string) (bool, error) {
-	if s == nil || repositoryID <= 0 {
+	if s == nil || repositoryID <= 0 || userID <= 0 {
 		return false, nil
 	}
 	provider, err := normalizeProviderConnectionProvider(provider)
 	if err != nil {
 		return false, nil
 	}
-	order, repo, err := s.connectionSources(ctx, repositoryID)
-	if err != nil {
+	if use, err := s.usesUserConnections(ctx, repositoryID); err != nil || !use {
 		return false, err
 	}
-	for _, source := range order {
-		status := db.ProviderConnectionPoolStatusParams{Provider: provider, Source: source, UserID: userID, RepositoryID: repositoryID}
-		if source == "org" {
-			if !repo.OrgID.Valid {
-				continue
-			}
-			status.OrgID = repo.OrgID.Int64
-		} else if userID <= 0 {
-			continue
-		}
-		counts, err := s.q.ProviderConnectionPoolStatus(ctx, status)
-		if err != nil {
-			return false, fmt.Errorf("provider pool status: %w", err)
-		}
-		if counts.Active+counts.Reconnect > 0 {
-			return true, nil
-		}
+	counts, err := s.q.ProviderConnectionPoolStatus(ctx, db.ProviderConnectionPoolStatusParams{Provider: provider, Source: "user", UserID: userID, RepositoryID: repositoryID})
+	if err != nil {
+		return false, fmt.Errorf("provider pool status: %w", err)
 	}
-	return false, nil
+	return counts.Active+counts.Reconnect > 0, nil
 }
 
 // MarkLimited parks a connection until its usage limit resets.
@@ -254,6 +229,9 @@ func (s *ProviderConnectionService) StartCodexDeviceLogin(ctx context.Context, a
 	if actor == nil {
 		return ProviderDeviceLoginResponse{}, pkgerrors.Unauthorized("authentication required")
 	}
+	if !s.enabled {
+		return ProviderDeviceLoginResponse{}, errSubscriptionConnectionsUnavailable()
+	}
 	if s.device == nil {
 		return ProviderDeviceLoginResponse{}, pkgerrors.BadRequest("codex sign-in is not configured")
 	}
@@ -290,6 +268,9 @@ func (s *ProviderConnectionService) StartCodexDeviceLogin(ctx context.Context, a
 func (s *ProviderConnectionService) PollCodexDeviceLogin(ctx context.Context, actor *db.User, id string) (ProviderDeviceLoginResponse, error) {
 	if actor == nil {
 		return ProviderDeviceLoginResponse{}, pkgerrors.Unauthorized("authentication required")
+	}
+	if !s.enabled {
+		return ProviderDeviceLoginResponse{}, errSubscriptionConnectionsUnavailable()
 	}
 	row, err := s.q.GetProviderConnectionDeviceLogin(ctx, db.GetProviderConnectionDeviceLoginParams{ID: strings.TrimSpace(id), UserID: actor.ID})
 	if err != nil {

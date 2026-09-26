@@ -177,6 +177,7 @@ var allEnvKeys = []string{
 	"SMITHERS_FEATURE_FLAGS_AGENTS",
 	"SMITHERS_FEATURE_FLAGS_WEB_DASHBOARD",
 	"SMITHERS_FEATURE_FLAGS_CHANGESETS",
+	"SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS",
 	"SMITHERS_FEATURE_FLAGS_PROTECTED_BOOKMARKS",
 	"SMITHERS_FEATURE_FLAGS_NOTIFICATIONS",
 	"SMITHERS_FEATURE_FLAGS_WIKI",
@@ -847,6 +848,21 @@ func TestLoad_RepositorySecretsDefaultOnWithEmergencyDisable(t *testing.T) {
 	cfg, err = Load("")
 	require.NoError(t, err)
 	assert.False(t, cfg.FeatureFlags.Secrets)
+}
+
+// Storing a user's Claude or ChatGPT subscription login is off unless a
+// self-hosted operator opts in; the hosted product never offers it.
+func TestLoad_SubscriptionConnectionsDefaultOffWithSelfHostOptIn(t *testing.T) {
+	clearConfigEnv(t)
+
+	cfg, err := Load("")
+	require.NoError(t, err)
+	assert.False(t, cfg.FeatureFlags.SubscriptionConnections)
+
+	t.Setenv("SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS", "true")
+	cfg, err = Load("")
+	require.NoError(t, err)
+	assert.True(t, cfg.FeatureFlags.SubscriptionConnections)
 }
 
 // TestLoad_PartialEnvOverrides verifies that setting only some env vars

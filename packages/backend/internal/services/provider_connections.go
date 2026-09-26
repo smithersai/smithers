@@ -277,9 +277,31 @@ type ProviderConnectionService struct {
 	audit     *AuditService
 	logger    *slog.Logger
 	now       func() time.Time
+	// enabled mirrors feature_flags.subscription_connections. Off (the
+	// default, and the hosted product): nothing connects, refreshes, pools or
+	// resolves a stored subscription token.
+	enabled bool
 }
 
 type ProviderConnectionServiceOption func(*ProviderConnectionService)
+
+// WithSubscriptionConnectionsEnabled turns on bring-your-own Claude/ChatGPT
+// subscriptions for a self-hosted deployment. Each connection serves only the
+// connecting user's own runs and workspaces.
+func WithSubscriptionConnectionsEnabled(enabled bool) ProviderConnectionServiceOption {
+	return func(s *ProviderConnectionService) { s.enabled = enabled }
+}
+
+// SubscriptionConnectionsEnabled reports feature_flags.subscription_connections.
+func (s *ProviderConnectionService) SubscriptionConnectionsEnabled() bool {
+	return s != nil && s.enabled
+}
+
+// errSubscriptionConnectionsUnavailable matches the route gate: a deployment
+// with the flag off refuses to store a subscription login.
+func errSubscriptionConnectionsUnavailable() error {
+	return pkgerrors.Forbidden("feature not available: subscription connections are not available on this deployment")
+}
 
 func WithProviderConnectionAudit(audit *AuditService) ProviderConnectionServiceOption {
 	return func(s *ProviderConnectionService) { s.audit = audit }
@@ -490,6 +512,9 @@ func (s *ProviderConnectionService) ConnectForUser(ctx context.Context, actor *d
 	if actor == nil {
 		return ProviderConnectionResponse{}, pkgerrors.Unauthorized("authentication required")
 	}
+	if !s.enabled {
+		return ProviderConnectionResponse{}, errSubscriptionConnectionsUnavailable()
+	}
 	if err := s.validateConnectInput(&in); err != nil {
 		return ProviderConnectionResponse{}, err
 	}
@@ -549,13 +574,17 @@ func (s *ProviderConnectionService) grantEverywhere(ctx context.Context, answer 
 	return answer, nil
 }
 
-// ConnectForOrg connects an account owned by an organization; only owners may.
+// ConnectForOrg always refuses. A Claude or ChatGPT subscription serves only
+// its account holder's own runs; sharing one across an organization's members
+// is exactly what the providers' consumer terms forbid.
 func (s *ProviderConnectionService) ConnectForOrg(ctx context.Context, actor *db.User, orgName string, in ConnectProviderInput) (ProviderConnectionResponse, error) {
-	org, err := s.requireOrgRole(ctx, actor, orgName, true)
-	if err != nil {
+	if !s.enabled {
+		return ProviderConnectionResponse{}, errSubscriptionConnectionsUnavailable()
+	}
+	if _, err := s.requireOrgRole(ctx, actor, orgName, true); err != nil {
 		return ProviderConnectionResponse{}, err
 	}
-	return s.createConnection(ctx, actor, "org", 0, org.ID, in)
+	return ProviderConnectionResponse{}, pkgerrors.Forbidden("a subscription serves only its account holder's own runs; connect it to your user account instead of the organization")
 }
 
 func (s *ProviderConnectionService) requireOrgRole(ctx context.Context, actor *db.User, orgName string, ownerOnly bool) (db.Organization, error) {
@@ -740,95 +769,61 @@ func (s *ProviderConnectionService) SetRepositoryPreference(ctx context.Context,
 	return nil
 }
 
-// ResolveForRun picks the connection an agent run uses, per the repository's
-// preference, and returns nil when the run should fall back to the platform
-// credentials. It refreshes an access token that is about to expire.
+// ResolveForRun returns the run user's own connection for the provider, or
+// nil when the run should keep the platform credentials. Only the connecting
+// user's own runs ever use a connection: organization rows never resolve, and
+// a user connection reaches a repository the user does not own only through
+// that user's grant. It refreshes an access token that is about to expire.
 func (s *ProviderConnectionService) ResolveForRun(ctx context.Context, userID, repositoryID int64, provider string) (*ResolvedProviderConnection, error) {
-	if s == nil || repositoryID <= 0 {
+	if s == nil || !s.enabled || repositoryID <= 0 || userID <= 0 {
 		return nil, nil
 	}
 	provider, err := normalizeProviderConnectionProvider(provider)
 	if err != nil {
 		return nil, nil
 	}
-	order, repo, err := s.connectionSources(ctx, repositoryID)
-	if err != nil || len(order) == 0 {
+	if use, err := s.usesUserConnections(ctx, repositoryID); err != nil || !use {
 		return nil, err
 	}
-	for _, source := range order {
-		var (
-			row db.ProviderConnection
-			err error
-		)
-		switch source {
-		case "org":
-			if !repo.OrgID.Valid {
-				continue
-			}
-			row, err = s.q.ResolveActiveOrgProviderConnection(ctx, db.ResolveActiveOrgProviderConnectionParams{OrgID: repo.OrgID, Provider: provider})
-		case "user":
-			if userID <= 0 {
-				continue
-			}
-			row, err = s.q.ResolveActiveUserProviderConnectionForRepository(ctx, db.ResolveActiveUserProviderConnectionForRepositoryParams{UserID: pgtype.Int8{Int64: userID, Valid: true}, Provider: provider, RepositoryID: repositoryID})
-		}
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				continue
-			}
-			return nil, fmt.Errorf("resolve %s provider connection: %w", source, err)
-		}
-		resolved, err := s.materialize(ctx, row)
-		if err != nil {
-			s.logger.Warn("provider connection unusable for run", "connection_id", row.ID, "provider", provider, "error", err)
-			continue
-		}
-		// Refresh and decrypt may wait on a provider while the owner revokes this
-		// connection or its repository grant. Recheck the scoped active selection
-		// before handing a token to a new run.
-		var current db.ProviderConnection
-		if source == "org" {
-			current, err = s.q.ResolveActiveOrgProviderConnection(ctx, db.ResolveActiveOrgProviderConnectionParams{OrgID: repo.OrgID, Provider: provider})
-		} else {
-			current, err = s.q.ResolveActiveUserProviderConnectionForRepository(ctx, db.ResolveActiveUserProviderConnectionForRepositoryParams{UserID: pgtype.Int8{Int64: userID, Valid: true}, Provider: provider, RepositoryID: repositoryID})
-		}
-		if errors.Is(err, pgx.ErrNoRows) || (err == nil && current.ID != row.ID) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("recheck provider connection: %w", err)
-		}
-		return resolved, nil
+	params := db.ResolveActiveUserProviderConnectionForRepositoryParams{UserID: pgtype.Int8{Int64: userID, Valid: true}, Provider: provider, RepositoryID: repositoryID}
+	row, err := s.q.ResolveActiveUserProviderConnectionForRepository(ctx, params)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
 	}
-	return nil, nil
+	if err != nil {
+		return nil, fmt.Errorf("resolve user provider connection: %w", err)
+	}
+	resolved, err := s.materialize(ctx, row)
+	if err != nil {
+		s.logger.Warn("provider connection unusable for run", "connection_id", row.ID, "provider", provider, "error", err)
+		return nil, nil
+	}
+	// Refresh and decrypt may wait on a provider while the owner revokes this
+	// connection or its repository grant. Recheck the scoped active selection
+	// before handing a token to a new run.
+	current, err := s.q.ResolveActiveUserProviderConnectionForRepository(ctx, params)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && current.ID != row.ID) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("recheck provider connection: %w", err)
+	}
+	return resolved, nil
 }
 
-// connectionSources is the repository's preference as an ordered list of
-// connection owners ("org", "user"); empty means platform credentials only.
-func (s *ProviderConnectionService) connectionSources(ctx context.Context, repositoryID int64) ([]string, db.Repository, error) {
+// usesUserConnections reports whether the repository's preference lets a
+// run's user draw on their own connections. A subscription serves only its
+// account holder's own runs: organization rows (legacy) never resolve, and
+// org_only and platform_only keep the platform credentials.
+func (s *ProviderConnectionService) usesUserConnections(ctx context.Context, repositoryID int64) (bool, error) {
+	if !s.enabled {
+		return false, nil
+	}
 	preference, err := s.q.GetRepositoryProviderConnectionPreference(ctx, repositoryID)
-	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return nil, db.Repository{}, fmt.Errorf("load provider connection preference: %w", err)
-		}
-		preference = ProviderConnectionPreferenceOrgFirst
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, fmt.Errorf("load provider connection preference: %w", err)
 	}
-	if preference == ProviderConnectionPreferencePlatformOnly {
-		return nil, db.Repository{}, nil
-	}
-	repo, err := s.q.GetRepoByID(ctx, repositoryID)
-	if err != nil {
-		return nil, db.Repository{}, fmt.Errorf("load repository: %w", err)
-	}
-	switch preference {
-	case ProviderConnectionPreferenceUserFirst:
-		return []string{"user", "org"}, repo, nil
-	case ProviderConnectionPreferenceOrgOnly:
-		return []string{"org"}, repo, nil
-	case ProviderConnectionPreferenceUserOnly:
-		return []string{"user"}, repo, nil
-	}
-	return []string{"org", "user"}, repo, nil
+	return preference != ProviderConnectionPreferencePlatformOnly && preference != ProviderConnectionPreferenceOrgOnly, nil
 }
 
 // materialize decrypts the access token, refreshing first when it is about to
@@ -933,6 +928,9 @@ func (s *ProviderConnectionService) refreshClaimedRow(ctx context.Context, row d
 // RefreshDue leases and refreshes one due connection. It returns false when
 // nothing was due.
 func (s *ProviderConnectionService) RefreshDue(ctx context.Context) (bool, error) {
+	if !s.enabled {
+		return false, nil
+	}
 	now := s.now()
 	row, err := s.q.ClaimProviderConnectionForRefresh(ctx, db.ClaimProviderConnectionForRefreshParams{
 		ExpiresBefore: now.Add(providerConnectionRefreshHorizon), LeaseUntil: now.Add(providerConnectionRefreshLease),
@@ -1035,6 +1033,10 @@ func NewProviderConnectionRefreshWorker(svc *ProviderConnectionService, interval
 }
 
 func (w *ProviderConnectionRefreshWorker) Start(ctx context.Context) {
+	if w.svc == nil || !w.svc.enabled {
+		w.logger.Info("provider connection refresh worker not started: subscription connections are disabled")
+		return
+	}
 	w.logger.Info("provider connection refresh worker started", "interval", w.interval)
 	for {
 		if err := w.PollOnce(ctx); err != nil {

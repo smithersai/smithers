@@ -540,8 +540,9 @@ func WithAgentEnvironmentVariables(loader AgentEnvironmentVariablesLoader) Agent
 	}
 }
 
-// WithAgentProviderConnections lets dispatch bind a user's or organization's
-// connected Claude or Codex subscription through the egress proxy.
+// WithAgentProviderConnections lets dispatch bind the run user's own connected
+// Claude or Codex subscription through the egress proxy. Self-host only: the
+// server wires it only when feature_flags.subscription_connections is on.
 func WithAgentProviderConnections(resolver AgentProviderConnectionResolver) AgentServiceOption {
 	return func(s *AgentService) {
 		s.providerConnections = resolver

@@ -644,7 +644,8 @@ type WorkspaceProviderPool interface {
 }
 
 // WithWorkspaceProviderConnections offers the owner's connected accounts to
-// each workspace boot through the account pool route.
+// each workspace boot through the account pool route. Self-host only: the
+// server wires it only when feature_flags.subscription_connections is on.
 func WithWorkspaceProviderConnections(pool WorkspaceProviderPool) WorkspaceServiceOption {
 	return func(s *WorkspaceService) { s.providerConnections = pool }
 }

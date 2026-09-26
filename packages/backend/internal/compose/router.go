@@ -149,6 +149,9 @@ func buildRouter(
 	gateSecrets := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Secrets })
 	gateNotifications := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Notifications })
 	gateChangesets := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Changesets })
+	// Stored Claude/ChatGPT subscription logins: self-host only, off in the
+	// hosted product. Covers every /provider-connections route and the pool.
+	gateSubscriptionConnections := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.SubscriptionConnections })
 	gateProtectedBookmarks := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.ProtectedBookmarks })
 	gateWebhooksUser := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.WebhooksUser })
 	gateWorkflows := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Workflows })
@@ -612,12 +615,14 @@ func buildRouter(
 	// user-authenticated /api group below.
 	r.Route("/api/internal", func(chi.Router) {})
 
-	// The provider account pool: workspaces' Claude and Codex model calls,
+	// The provider account pool (self-host only, behind
+	// feature_flags.subscription_connections): workspaces' Claude and Codex model calls,
 	// authenticated by the workspace's pool credential. Outside /api: calls
 	// stream for minutes, and workspace-bound credentials are confined away
 	// from the /api surface.
 	if providerConnectionHandler != nil && providerConnectionHandler.Pool != nil {
 		r.Group(func(r chi.Router) {
+			r.Use(gateSubscriptionConnections)
 			r.Use(routes.ProviderPoolAuth)
 			r.Use(authLoader(queries, cfg.Auth))
 			r.With(middleware.RequireAuth).Post(services.ProviderPoolPath+"/*", providerConnectionHandler.Pool.ServeHTTP)
@@ -1596,18 +1601,19 @@ func buildRouter(
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository), gateWorkspaces).Get("/user/readable-repos", userHandler.GetAuthenticatedUserReadableRepos)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/orgs", userHandler.GetAuthenticatedUserOrgs)
 
-			// Bring-your-own subscriptions (RFD-003). Token auth is allowed so
+			// Bring-your-own subscriptions (RFD-003), self-host only behind
+			// feature_flags.subscription_connections. Token auth is allowed so
 			// the CLI can connect with a PAT; connecting needs write:user.
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/provider-connections", providerConnectionHandler.ListUserConnections)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/provider-connections", providerConnectionHandler.ConnectUser)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Put("/user/provider-connections/order", providerConnectionHandler.ReorderConnections)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/provider-connections/codex/device", providerConnectionHandler.StartCodexDeviceLogin)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/provider-connections/codex/device/{id}", providerConnectionHandler.PollCodexDeviceLogin)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/provider-connections/{id}", providerConnectionHandler.GetConnection)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/provider-connections/{id}", providerConnectionHandler.RevokeConnection)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/provider-connections/{id}/refresh", providerConnectionHandler.RefreshConnection)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/provider-connections/{id}/grants", providerConnectionHandler.AddGrant)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/provider-connections/{id}/grants/{grantID}", providerConnectionHandler.DeleteGrant)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateSubscriptionConnections).Get("/user/provider-connections", providerConnectionHandler.ListUserConnections)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections", providerConnectionHandler.ConnectUser)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Put("/user/provider-connections/order", providerConnectionHandler.ReorderConnections)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections/codex/device", providerConnectionHandler.StartCodexDeviceLogin)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections/codex/device/{id}", providerConnectionHandler.PollCodexDeviceLogin)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateSubscriptionConnections).Get("/user/provider-connections/{id}", providerConnectionHandler.GetConnection)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Delete("/user/provider-connections/{id}", providerConnectionHandler.RevokeConnection)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections/{id}/refresh", providerConnectionHandler.RefreshConnection)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections/{id}/grants", providerConnectionHandler.AddGrant)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Delete("/user/provider-connections/{id}/grants/{grantID}", providerConnectionHandler.DeleteGrant)
 			r.With(middleware.SearchRateLimit(queries), middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/tokens", userHandler.GetUserTokens)
 			r.With(middleware.SearchRateLimit(queries), middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/tokens", userHandler.PostUserToken)
 			r.With(middleware.SearchRateLimit(queries), middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/tokens/{id}", userHandler.DeleteUserToken)
@@ -1774,9 +1780,11 @@ func buildRouter(
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Patch("/orgs/{org}", orgHandler.PatchOrg)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/members", orgHandler.GetOrgMembers)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/members", orgHandler.PostOrgMember)
-			// Organization-owned subscriptions (RFD-003): members read, owners connect.
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/orgs/{org}/provider-connections", providerConnectionHandler.ListOrgConnections)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/orgs/{org}/provider-connections", providerConnectionHandler.ConnectOrg)
+			// Organization subscriptions (RFD-003): members list legacy rows so
+			// an owner can revoke them; the service refuses new ones because a
+			// subscription serves only its account holder's own runs.
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateSubscriptionConnections).Get("/orgs/{org}/provider-connections", providerConnectionHandler.ListOrgConnections)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/orgs/{org}/provider-connections", providerConnectionHandler.ConnectOrg)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Delete("/orgs/{org}/members/{username}", orgHandler.DeleteOrgMember)
 			if changesetHandler != nil {
 				// Cross-repository changesets land through the organization
