@@ -972,8 +972,8 @@ describe("PackageManager.storeRoot", () => {
         "if (process.argv[2] === \"--version\") { process.stdout.write(\"11.21.0\\n\"); process.exit(0) }\n" +
           "setInterval(() => {}, 1_000)"
       )
-      // The version probe shares the deadline, so it must leave node room to
-      // start on a slow host; the label proves fetch itself timed out.
+      // The version probe uses the same timeoutMs, so it must leave node room
+      // to start on a slow host; the label proves fetch itself timed out.
       const manager = await makePnpm(root, executable, { timeoutMs: 2_000 })
       await expect(Effect.runPromise(manager.fetch)).rejects.toThrow(/^pnpm fetch did not finish within 2000ms$/)
     })
@@ -982,8 +982,10 @@ describe("PackageManager.storeRoot", () => {
   it("kills package-manager descendants when a command times out", async () => {
     await withFixture("package-manager-timeout-tree", async (root) => {
       const executable = NodePath.join(root, "pnpm.mjs")
+      const started = NodePath.join(root, "descendant-started")
       const marker = NodePath.join(root, "descendant-survived")
-      const child = `setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "yes"), 2_700)`
+      const child = `require("node:fs").writeFileSync(${JSON.stringify(started)}, "yes"); ` +
+        `setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "yes"), 2_700)`
       await writeExecutable(
         executable,
         "if (process.argv[2] === \"--version\") { process.stdout.write(\"11.21.0\\n\"); process.exit(0) }\n" +
@@ -994,6 +996,8 @@ describe("PackageManager.storeRoot", () => {
       const manager = await makePnpm(root, executable, { timeoutMs: 2_000 })
       await expect(Effect.runPromise(manager.fetch)).rejects.toThrow(/^pnpm fetch did not finish within 2000ms$/)
       await new Promise((resolve) => setTimeout(resolve, 1_500))
+      // The descendant ran before the deadline, so its absent marker proves it was killed.
+      await expect(Fs.stat(started)).resolves.toBeDefined()
       await expect(Fs.stat(marker)).rejects.toMatchObject({ code: "ENOENT" })
     })
   })

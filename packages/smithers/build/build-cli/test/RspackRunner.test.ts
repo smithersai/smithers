@@ -46,8 +46,18 @@ const signalable = (pid: number): boolean => {
 const runnable = (pid: number): boolean => {
   if (!signalable(pid)) return false
   if (process.platform === "win32") return true
+  if (process.platform === "linux") {
+    try {
+      // `comm` is parenthesised and may hold spaces; the state follows the last ") ".
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8")
+      return stat.slice(stat.lastIndexOf(") ") + 2).trimStart().charAt(0) !== "Z"
+    } catch {
+      return signalable(pid)
+    }
+  }
   const listed = spawnSync("/bin/ps", ["-o", "stat=", "-p", String(pid)], {
     encoding: "utf8",
+    timeout: 2_000,
     env: { LC_ALL: "C", PATH: "/usr/bin:/bin" }
   })
   if (listed.status !== 0) return signalable(pid)
