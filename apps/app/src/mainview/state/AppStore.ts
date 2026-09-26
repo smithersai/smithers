@@ -1466,6 +1466,10 @@ const initializeAppStore = async (
         value: { kind: "target-star", id, repoId: transition.repoId, star: after.snapshot.starredTargets.find(row => row.id === id) ?? null } })
     }
     // Session answers a person expects to survive an immediate reload.
+    if (transition.type === "hint.dismissed") {
+      return writeEntityRecovery(draftRecoveryStorage, { key: `hint-dismissed:${transition.id}`, revision: after.head.revision,
+        authority, value: { kind: "hint-dismissed", id: transition.id } })
+    }
     if (transition.type === "first-run.dismissed") {
       return writeEntityRecovery(draftRecoveryStorage, { key: "first-run-dismissed", revision: after.head.revision, authority, value: { kind: "first-run-dismissed" } })
     }
@@ -1641,6 +1645,8 @@ const initializeAppStore = async (
           await dispatch({ type: "approval.answer.changed", actor: "user", id: value.id, question: value.question, text: value.text }).isPersisted.promise
         } else if (value.kind === "first-run-dismissed") {
           await dispatch({ type: "first-run.dismissed", actor: authority.actor }).isPersisted.promise
+        } else if (value.kind === "hint-dismissed") {
+          await dispatch({ type: "hint.dismissed", actor: authority.actor, id: value.id }).isPersisted.promise
         } else if (value.kind === "signup") {
           await dispatch({ type: "signup.changed", actor: authority.actor, patch: value.signup }).isPersisted.promise
         } else if (value.star === null) await dispatch({ type: "target.unstarred", actor: authority.actor, repoId: value.repoId, id: value.id }).isPersisted.promise

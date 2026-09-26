@@ -88,6 +88,8 @@ for (const reset of [false, true]) test(`${reset ? "reset" : "account retirement
       value: { kind: "card", workspaceId: scope.workspaceId, branchId: scope.branchId, id: card.id, card } })
     writeWikiRecovery(recovery, head.revision + 2, document, authority)
     writeDraftRecovery(recovery, head.revision + 3, "private draft", authority)
+    writeEntityRecovery(recovery, { key: "hint-dismissed:chat", revision: head.revision + 4, authority,
+      value: { kind: "hint-dismissed", id: "chat" } })
     await store.dispatch(reset ? { type: "app.reset", actor: "user" } : { type: "identity.session.cleared", actor: "user" }).isPersisted.promise
     for (const key of [ENTITY_RECOVERY_STORAGE_KEY, WIKI_RECOVERY_STORAGE_KEY, DRAFT_RECOVERY_STORAGE_KEY]) expect(recovery.getItem(key)).toBeNull()
     await store.dispose?.()

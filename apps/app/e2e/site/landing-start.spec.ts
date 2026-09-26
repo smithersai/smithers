@@ -89,7 +89,20 @@ test.describe("touch landing", () => {
   })
 })
 
-test("tutorial query opens the plain app and hint dismissal survives reload", async ({ page }) => {
+for (const holdCommit of [false, true]) test(`tutorial query opens the plain app and hint dismissal survives reload${holdCommit ? " with SQLite commit held" : ""}`, async ({ page }) => {
+  if (holdCommit) await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage
+    const probe = { armed: false, held: false }
+    ;(window as any).hintCommitProbe = probe
+    Worker.prototype.postMessage = function(message: unknown, options?: StructuredSerializeOptions | Transferable[]) {
+      if (probe.armed && typeof message === "object" && message !== null && "sql" in message &&
+        typeof message.sql === "string" && /^\s*COMMIT\b/i.test(message.sql)) {
+        probe.held = true
+        return // The immediate reload kills this uncommitted worker; never acknowledge the write.
+      }
+      Reflect.apply(post, this, [message, options])
+    }
+  })
   await page.route("**/api/bootstrap", route => route.fulfill({ json: {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
   } }))
@@ -98,8 +111,10 @@ test("tutorial query opens the plain app and hint dismissal survives reload", as
   await expect(page.locator(".help-bubble")).toHaveCount(1)
   const hint = page.locator('[data-first-sight-hint="chat"] .help-bubble')
   await expect(hint).toBeVisible()
+  if (holdCommit) await page.evaluate(() => { (window as any).hintCommitProbe.armed = true })
   await hint.getByRole("button", { name: "Dismiss help" }).click()
   await expect(hint).toHaveCount(0)
+  if (holdCommit) await expect.poll(() => page.evaluate(() => (window as any).hintCommitProbe.held)).toBe(true)
   await page.reload()
   await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   await expect(page.getByTestId("first-run-actions")).toBeVisible()

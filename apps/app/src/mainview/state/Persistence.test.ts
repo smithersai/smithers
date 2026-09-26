@@ -39,6 +39,35 @@ const crashableStorage = (): StorageApi & { crashCommit: () => void; heal: () =>
 }
 
 describe("an atomic commit point per logical transition", () => {
+  test("hint dismissals recover from the exact bytes present before their commits", async () => {
+    const recovery = memoryStorage(), durable = memoryStorage(), crashed = memoryStorage(), crashedRecovery = memoryStorage()
+    const priorWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: recovery, matchMedia: () => ({ matches: false }) } })
+    let store: Awaited<ReturnType<typeof createAppStore>> | undefined
+    let reopened: Awaited<ReturnType<typeof createAppStore>> | undefined
+    try {
+      store = await createAppStore({ kind: "localStorage", storage: durable })
+      await store.settled?.()
+      crashed.setItem(ENVELOPE_STORAGE_KEY, durable.getItem(ENVELOPE_STORAGE_KEY)!)
+      const first = store.dispatch({ type: "hint.dismissed", actor: "user", id: "chat" })
+      const second = store.dispatch({ type: "hint.dismissed", actor: "user", id: "first-run" })
+      const raw = recovery.getItem(ENTITY_RECOVERY_STORAGE_KEY)
+      if (raw !== null) crashedRecovery.setItem(ENTITY_RECOVERY_STORAGE_KEY, raw)
+      expect(store.session().hintsSeen).toEqual(["chat", "first-run"])
+      await Promise.all([first.isPersisted.promise, second.isPersisted.promise])
+      expect(recovery.getItem(ENTITY_RECOVERY_STORAGE_KEY)).toBeNull()
+      await store.dispose?.(); store = undefined
+      Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: crashedRecovery, matchMedia: () => ({ matches: false }) } })
+      reopened = await createAppStore({ kind: "localStorage", storage: crashed })
+      expect(reopened.session().hintsSeen).toEqual(["chat", "first-run"])
+      expect(crashedRecovery.getItem(ENTITY_RECOVERY_STORAGE_KEY)).toBeNull()
+      expect((await reopened.verifyState()).valid).toBe(true)
+    } finally {
+      await reopened?.dispose?.(); await store?.dispose?.()
+      if (priorWindow) Object.defineProperty(globalThis, "window", priorWindow); else Reflect.deleteProperty(globalThis, "window")
+    }
+  })
+
   test("boot replays a pending card, Wiki edit, and later draft against the original durable revision", async () => {
     const recovery = memoryStorage(), durableStorage = memoryStorage()
     const original = await createAppStore({ kind: "localStorage", storage: durableStorage })
@@ -129,7 +158,7 @@ describe("an atomic commit point per logical transition", () => {
     }
   })
 
-  test("a rejected card mutation rolls back its crash record instead of resurrecting on boot", async () => {
+  for (const kind of ["card", "hint"] as const) test(`a rejected ${kind} mutation rolls back its crash record instead of resurrecting on boot`, async () => {
     const recovery = memoryStorage()
     const host = crashableStorage()
     const priorWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
@@ -141,7 +170,7 @@ describe("an atomic commit point per logical transition", () => {
     try {
       store = await createAppStore({ kind: "localStorage", storage: host })
       host.crashCommit()
-      await expect(store.dispatch({
+      await expect(store.dispatch(kind === "hint" ? { type: "hint.dismissed", actor: "user", id: "chat" } : {
         type: "card.upsert", actor: "user",
         card: {
           id: "rejected-card", kind: "flow-form", title: "Rejected form", status: "active", createdAt: 1, ordinal: 1,
@@ -152,6 +181,7 @@ describe("an atomic commit point per logical transition", () => {
       host.heal()
       reopened = await createAppStore({ kind: "localStorage", storage: host })
       expect(reopened.collections.cards.get("rejected-card")).toBeUndefined()
+      expect(reopened.session().hintsSeen ?? []).not.toContain("chat")
     } finally {
       await reopened?.dispose?.()
       await store?.dispose?.()

@@ -13,6 +13,7 @@ export type EntityRecoveryValue =
   | { readonly kind: "target-star"; readonly id: string; readonly repoId: string; readonly star: StarredTarget | null }
   | { readonly kind: "signup"; readonly signup: Signup }
   | { readonly kind: "first-run-dismissed" }
+  | { readonly kind: "hint-dismissed"; readonly id: string }
 
 export interface EntityRecoveryRecord {
   readonly key: string
@@ -87,6 +88,10 @@ const record = (key: string, input: unknown): EntityRecoveryRecord | undefined =
   }
   if (value.kind === "first-run-dismissed" && key === "first-run-dismissed" && Object.keys(value).length === 1) {
     return { key, revision: candidate.revision as number, ...binding, value: { kind: "first-run-dismissed" } }
+  }
+  if (value.kind === "hint-dismissed" && authority?.success && authority.data.actor === "user" &&
+    typeof value.id === "string" && value.id.length > 0 && key === `hint-dismissed:${value.id}` && Object.keys(value).length === 2) {
+    return { key, revision: candidate.revision as number, ...binding, value: { kind: "hint-dismissed", id: value.id } }
   }
   if (value.kind === "signup" && key === "signup") {
     const signup = SignupSchema.safeParse(value.signup)
