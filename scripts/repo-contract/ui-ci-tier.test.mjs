@@ -73,7 +73,7 @@ it("the selected browser executable installs its matching browser then runs Play
     assert.throws(() => execFileSync(process.execPath, [join(root, "apps/app/scripts/run-pr-e2e.mjs")], {
       cwd: join(root, "apps/app"), env: { ...process.env, PATH: `${temporary}:${process.env.PATH}`, BROWSER_TEST_CALLS: calls }, stdio: "pipe"
     }), (error) => error.status === 23)
-    assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["exec playwright install --with-deps chromium", "run test:e2e:auth", "run test:e2e:probes", "exec playwright test"])
+    assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["exec playwright install --with-deps chromium", "run test:e2e:auth", "run test:e2e:probes", "run test:e2e:graph-lifecycle", "exec playwright test"])
   } finally { rmSync(temporary, { recursive: true, force: true }) }
 })
 
@@ -99,6 +99,8 @@ export const Workspace = S.Workspace("ui-devkit-refusal", {
   runtime: S.Runtime.Node({ version: ">=26.4.0" }),
   packageManager: S.PackageManager.Pnpm({ manifest: packageJson, lockfile: S.file("//pnpm-lock.yaml") }),
   nodeModules: S.Npm.NodeModules({ packageJson }),
+  // The projected package declarations name S.Host.bin("bun").
+  host: S.Host({ bins: ["bun"] }),
   sandboxes: S.Sandboxes({ default: S.Sandbox.None() })
 })
 `)

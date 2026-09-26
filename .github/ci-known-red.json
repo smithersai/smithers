@@ -1,12 +1,6 @@
 {
   "entries": [
     {
-      "label": "//scripts/repo-contract:uiCiTier",
-      "owner": "will",
-      "reason": "Expects no graph-lifecycle e2e script and a strict devkit typecheck skip; both changed on main.",
-      "expires": "2026-10-10"
-    },
-    {
       "label": "//scripts:dependencyBoundaries",
       "owner": "will",
       "reason": "Undeclared imports (effect in apps/docs, @effect/platform-node in flows, apps/model-host reaching into apps/app).",
