@@ -28,10 +28,14 @@ export interface Skipped {
 export interface Scorecard {
   readonly date: string
   readonly runs: number
+  /** How many times each delivery case ran, when not `runs`. */
+  readonly deliveryRuns?: number | undefined
   readonly seats: Readonly<Record<string, string>>
   readonly scored: ReadonlyArray<Scored>
   readonly pending: ReadonlyArray<Skipped>
   readonly invalid: ReadonlyArray<Skipped>
+  /** What was graded: the wiki's git revision (`+` with uncommitted changes), the roster revision, the cases' digest. */
+  readonly graded?: { readonly wiki: string | undefined; readonly roster: string; readonly cases: string } | undefined
 }
 
 const percent = (passed: number, total: number) => total === 0 ? "–" : `${Math.round((passed / total) * 100)}%`
@@ -64,8 +68,14 @@ export const render = (card: Scorecard): string => {
   const lines = [
     `# Qualification ${card.date}`,
     "",
-    `${passed}/${card.scored.length} attempts passed (${percent(passed, card.scored.length)}); ${hosted} stopped by the host, not the role; ${byCase.size} cases × ${card.runs}; ${card.pending.length} pending; ${card.invalid.length} invalid.`,
+    `${passed}/${card.scored.length} attempts passed (${percent(passed, card.scored.length)}); ${hosted} stopped by the host, not the role; ${byCase.size} cases × ${card.runs}${
+      card.deliveryRuns === undefined || card.deliveryRuns === card.runs ? "" : ` (deliveries × ${card.deliveryRuns})`
+    }; ${card.pending.length} pending; ${card.invalid.length} invalid.`,
     "",
+    ...(card.graded === undefined ? [] : [
+      `Graded: wiki ${card.graded.wiki ?? "not a git checkout"}, roster ${card.graded.roster.slice(0, 12)}, cases ${card.graded.cases.slice(0, 12)}.`,
+      ""
+    ]),
     "| Role | Seat | Passed | Rate | Host stops |",
     "| --- | --- | --- | --- | --- |",
     ...[...byRole.entries()].map(([role, attempts]) => {

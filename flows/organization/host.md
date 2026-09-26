@@ -293,7 +293,7 @@ provider's code and message in the receipt and the reply:
 ## Qualification
 
 ```sh
-node flows/organization/qualify/cli.ts [--runs 3] [--concurrency 2] [--case <id>]... [--role <id>]... [--only role|delivery] [--keep] [--real-budgets]
+node flows/organization/qualify/cli.ts [--runs 3] [--delivery-runs <n>] [--concurrency 2] [--case <id>]... [--role <id>]... [--only role|delivery] [--keep] [--real-budgets]
 ```
 
 Runs every case under the organization's cases directory (`casesDir`,
@@ -302,12 +302,19 @@ scratch state directory, a scratch copy of `Org/` and the pages roles'
 knowledge names, and scratch clones of the repositories: the live host's
 state, memory, receipts and branches are never touched. A role case is one
 `organization/qualify` run; a delivery case (`request:` instead of `task:`)
-is one request through intake. Each attempt is scored against the case's
-`expect` (`qualify/cases.ts` documents the format), and the scorecard, per
-role and per case with each failure reason and its count, is written to
-`<generatedDir>/Qualification-<date>.md`. A case whose `requires` this host
-cannot provide is listed pending; a page that is not a case is listed invalid. Daily task budgets are lifted in the scratch copy so
-every attempt runs; `--real-budgets` keeps the roster's own.
+is one request through intake (`--delivery-runs` times). A workspace case
+may start at a named `revision`, and may have the change its principal left
+collected and run through the repository's checks and its own in a fresh
+machine; a `host-commands` case runs `backup`/`restore` on the qualification
+host first and hands the principal their output. Each attempt is scored
+against the case's `expect` (`qualify/cases.ts` documents the format), and
+the scorecard, per role and per case with each failure reason and its count,
+stamped with the wiki revision, the roster revision and the cases' digest, is
+written to `<generatedDir>/Qualification-<date>.md`. A case whose `requires`
+this host cannot provide, or whose revision the repository lacks, is listed
+pending; a page that is not a case is listed invalid. Daily task budgets are
+lifted in the scratch copy so every attempt runs; `--real-budgets` keeps the
+roster's own, one day's per round of attempts (`--runs 3`: three days' worth).
 Exit 0 only when every attempt passed.
 
 ## Command registry

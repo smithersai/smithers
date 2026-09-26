@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Skills from "../src/Skills.ts"
@@ -175,25 +175,16 @@ describe("Skills.loadPack", () => {
     expect([...(await run(Skills.loadPack(inside))).skills.keys()]).toEqual(["alpha", "beta"])
   })
 
-  it("reports an unreadable skill without its contents", async () => {
-    const dir = pack({ alpha: skillFor("alpha") })
-    const file = join(dir, "alpha", "SKILL.md")
-    chmodSync(file, 0o000)
-    try {
-      expect(await flip(Skills.loadPack(dir))).toMatchObject({ code: "read", path: "alpha/SKILL.md" })
-    } finally {
-      chmodSync(file, 0o644)
-      rmSync(dir, { recursive: true })
-    }
-  })
-
-  it("maps every filesystem failure to a read error", async () => {
+  // Injected, not chmod: root reads a mode-000 file, so a real unreadable file
+  // cannot be provoked portably (the build and check machines run as root).
+  it("maps every filesystem failure, an unreadable skill included, to a read error", async () => {
     const dir = pack({ alpha: skillFor("alpha") })
     const cases: ReadonlyArray<readonly [string, (method: string, path: string) => boolean, string]> = [
       ["listing", (method) => method === "readDirectory", "."],
       ["directory stat", (method, path) => method === "stat" && path.endsWith("alpha"), "alpha"],
       ["exists", (method) => method === "exists", "alpha/SKILL.md"],
-      ["file stat", (method, path) => method === "stat" && path.endsWith("SKILL.md"), "alpha/SKILL.md"]
+      ["file stat", (method, path) => method === "stat" && path.endsWith("SKILL.md"), "alpha/SKILL.md"],
+      ["file read", (method) => method === "readFileString", "alpha/SKILL.md"]
     ]
     for (const [label, fault, path] of cases) {
       expect(await flipWith(Skills.loadPack(dir), fault), label).toMatchObject({ code: "read", path })

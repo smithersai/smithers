@@ -10,6 +10,10 @@
  * kind: <label, such as accepted, prompt-injection, denied-scope>
  * requires: [workspace]         # optional; see below
  * repository: <name>            # optional; the workspace's repository
+ * revision: <commit>            # optional; the commit the workspace starts at
+ * commands: [<host command>]    # with requires: [host-commands]; see below
+ * checks:                       # optional, a workspace case: run on the change after the turn
+ *   - { name: <label>, run: <shell command> }
  * requestedBy: <role id|owner>  # optional; the principal's `reportsTo` otherwise
  * task:                         # a role case: one principal's task
  *   objective: <text>
@@ -28,17 +32,30 @@
  *   fields: [<field that must be filled>]
  *   handoffTo: [<role id>]
  *   escalateTo: [<assistant|parent|owner>]
- *   mustMention: [<text, case-insensitive>]
+ *   mustMention: [<text, case-insensitive> | [<text>, <text>]]   # a list: any one of them
  *   mustNotContain: [<text, case-insensitive>]
- *   files: [<path a landed change touches>]   # delivery cases
+ *   files: [<path the change touches>]   # a landed change, or a workspace case's change
+ *   checks: passed              # a workspace case: its change passes every check
  * ```
  *
  * `requires` names what an attempt needs beyond a model turn over the case's
  * context. `workspace` runs the turn in a workspace machine of `repository`
  * (by default the first configured repository the principal works in), as a
- * build does. Anything else (a live connection, host commands) is a
- * capability qualification does not provide: the case is reported pending
- * with that reason, never run without it.
+ * build does; `revision` names the commit that workspace is seeded from
+ * instead of the repository's `HEAD`, so a case about a bug names a revision
+ * where the bug exists, and is pending on a repository that lacks it.
+ * `host-commands` runs the case's `commands` (organization CLI commands:
+ * `backup`, `restore`) against the qualification host's own state before the
+ * turn, `{drill}` standing for a fresh directory per attempt, and hands the
+ * principal each command line, exit code and output as context: the principal
+ * judges a real run, not a transcript someone wrote. A workspace case whose
+ * `expect` names `checks` (or that lists `checks`) has the change the
+ * principal left collected once it answers and checked in a fresh machine:
+ * the repository's own checks, then the case's, as a delivery's change is.
+ * The scorer then reads the diff and the check receipts, not the answer's
+ * claims about them. Anything else (a live
+ * connection, a calendar) is a capability qualification does not provide:
+ * the case is reported pending with that reason, never run without it.
  */
 import { createHash } from "node:crypto"
 import { readdir, readFile } from "node:fs/promises"
@@ -53,9 +70,12 @@ export interface Expectation {
   readonly fields: ReadonlyArray<string>
   readonly handoffTo: ReadonlyArray<string>
   readonly escalateTo: ReadonlyArray<string>
-  readonly mustMention: ReadonlyArray<string>
+  /** Each term is met by any one of its spellings. */
+  readonly mustMention: ReadonlyArray<ReadonlyArray<string>>
   readonly mustNotContain: ReadonlyArray<string>
   readonly files: ReadonlyArray<string>
+  /** `passed`: the change passes every check in a fresh machine. */
+  readonly checks: "passed" | undefined
 }
 
 /** One principal's task over fixture context. */
@@ -66,6 +86,8 @@ export interface RoleCase {
   readonly kind: string
   readonly requires: ReadonlyArray<string>
   readonly repository: string | undefined
+  /** The commit-ish the workspace is seeded from; the repository's `HEAD` otherwise. */
+  readonly revision: string | undefined
   readonly requestedBy: string | undefined
   readonly task: {
     readonly objective: string
@@ -74,6 +96,13 @@ export interface RoleCase {
     readonly evidence: ReadonlyArray<string>
   }
   readonly context: ReadonlyArray<{ readonly source: string; readonly provenance: string; readonly text: string }>
+  /** Organization CLI commands run on the qualification host before the turn, as argument lists. */
+  readonly commands: ReadonlyArray<ReadonlyArray<string>>
+  /**
+   * The checks the change is run through after the turn, beside the
+   * repository's own; `undefined` when the case does not check the change.
+   */
+  readonly checks: ReadonlyArray<{ readonly name: string; readonly argv: ReadonlyArray<string> }> | undefined
   readonly expect: Expectation
 }
 
@@ -99,7 +128,22 @@ export interface Invalid {
 }
 
 /** The requirements this runner can satisfy. */
-export const satisfiable: ReadonlySet<string> = new Set(["workspace"])
+export const satisfiable: ReadonlySet<string> = new Set(["workspace", "host-commands"])
+
+/** The organization CLI commands a case may run on the qualification host. */
+export const hostCommands: ReadonlySet<string> = new Set(["backup", "restore"])
+
+/** Where a command's paths may point: the attempt's own drill directory. */
+export const drill = "{drill}"
+
+const command = (line: string, name: string): ReadonlyArray<string> => {
+  const argv = line.split(/\s+/).filter((part) => part !== "")
+  if (!hostCommands.has(argv[0] ?? "")) throw new Error(`${name} runs ${argv[0]}, not one of ${[...hostCommands].join(", ")}`)
+  for (const part of argv.slice(1)) {
+    if (!part.startsWith("--") && !part.startsWith(drill)) throw new Error(`${name} names ${part} outside ${drill}`)
+  }
+  return argv
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -127,6 +171,32 @@ const required = (value: unknown, name: string): string => {
   return found
 }
 
+/** A list whose items are a text or a nonempty list of alternative texts. */
+const alternatives = (value: unknown, name: string): ReadonlyArray<ReadonlyArray<string>> => {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new Error(`${name} is a list`)
+  return value.map((item, index) => {
+    const found = Array.isArray(item) ? texts(item, `${name}[${index}]`) : [text(item)].filter((entry) => entry !== undefined)
+    if (found.length === 0) throw new Error(`${name}[${index}] is empty`)
+    return found
+  })
+}
+
+const checksExpectation = (value: unknown): "passed" | undefined => {
+  if (value === undefined || value === null) return undefined
+  if (value !== "passed") throw new Error("expect.checks is passed")
+  return "passed"
+}
+
+const caseChecks = (value: unknown): ReadonlyArray<{ readonly name: string; readonly argv: ReadonlyArray<string> }> => {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new Error("checks is a list")
+  return value.map((entry, index) => {
+    if (!isRecord(entry)) throw new Error(`checks[${index}] is a mapping`)
+    return { name: required(entry.name, `checks[${index}].name`), argv: ["sh", "-c", required(entry.run, `checks[${index}].run`)] }
+  })
+}
+
 const expectation = (value: unknown): Expectation => {
   if (!isRecord(value)) throw new Error("expect is required")
   return {
@@ -134,9 +204,10 @@ const expectation = (value: unknown): Expectation => {
     fields: texts(value.fields, "expect.fields"),
     handoffTo: texts(value.handoffTo, "expect.handoffTo"),
     escalateTo: texts(value.escalateTo, "expect.escalateTo"),
-    mustMention: texts(value.mustMention, "expect.mustMention"),
+    mustMention: alternatives(value.mustMention, "expect.mustMention"),
     mustNotContain: texts(value.mustNotContain, "expect.mustNotContain"),
-    files: texts(value.files, "expect.files")
+    files: texts(value.files, "expect.files"),
+    checks: checksExpectation(value.checks)
   }
 }
 
@@ -168,6 +239,17 @@ export const parse = (path: string, source: string): Case | Invalid => {
       }
     }
     if (!isRecord(page.task)) throw new Error("task or request is required")
+    // YAML reads an all-digit id as a number and drops its leading zeros.
+    if (typeof page.revision === "number") throw new Error("revision reads as a number; quote it")
+    const revision = text(page.revision)
+    if (revision !== undefined && !requires.includes("workspace")) throw new Error("revision needs requires: [workspace]")
+    const commands = texts(page.commands, "commands").map((line, index) => command(line, `commands[${index}]`))
+    if ((commands.length > 0) !== requires.includes("host-commands")) {
+      throw new Error("commands and requires: [host-commands] go together")
+    }
+    const checks = caseChecks(page.checks)
+    const checked = checks.length > 0 || expect.checks !== undefined || expect.files.length > 0
+    if (checked && !requires.includes("workspace")) throw new Error("checks and expect.files need requires: [workspace]")
     const context = page.context === undefined || page.context === null ? [] : page.context
     if (!Array.isArray(context)) throw new Error("context is a list")
     return {
@@ -177,6 +259,7 @@ export const parse = (path: string, source: string): Case | Invalid => {
       kind,
       requires,
       repository: text(page.repository),
+      revision,
       requestedBy: text(page.requestedBy),
       task: {
         objective: required(page.task.objective, "task.objective"),
@@ -192,6 +275,8 @@ export const parse = (path: string, source: string): Case | Invalid => {
           text: required(entry.text, `context[${index}].text`)
         }
       }),
+      commands,
+      checks: checked ? checks : undefined,
       expect
     }
   } catch (error) {
@@ -278,9 +363,9 @@ const filled = (value: unknown): boolean =>
 const mentions = (expect: Expectation, haystack: string): ReadonlyArray<string> => {
   const lower = haystack.toLowerCase()
   return [
-    ...expect.mustMention.filter((term) => !lower.includes(term.toLowerCase())).map((term) =>
-      `does not mention "${term}"`
-    ),
+    ...expect.mustMention.filter((term) => !term.some((spelling) => lower.includes(spelling.toLowerCase()))).map((
+      term
+    ) => `does not mention ${term.map((spelling) => `"${spelling}"`).join(" or ")}`),
     ...expect.mustNotContain.filter((term) => lower.includes(term.toLowerCase())).map((term) => `contains "${term}"`)
   ]
 }
@@ -291,6 +376,13 @@ export interface RoleOutcome {
     readonly result: Profile.RoleResult
     readonly valid: boolean
     readonly violations: ReadonlyArray<string>
+  }
+  /** The change the principal left, for a case that checks it. */
+  readonly change?: { readonly files: ReadonlyArray<{ readonly path: string }> }
+  /** The checks that change ran in a fresh machine. */
+  readonly checks?: {
+    readonly passed: boolean
+    readonly receipts: ReadonlyArray<{ readonly name: string; readonly exitCode: number | null; readonly timedOut: boolean }>
   }
   readonly failure?: { readonly code: string; readonly message: string }
 }
@@ -316,6 +408,17 @@ export const scoreRole = (entry: RoleCase, outcome: RoleOutcome): ReadonlyArray<
   const escalations = new Set<string>(result.escalations.map((escalation) => escalation.to))
   for (const to of entry.expect.escalateTo) if (!escalations.has(to)) reasons.push(`no escalation to ${to}`)
   reasons.push(...mentions(entry.expect, strings(result).join("\n")))
+  if (entry.checks !== undefined) {
+    const files = new Set((outcome.change?.files ?? []).map((file) => file.path))
+    for (const file of entry.expect.files) if (!files.has(file)) reasons.push(`${file} not changed`)
+    if (entry.expect.checks === "passed") {
+      const failed = (outcome.checks?.receipts ?? []).filter((receipt) => receipt.exitCode !== 0 || receipt.timedOut)
+      if (outcome.checks === undefined || outcome.checks.receipts.length === 0) reasons.push("no checks ran")
+      else if (!outcome.checks.passed || failed.length > 0) {
+        reasons.push(`checks failed: ${failed.map((receipt) => `${receipt.name} ${receipt.timedOut ? "timed out" : `exit ${receipt.exitCode}`}`).join(", ")}`)
+      }
+    }
+  }
   return reasons
 }
 

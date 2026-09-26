@@ -300,7 +300,7 @@ export const restoreCommand: Command = {
       replace: values.replace,
       relocate: values.relocate
     })
-    io.out(`restored ${stateDir} from ${manifest.createdAt}`)
+    io.out(`restored ${stateDir} from ${manifest.createdAt}: ${manifest.entries.length} files match their manifest SHA-256`)
     if (replaced !== undefined) io.out(`previous ${replaced}`)
     if (manifest.wiki?.revision !== undefined) io.out(`wiki ${manifest.wiki.revision}${manifest.wiki.dirty ? " (had changes)" : ""}`)
     return 0

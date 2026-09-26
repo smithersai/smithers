@@ -7,7 +7,8 @@
  * grants name), with scratch clones of the configured repositories, so
  * qualification never touches the live host's state, memory, receipts, or
  * branches. Seats resolve exactly as `serve` resolves them. Each case runs
- * `--runs` times, at most `--concurrency` at once: a role case as one
+ * `--runs` times (a delivery case `--delivery-runs` times, `--runs` by
+ * default), at most `--concurrency` at once: a role case as one
  * `organization/qualify` run, a delivery case as one request through
  * `organization/intake`. Every attempt is scored against the case's
  * expectations (`cases.ts`), and the scorecard goes to
@@ -16,7 +17,8 @@
  * `node flows/organization/qualify/cli.ts [flags]` runs it directly; the
  * organization CLI registers it as `qualify`.
  */
-import { execFileSync, spawn } from "node:child_process"
+import { execFileSync, spawn, spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
@@ -81,18 +83,19 @@ const copyOrganization = (settings: Settings, into: string) => {
 }
 
 /**
- * Lifts every profile's daily task budget in the scratch copy to `tasks`:
- * qualification runs each case several times in one day, which says nothing
- * about the budget; every other part of a profile is qualified as written.
+ * Sets every profile's daily task budget in the scratch copy to `tasks` of
+ * its own: qualification runs each case several times in one day, which says
+ * nothing about the budget; every other part of a profile is qualified as
+ * written.
  */
-const liftDailyBudgets = (directory: string, tasks: number) => {
+const liftDailyBudgets = (directory: string, tasks: (own: number) => number) => {
   for (const entry of readdirSync(directory, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile() || !entry.name.endsWith(".md")) continue
     const path = join(entry.parentPath, entry.name)
     const text = readFileSync(path, "utf8")
     const end = text.startsWith("---") ? text.indexOf("\n---", 3) : -1
     if (end < 0) continue
-    const head = text.slice(0, end).replace(/(\btasksPerDay:\s*)\d+/g, `$1${tasks}`)
+    const head = text.slice(0, end).replace(/(\btasksPerDay:\s*)(\d+)/g, (_, key: string, own: string) => `${key}${tasks(Number(own))}`)
     if (head !== text.slice(0, end)) writeFileSync(path, head + text.slice(end))
   }
 }
@@ -112,6 +115,34 @@ const reap = async (owner: string) => {
   const sdk = await SetupMicrosandbox.sdkOf(install)
   sdk.setDefaultBackend("local")
   await Effect.runPromise(MicrosandboxSandbox.reap({ sdk, owner, isAlive: () => Effect.succeed(false) }))
+}
+
+/** The wiki root's git commit, `+` when its tree has uncommitted changes; `undefined` outside git. */
+const wikiRevision = (root: string): string | undefined => {
+  const head = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" })
+  if (head.status !== 0) return undefined
+  const status = spawnSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" })
+  return `${head.stdout.trim().slice(0, 12)}${status.stdout.trim() === "" ? "" : "+"}`
+}
+
+/** SHA-256 over every case page's name and bytes, in name order. */
+const casesDigest = (directory: string): string => {
+  const hash = createHash("sha256")
+  for (const name of readdirSync(directory).filter((entry) => entry.endsWith(".md")).sort()) {
+    hash.update(`${name}\0`).update(readFileSync(join(directory, name))).update("\0")
+  }
+  return hash.digest("hex")
+}
+
+/** Whether `revision` names a commit in `repo`. */
+const hasCommit = (repo: string, revision: string): boolean => {
+  if (revision.startsWith("-")) return false
+  try {
+    execFileSync("git", ["-C", repo, "cat-file", "-e", `${revision}^{commit}`], { stdio: "ignore" })
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** The files a commit in `repo` changed. */
@@ -137,7 +168,7 @@ const readText = (path: string): string | undefined => {
 }
 
 const usage =
-  "qualify [--root <dir containing Org/>] [--state-dir <dir>] [--case <id>]... [--role <id>]... [--only role|delivery] [--runs <n>] [--concurrency <n>] [--timeout <minutes>] [--keep] [--real-budgets] [--serve-with <cli module>]"
+  "qualify [--root <dir containing Org/>] [--state-dir <dir>] [--case <id>]... [--role <id>]... [--only role|delivery] [--runs <n>] [--delivery-runs <n>] [--concurrency <n>] [--timeout <minutes>] [--keep] [--real-budgets] [--serve-with <cli module>]"
 
 /** `qualify`: run the organization's cases and write the scorecard. */
 export const command: Command = {
@@ -154,6 +185,7 @@ export const command: Command = {
         case: { type: "string", multiple: true },
         role: { type: "string", multiple: true },
         runs: { type: "string" },
+        "delivery-runs": { type: "string" },
         concurrency: { type: "string" },
         timeout: { type: "string" },
         keep: { type: "boolean", default: false },
@@ -163,6 +195,9 @@ export const command: Command = {
       }
     })
     const runs = integer("--runs", values.runs, 3, 50)
+    const deliveryRuns = integer("--delivery-runs", values["delivery-runs"], runs, 50)
+    const runsOf = (entry: Cases.Case) => entry.mode === "delivery" ? deliveryRuns : runs
+    const rounds = Math.max(runs, deliveryRuns)
     const concurrency = integer("--concurrency", values.concurrency, 2, 16)
     const timeoutMs = integer("--timeout", values.timeout, 30, 240) * 60_000
     const environment = environmentOf(values, io.env, io.cwd)
@@ -180,8 +215,10 @@ export const command: Command = {
       environment,
       io.cwd
     )
+    const casesDir = settings.organization.casesDir ?? `${settings.organization.rosterDir}/Cases`
+    const graded = { wiki: wikiRevision(settings.root), roster: settings.snapshot.revision, cases: casesDigest(join(settings.root, casesDir)) }
     copyOrganization(settings, root)
-    const cases = await Cases.load(settings.root, settings.organization.casesDir ?? `${settings.organization.rosterDir}/Cases`)
+    const cases = await Cases.load(settings.root, casesDir)
     const selected = cases.filter((entry) =>
       (values.case === undefined || values.case.includes(entry.id)) &&
       (values.role === undefined || entry.mode === "invalid" || values.role.includes(entry.principal)) &&
@@ -204,12 +241,20 @@ export const command: Command = {
           principal: entry.principal,
           reason: `needs workspace: no configured repository ${entry.principal} works in`
         })
+      } else if (entry.mode === "role" && entry.revision !== undefined && !hasCommit(settings.repositories[workspaceOf(entry, profile)!]!, entry.revision)) {
+        pending.push({
+          caseId: entry.id,
+          principal: entry.principal,
+          reason: `needs revision ${entry.revision} in ${workspaceOf(entry, profile)}`
+        })
       } else runnable.push(entry)
     }
     // Each attempt is a handful of role tasks at most; a delivery is one per role it reaches per round.
-    if (!values["real-budgets"]) {
-      liftDailyBudgets(join(root, settings.organization.rosterDir), Math.max(1, runnable.length) * runs * 8)
-    }
+    // With the real budgets, each round of attempts is one day's work: a day's budget per round.
+    liftDailyBudgets(
+      join(root, settings.organization.rosterDir),
+      values["real-budgets"] ? (own) => own * rounds : () => Math.max(1, runnable.length) * rounds * 8
+    )
     const repositories = runnable.some((entry) => entry.mode === "delivery" || entry.requires.includes("workspace"))
       ? cloneRepositories(settings, scratch)
       : Object.entries(settings.repositories)
@@ -271,6 +316,33 @@ export const command: Command = {
         const lines = output.split("\n").filter((line) => line.includes(runId)).slice(0, 3)
         return lines.length === 0 ? "" : `: ${lines.join(" / ").slice(0, 600)}`
       }
+      /**
+       * A case's host commands, run in order against the qualification
+       * host's state, each as the context entry the principal sees.
+       */
+      const hostRun = (entry: Cases.RoleCase, n: number) => {
+        if (entry.commands.length === 0) return []
+        const directory = join(scratch, `drill-${entry.id}-${n}`)
+        mkdirSync(directory, { recursive: true })
+        return entry.commands.map((template) => {
+          const argv = template.map((part) => part.replaceAll(Cases.drill, directory))
+          const full = argv.includes("--state-dir") ? argv : [...argv, "--state-dir", stateDir]
+          const ran = spawnSync(process.execPath, [organizationCli, ...full], {
+            cwd: io.cwd,
+            env: childEnvironment,
+            encoding: "utf8",
+            timeout: 600_000
+          })
+          const output = `${ran.stdout ?? ""}${ran.stderr ?? ""}`.trim()
+          return {
+            source: { provider: "host", id: argv[0]! },
+            provenance: { retrievedAtMs: Date.now() },
+            text: `Provenance: run on the organization host for this task\n\n$ smithers-org ${full.join(" ")}\nexit ${
+              ran.status ?? ran.signal ?? ran.error?.message
+            }\n${output}`
+          }
+        })
+      }
       const attempt = async (entry: Cases.Case, n: number): Promise<Scored> => {
         const started = Date.now()
         const key = `qualify:${stamp}:${entry.id}:${n}`.slice(0, 128)
@@ -280,11 +352,20 @@ export const command: Command = {
         try {
           if (entry.mode === "role") {
             const profile = settings.snapshot.roster.profiles.get(entry.principal)!
-            const { context, task } = Cases.taskOf(entry, profile.reportsTo, Date.now())
+            const { context: given, task } = Cases.taskOf(entry, profile.reportsTo, Date.now())
+            const context = [...given, ...hostRun(entry, n)]
             const repository = entry.requires.includes("workspace") ? workspaceOf(entry, profile) : undefined
             const run = await ops.start(
               "organization/qualify",
-              { key, principal: entry.principal, task, context, ...(repository === undefined ? {} : { repository }) },
+              {
+                key,
+                principal: entry.principal,
+                task,
+                context,
+                ...(repository === undefined ? {} : { repository }),
+                ...(repository === undefined || entry.revision === undefined ? {} : { commit: entry.revision }),
+                ...(repository === undefined || entry.checks === undefined ? {} : { checks: entry.checks })
+              },
               key
             )
             const status = await settle(run.runId)
@@ -321,7 +402,7 @@ export const command: Command = {
         io.out(`${reasons.length === 0 ? "pass" : "FAIL"} ${entry.id} #${n} ${seconds}s${reasons.length === 0 ? "" : `: ${reasons.join("; ")}`}`)
         return { caseId: entry.id, principal: entry.principal, kind: entry.kind, attempt: n, reasons, receipt, seconds }
       }
-      const queue = runnable.flatMap((entry) => Array.from({ length: runs }, (_, index) => [entry, index + 1] as const))
+      const queue = runnable.flatMap((entry) => Array.from({ length: runsOf(entry) }, (_, index) => [entry, index + 1] as const))
       const scored: Array<Scored> = []
       await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
         for (let next = queue.shift(); next !== undefined; next = queue.shift()) scored.push(await attempt(...next))
@@ -331,7 +412,7 @@ export const command: Command = {
       mkdirSync(directory, { recursive: true })
       let path = join(directory, `Qualification-${date}.md`)
       for (let suffix = 2; existsSync(path); suffix++) path = join(directory, `Qualification-${date}-${suffix}.md`)
-      writeFileSync(path, render({ date, runs, seats, scored, pending, invalid }))
+      writeFileSync(path, render({ date, runs, deliveryRuns, seats, scored, pending, invalid, graded }))
       const passed = scored.filter((entry) => entry.reasons.length === 0).length
       io.out(`${passed}/${scored.length} passed; scorecard ${path}`)
       if (values.keep) io.out(`kept ${scratch}`)
