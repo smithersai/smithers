@@ -12,6 +12,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // TestIssueTemporaryRepoAPIToken_ScopesAndTTL verifies the per-run scoped jjhub
@@ -205,8 +206,54 @@ func TestApplyReservedRuntimeEnv_RepoSecretCannotOverride(t *testing.T) {
 	d.applyReservedRuntimeEnv()
 
 	want := normalizePublicBaseURL(svc.apiBaseURL)
-	assert.Equal(t, "agent-callback-token", d.agentServiceSpec.Env["SMITHERS_AGENT_TOKEN"])
 	assert.Equal(t, want, d.agentServiceSpec.Env["SMITHERS_API_BASE_URL"])
-	assert.Equal(t, "jjhub-scoped-token", d.agentServiceSpec.Env["SMITHERS_JJHUB_TOKEN"])
 	assert.Equal(t, want, d.agentServiceSpec.Env["SMITHERS_JJHUB_API_URL"])
+	assertAgentCallbackCredentialsProxied(t, d, map[string]string{
+		"SMITHERS_AGENT_TOKEN": "agent-callback-token",
+		"SMITHERS_JJHUB_TOKEN": "jjhub-scoped-token",
+	}, "api.jjhub.tech")
+}
+
+// A dotless dev host (localhost) cannot be bound at the egress proxy and
+// bypasses it, so only there do the callback tokens stay plaintext.
+func TestApplyReservedRuntimeEnv_DotlessDevHostKeepsPlaintext(t *testing.T) {
+	d := &agentDispatch{
+		svc:           &AgentService{apiBaseURL: "http://localhost:4000"},
+		plaintext:     "agent-callback-token",
+		hasJJHubToken: true,
+		jjhubToken:    temporaryRepoCloneToken{ID: 5, Plaintext: "jjhub-scoped-token"},
+	}
+	d.agentServiceSpec.Env = map[string]string{}
+	d.applyReservedRuntimeEnv()
+	assert.Equal(t, "agent-callback-token", d.agentServiceSpec.Env["SMITHERS_AGENT_TOKEN"])
+	assert.Equal(t, "jjhub-scoped-token", d.agentServiceSpec.Env["SMITHERS_JJHUB_TOKEN"])
+	for _, secret := range d.egressSecrets {
+		assert.NotEqual(t, "SMITHERS_AGENT_TOKEN", secret.Name)
+		assert.NotEqual(t, "SMITHERS_JJHUB_TOKEN", secret.Name)
+	}
+}
+
+// assertAgentCallbackCredentialsProxied: the agent VM's callback and REST
+// tokens reach the guest only as egress-proxy placeholders. Code the agent
+// runs (a repository test, an npm install script) can read the service
+// environment through /proc/*/environ, so a plaintext token there could be
+// carried out and replayed from anywhere. The proxy swaps each value in only
+// on the authorization header of requests to the Smithers API host.
+func assertAgentCallbackCredentialsProxied(t *testing.T, d *agentDispatch, want map[string]string, host string) {
+	t.Helper()
+	bound := map[string]sandbox.EgressProxySecret{}
+	for _, secret := range d.egressSecrets {
+		bound[secret.Name] = secret
+	}
+	for name, value := range want {
+		assert.Equal(t, sandbox.EgressProxyPlaceholder(name), d.agentServiceSpec.Env[name], "%s must be a placeholder in the guest", name)
+		secret, ok := bound[name]
+		require.True(t, ok, "%s is bound at the egress proxy", name)
+		assert.Equal(t, value, secret.Value, name)
+		assert.Equal(t, []string{host}, secret.Hosts, name)
+		assert.Equal(t, []string{"authorization"}, secret.MatchHeaders, name)
+		for envName, envValue := range d.agentServiceSpec.Env {
+			assert.NotEqual(t, value, envValue, "%s carries the plaintext %s", envName, name)
+		}
+	}
 }

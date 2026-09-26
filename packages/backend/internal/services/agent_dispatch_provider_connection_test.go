@@ -65,8 +65,11 @@ func TestAgentDispatch_ClaudeConnectionReplacesPlatformCredential(t *testing.T) 
 	assert.False(t, hasPlatformURL, "the subscription keeps Anthropic's own origin")
 
 	names := created.EgressProxy.SecretNames()
-	assert.ElementsMatch(t, []string{"ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"}, names)
+	assert.ElementsMatch(t, []string{"ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "SMITHERS_AGENT_TOKEN"}, names)
 	for _, secret := range created.EgressProxy.Secrets {
+		if secret.Name == "SMITHERS_AGENT_TOKEN" {
+			continue
+		}
 		assert.Equal(t, "sk-ant-oat01-subscription", secret.Value)
 		assert.Equal(t, []string{"api.anthropic.com"}, secret.Hosts)
 		assert.Equal(t, []string{"authorization"}, secret.MatchHeaders)
@@ -84,7 +87,7 @@ func TestAgentDispatch_CodexConnectionPlantsPlaceholderAuthJSON(t *testing.T) {
 	assert.Equal(t, "codex", resolver.provider)
 	assert.Equal(t, "OPENAI_CODEX_ACCESS_TOKEN", started.Env["OPENAI_CODEX_ACCESS_TOKEN"])
 	assert.Equal(t, "/root/.codex", started.Env["CODEX_HOME"])
-	assert.Equal(t, "agent-token", started.Env["ANTHROPIC_API_KEY"], "the platform seat stays metered for other providers")
+	assert.Equal(t, "ANTHROPIC_API_KEY", started.Env["ANTHROPIC_API_KEY"], "the platform seat stays metered for other providers")
 	assert.Equal(t, "anthropic", started.Env["SMITHERS_MODEL_PROXY_PROVIDERS"])
 
 	file, ok := created.Files["/root/.codex/auth.json"]
@@ -117,8 +120,8 @@ func TestAgentDispatch_CodexConnectionPlantsPlaceholderAuthJSON(t *testing.T) {
 func TestAgentDispatch_NoConnectionKeepsPlatformPath(t *testing.T) {
 	t.Parallel()
 	created, started := runProviderConnectionDispatch(t, &providerConnectionResolverStub{}, "smithers")
-	assert.Equal(t, "agent-token", started.Env["ANTHROPIC_API_KEY"])
-	assert.Empty(t, created.EgressProxy.SecretNames())
+	assert.Equal(t, "ANTHROPIC_API_KEY", started.Env["ANTHROPIC_API_KEY"])
+	assert.ElementsMatch(t, []string{"ANTHROPIC_API_KEY", "SMITHERS_AGENT_TOKEN"}, created.EgressProxy.SecretNames())
 	assert.Empty(t, created.Files)
 }
 

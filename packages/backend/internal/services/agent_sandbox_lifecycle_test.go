@@ -191,8 +191,20 @@ func TestDispatchAgentRun_FullVMLifecycleFlow(t *testing.T) {
 	assert.Equal(t, "1", capturedSystemdService.Env["SMITHERS_DEBUG"])
 	// The per-run scoped jjhub API token + public API url are injected for the
 	// REST tools and must not be the same as the internal agent callback token.
-	assert.True(t, strings.HasPrefix(capturedSystemdService.Env["SMITHERS_JJHUB_TOKEN"], "smithers_"))
-	assert.NotEqual(t, capturedSystemdService.Env["SMITHERS_AGENT_TOKEN"], capturedSystemdService.Env["SMITHERS_JJHUB_TOKEN"])
+	// Both reach the guest as placeholders; the proxy holds the values.
+	assert.Equal(t, "SMITHERS_AGENT_TOKEN", capturedSystemdService.Env["SMITHERS_AGENT_TOKEN"])
+	assert.Equal(t, "SMITHERS_JJHUB_TOKEN", capturedSystemdService.Env["SMITHERS_JJHUB_TOKEN"])
+	require.NotNil(t, capturedVMRequest.EgressProxy)
+	proxied := map[string]string{}
+	for _, secret := range capturedVMRequest.EgressProxy.Secrets {
+		proxied[secret.Name] = secret.Value
+		if strings.HasPrefix(secret.Name, "SMITHERS_") {
+			assert.Equal(t, []string{"api.smithers.test"}, secret.Hosts, secret.Name)
+		}
+	}
+	assert.True(t, strings.HasPrefix(proxied["SMITHERS_AGENT_TOKEN"], "smithers_agent_"))
+	assert.True(t, strings.HasPrefix(proxied["SMITHERS_JJHUB_TOKEN"], "smithers_"))
+	assert.NotEqual(t, proxied["SMITHERS_AGENT_TOKEN"], proxied["SMITHERS_JJHUB_TOKEN"])
 	assert.Equal(t, "https://api.smithers.test", capturedSystemdService.Env["SMITHERS_JJHUB_API_URL"])
 
 	// Verify task payload contents — the agent_token must NOT appear in the
@@ -536,7 +548,7 @@ func TestDispatchAgentRun_SecretInjectorMergesWithSystemdEnv(t *testing.T) {
 
 	// Verify reserved keys are still present (not overwritten)
 	assert.Equal(t, "/root", capturedEnv["HOME"])
-	assert.True(t, strings.HasPrefix(capturedEnv["SMITHERS_AGENT_TOKEN"], "smithers_agent_"))
+	assert.Equal(t, "SMITHERS_AGENT_TOKEN", capturedEnv["SMITHERS_AGENT_TOKEN"], "the callback token is a proxy placeholder")
 	// SMITHERS_TASK_PAYLOAD went with the 0.x loop that read it.
 	assert.Empty(t, capturedEnv["SMITHERS_TASK_PAYLOAD"])
 }

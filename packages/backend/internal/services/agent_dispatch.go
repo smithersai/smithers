@@ -804,11 +804,11 @@ func (d *agentDispatch) applyReservedRuntimeEnv() {
 	if d.agentServiceSpec.Env == nil {
 		return
 	}
-	d.agentServiceSpec.Env["SMITHERS_AGENT_TOKEN"] = d.plaintext
+	d.bindAgentCallbackCredential("SMITHERS_AGENT_TOKEN", d.plaintext)
 	d.agentServiceSpec.Env["SMITHERS_API_BASE_URL"] = normalizePublicBaseURL(d.svc.apiBaseURL)
 	d.bindModelSeats()
 	if d.hasJJHubToken {
-		d.agentServiceSpec.Env["SMITHERS_JJHUB_TOKEN"] = d.jjhubToken.Plaintext
+		d.bindAgentCallbackCredential("SMITHERS_JJHUB_TOKEN", d.jjhubToken.Plaintext)
 		d.agentServiceSpec.Env["SMITHERS_JJHUB_API_URL"] = normalizePublicBaseURL(d.svc.apiBaseURL)
 		// The same per-run token is the build cache write credential. It is
 		// bound to the API host and the authorization header, so smithers-build
@@ -826,14 +826,59 @@ func (d *agentDispatch) applyReservedRuntimeEnv() {
 	}
 }
 
+// bindAgentCallbackCredential puts a Smithers API credential in the guest as
+// an egress-proxy placeholder. Code the agent runs can read the service
+// environment through /proc/*/environ; the proxy swaps the real value in only
+// on the authorization header of requests to the Smithers API host, so a
+// copied placeholder is worthless elsewhere. A dotless dev host
+// (localhost) cannot be bound and bypasses the proxy, so only there does the
+// value stay plaintext.
+func (d *agentDispatch) bindAgentCallbackCredential(name, value string) {
+	d.bindAgentCredential(name, value, "authorization")
+}
+
+func (d *agentDispatch) bindAgentCredential(name, value string, headers ...string) {
+	host := apiHost(d.svc.apiBaseURL)
+	if !sandbox.ValidEgressHost(host) || strings.TrimSpace(value) == "" {
+		d.unbindEgressSecret(name)
+		d.agentServiceSpec.Env[name] = value
+		return
+	}
+	d.bindEgressSecret(sandbox.EgressProxySecret{
+		Name:         name,
+		Value:        value,
+		Hosts:        []string{host},
+		MatchHeaders: headers,
+	})
+}
+
+// carriesAgentToken reports whether name holds the run's agent token, as a
+// plaintext value or through an egress binding.
+func (d *agentDispatch) carriesAgentToken(name string) bool {
+	if d.plaintext == "" {
+		return false
+	}
+	if d.agentServiceSpec.Env[name] == d.plaintext {
+		return true
+	}
+	for _, secret := range d.egressSecrets {
+		if secret.Name == name && secret.Value == d.plaintext {
+			return true
+		}
+	}
+	return false
+}
+
 // bindModelSeats points the platform model seats at the metered proxy with
-// the run's agent token. A seat a connected account replaced stays off.
+// the run's agent token, bound at the egress proxy like the callback token.
+// A seat a connected account replaced stays off.
 func (d *agentDispatch) bindModelSeats() {
 	for _, name := range []string{modelproxy.URLEnv, modelproxy.ProvidersEnv} {
 		delete(d.agentServiceSpec.Env, name)
 	}
 	for _, seat := range d.svc.sandboxConfig.ModelSeats {
-		if d.agentServiceSpec.Env[seat.KeyEnv] == d.plaintext {
+		if d.carriesAgentToken(seat.KeyEnv) {
+			d.unbindEgressSecret(seat.KeyEnv)
 			delete(d.agentServiceSpec.Env, seat.KeyEnv)
 		}
 		delete(d.agentServiceSpec.Env, seat.BaseURLEnv)
@@ -853,7 +898,8 @@ func (d *agentDispatch) bindModelSeats() {
 	}
 	for _, seat := range seats {
 		d.unbindEgressSecret(seat.KeyEnv)
-		d.agentServiceSpec.Env[seat.KeyEnv] = d.plaintext
+		// Model SDKs send the key as a Bearer token or as x-api-key.
+		d.bindAgentCredential(seat.KeyEnv, d.plaintext, "authorization", "x-api-key")
 	}
 	for name, value := range modelproxy.GuestEnvironment(proxyURL, seats) {
 		d.agentServiceSpec.Env[name] = value
@@ -868,7 +914,7 @@ func (d *agentDispatch) repositoryDeclares(seat modelproxy.Seat) bool {
 	}
 	for _, name := range workspaceProviderFamily(seat.KeyEnv) {
 		value, set := d.agentServiceSpec.Env[name]
-		if set && value != d.plaintext && value != "" {
+		if set && value != "" && !d.carriesAgentToken(name) {
 			if d.repositorySeats == nil {
 				d.repositorySeats = map[string]struct{}{}
 			}

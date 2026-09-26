@@ -2459,7 +2459,7 @@ func TestDispatchAgentRun_InjectsRepoSecretsIntoSystemdEnv(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, capturedEnv)
 	assert.Equal(t, "sk-ant-test", capturedEnv["ANTHROPIC_API_KEY"])
-	assert.True(t, strings.HasPrefix(capturedEnv["SMITHERS_AGENT_TOKEN"], "smithers_agent_"))
+	assert.Equal(t, "SMITHERS_AGENT_TOKEN", capturedEnv["SMITHERS_AGENT_TOKEN"], "the callback token is a proxy placeholder")
 }
 
 func TestDispatchAgentRun_RepositoryKeyReplacesThePlatformSeat(t *testing.T) {

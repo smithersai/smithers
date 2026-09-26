@@ -111,9 +111,11 @@ func TestAgentDispatch_WorkspaceMode_CreateVMUsesBackendAndMergesBindings(t *tes
 	require.Len(t, got.Members, 1, "only changeset members are handed over; the primary clone is the workspace's job")
 	assert.Equal(t, "abc", got.Members[0].Rev)
 	for _, secret := range got.EgressSecrets {
-		assert.NotEqual(t, "ANTHROPIC_API_KEY", secret.Name, "a platform seat is metered, never an egress-bound provider key")
+		if secret.Name == "ANTHROPIC_API_KEY" {
+			assert.Equal(t, "agent-token", secret.Value, "a platform seat is metered, never an egress-bound provider key")
+		}
 	}
-	assert.Equal(t, "agent-token", d.agentServiceSpec.Env["ANTHROPIC_API_KEY"])
+	assert.Equal(t, "ANTHROPIC_API_KEY", d.agentServiceSpec.Env["ANTHROPIC_API_KEY"])
 	d.svc.cancelAgentRuntimeWatchdog(d.input.SessionID)
 }
 

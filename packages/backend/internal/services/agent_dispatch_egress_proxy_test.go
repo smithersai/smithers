@@ -91,12 +91,19 @@ func TestAgentDispatch_PlatformSeatsGoThroughTheMeteredModelProxy(t *testing.T) 
 	require.NoError(t, dispatch.startService())
 
 	env := started.Env
-	assert.Equal(t, "agent-token", env["ANTHROPIC_API_KEY"], "the seat carries the run's agent token")
+	assert.Equal(t, "ANTHROPIC_API_KEY", env["ANTHROPIC_API_KEY"], "the seat is a placeholder for the run's agent token")
 	assert.Equal(t, "https://api.example.test/model-proxy/anthropic", env["ANTHROPIC_BASE_URL"])
 	assert.Equal(t, "https://api.example.test/model-proxy", env[modelproxy.URLEnv])
 	assert.Equal(t, "anthropic", env[modelproxy.ProvidersEnv])
 	require.NotNil(t, created.EgressProxy)
-	assert.NotContains(t, created.EgressProxy.SecretNames(), "ANTHROPIC_API_KEY")
+	assert.ElementsMatch(t, []string{"ANTHROPIC_API_KEY", "SMITHERS_AGENT_TOKEN"}, created.EgressProxy.SecretNames())
+	for _, secret := range created.EgressProxy.Secrets {
+		assert.Equal(t, "agent-token", secret.Value, "%s is the run's agent token, never a provider key", secret.Name)
+		assert.Equal(t, []string{"api.example.test"}, secret.Hosts, secret.Name)
+	}
+	serviceJSON, err := json.Marshal(started)
+	require.NoError(t, err)
+	assert.NotContains(t, string(serviceJSON), "agent-token", "the guest environment never carries the agent token")
 }
 
 // Bound agent-environment secrets reach the session only through the proxy,
@@ -119,10 +126,15 @@ func TestAgentDispatch_BoundAgentEnvironmentSecretsGoThroughTheProxyOnly(t *test
 	require.NoError(t, dispatch.createVM())
 
 	assert.Equal(t, "WAREHOUSE_TOKEN", dispatch.agentServiceSpec.Env["WAREHOUSE_TOKEN"])
-	assert.Equal(t, "agent-token", dispatch.agentServiceSpec.Env["SMITHERS_AGENT_TOKEN"], "a bound secret cannot shadow a reserved runtime key")
+	assert.Equal(t, "SMITHERS_AGENT_TOKEN", dispatch.agentServiceSpec.Env["SMITHERS_AGENT_TOKEN"])
 	names := created.EgressProxy.SecretNames()
 	assert.Contains(t, names, "WAREHOUSE_TOKEN")
-	assert.NotContains(t, names, "SMITHERS_AGENT_TOKEN")
+	for _, secret := range created.EgressProxy.Secrets {
+		if secret.Name == "SMITHERS_AGENT_TOKEN" {
+			assert.Equal(t, "agent-token", secret.Value, "a bound secret cannot shadow a reserved runtime key")
+			assert.Equal(t, []string{"api.example.test"}, secret.Hosts, "nor redirect it to another host")
+		}
+	}
 }
 
 func TestAgentDispatch_RepositoryAgentEnvironmentVariablesReachService(t *testing.T) {
@@ -148,7 +160,9 @@ func TestAgentDispatch_RepositoryAgentEnvironmentVariablesReachService(t *testin
 
 	assert.Equal(t, "claude-haiku-4-5", dispatch.agentServiceSpec.Env["SMITHERS_ANTHROPIC_MODEL"])
 	assert.Equal(t, "secret-value", dispatch.agentServiceSpec.Env["DEPLOYMENT_TIER"], "repository secrets win over non-secret variables")
-	assert.Equal(t, "agent-token", dispatch.agentServiceSpec.Env["SMITHERS_AGENT_TOKEN"], "reserved runtime values win over repository variables and secrets")
+	assert.Equal(t, "SMITHERS_AGENT_TOKEN", dispatch.agentServiceSpec.Env["SMITHERS_AGENT_TOKEN"], "reserved runtime values win over repository variables and secrets")
+	assert.Contains(t, dispatch.egressSecrets, sandbox.EgressProxySecret{Name: "SMITHERS_AGENT_TOKEN", Value: "agent-token",
+		Hosts: []string{"api.example.test"}, MatchHeaders: []string{"authorization"}})
 }
 
 func TestAgentDispatch_BoundSecretLoadFailureMarksInfraFailed(t *testing.T) {
@@ -239,8 +253,8 @@ func TestAgentDispatch_EgressProxyIsRequestedForEverySession(t *testing.T) {
 
 	require.NotNil(t, created.EgressProxy)
 	assert.True(t, created.EgressProxy.Enabled)
-	assert.Empty(t, created.EgressProxy.Secrets)
-	assert.Equal(t, 0, metrics.deliveries[secretDeliveryPathEgressProxy])
+	assert.Equal(t, []string{"SMITHERS_AGENT_TOKEN"}, created.EgressProxy.SecretNames(), "only the callback token rides the proxy")
+	assert.Equal(t, 1, metrics.deliveries[secretDeliveryPathEgressProxy], "the callback token")
 }
 
 // The per-run repository token doubles as the build cache write credential:
