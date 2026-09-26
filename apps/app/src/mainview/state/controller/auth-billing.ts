@@ -1,3 +1,5 @@
+import { accountProviderChanged } from "../AccountOwner"
+import { identityProviderFor } from "../IdentityProvider"
 import {
 ADMIN_ALLOWLIST_PATH,
 ADMIN_GRANT_PATH,
@@ -176,6 +178,7 @@ export const createAuthBillingController = (
     if (ctx.disposed || probe !== mine || signal?.aborted) return
     await store.dispatch({
       type: "identity.session.loaded",
+      provider: identityProviderFor(services),
       actor: "system",
       state: "signed-out",
       login: null,
@@ -195,6 +198,7 @@ export const createAuthBillingController = (
     if (ctx.disposed) return
     store.dispatch({
       type: "identity.session.loaded",
+      provider: identityProviderFor(services),
       actor: "system",
       state: "unavailable",
       login: null,
@@ -211,9 +215,11 @@ export const createAuthBillingController = (
     mine: number
   ): Promise<void> => {
     if (ctx.disposed || probe !== mine) return
-    fenceAccountTurn(session.login)
+    const providerChanged = accountProviderChanged(previous?.provider, identityProviderFor(services))
+    fenceAccountTurn(session.login, providerChanged)
     const persisted = store.dispatch({
       type: "identity.session.loaded",
+      provider: identityProviderFor(services),
       actor: "system",
       state: "signed-in",
       login: session.login,
@@ -225,7 +231,7 @@ export const createAuthBillingController = (
     if (ctx.disposed || probe !== mine) return
     await mirrorSelectedCloud({ state: "signed-in", ...session })
     if (ctx.disposed || probe !== mine) return
-    if (previous?.state !== "signed-in" || previous.login !== session.login) ctx.identityChanged()
+    if (previous?.state !== "signed-in" || previous.login !== session.login || providerChanged) ctx.identityChanged()
     // The balance read is driven by the session answer, not fired blind at
     // boot: signed out it could only come back 401 — the expected state,
     // logged by the browser as a console error anyway.
@@ -559,7 +565,7 @@ export const createAuthBillingController = (
     if (identity?.state === "signed-in") {
       const key = "auth.sign-in.already"
       store.dispatch({ type: "toast.shown", actor: "system", key, title: `Connected as ${identity.login ?? "you"}` })
-      store.dispatch({ type: "toast.resolved", actor: "system", key, status: "ok", detail: "GitHub is connected.",
+      store.dispatch({ type: "toast.resolved", actor: "system", key, status: "ok", detail: identityProviderFor(services) === "github" ? "GitHub is connected." : "Signed in.",
         action: { flow: "auth.sign-out", label: "Sign out" } })
       return
     }

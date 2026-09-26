@@ -10,3 +10,7 @@ export const accountOwnerOf = (identity: IdentitySession | undefined): string | 
   identity === undefined ? undefined :
     identity.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
       identity.state === "signed-in" ? identity.login : identity.state === "unavailable" ? undefined : null
+
+/** A known provider switch is a new account even when both accounts spell their login alike. */
+export const accountProviderChanged = (previous: IdentitySession["provider"], next: IdentitySession["provider"]): boolean =>
+  previous !== undefined && next !== undefined && previous !== next

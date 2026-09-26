@@ -888,7 +888,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   },
   connect: {
     minimal: { github: { connected: false, login: null }, nativeAvailable: false },
-    full: { github: { connected: true, login: "will" }, nativeAvailable: true }
+    full: { provider: "github", github: { connected: true, login: "will" }, nativeAvailable: true }
   },
   world: {
     minimal: { documents: [] },

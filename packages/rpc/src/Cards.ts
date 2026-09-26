@@ -1005,6 +1005,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     ...cardBaseShape,
     kind: z.literal("connect"),
     payload: z.object({
+      /** Authentication evidence; legacy cards do not establish a GitHub connection. */
+      provider: z.enum(["github", "local"]).optional(),
       github: z.object({ connected: z.boolean(), login: z.string().nullable() }),
       nativeAvailable: z.boolean()
     })

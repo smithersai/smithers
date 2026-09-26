@@ -32,13 +32,12 @@ export const ConnectCardBody = ({
   readonly onRunCommand: RunCommand
 }) => (
   <ul className="connect-store-list">
-    <li className="connect-store-row">
+    {card.payload.provider === "github" ? <li className="connect-store-row">
       <span className="connect-store-icon">
         <GitPullRequest size={16} aria-hidden="true" />
       </span>
       <span className="connect-store-text">
         <strong>GitHub</strong>
-        <span>Issues, pull requests, and reviews from the repositories you choose.</span>
       </span>
       {card.payload.github.connected ?
         <Badge variant="success">Connected ✓ as {card.payload.github.login ?? "you"}</Badge> :
@@ -47,14 +46,13 @@ export const ConnectCardBody = ({
             Connect
           </Button>
         )}
-    </li>
+    </li> : null}
     <li className="connect-store-row">
       <span className="connect-store-icon">
         <Server size={16} aria-hidden="true" />
       </span>
       <span className="connect-store-text">
         <strong>Smithers Cloud repository</strong>
-        <span>Import a GitHub repository into hosted workspace storage.</span>
       </span>
       <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "repos.import")}>
         Import

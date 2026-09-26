@@ -7,7 +7,7 @@ import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import { z } from "zod"
 import { approvalQuestionKey } from "../cards/ApprovalQuestion"
 import { framePath } from "../runtime/FrameHistory"
-import { accountOwnerOf } from "./AccountOwner"
+import { accountOwnerOf, accountProviderChanged } from "./AccountOwner"
 import { sameApproval } from "./ApprovalReference"
 import type {
 AppTransition,
@@ -640,7 +640,7 @@ export const appTransitionErasesPrivateState = (snapshot: AppProjectionSnapshot,
   if (transition.type !== "identity.session.loaded") return false
   const owner = accountOwnerOf(identity)
   return owner !== null && (transition.state === "signed-out" ||
-    (transition.state === "signed-in" && owner !== transition.login))
+    (transition.state === "signed-in" && (owner !== transition.login || accountProviderChanged(identity.provider, transition.provider))))
 }
 
 /*
@@ -854,9 +854,11 @@ const answerSignInPrompts = (
   collections: Pick<ProjectionCollections, "messages" | "cards"> & Partial<Pick<ProjectionCollections, "toasts">>,
   requirement: "identity" | "cloud",
   login: string | null,
-  answeredAt: number
+  answeredAt: number,
+  provider?: "github" | "local"
 ): void => {
-  const answer = `${requirement === "identity" ? "Signed in with GitHub" : "Signed in to Smithers Cloud"}${login ? ` as @${login}` : ""}.`
+  // Omitted provider preserves pre-provider journal receipts byte-for-byte.
+  const answer = `${requirement === "identity" ? (provider === "local" ? "Signed in" : "Signed in with GitHub") : "Signed in to Smithers Cloud"}${login ? ` as @${login}` : ""}.`
   const matches = (action: Message["action"]): boolean => {
     if (!action || (action.flow !== "auth.sign-in" && action.flow !== "cloud.sign-in")) return false
     return (action.signInRequirement ?? (action.flow === "cloud.sign-in" ? "cloud" : "identity")) === requirement
@@ -883,10 +885,17 @@ const answerSignInPrompts = (
     for (const card of collections.cards.values()) {
       if (card.kind === "anonymous-ceiling" && card.status !== "acted") {
         collections.cards.update(card.id, draft => { draft.status = "acted" })
-      } else if (card.kind === "connect" && (!card.payload.github.connected || card.payload.github.login !== login)) {
-        collections.cards.update(card.id, draft => {
-          if (draft.kind === "connect") draft.payload.github = { connected: true, login }
-        })
+      } else if (card.kind === "connect") {
+        const connected = provider !== "local"
+        const githubLogin = connected ? login : null
+        if (card.payload.github.connected !== connected || card.payload.github.login !== githubLogin ||
+            (provider !== undefined && card.payload.provider !== provider)) {
+          collections.cards.update(card.id, draft => {
+            if (draft.kind !== "connect") return
+            draft.payload.github = { connected, login: githubLogin }
+            if (provider !== undefined) draft.payload.provider = provider
+          })
+        }
       }
     }
   }
@@ -1180,7 +1189,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         const restored = { messages: collections.messages, cards: collections.cards }
         const identity = collections.identitySessions.get("identity")
         if (identity?.state === "signed-in" && identity.sessionObservation && identity.sessionObservation.revision > saved.revision) {
-          answerSignInPrompts(restored, "identity", identity.login, identity.sessionObservation.at)
+          answerSignInPrompts(restored, "identity", identity.login, identity.sessionObservation.at, identity.provider)
         }
         const cloud = collections.cloudSessions.get("cloud")
         if (cloud?.state === "signed-in" && cloud.scopes !== "degraded" && cloud.revision > saved.revision) {
@@ -2526,13 +2535,15 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             })
           }
           collections.identitySessions.update("identity", (draft) => {
-            draft.ownerRevision = owner !== nextOwner || transition.state === "signed-out"
+            draft.ownerRevision = owner !== nextOwner || transition.state === "signed-out" ||
+              (transition.state === "signed-in" && accountProviderChanged(existing.provider, transition.provider))
               ? revision : existing.ownerRevision ?? existing.revision
             draft.accountOwnerLogin = transition.state === "signed-in"
               ? transition.login
               : transition.state === "signed-out" ? null : owner
             draft.state = transition.state
             draft.login = transition.login
+            if (transition.provider !== undefined && transition.state !== "unavailable") draft.provider = transition.provider
             draft.sessionObservation = { at: createdAt, revision }
             draft.allowlisted = transition.allowlisted
             draft.admin = transition.admin
@@ -2542,7 +2553,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             draft.updatedAt = createdAt
             draft.revision = revision
           })
-          if (transition.state === "signed-in") answerSignInPrompts(collections, "identity", transition.login, createdAt)
+          if (transition.state === "signed-in") answerSignInPrompts(collections, "identity", transition.login, createdAt, transition.provider)
           break
         }
 

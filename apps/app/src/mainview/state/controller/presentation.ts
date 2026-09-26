@@ -1,3 +1,4 @@
+import { identityProviderFor, hasGitHubIdentity } from "../IdentityProvider"
 import { TOOLS_BROWSER_FETCH_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { Card,Palette } from "../AppState"
 import { DEFAULT_PALETTE,isPalette,PALETTES,WIKI_DISPLAY_NAME } from "../AppState"
@@ -73,6 +74,8 @@ export const createPresentationController = (
 
   const showConnectors = (): void => {
     const identity = ctx.store.collections.identitySessions.get("identity")
+    const provider = identityProviderFor(ctx.services)
+    const connected = hasGitHubIdentity(identity, provider)
     let highest = -1
     for (const message of ctx.store.collections.messages.values()) highest = Math.max(highest, message.ordinal)
     for (const card of ctx.store.collections.cards.values()) highest = Math.max(highest, card.ordinal)
@@ -84,9 +87,10 @@ export const createPresentationController = (
       createdAt: Date.now(),
       ordinal: highest + 1,
       payload: {
+        provider,
         github: {
-          connected: identity?.state === "signed-in",
-          login: identity?.login ?? null
+          connected,
+          login: connected ? identity?.login ?? null : null
         },
         nativeAvailable: false
       }

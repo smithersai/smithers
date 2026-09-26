@@ -1,3 +1,4 @@
+import { identityProviderFor, hasGitHubIdentity } from "../IdentityProvider"
 import { releaseInterruptedApproval } from "../ApprovalRecovery"
 import { lostActRefusal } from "../BrowserWriteFailure"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
@@ -249,6 +250,7 @@ export const createTurnController = (
     const snapshot = store.agentContextSnapshot()
     const current = store.session()
     const identity = store.collections.identitySessions.get("identity")
+    const githubConnected = hasGitHubIdentity(identity, identityProviderFor(ctx.services))
     const loadedRepoIds = [...store.collections.repositories.keys()]
     const billingAccount = store.collections.billingAccounts.get("billing")
     /*
@@ -330,21 +332,19 @@ export const createTurnController = (
       activeRepository: activeRepositoryId(store),
       activeRepositorySummary: store.collections.repositories.get(activeRepositoryId(store) ?? "")?.summary,
       /*
-       * Sign-in IS the GitHub connector (§2a′): connection truth derives
-       * from the validated session, never from the legacy local-connector
-       * store. The repository inventory is the loaded repositories (lane
-       * piper).
+       * Only the GitHub authentication door establishes this connection.
+       * A backend owner can load repositories without connecting GitHub.
        */
       github: {
-        connected: identity?.state === "signed-in",
-        login: identity?.state === "signed-in" ? identity.login : null,
-        repositories: identity?.state !== "signed-in" ? null : loadedRepoIds.length,
+        connected: githubConnected,
+        login: githubConnected ? identity?.login ?? null : null,
+        repositories: githubConnected ? loadedRepoIds.length : null,
         /*
          * §22.7: a COUNT left the model declining to answer "what repos do
          * I have?" while the names were served plainly by the seam it
          * was already reading.
          */
-        ...(identity?.state === "signed-in" && loadedRepoIds.length > 0
+        ...(githubConnected && loadedRepoIds.length > 0
           ? { repositoryNames: loadedRepoIds }
           : {})
       },
@@ -444,6 +444,7 @@ export const createTurnController = (
   const turnInstructions = (context?: AgentRuntimeContext, lastStage: InstructionStage = 3): string => {
     const identity = store.collections.identitySessions.get("identity")
     const signedIn = identity?.state === "signed-in"
+    const githubConnected = hasGitHubIdentity(identity, identityProviderFor(ctx.services))
     const recent = new Set(context?.recentCards?.map(card => card.id))
     const prompt = contextMessages().filter(message => "role" in message && message.role === "user").at(-1)
     const mentioned = (id: string) => prompt !== undefined && "content" in prompt && prompt.content.includes(id)
@@ -462,9 +463,9 @@ export const createTurnController = (
       host: ctx.services.bootstrap?.host === "cloud" ? "web" : "native",
       nativeDownloadable: downloadUrlOf(ctx.services) !== null,
       github: {
-        connected: signedIn,
-        login: signedIn ? identity.login : null,
-        repositories: !signedIn ? null : store.collections.repositories.size
+        connected: githubConnected,
+        login: githubConnected ? identity?.login ?? null : null,
+        repositories: githubConnected ? store.collections.repositories.size : null
       },
       localRepositories: [
         ...new Set([

@@ -1,3 +1,4 @@
+import { identityProviderFor } from "./IdentityProvider"
 import type { ClientErrorReporter } from "./ClientErrors"
 import type { FlowSubmission } from "../flows/Commands"
 import { createRepositoryReadiness } from "./controller/repositoryReadiness"
@@ -1407,7 +1408,7 @@ export const createAppController = (
         : flow ? `run ${flow}${repo ? ` on ${repo}` : ""}` : commands.find(asked.name)?.metadata.summary
     } else if (!summary && asked?.name) summary = commands.find(asked.name)?.metadata.summary
     const purpose = summary?.trim().replace(/[.!?]$/, "")
-    const label = localAuth === undefined ? "Sign in with GitHub" : "Sign in"
+    const label = identityProviderFor(services) === "github" ? "Sign in with GitHub" : "Sign in"
     store.dispatch({
       type: "message.appended",
       actor: "system",
@@ -1467,7 +1468,7 @@ export const createAppController = (
   const account = actors.pair(ctx, (context) =>
     createAccountController(context, {
       nextOrdinal: store.nextOrdinal, promptSignIn,
-      provider: localAuth !== undefined || (applicationIdentity !== undefined && services.bootstrap?.host !== "cloud") ? "local" : "github"
+      provider: identityProviderFor(services)
     }))
   const signup = actors.pair(ctx, (context) => createSignupController(context))
 

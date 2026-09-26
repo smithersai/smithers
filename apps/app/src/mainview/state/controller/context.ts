@@ -1,7 +1,7 @@
 import { createOperationalFailureReporter, type OperationalFailureReporter } from "../OperationalFailures"
 import { Effect } from "effect"
 import type { AgentChatMessage, FetchLike } from "@smthrs/rpc/NativeAgent"
-import { accountOwnerOf } from "../AccountOwner"
+import { accountOwnerOf, accountProviderChanged } from "../AccountOwner"
 import { gatewayBindingFor } from "../RepoContext"
 import { createGatewaySeam } from "./gateway"
 import type { CommandRegistry } from "../../flows/Commands"
@@ -159,6 +159,7 @@ export const createControllerContext = (
   const failures = createOperationalFailureReporter({ clientErrors: services.clientErrors })
   const accountOwner = (): string | null | undefined => accountOwnerOf(store.collections.identitySessions.get("identity"))
   let owner = accountOwner()
+  let provider = store.collections.identitySessions.get("identity")?.provider
   let accountEpoch = 0
   const advance = (next: string | null | undefined): void => {
     owner = next
@@ -271,7 +272,9 @@ export const createControllerContext = (
    */
   const ownerChanges = store.collections.identitySessions.subscribeChanges(() => {
     const next = accountOwner()
-    if (next !== owner) advance(next)
+    const nextProvider = store.collections.identitySessions.get("identity")?.provider
+    if (next !== owner || accountProviderChanged(provider, nextProvider)) advance(next)
+    provider = nextProvider
   })
   ctx.onDispose(() => { ownerChanges.unsubscribe() })
 

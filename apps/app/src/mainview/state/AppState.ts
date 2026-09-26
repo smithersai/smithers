@@ -1099,6 +1099,8 @@ export type ConnectorOperation = z.infer<typeof ConnectorOperationSchema>
  * carries the one available action) — never which page exists.
  */
 export const IdentitySessionSchema = z.object({
+  /** Present on provider-aware session observations; absent only in legacy journal history. */
+  provider: z.enum(["github", "local"]).optional(),
   id: z.literal("identity"),
   state: z.enum(["unknown", "signed-out", "signed-in", "unavailable"]),
   login: z.string().nullable(),
@@ -1535,6 +1537,7 @@ export type AppTransition =
   }
   | {
     type: "identity.session.loaded"
+    provider?: "github" | "local"
     actor: "system"
     state: "signed-out" | "signed-in" | "unavailable"
     login: string | null

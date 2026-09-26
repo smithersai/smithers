@@ -133,7 +133,7 @@ describe("signed-in session adoption", () => {
       {
         actor: "system",
         type: "identity.session.loaded",
-        payload: { ...signedIn, scopesPlain: null }
+        payload: { ...signedIn, scopesPlain: null, provider: "github" }
       },
       {
         actor: "system",
