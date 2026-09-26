@@ -515,6 +515,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		queries,
 		webhookSecretCodec,
 		services.WithAgentEnvironmentOwnershipGuard(repoOwnershipFence),
+		services.WithAgentEnvironmentSubscriptionTokens(cfg.FeatureFlags.SubscriptionConnections),
 	)
 	secretInjector := services.NewSecretInjector(queries, webhookSecretCodec)
 	workflowParser := services.NewWorkflowParser()
@@ -565,8 +566,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	adminOrgService := services.NewAdminOrgService(queries)
 	adminRepoService := services.NewAdminRepoService(queries)
 	webhookService := services.NewWebhookService(queries, webhookSecretCodec, services.WithWebhookOwnershipGuard(repoOwnershipFence))
-	secretService := services.NewSecretService(queries, webhookSecretCodec, services.WithSecretOwnershipGuard(repoOwnershipFence))
-	variableService := services.NewVariableService(queries)
+	secretService := services.NewSecretService(queries, webhookSecretCodec, services.WithSecretOwnershipGuard(repoOwnershipFence), services.WithSecretSubscriptionTokens(cfg.FeatureFlags.SubscriptionConnections))
+	variableService := services.NewVariableService(queries, services.WithVariableSubscriptionTokens(cfg.FeatureFlags.SubscriptionConnections))
 	wikiService := services.NewWikiService(queries, webhookDispatcher, services.WithWikiCollaboration(queries, repoHostClient))
 
 	workflowAPIService := services.NewWorkflowAPIService(queries, workflowRunService, services.WithWorkflowAPIBillingPolicy(billingPolicy))

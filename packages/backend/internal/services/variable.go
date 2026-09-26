@@ -41,10 +41,24 @@ type VariableQuerier interface {
 
 type VariableService struct {
 	queries VariableQuerier
+	// subscriptionTokens mirrors feature_flags.subscription_connections.
+	subscriptionTokens bool
 }
 
-func NewVariableService(q VariableQuerier) *VariableService {
-	return &VariableService{queries: q}
+type VariableServiceOption func(*VariableService)
+
+// WithVariableSubscriptionTokens lets a self-hosted deployment store a Claude
+// or ChatGPT subscription token in a variable. Off by default (hosted).
+func WithVariableSubscriptionTokens(allowed bool) VariableServiceOption {
+	return func(s *VariableService) { s.subscriptionTokens = allowed }
+}
+
+func NewVariableService(q VariableQuerier, opts ...VariableServiceOption) *VariableService {
+	s := &VariableService{queries: q}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // VariableResponse is the service-layer response for a variable.
@@ -90,6 +104,9 @@ func (s *VariableService) SetVariable(ctx context.Context, actor *db.User, owner
 	}
 	if len(value) > maxVariableValueBytes {
 		return VariableResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Variable", Field: "value", Code: "too_long"})
+	}
+	if err := refuseSubscriptionToken(s.subscriptionTokens, trimmedName, value); err != nil {
+		return VariableResponse{}, err
 	}
 
 	repository, err := s.resolveRepoByOwnerAndName(ctx, owner, repo)
@@ -208,6 +225,9 @@ func (s *VariableService) SetOrgVariable(ctx context.Context, actor *db.User, or
 	}
 	if len(value) > maxVariableValueBytes {
 		return VariableResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Variable", Field: "value", Code: "too_long"})
+	}
+	if err := refuseSubscriptionToken(s.subscriptionTokens, trimmedName, value); err != nil {
+		return VariableResponse{}, err
 	}
 	org, err := s.resolveOrgByName(ctx, orgName)
 	if err != nil {

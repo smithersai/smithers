@@ -176,6 +176,25 @@ func TestCommandsAuth_Cov_PushClaudeSecret(t *testing.T) {
 	}
 }
 
+// A deployment without subscription connections refuses to store a Claude
+// subscription token as a secret; the CLI says so instead of surfacing a raw
+// 403.
+func TestCommandsAuth_Cov_PushClaudeSecretRefusedWhenFeatureOff(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"message":"feature not available: this deployment does not store Claude or ChatGPT subscription tokens; use an API key"}`)
+	}))
+	defer server.Close()
+	commandsAuthCovSetConfig(t, server.URL)
+	t.Setenv("SMITHERS_TOKEN", "smithers_auth_cov_token")
+
+	_, err := pushClaudeAuthSecret("alice/demo", &resolvedClaudeToken{EnvKey: "ANTHROPIC_AUTH_TOKEN", Source: "test source", Token: "sk-ant-oat01-x"})
+	if err == nil || !strings.Contains(err.Error(), "subscription tokens are not stored on this deployment") {
+		t.Fatalf("pushClaudeAuthSecret error = %v", err)
+	}
+}
+
 func TestCommandsAuth_Cov_BrowserFetchHelpersAndHTML(t *testing.T) {
 	setTestBrowserFetch(t, true)
 	var posted map[string]string

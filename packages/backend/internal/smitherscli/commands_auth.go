@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -382,7 +383,7 @@ func claudeAuthCommand() *incur.Cli {
 		},
 	})
 	cmd.Command("push", &incur.CommandDef{
-		Description: "Push the active Claude Code credential into repository secrets",
+		Description: "Push the active Claude Code credential into repository secrets (subscription tokens only on self-hosted servers with subscription connections enabled)",
 		OptionsSchema: objectSchema(nil, map[string]*incur.JSONSchema{
 			"repo": stringSchema("Repository (OWNER/REPO)"),
 		}),
@@ -464,6 +465,12 @@ func pushClaudeAuthSecret(repoOverride string, resolved *resolvedClaudeToken) (m
 		"name":  resolved.EnvKey,
 		"value": resolved.Token,
 	}, nil); err != nil {
+		// Hosted Plue refuses subscription tokens as secrets unless a
+		// self-hosted server sets feature_flags.subscription_connections.
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusForbidden && strings.Contains(apiErr.Detail, "feature not available") {
+			return nil, fmt.Errorf("Claude subscription tokens are not stored on this deployment; push an ANTHROPIC_API_KEY instead, or on a self-hosted server set SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS=true")
+		}
 		return nil, err
 	}
 	return map[string]any{"repo": owner + "/" + repo, "secret_name": resolved.EnvKey, "source": resolved.Source}, nil

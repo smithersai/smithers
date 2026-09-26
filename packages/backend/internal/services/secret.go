@@ -46,9 +46,17 @@ type SecretService struct {
 	queries        SecretQuerier
 	secretCodec    webhook.SecretCodec
 	ownershipGuard RepoOwnershipGuard
+	// subscriptionTokens mirrors feature_flags.subscription_connections.
+	subscriptionTokens bool
 }
 
 type SecretServiceOption func(*SecretService)
+
+// WithSecretSubscriptionTokens lets a self-hosted deployment store Claude or
+// ChatGPT subscription tokens as secrets. Off by default (hosted).
+func WithSecretSubscriptionTokens(allowed bool) SecretServiceOption {
+	return func(s *SecretService) { s.subscriptionTokens = allowed }
+}
 
 // WithSecretOwnershipGuard fences repo-scoped secret writes against concurrent
 // repository transfers, so a request authorized against the old owner cannot
@@ -104,6 +112,9 @@ func (s *SecretService) SetSecret(ctx context.Context, actor *db.User, owner, re
 	}
 	if len(value) > maxSecretValueBytes {
 		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "value", Code: "too_long"})
+	}
+	if err := refuseSubscriptionToken(s.subscriptionTokens, trimmedName, value); err != nil {
+		return SecretResponse{}, err
 	}
 
 	repository, err := s.resolveRepoByOwnerAndName(ctx, owner, repo)
@@ -254,6 +265,9 @@ func (s *SecretService) SetOrgSecret(ctx context.Context, actor *db.User, orgNam
 	}
 	if len(value) > maxSecretValueBytes {
 		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "value", Code: "too_long"})
+	}
+	if err := refuseSubscriptionToken(s.subscriptionTokens, trimmedName, value); err != nil {
+		return SecretResponse{}, err
 	}
 
 	org, err := s.resolveOrgByName(ctx, orgName)

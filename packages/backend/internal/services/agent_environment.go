@@ -44,9 +44,18 @@ type AgentEnvironmentService struct {
 	queries        AgentEnvironmentQuerier
 	secretCodec    webhook.SecretCodec
 	ownershipGuard RepoOwnershipGuard
+	// subscriptionTokens mirrors feature_flags.subscription_connections.
+	subscriptionTokens bool
 }
 
 type AgentEnvironmentServiceOption func(*AgentEnvironmentService)
+
+// WithAgentEnvironmentSubscriptionTokens lets a self-hosted deployment store
+// a Claude or ChatGPT subscription token in a repository agent environment.
+// Off by default (hosted).
+func WithAgentEnvironmentSubscriptionTokens(allowed bool) AgentEnvironmentServiceOption {
+	return func(s *AgentEnvironmentService) { s.subscriptionTokens = allowed }
+}
 
 func WithAgentEnvironmentOwnershipGuard(guard RepoOwnershipGuard) AgentEnvironmentServiceOption {
 	return func(s *AgentEnvironmentService) { s.ownershipGuard = guard }
@@ -153,6 +162,11 @@ func (s *AgentEnvironmentService) PutAgentEnvironment(ctx context.Context, actor
 	if err != nil {
 		return AgentEnvironmentResponse{}, err
 	}
+	for _, variable := range normalizedEnv {
+		if err := refuseSubscriptionToken(s.subscriptionTokens, variable.Name, variable.Value); err != nil {
+			return AgentEnvironmentResponse{}, err
+		}
+	}
 	if len(input.Secrets) > maxAgentEnvironmentEntries {
 		return AgentEnvironmentResponse{}, pkgerrors.BadRequest("too many agent environment secrets")
 	}
@@ -178,6 +192,9 @@ func (s *AgentEnvironmentService) PutAgentEnvironment(ctx context.Context, actor
 	for _, secret := range input.Secrets {
 		name, err := validateAgentEnvironmentSecret(secret.Name, secret.Value)
 		if err != nil {
+			return AgentEnvironmentResponse{}, err
+		}
+		if err := refuseSubscriptionToken(s.subscriptionTokens, name, secret.Value); err != nil {
 			return AgentEnvironmentResponse{}, err
 		}
 		hosts, matchHeaders, err := validateAgentEnvironmentSecretBinding(secret.Hosts, secret.MatchHeaders)
@@ -242,6 +259,9 @@ func (s *AgentEnvironmentService) PutAgentEnvironmentSecret(ctx context.Context,
 	}
 	name, err := validateAgentEnvironmentSecret(input.Name, input.Value)
 	if err != nil {
+		return AgentEnvironmentSecretMetadata{}, err
+	}
+	if err := refuseSubscriptionToken(s.subscriptionTokens, name, input.Value); err != nil {
 		return AgentEnvironmentSecretMetadata{}, err
 	}
 	hosts, matchHeaders, err := validateAgentEnvironmentSecretBinding(input.Hosts, input.MatchHeaders)
