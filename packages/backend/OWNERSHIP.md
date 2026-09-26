@@ -17,8 +17,10 @@ another product composition root.
 - `packages/backend/admission`
 - `packages/backend/app`
 - `packages/backend/blobs`
+- `packages/backend/canonicalimport`
 - `packages/backend/cli`
 - `packages/backend/cmd/failurecodes`
+- `packages/backend/cmd/legacyimport`
 - `packages/backend/commerce`
 - `packages/backend/controlstore`
 - `packages/backend/credits`

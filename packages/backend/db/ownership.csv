@@ -249,3 +249,4 @@ credit_reservations,product,product migration 0027
 credit_reservation_grants,product,product migration 0027
 credit_events,product,product migration 0027
 credit_legacy_imports,product,product migration 0027
+canonical_import_receipts,product,product migration 0028
