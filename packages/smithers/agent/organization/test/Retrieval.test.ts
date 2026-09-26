@@ -124,7 +124,15 @@ const refusal = async (promise: Promise<unknown>): Promise<string> => {
 
 describe("web-fetch policy", () => {
   it("admits public addresses only", () => {
-    for (const address of ["93.184.216.34", "2606:4700::6810:84e5", "::ffff:93.184.216.34"]) {
+    for (
+      const address of [
+        "93.184.216.34",
+        "2606:4700::6810:84e5",
+        "::ffff:93.184.216.34",
+        "::ffff:5db8:d822",
+        "0:0:0:0:0:FFFF:5DB8:D822"
+      ]
+    ) {
       expect(WebFetch.isPublicAddress(address)).toBe(true)
     }
     for (
@@ -150,6 +158,38 @@ describe("web-fetch policy", () => {
     ) {
       expect(WebFetch.isPublicAddress(address), address).toBe(false)
     }
+  })
+
+  it("judges every IPv6 spelling of an IPv4 address, and refuses the translation ranges", () => {
+    const refused: ReadonlyArray<readonly [string, string]> = [
+      ["mapped loopback, hex", "::ffff:7f00:1"],
+      ["mapped loopback, upper case", "::FFFF:7F00:0001"],
+      ["mapped loopback, expanded", "0:0:0:0:0:ffff:7f00:1"],
+      ["mapped metadata, hex", "::ffff:a9fe:a9fe"],
+      ["mapped metadata, dotted", "::ffff:169.254.169.254"],
+      ["mapped private, hex", "::ffff:a00:1"],
+      ["mapped private, padded", "::ffff:0a00:0001"],
+      ["mapped unspecified", "::ffff:0:0"],
+      ["compatible loopback, dotted", "::127.0.0.1"],
+      ["compatible public, hex", "::5db8:d822"],
+      ["translated (SIIT)", "::ffff:0:5db8:d822"],
+      ["translated, dotted", "::ffff:0:10.0.0.1"],
+      ["NAT64 public", "64:ff9b::8.8.8.8"],
+      ["NAT64 local use", "64:ff9b:1::a00:1"],
+      ["6to4 of loopback", "2002:7f00:1::"],
+      ["6to4 of public", "2002:5db8:d822::1"],
+      ["Teredo", "2001:0:4136:e378:8000:63bf:3fff:fdd2"],
+      ["ORCHIDv2", "2001:20::1"],
+      ["benchmarking", "2001:2::1"],
+      ["discard only", "100::1"],
+      ["documentation", "3fff::1"],
+      ["segment routing", "5f00::1"],
+      ["unique local", "fc00::1"],
+      ["site local", "fec0::1"],
+      ["multicast", "ff02::1"],
+      ["link local with zone", "fe80::1%lo0"]
+    ]
+    for (const [name, address] of refused) expect(WebFetch.isPublicAddress(address), name).toBe(false)
   })
 
   it("resolves names with the host resolver", async () => {

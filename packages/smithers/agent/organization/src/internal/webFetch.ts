@@ -94,13 +94,24 @@ for (
 const blockedV6 = new Net.BlockList()
 for (
   const [network, prefix] of [
+    // Unspecified, loopback and IPv4-compatible.
     ["::", 96],
+    // IPv4-translated (SIIT).
+    ["::ffff:0:0:0", 96],
+    // NAT64, well-known and local-use.
     ["64:ff9b::", 96],
     ["64:ff9b:1::", 48],
+    // Discard-only.
     ["100::", 64],
+    // IETF protocol assignments: Teredo, ORCHID, benchmarking and the rest.
     ["2001::", 23],
+    // Documentation.
     ["2001:db8::", 32],
+    ["3fff::", 20],
+    // 6to4.
     ["2002::", 16],
+    // Segment routing.
+    ["5f00::", 16],
     ["fc00::", 7],
     ["fe80::", 10],
     ["fec0::", 10],
@@ -108,7 +119,17 @@ for (
   ] as const
 ) blockedV6.addSubnet(network, prefix, "ipv6")
 
-const mappedV4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i
+/** An IPv4-mapped address in the compressed form WHATWG URL serializes. */
+const mappedV4 = /^\[::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})\]$/
+
+/** The one serialization of an IPv6 address, or `undefined` when it has none (a zone id). */
+const canonicalV6 = (address: string): string | undefined => {
+  try {
+    return new URL(`http://[${address}]/`).hostname
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * Whether an address is publicly routable: not loopback, private, shared,
@@ -121,9 +142,16 @@ export const isPublicAddress = (address: string): boolean => {
   const family = Net.isIP(address)
   if (family === 4) return !blockedV4.check(address, "ipv4")
   if (family !== 6) return false
-  const mapped = mappedV4.exec(address)
-  if (mapped !== null) return isPublicAddress(mapped[1]!)
-  return !blockedV6.check(address, "ipv6")
+  // Every spelling of an address — dotted, hex, expanded, upper case — has
+  // one serialization, so a mapped IPv4 address is judged as that address.
+  const canonical = canonicalV6(address)
+  if (canonical === undefined) return false
+  const mapped = mappedV4.exec(canonical)
+  if (mapped !== null) {
+    const bits = (parseInt(mapped[1]!, 16) << 16 | parseInt(mapped[2]!, 16)) >>> 0
+    return isPublicAddress([24, 16, 8, 0].map((shift) => (bits >>> shift) & 255).join("."))
+  }
+  return !blockedV6.check(canonical.slice(1, -1), "ipv6")
 }
 
 /**
