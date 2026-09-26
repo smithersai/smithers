@@ -2352,26 +2352,6 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     minimal: { message: "too many turns from this address", retryAt: null },
     full: { message: "too many turns from this address", retryAt: "2026-09-05T10:00:00Z" }
   },
-  /* The tutorial's commit picker: every field is required, so both fixtures name all five. */
-  "commit-pick": {
-    minimal: { repo: "practice:smithersai/demo", branch: "tutorial", targetBookmark: "main", rows: [], picked: [] },
-    full: {
-      repo: "practice:smithersai/demo",
-      branch: "tutorial",
-      targetBookmark: "main",
-      rows: [{
-        index: 1,
-        commitId: "a1b2c3d4",
-        changeId: "kkmpptxz",
-        message: "Add the greeting",
-        additions: 4,
-        deletions: 0,
-        locked: true,
-        hint: "the run's first commit"
-      }],
-      picked: [1]
-    }
-  },
   "commit-list": {
     minimal: { repo: "smithersai/smithers", branch: null, commits: [] },
     full: {

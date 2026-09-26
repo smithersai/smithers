@@ -490,7 +490,6 @@ describe("launch-law parity: every affordance is a command", () => {
        */
       "../cards/CodingPlanCard.tsx": 6,
       "../cards/CodingPocCard.tsx": 2, // Native execution inspection and existing steering form.
-      "../cards/CommitPickCard.tsx": 1, // change.open (the checkboxes are change.pick inputs, counted as fields)
       /* The commits cards: a row's and a parent's commits.read, and the sha chip's chat.copy-message — all through onRunCommand. */
       "../cards/CommitCards.tsx": 3,
       "../cards/BranchesCard.tsx": 2, // a row opens that branch's commits (commits.list)

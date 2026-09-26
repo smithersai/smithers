@@ -39,7 +39,7 @@ import { branchesFlows } from "./entries/branches"
 import { commitsFlows } from "./entries/commits"
 import { browserFlows } from "./entries/browser"
 import { cardFlows } from "./entries/card"
-import { changeFlows, changeOpenFlows } from "./entries/change"
+import { changeFlows } from "./entries/change"
 import { chatCopyFlows, chatFlows, chatReloadFlows } from "./entries/chat"
 import { cloudFlows } from "./entries/cloud"
 import { connectSurfaceFlows } from "./entries/connector"
@@ -178,7 +178,6 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   /* The cloud agent sessions (UI-COVERAGE-GAPS.md "agents · Cloud agent sessions"), in the agent namespace. */
   ...agentSessionFlows(actions),
   ...tutorialChangeFlows(actions),
-  ...changeOpenFlows(actions),
   ...formFlows(actions),
   ...tabFlows(actions),
   ...repoFlows(actions),

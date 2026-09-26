@@ -67,8 +67,6 @@ export const FLOW_NAMES = [
   "change.diff",
   "change.facet",
   "change.land",
-  "change.open",
-  "change.pick",
   "change.pins",
   "change.request",
   "change.resolve",

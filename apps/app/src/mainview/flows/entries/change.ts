@@ -171,27 +171,3 @@ export const changeFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     handler: ({ changeId, seq }) => actions.checksOfChangeAt(changeId, seq)
   }),
 ]
-
-/*
- * Open a Change from picked commits. The picker card's button, the M pill and
- * the agent all call `change.open`; `change.pick` is the picker's checkbox. A
- * hosted repository needs the rebase in the box first, and says so.
- */
-export const changeOpenFlows = (actions: import("../../state/controller/tutorialChange").TutorialChangeController): ReadonlyArray<FlowEntry> => [
-  flow({
-    name: "change.open",
-    summary: "Open a Change with the picked commits, bottom to top",
-    args: "<repo> <commit…>",
-    confirm: "open a Change with these commits",
-    input: Schema.Struct({ repo: Schema.String, commits: Schema.Array(Schema.String) }),
-    handler: ({ repo, commits }) => actions.openChange(repo, commits)
-  }),
-  flow({
-    name: "change.pick",
-    hidden: true,
-    summary: "Check or uncheck one commit in the commit picker",
-    args: "<row>",
-    input: Schema.Struct({ row: Schema.Number }),
-    handler: ({ row }) => actions.pickCommit(row)
-  })
-]

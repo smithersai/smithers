@@ -22,7 +22,6 @@ import { billingCardFamily } from "./BillingCards"
 import { branchesCardFamily } from "./BranchesCard"
 import type { CardActions, CardFamily, CardFamilyEntry, CardProjectionAuthority } from "./CardFamily"
 import { changeCardFamily } from "./ChangeCards"
-import { commitPickCardFamily } from "./CommitPickCard"
 import { commitCardFamily } from "./CommitCards"
 import { conversationCardFamily } from "./ConversationCards"
 import { envCardFamily } from "./EnvCard"
@@ -110,7 +109,6 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   repositoryChoiceCardFamily,
   pluginLibraryCardFamily,
   wikiCardFamily,
-  commitPickCardFamily,
   commitCardFamily
 ]
 
@@ -131,7 +129,6 @@ export const CARD_RENDERERS: CardFamily<RenderedCardKind> = {
   ...issueCardFamily,
   ...landingCardFamily,
   ...changeCardFamily,
-  ...commitPickCardFamily,
   ...commitCardFamily,
   ...notificationsCardFamily,
   ...repositoryUpdateCardFamily,

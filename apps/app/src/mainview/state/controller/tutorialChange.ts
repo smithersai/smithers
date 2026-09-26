@@ -13,10 +13,6 @@ export interface TutorialChangeController {
   readonly suggestTutorialChange: (repo?: string, feature?: string) => Promise<string | { readonly value: string }>
   readonly startTutorialChange: (cardId: string) => Promise<string | { readonly value: string }>
   readonly finishTutorialChange: (cardId: string) => Promise<void>
-  /** `change.open <repo> <commit…>`: a Change (a stacked landing request) from the picked commits. */
-  readonly openChange: (repo: string, commits: ReadonlyArray<string>) => Promise<string | { readonly value: string }>
-  /** `change.pick <row>`: toggle one row of the commit picker; the locked fix stays in. */
-  readonly pickCommit: (row: number) => Promise<string | { readonly value: string }>
 }
 
 type RunCard = Extract<Card, { kind: "run-trace" }>
@@ -114,11 +110,5 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
     }
   }
 
-  const openChange: TutorialChangeController["openChange"] = async (repo, _commits) =>
-    `Opening a Change from picked commits on ${repo} needs the rebase step in the workspace, which is not wired yet. /prs.create opens one from a bookmark.`
-
-  const pickCommit: TutorialChangeController["pickCommit"] = async () =>
-    "No commit picker is open. Back reopens it after a Change is made."
-
-  return { suggestTutorialChange, startTutorialChange, finishTutorialChange, openChange, pickCommit }
+  return { suggestTutorialChange, startTutorialChange, finishTutorialChange }
 }

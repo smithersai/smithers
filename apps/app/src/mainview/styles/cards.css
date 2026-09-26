@@ -2400,79 +2400,13 @@
 	min-width: 0;
 }
 
-/*
- * The commit picker and the change stack wear the commit-list shell above;
- * only their extras are spelled out here. The picker's label carries the
- * row's padding so the whole row is the checkbox's hit area, and a picked
- * row carries the brand tint — the checked set is what ships.
- */
-/* Chained to .commit-row so the label — not the li — owns the padding. */
-.commit-row.commit-pick-row {
-	padding: 0;
-}
-.commit-pick-row > label {
-	display: flex;
-	flex: 1;
-	align-items: center;
-	gap: 0.75rem;
-	min-width: 0;
-	padding: 0.5rem 0.75rem;
-	cursor: pointer;
-}
-.commit-pick-row[data-picked="true"] {
-	background: var(--brand-soft);
-}
-.commit-pick-row[data-locked="true"] > label {
-	cursor: default;
-}
-.commit-pick-row input[type="checkbox"] {
-	flex: none;
-	margin: 0;
-	accent-color: var(--brand);
-}
-.commit-pick-row kbd {
-	flex: none;
-	display: inline-flex;
-	min-width: 20px;
-	min-height: 20px;
-	align-items: center;
-	justify-content: center;
-	border: 1px solid var(--border);
-	border-radius: 4px;
-	color: var(--text-muted);
-	font-family: var(--font-mono);
-	font-size: var(--fs-caption);
-	line-height: 1;
-}
-.commit-pick-id {
-	flex: none;
-	font-family: var(--font-mono);
-	font-size: var(--fs-small);
-	color: var(--text-muted);
-}
-.commit-pick-message {
-	flex: 1;
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	font-weight: 600;
-}
-.commit-pick-stat,
+/* The change stack wears the commit-list shell above; only its extras are spelled out here. */
 .change-stack-stat {
 	flex: none;
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
 	font-variant-numeric: tabular-nums;
 	color: var(--text-muted);
-}
-.commit-pick-hint {
-	flex: none;
-	font-size: var(--fs-caption);
-	color: var(--text-muted);
-}
-.commit-pick-open {
-	margin-top: 0.75rem;
 }
 
 .change-stack-header {

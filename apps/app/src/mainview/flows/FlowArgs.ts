@@ -23,7 +23,6 @@ export interface FlowInput {
   readonly "agent.session.view": { readonly sessionId: string; readonly repo: string }
   readonly "agent.session.stop": { readonly sessionId: string; readonly repo: string }
   readonly "commits.read": { readonly ref: string; readonly repo: string }
-  readonly "change.open": { readonly repo: string; readonly commits: ReadonlyArray<string> }
   readonly "runs.trace.view": { readonly runId: string; readonly view: "turns" | "timeline" | "graph" }
   readonly "runs.trace.filter": { readonly runId: string; readonly filter: string }
   readonly "runs.graph.follow": { readonly runId: string; readonly follow: boolean }
@@ -184,7 +183,6 @@ const graphLine = (payload: Payload, target: string, value: string): string => {
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
   "commits.read": payload => line(token(payload, "ref"), token(payload, "repo")),
-  "change.open": payload => line(token(payload, "repo"), ...(payload.commits as ReadonlyArray<string>)),
   "runs.trace.view": payload => line(token(payload, "runId"), token(payload, "view")),
   "runs.trace.filter": payload => line(token(payload, "runId"), token(payload, "filter")),
   "runs.graph.follow": payload => line(token(payload, "runId"), payload.follow ? "on" : "off"),

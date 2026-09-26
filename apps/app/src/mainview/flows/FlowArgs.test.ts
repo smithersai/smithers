@@ -285,7 +285,6 @@ test("wiki selection preserves paths with spaces and signup preserves typed whit
 
 test("structured commit, trace, wiki and landing actions match their grammars", () => {
   roundTrip("commits.read", { ref: "abc123", repo: "team/project" }, "abc123 team/project", { ref: "abc123", repo: "team/project" })
-  roundTrip("change.open", { repo: "team/project", commits: ["abc123", "def456"] }, "team/project abc123 def456", { repo: "team/project", commits: ["abc123", "def456"] })
   roundTrip("runs.trace.view", { runId: "run-1", view: "timeline" }, "run-1 timeline", { runId: "run-1", view: "timeline" })
   roundTrip("runs.graph.follow", { runId: "run-1", follow: false }, "run-1 off", { runId: "run-1", follow: "off" })
   roundTrip("runs.coding.select", { runId: "run-1", changeId: "change-1" }, "run-1 change-1", { runId: "run-1", changeId: "change-1" })

@@ -804,33 +804,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   /* The tutorial's ranked repository chooser and its shared-backend creation receipt. */
   z.object({
     ...cardBaseShape,
-    /*
-     * The onboarding tutorial's commit picker (apps/app SCRIPT v4 beat 8):
-     * the commits a run made, bottom to top, each with a checkbox. The
-     * checked set becomes `change.open`'s commits; a locked row stays in.
-     */
-    kind: z.literal("commit-pick"),
-    payload: z.object({
-      repo: z.string(),
-      branch: z.string(),
-      targetBookmark: z.string(),
-      rows: z.array(z.object({
-        /** 1-based from the bottom, like `jj log`. */
-        index: z.number().int().positive(),
-        commitId: z.string(),
-        changeId: z.string(),
-        message: z.string(),
-        additions: z.number().int().nonnegative(),
-        deletions: z.number().int().nonnegative(),
-        locked: z.boolean(),
-        hint: z.string().optional()
-      })),
-      /** The checked rows' indexes, ascending. */
-      picked: z.array(z.number().int().positive())
-    })
-  }),
-  z.object({
-    ...cardBaseShape,
     kind: z.literal("repository-choice"),
     payload: z.object({
       cutoff: z.string(),

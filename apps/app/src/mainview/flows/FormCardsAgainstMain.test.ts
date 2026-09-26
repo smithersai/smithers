@@ -407,7 +407,8 @@ describe("the card every slash line opens, against main@origin", () => {
       return at !== undefined && at[0] !== -1 && row.error === null
     })
     expect(lost.map((row) => `/${row.flow} ${row.args ?? ""}`)).toEqual([])
-    expect({ atMain, here }).toEqual({ atMain: 1437, here: 1442 })
+    /* `here` counts only flows that still exist: the three `change.pick` rows left with the flow (#1904). */
+    expect({ atMain, here }).toEqual({ atMain: 1437, here: 1439 })
     /*
      * Two doors throw when the one token they are given is a number: the
      * render dispatches a card whose payload the event schema rejects. It is
