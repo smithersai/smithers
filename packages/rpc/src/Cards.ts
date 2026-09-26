@@ -1297,6 +1297,15 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     kind: z.literal("trigger-list"),
     payload: z.object({
       repo: z.string(),
+      /** Preparation outbox: the plan receipt is durable before its approval message is published. */
+      preparations: z.array(z.object({
+        id: z.string(), owner: z.string(), workspaceId: GatewayWorkspaceIdSchema.optional(),
+        phase: z.enum(["requested", "planning", "ready", "prepared", "failed"]),
+        draft: z.object({ flow: z.string(), slug: z.string(), schedule: z.string(), input: z.string(),
+          tokens: z.number().optional(), minutes: z.number().optional() }),
+        receipt: z.object({ text: z.string(), args: z.string() }).optional(),
+        error: z.string().optional()
+      })).optional(),
       /** Durable HTTP pause requests; reconnect by observing before offering an explicit retry. */
       pauseRequests: z.array(z.object({
         id: z.string(), slug: z.string(), owner: z.string(),

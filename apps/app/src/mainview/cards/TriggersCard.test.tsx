@@ -300,3 +300,15 @@ test("a failed Pause remains visible and retries the same repository and schedul
   retry.click()
   expect(raised.map(([name, args]) => [name, JSON.parse(args!)])).toEqual([["triggers.pause", { slug: "missing", repo: REPO }]])
 })
+
+
+test("an unread failed preparation offers Retry with the full draft without claiming no rules exist", () => {
+  const raised: Array<[string, string | undefined]> = []
+  const draft = { flow: "lint", slug: "nightly", schedule: "0 9 * * *", input: '{"args":"keep --flow inside input"}', tokens: 1000, minutes: 5 }
+  const host = render(triggerCard({ preparations: [{ id: "prepare-1", owner: "will", phase: "failed", draft, error: "Try again" }] }),
+    (name, args) => { raised.push([name, args]) })
+  expect(host.querySelector('[data-testid="trigger-list-empty"]') === null).toBe(true)
+  const retry = host.querySelector<HTMLButtonElement>('[aria-label="Retry preparation for nightly"]')!
+  retry.click()
+  expect(raised.map(([name, args]) => [name, JSON.parse(args!)])).toEqual([["triggers.register", { repo: REPO, ...draft, tokens: "1000", minutes: "5" }]])
+})

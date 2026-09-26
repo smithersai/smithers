@@ -2,7 +2,7 @@ import type { StorageApi } from "@tanstack/db"
 import { describe, expect, setDefaultTimeout, test } from "bun:test"
 
 import type { AgentPort } from "../../runtime/AgentPort"
-import type { AppServices } from "../AppController"
+import type { AppController, AppServices } from "../AppController"
 import { scopedControllers } from "../ControllerTestScope"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
@@ -13,9 +13,11 @@ import { initialSetup } from "@smthrs/rpc/RepositorySetup"
 import { readFile } from "node:fs/promises"
 import { flowArgs } from "../../flows/FlowArgs"
 import { LIMIT_SHAPE, limitsRefusal, NO_RULES_SENTENCE, otherLimitSentence, overBoundFlowSentence, readTriggerFires, registerUnavailableSentence, unboundedFlowSentence } from "./TriggersSeam"
+import type { TriggerWrite } from "./TriggersSeam"
 import type { SeamContext } from "./SeamContext"
 
 const createAppController = scopedControllers()
+const controllerStores = new WeakMap<AppController, AppStore>()
 
 // The first controller in a file pays the module warm-up; under machine load that alone passes 5 s.
 setDefaultTimeout(30_000)
@@ -112,6 +114,7 @@ const ready = async (
 ) => {
   const store = options.store ?? await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableAgent, services)
+  controllerStores.set(controller, store)
   if (options.signedIn === true) await signedIn(store)
   else await signedOut(store)
   await reposChosen(store)
@@ -602,13 +605,198 @@ const readyToRegister = async (services: AppServices, store?: AppStore) => {
   return scope
 }
 
+/** Existing receipt assertions wait for background preparation; the held-network tests exercise acknowledgment directly. */
+const registrationResult = async (controller: AppController, request: TriggerWrite) => {
+  const answer = await controller.registerTrigger(request)
+  if (request.operation !== "register" || typeof answer !== "object") return answer
+  const store = controllerStores.get(controller)!
+  const latest = () => [...store.collections.cards.values()].flatMap(card => card.kind === "trigger-list" ? card.payload.preparations ?? [] : [])
+    .find(row => row.draft.slug === request.slug)
+  await waitFor(() => ["prepared", "failed"].includes(latest()?.phase ?? ""))
+  return latest()?.phase === "failed" ? latest()?.error : answer
+}
+
 describe("triggers seam: registering a repository flow on a schedule", () => {
+  test.each(["List", "Plan"])("preparation acknowledges while %s is unresolved and shares one toast", async heldProcedure => {
+    const held = Promise.withResolvers<void>()
+    const calls: Array<RelayCall> = []
+    const answers = workspaceAnswers()
+    const { store, controller } = await readyToRegister({ ...watched(backend({ [RPC]: relayRoute(calls, {
+      ...answers, [heldProcedure]: async payload => { await held.promise; return answers[heldProcedure]!(payload) }
+    }) })), toastDebounceMs: 300 })
+    try {
+      const command = controller.registerTrigger(REQUEST)
+      expect(await Promise.race([command, new Promise(resolve => setTimeout(() => resolve("blocked"), 100))])).toEqual({ value: "Preparation requested for nightly on will/flows." })
+      await controller.registerTrigger(REQUEST)
+      await waitFor(() => calls.some(call => call.procedure === heldProcedure))
+      await store.dispatch({ type: "composer.changed", actor: "user", draft: "Keep chatting" }).isPersisted.promise
+      await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.title === "Preparing nightly" && toast.status === "running"))
+      expect(calls.filter(call => call.procedure === heldProcedure)).toHaveLength(1)
+      expect(lastAction(store)?.flow).not.toBe("triggers.approve")
+      held.resolve()
+      await waitFor(() => lastAction(store)?.flow === "triggers.approve")
+      await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.title === "Prepared nightly" && toast.status === "ok"))
+      expect(calls.some(call => call.procedure === "Approval.Submit" || call.procedure === "Run")).toBe(false)
+    } finally { held.resolve(); await controller.dispose() }
+  })
+
+  test.each(["List", "Plan", "publish"])("reload recovers %s with the same reviewed request and one approval prompt", async stage => {
+    const storage = memoryStorage()
+    const held = Promise.withResolvers<void>()
+    const calls: Array<RelayCall> = []
+    const answers = workspaceAnswers()
+    let publishing = false
+    const original = await createAppStore({ kind: "localStorage", storage })
+    const store: AppStore = { ...original, dispatch: transition => {
+      if (stage === "publish" && transition.type === "message.appended" && transition.action?.flow === "triggers.approve") {
+        publishing = true
+        return { isPersisted: { promise: held.promise } } as unknown as ReturnType<AppStore["dispatch"]>
+      }
+      return original.dispatch(transition)
+    } }
+    const first = await readyToRegister(watched(backend({ [RPC]: relayRoute(calls, {
+      ...answers,
+      ...(stage === "publish" ? {} : { [stage]: async payload => { await held.promise; return answers[stage]!(payload) } })
+    }) })), store)
+    await first.controller.registerTrigger(REQUEST)
+    await waitFor(() => stage === "publish" ? publishing : calls.some(call => call.procedure === stage))
+    const request = triggerCard(store).payload.preparations![0]!
+    await first.controller.dispose()
+    await store.dispose?.()
+    const next = await ready(watched(backend({ [RPC]: relayRoute(calls, answers) })), {
+      signedIn: true, store: await createAppStore({ kind: "localStorage", storage })
+    })
+    try {
+      await waitFor(() => triggerCard(next.store).payload.preparations?.[0]?.phase === "prepared")
+      const prompts = [...next.store.collections.messages.values()].filter(message => message.action?.flow === "triggers.approve")
+      expect(prompts).toHaveLength(1)
+      expect(JSON.parse(prompts[0]!.action!.args!).requestId).toBe(request.id)
+      const plans = calls.filter(call => call.procedure === "Plan")
+      expect(plans).toHaveLength(stage === "Plan" ? 2 : 1)
+      expect(new Set(plans.map(call => call.payload.idempotencyKey)).size).toBe(1)
+      expect(new Set(calls.map(call => call.workspaceId))).toEqual(new Set([JOB_WORKSPACE]))
+      expect(calls.some(call => call.procedure === "Run")).toBe(false)
+    } finally { held.resolve(); await next.controller.dispose() }
+  })
+
+  test("a late plan cannot offer approval after sign-out", async () => {
+    const held = Promise.withResolvers<void>()
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await readyToRegister(watched(backend({ [RPC]: relayRoute(calls, workspaceAnswers({
+      Plan: async () => { await held.promise; return okFrame(PLAN) }
+    })) })))
+    await controller.registerTrigger(REQUEST)
+    await waitFor(() => calls.some(call => call.procedure === "Plan"))
+    await signedOut(store)
+    held.resolve()
+    await settled()
+    expect(lastAction(store)?.flow).not.toBe("triggers.approve")
+    expect([...store.collections.toasts.values()].some(toast => toast.title === "Prepared nightly")).toBe(false)
+    await controller.dispose()
+  })
+
+  test("a workspace change refuses the old preview and retry binds the new workspace", async () => {
+    const held = Promise.withResolvers<void>()
+    const calls: Array<RelayCall> = []
+    let delay = true
+    const answers = workspaceAnswers()
+    const { store, controller } = await readyToRegister(watched(backend({ [RPC]: relayRoute(calls, {
+      ...answers, List: async () => { if (delay) await held.promise; return answers.List!() }
+    }) })))
+    await controller.registerTrigger(REQUEST)
+    await waitFor(() => calls.length === 1)
+    await jobSetUp(store, "will/flows", "e5973059-58bc-41ca-aa78-a57c3fc4b032")
+    delay = false
+    held.resolve()
+    await waitFor(() => triggerCard(store).payload.preparations?.[0]?.phase === "failed")
+    expect(calls.some(call => call.procedure === "Plan")).toBe(false)
+    expect(await registrationResult(controller, REQUEST)).toBe(registerUnavailableSentence("will/flows"))
+    expect(calls.at(-1)?.workspaceId).toBe("e5973059-58bc-41ca-aa78-a57c3fc4b032")
+    expect(lastAction(store)?.flow).not.toBe("triggers.approve")
+    await controller.dispose()
+  })
+
+  test("replacing a prepared draft retires the previous approval button", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await readyToRegister(watched(backend({ [RPC]: relayRoute(calls, workspaceAnswers()) })))
+    await registrationResult(controller, REQUEST)
+    const old = JSON.parse(lastAction(store)!.args!)
+    await registrationResult(controller, { ...REQUEST, input: '{"label":"corrected"}' })
+    const count = calls.length
+    expect(await controller.registerTrigger({ ...old, operation: "approve" })).toBe("Prepare this schedule again; this preview was replaced.")
+    expect(calls).toHaveLength(count)
+    await controller.dispose()
+  })
+
+  test("correcting a pending draft retires its late plan", async () => {
+    const held = Promise.withResolvers<void>()
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await readyToRegister(watched(backend({ [RPC]: relayRoute(calls, workspaceAnswers({
+      Plan: async payload => { if ((payload.input as { label?: string }).label === "nightly") await held.promise; return okFrame(PLAN) }
+    })) })))
+    await controller.registerTrigger(REQUEST)
+    await waitFor(() => calls.some(call => call.procedure === "Plan"))
+    await registrationResult(controller, { ...REQUEST, input: '{"label":"corrected"}' })
+    held.resolve()
+    await settled()
+    const prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "triggers.approve")
+    expect(prompts).toHaveLength(1)
+    expect(JSON.parse(prompts[0]!.action!.args!).input).toBe('{"label":"corrected"}')
+    await controller.dispose()
+  })
+
+  test("Retry admitted while the failure is settling still prepares the request", async () => {
+    let plans = 0
+    const { store, controller } = await readyToRegister(watched(backend({ [RPC]: relayRoute([], workspaceAnswers({
+      Plan: () => ++plans === 1 ? refusedFrame("Try again") : okFrame(PLAN)
+    })) })))
+    let retried = false
+    const subscription = store.collections.cards.subscribeChanges(() => {
+      const card = store.collections.cards.get("trigger-list-will/flows")
+      if (!retried && card?.kind === "trigger-list" && card.payload.preparations?.[0]?.phase === "failed") {
+        retried = true
+        queueMicrotask(() => { void controller.registerTrigger(REQUEST) })
+      }
+    })
+    try {
+      await controller.registerTrigger(REQUEST)
+      await waitFor(() => triggerCard(store).payload.preparations?.[0]?.phase === "prepared")
+      expect(plans).toBe(2)
+      expect(lastAction(store)?.flow).toBe("triggers.approve")
+    } finally { subscription.unsubscribe(); await controller.dispose() }
+  })
+
+  test.each(["requested", "planning", "ready", "publish", "prepared"])("failed %s storage never claims a durable preview and can retry", async phase => {
+    const original = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    let rejected = false
+    const calls: Array<RelayCall> = []
+    const store: AppStore = { ...original, dispatch: transition => {
+      const target = phase === "publish" ? transition.type === "message.appended" && transition.action?.flow === "triggers.approve"
+        : transition.type === "card.upsert" && transition.card.kind === "trigger-list" && transition.card.payload.preparations?.some(request => request.phase === phase)
+      if (!rejected && target) {
+        rejected = true
+        return { isPersisted: { promise: Promise.reject(new Error("disk full")) } } as ReturnType<AppStore["dispatch"]>
+      }
+      return original.dispatch(transition)
+    } }
+    const { controller } = await readyToRegister(watched(backend({ [RPC]: relayRoute(calls, workspaceAnswers()) })), store)
+    const answer = await controller.registerTrigger(REQUEST)
+    if (phase === "requested") expect(answer).toBe("Could not save the preparation. Retry.")
+    else await waitFor(() => triggerCard(store).payload.preparations?.[0]?.phase === "failed")
+    if (["requested", "planning"].includes(phase)) expect(calls.some(call => call.procedure === "Plan")).toBe(false)
+    if (phase !== "prepared") expect(lastAction(store)?.flow).not.toBe("triggers.approve")
+    await registrationResult(controller, REQUEST)
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "triggers.approve")).toHaveLength(1)
+    if (["publish", "prepared"].includes(phase)) expect(calls.filter(call => call.procedure === "Plan")).toHaveLength(1)
+    await controller.dispose()
+  })
+
   test("a bad name or a schedule that is not five UTC cron fields is refused before anything is asked of the workspace", async () => {
     const seen: Array<string> = []
     const { controller } = await ready(backend({ [PROJECTION]: projectionDocument(DAY_ONE) }, seen), { signedIn: true })
-    expect(await controller.registerTrigger({ ...REQUEST, slug: "Nightly" })).toContain("schedule name")
-    expect(await controller.registerTrigger({ ...REQUEST, schedule: "0 9 * *" })).toBe("schedule must have five cron fields in UTC")
-    expect(await controller.registerTrigger({ ...REQUEST, input: "{not json" })).toContain("valid JSON")
+    expect(await registrationResult(controller, { ...REQUEST, slug: "Nightly" })).toContain("schedule name")
+    expect(await registrationResult(controller, { ...REQUEST, schedule: "0 9 * *" })).toBe("schedule must have five cron fields in UTC")
+    expect(await registrationResult(controller, { ...REQUEST, input: "{not json" })).toContain("valid JSON")
     expect(seen.filter((path) => path.startsWith(RPC))).toEqual([])
   })
 
@@ -617,12 +805,12 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const { controller } = await readyToRegister(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) })
     )
-    const refused = await controller.registerTrigger({ ...REQUEST, input: "{}" })
+    const refused = await registrationResult(controller, { ...REQUEST, input: "{}" })
     expect(typeof refused).toBe("string")
     expect(String(refused)).toContain("label")
     expect(calls.map((call) => call.procedure)).toEqual(["List"])
 
-    const unknown = await controller.registerTrigger({ ...REQUEST, flow: "weekly-sweep" })
+    const unknown = await registrationResult(controller, { ...REQUEST, flow: "weekly-sweep" })
     expect(String(unknown)).toContain("nightly-lint")
     expect(calls.map((call) => call.procedure)).toEqual(["List", "List"])
   })
@@ -644,9 +832,9 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         List: () => okFrame({ _tag: "flows", items: [{ flowId: "checks/fast", description: "Fast checks.", inputSchema: document }, FLOW_ITEMS[1]] })
       }) })
     )
-    const refused = await controller.registerTrigger({ ...REQUEST, flow: "checks/fast", input: "{}" })
+    const refused = await registrationResult(controller, { ...REQUEST, flow: "checks/fast", input: "{}" })
     expect(refused).toBe('Input for "checks/fast" needs args: {"args": "…"}.')
-    const wrongType = await controller.registerTrigger({ ...REQUEST, flow: "checks/fast", input: '{"args":7}' })
+    const wrongType = await registrationResult(controller, { ...REQUEST, flow: "checks/fast", input: '{"args":7}' })
     expect(wrongType).toBe('Input for "checks/fast" takes {"args": "…"}.')
     for (const sentence of [refused, wrongType]) {
       expect(String(sentence)).not.toContain("Missing key")
@@ -671,7 +859,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         List: () => okFrame({ _tag: "flows", items: [{ flowId: "checks/none", description: "No input.", inputSchema: document }, FLOW_ITEMS[1]] })
       }) })
     )
-    const refused = await controller.registerTrigger({ ...REQUEST, flow: "checks/none", input: '{"args":"lint"}' })
+    const refused = await registrationResult(controller, { ...REQUEST, flow: "checks/none", input: '{"args":"lint"}' })
     expect(refused).toBe('Input for "checks/none" takes "…".')
     expect(String(refused)).not.toContain("isn't what it takes")
   })
@@ -681,7 +869,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const { store, controller } = await readyToRegister(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) })
     )
-    const prepared = await controller.registerTrigger(REQUEST)
+    const prepared = await registrationResult(controller, REQUEST)
     expect(typeof prepared).toBe("object")
     expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
     const action = lastAction(store)
@@ -727,7 +915,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         }))
       })
     )
-    expect(typeof await controller.registerTrigger(REQUEST)).toBe("object")
+    expect(typeof await registrationResult(controller, REQUEST)).toBe("object")
     const preview = [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal)[0]?.text ?? ""
     expect(preview).toContain("`0 9 * * 1-5`")
     expect(preview).toContain("`*`")
@@ -753,12 +941,12 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const { store, controller } = await readyToRegister(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, unbounded) })
     )
-    expect(await controller.registerTrigger(REQUEST)).toBe(unboundedFlowSentence("nightly-lint"))
+    expect(await registrationResult(controller, REQUEST)).toBe(unboundedFlowSentence("nightly-lint"))
     expect(lastAction(store)).toBeUndefined()
     expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
 
     /* The same flow, with the limits the person gave: prepared, and the preview states them. */
-    expect(typeof await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "20" })).toBe("object")
+    expect(typeof await registrationResult(controller, { ...REQUEST, tokens: "150000", minutes: "20" })).toBe("object")
     const preview = [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal)[0]?.text ?? ""
     expect(preview).toContain("150000 tokens · 20 min")
     expect(JSON.parse(lastAction(store)?.args ?? "{}")).toMatchObject({ tokens: 150_000, minutes: 20 })
@@ -785,12 +973,12 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
       const { store, controller } = await readyToRegister(
         backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, declaring(budget)) })
       )
-      expect(await controller.registerTrigger(REQUEST)).toBe(overBoundFlowSentence("nightly-lint"))
+      expect(await registrationResult(controller, REQUEST)).toBe(overBoundFlowSentence("nightly-lint"))
       expect(lastAction(store)).toBeUndefined()
       expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
 
       /* The same flow, bounded by the limits the person gave: prepared, and the preview states theirs. */
-      expect(typeof await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "20" })).toBe("object")
+      expect(typeof await registrationResult(controller, { ...REQUEST, tokens: "150000", minutes: "20" })).toBe("object")
       const preview = [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal)[0]?.text ?? ""
       expect(preview).toContain("150000 tokens · 20 min")
     }
@@ -801,12 +989,12 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const { controller } = await readyToRegister(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) })
     )
-    expect(await controller.registerTrigger({ ...REQUEST, tokens: "lots", minutes: "20" })).toBe(LIMIT_SHAPE)
-    expect(await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "0" })).toBe(LIMIT_SHAPE)
+    expect(await registrationResult(controller, { ...REQUEST, tokens: "lots", minutes: "20" })).toBe(LIMIT_SHAPE)
+    expect(await registrationResult(controller, { ...REQUEST, tokens: "150000", minutes: "0" })).toBe(LIMIT_SHAPE)
     /* Smithers Cloud refuses a registration past two hours; a person's own number never earns an upstream refusal. */
-    expect(await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "500" })).toBe(LIMIT_SHAPE)
+    expect(await registrationResult(controller, { ...REQUEST, tokens: "150000", minutes: "500" })).toBe(LIMIT_SHAPE)
     /* R98 F2: past the registrar's token ceiling the host refused on the registration run, after a Plue approval row existed. */
-    expect(await controller.registerTrigger({ ...REQUEST, tokens: "500000", minutes: "20" })).toBe(LIMIT_SHAPE)
+    expect(await registrationResult(controller, { ...REQUEST, tokens: "500000", minutes: "20" })).toBe(LIMIT_SHAPE)
     expect(calls).toEqual([])
   })
 
@@ -841,12 +1029,12 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const walked = { ...REQUEST, flow: "checks/fast", input: "" }
 
     /* Half a pair, refused with zero network calls, naming the half that is missing and the range it takes. */
-    expect(await controller.registerTrigger({ ...walked, tokens: "150000" })).toBe("Name the other limit: --minutes 1..120.")
-    expect(await controller.registerTrigger({ ...walked, minutes: "20" })).toBe("Name the other limit: --tokens 1..200000.")
+    expect(await registrationResult(controller, { ...walked, tokens: "150000" })).toBe("Name the other limit: --minutes 1..120.")
+    expect(await registrationResult(controller, { ...walked, minutes: "20" })).toBe("Name the other limit: --tokens 1..200000.")
     expect(calls).toEqual([])
 
     /* Neither named, same flow: the only sentence that may speak of "none" is the one that knows the flow. */
-    expect(await controller.registerTrigger(walked)).toBe(unboundedFlowSentence("checks/fast"))
+    expect(await registrationResult(controller, walked)).toBe(unboundedFlowSentence("checks/fast"))
     expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
 
     /* No sentence on this card offers an option another rule refuses. */
@@ -908,7 +1096,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const { controller } = await readyToRegister(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) })
     )
-    expect(typeof await controller.registerTrigger(REQUEST)).toBe("object")
+    expect(typeof await registrationResult(controller, REQUEST)).toBe("object")
     expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
     expect(calls.map((call) => call.workspaceId)).toEqual([JOB_WORKSPACE, JOB_WORKSPACE])
   })
@@ -921,7 +1109,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
       { signedIn: true }
     )
     await jobSetUp(store, "will/other")
-    expect(await controller.registerTrigger(REQUEST)).toBe(registerUnavailableSentence("will/flows"))
+    expect(await registrationResult(controller, REQUEST)).toBe(registerUnavailableSentence("will/flows"))
     expect(calls.map((call) => call.workspaceId)).toEqual([undefined])
   })
 
@@ -930,9 +1118,9 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const { store, controller } = await readyToRegister(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) })
     )
-    await controller.registerTrigger({ ...REQUEST, input: '{"label":"nightlyy"}' })
+    await registrationResult(controller, { ...REQUEST, input: '{"label":"nightlyy"}' })
     const first = String((JSON.parse(lastAction(store)?.args ?? "{}") as Record<string, unknown>).requestId)
-    await controller.registerTrigger(REQUEST)
+    await registrationResult(controller, REQUEST)
     const second = String((JSON.parse(lastAction(store)?.args ?? "{}") as Record<string, unknown>).requestId)
     expect(second).not.toBe(first)
     expect(calls.filter((call) => call.procedure === "Plan").map((call) => call.payload.idempotencyKey))
@@ -952,7 +1140,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const { controller } = await readyToRegister(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: json(200, { status: "provisioning", message: resuming }) })
     )
-    expect(await controller.registerTrigger(REQUEST)).toBe(resuming)
+    expect(await registrationResult(controller, REQUEST)).toBe(resuming)
   })
 
   test("a workspace that cannot register schedules says so before it plans anything", async () => {
@@ -963,7 +1151,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         [RPC]: relayRoute(calls, workspaceAnswers({ List: () => okFrame({ _tag: "flows", items: [FLOW_ITEMS[0]] }) }))
       })
     )
-    expect(await controller.registerTrigger(REQUEST)).toBe(registerUnavailableSentence("will/flows"))
+    expect(await registrationResult(controller, REQUEST)).toBe(registerUnavailableSentence("will/flows"))
     expect(calls.map((call) => call.procedure)).toEqual(["List"])
     expect(lastAction(store)).toBeUndefined()
   })
@@ -973,7 +1161,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const { store, controller } = await readyToRegister(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) })
     )
-    await controller.registerTrigger(REQUEST)
+    await registrationResult(controller, REQUEST)
     const args = lastAction(store)?.args ?? "{}"
     const refused = await controller.commands.runForAgent("triggers.approve", args)
     expect(refused.status).toBe("failed")
@@ -994,7 +1182,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         }
       }))
     )
-    await controller.registerTrigger(REQUEST)
+    await registrationResult(controller, REQUEST)
     const args = lastAction(store)?.args ?? "{}"
     const requestId = String((JSON.parse(args) as Record<string, unknown>).requestId)
     const approved = await controller.commands.run("triggers.approve", args)
@@ -1050,7 +1238,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         [APPROVAL]: json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
       }))
     )
-    await hosted.controller.registerTrigger(REQUEST)
+    await registrationResult(hosted.controller, REQUEST)
     const hostArgs = lastAction(hosted.store)?.args ?? "{}"
     const hostId = preparedId(hosted.store)
     expect((await hosted.controller.commands.run("triggers.approve", hostArgs)).status).toBe("executed")
@@ -1065,7 +1253,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         [APPROVAL]: json(409, { status: "error", code: "trigger_approval_missing", message: cloudRefusal })
       }))
     )
-    await clouded.controller.registerTrigger(REQUEST)
+    await registrationResult(clouded.controller, REQUEST)
     const cloudArgs = lastAction(clouded.store)?.args ?? "{}"
     const cloudId = preparedId(clouded.store)
     expect((await clouded.controller.commands.run("triggers.approve", cloudArgs)).status).toBe("executed")
@@ -1150,7 +1338,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
         [RPC]: relayRoute(calls, workspaceAnswers())
       }))
     )
-    await controller.registerTrigger(REQUEST)
+    await registrationResult(controller, REQUEST)
     const args = JSON.parse(lastAction(store)?.args ?? "{}") as Record<string, unknown>
     const requestId = preparedId(store)
     await controller.commands.run("triggers.approve", JSON.stringify({ ...args, planDigest: "a".repeat(64) }))
@@ -1188,7 +1376,7 @@ describe("triggers seam: watching the registration run", () => {
     `${code}: ${sentence}\n    at repository/trigger (flows/repository/triggers.ts:20)`
 
   const approved = async (store: AppStore, controller: Awaited<ReturnType<typeof ready>>["controller"]) => {
-    await controller.registerTrigger(REQUEST)
+    await registrationResult(controller, REQUEST)
     const args = lastAction(store)?.args ?? "{}"
     const outcome = await controller.commands.run("triggers.approve", args)
     expect(outcome.status).toBe("executed")
@@ -1397,7 +1585,7 @@ describe("triggers seam: watching the registration run", () => {
     const { store, controller } = await readyToRegister(
       ROUTES(calls, run, {}, { Run: async () => { await held; return okFrame({ runId: REGISTRAR_RUN }) } })
     )
-    await controller.registerTrigger(REQUEST)
+    await registrationResult(controller, REQUEST)
     const args = lastAction(store)?.args ?? "{}"
     expect((await controller.commands.run("triggers.approve", args)).status).toBe("executed")
     await waitFor(() => calls.some((call) => call.procedure === "Run"))
@@ -1420,7 +1608,7 @@ describe("triggers seam: watching the registration run", () => {
       ROUTES(calls, run, {}, { Run: () => unanswered }),
       await createAppStore({ kind: "localStorage", storage })
     )
-    await first.controller.registerTrigger(REQUEST)
+    await registrationResult(first.controller, REQUEST)
     const args = lastAction(first.store)?.args ?? "{}"
     const requestId = String((JSON.parse(args) as Record<string, unknown>).requestId)
     expect((await first.controller.commands.run("triggers.approve", args)).status).toBe("executed")

@@ -24,11 +24,14 @@ export default showcase({
   order: 105,
   title: "Flows",
   summary: "Plan a flow and inspect its graph, run it, write a new one; schedules in the Dispatcher.",
-  flows: ["flows", "flow.plan", "flow.plan.select", "flow.run", "flow.create", "triggers.list", "triggers.run", "triggers.pause", "triggers.resume"],
+  flows: ["flows", "flow.plan", "flow.plan.select", "flow.run", "flow.create", "triggers.list", "triggers.register", "triggers.run", "triggers.pause", "triggers.resume"],
   run: async ({ page, app, backend }) => {
     let paused = false
     const pauseReceipt = Promise.withResolvers<void>()
     let pauseCalls = 0
+    let preparationMode = false
+    let preparationCalls = 0
+    const preparationReceipt = Promise.withResolvers<void>()
     let planned = FLOW
     let resuming = false
     let resumed = false
@@ -45,15 +48,21 @@ export default showcase({
       paused = true
       return route.fulfill({ json: { status: "ok", paused: 1 } })
     })
-    await backend.route(url => url.pathname === "/api/workflow/rpc", route => {
+    await backend.route(url => url.pathname === "/api/workflow/rpc", async route => {
       const call = route.request().postDataJSON() as { procedure: string; payload: { flowId?: string; input?: { operation?: string }; selector?: { _tag?: string; runId?: string } } }
       const ok = (payload: unknown) => route.fulfill({ json: { ok: true, payload } })
       switch (call.procedure) {
         case "List": return ok({ _tag: "flows", items: [
           { flowId: FLOW, description: "Review a pull request and comment on it" },
-          { flowId: "triage-issue", description: "Label and route a new issue" }
+          { flowId: "triage-issue", description: "Label and route a new issue" },
+          { flowId: "repository/trigger", description: "Register a reviewed schedule" }
         ] })
         case "Plan":
+          if (preparationMode) {
+            preparationCalls += 1
+            if (preparationCalls === 1) return route.fulfill({ json: { ok: false, error: { message: "The workspace is unavailable." } } })
+            await preparationReceipt.promise
+          }
           planned = call.payload.flowId ?? FLOW
           resuming = call.payload.input?.operation === "resume"
           if (planned === "repository/trigger") triggerOperations.push(call.payload.input?.operation)
@@ -191,5 +200,31 @@ export default showcase({
     await expect(resumeToast).toHaveCount(0)
     await expect(dispatcher.getByTestId("trigger-run-nightly-review")).toBeVisible()
     expect(triggerOperations).toEqual(["fire", "resume"])
+
+    preparationMode = true
+    const prepare = `/triggers.register ${REPO} --flow ${FLOW} --slug review-schedule --schedule 0 9 * * 1-5 --input {} --tokens 150000 --minutes 20`
+    await app.slash(prepare)
+    const retryPreparation = dispatcher.getByRole("button", { name: "Retry preparation for review-schedule" })
+    await expect(retryPreparation).toBeVisible()
+    await app.closeComposer()
+    await app.show(dispatcher)
+    await retryPreparation.focus()
+    await page.keyboard.press("Enter")
+    try {
+      await expect.poll(() => preparationCalls).toBe(2)
+      await app.slash(prepare)
+      await page.keyboard.press("ControlOrMeta+k")
+      await page.getByTestId("composer-input").fill("Chat while the plan is pending")
+      await expect(page.getByTestId("composer-input")).toHaveValue("Chat while the plan is pending")
+      await page.keyboard.press("Escape")
+      await expect(page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Preparing review-schedule" })).toHaveCount(1)
+      await expect(page.getByRole("button", { name: "Approve and register", exact: true })).toHaveCount(0)
+      expect(preparationCalls).toBe(2)
+    } finally { preparationReceipt.resolve() }
+    const approveSchedule = page.getByRole("button", { name: "Approve and register", exact: true })
+    await expect(approveSchedule).toHaveCount(1)
+    await approveSchedule.focus()
+    await expect(approveSchedule).toBeFocused()
+    await expect(page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Preparing review-schedule" })).toHaveCount(0)
   }
 })

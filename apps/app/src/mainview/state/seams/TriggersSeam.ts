@@ -186,6 +186,7 @@ export interface TriggerWrite {
 export interface TriggersSeam {
   /** Reconnect persisted Pause requests for the current account. */
   readonly resumePauses: () => void
+  readonly resumePreparations: () => void
   /** The dispatcher card (triggers.list): declared rows for every visitor, live rows when a box answered. */
   readonly listTriggers: (repo?: string) => Promise<string | void | { readonly value: string }>
   /** The trigger write door: register, approve, run, pause (triggers.register / .approve / .run / .pause). */
@@ -905,6 +906,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
         repo,
         declared: [...declared],
         ...(existing?.kind === "trigger-list" && existing.payload.pauseRequests ? { pauseRequests: existing.payload.pauseRequests } : {}),
+        ...(existing?.kind === "trigger-list" && existing.payload.preparations ? { preparations: existing.payload.preparations } : {}),
         live: live.live,
         triggers: [...live.triggers],
         webhooks: [...live.webhooks]
@@ -957,55 +959,132 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     return items.some((item) => item.flowId === REGISTRAR_FLOW) ? items : { error: registerUnavailableSentence(repo) }
   }
 
-  /**
-   * Prepare a registration: validate it here, ask the workspace to plan the
-   * target flow with exactly the input the human gave, show that plan, and
-   * offer the approve button. Nothing is approved and nothing is registered.
-   */
-  const prepareTrigger = async (request: TriggerWrite, repo: string): Promise<string | void | { readonly value: string }> => {
+  type Preparation = NonNullable<TriggerListCard["payload"]["preparations"]>[number]
+  const preparing = actorSharedState(ctx, "trigger-preparations", () => ({ running: new Set<string>(), queued: new Set<string>() }))
+  const preparation = (repo: string, id: string) => pauseCard(repo)?.payload.preparations?.find(row => row.id === id)
+  const savePreparation = (repo: string, request: Preparation, actor: "user" | "smithers" | "system" = "system") => {
+    const previous = pauseCard(repo)
+    const card: TriggerListCard = previous ?? {
+      id: `trigger-list-${repo}`, kind: "trigger-list", title: `Dispatcher · ${repo}`,
+      status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { repo, triggers: [] }
+    }
+    return ctx.dispatch({ type: "card.upsert", actor, card: { ...card, payload: { ...card.payload,
+      preparations: [...(card.payload.preparations ?? []).filter(row => row.owner !== request.owner || row.draft.slug !== request.draft.slug), request]
+    } } }).isPersisted.promise
+  }
+
+  const pumpPreparation = (repo: string, request: Preparation) => {
+    if (preparing.running.has(request.id)) { preparing.queued.add(request.id); return }
+    preparing.running.add(request.id)
+    const sameOwner = capturePauseOwner()
+    const sameCloud = captureCloudOwner(ctx, false)
+    const current = () => sameOwner() && owner() === request.owner && preparation(repo, request.id) !== undefined
+    const bound = () => sameCloud() && jobWorkspace(ctx, repo) === request.workspaceId
+    const workspaceChanged = "The workspace changed. Prepare this schedule again."
+    void runtime.withToast(`trigger-prepare:${request.id}`, `Preparing ${request.draft.slug}`, `Prepared ${request.draft.slug}`, async () => {
+      const fail = async (error: string) => {
+        if (!current()) return TOAST_SUPERSEDED
+        await savePreparation(repo, { ...(preparation(repo, request.id) ?? request), phase: "failed", error })
+        return current() ? error : TOAST_SUPERSEDED
+      }
+      try {
+        if (!current()) return TOAST_SUPERSEDED
+        if (!bound()) return await fail(workspaceChanged)
+        let receipt = request.receipt
+        if (!receipt) {
+          const listed = await relayTo(ctx, repo, "List", { _tag: "flows" }, request.workspaceId)
+          if (!current()) return TOAST_SUPERSEDED
+          if (!bound()) return await fail(workspaceChanged)
+          if (!listed.ok) return await fail(listed.message)
+          const items = (Array.isArray(listed.value.items) ? listed.value.items : []).filter(isRecord)
+          if (!items.some(item => item.flowId === REGISTRAR_FLOW)) return await fail(registerUnavailableSentence(repo))
+          const target = items.find(item => item.flowId === request.draft.flow)
+          if (!target) return await fail(`No flow "${request.draft.flow}" is registered on this workspace. The workspace has: ${items.map(item => String(item.flowId)).join(", ")}.`)
+          const input: unknown = JSON.parse(request.draft.input)
+          const refusal = schemaRefusal(target.inputSchema, input, request.draft.flow)
+          if (refusal) return await fail(refusal)
+          await savePreparation(repo, { ...request, phase: "planning", error: undefined })
+          if (!current()) return TOAST_SUPERSEDED
+          if (!bound()) return await fail(workspaceChanged)
+          const planned = await relayTo(ctx, repo, "Plan", {
+            flowId: request.draft.flow, input, idempotencyKey: `trigger:${request.id}:plan`
+          }, request.workspaceId)
+          if (!current()) return TOAST_SUPERSEDED
+          if (!bound()) return await fail(workspaceChanged)
+          if (!planned.ok) return await fail(planned.message)
+          const { planId, digest } = planned.value
+          if (typeof planId !== "string" || typeof digest !== "string") return await fail("The workspace planned the flow but didn't name the plan.")
+          const named = namedLimits({ operation: "register", ...request.draft })
+          if (named && "error" in named) return await fail(named.error)
+          const limits = limitsFor(named, isRecord(planned.value.envelope) ? planned.value.envelope : {}, request.draft.flow)
+          if ("error" in limits) return await fail(limits.error)
+          receipt = {
+            text: previewOf(planned.value, request.draft.schedule, limits),
+            args: prepared({ operation: "register", ...request.draft }, repo, request.id, planId, digest, named)
+          }
+          await savePreparation(repo, { ...request, phase: "ready", receipt, error: undefined })
+        }
+        if (!current()) return TOAST_SUPERSEDED
+        if (!bound()) return await fail(workspaceChanged)
+        // A crash between these commits republishes only if the durable message is absent.
+        const published = [...ctx.store.collections.messages.values()].some(message =>
+          message.action?.flow === "triggers.approve" && message.action.args === receipt.args)
+        if (!published) await ctx.dispatch({ type: "message.appended", actor: "system", text: receipt.text,
+          action: { flow: "triggers.approve", args: receipt.args, label: "Approve and register" }
+        }).isPersisted.promise
+        if (!current()) return TOAST_SUPERSEDED
+        await savePreparation(repo, { ...request, phase: "prepared", receipt, error: undefined })
+      } catch {
+        return await fail("Could not save the preparation. Retry.")
+      }
+    }, false, current, `trigger-list-${repo}`).finally(() => {
+      preparing.running.delete(request.id)
+      const queued = preparing.queued.delete(request.id)
+      const latest = preparation(repo, request.id)
+      // Retry may be admitted while the failing attempt is still settling its toast.
+      if (queued && !ctx.isDisposed?.() && latest?.owner === owner() && (latest?.phase === "requested" || latest?.phase === "ready")) pumpPreparation(repo, latest)
+    })
+  }
+
+  const resumePreparations = () => {
+    if (ctx.isDisposed?.() || !owner()) return
+    for (const card of ctx.store.collections.cards.values()) {
+      if (card.kind !== "trigger-list") continue
+      for (const request of card.payload.preparations ?? []) {
+        if (request.owner === owner() && !["prepared", "failed"].includes(request.phase)) pumpPreparation(card.payload.repo, request)
+      }
+    }
+  }
+
+  /** Persist first. Discovery and planning produce a reviewed approval prompt in the background. */
+  const prepareTrigger = async (request: TriggerWrite, repo: string): Promise<string | { readonly value: string }> => {
     const slug = request.slug ?? ""
     if (!SLUG.test(slug)) return "A schedule name is lower-case letters, digits and dashes, up to 64 characters."
     const schedule = (request.schedule ?? "").trim()
-    if (schedule.split(/\s+/).filter((field) => field !== "").length !== 5) return CRON_REFUSAL
-    const text = (request.input ?? "").trim()
-    let input: unknown = {}
-    if (text !== "") {
-      try {
-        input = JSON.parse(text)
-      } catch {
-        return "Input is not valid JSON."
-      }
-    }
+    if (schedule.split(/\s+/).filter(field => field !== "").length !== 5) return CRON_REFUSAL
+    const input = (request.input ?? "").trim() || "{}"
+    try { JSON.parse(input) } catch { return "Input is not valid JSON." }
     const named = namedLimits(request)
-    if (named !== undefined && "error" in named) return named.error
-    const items = await registrarFlows(repo)
-    if ("error" in items) return items.error
-    const target = items.find((item) => item.flowId === request.flow)
-    if (target === undefined) {
-      const names = items.map((item) => String(item.flowId)).join(", ")
-      return `No flow "${request.flow}" is registered on this workspace. The workspace has: ${names}.`
+    if (named && "error" in named) return named.error
+    const login = owner()
+    if (!login) return "Sign in to prepare a schedule."
+    const draft: Preparation["draft"] = { flow: request.flow ?? "", slug, schedule, input,
+      ...(named ? { tokens: named.tokens, minutes: named.milliseconds / 60_000 } : {}) }
+    const workspaceId = jobWorkspace(ctx, repo)
+    const existing = pauseCard(repo)?.payload.preparations?.find(row => row.owner === login && row.workspaceId === workspaceId
+      && JSON.stringify(row.draft) === JSON.stringify(draft) && row.phase !== "prepared")
+    const ack = { value: `Preparation requested for ${slug} on ${repo}.` }
+    if (existing && existing.phase !== "failed") {
+      try { await ctx.store.settled?.() } catch { return "Could not save the preparation. Retry." }
+      pumpPreparation(repo, existing)
+      return ack
     }
-    const refusal = schemaRefusal(target.inputSchema, input, String(request.flow))
-    if (refusal !== undefined) return refusal
-    const requestId = crypto.randomUUID()
-    const planned = await relay(ctx, repo, "Plan", {
-      flowId: request.flow,
-      input,
-      idempotencyKey: `trigger:${requestId}:plan`
-    })
-    if (!planned.ok) return planned.message
-    const planId = typeof planned.value.planId === "string" ? planned.value.planId : undefined
-    const planDigest = typeof planned.value.digest === "string" ? planned.value.digest : undefined
-    if (planId === undefined || planDigest === undefined) return "The workspace planned the flow but didn't name the plan."
-    const limits = limitsFor(named, isRecord(planned.value.envelope) ? planned.value.envelope : {}, String(request.flow))
-    if ("error" in limits) return limits.error
-    ctx.dispatch({
-      type: "message.appended",
-      actor: "system",
-      text: previewOf(planned.value, schedule, limits),
-      action: { flow: "triggers.approve", args: prepared(request, repo, requestId, planId, planDigest, named), label: "Approve and register" }
-    })
-    return { value: `Prepared ${slug}. It registers when the user approves the plan.` }
+    const entry: Preparation = existing ? { ...existing, phase: existing.receipt ? "ready" : "requested", error: undefined }
+      : { id: crypto.randomUUID(), owner: login, ...(workspaceId ? { workspaceId } : {}), draft, phase: "requested" }
+    const current = capturePauseOwner()
+    try { await savePreparation(repo, entry, ctx.actor()) } catch { return "Could not save the preparation. Retry." }
+    if (current()) pumpPreparation(repo, entry)
+    return ack
   }
 
   /**
@@ -1211,6 +1290,10 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     if (!SLUG.test(slug) || requestId === undefined || request.flow === undefined || planId === undefined || planDigest === undefined) {
       return "This approval does not name a prepared registration."
     }
+    const saved = preparation(repo, requestId)
+    const replaced = !saved && pauseCard(repo)?.payload.preparations?.some(row => row.draft.slug === slug)
+    if (replaced) return "Prepare this schedule again; this preview was replaced."
+    if (saved && (saved.owner !== owner() || saved.workspaceId !== jobWorkspace(ctx, repo))) return "Prepare this schedule again for the current workspace."
     const text = (request.input ?? "").trim()
     let input: unknown = {}
     if (text !== "") {
@@ -1297,5 +1380,5 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     return prepareTrigger(request, target.repo)
   }
 
-  return { listTriggers, registerTrigger, resumePauses }
+  return { listTriggers, registerTrigger, resumePauses, resumePreparations }
 }

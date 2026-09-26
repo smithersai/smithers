@@ -5,7 +5,7 @@
  */
 import { Schema } from "effect"
 import { limitsRefusal } from "../../state/seams/TriggersSeam"
-import { flag, line, text } from "../FlowForms"
+import { line, text } from "../FlowForms"
 import { flow, RepoTarget } from "./Declare"
 import type { FlowEntry } from "../registry"
 import type { CommandActions } from "./Declare"
@@ -102,16 +102,10 @@ export const triggersFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
       submitLabel: "Prepare",
       /* The limits the line named meet the registrar's rule here, in the registrar's own words. */
       refuse: limitsRefusal,
-      args: (payload) =>
-        line(
-          text(payload, "repo"),
-          flag(payload, "flow"),
-          flag(payload, "slug"),
-          flag(payload, "schedule"),
-          flag(payload, "input"),
-          flag(payload, "tokens"),
-          flag(payload, "minutes")
-        ),
+      args: payload => JSON.stringify(Object.fromEntries(Object.keys(payload).flatMap(key => {
+        const value = text(payload, key)
+        return value === undefined ? [] : [[key, value]]
+      }))),
       fields: {
         repo: { label: "Repository", optionsFrom: "cloud-repos", kind: "text" },
         flow: { label: "Flow", placeholder: "nightly-lint" },

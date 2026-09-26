@@ -58,11 +58,13 @@ export const TriggerListCardBody = ({
   const webhooks = live ? card.payload.webhooks ?? [] : []
   const liveRows = live ? triggers : []
   const empty = declared.length === 0 && liveRows.length === 0 && webhooks.length === 0
+  const unreadRequest = card.payload.declared === undefined &&
+    ((card.payload.preparations?.length ?? 0) > 0 || (card.payload.pauseRequests?.length ?? 0) > 0)
   return (
     <div className="world-card-list">
       {live ? <span className="world-card-path" data-testid="trigger-live">listening</span> : null}
       {empty ?
-        <p className="smithers-card-note" data-testid="trigger-list-empty">{NO_RULES_SENTENCE}</p> :
+        unreadRequest ? null : <p className="smithers-card-note" data-testid="trigger-list-empty">{NO_RULES_SENTENCE}</p> :
         (
           <ul className="workflow-list" data-testid="trigger-list">
             {declared.length === 0 ? null : (
@@ -125,6 +127,15 @@ export const TriggerListCardBody = ({
             ))}
           </ul>
         )}
+      {(card.payload.preparations ?? []).filter(request => request.phase === "failed").map(request => (
+        <div key={request.id} className="workflow-list-row">
+          <span role="status">{request.error}</span>
+          <Button variant="ghost" size="sm" aria-label={`Retry preparation for ${request.draft.slug}`}
+            {...flowAction(onRunCommand, "triggers.register", flowArgs("triggers.register", { repo, ...request.draft }))}>
+            Retry
+          </Button>
+        </div>
+      ))}
       {(card.payload.pauseRequests ?? []).filter(request => request.phase === "failed").map(request => (
         <div key={request.id} className="workflow-list-row">
           <span role="status">{request.error}</span>

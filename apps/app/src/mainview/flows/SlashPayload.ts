@@ -193,6 +193,15 @@ const flowRunBody = (args: string | undefined): { name?: string; repo?: string; 
  */
 const TRIGGER_FIELDS: ReadonlyArray<string> = ["flow", "slug", "schedule", "input", "tokens", "minutes"]
 const triggerRegistration = (args: string | undefined): Parsed => {
+  // Buttons carry a structured draft so flag-like strings inside JSON input stay input.
+  if (trimmed(args).startsWith("{")) {
+    try {
+      const value: unknown = JSON.parse(args!)
+      if (value !== null && typeof value === "object" && !Array.isArray(value)
+        && Object.entries(value).every(([key, field]) => (key === "repo" || TRIGGER_FIELDS.includes(key)) && typeof field === "string")) return ok(value as Record<string, unknown>)
+    } catch { /* The malformed carried draft gets the same honest refusal. */ }
+    return no("Registration input must name text fields")
+  }
   const reason = `triggers.register takes an owner/repo and ${TRIGGER_FIELDS.map((field) => `--${field}`).join(", ")}`
   const head = /^(\S+)(?:\s+([\s\S]*))?$/.exec(trimmed(args))
   const payload: Record<string, unknown> = {}
@@ -203,7 +212,26 @@ const triggerRegistration = (args: string | undefined): Parsed => {
     rest = (head[2] ?? "").trim()
   }
   if (rest === "") return ok(payload)
-  for (const part of rest.split(/\s+(?=--)/)) {
+  // JSON input may contain whitespace followed by a flag name. Only top-level boundaries split flags.
+  const parts: string[] = []
+  let start = 0, depth = 0, quoted = false, escaped = false
+  for (let index = 0; index < rest.length; index += 1) {
+    const char = rest[index]!
+    if (quoted) {
+      if (escaped) escaped = false
+      else if (char === "\\") escaped = true
+      else if (char === '"') quoted = false
+      continue
+    }
+    if (char === '"') quoted = true
+    else if (char === "{" || char === "[") depth += 1
+    else if (char === "}" || char === "]") depth = Math.max(0, depth - 1)
+    else if (depth === 0 && /\s/.test(char) && rest.startsWith("--", index + 1)) {
+      parts.push(rest.slice(start, index)); start = index + 1
+    }
+  }
+  parts.push(rest.slice(start))
+  for (const part of parts) {
     const flag = /^--([a-z]+)(?:\s+([\s\S]*))?$/.exec(part.trim())
     if (flag === null || !TRIGGER_FIELDS.includes(flag[1]!)) return no(reason)
     payload[flag[1]!] = (flag[2] ?? "").trim()

@@ -2045,6 +2045,7 @@ export const createAppController = (
   }
 
   triggersSeam.resumePauses()
+  triggersSeam.resumePreparations()
   repoImportSeam.resume()
   secretsSeam.resumeCodingProviders()
   stackSeam.resumeStacks()
@@ -2056,7 +2057,7 @@ export const createAppController = (
    * before that answer would only be superseded by it.
    */
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
-    queueMicrotask(() => { if (!ctx.disposed) triggersSeam.resumePauses() })
+    queueMicrotask(() => { if (!ctx.disposed) { triggersSeam.resumePauses(); triggersSeam.resumePreparations() } })
     queueMicrotask(() => { if (!ctx.disposed) secretsSeam.resumeCodingProviders() })
     workflowController.resumeWorkflowRequests()
     // Catalog recovery writes a card; leave the identity projection before dispatching it.

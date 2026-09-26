@@ -295,3 +295,16 @@ test("structured commit, trace, wiki and landing actions match their grammars", 
   roundTrip("prs.land", { number: 42, repo: "team/project" }, "42 team/project", { number: 42, repo: "team/project" })
   roundTrip("prs.review", { number: 42, verdict: "request-changes", repo: "team/project" }, "42 request-changes team/project", { number: 42, verdict: "request_changes", text: "", repo: "team/project" })
 })
+
+
+test("preparation retry carries the original schedule, JSON input and both limits", () => {
+  const draft = { repo: "will/flows", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5", input: JSON.stringify({ label: 'a "quoted" label', args: "line one --flow keep-this-as-input\nline two" }), tokens: 150000, minutes: 20 }
+  const args = flowArgs("triggers.register", draft)
+  const expected = { payload: { ...draft, tokens: "150000", minutes: "20" } }
+  expect(payloadFor("triggers.register", args)).toEqual(expected)
+  const entry = triggersFlows({} as unknown as CommandActions).find(flow => nameOf(flow) === "triggers.register")!
+  const formArgs = entry.metadata.form!.args!(draft)
+  expect(payloadFor("triggers.register", formArgs)).toEqual(expected)
+  const slash = `${draft.repo} --flow ${draft.flow} --slug ${draft.slug} --schedule ${draft.schedule} --input ${draft.input} --tokens ${draft.tokens} --minutes ${draft.minutes}`
+  expect(payloadFor("triggers.register", slash)).toEqual(expected)
+})
