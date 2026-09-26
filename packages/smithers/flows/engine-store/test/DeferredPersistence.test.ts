@@ -339,6 +339,32 @@ describe("DeferredPersistence", () => {
       expect(result.events.filter((event) => event === "emit:flows.engine.deferred-completed")).toHaveLength(1)
     }))
 
+  it.effect("does not fire a clock again when a replayed sleep re-schedules it", () =>
+    Effect.gen(function*() {
+      const result = yield* withCrypto(
+        Effect.scoped(Effect.gen(function*() {
+          const state = DurableEngineState.makeMemory()
+          const resumes: Array<string> = []
+          const service = yield* build(state, makeJournal([]), resumes)
+          const clock = DurableClock.make({ name: "replayed", duration: "1 second" })
+          yield* service.scheduleClock(TestFlow, { executionId: "replay-run", clock })
+          yield* TestClock.adjust("1 second")
+          yield* Effect.yieldNow
+          const fired = [...resumes]
+          // The woken run replays its sleep, which schedules the same clock
+          // and gets the fired row back. Re-firing it would wake the run
+          // again, and that replay would schedule it again, forever.
+          yield* service.scheduleClock(TestFlow, { executionId: "replay-run", clock })
+          yield* TestClock.adjust("1 second")
+          yield* Effect.yieldNow
+          return { fired, resumes }
+        })).pipe(Effect.provide(TestClock.layer()))
+      )
+
+      expect(result.fired).toEqual(["replay-run:clock"])
+      expect(result.resumes).toEqual(["replay-run:clock"])
+    }))
+
   it.effect("redispatches a clock fire with backoff after a transient journal failure instead of losing the timer", () =>
     Effect.gen(function*() {
       const result = yield* withCrypto(

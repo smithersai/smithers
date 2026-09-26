@@ -268,7 +268,11 @@ export const make = (
       })
 
     const armClock = (row: DurableEngineState.ClockRow): Effect.Effect<void> =>
-      Clock.currentTimeMillis.pipe(Effect.map(Math.floor)).pipe(
+      // A replayed sleep re-schedules its clock and gets the existing row
+      // back. A fired clock is not armed again: firing it would re-admit its
+      // completed deferred and wake the run, whose replay would re-schedule
+      // the clock again, re-driving the parked run forever.
+      row.completedAtMs !== null ? Effect.void : Clock.currentTimeMillis.pipe(Effect.map(Math.floor)).pipe(
         Effect.flatMap((nowMs) =>
           fireClock(row).pipe(
             // A failed fire (journal emit/flush defect included) must not kill
