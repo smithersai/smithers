@@ -259,7 +259,9 @@ describe("resumeSignal", () => {
     })
     let executions = 0
     let signals = 0
+    let resumes = 0
     const scripted = scriptedEngine({
+      resume: () => Effect.sync(() => void resumes++),
       execute: (() =>
         Effect.sync(() => {
           executions++
@@ -275,6 +277,9 @@ describe("resumeSignal", () => {
       expect(yield* flow.execute({ id: "x" }, { executionId: "run-signal" })).toBe("woken")
       expect(executions).toBe(2)
       expect(signals).toBe(1)
+      // The wake's publisher already scheduled the re-drive. Resuming again
+      // would publish a wake of its own to every other caller following the run.
+      expect(resumes).toBe(0)
     }).pipe(Effect.provide(Layer.succeed(FlowRuntime.FlowRuntime)(scripted)))
   })
 
@@ -286,7 +291,9 @@ describe("resumeSignal", () => {
       body: () => Node.succeed("ready")
     })
     let executions = 0
+    let resumes = 0
     const scripted = scriptedEngine({
+      resume: () => Effect.sync(() => void resumes++),
       execute: (() =>
         Effect.sync(() => {
           executions++
@@ -300,6 +307,7 @@ describe("resumeSignal", () => {
     return Effect.gen(function*() {
       expect(yield* flow.execute({ id: "x" }, { executionId: "run-nosignal" })).toBe("slept")
       expect(executions).toBe(2)
+      expect(resumes).toBe(1)
     }).pipe(Effect.provide(Layer.succeed(FlowRuntime.FlowRuntime)(scripted)))
   })
 })

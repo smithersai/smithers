@@ -277,11 +277,15 @@ export const makeExecute = (options: Encoded, declarations: Declarations) =>
             })
           )
         }
-        const sleep = Effect.sleep(delay.value)
-        yield* (options.resumeSignal === undefined
+        const sleep = Effect.as(Effect.sleep(delay.value), false)
+        const woken = yield* (options.resumeSignal === undefined
           ? sleep
-          : Effect.raceFirst(sleep, options.resumeSignal(lineage.flow, lineage.executionId)))
-        yield* options.resume(lineage.flow, lineage.executionId)
+          : Effect.raceFirst(sleep, Effect.as(options.resumeSignal(lineage.flow, lineage.executionId), true)))
+        // Only an elapsed poll resumes. A wake is published by the write that
+        // already scheduled the re-drive, and resuming is itself a wake: two
+        // callers following one parked run would wake each other forever,
+        // re-driving it back to back with no delay.
+        if (!woken) yield* options.resume(lineage.flow, lineage.executionId)
         current = runRound(lineage, Option.getOrUndefined(parentInstance))
       }
     })

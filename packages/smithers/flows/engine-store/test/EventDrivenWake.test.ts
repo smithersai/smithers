@@ -159,6 +159,66 @@ describe("event-driven wake", () => {
       expect(waiters).toBe(0)
     }))
 
+  it.effect("two callers following one parked run do not wake each other into a re-drive loop", () =>
+    Effect.gen(function*() {
+      const FollowedFlow = Flow.make("Wake/followed", {
+        payload: {},
+        success: Schema.String,
+        body: opaqueHandlerBody
+      })
+      // The engine port takes the policy per call; the declaration's is
+      // applied only by `Flow.execute`.
+      const suspendedRetryPolicy = RetryPolicy.make({ initialMs: 5_000, factor: 1, maxMs: 5_000 })
+      const gate = DurableDeferred.make("followed-gate", { success: Schema.String })
+      let drives = 0
+      const handler = () =>
+        Effect.suspend(() => {
+          drives++
+          return Effect.map(DurableDeferred.await(gate), (value) => `followed:${value}`)
+        })
+
+      const result = yield* withEngine(WakeBus.layer, (makeEngine) =>
+        Effect.gen(function*() {
+          const bus = yield* WakeBus.WakeBus
+          const engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
+          yield* engine.register(FollowedFlow as never, handler as never)
+          const follow = engine.execute(FollowedFlow as never, {
+            executionId: "wake-followed",
+            payload: {},
+            discard: false,
+            suspendedRetryPolicy
+          }).pipe(Effect.forkChild({ startImmediately: true }))
+          const first = yield* follow
+          yield* untilWaiters(bus, "wake-followed", 1)
+          // Out of phase, so one caller's poll lands while the other sleeps.
+          yield* TestClock.adjust("2 seconds")
+          const second = yield* follow
+          yield* untilWaiters(bus, "wake-followed", 2)
+
+          // One poll tick, then time stands still. The run must settle back
+          // into its park: a caller that resumed on a wake would announce
+          // another wake, and the two callers would re-drive the run back to
+          // back for as long as the scheduler kept turning.
+          yield* TestClock.adjust("3 seconds")
+          const turns = (count: number) => Effect.repeat(Effect.yieldNow, { times: count })
+          yield* turns(1_000)
+          const settled = drives
+          yield* turns(5_000)
+          const later = drives
+
+          yield* engine.deferredDone(gate as never, {
+            flowName: FollowedFlow._tag,
+            executionId: "wake-followed",
+            deferredName: gate.name,
+            exit: Exit.succeed("open")
+          })
+          return { settled, later, values: [yield* Fiber.join(first), yield* Fiber.join(second)] }
+        }))
+
+      expect(result.later).toBe(result.settled)
+      expect(result.values).toEqual(["followed:open", "followed:open"])
+    }))
+
   it.effect("the polling fallback still resumes the caller when the bus misses the wake", () =>
     Effect.gen(function*() {
       const FallbackFlow = Flow.make("Wake/fallback", {
