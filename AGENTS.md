@@ -32,6 +32,13 @@ rules to behavior that applies throughout their directory trees.
   or undifferentiated features. Publish benchmark claims only with reproducible
   methods, artifacts, and limitations.
 
+## Zero tech debt; one backend (Will, 2026-09-25)
+
+No tech debt. Finish every migration in the same effort: delete the old path,
+never leave two implementations of one behavior. The product backend is
+`packages/backend` only; Plue composes it and adds private deployment ports.
+Never add product code to Plue.
+
 ## One mythical stack; append-only main (Will, 2026-09-25)
 
 A repository's history is one linear `mythical` stack of logical changes that
