@@ -37,19 +37,23 @@ export const site = (recordings: ReturnType<typeof Smithers.ToolBuild>, docs: Re
     cache: true,
     cwd
   })
-export const check = Smithers.ToolRun({ command: "pnpm", args: ["run", "check"], inputs: [], deps: [sourceFiles], cwd })
-export const test = Smithers.NodeTest({
-  runner: Smithers.testRunner(
-    ["test/playground.test.ts", "test/sponsor.test.ts", "test/recordings.test.ts"].map(Smithers.file)
-  ),
-  srcs: [Smithers.glob("test/**/*")],
-  deps: [sourceFiles],
-  cwd
-})
+export const check = (docs: ReturnType<typeof Smithers.Filegroup>) =>
+  Smithers.ToolRun({ command: "pnpm", args: ["run", "check"], inputs: [], deps: [sourceFiles, docs], cwd })
+export const test = (docs: ReturnType<typeof Smithers.Filegroup>) =>
+  Smithers.NodeTest({
+    runner: Smithers.testRunner(
+      ["test/playground.test.ts", "test/sponsor.test.ts", "test/recordings.test.ts", "test/coverage.test.ts"].map(
+        Smithers.file
+      )
+    ),
+    srcs: [Smithers.glob("test/**/*")],
+    deps: [sourceFiles, docs],
+    cwd
+  })
 export const browserTest = (build: ReturnType<typeof Smithers.ToolBuild>) =>
   Smithers.Shell.Test({
     bin: Smithers.Runtime.bin,
     args: ["apps/tui-docs/scripts/browser-test.mjs"],
     data: [build, sourceFiles],
-    timeout: "3m"
+    timeout: "10m"
   })

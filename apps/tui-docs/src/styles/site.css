@@ -59,7 +59,8 @@ header nav{
   position:sticky;
   top:72px;
   height:calc(100vh - 72px);
-  padding:38px 22px;
+  padding:24px 16px;
+  overflow-y:auto;
   border-right:1px solid var(--line);
   display:flex;
   flex-direction:column}
@@ -72,9 +73,12 @@ header nav{
 .sidebar nav{
   display:grid;
   gap:5px}
+.sidebar .nav-label{
+  margin:20px 12px 8px;
+  text-transform:uppercase}
 .sidebar nav a{
   font-size:13px;
-  padding:10px 12px;
+  padding:7px 12px;
   color:#a4b0a8;
   border-radius:5px}
 .sidebar nav a[aria-current]{
@@ -410,3 +414,7 @@ header nav{
 #transcript details pre{
   margin:8px 0 0;
   font-size:10px}
+
+article table{display:block;overflow-x:auto;max-width:100%}
+article td code{overflow-wrap:anywhere}
+.on-page{max-height:calc(100vh - 72px);overflow-y:auto}

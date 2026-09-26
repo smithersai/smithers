@@ -1,37 +1,151 @@
 ---
-title: Keys and commands
-description: The controls you need while working.
-order: 5
+title: Keyboard reference
+description: Every registered shortcut, grouped by the active context.
+order: 21
+section: Reference
 ---
 
-Press **?** with an empty editor for the keys available in the current view.
+Press **?** with an empty editor to see the active context's keys. **Esc** or **?** closes the popup; other typing keeps the question mark as prompt text. Global shortcuts remain available as the context permits.
 
-| Key                  | Action                               |
-| -------------------- | ------------------------------------ |
-| Enter                | Send, or steer an active turn        |
-| Alt+Enter            | Queue a follow-up                    |
-| Alt+Up               | Return queued messages to the editor |
-| Shift+Enter / Ctrl+J | Newline                              |
-| Esc                  | Stop the turn or close a view        |
-| Ctrl+S               | Summary                              |
-| Ctrl+T               | Timeline                             |
-| Ctrl+O               | Expand code, output, and diffs       |
-| Ctrl+] / Ctrl+\\     | Next / previous tab                  |
-| Ctrl+K               | Search                               |
-| Ctrl+G               | Open your external editor            |
+```tui-script keyboard-help
+Use "basic"
+Press ?
+Capture "Inspect the keys available in the composer."
+Press Escape
+Press Ctrl+S
+Press ?
+Capture "Inspect the keys for the current view."
+Press Escape
+```
 
-| Command     | Action                |
-| ----------- | --------------------- |
-| `/model`    | Select a model        |
-| `/thinking` | Set reasoning effort  |
-| `/new`      | Start a session       |
-| `/resume`   | Pick a saved session  |
-| `/fork`     | Branch a conversation |
-| `/flow`     | Run a repository flow |
-| `/agent`    | Run a named agent     |
-| `/retry`    | Resume a worker       |
-| `/stop`     | Stop a worker         |
-| `/hotkeys`  | Show keys             |
-| `/quit`     | Exit                  |
+## Global
 
-Prefix a command with `!` to run it and include its output in context. Use `!!` to keep the output out of context.
+| Key                       | Action         |
+| ------------------------- | -------------- |
+| `?`                       | Keys.          |
+| `ctrl+c`                  | Clear.         |
+| `ctrl+d`                  | Exit.          |
+| `ctrl+t`                  | Timeline.      |
+| `ctrl+o`                  | Expand.        |
+| `ctrl+g`                  | Edit prompt.   |
+| `ctrl+k`                  | Search.        |
+| `ctrl+s`                  | Summary.       |
+| `ctrl+]` / `ctrl+right`   | Next tab.      |
+| `ctrl+\` / `ctrl+left`    | Previous tab.  |
+| `pageup` / `pagedown`     | Scroll.        |
+| `shift+up` / `shift+down` | Scroll a line. |
+
+## Composer
+
+| Key                                   | Action          |
+| ------------------------------------- | --------------- |
+| `enter`                               | Send.           |
+| `alt+enter`                           | Queue.          |
+| `alt+up`                              | Restore queue.  |
+| `shift+enter` / `ctrl+j` / `linefeed` | New line.       |
+| `up` / `down`                         | History.        |
+| `ctrl+l`                              | Pick model.     |
+| `ctrl+p`                              | Next model.     |
+| `ctrl+shift+p`                        | Previous model. |
+| `shift+tab`                           | Thinking level. |
+| `/`                                   | Commands.       |
+| `@`                                   | Mention file.   |
+| `!`                                   | Shell mode.     |
+| `tab`                                 | Cards.          |
+
+## Working
+
+| Key         | Action         |
+| ----------- | -------------- |
+| `enter`     | Steer.         |
+| `alt+enter` | Queue.         |
+| `alt+up`    | Restore queue. |
+| `esc`       | Interrupt.     |
+
+## Shell
+
+| Key     | Action       |
+| ------- | ------------ |
+| `enter` | Run command. |
+| `esc`   | Cancel.      |
+
+## Panel
+
+| Key                                                      | Action          |
+| -------------------------------------------------------- | --------------- |
+| `esc`                                                    | Chat.           |
+| `i`                                                      | Composer.       |
+| `j` / `k` / `h` / `l` / `up` / `down` / `left` / `right` | Navigate.       |
+| `enter` / `space`                                        | Expand row.     |
+| `d`                                                      | Toggle diff.    |
+| `v`                                                      | Split diff.     |
+| `r`                                                      | Resume.         |
+| `m`                                                      | Switch model.   |
+| `w`                                                      | Wait for reset. |
+| `x`                                                      | Stop.           |
+| `s`                                                      | Steer.          |
+| `c`                                                      | Open in chat.   |
+| `a`                                                      | Action.         |
+| `u`                                                      | Undo changes.   |
+| `tab`                                                    | Next tab.       |
+
+## Picker
+
+| Key                                 | Action  |
+| ----------------------------------- | ------- |
+| `esc`                               | Close.  |
+| `up` / `down` / `ctrl+p` / `ctrl+n` | Move.   |
+| `pageup` / `pagedown`               | Page.   |
+| `enter`                             | Choose. |
+
+## Form
+
+| Key                | Action          |
+| ------------------ | --------------- |
+| `esc`              | Close.          |
+| `tab` / `down`     | Next field.     |
+| `shift+tab` / `up` | Previous field. |
+| `space`            | Toggle.         |
+| `left` / `right`   | Choose.         |
+| `enter`            | Run.            |
+
+## Approval
+
+| Key | Action     |
+| --- | ---------- |
+| `y` | Allow.     |
+| `n` | Deny.      |
+| `a` | Allow all. |
+
+## Selection
+
+| Key                                               | Action     |
+| ------------------------------------------------- | ---------- |
+| `up` / `down` / `left` / `right` / `home` / `end` | Move.      |
+| `[` / `]` / `shift+left` / `shift+right`          | Milestone. |
+| `esc` / `enter`                                   | Live.      |
+
+## Completion
+
+| Key                                 | Action    |
+| ----------------------------------- | --------- |
+| `up` / `down` / `ctrl+p` / `ctrl+n` | Move.     |
+| `tab`                               | Complete. |
+| `enter`                             | Choose.   |
+| `esc`                               | Close.    |
+
+## Card
+
+| Key                                 | Action     |
+| ----------------------------------- | ---------- |
+| `enter`                             | Open.      |
+| `up` / `down` / `tab` / `shift+tab` | Next card. |
+| `esc`                               | Composer.  |
+
+## Editor and mouse
+
+Ctrl+A/Ctrl+E move to the beginning/end of a line. Ctrl+W deletes a word and Ctrl+U deletes to the start of the line. Ctrl+K belongs to search. Drag text to copy a selection; click tabs, worker rows, cards, or status actions to open/invoke them. Scroll with the mouse or PageUp/PageDown.
+
+Ctrl+C clears the editor; twice within 500 ms exits. Ctrl+D exits only with an empty editor. Approval letters arm only after the editor is empty and their 400 ms guard has elapsed.
+
+Repository and runtime [extensions](../automation/extensions.md) add keys under their owner in the popup. Built-in keys and text-editing bindings cannot be shadowed.

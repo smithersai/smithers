@@ -8,8 +8,8 @@ export const Package = Smithers.Package({
   targets: {
     recordings,
     build,
-    check: Docs.check,
-    test: Docs.test,
+    check: Docs.check(tui.docsFiles),
+    test: Docs.test(tui.docsFiles),
     browserTests: Docs.browserTest(build),
     sources: Docs.sourceFiles
   }

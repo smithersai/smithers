@@ -1,7 +1,8 @@
 ---
 title: Inspect and branch
 description: See exactly what the agent knew at a checkpoint and try another approach.
-order: 3
+order: 6
+section: Use the TUI
 ---
 
 A finished answer hides the decisions that produced it. The timeline lets you inspect those decisions with the state that existed at the time.
@@ -13,7 +14,7 @@ Press **Ctrl+T**. Use the arrows to move through events, or **[** and **]** to j
 ```tui-script timeline
 Type "Fix math.js so node check.mjs passes."
 Press Enter
-Wait for "Fixed"
+Wait for answer "Fixed"
 Press Ctrl+T
 Press Home
 Capture "The timeline at the start of the task."

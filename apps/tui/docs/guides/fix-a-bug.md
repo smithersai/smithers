@@ -2,6 +2,7 @@
 title: Fix a failing check
 description: Turn a reproducible failure into a verified change.
 order: 2
+section: Start
 ---
 
 A check gives the agent a clear stopping point. This example starts with an addition function that subtracts.
@@ -19,7 +20,7 @@ Fix math.js so node check.mjs passes.
 ```tui-script fix-add
 Type "Fix math.js so node check.mjs passes."
 Press Enter
-Wait for "Fixed"
+Wait for answer "Fixed"
 Capture "The agent edits math.js and verifies the result."
 ```
 

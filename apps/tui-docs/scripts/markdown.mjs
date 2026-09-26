@@ -16,8 +16,8 @@ export function recordings() {
       }
       if (!node.children) return
       node.children = node.children.map((child) => {
-        if (child.type === "code" && child.lang === "tui-script") {
-          const [script] = parseScripts(`\x60\x60\x60tui-script ${child.meta ?? ""}\n${child.value}\n\x60\x60\x60`)
+        if (child.type === "code" && ["tui-script", "browser-script"].includes(child.lang)) {
+          const [script] = parseScripts(`\x60\x60\x60${child.lang} ${child.meta ?? ""}\n${child.value}\n\x60\x60\x60`)
           const escape = (value) => value.replaceAll("&", "&amp;").replaceAll("\"", "&quot;").replaceAll("<", "&lt;")
           const alt = script.steps.filter((step) => step.kind === "Capture").at(-1)?.value ?? script.id
           return {

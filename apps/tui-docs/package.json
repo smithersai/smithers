@@ -10,6 +10,7 @@
     "check": "astro check",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "record": "node scripts/record.mjs",
+    "sync:reference": "node scripts/sync-reference.mjs",
     "preview": "astro preview",
     "test:browser": "node scripts/browser-test.mjs",
     "start": "node server/serve.mjs"

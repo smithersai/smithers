@@ -5,7 +5,8 @@ import { extname, resolve } from "node:path"
 import { Readable } from "node:stream"
 import { fileURLToPath } from "node:url"
 import { Sponsor } from "./sponsor.mjs"
-const root = resolve(fileURLToPath(new URL("../dist/", import.meta.url))), port = Number(process.env.PORT || 4388)
+const root = resolve(process.env.DOCS_DIST || fileURLToPath(new URL("../dist/", import.meta.url))),
+  port = Number(process.env.PORT || 4388)
 let origin = process.env.DOCS_ORIGIN || `http://localhost:${port}`
 const database = process.env.DOCS_BUDGET_DB || fileURLToPath(new URL("../.cache/sponsor.sqlite", import.meta.url))
 mkdirSync(resolve(database, ".."), { recursive: true })

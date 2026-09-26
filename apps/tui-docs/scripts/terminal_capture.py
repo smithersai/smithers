@@ -26,6 +26,8 @@ try:
                 line, buffer = buffer.split(b'\n', 1)
                 os.write(fd, base64.b64decode(json.loads(line)['input']))
 finally:
+    # A second signal must not interrupt reaping the PTY's process group.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
     try: os.killpg(pid, signal.SIGTERM)
     except ProcessLookupError: pass
     os.close(fd)

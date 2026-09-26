@@ -15,16 +15,20 @@ from either server.
 
 ## Executable Markdown
 
-A `tui-script` fence names a recording. Write `Type "…"`, `Press Enter`,
-`Wait for "…"`, and `Capture "…"` on separate lines. The parser rejects other
-instructions. Repeated IDs must have identical scripts.
+A `tui-script` fence selects a reviewed scenario and drives the production TUI
+in a private PTY. The [authoring reference](../tui/docs/reference/recordings.md)
+lists the grammar. `Wait for answer` and worker/monitor status waits inspect
+persisted receipts; visible source text cannot satisfy a completion assertion.
+Repeated IDs must have identical scripts. `browser-script` drives the real
+playground in Chromium with controlled responses at its HTTP provider boundary.
 
-The recorder launches the real TUI in a private PTY with a fresh two-file
-workspace. It uses the checked-in `fix-add.jsonl` model recording, executes the
-cells against real files, and requires `node check.mjs` to pass. It captures the
-terminal's cells and colors through xterm, renders PNG frames in Chromium, and
-encodes a GIF with FFmpeg. Markdown becomes the GIF, a reduced-motion poster,
-and an accessible text transcript.
+Scenarios supply deterministic model responses and disposable projects. Cells,
+files, workers, flows, approvals, session recovery, and controls execute for
+real. Clipboard and external-editor fixtures stay inside the private workspace.
+Monitor examples use a local provider/judge. None of these recordings measures
+live model quality. The recorder captures terminal cells and colors through
+xterm, renders PNG frames in Chromium, and encodes GIFs with FFmpeg. Markdown
+embeds each GIF with a reduced-motion poster and accessible text transcript.
 
 `//apps/tui-docs:recordings` declares the source docs, TUI inputs, workspace
 runtime source closure, scripts, and lockfile. `:build` depends on that target.
@@ -33,8 +37,10 @@ local cache hit and restores missing public artifacts from `.cache/recordings`.
 It publishes a receipt only after successful execution and GIF encoding.
 Source changes invalidate the record; prose-only changes reuse the same script.
 
-Recording requires Node from `.node-version`, Bun >=1.4, Python 3, FFmpeg,
-and Chromium. `SMITHERS_DOCS_BUN`, `FFMPEG`, and `CHROME_BIN` select installed
+Recording requires Node from `.node-version`, Bun >=1.4, Python 3, Git, FFmpeg,
+Chromium, and the native workspace helper for flow examples. Set
+`SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to its installed path.
+`SMITHERS_DOCS_BUN`, `FFMPEG`, and `CHROME_BIN` select installed
 tools. Linux uses Playwright's installed Chromium; macOS defaults to Chrome.
 Model replay makes recording offline. The site itself needs no native TUI or
 private service once built.
@@ -84,6 +90,10 @@ Self-hosting variables: `PORT`, `HOST`, `DOCS_ORIGIN`, `DOCS_BUDGET_DB`,
 shared by requests to the same server. Hosted deployment, keys, domain setup,
 and multi-instance routing belong in the private deployment repository.
 
+Command and keyboard tables come from the TUI registries. After changing either,
+run `pnpm --filter @smithers/tui-docs sync:reference`. Coverage tests require a
+recording on every page, valid local links, and every registered command/key.
+
 ## Evidence
 
 ```bash
@@ -100,7 +110,7 @@ They start the portable server on an unused port; `DOCS_TEST_URL` selects an
 existing server instead.
 They cover unresolved transport, editable chat, duplicate submission, cross-tab
 exclusion, historical visibility, reload during a model request, branch isolation,
-personal credentials, provider refusal, mobile width, and site routes. Unit tests
+personal credentials, provider refusal, mobile width, every site route, and every embedded GIF. Unit tests
 also interrupt the real agent and recover it without duplicate completed calls.
 These are offline correctness tests, not evidence of a live OpenRouter model's
 quality or a hosted deployment. Release tracking: issue #1774.

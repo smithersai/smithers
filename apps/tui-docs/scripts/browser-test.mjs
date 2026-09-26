@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { fork } from "node:child_process"
+import { createHash } from "node:crypto"
 import { once } from "node:events"
 import { chromium } from "playwright"
 const browser = await chromium.launch({
@@ -91,17 +92,29 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await page.screenshot({ path: "/tmp/smithers-tui-docs-mobile.png", fullPage: true })
-  for (
-    const route of [
-      "/installation/",
-      "/guides/fix-a-bug/",
-      "/guides/time-travel/",
-      "/guides/background-work/",
-      "/reference/keys/"
-    ]
-  ) {
+  const routes = await page.locator("nav[aria-label=\"Documentation\"] a").evaluateAll((links) =>
+    links.map((link) => link.getAttribute("href"))
+  )
+  assert(routes.length >= 25)
+  for (const route of routes) {
     const response = await page.goto(origin + route)
-    assert.equal(response.status(), 200)
+    assert.equal(response.status(), 200, route)
+    const recordings = page.locator("figure.recording img")
+    assert(await recordings.count() > 0, `Missing recording on ${route}`)
+    for (const img of await recordings.all()) {
+      const src = await img.getAttribute("src")
+      const receiptResponse = await page.request.get(origin + src.replace(/\.gif$/, ".json"))
+      assert.equal(receiptResponse.status(), 200, src)
+      const receipt = await receiptResponse.json()
+      for (const ext of ["gif", "png", "txt"]) {
+        const asset = await page.request.get(origin + src.replace(/\.gif$/, `.${ext}`))
+        assert.equal(asset.status(), 200, src)
+        const bytes = await asset.body()
+        assert.equal(createHash("sha256").update(bytes).digest("hex"), receipt[ext], `${src} ${ext} receipt`)
+        if (ext === "gif") assert.equal(bytes.subarray(0, 3).toString(), "GIF", src)
+      }
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, route)
   }
   await page.goto(origin)
   await page.locator("#checkpoint").fill("0")
@@ -166,7 +179,7 @@ try {
   await recovering.close()
   assert.deepEqual(errors, [])
   console.log(
-    "Browser: live production agent, unresolved provider, checkpoints, reload, branching, mobile, and six routes passed."
+    "Browser: live production agent, unresolved provider, checkpoints, reload, branching, mobile, and all documentation routes and GIFs passed."
   )
 } finally {
   release()

@@ -9700,8 +9700,12 @@
     "inputs": [],
     "outputs": [],
     "dependencies": [
-      "//apps/tui-docs:sources"
-    ]
+      "//apps/tui-docs:sources",
+      "//apps/tui:docsFiles"
+    ],
+    "source": {
+      "file": "apps/tui-docs/PACKAGE.ts"
+    }
   },
   {
     "label": "//apps/tui-docs:recordings",
@@ -15914,6 +15918,10 @@
         "path": "apps/tui-docs/test/recordings.test.ts"
       },
       {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
+      },
+      {
         "kind": "glob",
         "pattern": "apps/tui-docs/test/**/*",
         "exclude": []
@@ -15921,8 +15929,12 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//apps/tui-docs:sources"
-    ]
+      "//apps/tui-docs:sources",
+      "//apps/tui:docsFiles"
+    ],
+    "source": {
+      "file": "apps/tui-docs/PACKAGE.ts"
+    }
   },
   {
     "label": "//apps/tui:check",
@@ -17028,6 +17040,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-record.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/scripts/browser-test.mjs"
       },
       {
@@ -17037,6 +17053,14 @@
       {
         "kind": "file",
         "path": "apps/tui-docs/scripts/record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/scenarios.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/scripts.mjs"
       },
       {
         "kind": "file",
@@ -17057,6 +17081,10 @@
       {
         "kind": "file",
         "path": "apps/tui-docs/src/playground/store.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
       },
       {
         "kind": "file",
@@ -17747,6 +17775,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-record.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/scripts/browser-test.mjs"
       },
       {
@@ -17756,6 +17788,14 @@
       {
         "kind": "file",
         "path": "apps/tui-docs/scripts/record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/scenarios.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/scripts.mjs"
       },
       {
         "kind": "file",
@@ -17776,6 +17816,10 @@
       {
         "kind": "file",
         "path": "apps/tui-docs/src/playground/store.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
       },
       {
         "kind": "file",
@@ -18464,6 +18508,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-record.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/scripts/browser-test.mjs"
       },
       {
@@ -18473,6 +18521,14 @@
       {
         "kind": "file",
         "path": "apps/tui-docs/scripts/record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/scenarios.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/scripts.mjs"
       },
       {
         "kind": "file",
@@ -18493,6 +18549,10 @@
       {
         "kind": "file",
         "path": "apps/tui-docs/src/playground/store.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
       },
       {
         "kind": "file",

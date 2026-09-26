@@ -2,6 +2,7 @@
 title: Run locally
 description: Start the terminal agent in your repository.
 order: 1
+section: Start
 ---
 
 The new TUI is available from this source checkout. Use the Node version in `.node-version`, pnpm 11.25.0, and Bun 1.4 or later.
@@ -11,6 +12,15 @@ git clone https://github.com/smithersai/smithers.git
 cd smithers
 pnpm install
 bun run tui /path/to/project
+```
+
+```tui-script first-run
+Use "basic"
+Capture "Start the terminal in the project directory."
+Type "Explain math.js"
+Press Enter
+Wait for answer "Ready."
+Capture "Send a first task and read its answer."
 ```
 
 Configure a provider before starting. The terminal reads credentials such as `OPENAI_API_KEY` from your environment. Browser playground settings apply only to the playground.

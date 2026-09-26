@@ -136,6 +136,7 @@ export const pages: readonly PageSpec[] = [
   ]),
   page({ id: "tui-docs", title: "Executable terminal documentation", purpose: "Build the terminal recordings and verify browser checkpoint recovery and sponsored model boundaries.", kind: "current", document: "apps/tui-docs/README.md", related: ["agent", "runtime", "build-graph"] }, [
     "apps/tui-docs/PACKAGE.ts", "apps/tui-docs/scripts/targets.ts", "apps/tui-docs/scripts/inputs.mjs", "apps/tui-docs/scripts/record.mjs",
+    "apps/tui-docs/scripts/scripts.mjs", "apps/tui-docs/scripts/scenarios.mjs", "apps/tui-docs/scripts/browser-record.mjs", "apps/tui-docs/test/coverage.test.ts",
     "apps/tui-docs/src/playground/store.ts", "apps/tui-docs/src/playground/agent.ts", "apps/tui-docs/src/playground/provider.ts",
     "apps/tui-docs/server/sponsor.mjs", "apps/tui-docs/test/playground.test.ts", "apps/tui-docs/scripts/browser-test.mjs"
   ])
