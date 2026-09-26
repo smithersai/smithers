@@ -7,11 +7,15 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/smithersai/smithers/packages/backend/app"
+	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/localbootstrap"
 	"github.com/smithersai/smithers/packages/backend/modelhost"
@@ -42,6 +46,14 @@ func run(ctx context.Context, args []string) (runErr error) {
 			return err
 		}
 		return app.Run(ctx, app.Config{Args: args})
+	}
+	// `credits grant|balance` funds platform-model calls; server-free.
+	if len(args) > 0 && args[0] == "credits" {
+		return runCredits(ctx, args[1:])
+	}
+	platformKeys, err := platformModelKeys()
+	if err != nil {
+		return err
 	}
 	manifestPath := strings.TrimSpace(os.Getenv("SMITHERS_FLOW_HOST_MANIFEST"))
 	if manifestPath == "" {
@@ -103,7 +115,13 @@ func run(ctx context.Context, args []string) (runErr error) {
 		return err
 	}
 	var recommender ports.Recommender
-	if key := strings.TrimSpace(os.Getenv("AI_GATEWAY_API_KEY")); key != "" {
+	if platformKeys != nil && slices.Contains(platformKeys.PlatformModelProviders(), modelproxy.ProviderVercel) {
+		// Metered: the key file is what the install pays for.
+		recommender, err = modelhost.NewJevRecommender(platformKeys, os.Getenv("SMITHERS_JEV_ENDPOINT"), nil)
+		if err != nil {
+			return fmt.Errorf("configure recommender: %w", err)
+		}
+	} else if key := strings.TrimSpace(os.Getenv("AI_GATEWAY_API_KEY")); key != "" {
 		// The owner's own key: a single-owner installation is not metered.
 		recommender, err = modelhost.NewJevRecommender(modelproxy.NewStaticKeys(map[string]string{modelproxy.ProviderVercel: key}), os.Getenv("SMITHERS_JEV_ENDPOINT"), nil)
 		if err != nil {
@@ -118,6 +136,9 @@ func run(ctx context.Context, args []string) (runErr error) {
 		FlowHostRegistry: &registry,
 		ChatHost:         chatHost,
 		Recommender:      recommender,
+	}
+	if platformKeys != nil {
+		appConfig.PlatformModelKeys = platformKeys
 	}
 	if nativeBin != "" {
 		stateRoot := strings.TrimSpace(os.Getenv("SMITHERS_NATIVE_STATE_DIR"))
@@ -177,4 +198,31 @@ func requireExternalBootstrapToken(dataRoot string) error {
 		return fmt.Errorf("inspect local secrets: %w", err)
 	}
 	return errors.New("SMITHERS_AUTH_BOOTSTRAP_TOKEN is required for first setup with external PostgreSQL")
+}
+
+// platformModelKeys opens SMITHERS_PLATFORM_MODEL_KEYS_FILE, the keys the
+// install pays for. Every call on them is metered in the credit ledger and
+// each key is read from the file per call. Nil when unset.
+func platformModelKeys() (*modelproxy.FileKeys, error) {
+	path := strings.TrimSpace(os.Getenv(modelproxy.KeysFileEnv))
+	if path == "" {
+		return nil, nil
+	}
+	if strings.TrimSpace(os.Getenv("AI_GATEWAY_API_KEY")) != "" {
+		return nil, fmt.Errorf("set the AI Gateway key as \"vercel\" in %s instead of AI_GATEWAY_API_KEY", modelproxy.KeysFileEnv)
+	}
+	return modelproxy.OpenKeysFile(path)
+}
+
+func runCredits(ctx context.Context, args []string) error {
+	databaseURL, err := externalDatabaseURL()
+	if err != nil {
+		return err
+	}
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return fmt.Errorf("credits: PostgreSQL pool: %w", err)
+	}
+	defer pool.Close()
+	return credits.Ledger{DB: pool}.OperatorCommand(ctx, args, os.Stdout, os.Stderr)
 }

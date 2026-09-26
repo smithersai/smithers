@@ -20,6 +20,9 @@ former integer-cent balances into it.
   it. Every ledger that can create a payer's account (commerce via
   `commerce.Config.SignupCreditGrantCents`, and any model proxy resolving the
   payer) must carry the same amount.
+- A self-hosted operator funds platform-model calls with
+  `smithers-backend credits grant -owner user:NAME -usd AMOUNT -key KEY`
+  (`Ledger.OperatorCommand`); a grant is applied once per key.
 - `credit_events` is append-only. Per grant, its deltas sum to the available
   amount. Per account, they sum to the debt.
 

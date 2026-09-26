@@ -22,6 +22,30 @@ On Railway, attach PostgreSQL 18 and a volume mounted at `/var/lib/smithers`, se
 
 The image contains the web build, `apps/backend`, the canonical coding, librarian, and model TypeScript hosts with exact SHA-256 manifests, embedded product migrations, the Rust 1.98 glibc FFI library, the canonical Rust 1.89 jj WebAssembly artifact, the `jj` 0.44 CLI built from revision `47589ada70c12b3e829b5c98ab32503abad49eac`, checksum-pinned Git 2.50.1, Node 26, and PostgreSQL 18 client tools. Startup verifies the host artifacts and never downloads an executable. The backend listens on port 4000 and owns the process adapter; PostgreSQL is external.
 
+## Platform model keys
+
+Agent runs, workspaces, repository gateways and Flow hosts can use provider keys the installation pays for, as well as repository keys and connected accounts. After the first start, put the keys in a JSON file of provider name to key in the data volume. The providers are `anthropic`, `openai`, `cerebras`, `openrouter` and `vercel` (the AI Gateway key for recommendations, in place of `AI_GATEWAY_API_KEY`):
+
+```sh
+docker run --rm -i -v smithers-data:/var/lib/smithers --entrypoint sh \
+  ghcr.io/smithersai/smithers:0.1.0 \
+  -c 'f=/var/lib/smithers/config/platform-model-keys.json; umask 077 && cat >"$f" && chmod 600 "$f"' <<'EOF'
+{"anthropic": "sk-ant-...", "openai": "sk-..."}
+EOF
+echo SMITHERS_PLATFORM_MODEL_KEYS_FILE=/var/lib/smithers/config/platform-model-keys.json >>smithers.env
+```
+
+Then remove the container and run it again with the same `docker run` command, which reads `smithers.env`; do the same after changing the set of providers. Startup fails if the file is readable by other users, is not a JSON object, names an unknown provider or holds a placeholder. Each call reads its key from the file, so a replaced key applies to the next call without a restart. Keys are never logged or placed in a guest's environment: guests reach the providers through the backend's metered model proxy with a Smithers credential. Local jobs are trusted processes of the same user, so they are not a boundary against the owner's own code reading the file.
+
+Every call on these keys is metered in the owner's credit ledger at the provider's list price, including long-context rates, and is refused when the credit is spent. Fund it from the running container:
+
+```sh
+docker exec smithers /opt/smithers/bin/smithers-backend credits grant -owner user:OWNER -usd 25 -key 2026-10
+docker exec smithers /opt/smithers/bin/smithers-backend credits balance -owner user:OWNER
+```
+
+`-owner` is `user:NAME` or `org:NAME`. A grant is applied once per `-key`; `-expires` takes an RFC 3339 time.
+
 ## Native application
 
 The macOS package has two modes. `SMITHERS_BACKEND_MODE=own` starts the same Go backend plus the PostgreSQL 18 bundle copied at build time. `SMITHERS_BACKEND_MODE=plue` starts neither and uses `SMITHERS_API_ORIGIN`. Own mode is the default. Both canonical Flow hosts, their digest manifest, the canonical model host and checksum, the FFI library, the pinned `jj` CLI, relocatable Git helpers and templates, PostgreSQL server, and all PostgreSQL maintenance tools are inside the application; launch performs no download.

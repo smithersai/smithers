@@ -198,3 +198,4 @@ zz-*-repro.*
 # scripts/repo-contract/scratch-artifacts.test.mjs fails if one is tracked.
 .enrollment-*
 *.exit
+/apps/backend/backend
