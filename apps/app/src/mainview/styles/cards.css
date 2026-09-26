@@ -516,7 +516,9 @@
 }
 .smithers-card[data-maximized="true"] {
 	position: fixed;
-	inset: 1.5rem 1.5rem 8.5rem;
+	/* Fixed cards share the space reserved for the persistent header and rail. */
+	inset: calc(var(--session-strip, 0px) + 1.5rem) 1.5rem 8.5rem;
+	inset-inline-start: calc(var(--chrome-rail-space, 0px) + 1.5rem);
 	z-index: 70;
 	overflow: auto;
 	margin: 0;

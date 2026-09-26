@@ -210,6 +210,18 @@ for (const sample of [
   const rail = page.getByRole("navigation", { name: "Chrome" })
   const railButtons = rail.getByRole("button")
   expect(await railButtons.count()).toBeGreaterThan(0)
+  const cardBox = await card.boundingBox()
+  const railBox = await rail.boundingBox()
+  const headerBox = await page.locator(".session-navigation").boundingBox()
+  expect(cardBox!.x).toBeGreaterThanOrEqual(railBox!.x + railBox!.width + 8)
+  expect(cardBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height + 8)
+  await expect.poll(() => card.evaluate(node => {
+    const box = node.getBoundingClientRect()
+    return [box.top + 12, box.top + box.height / 2].every(y => {
+      const hit = document.elementFromPoint(box.left + 12, y)
+      return hit !== null && node.contains(hit)
+    })
+  })).toBe(true)
   for (const target of [chat, ...await railButtons.all()]) {
     const box = await target.boundingBox()
     expect(box).not.toBeNull()

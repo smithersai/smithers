@@ -73,8 +73,11 @@
 }
 
 /* Reserve the dock's 36px width and its 12px gutters for every app surface. */
+.session-shell:has(> .chrome-dock) {
+	--chrome-rail-space: calc(36px + var(--sp-3) * 2);
+}
 .session-shell:has(> .chrome-dock) > .app-shell {
-	margin-inline-start: calc(36px + var(--sp-3) * 2);
+	margin-inline-start: var(--chrome-rail-space);
 }
 
 /* One row recipe: 32px, 8px inline padding, 8px radius. */
@@ -129,17 +132,8 @@
 
 .app-chat-controls { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); min-height: 52px; padding: var(--sp-2) var(--sp-5); }
 .app-chat-controls .chat-filter-control { order: -1; }
-/*
- * A phone has no room beside the bottom bar: an open first-sight tip docks
- * full-width above it instead of sitting in the bar's flow, where it squeezed
- * to one word per line and pushed the transcript up by its whole height.
- */
+/* Signup buttons stay uncovered by Chat guidance on a phone. */
 @media (max-width: 600px) {
-	.app-chat-controls { position: relative; }
-	.app-chat-controls .help-anchor { position: static; }
-	.app-chat-controls .help-bubble { position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: calc(100% - var(--sp-2)); width: auto; margin-bottom: 0; }
-	.app-chat-controls .help-bubble::after { display: none; }
-	/* The signup is the whole page on a phone; its buttons stay uncovered. */
 	.app-shell:has(.signup) .app-chat-controls .help-bubble { display: none; }
 }
 /*
