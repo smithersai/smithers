@@ -112,7 +112,13 @@ describe("the mythical stack contract", () => {
   })
 
   test("a lane's account decodes without its label for a reader, and never as an unknown provider", () => {
-    const lane = { index: 0, state: "busy", startedAt: "2026-09-25T11:53:00Z", account: { provider: "codex", count: 1 }, seat: "luna" }
+    const lane = {
+      index: 0,
+      state: "busy",
+      startedAt: "2026-09-25T11:53:00Z",
+      account: { provider: "codex", count: 1 },
+      seat: "luna"
+    }
     expect(MythicalLaneSchema.parse(lane)).toEqual(lane)
     expect(MythicalLaneSchema.safeParse({ ...lane, account: { provider: "gemini", count: 1 } }).success).toBe(false)
     expect(MythicalLaneSchema.safeParse({ ...lane, account: { provider: "codex", count: 0 } }).success).toBe(false)
