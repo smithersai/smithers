@@ -70,25 +70,7 @@ Only owners, members, and collaborators can trigger reviews. Repositories regist
 
 Subscriptions meter reviewed PRs as a monthly per-repo allotment, and the status comment shows remaining quota. Re-reviewing a PR that already counted this month is free. When the quota is spent, the action skips with a notice instead of failing your checks.
 
-## 3. Pay for your own inference (optional)
-
-To pay for the review's inference directly instead of using the service's metered inference, set `ANTHROPIC_API_KEY` as a repository secret and pass it through in the job:
-
-```yaml
-  review:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-    steps:
-      - uses: smithersai/smithers/apps/review/action@main
-```
-
-`OPENAI_API_KEY` works the same way and moves both seats onto the `openai:` provider. The action prefers Anthropic when both are set, and it scrubs the raw secret out of the environment before the review starts: the run reads an untrusted diff, so it is handed only the credential its chosen mode needs. Repository registration, quota counting, and walkthrough hosting work exactly as before; only the inference moves to your key.
-
-`CODEX_AUTH_JSON` and `CLAUDE_CODE_OAUTH_TOKEN` are ignored. Those were the 0.x subscription modes; this release runs no CLI subprocess, so the credential is an API key and there is nothing to materialize on disk.
-
-## 4. Run the same review from a terminal
+## 3. Run the same review from a terminal
 
 The review package ships `smithers-review`, which runs its review flow against a repository. This is separate from `smthrs review`, which selects review-kind targets from `PACKAGE.ts`:
 
@@ -112,7 +94,7 @@ smithers-review /path/to/repo --pr 123 --publish
 smithers-review /path/to/repo --no-review --no-narrate --quiz off
 ```
 
-The repository path defaults to the current directory. `--publish` needs a publish service URL in `SMITHERS_REVIEW_PUBLISH_URL` and an operator-issued API key in `SMITHERS_REVIEW_PUBLISH_TOKEN`; both can also be set in `~/.smithers-review.json`.
+The repository path defaults to the current directory. Provider keys are for this self-run use; Smithers Cloud does not offer bring-your-own-key. The bin reads the key from your own environment, as listed under [Configuration knobs](#configuration-knobs). `--publish` needs a publish service URL in `SMITHERS_REVIEW_PUBLISH_URL` and an operator-issued API key in `SMITHERS_REVIEW_PUBLISH_TOKEN`; both can also be set in `~/.smithers-review.json`.
 
 ## Configuration knobs
 

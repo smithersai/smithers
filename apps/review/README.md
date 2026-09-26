@@ -93,36 +93,13 @@ your registration; the status comment shows remaining quota.
 Re-reviewing a PR that already counted this month is free. When the quota
 is spent, the action skips with a notice instead of failing your checks.
 
-### Use your own subscription (optional)
+### Your own provider key (self-run only)
 
-If you own the repo you can pay for its inference directly instead of using the
-service's metered inference. Repo registration, quota counting, and walkthrough
-hosting work exactly as before; only the inference moves to your key, so your
-metered spend on the service stays zero.
-
-Set one of these as a repo secret and pass it through in the job:
-
-```yaml
-  review:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-    steps:
-      - uses: smithersai/smithers/apps/review/action@v1.0.0-rc.0
-```
-
-`OPENAI_API_KEY` works the same way and moves both seats onto the `openai:`
-provider. The action prefers Anthropic when both are set, and it scrubs the raw
-secret out of the environment before the review starts: the run reads an
-untrusted diff, so it is handed only the credential its chosen mode needs.
-
-0.x offered two subscription modes instead, one per CLI agent: it wrote your
-`~/.codex/auth.json` for the Codex CLI, or forwarded `CLAUDE_CODE_OAUTH_TOKEN`
-to the Claude Code CLI. This release runs no CLI subprocess — a seat resolves to
-a provider route — so the credential is an API key and there is nothing to
-materialize on disk. `CODEX_AUTH_JSON` and `CLAUDE_CODE_OAUTH_TOKEN` are
-ignored.
+Provider keys are for self-run use; Smithers Cloud does not offer
+bring-your-own-key. To pay a model provider directly, run the review yourself,
+[from the terminal](#run-it-from-the-terminal) or in
+[self-hosted CI](CONTRIBUTING.md#self-hosted-ci-your-own-credentials), where
+the CLI reads the provider key from your own environment.
 
 ## Run it from the terminal
 
