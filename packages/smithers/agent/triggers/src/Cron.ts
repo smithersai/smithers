@@ -16,12 +16,20 @@
  * under a finite cap and reports when an unstated limit would exceed
  * {@link maxOccurrences}.
  *
+ * A timezone makes the expression a wall-clock schedule. A wall time that
+ * spring forward skips fires at the instant it would have had on the old
+ * offset, so a daily 02:30 fires at 03:30 daylight time. A wall time that fall
+ * back repeats fires once, at its first instant, unless the hour field is every
+ * hour, in which case both passes fire. Occurrences are whole seconds in UTC,
+ * whatever the host's zone.
+ *
  * @since 0.1.0
  */
 import * as Clock from "effect/Clock"
 import * as EffectCron from "effect/Cron"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
+import * as WallClock from "./internal/WallClock.ts"
 import { TriggerError } from "./TriggerError.ts"
 
 /**
@@ -54,7 +62,7 @@ const attempt = <A>(cron: Cron, search: string, find: () => A): Effect.Effect<A,
  * @since 0.1.0
  */
 export const next = (cron: Cron, from: Date): Effect.Effect<Date, TriggerError> =>
-  attempt(cron, "next", () => EffectCron.next(cron.value, from))
+  attempt(cron, "next", () => new Date(WallClock.next(WallClock.compile(cron.value), from.getTime())))
 
 /**
  * Returns the latest occurrence at or before `at`.
@@ -62,14 +70,12 @@ export const next = (cron: Cron, from: Date): Effect.Effect<Date, TriggerError> 
  * @category getters
  * @since 0.1.0
  */
-export const previousAtOrBefore = (cron: Cron, at: Date): Effect.Effect<Date, TriggerError> => {
-  if (EffectCron.match(cron.value, at)) {
-    const occurrence = new Date(at)
-    occurrence.setMilliseconds(0)
-    return Effect.succeed(occurrence)
-  }
-  return attempt(cron, "previous", () => EffectCron.prev(cron.value, at))
-}
+export const previousAtOrBefore = (cron: Cron, at: Date): Effect.Effect<Date, TriggerError> =>
+  attempt(
+    cron,
+    "previous",
+    () => new Date(WallClock.previousAtOrBefore(WallClock.compile(cron.value), at.getTime()))
+  )
 
 /**
  * The greatest number of occurrences one search returns when its caller states
@@ -110,11 +116,13 @@ export const occurrencesBetween = (
   const searchLimit = limit ?? maxOccurrences + 1
   if (searchLimit === 0) return Effect.succeed([])
   const search = attempt(cron, "interval", () => {
+    const wall = WallClock.compile(cron.value)
     const occurrences: Array<Date> = []
-    for (const occurrence of EffectCron.sequence(cron.value, from)) {
-      if (occurrence.getTime() > to.getTime()) break
-      if (occurrences.length >= searchLimit) break
-      occurrences.push(occurrence)
+    let cursor = from.getTime()
+    while (occurrences.length < searchLimit) {
+      cursor = WallClock.next(wall, cursor)
+      if (cursor > to.getTime()) break
+      occurrences.push(new Date(cursor))
     }
     return occurrences
   })

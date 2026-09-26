@@ -44,7 +44,7 @@ value, so a declaration round-trips through the store unchanged.
 ## The occurrence is the boundary, not the observation
 
 `Cron.previousAtOrBefore` answers with the schedule boundary itself, with
-milliseconds zeroed, even when the instant it was asked about carries a
+milliseconds zeroed in UTC, even when the instant it was asked about carries a
 sub-second offset:
 
 ```ts
@@ -63,6 +63,22 @@ This is what makes an occurrence an identity rather than a timestamp. The
 scheduler derives a launch's idempotency key from it, so two hosts that poll
 the same boundary a few hundred milliseconds apart derive the same key and the
 control plane sees one launch.
+
+## Daylight saving moves the instant, not the wall clock
+
+A timezone makes the expression a wall-clock schedule. `0 9 * * 5` in
+`America/New_York` fires at 09:00 local every Friday: 14:00 UTC in winter,
+13:00 UTC in summer. Day-of-week and day-of-month are read in the zone, so a
+Friday 19:30 in New York stays a Friday even when it is Saturday in UTC.
+
+| Wall time                       | Fires                                                                                   |
+| ------------------------------- | --------------------------------------------------------------------------------------- |
+| Skipped by spring forward       | Once, at the instant it would have had on the old offset: a daily 02:30 fires at 03:30. |
+| Repeated by fall back           | Once, at its first instant. The second 01:30 is not an occurrence.                      |
+| Repeated, hour field every hour | In both passes, so `30 * * * *` fires every elapsed hour and never stalls.              |
+
+Occurrences are whole seconds in UTC, whatever the host's zone. A schedule
+with no timezone follows the host's zone by the same rules.
 
 ## Every search runs under a bound
 

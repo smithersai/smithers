@@ -26,17 +26,11 @@
   (`Scheduler.defaultFireRetention`): a tick prunes settled fires older than
   that at most once an hour. The `0004_fire_run_index` migration indexes the
   ledger by run id.
-- Daylight-saving tests pin occurrence computation for `America/Los_Angeles`
-  and `America/New_York` across the 2026 transitions. A weekly Friday 09:00
-  keeps its wall clock, launches once a week over the SQL store, and keys each
-  launch by its UTC instant. The tests also pin three unfixed defects. After
-  spring forward swallows a daily 02:30, `Cron.previousAtOrBefore` fails with
-  `unsatisfiable_cron` until the next real 02:30, so the scheduler never
-  launches the gap day. In the repeated fall-back hour, the second 01:30 also
-  matches, so a tick inside it launches the day again under a second key.
-  `previousAtOrBefore` zeroes milliseconds in host-local time, so on a host
-  whose own zone is repeating an hour, a matched occurrence comes back one hour
-  early.
+- Daylight-saving tests cover `America/Los_Angeles` and `America/New_York`
+  across both 2026 transitions: weekly Friday series (including one that
+  crosses UTC midnight), a daily time in the spring-forward gap and in the
+  fall-back repeat, an hourly series, and host-zone independence, each through
+  `Cron` and through the scheduler over the SQL store.
 - The scheduler traces `Scheduler.runOnce`, `Scheduler.processTrigger`, and
   `Scheduler.launch`, and records `smithers.triggers.fires` by outcome plus
   tick and launch duration histograms (`Scheduler.durationBoundaries`).
@@ -86,6 +80,19 @@
   state what the in-memory store shares with the SQL store and where it stops:
   it holds one process's state, reports no `store` write failures, shows no
   contention between connections, and applies no migrations.
+
+### Fixed
+
+- Daylight saving (#1930). `Cron` now searches wall-clock times and resolves
+  each one in the trigger's zone. A time that spring forward skips fires once,
+  at the instant it would have had on the old offset (a daily 02:30 fires at
+  03:30 daylight time); `previousAtOrBefore` used to fail `unsatisfiable_cron`
+  there, so the scheduler never launched the gap day. A time that fall back
+  repeats fires once, at its first instant; the repeated instant used to match
+  too and launch the day again under a second key. An expression whose hour
+  field is every hour still fires in both passes. Milliseconds are zeroed in
+  UTC; on a host whose own zone was repeating an hour, a matched occurrence
+  used to come back an hour early.
 
 ### Removed
 

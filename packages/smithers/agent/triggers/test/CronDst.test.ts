@@ -14,25 +14,16 @@
  * The host's own zone is part of the answer (see the last case), so every
  * case runs on a host pinned to UTC unless it names another host zone.
  *
- * Three answers are pinned as they are, not as they should be, and each case
- * says so in its name. The first two come from the local-time arithmetic of
- * `effect/Cron` (4.0.0-rc.115), which `Cron` wraps; the third is `Cron`'s own:
+ * The rules those answers follow, fixed by
+ * https://github.com/smithersai/smithers/issues/1930:
  *
- * - When spring forward swallows a daily 02:30, the search names 03:30
- *   daylight time as that day's occurrence, but `previousAtOrBefore` fails with
- *   `unsatisfiable_cron` from the gap until the next real 02:30. A scheduler
- *   tick asks exactly that, so it launches nothing for the gap day.
- * - When fall back repeats 01:00-02:00, the search names the first 01:30 as the
- *   day's only occurrence, but the repeated 01:30 matches the cron as well. A
- *   scheduler tick inside that second launches the day again, under a second
- *   idempotency key that no runner-side deduplication can recognise.
- * - `previousAtOrBefore` zeroes milliseconds with the host-local setter, so on
- *   a host whose own zone is repeating an hour, an occurrence matched inside
- *   that hour comes back one hour early, whatever zone the cron names.
- *
- * The three defects are tracked in
- * https://github.com/smithersai/smithers/issues/1930; fixing one flips its
- * case, which then asserts the corrected answer.
+ * - A wall time that spring forward skips fires at the instant it would have
+ *   had on the old offset: a daily 02:30 fires at 03:30 daylight time, and the
+ *   scheduler launches the gap day once.
+ * - A wall time that fall back repeats fires once, at its first instant, so a
+ *   tick inside the repeated hour launches nothing. An expression whose hour
+ *   field is every hour fires in both passes, so it never stalls for an hour.
+ * - Occurrences are whole seconds in UTC, so the host's zone never moves one.
  */
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Cause from "effect/Cause"
@@ -347,13 +338,16 @@ for (const zone of zones) {
       expect(new Set(keys).size).toBe(4)
     })
 
-    it("known defect: fails unsatisfiable_cron from the gap until the next real 02:30, so the scheduler never launches the gap day", async () => {
+    it("fires the gap day once, at 03:30 daylight time, and fails no tick", async () => {
       const cron = await run(Cron.parse("30 2 * * *", timezone))
       const [, saturday, gapDay, monday] = zone.gap.map(instantOf)
-      const refused = await run(Effect.flip(Cron.previousAtOrBefore(cron, new Date(gapDay!))))
-      expect(refused).toBeInstanceOf(TriggerError)
-      expect(refused.code).toBe("unsatisfiable_cron")
-      expect(await run(Cron.previousAtOrBefore(cron, new Date(monday!)))).toEqual(new Date(monday!))
+      const previous = async (instant: number) =>
+        (await run(Cron.previousAtOrBefore(cron, new Date(instant)))).getTime()
+      expect(await previous(gapDay!)).toBe(gapDay)
+      expect(await previous(gapDay! + 90 * minute + 457)).toBe(gapDay)
+      // 03:00 daylight time, the first instant after the gap, is before it.
+      expect(await previous(gapDay! - 30 * minute)).toBe(saturday)
+      expect(await previous(monday!)).toBe(monday)
 
       const runner = runnerFixture()
       const failures = await onStore((warnings) =>
@@ -362,19 +356,26 @@ for (const zone of zones) {
           yield* TestClock.setTime(saturday! - 10 * hour)
           yield* store.register(yield* declare(timezone, "nightly-sync", "30 2 * * *"))
           const tick = yield* scheduler(runner)
-          for (const instant of [saturday! - 10 * hour, saturday!, gapDay!, gapDay! + 90 * minute, monday!]) {
+          for (
+            const instant of [
+              saturday! - 10 * hour,
+              saturday!,
+              gapDay! - 30 * minute,
+              gapDay!,
+              gapDay! + 90 * minute,
+              monday!
+            ]
+          ) {
             yield* tick(instant)
           }
           return tickFailures(warnings)
         })
       )
 
-      expect(runner.starts.map((start) => start.idempotencyKey)).toEqual([
-        `nightly-sync:${new Date(saturday!).toISOString()}`,
-        `nightly-sync:${new Date(monday!).toISOString()}`
-      ])
-      expect(failures).toHaveLength(2)
-      for (const failure of failures) expect(failure).toMatchObject({ code: "unsatisfiable_cron" })
+      expect(runner.starts.map((start) => start.idempotencyKey)).toEqual(
+        [saturday!, gapDay!, monday!].map((instant) => `nightly-sync:${new Date(instant).toISOString()}`)
+      )
+      expect(failures).toEqual([])
     })
   })
 
@@ -392,23 +393,22 @@ for (const zone of zones) {
       expect(new Set(keys).size).toBe(4)
     })
 
-    it("known defect: the repeated 01:30 matches too, so a tick inside it launches the day again under a second key", async () => {
+    it("does not match the repeated 01:30, so a tick inside it launches nothing", async () => {
       const cron = await run(Cron.parse("30 1 * * *", timezone))
       const first = instantOf(zone.repeat[2]!)
+      const monday = instantOf(zone.repeat[3]!)
       const repeated = Date.parse(zone.repeatedOneThirty)
       expect(wallClock(new Date(repeated), timezone)).toBe(
         `Sun 2026-11-01 01:30 ${timezone === "America/New_York" ? "EST" : "PST"}`
       )
-      expect(await run(Cron.previousAtOrBefore(cron, new Date(repeated)))).toEqual(new Date(repeated))
-      // `next` is documented as strictly after its argument; inside the
-      // repeated hour it answers the first 01:30, which is already past.
+      expect(await run(Cron.previousAtOrBefore(cron, new Date(repeated)))).toEqual(new Date(first))
+      // `next` is strictly after its argument, inside the repeated hour too.
       const inside = new Date(zone.repeatedOne)
-      const answered = await run(Cron.next(cron, inside))
-      expect(answered).toEqual(new Date(first))
-      expect(answered.getTime()).toBeLessThan(inside.getTime())
+      expect(await run(Cron.next(cron, inside))).toEqual(new Date(monday))
+      expect(await run(Cron.next(cron, new Date(first)))).toEqual(new Date(monday))
 
       const runner = runnerFixture()
-      await onStore(() =>
+      const failures = await onStore((warnings) =>
         Effect.gen(function*() {
           const store = yield* TriggerStore.TriggerStore
           yield* TestClock.setTime(first - 12 * hour)
@@ -417,31 +417,103 @@ for (const zone of zones) {
           for (const instant of [first - 12 * hour, first, first + 30 * minute, repeated, repeated + minute]) {
             yield* tick(instant)
           }
+          return tickFailures(warnings)
         })
       )
 
-      const keys = runner.starts.map((start) => start.idempotencyKey)
-      expect(keys).toEqual([
-        `nightly-sync:${new Date(first).toISOString()}`,
-        `nightly-sync:${new Date(repeated).toISOString()}`
+      expect(runner.starts.map((start) => start.idempotencyKey)).toEqual([
+        `nightly-sync:${new Date(first).toISOString()}`
       ])
-      expect(new Set(keys).size).toBe(2)
+      expect(failures).toEqual([])
     })
   })
 
+  describe(`an hourly :30 across both transitions in ${timezone}`, () => {
+    for (
+      const [transition, from, to] of [
+        ["spring forward", "2026-03-08T00:00:00.000Z", "2026-03-08T16:00:00.000Z"],
+        ["fall back", "2026-11-01T00:00:00.000Z", "2026-11-01T16:00:00.000Z"]
+      ] as const
+    ) {
+      it(`fires every elapsed hour exactly once across ${transition}`, async () => {
+        const cron = await run(Cron.parse("30 * * * *", timezone))
+        const occurrences = await run(Cron.occurrencesBetween(cron, new Date(from), new Date(to)))
+
+        expect(occurrences).toHaveLength(16)
+        expect(occurrences[0]).toEqual(new Date(Date.parse(from) + 30 * minute))
+        expect(occurrences.slice(1).map((occurrence, index) => occurrence.getTime() - occurrences[index]!.getTime()))
+          .toEqual(Array.from({ length: 15 }, () => hour))
+        const walls = occurrences.map((occurrence) => wallClock(occurrence, timezone).slice(15, 20))
+        if (transition === "spring forward") expect(walls).not.toContain("02:30")
+        else expect(walls.filter((wall) => wall === "01:30")).toHaveLength(2)
+        for (const occurrence of occurrences) {
+          expect(await run(Cron.previousAtOrBefore(cron, new Date(occurrence.getTime() + 29 * minute)))).toEqual(
+            occurrence
+          )
+        }
+      })
+    }
+  })
+
+  describe(`a weekly Friday evening that crosses UTC midnight in ${timezone}`, () => {
+    // 16:30 in Los Angeles and 19:30 in New York are 00:30 UTC on Saturday in
+    // standard time and 23:30 UTC on Friday in daylight time.
+    const [clock, expression] = timezone === "America/New_York" ? ["19:30", "30 19 * * 5"] : ["16:30", "30 16 * * 5"]
+    const [standard, daylight] = timezone === "America/New_York" ? ["EST", "EDT"] : ["PST", "PDT"]
+    for (
+      const [transition, from, to, expected] of [
+        ["spring forward", "2026-02-26T00:00:00.000Z", "2026-03-21T00:00:00.000Z", [
+          `2026-02-28T00:30:00.000Z Fri 2026-02-27 ${clock} ${standard}`,
+          `2026-03-07T00:30:00.000Z Fri 2026-03-06 ${clock} ${standard}`,
+          `2026-03-13T23:30:00.000Z Fri 2026-03-13 ${clock} ${daylight}`,
+          `2026-03-20T23:30:00.000Z Fri 2026-03-20 ${clock} ${daylight}`
+        ]],
+        ["fall back", "2026-10-22T00:00:00.000Z", "2026-11-15T00:00:00.000Z", [
+          `2026-10-23T23:30:00.000Z Fri 2026-10-23 ${clock} ${daylight}`,
+          `2026-10-30T23:30:00.000Z Fri 2026-10-30 ${clock} ${daylight}`,
+          `2026-11-07T00:30:00.000Z Fri 2026-11-06 ${clock} ${standard}`,
+          `2026-11-14T00:30:00.000Z Fri 2026-11-13 ${clock} ${standard}`
+        ]]
+      ] as const
+    ) {
+      it(`reads Friday in the zone, not in UTC, and launches each week once across ${transition}`, async () => {
+        const cron = await run(Cron.parse(expression, timezone))
+        const occurrences = await run(Cron.occurrencesBetween(cron, new Date(from), new Date(to)))
+        expect(read(occurrences, timezone)).toEqual(expected)
+        for (const occurrence of occurrences) {
+          expect(await run(Cron.previousAtOrBefore(cron, new Date(occurrence.getTime() + 45 * minute)))).toEqual(
+            occurrence
+          )
+        }
+
+        const runner = runnerFixture()
+        const failures = await onStore((warnings) =>
+          Effect.gen(function*() {
+            const store = yield* TriggerStore.TriggerStore
+            yield* store.register(yield* declare(timezone, "weekly-close", expression))
+            const tick = yield* scheduler(runner)
+            for (const instant of [...hourly(from, to), Date.parse(to)]) yield* tick(instant)
+            return tickFailures(warnings)
+          })
+        )
+        expect(runner.starts.map((start) => start.idempotencyKey)).toEqual(
+          expected.map((line) => `weekly-close:${line.slice(0, 24)}`)
+        )
+        expect(failures).toEqual([])
+      })
+    }
+  })
+
   describe(`a UTC schedule on a host whose own zone is ${timezone}`, () => {
-    it("known defect: an occurrence inside the host's repeated hour comes back an hour early and launches twice", async () => {
+    it("answers the same whole-second occurrence and launches once, whatever the host's zone", async () => {
       // A daily UTC cron whose occurrence is the host zone's repeated 01:30.
       const repeated = Date.parse(zone.repeatedOneThirty)
       const expression = `30 ${new Date(repeated).getUTCHours()} * * *`
-      const early = repeated - hour
-      const previous = (cron: Cron.Cron) => run(Cron.previousAtOrBefore(cron, new Date(repeated)))
+      const previous = (cron: Cron.Cron) => run(Cron.previousAtOrBefore(cron, new Date(repeated + 457)))
       const cron = await run(Cron.parse(expression, "UTC"))
 
       expect(await previous(cron)).toEqual(new Date(repeated))
-      const hosted = await onHost(timezone, () => previous(cron))
-      expect(hosted).toEqual(new Date(early))
-      expect(await run(Cron.previousAtOrBefore(cron, hosted))).not.toEqual(hosted)
+      expect(await onHost(timezone, () => previous(cron))).toEqual(new Date(repeated))
 
       const launches = (host: string) =>
         onHost(host, async () => {
@@ -458,11 +530,45 @@ for (const zone of zones) {
           return runner.starts.map((start) => start.idempotencyKey)
         })
 
-      expect(await launches("UTC")).toEqual([`daily-export:${new Date(repeated).toISOString()}`])
-      expect(await launches(timezone)).toEqual([
-        `daily-export:${new Date(early).toISOString()}`,
-        `daily-export:${new Date(repeated).toISOString()}`
-      ])
+      const key = [`daily-export:${new Date(repeated).toISOString()}`]
+      expect(await launches("UTC")).toEqual(key)
+      expect(await launches(timezone)).toEqual(key)
+    })
+  })
+
+  describe(`a schedule with no timezone on a host whose own zone is ${timezone}`, () => {
+    it("follows the host's wall clock across both transitions", async () => {
+      const [gap, repeat] = await onHost(timezone, async () => {
+        const gapCron = await run(Cron.parse("30 2 * * *"))
+        const repeatCron = await run(Cron.parse("30 1 * * *"))
+        return [
+          await run(
+            Cron.occurrencesBetween(gapCron, new Date("2026-03-06T00:00:00.000Z"), new Date("2026-03-10T00:00:00.000Z"))
+          ),
+          await run(
+            Cron.occurrencesBetween(
+              repeatCron,
+              new Date("2026-10-30T00:00:00.000Z"),
+              new Date("2026-11-03T00:00:00.000Z")
+            )
+          )
+        ]
+      })
+      expect(read(gap, timezone)).toEqual(zone.gap)
+      expect(read(repeat, timezone)).toEqual(zone.repeat)
     })
   })
 }
+
+describe("a fixed-offset timezone", () => {
+  it("has no transitions to adjust for", async () => {
+    const cron = await run(Cron.parse("30 2 * * *", "+02:00"))
+    const occurrences = await run(
+      Cron.occurrencesBetween(cron, new Date("2026-03-07T00:00:00.000Z"), new Date("2026-03-09T00:00:00.000Z"))
+    )
+    expect(iso(occurrences)).toEqual(["2026-03-07T00:30:00.000Z", "2026-03-08T00:30:00.000Z"])
+    expect(await run(Cron.previousAtOrBefore(cron, new Date("2026-03-08T00:30:59.999Z")))).toEqual(
+      new Date("2026-03-08T00:30:00.000Z")
+    )
+  })
+})
