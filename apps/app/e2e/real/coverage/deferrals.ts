@@ -51,7 +51,10 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
     "review.unrequest", "runs.seat", "runs.signal", "search.boxes", "search.changes", "search.files",
     "search.history", "search.issues", "search.open", "search.runs", "search.secrets", "secrets.connect.codex", "secrets.move",
     "search.targets", "search.wiki", "setup.ask", "setup.discard", "setup.discard.confirm", "setup.guide",
-    "setup.retry", "setup.work", "tab.close.confirm", "triggers.approve", "triggers.pause", "triggers.run",
+    "setup.retry", "setup.work",
+    // Cloud stack writes/readback still need real-host receipts: https://github.com/smithersai/smithers/issues/1921.
+    "stack.backfill", "stack.parallel", "stack.retry", "stack.show",
+    "tab.close.confirm", "triggers.approve", "triggers.pause", "triggers.run",
     "workspace.desktop", "workspace.desktop.open", "workspace.desktop.rotate", "workspace.desktop.stop",
     "workspace.images", "workspace.list", "workspace.rename", "workspace.session.destroy"
   ]
