@@ -75,12 +75,6 @@ func adminCommand() *incur.Cli {
 			return map[string]any{"status": "deleted", "username": username}, nil
 		},
 	})
-	cmd.Command("runner list", &incur.CommandDef{
-		Description: "List runners and pool status",
-		Handler: func(ctx *incur.CommandContext) (any, error) {
-			return APIRequest("GET", "/api/admin/runners", nil, nil)
-		},
-	})
 	cmd.Command("runs list", &incur.CommandDef{
 		Format:      incur.FormatJSON,
 		Description: "List workflow runs in a repository",

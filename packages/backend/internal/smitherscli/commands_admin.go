@@ -26,24 +26,14 @@ type adminOperation struct {
 func adminOperations() []adminOperation {
 	return []adminOperation{
 		{name: "status", method: "GET", path: "/api/admin/system/status"},
-		{name: "incidents list", method: "GET", path: "/api/admin/system/incidents", query: []string{"state", "policy", "limit"}},
-		{name: "incidents ack", method: "POST", path: "/api/admin/system/incidents/{target}/acknowledge", arg: "id", body: []string{"note"}},
-		{name: "incidents unack", method: "POST", path: "/api/admin/system/incidents/{target}/unacknowledge", arg: "id"},
-		{name: "incidents resolve", method: "POST", path: "/api/admin/system/incidents/{target}/resolve", arg: "id", body: []string{"note"}, destructive: true},
-		{name: "incidents snooze", method: "POST", path: "/api/admin/system/incidents/{target}/snooze", arg: "id", body: []string{"until"}, required: []string{"until"}},
-		{name: "incidents bulk", method: "POST", path: "/api/admin/system/incidents/bulk", body: []string{"action", "policy", "ids", "note", "until"}, required: []string{"action"}, destructive: true},
 		{name: "analytics summary", method: "GET", path: "/api/admin/analytics/summary", query: []string{"range", "include-synthetic"}},
 		{name: "sessions list", method: "GET", path: "/api/admin/agent-sessions", query: []string{"status", "include-synthetic", "limit"}},
 		{name: "sessions cancel", method: "POST", path: "/api/admin/agent-sessions/{target}/cancel", arg: "id", body: []string{"reason"}, destructive: true},
 		{name: "workspaces list", method: "GET", path: "/api/admin/workspaces", query: []string{"status", "kind", "owner", "include-synthetic", "limit"}},
 		{name: "workspaces stop", method: "POST", path: "/api/admin/workspaces/{target}/stop", arg: "id", destructive: true},
 		{name: "workspaces suspend", method: "POST", path: "/api/admin/workspaces/{target}/suspend", arg: "id", destructive: true},
-		{name: "hosts list", method: "GET", path: "/api/admin/sandbox/hosts"},
-		{name: "hosts drain", method: "POST", path: "/api/admin/sandbox/hosts/{target}/drain", arg: "id", destructive: true},
-		{name: "hosts prune-stale", method: "POST", path: "/api/admin/sandbox/hosts/prune-stale", body: []string{"older-than-hours"}, destructive: true},
 		{name: "tokens list", method: "GET", path: "/api/admin/tokens", query: []string{"unused-days", "scope", "expiring-days", "limit"}},
 		{name: "users set-synthetic", method: "PATCH", path: "/api/admin/users/{target}", arg: "username", body: []string{"value"}, required: []string{"value"}},
-		{name: "metrics query", method: "GET", path: "/api/admin/system/metrics/query", query: []string{"name", "range"}, required: []string{"name", "range"}},
 		{name: "audit list", method: "GET", path: "/api/admin/audit-logs", query: []string{"since"}, required: []string{"since"}},
 		{name: "alerts channels list", method: "GET", path: "/api/v1/alerts/channels", observe: true},
 		{name: "alerts channels add", method: "POST", path: "/api/v1/alerts/channels", body: []string{"type", "display-name", "target", "route"}, required: []string{"type", "display-name", "target", "route"}, observe: true},
@@ -68,18 +58,14 @@ func adminOption(name string) *incur.JSONSchema {
 	switch name {
 	case "include-synthetic":
 		return booleanSchema("Include synthetic users and their resources", false)
-	case "limit", "unused-days", "expiring-days", "older-than-hours":
+	case "limit", "unused-days", "expiring-days":
 		return numberSchema(name, nil)
 	case "value":
 		return &incur.JSONSchema{Type: "string", Description: "Whether the user is synthetic", Enum: []any{"true", "false"}}
-	case "action":
-		return &incur.JSONSchema{Type: "string", Description: "Bulk incident action", Enum: []any{"acknowledge", "resolve", "snooze"}}
 	case "route":
 		return &incur.JSONSchema{Type: "string", Description: "Alert routing severity", Enum: []any{"critical", "all"}}
 	case "type":
 		return &incur.JSONSchema{Type: "string", Description: "Notification channel type", Enum: []any{"email", "sms", "pagerduty", "webhook"}}
-	case "ids":
-		return stringSchema("Comma-separated incident IDs; mutually exclusive with --policy")
 	default:
 		return stringSchema(strings.ReplaceAll(name, "-", " "))
 	}
@@ -158,33 +144,10 @@ func executeAdminOperation(ctx *incur.CommandContext, op adminOperation) (any, e
 		}
 		body = map[string]any{"synthetic": value}
 	}
-	if op.name == "incidents bulk" {
-		ids, policy := stringValue(body["ids"]), stringValue(body["policy"])
-		if (ids == "") == (policy == "") {
-			return nil, fmt.Errorf("exactly one of --ids or --policy is required")
-		}
-		if ids != "" {
-			parsed := []int64{}
-			for _, id := range strings.Split(ids, ",") {
-				n, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
-				if err != nil || n <= 0 {
-					return nil, fmt.Errorf("--ids must contain positive integer IDs")
-				}
-				parsed = append(parsed, n)
-			}
-			body["ids"] = parsed
-		}
-		if body["action"] == "snooze" && stringValue(body["until"]) == "" {
-			return nil, fmt.Errorf("--until is required for bulk snooze")
-		}
-	}
 	if op.destructive {
 		description := op.name
 		if target != "" {
 			description += " " + strconv.Quote(target)
-		}
-		if op.name == "incidents bulk" {
-			description += " " + stringValue(body["action"]) + " " + firstNonEmpty(stringValue(body["policy"]), stringValue(ctx.Options["ids"]))
 		}
 		if err := confirmDestructiveOperation(ctx.Options["yes"] == true, description); err != nil {
 			return nil, err
@@ -220,21 +183,17 @@ func formatAdminResult(result any) string {
 	records, ok := result.([]any)
 	if !ok {
 		if obj, yes := result.(map[string]any); yes {
-			if incidents, yes := obj["incidents"].([]any); yes {
-				records = incidents
-			} else {
-				keys := make([]string, 0, len(obj))
-				for key := range obj {
-					keys = append(keys, key)
-				}
-				sort.Strings(keys)
-				rows := [][]string{}
-				for _, key := range keys {
-					value, _ := json.Marshal(obj[key])
-					rows = append(rows, []string{key, string(value)})
-				}
-				return formatTable([]string{"Field", "Value"}, rows)
+			keys := make([]string, 0, len(obj))
+			for key := range obj {
+				keys = append(keys, key)
 			}
+			sort.Strings(keys)
+			rows := [][]string{}
+			for _, key := range keys {
+				value, _ := json.Marshal(obj[key])
+				rows = append(rows, []string{key, string(value)})
+			}
+			return formatTable([]string{"Field", "Value"}, rows)
 		} else {
 			return stringValue(result)
 		}

@@ -134,7 +134,6 @@ func TestCommandsMoreHttp_H_CommandSurfaceSuccess(t *testing.T) {
 	commandsMoreHTTPHServe(t, adminCommand(), "user", "create", "--username", "new-user", "--email", "new@example.com", "--json")
 	commandsMoreHTTPHServe(t, adminCommand(), "user", "disable", "new-user", "--json")
 	commandsMoreHTTPHServe(t, adminCommand(), "user", "delete", "new-user", "--yes", "--json")
-	commandsMoreHTTPHServe(t, adminCommand(), "runner", "list", "--json")
 	commandsMoreHTTPHServe(t, adminCommand(), "runs", "list", "--repo", "acme/repo", "--page", "3", "--limit", "7", "--json")
 	commandsMoreHTTPHServe(t, adminCommand(), "health", "--json")
 
@@ -203,7 +202,7 @@ func TestCommandsMoreHttp_H_CommandSurfaceSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(seen) < 47 {
+	if len(seen) < 46 {
 		t.Fatalf("expected broad command surface to be exercised, saw only %d requests", len(seen))
 	}
 	var foundUserCreate, foundWebhookSecret, foundLinearInstall bool

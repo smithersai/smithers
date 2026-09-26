@@ -19,26 +19,15 @@ func TestAdminCommandRequests(t *testing.T) {
 	// query, body, and Observe confirmation target is part of the wire contract.
 	cases := []struct{ command, method, path, query, body, confirm string }{
 		{"status", "GET", "/api/admin/system/status", "", "", ""},
-		{"incidents list --state open --policy Production --limit 50", "GET", "/api/admin/system/incidents", "limit=50&policy=Production&state=open", "", ""},
-		{"incidents ack 229 --note checked", "POST", "/api/admin/system/incidents/229/acknowledge", "", `{"note":"checked"}`, ""},
-		{"incidents unack 229", "POST", "/api/admin/system/incidents/229/unacknowledge", "", "", ""},
-		{"incidents resolve 229 --note fixed --yes", "POST", "/api/admin/system/incidents/229/resolve", "", `{"note":"fixed"}`, ""},
-		{"incidents snooze 229 --until 2026-09-14T01:00:00Z", "POST", "/api/admin/system/incidents/229/snooze", "", `{"until":"2026-09-14T01:00:00Z"}`, ""},
-		{"incidents bulk --action resolve --ids 229,230 --note fixed --yes", "POST", "/api/admin/system/incidents/bulk", "", `{"action":"resolve","ids":[229,230],"note":"fixed"}`, ""},
-		{"incidents bulk --action snooze --policy Production --until 2026-09-14T01:00:00Z --yes", "POST", "/api/admin/system/incidents/bulk", "", `{"action":"snooze","policy":"Production","until":"2026-09-14T01:00:00Z"}`, ""},
 		{"analytics summary --range 30d --include-synthetic", "GET", "/api/admin/analytics/summary", "include_synthetic=true&range=30d", "", ""},
 		{"sessions list --status active", "GET", "/api/admin/agent-sessions", "include_synthetic=false&status=active", "", ""},
 		{"sessions cancel abc --reason stuck --yes", "POST", "/api/admin/agent-sessions/abc/cancel", "", `{"reason":"stuck"}`, ""},
 		{"workspaces list --status failed --kind container --owner alice", "GET", "/api/admin/workspaces", "include_synthetic=false&kind=container&owner=alice&status=failed", "", ""},
 		{"workspaces stop abc --yes", "POST", "/api/admin/workspaces/abc/stop", "", "", ""},
 		{"workspaces suspend abc --yes", "POST", "/api/admin/workspaces/abc/suspend", "", "", ""},
-		{"hosts list", "GET", "/api/admin/sandbox/hosts", "", "", ""},
-		{"hosts drain abc --yes", "POST", "/api/admin/sandbox/hosts/abc/drain", "", "", ""},
-		{"hosts prune-stale --older-than-hours 48 --yes", "POST", "/api/admin/sandbox/hosts/prune-stale", "", `{"older_than_hours":48}`, ""},
 		{"tokens list --unused-days 30 --scope write:admin --expiring-days 2 --limit 50", "GET", "/api/admin/tokens", "expiring_days=2&limit=50&scope=write%3Aadmin&unused_days=30", "", ""},
 		{"users set-synthetic alice --value true", "PATCH", "/api/admin/users/alice", "", `{"synthetic":true}`, ""},
 		{"users set-synthetic alice --value false", "PATCH", "/api/admin/users/alice", "", `{"synthetic":false}`, ""},
-		{"metrics query --name http_request_rate --range 1h", "GET", "/api/admin/system/metrics/query", "name=http_request_rate&range=1h", "", ""},
 		{"audit list --since 2026-09-13", "GET", "/api/admin/audit-logs", "since=2026-09-13", "", ""},
 		{"alerts channels list", "GET", "/api/v1/alerts/channels", "", "", ""},
 		{"alerts channels add --type email --display-name Primary --target ops@example.com --route critical", "POST", "/api/v1/alerts/channels", "", `{"type":"email","display_name":"Primary","target":"ops@example.com","route":"critical"}`, "Primary"},
@@ -107,7 +96,7 @@ func TestAdminCommandRequests(t *testing.T) {
 }
 
 func TestAdminDestructiveConfirmation(t *testing.T) {
-	commands := []string{"sessions cancel abc", "workspaces stop abc", "workspaces suspend abc", "hosts drain abc", "hosts prune-stale", "incidents resolve 1", "incidents bulk --action resolve --policy Production", "alerts channels remove abc", "deploys observe rollback abc", "deploys observe redeploy abc", "deploys observe restart abc", "deploys platform rollback server --revision 42"}
+	commands := []string{"sessions cancel abc", "workspaces stop abc", "workspaces suspend abc", "alerts channels remove abc", "deploys observe rollback abc", "deploys observe redeploy abc", "deploys observe restart abc", "deploys platform rollback server --revision 42"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("unconfirmed request reached server") }))
 	defer server.Close()
 	authFSetConfig(t, server.URL)
@@ -146,7 +135,7 @@ func TestAdminConfirmationPrompt(t *testing.T) {
 
 func TestAdminInvalidArguments(t *testing.T) {
 	for _, command := range []string{
-		"incidents bulk --action resolve --yes", "incidents bulk --action resolve --ids 1 --policy X --yes", "incidents bulk --action resolve --ids 1,no --yes", "incidents bulk --action snooze --ids 1 --yes", "incidents bulk --action delete --ids 1 --yes", "users set-synthetic alice --value maybe", "deploys platform rollback ../server --revision 1 --yes",
+		"users set-synthetic alice --value maybe", "deploys platform rollback ../server --revision 1 --yes",
 	} {
 		t.Run(command, func(t *testing.T) {
 			var out bytes.Buffer
@@ -157,7 +146,7 @@ func TestAdminInvalidArguments(t *testing.T) {
 
 func TestAdminOutputFormats(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"incidents":[{"id":229,"state":"open"}]}`)
+		fmt.Fprint(w, `[{"id":"session-1","status":"active"}]`)
 	}))
 	defer server.Close()
 	authFSetConfig(t, server.URL)
@@ -167,9 +156,9 @@ func TestAdminOutputFormats(t *testing.T) {
 	for _, human := range []bool{false, true} {
 		adminIsTerminal = func(int) bool { return human }
 		var out bytes.Buffer
-		require.NoError(t, adminCommand().ServeWithOptions([]string{"incidents", "list"}, incur.ServeOptions{Stdout: &out, Human: &human}))
+		require.NoError(t, adminCommand().ServeWithOptions([]string{"sessions", "list"}, incur.ServeOptions{Stdout: &out, Human: &human}))
 		if human {
-			require.Contains(t, out.String(), "state")
+			require.Contains(t, out.String(), "status")
 			require.Contains(t, out.String(), "---")
 		} else {
 			var parsed any
