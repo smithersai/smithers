@@ -661,8 +661,19 @@ type mythicalItemStep struct {
 	gh       *mythicalGitHubRepo
 	ghErr    error
 	launches int
-	issues   []string // other open issue titles, for duplicate detection
+	issues   []string              // other open issue titles, for duplicate detection
+	held     map[int32]pgtype.UUID // lane index -> the unsettled item holding it
 	now      time.Time
+}
+
+// freeLane answers the lowest lane index no other unsettled item holds, so
+// two items never share a lane.
+func (st *mythicalItemStep) freeLane(item pgtype.UUID) int32 {
+	for index := int32(0); ; index++ {
+		if holder, ok := st.held[index]; !ok || holder == item {
+			return index
+		}
+	}
 }
 
 // advanceItems moves every unsettled item one step. It runs inside the stack
@@ -681,8 +692,11 @@ func (s *MythicalService) advanceItems(ctx context.Context, r *mythicalRun) {
 		s.logger.Warn("mythical.items_failed", "repository_id", r.row.RepositoryID, "error", err)
 		return
 	}
-	step := &mythicalItemStep{s: s, r: r, q: q, now: s.now()}
+	step := &mythicalItemStep{s: s, r: r, q: q, now: s.now(), held: map[int32]pgtype.UUID{}}
 	for _, item := range items {
+		if item.Lane.Valid && !mythicalSettledStates[item.State] {
+			step.held[item.Lane.Int32] = item.ID
+		}
 		if item.IssueNumber.Valid && item.State != "cancelled" && item.State != "landed" && item.State != "rejected" {
 			step.issues = append(step.issues, fmt.Sprintf("#%d %s", item.IssueNumber.Int64, item.IssueTitle))
 		}
@@ -781,7 +795,7 @@ func (s *MythicalService) releaseLane(ctx context.Context, r *mythicalRun, item 
 		return
 	}
 	next := item
-	next.WorkspaceID, next.Lane = "", pgtype.Int4{}
+	next.WorkspaceID, next.Lane, next.LaneStartedAt = "", pgtype.Int4{}, pgtype.Timestamptz{}
 	if _, err := s.queries().SaveMythicalItem(ctx, next); err != nil {
 		s.logger.Warn("mythical.lane_release_save_failed", "item", uuidString(item.ID), "error", err)
 	}
@@ -1018,7 +1032,9 @@ func (st *mythicalItemStep) start(ctx context.Context, item db.MythicalItem) (*d
 		return mythicalLater(item, "no lane workspace: "+err.Error(), st.now), false, nil
 	}
 	next.WorkspaceID, next.BaseCommit = workspaceID, r.row.TipCommit
-	next.Lane = pgtype.Int4{Int32: int32(next.Attempt % 8), Valid: true}
+	next.Lane = pgtype.Int4{Int32: st.freeLane(item.ID), Valid: true}
+	// The launch below records the lane's start with the item, atomically.
+	next.LaneStartedAt = pgtype.Timestamptz{Time: st.now, Valid: true}
 	ref, err := s.retainFor(ctx, r, workspaceID, r.row.TipCommit)
 	if err != nil {
 		return mythicalLater(item, "the stack tip could not reach the lane: "+err.Error(), st.now), false, nil
@@ -1027,6 +1043,9 @@ func (st *mythicalItemStep) start(ctx context.Context, item db.MythicalItem) (*d
 		"base": map[string]string{"commitId": r.row.TipCommit, "ref": ref}})
 	next.State, next.Reason, next.NextAttemptAt = "running", "", pgtype.Timestamptz{}
 	saved, err := st.commit(ctx, next, "request", "coding/request", payload)
+	if err == nil {
+		st.held[saved.Lane.Int32] = saved.ID
+	}
 	if err != nil {
 		// The lane stays bound; the sweep retires it once the item provably
 		// does not reference it, so a lost COMMIT acknowledgment never
@@ -1138,6 +1157,8 @@ func (st *mythicalItemStep) integrate(ctx context.Context, item db.MythicalItem)
 		if workspaceID, err = st.lane(ctx, item, fmt.Sprintf("mythical #%d verify %d", item.IssueNumber.Int64, item.Generation+1)); err != nil {
 			return mythicalLater(item, "no lane workspace to verify on: "+err.Error(), st.now), false, nil
 		}
+		next.Lane = pgtype.Int4{Int32: st.freeLane(item.ID), Valid: true}
+		next.LaneStartedAt = pgtype.Timestamptz{Time: st.now, Valid: true}
 	}
 	ref, err := s.retainFor(ctx, r, workspaceID, rebased)
 	if err != nil {
@@ -1152,6 +1173,9 @@ func (st *mythicalItemStep) integrate(ctx context.Context, item db.MythicalItem)
 	saved, err := st.commit(ctx, next, "verify", "coding/verify", payload)
 	if err != nil {
 		return mythicalLater(item, "verification could not be launched: "+err.Error(), st.now), false, nil
+	}
+	if saved.Lane.Valid {
+		st.held[saved.Lane.Int32] = saved.ID
 	}
 	return &saved, true, nil
 }

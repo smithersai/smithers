@@ -24,6 +24,7 @@ type fakeMythicalRoute struct {
 	parallel   int32
 	retried    string
 	backfills  int
+	viewers    []services.MythicalViewer
 }
 
 func (f *fakeMythicalRoute) Backfill(context.Context, int64) error { f.backfills++; return nil }
@@ -43,8 +44,9 @@ func (f *fakeMythicalRoute) RetryItem(_ context.Context, _ int64, id string) (se
 	return services.MythicalItemView{ID: id, State: "queued", DependsOn: []string{}}, nil
 }
 
-func (f *fakeMythicalRoute) Snapshot(_ context.Context, id int64, slug, main string) (services.MythicalStackView, error) {
+func (f *fakeMythicalRoute) Snapshot(_ context.Context, id int64, slug, main string, viewer services.MythicalViewer) (services.MythicalStackView, error) {
 	f.main = main
+	f.viewers = append(f.viewers, viewer)
 	state := "absent"
 	if len(f.bootstraps) > 0 {
 		state = "bootstrapping"
@@ -82,6 +84,21 @@ func TestMythicalRoutes(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"mainBehind":false`)
 	assert.Contains(t, rec.Body.String(), `"limits":{"maxParallel":2}`)
 	assert.Equal(t, "abc", service.main)
+	assert.Equal(t, []services.MythicalViewer{{Admin: true}}, service.viewers)
+
+	// A signed-in admin is named, so their own accounts are shown to them.
+	rec = httptest.NewRecorder()
+	handler.GetStack(rec, withRepo(httptest.NewRequest(http.MethodGet, "/", nil), true))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, services.MythicalViewer{UserID: 7, Admin: true}, service.viewers[1])
+
+	// A reader (a public repository's visitor) is nobody's owner.
+	rec = httptest.NewRecorder()
+	reader := httptest.NewRequest(http.MethodGet, "/", nil)
+	handler.GetStack(rec, reader.WithContext(middleware.ContextWithRepoContext(reader.Context(), &middleware.RepoContext{Owner: "smithers-canary",
+		Repository: &db.Repository{ID: 19, Name: "smithers", IsPublic: true}}, middleware.PermissionRead)))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, services.MythicalViewer{}, service.viewers[2])
 
 	rec = httptest.NewRecorder()
 	handler.Bootstrap(rec, withRepo(httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"depth":50}`)), false))

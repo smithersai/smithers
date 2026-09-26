@@ -8,8 +8,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -37,10 +39,23 @@ type ProviderPoolScopes interface {
 	Scope(ctx context.Context, info *middleware.AuthInfo) (userID, repositoryID int64, ok bool)
 }
 
+// ProviderPoolUses records which account took a workspace's model call
+// (db.Queries.RecordWorkspaceProviderUse).
+type ProviderPoolUses interface {
+	RecordWorkspaceProviderUse(ctx context.Context, workspaceID, connectionID, model string) error
+}
+
 // ProviderPoolHandler serves /provider-pool/{provider}/{path}.
 type ProviderPoolHandler struct {
 	Pool   ProviderPool
 	Scopes ProviderPoolScopes
+	// Uses, when set, records the account each served call used, so the
+	// monitor can say which account a workspace runs on.
+	Uses ProviderPoolUses
+	// recording bounds the records in flight; a record never delays a call.
+	recording     chan struct{}
+	recordingOnce sync.Once
+	recorded      sync.WaitGroup
 	// Upstreams overrides a provider's origin (tests).
 	Upstreams map[string]string
 	Client    *http.Client
@@ -77,6 +92,53 @@ func (h *ProviderPoolHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.servePool(w, r, provider, route, body, userID, repositoryID)
+}
+
+// modelPoolModelPattern bounds what is recorded as a call's model: a model
+// id, never free text from the body.
+var modelPoolModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
+
+// modelPoolModel reads the model a call names, or "" when it names none
+// that looks like a model id.
+func modelPoolModel(body []byte) string {
+	var doc struct {
+		Model string `json:"model"`
+	}
+	if json.Unmarshal(body, &doc) != nil || !modelPoolModelPattern.MatchString(doc.Model) {
+		return ""
+	}
+	return doc.Model
+}
+
+const modelPoolRecordsInFlight = 64
+
+// recordUse counts a call an account answered successfully, off the call's
+// path: the relay never waits for it, and a failed or shed record never
+// fails the call.
+func (h *ProviderPoolHandler) recordUse(ctx context.Context, conn *services.ResolvedProviderConnection, status int, body []byte) {
+	if h.Uses == nil || conn == nil || status < 200 || status > 299 {
+		return
+	}
+	info := middleware.AuthInfoFromContext(ctx)
+	if info == nil || info.WorkspaceRestriction() == "" {
+		return
+	}
+	h.recordingOnce.Do(func() { h.recording = make(chan struct{}, modelPoolRecordsInFlight) })
+	select {
+	case h.recording <- struct{}{}:
+	default:
+		slog.Warn("provider pool use not recorded: too many records in flight", "connection_id", conn.ConnectionID)
+		return
+	}
+	workspaceID, connectionID, model := info.WorkspaceRestriction(), conn.ConnectionID, modelPoolModel(body)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	h.recorded.Add(1)
+	go func() {
+		defer func() { cancel(); <-h.recording; h.recorded.Done() }()
+		if err := h.Uses.RecordWorkspaceProviderUse(ctx, workspaceID, connectionID, model); err != nil {
+			slog.Warn("record provider pool use failed", "connection_id", connectionID, "error", err)
+		}
+	}()
 }
 
 // ProviderPoolAuth reads an Anthropic SDK's x-api-key as the bearer
@@ -180,6 +242,7 @@ func (h *ProviderPoolHandler) servePool(w http.ResponseWriter, r *http.Request, 
 			}
 			continue
 		}
+		h.recordUse(ctx, conn, resp.StatusCode, body)
 		h.relayPooled(ctx, w, resp, conn)
 		return
 	}

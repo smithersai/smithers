@@ -141,7 +141,7 @@ func TestMythicalServiceBootstrapsFoldsAndServesTheSnapshot(t *testing.T) {
 	f.commit("✨ feat: two", "b.txt", "b")
 	main := f.publish()
 
-	absent, err := f.service.Snapshot(ctx, f.repoID, "smithers-canary/smithers", main)
+	absent, err := f.service.Snapshot(ctx, f.repoID, "smithers-canary/smithers", main, MythicalViewer{})
 	require.NoError(t, err)
 	assert.Equal(t, "absent", absent.State)
 
@@ -174,7 +174,7 @@ func TestMythicalServiceBootstrapsFoldsAndServesTheSnapshot(t *testing.T) {
 	assert.Equal(t, tip, f.git(f.hostDir, "rev-parse", folded+"^"), "folds only append")
 	assert.Equal(t, outside, f.hostRef("refs/heads/main"), "main is never written")
 
-	view, err := f.service.Snapshot(ctx, f.repoID, "smithers-canary/smithers", outside)
+	view, err := f.service.Snapshot(ctx, f.repoID, "smithers-canary/smithers", outside, MythicalViewer{})
 	require.NoError(t, err)
 	assert.Equal(t, "active", view.State)
 	assert.False(t, view.MainBehind)

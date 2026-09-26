@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -85,6 +86,21 @@ type MythicalLaneView struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	ItemID      string `json:"itemId,omitempty"`
 	State       string `json:"state"`
+	// StartedAt is when the lane launched its item's current attempt.
+	StartedAt string               `json:"startedAt,omitempty"`
+	Account   *MythicalAccountView `json:"account,omitempty"`
+	// Seat is the seat alias (or model id) most of the lane's calls ran on.
+	Seat string `json:"seat,omitempty"`
+}
+
+// MythicalAccountView is the pooled account that took the lane's latest
+// model call. Label is shown only to the account's owner (an organization's
+// account: a repository admin); Count is how many accounts served the attempt
+// (the pool rotates per call).
+type MythicalAccountView struct {
+	Provider string `json:"provider"`
+	Label    string `json:"label,omitempty"`
+	Count    int64  `json:"count"`
 }
 
 type MythicalLimitsView struct {
@@ -93,8 +109,10 @@ type MythicalLimitsView struct {
 
 // Snapshot reads the repository's stack for the monitoring UI. mainCommit is
 // the repository's current main commit when the caller knows it ("" skips
-// the behind check). A repository without a stack is `absent`, not an error.
-func (s *MythicalService) Snapshot(ctx context.Context, repositoryID int64, slug, mainCommit string) (MythicalStackView, error) {
+// the behind check). viewer decides whose account names the lanes show;
+// every reader sees the provider and seat. A repository without a stack is
+// `absent`, not an error.
+func (s *MythicalService) Snapshot(ctx context.Context, repositoryID int64, slug, mainCommit string, viewer MythicalViewer) (MythicalStackView, error) {
 	view := MythicalStackView{Repository: slug, State: "absent", Changes: []MythicalChangeView{}, Items: []MythicalItemView{},
 		Lanes: []MythicalLaneView{}, Limits: MythicalLimitsView{MaxParallel: 2}}
 	q := s.queries()
@@ -135,21 +153,109 @@ func (s *MythicalService) Snapshot(ctx context.Context, repositoryID int64, slug
 		return view, err
 	}
 	lanes := map[int32]MythicalLaneView{}
+	var workspaces []string
 	for _, item := range items {
 		row := mythicalItemView(item)
 		view.Items = append(view.Items, row)
 		if row.Lane != nil && !mythicalSettled(item.State) {
-			lanes[*row.Lane] = MythicalLaneView{Index: *row.Lane, WorkspaceID: item.WorkspaceID, ItemID: row.ID, State: "busy"}
+			lane := MythicalLaneView{Index: *row.Lane, WorkspaceID: item.WorkspaceID, ItemID: row.ID, State: "busy"}
+			lanes[*row.Lane] = lane
+			// A retrying item waits for its next attempt: the failed one's
+			// clock and accounts are not what the lane runs now.
+			if item.State == "retrying" {
+				continue
+			}
+			if item.LaneStartedAt.Valid {
+				lane.StartedAt = item.LaneStartedAt.Time.UTC().Format(time.RFC3339)
+			}
+			lanes[*row.Lane] = lane
+			if mythicalWorkspaceID.MatchString(item.WorkspaceID) {
+				workspaces = append(workspaces, item.WorkspaceID)
+			}
 		}
 	}
-	for index := int32(0); index < stack.MaxParallel; index++ {
+	// The accounts are a detail of the lanes: when they cannot be read, the
+	// snapshot still answers, without them.
+	uses, err := q.ListLatestWorkspaceProviderUses(ctx, workspaces)
+	if err != nil && ctx.Err() == nil {
+		s.logger.Warn("mythical.lane_accounts_failed", "repository_id", repositoryID, "error", err)
+	}
+	latest := map[string]db.WorkspaceProviderUse{}
+	for _, use := range uses {
+		latest[use.WorkspaceID] = use
+	}
+	// A lane above a lowered limit still shows while it holds an item.
+	for index := int32(0); index < stack.MaxParallel || len(lanes) > 0; index++ {
 		lane, ok := lanes[index]
+		delete(lanes, index)
 		if !ok {
+			if index >= stack.MaxParallel {
+				continue
+			}
 			lane = MythicalLaneView{Index: index, State: "idle"}
+		}
+		if use, ok := latest[lane.WorkspaceID]; ok && lane.WorkspaceID != "" {
+			lane.Account = &MythicalAccountView{Provider: use.Provider, Count: use.Accounts}
+			if viewer.owns(use) {
+				lane.Account.Label = providerAccountLabel(use)
+			}
+			lane.Seat = mythicalSeat(use.Model)
 		}
 		view.Lanes = append(view.Lanes, lane)
 	}
 	return view, nil
+}
+
+// MythicalViewer is who reads a snapshot: the signed-in user (0: nobody)
+// and whether they administer the repository.
+type MythicalViewer struct {
+	UserID int64
+	Admin  bool
+}
+
+// owns reports whether the viewer may see which account this is: a user's
+// own account, or an organization's account to a repository admin.
+func (v MythicalViewer) owns(use db.WorkspaceProviderUse) bool {
+	switch use.OwnerType {
+	case "user":
+		return v.UserID > 0 && use.OwnerUserID == v.UserID
+	case "org":
+		return v.Admin
+	}
+	return false
+}
+
+// providerAccountLabel names an account the way the accounts card does: its
+// email, else its label. A browser request label ("web-…") is an internal
+// idempotency key, not a name.
+func providerAccountLabel(use db.WorkspaceProviderUse) string {
+	if use.AccountEmail != "" {
+		return use.AccountEmail
+	}
+	if strings.HasPrefix(use.Label, "web-") {
+		return ""
+	}
+	return use.Label
+}
+
+// mythicalSeatAliases mirrors @smthrs/cli Providers seatAliases (#1752): the
+// model each seat alias names, answered as its alias. Keep them in step;
+// TestMythicalSeatAliasesMatchProviders reads Providers.ts.
+var mythicalSeatAliases = map[string]string{
+	"gpt-6-sol":        "sol",
+	"gpt-6-astra":      "astra",
+	"gpt-6-luna":       "luna",
+	"claude-opus-5-5":  "opus",
+	"claude-fable-5-1": "fable",
+	"qwen-3.8-27b":     "qwen",
+}
+
+// mythicalSeat answers a model call's seat: its alias, else the model id.
+func mythicalSeat(model string) string {
+	if alias, ok := mythicalSeatAliases[model]; ok {
+		return alias
+	}
+	return model
 }
 
 func mythicalSettled(state string) bool {

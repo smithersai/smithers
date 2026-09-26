@@ -19,7 +19,7 @@ import (
 )
 
 type MythicalRouteService interface {
-	Snapshot(ctx context.Context, repositoryID int64, slug, mainCommit string) (services.MythicalStackView, error)
+	Snapshot(ctx context.Context, repositoryID int64, slug, mainCommit string, viewer services.MythicalViewer) (services.MythicalStackView, error)
 	RequestBootstrap(ctx context.Context, repositoryID, actorUserID int64, depth int32, reset bool) (db.MythicalStack, error)
 	Backfill(ctx context.Context, repositoryID int64) error
 	SubmitLane(ctx context.Context, repositoryID, userID int64, input services.MythicalLaneSubmission) (services.MythicalLaneReceipt, error)
@@ -63,7 +63,13 @@ func (h *MythicalHandler) snapshot(r *http.Request, repoCtx *middleware.RepoCont
 			main = head
 		}
 	}
-	return h.Service.Snapshot(r.Context(), repository.ID, slug, main)
+	// Which account a lane runs on is its owner's business: every reader sees
+	// the provider and seat, the account's owner also its name.
+	viewer := services.MythicalViewer{Admin: middleware.RepoPermissionFromContext(r.Context()).Satisfies(middleware.PermissionAdmin)}
+	if user := middleware.UserFromContext(r.Context()); user != nil {
+		viewer.UserID = user.ID
+	}
+	return h.Service.Snapshot(r.Context(), repository.ID, slug, main, viewer)
 }
 
 // GetStack answers the snapshot.

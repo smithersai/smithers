@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -246,6 +247,9 @@ func TestMythicalItemsFlowFromIssueToLandedAndAdopted(t *testing.T) {
 	item := o.item(7)
 	require.Equal(t, "running", item.State, item.Reason)
 	require.Len(t, o.lanes.created, 1)
+	assert.EqualValues(t, 0, item.Lane.Int32, "the first lane is lane 0")
+	require.True(t, item.LaneStartedAt.Valid)
+	assert.WithinDuration(t, time.Now(), item.LaneStartedAt.Time, time.Minute)
 	workspace := o.lanes.created[0]
 	request := o.launcher.last("coding/request")
 	require.Equal(t, mythicalBindingKind, request.Target.BindingKind)
@@ -343,8 +347,17 @@ func TestMythicalItemsRebaseVerifyRetryAndDecline(t *testing.T) {
 	require.NoError(t, err)
 	stack := o.wake()
 	oldTip := stack.TipCommit
+	lanes := map[int32]int64{}
 	for _, number := range []int64{11, 12, 13} {
-		require.Equal(t, "running", o.item(number).State)
+		item := o.item(number)
+		require.Equal(t, "running", item.State)
+		require.True(t, item.Lane.Valid)
+		assert.True(t, item.LaneStartedAt.Valid, "the launch records when the lane started")
+		lanes[item.Lane.Int32] = number
+	}
+	assert.Len(t, lanes, 3, "three items in flight hold three distinct lanes")
+	for index := int32(0); index < 3; index++ {
+		assert.Contains(t, lanes, index, "the lowest free lanes are taken")
 	}
 	requests := map[int64]flowdispatch.LaunchRequest{}
 	for _, request := range o.launcher.requests {
@@ -454,13 +467,23 @@ func TestMythicalItemsRebaseVerifyRetryAndDecline(t *testing.T) {
 	assert.Equal(t, pullNumber, eleven.PRNumber.Int64, "the same pull request is updated")
 
 	// The snapshot shows the items and their lanes.
-	snapshot, err := o.service.Snapshot(ctx, o.repoID, "smithers-canary/smithers", "")
+	snapshot, err := o.service.Snapshot(ctx, o.repoID, "smithers-canary/smithers", "", MythicalViewer{UserID: o.userID})
 	require.NoError(t, err)
 	states := map[string]string{}
 	for _, row := range snapshot.Items {
 		states[row.Issue.Title] = row.State
 	}
 	assert.Equal(t, map[string]string{"Issue 11": "verifying", "Issue 12": "running", "Issue 13": "skipped"}, states)
+	busy := map[string]string{}
+	for _, lane := range snapshot.Lanes {
+		if lane.State == "busy" {
+			busy[lane.WorkspaceID] = lane.StartedAt
+		}
+	}
+	require.Len(t, busy, 2, "the verifying proposal's fresh lane and #12's lane both show")
+	for workspace, started := range busy {
+		assert.NotEmpty(t, started, "lane %s shows when it started", workspace)
+	}
 	_ = pgtype.UUID{}
 }
 

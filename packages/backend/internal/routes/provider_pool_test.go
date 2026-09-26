@@ -354,3 +354,98 @@ func atoi(value string) int {
 	}
 	return n
 }
+
+type fakePoolUses struct {
+	mu   sync.Mutex
+	uses []string
+}
+
+func (u *fakePoolUses) RecordWorkspaceProviderUse(_ context.Context, workspaceID, connectionID, model string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.uses = append(u.uses, workspaceID+"|"+connectionID+"|"+model)
+	return nil
+}
+
+func TestProviderPool_RecordsTheAccountThatTookTheCall(t *testing.T) {
+	var calls []providerCall
+	upstream := accountUpstream(t, &calls, map[string]func(http.ResponseWriter){
+		"sk-ant-oat01-a": func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, `{"type":"error","error":{"type":"rate_limit_error","message":"usage limit"}}`)
+		},
+	})
+	pool := &fakePool{pooled: true, accounts: claudeAccounts("a", "b"), limited: map[string]time.Time{}}
+	uses := &fakePoolUses{}
+	h := poolHandler(pool, upstream.URL)
+	h.Uses = uses
+
+	rec := proxyRequest(t, h, "/api/model/anthropic/v1/messages", messagesBody, workspaceContext())
+	require.Equal(t, http.StatusOK, rec.Code)
+	h.recorded.Wait()
+	assert.Equal(t, []string{"ws1|b|claude-sonnet-4-6"}, uses.uses, "only the account that answered is recorded, with the model the call named")
+
+	// A model field that is not a model id is not recorded as one.
+	rec = proxyRequest(t, h, "/api/model/anthropic/v1/messages", `{"model":"sk-ant-oat01 secret\n","messages":[]}`, workspaceContext())
+	require.Equal(t, http.StatusOK, rec.Code)
+	h.recorded.Wait()
+	require.Len(t, uses.uses, 2)
+	assert.Equal(t, "ws1|b|", uses.uses[1])
+
+	// Nothing is recorded when no account takes the call.
+	pool.limited["b"] = time.Now().Add(time.Hour)
+	pool.nextReset = time.Now().Add(time.Hour)
+	rec = proxyRequest(t, h, "/api/model/anthropic/v1/messages", messagesBody, workspaceContext())
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	h.recorded.Wait()
+	assert.Len(t, uses.uses, 2)
+}
+
+func TestProviderPool_ARefusedCallIsNotCountedAndARecordNeverHoldsTheCall(t *testing.T) {
+	var calls []providerCall
+	upstream := accountUpstream(t, &calls, map[string]func(http.ResponseWriter){
+		"sk-ant-oat01-a": func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"type":"error","error":{"type":"invalid_request_error","message":"unknown model"}}`)
+		},
+	})
+	release := make(chan struct{})
+	uses := &blockingPoolUses{release: release}
+	h := poolHandler(&fakePool{pooled: true, accounts: claudeAccounts("a"), limited: map[string]time.Time{}}, upstream.URL)
+	h.Uses = uses
+	rec := proxyRequest(t, h, "/api/model/anthropic/v1/messages", `{"model":"made-up-model","messages":[]}`, workspaceContext())
+	require.Equal(t, http.StatusBadRequest, rec.Code, "the provider's refusal reaches the caller")
+	h.recorded.Wait()
+	assert.Zero(t, uses.count(), "a refused call is not a call the account ran")
+
+	h = poolHandler(&fakePool{pooled: true, accounts: claudeAccounts("b"), limited: map[string]time.Time{}}, upstream.URL)
+	h.Uses = uses
+	rec = proxyRequest(t, h, "/api/model/anthropic/v1/messages", messagesBody, workspaceContext())
+	require.Equal(t, http.StatusOK, rec.Code, "the answer is relayed while its record is still waiting")
+	assert.Equal(t, anthropicStream, rec.Body.String())
+	close(release)
+	h.recorded.Wait()
+	assert.Equal(t, 1, uses.count())
+}
+
+type blockingPoolUses struct {
+	release chan struct{}
+	mu      sync.Mutex
+	n       int
+}
+
+func (u *blockingPoolUses) RecordWorkspaceProviderUse(context.Context, string, string, string) error {
+	<-u.release
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.n++
+	return nil
+}
+
+func (u *blockingPoolUses) count() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.n
+}

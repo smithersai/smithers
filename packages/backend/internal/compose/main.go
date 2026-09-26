@@ -1016,7 +1016,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Service: gitHubSyncedRepoService,
 	}
 	providerConnectionHandler := &routes.ProviderConnectionHandler{Service: providerConnectionService,
-		Pool: &routes.ProviderPoolHandler{Pool: providerConnectionService, Scopes: services.NewProviderPoolScopes(queries)}}
+		Pool: &routes.ProviderPoolHandler{Pool: providerConnectionService, Scopes: services.NewProviderPoolScopes(queries), Uses: queries}}
 	secretHandler := &routes.SecretHandler{
 		Service:          secretService,
 		AgentEnvironment: agentEnvironmentService,

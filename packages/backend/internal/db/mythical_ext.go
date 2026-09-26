@@ -352,15 +352,17 @@ type MythicalItem struct {
 	PRMergeCommit     string             `json:"pr_merge_commit"`
 	PendingOp         json.RawMessage    `json:"pending_op"`
 	NextAttemptAt     pgtype.Timestamptz `json:"next_attempt_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	// LaneStartedAt is when the current attempt's lane launched.
+	LaneStartedAt pgtype.Timestamptz `json:"lane_started_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 const mythicalItemColumns = `id, repository_id, issue_number, issue_title, issue_url, issue_digest, issue_body, approved_digest, proposal_round,
 source, version, state, reason, attempt,
 generation, lane, workspace_id, base_commit, candidate_base, candidate_head, candidate_verified, request_run_id, vibe_run_id, verify_run_id,
 request_outcome, vibe_outcome, verify_outcome, summary, plan, integration, checks, pr_number, pr_url, pr_state, pr_head, pr_merge_commit,
-pending_op, next_attempt_at, created_at, updated_at`
+pending_op, next_attempt_at, lane_started_at, created_at, updated_at`
 
 func scanMythicalItem(row interface{ Scan(...any) error }) (MythicalItem, error) {
 	var i MythicalItem
@@ -369,7 +371,7 @@ func scanMythicalItem(row interface{ Scan(...any) error }) (MythicalItem, error)
 		&i.ProposalRound, &i.Source, &i.Version, &i.State,
 		&i.Reason, &i.Attempt, &i.Generation, &i.Lane, &i.WorkspaceID, &i.BaseCommit, &i.CandidateBase, &i.CandidateHead, &i.CandidateVerified,
 		&i.RequestRunID, &i.VibeRunID, &i.VerifyRunID, &i.RequestOutcome, &i.VibeOutcome, &i.VerifyOutcome, &i.Summary, &plan, &integration,
-		&checks, &i.PRNumber, &i.PRURL, &i.PRState, &i.PRHead, &i.PRMergeCommit, &pending, &i.NextAttemptAt, &i.CreatedAt, &i.UpdatedAt)
+		&checks, &i.PRNumber, &i.PRURL, &i.PRState, &i.PRHead, &i.PRMergeCommit, &pending, &i.NextAttemptAt, &i.LaneStartedAt, &i.CreatedAt, &i.UpdatedAt)
 	i.Plan, i.Integration, i.Checks, i.PendingOp = rawJSON(plan), rawJSON(integration), rawJSON(checks), rawJSON(pending)
 	return i, err
 }
@@ -473,7 +475,7 @@ func (q *Queries) InsertMythicalChatItem(ctx context.Context, item MythicalItem)
 // writer makes it answer pgx.ErrNoRows; the caller rereads and decides again.
 func (q *Queries) SaveMythicalItem(ctx context.Context, item MythicalItem) (MythicalItem, error) {
 	return scanMythicalItem(q.db.QueryRow(ctx, `UPDATE mythical_items SET
-		issue_body = $33, approved_digest = $34, proposal_round = $35,
+		issue_body = $33, approved_digest = $34, proposal_round = $35, lane_started_at = $36,
 		issue_title = $3, issue_url = $4, issue_digest = $5, state = $6, reason = $7, attempt = $8, generation = $9, lane = $10,
 		workspace_id = $11, base_commit = $12, candidate_base = $13, candidate_head = $14, candidate_verified = $15,
 		request_run_id = $16, vibe_run_id = $17, verify_run_id = $18, request_outcome = $19, vibe_outcome = $20, verify_outcome = $21,
@@ -485,7 +487,7 @@ func (q *Queries) SaveMythicalItem(ctx context.Context, item MythicalItem) (Myth
 		item.Lane, item.WorkspaceID, item.BaseCommit, item.CandidateBase, item.CandidateHead, item.CandidateVerified, item.RequestRunID,
 		item.VibeRunID, item.VerifyRunID, item.RequestOutcome, item.VibeOutcome, item.VerifyOutcome, item.Summary, jsonArg(item.Plan),
 		jsonArg(item.Integration), jsonArg(item.Checks), item.PRNumber, item.PRURL, item.PRState, item.PRHead, item.PRMergeCommit,
-		jsonArg(item.PendingOp), item.NextAttemptAt, item.IssueBody, item.ApprovedDigest, item.ProposalRound))
+		jsonArg(item.PendingOp), item.NextAttemptAt, item.IssueBody, item.ApprovedDigest, item.ProposalRound, item.LaneStartedAt))
 }
 
 func jsonArg(value json.RawMessage) any {
