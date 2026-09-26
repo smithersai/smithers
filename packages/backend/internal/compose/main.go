@@ -132,6 +132,8 @@ type Options struct {
 	// offers no platform models: guests use repository keys and connected
 	// accounts only.
 	PlatformModelKeys modelproxy.Keys
+	// AdminRoutes serves deployment operator endpoints under /api/admin.
+	AdminRoutes ports.AdminRoutes
 }
 
 // Duties splits one product composition across processes. A deployment
@@ -1003,6 +1005,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	adminAuditHandler := &routes.AdminAuditHandler{
 		Queries: queries,
 	}
+	adminSystemHealthHandler := &routes.AdminSystemHealthHandler{DB: pool}
+	adminAnalyticsHandler := &routes.AdminAnalyticsHandler{Service: services.NewAdminAnalyticsServiceWithPool(pool)}
 	adminSystemStatusHandler := &routes.AdminSystemStatusHandler{
 		Service: services.NewAdminSystemStatusService(services.AdminSystemStatusServiceConfig{
 			DB: pool, Runtime: queries, SSE: sseBroker,
@@ -1127,6 +1131,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	// RFD-004: agent runs execute in kind=agent workspaces.
 	agentService.SetWorkspaceBackend(workspaceService)
+	adminManageService := services.NewAdminManageService(queries, agentService, workspaceService)
+	var deploymentAdminRoutes []ports.AdminRoute
+	if options.AdminRoutes != nil && options.topology.servesHTTP() {
+		deploymentAdminRoutes = options.AdminRoutes(services.NewAdminOperationLog(queries))
+	}
 	var repositoryJobGateway services.RepositoryJobGateway
 	if repoGatewayService != nil {
 		repositoryJobGateway = repoGatewayService
@@ -1424,7 +1433,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubWebhookHandler,
 		smithersMetrics,
 		routerExtras{Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler,
-			Mythical: mythicalHandler, ModelProxy: modelProxyHandler, AdminSystemStatus: adminSystemStatusHandler},
+			Mythical: mythicalHandler, ModelProxy: modelProxyHandler, AdminSystemStatus: adminSystemStatusHandler,
+			AdminSystemHealth: adminSystemHealthHandler, AdminAnalytics: adminAnalyticsHandler,
+			AdminAgentSessions: &routes.AdminAgentSessionHandler{Service: adminManageService},
+			AdminWorkspaces:    &routes.AdminWorkspaceHandler{Service: adminManageService},
+			AdminTokens:        &routes.AdminTokenHandler{Service: adminManageService},
+			DeploymentAdmin:    deploymentAdminRoutes},
 	)
 	if flow != nil && options.topology.servesHTTP() {
 		browser := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries, dispatcher: flow.dispatcher}

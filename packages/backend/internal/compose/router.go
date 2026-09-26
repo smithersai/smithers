@@ -23,6 +23,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
 	"github.com/smithersai/smithers/packages/backend/modelproxy"
+	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
 type routerExtras struct {
@@ -33,6 +34,14 @@ type routerExtras struct {
 	Catalog             *routes.PublicRepositoryCatalogHandler
 	Mythical            *routes.MythicalHandler
 	AdminSystemStatus   *routes.AdminSystemStatusHandler
+	AdminSystemHealth   *routes.AdminSystemHealthHandler
+	AdminAnalytics      *routes.AdminAnalyticsHandler
+	AdminAgentSessions  *routes.AdminAgentSessionHandler
+	AdminWorkspaces     *routes.AdminWorkspaceHandler
+	AdminTokens         *routes.AdminTokenHandler
+	// DeploymentAdmin are operator endpoints for deployment-owned resources,
+	// mounted behind the same admin chain as the product's.
+	DeploymentAdmin []ports.AdminRoute
 	// ModelProxy is the metered platform-model proxy; nil when the deployment
 	// offers no platform models.
 	ModelProxy http.Handler
@@ -1845,8 +1854,33 @@ func buildRouter(
 				if adminAuditHandler != nil {
 					r.With(readAdmin...).Get("/audit-logs", adminAuditHandler.ListAuditLogs)
 				}
+				if extras.AdminSystemHealth != nil {
+					r.With(readAdmin...).Get("/system/health", extras.AdminSystemHealth.SystemHealth)
+				}
 				if extras.AdminSystemStatus != nil {
 					r.With(readAdmin...).Get("/system/status", extras.AdminSystemStatus.SystemStatus)
+				}
+				if extras.AdminAnalytics != nil {
+					r.With(readAdmin...).Get("/analytics/summary", extras.AdminAnalytics.Summary)
+				}
+				if extras.AdminAgentSessions != nil {
+					r.With(readAdmin...).Get("/agent-sessions", extras.AdminAgentSessions.List)
+					r.With(writeAdmin...).Post("/agent-sessions/{id}/cancel", extras.AdminAgentSessions.Cancel)
+				}
+				if extras.AdminWorkspaces != nil {
+					r.With(readAdmin...).Get("/workspaces", extras.AdminWorkspaces.List)
+					r.With(writeAdmin...).Post("/workspaces/{id}/stop", extras.AdminWorkspaces.Stop)
+					r.With(writeAdmin...).Post("/workspaces/{id}/suspend", extras.AdminWorkspaces.Suspend)
+				}
+				if extras.AdminTokens != nil {
+					r.With(readAdmin...).Get("/tokens", extras.AdminTokens.List)
+				}
+				for _, route := range extras.DeploymentAdmin {
+					scope := readAdmin
+					if route.Write {
+						scope = writeAdmin
+					}
+					r.With(scope...).Method(route.Method, route.Pattern, withAdminAuditActor(route.Handler))
 				}
 				if alphaAccessHandler != nil {
 					r.With(readAdmin...).Get("/alpha/whitelist", alphaAccessHandler.GetAdminWhitelist)
@@ -1887,5 +1921,13 @@ func mountModelProxy(r chi.Router, queries *db.Queries, cfg *config.Config, hand
 		for _, seat := range modelproxy.Seats {
 			r.Post(modelproxy.APIPath+"/"+seat.Provider+"/*", handler.ServeHTTP)
 		}
+	})
+}
+
+// withAdminAuditActor attributes a deployment operator request to the acting
+// admin so its AdminOperations records name them.
+func withAdminAuditActor(next http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next(w, r.WithContext(routes.AdminUserAuditContext(r)))
 	})
 }
