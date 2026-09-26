@@ -227,10 +227,10 @@ func (p pullPushProver) GitHubRepoPushAuthorized(ctx context.Context, userID int
 	return p(ctx, userID, owner, repo)
 }
 
-type pullTokens func(context.Context, int64, int64, string, string) (GitHubInstallationToken, error)
+type pullTokens func(context.Context, int64, int64, string, string, map[string]string) (GitHubInstallationToken, error)
 
-func (p pullTokens) CreateGitHubInstallationTokenForRepositoryOwner(ctx context.Context, userID, orgID int64, owner, repo string) (GitHubInstallationToken, error) {
-	return p(ctx, userID, orgID, owner, repo)
+func (p pullTokens) CreateGitHubInstallationTokenForRepositoryOwner(ctx context.Context, userID, orgID int64, owner, repo string, permissions map[string]string) (GitHubInstallationToken, error) {
+	return p(ctx, userID, orgID, owner, repo, permissions)
 }
 
 func TestLandingGitHubPullCredentialsAreResolvedAtDispatch(t *testing.T) {
@@ -238,11 +238,20 @@ func TestLandingGitHubPullCredentialsAreResolvedAtDispatch(t *testing.T) {
 	repository := landingRepo(nil)
 	actor := &db.User{ID: 7}
 	proved := false
-	tokens := pullTokens(func(_ context.Context, userID, _ int64, owner, repo string) (GitHubInstallationToken, error) {
+	tokens := pullTokens(func(_ context.Context, userID, _ int64, owner, repo string, permissions map[string]string) (GitHubInstallationToken, error) {
 		require.True(t, proved, "push access is proven before an installation token is minted")
 		require.Equal(t, int64(1), userID)
 		require.Equal(t, "acme/app", owner+"/"+repo)
-		return GitHubInstallationToken{InstallationID: 5, Token: "ghs_installation"}, nil
+		// No landing token may carry workflows: GitHub then refuses a push
+		// that adds or edits .github/workflows, so an agent-written workflow
+		// cannot run with the customer's secrets before a human merges.
+		require.NotContains(t, permissions, "workflows")
+		if permissions["contents"] == "write" {
+			require.Equal(t, map[string]string{"contents": "write"}, permissions, "the git push token holds contents:write only")
+			return GitHubInstallationToken{InstallationID: 5, Token: "ghs_push"}, nil
+		}
+		require.Equal(t, map[string]string{"contents": "read", "pull_requests": "write"}, permissions)
+		return GitHubInstallationToken{InstallationID: 5, Token: "ghs_pulls"}, nil
 	})
 	prover := pullPushProver(func(_ context.Context, userID int64, owner, repo string) error {
 		require.Equal(t, int64(7), userID)
@@ -255,7 +264,8 @@ func TestLandingGitHubPullCredentialsAreResolvedAtDispatch(t *testing.T) {
 	target, err := url.Parse(remotes.targetURL)
 	require.NoError(t, err)
 	password, _ := target.User.Password()
-	assert.Equal(t, "ghs_installation", password)
+	assert.Equal(t, "ghs_push", password)
+	assert.Equal(t, "ghs_pulls", remotes.token, "pull request calls use a token that cannot push")
 	assert.Equal(t, "/acme/app.git", target.Path)
 	source, err := url.Parse(remotes.sourceURL)
 	require.NoError(t, err)
@@ -272,7 +282,7 @@ func TestLandingGitHubPullCredentialsAreResolvedAtDispatch(t *testing.T) {
 	_, err = denied.remotes(context.Background(), actor, repository, "owner", "demo")
 	require.ErrorContains(t, err, "push access")
 
-	missing := NewLandingGitHubPullService(nil, q, pullTokens(func(context.Context, int64, int64, string, string) (GitHubInstallationToken, error) {
+	missing := NewLandingGitHubPullService(nil, q, pullTokens(func(context.Context, int64, int64, string, string, map[string]string) (GitHubInstallationToken, error) {
 		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository")
 	}), prover, "https://forge.example", nil)
 	_, err = missing.remotes(context.Background(), actor, repository, "owner", "demo")
@@ -324,4 +334,31 @@ func TestLandingGitHubAPIMapsGitHubAnswers(t *testing.T) {
 	var apiErr *pkgerrors.APIError
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, pkgerrors.CodeForbidden, apiErr.Code)
+}
+
+// The mythical stack pushes agent-written commits like a landing: its push
+// token holds contents:write only and its API token cannot push, so neither
+// carries workflows.
+func TestMythicalGitHubTokensNeverCarryWorkflows(t *testing.T) {
+	q := &mirrorCredentialStore{fakeGitMirrorSyncStore: newFakeGitMirrorSyncStore(), sources: []db.ListRepositoryGitHubSourcesRow{{GithubOwner: "acme", GithubRepo: "app"}}}
+	var minted []map[string]string
+	tokens := pullTokens(func(_ context.Context, _, _ int64, _, _ string, permissions map[string]string) (GitHubInstallationToken, error) {
+		minted = append(minted, permissions)
+		if permissions["contents"] == "write" {
+			return GitHubInstallationToken{Token: "ghs_push"}, nil
+		}
+		return GitHubInstallationToken{Token: "ghs_api"}, nil
+	})
+	prover := pullPushProver(func(context.Context, int64, string, string) error { return nil })
+	gh, err := NewMythicalGitHub(q, tokens, prover, nil).Resolve(context.Background(), landingRepo(nil), "owner", 7)
+	require.NoError(t, err)
+	assert.Equal(t, []map[string]string{
+		{"contents": "write"},
+		{"contents": "read", "issues": "read", "pull_requests": "write"},
+	}, minted)
+	target, err := url.Parse(gh.GitURL)
+	require.NoError(t, err)
+	password, _ := target.User.Password()
+	assert.Equal(t, "ghs_push", password)
+	assert.Equal(t, "ghs_api", gh.Token, "API calls use a token that cannot push")
 }

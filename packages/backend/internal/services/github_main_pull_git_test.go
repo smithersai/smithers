@@ -186,7 +186,7 @@ func TestGitHubMainPullTransfersThroughRealGit(t *testing.T) {
 
 type fixtureTokens struct{}
 
-func (fixtureTokens) CreateGitHubInstallationTokenForRepositoryOwner(context.Context, int64, int64, string, string) (GitHubInstallationToken, error) {
+func (fixtureTokens) CreateGitHubInstallationTokenForRepositoryOwner(context.Context, int64, int64, string, string, map[string]string) (GitHubInstallationToken, error) {
 	return GitHubInstallationToken{Token: "ghs_fixture"}, nil
 }
 

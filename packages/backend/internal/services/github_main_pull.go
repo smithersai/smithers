@@ -73,7 +73,7 @@ type GitHubMainPullStore interface {
 // token for its GitHub source. *RepoConnectionService implements it. Without
 // one, a public source is read anonymously, which also proves it is public now.
 type GitHubMainPullTokens interface {
-	CreateGitHubInstallationTokenForRepositoryOwner(ctx context.Context, ownerUserID, ownerOrgID int64, owner, repo string) (GitHubInstallationToken, error)
+	CreateGitHubInstallationTokenForRepositoryOwner(ctx context.Context, ownerUserID, ownerOrgID int64, owner, repo string, permissions map[string]string) (GitHubInstallationToken, error)
 }
 
 // GitHubMainPullStatus is the receipt of a repository's last observation.
@@ -530,12 +530,15 @@ func (s *GitHubMainPullService) repositoryOwner(ctx context.Context, repository 
 	return "", fmt.Errorf("repository %d has no owner", repository.ID)
 }
 
+// gitHubMainPullPermissions only reads the GitHub repository.
+var gitHubMainPullPermissions = map[string]string{"contents": "read"}
+
 // readToken resolves a read credential now; it is never stored.
 func (s *GitHubMainPullService) readToken(ctx context.Context, repository db.Repository, owner, repo string) string {
 	if s.tokens == nil {
 		return ""
 	}
-	installation, err := s.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, owner, repo)
+	installation, err := s.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, owner, repo, gitHubMainPullPermissions)
 	if err != nil {
 		return ""
 	}

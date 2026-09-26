@@ -117,10 +117,19 @@ type LandingGitHubPullService struct {
 }
 
 // LandingGitHubPullTokens mints the repository owner's GitHub App
-// installation token at dispatch. *RepoConnectionService implements it.
+// installation tokens at dispatch, scoped to one repository and the named
+// permissions. *RepoConnectionService implements it.
 type LandingGitHubPullTokens interface {
-	CreateGitHubInstallationTokenForRepositoryOwner(ctx context.Context, ownerUserID, ownerOrgID int64, owner, repo string) (GitHubInstallationToken, error)
+	CreateGitHubInstallationTokenForRepositoryOwner(ctx context.Context, ownerUserID, ownerOrgID int64, owner, repo string, permissions map[string]string) (GitHubInstallationToken, error)
 }
+
+// Landing tokens never include workflows. GitHub refuses a push that adds or
+// edits .github/workflows without it, so an agent-written workflow cannot run
+// in the customer's repository with its secrets before a human merges.
+var (
+	landingGitHubPushPermissions = map[string]string{"contents": "write"}
+	landingGitHubPullPermissions = map[string]string{"contents": "read", "pull_requests": "write"}
+)
 
 // NewLandingGitHubPullService resolves credentials at dispatch: the GitHub
 // destination from the repository's recorded GitHub source, the acting user's
@@ -149,11 +158,18 @@ func NewLandingGitHubPullService(landings *LandingService, q GitMirrorCredential
 		if err := prover.GitHubRepoPushAuthorized(ctx, actor.ID, githubOwner, githubRepo); err != nil {
 			return landingGitHubRemotes{}, pkgerrors.Forbidden("Your GitHub account must have push access to " + githubOwner + "/" + githubRepo).WithCause(err)
 		}
-		installation, err := tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, githubOwner, githubRepo)
+		installation, err := tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, githubOwner, githubRepo, landingGitHubPushPermissions)
 		if err != nil {
 			return landingGitHubRemotes{}, err
 		}
 		if strings.TrimSpace(installation.Token) == "" {
+			return landingGitHubRemotes{}, pkgerrors.BadRequest("github app is not installed for this repository")
+		}
+		pulls, err := tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, githubOwner, githubRepo, landingGitHubPullPermissions)
+		if err != nil {
+			return landingGitHubRemotes{}, err
+		}
+		if strings.TrimSpace(pulls.Token) == "" {
 			return landingGitHubRemotes{}, pkgerrors.BadRequest("github app is not installed for this repository")
 		}
 		if _, err := gitMirrorURL(sourceBaseURL, "", owner, repo); err != nil {
@@ -180,7 +196,7 @@ func NewLandingGitHubPullService(landings *LandingService, q GitMirrorCredential
 			return landingGitHubRemotes{}, pkgerrors.Internal("build GitHub destination URL").WithCause(err)
 		}
 		return landingGitHubRemotes{githubOwner: githubOwner, githubRepo: githubRepo, sourceURL: source, targetURL: target,
-			token: installation.Token, cleanup: cleanup}, nil
+			token: pulls.Token, cleanup: cleanup}, nil
 	}
 	return s
 }

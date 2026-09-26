@@ -62,6 +62,10 @@ type MythicalGitHubStore interface {
 	gitHubDestinationStore
 }
 
+// mythicalGitHubAPIPermissions covers the stack's API calls: reading issues
+// and opening or reading its pull requests.
+var mythicalGitHubAPIPermissions = map[string]string{"contents": "read", "issues": "read", "pull_requests": "write"}
+
 type mythicalGitHubAPI struct {
 	api         *landingGitHubAPI
 	store       MythicalGitHubStore
@@ -101,15 +105,25 @@ func (g *mythicalGitHubAPI) Resolve(ctx context.Context, repository db.Repositor
 	if err := g.prover.GitHubRepoPushAuthorized(ctx, actorUserID, ghOwner, ghRepo); err != nil {
 		return mythicalGitHubRepo{}, pkgerrors.Forbidden("The stack's GitHub account must have push access to " + ghOwner + "/" + ghRepo).WithCause(err)
 	}
-	installation, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, ghOwner, ghRepo)
+	// Like landings, neither token carries workflows: the git push holds
+	// contents:write only and the API token cannot push.
+	installation, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, ghOwner, ghRepo, landingGitHubPushPermissions)
 	if err != nil {
 		return mythicalGitHubRepo{}, err
 	}
-	token := strings.TrimSpace(installation.Token)
+	push := strings.TrimSpace(installation.Token)
+	if push == "" {
+		return mythicalGitHubRepo{}, pkgerrors.BadRequest("github app is not installed for this repository")
+	}
+	api, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, ghOwner, ghRepo, mythicalGitHubAPIPermissions)
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	token := strings.TrimSpace(api.Token)
 	if token == "" {
 		return mythicalGitHubRepo{}, pkgerrors.BadRequest("github app is not installed for this repository")
 	}
-	gitURL, err := gitMirrorURL(g.gitBase(), token, ghOwner, ghRepo)
+	gitURL, err := gitMirrorURL(g.gitBase(), push, ghOwner, ghRepo)
 	if err != nil {
 		return mythicalGitHubRepo{}, pkgerrors.Internal("build GitHub destination URL").WithCause(err)
 	}

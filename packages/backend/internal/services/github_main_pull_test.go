@@ -243,10 +243,14 @@ func (h *fakeMainPullHost) ListBookmarks(context.Context, string, string, string
 	return out, "", nil
 }
 
-type fakeMainPullTokens struct{ calls int }
+type fakeMainPullTokens struct {
+	calls       int
+	permissions []map[string]string
+}
 
-func (t *fakeMainPullTokens) CreateGitHubInstallationTokenForRepositoryOwner(context.Context, int64, int64, string, string) (GitHubInstallationToken, error) {
+func (t *fakeMainPullTokens) CreateGitHubInstallationTokenForRepositoryOwner(_ context.Context, _, _ int64, _, _ string, permissions map[string]string) (GitHubInstallationToken, error) {
 	t.calls++
+	t.permissions = append(t.permissions, permissions)
 	return GitHubInstallationToken{Token: "ghs_installation_secret"}, nil
 }
 
@@ -1001,4 +1005,13 @@ func TestGitMirrorSyncRechecksThePolicyAtExecution(t *testing.T) {
 	queued[0]()
 	assert.False(t, listed, "the queued run never reaches either remote")
 	assert.Equal(t, gitMirrorRunFailed, store.run.State)
+}
+
+// The main pull only reads GitHub, so its installation token is scoped to
+// contents:read and can never push or carry workflows.
+func TestGitHubMainPullReadTokenIsReadOnly(t *testing.T) {
+	tokens := &fakeMainPullTokens{}
+	service := NewGitHubMainPullService(nil, nil, tokens, nil)
+	assert.Equal(t, "ghs_installation_secret", service.readToken(context.Background(), db.Repository{UserID: pgtype.Int8{Int64: 1, Valid: true}}, "acme", "app"))
+	assert.Equal(t, []map[string]string{{"contents": "read"}}, tokens.permissions)
 }

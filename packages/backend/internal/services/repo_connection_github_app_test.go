@@ -367,3 +367,62 @@ func assertGitHubAppJWTIsValid(t *testing.T, token string, publicKey *rsa.Public
 	require.NoError(t, json.Unmarshal(payloadJSON, &payload))
 	assert.Equal(t, expectedIssuer, payload.Iss)
 }
+
+// A landing push must not carry the App's full installation authority: the
+// production App holds workflows:write, and a full token lets an agent-written
+// .github/workflows file reach the customer's CI and secrets before any merge.
+// The owner-path mint names one repository and the operation's permissions,
+// and never serves or fills the full-installation cache.
+func TestRepoConnectionService_CreateGitHubInstallationTokenForRepositoryOwner_ScopesRepositoryAndPermissions(t *testing.T) {
+	const installationID = int64(9003)
+	invalidateCachedInstallationToken(installationID)
+	defer invalidateCachedInstallationToken(installationID)
+	storeCachedInstallationToken(installationID, "ghs_full_installation", time.Now().Add(time.Hour))
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+
+	var bodies []map[string]any
+	expiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/app/installations/9003/access_tokens", r.URL.Path)
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		bodies = append(bodies, body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"token":"ghs_scoped","expires_at":"` + expiresAt.Format(time.RFC3339) + `"}`))
+	}))
+	defer server.Close()
+	t.Setenv(envGitHubAppID, "12345")
+	t.Setenv(envGitHubAppPrivateKey, string(privateKeyPEM))
+	t.Setenv(envGitHubAppAPIBaseURL, server.URL)
+
+	svc := NewRepoConnectionService(&mockRepoConnectionDB{
+		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return mockRepoConnectionRow{scanFn: func(dest ...any) error {
+				*(dest[0].(*int64)) = installationID
+				return nil
+			}}
+		},
+	})
+
+	for range 2 {
+		token, err := svc.CreateGitHubInstallationTokenForRepositoryOwner(context.Background(), 11, 0, "Acme", "App",
+			map[string]string{"contents": "write"})
+		require.NoError(t, err)
+		assert.Equal(t, "ghs_scoped", token.Token)
+	}
+	require.Len(t, bodies, 2, "scoped tokens are minted per operation, never served from the full-installation cache")
+	for _, body := range bodies {
+		assert.Equal(t, []any{"app"}, body["repositories"])
+		assert.Equal(t, map[string]any{"contents": "write"}, body["permissions"])
+	}
+	cached, ok := getCachedInstallationToken(installationID)
+	require.True(t, ok)
+	assert.Equal(t, "ghs_full_installation", cached.token, "a scoped token never replaces the cached full token")
+
+	_, err = svc.CreateGitHubInstallationTokenForRepositoryOwner(context.Background(), 11, 0, "acme", "app", nil)
+	require.Error(t, err, "an unscoped owner-path mint is refused")
+	assert.Len(t, bodies, 2)
+}

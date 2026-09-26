@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -245,13 +246,22 @@ func (s *RepoConnectionService) CreateGitHubInstallationToken(
 // org member) to the GitHub owner/repo must exist. Smithers user/org names are
 // freely chosen, so a bare owner/repo string match would let a name-colliding
 // Smithers repo resolve a victim's installation.
+//
+// The token is scoped to that one repository and to the caller's permissions,
+// which must be non-empty. These paths push agent-written commits, so they must
+// never carry the App's full authority (for example workflows:write, which
+// lets a pushed .github/workflows file run with the repository's secrets).
 func (s *RepoConnectionService) CreateGitHubInstallationTokenForRepositoryOwner(
 	ctx context.Context,
 	ownerUserID int64,
 	ownerOrgID int64,
 	owner string,
 	repo string,
+	permissions map[string]string,
 ) (GitHubInstallationToken, error) {
+	if len(permissions) == 0 {
+		return GitHubInstallationToken{}, pkgerrors.Internal("scoped github installation token requires permissions")
+	}
 	installationID, err := s.GetGitHubInstallationIDForRepositoryOwner(ctx, ownerUserID, ownerOrgID, owner, repo)
 	if err != nil {
 		return GitHubInstallationToken{}, err
@@ -259,8 +269,23 @@ func (s *RepoConnectionService) CreateGitHubInstallationTokenForRepositoryOwner(
 	if installationID <= 0 {
 		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository")
 	}
+	_, normalizedRepo, err := normalizeRepoRef(owner, repo)
+	if err != nil {
+		return GitHubInstallationToken{}, err
+	}
 
-	return s.createGitHubInstallationTokenForInstallationID(ctx, installationID)
+	return mintGitHubInstallationToken(ctx, installationID, &gitHubInstallationTokenScope{
+		Repositories: []string{normalizedRepo},
+		Permissions:  permissions,
+	})
+}
+
+// gitHubInstallationTokenScope is the body of a scoped access_tokens request.
+// GitHub refuses a token wider than the installation and refuses any request
+// the token's permissions do not cover.
+type gitHubInstallationTokenScope struct {
+	Repositories []string          `json:"repositories"`
+	Permissions  map[string]string `json:"permissions"`
 }
 
 // CreateGitHubInstallationTokenForImportedSource mints a token for a public
@@ -429,6 +454,25 @@ func (s *RepoConnectionService) createGitHubInstallationTokenForInstallationID(
 			ExpiresAt:      cached.expiresAt,
 		}, nil
 	}
+	return mintGitHubInstallationToken(ctx, installationID, nil)
+}
+
+// mintGitHubInstallationToken asks GitHub for an installation token. A nil
+// scope mints (and caches) the full-installation token; a scoped token is
+// per-operation and never cached.
+func mintGitHubInstallationToken(
+	ctx context.Context,
+	installationID int64,
+	scope *gitHubInstallationTokenScope,
+) (GitHubInstallationToken, error) {
+	requestBody := []byte("{}")
+	if scope != nil {
+		encoded, err := json.Marshal(scope)
+		if err != nil {
+			return GitHubInstallationToken{}, pkgerrors.Internal("failed to encode github token scope").WithCause(err)
+		}
+		requestBody = encoded
+	}
 
 	appID, privateKey, err := readGitHubAppCredentialsFromEnv()
 	if err != nil {
@@ -445,7 +489,7 @@ func (s *RepoConnectionService) createGitHubInstallationTokenForInstallationID(
 		strings.TrimRight(githubAPIBaseURL(), "/"),
 		installationID,
 	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader("{}"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
 		return GitHubInstallationToken{}, pkgerrors.Internal("failed to build github token request").WithCause(err)
 	}
@@ -492,7 +536,9 @@ func (s *RepoConnectionService) createGitHubInstallationTokenForInstallationID(
 		return GitHubInstallationToken{}, pkgerrors.Internal("github installation token response had invalid expiry").WithCause(err)
 	}
 
-	storeCachedInstallationToken(installationID, token, expiresAt)
+	if scope == nil {
+		storeCachedInstallationToken(installationID, token, expiresAt)
+	}
 	return GitHubInstallationToken{
 		InstallationID: installationID,
 		Token:          token,
