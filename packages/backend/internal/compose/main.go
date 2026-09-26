@@ -1000,6 +1000,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	adminAuditHandler := &routes.AdminAuditHandler{
 		Queries: queries,
 	}
+	adminSystemStatusHandler := &routes.AdminSystemStatusHandler{
+		Service: services.NewAdminSystemStatusService(services.AdminSystemStatusServiceConfig{
+			DB: pool, Runtime: queries, SSE: sseBroker,
+		}),
+	}
 	webhookHandler := &routes.WebhookHandler{
 		Service: webhookService,
 	}
@@ -1416,7 +1421,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubWebhookHandler,
 		smithersMetrics,
 		routerExtras{Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler,
-			Mythical: mythicalHandler, ModelProxy: modelProxyHandler},
+			Mythical: mythicalHandler, ModelProxy: modelProxyHandler, AdminSystemStatus: adminSystemStatusHandler},
 	)
 	if flow != nil && options.topology.servesHTTP() {
 		browser := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries, dispatcher: flow.dispatcher}

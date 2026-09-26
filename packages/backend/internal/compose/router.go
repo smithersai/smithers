@@ -32,6 +32,7 @@ type routerExtras struct {
 	ModelStream         *routes.ModelStreamHandler
 	Catalog             *routes.PublicRepositoryCatalogHandler
 	Mythical            *routes.MythicalHandler
+	AdminSystemStatus   *routes.AdminSystemStatusHandler
 	// ModelProxy is the metered platform-model proxy; nil when the deployment
 	// offers no platform models.
 	ModelProxy http.Handler
@@ -1830,6 +1831,9 @@ func buildRouter(
 				}
 				if adminAuditHandler != nil {
 					r.With(readAdmin...).Get("/audit-logs", adminAuditHandler.ListAuditLogs)
+				}
+				if extras.AdminSystemStatus != nil {
+					r.With(readAdmin...).Get("/system/status", extras.AdminSystemStatus.SystemStatus)
 				}
 				if alphaAccessHandler != nil {
 					r.With(readAdmin...).Get("/alpha/whitelist", alphaAccessHandler.GetAdminWhitelist)

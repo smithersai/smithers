@@ -26,7 +26,6 @@ type adminOperation struct {
 func adminOperations() []adminOperation {
 	return []adminOperation{
 		{name: "status", method: "GET", path: "/api/admin/system/status"},
-		{name: "canaries", method: "GET", path: "/api/admin/system/canaries"},
 		{name: "incidents list", method: "GET", path: "/api/admin/system/incidents", query: []string{"state", "policy", "limit"}},
 		{name: "incidents ack", method: "POST", path: "/api/admin/system/incidents/{target}/acknowledge", arg: "id", body: []string{"note"}},
 		{name: "incidents unack", method: "POST", path: "/api/admin/system/incidents/{target}/unacknowledge", arg: "id"},

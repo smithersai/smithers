@@ -19,7 +19,6 @@ func TestAdminCommandRequests(t *testing.T) {
 	// query, body, and Observe confirmation target is part of the wire contract.
 	cases := []struct{ command, method, path, query, body, confirm string }{
 		{"status", "GET", "/api/admin/system/status", "", "", ""},
-		{"canaries", "GET", "/api/admin/system/canaries", "", "", ""},
 		{"incidents list --state open --policy Production --limit 50", "GET", "/api/admin/system/incidents", "limit=50&policy=Production&state=open", "", ""},
 		{"incidents ack 229 --note checked", "POST", "/api/admin/system/incidents/229/acknowledge", "", `{"note":"checked"}`, ""},
 		{"incidents unack 229", "POST", "/api/admin/system/incidents/229/unacknowledge", "", "", ""},
