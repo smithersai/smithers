@@ -4,7 +4,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { memoryStorage, silentAgent } from "./TestFixtures"
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 /*
  * `/world.new-note` typed from the chat used to create a note in a pane

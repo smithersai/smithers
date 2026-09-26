@@ -5,7 +5,6 @@ import type { Card, WorldDocument } from "../AppState"
 import type { AppStore } from "../AppStore"
 import { linkGraphOf, linksOf, neighbourhoodOf, notesOf, resolveLink } from "../../wiki/VaultAdapter"
 import { actorSharedState } from "../ActorBindings"
-import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
 import type { ControllerContext } from "./context"
 import { sweepConversation, SweepRequestTooLargeError } from "./ConversationSweep"
 import type { SweepNote } from "./ConversationSweep"
@@ -62,7 +61,6 @@ export const createWorldController = (
   ctx: ControllerContext,
   deps: { readonly nextOrdinal: () => number; readonly cloudWiki?: { readonly scrollEditor?: (id: string, cardId: string, line: number) => boolean; readonly editCloudWiki: (id: string, body: string) => Promise<string | void> } }
 ): WorldController => {
-  const wikiEnabled = knowledgeFlowAvailable("wiki", ctx.services.features)
   let pendingClear: AbortController | undefined
   let disposed = false
   ctx.onDispose(() => {
@@ -90,7 +88,7 @@ export const createWorldController = (
     pendingClear?.abort()
     const operation = new AbortController()
     pendingClear = operation
-    const summarize = options.summarize === true && wikiEnabled
+    const summarize = options.summarize === true
     try {
       const outcome = await ctx.withToast(
         "chat.clear",
@@ -167,9 +165,7 @@ export const createWorldController = (
                 detail: "This turn stopped while trying to archive the conversation; the archive was not saved."
               }).isPersisted.promise.catch(error => ctx.failures.report("archive.notice", error, branchId))
             }
-            return wikiEnabled
-              ? "The archive could not be saved. Your conversation and Wiki notes were not cleared; check local storage and reload before retrying."
-              : "The archive could not be saved. Your conversation was not cleared; check local storage and reload before retrying."
+            return "The archive could not be saved. Your conversation and Wiki notes were not cleared; check local storage and reload before retrying."
           }
           for (const [cardId, pump] of pumps) {
             pump.stopped = true

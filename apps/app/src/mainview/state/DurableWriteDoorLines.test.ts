@@ -64,7 +64,6 @@ import { recordingAgent } from "./TestFixtures"
  * rather than a door that fails.
  */
 const createAppController = scopedControllers({
-  wiki: true,
   pluginLibrary: true
 })
 

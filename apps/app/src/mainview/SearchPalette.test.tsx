@@ -68,7 +68,6 @@ interface View {
 const mount = async (): Promise<View> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableAgent, {
-    features: { wiki: true },
     fetchImpl: async () => json(404, { status: "error", message: "no backend" })
   })
   store.dispatch({

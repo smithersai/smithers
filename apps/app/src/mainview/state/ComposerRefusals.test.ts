@@ -93,7 +93,7 @@ describe("a flow typed into the composer states its refusal", () => {
 
   /*
    * Canary D-6: `/chat.clear --summarize` archived the conversation on a
-   * build where summarising is off. The flag has no grammar there, so it was
+   * build where summarising was off. The flag had no grammar there, so it was
    * dropped and the consequential half ran anyway — the person watched an act
    * happen under a flag that did nothing. A flag a flow never declared is a
    * misunderstanding, not input, so it refuses and performs nothing.
@@ -106,14 +106,14 @@ describe("a flow typed into the composer states its refusal", () => {
     controller.send("hello")
     await settled()
     const before = store.collections.messages.size
-    controller.send("/chat.clear --summarize")
+    controller.send("/chat.clear --forever")
     await settled()
     await settled()
     /* Nothing was archived: the earlier turn is still the conversation. */
     expect([...store.collections.messages.values()].map((message) => message.text).join("\n"))
       .not.toContain("Open the archived conversation")
     expect(store.collections.messages.size).toBeGreaterThanOrEqual(before)
-    expect(transcript(store)).toContain("--summarize")
+    expect(transcript(store)).toContain("--forever")
 
     /* A flow that DOES take flags refuses the one it never named, and keeps the ones it did. */
     controller.send("/issues.view 3 --bogus codeplanesmithers/canary-sandbox")
@@ -141,15 +141,15 @@ describe("a flow typed into the composer states its refusal", () => {
     controller.send("remember that I prefer dark mode")
     await settled()
     const before = [...store.collections.messages.values()].map((message) => message.text)
-    controller.send("/chat.clear --summarize")
+    controller.send("/chat.clear --forever")
     await settled()
     await settled()
     const after = [...store.collections.messages.values()].map((message) => message.text)
     /* The transcript GREW, and every prior turn is still in it. */
     expect(after.length).toBeGreaterThan(before.length)
     for (const text of before) expect(after).toContain(text)
-    const refusal = after.find((text) => text.includes("--summarize")) ?? ""
-    expect(refusal).toContain("--summarize")
+    const refusal = after.find((text) => text.includes("--forever")) ?? ""
+    expect(refusal).toContain("--forever")
     expect(refusal).toContain("/chat.clear")
     /* A refusal is not a decode dump: no schema path, no internal id. */
     expect(refusal).not.toMatch(/Missing key|\[".*"\]|_tag/)

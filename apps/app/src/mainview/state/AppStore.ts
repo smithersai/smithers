@@ -118,7 +118,6 @@ import { RepositoryContextSchema } from "./RepositoryContext"
 import { NotificationReadReceiptSchema,RepositoryNotificationSchema } from "./RepositoryNotifications"
 import { RuntimeApprovalSchema,RuntimeRunSchema,type RuntimeApproval,type RuntimeRun } from "./RuntimeProjection"
 import { HeldBrowserStorageError } from "./StorageRecoveryContract"
-import { wikiFlagEnabled } from "./KnowledgeFeatures"
 import { WIKI_RECOVERY_STORAGE_KEY,clearWikiRecovery,readWikiRecovery,writeWikiRecovery } from "./WikiRecovery"
 import { createWorkspaceViews } from "./WorkspaceViews"
 
@@ -1595,8 +1594,7 @@ const initializeAppStore = async (
   // receipts add fresh events and cannot prove that a later input already landed.
   const pendingRecoveries = [
     ...(draftRecovery ? [{ kind: "draft" as const, record: draftRecovery }] : []),
-    // A Wiki edit behind the off flag is kept, never replayed: the text waits for the day the flag is on.
-    ...(wikiRecovery && wikiFlagEnabled() ? [{ kind: "wiki" as const, record: wikiRecovery }] : []),
+    ...(wikiRecovery ? [{ kind: "wiki" as const, record: wikiRecovery }] : []),
     ...entityRecoveries.map(record => ({ kind: "entity" as const, record }))
   ].sort((a, b) => {
     const left = a.record.authority?.intentId ?? "", right = b.record.authority?.intentId ?? ""

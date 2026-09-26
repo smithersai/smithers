@@ -57,7 +57,7 @@ const attachWorld = (
     startTurn: async () => ({ status: "error", message: "unavailable" }),
     cancelTurn,
     subscribe: () => () => {}
-  }, { fetchImpl, frameHistory, features: { wiki: true } })
+  }, { fetchImpl, frameHistory })
   ctx.withToast = createFailureController(ctx).withToast
   ctx.contextMessages = () =>
     [...store.collections.messages.values()].map((message) => ({

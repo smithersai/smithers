@@ -21,11 +21,8 @@ import type { FlowName } from "../../../src/mainview/flows/FlowName"
  * `tab` field is required — and reading a tab mutates nothing if the form is
  * ever submitted.
  *
- * The vehicle was `wiki.open` until it failed criterion 1: the Wiki flows sit
- * behind VITE_SMITHERS_WIKI (Flows.ts), off in every deployed build, so they
- * are absent from the live `.app-shell[data-flows]` registry and nine
- * scenarios whose subject was never Wiki could not execute in production.
- * Re-point FORM_VEHICLE_FLOW and FORM_VEHICLE_FIELD to change the vehicle
+ * The vehicle was `wiki.open`; `tab.read` keeps the scenarios off the Wiki,
+ * which none of them is about. Re-point FORM_VEHICLE_FLOW and FORM_VEHICLE_FIELD to change the vehicle
  * again; the card and field ids below derive from them.
  */
 const FORM_VEHICLE_FLOW: FlowName = "tab.read"

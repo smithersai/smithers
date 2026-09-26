@@ -573,7 +573,7 @@ function AppContent() {
 
         </div>
 
-        {session.surface === "world" && controller.features.wiki ?
+        {session.surface === "world" ?
           <WorldSurface documents={worldDocuments} /> :
           session.surface === "connectors" ?
           <ConnectorsSurface /> :

@@ -15,10 +15,8 @@ import { expect,test } from "@playwright/test"
  * passed (a bounding box is not a hit test), and its own styling lost every
  * declaration to `.sui-button-ghost` and `.first-run-actions button`.
  *
- * The surface used to be a Wiki note's editor. Wiki is a default-off release
- * flag, so `/wiki.new-note` registers nowhere and the three tests failed in
- * the helper. The browser card is the other card-shaped surface the module
- * detects (state/controller/controlFocus.ts KINDS), so the geometry the tests
+ * The surface used to be a Wiki note's editor. The browser card is the
+ * other card-shaped surface the module detects (state/controller/controlFocus.ts KINDS), so the geometry the tests
  * measure — the box, its header, the inner element focus lands on — is the
  * same shape, and every assertion below is the one it always made.
  */

@@ -5,7 +5,7 @@ import { createAppStore } from "./AppStore"
 import { WORLD_BODY_PER_DOCUMENT, worldContextDocuments } from "./WorldContext"
 import { memoryStorage, recordingAgent, settled } from "./TestFixtures"
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 /*
  * §10.8 — the World reaches the model, or it is decoration.

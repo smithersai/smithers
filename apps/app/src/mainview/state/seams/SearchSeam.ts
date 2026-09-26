@@ -35,7 +35,6 @@ import { readHistory } from "./HistorySeam"
 import type { HistoryPayload } from "./HistorySeam"
 import type { SeamContext } from "./SeamContext"
 import { readFactoryProjection } from "./TriggersSeam"
-import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
 
 /** The registry the seam reads: the flows it can act with and the state the scope rules read. */
 export interface SearchRegistry {
@@ -179,9 +178,8 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
   }
 
   /** The Wiki pane's documents: the person's notes (generated pages exist on no catalog repository yet). */
-  const wikiItems = (): ReadonlyArray<Fact> => deps.registry().state().wiki === true
-    ? [...ctx.store.collections.worldDocuments.values()].map((document) => ({ kind: "note" as const, ref: document.id, title: document.title, subtitle: document.path }))
-    : []
+  const wikiItems = (): ReadonlyArray<Fact> =>
+    [...ctx.store.collections.worldDocuments.values()].map((document) => ({ kind: "note" as const, ref: document.id, title: document.title, subtitle: document.path }))
 
   /** The history cards the history seam has written, as their payloads. */
   const heldHistory = (): ReadonlyArray<HistoryPayload> =>
@@ -396,12 +394,10 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
         parsed,
         groups: [],
         flow,
-        help: PREFIXES.filter(row => (row.mode !== "ask" || snapshot.wiki === true) &&
-          knowledgeFlowAvailable(flowOf(row.mode) ?? "", snapshot)).map((row) => ({ ...row, available: !(row.signedIn && snapshot.signedOut) }))
+        help: PREFIXES.map((row) => ({ ...row, available: !(row.signedIn && snapshot.signedOut) }))
       }
     }
     if (parsed.mode === "flows") return { parsed, groups: [], flow }
-    if (!knowledgeFlowAvailable(flow ?? "", snapshot)) return { parsed, groups: [], flow: null }
     if (snapshot.signedOut && HIDDEN_SIGNED_OUT.has(parsed.mode)) return { parsed, groups: [], flow }
     const items = parsed.mode === "line" ? lineItems(parsed) : itemsOf(parsed.mode, parsed)
     if (typeof items === "string") return { parsed, groups: [], flow, refusal: items }
@@ -436,7 +432,6 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
    * secrets.list re-reads it.
    */
   const liveIndexes = async (mode: PaletteMode, args: SearchArgs): Promise<LiveIndexes | string> => {
-    if (!knowledgeFlowAvailable(flowOf(mode) ?? "", deps.registry().state())) return "This feature is not enabled."
     if (mode === "boxes" && deps.refreshWorkspaces !== undefined) {
       const refused = await deps.refreshWorkspaces()
       return typeof refused === "string" ? refused : {}
@@ -466,7 +461,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
     if (read.absent) return []
     const entries = deps.registry().entries()
     const runnable = entries.some((entry) => entry.binding.descriptor.name === "flow.run")
-    return (read.projection.flows ?? []).filter(flow => knowledgeFlowAvailable(flow.id, deps.registry().state())).map((flow) => ({
+    return (read.projection.flows ?? []).map((flow) => ({
       kind: "flow" as const,
       ref: flow.id,
       title: flow.id,

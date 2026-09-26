@@ -225,6 +225,7 @@ export const APP_TRANSITION_TYPES = {
   "signup.changed": true,
   "librarian.launches.changed": true,
   "coding.provider.requests.changed": true,
+  "stack.wiki.requests.changed": true,
   "theme.changed": true,
   "palette.changed": true,
   "composer.control.changed": true,
@@ -815,6 +816,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
     }
     draft.activeRepoKey = null
     delete draft.librarianLaunches
+    delete draft.wikiRequests
     draft.maximizedCardId = null
     draft.activeFrameId = rootFrameId(branchId)
   })
@@ -1979,6 +1981,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         }
         case "coding.provider.requests.changed": {
           collections.sessions.update(SESSION_ID, draft => { draft.codingProviderRequests = transition.requests })
+          break
+        }
+        case "stack.wiki.requests.changed": {
+          collections.sessions.update(SESSION_ID, draft => { draft.wikiRequests = transition.requests })
           break
         }
         case "theme.changed":

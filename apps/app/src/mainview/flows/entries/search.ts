@@ -12,7 +12,6 @@ import type { PaletteMode } from "../SearchQuery"
 import { flow } from "./Declare"
 import type { FlowEntry, Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
-import { knowledgeFlowAvailable } from "../../state/KnowledgeFeatures"
 
 /** The `search` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
 export const namespace: Namespace = {
@@ -74,4 +73,4 @@ export const searchFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   search(actions, "search.issues", "issues", "Find issues by number or title", "<query> [is:open|closed]"),
   search(actions, "search.boxes", "boxes", "Find boxes by name, repository or state", "<query>", { requires: ["signed-in"], runtime: ["cloud"] }),
   search(actions, "search.secrets", "secrets", "Find secret names and the hosts they bind to; values never exist on the wire", "<query>", { requires: ["signed-in"], runtime: ["cloud"] }),
-].filter(entry => knowledgeFlowAvailable(entry.binding.descriptor.name, actions.snapshot?.()))
+]

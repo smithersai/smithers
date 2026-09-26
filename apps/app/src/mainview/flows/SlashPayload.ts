@@ -635,6 +635,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "wiki.cloud": (args) => {
     const [repo, page] = tokensOf(args)
     if (repo === undefined) return no("Choose a repository for its Wiki.")
+    if (page !== undefined && !/^\d+$/.test(page)) return no("A Wiki page is a whole number.")
     return ok({ repo, ...(page === undefined ? {} : { page: Number(page) }) })
   },
   "wiki.cloud.open": (args, known) => {

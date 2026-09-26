@@ -19,7 +19,6 @@ const createAppController = scopedControllers()
 const setup = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, silentAgent, {
-    features: { wiki: true },
     fetchImpl: async () => new Response("{}", { status: 200 })
   })
   await store.dispatch({

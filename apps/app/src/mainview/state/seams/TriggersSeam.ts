@@ -417,7 +417,7 @@ const jobWorkspace = (ctx: SeamContext, repo: string): string | undefined =>
  * host, whose catalog carries `repository/setup`, `repository/trigger` and
  * the five `repository-jobs/*` (flows/repository/registry.ts). The
  * repository's own gateway, which `workspaceId: undefined` reaches, runs the
- * product host: the two librarian flows and the trigger store the Worker's
+ * product host: the librarian flow and the trigger store the Worker's
  * triggers route lists (apps/server workflows.ts names no workspace either).
  * A registrar call that named no workspace would answer `flow_not_found` on
  * every repository, and a trigger read that named one would answer for

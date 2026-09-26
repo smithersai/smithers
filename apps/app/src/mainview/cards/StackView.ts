@@ -3,7 +3,7 @@
  * snapshot: the counts row, the lanes, and the ordered stack rows. Pure, so
  * the card, the homepage block and their tests read the same projection.
  */
-import type { MythicalAccount, MythicalChange, MythicalItem, MythicalLane, MythicalStack } from "@smthrs/rpc/Mythical"
+import type { MythicalAccount, MythicalChange, MythicalItem, MythicalLane, MythicalStack, MythicalWiki } from "@smthrs/rpc/Mythical"
 import { isSettledItemState } from "@smthrs/rpc/Mythical"
 
 /** Items a lane is working on: from launch until the pull request is open. */
@@ -127,6 +127,22 @@ const PROVIDER_NAMES: Readonly<Record<MythicalAccount["provider"], string>> = { 
 /** The account a lane's latest call used, and how many more served it: `work@example.com +1`. */
 export const accountLabel = (account: MythicalAccount): string =>
   `${account.label ?? PROVIDER_NAMES[account.provider]}${account.count > 1 ? ` +${account.count - 1}` : ""}`
+
+/** The Wiki row: its page count, the edited count when any, and the Retry reason of a failed refresh. */
+export interface WikiRow {
+  readonly state: MythicalWiki["state"]
+  readonly pages: string
+  readonly edited: string | undefined
+  /** Present only while a refresh failed: the row offers Retry with this line under it. */
+  readonly failure: string | undefined
+}
+
+export const wikiRow = (wiki: MythicalWiki): WikiRow => ({
+  state: wiki.state,
+  pages: `${wiki.pages} ${wiki.pages === 1 ? "page" : "pages"}`,
+  edited: wiki.edited > 0 ? `${wiki.edited} edited` : undefined,
+  failure: wiki.state === "failed" ? wiki.error ?? "" : undefined
+})
 
 /** Whether an item is out of the lanes: settled, or its pull request is open. */
 export function settled(item: MythicalItem): boolean {

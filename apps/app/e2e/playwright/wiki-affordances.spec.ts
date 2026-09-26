@@ -10,12 +10,7 @@ import { expect, test, type Page } from "@playwright/test"
  * would pass while the flow behind it ran nothing — which is exactly what the
  * ref-callback stamp these bindings replaced used to hide — so every test
  * clicks the row and asserts what the app then shows.
- *
- * Wiki is a default-off release flag read at BUILD time, and the tier builds
- * the SPA once for every spec, so these run under
- * `VITE_SMITHERS_WIKI=true pnpm --filter smithers-app test:e2e`.
  */
-test.skip(process.env.VITE_SMITHERS_WIKI !== "true", "Wiki is a default-off release flag; run the tier with VITE_SMITHERS_WIKI=true")
 test.skip(process.env.SMITHERS_CHAT_STUB === "0", "the stub suite; no turn is sent")
 test.use({ actionTimeout: 5_000 })
 test.setTimeout(60_000)

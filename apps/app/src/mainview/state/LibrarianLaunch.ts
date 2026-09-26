@@ -3,21 +3,21 @@ import { runFailure } from "./RunFailure"
 
 /** A persisted preparation from another page load is retryable, never an endless spinner. */
 export const LIBRARIAN_LAUNCH_OWNER = crypto.randomUUID()
-export const LIBRARIAN_COMMANDS = { wiki: "wiki.create", history: "history.bootstrap" } as const
+/** The one generator a persisted launch can name; the Wiki refreshes through the stack (StackSeam). */
+export const LIBRARIAN_HISTORY_FLOW = "librarian/history"
 export const LIBRARIAN_UNCONFIRMED = "The page reloaded before Smithers could confirm the run. Check Runs before retrying."
-export const librarianFailureMessage = (kind: "wiki" | "history", reason?: string) => {
-  const label = kind === "wiki" ? "Wiki" : "Mythical history"
-  if (reason === LIBRARIAN_UNCONFIRMED) return `${label} may have started. Check Runs before retrying, or choose Do this later.`
-  return `Create ${label} didn't start: ${runFailure(reason).message}`
+export const librarianFailureMessage = (reason?: string) => {
+  if (reason === LIBRARIAN_UNCONFIRMED) return "Mythical history may have started. Check Runs before retrying, or choose Do this later."
+  return `Create Mythical history didn't start: ${runFailure(reason).message}`
 }
 
 export type LibrarianRunCard = Extract<Card, { kind: "run-trace" }>
 export const librarianRunKey = (card: LibrarianRunCard): string => JSON.stringify([card.payload.repo, card.payload.workspaceId, card.payload.runId])
-export const librarianRunMetadata = (card: LibrarianRunCard): { kind: "wiki" | "history"; scope: string; inspected: boolean } | undefined => {
+export const librarianRunMetadata = (card: LibrarianRunCard): { kind: "history"; scope: string; inspected: boolean } | undefined => {
   const value = card.payload.input?._librarian
   if (!value || typeof value !== "object") return
   const row = value as { kind?: unknown; scope?: unknown; inspected?: unknown }
-  if ((row.kind === "wiki" || row.kind === "history") && typeof row.scope === "string" && typeof row.inspected === "boolean") {
+  if (row.kind === "history" && typeof row.scope === "string" && typeof row.inspected === "boolean") {
     return { kind: row.kind, scope: row.scope, inspected: row.inspected }
   }
 }
@@ -27,8 +27,7 @@ export const librarianRunCards = (cards: readonly Card[]): LibrarianRunCard[] =>
   const runs = new Map<string, LibrarianRunCard>()
   for (const card of cards) {
     if (card.kind !== "run-trace") continue
-    const receipt = librarianRunMetadata(card)
-    if (!receipt || card.payload.workflow !== `librarian/${receipt.kind}`) continue
+    if (!librarianRunMetadata(card) || card.payload.workflow !== LIBRARIAN_HISTORY_FLOW) continue
     const key = librarianRunKey(card)
     const previous = runs.get(key)
     if (!previous || card.payload.lastSeq > previous.payload.lastSeq ||

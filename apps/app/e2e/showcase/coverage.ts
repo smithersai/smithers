@@ -33,7 +33,7 @@ export const UNAVAILABLE: Readonly<Record<string, string>> = {
   "experimental.*": "admin-only panes over mock data"
 }
 
-const inert = (flags: { readonly wiki: boolean; readonly pluginLibrary: boolean }): CommandActions =>
+const inert = (flags: { readonly pluginLibrary: boolean }): CommandActions =>
   new Proxy({}, { get: (_, key) => key === "snapshot" ? () => flags : () => undefined }) as CommandActions
 
 const registered = (actions: CommandActions) =>
@@ -53,10 +53,10 @@ const unavailableReason = (name: string): string | undefined =>
 
 /** Every declared flow, with the default build's release flags deciding what is off. */
 export const flowCatalog = (): ReadonlyArray<CatalogFlow> => {
-  const defaults = new Set(registered(inert({ wiki: false, pluginLibrary: false })).map(nameOf))
+  const defaults = new Set(registered(inert({ pluginLibrary: false })).map(nameOf))
   const seen = new Set<string>()
   const rows: Array<CatalogFlow> = []
-  for (const entry of registered(inert({ wiki: true, pluginLibrary: true }))) {
+  for (const entry of registered(inert({ pluginLibrary: true }))) {
     const name = nameOf(entry)
     if (seen.has(name)) continue
     seen.add(name)

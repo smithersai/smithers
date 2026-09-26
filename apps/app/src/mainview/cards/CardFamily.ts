@@ -48,7 +48,6 @@ export interface CardProjectionAuthority {
  */
 export interface CardActions {
   readonly pluginLibrary?: boolean
-  readonly wiki?: boolean
   readonly experimental?: boolean
   /** Read authority for derived decorations; absent only in isolated static previews. */
   readonly projectionStore?: CardProjectionAuthority

@@ -11,7 +11,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { RECOMMEND_OUTCOME_PATH,RECOMMEND_PATH } from "./Recommend"
 import { json, memoryStorage, repositoryHttpFixture, silentAgent } from "./TestFixtures"
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 /*
  * The recommender as a workflow: a material change → the `recommend` flow →

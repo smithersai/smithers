@@ -44,7 +44,7 @@ afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
 })
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 interface Mount {
   readonly host: HTMLElement

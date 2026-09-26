@@ -57,7 +57,6 @@ const localHarness = async (services: AppServices = {}): Promise<{ store: AppSto
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableAgent, {
     ...services,
-    features: { wiki: true, ...services.features },
     bootstrap: {
       apiVersion: 1,
       host: "local",
@@ -76,7 +75,6 @@ const cloudHarness = async (services: AppServices = {}): Promise<{ store: AppSto
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableAgent, {
     ...services,
-    features: { wiki: true, ...services.features },
     bootstrap: {
       apiVersion: 1,
       host: "cloud",

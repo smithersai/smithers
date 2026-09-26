@@ -24,7 +24,7 @@ export function ChromeDock() {
   // rendered only while a native release exists to download (AppLinks.ts — null until one carries an asset).
   const canDownload = controller.commands.find("app.download") !== undefined && controller.downloadUrl !== null
   // Wiki: the `wiki` surface switch (the Wiki pane beside the chat); registered on every host.
-  const canWiki = controller.features.wiki === true && controller.commands.find("wiki") !== undefined
+  const canWiki = controller.commands.find("wiki") !== undefined
   // Dispatcher: triggers.list, the dispatcher card.
   const canDispatcher = controller.commands.find("triggers.list") !== undefined
   // Flows: the `flows` surface switch; registered on every host.

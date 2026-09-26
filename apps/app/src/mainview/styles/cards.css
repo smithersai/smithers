@@ -1438,6 +1438,7 @@
 }
 .stack-counts,
 .stack-admin,
+.stack-wiki,
 .stack-lanes > .world-card-row,
 .stack-rows > .world-card-row,
 .stack-failure {
@@ -1449,7 +1450,8 @@
 	font-weight: 600;
 }
 .stack-state[data-state="blocked"],
-.stack-state[data-state="rejected"] {
+.stack-state[data-state="rejected"],
+.stack-wiki > .stack-state[data-state="failed"] {
 	color: var(--danger);
 }
 .stack-reason {

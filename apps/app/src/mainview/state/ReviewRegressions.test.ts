@@ -7,7 +7,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import type { AppController, AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 const controllers: AppController[] = []
 afterEach(() => { for (const controller of controllers.splice(0)) controller.dispose() })

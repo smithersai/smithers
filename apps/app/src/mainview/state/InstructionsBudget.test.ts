@@ -10,7 +10,7 @@ import { initialSetup, REPOSITORY_JOB_TITLES, type RepositoryJob } from "@smthrs
 import { CHAT_INSTRUCTIONS_CAP_BYTES, CODE_INTEL_LINE, INSTRUCTIONS_BUDGET_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionStageOf, smithersInstructions } from "./Instructions"
 import { WORLD_BODY_BUDGET, WORLD_BODY_PER_DOCUMENT } from "./WorldContext"
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 /*
  * 2026-09-02: a turn failed with "Smithers Cloud chat failed (HTTP 400):

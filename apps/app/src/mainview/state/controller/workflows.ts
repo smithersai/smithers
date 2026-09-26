@@ -21,7 +21,6 @@ import { declaredInput, formFieldsFor, draftFrom, missingFields } from "../../fl
 import type { FormsController } from "./forms"
 import { flowArgs } from "../../flows/FlowArgs"
 import { projectRuntimeCard, runtimeApprovalIdOf, runtimeApprovalKey } from "../RuntimeProjection"
-import { runtimeFlowAvailable } from "../KnowledgeFeatures"
 import { createWorkflowLaunchController } from "./workflow-launch"
 import { canonical, digest } from "@smthrs/core/Digest"
 import { planCardGraph, planCardNode, planCardSnapshot } from "../../cards/PlanNodes"
@@ -654,7 +653,6 @@ export const createWorkflowController = (
     readonly binding?: GatewayWorkspaceBinding
     readonly kind?: string
   }): Promise<{ readonly runId: string } | LaunchRefusal> => {
-    if (!runtimeFlowAvailable(args.workflow, ctx.services.features)) return { message: "This feature is not enabled.", code: "FEATURE_DISABLED" }
     const launch = await gateway.launch(args.repo, args.workflow, args.input, args.binding)
     if (launch.status !== "ok") return { message: launch.message, ...(launch.code === undefined ? {} : { code: launch.code }) }
     const { runId } = launch.value
@@ -856,7 +854,6 @@ export const createWorkflowController = (
   }
 
   const runWorkflow = async (name: string, repoArg?: string, inputArg?: Record<string, unknown>, sourceCard?: string): Promise<string | void | { readonly value: string }> => {
-    if (!runtimeFlowAvailable(name, ctx.services.features)) return "This feature is not enabled."
     const input = inputArg ?? {}
     const guard = workflowIdentityGuard()
     if (guard !== undefined) return guard
@@ -899,7 +896,6 @@ export const createWorkflowController = (
   const requestChange = async (prompt: string, repoArg?: string): Promise<string | void | { readonly value: string }> => {
     const what = prompt.trim()
     if (what === "") return "change.request needs what to change"
-    if (!runtimeFlowAvailable("coding/request", ctx.services.features)) return "This feature is not enabled."
     if (what.length > 32_768) return "The change request exceeds the coding request limit of 32,768 characters."
     const guard = workflowIdentityGuard()
     if (guard !== undefined) return guard

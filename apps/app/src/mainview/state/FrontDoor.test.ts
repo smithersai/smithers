@@ -20,7 +20,7 @@ import { memoryStorage, settled } from "./TestFixtures"
  * leg as its own and answers it without a model.
  */
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
 

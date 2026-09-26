@@ -9,7 +9,6 @@ import { beginRepositoryEntry, openRequestedRepo, requestedRepo, withoutRepoPara
 import { createBrowserFrameHistory } from "./runtime/FrameHistory"
 import { BootstrapFailure, createRuntime, warmBootstrap, unavailableAgent } from "./runtime/Runtime"
 import { createAppController } from "./state/AppController"
-import { wikiFlagEnabled } from "./state/KnowledgeFeatures"
 import type { AppController } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
 import { canPaintAppBeforeIdentity, loadControllerBootInputs } from "./ControllerBootMemo"
@@ -51,7 +50,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     const bootstrapRead = warmBootstrap(http)
     const { bootstrap, store } = yield* promiseEffect("prepare runtime and persisted state", () =>
       loadControllerBootInputs(() => bootstrapRead, () => createAppStore(undefined, {
-        seedWiki: bootstrapRead.then(bootstrap => bootstrap.host !== "cloud" && wikiFlagEnabled(), () => false), eraseTurn: createTurnEraser(http)
+        seedWiki: bootstrapRead.then(bootstrap => bootstrap.host !== "cloud", () => false), eraseTurn: createTurnEraser(http)
       })))
     const repositoryEntryId = yield* Effect.sync(() => beginRepositoryEntry(store, requested))
     const runtime = yield* Effect.sync(() => createRuntime({

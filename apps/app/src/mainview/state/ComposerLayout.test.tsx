@@ -10,7 +10,7 @@ import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { backend, json, memoryStorage, settled, silentAgent } from "./TestFixtures"
 
-const createAppController = scopedControllers({ wiki: true, pluginLibrary: true })
+const createAppController = scopedControllers({ pluginLibrary: true })
 
 GlobalRegistrator.register()
 

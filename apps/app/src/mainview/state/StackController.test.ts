@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { MythicalItem, MythicalStack } from "@smthrs/rpc/Mythical"
+import type { MythicalItem, MythicalStack, MythicalWiki } from "@smthrs/rpc/Mythical"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
@@ -296,4 +296,104 @@ test("a dismissed lane notice stays dismissed while the item is in its lane", as
   await waitFor(() => fake.reads() > reads, 3_000)
   await new Promise(resolve => setTimeout(resolve, 60))
   expect(toast(store, itemKey("i4"))).toBeUndefined()
+})
+
+/* ---- the Wiki the stack keeps current (wiki.create) ---- */
+
+const WIKI_KEY = `stack.wiki.${REPO}`
+const wiki = (state: MythicalWiki["state"], extra: Partial<MythicalWiki> = {}): MythicalWiki =>
+  ({ state, commit: "c2", pages: 12, edited: 0, attempt: 1, ...extra })
+
+test("wiki.create answers before its request does, deduplicates, and settles only when the Wiki reads current", async () => {
+  const { store, controller, fake } = await setup()
+  fake.set(snapshot(1, [], { wiki: wiki("stale") }))
+  const held = deferred<Response>()
+  fake.handlers.set(`POST ${BASE}/wiki`, () => held.promise)
+  // A double press: both doors answer at once and one request goes out.
+  const [first, second] = await Promise.all([controller.commands.run("wiki.create", REPO), controller.commands.run("wiki.create", REPO)])
+  expect(first).toMatchObject({ status: "executed", value: "Requested" })
+  expect(second).toMatchObject({ status: "executed", value: "Requested" })
+  expect(stackCard(store)?.payload).toEqual({ repo: REPO, failure: null })
+  // Durable before the network answers.
+  expect(store.session().wikiRequests).toMatchObject([{ repo: REPO, owner: "alice" }])
+  await waitFor(() => toast(store, WIKI_KEY)?.status === "running")
+  expect(fake.writes.filter(write => write.path === `${BASE}/wiki`)).toHaveLength(1)
+  // Chat and other acts stay usable while the launch is unresolved.
+  expect(await controller.commands.run("stack.show", REPO)).toMatchObject({ status: "executed" })
+
+  const refreshing = snapshot(2, [], { wiki: wiki("refreshing") })
+  fake.set(refreshing)
+  held.resolve(Response.json(refreshing, { status: 202 }))
+  await waitFor(() => controller.stackSnapshots.get(REPO)?.stack?.wiki?.state === "refreshing")
+  await waitFor(() => fake.streams() === 1)
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(toast(store, WIKI_KEY)?.status).toBe("running")
+
+  fake.set(snapshot(3, [], { wiki: wiki("current", { publishedCommit: "c2", pages: 14 }) }))
+  fake.hint(3)
+  await waitFor(() => toast(store, WIKI_KEY)?.status === "ok")
+  expect(toast(store, WIKI_KEY)?.title).toBe("Wiki current")
+  expect(fake.writes.filter(write => write.path === `${BASE}/wiki`)).toHaveLength(1)
+  await waitFor(() => (store.session().wikiRequests ?? []).length === 0)
+})
+
+test("a failed refresh settles failed with Retry, and Retry waits for the next attempt, not the last one's error", async () => {
+  const { store, controller, fake } = await setup()
+  fake.handlers.set(`POST ${BASE}/wiki`, async () => Response.json(snapshot(2, [], { wiki: wiki("refreshing") }), { status: 202 }))
+  fake.set(snapshot(2, [], { wiki: wiki("refreshing") }))
+  await controller.commands.run("wiki.create", REPO)
+  await waitFor(() => fake.streams() === 1)
+  const failed = snapshot(3, [], { wiki: wiki("failed", { error: "2 pages failed review" }) })
+  fake.set(failed)
+  fake.hint(3)
+  await waitFor(() => toast(store, WIKI_KEY)?.status === "failed")
+  expect(toast(store, WIKI_KEY)).toMatchObject({ detail: "2 pages failed review", action: { flow: "wiki.create", args: REPO, label: "Retry" } })
+  // The card has no failure row for the Wiki: its own row shows the error and Retry.
+  expect(stackCard(store)?.payload.failure).toBeNull()
+
+  // The retry is acknowledged with the failure it was asked about.
+  fake.handlers.set(`POST ${BASE}/wiki`, async () => Response.json(failed, { status: 202 }))
+  expect(await controller.commands.run("wiki.create", REPO)).toMatchObject({ status: "executed", value: "Requested" })
+  await waitFor(() => toast(store, WIKI_KEY)?.status === "running")
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(toast(store, WIKI_KEY)?.status).toBe("running")
+  fake.set(snapshot(4, [], { wiki: wiki("refreshing", { attempt: 2 }) }))
+  fake.hint(4)
+  await waitFor(() => controller.stackSnapshots.get(REPO)?.stack?.wiki?.attempt === 2, 3_000)
+  expect(toast(store, WIKI_KEY)?.status).toBe("running")
+  fake.set(snapshot(5, [], { wiki: wiki("current", { attempt: 2, publishedCommit: "c2" }) }))
+  fake.hint(5)
+  await waitFor(() => toast(store, WIKI_KEY)?.status === "ok", 3_000)
+})
+
+test("a refused Wiki request fails on its notice with Retry", async () => {
+  const { store, controller, fake } = await setup()
+  fake.handlers.set(`POST ${BASE}/wiki`, async () => Response.json({ message: "Only a repository writer can refresh the Wiki." }, { status: 403 }))
+  expect(await controller.commands.run("wiki.create", REPO)).toMatchObject({ status: "executed", value: "Requested" })
+  await waitFor(() => toast(store, WIKI_KEY)?.status === "failed")
+  expect(toast(store, WIKI_KEY)?.action).toEqual({ flow: "wiki.create", args: REPO, label: "Retry" })
+  expect(stackCard(store)?.payload.failure).toBeNull()
+})
+
+test("a reload reconnects a running Wiki notice without sending the request again", async () => {
+  const storage = new Map<string, string>()
+  const local = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => { storage.set(key, value) }, removeItem: (key: string) => { storage.delete(key) } }
+  const first = await createAppStore({ kind: "localStorage", storage: local })
+  await first.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: `stack:${REPO}`, kind: "stack", title: `Stack · ${REPO}`, status: "active", createdAt: 1, ordinal: 1,
+    payload: { repo: REPO, failure: null }
+  } }).isPersisted.promise
+  await first.dispatch({ type: "stack.wiki.requests.changed", actor: "system", requests: [{ repo: REPO, owner: "alice", requestedAt: 1 }] }).isPersisted.promise
+  await first.dispose?.()
+  const fake = cloud()
+  fake.set(snapshot(1, [], { wiki: wiki("refreshing") }))
+  const { store } = await setup(fake, await createAppStore({ kind: "localStorage", storage: local }))
+  await waitFor(() => toast(store, WIKI_KEY)?.status === "running")
+  await waitFor(() => fake.streams() === 1)
+  fake.set(snapshot(2, [], { wiki: wiki("failed", { error: "the review timed out" }) }))
+  fake.hint(2)
+  await waitFor(() => toast(store, WIKI_KEY)?.status === "failed")
+  expect(toast(store, WIKI_KEY)).toMatchObject({ detail: "the review timed out", action: { flow: "wiki.create", args: REPO, label: "Retry" } })
+  expect(fake.writes).toEqual([])
+  await waitFor(() => (store.session().wikiRequests ?? []).length === 0)
 })

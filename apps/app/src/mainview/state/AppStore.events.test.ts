@@ -624,7 +624,7 @@ describe("the live store's authoritative event path", () => {
   test("a dispatcher row persisted before slug joined it replays on this projector, unchanged and unupgraded", async () => {
     const storage = memoryStorage()
     const before = await open(storage)
-    const triggers = [{ id: "trg-1", flowId: "librarian/wiki", cron: "0 * * * *", timezone: "UTC", enabled: true }]
+    const triggers = [{ id: "trg-1", flowId: "librarian/history", cron: "0 * * * *", timezone: "UTC", enabled: true }]
     await before.dispatch({ type: "card.upsert", actor: "system", card: {
       id: "trigger-list", kind: "trigger-list", title: "Dispatcher", status: "active", createdAt: 1, ordinal: 1,
       payload: { repo: "alpha/one", live: true, triggers }

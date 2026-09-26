@@ -4,8 +4,6 @@ import * as Y from "yjs"
 import { installCloudFixture } from "./cloudFixture"
 import { fillComposer } from "./composer"
 
-test.skip(process.env.VITE_SMITHERS_WIKI !== "true", "Wiki is a default-off release flag; run the tier with VITE_SMITHERS_WIKI=true")
-
 const repo = "smithersai/smithers"
 const pageId = 42
 const documentId = `wiki:${repo}:${pageId}`

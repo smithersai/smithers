@@ -5,7 +5,6 @@
  * unchanged; only what a person reads or types says Wiki. entries/world.ts
  * registers the old names as hidden aliases over the same controller calls.
  */
-import type { LibrarianRunsController } from "../../state/controller/librarianRuns"
 import { Schema } from "effect"
 import { WIKI_DISPLAY_NAME } from "../../state/AppState"
 import { flow, NoPayload } from "./Declare"
@@ -17,7 +16,7 @@ export const namespace: Namespace = { id: "wiki", label: WIKI_DISPLAY_NAME, summ
 
 /** The Wiki leads connect once something is connected. */
 export const recommendations: ReadonlyArray<Recommendation> = [
-  { name: "wiki", when: state => state.wiki === true, rank: (state) => (state.hasConnectors ? 1 : 2) }
+  { name: "wiki", when: () => true, rank: (state) => (state.hasConnectors ? 1 : 2) }
 ]
 
 /** Why `wiki.heading` is the human's alone: it scrolls their editor, which is focus. */
@@ -34,17 +33,18 @@ export const wikiSurfaceFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
 ]
 
 /** The `wiki.*` flows: notes and their confirms. */
-export const wikiFlows = (actions: CommandActions & Partial<LibrarianRunsController>): ReadonlyArray<FlowEntry> => [
+export const wikiFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
+    /* The stack refreshes the Wiki (StackSeam.refreshWiki); this door asks for it now and is the Retry of a failed refresh. */
     name: "wiki.create",
-    summary: "Create Wiki in the background",
+    summary: "Refresh the repository Wiki in the background",
     args: "<owner/repo>",
     requires: ["signed-in"],
-    confirm: "create the repository Wiki",
+    confirm: "refresh the repository Wiki",
     input: Schema.Struct({ repo: Schema.NonEmptyString }),
     /* Typed owner/repo, with the loaded repositories offered: the grammar reads only that shape. */
     form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text", label: "Repository" } } },
-    handler: ({ repo }) => actions.createWiki?.(repo) ?? "Create Wiki is unavailable on this host."
+    handler: ({ repo }) => actions.refreshWiki(repo)
   }),
   flow({
     name: "wiki.cloud",

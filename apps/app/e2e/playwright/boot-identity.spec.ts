@@ -67,22 +67,14 @@ for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", 
   })
 }
 
-// The Wiki ships default-off (PRODUCT.md FLAG-01), so the web host seeds no
-// World page and no door — chrome, slash, or card — reaches one.
-test("unknown repository has one sign-in card and no Wiki door while the flag is off", async ({ page }) => {
+// The Wiki is core (D-09b): the chrome offers its door, and the web host seeds no World page.
+test("unknown repository has one sign-in card beside the Wiki door", async ({ page }) => {
   await signedOutVisitor(page)
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [] } }))
   await page.goto("/nope/nope/")
   await expect(page.getByRole("article").filter({ has: page.locator('[data-flow="auth.sign-in"]') })).toContainText("nope/nope")
   await expect(page.getByRole("article").filter({ has: page.locator('[data-flow="auth.sign-in"]') })).toHaveCount(1)
-  await expect(page.getByTestId("chrome-wiki")).toHaveCount(0)
-  if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
-  await page.getByTestId("composer-input").fill("/wiki")
-  await expect(page.getByRole("listbox", { name: "Search palette" })).toBeVisible()
-  await expect(page.getByRole("status")).toContainText("There is no /wiki flow")
-  await expect(page.locator('[role="option"][data-flow^="wiki"], [role="option"][data-flow^="world"]')).toHaveCount(0)
-  await page.keyboard.press("Escape")
-  await expect(page.locator(".world-card-empty")).toHaveCount(0)
+  await expect(page.getByTestId("chrome-wiki")).toHaveCount(1)
   await expect(page.locator(".world-document-title")).toHaveCount(0)
 })
 

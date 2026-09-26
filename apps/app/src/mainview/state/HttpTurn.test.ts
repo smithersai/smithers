@@ -16,7 +16,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { httpToolItems } from "./HttpTurn"
 import { memoryStorage } from "./TestFixtures"
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 const token = "a".repeat(64)
 const initialCursor = (runId = "turn", legId = "leg"): AgentTurnCursor => ({ version: 1, runId, legId, batch: 0, position: 0, hash: "0".repeat(64) })

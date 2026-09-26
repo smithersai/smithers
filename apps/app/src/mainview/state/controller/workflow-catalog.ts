@@ -1,6 +1,5 @@
 import type { Card } from "../AppState"
 import { actorSharedState } from "../ActorBindings"
-import { runtimeFlowAvailable } from "../KnowledgeFeatures"
 import type { ControllerContext } from "./context"
 import type { GatewayWorkspaceBinding } from "./gateway"
 import { TOAST_SUPERSEDED } from "./failures"
@@ -55,8 +54,7 @@ export function createWorkflowCatalogController(ctx: ControllerContext, options:
         const list = await ctx.gateway.listFlows(card.payload.repo, binding)
         if (!current()) return TOAST_SUPERSEDED
         if (list.status !== "ok") return fail(list.message)
-        const workflows = list.value.filter(flow => runtimeFlowAvailable(flow.flowId, ctx.services.features))
-          .map(flow => ({ key: flow.flowId, description: flow.description,
+        const workflows = list.value.map(flow => ({ key: flow.flowId, description: flow.description,
             ...(flow.inputSchema === undefined ? {} : { inputSchema: flow.inputSchema }) }))
         await store.dispatch({ type: "card.upsert", actor: "system", card: {
           ...card, loading: false, status: "active", body: undefined,

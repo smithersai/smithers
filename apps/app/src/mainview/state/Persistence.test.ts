@@ -76,9 +76,6 @@ describe("an atomic commit point per logical transition", () => {
     const authority = { streamId: head.streamId, baseSequence: head.sequence, baseEventHash: head.eventHash, actor: "user" as const,
       intentId: "pending-input", workspaceId: "workspace-main", branchId: "branch-main", conversationTabId: null }
     const priorWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
-    // A pending Wiki edit only exists where the Wiki is enabled; PendingRecovery.test.ts pins the flag-off store.
-    const priorFlag = process.env.VITE_SMITHERS_WIKI
-    process.env.VITE_SMITHERS_WIKI = "true"
     let store: Awaited<ReturnType<typeof createAppStore>> | undefined
     const card = {
       id: "pending-card", kind: "flow-form" as const, title: "Pending form", status: "active" as const, createdAt: 1, ordinal: 1,
@@ -107,8 +104,6 @@ describe("an atomic commit point per logical transition", () => {
       expect(recovery.getItem(DRAFT_RECOVERY_STORAGE_KEY)).toBeNull()
     } finally {
       await store?.dispose?.()
-      if (priorFlag === undefined) delete process.env.VITE_SMITHERS_WIKI
-      else process.env.VITE_SMITHERS_WIKI = priorFlag
       if (priorWindow !== undefined) Object.defineProperty(globalThis, "window", priorWindow)
       else Reflect.deleteProperty(globalThis, "window")
     }

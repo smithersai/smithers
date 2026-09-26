@@ -749,6 +749,7 @@ export const SessionSchema = z.object({
     state: z.enum(["requested", "completed", "failed"])
   })).optional(),
   librarianLaunches: z.array(z.object({
+    /* `wiki` is the retired per-folder generator: still parsed so an older session loads, then dropped (controller/librarianRuns.ts). */
     kind: z.enum(["wiki", "history"]),
     repo: z.string(),
     scope: z.string(),
@@ -759,6 +760,8 @@ export const SessionSchema = z.object({
     owner: z.string().optional(),
     reason: z.string().optional()
   })).optional(),
+  /* Wiki refreshes asked of a repository's stack (StackSeam.refreshWiki): each notice reconnects after a reload until the Wiki settles. */
+  wikiRequests: z.array(z.object({ repo: z.string(), owner: z.string(), requestedAt: z.number() })).optional(),
 
   /** Optional so previously saved sessions still parse. */
   firstRunDismissed: z.boolean().optional(),
@@ -1240,6 +1243,7 @@ export type AppTransition =
   | { type: "signup.changed"; actor: Actor; patch: Partial<Signup> }
   | { type: "librarian.launches.changed"; actor: Actor; launches: NonNullable<Session["librarianLaunches"]> }
   | { type: "coding.provider.requests.changed"; actor: Actor; requests: NonNullable<Session["codingProviderRequests"]> }
+  | { type: "stack.wiki.requests.changed"; actor: Actor; requests: NonNullable<Session["wikiRequests"]> }
   | { type: "theme.changed"; actor: "user" | "system"; theme: Session["theme"] }
   /* The color theme (/theme) — the axis orthogonal to light/dark. */
   | { type: "palette.changed"; actor: "user"; palette: Palette }

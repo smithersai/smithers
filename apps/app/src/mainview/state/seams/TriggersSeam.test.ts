@@ -472,10 +472,10 @@ const JOB_WORKSPACE = "b9275008-1c3e-4f2a-9a7d-0c2f5a6b1d84"
  * The repository's own gateway, which is the box a relay body that names no
  * workspace reaches: plue matches such a call to the `workspace_id IS NULL`
  * row alone (db/queries/repo_gateways.sql), and that row runs the product
- * host — the two librarian flows, no registrar, and no run of one.
+ * host — the librarian flow, no registrar, and no run of one.
  */
 const productHost: Record<string, (payload: Record<string, unknown>) => unknown> = {
-  List: () => okFrame({ _tag: "flows", items: [{ flowId: "librarian/history" }, { flowId: "librarian/wiki" }] }),
+  List: () => okFrame({ _tag: "flows", items: [{ flowId: "librarian/history" }] }),
   Plan: (payload) => refusedFrame(`No flow "${String(payload.flowId)}" is registered on this workspace.`, [
     { _tag: "Fail", error: { _tag: "/control/FlowNotFound", code: "flow_not_found", flowId: payload.flowId } }
   ]),
@@ -1268,7 +1268,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
    * The registrar is a built-in of the workspace coding host (flows/coding
    * host.ts, flows/repository/registry.ts). A relay call that names no
    * workspace reaches the repository's own gateway instead, which runs the
-   * product host and holds the two librarian flows and no registrar at all —
+   * product host and holds the librarian flow and no registrar at all —
    * the canary's `No flow "repository/trigger" is registered on this
    * workspace.` on every repository.
    */

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import type { MythicalItem, MythicalStack } from "@smthrs/rpc/Mythical"
+import type { MythicalItem, MythicalStack, MythicalWiki } from "@smthrs/rpc/Mythical"
 import { renderToStaticMarkup } from "react-dom/server"
 import { StackBody } from "./StackCard"
 import type { StackBodyProps } from "./StackCard"
 import { elapsedLabel } from "../Timestamps"
-import { accountLabel, itemStateLabel, laneRows, stackCounts, stackRows } from "./StackView"
+import { accountLabel, itemStateLabel, laneRows, stackCounts, stackRows, wikiRow } from "./StackView"
 
 /*
  * The Stack card renders exactly what the snapshot states: counts, lanes
@@ -161,5 +161,47 @@ describe("the Stack card", () => {
     const empty = render({ snapshot: { stack: null, error: "Not found" } })
     expect(empty).toContain("Not found")
     expect(empty).not.toContain("history.bootstrap")
+  })
+})
+
+describe("the Wiki row", () => {
+  const wiki = (state: MythicalWiki["state"], extra: Partial<MythicalWiki> = {}): MythicalWiki =>
+    ({ state, commit: "c3", pages: 12, edited: 0, attempt: 1, ...extra })
+  const withWiki = (value: MythicalWiki | undefined) => render({ snapshot: { stack: { ...STACK, wiki: value }, error: null } })
+  const row = (html: string) => {
+    const start = html.indexOf('data-testid="stack-wiki"')
+    return html.slice(start, html.indexOf("</div>", start))
+  }
+
+  test("no declared Wiki, no row", () => {
+    expect(withWiki(undefined)).not.toContain("stack-wiki")
+  })
+
+  test("one row: Wiki, its state, the pages door to the repository Wiki, and nothing else while it is healthy", () => {
+    for (const state of ["current", "refreshing", "stale"] as const) {
+      const html = row(withWiki(wiki(state)))
+      expect(html).toContain(">Wiki<")
+      expect(html).toContain(`data-state="${state}">${state}<`)
+      expect(html).toContain(`data-flow="wiki.cloud" data-flow-args="${REPO}"`)
+      expect(html).toContain(">12 pages<")
+      expect(html).not.toContain("wiki.create")
+      expect(html).not.toContain("edited")
+    }
+    expect(wikiRow(wiki("current", { pages: 1 })).pages).toBe("1 page")
+  })
+
+  test("the edited count shows only when a person changed pages", () => {
+    expect(wikiRow(wiki("current")).edited).toBeUndefined()
+    expect(row(withWiki(wiki("current", { edited: 3 })))).toContain(">3 edited<")
+  })
+
+  test("Retry only on a failed refresh, with the error as its one line", () => {
+    const html = row(withWiki(wiki("failed", { error: "2 pages failed review" })))
+    expect(html).toContain('data-state="failed">failed<')
+    expect(html).toContain(`data-flow="wiki.create" data-flow-args="${REPO}"`)
+    expect(html).toContain(">Retry<")
+    expect(html).toContain("2 pages failed review")
+    expect(wikiRow(wiki("failed")).failure).toBe("")
+    expect(row(withWiki(wiki("failed")))).toContain(">Retry<")
   })
 })

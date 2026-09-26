@@ -119,8 +119,8 @@ export const USER_ONLY_VISIBLE: ReadonlyArray<{ readonly name: string; readonly 
 
 export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   ...connectSurfaceFlows(actions),
-  ...(actions.snapshot?.()?.wiki === true ? wikiSurfaceFlows(actions) : []),
-  ...(actions.snapshot?.()?.wiki === true ? worldSurfaceFlows(actions) : []),
+  ...wikiSurfaceFlows(actions),
+  ...worldSurfaceFlows(actions),
   ...flowsSurfaceFlows(actions),
   ...(actions.snapshot?.()?.pluginLibrary === true ? pluginsSurfaceFlows(actions) : []),
   ...appearanceFlows(actions),
@@ -138,8 +138,8 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...frameFlows(actions),
   ...chatCopyFlows(actions),
   ...approvalFlows(actions),
-  ...(actions.snapshot?.()?.wiki === true ? wikiFlows(actions) : []),
-  ...(actions.snapshot?.()?.wiki === true ? worldFlows(actions) : []),
+  ...wikiFlows(actions),
+  ...worldFlows(actions),
   ...authFlows(actions),
   ...accountFlows(actions),
   ...appFlows(actions),

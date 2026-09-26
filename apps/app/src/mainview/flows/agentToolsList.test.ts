@@ -15,7 +15,7 @@ import { scopedControllers } from "../state/ControllerTestScope"
 import { createAppStore } from "../state/AppStore"
 import { memoryStorage, settle, silentAgent } from "../state/TestFixtures"
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 const bootstraps: ReadonlyArray<AppBootstrap> = [
   {

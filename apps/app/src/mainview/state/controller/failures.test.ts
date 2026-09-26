@@ -48,7 +48,7 @@ const fakeContext = async (options?: {
     toastDebounceMs: options?.toastDebounceMs ?? 0,
     toastAutoDismissMs: options?.toastAutoDismissMs ?? 0,
     commands: { find: (name: string) => {
-      const summary = ({ "auth.sign-in": "Sign in with GitHub", "prs.list": "Read pull requests", "wiki.create": "Create Wiki" } as Record<string, string>)[name]
+      const summary = ({ "auth.sign-in": "Sign in with GitHub", "prs.list": "Read pull requests" } as Record<string, string>)[name]
       return summary ? { metadata: { summary } } : undefined
     } },
     unref: () => {}

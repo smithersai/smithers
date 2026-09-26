@@ -6,7 +6,7 @@
  * repository homepage (`S.Home.Stack`); the snapshot is the stack seam's live
  * read, never card state.
  */
-import type { MythicalItem, MythicalStack } from "@smthrs/rpc/Mythical"
+import type { MythicalItem, MythicalStack, MythicalWiki } from "@smthrs/rpc/Mythical"
 import { Button } from "@smthrs/ui"
 import { useContext, useMemo, useSyncExternalStore } from "react"
 import { ControllerContext } from "../ControllerContext"
@@ -16,7 +16,7 @@ import type { Card } from "../state/AppState"
 import type { StackSnapshot } from "../state/seams/StackSeam"
 import { elapsedLabel } from "../Timestamps"
 import type { CardFamily, RunCommand } from "./CardFamily"
-import { accountLabel, ACTIVE_ITEM_STATES, itemReason, itemStateLabel, itemTitle, laneRows, retryable, stackCounts, stackRows } from "./StackView"
+import { accountLabel, ACTIVE_ITEM_STATES, itemReason, itemStateLabel, itemTitle, laneRows, retryable, stackCounts, stackRows, wikiRow } from "./StackView"
 
 type StackCard = Extract<Card, { kind: "stack" }>
 type Failure = NonNullable<StackCard["payload"]["failure"]>
@@ -74,6 +74,29 @@ const ItemCells = ({ item, repo, onRunCommand }: {
       ) : null}
       {reason === undefined ? null : <span className="world-card-path stack-reason">{reason}</span>}
     </>
+  )
+}
+
+/** The repository Wiki the stack keeps current: its state, its pages (the cloud Wiki), and Retry when a refresh failed. */
+const WikiRow = ({ wiki, repo, onRunCommand }: {
+  readonly wiki: MythicalWiki
+  readonly repo: string
+  readonly onRunCommand: RunCommand
+}) => {
+  const row = wikiRow(wiki)
+  return (
+    <div className="world-card-row stack-wiki" data-testid="stack-wiki">
+      <span>Wiki</span>
+      <span className="stack-state" data-state={row.state}>{row.state}</span>
+      <Button size="sm" variant="ghost" data-testid="stack-wiki-pages" {...flowAction(onRunCommand, "wiki.cloud", repo)}>{row.pages}</Button>
+      {row.edited === undefined ? null : <span className="world-card-path" data-testid="stack-wiki-edited">{row.edited}</span>}
+      {row.failure === undefined ? null : (
+        <>
+          <Button size="sm" variant="ghost" data-testid="stack-wiki-retry" {...flowAction(onRunCommand, "wiki.create", repo)}>Retry</Button>
+          {row.failure === "" ? null : <span className="world-card-path stack-reason">{row.failure}</span>}
+        </>
+      )}
+    </div>
   )
 }
 
@@ -140,6 +163,7 @@ export const StackBody = ({ repo, snapshot, failure, bootstrapping, onRunCommand
         <Button size="sm" variant="ghost" aria-label="More lanes" disabled={counts.maxParallel >= 8}
           {...flowAction(onRunCommand, "stack.parallel", flowArgs("stack.parallel", { value: counts.maxParallel + 1, repo }))}>+</Button>
       </div>
+      {stack.wiki === undefined ? null : <WikiRow wiki={stack.wiki} repo={repo} onRunCommand={onRunCommand} />}
       <ol className="stack-lanes" aria-label="Lanes" data-testid="stack-lanes">
         {laneRows(stack).map(({ index, workspaceId, item, lane }) => {
           const startedAt = lane?.startedAt

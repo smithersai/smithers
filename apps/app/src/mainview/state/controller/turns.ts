@@ -257,7 +257,7 @@ export const createTurnController = (
      * about it; anything that writes is one sign-in away.
      */
     const exploring = identity?.state === "signed-out" ? activeCatalogRepositoryId(store) : null
-    const selected = ctx.services.features?.wiki !== true || current.selectedWorldDocumentId === null
+    const selected = current.selectedWorldDocumentId === null
       ? undefined
       : store.collections.worldDocuments.get(current.selectedWorldDocumentId)
     const windowed = [...store.collections.cards.values()]
@@ -369,9 +369,9 @@ export const createTurnController = (
        * a budget, open note first.
        */
       worldState: {
-        documentCount: ctx.services.features?.wiki === true ? snapshot.worldState.documents.length : 0,
+        documentCount: snapshot.worldState.documents.length,
         documents: worldContextDocuments(
-          ctx.services.features?.wiki === true ? snapshot.worldState.documents : [],
+          snapshot.worldState.documents,
           current.selectedWorldDocumentId,
           worldBodyBudget
         )

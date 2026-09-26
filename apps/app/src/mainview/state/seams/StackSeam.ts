@@ -16,12 +16,18 @@
  * an item is in a lane, progressed through its states (a rebase conflict
  * included), and settled only when it reaches an open pull request, lands, or
  * stops.
+ *
+ * `refreshWiki` asks the stack to refresh the repository Wiki now (or retry a
+ * failed refresh). The request is durable (`session.wikiRequests`) before it
+ * is acknowledged; its notice runs until the snapshot's Wiki reads `current`
+ * or `failed`, reconnects after a reload in `resumeStacks`, and a failure
+ * offers Retry (`wiki.create`).
  */
-import type { MythicalItem, MythicalStack } from "@smthrs/rpc/Mythical"
+import type { MythicalItem, MythicalStack, MythicalWiki } from "@smthrs/rpc/Mythical"
 import { mythicalRoute, MythicalStackSchema } from "@smthrs/rpc/Mythical"
 import { ACTIVE_ITEM_STATES, itemReason, itemStateLabel, itemTitle, stackCounts } from "../../cards/StackView"
 import { actorSharedState } from "../ActorBindings"
-import type { Card } from "../AppState"
+import type { Card, Toast } from "../AppState"
 import type { FailureController } from "../controller/failures"
 import { TOAST_SUPERSEDED } from "../controller/failures"
 import { resolveTargetRepo } from "../RepoContext"
@@ -54,6 +60,8 @@ export interface StackSeam {
   readonly backfillStack: (repo?: string) => Promise<Result>
   readonly setStackParallel: (value: number, repo?: string) => Promise<Result>
   readonly retryStackItem: (id: string, repo?: string) => Promise<Result>
+  /** Refresh the repository Wiki now, or retry a failed refresh. */
+  readonly refreshWiki: (repo?: string) => Promise<Result>
   /** The repository homepage declares a stack block: keep its snapshot live. */
   readonly watchHomeStack: (repo: string) => void
   /** Boot and identity changes: reconnect every stored card and bootstrap request. */
@@ -419,20 +427,28 @@ export const createStackSeam = (
    * Admit one act: acknowledged as soon as the card records it, then run in
    * the shared toast stack. A second request for the same act joins the first.
    */
-  const actKey = (repo: string, kind: Failure["act"], args: string): string => `stack.${kind}.${encodeURIComponent(repo)}#${args}`
+  type ActKind = Failure["act"] | "wiki"
+  const actKey = (repo: string, kind: ActKind, args: string): string => `stack.${kind}.${encodeURIComponent(repo)}#${args}`
+  /** The notice an act wears: one per act and repository; a newer request of the act owns it. */
+  const actToastKey = (repo: string, kind: ActKind, args: string): string =>
+    args === repo ? `stack.${kind}.${repo}` : `stack.${kind}.${repo}#${args.split(" ")[0]}`
+  /**
+   * `before` replaces the default card write; `retry` states a failure on the
+   * notice with that Retry instead of on the card (an act the card has no row for).
+   */
   const act = async (
     repo: string,
-    kind: Failure["act"],
+    kind: ActKind,
     args: string,
     titles: { readonly running: string; readonly done: string },
     work: () => Promise<true | string | typeof TOAST_SUPERSEDED>,
-    before?: () => Promise<void>
+    options: { readonly before?: () => Promise<void>; readonly retry?: NonNullable<Toast["action"]> } = {}
   ): Promise<Result> => {
+    const { before, retry } = options
     // The same request joins the one in flight; the claim is taken before anything awaits.
     const claim = actKey(repo, kind, args)
     if (shared.acts.has(claim)) return { value: "Requested" }
-    // One notice per act and repository; a newer request of the act owns it.
-    const key = args === repo ? `stack.${kind}.${repo}` : `stack.${kind}.${repo}#${args.split(" ")[0]}`
+    const key = actToastKey(repo, kind, args)
     let admitted!: () => void
     const admission = new Promise<void>((resolve) => { admitted = resolve })
     shared.acts.set(claim, admission)
@@ -443,14 +459,15 @@ export const createStackSeam = (
       const running = withToast(key, titles.running, titles.done, async () => {
         const outcome = await work()
         if (!current()) return TOAST_SUPERSEDED
-        if (typeof outcome === "string") await write(repo, { failure: { act: kind, message: outcome, args } })
+        if (typeof outcome === "string" && kind !== "wiki") await write(repo, { failure: { act: kind, message: outcome, args } })
         return outcome
       }, false, current).then((outcome) => {
+        if (typeof outcome !== "string" || !current()) return outcome
         // A refusal inside the debounce showed nothing; it is still a failure the stack states.
-        if (typeof outcome === "string" && current() && ctx.store.collections.toasts.get(`toast-${key}`) === undefined) {
+        if (ctx.store.collections.toasts.get(`toast-${key}`) === undefined) {
           ctx.dispatch({ type: "toast.shown", actor: "system", key, title: titles.running })
-          ctx.resolveToast?.(key, { status: "failed", detail: outcome })
-        }
+          ctx.resolveToast?.(key, { status: "failed", detail: outcome, ...(retry === undefined ? {} : { action: retry }) })
+        } else if (retry !== undefined) ctx.resolveToast?.(key, { status: "failed", detail: outcome, action: retry })
         return outcome
       }).finally(() => { if (shared.acts.get(claim) === running) shared.acts.delete(claim) })
       shared.acts.set(claim, running)
@@ -503,7 +520,7 @@ export const createStackSeam = (
       const outcome = await untilActive(repo)
       if (typeof outcome === "string") await write(repo, { bootstrap: undefined })
       return outcome
-    }, before)
+    }, { before })
   const bootstrapStack: StackSeam["bootstrapStack"] = async (repoArg) => {
     const resolved = target(repoArg)
     if ("error" in resolved) return resolved.error
@@ -537,6 +554,81 @@ export const createStackSeam = (
     })
   }
 
+  /*
+   * The Wiki's answer to a request: `current` is done, `failed` is its error.
+   * `baseline` is the Wiki the request's acknowledgement showed: the failure
+   * a retry was asked for is not the retry's answer, so an unchanged failed
+   * Wiki keeps the notice running until the next attempt settles.
+   */
+  const wikiOutcome = (wiki: MythicalWiki | undefined, baseline: MythicalWiki | undefined): true | string | undefined => {
+    if (wiki === undefined) return "This repository declares no Wiki."
+    if (wiki.state === "current") return true
+    if (wiki.state !== "failed") return undefined
+    if (baseline?.state === "failed" && baseline.attempt === wiki.attempt && baseline.commit === wiki.commit) return undefined
+    return wiki.error ?? "The Wiki refresh failed."
+  }
+  const untilWikiSettled = (repo: string, baseline: MythicalWiki | undefined): Promise<true | string | typeof TOAST_SUPERSEDED> => new Promise((resolve) => {
+    const handle = watch(repo)
+    const check = (stack: MythicalStack | string | typeof TOAST_SUPERSEDED): void => {
+      const outcome = stack === TOAST_SUPERSEDED || typeof stack === "string" ? stack : wikiOutcome(stack.wiki, baseline)
+      if (outcome === undefined) return
+      handle.waiters.delete(check)
+      resolve(outcome)
+    }
+    handle.waiters.add(check)
+    if (baseline !== undefined && handle.stack !== null) check(handle.stack)
+    else void refresh(handle)
+  })
+  const wikiTitles = { running: "Refreshing the Wiki…", done: "Wiki current" }
+  const wikiRetry = (repo: string): NonNullable<Toast["action"]> => ({ flow: "wiki.create", args: repo, label: "Retry" })
+  const wikiRequests = () => ctx.store.session().wikiRequests ?? []
+  const writeWikiRequests = async (requests: NonNullable<ReturnType<typeof ctx.store.session>["wikiRequests"]>): Promise<void> => {
+    await ctx.dispatch({ type: "stack.wiki.requests.changed", actor: "system", requests }).isPersisted.promise
+  }
+  const otherWikiRequests = (repo: string, owner: string) => wikiRequests().filter((row) => row.repo !== repo || row.owner !== owner)
+  const pendingWiki = (repo: string, owner: string | null): boolean =>
+    owner !== null && wikiRequests().some((row) => row.repo === repo && row.owner === owner)
+  /** A settled request leaves the session; one superseded by an account change waits for that account's return. */
+  const settleWiki = async (repo: string, owner: string, work: () => Promise<true | string | typeof TOAST_SUPERSEDED>) => {
+    const outcome = await work()
+    if (!disposed() && (outcome !== TOAST_SUPERSEDED || login() === owner) && pendingWiki(repo, owner)) {
+      await writeWikiRequests(otherWikiRequests(repo, owner))
+    }
+    return outcome
+  }
+  const refreshWiki: StackSeam["refreshWiki"] = async (repoArg) => {
+    const resolved = target(repoArg)
+    if ("error" in resolved) return resolved.error
+    const { repo } = resolved
+    const owner = login()!
+    return act(repo, "wiki", repo, wikiTitles, () => settleWiki(repo, owner, async () => {
+      const answer = await send("POST", route("wiki", repo), {}, "the stack")
+      const handle = watch(repo)
+      if ("error" in answer) {
+        void refresh(handle)
+        return answer.error
+      }
+      const parsed = MythicalStackSchema.safeParse(answer.body)
+      if (!parsed.success) return untilWikiSettled(repo, undefined)
+      apply(handle, parsed.data)
+      return untilWikiSettled(repo, parsed.data.wiki)
+    }), {
+      // The request is durable before it is acknowledged.
+      before: async () => {
+        await write(repo, {}, card(repo) === undefined)
+        await writeWikiRequests([...otherWikiRequests(repo, owner), { repo, owner, requestedAt: Date.now() }])
+      },
+      retry: wikiRetry(repo)
+    })
+  }
+  /** A request from an earlier page load follows the snapshot to its end without being sent again. */
+  const resumeWiki = (repo: string): void => {
+    const owner = login()
+    if (owner === null || !pendingWiki(repo, owner) || shared.acts.has(actKey(repo, "wiki", repo))) return
+    void act(repo, "wiki", repo, wikiTitles, () => settleWiki(repo, owner, () => untilWikiSettled(repo, undefined)),
+      { before: async () => {}, retry: wikiRetry(repo) }).catch(() => {})
+  }
+
   /* One homepage is on screen at a time: the previous repository's watch ends unless its card still needs it. */
   const watchHomeStack: StackSeam["watchHomeStack"] = (repo) => {
     if (disposed()) return
@@ -560,11 +652,13 @@ export const createStackSeam = (
     if (owner === null) return
     const repos = new Set(shared.homes)
     for (const value of ctx.store.collections.cards.values()) if (value.kind === "stack") repos.add(value.payload.repo)
+    for (const request of wikiRequests()) if (request.owner === owner) repos.add(request.repo)
     for (const repo of repos) {
       // A watch already live for this account has nothing to reconnect.
       if (shared.watches.get(repo)?.current()) continue
       const handle = watch(repo)
       void refresh(handle)
+      resumeWiki(repo)
       if (card(repo)?.payload.bootstrap !== undefined && !shared.acts.has(actKey(repo, "bootstrap", repo))) {
         // Re-send only when the server has no record of the request.
         void (async () => {
@@ -597,5 +691,5 @@ export const createStackSeam = (
     options.onDispose?.(stop)
   }
 
-  return { showStack, bootstrapStack, backfillStack, setStackParallel, retryStackItem, watchHomeStack, resumeStacks, snapshots }
+  return { showStack, bootstrapStack, backfillStack, setStackParallel, retryStackItem, refreshWiki, watchHomeStack, resumeStacks, snapshots }
 }

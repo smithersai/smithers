@@ -352,7 +352,6 @@ export interface CommandState {
   readonly pluginLibrary?: boolean
   /** VITE_SMITHERS_EXPERIMENTAL: the hidden mock namespace registers only then. */
   readonly experimental?: boolean
-  readonly wiki?: boolean
   readonly plugins?: ReadonlyArray<string>
   /** The validated session carries admin:true; the admin plugin registers only then. */
   readonly admin: boolean

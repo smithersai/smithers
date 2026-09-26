@@ -63,7 +63,7 @@ import { createHealthStatusController } from "./controller/health-status"
 import { createInputModeController } from "./controller/inputMode"
 import { createIssueFlowsController,type IssueFlowsController } from "./controller/issueFlows"
 import { createRepositorySetupController, type RepositorySetupController } from "./controller/repositorySetup"
-import { createLibrarianRunsController,type LibrarianRunsController } from "./controller/librarianRuns"
+import { createLibrarianRunsController } from "./controller/librarianRuns"
 import { createModelCallController, type ModelCallController } from "./controller/modelCall"
 import { createModelsController,type ModelsController } from "./controller/models"
 import type { OnboardingController } from "./controller/onboarding"
@@ -141,8 +141,6 @@ import type { WorkspaceSeam } from "./seams/WorkspaceSeam"
 import { createWorkspaceSeam } from "./seams/WorkspaceSeam"
 
 export interface AppController extends TutorialChangeController, IssueFlowsController, RepositorySetupController {
-  /* Tutorial stage 6: the two Librarian generators and their monitored runs. */
-  readonly createWiki: LibrarianRunsController["createWiki"]
   readonly storageRecoveryState: StorageRecoveryAction["state"]
   readonly promptStorageRecovery: () => Promise<void>
   readonly exportStorageRecovery: () => Promise<string | void>
@@ -541,6 +539,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly backfillStack: StackSeam["backfillStack"]
   readonly setStackParallel: StackSeam["setStackParallel"]
   readonly retryStackItem: StackSeam["retryStackItem"]
+  readonly refreshWiki: StackSeam["refreshWiki"]
   readonly stackSnapshots: StackSeam["snapshots"]
   readonly importRepository: RepoImportSeam["importRepository"]
   readonly retryImport: RepoImportSeam["retryImport"]
@@ -756,7 +755,6 @@ export interface AppServices {
 
 export interface AppFeatures {
   readonly pluginLibrary?: boolean
-  readonly wiki?: boolean
   readonly suggestionPills?: boolean
   /** The hidden mock namespace (experimental/Manifest.ts). */
   readonly experimental?: boolean
@@ -771,12 +769,9 @@ export const createAppController = (
   agent: AgentPort,
   services: AppServices = {}
 ): AppController => {
-  const knowledge = {
-    wiki: services.features?.wiki ?? import.meta.env?.VITE_SMITHERS_WIKI === "true",
-    experimental: services.features?.experimental === true || import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"
-  }
+  const experimental = services.features?.experimental === true || import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"
   const ctx = createControllerContext(store, agent, {
-    ...services, features: { ...services.features, ...knowledge }
+    ...services, features: { ...services.features, experimental }
   })
   const actors = createActorBindings(ctx.onDispose)
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
@@ -789,10 +784,10 @@ export const createAppController = (
   const { baseUrl, http } = ctx
   const features: Required<AppFeatures> = {
     pluginLibrary: services.features?.pluginLibrary ?? false,
-    ...knowledge,
+    experimental,
     suggestionPills: services.features?.suggestionPills ?? services.bootstrap?.host === "cloud"
   }
-  if ((!features.pluginLibrary && store.session().surface === "plugins") || (!features.wiki && store.session().surface === "world")) {
+  if (!features.pluginLibrary && store.session().surface === "plugins") {
     store.dispatch({ type: "surface.changed", actor: "system", surface: "chat" })
   }
   /*
@@ -1214,8 +1209,8 @@ export const createAppController = (
   const librarianRuns = actors.pair(ctx, (context, select) => createLibrarianRunsController(context, select(workflowController)))
   void librarianRuns.recoverLaunches()
   /*
-   * Stage 6 completes when both generated runs have actually been read: the
-   * inspection is recorded only after the existing run read rendered its monitor.
+   * A generated history run counts as read only after the existing run read
+   * rendered its monitor.
    */
   const monitoredRuns = actors.pair(ctx, (context, select) => ({
     openRun: async (...args: Parameters<RunsController["openRun"]>) => {
@@ -1690,7 +1685,6 @@ export const createAppController = (
     stopWatchingRun,
     retryRunWatch,
     resumeWorkflowRuns,
-    createWiki: librarianRuns.createWiki,
     listRuns: monitoredRuns.listRuns,
     prepareRunHandoff: runs.prepareRunHandoff,
     openRun: monitoredRuns.openRun,
@@ -1856,6 +1850,7 @@ export const createAppController = (
     backfillStack: stackSeam.backfillStack,
     setStackParallel: stackSeam.setStackParallel,
     retryStackItem: stackSeam.retryStackItem,
+    refreshWiki: stackSeam.refreshWiki,
     registerTrigger,
     importRepository: repoImportSeam.importRepository,
     retryImport: repoImportSeam.retryImport,
@@ -1967,7 +1962,6 @@ export const createAppController = (
       return {
         repositoryReadiness,
         pluginLibrary: features.pluginLibrary,
-        wiki: features.wiki,
         experimental: experimentalEnabled(),
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],

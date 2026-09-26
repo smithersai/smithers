@@ -27,7 +27,6 @@ const fixture = async (answer: () => Promise<Response>, services: Pick<AppServic
     } : Reflect.get(target, key, receiver) }) : store
   const controller = createAppController(guarded, silentAgent, {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
-    features: { wiki: true },
     // Tests invoke the flow explicitly; material notifications cannot race the gates.
     recommender: { enabled: true, debounceMs: 60_000 },
     ...services,
@@ -211,7 +210,6 @@ const seatFixture = async () => {
   const bodies: Array<Record<string, unknown>> = []
   const controller = createAppController(store, silentAgent, {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
-    features: { wiki: true },
     recommender: { enabled: true, debounceMs: 60_000 },
     fetchImpl: async (input, init) => {
       if (!String(input).endsWith("/api/recommend")) return json(404, {})

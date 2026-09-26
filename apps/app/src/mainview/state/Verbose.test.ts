@@ -13,7 +13,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore, TRACE_MESSAGE_PREFIX, VERBOSE_OFF_TEXT, VERBOSE_ON_TEXT, verboseTrace } from "./AppStore"
 import { memoryStorage, unavailableAgent } from "./TestFixtures"
 
-const createAppController = scopedControllers({ wiki: true })
+const createAppController = scopedControllers()
 
 const fresh = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })

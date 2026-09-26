@@ -150,7 +150,7 @@ export const cardObjectFields = (): ReadonlySet<string> => {
 const declarationStub = (): CommandActions => new Proxy({}, {
   get: (_, key) =>
     key === "snapshot"
-      ? () => ({ wiki: true, pluginLibrary: true })
+      ? () => ({ pluginLibrary: true })
       : () => undefined
 }) as unknown as CommandActions
 
