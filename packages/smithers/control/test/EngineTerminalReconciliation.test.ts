@@ -30,7 +30,7 @@ const events = (runId: string) =>
 describe("terminal engine authority and durable control reconciliation", () => {
   for (const status of ["completed", "failed", "cancelled"] as const) {
     for (const staleFirstRead of [false, true]) {
-      it(`persists ${status} learned from ${staleFirstRead ? "the cancellation recheck" : "the engine observation"} across reopen`, async () => {
+      it.each([false, true])(`persists ${status} learned from ${staleFirstRead ? "the cancellation recheck" : "the engine observation"} across reopen (parked=%s)`, async (parked) => {
         const directory = mkdtempSync(join(tmpdir(), "control-engine-terminal-"))
         const controlFile = join(directory, "control.sqlite")
         const engineFile = join(directory, "engine.sqlite")
@@ -65,6 +65,7 @@ describe("terminal engine authority and durable control reconciliation", () => {
               const control = yield* Control
               const runtime = yield* ControlRuntime
               const id = yield* start
+              if (parked) yield* runtime.writeStatus(id, yield* runtime.claimFence(id), "parked")
               yield* engine.create(id, JSON.stringify({ version: 1, flowName: "system/test", payload: {} }))
               const owner = { hostId: "engine", pid: process.pid, nonce: "terminal-test" }
               const row = yield* engine.get(id)
@@ -72,7 +73,7 @@ describe("terminal engine authority and durable control reconciliation", () => {
               expect(yield* engine.claimAndOwn(id, snapshot, owner, yield* Clock.currentTimeMillis))
                 .toEqual({ _tag: "Activated" })
               expect(yield* engine.transitionOwned(id, owner, status)).toEqual({ _tag: "Transitioned" })
-              expect((yield* runtime.getRun(id)).status).toBe("accepted")
+              expect((yield* runtime.getRun(id)).status).toBe(parked ? "parked" : "accepted")
               expect(yield* control.cancel({ runId: id, idempotencyKey: "cancel-after-engine-settled" }))
                 .toEqual({ _tag: "Terminal", runId: id, status })
               expect((yield* runtime.getRun(id)).status).toBe(status)

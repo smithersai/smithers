@@ -13,7 +13,7 @@
 import { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { ClaimLost, InvalidInput, PersistenceError, RunNotFound } from "../src/ControlError.ts"
@@ -75,6 +75,50 @@ const said = (receipt: Receipt): ReadonlyArray<unknown> => [
 ]
 
 describe("ControlLive idempotency keys", () => {
+  it.each(["interrupt", "settle"] as const)("journals cancellation when the engine wins during %s", async (phase) => {
+    let cancelling = false
+    let finished = false
+    const observed = await run(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const runtime = yield* ControlRuntime
+        const runId = yield* start(`cancel-race:${phase}`)
+        yield* runtime.writeStatus(runId, yield* runtime.claimFence(runId), "parked")
+        cancelling = true
+        yield* control.cancel({ runId, idempotencyKey: "cancel:engine-wins" })
+        const after = yield* runtime.getRun(runId)
+        yield* control.cancel({ runId, idempotencyKey: "cancel:engine-wins" })
+        const events = yield* control.watch({ runId, follow: false }).pipe(Stream.runCollect)
+        return { after, events }
+      }),
+      live({
+        runtime: wrapping((runtime) => ({
+          interrupt: (runId) =>
+            Effect.gen(function*() {
+              if (phase === "interrupt") finished = true
+              return yield* new ClaimLost({ runId })
+            }),
+          resume: (runId, options) =>
+            cancelling && !finished ? Effect.fail(new ClaimLost({ runId })) : runtime.resume(runId, options)
+        })),
+        executor: ControlExecutor.makeNoop({
+          readExecution: () =>
+            Effect.sync(() => ({
+              _tag: "Observed" as const,
+              status: finished ? "cancelled" as const : "parked" as const
+            })),
+          requestCancel: () => Effect.succeed("recorded" as const),
+          settleCancelledPark: () =>
+            Effect.sync(() => {
+              finished = true
+            })
+        })
+      })
+    )
+    expect(observed.after.status).toBe("cancelled")
+    expect(observed.events.filter((event) => event.kind === "control.run.cancelled")).toHaveLength(1)
+  })
+
   it("refuses a key the durable store could not tell one intent from another by", async () => {
     // Each of these is a way for one key to name nothing storable: an empty key
     // names no operation, an over-long one is past the column's bound, and a NUL

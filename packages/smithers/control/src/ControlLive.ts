@@ -736,7 +736,12 @@ export const layer: Layer.Layer<
         // here would make a stale row appear settled before it was persisted.
         const current = yield* runtime.getRun(runId)
         if (terminal(current.status)) return
-        const fence = yield* runtime.claimFence(runId)
+        const fence = yield* runtime.claimFence(runId).pipe(
+          // A parked coordination row has released its fence. Claim that row
+          // before copying the engine's terminal fact; a live peer still wins.
+          Effect.catchTag("/control/ClaimLost", () =>
+            runtime.resume(runId).pipe(Effect.andThen(runtime.claimFence(runId))))
+        )
         const run = yield* runtime.writeStatus(runId, fence, status)
         yield* emit(runId, `control.run.${status}`, json({ runId, status, ...ControlFacts.runFact(run) }))
       }).pipe(
@@ -1640,7 +1645,16 @@ export const layer: Layer.Layer<
             // later long-lived engine happened to sweep it: `gc` collected the
             // run in `control.db` and skipped it in `engine.db` for fifteen
             // seconds and six commands in the release validation.
-            Effect.tap(() => executorSettleCancelledPark(input.runId))
+            Effect.tap(() =>
+              Effect.gen(function*() {
+                yield* executorSettleCancelledPark(input.runId)
+                // The engine can finish between the request and local interrupt,
+                // or while settling an unowned park. Its read overlay alone does
+                // not persist the control row or deliver the terminal watch event.
+                const current = yield* getRun(input.runId)
+                if (terminal(current.status)) yield* reconcileTerminal(input.runId, current.status)
+              })
+            )
           ))
       ),
       resume: Effect.fn("Control.resume")((input) => runMutation(input)),
