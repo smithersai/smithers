@@ -14,7 +14,8 @@
 import * as BundlerTarget from "@smthrs/targets/BundlerTarget"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
-import { existsSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { existsSync, readFileSync } from "node:fs"
 import * as Fs from "node:fs/promises"
 import { createRequire } from "node:module"
 import * as Os from "node:os"
@@ -23,6 +24,35 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import { resolveGraph, runBuild } from "../src/RspackRunner.ts"
 
 const fixture = NodePath.join(import.meta.dirname, "fixtures", "rsbuild-mini")
+
+const signalable = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (cause) {
+    if ((cause as { readonly code?: string }).code === "ESRCH") return false
+    throw cause
+  }
+}
+
+/**
+ * Whether a pid still names a process that can run.
+ *
+ * The runner's child is killed together with the supervisor that parents it,
+ * so it is left an orphan zombie until whatever adopts it reaps it; a
+ * container's PID 1 may do that late. A zombie is dead but still answers
+ * signal 0, so its scheduler state decides.
+ */
+const runnable = (pid: number): boolean => {
+  if (!signalable(pid)) return false
+  if (process.platform === "win32") return true
+  const listed = spawnSync("/bin/ps", ["-o", "stat=", "-p", String(pid)], {
+    encoding: "utf8",
+    env: { LC_ALL: "C", PATH: "/usr/bin:/bin" }
+  })
+  if (listed.status !== 0) return signalable(pid)
+  return !listed.stdout.trim().startsWith("Z")
+}
 
 /**
  * The node_modules tree the fixture workspace links in so it provides its own
@@ -267,10 +297,13 @@ describe("rsbuild-mini end to end", () => {
       : runBuild(options(), { configPath, environment: "web", mode: "development", env: {}, outDirs: ["dist"] })
     const fiber = Effect.runFork(effect)
     try {
-      await expect.poll(() => existsSync(readyPath), { timeout: 60_000 }).toBe(true)
-      const pid = Number(await Fs.readFile(readyPath, "utf8"))
+      // The child creates the file before it writes its pid into it.
+      await expect.poll(() => existsSync(readyPath) && readFileSync(readyPath, "utf8") !== "", { timeout: 60_000 })
+        .toBe(true)
+      const pid = Number(readFileSync(readyPath, "utf8"))
+      expect(Number.isSafeInteger(pid) && pid > 0).toBe(true)
       await Effect.runPromise(Fiber.interrupt(fiber))
-      expect(() => process.kill(pid, 0)).toThrow()
+      expect(runnable(pid)).toBe(false)
       expect(await Fs.readdir(scratch)).toEqual(["rspack-cache"])
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber))
