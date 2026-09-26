@@ -90,8 +90,9 @@ func UserRef(userID int64, name string) string {
 }
 
 // UserIDFromRef parses refs/smithers/users/<id>/<name>. The id is canonical
-// decimal and positive; the name is one or more [A-Za-z0-9._-] segments,
-// none of them "." or "..", none ending in ".lock".
+// decimal and positive; the name is one or more [A-Za-z0-9._-] segments that
+// git accepts: no "..", no segment starting or ending with ".", none ending
+// in ".lock".
 func UserIDFromRef(ref string) (int64, bool) {
 	rest, ok := strings.CutPrefix(ref, UserRefPrefix)
 	if !ok {
@@ -102,8 +103,11 @@ func UserIDFromRef(ref string) (int64, bool) {
 	if !ok || err != nil || id <= 0 || strconv.FormatInt(id, 10) != idText || !userRefName.MatchString(name) {
 		return 0, false
 	}
+	if strings.Contains(name, "..") {
+		return 0, false
+	}
 	for _, segment := range strings.Split(name, "/") {
-		if segment == "." || segment == ".." || strings.HasSuffix(segment, ".lock") || strings.HasPrefix(segment, ".") {
+		if strings.HasPrefix(segment, ".") || strings.HasSuffix(segment, ".") || strings.HasSuffix(segment, ".lock") {
 			return 0, false
 		}
 	}

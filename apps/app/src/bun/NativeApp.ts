@@ -39,7 +39,10 @@ const receiveDeepLink = (url: string): void => {
   else openDeepLink(path)
 }
 Electrobun.events.on("open-url", (event: { readonly data: { readonly url: string } }) => receiveDeepLink(event.data.url))
-if (Bun.env.SMITHERS_OPEN_URL) receiveDeepLink(Bun.env.SMITHERS_OPEN_URL)
+const launchLink = Bun.env.SMITHERS_OPEN_URL
+// Read once: the backend and agents inherit Bun.env.
+delete Bun.env.SMITHERS_OPEN_URL
+if (launchLink) receiveDeepLink(launchLink)
 
 const headless = Bun.env.SMITHERS_LOCAL_HEADLESS === "1"
 const hiddenE2EWindow = Bun.env.SMITHERS_E2E_BRIDGE === "1" && Bun.env.SMITHERS_NATIVE_E2E_VISIBLE !== "1"

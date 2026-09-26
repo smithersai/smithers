@@ -70,6 +70,10 @@ func resolveLocalCheckout(workingCopy bool) (localCheckout, error) {
 		if len(commits) != 1 {
 			return localCheckout{}, fmt.Errorf("%s names %d commits; push exactly one", revision, len(commits))
 		}
+		// jj's root commit is all zeros, which git reads as a deletion.
+		if strings.Trim(commits[0], "0") == "" {
+			return localCheckout{}, fmt.Errorf("%s is the root commit: commit work first or pass --working-copy", revision)
+		}
 		return localCheckout{gitDir: strings.TrimSpace(gitDir), commit: strings.TrimSpace(commits[0])}, nil
 	}
 	if workingCopy {
@@ -149,7 +153,7 @@ func runRepoPush(ctx *incur.CommandContext) (any, error) {
 		name = defaultPushName
 	}
 	if _, ok := repohost.UserIDFromRef(repohost.UserRef(1, name)); !ok {
-		return nil, fmt.Errorf("--name %q must be [A-Za-z0-9._-] segments separated by /, none starting with . or ending in .lock", name)
+		return nil, fmt.Errorf("--name %q is not a valid ref name of [A-Za-z0-9._-] segments separated by /", name)
 	}
 	owner, repo, err := resolvePushRepository(stringValue(ctx.Options["repo"]))
 	if err != nil {
@@ -159,14 +163,8 @@ func runRepoPush(ctx *incur.CommandContext) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	userID, err := pushUserID()
-	if err != nil {
-		return nil, err
-	}
-	ref := repohost.UserRef(userID, name)
-	remote := strings.TrimRight(token.APIURL, "/") + "/" + owner + "/" + repo + ".git"
-	env := pushAuthEnv(token.APIURL, token.Token)
 	deleting := ctx.Options["delete"] == true
+	workingCopy := ctx.Options["working-copy"] == true
 
 	var checkout localCheckout
 	if deleting {
@@ -177,9 +175,27 @@ func runRepoPush(ctx *incur.CommandContext) (any, error) {
 			}
 		}
 		checkout.gitDir = strings.TrimSpace(gitDir)
-	} else if checkout, err = resolveLocalCheckout(ctx.Options["working-copy"] == true); err != nil {
+	} else if checkout, err = resolveLocalCheckout(workingCopy); err != nil {
 		return nil, err
 	}
+	// Every reader of a public repository can fetch refs/smithers/users/*,
+	// and jj snapshots untracked files into @.
+	if workingCopy {
+		repository, err := APIRequest("GET", "/api/repos/"+owner+"/"+repo, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		if public, _ := objectValue(repository)["is_public"].(bool); public {
+			return nil, fmt.Errorf("--working-copy is refused on public %s/%s: everyone can read pushed refs there", owner, repo)
+		}
+	}
+	userID, err := pushUserID()
+	if err != nil {
+		return nil, err
+	}
+	ref := repohost.UserRef(userID, name)
+	remote := strings.TrimRight(token.APIURL, "/") + "/" + owner + "/" + repo + ".git"
+	env := pushAuthEnv(token.APIURL, token.Token)
 
 	advertised, err := runGit(env, "--git-dir", checkout.gitDir, "ls-remote", remote, ref)
 	if err != nil {
@@ -195,7 +211,6 @@ func runRepoPush(ctx *incur.CommandContext) (any, error) {
 		"repository": owner + "/" + repo,
 		"ref":        ref,
 		"previous":   nullableString(previous),
-		"fetch":      "git fetch origin " + ref,
 	}
 	if deleting {
 		result["deleted"] = previous != ""

@@ -161,6 +161,8 @@ func TestUserRefViolation(t *testing.T) {
 		{"lock suffix", []string{UserRefPrefix + "42/head.lock"}, "", 42, false, true},
 		{"hidden segment", []string{UserRefPrefix + "42/.head"}, "", 42, false, true},
 		{"empty segment", []string{UserRefPrefix + "42/a//b"}, "", 42, false, true},
+		{"double dot inside", []string{UserRefPrefix + "42/a..b"}, "", 42, false, true},
+		{"trailing dot", []string{UserRefPrefix + "42/head."}, "", 42, false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

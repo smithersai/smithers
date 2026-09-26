@@ -1231,7 +1231,7 @@ func (s *Server) proxyReceivePack(ctx context.Context, sess ssh.Session, owner, 
 	proxyCtx, cancel := context.WithTimeout(context.Background(), s.receivePackTimeout())
 	defer cancel()
 	meta := repohost.ReceivePackMetadata{
-		PusherID:    pusher.UserID,
+		PusherID:    userID,
 		PusherLogin: pusher.Username,
 	}
 	proxyErr := s.RepoHostClient.ProxyReceivePack(proxyCtx, owner, repo, pipeReader, sess, meta)

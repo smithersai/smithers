@@ -22,6 +22,7 @@ type pushFixture struct {
 	receives   int
 	unauthed   int
 	originMain string
+	public     bool
 }
 
 func newPushFixture(t *testing.T) *pushFixture {
@@ -49,7 +50,7 @@ func newPushFixture(t *testing.T) *pushFixture {
 	}
 	f.api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		want := "Bearer push-token"
-		if r.URL.Path == "/api/user" {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
 			want = "token push-token" // the CLI's API client spelling
 		}
 		if r.Header.Get("Authorization") != want {
@@ -62,6 +63,10 @@ func newPushFixture(t *testing.T) *pushFixture {
 		}
 		if r.URL.Path == "/api/user" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": 42, "username": "alice"})
+			return
+		}
+		if r.URL.Path == "/api/repos/alice/demo" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"is_public": f.public})
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/git-receive-pack") {
@@ -214,6 +219,9 @@ func TestRepoPush_JjCheckoutPushesCommittedWorkUnlessAsked(t *testing.T) {
 	}
 	jj("git", "init", "--no-colocate")
 	jj("git", "remote", "add", "origin", "https://github.com/alice/demo.git")
+	commandsRepoZChdir(t, checkout)
+	// Nothing committed: @- is jj's all-zero root, which git would read as a delete.
+	commandsRepoZServeErr(t, "root commit", "push")
 	writePushFile(t, checkout, "committed.txt", "done\n")
 	jj("commit", "-m", "committed work")
 	writePushFile(t, checkout, "wip.txt", "in progress\n")
@@ -233,6 +241,49 @@ func TestRepoPush_JjCheckoutPushesCommittedWorkUnlessAsked(t *testing.T) {
 	if f.remoteRefs(t)["refs/heads/main"] != f.originMain {
 		t.Fatal("main moved")
 	}
+	f.public = true
+	commandsRepoZServeErr(t, "refused on public alice/demo", "push", "--working-copy")
+	if deleted := repoPush(t, "--delete"); deleted["deleted"] != true {
+		t.Fatalf("jj delete = %#v", deleted)
+	}
+	if _, ok := f.remoteRefs(t)["refs/smithers/users/42/head"]; ok {
+		t.Fatal("deleted ref is still on the remote")
+	}
+}
+
+// The bearer is scoped to the API origin and never follows a redirect.
+func TestRepoPush_TokenNeverFollowsARedirect(t *testing.T) {
+	var leaked []string
+	var mu sync.Mutex
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		leaked = append(leaked, r.Header.Get("Authorization"))
+		mu.Unlock()
+		http.Error(w, "no", http.StatusNotFound)
+	}))
+	t.Cleanup(elsewhere.Close)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/user" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 42})
+			return
+		}
+		http.Redirect(w, r, elsewhere.URL+r.URL.RequestURI(), http.StatusFound)
+	}))
+	t.Cleanup(api.Close)
+	commandsRepoCovSetConfig(t, api.URL)
+	t.Setenv("SMITHERS_TOKEN", "push-token")
+	checkout := t.TempDir()
+	pushGit(t, checkout, "init", "--initial-branch=main")
+	writePushFile(t, checkout, "a.txt", "a\n")
+	pushGit(t, checkout, "add", ".")
+	pushGit(t, checkout, "commit", "-m", "a")
+	commandsRepoZChdir(t, checkout)
+	commandsRepoZServeErr(t, "", "push", "--repo", "alice/demo")
+	for _, header := range leaked {
+		if header != "" {
+			t.Fatalf("the redirect target received %q", header)
+		}
+	}
 }
 
 func TestRepoPush_Refusals(t *testing.T) {
@@ -240,9 +291,9 @@ func TestRepoPush_Refusals(t *testing.T) {
 	checkout := t.TempDir()
 	pushGit(t, checkout, "init", "--initial-branch=main")
 	commandsRepoZChdir(t, checkout)
-	commandsRepoZServeErr(t, "must be", "push", "--repo", "alice/demo", "--name", "../main")
-	commandsRepoZServeErr(t, "must be", "push", "--repo", "alice/demo", "--name", "a//b")
-	commandsRepoZServeErr(t, "must be", "push", "--repo", "alice/demo", "--name", "head.lock")
+	commandsRepoZServeErr(t, "not a valid ref name", "push", "--repo", "alice/demo", "--name", "../main")
+	commandsRepoZServeErr(t, "not a valid ref name", "push", "--repo", "alice/demo", "--name", "a//b")
+	commandsRepoZServeErr(t, "not a valid ref name", "push", "--repo", "alice/demo", "--name", "head.lock")
 	commandsRepoZServeErr(t, "HEAD", "push", "--repo", "alice/demo")
 	commandsRepoZServeErr(t, "--working-copy needs a jj checkout", "push", "--repo", "alice/demo", "--working-copy")
 	commandsRepoZServeErr(t, "Could not determine repository", "push")
