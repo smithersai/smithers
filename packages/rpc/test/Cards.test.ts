@@ -1123,6 +1123,16 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       repo: "smithersai/smithers",
       workspaceId: gatewayWorkspaceId,
       gatewayBindingVersion: 1,
+      listRequest: {
+        id: "list-request",
+        owner: "will",
+        repo: "smithersai/smithers",
+        workspaceId: gatewayWorkspaceId,
+        status: "running",
+        flow: "review",
+        lineage: "lin-1",
+        state: "failed"
+      },
       statuses: ["running", "completed"],
       status: "running",
       flow: "review",

@@ -1204,31 +1204,18 @@ export const createAppController = (
     forwardInboxApprovalDecision
   } = workflowController
   const { listTriggers, registerTrigger } = triggersSeam
-  const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController), select(renderFlowForm)))
-  const graph = actors.pair(ctx, (context, select) => createGraphController(context, select(filesSeam.readFile)))
   const librarianRuns = actors.pair(ctx, (context, select) => createLibrarianRunsController(context, select(workflowController)))
+  const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController), select(renderFlowForm), select(librarianRuns).inspectLibrarianRun))
+  const graph = actors.pair(ctx, (context, select) => createGraphController(context, select(filesSeam.readFile)))
   void librarianRuns.recoverLaunches()
   /*
    * A generated history run counts as read only after the existing run read
    * rendered its monitor.
    */
-  const monitoredRuns = actors.pair(ctx, (context, select) => ({
+  const monitoredRuns = actors.pair(ctx, (_context, select) => ({
     openRun: async (...args: Parameters<RunsController["openRun"]>) => {
       const result = await select(runs).openRun(...args)
       if (typeof result === "object" && result !== null) await select(librarianRuns).inspectLibrarianRun(args[0])
-      return result
-    },
-    listRuns: async (args: Parameters<RunsController["listRuns"]>[0]) => {
-      const result = await select(runs).listRuns(args)
-      if (typeof result === "object" && result !== null) {
-        const target = select(workflowController).workflowTargetRepo(args.repo)
-        if (!("error" in target)) {
-          const card = context.store.collections.cards.get(`run-list-${target.repo}`)
-          if (card?.kind === "run-list") {
-            for (const row of card.payload.runs) await select(librarianRuns).inspectLibrarianRun(row.runId)
-          }
-        }
-      }
       return result
     }
   }))
@@ -1685,7 +1672,7 @@ export const createAppController = (
     stopWatchingRun,
     retryRunWatch,
     resumeWorkflowRuns,
-    listRuns: monitoredRuns.listRuns,
+    listRuns: runs.listRuns,
     prepareRunHandoff: runs.prepareRunHandoff,
     openRun: monitoredRuns.openRun,
     resumeRun: runs.resumeRun,
@@ -2063,6 +2050,7 @@ export const createAppController = (
     repoImportSeam.resume()
     runs.resumeApprovalRequests()
     runs.resumeRunFacetRequests()
+    runs.resumeRunListRequests()
   })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
   const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => {

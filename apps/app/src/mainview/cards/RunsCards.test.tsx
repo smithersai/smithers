@@ -88,6 +88,19 @@ const click = (element: Element): void => {
 }
 
 describe("the run inbox card", () => {
+  test("pending and failed reads keep Refresh without claiming an empty result", () => {
+    const card = runListCard([])
+    card.payload.listRequest = { id: "request", owner: "owner", repo: REPO, state: "pending" }
+    const pending = render(<RunListCardBody card={card} onRunCommand={() => {}} />)
+    expect(pending.textContent).not.toContain("No runs match.")
+    expect(pending.textContent).toContain("Refresh")
+    card.payload.listRequest.state = "failed"
+    card.payload.observationError = "Gateway unavailable"
+    const failed = render(<RunListCardBody card={card} onRunCommand={() => {}} />)
+    expect(failed.querySelector('[role="alert"]')?.textContent).toContain("Gateway unavailable")
+    expect(failed.textContent).not.toContain("No runs match.")
+  })
+
   const runs = [
     { runId: "run-new", flowId: "deploy", status: "parked", waiting: "approval", createdAt: 5, turns: 1, calls: 2 },
     { runId: "run-old", flowId: "review-pr", status: "completed", createdAt: 1, turns: 4, calls: 9 }

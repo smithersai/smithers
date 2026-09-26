@@ -31,6 +31,10 @@ export default showcase({
     const steers: Array<{ kind: string; body?: string }> = []
     const cancelled = new Set<string>()
     const summaries = new Map<string, number>()
+    const listReceipt = Promise.withResolvers<void>()
+    let holdList = true
+    let listReads = 0
+    let refuseList = false
     const transcriptReceipt = Promise.withResolvers<void>()
     let holdTranscript = false
     let transcriptReads = 0
@@ -53,7 +57,12 @@ export default showcase({
         case "Cancel": cancelled.add(call.payload.runId ?? ""); return ok({ _tag: "Accepted", receiptId: "ok" })
         case "Projection.Snapshot": {
           const selector = call.payload.selector ?? {}
-          if (selector._tag === "workspace-runs") return rows("workspace-runs", [row(REVIEW), row(CODING)])
+          if (selector._tag === "workspace-runs") {
+            listReads += 1
+            if (holdList) await listReceipt.promise
+            if (refuseList) { refuseList = false; return route.fulfill({ json: { ok: false, error: { message: "Run list unavailable" } } }) }
+            return rows("workspace-runs", [row(REVIEW), row(CODING)])
+          }
           if (selector._tag === "run-summary") summaries.set(selector.runId ?? REVIEW, (summaries.get(selector.runId ?? REVIEW) ?? 0) + 1)
           if (selector._tag === "run-summary") return rows("run-summary", [row(selector.runId ?? REVIEW)])
           if (selector._tag === "run-events" && JSON.stringify(call.payload).includes(CODING)) {
@@ -77,7 +86,44 @@ export default showcase({
     await app.click(page.getByRole("button", { name: "Dismiss", exact: true }))
     await app.slash(`/runs.list ${REPO}`)
     const inbox = page.getByTestId(`card-run-list-${REPO}`)
+    const loadingList = page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Loading runs" })
+    try {
+      await expect.poll(() => listReads).toBe(1)
+      await expect(inbox).not.toContainText("No runs match.")
+      await expect(loadingList).toHaveCount(1)
+      await app.closeComposer()
+      await page.keyboard.press("ControlOrMeta+k")
+      await page.getByTestId("composer-input").fill("Chat while listing runs")
+      await expect(page.getByTestId("composer-input")).toBeEditable()
+      await page.keyboard.press("Escape")
+      await inbox.getByRole("button", { name: "Refresh", exact: true }).focus()
+      await page.keyboard.press("Enter")
+      expect(listReads).toBe(1)
+      await page.reload()
+      await expect.poll(() => listReads).toBe(2)
+      await expect(loadingList).toHaveCount(1)
+    } finally { holdList = false; listReceipt.resolve() }
     await expect(inbox).toContainText(CODING)
+    await expect(loadingList).toHaveCount(0)
+    await inbox.getByTestId("run-list-chip-failed").focus()
+    await page.keyboard.press("Enter")
+    await expect(inbox.getByTestId(`runs-open-${CODING}`)).toBeVisible()
+    await expect(inbox.getByTestId(`runs-open-${REVIEW}`)).toHaveCount(0)
+    await page.reload()
+    await expect(inbox.getByTestId(`runs-open-${CODING}`)).toBeVisible()
+    await expect(inbox.getByTestId(`runs-open-${REVIEW}`)).toHaveCount(0)
+    refuseList = true
+    await inbox.getByRole("button", { name: "Refresh", exact: true }).focus()
+    await page.keyboard.press("Enter")
+    await expect(inbox.getByRole("alert")).toContainText("Run list unavailable")
+    await expect(inbox).not.toContainText("No runs match.")
+    await inbox.getByRole("button", { name: "Refresh", exact: true }).focus()
+    await page.keyboard.press("Enter")
+    await expect(inbox.getByRole("alert")).toHaveCount(0)
+    await expect(inbox.getByTestId(`runs-open-${CODING}`)).toBeVisible()
+    await inbox.getByRole("button", { name: "All", exact: true }).focus()
+    await page.keyboard.press("Enter")
+    await expect(inbox.getByTestId(`runs-open-${REVIEW}`)).toBeVisible()
     await app.closeComposer()
     await app.show(inbox)
     await app.beat(900)

@@ -273,6 +273,15 @@ const runListCard = (store: Awaited<ReturnType<typeof webStore>>): Extract<Card,
   return card?.kind === "run-list" ? card : undefined
 }
 
+const listInventory = async (controller: AppController, store: Awaited<ReturnType<typeof webStore>>, flow: "runs.list" | "runs.attention", args?: string) => {
+  const result = await controller.commands.run(flow, args)
+  if (result.status === "executed") {
+    await waitFor(() => [...store.collections.cards.values()].every(card => card.kind !== "run-list" || card.payload.listRequest?.state !== "pending"))
+    await store.settled?.()
+  }
+  return result
+}
+
 const inboxCard = (
   store: Awaited<ReturnType<typeof webStore>>
 ): Extract<Card, { kind: "approvals-inbox" }> | undefined => {
@@ -307,13 +316,13 @@ test("attention combines explicit blockers and pending gates, and refresh remove
   const double = relay({ runs, approvals })
   const controller = createAppController(store, silentAgent, double.services)
   await signIn(store)
-  await controller.commands.run("runs.attention")
+  await listInventory(controller, store, "runs.attention")
   expect(runListCard(store)?.payload.runs.map(row => row.runId)).toEqual(["failed", "parked"])
   expect(runListCard(store)?.payload.approvals).toEqual([{ runId: "uncarded", requestId: "gate-1", title: "Review this request" }])
   expect(double.state.submitted).toEqual([])
   approvals.splice(0)
   runs.splice(0, 2)
-  await controller.commands.run("runs.attention", `sourceCard=run-list-${REPO} ${REPO}`)
+  await listInventory(controller, store, "runs.attention", `sourceCard=run-list-${REPO} ${REPO}`)
   expect(runListCard(store)?.payload.runs).toEqual([])
   expect(runListCard(store)?.payload.approvals).toEqual([])
 })
@@ -323,7 +332,7 @@ test("attention reports unreadable observations instead of claiming the inbox is
   const double = relay({ refusals: { "Projection.Snapshot": "Gateway unreachable" } })
   const controller = createAppController(store, silentAgent, double.services)
   await signIn(store)
-  await controller.commands.run("runs.attention")
+  await listInventory(controller, store, "runs.attention")
   expect(runListCard(store)?.payload.observationError).toContain("Gateway unreachable")
 })
 
@@ -333,7 +342,7 @@ test("attention retains pending approvals when the run inventory cannot be read"
     projectionRefusals: { "workspace-runs": "Run inventory unavailable" } })
   const controller = createAppController(store, silentAgent, double.services)
   await signIn(store)
-  await controller.commands.run("runs.attention")
+  await listInventory(controller, store, "runs.attention")
   expect(runListCard(store)?.payload.approvals?.[0]?.requestId).toBe("gate")
   expect(runListCard(store)?.payload.observationError).toContain("Run inventory unavailable")
   await controller.commands.run("approvals.open", `sourceCard=run-list-${REPO} uncarded`)
@@ -435,8 +444,8 @@ describe("runs.list — the run inbox", () => {
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
-    const listed = await controller.commands.run("runs.list")
-    expect(said(listed)).toContain("3 runs")
+    const listed = await listInventory(controller, store, "runs.list")
+    expect(said(listed)).toBe("Runs requested.")
     const card = runListCard(store)
     expect(card?.payload.runs.map((run) => run.runId)).toEqual(["run-new", "run-mid", "run-old"])
     // The parked run names its wait; the accepted one names the executor convention.
@@ -447,8 +456,8 @@ describe("runs.list — the run inbox", () => {
       JSON.stringify(call.body).includes("\"workspace-runs\"")
     )).toBe(true)
 
-    const filtered = await controller.commands.run("runs.list", "parked")
-    expect(said(filtered)).toContain("1 run")
+    const filtered = await listInventory(controller, store, "runs.list", "parked")
+    expect(said(filtered)).toBe("Runs requested.")
     expect(runListCard(store)?.payload.runs.map((run) => run.runId)).toEqual(["run-new"])
     expect(runListCard(store)?.payload.status).toBe("parked")
   })
@@ -460,7 +469,7 @@ describe("runs.list — the run inbox", () => {
     await signIn(store)
 
     const before = double.calls.length
-    const refused = await controller.commands.run("runs.list", "by=octocat")
+    const refused = await listInventory(controller, store, "runs.list", "by=octocat")
     expect(said(refused)).toContain("no by=")
     expect(double.calls.length).toBe(before)
     expect(runListCard(store)).toBeUndefined()
@@ -470,7 +479,7 @@ describe("runs.list — the run inbox", () => {
     const store = await webStore()
     const double = relay()
     const controller = createAppController(store, silentAgent, double.services)
-    const refused = await controller.commands.run("runs.list")
+    const refused = await listInventory(controller, store, "runs.list")
     expect(said(refused)).toContain("Sign in with GitHub first")
     expect(double.calls).toHaveLength(0)
   })
@@ -1830,7 +1839,7 @@ describe("workspace-bound run cards", () => {
     let controller = createAppController(store, silentAgent, services)
     await signIn(store)
     await selectWorkspace(store)
-    expect((await controller.commands.run("runs.list", REPO)).status).toBe("executed")
+    expect((await listInventory(controller, store, "runs.list", REPO)).status).toBe("executed")
     await selectWorkspace(store)
     await listInbox(controller, store, REPO)
     const listId = `run-list-${REPO}-${workspaceId}`
@@ -1843,7 +1852,7 @@ describe("workspace-bound run cards", () => {
     controller = createAppController(store, silentAgent, services)
     await signIn(store)
     await selectWorkspace(store, "ffffffff-ffff-ffff-ffff-ffffffffffff")
-    await controller.commands.run("runs.list", `completed sourceCard=${listId} ${REPO}`)
+    await listInventory(controller, store, "runs.list", `completed sourceCard=${listId} ${REPO}`)
     await controller.commands.run("runs.open", "listed")
     await controller.commands.run("approvals.open", "gated")
     expect(runCardInScope(store, { repo: REPO, runId: "listed", workspaceId })).toMatchObject({ payload: { workspaceId } })
@@ -1890,10 +1899,10 @@ describe("workspace-bound run cards", () => {
       ] }
     } }).isPersisted.promise
     const beforeMixedRefresh = double.calls.length
-    expect(said(await controller.commands.run("runs.list", `completed sourceCard=run-list-${REPO} ${REPO}`))).toContain("several gateways")
+    expect(said(await listInventory(controller, store, "runs.list", `completed sourceCard=run-list-${REPO} ${REPO}`))).toContain("several gateways")
     expect(double.calls.length).toBe(beforeMixedRefresh)
     await store.dispatch({ type: "card.upsert", actor: "system", card: historicalList }).isPersisted.promise
-    await controller.commands.run("runs.list", `completed sourceCard=run-list-${REPO} ${REPO}`)
+    await listInventory(controller, store, "runs.list", `completed sourceCard=run-list-${REPO} ${REPO}`)
     expect(store.collections.cards.get(`run-list-${REPO}`)).toMatchObject({ payload: { workspaceId, gatewayBindingVersion: 1 } })
     for (const call of double.calls.slice(before).filter((call) => call.path.startsWith("/api/workflow/"))) expect(call.body).toMatchObject({ workspaceId })
   })
@@ -1903,7 +1912,7 @@ describe("workspace-bound run cards", () => {
     const double = relay({ runs: [{ runId: "legacy", flowId: "review-pr", status: "completed" }] })
     const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("runs.list", REPO)
+    await listInventory(controller, store, "runs.list", REPO)
     await selectWorkspace(store)
     await controller.commands.run("runs.open", "legacy")
     await waitFor(() => runCardInScope(store, { repo: REPO, runId: "legacy" })?.payload.phase === "completed")
@@ -2042,10 +2051,10 @@ describe("workspace-bound run cards", () => {
     expect(runCardInScope(store, scopeA)).toMatchObject({ id: cardA.id, payload: { filter: "failed", traceView: "timeline" } })
     expect(runCardInScope(store, scopeB)).toMatchObject({ id: cardB.id })
     await selectWorkspace(store)
-    await controller.commands.run("runs.list", REPO)
+    await listInventory(controller, store, "runs.list", REPO)
     await listInbox(controller, store, REPO)
     await selectWorkspace(store, workspaceB)
-    await controller.commands.run("runs.list", REPO)
+    await listInventory(controller, store, "runs.list", REPO)
     await listInbox(controller, store, REPO)
     const listA = `run-list-${REPO}-${workspaceId}`
     const listB = `run-list-${REPO}-${workspaceB}`
@@ -2111,7 +2120,7 @@ describe("workspace-bound run cards", () => {
         ] }
     }
     await store.dispatch({ type: "card.upsert", actor: "system", card: old }).isPersisted.promise
-    await controller.commands.run("runs.list", REPO) // A newly recorded, explicitly legacy list.
+    await listInventory(controller, store, "runs.list", REPO) // A newly recorded, explicitly legacy list.
     const listId = `run-list-${REPO}`
     expect(store.collections.cards.get(listId)).toMatchObject({ payload: { gatewayBindingVersion: 1 } })
     expect(gatewayRunContextFor(store, "run-1")).toMatchObject({ error: expect.stringContaining("conflicting") })
@@ -2683,4 +2692,217 @@ describe("durable run facet requests", () => {
       })
     }
   }
+})
+
+
+describe("durable run-list reads", () => {
+  const ready = async (gate: Promise<void>, storage = memoryStorage(), holdAll = false) => {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    await signIn(store)
+    const double = relay({ runs: [
+      { runId: "parked", flowId: "review-pr", status: "parked" },
+      { runId: "done", flowId: "review-pr", status: "completed" }
+    ] })
+    let reads = 0
+    let returned = 0
+    const services = { ...double.services, fetchImpl: async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      if (body?.payload?.selector?._tag === "workspace-runs") {
+        reads += 1
+        if (reads === 1 || holdAll) await gate
+        const response = await double.services.fetchImpl!(input, init)
+        returned += 1
+        return response
+      }
+      return double.services.fetchImpl!(input, init)
+    } }
+    const controller = createAppController(store, silentAgent, services)
+    return { store, controller, services, storage, reads: () => reads, returned: () => returned }
+  }
+
+  test("listing acknowledges before a held projection and leaves Chat usable", async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise)
+    let answered = false
+    const result = fixture.controller.commands.run("runs.list").then(result => { answered = true; return result })
+    try {
+      await waitFor(() => fixture.reads() === 1)
+      await waitFor(() => answered)
+      expect(said(await result)).toBe("Runs requested.")
+      await fixture.controller.commands.runForAgent("runs.list")
+      expect(fixture.reads()).toBe(1)
+      await fixture.store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat while listing" }).isPersisted.promise
+      await waitFor(() => [...fixture.store.collections.toasts.values()].some(toast => toast.status === "running"))
+    } finally { gate.resolve(); await result }
+  })
+
+  test("an older filter cannot overwrite a newer result", async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise)
+    const first = fixture.controller.commands.run("runs.list", "parked")
+    try {
+      await waitFor(() => fixture.reads() === 1)
+      await fixture.controller.commands.run("runs.list", "completed")
+      await waitFor(() => fixture.returned() === 1)
+      gate.resolve()
+      await first
+      await waitFor(() => fixture.returned() === 2)
+      await settle(15)
+      expect(runListCard(fixture.store)?.payload.status).toBe("completed")
+      expect(runListCard(fixture.store)?.payload.runs.map(row => row.runId)).toEqual(["done"])
+    } finally { gate.resolve(); await first }
+  })
+
+  test("a previous account's list cannot reappear after sign-in changes", async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise)
+    const first = fixture.controller.commands.run("runs.list")
+    try {
+      await waitFor(() => fixture.reads() === 1)
+      await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+      gate.resolve()
+      await first
+      await waitFor(() => fixture.returned() === 1)
+      await settle(15)
+      expect(runListCard(fixture.store)).toBeUndefined()
+    } finally { gate.resolve(); await first }
+  })
+  test("duplicate admission waits for the saved request before reading", async () => {
+    const fixture = await ready(Promise.resolve())
+    const saved = Promise.withResolvers<void>()
+    const dispatch = fixture.store.dispatch
+    let held = false
+    let answers = 0
+    Object.assign(fixture.store, { dispatch: (event: Parameters<typeof dispatch>[0]) => {
+      const write = dispatch(event)
+      if (!held && event.type === "card.upsert" && event.card.kind === "run-list") {
+        held = true
+        return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+      }
+      return write
+    } })
+    const first = fixture.controller.commands.run("runs.list").then(result => { answers += 1; return result })
+    try {
+      await waitFor(() => held)
+      const second = fixture.controller.commands.runForAgent("runs.list").then(result => { answers += 1; return result })
+      await settle(15)
+      expect(answers).toBe(0)
+      expect(fixture.reads()).toBe(0)
+      saved.resolve()
+      expect((await first).status).toBe("executed")
+      expect((await second).status).toBe("executed")
+      await waitFor(() => runListCard(fixture.store)?.payload.listRequest?.state === "complete")
+      expect(fixture.reads()).toBe(1)
+    } finally { saved.resolve(); Object.assign(fixture.store, { dispatch }); await first }
+  })
+
+  test("the named list owns its repository even when a different repository is selected", async () => {
+    const fixture = await ready(Promise.resolve())
+    await signIn(fixture.store, [REPO, "another/repo"])
+    await fixture.store.dispatch({ type: "repo.selected", actor: "user", id: "another/repo" }).isPersisted.promise
+    await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: "alternate-list", kind: "run-list", title: "Runs", status: "active", createdAt: 1, ordinal: 1,
+      payload: { repo: REPO, gatewayBindingVersion: 1, runs: [] }
+    } }).isPersisted.promise
+    await listInventory(fixture.controller, fixture.store, "runs.list", "parked sourceCard=alternate-list")
+    expect(fixture.store.collections.cards.get("alternate-list")).toMatchObject({ payload: { repo: REPO, runs: [{ runId: "parked" }] } })
+    expect(fixture.store.collections.cards.has("run-list-another/repo")).toBe(false)
+  })
+
+  test("reload reconnects the saved list without changing its request", async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise, memoryStorage(), true)
+    let reopened: AppController | undefined
+    let restored: Awaited<ReturnType<typeof webStore>> | undefined
+    try {
+      await fixture.controller.commands.run("runs.list", "parked")
+      await waitFor(() => fixture.reads() === 1)
+      const id = runListCard(fixture.store)?.payload.listRequest?.id
+      await fixture.controller.dispose()
+      await fixture.store.dispose?.()
+      restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
+      reopened = createAppController(restored, silentAgent, fixture.services)
+      await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+      await waitFor(() => fixture.reads() === 2)
+      expect(runListCard(restored)?.payload.listRequest?.id).toBe(id)
+      gate.resolve()
+      await waitFor(() => runListCard(restored!)?.payload.listRequest?.state === "complete")
+      expect(runListCard(restored)?.payload.runs.map(row => row.runId)).toEqual(["parked"])
+    } finally { gate.resolve(); await reopened?.dispose(); await restored?.dispose?.() }
+  })
+
+  for (const boundary of ["admission", "result"] as const) {
+    test(`a refused ${boundary} write cannot claim a saved list and can retry`, async () => {
+      const backing = memoryStorage()
+      let armed = false
+      let refused = 0
+      const marker = JSON.stringify(`"state":"${boundary === "admission" ? "pending" : "complete"}"`).slice(1, -1)
+      const storage = { ...backing, setItem: (key: string, value: string) => {
+        if (armed && key.endsWith(".staged") && value.includes("listRequest") && value.includes(marker)) {
+          armed = false; refused += 1
+          throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError", code: 22 })
+        }
+        backing.setItem(key, value)
+      } }
+      const fixture = await ready(Promise.resolve(), storage)
+      armed = true
+      const result = await fixture.controller.commands.run("runs.list")
+      if (boundary === "admission") {
+        expect(result.status).toBe("failed")
+        expect(runListCard(fixture.store)).toBeUndefined()
+        expect(fixture.reads()).toBe(0)
+      } else {
+        await waitFor(() => runListCard(fixture.store)?.payload.listRequest?.state === "failed")
+        expect([...fixture.store.collections.toasts.values()].some(toast => toast.key.startsWith("runs.list.") && toast.status === "ok")).toBe(false)
+      }
+      expect(refused).toBe(1)
+      await listInventory(fixture.controller, fixture.store, "runs.list")
+      expect(runListCard(fixture.store)?.payload.listRequest?.state).toBe("complete")
+      expect(runListCard(fixture.store)?.payload.runs).toHaveLength(2)
+    })
+  }
+
+  test("a replaced source rejects its old response", async () => {
+    const gate = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise)
+    try {
+      await fixture.controller.commands.run("runs.list")
+      await waitFor(() => fixture.reads() === 1)
+      const card = runListCard(fixture.store)!
+      await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, payload: { repo: "another/repo", runs: [] } } }).isPersisted.promise
+      gate.resolve()
+      await waitFor(() => fixture.returned() === 1)
+      await settle(15)
+      expect(runListCard(fixture.store)?.payload).toEqual({ repo: "another/repo", runs: [] })
+      expect(fixture.store.collections.runtimeRuns.size).toBe(0)
+    } finally { gate.resolve() }
+  })
+
+  test("completion waits for the list receipt and duplicate input shares that write", async () => {
+    const gate = Promise.withResolvers<void>()
+    const saved = Promise.withResolvers<void>()
+    const fixture = await ready(gate.promise)
+    const dispatch = fixture.store.dispatch
+    let held = false
+    Object.assign(fixture.store, { dispatch: (event: Parameters<typeof dispatch>[0]) => {
+      const write = dispatch(event)
+      if (event.type === "card.upsert" && event.card.kind === "run-list" && event.card.payload.listRequest?.state === "complete") {
+        held = true
+        return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+      }
+      return write
+    } })
+    try {
+      await fixture.controller.commands.run("runs.list")
+      await waitFor(() => [...fixture.store.collections.toasts.values()].some(toast => toast.key.startsWith("runs.list.") && toast.status === "running"))
+      gate.resolve()
+      await waitFor(() => held)
+      await fixture.controller.commands.runForAgent("runs.list")
+      expect(fixture.reads()).toBe(1)
+      expect([...fixture.store.collections.toasts.values()].some(toast => toast.key.startsWith("runs.list.") && toast.status === "running")).toBe(true)
+      saved.resolve()
+      await waitFor(() => [...fixture.store.collections.toasts.values()].some(toast => toast.key.startsWith("runs.list.") && toast.status === "ok"))
+    } finally { gate.resolve(); saved.resolve(); Object.assign(fixture.store, { dispatch }) }
+  })
+
 })

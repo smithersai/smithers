@@ -1413,6 +1413,17 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       gatewayBindingVersion: z.literal(1).optional(),
       /** Every status the unfiltered workspace carried when listed; the filter chips read it. Optional for older cards. */
       statuses: z.array(z.string()).optional(),
+      /** A saved inventory read; only this request may publish into the card. */
+      listRequest: z.object({
+        id: z.string(),
+        owner: z.string(),
+        repo: z.string(),
+        workspaceId: GatewayWorkspaceIdSchema.optional(),
+        status: z.string().optional(),
+        flow: z.string().optional(),
+        lineage: z.string().optional(),
+        state: z.enum(["pending", "complete", "failed"])
+      }).optional(),
       status: z.string().optional(),
       flow: z.string().optional(),
       lineage: z.string().optional(),

@@ -91,6 +91,7 @@ export interface RunsController {
   /** Reconnect every persisted inbox read the current account still owns; idempotent. */
   readonly resumeApprovalRequests: () => void
   readonly resumeRunFacetRequests: () => void
+  readonly resumeRunListRequests: () => void
   readonly openApproval: (runId: string, sourceCard?: string) => Promise<CommandResult>
 }
 
@@ -107,7 +108,8 @@ export const createRunsController = (
   ctx: ControllerContext,
   nextTranscriptOrdinal: () => number,
   workflows: WorkflowController,
-  renderFlowForm?: FormsController["renderFlowForm"]
+  renderFlowForm?: FormsController["renderFlowForm"],
+  onRunListed?: (runId: string) => Promise<void>
 ): RunsController => {
   const { store, gateway } = ctx
 
@@ -170,14 +172,105 @@ export const createRunsController = (
     return "error" in binding ? binding : { repo: target.repo, runId, ...binding }
   }
 
-  const listRuns = async (args: {
-    readonly status?: string
-    readonly flow?: string
-    readonly lineage?: string
-    readonly sourceCard?: string
-    readonly by?: string
-    readonly repo?: string
-  }): Promise<CommandResult> => {
+  type RunListCard = Extract<Card, { kind: "run-list" }>
+  type ListRequest = NonNullable<RunListCard["payload"]["listRequest"]>
+  const listReads = actorSharedState(ctx, "run-list-reads", () => ({
+    inFlight: new Map<string, { id: string; epoch: number; work: Promise<unknown> }>(),
+    persisting: new Map<string, Promise<unknown>>()
+  }))
+  const sameList = (left: Pick<ListRequest, "repo" | "workspaceId" | "status" | "flow" | "lineage">, right: typeof left) =>
+    left.repo === right.repo && left.workspaceId === right.workspaceId && left.status === right.status && left.flow === right.flow && left.lineage === right.lineage
+  const listBinding = (card: RunListCard): { workspaceId?: string } | { error: string } => {
+    if (card.payload.workspaceId !== undefined || card.payload.gatewayBindingVersion === 1) return { workspaceId: card.payload.workspaceId }
+    const scopes = card.payload.runs.map(run => runScopeFromCard(store, card, run.runId))
+    if (scopes.some(scope => scope === undefined || scope.workspaceId !== scopes[0]?.workspaceId)) {
+      return { error: "The historical run list records several gateways. Open a run from its own recorded card before listing that workspace." }
+    }
+    return { workspaceId: scopes[0]?.workspaceId }
+  }
+  const listCard = (id: string, request: ListRequest): RunListCard | undefined => {
+    const card = store.collections.cards.get(id)
+    return card?.kind === "run-list" && card.payload.listRequest?.id === request.id && sameList(card.payload, request) ? card : undefined
+  }
+  const readRunList = (cardId: string, request: ListRequest): Promise<unknown> => {
+    const epoch = ctx.accountEpoch
+    const running = listReads.inFlight.get(cardId)
+    if (running?.id === request.id && running.epoch === epoch) return running.work
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === request.owner && listCard(cardId, request) !== undefined
+    const key = `runs.list.${cardId}`
+    const work = ctx.withToast(key, "Loading runs…", "Runs loaded", async () => {
+      try {
+        if (!current()) return TOAST_SUPERSEDED
+        const { repo } = request
+        const binding = request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }
+        const provisioned = await workflows.provisionWorkspace(repo, binding)
+        if (!current()) return TOAST_SUPERSEDED
+        if (provisioned !== true) throw new Error(provisioned)
+        const attention = request.status === "attention"
+        const [listed, inbox] = await Promise.all([
+          gateway.workspaceRuns(repo, binding), attention ? gateway.approvalsInbox(repo, binding) : undefined
+        ])
+        if (!current()) return TOAST_SUPERSEDED
+        if (listed.status !== "ok" && !attention) throw new Error(listed.message)
+        const observed = listed.status === "ok" ? listed.value : []
+        for (const summary of observed) {
+          if (!current()) return TOAST_SUPERSEDED
+          await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+            scope: { repo, ...binding, runId: summary.runId }, summary
+          } }).isPersisted.promise
+        }
+        if (inbox?.status === "ok") for (const runId of new Set(inbox.value.map(row => row.runId))) {
+          if (!current()) return TOAST_SUPERSEDED
+          await reconcileRunApprovals(store, { repo, ...binding, runId }, inbox.value.filter(row => row.runId === runId))
+        }
+        if (!current()) return TOAST_SUPERSEDED
+        const pending = inbox?.status === "ok" ? inbox.value.filter(row => row.status === "pending") : []
+        const errors = [listed.status === "error" ? listed.message : undefined, inbox?.status === "error" ? inbox.message : undefined]
+          .filter((error): error is string => error !== undefined)
+        const rows = observed.filter(row =>
+          (request.status === undefined || (attention ? ["parked", "failed", "waiting-approval"].includes(row.status) : row.status === request.status)) &&
+          (request.flow === undefined || row.flowId === request.flow) && (request.lineage === undefined || row.lineageId === request.lineage)
+        ).sort((left, right) => right.createdAt - left.createdAt)
+        const card = listCard(cardId, request)!
+        await store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, status: errors.length ? "error" : "active", payload: {
+          ...card.payload, listRequest: { ...request, state: errors.length ? "failed" : "complete" },
+          ...(attention ? { approvals: pending.map(({ runId, requestId, title }) => ({ runId, requestId, title })) } : {}),
+          observedAt: Date.now(), ...(errors.length ? { observationError: errors.join(" · ") } : {}),
+          statuses: [...new Set(observed.map(row => row.status))].sort(),
+          runs: rows.map(row => ({ runId: row.runId, flowId: row.flowId, status: row.status,
+            ...(row.statusRollup?.subjectId === `run:${row.runId}` && row.statusRollup.state === row.status ? { statusRollup: row.statusRollup } : {}),
+            ...(waitingWord(row) === undefined ? {} : { waiting: waitingWord(row) }), createdAt: row.createdAt, turns: row.turns, calls: row.calls }))
+        } } }).isPersisted.promise
+        for (const row of rows) {
+          if (!current()) return TOAST_SUPERSEDED
+          await onRunListed?.(row.runId)
+        }
+        return current() ? errors.length ? errors.join(" · ") : true : TOAST_SUPERSEDED
+      } catch (error) {
+        if (!current()) return TOAST_SUPERSEDED
+        const message = error instanceof Error ? error.message : String(error)
+        const card = listCard(cardId, request)!
+        try {
+          await store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, status: "error", payload: {
+            ...card.payload, observationError: message, listRequest: { ...request, state: "failed" }
+          } } }).isPersisted.promise
+        } catch { return current() ? "The run list could not be saved. Refresh to retry." : TOAST_SUPERSEDED }
+        return current() ? message : TOAST_SUPERSEDED
+      }
+    }, false, current)
+    const entry = { id: request.id, epoch, work }
+    listReads.inFlight.set(cardId, entry)
+    void work.then(outcome => {
+      if (typeof outcome !== "string" || !current() || listReads.inFlight.get(cardId) !== entry) return
+      if (store.collections.toasts.get(`toast-${key}`) === undefined) store.dispatch({ type: "toast.shown", actor: "system", key, title: "Runs" })
+      ctx.resolveToast(key, { status: "failed", detail: outcome })
+    }).finally(() => {
+      if (listReads.inFlight.get(cardId) === entry) listReads.inFlight.delete(cardId)
+    }).catch(error => ctx.failures.report("toast.work", error, key))
+    return work
+  }
+
+  const listRuns: RunsController["listRuns"] = async (args) => {
     const guard = workflows.workflowIdentityGuard()
     if (guard !== undefined) return guard
     /*
@@ -188,85 +281,74 @@ export const createRunsController = (
     if (args.by !== undefined) {
       return "Runs don't record who launched them on this wire, so there is no by= to filter with — status, flow, and lineage are the filters that exist."
     }
-    const target = workflows.workflowTargetRepo(args.repo)
+    const named = args.sourceCard === undefined ? undefined : store.collections.cards.get(args.sourceCard)
+    const target = workflows.workflowTargetRepo(args.repo ?? (named?.kind === "run-list" ? named.payload.repo : undefined))
     if ("error" in target) return target.error
     const repo = target.repo
     const source = args.sourceCard === undefined ? undefined : store.collections.cards.get(args.sourceCard)
     if (args.sourceCard !== undefined && (source?.kind !== "run-list" || source.payload.repo !== repo)) {
       return "The run list is unavailable or belongs to another repository."
     }
-    let binding = source?.kind === "run-list"
-      ? (source.payload.workspaceId === undefined ? {} : { workspaceId: source.payload.workspaceId })
-      : gatewayBindingFor(store, repo)
+    const binding = source?.kind === "run-list" ? listBinding(source) : gatewayBindingFor(store, repo)
     if ("error" in binding) return binding.error
-    if (source?.kind === "run-list" && source.payload.workspaceId === undefined && source.payload.gatewayBindingVersion === undefined) {
-      const scopes = source.payload.runs.map((run) => runScopeFromCard(store, source, run.runId)!)
-      if (scopes.some((scope) => scope.workspaceId !== scopes[0]?.workspaceId)) {
-        return "The historical run list records several gateways. Open a run from its own recorded card before listing that workspace."
-      }
-      binding = { workspaceId: scopes[0]?.workspaceId }
-    }
-    const provisioned = await workflows.provisionWorkspace(repo, binding)
-    if (provisioned !== true) return provisioned
-    const attention = args.status === "attention"
-    const [listed, inbox] = await Promise.all([
-      gateway.workspaceRuns(repo, binding),
-      attention ? gateway.approvalsInbox(repo, binding) : undefined
-    ])
-    if (listed.status !== "ok" && !attention) return listed.message
-    const observed = listed.status === "ok" ? listed.value : []
-    for (const summary of observed) await store.dispatch({ type: "gateway.run.observed", actor: "system",
-      observation: { scope: { repo, ...binding, runId: summary.runId }, summary } }).isPersisted.promise
-    if (inbox?.status === "ok") for (const runId of new Set(inbox.value.map(row => row.runId))) {
-      await reconcileRunApprovals(store, { repo, ...binding, runId }, inbox.value.filter(row => row.runId === runId))
-    }
-    const pending = inbox?.status === "ok" ? inbox.value.filter(row => row.status === "pending") : []
-    const errors = [listed.status === "error" ? listed.message : undefined, inbox?.status === "error" ? inbox.message : undefined]
-      .filter((error): error is string => error !== undefined)
-    const rows = observed
-      .filter((row) =>
-        (args.status === undefined || (attention ? ["parked", "failed", "waiting-approval"].includes(row.status) : row.status === args.status)) &&
-        (args.flow === undefined || row.flowId === args.flow) &&
-        (args.lineage === undefined || row.lineageId === args.lineage)
-      )
-      .sort((left, right) => right.createdAt - left.createdAt)
+    const owner = ctx.accountOwner()
+    if (typeof owner !== "string") return "Sign in with GitHub first."
+    const epoch = ctx.accountEpoch
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
+    const changed = "The account or run list changed. Refresh to retry."
     const cardId = source?.kind === "run-list" ? source.id : `run-list-${repo}${binding.workspaceId === undefined ? "" : `-${binding.workspaceId}`}`
+    for (let saving = listReads.persisting.get(cardId); saving !== undefined; saving = listReads.persisting.get(cardId)) {
+      try { await saving } catch { /* The original command reports its failed save. */ }
+      if (!current()) return changed
+    }
     const existing = store.collections.cards.get(cardId)
-    const card: Card = {
-      id: cardId,
-      kind: "run-list",
-      title: `${attention ? "Needs attention" : "Runs"} — ${repo}`,
-      status: "active",
-      createdAt: existing?.createdAt ?? Date.now(),
-      ordinal: existing?.ordinal ?? nextTranscriptOrdinal(),
-      payload: {
-        repo, ...binding, gatewayBindingVersion: 1,
-        ...(args.status === undefined ? {} : { status: args.status }),
-        ...(args.flow === undefined ? {} : { flow: args.flow }),
-        ...(args.lineage === undefined ? {} : { lineage: args.lineage }),
-        ...(attention ? { approvals: pending.map(({ runId, requestId, title }) => ({ runId, requestId, title })) } : {}),
-        observedAt: Date.now(),
-        ...(errors.length === 0 ? {} : { observationError: errors.join(" · ") }),
-        // Every status the UNFILTERED workspace carries, so the filter chips (and "All") survive a single-status filter.
-        statuses: [...new Set(observed.map((row) => row.status))].sort(),
-        runs: rows.map((row) => ({
-          runId: row.runId,
-          flowId: row.flowId,
-          status: row.status,
-          ...(row.statusRollup?.subjectId === `run:${row.runId}` && row.statusRollup.state === row.status ? { statusRollup: row.statusRollup } : {}),
-          ...(waitingWord(row) === undefined ? {} : { waiting: waitingWord(row) }),
-          createdAt: row.createdAt,
-          turns: row.turns,
-          calls: row.calls
-        }))
-      }
+    if (!current() || (existing !== undefined && existing.kind !== "run-list")) return changed
+    if (args.sourceCard !== undefined) {
+      if (existing?.kind !== "run-list" || existing.payload.repo !== repo) return changed
+      const retained = listBinding(existing)
+      if ("error" in retained || retained.workspaceId !== binding.workspaceId) return changed
     }
-    store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
-    return {
-      value: attention ? `${pending.length} pending approvals and ${rows.length} parked, failed or approval-waiting runs on ${repo}.${errors.length ? ` Some state could not be read: ${errors.join(" · ")}` : ""}` : rows.length === 0
-        ? `No runs on ${repo} match.`
-        : `${rows.length} run${rows.length === 1 ? "" : "s"} on ${repo}.`
+    const filters = { repo, ...(binding.workspaceId === undefined ? {} : { workspaceId: binding.workspaceId }),
+      ...(args.status === undefined ? {} : { status: args.status }), ...(args.flow === undefined ? {} : { flow: args.flow }),
+      ...(args.lineage === undefined ? {} : { lineage: args.lineage }) }
+    const previous = existing?.payload.listRequest
+    const running = listReads.inFlight.get(cardId)
+    const acknowledgment = { value: "Runs requested." }
+    if (previous?.owner === owner && sameList(previous, filters) && previous.state !== "failed" &&
+      (previous.state === "pending" || running?.id === previous.id && running.epoch === epoch)) {
+      void readRunList(cardId, previous)
+      return acknowledgment
     }
+    const request: ListRequest = { id: crypto.randomUUID(), owner, ...filters, state: "pending" }
+    const saving = store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: {
+      id: cardId, kind: "run-list", title: `${args.status === "attention" ? "Needs attention" : "Runs"} — ${repo}`, status: "active",
+      createdAt: existing?.createdAt ?? Date.now(), ordinal: existing?.ordinal ?? nextTranscriptOrdinal(),
+      payload: { ...filters, gatewayBindingVersion: 1, listRequest: request, runs: [], statuses: existing?.payload.statuses ?? [] }
+    } }).isPersisted.promise
+    listReads.persisting.set(cardId, saving)
+    try { await saving } finally { if (listReads.persisting.get(cardId) === saving) listReads.persisting.delete(cardId) }
+    if (!current() || listCard(cardId, request) === undefined) return changed
+    void readRunList(cardId, request)
+    return acknowledgment
+  }
+
+  const resumeRunListRequests = (): void => {
+    const epoch = ctx.accountEpoch
+    const owner = ctx.accountOwner()
+    if (ctx.disposed || typeof owner !== "string") return
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
+    const timer = setTimeout(() => {
+      if (!current()) return
+      void (store.settled?.() ?? Promise.resolve()).then(() => {
+        if (!current() || workflows.workflowIdentityGuard() !== undefined) return
+        for (const card of store.collections.cards.values()) {
+          if (card.kind !== "run-list") continue
+          const request = card.payload.listRequest
+          if (request?.state === "pending" && request.owner === owner && sameList(card.payload, request)) void readRunList(card.id, request)
+        }
+      }, () => {})
+    }, 0)
+    ctx.unref(timer)
   }
 
   const openRun = async (runId: string, repoArg?: string, sourceCard?: string): Promise<CommandResult> => {
@@ -1013,6 +1095,7 @@ export const createRunsController = (
     listApprovals,
     resumeApprovalRequests,
     resumeRunFacetRequests,
+    resumeRunListRequests,
     openApproval
   }
 }

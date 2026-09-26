@@ -38,6 +38,7 @@ export const RunListCardBody = ({
 }) => {
   const { repo, runs, approvals = [], observationError } = card.payload
   const attention = card.payload.status === "attention"
+  const pending = card.payload.listRequest?.state === "pending"
   /*
    * The header's mono count line: one clause per status present, in the
    * order a reader triages — live first, settled last.
@@ -73,11 +74,11 @@ export const RunListCardBody = ({
             {...flowAction(onRunCommand, "approvals.open", flowArgs("approvals.open", { runId: approval.runId, sourceCard: card.id }))}>Review request</Button>
         </li>)}
       </ul> : null}
-      <p className="smithers-card-note" data-testid="run-list-counts">
+      {pending || (runs.length === 0 && observationError !== undefined) ? null : <p className="smithers-card-note" data-testid="run-list-counts">
         {runs.length === 0 ? attention
           ? observationError !== undefined ? "Run state is incomplete." : approvals.length === 0 ? "No pending approvals or parked or failed runs were recorded." : "No other parked or failed runs were recorded."
           : "No runs match." : `${runs.length} ${runs.length === 1 ? "run" : "runs"} · ${countLine}`}
-      </p>
+      </p>}
       {!attention && chips.length > 1 ?
         (
           <div className="flow-run-actions" role="group" aria-label="Filter by status">
