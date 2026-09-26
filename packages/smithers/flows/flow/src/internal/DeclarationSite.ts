@@ -91,7 +91,9 @@ const normalize = (path: string): string =>
  *
  * Keyed by the file that was evaluated, which a loader makes unique per load.
  */
-const sources = new Map<string, string>()
+const sourcesKey = Symbol.for("@smthrs/flow/DeclaredAt/sources/v1")
+const globals = globalThis as typeof globalThis & { [sourcesKey]?: Map<string, string> }
+const sources = globals[sourcesKey] ??= new Map<string, string>()
 
 /**
  * States that a file this runtime is about to evaluate holds bytes read from

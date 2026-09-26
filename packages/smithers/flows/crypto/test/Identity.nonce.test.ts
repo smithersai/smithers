@@ -43,6 +43,7 @@ const guardCrypto = () => {
 /** Evaluates a fresh copy of the module under the guarded global. */
 const importFresh = async () => {
   vi.resetModules()
+  vi.stubGlobal(Symbol.for("@smthrs/crypto/Identity/state/v4"), undefined)
   return import("../src/Identity.ts")
 }
 

@@ -1,5 +1,11 @@
 # @smthrs/plan
 
+## Unreleased
+
+### Fixed
+
+- Keep live executable bindings and planned-reference ownership across compatible package copies; serialized ASTs remain inert. ([#1991](https://github.com/smithersai/smithers/issues/1991)).
+
 ## [Unreleased]
 
 ### Added

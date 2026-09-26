@@ -53,14 +53,28 @@ interface CapturedMetadata {
 }
 
 /** @private */
-const capturedMetadata = new WeakMap<object, CapturedMetadata>()
+// Bundled hosts and dynamically imported flows can load separate compatible
+// copies. Identity belongs to the function, not to whichever copy inspects it.
+const stateKey = Symbol.for("@smthrs/crypto/Identity/state/v4")
+interface IdentityState {
+  readonly captured: WeakMap<object, CapturedMetadata>
+  readonly ephemeral: WeakMap<object, string>
+  ordinal: number
+  nonce: string | undefined
+}
+const globals = globalThis as typeof globalThis & { [stateKey]?: IdentityState }
+const state = globals[stateKey] ??= {
+  captured: new WeakMap(),
+  ephemeral: new WeakMap(),
+  ordinal: 0,
+  nonce: undefined
+}
+const capturedMetadata = state.captured
 
 /** @private */
 const hex = (bytes: Uint8Array): string => [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 
-const ephemeralIdentities = new WeakMap<object, string>()
-let ephemeralOrdinal = 0
-let ephemeralNonce: string | undefined
+const ephemeralIdentities = state.ephemeral
 
 /**
  * Returns the process-local nonce, seeding it on first use.
@@ -73,12 +87,12 @@ let ephemeralNonce: string | undefined
  * @private
  */
 const nonce = (): string => {
-  if (ephemeralNonce === undefined) {
+  if (state.nonce === undefined) {
     const bytes = new Uint8Array(16)
     globalThis.crypto.getRandomValues(bytes)
-    ephemeralNonce = hex(bytes)
+    state.nonce = hex(bytes)
   }
-  return ephemeralNonce
+  return state.nonce
 }
 
 /**
@@ -364,7 +378,7 @@ export const functionIdentity = (operation: unknown): FunctionIdentity => {
   const source = metadata?.source ?? Function.prototype.toString.call(operation)
   let ephemeral = ephemeralIdentities.get(operation)
   if (metadata === undefined && ephemeral === undefined) {
-    ephemeral = `${nonce()}:${ephemeralOrdinal++}`
+    ephemeral = `${nonce()}:${state.ordinal++}`
     ephemeralIdentities.set(operation, ephemeral)
   }
   return {

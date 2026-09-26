@@ -1,5 +1,11 @@
 # @smthrs/flow
 
+## Unreleased
+
+### Fixed
+
+- Preserve dynamic flow expansion and declaration source mappings when a bundled host loads project flows. ([#1991](https://github.com/smithersai/smithers/issues/1991)).
+
 ## [Unreleased]
 
 ### Changed

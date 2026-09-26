@@ -185,7 +185,9 @@ export type Services<N> = N extends Node<infer _A, infer _E, infer R> ? R : neve
 export const branchSubject = "branch/subject"
 
 /** @private */
-let branchOrdinal = 0
+const subjectsKey = Symbol.for("@smthrs/plan/Node/subjects/v1")
+const globals = globalThis as typeof globalThis & { [subjectsKey]?: { branch: number; catch: number } }
+const subjects = globals[subjectsKey] ??= { branch: 0, catch: 0 }
 
 /**
  * The prefix of the node reference a catch failure arm's symbolic error
@@ -199,9 +201,6 @@ let branchOrdinal = 0
  * @slop
  */
 export const catchSubject = "catch/subject"
-
-/** @private */
-let catchOrdinal = 0
 
 /**
  * The two arms of a decision plus the predicate that chooses between them.
@@ -502,7 +501,7 @@ export const branch: {
     options: BranchOptions<A, B1, E1, R1, B2, E2, R2>
   ): Node<B1 | B2, E | E1 | E2, R | R1 | R2> => {
     const predicate = options.if
-    const subjectToken = `${branchSubject}/${branchOrdinal++}`
+    const subjectToken = `${branchSubject}/${subjects.branch++}`
     const subject = Planned.make<A>(subjectToken)
     return internal.makeNode<B1 | B2, E | E1 | E2, R | R1 | R2>(
       internal.branch(
@@ -565,7 +564,7 @@ const catch_: {
     self: Node<A, E, R>,
     options: CatchOptions<E, B, E2, R2, Handled>
   ): Node<A | B, E | E2, R | R2> => {
-    const subjectToken = `${catchSubject}/${catchOrdinal++}`
+    const subjectToken = `${catchSubject}/${subjects.catch++}`
     const failure = options.onFailure(Planned.make<Handled>(subjectToken))
     if (!isNode(failure)) {
       throw new GraphBuildError({

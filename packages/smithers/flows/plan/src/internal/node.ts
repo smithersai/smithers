@@ -303,8 +303,30 @@ export interface PlannedReference {
   readonly path: ReadonlyArray<string>
 }
 
+// A bundled runtime and a dynamically loaded flow may contain separate
+// compatible package copies. Share only live object metadata: JSON round trips
+// still lose executable bindings, and structural lookalikes remain inert.
+const stateKey = Symbol.for("@smthrs/plan/Node/live/v1")
+interface LiveState {
+  readonly references: WeakSet<object>
+  readonly nodes: WeakSet<object>
+  readonly operations: WeakMap<AndThen | Map, Operation>
+  readonly predicates: WeakMap<Branch, Predicate>
+  readonly filters: WeakMap<Catch, Schema.Top>
+  readonly declarations: WeakMap<ActionCall | FlowCall, unknown>
+}
+const globals = globalThis as typeof globalThis & { [stateKey]?: LiveState }
+const liveState = globals[stateKey] ??= {
+  references: new WeakSet(),
+  nodes: new WeakSet(),
+  operations: new WeakMap(),
+  predicates: new WeakMap(),
+  filters: new WeakMap(),
+  declarations: new WeakMap()
+}
+
 /** The AST references minted by this module; structural lookalikes are data. */
-const plannedReferences = new WeakSet<object>()
+const plannedReferences = liveState.references
 
 const makePlannedReference = (reference: Planned.Reference): PlannedReference => {
   const value = Object.freeze({
@@ -340,10 +362,10 @@ type Operation = (value: unknown) => unknown
 
 type Predicate = (value: unknown) => boolean
 
-const operations = new WeakMap<AndThen | Map, Operation>()
-const predicates = new WeakMap<Branch, Predicate>()
-const filters = new WeakMap<Catch, Schema.Top>()
-const declarations = new WeakMap<ActionCall | FlowCall, unknown>()
+const operations = liveState.operations
+const predicates = liveState.predicates
+const filters = liveState.filters
+const declarations = liveState.declarations
 
 /**
  * The JSON mirror of an AST payload. A planned value becomes an AST-owned
@@ -392,7 +414,7 @@ export const NodeProto = {
  * Every node {@link makeNode} built, so a node this module made is recognized
  * in constant time without walking its AST again.
  */
-const liveNodes = new WeakSet<object>()
+const liveNodes = liveState.nodes
 
 /** Recognizes the algorithms {@link IdentityAlgorithm} declares, and nothing else. */
 const isIdentityAlgorithm = Schema.is(IdentityAlgorithm)
