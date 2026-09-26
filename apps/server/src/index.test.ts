@@ -137,7 +137,7 @@ describe("routed repository pages", () => {
   })
 
   test("unknown site routes keep the site's 404 instead of the repository shell", async () => {
-    for (const path of ["/docs/nope/", "/docs/quickstart2/", "/DOCS/nope/", "/changelogs/nope/", "/pricing/nope/", "/blog/hello/", "/demo/nope/", "/download/nope/", "/w/nope/", "/_astro/nope/"]) {
+    for (const path of ["/docs/nope/", "/docs/quickstart2/", "/DOCS/nope/", "/changelogs/nope/", "/pricing/nope/", "/terms/nope/", "/privacy/nope/", "/refunds/nope/", "/TERMS/nope/", "/PRIVACY/nope/", "/REFUNDS/nope/", "/blog/hello/", "/demo/nope/", "/download/nope/", "/w/nope/", "/_astro/nope/"]) {
       for (const method of ["GET", "HEAD"]) {
         const { env, served } = siteEnv()
         const response = await worker.fetch(new Request(`https://smithers.sh${path}`, { method }), env)
