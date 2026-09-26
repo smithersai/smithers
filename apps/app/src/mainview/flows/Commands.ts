@@ -1,6 +1,6 @@
 import { preloadViewModule } from "../ViewModules"
 import { FlowGesture, type CommandGesture } from "./CommandGesture"
-import type { CommandLifecycle, PendingCommandInput, PendingFormInput } from "./CommandLifecycle"
+import type { CommandLifecycle, PendingCommandInput, PendingFieldInput, PendingFormInput } from "./CommandLifecycle"
 /*
  * The registry runtime: one dispatch path for every trigger.
  *
@@ -496,22 +496,25 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       name === "card.maximize" || name === "card.minimize" || name.startsWith("card.history.") ||
       name.startsWith("frame.") || OVER_MAXIMIZED_CARD.has(name)
     if (invoker === "user" && maximizedCardId != null && !staysInMaximizedCard) actions.minimizeCard()
-    // Only the human's local form edit has a synchronous recovery preparation.
+    // Only the human's local field edit has a synchronous recovery preparation.
     // Agent input waits for capability authorization in settle before dispatch.
-    let pendingFormInput: PendingFormInput | undefined
-    if (invoker === "user" && name === "form.set") {
+    let pendingFieldInput: PendingFieldInput | PendingFormInput | undefined
+    if (invoker === "user" && (name === "form.set" || name === "signup.set")) {
       const entry = find(name)
       if (entry !== undefined && unmetRequirements(entry.metadata, actions.snapshot(), flowRequirements).length === 0) {
         const parsed = named === undefined ? payloadFor(name, args, entry.metadata.grammar, actions.knownRepositories()) : { payload: named }
         if (!("error" in parsed)) {
           const { cardId, field, value } = parsed.payload
-          if (typeof cardId === "string" && typeof field === "string" && typeof value === "string") pendingFormInput = { cardId, field, value }
+          if (typeof field === "string" && typeof value === "string") {
+            if (name === "signup.set") pendingFieldInput = { field, value }
+            else if (typeof cardId === "string") pendingFieldInput = { cardId, field, value }
+          }
         }
       }
     }
     let pendingInput: PendingCommandInput | undefined
     try {
-    const acceptance = lifecycle === undefined ? undefined : await lifecycle.accept(request, pendingFormInput)
+    const acceptance = lifecycle === undefined ? undefined : await lifecycle.accept(request, pendingFieldInput)
     if (acceptance !== undefined && "receipt" in acceptance) pendingInput = acceptance.pendingInput
     if (acceptance !== undefined && "refusal" in acceptance) return {
       status: "failed", error: acceptance.refusal, ...(acceptance.persistenceFailed ? { persistenceFailed: true } : {}),

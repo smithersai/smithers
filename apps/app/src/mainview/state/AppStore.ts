@@ -742,6 +742,7 @@ export interface AppStore {
   readonly dispatch: (transition: AppTransition) => Transaction
   /** Private preparation of validated human form input; never changes accepted projections. */
   readonly stagePendingApprovalAnswer: (input: ApprovalAnswerInput, intentId: string) => { clear(): void } | undefined
+  readonly stagePendingSignupInput: (field: string, value: string, intentId: string) => { clear(): void } | undefined
   readonly stagePendingCardInput: (cardId: string, card: Extract<Card, { kind: "flow-form" }>, intentId: string, field: string) => { clear(): void } | undefined
   /** Immutable runtime request; legacy model-authored cards have no authority. */
   readonly approvalRequest: (id: string) => ApprovalRequest | undefined
@@ -1413,6 +1414,26 @@ const initializeAppStore = async (
     ...pendingRecoveryScope(state.snapshot.sessions.find(row => row.id === SESSION_ID)!),
     streamId: committed.head.streamId, baseSequence: committed.head.sequence, baseEventHash: committed.head.eventHash, actor, intentId
   })
+  const signupMetadata = (signup: NonNullable<Session["signup"]>) => {
+    const { draft: _draft, ...metadata } = signup
+    return canonicalStoredJsonValue(metadata)
+  }
+  const stagePendingSignupInput: AppStore["stagePendingSignupInput"] = (field, value, intentId) => {
+    if (disposed || resetTransaction || recoveringInputs || privacyRejected || !intentId || typeof field !== "string" || typeof value !== "string" ||
+      (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending")) return undefined
+    const signup = optimistic.snapshot.sessions.find(row => row.id === SESSION_ID)?.signup
+    if (signup === undefined) return undefined
+    const authority = recoveryAuthority(optimistic, "user", intentId)
+    const pending = readEntityRecoveries(draftRecoveryStorage).find(row => row.key === "signup")
+    const previous = pending?.preparedCommandId && pending.authority?.streamId === authority.streamId && sameRecoveryScope(pending.authority, authority) &&
+      admitsPendingRecovery(pending, { head: committed.head, checkpoint: committedCheckpoint, events: committedEvents, commands: optimistic.snapshot.commandIntents }) &&
+      pending.value.kind === "signup" && signupMetadata(pending.value.signup) === signupMetadata(signup) ? pending.value.signup : signup
+    const record = writeEntityRecovery(draftRecoveryStorage, {
+      key: "signup", revision: optimistic.head.revision + 1, authority, preparedCommandId: intentId,
+      value: { kind: "signup", signup: { ...signup, draft: { ...previous.draft, [field]: value } } }
+    })
+    return record === undefined ? undefined : { clear: () => clearEntityRecovery(draftRecoveryStorage, record) }
+  }
   const stagePendingApprovalAnswer: AppStore["stagePendingApprovalAnswer"] = (input, intentId) => {
     if (disposed || resetTransaction || recoveringInputs || privacyRejected || !intentId || typeof input.text !== "string") return undefined
     const row = optimistic.snapshot.runtimeApprovals.find(row => row.id === input.id)
@@ -1490,6 +1511,13 @@ const initializeAppStore = async (
     if (transition.type === "signup.changed") {
       const signup = after.snapshot.sessions.find(row => row.id === SESSION_ID)?.signup
       if (signup === undefined) return undefined
+      // A completed earlier keystroke cannot replace the latest prepared
+      // draft while that command still waits for its own saved receipt.
+      const pending = readEntityRecoveries(draftRecoveryStorage).find(row => row.key === "signup")
+      if (pending?.preparedCommandId && pending.authority?.streamId === authority.streamId && sameRecoveryScope(pending.authority, authority) &&
+        admitsPendingRecovery(pending, { head: committed.head, checkpoint: committedCheckpoint, events: committedEvents, commands: after.snapshot.commandIntents }) &&
+        pending.value.kind === "signup" && signupMetadata(pending.value.signup) === signupMetadata(signup) &&
+        canonicalStoredJsonValue(pending.value.signup.draft) !== canonicalStoredJsonValue(signup.draft)) return undefined
       return writeEntityRecovery(draftRecoveryStorage, { key: "signup", revision: after.head.revision, authority, value: { kind: "signup", signup } })
     }
     const id = transition.type === "card.upsert" || transition.type === "card.view.loaded" || transition.type === "card.navigated" ? transition.card.id
@@ -1623,6 +1651,11 @@ const initializeAppStore = async (
     }
     if (record.preparedCommandId === undefined) return true
     const value = record.value
+    if (value.kind === "signup") {
+      const saved = recoverySnapshot?.sessions.find(row => row.id === SESSION_ID)
+      return !!record.authority && !!saved?.signup && sameRecoveryScope(record.authority, pendingRecoveryScope(saved)) &&
+        signupMetadata(saved.signup) === signupMetadata(value.signup)
+    }
     if (!record.authority || value.kind !== "card" || value.card?.kind !== "flow-form" || !recoverySnapshot) return false
     const scope = record.authority, savedSession = recoverySnapshot.sessions.find(row => row.id === SESSION_ID)!
     const currentScope = pendingRecoveryScope(savedSession)
@@ -1886,6 +1919,7 @@ const initializeAppStore = async (
     persistenceDegraded: resolved.degraded,
     session,
     stagePendingCardInput,
+    stagePendingSignupInput,
     stagePendingApprovalAnswer,
     nextOrdinal: () => { assertReadable(); return nextOrdinal(collections) },
     worldStateSnapshot,

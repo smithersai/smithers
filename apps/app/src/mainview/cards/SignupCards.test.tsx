@@ -7,7 +7,9 @@ import { initialSignup } from "../state/Signup"
 import { createAppStore } from "../state/AppStore"
 import { scopedControllers } from "../state/ControllerTestScope"
 import { memoryStorage, silentAgent } from "../state/TestFixtures"
-import { SignupCardBody } from "./SignupCards"
+import { ControllerContext } from "../ControllerContext"
+import type { AppController } from "../state/AppController"
+import { SignupCardBody, SignupCards } from "./SignupCards"
 
 GlobalRegistrator.register()
 afterAll(async () => {
@@ -132,4 +134,30 @@ describe("the signup cards", () => {
     expect(flows()).toEqual([["Start Automating", "signup.finish", undefined]])
     expect(host.querySelector('[data-testid="signup-video"]')).not.toBeNull()
   })
+})
+
+for (const replacement of ["login", "provider"] as const) test(`pending editor DOM belongs to the account across ${replacement} replacement`, async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+  const identity = (login: string, provider: "github" | "local" = "github") => store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, provider, allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  const host = document.createElement("div"), root = createRoot(host)
+  document.body.append(host)
+  const controller = { store, bootstrap: { host: "cloud" }, repositoryApp: null, runCommand: () => true } as unknown as AppController
+  const project = () => flushSync(() => root.render(<ControllerContext value={controller}><SignupCards /></ControllerContext>))
+  const input = () => host.querySelector<HTMLInputElement>('[data-testid="signup-name"]')!
+  try {
+    await identity("old-owner", replacement === "provider" ? "local" : "github")
+    project(); await new Promise(resolve => setTimeout(resolve, 20))
+    const original = input()
+    original.focus(); original.value = "PRIVATE-PENDING-NAME"; original.dispatchEvent(new Event("input", { bubbles: true }))
+    await identity("old-owner", replacement === "provider" ? "local" : "github")
+    project(); await new Promise(resolve => setTimeout(resolve, 20))
+    expect(input()).toBe(original)
+    expect(input().value).toBe("PRIVATE-PENDING-NAME")
+    const nextLogin = replacement === "provider" ? "old-owner" : "new-owner"
+    await identity(nextLogin)
+    project(); await new Promise(resolve => setTimeout(resolve, 20))
+    expect(input().value).toBe("")
+    expect(input()).not.toBe(original)
+    expect(host.querySelector<HTMLInputElement>('[data-testid="signup-account"]')?.value).toBe(nextLogin)
+  } finally { flushSync(() => root.unmount()); host.remove(); await store.dispose?.() }
 })

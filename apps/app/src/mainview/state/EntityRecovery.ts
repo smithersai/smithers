@@ -78,6 +78,10 @@ const record = (key: string, input: unknown): EntityRecoveryRecord | undefined =
     return { key, revision: candidate.revision as number, ...binding,
       value: { kind: "approval-answer", id: value.id, question: value.question, text: value.text } }
   }
+  if (value.kind === "signup" && key === "signup") {
+    const signup = SignupSchema.safeParse(value.signup)
+    return signup.success ? { key, revision: candidate.revision as number, ...binding, value: { kind: "signup", signup: signup.data } } : undefined
+  }
   if (candidate.preparedCommandId !== undefined) return undefined
   if (value.kind === "target-star" && typeof value.id === "string" && key === `target-star:${value.id}` && typeof value.repoId === "string") {
     if (value.star === null) return { key, revision: candidate.revision as number, ...binding, value: { kind: "target-star", id: value.id, repoId: value.repoId, star: null } }
@@ -92,10 +96,6 @@ const record = (key: string, input: unknown): EntityRecoveryRecord | undefined =
   if (value.kind === "hint-dismissed" && authority?.success && authority.data.actor === "user" &&
     typeof value.id === "string" && value.id.length > 0 && key === `hint-dismissed:${value.id}` && Object.keys(value).length === 2) {
     return { key, revision: candidate.revision as number, ...binding, value: { kind: "hint-dismissed", id: value.id } }
-  }
-  if (value.kind === "signup" && key === "signup") {
-    const signup = SignupSchema.safeParse(value.signup)
-    return signup.success ? { key, revision: candidate.revision as number, ...binding, value: { kind: "signup", signup: signup.data } } : undefined
   }
   return undefined
 }

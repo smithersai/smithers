@@ -138,5 +138,7 @@ export function SignupCards() {
   const signup = sessions[0]?.signup ?? controller.store.session().signup
   const opening = controller.bootstrap?.host === "cloud" && (signup !== undefined || controller.repositoryApp === null) ? signupOpening(signup, identities[0]?.state, identities[0]?.accountOwnerLogin) : false
   if (opening === false) return null
-  return <SignupCardBody signup={signup ?? initialSignup()} doors={opening === "full"} repos={repositories.filter(row => row.catalog !== true).map(row => ({ id: row.id }))} onRunCommand={controller.runCommand} />
+  // Pending DOM input belongs to this owner too, even before its command saves.
+  // Same-owner refreshes retain the editor; retirement replaces its nodes.
+  return <SignupCardBody key={identities[0]?.ownerRevision ?? 0} signup={signup ?? initialSignup()} doors={opening === "full"} repos={repositories.filter(row => row.catalog !== true).map(row => ({ id: row.id }))} onRunCommand={controller.runCommand} />
 }

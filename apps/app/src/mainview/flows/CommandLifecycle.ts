@@ -15,11 +15,11 @@ export interface CommandReceipt {
   readonly actor: CommandIntent["actor"]
   readonly acceptedRevision: number
 }
-export interface PendingFormInput {
-  readonly cardId: string
+export interface PendingFieldInput {
   readonly field: string
   readonly value: string
 }
+export interface PendingFormInput extends PendingFieldInput { readonly cardId: string }
 export interface PendingCommandInput { readonly clear: () => void }
 
 export type CommandAcceptance =
@@ -39,7 +39,7 @@ export interface CommandLifecycle {
   /** Infrastructure refusal before gestures, state reads, or durable admission. */
   readonly before?: (request: CommandRequest, args?: string, named?: Record<string, unknown>) => CommandOutcome | undefined
   readonly reserveGesture?: (request: CommandRequest, args?: string, named?: Record<string, unknown>) => CommandGesture | undefined
-  readonly accept: (request: CommandRequest, pendingFormInput?: PendingFormInput) => Promise<CommandAcceptance>
+  readonly accept: (request: CommandRequest, pendingFieldInput?: PendingFieldInput | PendingFormInput) => Promise<CommandAcceptance>
   readonly canExecute?: (receipt: CommandReceipt, request: CommandRequest) => boolean
   readonly settle: (receipt: CommandReceipt, outcome: CommandOutcome, retryableAuthorization?: boolean) => Promise<boolean>
 }

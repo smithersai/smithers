@@ -56,7 +56,7 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
     }
     return reserveBrowserCommandGesture(name)
   },
-  accept: async (request, pendingFormInput) => {
+  accept: async (request, pendingFieldInput) => {
     if (ctx.disposed || request.invocation?.signal?.aborted) return { refusal: "The command's controller or turn is closed.", persistenceFailed: true }
     const privacyRefusal = createPrivacyActions(ctx).refuse(request.actor)
     if (privacyRefusal !== undefined) return { refusal: privacyRefusal, persistenceFailed: true, writeRefused: true }
@@ -99,8 +99,8 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
      */
     let pendingInput: PendingCommandInput | undefined
     try {
-      if (request.actor === "user" && request.name === "form.set" && pendingFormInput !== undefined) {
-        const { cardId, field, value } = pendingFormInput
+      if (request.actor === "user" && request.name === "form.set" && pendingFieldInput !== undefined && "cardId" in pendingFieldInput) {
+        const { cardId, field, value } = pendingFieldInput
         const candidate = ctx.store.collections.cards.get(cardId)
         const decided = decideFormFieldInput(candidate?.kind === "flow-form" ? candidate : undefined, cardId, field, value)
         if (!("error" in decided)) pendingInput = ctx.store.stagePendingCardInput(cardId, decided.card, id, field)
@@ -108,6 +108,8 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
           const answer = decideApprovalAnswerInput(ctx.store, cardId, field, value)
           if (!("error" in answer)) pendingInput = ctx.store.stagePendingApprovalAnswer(answer, id)
         }
+      } else if (request.actor === "user" && request.name === "signup.set" && pendingFieldInput !== undefined) {
+        pendingInput = ctx.store.stagePendingSignupInput(pendingFieldInput.field, pendingFieldInput.value, id)
       }
     } catch (error) {
       pendingInput?.clear()

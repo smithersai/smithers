@@ -23,13 +23,13 @@ export interface PendingRecoveryBoundary {
   readonly commands?: ReadonlyArray<CommandIntent>
 }
 /** Call only after verifying the complete stream. Pending input is not accepted history. */
-export const admitsPendingRecovery = (record: { readonly revision: number; readonly authority?: PendingRecoveryAuthority; readonly preparedCommandId?: string }, boundary: PendingRecoveryBoundary | undefined): boolean => {
+export const admitsPendingRecovery = (record: { readonly revision: number; readonly authority?: PendingRecoveryAuthority; readonly preparedCommandId?: string; readonly value?: { readonly kind: string } }, boundary: PendingRecoveryBoundary | undefined): boolean => {
   const authority = record.authority
   if (!authority || !boundary || authority.streamId !== boundary.head.streamId || authority.baseSequence > boundary.head.sequence) return false
   if (record.preparedCommandId !== undefined) {
     if (record.preparedCommandId !== authority.intentId || authority.actor !== "user" || boundary.commands === undefined) return false
     const command = boundary.commands.find(row => row.id === record.preparedCommandId)
-    if (command && (command.name !== "form.set" || command.actor !== "user" || command.status !== "accepted")) return false
+    if (command && (command.name !== (record.value?.kind === "signup" ? "signup.set" : "form.set") || command.actor !== "user" || command.status !== "accepted")) return false
   } else if (record.revision <= boundary.head.revision) return false
   const hash = authority.baseSequence === boundary.checkpoint.sequence ? boundary.checkpoint.eventHash
     : boundary.events.find(event => event.sequence === authority.baseSequence)?.hash
