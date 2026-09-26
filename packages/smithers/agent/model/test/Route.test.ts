@@ -584,6 +584,25 @@ describe("Route.prepare", () => {
     expect(error).toMatchObject({ code: "authentication", message: "API key must not be empty" })
   })
 
+  it("fails a route given no credential at all the same way as an empty one", async () => {
+    const route = Result.getOrThrow(Route.anthropic({}))
+    const executor = RequestExecutor.RequestExecutor.of({
+      execute: () => Effect.die(new Error("the request must never be sent"))
+    })
+
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Route.toModel(route).pipe(
+          Effect.flatMap((model) => model.stream(request).pipe(Stream.runDrain, Effect.flip)),
+          Effect.provideService(RequestExecutor.RequestExecutor, executor)
+        )
+      )
+    )
+
+    expect(route.headers).toEqual({ "anthropic-version": "2023-06-01" })
+    expect(error).toMatchObject({ code: "authentication", message: "API key must not be empty" })
+  })
+
   it("rejects a provider body that cannot be canonically encoded", async () => {
     const uncanonical = Protocol.make({
       ...protocol,
@@ -1473,6 +1492,16 @@ describe("Endpoint.providerOrigin", () => {
     expect(Endpoint.providerOrigin(provider, { SMITHERS_MODEL_PROXY_URL: "http://p.test/m/" })).toBe(
       `http://p.test/m/${provider}`
     )
+  })
+
+  it("proxies only the providers SMITHERS_MODEL_PROXY_PROVIDERS names", () => {
+    const environment = {
+      SMITHERS_MODEL_PROXY_URL: "http://p.test/m",
+      SMITHERS_MODEL_PROXY_PROVIDERS: "openai, anthropic"
+    }
+    expect(Endpoint.proxyOrigin("anthropic", environment)).toBe("http://p.test/m/anthropic")
+    expect(Endpoint.proxyOrigin("cerebras", environment)).toBeUndefined()
+    expect(Endpoint.providerOrigin("cerebras", environment)).toBe("https://api.cerebras.ai")
   })
 
   it("routes Route.anthropic and Route.openai to a supplied origin", () => {
