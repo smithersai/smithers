@@ -42,6 +42,7 @@ const relay = (options: {
   readonly provision?: () => unknown
   readonly provisionStatus?: number
   readonly flows?: ReadonlyArray<{ flowId: string }>
+  readonly cancelFails?: boolean
 } = {}) => {
   const calls: Array<{ path: string; method: string; body: unknown }> = []
   const state = {
@@ -84,6 +85,7 @@ const relay = (options: {
         state.launched.push({ workflow: planned?.flowId ?? "?", input: planned?.input, repo })
         return json(200, { ok: true, payload: { _tag: "Accepted", receiptId: "r", runId: "run-w12" } })
       case "Cancel":
+        if (options.cancelFails === true) return json(200, { ok: false, error: { message: "Cancel failed." } })
         state.runStatus = "cancelled"
         state.revision += 1
         return json(200, { ok: true, payload: { _tag: "Accepted", receiptId: "c", runId: "run-w12" } })
@@ -658,6 +660,43 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
     const settledCalls = double.calls.filter((call) => call.path === "/api/workflow/rpc").length
     await settle(30)
     expect(double.calls.filter((call) => call.path === "/api/workflow/rpc").length).toBe(settledCalls)
+  })
+})
+
+describe("reopening a run whose watch went quiet or stopped re-reads its history, like Retry", () => {
+  const historyReads = (double: ReturnType<typeof relay>) => double.calls.filter((call) =>
+    (call.body as { payload?: { selector?: { _tag?: string } } } | undefined)?.payload?.selector?._tag === "run-events").length
+
+  test("a quiet run", async () => {
+    const store = await webStore()
+    const double = relay()
+    const controller = createAppController(store, silentAgent, { ...double.services, workflowQuietMs: 25 })
+    await signIn(store)
+
+    await controller.commands.run("flow.run", "review-pr")
+    await waitFor(() => runCard(store)?.payload.phase === "quiet")
+    const before = historyReads(double)
+
+    expect((await controller.commands.run("runs.open", "run-w12")).status).toBe("executed")
+    await waitFor(() => historyReads(double) > before)
+  })
+
+  test("a run whose Stop request failed", async () => {
+    const store = await webStore()
+    const double = relay({ cancelFails: true })
+    const controller = createAppController(store, silentAgent, { ...double.services, workflowQuietMs: 25 })
+    await signIn(store)
+
+    await controller.commands.run("flow.run", "review-pr")
+    await waitFor(() => runCard(store)?.payload.phase === "quiet")
+    await controller.commands.run("flow.run.stop", runCard(store)!.id)
+    await waitFor(() => runCard(store)?.payload.phase === "stopped")
+    expect(runCard(store)?.payload.observationError).toBe("Cancel failed.")
+    const before = historyReads(double)
+
+    expect((await controller.commands.run("runs.open", "run-w12")).status).toBe("executed")
+    expect(runCard(store)?.payload.observationError).toBeUndefined()
+    await waitFor(() => historyReads(double) > before)
   })
 })
 
