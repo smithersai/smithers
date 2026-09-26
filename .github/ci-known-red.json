@@ -37,24 +37,6 @@
       "expires": "2026-10-10"
     },
     {
-      "label": "//flows:pack",
-      "owner": "will",
-      "reason": "Five roster, dispatcher and migration-fixture cases fail after recent flow additions.",
-      "expires": "2026-10-10"
-    },
-    {
-      "label": "//flows:egress",
-      "owner": "will",
-      "reason": "Judge does not reach the gateway through the named proxy.",
-      "expires": "2026-10-10"
-    },
-    {
-      "label": "//flows:fixtures",
-      "owner": "will",
-      "reason": "Red in a local reproduction of the ci.yml step on 2026-09-26; CI has not reached this step since //packages went red. Not triaged; may be environment-specific.",
-      "expires": "2026-10-10"
-    },
-    {
       "label": "//apps/app:browserE2e",
       "owner": "will",
       "reason": "Red in a local reproduction of the ci.yml step on 2026-09-26; CI has not reached this step since //packages went red. Not triaged; may be environment-specific.",
