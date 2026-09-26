@@ -850,11 +850,12 @@ ctx.done(suite.passed + " passed, " + suite.failed.join(","))`
           ).pipe(Context.add(Evaluator.Evaluator, judge))
         )
       ],
-      cells: [`for (const [name, input] of [
+      cells: [`const failed = []
+      for (const [name, input] of [
         ["bash", { mode: "unhermetic", command: "echo SYNTHETIC_COMMAND", timeoutMs: 1 }],
         ["test", {}]
-      ]) { const result = await ctx.call(name, input); if (result.ok === false) console.log(name) }
-      ctx.done("done")`]
+      ]) { const result = await ctx.call(name, input); if (result.ok === false) failed.push(name) }
+      ctx.done(failed.join(" "))`]
     }))
     const settled = settledCalls(eventsOf(outcome))
     expect(settled.map((event) => event.result.message)).toEqual([
