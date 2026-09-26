@@ -1181,7 +1181,8 @@ A call that writes also says so, names its byte count, and names an earlier
 identical write when one settled. `entry` records one settled call,
 `remember` folds a frame's calls into the run's `Ledger` bounded to `bound`
 (30, newest last), `settled` counts through aged-out lines, and `render`
-renders the ledger for the state section. Line fields clip to `width` (120),
+renders the ledger for the state section, only the calls after `since` when an
+earlier section in the window already listed the rest. Line fields clip to `width` (120),
 and a result digest names at most `members` (6) members.
 
 ## NarrowedCheck

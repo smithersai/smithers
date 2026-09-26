@@ -1312,12 +1312,12 @@ describe("AgentSession", () => {
     expect(
       requested.map((payload) => (payload.prefixCount as number) + (payload.messages as ReadonlyArray<unknown>).length)
     ).toEqual(captured.map((call) => call.request.messages.length))
-    // The second call keeps the first's opening and replaces the realm note
-    // every frame closes on, and the teaching did not change: what the two
-    // share and the system text are written once. A replayed incarnation folds
-    // from the first frame again, which is why the two records above are still
-    // two after three of them.
-    expect(requested[1]!.prefixCount).toBe(captured[0]!.request.messages.length - 1)
+    // The second call keeps everything the first sent, its realm note
+    // included, and the teaching did not change: what the two share and the
+    // system text are written once. A replayed incarnation folds from the
+    // first frame again, which is why the two records above are still two
+    // after three of them.
+    expect(requested[1]!.prefixCount).toBe(captured[0]!.request.messages.length)
     expect(requested.map((payload) => Object.hasOwn(payload, "system"))).toEqual([true, false])
     expect(requested[1]!.systemDigest).toBe(requested[0]!.systemDigest)
     expect(requested[0]).toMatchObject({

@@ -510,18 +510,25 @@ export const remember = (known: Ledger, made: ReadonlyArray<Settlement>): Ledger
 }
 
 /**
- * Renders the ledger for the state section, or nothing when the run has settled
- * no call yet.
+ * Renders the ledger for the state section, or nothing when there is no call
+ * to list.
+ *
+ * `since` is the newest ordinal an earlier section in the window already
+ * listed. The window keeps every frame's section (see `CellTurn`), so a later
+ * section lists only the calls settled after it; zero lists the whole ledger.
  *
  * @category conversions
  * @since 0.1.0
  * @slop
  */
-export const render = (ledger: Ledger): string | undefined => {
-  if (ledger.length === 0) return undefined
+export const render = (ledger: Ledger, since = 0): string | undefined => {
+  const listed = ledger.filter((line) => line.ordinal > since)
+  if (listed.length === 0) return undefined
   const total = settled(ledger)
   const elided = total - ledger.length
-  const heading = elided === 0
+  const heading = since > 0
+    ? `Calls this run has settled since the last list (${listed.length} of ${total}), oldest first. You have already asked these — read them here instead of asking again:`
+    : elided === 0
     ? `Calls this run has settled (${total}), oldest first. You have already asked these — read them here instead of asking again:`
     : `Calls this run has settled (${total}), oldest first; the ${elided} oldest are not listed. You have already asked these — read them here instead of asking again:`
   // Where each write's signature was first settled, so a repeat can name it.
@@ -531,7 +538,7 @@ export const render = (ledger: Ledger): string | undefined => {
   for (const line of ledger) {
     if (line.mutates && !first.has(line.signature)) first.set(line.signature, line)
   }
-  const lines = ledger.map((line) => {
+  const lines = listed.map((line) => {
     const repeated = line.mutates ? first.get(line.signature) : undefined
     const again = repeated === undefined || repeated.ordinal === line.ordinal
       ? ""

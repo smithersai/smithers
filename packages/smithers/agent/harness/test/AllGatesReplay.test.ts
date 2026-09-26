@@ -216,8 +216,8 @@ const attempt = async (
 }
 
 /**
- * The loop's own events from the `n`th opened turn on. Supervisor readings
- * settle off the hot path, and neither a model step's wall-clock duration nor
+ * The loop's own events from the `n`th opened turn on. Supervisor readings,
+ * and the compaction marks they carry, settle off the hot path, and neither a model step's wall-clock duration nor
  * a reading's latency is part of what it settled: a resumed run replays the
  * interrupted run's latency, which the uninterrupted run measured afresh.
  */
@@ -225,7 +225,8 @@ const suffix = (events: ReadonlyArray<AgentEvent.AgentEvent>, n: number) => {
   const opened = events.flatMap((event, index) => event._tag === "turn-opened" ? [index] : [])
   return events.slice(opened[n]).flatMap((event) =>
     event._tag === "supervisor-settled" ||
-      (event._tag === "decision-settled" && event.classifier.startsWith("supervisor/"))
+      (event._tag === "decision-settled" &&
+        (event.classifier.startsWith("supervisor/") || event.classifier === "compaction/marks"))
       ? []
       : [
         event._tag === "model-settled"

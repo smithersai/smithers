@@ -493,13 +493,37 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     cap: NonNegativeSafeInt
   })),
   /**
+   * The newest call ordinal a state section already in the window listed.
+   *
+   * Every frame's section stays in the window (see `frozen`), so the next one
+   * lists only calls settled after this. Zero after a compaction, which may
+   * have replaced the sections that listed them, and on a state decoded from
+   * an older journal, whose window holds none.
+   */
+  ledgerShown: NonNegativeSafeInt.pipe(
+    Schema.withConstructorDefault(Effect.succeed(0)),
+    Schema.withDecodingDefaultKey(Effect.succeed(0))
+  ),
+  /**
+   * Whether the window already ends with this frame's state section.
+   *
+   * A frame that continues writes the next frame's section into the segment it
+   * just appended, so a supervisor reading of that segment reads it whole (see
+   * `frozen`). A run's first frame, and a state decoded from an older journal,
+   * has none yet, and the frame writes it when it opens.
+   */
+  sectioned: Schema.Boolean.pipe(
+    Schema.withConstructorDefault(Effect.succeed(false)),
+    Schema.withDecodingDefaultKey(Effect.succeed(false))
+  ),
+  /**
    * How many messages at the end of the window are interventions the next
    * frame is being asked to answer.
    *
    * The controller's own asks, which are the read-only demand, the repeat
    * redirect, the sufficiency observation and the completion review, are
    * appended to the transcript when the frame that earned them closes. The block of run memory
-   * is appended when the next request is built, so without this count the ask
+   * is written into the window when the next frame opens, so without this count the ask
    * was always the second-to-last message and a roster of variable names was
    * always the last. {@link stateSection} says what that cost.
    *
@@ -1287,8 +1311,8 @@ const keyMaterialFrom = (
  * twice without it: what names the realm holds and how fresh each one is
  * (`VariablesPanel`), and what the run has already asked (`CallLedger`).
  *
- * It is one trailing user message rather than a system part, and that placement
- * is the whole point: the teaching, the task and the flow catalog are
+ * It is a user message after the transcript rather than a system part, and
+ * that placement is the whole point: the teaching, the task and the flow catalog are
  * byte-identical for the life of a run, so putting the one block that changes
  * every frame *after* the transcript leaves the provider's prefix cache
  * covering every byte before it. With the block in the middle, the cache broke
@@ -1312,7 +1336,7 @@ const keyMaterialFrom = (
 const stateSection = (state: State): string => {
   // The panel is stamped by the frame that ran, which is the frame before the
   // one this prompt is opening.
-  const settled = CallLedger.render(state.callLedger)
+  const settled = CallLedger.render(state.callLedger, state.ledgerShown)
   return [
     VariablesPanel.render({ ledger: state.panel, frame: state.frame - 1 }),
     ...(settled === undefined ? [] : [settled])
@@ -1320,27 +1344,80 @@ const stateSection = (state: State): string => {
 }
 
 /**
- * Places the run's memory after the transcript and before this frame's asks.
+ * Writes this frame's state section into the window, after the transcript
+ * and before this frame's asks, where it then stays.
  *
- * The count is clamped against the rendered window rather than trusted,
- * because it is carried in state while the window is rebuilt every frame. A
- * block one message too early is a misplacement; a splice past the start
- * would drop the block entirely.
+ * It stays because the provider's prefix cache only reuses a request the next
+ * one extends. When the section was spliced into each request and dropped
+ * from the next, frame N+1 forked from frame N one message before the reply N
+ * produced, so the provider re-read every earlier reasoning item from its
+ * encrypted copy instead of the reply it had just decoded: 2026-09-26 Luna
+ * runs on Terminal-Bench cached 23% to 49% of input and plateaued at the first
+ * long reasoning item, where the Codex CLI on the same tasks cached 91% to 96%.
+ * Written into the window, frame N+1 is frame N, its reply, and new messages.
+ * The newest section is still the second-to-last thing read when the frame
+ * carries an ask, and the last thing read when it does not.
+ *
+ * The asks are the last {@link State.interventions} messages of the window,
+ * so the section goes in front of them inside whatever segment holds them;
+ * with no asks it is a transcript segment of its own. The count is clamped
+ * against the window, because it is carried in state while the window is
+ * rebuilt every frame.
  */
-const withStateSection = (
-  messages: ReadonlyArray<ModelRequest.Message>,
+const frozen = (
+  contextWindow: ContextWindow.ContextWindow,
   state: State
-): { readonly messages: ReadonlyArray<ModelRequest.Message>; readonly stable: number } => {
-  const asks = Math.min(state.interventions, messages.length)
-  const stable = messages.length - asks
-  return {
-    messages: [
-      ...messages.slice(0, stable),
-      ModelRequest.Message.user(stateSection(state)),
-      ...messages.slice(stable)
-    ],
-    stable
+): Result.Result<ContextWindow.ContextWindow, HarnessError> => {
+  // A durable window that no longer renders is a render failure, stated
+  // before the section is written into it.
+  try {
+    ContextWindow.render(contextWindow)
+    return Result.succeed(withSection(contextWindow, state))
+  } catch (cause) {
+    return Result.fail(
+      new HarnessError({ code: "render_failed", message: "Unable to render the context window", cause })
+    )
   }
+}
+
+const withSection = (contextWindow: ContextWindow.ContextWindow, state: State): ContextWindow.ContextWindow => {
+  const section = ModelRequest.Message.user(stateSection(state))
+  const segments = [...contextWindow.segments]
+  // Walk back over the asks to the segment and position the section goes in.
+  let asks = state.interventions
+  let index = segments.length - 1
+  let position = index < 0 ? 0 : segments[index]!.content.length
+  while (index >= 0 && asks > 0) {
+    const content = segments[index]!.content
+    position = content.length
+    for (let item = content.length - 1; item >= 0 && asks > 0; item--) {
+      if ("role" in content[item]!) {
+        asks--
+        position = item
+      }
+    }
+    if (asks > 0 && index > 0) {
+      index--
+    } else break
+  }
+  const holder = index < 0 ? undefined : segments[index]
+  // Only the tail may carry it: a prefix segment is the stable span every
+  // frame repeats, and a window with no tail yet gets a transcript segment.
+  if (holder === undefined || holder.zone !== "tail") {
+    segments.push(ContextWindow.makeSegment({ kind: "transcript", zone: "tail", content: [section] }))
+  } else {
+    segments[index] = ContextWindow.makeSegment({
+      kind: holder.kind,
+      zone: holder.zone,
+      content: [...holder.content.slice(0, position), section, ...holder.content.slice(position)]
+    })
+  }
+  return ContextWindow.make({
+    modelId: contextWindow.modelId,
+    segments,
+    activeTools: contextWindow.activeTools,
+    replaced: contextWindow.replaced
+  })
 }
 
 const requestFrom = (
@@ -1359,22 +1436,20 @@ const requestFrom = (
       })
     )
   }
-  const withState = withStateSection(rendered.messages, state)
   return Result.succeed(
     ModelRequest.ModelRequest.make({
       modelId: contextWindow.modelId,
       system: rendered.system,
-      messages: withState.messages,
+      messages: rendered.messages,
       // A cell-first frame never declares provider tools: the cell is the plan
       // and `ctx.call` is the only invocation path.
       tools: [],
       toolChoice: "none",
       params: state.modelParams,
+      // The window only grows between frames (see `frozen`), so the whole
+      // request is the next one's prefix and Anthropic's moving breakpoint
+      // sits at its end.
       cacheKey: cacheKey(state, rendered.system),
-      // The state section is rebuilt every frame, so Anthropic's moving cache
-      // breakpoint stops at the transcript before it; the next frame repeats
-      // that transcript and reads its prefix back.
-      cacheBoundary: withState.stable,
       // Provider-run tools are not declared tools: the model may search
       // inside the call while `ctx.call` stays the only invocation path.
       ...(state.serverTools === undefined ? {} : { serverTools: state.serverTools })
@@ -2583,7 +2658,9 @@ const compacted = (
     )
     return advance(state, {
       contextWindow,
-      segmentFacts: factsAfter(state, prefixLength, marks?.map((mark) => mark.mark))
+      segmentFacts: factsAfter(state, prefixLength, marks?.map((mark) => mark.mark)),
+      // The sections that listed earlier calls may be among what was replaced.
+      ledgerShown: 0
     })
   })
 
@@ -3107,22 +3184,27 @@ const continuing = (
   // A drain's marks answer segments the frame opened on; the frame's own
   // segments go after them, unmarked.
   const { segmentFacts = settling.state.segmentFacts, ...rest } = changes
+  // A frame carries no ask unless its own exit says how many it appended, so
+  // the default is zero and the two exits that intervene state their count.
+  const next = advance(settling.state, {
+    frame: frame + 1,
+    interventions: 0,
+    // What this frame's section listed; see `frozen`.
+    ledgerShown: CallLedger.settled(settling.state.callLedger),
+    ...settling.facts,
+    contextWindow,
+    segmentFacts: [
+      ...segmentFacts,
+      ...new Array<compactionMarks.Facts>(reasks).fill({ frame, person: false, mutated: false, checks: [] }),
+      { frame, person, ...settling.written }
+    ],
+    ...rest
+  })
+  // The next frame's section, written into the segment this frame appended
+  // before anything reads that segment. See `frozen`.
   return {
     _tag: "Continue",
-    // A frame carries no ask unless its own exit says how many it appended, so
-    // the default is zero and the two exits that intervene state their count.
-    state: advance(settling.state, {
-      frame: frame + 1,
-      interventions: 0,
-      ...settling.facts,
-      contextWindow,
-      segmentFacts: [
-        ...segmentFacts,
-        ...new Array<compactionMarks.Facts>(reasks).fill({ frame, person: false, mutated: false, checks: [] }),
-        { frame, person, ...settling.written }
-      ],
-      ...rest
-    })
+    state: advance(next, { contextWindow: withSection(next.contextWindow, next), sectioned: true })
   }
 }
 
@@ -3200,7 +3282,16 @@ const frame = (
   Effect.gen(function*() {
     // Compaction happens before the turn opens, so the digest the turn records
     // is the one the sealed step is actually keyed on.
-    const state = yield* compacted(input.state, engine, emit, input.judged ?? false, taskOf)
+    const compactedState = yield* compacted(input.state, engine, emit, input.judged ?? false, taskOf)
+    // A run's first frame writes its own state section, before anything reads
+    // the window; every later one opens on the section the frame before it
+    // wrote. See `frozen`.
+    const sectioned = compactedState.sectioned
+      ? Result.succeed(compactedState.contextWindow)
+      : frozen(compactedState.contextWindow, compactedState)
+    const state = sectioned._tag === "Success"
+      ? advance(compactedState, { contextWindow: sectioned.success, sectioned: true })
+      : compactedState
 
     yield* emit(
       new AgentEvent.TurnOpened({
@@ -3211,6 +3302,7 @@ const frame = (
         contextDigest: state.contextWindow.digest
       })
     )
+    if (sectioned._tag === "Failure") return yield* Effect.fail(sectioned.failure)
 
     const { answer, cell: sealed, contextWindow } = yield* seal(state, engine, emit)
     const settling = (
@@ -3667,7 +3759,7 @@ const frame = (
           : observedOn(contextWindow, answer, demanded.note, liveCellEcho)
         return continuing(exit, demandedWindow, false, {
           // The note is the ask this frame appended; the run's memory goes
-          // above it. See `withStateSection`.
+          // above it. See `frozen`.
           interventions: 1,
           pendingReadOnlyDemand: undefined,
           ...demanded.spent,
@@ -3733,7 +3825,7 @@ const frame = (
       ...ledgerAfter(drained),
       ...marksAfter(state, drained),
       // Whatever this frame earned is what the next one answers, so the run's
-      // memory goes above it. See `withStateSection`.
+      // memory goes above it. See `frozen`.
       interventions: disciplined.messages.length,
       ...disciplined.changes
     })

@@ -142,9 +142,13 @@ zoned, so a provider's prefix cache covers the stable span. Segments carry their
 own digest and estimated token count, computed once at construction; the arrays
 are frozen so a mutation cannot invalidate a cached digest silently.
 
-The volatile block, the frame's state section, sits in one trailing user
-message after the transcript rather than inside the system context, so the whole
-stable span is byte-identical for the life of a run.
+The volatile block, the frame's state section, is a user message after the
+transcript rather than inside the system context, so the whole stable span is
+byte-identical for the life of a run. Each frame's section stays in the window
+once written, and a later section lists only the calls settled since the last
+one, so every request is the previous request, its reply, and new messages.
+The newest section is read just before the frame's asks, or last when there
+are none.
 
 Compaction summaries are rendered as user messages, including summaries read
 from older journal records. This keeps every compacted request anchored by a

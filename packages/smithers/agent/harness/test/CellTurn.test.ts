@@ -4181,11 +4181,30 @@ describe("CellTurn context ordering", () => {
     return { body: JSON.parse(prepared.bodyText) as Record<string, unknown>, headers: prepared.publicHeaders }
   }
 
-  it("serializes frame N's ChatGPT request as a strict prefix of frame N+1's, less the trailing state section", async () => {
-    // What the provider caches is the serialized body, not the ModelRequest:
-    // instructions, then input items in order, reasoning replayed byte for
-    // byte. Frame N's only volatile item is its trailing state section, so
-    // everything before it must open frame N+1 unchanged.
+  /**
+   * Asserts each ChatGPT request is the previous one, then that frame's own
+   * reply exactly as the model returned it, then new items: nothing earlier is
+   * rewritten, removed or moved. That is the only shape under which the
+   * provider reuses the reasoning it decoded, and the shape the Codex CLI
+   * sends; 2026-09-26 Luna runs that rebuilt their trailing state section
+   * every frame cached 23% to 49% of input where Codex cached 91% to 96%.
+   */
+  const extendsEachFrame = (wires: ReadonlyArray<{ readonly body: Record<string, unknown> }>) => {
+    for (let frame = 0; frame + 1 < wires.length; frame++) {
+      const current = wires[frame]!.body
+      const next = wires[frame + 1]!.body
+      expect(next.instructions).toBe(current.instructions)
+      expect(next.prompt_cache_key).toBe(current.prompt_cache_key)
+      const input = current.input as ReadonlyArray<Record<string, unknown>>
+      const nextInput = next.input as ReadonlyArray<Record<string, unknown>>
+      expect(JSON.stringify(nextInput.slice(0, input.length))).toBe(JSON.stringify(input))
+      // The reply this frame produced comes next, reasoning first.
+      expect(nextInput[input.length]).toMatchObject({ type: "reasoning", encrypted_content: `opaque-${frame}` })
+      expect(nextInput[input.length + 1]).toMatchObject({ role: "assistant" })
+    }
+  }
+
+  it("serializes frame N's ChatGPT request and its reply as a strict prefix of frame N+1's", async () => {
     const { model } = await run({
       script: [
         reasoned(`console.log("alpha")`, 0),
@@ -4196,18 +4215,31 @@ describe("CellTurn context ordering", () => {
     })
     const wires = await Promise.all(model.recorder.requests.map(chatgptWire))
     expect(wires.length).toBe(4)
-    for (let frame = 0; frame + 1 < wires.length; frame++) {
-      const current = wires[frame]!.body
-      const next = wires[frame + 1]!.body
-      expect(next.instructions).toBe(current.instructions)
-      const input = current.input as ReadonlyArray<unknown>
-      const nextInput = next.input as ReadonlyArray<unknown>
-      const stable = input.slice(0, -1)
-      expect(nextInput.length).toBeGreaterThan(input.length)
-      expect(JSON.stringify(nextInput.slice(0, stable.length))).toBe(JSON.stringify(stable))
-    }
-    // The encrypted reasoning rides along, so the prefix above covers it.
-    expect(JSON.stringify(wires[3]!.body.input)).toContain("opaque-2")
+    extendsEachFrame(wires)
+    // Every frame's state section is still read last.
+    for (const request of model.recorder.requests) expect(stateSection(request)).toContain("realm")
+  })
+
+  it("keeps the prefix append-only across a frame that carries a demand, with the demand read last", async () => {
+    const { model } = await run({
+      state: capped(2, 5),
+      flows: [descriptor("fs/list", { capabilities: ["fs:read:**"] }), editor],
+      script: Array.from({ length: 5 }, (_, ordinal) =>
+        reasoned(
+          `await ctx.call("fs/list", { path: "." })
+           console.log("still reading")`,
+          ordinal
+        )),
+      calls: successes(5)
+    })
+    const wires = await Promise.all(model.recorder.requests.map(chatgptWire))
+    expect(wires.length).toBeGreaterThanOrEqual(3)
+    extendsEachFrame(wires)
+    const texts = (model.recorder.requests[2]?.messages ?? []).map((message) =>
+      message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n")
+    )
+    expect(texts.at(-1)).toContain("Read-only discipline")
+    expect(texts.at(-2)).toContain("realm holds")
   })
 
   it("replays each frame's ChatGPT reasoning item ahead of the message it produced", async () => {
@@ -4243,10 +4275,10 @@ describe("CellTurn context ordering", () => {
     }
   }
 
-  it("moves frame N's Anthropic cache breakpoint to a prefix frame N+1 repeats byte for byte", async () => {
+  it("puts frame N's Anthropic cache breakpoint on its last message, which frame N+1 repeats byte for byte", async () => {
     // Anthropic reads a cache entry only where an earlier request wrote a
-    // breakpoint, so frame N must mark its last stable message, never the
-    // trailing state section frame N+1 replaces.
+    // breakpoint. The window only grows between frames, so frame N's whole
+    // conversation, state section included, opens frame N+1.
     const { model } = await run({
       script: [
         emits(`console.log("alpha")`),
@@ -4267,13 +4299,10 @@ describe("CellTurn context ordering", () => {
       const current = wires[frame]!
       const next = wires[frame + 1]!
       expect(current.system.at(-1)?.cache_control).toEqual({ type: "ephemeral" })
-      const [breakpoint, ...others] = marked(current)
-      expect(others).toEqual([])
-      // Everything after the breakpoint is this frame's volatile tail.
-      expect(JSON.stringify(current.messages.slice(breakpoint! + 1))).toContain("realm")
-      expect(marked(next)[0]).toBeGreaterThan(breakpoint!)
-      expect(unmarked([next.system, next.messages.slice(0, breakpoint! + 1)]))
-        .toBe(unmarked([current.system, current.messages.slice(0, breakpoint! + 1)]))
+      expect(marked(current)).toEqual([current.messages.length - 1])
+      expect(JSON.stringify(current.messages.at(-1))).toContain("realm")
+      expect(unmarked([next.system, next.messages.slice(0, current.messages.length)]))
+        .toBe(unmarked([current.system, current.messages]))
     }
   })
 

@@ -226,9 +226,9 @@ describe("agent checkpoint process recovery", () => {
           ])
           // The step's facts are written against each other the way a prompt
           // run's rows are: the second call's fact holds what it added past
-          // the realm note each frame closes on, and the teaching both calls
-          // ran under is stored once.
-          expect(asked[1]!.prefixCount).toBe((asked[0]!.messages as ReadonlyArray<unknown>).length - 1)
+          // everything the first sent, realm note included, and the teaching
+          // both calls ran under is stored once.
+          expect(asked[1]!.prefixCount).toBe((asked[0]!.messages as ReadonlyArray<unknown>).length)
           expect(asked.map((payload) => Object.hasOwn(payload, "system"))).toEqual([true, false])
           const wiring = yield* incarnation(Model.make({
             stream: () =>

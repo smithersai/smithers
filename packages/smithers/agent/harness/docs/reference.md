@@ -555,7 +555,7 @@ carries no payloads: a line says `stdout=4096b`, never the four kilobytes.
 | `entry` | const | constructors | Records one settled call. |
 | `settled` | const | conversions | How many calls this run has settled, given a ledger some of whose lines have aged out. |
 | `remember` | const | combinators | Folds one frame's settled calls into the run's ledger, newest last. |
-| `render` | const | conversions | Renders the ledger for the state section, or nothing when the run has settled no call yet. |
+| `render` | const | conversions | Renders the ledger for the state section, or nothing when there is no call to list. |
 
 ## NarrowedCheck
 
