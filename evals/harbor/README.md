@@ -56,7 +56,7 @@ Terminal-Bench 4.0, two tasks, one attempt each, one at a time:
 ```sh
 cd <checkout>
 PYTHONPATH=$PWD harbor run -d terminal-bench/terminal-bench@4.0.0 \
-  -i wal-recovery-ordering -i sound-change-cascade \
+  -i terminal-bench/wal-recovery-ordering -i terminal-bench/sound-change-cascade \
   -a evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6-sol \
   -k 1 -n 1 -o "$PWD/evals/harbor/jobs" --job-name smithers-smoke -y
 ```
@@ -157,10 +157,18 @@ The full benchmark drops the `-i` filters and raises `-n`. Use an absolute
 directory when it copies artifacts into the verifier container, and the copy
 falls back to a slower tar stream.
 
-DeepSWE 1.1 through Pier, one task:
+A `-i` filter takes the dataset's full task name (`terminal-bench/<task>`);
+a bare name matches nothing.
+
+DeepSWE 1.1 runs through Pier, not Harbor: on Smithers Cloud, Harbor's
+`PlueEnvironment` refuses DeepSWE's agent-phase network policy. Download the
+tasks once, then pass one task directory, or the dataset directory for all 113
+(Pier keeps only the last `-p`):
 
 ```sh
-PYTHONPATH=$PWD pier run -p <deep-swe>/tasks/<task> \
+harbor dataset download datacurve/deep-swe-1-1 -o <deep-swe>
+PYTHONPATH=$PWD pier run -p <deep-swe>/deep-swe-1-1/<task> \
+  --environment-import-path evals.harbor.plue_env:PluePierEnvironment \
   --agent-import-path evals.harbor.smithers_agent:SmithersAgent \
   -m openai/gpt-6-sol -k 1 -n 1 -o "$PWD/evals/harbor/jobs"
 ```
