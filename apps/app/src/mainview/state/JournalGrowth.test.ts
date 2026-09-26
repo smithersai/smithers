@@ -285,3 +285,66 @@ describe("normalized run polling has no idle SQLite growth", () => {
     expect((await store.verifyState()).valid).toBe(true)
   })
 })
+
+test("identical repository-import polls do not grow the committed journal or SQLite rows", async () => {
+  const { createRepoImportSeam, repoImportPolling } = await import("./seams/RepoImportSeam")
+  const fixture = await open()
+  const store = fixture.store
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  const previousDelay = repoImportPolling.delayMs
+  repoImportPolling.delayMs = 1
+  let disposed = false
+  const reads: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Import observation did not settle")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  const answer = (stage = "cloning_github", status = "cloning") => Response.json({
+    importJobId: "import-growth", repoOwner: "owner", repoName: "repo", status, stage,
+    target_bookmark: "main", created_at: "2026-09-26T00:00:00Z", updated_at: "2026-09-26T00:00:00Z"
+  })
+  const seam = createRepoImportSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    isDisposed: () => disposed, http: async (_input, init) => {
+      if (init?.method === "POST") return answer()
+      const read = Promise.withResolvers<Response>(); reads.push(read); return read.promise
+    }
+  })
+  try {
+    await seam.importRepository("owner/repo")
+    await waitFor(() => reads.length === 1)
+    reads[0]!.resolve(answer())
+    await waitFor(() => reads.length === 2)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 1; index <= 10; index++) {
+      reads[index]!.resolve(answer())
+      await waitFor(() => reads.length === index + 2)
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    const held = fixture.pauseNextWrite()
+    reads[11]!.resolve(answer("pushing_mirror"))
+    await held.entered
+    expect(store.committedCard("repo-import-owner/repo")).toMatchObject({ payload: { stage: "cloning_github" } })
+    expect(reads).toHaveLength(12)
+    held.release()
+    await waitFor(() => reads.length === 13)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    reads[12]!.resolve(answer("provisioning_workspace", "ready"))
+    await waitFor(() => {
+      const card = store.collections.cards.get("repo-import-owner/repo")
+      return card?.kind === "repo-import" && card.payload.phase === "done"
+    })
+    await store.settled?.()
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 2)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.collections.cards.get("repo-import-owner/repo")).toMatchObject({ payload: { phase: "done", stage: "provisioning_workspace" } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    disposed = true
+    for (const read of reads) read.resolve(answer())
+    repoImportPolling.delayMs = previousDelay
+  }
+})

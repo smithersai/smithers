@@ -10,6 +10,7 @@
  * src/smithersCloud/githubImport.ts (startImport/pollImport) against plue
  * internal/routes/github_import.go.
  */
+import { canonicalStoredJsonValue } from "../EventValue"
 import { accountOwnerOf } from "../AccountOwner"
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
@@ -243,6 +244,10 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
         ...(patch.accountOwner !== undefined ? { accountOwner: patch.accountOwner } : prior?.accountOwner !== undefined ? { accountOwner: prior.accountOwner } : {})
       }
     }
+    // Polling can return the same progress for minutes. Only a committed
+    // observation permits skipping its next write; optimistic rows do not.
+    const committed = ctx.store.committedCard(id)
+    if (committed !== undefined && canonicalStoredJsonValue(committed) === canonicalStoredJsonValue(card)) return Promise.resolve()
     return ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card }).isPersisted.promise
   }
 
