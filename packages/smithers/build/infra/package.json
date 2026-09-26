@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260903.1",
+    "@smthrs/build-cli": "1.0.0-rc.1",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "alchemy": "2.0.0-beta.76",

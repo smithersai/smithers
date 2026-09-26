@@ -713,6 +713,7 @@
       "devDependencies": {
         "@astrojs/starlight": "^0.42.0",
         "alchemy": "2.0.0-beta.76",
+        "effect": "4.0.0-rc.115",
       },
       "peerDependencies": {
         "alchemy": "2.0.0-beta.76",
@@ -1911,6 +1912,7 @@
       },
       "devDependencies": {
         "@cloudflare/workers-types": "5.20260903.1",
+        "@smthrs/build-cli": "1.0.0-rc.1",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "alchemy": "2.0.0-beta.76",
@@ -2115,11 +2117,13 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
+        "@effect/platform-node": "4.0.0-rc.115",
         "@smthrs/platform-bun": "1.0.0-rc.1",
         "@smthrs/platform-node": "1.0.0-rc.1",
         "effect": "4.0.0-rc.115",
       },
       "optionalPeers": [
+        "@effect/platform-node",
         "@smthrs/platform-bun",
         "@smthrs/platform-node",
       ],

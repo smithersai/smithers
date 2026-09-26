@@ -183,11 +183,15 @@
     "@smthrs/platform-bun": "1.0.0-rc.1"
   },
   "peerDependencies": {
+    "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/platform-node": "1.0.0-rc.1",
     "effect": "4.0.0-rc.115",
     "@smthrs/platform-bun": "1.0.0-rc.1"
   },
   "peerDependenciesMeta": {
+    "@effect/platform-node": {
+      "optional": true
+    },
     "@smthrs/platform-node": {
       "optional": true
     },

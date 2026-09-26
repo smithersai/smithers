@@ -12,7 +12,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { type CachedResult, openCache } from "../../../build-cli/src/Cache.ts"
+import { type CachedResult, openCache } from "@smthrs/build-cli/Cache"
 import { createHandler, maxConcurrentActionCachePublications } from "../protocol.ts"
 import { MemoryActionCache, MemoryContentStore } from "./MemoryStores.ts"
 
