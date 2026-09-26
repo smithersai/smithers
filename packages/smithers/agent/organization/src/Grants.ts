@@ -97,7 +97,8 @@ export const Widening = Schema.Struct({
     "repositories",
     "personalAccounts",
     "contact",
-    "hiring"
+    "hiring",
+    "retrieval"
   ]),
   detail: Schema.String
 })
@@ -134,6 +135,14 @@ const hasBit = (access: Profile.Access, bit: "read" | "write"): boolean => acces
 
 const reaches = (grant: Profile.ConnectionGrant, container: string): boolean =>
   grant.containers.includes("*") || (container !== "*" && grant.containers.includes(container))
+
+/**
+ * Whether `domain` is `scope` or one of its subdomains.
+ *
+ * @category relations
+ * @since 1.0.0
+ */
+export const withinDomain = (domain: string, scope: string): boolean => domain === scope || domain.endsWith(`.${scope}`)
 
 const parsedKnowledge = (grants: ReadonlyArray<string>): ReadonlyArray<KnowledgePath.KnowledgePath> =>
   grants.flatMap((grant) => {
@@ -201,6 +210,26 @@ export const widenings = (
     found.push({ grant: "contact", detail: "a hired principal never contacts the owner directly" })
   } else if (hired && parent.contact === "owner-direct" && child.contact !== "via-parent") {
     found.push({ grant: "contact", detail: "a principal hired by the assistant contacts the owner only through it" })
+  }
+  if (child.tools.includes("retrieval") && parent.tools.includes("retrieval")) {
+    const allow = parent.retrieval?.allow
+    if (allow !== undefined) {
+      const held = child.retrieval?.allow
+      if (held === undefined) {
+        found.push({ grant: "retrieval", detail: `the parent reaches only ${allow.join(", ") || "no domain"}` })
+      } else {
+        for (const domain of held) {
+          if (!allow.some((scope) => withinDomain(domain, scope))) {
+            found.push({ grant: "retrieval", detail: `domain ${domain} is outside the parent's` })
+          }
+        }
+      }
+    }
+    for (const denied of parent.retrieval?.deny ?? []) {
+      if (!(child.retrieval?.deny ?? []).some((scope) => withinDomain(denied, scope))) {
+        found.push({ grant: "retrieval", detail: `domain ${denied} is denied to the parent` })
+      }
+    }
   }
   if (child.hiring !== undefined) {
     if (parent.hiring === undefined) {

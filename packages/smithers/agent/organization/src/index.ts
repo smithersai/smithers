@@ -41,6 +41,9 @@ export * as Config from "./Config.ts"
 /** @category authority @since 1.0.0 */
 export * as Authority from "./Authority.ts"
 
+/** @category budgets @since 1.0.0 */
+export * as Budgets from "./Budgets.ts"
+
 /** @category authority @since 1.0.0 */
 export * as RoleHost from "./RoleHost.ts"
 

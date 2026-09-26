@@ -153,6 +153,144 @@ export const propose = (
 }
 
 /**
+ * What a role asks for when it hires: the structured `hire` field of its
+ * result. Only `slug`, `name`, `objective`, and `responsibilities` are
+ * required; everything else defaults narrowly:
+ *
+ * - `kind` `specialist` (persistent); a `helper` is scoped to the hiring task;
+ * - `outputs` one `report` field;
+ * - no tools, connections, knowledge, repositories, skills, or hiring;
+ * - `contact` `via-parent` and no personal accounts;
+ * - with the `retrieval` tool, the parent's own web scope: a missing `allow`
+ *   takes the parent's, and the parent's `deny` is always kept, so a hire may
+ *   narrow its scope but never widen it;
+ * - a budget of at most 100000 tokens per task, 5 tasks a day, and one task
+ *   at a time, and never more than the parent's own.
+ *
+ * Asking for a grant is not holding it: {@link fromSpec} builds the request
+ * and {@link propose} refuses whatever the parent may not give.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const HireSpec = Schema.Struct({
+  slug: Slug,
+  name: Profile.Line,
+  kind: Schema.optionalKey(Schema.Literals(["specialist", "helper"])),
+  objective: Profile.Paragraph,
+  responsibilities: Schema.NonEmptyArray(Profile.Line),
+  outputs: Schema.optionalKey(Schema.NonEmptyArray(Profile.OutputField)),
+  tools: Schema.optionalKey(Schema.Array(Profile.Tool)),
+  connections: Schema.optionalKey(Schema.Array(Profile.ConnectionGrant)),
+  knowledge: Schema.optionalKey(Schema.Array(Profile.KnowledgeGrant)),
+  repositories: Schema.optionalKey(Schema.Array(Profile.Container)),
+  skills: Schema.optionalKey(Schema.Array(Profile.SkillName)),
+  personalAccounts: Schema.optionalKey(Schema.Boolean),
+  contact: Schema.optionalKey(Profile.Contact),
+  hiring: Schema.optionalKey(Profile.HiringLimits),
+  retrieval: Schema.optionalKey(Profile.RetrievalScope),
+  budget: Schema.optionalKey(Schema.Struct({
+    tokensPerTask: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+    tasksPerDay: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+    concurrency: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0)))
+  })),
+  boundaries: Schema.optionalKey(Schema.Array(Profile.Line))
+})
+
+/**
+ * What a role asks for when it hires.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type HireSpec = typeof HireSpec.Type
+
+/**
+ * The default budget ceiling of a hire, below its parent's own.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultHireBudget = { tokensPerTask: 100_000, tasksPerDay: 5, concurrency: 1 } as const
+
+const decodeSpec = Schema.decodeUnknownResult(HireSpec, { onExcessProperty: "error" })
+
+/** The hire's web scope: what it asked for, with the parent's `allow` when it named none and the parent's `deny` kept. */
+const retrievalOf = (parent: Profile.Profile, hire: HireSpec): Profile.RetrievalScope | undefined => {
+  if (!(hire.tools ?? []).includes("retrieval")) return hire.retrieval
+  const allow = hire.retrieval?.allow ?? parent.grants.retrieval?.allow
+  const deny = [...new Set([...(hire.retrieval?.deny ?? []), ...(parent.grants.retrieval?.deny ?? [])])]
+  if (allow === undefined && deny.length === 0) return undefined
+  return { ...(allow === undefined ? {} : { allow }), ...(deny.length === 0 ? {} : { deny }) }
+}
+
+/**
+ * Builds the hire request a role's `hire` field asks for, on behalf of
+ * `parent` at `at`; a `helper` is scoped to `taskScope`. A field that does not
+ * decode is refused as `invalid-profile` with the problems it has.
+ *
+ * @category lifecycle
+ * @since 1.0.0
+ */
+export const fromSpec = (
+  parent: Profile.Profile,
+  spec: unknown,
+  at: string,
+  taskScope?: string
+): Result.Result<HireRequest, ReadonlyArray<Roster.Violation>> => {
+  const decoded = decodeSpec(spec)
+  if (Result.isFailure(decoded)) {
+    return Result.fail([{
+      code: "invalid-profile",
+      principal: parent.id,
+      message: `the hire request does not decode: ${Issues.summary(Issues.problems(decoded.failure))}`
+    }])
+  }
+  const hire = decoded.success
+  const kind = hire.kind ?? "specialist"
+  const budget = {
+    tokensPerTask: hire.budget?.tokensPerTask ??
+      Math.min(defaultHireBudget.tokensPerTask, parent.budget.tokensPerTask),
+    tasksPerDay: hire.budget?.tasksPerDay ?? Math.min(defaultHireBudget.tasksPerDay, parent.budget.tasksPerDay),
+    concurrency: hire.budget?.concurrency ?? Math.min(defaultHireBudget.concurrency, parent.budget.concurrency)
+  }
+  const retrieval = retrievalOf(parent, hire)
+  return Result.succeed({
+    parent: parent.id,
+    slug: hire.slug,
+    name: hire.name,
+    kind,
+    charter: {
+      objective: hire.objective,
+      responsibilities: hire.responsibilities,
+      inputs: [`Tasks from ${parent.id}.`],
+      allowedActions: [`Answer tasks from ${parent.id} within the granted knowledge and tools.`],
+      output: {
+        fields: hire.outputs ?? [{ name: "report", description: "The findings, each with its source and date" }],
+        evidence: ["The source and date of every claim; unverified claims labeled."]
+      },
+      escalation: [`Anything outside this charter: return blocked to ${parent.id}.`],
+      successCriteria: [`${parent.id} accepts the output after review.`],
+      boundaries: hire.boundaries ?? [`Reports only to ${parent.id}; never contacts the owner.`]
+    },
+    grants: {
+      tools: hire.tools ?? [],
+      connections: hire.connections ?? [],
+      knowledge: hire.knowledge ?? [],
+      repositories: hire.repositories ?? [],
+      personalAccounts: hire.personalAccounts ?? false,
+      contact: hire.contact ?? "via-parent",
+      ...(hire.hiring === undefined ? {} : { hiring: hire.hiring }),
+      ...(retrieval === undefined ? {} : { retrieval })
+    },
+    budget,
+    skills: hire.skills ?? [],
+    ...(kind === "helper" && taskScope !== undefined ? { taskScope } : {}),
+    at
+  })
+}
+
+/**
  * A lifecycle action.
  *
  * @category schemas

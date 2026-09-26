@@ -109,9 +109,18 @@ const slug = (key: string) => key.replaceAll(/[^A-Za-z0-9._-]/g, "-")
  * base is a captured directory a new machine starts as a copy of. A
  * workspace boundary for tests only, never an isolation boundary.
  */
-export const hostMachines = (root: string = tempDir(), bases: string = tempDir()) => {
+export const hostMachines = (
+  root: string = tempDir(),
+  bases: string = tempDir(),
+  options: {
+    /** Whether a capture loses the guest's last writes, as a stop that does not finish gracefully can. */
+    readonly loseWrites?: ((name: string) => boolean) | undefined
+  } = {}
+) => {
   const opened: Array<string> = []
   const boots: Array<{ readonly key: string; readonly boot: Workspace.Boot | undefined }> = []
+  const captured = new Map<string, number>()
+  let sequence = 0
   const open = (key: string, workdir: string, boot: Workspace.Boot | undefined) => {
     if (!existsSync(workdir) && boot?.base !== undefined) cpSync(join(bases, boot.base), workdir, { recursive: true })
     mkdirSync(workdir, { recursive: true })
@@ -130,14 +139,19 @@ export const hostMachines = (root: string = tempDir(), bases: string = tempDir()
     bases: {
       identity: "host directories",
       exists: (name) => Effect.sync(() => existsSync(join(bases, name))),
-      capture: (remoteId, name, family) =>
+      capture: (remoteId, name, family, retain) =>
         Effect.sync(() => {
+          if (options.loseWrites?.(name) === true) rmSync(join(remoteId, ".git", "smithers-prepared"))
           renameSync(remoteId, join(bases, name))
+          captured.set(name, ++sequence)
           const members = readdirSync(bases)
             .filter((entry) => entry.startsWith(`${family}-`))
-            .sort((left, right) => statSync(join(bases, right)).mtimeMs - statSync(join(bases, left)).mtimeMs)
-          for (const stale of members.slice(2)) rmSync(join(bases, stale), { recursive: true, force: true })
-        })
+            .sort((left, right) => captured.get(right)! - captured.get(left)!)
+          for (const stale of members.slice(2)) {
+            if (!retain.includes(stale)) rmSync(join(bases, stale), { recursive: true, force: true })
+          }
+        }),
+      remove: (name) => Effect.sync(() => rmSync(join(bases, name), { recursive: true, force: true }))
     }
   }
   return { root, bases, machines, opened, boots }

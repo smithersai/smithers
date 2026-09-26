@@ -109,6 +109,7 @@ export interface Recorded {
   readonly system: ReadonlyArray<string>
   readonly skills: ReadonlyArray<string>
   readonly claimCap: number | undefined
+  readonly serverTools: ReadonlyArray<unknown>
 }
 
 const recordingAgent = (recorded: Array<Recorded>) =>
@@ -124,7 +125,8 @@ const recordingAgent = (recorded: Array<Recorded>) =>
           envelope: (options.capabilityEnvelope ?? []).map(Capability.format).sort(),
           system: options.system ?? [],
           skills: skills.map((descriptor) => descriptor.name),
-          claimCap: options.claimCap
+          claimCap: options.claimCap,
+          serverTools: options.serverTools ?? []
         })
         return agent.run(options)
       }))

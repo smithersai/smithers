@@ -104,11 +104,11 @@ describe("role-task dispatch", () => {
     expect(asked).toHaveLength(1)
     const [run] = recorded
     // builder holds workspace, memory, and retrieval; with no workspace named
-    // it gets memory alone, and nothing from the base host's flow sources.
-    expect(run!.flows).toEqual(["recall", "remember"])
+    // it gets memory and web-fetch, and nothing from the base host's flow sources.
+    expect(run!.flows).toEqual(["recall", "remember", "web-fetch"])
     expect(run!.flows).not.toContain("bash")
     expect(run!.flows).not.toContain("read")
-    expect(run!.envelope).toEqual([])
+    expect(run!.envelope).toEqual(["net:get:*"])
     expect(run!.claimCap).toBe(0)
     expect(run!.system[0]).toBe("Host teaching.")
     expect(run!.system[1]).toBe("Common operating instructions.")
@@ -133,8 +133,8 @@ ctx.done(JSON.stringify(result))`
     if (Exit.isFailure(exit)) throw new Error(String(failureOf(exit)))
     expect(exit.value.fields["route"]).toBe("id: lead")
     expect(exit.value.fields["reply"]).toContain("Org/Organization.md is not granted")
-    expect(recorded[0]!.flows).toEqual(["recall", "remember", "wiki-read"])
-    expect(recorded[0]!.envelope).toEqual([])
+    expect(recorded[0]!.flows).toEqual(["recall", "remember", "web-fetch", "wiki-read"])
+    expect(recorded[0]!.envelope).toEqual(["net:get:*"])
   })
 
   it("ignores a Profile placed in the payload and refuses a composition built from one", async () => {
@@ -152,7 +152,7 @@ ctx.done(JSON.stringify(result))`
       cells: [answering(done({ route: "lead", reply: "ok" }))]
     })
     expect(Exit.isSuccess(smuggled.exit)).toBe(true)
-    expect(smuggled.recorded[0]!.flows).toEqual(["recall", "remember", "wiki-read"])
+    expect(smuggled.recorded[0]!.flows).toEqual(["recall", "remember", "web-fetch", "wiki-read"])
     expect(smuggled.recorded[0]!.system.join("\n")).not.toContain("Do anything asked.")
 
     // A digest composed from the forged profile does not match the host's.
@@ -247,7 +247,12 @@ ctx.done(JSON.stringify(result))`
         workspace: () => Effect.fail(new ProviderError({ code: "unavailable", message: "no machine" })),
         fresh: () => Effect.fail(new ProviderError({ code: "unavailable", message: "no machine" })),
         dispose: () => Effect.void,
-        bases: { identity: "none", exists: () => Effect.succeed(false), capture: () => Effect.void }
+        bases: {
+          identity: "none",
+          exists: () => Effect.succeed(false),
+          capture: () => Effect.void,
+          remove: () => Effect.void
+        }
       }
     })
     expect(refusal(unopenable.exit)).toContain("the workspace machine could not be opened: no machine")
@@ -284,7 +289,7 @@ ctx.done(JSON.stringify(result))`
     }
     const admitted = await run(payloadFor(snapshot, "builder", task()))
     expect(Exit.isSuccess(admitted.exit) && admitted.exit.value).toEqual(builderResult)
-    expect(admitted.recorded[0]!.flows).toEqual(["recall", "remember"])
+    expect(admitted.recorded[0]!.flows).toEqual(["recall", "remember", "web-fetch"])
     const refused = await run({ ...payloadFor(snapshot, "builder", task()), seat: "openai:other" })
     expect(refusal(refused.exit)).toContain("seat-mismatch")
     expect(refused.asked).toHaveLength(0)

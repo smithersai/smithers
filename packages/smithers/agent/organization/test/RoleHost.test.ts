@@ -4,6 +4,7 @@
  * registry admits, and the wiki reads the knowledge grants allow.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as KernelWorkspace from "@smthrs/kernel/Workspace"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Registry from "@smthrs/registry/Registry"
 import { Context, Effect, Layer, Option } from "effect"
@@ -48,19 +49,39 @@ const skillsLayer = Registry.layer({
 const wiki = (root = wikiRoot()) => ({ root, services: fileServices })
 
 describe("RoleHost.make", () => {
+  it("admits the reads the engine measures for a sealed memory call under the served root, and no other", async () => {
+    const profile = await profiles()
+    const served = (options: Parameters<typeof build>[0]) =>
+      Effect.runPromise(
+        RoleHost.make({ base: baseHost, system: ["Composed."], executionId: "run-1", ...options }).pipe(
+          Effect.provideService(KernelWorkspace.Workspace, KernelWorkspace.make("/srv/org/"))
+        )
+      )
+    const lead = await served({ profile: profile("lead"), resources: { memory: memoryServices, wiki: wiki() } })
+    expect(lead.envelope.map((pattern) => [pattern.action, pattern.resource])).toEqual([
+      ["fs:read", "/srv/org/memory/**"],
+      ["net:get", "*"]
+    ])
+    const bare = await served({
+      profile: { ...profile("lead"), grants: { ...profile("lead").grants, tools: ["wiki-read"] } },
+      resources: { wiki: wiki() }
+    })
+    expect(bare.envelope).toEqual([])
+  })
+
   it("binds only granted families, never the base host's flows, and keeps the base limits", async () => {
     const profile = await profiles()
     const lead = await built({ profile: profile("lead"), resources: { memory: memoryServices, wiki: wiki() } })
-    expect(lead.flows).toEqual(["recall", "remember", "wiki-read"])
-    expect(lead.envelope).toEqual([])
+    expect(lead.flows).toEqual(["recall", "remember", "web-fetch", "wiki-read"])
+    expect(lead.envelope.map((pattern) => `${pattern.action}:${pattern.resource}`)).toEqual(["net:get:*"])
     expect(lead.host.limits).toBe(baseHost.limits)
-    expect(lead.host.system).toEqual(["Host teaching.", "Composed."])
+    expect(lead.host.system).toEqual(["Host teaching.", "Composed.", RoleHost.retrievalNotice])
     expect(lead.host.plugins).toBeUndefined()
     expect(lead.host.implementations).toBeUndefined()
     expect(lead.host.claimCap).toBeUndefined()
 
     const builder = await built({ profile: profile("builder"), resources: { memory: memoryServices, claimCap: 0 } })
-    expect(builder.flows).toEqual(["recall", "remember"])
+    expect(builder.flows).toEqual(["recall", "remember", "web-fetch"])
     expect(builder.host.claimCap).toBe(0)
 
     // A principal granted no tool family gets no flow at all, and a base host
@@ -99,8 +120,20 @@ describe("RoleHost.make", () => {
         system: result.host.system
       }
     })))
-    expect(flows).toEqual(["apply_patch", "bash", "edit", "glob", "grep", "ls", "read", "recall", "remember", "write"])
-    expect(envelope).toEqual(["fs:read:/**", "fs:write:/**", "proc:spawn:*"])
+    expect(flows).toEqual([
+      "apply_patch",
+      "bash",
+      "edit",
+      "glob",
+      "grep",
+      "ls",
+      "read",
+      "recall",
+      "remember",
+      "web-fetch",
+      "write"
+    ])
+    expect(envelope).toEqual(["fs:read:/**", "fs:write:/**", "net:get:*", "proc:spawn:*"])
     expect(system?.at(-1)).toContain("isolated machine")
   })
 

@@ -432,9 +432,17 @@ export interface Bases {
   /**
    * Stops the workspace machine `remoteId`, captures its disk as base `name`,
    * removes the machine, and drops the older bases of `family` beyond the
-   * newest few.
+   * newest few, except those in `retain`: bases a machine is about to boot
+   * from.
    */
-  readonly capture: (remoteId: string, name: string, family: string) => Effect.Effect<void, ProviderError>
+  readonly capture: (
+    remoteId: string,
+    name: string,
+    family: string,
+    retain: ReadonlyArray<string>
+  ) => Effect.Effect<void, ProviderError>
+  /** Removes a base; one already gone is not an error. */
+  readonly remove: (name: string) => Effect.Effect<void, ProviderError>
 }
 
 /**
@@ -605,11 +613,19 @@ export const microsandbox = (options: MicrosandboxOptions): Machines => {
     bases: {
       identity: `microsandbox ${options.image} disk ${shape.rootDiskMib}`,
       exists: (name) => MicrosandboxSandbox.hasSnapshot(options.sdk, `${prefix}${name}`),
-      capture: (remoteId, name, family) =>
+      capture: (remoteId, name, family, retain) =>
         MicrosandboxSandbox.captureSnapshot({ sdk: options.sdk, machine: remoteId, name: `${prefix}${name}` }).pipe(
-          Effect.andThen(MicrosandboxSandbox.pruneSnapshots(options.sdk, `${prefix}${family}-`, keptBases)),
+          Effect.andThen(
+            MicrosandboxSandbox.pruneSnapshots(
+              options.sdk,
+              `${prefix}${family}-`,
+              keptBases,
+              retain.map((base) => `${prefix}${base}`)
+            )
+          ),
           Effect.asVoid
-        )
+        ),
+      remove: (name) => MicrosandboxSandbox.removeSnapshot(options.sdk, `${prefix}${name}`)
     }
   }
 }
@@ -683,6 +699,12 @@ export interface PrepareRequest {
   readonly key: string
   readonly repoPath: string
   readonly commit: string
+  /**
+   * A change applied over the seeded commit, as `collect` returns it: a
+   * checker's own machine holds the change it judges. Preparing the same key
+   * again leaves an applied patch as it is.
+   */
+  readonly patch?: string | undefined
 }
 
 /**
@@ -821,6 +843,10 @@ export const make = (
     const permits = yield* Semaphore.make(options.maxConcurrentVMs)
     // One base is prepared at a time, so two tasks never prepare the same one.
     const baking = yield* Semaphore.make(1)
+    // Bases known to hold their prepared tree, and bases a machine is about to
+    // boot from, which pruning keeps.
+    const verified = new Set<string>()
+    const booting = new Map<string, number>()
     const machines = options.machines
 
     const host = (repo: string, args: ReadonlyArray<string>, limit: number, env?: Record<string, string>) =>
@@ -949,47 +975,108 @@ export const make = (
     const ensureBase = (repo: string, commit: string, prepare: Prepare) =>
       Effect.gen(function*() {
         const { family, name } = yield* baseOf(repo, commit, prepare)
-        const exists = machines.bases.exists(name).pipe(
-          Effect.mapError(unavailable("the prepared base could not be read"))
-        )
-        if (yield* exists) return name
+        if (verified.has(name)) return trusted(name)
         return yield* baking.withPermit(Effect.gen(function*() {
-          if (yield* exists) return name
-          const started = Date.now()
-          const remoteId = yield* Effect.scoped(Effect.gen(function*() {
-            const session = yield* machines.workspace(`bases/${name}`, { network: prepare.network }).pipe(
-              Effect.mapError(unavailable("the machine a base is prepared in could not be opened"))
-            )
-            // Removed on any failure, so a broken preparation is never captured.
-            yield* Effect.addFinalizer((exit) =>
-              exit._tag === "Success" ? Effect.void : Effect.ignore(machines.dispose(session.remoteId))
-            )
-            yield* seedFromArchive(session, repo, commit)
-            const ran = yield* Process.guest(
-              session,
-              `(${prepare.run}) > ${prepareLog} 2>&1`,
-              { limit: 4_096, timeoutMs: prepare.timeoutMs ?? defaultPrepareTimeoutMs }
-            ).pipe(Effect.mapError(unavailable("the prepare command did not run")))
-            if (ran.exitCode !== 0) {
-              const tail = Process.text((yield* run(session, `tail -c 2000 ${prepareLog} 2>/dev/null || true`)).stdout)
-                .trim()
-              const reason = ran.timedOut
-                ? "the prepare command timed out"
-                : `the prepare command exited ${ran.exitCode}`
-              return yield* fail("prepare-failed", tail === "" ? reason : `${reason}: ${tail}`)
-            }
-            // What the command left that the repository does not ignore is part
-            // of the prepared tree, so it never shows up as a change.
-            // A machine booted from the base is not yet a seeded workspace.
-            yield* record(session, commit, preparedPath, [`rm -f ${markerPath}`, `${guestGit} add -A`])
-            return session.remoteId
-          }))
-          yield* machines.bases.capture(remoteId, name, family).pipe(
-            Effect.mapError(unavailable("the prepared base could not be captured"))
+          if (verified.has(name)) return trusted(name)
+          const exists = yield* machines.bases.exists(name).pipe(
+            Effect.mapError(unavailable("the prepared base could not be read"))
           )
-          yield* Effect.logInfo(`prepared base ${name} of ${repo} in ${Date.now() - started} ms`)
-          return name
+          // A base this process did not capture is checked once before use; a
+          // base without its prepared tree is removed and prepared again.
+          if (exists && (yield* holdsPreparedTree(name))) return trusted(name)
+          if (exists) yield* removeBase(name)
+          // A capture that lost the prepared tree is prepared once more.
+          for (let attempt = 0; attempt < 2; attempt++) {
+            yield* bake(repo, commit, prepare, name, family)
+            if (yield* holdsPreparedTree(name)) return trusted(name)
+            yield* removeBase(name)
+          }
+          return yield* fail("prepare-failed", `the prepared base ${name} did not keep its prepared tree`)
         }))
+      })
+
+    /**
+     * Marks a base as holding its tree and keeps it from pruning until the
+     * caller releases it, in one step, so no preparation can prune it between.
+     */
+    const trusted = (name: string) => {
+      verified.add(name)
+      booting.set(name, (booting.get(name) ?? 0) + 1)
+      return name
+    }
+
+    const removeBase = (name: string) =>
+      machines.bases.remove(name).pipe(Effect.mapError(unavailable("a broken prepared base could not be removed")))
+
+    /** Whether a machine booted from `name` holds the prepared tree's marker. */
+    const holdsPreparedTree = (name: string) =>
+      Effect.scoped(Effect.gen(function*() {
+        const session = yield* machines.fresh(`bases/${name}/verify`, { base: name, network: "none" }).pipe(
+          Effect.mapError(unavailable("the prepared base could not be booted"))
+        )
+        const prepared = yield* readMarker(session, preparedPath)
+        return Schema.is(CommitId)(prepared.commit) && Schema.is(CommitId)(prepared.base)
+      }))
+
+    /**
+     * Seeds `commit` into a machine of its own with the command's network,
+     * runs the command, records the prepared tree, flushes it to disk, and
+     * captures the disk as base `name`.
+     */
+    const bake = (repo: string, commit: string, prepare: Prepare, name: string, family: string) =>
+      Effect.gen(function*() {
+        const started = Date.now()
+        const remoteId = yield* Effect.scoped(Effect.gen(function*() {
+          // A key of its own per attempt: no other process's preparation of
+          // the same base can reattach this machine.
+          const session = yield* machines.workspace(`bases/${name}/${globalThis.crypto.randomUUID()}`, {
+            network: prepare.network
+          }).pipe(
+            Effect.mapError(unavailable("the machine a base is prepared in could not be opened"))
+          )
+          // Removed on any failure, so a broken preparation is never captured.
+          yield* Effect.addFinalizer((exit) =>
+            exit._tag === "Success" ? Effect.void : Effect.ignore(machines.dispose(session.remoteId))
+          )
+          yield* seedFromArchive(session, repo, commit)
+          const ran = yield* Process.guest(
+            session,
+            `(${prepare.run}) > ${prepareLog} 2>&1`,
+            { limit: 4_096, timeoutMs: prepare.timeoutMs ?? defaultPrepareTimeoutMs }
+          ).pipe(Effect.mapError(unavailable("the prepare command did not run")))
+          if (ran.exitCode !== 0) {
+            const tail = Process.text((yield* run(session, `tail -c 2000 ${prepareLog} 2>/dev/null || true`)).stdout)
+              .trim()
+            const reason = ran.timedOut
+              ? "the prepare command timed out"
+              : `the prepare command exited ${ran.exitCode}`
+            return yield* fail("prepare-failed", tail === "" ? reason : `${reason}: ${tail}`)
+          }
+          // What the command left that the repository does not ignore is part
+          // of the prepared tree, so it never shows up as a change.
+          // A machine booted from the base is not yet a seeded workspace.
+          yield* record(session, commit, preparedPath, [`rm -f ${markerPath}`, `${guestGit} add -A`])
+          // The capture stops the machine; a stop that does not finish
+          // gracefully loses what the guest has not written back yet.
+          const flushed = yield* run(session, "sync")
+          if (flushed.exitCode !== 0) {
+            return yield* fail("seed-failed", `the prepared tree could not be flushed: ${excerpt(flushed.stderr)}`)
+          }
+          return session.remoteId
+        }))
+        yield* machines.bases.capture(remoteId, name, family, [...booting.keys()]).pipe(
+          Effect.mapError(unavailable("the prepared base could not be captured"))
+        )
+        yield* Effect.logInfo(`prepared base ${name} of ${repo} in ${Date.now() - started} ms`)
+      })
+
+    /** Lets pruning remove a base {@link ensureBase} handed out again. */
+    const release = (base: string | undefined) =>
+      Effect.sync(() => {
+        if (base === undefined) return
+        const left = booting.get(base)! - 1
+        if (left === 0) booting.delete(base)
+        else booting.set(base, left)
       })
 
     /**
@@ -1092,6 +1179,39 @@ export const make = (
         ])
       })
 
+    /** Applies a collected change in a seeded checkout. */
+    const applyPatch = (session: Session, patch: string) =>
+      Effect.gen(function*() {
+        if (patch.length === 0) return
+        yield* session.writeFile(`${session.workdir}/${patchName}`, new TextEncoder().encode(patch)).pipe(
+          Effect.mapError(unavailable("the patch could not be copied into the machine"))
+        )
+        const applied = yield* run(session, `git apply --binary --whitespace=nowarn ${patchName} && rm -f ${patchName}`)
+        if (applied.exitCode !== 0) {
+          return yield* fail("patch-does-not-apply", `the patch does not apply: ${excerpt(applied.stderr)}`)
+        }
+      })
+
+    /**
+     * A seeded workspace with `patch` applied once: a checkout that already
+     * holds it (a prepare repeated after the patch went in) is left as it is.
+     */
+    const patched = (session: Session, seededBase: string, patch: string | undefined) =>
+      Effect.gen(function*() {
+        if (patch === undefined || patch.length === 0) return seededBase
+        yield* session.writeFile(`${session.workdir}/${patchName}`, new TextEncoder().encode(patch)).pipe(
+          Effect.mapError(unavailable("the patch could not be copied into the machine"))
+        )
+        const applied = yield* run(
+          session,
+          `if git apply --binary --reverse --check ${patchName} 2>/dev/null; then rm -f ${patchName}; else git apply --binary --whitespace=nowarn ${patchName} && rm -f ${patchName}; fi`
+        )
+        if (applied.exitCode !== 0) {
+          return yield* fail("patch-does-not-apply", `the patch does not apply: ${excerpt(applied.stderr)}`)
+        }
+        return seededBase
+      })
+
     const prepare = (request: PrepareRequest) =>
       Effect.gen(function*() {
         if (!Schema.is(Key)(request.key)) return yield* fail("invalid-request", "the workspace key is malformed")
@@ -1100,6 +1220,7 @@ export const make = (
         const base = environment?.prepare === undefined
           ? undefined
           : yield* ensureBase(request.repoPath, commit, environment.prepare)
+        yield* Effect.addFinalizer(() => release(base))
         const boot: Boot = { base, network: environment?.network ?? (base === undefined ? undefined : "none") }
         return yield* Effect.scoped(Effect.gen(function*() {
           const session = yield* machines.workspace(request.key, boot).pipe(
@@ -1113,15 +1234,21 @@ export const make = (
             workdir: live.workdir
           })
           const marker = yield* readMarker(session, markerPath)
-          if (marker.commit === commit && Schema.is(CommitId)(marker.base)) return done(session, marker.base)
+          if (marker.commit === commit && Schema.is(CommitId)(marker.base)) {
+            return done(session, yield* patched(session, marker.base, request.patch))
+          }
           if (marker.commit.length > 0) {
             return yield* fail("occupied", `workspace ${request.key} is already seeded at another commit`)
           }
-          if (base === undefined) return done(session, yield* seedFromArchive(session, request.repoPath, commit))
+          if (base === undefined) {
+            const seededBase = yield* seedFromArchive(session, request.repoPath, commit)
+            return done(session, yield* patched(session, seededBase, request.patch))
+          }
           const opened = yield* openFromBase((boot) => machines.workspace(request.key, boot), boot, true)
-          return done(opened.session, yield* syncFromBase(opened.session, request.repoPath, opened.prepared, commit))
+          const syncedBase = yield* syncFromBase(opened.session, request.repoPath, opened.prepared, commit)
+          return done(opened.session, yield* patched(opened.session, syncedBase, request.patch))
         }))
-      }).pipe(permits.withPermit)
+      }).pipe(Effect.scoped, permits.withPermit)
 
     const seeded = (session: Session) =>
       Effect.map(run(session, `cat ${markerPath} 2>/dev/null || true`), (marker) => {
@@ -1197,6 +1324,7 @@ export const make = (
         const base = environment?.prepare === undefined
           ? undefined
           : yield* ensureBase(request.repoPath, commit, environment.prepare)
+        yield* Effect.addFinalizer(() => release(base))
         const boot: Boot = { base, network: environment?.network ?? (base === undefined ? undefined : "none") }
         const fresh = `${request.key}/checks-${globalThis.crypto.randomUUID()}`
         const tar = base === undefined ? yield* archive(request.repoPath, commit) : undefined
@@ -1212,18 +1340,7 @@ export const make = (
             )
             yield* seed(session, tar)
           }
-          if (request.patch.length > 0) {
-            yield* session.writeFile(`${session.workdir}/${patchName}`, new TextEncoder().encode(request.patch)).pipe(
-              Effect.mapError(unavailable("the patch could not be copied into the machine"))
-            )
-            const applied = yield* run(
-              session,
-              `git apply --binary --whitespace=nowarn ${patchName} && rm -f ${patchName}`
-            )
-            if (applied.exitCode !== 0) {
-              return yield* fail("patch-does-not-apply", `the patch does not apply: ${excerpt(applied.stderr)}`)
-            }
-          }
+          yield* applyPatch(session, request.patch)
           const receipts: Array<CheckReceipt> = []
           for (const check of checks) {
             const result = yield* Process.guest(session, Process.commandLine(check.argv), {
@@ -1247,7 +1364,7 @@ export const make = (
             receipts
           }
         }))
-      }).pipe(permits.withPermit)
+      }).pipe(Effect.scoped, permits.withPermit)
 
     const dispose = (prepared: Pick<Prepared, "remoteId">) =>
       machines.dispose(prepared.remoteId).pipe(

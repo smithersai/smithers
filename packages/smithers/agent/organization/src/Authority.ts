@@ -49,6 +49,7 @@ import type * as Config from "./Config.ts"
 import * as Grants from "./Grants.ts"
 import * as Confined from "./internal/confined.ts"
 import { canonicalDigest, sha256Hex } from "./internal/digest.ts"
+import * as RetrievalLog from "./internal/retrievalLog.ts"
 import * as Profile from "./Profile.ts"
 import * as Prompt from "./Prompt.ts"
 import * as RoleHost from "./RoleHost.ts"
@@ -480,7 +481,8 @@ const guarded = <A, E, R>(
   executionId: string | undefined,
   handler: Effect.Effect<A, E, R>,
   services: Context.Context<RosterRegistry | RoleHost.Resources>,
-  workspaces: Option.Option<Workspace.Service>
+  workspaces: Option.Option<Workspace.Service>,
+  retrievalStore: RetrievalLog.Store
 ) =>
   Effect.gen(function*() {
     const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
@@ -513,13 +515,20 @@ const guarded = <A, E, R>(
         tools = { services: context, workdir: session.workdir }
         boundary = RoleHost.snapshotBoundary(session)
       }
+      const resources = Context.get(services, RoleHost.Resources)
+      // Every page the task retrieves, and every page of the run it cites,
+      // becomes url evidence on its result.
+      const retrievals = authorized.profile.grants.tools.includes("retrieval")
+        ? RetrievalLog.task(retrievalStore, execution)
+        : undefined
       const built = yield* RoleHost.make({
         base: base.value,
         profile: authorized.profile,
         system: authorized.composed.system,
         executionId: execution,
-        resources: Context.get(services, RoleHost.Resources),
-        workspace: tools
+        resources,
+        workspace: tools,
+        retrievals: retrievals?.log
       })
       const hosted = handler.pipe(
         Effect.provideService(AgentAction.Host, built.host),
@@ -527,9 +536,11 @@ const guarded = <A, E, R>(
       )
       // Compensable workspace edits snapshot the machine's workspace, never
       // the host repository the engine's own boundary would reach.
-      return yield* (boundary === undefined
+      const result = yield* (boundary === undefined
         ? hosted
         : Effect.provideService(hosted, FlowEngine.SnapshotBoundary, boundary))
+      if (retrievals === undefined) return result
+      return RetrievalLog.withEvidence(result, yield* retrievals.entries)
     }))
   })
 
@@ -563,6 +574,7 @@ export const layer = <A, E, R>(
     Layer.provide(Layer.unwrap(Effect.gen(function*() {
       const services = yield* Effect.context<RosterRegistry | RoleHost.Resources>()
       const workspaces = yield* Effect.serviceOption(Workspace.Workspace)
+      const retrievalStore = RetrievalLog.store(Context.get(services, RoleHost.Resources).retrieval?.logDir)
       return Layer.mergeAll(
         Layer.effect(FlowRuntime.FlowRuntime)(Effect.map(FlowRuntime.FlowRuntime, (runtime) => ({
           ...runtime,
@@ -571,7 +583,7 @@ export const layer = <A, E, R>(
               flow,
               included(flow._tag)
                 ? (payload, executionId) =>
-                  guarded(payload, executionId, handler(payload, executionId), services, workspaces)
+                  guarded(payload, executionId, handler(payload, executionId), services, workspaces, retrievalStore)
                 : handler
             )
         }))),
@@ -582,7 +594,8 @@ export const layer = <A, E, R>(
               included(implementation.name)
                 ? {
                   ...implementation,
-                  action: (payload) => guarded(payload, undefined, implementation.action(payload), services, workspaces)
+                  action: (payload) =>
+                    guarded(payload, undefined, implementation.action(payload), services, workspaces, retrievalStore)
                 }
                 : implementation,
               options

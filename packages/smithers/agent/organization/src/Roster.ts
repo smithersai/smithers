@@ -261,6 +261,12 @@ const frontmatterOf = (profile: Profile.Profile): Record<string, unknown> => {
           maxChildren: grants.hiring.maxChildren,
           maxPersistent: grants.hiring.maxPersistent
         }
+      }),
+      ...(grants.retrieval === undefined ? {} : {
+        retrieval: {
+          ...(grants.retrieval.allow === undefined ? {} : { allow: grants.retrieval.allow }),
+          ...(grants.retrieval.deny === undefined ? {} : { deny: grants.retrieval.deny })
+        }
       })
     },
     budget: {
@@ -306,6 +312,8 @@ export const renderProfile = (profile: Profile.Profile): string => {
       ["grants", "knowledge"],
       ["grants", "repositories"],
       ["grants", "hiring"],
+      ["grants", "retrieval", "allow"],
+      ["grants", "retrieval", "deny"],
       ["budget"],
       ["memory"],
       ["skills"],

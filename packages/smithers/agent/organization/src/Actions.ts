@@ -148,14 +148,21 @@ export const Slug = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,6
 export const executionOfWorkspace = (key: string): string => key.split("/", 1)[0]!
 
 /**
- * Seeds the workspace `<execution>/<repository>/<slug>` from a commit.
+ * Seeds the workspace `<execution>/<repository>/<slug>` from a commit, with
+ * an optional collected change applied over it.
  *
  * @category actions
  * @since 1.0.0
  */
 export const PrepareWorkspace = Action.make("organization/prepare-workspace", {
   implementationVersion: "prepare-workspace/v1",
-  payload: { repository: Repository, commit: Schema.NonEmptyString, slug: Slug },
+  payload: {
+    repository: Repository,
+    commit: Schema.NonEmptyString,
+    slug: Slug,
+    /** A collected change to apply over the commit, for a checker's own machine. */
+    patch: Schema.optionalKey(Schema.String)
+  },
   success: Workspace.Prepared,
   error: Workspace.WorkspaceError
 })
@@ -373,7 +380,12 @@ export const layer = (options: Options) => {
           const workspace = yield* Workspace.Workspace
           const repoPath = yield* repositoryPath(payload.repository)
           const key = `${yield* executionId}/${payload.repository}/${payload.slug}`
-          return yield* workspace.prepare({ key, repoPath, commit: payload.commit })
+          return yield* workspace.prepare({
+            key,
+            repoPath,
+            commit: payload.commit,
+            ...(payload.patch === undefined ? {} : { patch: payload.patch })
+          })
         }),
       { implementationVersion: "prepare-workspace/v1" }
     ),

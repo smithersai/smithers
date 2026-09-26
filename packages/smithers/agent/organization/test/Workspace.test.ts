@@ -77,7 +77,12 @@ const unopenable: Workspace.Machines = {
   workspace: () => broken("no machine"),
   fresh: () => broken("no machine"),
   dispose: () => broken("no machine"),
-  bases: { identity: "none", exists: () => broken("no machine"), capture: () => broken("no machine") }
+  bases: {
+    identity: "none",
+    exists: () => broken("no machine"),
+    capture: () => broken("no machine"),
+    remove: () => broken("no machine")
+  }
 }
 
 const prepare = (repoPath: string, commit: string, key = "run-1/example/demo/build") =>
@@ -113,6 +118,39 @@ describe("prepare and collect", () => {
     expect(outcome.diff.added).toBe(1)
     expect(outcome.diff.patch).toContain("GIT binary patch")
     expect(readdirSync(root)).toEqual([])
+  })
+
+  it("prepares a checker's machine with a collected change applied once", async () => {
+    const { repo, commit } = fixtureRepo()
+    const { machines } = hostMachines()
+    const outcome = await within(
+      Effect.gen(function*() {
+        const workspace = yield* service
+        const built = yield* prepare(repo, commit)
+        yield* Effect.scoped(Effect.gen(function*() {
+          const session = yield* workspace.session(built.key)
+          yield* session.writeFile(`${session.workdir}/lib.txt`, new TextEncoder().encode("hello world\n"))
+        }))
+        const { patch } = yield* workspace.collect(built)
+        const request = { key: "run-1/example/demo/check-1", repoPath: repo, commit, patch }
+        const checking = yield* workspace.prepare(request)
+        const again = yield* workspace.prepare(request)
+        const seen = yield* Effect.scoped(Effect.gen(function*() {
+          const session = yield* workspace.session(checking.key)
+          return new TextDecoder().decode(yield* session.readFile(`${session.workdir}/lib.txt`))
+        }))
+        const collected = yield* workspace.collect(checking)
+        const refused = yield* Effect.flip(
+          workspace.prepare({ ...request, key: "run-1/example/demo/check-2", patch: "not a patch\n" })
+        )
+        return { checking, again, seen, collected, patch, refused }
+      }),
+      { machines }
+    )
+    expect(outcome.again).toEqual(outcome.checking)
+    expect(outcome.seen).toBe("hello world\n")
+    expect(outcome.collected.patch).toBe(outcome.patch)
+    expect(outcome.refused.code).toBe("patch-does-not-apply")
   })
 
   it("refuses a key, commit, or seed it cannot use", async () => {

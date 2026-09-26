@@ -271,6 +271,43 @@ export const HiringLimits = Schema.Struct({
 export type HiringLimits = typeof HiringLimits.Type
 
 /**
+ * A public domain name in lowercase, such as `nodejs.org`. In a retrieval
+ * grant it covers the domain and every subdomain.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Domain = Schema.String.check(
+  pattern(
+    /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/,
+    "a lowercase domain name such as example.com"
+  ),
+  Schema.isMaxLength(253)
+)
+
+/**
+ * Where `retrieval` may reach on the public web. `allow`, when present,
+ * limits it to those domains; `deny` removes domains. Each entry covers its
+ * subdomains. Private, loopback, and link-local addresses are never
+ * reachable, whatever the grant says.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const RetrievalScope = Schema.Struct({
+  allow: Schema.optionalKey(Schema.Array(Domain).check(unique<string>((domain) => domain, "allowed domains"))),
+  deny: Schema.optionalKey(Schema.Array(Domain).check(unique<string>((domain) => domain, "denied domains")))
+})
+
+/**
+ * Where `retrieval` may reach.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RetrievalScope = typeof RetrievalScope.Type
+
+/**
  * Every authority a principal holds. Anything not listed is not granted.
  *
  * @category schemas
@@ -283,7 +320,8 @@ export const Grants = Schema.Struct({
   repositories: Schema.Array(Container).check(unique<string>((repository) => repository, "repositories")),
   personalAccounts: Schema.Boolean,
   contact: Contact,
-  hiring: Schema.optionalKey(HiringLimits)
+  hiring: Schema.optionalKey(HiringLimits),
+  retrieval: Schema.optionalKey(RetrievalScope)
 })
 
 /**

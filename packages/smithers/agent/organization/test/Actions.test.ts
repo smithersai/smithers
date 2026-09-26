@@ -205,6 +205,12 @@ const Prepare = step(
   Workspace.Prepared,
   (payload) => Actions.PrepareWorkspace.call({ repository: payload.repository, commit: payload.commit, slug: "build" })
 )
+const PrepareChecking = step(
+  "prepare-checking",
+  { repository: Schema.String, commit: Schema.String, patch: Schema.String },
+  Workspace.Prepared,
+  (payload) => Actions.PrepareWorkspace.call({ ...payload, slug: "check-1" })
+)
 const Collect = step(
   "collect",
   { workspace: Workspace.Prepared },
@@ -266,6 +272,18 @@ describe("workspace steps", () => {
     expect(git(repo, "log", "-1", "--format=%B", applied.commit)).toContain("Smithers-Run: exec-8")
     value(await execute(Dispose, { workspace: prepared }, snapshot, options))
     expect(existsSync(prepared.workdir)).toBe(false)
+  })
+
+  it("prepares a checker's workspace with the collected change applied", async () => {
+    const snapshot = await loadSnapshot()
+    const { repo, commit } = fixtureRepo()
+    const options = { repo, machines: hostMachines().machines, executionId: "exec-9" }
+    const patch = git(repo, "diff", "--binary", commit, commit) + ""
+    const checking = value(
+      await execute(PrepareChecking, { repository: "example/demo", commit, patch }, snapshot, options)
+    )
+    expect(checking.key).toBe("exec-9/example/demo/check-1")
+    expect(value(await execute(Collect, { workspace: checking }, snapshot, options))).toMatchObject({ files: [] })
   })
 
   it("refuses a repository the host does not configure", async () => {

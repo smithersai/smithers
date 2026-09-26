@@ -105,8 +105,8 @@ describe("a Review gate answered by the reviewer's role task", () => {
     expect(asked[0]!.text).toContain("<source provider=\"organization\" id=\"gate/ship-review\"")
     expect(asked[0]!.text).toContain("+hello world")
     // The checker holds workspace, memory, and retrieval; a review names no
-    // workspace, so it runs with memory alone.
-    expect(recorded[0]!.flows).toEqual(["recall", "remember"])
+    // workspace, so it runs with memory and web-fetch alone.
+    expect(recorded[0]!.flows).toEqual(["recall", "remember", "web-fetch"])
   })
 
   it("denies the gate when the reviewer requests changes", async () => {
@@ -200,6 +200,7 @@ ctx.done(JSON.stringify(result))`
       "read",
       "recall",
       "remember",
+      "web-fetch",
       "write"
     ])
     expect(recorded[0]!.envelope).toContain("proc:spawn:*")

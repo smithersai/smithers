@@ -173,6 +173,170 @@ describe("Hiring.propose", () => {
   })
 })
 
+describe("Hiring.fromSpec", () => {
+  let roster: Roster.Roster
+  let lead: Profile.Profile
+
+  beforeAll(async () => {
+    roster = await loadExample()
+    lead = profileOf(roster, "lead")
+  })
+
+  const minimal = {
+    slug: "pricing",
+    name: "Pricing Researcher",
+    objective: "Compare competitor pricing.",
+    responsibilities: ["Collect prices with sources"]
+  }
+
+  it("fills narrow defaults: a persistent specialist with no grants and a budget below its parent's", () => {
+    const request = ok(Hiring.fromSpec(lead, minimal, at, "task-1"))
+    expect(request).toEqual({
+      parent: "lead",
+      slug: "pricing",
+      name: "Pricing Researcher",
+      kind: "specialist",
+      charter: {
+        objective: "Compare competitor pricing.",
+        responsibilities: ["Collect prices with sources"],
+        inputs: ["Tasks from lead."],
+        allowedActions: ["Answer tasks from lead within the granted knowledge and tools."],
+        output: {
+          fields: [{ name: "report", description: "The findings, each with its source and date" }],
+          evidence: ["The source and date of every claim; unverified claims labeled."]
+        },
+        escalation: ["Anything outside this charter: return blocked to lead."],
+        successCriteria: ["lead accepts the output after review."],
+        boundaries: ["Reports only to lead; never contacts the owner."]
+      },
+      grants: {
+        tools: [],
+        connections: [],
+        knowledge: [],
+        repositories: [],
+        personalAccounts: false,
+        contact: "via-parent"
+      },
+      budget: {
+        tokensPerTask: Math.min(Hiring.defaultHireBudget.tokensPerTask, lead.budget.tokensPerTask),
+        tasksPerDay: Math.min(Hiring.defaultHireBudget.tasksPerDay, lead.budget.tasksPerDay),
+        concurrency: Math.min(Hiring.defaultHireBudget.concurrency, lead.budget.concurrency)
+      },
+      skills: [],
+      at
+    })
+    const proposed = ok(Hiring.propose(request, roster, examplePolicy))
+    expect(proposed.memory.namespace).toBe("agent-lead.pricing")
+  })
+
+  it("keeps what the role asked for, and scopes a helper to the task", () => {
+    const request = ok(Hiring.fromSpec(
+      lead,
+      {
+        ...minimal,
+        kind: "helper",
+        outputs: [{ name: "brief", description: "The brief" }],
+        tools: ["wiki-read"],
+        connections: [],
+        knowledge: ["Org/Roles/"],
+        repositories: ["example/demo"],
+        skills: ["research"],
+        personalAccounts: false,
+        contact: "via-parent",
+        hiring: { maxDepth: 0, maxChildren: 0, maxPersistent: 0 },
+        budget: { tokensPerTask: 5_000, tasksPerDay: 1, concurrency: 1 },
+        boundaries: ["Only public sources."]
+      },
+      at,
+      "task-1"
+    ))
+    expect(request).toMatchObject({
+      kind: "helper",
+      taskScope: "task-1",
+      skills: ["research"],
+      budget: { tokensPerTask: 5_000, tasksPerDay: 1, concurrency: 1 },
+      grants: {
+        tools: ["wiki-read"],
+        knowledge: ["Org/Roles/"],
+        repositories: ["example/demo"],
+        hiring: { maxDepth: 0, maxChildren: 0, maxPersistent: 0 }
+      }
+    })
+    expect(request.charter.output.fields).toEqual([{ name: "brief", description: "The brief" }])
+    expect(request.charter.boundaries).toEqual(["Only public sources."])
+    expect(ok(Hiring.fromSpec(lead, { ...minimal, kind: "helper" }, at)).taskScope).toBeUndefined()
+  })
+
+  describe("web retrieval scope", () => {
+    const scoped = (retrieval?: Profile.RetrievalScope): Profile.Profile => ({
+      ...lead,
+      grants: {
+        ...lead.grants,
+        tools: [...new Set([...lead.grants.tools, "retrieval" as const])],
+        ...(retrieval === undefined ? {} : { retrieval })
+      }
+    })
+    const rosterWith = (parent: Profile.Profile) => ({ profiles: new Map([...roster.profiles, [parent.id, parent]]) })
+    const hire = (parent: Profile.Profile, spec: Record<string, unknown>) =>
+      Hiring.propose(
+        ok(Hiring.fromSpec(parent, { ...minimal, tools: ["retrieval"], ...spec }, at)),
+        rosterWith(parent),
+        examplePolicy
+      )
+
+    it("accepts a narrower scope inside a restricted parent's, keeping the parent's denials", () => {
+      const parent = scoped({ allow: ["cursor.com", "devin.ai"], deny: ["forum.cursor.com"] })
+      const hired = ok(hire(parent, { retrieval: { allow: ["cursor.com"] } }))
+      expect(hired.grants.retrieval).toEqual({ allow: ["cursor.com"], deny: ["forum.cursor.com"] })
+      const sub = ok(hire(parent, { retrieval: { allow: ["docs.cursor.com"], deny: ["x.cursor.com"] } }))
+      expect(sub.grants.retrieval).toEqual({ allow: ["docs.cursor.com"], deny: ["x.cursor.com", "forum.cursor.com"] })
+    })
+
+    it("takes a restricted parent's scope when the hire names none", () => {
+      const parent = scoped({ allow: ["cursor.com"] })
+      expect(ok(hire(parent, {})).grants.retrieval).toEqual({ allow: ["cursor.com"] })
+      const denyOnly = scoped({ deny: ["example.com"] })
+      expect(ok(hire(denyOnly, {})).grants.retrieval).toEqual({ deny: ["example.com"] })
+      expect(ok(hire(denyOnly, { retrieval: { allow: ["ona.com"] } })).grants.retrieval).toEqual({
+        allow: ["ona.com"],
+        deny: ["example.com"]
+      })
+    })
+
+    it("refuses a scope wider than the parent's", () => {
+      const parent = scoped({ allow: ["cursor.com"] })
+      const refused = err(hire(parent, { retrieval: { allow: ["cursor.com", "devin.ai"] } }))
+      expect(codes(refused)).toContain("grants-widen:lead.pricing")
+      expect(refused.map((violation) => violation.message).join("; ")).toContain(
+        "domain devin.ai is outside the parent's"
+      )
+    })
+
+    it("adds no scope for an unrestricted parent, and passes a scope without the tool through unchanged", () => {
+      expect(ok(hire(scoped(), {})).grants.retrieval).toBeUndefined()
+      const request = ok(
+        Hiring.fromSpec(scoped({ allow: ["cursor.com"] }), { ...minimal, retrieval: { allow: ["a.com"] } }, at)
+      )
+      expect(request.grants.retrieval).toEqual({ allow: ["a.com"] })
+      expect(ok(Hiring.fromSpec(lead, minimal, at)).grants.retrieval).toBeUndefined()
+    })
+  })
+
+  it("refuses a field that does not decode, naming the problem", () => {
+    const [violation] = err(Hiring.fromSpec(lead, { ...minimal, slug: "Bad Slug", smuggled: true }, at))
+    expect(violation).toMatchObject({ code: "invalid-profile", principal: "lead" })
+    expect(violation!.message).toContain("the hire request does not decode")
+    expect(err(Hiring.fromSpec(lead, null, at))[0]!.code).toBe("invalid-profile")
+  })
+
+  it("leaves refusing personal accounts and wider grants to propose", () => {
+    const personal = ok(Hiring.fromSpec(lead, { ...minimal, personalAccounts: true, contact: "owner-direct" }, at))
+    expect(codes(err(Hiring.propose(personal, roster, examplePolicy)))).toContain("hired-personal:lead.pricing")
+    const wide = ok(Hiring.fromSpec(lead, { ...minimal, knowledge: ["Secret/"] }, at))
+    expect(codes(err(Hiring.propose(wide, roster, examplePolicy)))).toContain("grants-widen:lead.pricing")
+  })
+})
+
 describe("Hiring.transition", () => {
   let research: Profile.Profile
 

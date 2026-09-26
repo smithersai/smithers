@@ -41,6 +41,7 @@
     "./*/index": null,
     "./Actions": "./src/Actions.ts",
     "./Authority": "./src/Authority.ts",
+    "./Budgets": "./src/Budgets.ts",
     "./Config": "./src/Config.ts",
     "./Gates": "./src/Gates.ts",
     "./GatesLive": "./src/GatesLive.ts",
@@ -103,6 +104,16 @@
         "require": {
           "types": "./dist/cjs/Authority.d.ts",
           "default": "./dist/cjs/Authority.js"
+        }
+      },
+      "./Budgets": {
+        "import": {
+          "types": "./dist/esm/Budgets.d.ts",
+          "default": "./dist/esm/Budgets.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Budgets.d.ts",
+          "default": "./dist/cjs/Budgets.js"
         }
       },
       "./Config": {
