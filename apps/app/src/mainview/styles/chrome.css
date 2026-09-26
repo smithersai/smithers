@@ -130,6 +130,19 @@
 .app-chat-controls { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); min-height: 52px; padding: var(--sp-2) var(--sp-5); }
 .app-chat-controls .chat-filter-control { order: -1; }
 /*
+ * A phone has no room beside the bottom bar: an open first-sight tip docks
+ * full-width above it instead of sitting in the bar's flow, where it squeezed
+ * to one word per line and pushed the transcript up by its whole height.
+ */
+@media (max-width: 600px) {
+	.app-chat-controls { position: relative; }
+	.app-chat-controls .help-anchor { position: static; }
+	.app-chat-controls .help-bubble { position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: calc(100% - var(--sp-2)); width: auto; margin-bottom: 0; }
+	.app-chat-controls .help-bubble::after { display: none; }
+	/* The signup is the whole page on a phone; its buttons stay uncovered. */
+	.app-shell:has(.signup) .app-chat-controls .help-bubble { display: none; }
+}
+/*
  * The bottom bar is GuideButton chrome OUTSIDE the guide shell, where the
  * --g-* tokens do not exist: keep the polish session's quiet text-button
  * look, but make it deliberate — app tokens, a real hover, and the same

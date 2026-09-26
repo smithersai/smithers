@@ -1,5 +1,5 @@
 import { cloudFailure } from "../seams/CloudClient"
-import { renderPlanLimit } from "../seams/BillingSeam"
+import { outOfCreditRefusal, renderCreditExhausted, renderPlanLimit } from "../seams/BillingSeam"
 import type { ViewAction } from "../PreparedView"
 import { createWorkflowCatalogController } from "./workflow-catalog"
 import { WORKFLOW_PROVISION_PATH } from "@smthrs/rpc/AgentApiRoutes"
@@ -152,7 +152,8 @@ export const createWorkflowController = (
   const zeroBalanceGuard = (): string | undefined => {
     const billing = store.collections.billingAccounts.get("billing")
     if (billing === undefined || billing.allowedToStartWork) return undefined
-    store.dispatch({ type: "message.appended", actor: "system", text: ZERO_BALANCE_EXHAUSTED_TEXT })
+    void renderCreditExhausted(store, outOfCreditRefusal(ZERO_BALANCE_EXHAUSTED_TEXT),
+      ctx.services.bootstrap?.capabilities.includes("billing.checkout") ?? true, "system")
     return ZERO_BALANCE_EXHAUSTED_TEXT
   }
 

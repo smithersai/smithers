@@ -47,14 +47,25 @@ import { settledPill } from "./CardFamily"
 import { flowArgs } from "../flows/FlowArgs"
 
 /** THE SEAM: the upgrade door uses the same typed flow as the plans card. */
+/*
+ * The plan an upgrade door buys. The backend names it for a plan limit; an
+ * out-of-credit refusal names none (Plue sends only `upgrade: "/billing"`), and
+ * Pro is the one plan on sale, so that door buys Pro.
+ */
+export const upgradePlanKey = (refusal: Refusal): string | null =>
+  refusal.upgrade_plan_key ?? (refusal.code === "out_of_credit" ? "pro" : null)
+
 export const UpgradeDoor = ({ refusal, onRunCommand, disabled = false }: {
   readonly refusal: Refusal; readonly onRunCommand: RunCommand; readonly disabled?: boolean
-}) => refusalDoors(refusal).includes("upgrade") && refusal.upgrade_plan_key ? (
-  <Button size="sm" variant="outline" disabled={disabled}
-    {...flowAction(onRunCommand, "billing.upgrade", flowArgs("billing.upgrade", { plan: refusal.upgrade_plan_key }))}>
-    Upgrade
-  </Button>
-) : null
+}) => {
+  const plan = upgradePlanKey(refusal)
+  return refusalDoors(refusal).includes("upgrade") && plan ? (
+    <Button size="sm" variant="outline" disabled={disabled}
+      {...flowAction(onRunCommand, "billing.upgrade", flowArgs("billing.upgrade", { plan }))}>
+      Upgrade
+    </Button>
+  ) : null
+}
 
 export interface WorkspaceCardActions {
   readonly onRunCommand: RunCommand

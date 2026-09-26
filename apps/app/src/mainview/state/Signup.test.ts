@@ -41,9 +41,9 @@ describe("Signup", () => {
     expect(signupAfterIdentity(undefined, "signed-in", "ada", "ada")).toBeUndefined()
   })
 
-  test("the poll asks the seven questions Will listed, in order", () => {
+  test("the poll asks the seven questions Will listed, in order, none required", () => {
     expect(SIGNUP_QUESTIONS.map(q => q.id)).toEqual(["size", "role", "heard", "know", "models", "repo", "more"])
-    expect(SIGNUP_QUESTIONS.filter(q => q.required).map(q => q.id)).toEqual(["size", "role", "know"])
+    expect(SIGNUP_QUESTIONS.filter(q => q.required).map(q => q.id)).toEqual([])
   })
 
   test("signup.changed merges onto the row and a sign-in advances an unfinished signup through the projection", async () => {

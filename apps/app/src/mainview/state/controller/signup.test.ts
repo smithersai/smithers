@@ -45,10 +45,13 @@ describe("the signup controller", () => {
     await store.dispose?.()
   })
 
-  test("answers advance one question at a time, multi-select toggles, required questions refuse a skip, and the last answer readies the workspace", async () => {
+  test("answers advance one question at a time, multi-select toggles, every question may be skipped, and the last answer readies the workspace", async () => {
     const { store, controller } = await boot()
     controller.signupChange({ stage: "poll", question: 0 })
-    expect(controller.signupNext()).toBe("This one needs an answer.")
+    expect(SIGNUP_QUESTIONS.filter(question => question.required)).toEqual([])
+    expect(controller.signupNext()).toBeUndefined()
+    expect(store.session().signup?.question).toBe(1)
+    controller.signupBack()
     expect(controller.signupAnswer("Huge")).toContain("Choose one of")
     controller.signupAnswer("2–10")
     expect(store.session().signup?.question).toBe(1)

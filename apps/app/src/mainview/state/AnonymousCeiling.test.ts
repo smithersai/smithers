@@ -166,3 +166,17 @@ test("sign-in answers the anonymous ceiling's persisted sign-in card", async () 
   expect(store.collections.cards.get(before.id)).toMatchObject({ id: before.id, payload: before.payload,
     ordinal: before.ordinal, createdAt: before.createdAt, status: "acted" })
 })
+
+describe("a signed-in turn refused for lack of model credit", () => {
+  test("renders the out-of-credit plans card whose door buys Pro", async () => {
+    const { store } = await sendRefused("signed-in", {
+      status: "error",
+      message: "That turn wasn't run because the account has no balance left. (HTTP 402)",
+      refusal: { code: "out_of_credit", message: "Out of credit.", retryAt: null }
+    })
+    await settled()
+    const card = store.collections.cards.get("billing-credit-exhausted")
+    expect(card?.kind).toBe("billing-plans")
+    expect(card?.payload).toMatchObject({ refusal: { code: "out_of_credit", upgrade_plan_key: "pro" } })
+  })
+})

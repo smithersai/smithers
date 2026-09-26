@@ -27,7 +27,7 @@ const settle = async (ticks = 4): Promise<void> => {
 const REPO = "codeplanesmithers/smithers-demo"
 
 const EXHAUSTED_TEXT =
-  "Balance is at $0: flow runs pause until more balance is added. Run /billing.upgrade to add balance; chat stays free in the meantime."
+  "Add credit to keep working. Pro includes $50 of model credit each month."
 
 /** A backend that answers nothing about workflows — proves the guard never calls it. */
 const noWorkflowSeam = (): AppServices => ({
@@ -98,17 +98,18 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
     if (outcome.status === "failed") expect(outcome.error).toBe(EXHAUSTED_TEXT)
   })
 
-  test("the exhausted-balance message renders embedded in the transcript (THE EMBED LAW), not a toast-only surface", async () => {
+  test("the exhausted-balance refusal embeds the plans card with an Upgrade-to-Pro door (THE EMBED LAW), not a toast-only surface", async () => {
     const store = await webStore()
     const controller = createAppController(store, silentAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     await controller.commands.run("flow.run", "review-pr")
 
-    const texts = transcriptTexts(store)
-    expect(texts).toContain(EXHAUSTED_TEXT)
-    const message = [...store.collections.messages.values()].find((entry) => entry.text === EXHAUSTED_TEXT)
-    expect(message?.role).toBe("smithers")
+    await waitFor(() => store.collections.cards.get("billing-credit-exhausted") !== undefined)
+    const card = store.collections.cards.get("billing-credit-exhausted")
+    expect(card?.kind).toBe("billing-plans")
+    expect(card?.title).toBe("Out of model credit")
+    expect(card?.payload).toMatchObject({ refusal: { code: "out_of_credit", message: EXHAUSTED_TEXT, upgrade_plan_key: "pro" } })
   })
 
   test("a $0 balance never blocks interactive chat — only workflow launch pauses", async () => {
@@ -221,7 +222,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
     controller.runCommand("flow.run", "review-pr")
     await settle()
 
-    expect(transcriptTexts(store)).toContain(EXHAUSTED_TEXT)
+    await waitFor(() => store.collections.cards.get("billing-credit-exhausted") !== undefined)
     const toasts = [...store.collections.toasts.values()]
     expect(toasts.some((toast) => toast.detail === EXHAUSTED_TEXT)).toBe(false)
   })

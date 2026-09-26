@@ -139,7 +139,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "identity.access.failed": z.object({ "type": z.literal("identity.access.failed"), "actor": z.literal("system"), "message": z.string() }).strict(),
   "identity.session.cleared": z.object({ "type": z.literal("identity.session.cleared"), "actor": z.literal("user") }).strict(),
   "billing.refreshed": z.object({ "type": z.literal("billing.refreshed"), "actor": z.literal("system"), "state": z.enum(["ok", "low", "empty"]), "totalUsd": z.string(), "allowedToStartWork": z.boolean(), "lifetimeChargedUsd": z.string(), "chargeCount": z.number().finite() }).strict(),
-  "billing.plans.loaded": z.object({ type: z.literal("billing.plans.loaded"), actor: ActorSchema, planKey: z.string(), sandbox: SandboxEntitlementSchema, plans: z.array(BillingPlanSchema), creditBalanceCents: z.number().int().nullable().optional() }).strict(),
+  "billing.plans.loaded": z.object({ type: z.literal("billing.plans.loaded"), actor: ActorSchema, planKey: z.string(), sandbox: SandboxEntitlementSchema, plans: z.array(BillingPlanSchema), creditBalanceCents: z.number().int().nullable().optional(), creditResetsAt: z.string().nullable().optional() }).strict(),
   "billing.unavailable": z.object({ "type": z.literal("billing.unavailable"), "actor": z.literal("system") }).strict(),
   "toast.shown": z.object({ "type": z.literal("toast.shown"), sourceCard: z.string().optional(), "actor": z.literal("system"), "key": z.string(), "title": z.string(), "action": ToastSchema.shape["action"].optional() }).strict(),
   "toast.progressed": z.object({ "type": z.literal("toast.progressed"), "actor": z.literal("system"), "key": z.string(), "detail": z.string(), "title": z.string().optional() }).strict(),

@@ -41,6 +41,8 @@ import { downloadUrlOf } from "./app"
 import type { ActiveTurn,ControllerContext } from "./context"
 import type { FailureController } from "./failures"
 import { createHttpTurnDriver } from "./httpTurns"
+import { ZERO_BALANCE_EXHAUSTED_TEXT } from "./failures"
+import { outOfCreditRefusal, renderCreditExhausted } from "../seams/BillingSeam"
 import { assignedBinding } from "./modelSeats"
 import { latestOrdinal } from "./spokenLines"
 
@@ -133,6 +135,12 @@ export const createTurnController = (
    * reset time as sent; the reducer's completion settles the phase without a
    * bubble.
    */
+  /** Out of model credit: the plans card with its Upgrade-to-Pro door, beside the failed turn. */
+  const offerCreditUpgrade = (): void => {
+    void renderCreditExhausted(store, outOfCreditRefusal(ZERO_BALANCE_EXHAUSTED_TEXT),
+      ctx.services.bootstrap?.capabilities.includes("billing.checkout") ?? true, "system")
+  }
+
   const refuseAnonymousTurn = (turnId: string, refusal: TurnRefusal): boolean => {
     if (refusal.code !== "turn_rate_limited") return false
     if (store.collections.identitySessions.get("identity")?.state !== "signed-out") return false
@@ -719,6 +727,7 @@ export const createTurnController = (
             turnId,
             message: result.message
           })
+          if (result.refusal?.code === "out_of_credit") offerCreditUpgrade()
         }
         settleTurnBilling()
       })
@@ -1311,6 +1320,7 @@ export const createTurnController = (
     ownTurn, isCurrentTurn, contextMessages, composeTurn, settled: settleTurnBilling,
     refused: (turnId, result) => {
       if (result.refusal?.code === "sign_in_required") offerChatSignIn(store.collections.messages.get(`message-${turnId}-user`)?.text ?? "")
+      else if (result.refusal?.code === "out_of_credit") offerCreditUpgrade()
       else if (result.refusal !== undefined) refuseAnonymousTurn(turnId, result.refusal)
     }
   })

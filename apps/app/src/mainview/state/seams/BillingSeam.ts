@@ -1,7 +1,7 @@
 import { BILLING_OVERVIEW_PATH, BILLING_PLANS_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { BillingOverviewSchema, BillingPlansResponseSchema } from "@smthrs/rpc/BillingPlans"
 import { z } from "zod"
-import { storedRefusal, type Refusal } from "@smthrs/rpc/Refusal"
+import { refusalOf, storedRefusal, type Refusal } from "@smthrs/rpc/Refusal"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import type { AppStore } from "../AppStore"
 
@@ -72,10 +72,11 @@ const openSession = async (
 }
 
 /** A refusal can precede workspace creation; its upgrade door still embeds in the transcript. */
-export const renderPlanLimit = async (store: AppStore, refusal: Refusal, checkout: boolean, actor: "user" | "smithers") => {
+export const renderPlanLimit = async (store: AppStore, refusal: Refusal, checkout: boolean, actor: "user" | "smithers" | "system",
+  card: { readonly id: string; readonly title: string } = { id: "billing-plan-limit", title: "Sandbox limit" }) => {
   const account = store.collections.billingAccounts.get("billing")
   await store.dispatch({ type: "card.upsert", actor, card: {
-    id: "billing-plan-limit", kind: "billing-plans", title: "Sandbox limit", status: "active",
+    id: card.id, kind: "billing-plans", title: card.title, status: "active",
     createdAt: Date.now(), ordinal: store.nextOrdinal(), payload: {
       planKey: refusal.plan_key ?? account?.planKey ?? null,
       sandbox: account?.sandbox ?? null, plans: account?.plans ?? [], checkout,
@@ -84,6 +85,18 @@ export const renderPlanLimit = async (store: AppStore, refusal: Refusal, checkou
   } }).isPersisted.promise
   return refusalSentence(refusal)
 }
+
+/** The one out-of-credit refusal the app states when Plue named none: its door buys Pro. */
+export const outOfCreditRefusal = (message: string): Refusal =>
+  refusalOf({ status: 402, message, body: { code: "out_of_credit", message, upgrade_plan_key: "pro" } })
+
+/**
+ * Out of model credit: the plans card with the refusal and its Upgrade door,
+ * embedded in the transcript, so the person's next act is one press away.
+ */
+export const renderCreditExhausted = (store: AppStore, refusal: Refusal, checkout: boolean, actor: "user" | "smithers" | "system") =>
+  renderPlanLimit(store, refusal.upgrade_plan_key == null ? { ...refusal, upgrade_plan_key: "pro" } : refusal, checkout, actor,
+    { id: "billing-credit-exhausted", title: "Out of model credit" })
 
 export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: () => boolean = () => false): BillingSeam => {
   const currentAccount = () => {
@@ -111,7 +124,8 @@ export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: (
       const planKey = wire.plan_key
       const plans = catalog.data.plans
       const creditBalanceCents = overview.data.credit_balance_cents ?? null
-      await ctx.dispatch({ type: "billing.plans.loaded", actor: ctx.actor(), planKey, sandbox, plans, creditBalanceCents }).isPersisted.promise
+      const creditResetsAt = overview.data.usage_period_end ?? null
+      await ctx.dispatch({ type: "billing.plans.loaded", actor: ctx.actor(), planKey, sandbox, plans, creditBalanceCents, creditResetsAt }).isPersisted.promise
       if (!current()) return "The account changed while plans were loading."
       await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
         id: "billing-plans", kind: "billing-plans", title: "Plans", status: "active",
@@ -124,6 +138,9 @@ export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: (
     }
   },
   startCheckout: (plan) => {
+    if (plan === "max") {
+      return ctx.dispatch({ type: "message.appended", actor: ctx.actor(), text: "Max is not for sale. Upgrade to Pro." }).isPersisted.promise.then(() => undefined)
+    }
     if (!checkout) {
       return ctx.dispatch({ type: "message.appended", actor: ctx.actor(), text: "Checkout is not open yet." }).isPersisted.promise.then(() => undefined)
     }

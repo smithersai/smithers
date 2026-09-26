@@ -827,6 +827,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
       draft.sandbox = reset.sandbox
       draft.plans = reset.plans
       draft.creditBalanceCents = reset.creditBalanceCents
+      draft.creditResetsAt = reset.creditResetsAt
       draft.state = reset.state
       draft.totalUsd = reset.totalUsd
       draft.allowedToStartWork = reset.allowedToStartWork
@@ -2579,6 +2580,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             draft.sandbox = transition.sandbox
             draft.plans = transition.plans
             draft.creditBalanceCents = transition.creditBalanceCents ?? null
+            draft.creditResetsAt = transition.creditResetsAt ?? null
             draft.revision = revision
           })
           break

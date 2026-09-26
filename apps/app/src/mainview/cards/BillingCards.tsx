@@ -5,7 +5,7 @@ import { refusalFromStored } from "@smthrs/rpc/Refusal"
 import { refusalLead } from "@smthrs/rpc/RefusalCopy"
 import { useCallback, useSyncExternalStore } from "react"
 import { creditDollars } from "../state/seams/BillingSeam"
-import { UpgradeDoor } from "./WorkspaceCard"
+import { UpgradeDoor, upgradePlanKey } from "./WorkspaceCard"
 import type { CardProjectionAuthority, RunCommand } from "./CardFamily"
 
 /*
@@ -23,31 +23,46 @@ const idle = (seconds: number) => seconds === 0 ? "Never sleeps" : seconds < 360
 
 type BillingPlansCard = Extract<Card, { kind: "billing-plans" }>
 
-export const BillingPlansCardBody = ({ card, onRunCommand, creditBalanceCents = null }: {
-  readonly card: BillingPlansCard; readonly onRunCommand: RunCommand; readonly creditBalanceCents?: number | null
+/** Max is not sold: it shows only to an account already on it. */
+export const offeredPlans = <Plan extends { readonly key: string }>(plans: ReadonlyArray<Plan>, planKey: string | null): ReadonlyArray<Plan> =>
+  plans.filter(plan => plan.key !== "max" || plan.key === planKey)
+
+const day = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+
+export const BillingPlansCardBody = ({ card, onRunCommand, creditBalanceCents = null, creditResetsAt = null }: {
+  readonly card: BillingPlansCard; readonly onRunCommand: RunCommand
+  readonly creditBalanceCents?: number | null; readonly creditResetsAt?: string | null
 }) => {
   const { plans, planKey, sandbox, checkout } = card.payload
   const refusal = card.payload.refusal ? refusalFromStored(card.payload.refusal) : null
-  const columns = [...plans].sort((a, b) => a.price_cents - b.price_cents)
+  const columns = [...offeredPlans(plans, planKey)].sort((a, b) => a.price_cents - b.price_cents)
+  const included = plans.find(plan => plan.key === planKey)?.limits.monthly_credit_cents ?? 0
+  const credited = columns.some(plan => plan.limits.monthly_credit_cents !== undefined)
+  const resets = creditResetsAt === null || Number.isNaN(Date.parse(creditResetsAt)) ? null : creditResetsAt
   return <div className="world-card-list">
     {refusal === null ? null : <div role="alert">
       <p>{refusalLead(refusal)}</p><p>{refusal.message}</p>
-      <UpgradeDoor refusal={refusal} onRunCommand={onRunCommand} disabled={!checkout || plans.find(plan => plan.key === refusal.upgrade_plan_key)?.checkout_available === false} />
+      <UpgradeDoor refusal={refusal} onRunCommand={onRunCommand} disabled={!checkout || upgradePlanKey(refusal) === planKey || plans.find(plan => plan.key === upgradePlanKey(refusal))?.checkout_available === false} />
     </div>}
     {!checkout ? <p>Checkout is not open yet.</p> : null}
+    {creditBalanceCents === null ? null : <p data-testid="billing-credit-line">
+      Credit left: <strong data-testid="billing-credit">{creditDollars(creditBalanceCents)}</strong>
+      {included > 0 ? <> · Included: <span data-testid="billing-credit-included">{creditDollars(included)}</span> per month</> : null}
+      {included > 0 && resets !== null ? <> · Resets <time data-testid="billing-credit-reset" dateTime={resets}>{day.format(new Date(resets))}</time></> : null}
+    </p>}
     {columns.length === 0 ? null : <div style={{ overflowX: "auto" }}><table>
       <thead><tr><th scope="col">Plan</th>{columns.map(plan => <th scope="col" key={plan.key}
         aria-current={plan.key === planKey ? "true" : undefined}
         style={plan.key === planKey ? { background: "var(--surface)", outline: "2px solid currentColor", outlineOffset: "-2px" } : undefined}>
         {plan.display_name} {dollars.format(plan.price_cents / 100)}{plan.price_cents === 0 ? "" : " per month"}
         {plan.key === planKey ? " · Current plan" : ""}
-        {plan.key === planKey && creditBalanceCents !== null ? <> · <span data-testid="billing-credit">{creditDollars(creditBalanceCents)}</span></> : null}
       </th>)}</tr></thead>
       <tbody>
+        {credited ? <tr><th scope="row">Model credit per month</th>{columns.map(plan => <td key={plan.key}>{creditDollars(plan.limits.monthly_credit_cents ?? 0)}</td>)}</tr> : null}
         <tr><th scope="row">Running sandboxes</th>{columns.map(plan => <td key={plan.key}>{quantity(plan.limits.concurrent_sandboxes)}</td>)}</tr>
         <tr><th scope="row">Idle sleep</th>{columns.map(plan => <td key={plan.key}>{idle(plan.limits.idle_timeout_secs)}</td>)}</tr>
         <tr><th scope="row">Sandbox-hours per day</th>{columns.map(plan => <td key={plan.key}>{quantity(plan.limits.hours_per_day)}</td>)}</tr>
-        <tr><th scope="row">Upgrade</th>{columns.map(plan => <td key={plan.key}>{plan.key === "free" ? null :
+        <tr><th scope="row">Upgrade</th>{columns.map(plan => <td key={plan.key}>{plan.key === "free" || plan.key === "max" ? null :
           <Button size="sm" disabled={!checkout || !plan.checkout_available || plan.key === planKey}
             {...flowAction(onRunCommand, "billing.upgrade", flowArgs("billing.upgrade", { plan: plan.key }))}>
             Upgrade to {plan.display_name}
@@ -70,8 +85,11 @@ const ObservedBillingPlans = ({ card, accounts, onRunCommand }: {
     const subscription = accounts.subscribeChanges(notify)
     return () => subscription.unsubscribe()
   }, [accounts])
-  const read = () => accounts.get("billing")?.creditBalanceCents ?? null
-  return <BillingPlansCardBody card={card} onRunCommand={onRunCommand} creditBalanceCents={useSyncExternalStore(subscribe, read, read)} />
+  const readCredit = () => accounts.get("billing")?.creditBalanceCents ?? null
+  const readResets = () => accounts.get("billing")?.creditResetsAt ?? null
+  return <BillingPlansCardBody card={card} onRunCommand={onRunCommand}
+    creditBalanceCents={useSyncExternalStore(subscribe, readCredit, readCredit)}
+    creditResetsAt={useSyncExternalStore(subscribe, readResets, readResets)} />
 }
 
 const BalanceCardBody = ({ card }: { readonly card: Extract<Card, { kind: "balance" }> }) => (

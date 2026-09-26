@@ -44,7 +44,9 @@ export const BillingPlanSchema = z.object({
     storage_bytes: z.number(),
     ci_minutes: z.number(),
     agent_runs: z.number(),
-    seats: z.number()
+    seats: z.number(),
+    /** Model credit the plan grants each billing month, integer cents. */
+    monthly_credit_cents: z.number().int().nonnegative().optional()
   }),
   checkout_available: z.boolean()
 })
@@ -75,5 +77,7 @@ export const BillingOverviewSchema = z.object({
     hours_per_day: z.number().int(),
     seconds_used_today: z.number().nonnegative(),
     day_resets_at: z.string()
-  })
+  }),
+  /** When the current usage month ends and the next monthly credit grant lands. */
+  usage_period_end: z.string().optional()
 })

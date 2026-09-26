@@ -112,11 +112,11 @@ describe("the signup cards", () => {
     expect(calls).toEqual([["signup.account", undefined]])
   })
 
-  test("a poll question renders its lettered choices as signup.answer buttons, a letter key answers, and a required question has no Skip", () => {
+  test("a poll question renders its lettered choices as signup.answer buttons, a letter key answers, and every question offers Skip", () => {
     const { host, flows, calls } = render({ ...initialSignup(), stage: "poll", question: 1 })
-    expect(host.querySelector("h2")?.textContent).toBe("What best describes your role?*")
+    expect(host.querySelector("h2")?.textContent).toBe("What best describes your role?")
     expect(flows().filter(row => row[1] === "signup.answer").map(row => row[2])).toEqual(["Executive/Owner", "Engineering", "Support", "Marketing", "Product & Design", "Sales", "IT", "Other"])
-    expect(host.querySelector('[data-testid="signup-skip"]')).toBeNull()
+    expect(host.querySelector('[data-testid="signup-skip"]')).not.toBeNull()
     expect(flows().some(row => row[1] === "signup.back")).toBe(true)
     host.querySelector<HTMLElement>(".signup-choice")!.dispatchEvent(new KeyboardEvent("keydown", { key: "b", bubbles: true }))
     expect(calls).toEqual([["signup.answer", "Engineering"]])

@@ -242,7 +242,7 @@ export type StartAgentTurnResult =
  * @category models
  */
 export interface TurnRefusal {
-  readonly code: "turn_rate_limited" | "sign_in_required"
+  readonly code: "turn_rate_limited" | "sign_in_required" | "out_of_credit"
   readonly message: string
   readonly retryAt: string | null
 }

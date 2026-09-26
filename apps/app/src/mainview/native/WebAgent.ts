@@ -84,13 +84,15 @@ const errorDetail = (status: number, body: string): string => {
  * their code so the composer can preserve the draft and offer sign-in.
  * A provider's 429 carries no such code and stays a classified failure.
  */
+const TURN_REFUSAL_CODES = { 401: "sign_in_required", 402: "out_of_credit", 429: "turn_rate_limited" } as const
+
 const turnRefusal = (status: number, body: string): TurnRefusal | undefined => {
-  if (status !== 429 && status !== 401) return undefined
+  if (status !== 429 && status !== 401 && status !== 402) return undefined
+  const expected = TURN_REFUSAL_CODES[status]
   try {
     const parsed: unknown = JSON.parse(body)
     if (
-      typeof parsed !== "object" || parsed === null || !("code" in parsed) ||
-      (status === 429 ? parsed.code !== "turn_rate_limited" : parsed.code !== "sign_in_required") ||
+      typeof parsed !== "object" || parsed === null || !("code" in parsed) || parsed.code !== expected ||
       !("message" in parsed) || typeof parsed.message !== "string" || parsed.message === ""
     ) {
       return undefined
@@ -98,7 +100,7 @@ const turnRefusal = (status: number, body: string): TurnRefusal | undefined => {
     const retryAt = "retryAt" in parsed && typeof parsed.retryAt === "string" && !Number.isNaN(Date.parse(parsed.retryAt))
       ? parsed.retryAt
       : null
-    return { code: status === 401 ? "sign_in_required" : "turn_rate_limited", message: parsed.message, retryAt }
+    return { code: expected, message: parsed.message, retryAt }
   } catch {
     return undefined
   }

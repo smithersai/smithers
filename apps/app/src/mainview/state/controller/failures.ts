@@ -7,13 +7,14 @@ import { claimedSpokenLines,claimSpokenLine, forgetVanishedClaims,latestOrdinal 
 
 /**
  * Launch Checklist D-4's exhausted-balance refusal, shared between the
- * `zeroBalanceGuard` that dispatches it as a transcript message and
+ * `zeroBalanceGuard` that renders it on the embedded out-of-credit plans card
+ * (with its Upgrade door) and
  * `surfaceCommandFailure`, which recognizes it to skip its toast (the
  * refusal is already an embedded chat message; a toast would double-surface
  * it). Names the upgrade path per the definition of done: "how to proceed".
  */
 export const ZERO_BALANCE_EXHAUSTED_TEXT =
-  "Balance is at $0: flow runs pause until more balance is added. Run /billing.upgrade to add balance; chat stays free in the meantime."
+  "Add credit to keep working. Pro includes $50 of model credit each month."
 
 /**
  * A settled run with nothing to report: the work it named was superseded —

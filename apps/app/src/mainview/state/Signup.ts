@@ -40,10 +40,10 @@ export interface SignupQuestion {
 }
 
 export const SIGNUP_QUESTIONS: ReadonlyArray<SignupQuestion> = [
-  { id: "size", text: "What is the size of your company?", required: true, kind: "single", options: ["Just me", "2–10", "11–50", "51–200", "201–1,000", "1,000+"] },
-  { id: "role", text: "What best describes your role?", required: true, kind: "single", options: ["Executive/Owner", "Engineering", "Support", "Marketing", "Product & Design", "Sales", "IT", "Other"] },
+  { id: "size", text: "What is the size of your company?", required: false, kind: "single", options: ["Just me", "2–10", "11–50", "51–200", "201–1,000", "1,000+"] },
+  { id: "role", text: "What best describes your role?", required: false, kind: "single", options: ["Executive/Owner", "Engineering", "Support", "Marketing", "Product & Design", "Sales", "IT", "Other"] },
   { id: "heard", text: "How did you hear about Smithers?", required: false, kind: "single", options: ["X / Twitter", "GitHub", "YouTube", "Hacker News", "A friend or colleague", "Search", "Other"] },
-  { id: "know", text: "Do you already know what you want to automate?", required: true, kind: "single", options: ["Yes", "Not yet"] },
+  { id: "know", text: "Do you already know what you want to automate?", required: false, kind: "single", options: ["Yes", "Not yet"] },
   { id: "models", text: "What models do you usually prefer?", required: false, kind: "multi", options: ["Codex", "Claude", "Open Source", "Gemini", "Grok", "Other"] },
   { id: "repo", text: "Do you have a repo you would like to connect?", required: false, kind: "repo", options: [] },
   { id: "more", text: "Do you have anything else you would like to share?", required: false, kind: "free", options: [] }
