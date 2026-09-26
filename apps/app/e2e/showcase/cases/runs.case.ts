@@ -31,11 +31,9 @@ export default showcase({
     const steers: Array<{ kind: string; body?: string }> = []
     const cancelled = new Set<string>()
     const summaries = new Map<string, number>()
-    // As in run-reading.spec.ts: the run reads as running until its journal has been read.
-    let journalRead = false
     const base = { editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0, diagnosis: "Recorded status" }
     const row = (runId: string) => {
-      if (runId === CODING) return { ...base, runId, flowId: "coding", status: journalRead ? "failed" : "running", createdAt: now - 3_600_000, updatedAt: now - 3_000_000, turns: 2, calls: 2, callsFailed: 1, verdict: "failed" }
+      if (runId === CODING) return { ...base, runId, flowId: "coding", status: "failed", createdAt: now - 3_600_000, updatedAt: now - 3_000_000, turns: 2, calls: 2, callsFailed: 1, verdict: "failed" }
       const status = cancelled.has(runId) ? "cancelled" : "running"
       return { ...base, runId, flowId: "review-pr", status, createdAt: now - 240_000, updatedAt: now, turns: 3, calls: 7, callsFailed: 0,
         verdict: status, steeringPending: cancelled.has(REVIEW) ? 0 : steers.filter(steer => steer.body !== undefined).length }
@@ -55,7 +53,6 @@ export default showcase({
           if (selector._tag === "run-summary") summaries.set(selector.runId ?? REVIEW, (summaries.get(selector.runId ?? REVIEW) ?? 0) + 1)
           if (selector._tag === "run-summary") return rows("run-summary", [row(selector.runId ?? REVIEW)])
           if (selector._tag === "run-events" && JSON.stringify(call.payload).includes(CODING)) {
-            journalRead = true
             return rows("run-events", journal.filter(event => event.sequence > (call.payload.after?.value ?? 0)))
           }
           if (selector._tag === "transcript" && JSON.stringify(call.payload).includes(CODING)) {

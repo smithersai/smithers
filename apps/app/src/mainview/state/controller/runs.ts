@@ -285,7 +285,9 @@ export const createRunsController = (
       ...binding,
       workflow: row.flowId,
       title: `${row.flowId} — ${repo}`,
-      firstStep: `Watching ${row.flowId} (run ${runId}).`
+      firstStep: `Watching ${row.flowId} (run ${runId}).`,
+      // A run that already settled still reads its recorded journal once.
+      observe: true
       /*
        * No `input`: this run was not launched from here, so its launch input
        * is not recorded on this client — `runs.rerun` says so honestly rather

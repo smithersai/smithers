@@ -36,14 +36,12 @@ for (const width of [900, 390]) test(`the run reads in one column at ${width}px 
   await page.setViewportSize({ width, height: 1000 })
   await installCloudFixture(page, { capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
   await page.route("**/api/workflow/provision", route => route.fulfill({ json: { status: "ready", repo, gatewayId: "reading" } }))
-  let journalRead = false
   await page.route("**/api/workflow/rpc", route => {
     const call = route.request().postDataJSON() as { procedure: string; payload: { selector?: { _tag?: string }; after?: { value: number } } }
     const tag = call.payload.selector?._tag
-    const rows = tag === "run-summary" || tag === "workspace-runs" ? [{ runId, flowId: "coding", status: journalRead ? "failed" : "running", createdAt: 1, updatedAt: 1400,
+    const rows = tag === "run-summary" || tag === "workspace-runs" ? [{ runId, flowId: "coding", status: "failed", createdAt: 1, updatedAt: 1400,
       turns: 2, calls: 2, callsFailed: 1, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0, verdict: "failed", diagnosis: "failed" }]
       : tag === "run-events" ? journal.filter(row => row.sequence > (call.payload.after?.value ?? 0)) : []
-    if (tag === "run-events") journalRead = true
     return route.fulfill({ json: { ok: true, payload: { cursor: { projection: tag, runId: null, value: 0 }, rows } } })
   })
   await page.goto("/")

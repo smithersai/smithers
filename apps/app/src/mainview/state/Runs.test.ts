@@ -485,6 +485,28 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
     expect(card?.kind === "run-trace" && card.payload.repo).toBe(REPO)
   })
 
+  test("runs.open of a finished run reads its recorded journal once (#1936)", async () => {
+    const store = await webStore()
+    const double = relay({
+      runs: [{ runId: "run-done", flowId: "coding", status: "failed" }],
+      events: [
+        { kind: "control.agent.turn-opened", payload: { seat: "openai:gpt-5.6-sol", at: 100 }, sequence: 1, occurredAt: 100 },
+        { kind: "control.run.failed", payload: {}, sequence: 2, occurredAt: 200 }
+      ]
+    })
+    const controller = createAppController(store, silentAgent, double.services)
+    await signIn(store)
+    await controller.commands.run("runs.open", "run-done")
+    await waitFor(() => {
+      const card = store.collections.cards.get("flow-run-run-done")
+      return card?.kind === "run-trace" && (card.payload.events?.length ?? 0) === 2
+    })
+    const card = store.collections.cards.get("flow-run-run-done")
+    expect(card?.kind === "run-trace" && card.payload.phase).toBe("failed")
+    await settle()
+    expect(double.calls.filter((call) => JSON.stringify(call.body).includes("\"run-events\"")).length).toBe(1)
+  })
+
   test("runs.open names the miss honestly", async () => {
     const store = await webStore()
     const double = relay({ runs: [] })
@@ -1680,6 +1702,9 @@ describe("workspace-bound run cards", () => {
     await selectWorkspace(store)
     await controller.commands.run("runs.open", "legacy")
     await waitFor(() => runCardInScope(store, { repo: REPO, runId: "legacy" })?.payload.phase === "completed")
+    // The settled run still reads its journal once.
+    await waitFor(() => double.calls.some((call) => JSON.stringify(call.body).includes("\"run-events\"")))
+    await settle()
     expect(gatewayRunContextFor(store, "legacy")).toEqual({ repo: REPO })
     for (const call of double.calls.filter((call) => call.path.startsWith("/api/workflow/"))) expect(call.body).not.toHaveProperty("workspaceId")
     const listed = store.collections.cards.get(`run-list-${REPO}`)!
@@ -1889,6 +1914,8 @@ describe("workspace-bound run cards", () => {
     expect(legacy.id).not.toBe(old.id)
     expect(store.collections.cards.get(old.id)).toMatchObject({ payload: { workspaceId } })
     await waitFor(() => legacy.id !== undefined && runCardInScope(store, { repo: REPO, runId: "run-1" })?.payload.phase === "completed", 10_000)
+    await waitFor(() => double.calls.slice(before).some((call) => JSON.stringify(call.body).includes("\"run-events\"")))
+    await settle()
     for (const call of double.calls.slice(before).filter((call) => call.path.startsWith("/api/workflow/"))) expect(call.body).not.toHaveProperty("workspaceId")
     const beforeNative = double.calls.length
     expect(said(await controller.commands.run("runs.open", `sourceCard=${old.id} native-1`))).toContain("does not record")
@@ -1899,9 +1926,12 @@ describe("workspace-bound run cards", () => {
     expect(runCardInScope(store, { repo: REPO, workspaceId, runId: "child-1" })).toBeDefined()
     await waitFor(() => runCardInScope(store, { repo: REPO, workspaceId, runId: "child-1" })?.payload.phase === "completed", 10_000)
     for (const call of double.calls.slice(before).filter((call) => call.path.startsWith("/api/workflow/"))) expect(call.body).toMatchObject({ workspaceId })
+    before = double.calls.length
     expect((await controller.commands.run("runs.open", `sourceCard=${old.id} run-1`)).status).toBe("executed")
     expect(runCardInScope(store, { repo: REPO, workspaceId, runId: "run-1" })?.id).toBe(old.id)
     await waitFor(() => runCardInScope(store, { repo: REPO, workspaceId, runId: "run-1" })?.payload.phase === "completed")
+    await waitFor(() => double.calls.slice(before).some((call) => JSON.stringify(call.body).includes("\"run-events\"")))
+    await settle()
     const wireCount = double.calls.length
     expect(said(await controller.commands.run("runs.resume", `sourceCard=${old.id} child-1`))).toContain("does not record")
     expect(double.calls.length).toBe(wireCount)

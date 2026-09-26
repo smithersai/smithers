@@ -15,7 +15,8 @@ import { pendingWorkflowLaunch } from "../WorkflowLaunch"
 import type { FlowDurationsReader } from "./flowDurations"
 
 export interface WorkflowPumpController {
-  readonly pumpWorkflowRun: (cardId: string) => Promise<void>
+  /** `observeOnce` reads a settled run's summary and journal one more time. */
+  readonly pumpWorkflowRun: (cardId: string, observeOnce?: boolean) => Promise<void>
   readonly stopWatchingRun: (cardId: string, reason?: string) => string | void
   readonly retryRunWatch: (cardId: string) => string | void
   readonly resumeWorkflowRuns: () => void

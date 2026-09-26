@@ -88,6 +88,8 @@ export interface WorkflowController {
     readonly input?: Record<string, unknown>
     /** The run's kind (prototype, implement); absent for every other run. */
     readonly kind?: string
+    /** Read the run once even when it already settled. */
+    readonly observe?: boolean
   }) => string
   readonly launchWorkflow: (args: {
     readonly repo: string
@@ -110,7 +112,7 @@ export interface WorkflowController {
 export const createWorkflowController = (
   ctx: ControllerContext,
   nextTranscriptOrdinal: () => number,
-  pumpWorkflowRun: (cardId: string) => Promise<void>,
+  pumpWorkflowRun: (cardId: string, observeOnce?: boolean) => Promise<void>,
   renderFlowForm?: FormsController["renderFlowForm"],
   /* A plan card draws a graph, so the graph's predictions are read once, as
    * the card opens (controller/flowDurations.ts). */
@@ -332,6 +334,8 @@ export const createWorkflowController = (
     readonly kind?: string
     /** The plan the launch was approved on; absent for a run this client did not start. */
     readonly plan?: NonNullable<Extract<Card, { kind: "run-trace" }>["payload"]["plan"]>
+    /** Read the run once even when it already settled (an opened run's recorded journal). */
+    readonly observe?: boolean
   }): string => {
     const cardId = runCardIdFor(store, args)
     const existing = store.collections.cards.get(cardId)
@@ -381,7 +385,7 @@ export const createWorkflowController = (
       }
     }
     store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
-    void pumpWorkflowRun(cardId)
+    void pumpWorkflowRun(cardId, args.observe === true)
     return cardId
   }
 
