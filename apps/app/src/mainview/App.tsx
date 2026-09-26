@@ -594,7 +594,7 @@ function AppContent() {
         {composerWrap}
       </div>
       <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
-        <FirstSightHint id="chat" content={<ChatHint />}><GuideButton ref={chatTriggerRef} shortcut={GUIDE_KEYS.chat} {...flowProps("chat.open")} onClick={() => {
+        <FirstSightHint id="chat" placement="above" content={<ChatHint />}><GuideButton ref={chatTriggerRef} shortcut={GUIDE_KEYS.chat} {...flowProps("chat.open")} onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
         }}>Chat</GuideButton></FirstSightHint>
