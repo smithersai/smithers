@@ -280,7 +280,11 @@ const fakeSdk = (controls: Controls = {}) => {
     for (const live of [...machine.live]) live.lose()
     machines.delete(machine.name)
     rmSync(machine.root, { recursive: true, force: true })
-    if (machine.workspace !== undefined) rmSync(machine.workspace, { recursive: true, force: true })
+    // A workspace under a regular file was never created, and rmSync's
+    // `force` only forgives ENOENT, not the ENOTDIR that path raises.
+    if (machine.workspace !== undefined && existsSync(machine.workspace)) {
+      rmSync(machine.workspace, { recursive: true, force: true })
+    }
   }
 
   const destroy = async (
