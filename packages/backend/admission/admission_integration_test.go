@@ -218,3 +218,51 @@ func TestMeteredTransactionUsageFailureDoesNotCommit(t *testing.T) {
 	require.ErrorIs(t, err, bindFailure)
 	require.False(t, called)
 }
+
+type pendingRepoUsage struct {
+	admission.Usage
+	conn admission.DBTX
+}
+
+func (u pendingRepoUsage) CountPrivateReposByOwner(ctx context.Context, owner admission.RepoOwner) (int64, error) {
+	base, err := u.Usage.CountPrivateReposByOwner(ctx, owner)
+	if err != nil {
+		return 0, err
+	}
+	var pending int64
+	err = u.conn.QueryRow(ctx, `SELECT count(*) FROM private_pending_repos WHERE owner_type=$1 AND owner_id=$2`, owner.OwnerType, owner.OwnerID).Scan(&pending)
+	return base + pending, err
+}
+
+func TestMeteredPrivateRepoCapCountsDeploymentReservations(t *testing.T) {
+	pool := database(t)
+	owner := user(t, pool)
+	ctx := context.Background()
+	_, err := pool.Exec(ctx, `CREATE TABLE private_pending_repos (owner_type text, owner_id bigint)`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO repositories (user_id, name, lower_name, is_public, default_bookmark)
+		SELECT $1, 'repo-' || i, 'repo-' || i, false, 'main' FROM generate_series(1, 99) i`, owner)
+	require.NoError(t, err)
+	policy, err := admission.NewMetered(pool, admission.Config{Usage: func(conn admission.DBTX) (admission.Usage, error) {
+		product, err := admission.ProductUsage(conn)
+		return pendingRepoUsage{product, conn}, err
+	}})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO private_pending_repos VALUES ('user', $1)`, owner)
+	require.NoError(t, err)
+	called := false
+	err = policy.AuthorizePrivateRepoCommitted(ctx, "user", owner, func(context.Context) error {
+		called = true
+		return nil
+	})
+	require.ErrorContains(t, err, "private repositories")
+	require.False(t, called, "a reserved, unpublished private repository holds the last slot")
+
+	_, err = pool.Exec(ctx, `DELETE FROM private_pending_repos`)
+	require.NoError(t, err)
+	require.NoError(t, policy.AuthorizePrivateRepoCommitted(ctx, "user", owner, func(context.Context) error {
+		called = true
+		return nil
+	}))
+	require.True(t, called)
+}

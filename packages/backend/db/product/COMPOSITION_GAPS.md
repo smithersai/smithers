@@ -21,8 +21,8 @@ product SQL. `productstore.ConfigureTypes` registers canonical product codecs
 on deployment-owned PostgreSQL pools.
 
 `CountPrivateReposByOwner` and storage-byte queries measure product allocations.
-Private admission policy is responsible for its pending infrastructure
-allocations. Product code must not query those private tables directly.
+Private admission usage (`admission.Usage`) adds its pending infrastructure
+allocations, including reserved but unpublished private repositories. Product code must not query those private tables directly.
 
 `scripts/check-go-boundaries.py` enforces the SQL and import boundary; its
 negative tests deliberately insert private-table queries and dependencies.

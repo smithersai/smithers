@@ -16,6 +16,7 @@ import (
 
 type DBTX = db.DBTX
 type Owner = db.SumStorageBytesByOwnerParams
+type RepoOwner = db.CountPrivateReposByOwnerParams
 type ResumeRequest = db.CountOtherActiveSandboxesForWorkspaceResumeParams
 type ResumeCount = db.CountOtherActiveSandboxesForWorkspaceResumeRow
 type SandboxEntitlement = services.SandboxEntitlement

@@ -12,6 +12,7 @@ import (
 // A private implementation may embed ProductUsage and override only the facts
 // affected by private reservations and retained physical allocations.
 type Usage interface {
+	CountPrivateReposByOwner(context.Context, db.CountPrivateReposByOwnerParams) (int64, error)
 	SumStorageBytesByOwner(context.Context, db.SumStorageBytesByOwnerParams) (int64, error)
 	SumStorageBytesByRepository(context.Context, int64) (int64, error)
 	CountActiveSandboxesForUser(context.Context, int64) (int, error)
@@ -46,6 +47,9 @@ func (q *Queries) RebindBillingQueries(conn db.DBTX) (Querier, error) {
 	return Bind(conn, q.bind)
 }
 
+func (q *Queries) CountPrivateReposByOwner(ctx context.Context, owner db.CountPrivateReposByOwnerParams) (int64, error) {
+	return q.usage.CountPrivateReposByOwner(ctx, owner)
+}
 func (q *Queries) SumStorageBytesByOwner(ctx context.Context, owner db.SumStorageBytesByOwnerParams) (int64, error) {
 	return q.usage.SumStorageBytesByOwner(ctx, owner)
 }
