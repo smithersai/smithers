@@ -350,14 +350,15 @@ describe("UnobservedCall", () => {
         `switch (1) { case r.exitCode: ctx.done("a"); break; default: console.log(1) }`,
         `if (r.exitCode !== 0) { console.log(r); return }\nctx.done("a")`,
         `if (r.exitCode !== 0) throw new Error("no")\nctx.done("a")`,
-        `if (r.ok) console.log(r)\nctx.done("a")`,
         `if (r.ok) ctx.done(r.stdout)\nctx.done("fallback")`,
         // Asked, saved the answer, completed: the program acted on the result.
         `await ctx.call("note/save", { text: "decision=" + r.approved })\nctx.done("settled")`
       ]
     ) expect(blind(probe + acting)).toBe(false)
+    // A guard that only prints decides nothing, but a loop over results that
+    // leaves early does.
     expect(blind(`for (const [name, input] of [["bash", {}], ["test", {}]]) {
-      const result = await ctx.call(name, input); if (result.ok === false) console.log(name)
+      const result = await ctx.call(name, input); if (result.ok === false) { console.log(name); break }
     }
     ctx.done("done")`)).toBe(false)
     for (
@@ -370,6 +371,49 @@ describe("UnobservedCall", () => {
         `console.log(r.stdout, r?.stderr); console.info(r)\nctx.done("blocked: output not observed")`
       ]
     ) expect(blind(probe + blindly)).toBe(true)
+  })
+
+  it("reads a result tested only to decide what to print as unread", () => {
+    // The p3 qualification shape: the first cell probes, prints the failures,
+    // and completes with a verdict written before any result came back.
+    expect(blind(`const r = await ctx.call("bash", { command: "rg -n planWeekly packages" })
+      const t = await ctx.call("bash", { command: "pnpm test" })
+      if (r.exitCode) console.log(r.stderr)
+      if (t.exitCode !== 0) { console.error(t.stderr) } else console.log("tests pass")
+      ctx.done("blocked: the command results were not visible")`)).toBe(true)
+    const probe = `const r = await ctx.call("bash", {});\n`
+    for (
+      const blindly of [
+        `if (r.ok) console.log(r)\nctx.done("a")`,
+        `if (r.ok) ;\nctx.done("a")`,
+        `if (r.exitCode) { if (r.stderr) console.log(r.stderr) } else {}\nctx.done("a")`,
+        `r.exitCode && console.log(r.stderr)\nctx.done("a")`,
+        `r.exitCode ? console.log(r.stderr) : null\nctx.done("a")`,
+        `r.exitCode ? console.log(r.stderr) : undefined\nctx.done("a")`,
+        `r.exitCode ? console.log(r.stderr) : void 0\nctx.done("a")`,
+        `switch (r.exitCode) { case 0: console.log("ok"); break; default: console.log(r.stderr) }\nctx.done("a")`,
+        `for (const line of r.stdout.split("\\n")) if (line.includes("FAIL")) console.log(line)\nctx.done("a")`,
+        `if ((await ctx.call("bash", {})).exitCode) console.log("second failed")\nconsole.log(r)\nctx.done("a")`
+      ]
+    ) expect(blind(probe + blindly)).toBe(true)
+    // A guard that does anything but print acts on what it tests.
+    for (
+      const acting of [
+        `if (r.exitCode) { console.log(r.stderr); return }\nctx.done("a")`,
+        `if (r.exitCode) { console.log(r.stderr); throw new Error("x") }\nctx.done("a")`,
+        `if (r.exitCode) console.log(r.stderr); else ctx.done("a")`,
+        `r.exitCode ? console.log(r.stderr) : ctx.done("a")`,
+        `r.exitCode ? console.log(r.stderr) : 0\nctx.done("a")`,
+        `r.exitCode && console.log(r.stderr) || ctx.done("a")`,
+        `switch (r.exitCode) { case 0: break; default: ctx.done("a") }`,
+        `switch (r.exitCode) { case 0: console.log("ok"); break outer; default: console.log(1) }\nctx.done("a")`,
+        `if (r.exitCode) await ctx.call("bash", { command: "pnpm install" })\nctx.done("a")`,
+        `if (r.exitCode) console.log(r.stderr)\nctx.done(r.exitCode ? "blocked" : "done")`,
+        `ctx.done(r.ok || null)`,
+        `if (r.exitCode) console.log(r.stderr)\nwhile (r.exitCode) { ctx.done("a"); break }`,
+        `if (r.exitCode) console.log(() => ctx.done(r.stderr))\nctx.done("a")`
+      ]
+    ) expect(blind(probe + acting)).toBe(false)
   })
 
   it("never calls a cell blind that kept no result, completed nowhere it can see, or does not parse", () => {
