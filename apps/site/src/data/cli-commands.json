@@ -4727,6 +4727,15 @@
             "print": {
               "description": "Answer one prompt, print it, and exit",
               "type": "string"
+            },
+            "approve": {
+              "description": "Consequential calls: all, ask, or deny",
+              "type": "string",
+              "enum": [
+                "all",
+                "ask",
+                "deny"
+              ]
             }
           },
           "required": [
