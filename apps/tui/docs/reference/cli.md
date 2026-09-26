@@ -11,8 +11,11 @@ bun run tui [directory] [--model provider:modelId] [-c | -r] [-p "prompt"] [--ap
 
 `smthrs tui` accepts the same arguments when the TUI binary or runtime bundle is installed. In the source checkout, run the command from the repository root.
 
+Interactive mode requires terminal input and output. Use `--print` in scripts or pipelines.
+
 | Option                     | Short | Effect                                                   |
 | -------------------------- | ----- | -------------------------------------------------------- |
+| `--help` | `-h` | Show command-line options without opening a session. |
 | `directory`                |       | Working directory; defaults to the current directory.    |
 | `--model provider:modelId` | `-m`  | Chat or print-mode model; overrides `SMITHERS_TUI_SEAT`. |
 | `--continue`               | `-c`  | Continue the latest saved session for this directory.    |
@@ -41,10 +44,19 @@ Print mode runs the task directly, without the interactive chat coordinator. It 
 `smthrs tui` tries `SMITHERS_TUI_BIN`, an installed compiled binary, Bun (`SMITHERS_BUN` or an already-running Bun CLI), then Node with experimental FFI. The TUI runtime supports Bun and Node 26.4 or later; this repository uses the Node pin in `.node-version`.
 
 ```bash
+cargo +1.98.0 build --locked --release -p smithers-ffi --bin smithers-jj-export
 node packages/smithers/scripts/build-tui.mjs
-node --experimental-ffi --disable-warning=ExperimentalWarning packages/smithers/dist/tui/main.js /path/to/project
+SMITHERS_WORKSPACE_JJ_EXPORT_BINARY="$PWD/target/release/smithers-jj-export" \
+  node --experimental-ffi --disable-warning=ExperimentalWarning packages/smithers/dist/tui/main.js /path/to/project
 bun packages/smithers/scripts/build-tui-binaries.mjs --single
 ```
+
+Compiled binaries use installed project dependencies for local flows. They share
+their embedded Effect runtime with those flows and require its exact version;
+incompatible project versions are refused before loading.
+
+Interactive compiled builds need an executable, writable `TMPDIR` for their
+native terminal library. Help and print mode do not load that library.
 
 ## Exit
 

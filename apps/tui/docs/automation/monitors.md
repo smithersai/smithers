@@ -52,6 +52,8 @@ Intervals range from 10 seconds to 24 hours. A shell command runs on every tick.
 
 Ask the coordinator to list or stop monitors; the flows are `monitor.list({})` and `monitor.stop({id})`. Reusing an ID restarts that monitor. Unchanged observations do not call a model. Updates appear as a toast and a persisted chat row.
 
+Stopping a monitor cancels its current shell command. `/new`, switching sessions, and quitting cancel commands owned by the previous session too.
+
 Monitors persist across `/resume` and `-c`. A shell monitor must pass approval again before its first restored command. Under `deny`, it is refused.
 
 ## Handle missing credentials

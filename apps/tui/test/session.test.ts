@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { createHash } from "node:crypto"
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import * as Session from "../src/session.ts"
 
 let previousSessionDirectory: string | undefined
@@ -21,6 +22,36 @@ describe("session files", () => {
     writer.append({ type: "user", at: 1, text: "fix add" })
     appendFileSync(writer.file, '{"type":"user","at":2,"te')
     expect(Session.load(writer.file).map((record) => record.type)).toEqual(["session", "user"])
+  })
+
+  it.each(["", "\n", "\n\n"])("repairs a torn tail before appending after resume (suffix %j)", (suffix) => {
+    const writer = Session.create("/work/repo")
+    writer.append({ type: "user", at: 1, text: "kept 中文 🦉" })
+    appendFileSync(writer.file, '{"type":"user","at":2,"te' + suffix)
+    expect(Session.load(writer.file)).toHaveLength(2)
+    Session.reopen(writer.file).append({ type: "user", at: 3, text: "after resume" })
+    expect(Session.load(writer.file).filter((record) => record.type === "user").map((record) => record.text))
+      .toEqual(["kept 中文 🦉", "after resume"])
+  })
+
+  it("repairs a large torn Unicode fragment across backward-read boundaries without changing complete bytes", () => {
+    const writer = Session.create("/work/repo")
+    writer.append({ type: "user", at: 1, text: "kept 中文 🦉".repeat(10_000) })
+    const before = readFileSync(writer.file)
+    const torn = Buffer.from('{"type":"user","text":"' + "中文 🦉".repeat(15_000))
+    appendFileSync(writer.file, torn.subarray(0, torn.length - 2))
+    Session.reopen(writer.file).append({ type: "name", name: "recovered" })
+    expect(readFileSync(writer.file).subarray(0, before.length).equals(before)).toBe(true)
+    expect(Session.load(writer.file).at(-1)).toEqual({ type: "name", name: "recovered" })
+  })
+
+  it("separates a complete final record without a newline before appending", () => {
+    const writer = Session.create("/work/repo")
+    writer.append({ type: "user", at: 1, text: "complete 🦉" })
+    writeFileSync(writer.file, readFileSync(writer.file, "utf8").trimEnd())
+    Session.reopen(writer.file).append({ type: "user", at: 2, text: "next" })
+    expect(Session.load(writer.file).filter((record) => record.type === "user").map((record) => record.text))
+      .toEqual(["complete 🦉", "next"])
   })
 
   it("refuses a record damaged before the last line with its line number", () => {
@@ -64,6 +95,21 @@ describe("session files", () => {
     expect(Session.list("/tmp/foo/bar").map((row) => row.firstPrompt)).toEqual(["slash"])
   })
 
+  it.each(["nested-project-", "项目👩🏽‍💻-"])("saves long %s paths without exceeding a filesystem component", (part) => {
+    const cwd = "/work/" + part.repeat(40) + "/repo"
+    const other = cwd + "-other"
+    expect(Buffer.byteLength(basename(Session.directory(cwd)))).toBeLessThanOrEqual(255)
+    expect(Session.directory(cwd)).not.toBe(Session.directory(other))
+    const chat = Session.create(cwd)
+    chat.append({ type: "user", at: 1, text: "saved in a deep project" })
+    const worker = Session.create(cwd, "worker")
+    worker.append({ type: "user", at: 2, text: "worker saved too" })
+    expect(Session.latest(cwd)).toBe(chat.file)
+    expect(Session.list(cwd).map((row) => row.firstPrompt)).toEqual(["saved in a deep project"])
+    expect(Session.load(worker.file).at(-1)).toMatchObject({ text: "worker saved too" })
+    expect(Session.list(other)).toEqual([])
+  })
+
   it("still lists a session in the pre-hash folder when its header names this cwd", () => {
     const legacy = join(process.env.SMITHERS_TUI_SESSION_DIR!, "--tmp-foo-bar--")
     mkdirSync(legacy, { recursive: true })
@@ -73,6 +119,16 @@ describe("session files", () => {
     writeFileSync(join(legacy, "b.jsonl"), line(header("/tmp/foo/bar")) + line({ type: "user", at: 1, text: "other" }))
     expect(Session.list("/tmp/foo-bar").map((row) => row.firstPrompt)).toEqual(["mine"])
     expect(Session.list("/tmp/foo/bar").map((row) => row.firstPrompt)).toEqual(["other"])
+  })
+
+  it.skipIf(process.platform !== "darwin")("finds an existing APFS Unicode folder whose name exceeds Linux's byte limit", () => {
+    const cwd = "/" + "项".repeat(100)
+    const oldFolder = join(process.env.SMITHERS_TUI_SESSION_DIR!, `--${cwd.slice(1)}--${createHash("sha256").update(cwd).digest("hex").slice(0, 12)}`)
+    mkdirSync(oldFolder)
+    const file = join(oldFolder, "old.jsonl")
+    writeFileSync(file, JSON.stringify({ type: "session", version: 1, id: "old", cwd, createdAt: 1 }) + "\n" + JSON.stringify({ type: "user", at: 1, text: "before bounding" }) + "\n")
+    expect(Session.list(cwd).map((row) => row.firstPrompt)).toEqual(["before bounding"])
+    expect(Session.latest(cwd)).toBe(file)
   })
 
   it("writes owner-only folders and files, repairing a reopened file", () => {
@@ -98,6 +154,26 @@ describe("session files", () => {
 })
 
 describe("Session.guarded", () => {
+  it("repairs a partial failed write before saving the next record", () => {
+    const writer = Session.create("/work/repo")
+    writer.append({ type: "user", at: 1, text: "before full disk" })
+    let fail = true
+    const reports: Array<Session.WriteFailed> = []
+    const guarded = Session.guarded({ file: writer.file, append: (record) => {
+      if (fail) {
+        fail = false
+        appendFileSync(writer.file, '{"type":"user","text":"partial')
+        throw new Error("ENOSPC: no space left on device")
+      }
+      writer.append(record)
+    } }, (failure) => reports.push(failure))
+    guarded.append({ type: "user", at: 2, text: "failed write" })
+    guarded.append({ type: "user", at: 3, text: "after recovery" })
+    expect(reports).toHaveLength(1)
+    expect(Session.load(writer.file).filter((record) => record.type === "user").map((record) => record.text))
+      .toEqual(["before full disk", "after recovery"])
+  })
+
   it("reports the first refused write of each run of failures instead of throwing, and keeps saving once the disk accepts again", () => {
     const file = join(mkdtempSync(join(tmpdir(), "tui-session-")), "chat.jsonl")
     writeFileSync(file, "")

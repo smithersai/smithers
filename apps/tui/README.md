@@ -12,6 +12,7 @@ idea.
 
 ```sh
 bun run tui [directory]          # from the repository root
+bun run tui --help              # command-line options
 bun run tui -c                   # continue the latest session here
 bun run tui -r                   # pick a session
 bun run tui -p "prompt"          # print one answer and exit
@@ -25,10 +26,22 @@ then this Node with `--experimental-ffi`. To run it on Node from the
 repository:
 
 ```sh
+cargo +1.98.0 build --locked --release -p smithers-ffi --bin smithers-jj-export
 node packages/smithers/scripts/build-tui.mjs
-node --experimental-ffi --disable-warning=ExperimentalWarning packages/smithers/dist/tui/main.js [directory]
+SMITHERS_WORKSPACE_JJ_EXPORT_BINARY="$PWD/target/release/smithers-jj-export" \
+  node --experimental-ffi --disable-warning=ExperimentalWarning packages/smithers/dist/tui/main.js [directory]
 bun packages/smithers/scripts/build-tui-binaries.mjs --single   # compile this platform's binary
 ```
+
+Compiled binaries load project flows from installed dependencies and share their
+embedded Effect runtime with them. Projects must use the binary's pinned Effect
+version; a mismatched version is refused before its module loads.
+They embed the matching native filesystem helper. Cross-builds require
+`SMITHERS_NATIVE_HELPERS_DIR/<os>-<arch>[-musl]/smithers-jj-export` for every
+target; missing or mismatched helpers fail the build. Flow execution also needs
+jj 0.39.0 or later on PATH; text search uses `rg`.
+On Alpine, install the C++ runtime with `apk add libstdc++` before launching
+a compiled musl binary.
 
 Interactive chat prefers `cerebras:qwen-3.8-27b` with low reasoning effort
 when `CEREBRAS_API_KEY` is configured, falling back to an available provider.
@@ -96,6 +109,8 @@ Ctrl+O read it.
 
 ## Commands
 
+The `?` key popup scrolls with PageUp/PageDown or the mouse wheel.
+
 `/model [query]`, `/theme`, `/thinking [level]`, `/new`, `/resume`, `/fork`, `/session`, `/compact`,
 `/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/filter`,
 `/grep [text]`, `/ui [id]`, `/smithers`, `/flows`, `/flow <name> [json|key=value]`, `/agent [name] [prompt]`,
@@ -140,6 +155,13 @@ shapes in prompts, shell output and flow calls are saved as `[REDACTED]`; file
 patches keep their bytes so undo can apply them. `/fork` starts a new session from the
 messages before a chosen one and puts that message back in the editor; the
 original stays resumable.
+
+Long cwd slugs are bounded to the filesystem's filename limit; the full path
+still determines the hash. Existing session folders remain readable.
+
+If session storage is inside the project, its exact session subtree and log
+are excluded from workspace mutation accounting. Other project files remain
+observed, including files beside that storage.
 
 Without `AI_GATEWAY_API_KEY` the completion brake that asks Jev is disarmed
 (`claimCap: 0`); you read every answer. **u** on a Summary or worker tab row
@@ -318,6 +340,9 @@ restarts it. A shell monitor runs its command every tick, so creating one is
 asked like `bash` under `--approve ask` and refused under `deny`; on `/resume`
 and `-c` it asks again before its command runs. Monitors persist in the
 session and resume on `/resume` and `-c`.
+Stopping a monitor cancels its current shell command. Changing sessions and
+quitting cancel active monitor commands too; quit waits within its 3-second
+shutdown limit.
 
 ## Estimates
 
@@ -359,6 +384,8 @@ at most 20) and starts one with `agent.delegate {id, title, prompt, agent}`.
 Both doors persist the tab and return `requested` before the file is read; the
 body is read when the tab launches, so chat stays usable while it loads. The
 seat is the request's `model`, then the file's `model:`, then the worker seat.
+The file may declare `model: [sol, opus]` to set an ordered primary and fallback list.
+An explicit model override uses the host's fallback settings.
 The tab runs as a worker with the body appended to the worker instructions,
 `effort` as its reasoning effort, `capabilities` as its envelope and `flows`
 narrowing the filesystem and shell flows. The registry lists a body that
@@ -393,3 +420,8 @@ Its model turns replay `test/fixtures/fix-add.jsonl` through the replay seat:
 `SMITHERS_TUI_REPLAY=<file>` streams a run recorded with
 `SMITHERS_TUI_APPROVE=all SMITHERS_TUI_RECORD=<file> bun src/ask.ts "<prompt>"`, and its cells run for
 real. `SMITHERS_TUI_REPLAY_SPEED` and `SMITHERS_TUI_REPLAY_HOLD_MS` pace it.
+
+Quoted `/flow` values retain spaces: `/flow echo text="hello world"`.
+A durably parked flow shows `parked`; its tab retains the question. `r` resumes
+the same run, `x` stops it, and chat stays usable. Routine tree diagnostics and
+their hashes appear only when expanded with Ctrl+O.

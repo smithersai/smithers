@@ -8,9 +8,10 @@
  * Credential shapes in that text are redacted before a line reaches the disk.
  */
 import type * as Activity from "./activity.ts"
+import * as PromptQueue from "@smthrs/rpc/PromptQueue"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { createHash, randomUUID } from "node:crypto"
-import { appendFileSync, chmodSync, closeSync, existsSync, openSync, readSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { appendFileSync, chmodSync, closeSync, existsSync, fstatSync, ftruncateSync, openSync, readSync, writeSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import { StringDecoder } from "node:string_decoder"
@@ -68,6 +69,10 @@ export type Record =
     readonly outcome: { readonly _tag: string; readonly answer?: string; readonly message?: string; readonly headline?: string }
   }
   | { readonly type: "shell"; readonly at: number; readonly result: Shell.Result; readonly excluded: boolean }
+  /** An Alt+Enter follow-up admitted to this conversation's FIFO queue. */
+  | { readonly type: "queued"; readonly at: number; readonly prompt: PromptQueue.Prompt }
+  /** A follow-up left the queue: its turn started, or it went back to the editor. */
+  | { readonly type: "dequeued"; readonly at: number; readonly id: string; readonly reason: "started" | "restored" }
   /** `/compact`: the model no longer receives the oldest `dropped` context entries. */
   | { readonly type: "compact"; readonly at: number; readonly dropped: number }
   /** The user reversed these calls' captured changes (call identities, `Changes.identity`). */
@@ -94,12 +99,31 @@ export const root = (): string =>
 
 const slug = (cwd: string): string => cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")
 
-/** pi's directory slug, fenced by `--`, plus a hash of the exact path: `/a/b-c` and `/a/b/c` never share a folder. */
+/** Keep the slug and its 16-byte fence/hash within the 255-byte filename limit. */
+const boundedSlug = (cwd: string): string => {
+  let value = ""
+  let bytes = 0
+  for (const character of slug(cwd)) {
+    bytes += Buffer.byteLength(character)
+    if (bytes > 239) break
+    value += character
+  }
+  return value
+}
+
+/** A bounded directory slug plus the exact path's hash; truncated or colliding slugs never share a folder. */
 export const directory = (cwd: string): string =>
-  join(root(), `--${slug(cwd)}--${createHash("sha256").update(cwd).digest("hex").slice(0, 12)}`)
+  join(root(), `--${boundedSlug(cwd)}--${createHash("sha256").update(cwd).digest("hex").slice(0, 12)}`)
 
 /** The folder before the hash; shared by colliding paths, so its files are filtered by their header's cwd. */
 const legacyDirectory = (cwd: string): string => join(root(), `--${slug(cwd)}--`)
+
+/** APFS may hold a pre-bound Unicode slug that exceeds Linux's byte limit. */
+const readableDirectories = (cwd: string): ReadonlyArray<string> => [...new Set([
+  directory(cwd),
+  join(root(), `--${slug(cwd)}--${createHash("sha256").update(cwd).digest("hex").slice(0, 12)}`),
+  legacyDirectory(cwd)
+])]
 
 /** Sessions hold prompts, code, diffs and shell output: owner-only folders and files. */
 const privateFolder = (folder: string): void => {
@@ -132,7 +156,7 @@ const said = <A extends { readonly answer?: string; readonly message?: string }>
  * undo would write into the file, one in a flow run's input or a worker tab's
  * prompt is what retry would relaunch, one in a monitor's source is what its
  * next tick would run, and one in a view is what selecting its action would
- * send. `session` and `undo` hold ids and paths, which a rule could mistake for
+ * send; a queued follow-up is the prompt its turn will send. `session` and `undo` hold ids and paths, which a rule could mistake for
  * a key (`~/sk-demo-project`).
  */
 const line = (record: Record): string => {
@@ -146,6 +170,7 @@ const line = (record: Record): string => {
     case "patch":
     case "undo":
     case "panel":
+    case "queued":
       return JSON.stringify(record) + "\n"
     case "tab":
       return JSON.stringify({ ...record, tab: said(record.tab) }) + "\n"
@@ -216,13 +241,58 @@ export const create = (
   }
 }
 
+/** Repair only the final JSONL fragment; scan backwards without rereading a long conversation. */
+const repairTail = (file: string): void => {
+  const fd = openSync(file, "r+")
+  try {
+    const size = fstatSync(fd).size
+    const unchanged = () => {
+      if (fstatSync(fd).size !== size) throw new Error("Session changed while repairing its final record")
+    }
+    if (size === 0) return
+    const chunk = Buffer.allocUnsafe(64 * 1024)
+    let start = 0
+    let content = false
+    scan: for (let end = size; end > 0;) {
+      const position = Math.max(0, end - chunk.length)
+      const count = readSync(fd, chunk, 0, end - position, position)
+      for (let index = count - 1; index >= 0; index--) {
+        const byte = chunk[index]!
+        if (!content && (byte === 10 || byte === 13 || byte === 32 || byte === 9)) continue
+        content = true
+        if (byte === 10) { start = position + index + 1; break scan }
+      }
+      end = position
+    }
+    if (!content) { unchanged(); ftruncateSync(fd, 0); return }
+    const tail = Buffer.allocUnsafe(size - start)
+    let read = 0
+    while (read < tail.length) {
+      const count = readSync(fd, tail, read, tail.length - read, start + read)
+      if (count === 0) throw new Error("Session changed while repairing its final record")
+      read += count
+    }
+    try { JSON.parse(tail.toString("utf8")) }
+    catch (error) {
+      if (!(error instanceof SyntaxError)) throw error
+      unchanged()
+      ftruncateSync(fd, start)
+      return
+    }
+    if (tail.at(-1) !== 10) { unchanged(); writeSync(fd, "\n", size, "utf8") }
+  } finally { closeSync(fd) }
+}
+
 /** Continues an existing file. */
 export const reopen = (file: string): Writer => {
   let repaired = false
   return {
     file,
     append: (record) => {
-      if (!repaired && existsSync(file)) chmodSync(file, 0o600)
+      if (!repaired && existsSync(file)) {
+        chmodSync(file, 0o600)
+        repairTail(file)
+      }
       repaired = true
       append(file, line(record))
     }
@@ -247,6 +317,7 @@ export const guarded = (writer: Writer, report: (failure: WriteFailed) => void):
     file: writer.file,
     append: (record) => {
       try {
+        if (failing && existsSync(writer.file)) repairTail(writer.file)
         writer.append(record)
         failing = false
       } catch (error) {
@@ -364,17 +435,14 @@ const summaries = (folder: string): ReadonlyArray<Summary & { readonly cwd?: str
 
 /** Sessions for `cwd`, newest first. */
 export const list = (cwd: string): ReadonlyArray<Summary> =>
-  [
-    ...summaries(directory(cwd)),
-    ...summaries(legacyDirectory(cwd)).filter((row) => row.cwd === cwd)
-  ]
+  readableDirectories(cwd).flatMap((folder) => summaries(folder).filter((row) => folder !== legacyDirectory(cwd) || row.cwd === cwd))
     .map(({ cwd: _cwd, ...row }) => row)
     .sort((a, b) => b.modified - a.modified)
 
 /** Startup needs only modification times; legacy folders also require their cwd header. */
 export const latest = (cwd: string): string | undefined => {
   const candidates: Array<{ file: string; modified: number }> = []
-  for (const folder of [directory(cwd), legacyDirectory(cwd)]) {
+  for (const folder of readableDirectories(cwd)) {
     if (!existsSync(folder)) continue
     for (const name of readdirSync(folder)) {
       if (!name.endsWith(".jsonl")) continue
@@ -425,7 +493,9 @@ export const fork = (source: string, cwd: string, turn: Turn): Fork => {
   const records = load(source)
   const at = records[turn.index]
   if (at?.type !== "user" || at.steered === true || at.at !== turn.at || at.text !== turn.text) return { _tag: "Stale" }
-  const before: ReadonlyArray<Record> = records.slice(0, turn.index).filter((record) => record.type !== "session")
+  // Queued follow-ups belong to the source conversation; a fork never inherits them.
+  const before: ReadonlyArray<Record> = records.slice(0, turn.index).filter((record) =>
+    record.type !== "session" && record.type !== "queued" && record.type !== "dequeued")
   // A worker started before the fork point may have settled after it: carry its last record, not a stale `requested`.
   type TabRecord = Extract<Record, { readonly type: "tab" }>
   const key = (tab: Workspace.Tab) => `${tab.id}\0${tab.file}`
@@ -455,6 +525,38 @@ export const fork = (source: string, cwd: string, turn: Turn): Fork => {
   }
 }
 
+type Outcome = Extract<Record, { readonly type: "outcome" }>
+
+/** The outcome of a chat turn whose process ended before the turn settled. */
+export const interrupted = { _tag: "interrupted", headline: "Interrupted" } as const
+
+/**
+ * A chat session as it reads after a restart. A foreground turn is a prompt
+ * (a `user` record that is not a steer) and its `outcome`; a prompt with no
+ * outcome lost the process running it, and nothing runs it now. One followed
+ * by a later prompt (a file from before these receipts) settles in place;
+ * the last one's `receipt` is returned for the caller to append, so the file
+ * says so too. Worker files never pass through here: a worker relaunches.
+ */
+export const recover = (records: ReadonlyArray<Record>, at = Date.now()): {
+  readonly records: ReadonlyArray<Record>
+  readonly receipt?: Outcome
+} => {
+  const recovered: Array<Record> = []
+  let open: Extract<Record, { readonly type: "user" }> | undefined
+  const settle = (when: number): Outcome => ({ type: "outcome", at: when, prompt: open!.text, outcome: interrupted })
+  for (const record of records) {
+    if (record.type === "user" && record.steered !== true) {
+      if (open !== undefined) recovered.push(settle(record.at))
+      open = record
+    } else if (record.type === "outcome") open = undefined
+    recovered.push(record)
+  }
+  if (open === undefined) return { records: recovered }
+  const receipt = settle(Math.max(at, open.at))
+  return { records: [...recovered, receipt], receipt }
+}
+
 /** What a session file rebuilds: the screen, the agent's context, and the prompt history. */
 export const restore = (records: ReadonlyArray<Record>): {
   readonly transcript: Transcript.Transcript
@@ -465,6 +567,8 @@ export const restore = (records: ReadonlyArray<Record>): {
   readonly contributions: ReadonlyArray<{ readonly owner: string; readonly contribution: Extension.Contribution }>
   readonly entries: Array<Context.Entry>
   readonly prompts: Array<string>
+  /** Follow-ups still waiting for a turn, oldest first. */
+  readonly queued: ReadonlyArray<PromptQueue.Prompt>
   readonly name: string | undefined
 } => {
   const panels = new Map<string, Panels.Panel>()
@@ -476,6 +580,7 @@ export const restore = (records: ReadonlyArray<Record>): {
   let transcript = Transcript.empty
   const entries: Array<Context.Entry> = []
   const prompts: Array<string> = []
+  let queued: ReadonlyArray<PromptQueue.Prompt> = []
   let name: string | undefined
   for (const record of records) {
     switch (record.type) {
@@ -550,6 +655,12 @@ export const restore = (records: ReadonlyArray<Record>): {
       case "compact":
         entries.splice(0, record.dropped)
         break
+      case "queued":
+        queued = PromptQueue.enqueue(queued, record.prompt)
+        break
+      case "dequeued":
+        queued = PromptQueue.remove(queued, record.id)
+        break
       case "session":
         break
     }
@@ -558,6 +669,7 @@ export const restore = (records: ReadonlyArray<Record>): {
     transcript,
     entries,
     prompts,
+    queued,
     name,
     workspace: { tabs: [...tabs.values()], panels: [...panels.values()], cards: [...cards].filter((id) => panels.has(id)) },
     flows: [...flows.values()],

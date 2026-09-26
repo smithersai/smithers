@@ -61,6 +61,7 @@ const real = FlowControl.make({
 })
 const flows: Flows.Port = {
   discover: real.discover,
+  body: real.body,
   input: async () => Schema.Struct({}),
   plan: async () => ({ all: false, raw: {} }),
   start: async () => "run-1",

@@ -30,6 +30,7 @@ export interface Profile {
   readonly system: string
   /** The declared seat, resolved; undefined when the file names none. */
   readonly seat?: string
+  readonly fallbackSeats?: ReadonlyArray<string>
   readonly thinking?: ModelRequest.ReasoningEffort
   readonly flows: ReadonlyArray<string>
   readonly envelope: ReadonlyArray<string>
@@ -59,6 +60,11 @@ export const profile = (
   if (descriptor.seat !== undefined && seat === undefined) {
     throw new AgentError("unknown_seat", `Unknown model ${descriptor.seat}`)
   }
+  const fallbackSeats = descriptor.fallbackSeats?.map((declared) => {
+    const seat = seatOf(declared)
+    if (seat === undefined) throw new AgentError("unknown_seat", `Unknown model ${declared}`)
+    return seat
+  })
   if (descriptor.effort !== undefined && !isEffort(descriptor.effort)) {
     throw new AgentError("unknown_effort", `Unknown effort ${descriptor.effort}`)
   }
@@ -72,6 +78,7 @@ export const profile = (
     digest: body.digest,
     system: MarkdownFlow.renderPrompt(new FlowBodyPrompt({ text: body.text, baseDirectory: body.baseDirectory }), { args: "" }),
     ...(seat === undefined ? {} : { seat }),
+    ...(fallbackSeats === undefined ? {} : { fallbackSeats }),
     ...(descriptor.effort === undefined ? {} : { thinking: descriptor.effort as ModelRequest.ReasoningEffort }),
     flows: descriptor.flows,
     envelope: envelope.length === declared.length ? envelope : []

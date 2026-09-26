@@ -21,6 +21,8 @@ Capture "Run a local command without adding its output to context."
 
 Shell output appears as it arrives. **Esc** cancels the active shell process; chat returns when it settles.
 
+Output preserves split Unicode characters and removes terminal control sequences. Values of credential-named environment variables with at least eight characters are masked before display or storage. Commands that ignore cancellation are killed after a one-second cleanup period.
+
 ```tui-script cancel-shell
 Use "basic"
 Type "!sleep 30"

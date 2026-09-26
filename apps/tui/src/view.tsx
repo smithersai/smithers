@@ -5,8 +5,9 @@
  * page → panel → element. The user's messages keep the composer's shape. The shapes are opencode's: a left `┃` bar and a filled panel
  * instead of a boxed border, and a selected row filled with the brand color.
  */
-import { RGBA } from "@opentui/core"
-import { memo, useState, type ReactNode } from "react"
+import { RGBA, type ScrollBoxRenderable } from "@opentui/core"
+import stringWidth from "string-width"
+import { memo, useState, type ReactNode, type RefObject } from "react"
 import type * as Extension from "./extension.ts"
 import * as Keys from "./keys.ts"
 import type * as Panels from "./panels.ts"
@@ -39,25 +40,17 @@ export const bar = {
 }
 
 
-export function Home(props: { readonly expanded: boolean }) {
+export function Home(props: { readonly width: number }) {
   return (
-    <box style={{ flexGrow: 1, alignItems: "center", justifyContent: "center", paddingBottom: 2 }}>
-      <text>
-        <span fg={color.brand}>
-          <strong>smithers</strong>
-        </span>
+    <box style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, overflow: "hidden", alignItems: "center", justifyContent: "center", paddingBottom: 1 }}>
+      <text><span fg={color.brand}><strong>smithers</strong></span></text>
+      <text fg={color.faint} wrapMode="none" style={{ marginTop: 1 }}>
+        {props.width >= 60
+          ? <><span fg={color.muted}>/</span> commands  <span fg={color.muted}>@</span> files  <span fg={color.muted}>!</span> shell  <span fg={color.muted}>ctrl+o</span> keys</>
+          : props.width >= 32
+          ? <><span fg={color.muted}>/</span> commands  <span fg={color.muted}>@</span> files  <span fg={color.muted}>?</span> keys</>
+          : <><span fg={color.muted}>?</span> keys</>}
       </text>
-      {props.expanded
-        ? (
-          <box style={{ marginTop: 1 }}>
-            <KeyColumns bindings={Keys.registry} />
-          </box>
-        )
-        : (
-          <text fg={color.faint} style={{ marginTop: 1 }}>
-            <span fg={color.muted}>/</span> commands  <span fg={color.muted}>@</span> files  <span fg={color.muted}>!</span> shell  <span fg={color.muted}>ctrl+o</span> keys
-          </text>
-        )}
     </box>
   )
 }
@@ -78,8 +71,9 @@ export function KeyHints(props: { readonly bindings: ReadonlyArray<Keys.Binding>
   )
 }
 
-/** A bottom which-key panel, the current context's group first; a short terminal clips the rest. */
+/** A scrollable which-key panel, the current context's group first. */
 export function KeyPopup(props: {
+  readonly scrollRef: RefObject<ScrollBoxRenderable | null>
   readonly bindings: ReadonlyArray<Keys.Binding>
   readonly width: number
   readonly height: number
@@ -89,14 +83,17 @@ export function KeyPopup(props: {
       style={{ position: "absolute", left: 0, bottom: 1, width: "100%", zIndex: 200, alignItems: "center" }}
     >
       <box
-        style={{ width: Math.max(20, props.width - 2), maxHeight: Math.max(4, props.height - 2), overflow: "hidden", paddingTop: 1, paddingBottom: 1, paddingLeft: 2, paddingRight: 2 }}
+        style={{ width: Math.max(1, props.width - 2), maxHeight: Math.max(4, props.height - 2), overflow: "hidden", paddingTop: 1, paddingBottom: 1, paddingLeft: 2, paddingRight: 2 }}
         backgroundColor={color.surface}
       >
         <box style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 1 }}>
           <text fg={color.text}><strong>Keys</strong></text>
           <text fg={color.faint}>esc</text>
         </box>
-        <KeyColumns bindings={props.bindings} />
+        <scrollbox ref={props.scrollRef} style={{ height: Math.max(1, props.height - 7), width: "100%" }} scrollX={false}>
+          <KeyColumns bindings={props.bindings} />
+        </scrollbox>
+        <text fg={color.faint}>pgup/pgdn</text>
       </box>
     </box>
   )
@@ -109,10 +106,10 @@ function KeyColumns(props: { readonly bindings: ReadonlyArray<Keys.Binding> }) {
       {Keys.groups(props.bindings).map(({ group, bindings }) => {
         const keyWidth = Math.max(...bindings.map((binding) => Keys.displayKeys(binding).length)) + 2
         return (
-          <box key={group} style={{ marginRight: 3, marginBottom: 1 }}>
+          <box key={group} style={{ marginRight: 3, marginBottom: 1, maxWidth: "100%" }}>
             <text fg={color.muted}>{group}</text>
             {bindings.map((binding) => (
-              <text key={binding.id} wrapMode="none">
+              <text key={binding.id} wrapMode="word">
                 <span fg={color.brand}>{Keys.displayKeys(binding).padEnd(keyWidth)}</span>
                 <span fg={color.text}>{binding.label}</span>
               </text>
@@ -204,7 +201,20 @@ const rowGlyph = (status: RowStatus): { readonly glyph: string; readonly tone: s
     : { glyph: "·", tone: color.faint }
 /** Rows a card shows; the rest are in its `ui:<id>` view. */
 const cardRows = 5
-const clip = (text: string, width: number) => (text.length > width ? `${text.slice(0, width - 1)}…` : text)
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
+const clip = (text: string, width: number): string => {
+  if (stringWidth(text) <= width) return text
+  let prefix = ""
+  let used = 0
+  for (const { segment } of graphemes.segment(text)) {
+    const cells = stringWidth(segment)
+    if (used + cells > width - 1) break
+    prefix += segment
+    used += cells
+  }
+  return `${prefix}…`
+}
+const pad = (text: string, width: number): string => text + " ".repeat(Math.max(0, width - stringWidth(text)))
 
 /** A panel placed in the transcript: title, summary and its first rows, updated in place. Click, or `enter` while focused, opens its view. */
 export function Card(props: { readonly panel: Panels.Panel; readonly focused?: boolean; readonly onOpen?: () => void }) {
@@ -333,16 +343,16 @@ const firstLine = (source: string): string => source.split("\n").find((line) => 
 const noteTone = (tone: "warn" | "bad" | "good"): string =>
   tone === "good" ? color.success : tone === "bad" ? color.danger : color.warning
 
-/** A discipline note as the app's callout card: a titled panel with its evidence lines. */
-function Callout(props: { readonly note: Scrubber.Step["notes"][number] }) {
+/** Failures stay visible; expanded steps carry the diagnostic body and evidence. */
+function Callout(props: { readonly note: Scrubber.Step["notes"][number]; readonly expanded: boolean }) {
   const { note } = props
   const tone = noteTone(note.tone)
   return (
     <box style={{ border: ["left"], marginTop: 1 }} borderColor={tone} customBorderChars={bar}>
       <box style={{ paddingLeft: 1, paddingRight: 1 }} backgroundColor={mix(tone, 10, color.page)}>
         <text fg={tone}><strong>{note.tone === "good" ? "✓" : "△"} {note.title}</strong></text>
-        {note.body === "" ? null : <text fg={color.text}>{note.body}</text>}
-        {note.evidence?.map((line, index) => <text key={index} fg={color.muted} wrapMode="char">{line}</text>)}
+        {!props.expanded || note.body === "" ? null : <text fg={color.text}>{note.body}</text>}
+        {props.expanded ? note.evidence?.map((line, index) => <text key={index} fg={color.muted} wrapMode="char">{line}</text>) : null}
       </box>
     </box>
   )
@@ -417,7 +427,7 @@ function CellView(props: {
         )
         : <text fg={color.faint}>printed {printedRows} {printedRows === 1 ? "line" : "lines"} · ctrl+o</text>}
       {cell.error === undefined ? null : <text fg={cell.status === "rejected" ? color.warning : color.danger}>{cell.error}</text>}
-      {step.notes.map((note) => <Callout key={note.seq} note={note} />)}
+      {step.notes.filter((note) => props.expanded || (note.tone !== "good" && note.title !== "unmoved")).map((note) => <Callout key={note.seq} note={note} expanded={props.expanded} />)}
     </box>
   )
 }
@@ -508,13 +518,15 @@ export function List(props: {
   if (rows.length === 0) return <text fg={color.faint} style={{ paddingLeft: 1 }}>{props.empty}</text>
   const first = Math.max(0, Math.min(props.selected - Math.floor(height / 2), rows.length - height))
   const shown = rows.slice(first, first + height)
-  const labelWidth = Math.min(40, Math.max(...shown.map((row) => row.label.length)) + 2)
-  const hintWidth = Math.max(0, ...shown.map((row) => (row.hint === undefined ? 0 : row.hint.length + 2)))
+  const labelWidth = Math.min(40, Math.max(...shown.map((row) => stringWidth(row.label))) + 2)
+  const columns = shown.some((row) => row.hint !== undefined || row.detail !== undefined)
+  const hintWidth = Math.max(0, ...shown.map((row) => (row.hint === undefined ? 0 : stringWidth(row.hint) + 2)))
   return (
     <box>
       {shown.map((row, offset) => {
         const selected = first + offset === props.selected
         const fg = selected ? color.page : color.text
+        const label = columns ? pad(clip(row.label, labelWidth - 2), labelWidth) : row.label
         return (
           <box
             key={row.key}
@@ -523,8 +535,8 @@ export function List(props: {
           >
             <text fg={fg} wrapMode="none" style={{ flexShrink: 1 }}>
               <span fg={selected ? color.page : color.brand}>{row.current === true ? "● " : "  "}</span>
-              {selected ? <strong>{row.label.padEnd(labelWidth)}</strong> : row.label.padEnd(labelWidth)}
-              <span fg={selected ? color.page : color.muted}>{(row.hint ?? "").padEnd(hintWidth)}</span>
+              {selected ? <strong>{label}</strong> : label}
+              <span fg={selected ? color.page : color.muted}>{pad(row.hint ?? "", hintWidth)}</span>
               <span fg={selected ? color.page : color.faint}>{row.detail ?? ""}</span>
             </text>
           </box>
@@ -550,17 +562,18 @@ export function Dialog(props: {
   readonly height: number
   readonly children: ReactNode
 }) {
+  const compact = props.height < 20
   return (
     <box
-      style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", alignItems: "center", paddingTop: Math.max(1, Math.floor(props.height / 5)), zIndex: 100 }}
+      style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", alignItems: "center", paddingTop: compact ? 1 : Math.max(1, Math.floor(props.height / 5)), zIndex: 100 }}
       backgroundColor={backdrop}
     >
-      <box style={{ width: props.width, paddingTop: 1, paddingBottom: 1 }} backgroundColor={color.surface}>
-        <box style={{ flexDirection: "row", justifyContent: "space-between", paddingLeft: 3, paddingRight: 3, marginBottom: 1 }}>
-          <text fg={color.text}>
+      <box style={{ width: props.width, paddingTop: compact ? 0 : 1, paddingBottom: compact ? 0 : 1 }} backgroundColor={color.surface}>
+        <box style={{ flexDirection: "row", justifyContent: "space-between", paddingLeft: 3, paddingRight: 3, marginBottom: compact ? 0 : 1 }}>
+          <text fg={color.text} wrapMode="none" style={{ flexShrink: 1 }}>
             <strong>{props.title}</strong>
           </text>
-          <text fg={color.faint}>esc</text>
+          <text fg={color.faint} style={{ flexShrink: 0 }}>esc</text>
         </box>
         {props.children}
       </box>
@@ -577,6 +590,7 @@ export function Approval(
       readonly always: boolean
     }
     /** What `a` grants, from `Approvals.scope`. */
+    readonly width: number
     readonly scope: string
     /** False while the focused panel owns `a`. */
     readonly all?: boolean
@@ -587,7 +601,7 @@ export function Approval(
   }
 ) {
   return (
-    <box style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 1, paddingLeft: 2, flexShrink: 0 }}>
+    <box style={{ flexDirection: props.width < 90 ? "column" : "row", justifyContent: "space-between", marginTop: 1, paddingLeft: 2, flexShrink: 0 }}>
       {/* Wrapped, never clipped: `y` approves exactly the text shown. */}
       <text wrapMode="char" style={{ flexShrink: 1 }} fg={color.warning}>
         {props.worker === undefined ? "" : `↳ ${props.worker} `}? {props.request.flow}{" "}
@@ -596,7 +610,7 @@ export function Approval(
       </text>
       {props.armed
         ? (
-          <text wrapMode="none" style={{ flexShrink: 0, paddingLeft: 2 }}>
+          <text wrapMode="word" style={{ flexShrink: 0, marginLeft: props.width < 90 ? 0 : 2 }}>
             <span fg={color.text}>y</span>
             <span fg={color.faint}>{" allow  "}</span>
             <span fg={color.text}>n</span>
@@ -616,15 +630,17 @@ export function ToastStack(
     readonly rows: ReadonlyArray<
       { readonly id: string; readonly text: string; readonly tone: "info" | "warning" | "danger" }
     >
+    readonly height: number
+    readonly compact: boolean
   }
 ) {
   if (props.rows.length === 0) return null
   return (
-    <box style={{ flexShrink: 0, alignItems: "flex-end" }}>
+    <scrollbox stickyScroll stickyStart="bottom" scrollX={false} style={{ height: Math.min(props.height, props.rows.length * (props.compact ? 1 : 2)), flexShrink: 0, scrollbarOptions: { visible: false }, contentOptions: { alignItems: "flex-end" } }}>
       {props.rows.map((row) => (
         <box
           key={row.id}
-          style={{ border: ["left"], marginTop: 1, maxWidth: 60 }}
+          style={{ border: ["left"], marginTop: props.compact ? 0 : 1, maxWidth: 60, flexShrink: 0 }}
           borderColor={row.tone === "info" ? color.brand : color[row.tone]}
           customBorderChars={bar}
         >
@@ -633,7 +649,7 @@ export function ToastStack(
           </box>
         </box>
       ))}
-    </box>
+    </scrollbox>
   )
 }
 

@@ -9,6 +9,23 @@ import { accessSync, constants, statSync } from "node:fs"
 import { delimiter, join } from "node:path"
 import { Readable } from "node:stream"
 
+/** Stop an owned POSIX process group, including children that closed their pipes. */
+export const stopGroup = async (pid: number, graceMs = 1000): Promise<void> => {
+  const signal = (value: NodeJS.Signals | 0): boolean => {
+    try { process.kill(-pid, value); return true }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return false
+      throw error
+    }
+  }
+  if (!signal("SIGTERM")) return
+  const deadline = Date.now() + graceMs
+  while (signal(0)) {
+    if (Date.now() >= deadline) { signal("SIGKILL"); return }
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+}
+
 const executable = (path: string): boolean => {
   try {
     accessSync(path, constants.X_OK)

@@ -83,9 +83,10 @@ export class FlowDiscoveryFailed extends Error {
 export class FlowError extends Error {
   constructor(
     readonly code: "unknown_flow" | "refused" | "invalid_input" | "launch" | "control",
-    message: string
+    message: string,
+    options?: ErrorOptions
   ) {
-    super(message)
+    super(message, options)
   }
 }
 
@@ -96,7 +97,7 @@ export interface Run {
   readonly input: Record<string, unknown>
   /** The original input as JSON, for deduplication. */
   readonly requested: string
-  readonly status: Exclude<Lifecycle.Status, "parked">
+  readonly status: Lifecycle.Status
   readonly runId?: string
   /** When the current attempt began: a retry or resume restarts it. */
   readonly startedAt: number
@@ -109,6 +110,8 @@ export interface Run {
   readonly answer?: string
   /** A stop must follow an in-flight launch through its remote receipt. */
   readonly stopRequested?: true
+  /** A queued admission must resume this durable run, not launch a replacement. */
+  readonly resumeRequested?: true
 }
 export interface Request {
   readonly id?: string
@@ -127,6 +130,12 @@ export const running = (run: Run): boolean =>
   run.status === "requested" || run.status === "running" || run.status === "waiting"
 /** Holds a seat: in flight, or parked here for the user's input. */
 const active = (run: Run) => running(run) || run.status === "input"
+
+/** The controller, keyboard, and footer share the same action eligibility. */
+export const actions = (run: Run | undefined): { retry: boolean; stop: boolean } => ({
+  retry: run !== undefined && (run.status === "failed" || run.status === "cancelled" || run.status === "parked"),
+  stop: run !== undefined && (active(run) || run.status === "queued" || run.status === "parked")
+})
 
 export class FlowRuns {
   private runs: Lifecycle.Pool<Run>
@@ -318,6 +327,7 @@ export class FlowRuns {
     return { id, status: "requested" }
   }
   private async prepare(id: string, attempt: number) {
+    if (this.runs.get(id)?.resumeRequested) return this.track(this.resumeExisting(id, attempt))
     const port = this.options.port!
     try {
       const listed = await this.discover()
@@ -352,7 +362,9 @@ export class FlowRuns {
     await this.launch(id, attempt, card)
   }
   private launch(id: string, attempt: number, card: Card): Promise<void> {
-    const task = this.start(id, attempt, card)
+    return this.track(this.start(id, attempt, card))
+  }
+  private track(task: Promise<void>): Promise<void> {
     this.launches.add(task)
     const settled = () => { this.launches.delete(task) }
     void task.then(settled, settled)
@@ -376,12 +388,29 @@ export class FlowRuns {
       this.launching.delete(id)
     }
   }
+  private async resumeExisting(id: string, attempt: number): Promise<void> {
+    const run = this.runs.get(id)
+    if (run?.runId === undefined || this.closed) return
+    this.update(id, attempt, { resumeRequested: undefined, message: undefined, launchedAt: Date.now() }, run.status === "requested" ? "launch" : undefined)
+    try {
+      const receipt = await this.options.port!.resume(run.runId)
+      if ("runId" in receipt) {
+        if (this.closed) {
+          const current = this.runs.get(id)!
+          this.runs.move({ ...current, runId: receipt.runId, message: interrupted, endedAt: Date.now() }, "fail")
+        } else if (this.update(id, attempt, { runId: receipt.runId }) !== undefined) this.follow(id, attempt, receipt.runId)
+        if (this.runs.get(id)?.stopRequested) await this.stop(id, receipt.runId)
+      } else this.settle(id, attempt, receipt)
+    } catch (error) {
+      this.fail(id, attempt, error)
+    }
+  }
   private async stop(id: string, runId: string) {
     try {
       await this.options.port!.cancel(runId)
     } catch (error) {
       const current = this.runs.get(id)
-      if (current !== undefined && (active(current) || this.closed)) {
+      if (current !== undefined && (active(current) || current.status === "parked" || this.closed)) {
         this.runs.put({ ...current, message: error instanceof Error ? error.message : String(error) })
       }
     }
@@ -393,16 +422,23 @@ export class FlowRuns {
       if (this.attempts.get(id) !== attempt) return
       this.events.get(id)?.push(event)
       const status = this.runs.get(id)?.status
-      if (event.kind === "control.run.waiting-approval" && status === "running") this.update(id, attempt, {}, "block")
-      else if (status === "waiting" && event.kind !== "control.run.waiting-approval" && !terminal.has(event.kind)) this.update(id, attempt, {}, "unblock")
-      else this.changed()
+      if (event.kind === "control.run.parked") this.update(id, attempt, {}, "park")
+      else if (event.kind === "control.run.waiting-approval" && (status === "running" || status === "waiting")) this.update(id, attempt, {}, "block")
+      else if (event.kind === "control.run.running" && (status === "waiting" || status === "parked")) {
+        // A remote resume is already executing and cannot be queued by this UI.
+        this.runs.put({ ...this.runs.get(id)!, status: "running", message: undefined })
+      } else if (event.kind === "control.agent.suspended") {
+        const reason = (event.payload as { reason?: { message?: unknown } } | null)?.reason
+        if (typeof reason?.message === "string") this.update(id, attempt, { message: reason.message })
+        else this.changed()
+      } else this.changed()
     })
     this.watches.set(id, watch)
     watch.done.then((settled) => {
-      this.watches.delete(id)
+      if (this.watches.get(id) === watch) this.watches.delete(id)
       this.settle(id, attempt, settled)
     }, (error) => {
-      this.watches.delete(id)
+      if (this.watches.get(id) === watch) this.watches.delete(id)
       this.fail(id, attempt, error)
     })
   }
@@ -422,13 +458,20 @@ export class FlowRuns {
   }
   cancel = (id: string): void => {
     const run = this.runs.get(id)
-    if (run === undefined || (!active(run) && run.status !== "queued")) return
+    if (run === undefined || !actions(run).stop) return
     if (this.launching.has(id)) {
       this.runs.put({ ...run, stopRequested: true, message: "Stopping" })
       this.launching.get(id)!.abort()
       return
     }
-    if (run.runId !== undefined && (run.status === "running" || run.status === "waiting")) {
+    if (run.status === "queued" && run.resumeRequested && run.runId !== undefined) {
+      this.runs.dequeue(id)
+      this.runs.put({ ...run, status: "parked", stopRequested: true, resumeRequested: undefined })
+      this.follow(id, this.attempts.get(id)!, run.runId)
+      void this.stop(id, run.runId)
+      return
+    }
+    if (run.runId !== undefined && (run.status === "running" || run.status === "waiting" || run.status === "parked" || run.resumeRequested)) {
       // The watch settles the status; a refused cancel keeps it running.
       this.runs.put({ ...run, stopRequested: true })
       void this.stop(id, run.runId)
@@ -441,35 +484,33 @@ export class FlowRuns {
   retry = (id: string): { id: string; status: Run["status"] } => {
     const run = this.runs.get(id)
     if (run === undefined) throw new Error("Unknown tab")
-    if (run.status !== "failed" && run.status !== "cancelled") {
-      throw new Error(`Only a failed or stopped run can be retried; ${id} is ${run.status}`)
+    if (!actions(run).retry) {
+      throw new Error(`Only a failed, stopped, or parked run can be retried; ${id} is ${run.status}`)
     }
     if (this.closed) throw new Error("Session closed")
     if (this.options.port === undefined) throw new Error("Flows unavailable")
     const { endedAt: _ended, answer: _answer, launchedAt: _launched, ...previous } = run
     // Each retry is new work with its own clock, so it is estimated and scored on its own.
-    const rest = { ...previous, attempt: (run.attempt ?? 1) + 1, startedAt: Date.now() }
+    const resume = run.runId !== undefined && (run.status === "parked" || run.message === interrupted || run.resumeRequested)
+    const rest = { ...previous, attempt: (run.attempt ?? 1) + 1, startedAt: Date.now(), resumeRequested: resume ? true as const : undefined }
+    const attempt = this.attempt(id)
+    this.watches.get(id)?.close()
+    this.watches.delete(id)
     if (this.runs.full()) {
-      const { runId: _runId, stopRequested: _stop, ...fresh } = rest
-      this.runs.move({ ...fresh, message: undefined }, "retry")
+      const next = resume ? rest : { ...rest, runId: undefined, stopRequested: undefined }
+      this.runs.move({ ...next, message: undefined }, run.status === "parked" ? "wake" : "retry")
       this.runs.enqueue(id, undefined)
       return { id, status: "queued" }
     }
-    const attempt = this.attempt(id)
     if (run.runId !== undefined && run.stopRequested && run.status === "failed") {
       this.runs.move({ ...rest, message: undefined }, "reattach")
       this.follow(id, attempt, run.runId)
       void this.stop(id, run.runId)
       return { id, status: "running" }
     }
-    if (run.runId !== undefined && run.message === interrupted) {
-      const runId = run.runId
-      this.runs.move({ ...rest, message: undefined, launchedAt: rest.startedAt }, "reattach")
-      this.options.port.resume(runId).then((receipt) => {
-        if ("runId" in receipt) {
-          if (this.update(id, attempt, { runId: receipt.runId }) !== undefined) this.follow(id, attempt, receipt.runId)
-        } else this.settle(id, attempt, receipt)
-      }, (error) => this.fail(id, attempt, error))
+    if (resume) {
+      this.runs.move({ ...rest, message: undefined }, run.status === "parked" ? "wake" : "reattach")
+      void this.track(this.resumeExisting(id, attempt))
       return { id, status: "running" }
     }
     const { runId: _runId, stopRequested: _stop, ...fresh } = rest
@@ -511,6 +552,8 @@ export class FlowRuns {
         ? "Stopped."
         : run.status === "waiting"
         ? "Waiting."
+        : run.status === "parked"
+        ? "Parked."
         : "Running.")
     const nodes = NodeOutput.project(this.events.get(id) ?? []).map((node) => ({
       id: node.nodeId,

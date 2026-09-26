@@ -38,7 +38,7 @@ Capture "Inspect its worker transcript and result."
 
 `/agent` opens the picker. `/agent review` prepares the composer; `/agent review Review math.js` requests a worker directly. The request persists before the body is read, so a slow load does not block chat.
 
-The model is chosen in order: explicit request, file `model:`, then worker default. Aliases include `sol`, `astra`, `luna`, `opus`, `fable`, and `qwen`; a `provider:modelId` is also accepted. `effort` uses the runtime's reasoning schema.
+The model is chosen in order: explicit request, file `model:`, then worker default. Aliases include `sol`, `astra`, `luna`, `opus`, `fable`, and `qwen`; a `provider:modelId` is also accepted. `effort` uses the runtime's reasoning schema. Use `model: [sol, opus]` for an ordered primary and fallback list. An explicit request model overrides that list.
 
 `capabilities` is the worker's envelope; omit it for the host default. `flows` narrows its standard filesystem/shell flows. `disable-model-invocation: true` permits a person to start the agent while refusing coordinator requests.
 

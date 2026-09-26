@@ -44,6 +44,7 @@ export interface Options {
   readonly continue?: boolean | undefined
   readonly resume?: boolean | undefined
   readonly print?: string | undefined
+  readonly approve?: "all" | "ask" | "deny" | undefined
 }
 
 /**
@@ -57,6 +58,7 @@ export const argv = (options: Options): Array<string> => [
   ...(options.continue === true ? ["--continue"] : []),
   ...(options.resume === true ? ["--resume"] : []),
   ...(options.print === undefined ? [] : ["--print", options.print]),
+  ...(options.approve === undefined ? [] : ["--approve", options.approve]),
   ...(options.directory === undefined ? [] : [options.directory])
 ]
 

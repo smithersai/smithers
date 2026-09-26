@@ -8,7 +8,7 @@
  *
  * Pure: the caller passes the sources and acts on the chosen row's value.
  */
-import { fileLimit, mention, rankFiles } from "./complete.ts"
+import { display, fileLimit, mention, rankFiles } from "./complete.ts"
 import type * as Editor from "./editor.ts"
 import type * as Extension from "./extension.ts"
 import * as Fuzzy from "./fuzzy.ts"
@@ -105,7 +105,7 @@ export const rows = (parsed: Parsed, sources: Sources): ReadonlyArray<Row> => {
         })),
         ...rankFiles(sources.files(), query).slice(0, fileLimit).map((path): Row => ({
           key: `file:${path}`,
-          label: path,
+          label: display(path),
           value: { kind: "file", path }
         }))
       ]
@@ -114,8 +114,8 @@ export const rows = (parsed: Parsed, sources: Sources): ReadonlyArray<Row> => {
     case "text":
       return sources.hits.map((hit) => ({
         key: `hit:${hit.path}:${hit.line}`,
-        label: `${hit.path}:${hit.line}`,
-        detail: hit.text.trim(),
+        label: `${display(hit.path)}:${hit.line}`,
+        detail: display(hit.text.trim()),
         value: { kind: "hit", path: hit.path, line: hit.line }
       }))
     case "sessions":

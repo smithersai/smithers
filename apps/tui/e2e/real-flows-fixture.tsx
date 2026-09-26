@@ -5,6 +5,7 @@
  * answers every prompt flow with one cell, and a judge that passes the
  * completion. Chat is a fixed reply, since chat is not under test here.
  */
+import { appendFileSync } from "node:fs"
 import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { App } from "../src/app.tsx"
@@ -18,7 +19,16 @@ const stream = (text: string) => {
 }
 const model = Bun.serve({
   port: 0,
-  fetch: () => new Response(stream("```cell\nctx.done(\"Pong.\")\n```"), { headers: { "content-type": "text/event-stream" } })
+  fetch: async (request) => {
+    const body = await request.json() as { model: string }
+    if (process.env.TUI_MODEL_LOG) appendFileSync(process.env.TUI_MODEL_LOG, body.model + "\n")
+    if (body.model === process.env.TUI_REFUSED_MODEL) {
+      return process.env.TUI_REFUSAL === "overflow"
+        ? Response.json({ error: { message: "maximum context length exceeded", code: "context_length_exceeded" } }, { status: 400 })
+        : Response.json({ error: { message: "Fixture provider unavailable", type: "server_error" } }, { status: 503 })
+    }
+    return new Response(stream("```cell\n" + (process.env.TUI_FLOW_CELL ?? 'ctx.done("Pong.")') + "\n```"), { headers: { "content-type": "text/event-stream" } })
+  }
 })
 // The completion brake asks Jev; this judge says the run stayed on target and its claim holds.
 const passing = new Set(["on_target", "complete"])

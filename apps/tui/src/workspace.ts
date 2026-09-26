@@ -451,6 +451,7 @@ export class Workspace {
       const handle = this.options.host.run({
         prompt: tab.prompt,
         seat: tab.seat,
+        ...(tab.model === undefined && agent?.fallbackSeats !== undefined ? { fallbackSeats: agent.fallbackSeats } : {}),
         source: tab.id,
         history,
         role: "worker",

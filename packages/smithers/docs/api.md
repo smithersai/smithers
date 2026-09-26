@@ -123,7 +123,7 @@ The Node composition for the command tree.
 | `layerHostPlatform` | `Layer` | Node's services plus the descriptor-relative, no-follow filesystem the kernel needs. Unguarded; only host equipment that carries its own confinement argument runs on it. |
 | `layerGrantStore` | `(root: string) => Layer<GrantStore>` | The local CLI's real permission store: an allow policy, with the fiber's capability ceiling still enforced. |
 | `layerGuardedPlatform` | `(root: string, grants?) => Layer` | The kernel-guarded platform over one workspace root. Every filesystem operation is resolved, authorized, re-resolved, and executed relative to a pinned root descriptor. |
-| `layerObserver` | `(root: string) => Layer<WorkspaceObservation.Observer>` | The workspace observer a run's mutation accounting is measured with. |
+| `layerObserver` | `(root: string, options?: WorkspaceObservation.Options) => Layer<WorkspaceObservation.Observer>` | The workspace observer a run's mutation accounting is measured with. Options can omit exact host-owned runtime paths. |
 | `layerRegistry` | `(root: string) => Layer<Registry>` | Flow discovery from `<root>/flows`. A missing directory discovers nothing; any other failure is a startup defect. |
 | `databasePath` | `(root: string) => string` | `<root>/.flows/control.db`. |
 | `executionDatabasePath` | `(root: string) => string` | `<root>/.flows/engine.db`. |

@@ -10,12 +10,17 @@ it("appends private redacted diagnostics without losing earlier failures", () =>
   process.env.SMITHERS_TUI_SESSION_DIR = root
   try {
     const token = `ghp_${"x".repeat(36)}`
-    Log.write("discovery", new Error(`refused ${token}`))
+    const cause = new Error(`missing dependency ${token}`)
+    const failure = new Error("refused", { cause })
+    cause.cause = failure
+    Log.write("discovery", failure)
     Log.write("compaction", "seat unavailable")
     const saved = readFileSync(Log.path(), "utf8")
     const records = saved.trim().split("\n").map((line) => JSON.parse(line))
     expect(records.map((r) => r.tag)).toEqual(["discovery", "compaction"])
     expect(records[0].detail).toContain("Error: refused")
+    expect(records[0].detail).toContain("Caused by: Error: missing dependency")
+    expect(records[0].detail).toContain("[circular cause]")
     expect(saved.includes(token)).toBe(false)
     expect(statSync(Log.path()).mode & 0o777).toBe(0o600)
   } finally {

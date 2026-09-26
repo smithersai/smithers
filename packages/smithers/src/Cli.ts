@@ -260,7 +260,8 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         model: z.string().optional().describe("Chat seat as provider:model"),
         continue: z.boolean().default(false).describe("Continue the latest session in the directory"),
         resume: z.boolean().default(false).describe("Pick a session to continue"),
-        print: z.string().optional().describe("Answer one prompt, print it, and exit")
+        print: z.string().optional().describe("Answer one prompt, print it, and exit"),
+        approve: z.enum(["all", "ask", "deny"]).optional().describe("Consequential calls: all, ask, or deny")
       }),
       alias: { model: "m", continue: "c", resume: "r", print: "p" },
       run: (c) =>

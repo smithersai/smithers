@@ -49,3 +49,11 @@ it("parses /flow arguments like smthrs up", () => {
   expect(Form.parseArgs("[1]")).toEqual({ input: { data: [1] } })
   expect(Form.parseArgs("{bad")).toEqual({ error: "Invalid JSON" })
 })
+
+it("keeps quoted and escaped flow values intact", () => {
+  expect(Form.parseArgs('text="hello world" enabled')).toEqual({ input: { text: "hello world", enabled: true } })
+  expect(Form.parseArgs("text='日本語 with spaces' empty='' equal='a=b'")).toEqual({ input: { text: "日本語 with spaces", empty: "", equal: "a=b" } })
+  expect(Form.parseArgs(String.raw`text="say \"hi\"" path=C:\work\file escaped=hello\ world`)).toEqual({ input: { text: 'say "hi"', path: String.raw`C:\work\file`, escaped: "hello world" } })
+  expect(Form.parseArgs('text="unclosed')).toEqual({ error: "Unclosed quote" })
+  expect(Form.parseArgs("text=trailing\\")).toEqual({ error: "Trailing escape" })
+})

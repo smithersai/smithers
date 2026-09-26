@@ -13,7 +13,7 @@ import type { Snapshot, Tab } from "./workspace.ts"
 export const tabTitle = (tab: Tab): string => (tab.agent === undefined ? tab.title : `${tab.agent.name}: ${tab.title}`)
 
 export const flowGlyph = (status: Run["status"]): string =>
-  status === "done" ? "✓ " : status === "failed" ? "✗ " : status === "cancelled" ? "■ " : status === "queued" ? "… " : "◌ "
+  status === "done" ? "✓ " : status === "failed" ? "✗ " : status === "cancelled" ? "■ " : status === "queued" ? "… " : status === "parked" ? "⏸ " : "◌ "
 
 /**
  * Every tab in strip order. Built-in plugins' open tabs sit beside Summary;

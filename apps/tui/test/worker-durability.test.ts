@@ -135,7 +135,7 @@ describe("worker durability", () => {
     input!.onEvent(new AgentEvent.ModelUnparked({ eventType: "flows.harness.model-unparked.v1", seat: "openai:gpt-6-sol", at: Date.UTC(2026, 8, 30, 21) }))
     expect(f.workspace.snapshot().tabs[0]).toMatchObject({ id: "review", status: "running" })
     input!.onEvent(new AgentEvent.SeatFailedOver({ eventType: "flows.harness.seat-failed-over.v1", from: "openai:gpt-6-sol", to: "anthropic:claude", code: "rate_limited" }))
-    expect(f.workspace.transcript("review").items.some((item) => item.kind === "note" && item.text.includes("↪ switched to anthropic:claude · ChatGPT limit"))).toBe(true)
+    expect(f.workspace.transcript("review").items.some((item) => item.kind === "note" && item.text.includes("↪ switched to anthropic:claude"))).toBe(true)
     expect(f.workspace.snapshot().tabs[0]?.activeSeat).toBe("anthropic:claude")
     expect(f.workspace.tree("review").rows[0]?.label).toContain("claude")
   })

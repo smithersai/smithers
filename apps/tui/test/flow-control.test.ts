@@ -1,7 +1,7 @@
 /** The real Port over the native control host, under Bun, against a fixture project. */
 import { afterAll, expect, it } from "bun:test"
 import { Schema } from "effect"
-import { mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as FlowControl from "../src/flow-control.ts"
@@ -79,6 +79,33 @@ it("rejects an unknown flow with a typed error", async () => {
   const error = await port.input("missing").catch((error: unknown) => error)
   expect(error).toBeInstanceOf(FlowError)
   expect((error as FlowError).code).toBe("unknown_flow")
+})
+
+it("keeps the actionable import failure and its original cause", async () => {
+  const project = mkdtempSync(join(tmpdir(), "tui-broken-flow-"))
+  const folder = join(project, "flows/broken")
+  mkdirSync(folder, { recursive: true })
+  symlinkSync(join(import.meta.dir, "../node_modules"), join(project, "node_modules"), "dir")
+  writeFileSync(join(folder, "flow.ts"), `
+    import { Flow } from "@smthrs/flow"
+    import { Node } from "@smthrs/plan"
+    import { Schema } from "effect"
+    throw new Error("missing project configuration\\nadditional diagnostic detail")
+    export default Flow.make("broken", { description: "Broken", payload: {}, success: Schema.String, body: () => Node.succeed("unused") })
+  `)
+  const broken = FlowControl.make({ cwd: project, environment: {}, approvals: host.approvals! })
+  try {
+    const failure = await broken.input("broken").catch((error: unknown) => error) as FlowError
+    expect(failure).toBeInstanceOf(FlowError)
+    expect(failure.code).toBe("refused")
+    expect(failure.message).toContain("missing project configuration")
+    expect(failure.message).not.toContain("additional diagnostic detail")
+    expect((failure.cause as Error).cause).toBeInstanceOf(Error)
+    expect(((failure.cause as Error).cause as Error).message).toContain("additional diagnostic detail")
+  } finally {
+    await broken.dispose()
+    rmSync(project, { recursive: true, force: true })
+  }
 })
 
 it("plans, starts and settles a run from the watch", async () => {

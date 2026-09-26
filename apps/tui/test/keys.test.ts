@@ -141,7 +141,7 @@ describe("key registry", () => {
     const hints = (options: Parameters<typeof Keys.panelHints>[0]) =>
       Keys.panelHints(options).map((binding) => `${Keys.primaryKey(binding)} ${binding.label}`)
     expect(hints({})).toEqual(["esc Chat", "hjkl/arrows Navigate", "enter Expand row", "? Keys"])
-    expect(hints({ worker: true, undo: true, action: "Approve" })).toEqual([
+    expect(hints({ retry: true, stop: true, undo: true, action: "Approve" })).toEqual([
       "r Resume",
       "x Stop",
       "u Undo changes",

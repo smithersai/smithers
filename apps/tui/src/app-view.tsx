@@ -17,13 +17,21 @@ import * as View from "./view.tsx"
 const menuRows = 8
 
 /** A flow run's missing input; the focused text or number field takes the typing. */
-export function FlowFormView(props: { readonly form: FlowForm; readonly onField: (name: string, text: string) => void }) {
+export function FlowFormView(props: {
+  readonly form: FlowForm
+  readonly height: number
+  readonly compact: boolean
+  readonly onField: (name: string, text: string) => void
+}) {
   const { form } = props
+  const rows = Math.max(1, props.height - (props.compact ? 1 : 4) - (form.error === undefined ? 0 : 1))
+  const start = Math.min(Math.max(0, form.focus - Math.floor(rows / 2)), Math.max(0, form.fields.length - rows))
   return (
-    <box style={{ border: ["left"], marginTop: 1, flexShrink: 0 }} borderColor={color.brand} customBorderChars={View.bar}>
-      <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 }} backgroundColor={color.element}>
-        <text fg={color.text} wrapMode="none">{form.flow}</text>
-        {form.fields.map((field, index) => {
+    <box style={{ border: ["left"], marginTop: props.compact ? 0 : 1, flexShrink: 0 }} borderColor={color.brand} customBorderChars={View.bar}>
+      <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: props.compact ? 0 : 1, paddingBottom: props.compact ? 0 : 1 }} backgroundColor={color.element}>
+        <text fg={color.text} wrapMode="none">{form.flow}{form.fields.length > rows ? `  ${form.focus + 1}/${form.fields.length}` : ""}</text>
+        {form.fields.slice(start, start + rows).map((field, offset) => {
+          const index = start + offset
           const value = form.draft[field.name]
           const focused = index === form.focus
           return (
@@ -52,7 +60,7 @@ export function FlowFormView(props: { readonly form: FlowForm; readonly onField:
             </box>
           )
         })}
-        {form.error === undefined ? null : <text fg={color.danger}>{form.error}</text>}
+        {form.error === undefined ? null : <text fg={color.danger} wrapMode="none">{form.error}</text>}
       </box>
     </box>
   )
@@ -64,6 +72,7 @@ export function CompletionMenu(props: {
   readonly selected: number
   readonly seat: string
   readonly thinking: Editor.Thinking
+  readonly rows?: number
 }) {
   const { menu, seat, thinking } = props
   return (
@@ -85,7 +94,7 @@ export function CompletionMenu(props: {
               : {})
           }))}
           selected={props.selected}
-          height={Math.min(menuRows, Math.max(1, menu.items.length))}
+          height={Math.min(props.rows ?? menuRows, Math.max(1, menu.items.length))}
           background={color.element}
           empty={menu.kind === "command" ? "No matching commands" : "No matches"}
         />
@@ -107,10 +116,12 @@ export function PickerDialog(props: {
   readonly height: number
 }) {
   const { rows, height } = props
+  const compact = height < 20
+  const visible = compact ? Math.max(1, height - 6) : Math.max(3, Math.floor(height / 2) - 6)
   return (
     <View.Dialog title={props.title} width={props.width} height={height}>
       {props.query === undefined ? null : (
-      <box style={{ paddingLeft: 3, paddingRight: 3, marginBottom: 1 }}>
+      <box style={{ paddingLeft: 3, paddingRight: 3, marginBottom: compact ? 0 : 1 }}>
         <input
           focused
           value={props.query}
@@ -128,7 +139,7 @@ export function PickerDialog(props: {
         <View.List
           rows={rows}
           selected={props.selected}
-          height={Math.min(rows.length, Math.max(3, Math.floor(height / 2) - 6))}
+          height={Math.min(rows.length, visible)}
           background={color.surface}
           empty={props.empty}
         />

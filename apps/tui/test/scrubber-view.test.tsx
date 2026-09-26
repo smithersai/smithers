@@ -101,9 +101,27 @@ describe("numbered steps", () => {
     const header = frame.split("\n").find((row) => row.includes("13"))!
     expect(header).toMatch(/▾ 13\s+Ran pytest -rA -k slash\s+3 passed\s+1\.2s/)
     expect(frame).toContain("“Spot-check the two named cases and finish.”")
-    expect(frame).toContain("✓ sufficiency")
+    expect(frame).not.toContain("✓ sufficiency")
+    expect(frame).not.toContain("complete 0, overclaims 1.")
     expect(frame).toContain("pytest -rA -k slash")
     expect(frame).toContain("△ claim refused")
+  })
+
+  test("keeps routine tree diagnostics behind expand while retaining their evidence", async () => {
+    const diagnostic = { seq: 6, spanId: "frame-1", tone: "warn" as const, title: "unmoved", body: "The tree did not change.", evidence: ["a".repeat(64)] }
+    for (const expanded of [false, true]) {
+      setup = await testRender(<box style={{ width: 90 }}><View.Entry item={cell} now={0} tick="" expanded={expanded} step={{ line, notes: [...notes, diagnostic] }} /></box>,
+        { width: 90, height: 30 })
+      await setup.renderOnce()
+      const frame = setup.captureCharFrame()
+      expect(frame.includes("unmoved")).toBe(expanded)
+      expect(frame.includes("a".repeat(64))).toBe(expanded)
+      expect(frame.includes("sufficiency")).toBe(expanded)
+      expect(frame.includes("complete 0, overclaims 1.")).toBe(expanded)
+      expect(frame).toContain("△ claim refused")
+      setup.renderer.destroy()
+      setup = undefined
+    }
   })
 
   test("a click on the header folds the step to one line and keeps its callouts", async () => {
@@ -117,4 +135,23 @@ describe("numbered steps", () => {
     expect(frame).not.toContain("Spot-check")
     expect(frame).toContain("△ claim refused")
   })
+})
+
+
+test("approval subjects and keys remain separate across terminal widths", async () => {
+  const subject = "node --test test/parser/quoted-arguments-and-unicode-paths-regression.test.mjs"
+  for (const width of [40, 60, 80, 120]) {
+    setup = await testRender(<box style={{ width }}><View.Approval width={width} request={{ flow: "bash", subject, always: true }} scope="all bash" armed more={0} /></box>, { width, height: 12 })
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    const lines = frame.split("\n").map((line) => line.trim())
+    expect(frame).toContain("y allow  n deny  a all bash")
+    if (width < 90) {
+      expect(lines.filter((line) => line !== "" && !line.startsWith("y allow")).join("")).toBe(`? bash ${subject}`)
+    } else {
+      expect(frame).toContain(subject + "  ")
+    }
+    setup.renderer.destroy()
+    setup = undefined
+  }
 })

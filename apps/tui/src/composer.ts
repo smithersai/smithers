@@ -7,6 +7,7 @@ import type { CliRenderer, KeyBinding, TextareaRenderable } from "@opentui/core"
 import { type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as Approvals from "./approvals.ts"
 import * as Complete from "./complete.ts"
+import * as Cursor from "./cursor.ts"
 import * as Editor from "./editor.ts"
 import * as Extension from "./extension.ts"
 import * as External from "./external.ts"
@@ -63,6 +64,13 @@ export const useComposer = (options: {
   const history = useRef(new Editor.History(options.prompts))
   /** The draft a palette command with an argument displaced; restored by the next submit. */
   const parkedDraft = useRef<string | undefined>(undefined)
+  const editing = useRef<{ controller: AbortController; done: Promise<string | undefined> } | undefined>(undefined)
+  const stopEditor = useCallback((): Promise<void> | undefined => {
+    const current = editing.current
+    current?.controller.abort()
+    return current?.done.then(() => {}, () => {})
+  }, [])
+  useEffect(() => () => { void stopEditor() }, [stopEditor])
 
   const completeAt = (text: string, at: number): Complete.Completion | undefined => {
     const completion = Complete.complete(text, at, {
@@ -92,11 +100,11 @@ export const useComposer = (options: {
    */
   const liveMenu = (): { readonly menu: Complete.Completion | undefined; readonly index: number } => {
     const input = composer.current
-    const now = input === null || (input.plainText === draft && input.cursorOffset === cursor)
+    const now = input === null || (input.plainText === draft && Cursor.index(input) === cursor)
       ? menu
       : input.plainText === draft && menuDismissed
       ? undefined
-      : completeAt(input.plainText, input.cursorOffset)
+      : completeAt(input.plainText, Cursor.index(input))
     return { menu: now, index: indexFor(now) }
   }
   /** Moves the live menu's selection. */
@@ -111,10 +119,10 @@ export const useComposer = (options: {
     if (input === null) return
     input.setText(text)
     if (at === undefined) input.gotoBufferEnd()
-    else input.cursorOffset = at
+    else Cursor.move(input, at)
     arming.current = Approvals.edited(arming.current, Date.now())
     setDraft(text)
-    setCursor(input.cursorOffset)
+    setCursor(Cursor.index(input))
   }, [])
 
   /** Tab inserts the selected completion; Enter also runs it through `submit` when it is a whole command. */
@@ -130,16 +138,27 @@ export const useComposer = (options: {
 
   /** Ctrl+G: the draft in $VISUAL or $EDITOR, with the terminal handed over until it exits. */
   const externalEditor = async (renderer: CliRenderer, setStatus: (text: string, tone: "warning") => void) => {
+    if (editing.current !== undefined) return
     const editor = process.env.VISUAL ?? process.env.EDITOR ?? "nano"
     renderer.suspend()
+    const controller = new AbortController()
+    const done = External.edit(composer.current?.plainText ?? "", editor, undefined, controller.signal)
+    editing.current = { controller, done }
     let edited: string | undefined
     try {
-      edited = await External.edit(composer.current?.plainText ?? "", editor)
+      edited = await done
     } catch (error) {
       Log.write("editor", error)
-      setStatus("Editor unavailable", "warning")
+      if (!controller.signal.aborted) setStatus("Editor unavailable", "warning")
     } finally {
-      renderer.resume()
+      editing.current = undefined
+      if (!controller.signal.aborted) {
+        renderer.resume()
+        // Window changes went to the foreground editor while we were suspended.
+        // Refresh the runtime's TTY dimensions and the renderer through its
+        // normal signal path, on both Node and Bun.
+        process.kill(process.pid, "SIGWINCH")
+      }
     }
     if (edited !== undefined) setText(edited)
   }
@@ -148,10 +167,10 @@ export const useComposer = (options: {
   const onContentChange = () => {
     arming.current = Approvals.edited(arming.current, Date.now())
     setDraft(composer.current?.plainText ?? "")
-    setCursor(composer.current?.cursorOffset ?? 0)
+    setCursor(composer.current === null ? 0 : Cursor.index(composer.current))
     setMenuDismissed(false)
   }
-  const onCursorChange = () => setCursor(composer.current?.cursorOffset ?? 0)
+  const onCursorChange = () => setCursor(composer.current === null ? 0 : Cursor.index(composer.current))
 
   return {
     composer,
@@ -166,6 +185,7 @@ export const useComposer = (options: {
     dismissMenu: () => setMenuDismissed(true),
     accept,
     externalEditor,
+    stopEditor,
     onContentChange,
     onCursorChange
   }

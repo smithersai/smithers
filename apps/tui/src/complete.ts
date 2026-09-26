@@ -92,9 +92,22 @@ const argumentItems = (name: string, typed: string, sources: Sources): Array<Sug
   return undefined
 }
 
-/** `@path` or `@path:line` with a trailing space; a path with whitespace is quoted. */
+/** Characters that cannot appear raw in a terminal row or an unquoted mention. */
+const unsafe = /[\p{Cc}\p{Zl}\p{Zp}]|[^\S ]/gu
+
+const escape = (char: string): string =>
+  JSON.stringify(char).length === 4 ? JSON.stringify(char).slice(1, -1) : `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`
+
+/** `path` for a menu row: control and non-space whitespace characters escaped, Unicode kept readable. */
+export const display = (path: string): string => path.replace(unsafe, escape)
+
+/**
+ * `@path` or `@path:line` with a trailing space. A path with whitespace, a
+ * quote, a backslash, a control character, or a `:digits` ending is a JSON
+ * string, so the mention names exactly one file and Unicode stays readable.
+ */
 export const mention = (path: string, line?: number): string =>
-  `@${/\s/.test(path) ? `"${path}"` : path}${line === undefined ? "" : `:${line}`} `
+  `@${/[\s"\\\p{Cc}]|:\d+$/u.test(path) ? `"${JSON.stringify(path).slice(1, -1).replace(unsafe, escape)}"` : path}${line === undefined ? "" : `:${line}`} `
 
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1)
 
@@ -132,7 +145,7 @@ export const complete = (text: string, cursor: number, sources: Sources): Comple
   const start = cursor - query.length - 1
   const end = cursor + /^\S*/.exec(text.slice(cursor))![0].length
   const items = rankFiles(sources.files(), query).slice(0, fileLimit).map((path) => ({
-    label: path,
+    label: display(path),
     insert: mention(path),
     submit: false
   }))

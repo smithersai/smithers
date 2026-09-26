@@ -199,8 +199,9 @@ export const card = (transcript: Transcript, panel: Panels.Panel, at?: number): 
   return { ...transcript, items }
 }
 
+/** Ends the turn: nothing streams or waits on a model after it. */
 export const failure = (transcript: Transcript, text: string, at: number): Transcript =>
-  withId({ ...settleOpen(transcript, at, "failed"),
+  withId({ ...settleOpen(transcript, at, "failed"), streaming: "", thinking: false, requestedAt: undefined,
     activity: Activity.finish(transcript.activity ?? Activity.empty, text === "Stopped" ? "cancelled" : "failed", at, text)
   }, { kind: "error", text }, at)
 
@@ -379,8 +380,7 @@ const onlyDone = (cell: CellItem): boolean =>
 /** Folds one harness event, observed at `at` milliseconds, into the transcript. */
 export const apply = (transcript: Transcript, event: Activity.Observed, at: number): Transcript => {
   if (event._tag === "seat-failed-over") {
-    const provider = event.from.startsWith("openai:") ? "ChatGPT" : event.from.split(":")[0] ?? "provider"
-    return note(transcript, `↪ switched to ${event.to} · ${provider} limit`, at)
+    return note(transcript, `↪ switched to ${event.to}`, at)
   }
   if (event._tag === "supervisor-settled" && transcript.contextAssessment?.scope === event.scope &&
     transcript.contextAssessment.frame > event.frame) return transcript

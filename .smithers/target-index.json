@@ -9855,6 +9855,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/src/cli.ts"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui/src/clipboard.ts"
       },
       {
@@ -9872,6 +9876,10 @@
       {
         "kind": "file",
         "path": "apps/tui/src/contributions.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/src/cursor.ts"
       },
       {
         "kind": "file",
@@ -9984,6 +9992,10 @@
       {
         "kind": "file",
         "path": "apps/tui/src/session.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/src/shell-output.ts"
       },
       {
         "kind": "file",
@@ -16050,6 +16062,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/tui/e2e/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/tui/bunfig.toml"
       },
@@ -16108,6 +16125,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/tui/e2e/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/tui/bunfig.toml"
       },
@@ -16145,6 +16167,11 @@
       {
         "kind": "glob",
         "pattern": "apps/tui/test/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/tui/e2e/**/*",
         "exclude": []
       },
       {

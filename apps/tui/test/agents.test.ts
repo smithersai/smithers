@@ -45,6 +45,13 @@ describe("find", () => {
 })
 
 describe("profile", () => {
+  test("resolves ordered fallback seats and rejects unknown fallback names", () => {
+    const profile = Agents.profile(agent({ fallbackSeats: ["sol", "unknown"] }), body, (id) => `resolved:${id}`)
+    expect(profile.seat).toBe("resolved:sol")
+    expect(profile.fallbackSeats).toEqual(["resolved:sol", "resolved:unknown"])
+    expect(Agents.profile(agent({ fallbackSeats: [] }), body, seatOf).fallbackSeats).toEqual([])
+    expect(code(() => Agents.profile(agent({ fallbackSeats: ["missing"] }), body, (id) => id === "sol" ? "resolved:sol" : undefined))).toBe("unknown_seat")
+  })
   test("narrows to the file's declared capabilities when the registry widened them for flows", () => {
     const widened = agent({ capabilities: ["*"], flows: ["read", "grep"] })
     expect(Agents.profile(widened, { ...body, capabilities: ["fs:read:**"] }, seatOf).envelope).toEqual(["fs:read:**"])

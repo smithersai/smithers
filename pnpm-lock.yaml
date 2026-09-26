@@ -1737,6 +1737,9 @@ importers:
       react:
         specifier: 19.2.8
         version: 19.2.8
+      string-width:
+        specifier: 7.2.0
+        version: 7.2.0
     devDependencies:
       '@types/react':
         specifier: 19.2.18

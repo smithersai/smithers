@@ -24,7 +24,7 @@ Press Enter
 Capture "Inspect a real completed durable flow run."
 ```
 
-`/flow echo text=hello` and `/flow echo {"text":"hello"}` supply the same payload. A run gets its own tab and uses the native control host's plan, approval, execution, and watch path. Requested is not running; completion comes from the watch receipt.
+`/flow echo text=hello` and `/flow echo {"text":"hello"}` supply the same payload. Quote values containing spaces: `/flow echo text="hello world"`. A run gets its own tab and uses the native control host's plan, approval, execution, and watch path. Requested is not running; completion comes from the watch receipt.
 
 ## Fill missing input
 
@@ -43,9 +43,9 @@ Wait for "hello from the form"
 Capture "Submit the payload and wait for the actual run result."
 ```
 
-Forms open once the composer is empty and no approval is pending. **Tab/Down** move forward; **Shift+Tab/Up** move back; **Space** toggles a boolean; **Left/Right** choose an option; **Enter** runs. **Esc**, search, Summary, or tab navigation close the form and leave the run parked. Open its tab and press **a** to return.
+Forms open once the composer is empty and no approval is pending. The form replaces the composer until submitted or closed; long forms follow the focused field and show its position. **Tab/Down** move forward; **Shift+Tab/Up** move back; **Space** toggles a boolean; **Left/Right** choose an option; **Enter** runs. **Esc**, search, Summary, or tab navigation close the form and leave the run parked. Open its tab and press **a** to return.
 
-**x** requests cancellation. **r** or `/retry id` resumes an interrupted run. A parked form does not block new sessions, forking, or undo. With `--approve ask`, consequential capabilities use the approval row's **y/n/a** controls. Each declared capability is reviewed before launch.
+**x** requests cancellation. **r** or `/retry id` resumes an interrupted or parked run with its durable run ID. A parked agent question appears in the run tab. A parked form does not block new sessions, forking, or undo. With `--approve ask`, consequential capabilities use the approval row's **y/n/a** controls. Each declared capability is reviewed before launch.
 
 ## Approve a flow
 

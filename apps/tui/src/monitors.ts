@@ -83,7 +83,7 @@ export type Delivery =
 export interface Ports {
   /** Whether this host binds Jev; without it a monitor is refused at creation. */
   readonly judged: boolean
-  readonly observe: (source: Source) => Promise<string>
+  readonly observe: (source: Source, signal: AbortSignal) => Promise<string>
   /** Jev. Rejects with a `MonitorError` carrying `JevFailed`. */
   readonly judge: (input: Judged) => Promise<boolean>
   /** Luna. */
@@ -117,6 +117,7 @@ const failedWith = (error: unknown, fallback: (message: string) => Failure): Fai
 export class Monitors {
   private monitors = new Map<string, Monitor>()
   private stops = new Map<string, () => void>()
+  private observations = new Map<string, AbortController>()
   private ticks = new Map<string, { readonly generation: number | undefined; readonly task: Promise<void> }>()
   private generations = new Map<string, number>()
   private listeners = new Set<() => void>()
@@ -235,6 +236,7 @@ export class Monitors {
   private disarm(id: string) {
     this.stops.get(id)?.()
     this.stops.delete(id)
+    this.observations.get(id)?.abort()
   }
   /**
    * One observation, judged if it changed. Ticks of one monitor never
@@ -263,10 +265,14 @@ export class Monitors {
         : undefined
     }
     let after: string
+    const observation = new AbortController()
+    this.observations.set(id, observation)
     try {
-      after = (await this.ports.observe(start.source)).slice(-maxObservation)
+      after = (await this.ports.observe(start.source, observation.signal)).slice(-maxObservation)
     } catch (error) {
       return this.fail(id, generation, failedWith(error, (message) => ({ _tag: "SourceFailed", message })))
+    } finally {
+      if (this.observations.get(id) === observation) this.observations.delete(id)
     }
     const observed = current()
     if (observed === undefined || observed.seen === after) return
@@ -323,9 +329,10 @@ export class Monitors {
       updates,
       ...(failure === undefined ? {} : { failure: message(failure) })
     })))
-  dispose = (): void => {
+  dispose = (): Promise<void> => {
     this.closed = true
     for (const id of [...this.stops.keys()]) this.disarm(id)
+    return Promise.allSettled([...this.ticks.values()].map((tick) => tick.task)).then(() => {})
   }
 }
 
@@ -387,11 +394,11 @@ export const composeText = (input: Judged): string =>
 export const observer = (options: {
   readonly tab: (id: string) => { status: string; summary?: string; message?: string; answer?: string; turns: ReadonlyArray<{ label: string; status?: string }> }
   readonly run: (id: string) => { status: string; message?: string; answer?: string; steps: ReadonlyArray<{ label: string; status?: string }> }
-  readonly shell: (command: string) => Promise<{ output: string; exitCode: number | null }>
+  readonly shell: (command: string, signal?: AbortSignal) => Promise<{ output: string; exitCode: number | null }>
 }) =>
-async (source: Source): Promise<string> => {
+async (source: Source, signal?: AbortSignal): Promise<string> => {
   if (source.kind === "shell") {
-    const result = await options.shell(source.command)
+    const result = await options.shell(source.command, signal)
     return `${result.output}\n(exit ${result.exitCode ?? "killed"})`
   }
   const read = source.kind === "tab" ? options.tab(source.id) : options.run(source.id)

@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- `smthrs tui` accepts and forwards `--approve all|ask|deny` (#2020).
+- TUI shell output preserves split Unicode, redacts split credential values,
+  and strips split terminal sequences; cancellation stops resistant process
+  groups after a bounded grace period (#2018, #2019).
+- TUI sessions save in deeply nested projects, and redirected interactive
+  startup exits with a print-mode hint (#2012, #2015).
+- Compiled TUI binaries resolve installed project flows and share one pinned
+  Effect runtime with them, preserving encoded return values (#2006).
+- The packaged Node TUI supports terminal width, external editors, and native
+  flow execution without a Bun global (#1987).
+
 - The native control plane takes over a run whose host process died mid-run
   (`isAlive: sameHostPidProbe`), so a restarted host finishes it instead of
   failing it with `ClaimLost`.

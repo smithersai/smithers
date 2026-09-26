@@ -10,12 +10,9 @@ import * as Log from "./log.ts"
  */
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
-import { createCliRenderer } from "@opentui/core"
-import { createRoot } from "@opentui/react"
 import { spawnSync } from "node:child_process"
 import { resolve } from "node:path"
-import { parseArgs } from "node:util"
-import { App } from "./app.tsx"
+import * as Cli from "./cli.ts"
 import * as Context from "./context.ts"
 import * as FlowControl from "./flow-control.ts"
 import * as Approvals from "./approvals.ts"
@@ -23,31 +20,38 @@ import * as Host from "./host.ts"
 import * as Models from "./models.ts"
 import * as Session from "./session.ts"
 
-const { values, positionals } = parseArgs({
-  args: process.argv.slice(2),
-  options: {
-    model: { type: "string", short: "m" },
-    continue: { type: "boolean", short: "c" },
-    resume: { type: "boolean", short: "r" },
-    print: { type: "string", short: "p" },
-    approve: { type: "string" }
-  },
-  allowPositionals: true
-})
-const cwd = resolve(positionals[0] ?? process.cwd())
+const parsed = Cli.parse(process.argv.slice(2), process.cwd())
+if ("help" in parsed) {
+  console.log(Cli.usage)
+  process.exit(0)
+}
+if ("error" in parsed) {
+  console.error(`${parsed.error}\nRun smithers-tui --help for usage.`)
+  process.exit(1)
+}
+const { values, cwd } = parsed
+const approvals = Approvals.mode(process.env, { print: values.print !== undefined, flag: values.approve })
+if (typeof approvals === "object") {
+  console.error(approvals.error)
+  process.exit(1)
+}
+if (values.print === undefined && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+  console.error("Interactive mode requires a terminal. Use --print <prompt>.")
+  process.exit(1)
+}
 // Resolved before the chdir below, so a relative recording names the caller's file.
 const replay = process.env.SMITHERS_TUI_REPLAY === undefined ? undefined : resolve(process.env.SMITHERS_TUI_REPLAY)
-process.chdir(cwd)
+try {
+  process.chdir(cwd)
+} catch {
+  console.error(`Cannot open directory: ${cwd}`)
+  process.exit(1)
+}
 
 const available = Models.detect(process.env)
 const seat = values.model ?? (replay === undefined ? available.defaultSeat : `replay:${replay}`)
 if (seat === undefined) {
   console.error("No model is available. Run `codex login` for the ChatGPT subscription, or set a provider API key.")
-  process.exit(1)
-}
-const approvals = Approvals.mode(process.env, { print: values.print !== undefined, flag: values.approve })
-if (typeof approvals === "object") {
-  console.error(approvals.error)
   process.exit(1)
 }
 const host = Host.make({ cwd, environment: available.environment, approvals })
@@ -74,23 +78,36 @@ if (values.print !== undefined) {
   process.exit(1)
 }
 
-// App warms the host after first draw; discovery alone never imports a flow module.
-const flows = FlowControl.make({ cwd, environment: available.environment, approvals: host.approvals! })
-const resumeFile = values.continue === true ? Session.latest(cwd) : undefined
-const branch = spawnSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).stdout?.trim()
-const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })
-Log.install()
-createRoot(renderer).render(
-  <App
-    host={host}
-    seat={seat}
-    workerSeat={replay === undefined ? available.workerSeat ?? seat : seat}
-    models={available.models}
-    {...(replay === undefined ? {} : { seatOf: () => seat })}
-    contextWindow={(id) => SeatResolver.contextWindowTokensFor(Seat.modelIdOf(id))}
-    {...(resumeFile === undefined ? {} : { resume: resumeFile })}
-    pickSession={values.resume === true}
-    flows={flows}
-    {...(branch === undefined || branch === "" ? {} : { branch })}
-  />
-)
+// Help and print mode never initialize the terminal's native library.
+let flows: ReturnType<typeof FlowControl.make> | undefined
+try {
+  const [{ createCliRenderer }, { createRoot }, { App }, { createElement }] = await Promise.all([
+    import("@opentui/core"), import("@opentui/react"), import("./app.tsx"), import("react")
+  ])
+  // App warms the host after first draw; discovery alone never imports a flow module.
+  flows = FlowControl.make({ cwd, environment: available.environment, approvals: host.approvals! })
+  const resumeFile = values.continue === true ? Session.latest(cwd) : undefined
+  const branch = spawnSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).stdout?.trim()
+  const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })
+  Log.install()
+  createRoot(renderer).render(
+    createElement(App, {
+      host,
+      seat,
+      workerSeat: replay === undefined ? available.workerSeat ?? seat : seat,
+      models: available.models,
+      ...(replay === undefined ? {} : { seatOf: () => seat }),
+      contextWindow: (id) => SeatResolver.contextWindowTokensFor(Seat.modelIdOf(id)),
+      ...(resumeFile === undefined ? {} : { resume: resumeFile }),
+      pickSession: values.resume === true,
+      flows,
+      ...(branch === undefined || branch === "" ? {} : { branch })
+    })
+  )
+} catch (error) {
+  Log.write("terminal.startup", error)
+  await flows?.dispose()
+  await host.dispose()
+  console.error(`Terminal unavailable: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`)
+  process.exit(1)
+}

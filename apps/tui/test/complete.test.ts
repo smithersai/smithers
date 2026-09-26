@@ -91,6 +91,17 @@ describe("file completion", () => {
     const quoted = Complete.complete("@notes", 6, sources)!.items[0]!
     expect(quoted.insert).toBe('@"docs/my notes.md" ')
   })
+  it("encodes a path a bare or naively quoted mention would misname, keeping Unicode readable", () => {
+    expect(Complete.mention("docs/café 日本.md")).toBe('@"docs/café 日本.md" ')
+    expect(Complete.mention("café.txt")).toBe("@café.txt ")
+    expect(Complete.mention('say "hi".txt')).toBe('@"say \\"hi\\".txt" ')
+    expect(Complete.mention("back\\slash")).toBe('@"back\\\\slash" ')
+    expect(Complete.mention("new\nline\tbell\u0007")).toBe('@"new\\nline\\tbell\\u0007" ')
+    expect(Complete.mention("para\u2028sep\u00a0nb")).toBe('@"para\\u2028sep\\u00a0nb" ')
+    expect(Complete.mention("line.ts:12")).toBe('@"line.ts:12" ')
+    expect(Complete.mention("line.ts:12", 4)).toBe('@"line.ts:12":4 ')
+    expect(Complete.display("new\nline\u0007 café")).toBe("new\\nline\\u0007 café")
+  })
 })
 
 describe("edit diffs", () => {

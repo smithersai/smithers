@@ -11,9 +11,18 @@ export const subscribe = (listener: (message: string) => void): (() => void) => 
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
+/** Error.stack omits Error.cause; retain its chain without looping on cycles. */
+const describe = (error: unknown, seen = new Set<unknown>()): string => {
+  if (seen.has(error)) return "[circular cause]"
+  if (seen.size >= 16) return "[cause chain truncated]"
+  seen.add(error)
+  if (!(error instanceof Error)) return String(error)
+  const own = error.stack ?? error.message
+  return error.cause === undefined ? own : `${own}\nCaused by: ${describe(error.cause, seen)}`
+}
 /** Record the full cause, redacting credential-shaped text before writing. */
 export const write = (tag: string, error: unknown): void => {
-  const detail = error instanceof Error ? error.stack ?? error.message : String(error)
+  const detail = describe(error)
   const redacted = Redaction.defaultRules.reduce((value, rule) => value.replace(rule.pattern, rule.replace ?? Redaction.placeholder), detail)
   try {
     const file = path()
@@ -34,7 +43,7 @@ export const install = (): (() => void) => {
   const exception = (error: unknown) => report("uncaught-exception", error)
   const original = console.error
   const rendererError: typeof console.error = (...values) => {
-    write("terminal.error", values.map((value) => value instanceof Error ? value.stack ?? value.message : String(value)).join(" "))
+    write("terminal.error", values.map((value) => describe(value)).join(" "))
     original(...values)
   }
   console.error = rendererError

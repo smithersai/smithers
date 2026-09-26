@@ -126,6 +126,20 @@ describe("custom agents", () => {
     expect(f.workspace.read("rev")).toMatchObject({ status: "done", answer: "approve" })
   })
 
+  it("passes a custom agent's fallback order unless the caller overrides its model", async () => {
+    const f = setup()
+    f.relist([descriptor({ fallbackSeats: ["sol", "luna"] })])
+    f.workspace.request(request)
+    f.workspace.request({ ...request, id: "override", model: "astra" })
+    await tick()
+    f.loads[0]!.resolve(body())
+    f.loads[1]!.resolve(body())
+    await tick()
+    expect(f.inputs[0]?.fallbackSeats).toEqual([Models.delegateModels.sol, Models.delegateModels.luna])
+    expect(f.inputs[1]?.fallbackSeats).toBeUndefined()
+    f.workspace.dispose()
+  })
+
   it("prefers the requested model, then the agent's, then the worker seat", async () => {
     const f = setup()
     f.workspace.request({ ...request, model: "astra" })

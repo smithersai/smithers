@@ -61,6 +61,21 @@ describe("rows", () => {
     ])
   })
 
+  it("draws awkward file and hit names on one line and keeps the exact path in values and mentions", () => {
+    const odd = ["new\nline.ts", "tab\there.ts", "café 日本.ts", 'say "hi"\\x.ts']
+    const fileRows = rows("", { commands: [], files: () => odd }).filter((row) => row.value.kind === "file")
+    expect(fileRows.map((row) => row.label).sort()).toEqual(["new\\nline.ts", "tab\\there.ts", "café 日本.ts", 'say "hi"\\x.ts'].sort())
+    expect(fileRows.map((row) => row.value).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
+      .toEqual(odd.map((path) => ({ kind: "file" as const, path })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
+    const hits = rows("text:x", { hits: [{ path: "new\nline.ts", line: 3, text: "\ta\tb\u0007 café" }] })
+    expect(hits).toEqual([
+      { key: "hit:new\nline.ts:3", label: "new\\nline.ts:3", detail: "a\\tb\\u0007 café", value: { kind: "hit", path: "new\nline.ts", line: 3 } }
+    ])
+    for (const row of [...fileRows, ...hits]) expect(`${row.label}${row.detail ?? ""}`).not.toMatch(/[\u0000-\u001f\u007f]/)
+    expect(Palette.mention("new\nline.ts", 3)).toBe('@"new\\nline.ts":3 ')
+    expect(Palette.mention('say "hi"\\x.ts')).toBe('@"say \\"hi\\"\\\\x.ts" ')
+  })
+
   it("filters worker tabs by title and status", () => {
     expect(rows("tab:inv").map((row) => row.value)).toEqual([{ kind: "tab", id: "w1" }])
     expect(rows("tab:done").map((row) => row.label)).toEqual(["Docs pass"])

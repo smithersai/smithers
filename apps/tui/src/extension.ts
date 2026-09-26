@@ -84,6 +84,7 @@ export interface Descriptor {
   readonly kind: "markdown" | "module"
   /** The declared seat (`model:`), unresolved. */
   readonly seat?: string
+  readonly fallbackSeats?: ReadonlyArray<string>
   readonly effort?: string
   /** The flows the agent may call (`flows:` or `allowed-tools:`); empty means the host's default catalog. */
   readonly flows: ReadonlyArray<string>
@@ -99,7 +100,7 @@ export interface Source {
   readonly description: string
   readonly modelInvocable: boolean
   readonly body: { readonly _tag: string }
-  readonly model: { readonly _tag: "Some"; readonly value: string } | { readonly _tag: "None" }
+  readonly model: { readonly _tag: "Some"; readonly value: string | ReadonlyArray<string> } | { readonly _tag: "None" }
   readonly flows: ReadonlyArray<string>
   readonly capabilities: ReadonlyArray<string>
   readonly path: string
@@ -112,12 +113,13 @@ export const project = (source: Source): Descriptor => {
     ? (metadata as Record<string, unknown>)["tui"]
     : undefined
   const effort = source.frontmatter["effort"]
+  const model = source.model._tag === "Some" ? source.model.value : undefined
   return {
     name: source.name,
     description: source.description,
     modelInvocable: source.modelInvocable,
     kind: source.body._tag === "Markdown" ? "markdown" : "module",
-    ...(source.model._tag === "Some" ? { seat: source.model.value } : {}),
+    ...(model === undefined ? {} : typeof model === "string" ? { seat: model } : { seat: model[0], fallbackSeats: model.slice(1) }),
     ...(typeof effort === "string" && effort !== "" ? { effort } : {}),
     flows: [...source.flows],
     capabilities: [...source.capabilities],

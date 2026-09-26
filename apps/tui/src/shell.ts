@@ -9,6 +9,8 @@ import { randomUUID } from "node:crypto"
 import { appendFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as Output from "./shell-output.ts"
+import { stopGroup } from "./subprocess.ts"
 
 /** The kept tail, and past it the full output goes to a file (pi's limits). */
 export const maxLines = 2000
@@ -35,11 +37,8 @@ export const parse = (line: string): { readonly command: string; readonly exclud
   return undefined
 }
 
-// CSI, OSC and single-character escapes.
-const ansi = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g
-
 /** Terminal output as plain text: escapes removed, carriage returns normalized. */
-export const clean = (text: string): string => text.replace(ansi, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+export const clean = Output.clean
 
 /** The last `maxLines` lines within `maxBytes`, and whether anything was cut. */
 export const tail = (text: string): { readonly text: string; readonly truncated: boolean } => {
@@ -51,34 +50,29 @@ export const tail = (text: string): { readonly text: string; readonly truncated:
   }
   let kept = lines.join("\n")
   if (Buffer.byteLength(kept) > maxBytes) {
-    kept = Buffer.from(kept).subarray(-maxBytes).toString("utf8")
+    const bytes = Buffer.from(kept)
+    let start = bytes.length - maxBytes
+    while ((bytes[start]! & 0xc0) === 0x80) start++
+    kept = bytes.subarray(start).toString("utf8")
     kept = kept.slice(kept.indexOf("\n") + 1)
     truncated = true
   }
   return { text: kept, truncated }
 }
 
-/** An environment variable whose value is a credential by its name. */
-const secretName = /TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL|AUTH/i
-
 /**
  * Masks the values of credential-named environment variables. The command
  * runs with the person's own environment, but its output is shown, saved to
  * the session and, for `!`, sent to the model.
  */
-export const redact = (text: string, env: NodeJS.ProcessEnv = process.env): string => {
-  let masked = text
-  const secrets = Object.entries(env)
-    .flatMap(([name, value]) => (secretName.test(name) && value !== undefined && value.length >= 8 ? [[name, value] as const] : []))
-    .sort((a, b) => b[1].length - a[1].length)
-  for (const [name, value] of secrets) masked = masked.split(value).join(`[redacted $${name}]`)
-  return masked
-}
+export const redact = Output.redact
 
 /** Output kept in memory while a command runs; past it, only the tail stays and the rest streams to a file. */
 const memory = 4 * maxBytes
 /** Output reaches the screen at most this often. */
 export const flushMs = 50
+/** Give a stopped command time to clean up before killing its remaining process group. */
+export const cancelGraceMs = 1000
 
 export const run = (options: {
   readonly command: string
@@ -103,6 +97,8 @@ export const run = (options: {
   let pending = ""
   let timer: ReturnType<typeof setTimeout> | undefined
   let cancelled = false
+  let settled = false
+  let stopping: Promise<void> | undefined
   const spillDir = options.spillDir ?? tmpdir()
   /** A full-output file that cannot be written costs only the file; the command and its tail go on. */
   const written = (write: () => void): boolean => {
@@ -121,8 +117,8 @@ export const run = (options: {
     pending = ""
     options.onOutput(text)
   }
-  const receive = (chunk: Buffer | string) => {
-    const text = redact(clean(chunk.toString()), env)
+  const receive = (text: string) => {
+    if (text === "") return
     bytes += Buffer.byteLength(text)
     if (spill === undefined && bytes > maxBytes && !unwritable) {
       const path = join(spillDir, `smithers-bash-${randomUUID()}.log`)
@@ -133,16 +129,22 @@ export const run = (options: {
       unwritable = true
     }
     kept = (kept + text).slice(-memory)
+    if (kept.charCodeAt(0) >= 0xdc00 && kept.charCodeAt(0) <= 0xdfff) kept = kept.slice(1)
     pending += text
     timer ??= setTimeout(flush, flushMs)
   }
-  child.stdout.on("data", receive)
-  child.stderr.on("data", receive)
+  const redactor = Output.redactor(env)
+  for (const pipe of [child.stdout, child.stderr]) {
+    const decoder = Output.decoder()
+    pipe.on("data", (chunk: Buffer) => receive(redactor.write(decoder.write(chunk))))
+    pipe.on("end", () => receive(redactor.write(decoder.end())))
+  }
   const done = new Promise<Result>((resolve) => {
-    let settled = false
-    const settle = (exitCode: number | null) => {
+    const settle = async (exitCode: number | null) => {
       if (settled) return
       settled = true
+      await stopping
+      receive(redactor.end())
       flush()
       const cut = tail(kept)
       let fullOutputPath = spill
@@ -160,20 +162,18 @@ export const run = (options: {
     }
     child.on("close", (code) => settle(code))
     child.on("error", (error) => {
-      receive(`${error.message}\n`)
+      receive(redactor.write(clean(`${error.message}\n`)))
       settle(127)
     })
   })
   return {
     done,
     cancel: () => {
+      if (settled || cancelled) return
       cancelled = true
-      // The whole process group, so `sleep` under `sh -c` dies with it.
-      try {
-        process.kill(-child.pid!, "SIGTERM")
-      } catch {
-        child.kill("SIGTERM")
-      }
+      if (child.pid !== undefined) stopping = stopGroup(child.pid, cancelGraceMs).catch((error) => {
+        receive(redactor.write(clean(`Could not stop process group: ${String(error)}\n`)))
+      })
     }
   }
 }

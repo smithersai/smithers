@@ -7,7 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
@@ -72,7 +72,12 @@ const start = async (
     readonly args?: string
     readonly cwd?: string
     readonly sessions?: string
+    readonly home?: string
+    readonly editor?: string
+    readonly shellInit?: string
+    readonly replay?: string
     readonly cols?: number
+    readonly rows?: number
     /** Unset runs the default (every call unasked); approval cases opt in. */
     readonly approve?: "ask" | "all" | "deny"
   } = {}
@@ -82,14 +87,17 @@ const start = async (
   tui = await Tui.start({
     cwd,
     cols: options.cols,
+    rows: options.rows,
     command: `bun ${join(app, "src", "main.tsx")} ${cwd} ${options.args ?? ""}`,
     env: {
       PATH: process.env.PATH ?? "",
-      HOME: process.env.HOME ?? "",
-      SMITHERS_TUI_REPLAY: fixture,
+      HOME: options.home ?? process.env.HOME ?? "",
+      SMITHERS_TUI_REPLAY: options.replay ?? fixture,
       SMITHERS_TUI_REPLAY_HOLD_MS: String(options.holdMs ?? 0),
       SMITHERS_TUI_REPLAY_SPEED: "20",
       SMITHERS_TUI_SESSION_DIR: sessions,
+      ...(options.editor === undefined ? {} : { VISUAL: options.editor, EDITOR: options.editor }),
+      ...(options.shellInit === undefined ? {} : { ENV: options.shellInit }),
       ...(options.approve === undefined ? {} : { SMITHERS_TUI_APPROVE: options.approve })
     }
   })
@@ -97,7 +105,61 @@ const start = async (
   return { tui, cwd, sessions }
 }
 
+describe("startup", () => {
+  for (const stream of ["stdin", "stdout"]) {
+    it(`refuses redirected ${stream} while the other stream is a terminal`, async () => {
+      const cwd = repository()
+      const output = join(cwd, "redirected-output")
+      const script = join(cwd, "launch.sh")
+      writeFileSync(script, `bun ${join(app, "src/main.tsx")} ${stream === "stdin" ? "< /dev/null" : `> ${output}`}\nstatus=$?\nprintf 'child-exit-%s\\n' "$status"\ncat\n`)
+      tui = await Tui.start({ cwd, command: `sh ${script}`, env: { PATH: process.env.PATH ?? "", SMITHERS_TUI_REPLAY: join(app, "test/fixtures/pong.jsonl") } })
+      const screen = await tui.until((screen) => screen.includes("child-exit-1"), 5_000, "terminal refusal")
+      expect(screen).toContain("Interactive mode requires a terminal. Use --print <prompt>.")
+      if (stream === "stdout") expect(readFileSync(output, "utf8")).toBe("")
+    }, 15_000)
+  }
+})
+
 describe("composer mode", () => {
+  it("keeps typing immediately after clicking back to Chat", async () => {
+    const { tui } = await start()
+    await tui.press(key.ctrlS)
+    await tui.until((screen) => screen.includes("No turns yet"), 5_000, "summary focus")
+    const lines = tui.screen().split("\n")
+    const row = lines.findIndex((line) => line.includes("Chat"))
+    const at = `${lines[row]!.indexOf("Chat") + 1};${row + 1}`
+    await tui.press(`\x1b[<0;${at}M\x1b[<0;${at}mkeep-click-draft`)
+    await tui.until((screen) => /┃\s+keep-click-draft/.test(screen), 5_000, "mouse handoff keeps complete draft")
+  }, 60_000)
+
+  for (const close of [key.ctrlS, key.ctrlC, key.ctrlBracket, "i"]) {
+    it(`keeps typing when leaving Summary focus in one burst (${JSON.stringify(close)})`, async () => {
+      const { tui } = await start()
+      await tui.press(key.ctrlS)
+      await tui.until((screen) => screen.includes("No turns yet"), 5_000, "summary focus")
+      await tui.press(close + "keep-all-characters")
+      await tui.until((screen) => /┃\s+keep-all-characters/.test(screen), 5_000, "complete draft after focus change")
+    }, 60_000)
+  }
+
+  it("keeps short-terminal input, queue controls, and status visible", async () => {
+    const { tui } = await start({ cols: 40, rows: 12, holdMs: 60_000 })
+    await tui.press(key.ctrlO)
+    await tui.until((screen) => /Keys\s+esc/.test(screen), 5_000, "home help")
+    await tui.press(key.ctrlO)
+    await tui.until((screen) => !/Keys\s+esc/.test(screen), 5_000, "home help closed")
+    await tui.press("\x1b[200~one\ntwo\nthree\nfour\nfive\nsix\x1b[201~")
+    await tui.until((screen) => screen.includes("six") && drawn(screen), 5_000, "bounded multiline input")
+    await tui.press(key.enter)
+    await tui.type("queued one")
+    await tui.press("\x1b\r")
+    await tui.type("queued two")
+    await tui.press("\x1b\r")
+    await tui.until((screen) => screen.includes("2 queued:") && screen.includes("alt+up") && drawn(screen), 5_000, "compact queue")
+    await tui.press(key.escape)
+    await tui.until((screen) => screen.includes("queued two") && drawn(screen) && !screen.includes("2 queued:"), 5_000, "interrupted queue in editor")
+  }, 60_000)
+
   it("names no mode by default and shows shell once the draft starts with !", async () => {
     const { tui } = await start()
     const footer = (screen: string) => screen.split("\n").find((line) => line.includes("replay fix-add.jsonl"))?.replace(/^\s*┃/, "").trim()
@@ -144,6 +206,25 @@ describe("which-key", () => {
     await tui.press("?")
     const closed = await tui.until((screen) => !popup(screen), 5_000, "which-key close on ?")
     expect(composerLine(closed)).not.toContain("?")
+  }, 60_000)
+
+  it.each([[60, 20], [40, 12]])("scrolls complete help at %i by %i without dismissing the popup", async (cols, rows) => {
+    const { tui } = await start({ cols, rows })
+    await tui.press("?")
+    await tui.until(popup, 5_000, "short which-key popup")
+    let seen = tui.screen()
+    for (let page = 0; page < 30; page++) {
+      await tui.press("\x1b[6~")
+      expect(popup(tui.screen())).toBe(true)
+      seen += tui.screen()
+    }
+    expect(seen.replace(/\s+/g, " ")).toContain("Previous tab")
+    expect(seen.replace(/\s+/g, " ")).toContain("Edit prompt")
+    expect(seen).toContain("Send")
+    for (let page = 0; page < 30; page++) await tui.press("\x1b[5~")
+    expect(tui.screen()).toContain("Send")
+    await tui.press(key.escape)
+    await tui.until((screen) => !popup(screen), 5_000, "help dismissed")
   }, 60_000)
 
   it("keeps a message that starts with ?", async () => {
@@ -238,6 +319,139 @@ describe("esc", () => {
     await tui.until((screen) => screen.includes("(cancelled)"), 5_000, "cancelled shell")
   }, 60_000)
 
+  it("Esc kills a SIGTERM-resistant shell and permits a new session", async () => {
+    const { tui } = await start()
+    await tui.type("!trap '' TERM; echo resistant-shell-ready; sleep 30")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("resistant-shell-ready") && screen.includes("Running… (esc to cancel)"), 5_000, "resistant shell running")
+    // Wait for streamed output, rather than the command text, before signalling the group.
+    await tui.until((screen) => screen.split("resistant-shell-ready").length >= 3, 5_000, "shell installed its signal handler")
+    await tui.press(key.escape)
+    await tui.until((screen) => screen.includes("(cancelled)"), 5_000, "resistant shell cancelled")
+    await tui.type("/new")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("New session started"), 5_000, "new session after cancellation")
+  }, 30_000)
+
+  it("quit waits for a resistant shell's process group to stop", async () => {
+    const { tui, cwd } = await start()
+    let pid: number | undefined
+    try {
+      await tui.type("!trap '' TERM; echo $$ > shell.pid; sleep 30")
+      await tui.press(key.enter)
+      await tui.until(() => existsSync(join(cwd, "shell.pid")), 5_000, "shell pid")
+      pid = Number(readFileSync(join(cwd, "shell.pid"), "utf8").trim())
+      await tui.type("/quit")
+      await tui.press(key.enter)
+      expect((await tui.waitForExit(5_000)).code).toBe(0)
+      expect(() => process.kill(-pid!, 0)).toThrow()
+    } finally {
+      if (pid !== undefined) try { process.kill(-pid, "SIGKILL") } catch {}
+    }
+  }, 15_000)
+
+  for (const signal of ["SIGTERM", "SIGHUP"] as const) {
+    it(`${signal} stops an active shell process group`, async () => {
+      const { tui, cwd } = await start()
+      let pid: number | undefined
+      try {
+        await tui.type("!trap '' TERM; echo $$ $PPID > shell.pid; sleep 30")
+        await tui.press(key.enter)
+        await tui.until(() => existsSync(join(cwd, "shell.pid")), 5_000, "shell parent pid")
+        const ids = readFileSync(join(cwd, "shell.pid"), "utf8").trim().split(/\s+/).map(Number)
+        pid = ids[0]!
+        process.kill(ids[1]!, signal)
+        await tui.waitForExit(5_000)
+        expect(() => process.kill(-pid!, 0)).toThrow()
+      } finally {
+        if (pid !== undefined) try { process.kill(-pid, "SIGKILL") } catch {}
+      }
+    }, 15_000)
+  }
+
+  it("shows a missing external editor failure and preserves the draft", async () => {
+    const { tui } = await start({ editor: "/missing-tui-audit-editor" })
+    await tui.type("keep my draft")
+    await tui.press("\x07")
+    const screen = await tui.until((screen) => screen.includes("Editor unavailable") && drawn(screen), 5_000, "editor startup failure")
+    expect(screen).toContain("keep my draft")
+  }, 15_000)
+
+  it("opens an external editor without running interactive shell startup hooks", async () => {
+    const cwd = repository()
+    const init = join(cwd, "shell-init")
+    writeFileSync(init, "exit 37\n")
+    const { tui } = await start({ cwd, shellInit: init, editor: "printf edited-without-startup >" })
+    await tui.type("keep draft")
+    await tui.press("\x07")
+    await tui.until((screen) => screen.includes("edited-without-startup") && drawn(screen), 5_000, "editor completion")
+  }, 15_000)
+
+  it.skipIf(Bun.which("vim") === null)("hands the real terminal to Vim and restores its edited Unicode draft", async () => {
+    const { tui } = await start({ editor: "vim -u NONE -U NONE -i NONE -n" })
+    await tui.type("original draft")
+    await tui.press("\x07")
+    await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim foreground")
+    await tui.press(key.ctrlC)
+    await tui.press("gg0Cedited 中文 🦉")
+    await tui.press(key.escape)
+    await tui.press(":wq" + key.enter)
+    const screen = await tui.until((screen) => drawn(screen) && screen.includes("edited 中文 🦉"), 5_000, "edited draft restored")
+    expect(screen).not.toContain("original draft")
+    await tui.press("\x07")
+    await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim reopened")
+    await tui.press(":cq" + key.enter)
+    await tui.until((screen) => drawn(screen) && screen.includes("edited 中文 🦉"), 5_000, "cancel preserves draft")
+  }, 30_000)
+
+  it.skipIf(Bun.which("vim") === null)("cleans up a suspended external editor before restoring the draft", async () => {
+    const cwd = repository()
+    writeFileSync(join(cwd, "edit-vim.sh"), 'echo $$ > vim.pid\nexec vim -u NONE -U NONE -i NONE -n "$1"\n')
+    const { tui } = await start({ cwd, editor: "sh ./edit-vim.sh" })
+    await tui.type("keep draft")
+    await tui.press("\x07")
+    await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim foreground")
+    const pid = Number(readFileSync(join(cwd, "vim.pid"), "utf8"))
+    try {
+      await tui.press("\x1a")
+      await tui.until((screen) => drawn(screen) && screen.includes("keep draft"), 5_000, "suspended editor released")
+      await Bun.sleep(100)
+      expect(() => process.kill(pid, 0)).toThrow()
+    } finally { try { process.kill(pid, "SIGKILL") } catch {} }
+  }, 30_000)
+
+  it.skipIf(Bun.which("vim") === null)("adopts terminal resizing while an external editor owns the foreground", async () => {
+    const { tui } = await start({ cols: 80, rows: 20, editor: "vim -u NONE -U NONE -i NONE -n" })
+    await tui.press("\x07")
+    await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim foreground")
+    await tui.resize(110, 40)
+    await tui.press(":q!" + key.enter)
+    await tui.until((screen) => drawn(screen) && /↑\S+ ↓\S+/.test(screen.split("\n")[39] ?? ""), 5_000, "footer at resized bottom")
+    await tui.press("\x07")
+    await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim reopened")
+    await tui.resize(60, 12)
+    await tui.press(":q!" + key.enter)
+    await tui.until((screen) => drawn(screen) && /↑\S+ ↓\S+/.test(screen.split("\n")[11] ?? ""), 5_000, "footer after shrinking")
+  }, 30_000)
+
+  it("termination while an external editor is open stops its child processes", async () => {
+    const { tui, cwd } = await start({ editor: "trap '' TERM HUP; echo $$ $PPID > editor.pid; sleep 30 & echo $! > editor-child.pid; wait; :" })
+    let ids: Array<number> = []
+    try {
+      const main = await tui.call("session.info", { sessionId: "tui" }) as { pid: number }
+      await tui.press("\x07")
+      await tui.until(() => existsSync(join(cwd, "editor-child.pid")), 5_000, "editor child")
+      const [editor] = readFileSync(join(cwd, "editor.pid"), "utf8").trim().split(/\s+/).map(Number)
+      const child = Number(readFileSync(join(cwd, "editor-child.pid"), "utf8").trim())
+      ids = [editor!, child]
+      process.kill(main.pid, "SIGTERM")
+      await tui.waitForExit(5_000)
+      for (const id of ids) expect(() => process.kill(id, 0)).toThrow()
+    } finally {
+      for (const id of ids) try { process.kill(id, "SIGKILL") } catch {}
+    }
+  }, 15_000)
+
   it("puts steered messages back in the editor when it stops the turn", async () => {
     const { tui } = await start({ holdMs: 60_000 })
     await tui.type("first prompt")
@@ -283,6 +497,36 @@ describe("! shell commands", () => {
 })
 
 describe("turns", () => {
+  it("finishes coding with session storage inside the project", async () => {
+    const cwd = repository()
+    const replay = join(mkdtempSync(join(tmpdir(), "tui-session-observer-replay-")), "turn.jsonl")
+    const cells = [
+      'const before = await ctx.call("read", { path: "math.js" }); console.log(before.content)',
+      'await ctx.call("edit", { path: "math.js", oldString: "a - b", newString: "a + b" }); const checked = await ctx.call("bash", { mode: "hermetic", command: "node check.mjs", reads: ["."], writes: [], cwd: "." }); if (checked.exitCode !== 0) throw new Error("Check failed"); ctx.done("Fixed math.js; check passed")'
+    ]
+    writeFileSync(replay, cells.flatMap((cell) => [
+      { at: 0, event: { _tag: "model-requested" } },
+      { at: 0, event: { _tag: "model-delta", delta: { type: "text-start", id: "cell" } } },
+      { at: 0, event: { _tag: "model-delta", delta: { type: "text-delta", id: "cell", text: `\`\`\`cell\n${cell}\n\`\`\`` } } },
+      { at: 0, event: { _tag: "model-delta", delta: { type: "text-end", id: "cell" } } },
+      { at: 0, event: { _tag: "model-settled", message: { stopReason: "stop" } } }
+    ]).map((record) => JSON.stringify(record)).join("\n"))
+    const { tui, sessions } = await start({ cwd, replay, sessions: join(cwd, "sessions") })
+    await tui.type("node check.mjs fails. Fix it and show it passes.")
+    await tui.press(key.enter)
+    await tui.until((screen) => idle(screen) && /Fixed/.test(screen), 20_000, "answer without journal churn")
+    const folder = sessionFolder(sessions)
+    const file = readdirSync(folder).find((name) => name.endsWith(".jsonl"))!
+    const records = Session.load(join(folder, file))
+    const outcome = records.findLast((record) => record.type === "outcome")
+    expect(outcome?.type === "outcome" && outcome.outcome.answer).not.toContain("frame budget")
+    expect(records.filter((record) => record.type === "event" && record.event._tag === "model-requested").length).toBeLessThan(10)
+    const mutations = records.flatMap((record) => record.type === "event" && record.event._tag === "mutation-observed" ? [record.event.mutated] : [])
+    expect(mutations).toEqual([false, true])
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
+    expect(spawnSync("node", ["check.mjs"], { cwd }).status).toBe(0)
+  }, 30_000)
+
   it.each([40, 110])("replays a whole recorded turn at %i columns: cells stream, flows run, the answer lands", async (cols) => {
     const { tui, cwd } = await start({ cols })
     await tui.type("node check.mjs fails. Fix it and show it passes.")
@@ -353,6 +597,44 @@ describe("turns", () => {
     await tui.until((screen) => screen.includes("$ echo first"))
     await tui.press(key.up)
     await tui.until((screen) => /┃\s+!echo first/.test(screen), 3_000, "recalled prompt")
+  }, 60_000)
+
+  it("continues a torn session tail and can reopen the newly saved turn", async () => {
+    const first = await start({ replay: join(app, "test/fixtures/pong.jsonl") })
+    await first.tui.type("before torn tail")
+    await first.tui.press(key.enter)
+    await first.tui.until((screen) => idle(screen) && screen.includes("pong"), 10_000, "initial answer")
+    await first.tui.stop()
+    process.env.SMITHERS_TUI_SESSION_DIR = first.sessions
+    const file = Session.latest(first.cwd)!
+    appendFileSync(file, '{"type":"user","at":2,"te')
+    const second = await start({ cwd: first.cwd, sessions: first.sessions, args: "-c", replay: join(app, "test/fixtures/pong.jsonl") })
+    await second.tui.until((screen) => screen.includes("before torn tail"), 5_000, "torn tail ignored")
+    await second.tui.type("after torn tail")
+    await second.tui.press(key.enter)
+    await second.tui.until((screen) => idle(screen) && screen.includes("after torn tail") && screen.includes("pong"), 10_000, "new answer")
+    await second.tui.stop()
+    expect(Session.load(file).filter((record) => record.type === "user").map((record) => record.text))
+      .toEqual(["before torn tail", "after torn tail"])
+    const third = await start({ cwd: first.cwd, sessions: first.sessions, args: "-c", replay: join(app, "test/fixtures/pong.jsonl") })
+    await third.tui.until((screen) => screen.includes("before torn tail") && screen.includes("after torn tail"), 5_000, "both turns survive another restart")
+    expect(third.tui.screen()).not.toContain("damaged")
+  }, 45_000)
+
+  it("saves and resumes a conversation from a deeply nested project", async () => {
+    const cwd = join(repository(), "a".repeat(90), "b".repeat(90), "c".repeat(90))
+    mkdirSync(cwd, { recursive: true })
+    const first = await start({ cwd, replay: join(app, "test/fixtures/pong.jsonl") })
+    await first.tui.type("remember this deep project")
+    await first.tui.press(key.enter)
+    await first.tui.until((screen) => idle(screen) && screen.includes("pong"), 15_000, "deep project answered")
+    expect(first.tui.screen()).not.toContain("Session not saved")
+    process.env.SMITHERS_TUI_SESSION_DIR = first.sessions
+    const file = Session.latest(cwd)!
+    expect(Session.load(file)).toContainEqual({ type: "user", at: expect.any(Number), text: "remember this deep project" })
+    await first.tui.stop()
+    const resumed = await start({ cwd, sessions: first.sessions, replay: join(app, "test/fixtures/pong.jsonl"), args: "-c" })
+    await resumed.tui.until((screen) => screen.includes("remember this deep project") && screen.includes("pong"), 10_000, "deep project resumed")
   }, 60_000)
 
   it("continues the latest session with -c", async () => {
@@ -433,6 +715,34 @@ describe("completion", () => {
 })
 
 describe("search palette", () => {
+  it("routes typeahead after Ctrl+L into the model filter and keeps the draft empty", async () => {
+    const { tui } = await start()
+    await tui.press("\x0c" + "replay-filter")
+    await tui.until((screen) => screen.includes("Select model") && screen.includes("replay-filter"), 5_000, "model query")
+    await tui.press(key.escape)
+    await tui.until((screen) => !screen.includes("Select model"), 5_000, "model picker closed")
+    expect(tui.screen()).not.toContain("replay-filter")
+  }, 60_000)
+
+  for (const close of [key.ctrlC, key.ctrlK]) {
+    it(`keeps typing after closing the palette in one burst (${JSON.stringify(close)})`, async () => {
+      const { tui } = await start()
+      await tui.press(key.ctrlK)
+      await tui.until((screen) => screen.includes("Search") && screen.includes("/model"), 5_000, "palette")
+      await tui.press(close + "keep-this-draft")
+      await tui.until((screen) => /┃\s+keep-this-draft/.test(screen), 5_000, "complete draft")
+    }, 60_000)
+  }
+
+  it("keeps typing after choosing a file in one burst", async () => {
+    const { tui } = await start()
+    await tui.press(key.ctrlK)
+    await tui.type("check")
+    await tui.until((screen) => screen.includes("check.mjs"), 5_000, "file row")
+    await tui.press(key.enter + "keep-this-draft")
+    await tui.until((screen) => /┃\s+@check\.mjs keep-this-draft/.test(screen), 5_000, "mention and complete draft")
+  }, 60_000)
+
   it("ctrl+k opens Search without deleting the rest of the line", async () => {
     const { tui } = await start()
     await tui.type("look at ")
@@ -497,11 +807,23 @@ describe("search palette", () => {
     await tui.until((screen) => /┃\s+my precious draft/.test(screen), 5_000, "draft restored")
   }, 60_000)
 
-  it("text: says when rg stopped at the cap", async () => {
+  for (const rows of [8, 12]) {
+    it(`keeps search selection and count visible in a 40 by ${rows} terminal`, async () => {
+      const cwd = repository()
+      writeFileSync(join(cwd, "many.txt"), "small-needle\n".repeat(75))
+      const { tui } = await start({ cwd, cols: 40, rows })
+      await tui.press(key.ctrlK + "text:small-needle")
+      await tui.until((screen) => screen.includes("many.txt:1"), 5_000, "search matches")
+      await tui.press(key.down.repeat(30))
+      const screen = await tui.until((screen) => screen.includes("31/75") && screen.includes("many.txt:31"), 5_000, "selected row and count")
+      expect(screen).toContain("text:small-needle")
+      expect(screen).toContain("esc")
+    }, 30_000)
+  }
+
+  it("text: says when one file reaches the global cap", async () => {
     const cwd = repository()
-    for (let file = 0; file < 12; file++) {
-      writeFileSync(join(cwd, `many${file}.txt`), Array.from({ length: 20 }, () => "repeated").join("\n") + "\n")
-    }
+    writeFileSync(join(cwd, "many.txt"), "repeated\n".repeat(240))
     const { tui } = await start({ cwd })
     await tui.press(key.ctrlK)
     await tui.type("text:repeated")
@@ -695,6 +1017,25 @@ describe("fork", () => {
 })
 
 describe("model dialog", () => {
+  it("chooses the latest picker row and filter when keys arrive in one burst", async () => {
+    const { tui } = await start({ home: mkdtempSync(join(tmpdir(), "tui-theme-home-")) })
+    await tui.type("/theme")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Select theme"), 5_000, "theme picker")
+    await tui.press(key.down + key.enter)
+    await tui.until((screen) => !screen.includes("Select theme"), 5_000, "selected theme")
+    await tui.type("/theme")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Select theme"), 5_000, "reopened picker")
+    expect(tui.screen()).toMatch(/●\s+blue/)
+    await tui.press("green" + key.enter)
+    await tui.until((screen) => !screen.includes("Select theme"), 5_000, "filtered theme")
+    await tui.type("/theme")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Select theme"), 5_000, "final picker")
+    expect(tui.screen()).toMatch(/●\s+green/)
+  }, 60_000)
+
   it("filters as you type and picks with enter", async () => {
     const { tui } = await start()
     await tui.type("/model")
@@ -949,6 +1290,51 @@ describe("runtime views", () => {
     await tui.until((screen) => screen.includes("New session started"), 5_000, "new session")
   }, 60_000)
 
+  it("/new is refused while an undo is pending and starts a session once it settles", async () => {
+    const cwd = repository()
+    const sessions = mkdtempSync(join(tmpdir(), "tui-undo-hold-"))
+    const gate = join(sessions, "release-undo")
+    tui = await Tui.start({
+      cwd,
+      command: `bun ${join(app, "e2e", "undo-hold-fixture.ts")}`,
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions, SMITHERS_TUI_UNDO_HOLD: gate }
+    })
+    await tui.until(drawn, 20_000, "first draw")
+    await tui.type("delegate fix")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Fixer · done"), 10_000, "worker done")
+    await tui.press(key.ctrlK)
+    await tui.type("tab:fix")
+    await tui.until((screen) => screen.includes("Search") && /Fixer\s+done/.test(screen), 5_000, "tab row")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("u Undo changes") && screen.includes("Fixer"), 5_000, "worker tab")
+    for (let step = 0; step < 8 && !/› .*ctx\.call\("edit"\)/.test(tui.screen()); step++) {
+      await tui.type("j")
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+    await tui.until((screen) => /› .*ctx\.call\("edit"\)/.test(screen), 5_000, "edit row")
+    await tui.type("u")
+    await tui.until((screen) => screen.includes("Undo math.js?"), 5_000, "confirm")
+    await tui.press(key.enter)
+    await tui.until(() => existsSync(`${gate}.held`), 5_000, "undo held")
+    await tui.press(key.escape)
+    await tui.type("/new")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "refused")
+    expect(tui.screen()).not.toContain("New session started")
+    expect(readdirSync(sessions, { withFileTypes: true }).filter((entry) => entry.isDirectory())).toHaveLength(1)
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
+    writeFileSync(gate, "")
+    await tui.until(
+      (screen) => readFileSync(join(cwd, "math.js"), "utf8").includes("a - b") && screen.includes("Undid math.js"),
+      10_000,
+      "undone"
+    )
+    await tui.type("/new")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("New session started"), 5_000, "new session")
+  }, 60_000)
+
   it("renders agent-authored UI from a real cell and restores it after restart", async () => {
     const cwd = repository()
     const sessions = mkdtempSync(join(tmpdir(), "tui-panels-"))
@@ -1137,6 +1523,15 @@ describe("worker tabs", () => {
     await tui.click("c Open in chat")
     await tui.until((screen) => screen.includes("Requested the investigation.") && !screen.includes("x Stop"), 5_000, "chat")
   }, 60_000)
+
+  for (const action of ["s", "c"]) {
+    it(`keeps typeahead after the worker's ${action} focus action`, async () => {
+      const tui = await launch()
+      await tui.press(action + "keep-this-worker-draft")
+      await tui.until((screen) => /┃\s+keep-this-worker-draft/.test(screen), 5_000, "worker action keeps complete draft")
+      expect(tui.screen().includes("steer ↳ Investigation")).toBe(action === "s")
+    }, 60_000)
+  }
 })
 
 describe("flows", () => {
@@ -1169,7 +1564,7 @@ describe("flows", () => {
     await tui.until((screen) => /┃\s+hello/.test(screen), 5_000, "composer usable while the flow runs")
     await tui.press(ctrlRight)
     await tui.press(ctrlRight)
-    await tui.until((screen) => screen.includes("r Resume") && screen.includes("x Stop"), 5_000, "flow tab footer")
+    await tui.until((screen) => !screen.includes("r Resume") && screen.includes("x Stop"), 5_000, "flow tab footer")
     await tui.type("x")
     await tui.until((screen) => screen.includes("review · cancelled") && screen.includes("■ review"), 5_000, "settled from the watch")
   }, 60_000)
@@ -1185,7 +1580,7 @@ describe("flows", () => {
     await tui.press(key.ctrlC)
     await tui.press(ctrlRight)
     await tui.press(ctrlRight)
-    await tui.until((screen) => screen.includes("r Resume") && screen.includes("x Stop"), 5_000, "flow tab footer")
+    await tui.until((screen) => !screen.includes("r Resume") && screen.includes("x Stop"), 5_000, "flow tab footer")
     await tui.type("a")
     await tui.until((screen) => /┃\s+Title/.test(screen), 5_000, "form reopened")
     await tui.press(ctrlRight)
@@ -1193,6 +1588,18 @@ describe("flows", () => {
     await tui.until((screen) => /┃\s+again/.test(screen), 5_000, "composer after Ctrl+Right")
     expect(tui.screen()).not.toContain("cancelled")
     expect(tui.screen()).toContain("◌ review")
+  }, 60_000)
+
+  it("keeps typeahead when a flow tab reopens its input form", async () => {
+    const { tui } = await open()
+    await tui.type("/flow review")
+    await tui.press(key.enter)
+    await tui.until((screen) => /┃\s+Title/.test(screen), 5_000, "form")
+    await tui.press(key.escape)
+    await tui.press(ctrlRight + ctrlRight)
+    await tui.until((screen) => !screen.includes("r Resume") && screen.includes("x Stop"), 5_000, "flow tab")
+    await tui.press("a" + "all-form-characters")
+    await tui.until((screen) => screen.includes("all-form-characters"), 5_000, "complete form field")
   }, 60_000)
 
   it("a run parked on its form never blocks /new", async () => {
@@ -1520,6 +1927,34 @@ describe("transcript scrolling", () => {
 })
 
 describe("monitors", () => {
+  for (const action of ["stop the shell watch", "/quit", "/new"]) {
+    it(`${action} cancels an in-flight monitor shell`, async () => {
+      const cwd = repository()
+      tui = await Tui.start({
+        cwd,
+        command: `bun ${join(app, "e2e", "monitor-fixture.tsx")}`,
+        env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
+      })
+      let pid: number | undefined
+      try {
+        await tui.until(drawn, 20_000, "first draw")
+        await tui.type("watch a slow shell")
+        await tui.press(key.enter)
+        await tui.until(() => existsSync(join(cwd, "monitor.pid")), 5_000, "monitor shell running")
+        pid = Number(readFileSync(join(cwd, "monitor.pid"), "utf8").trim())
+        await tui.type(action)
+        await tui.press(key.enter)
+        if (action === "/quit") await tui.waitForExit(5_000)
+        else await tui.until(() => {
+          try { process.kill(-pid!, 0); return false } catch { return true }
+        }, 5_000, "monitor shell stopped")
+        expect(() => process.kill(-pid!, 0)).toThrow()
+      } finally {
+        if (pid !== undefined) try { process.kill(-pid, "SIGKILL") } catch {}
+      }
+    }, 30_000)
+  }
+
   const update = "CI: Build failed on main."
   const watch = async (notable: boolean) => {
     const cwd = repository()

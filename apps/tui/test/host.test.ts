@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as NodeServices from "@effect/platform-node/NodeServices"
@@ -18,6 +18,8 @@ import type * as Agents from "../src/agents.ts"
 import * as Approvals from "../src/approvals.ts"
 import * as Host from "../src/host.ts"
 import * as Runtime from "../src/runtime.ts"
+import * as Log from "../src/log.ts"
+import * as Session from "../src/session.ts"
 
 const roots: Array<string> = []
 afterEach(() => {
@@ -68,6 +70,41 @@ const basis = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
   events.flatMap((event) => (event._tag === "mutation-observed" ? [event.basis] : []))
 
 describe("Host.run workspace observation", () => {
+  for (const location of ["nested", "root", "alias"] as const) {
+    test(`does not count its in-project session and diagnostic writes as edits (${location})`, async () => {
+      const previous = process.env.SMITHERS_TUI_SESSION_DIR
+      const cwd = mkdtempSync(join(tmpdir(), "tui-observer-session-"))
+      roots.push(cwd)
+      if (location === "alias") symlinkSync(cwd, join(cwd, "alias"), "dir")
+      process.env.SMITHERS_TUI_SESSION_DIR = location === "root" ? cwd : join(cwd, location === "alias" ? "alias" : "sessions")
+      const seat = `replay:${doneReplay(cwd)}`
+      const writer = Session.create(cwd)
+      const host = Host.make({ cwd, environment: {}, approvals: "all" })
+      const events: Array<AgentEvent.AgentEvent> = []
+      try {
+        const outcome = await host.run({ prompt: "answer", role: "worker", seat, history: [], onEvent: (event) => {
+          events.push(event)
+          writer.append({ type: "event", at: Date.now(), event })
+          Log.write("observation-test", event._tag)
+        } }).done
+        expect(outcome).toEqual({ _tag: "done", answer: "ok" })
+        expect(new Set(events.filter((event) => event._tag === "mutation-observed").map((event) => event.mutated))).toEqual(new Set([false]))
+        events.length = 0
+        const editingSeat = `replay:${doneReplay(cwd, 'await ctx.call("write", { path: "sessions/project.ts", content: "real project edit" }); ctx.done("edited")')}`
+        const edited = await host.run({ prompt: "edit", role: "worker", seat: editingSeat, history: [], onEvent: (event) => {
+          events.push(event)
+          writer.append({ type: "event", at: Date.now(), event })
+        } }).done
+        expect(edited).toEqual({ _tag: "done", answer: "edited" })
+        expect(new Set(events.filter((event) => event._tag === "mutation-observed").map((event) => event.mutated))).toEqual(new Set([true]))
+      } finally {
+        await host.dispose()
+        if (previous === undefined) delete process.env.SMITHERS_TUI_SESSION_DIR
+        else process.env.SMITHERS_TUI_SESSION_DIR = previous
+      }
+    })
+  }
+
   test("a coordinator turn measures no tree: it has no flow that can move one", async () => {
     const { outcome, events } = await turn("coordinator")
 

@@ -279,11 +279,12 @@ export const fit = (
  * the panel basics. `action` relabels `a` with the selected row's action.
  */
 export const panelHints = (
-  panel: { readonly worker?: boolean; readonly undo?: boolean; readonly action?: string }
+  panel: { readonly retry?: boolean; readonly stop?: boolean; readonly undo?: boolean; readonly action?: string }
 ): ReadonlyArray<Binding> => {
   const byId = (id: string) => registry.find((binding) => binding.id === id)!
   return [
-    ...(panel.worker === true ? [byId("retry"), byId("stop")] : []),
+    ...(panel.retry === true ? [byId("retry")] : []),
+    ...(panel.stop === true ? [byId("stop")] : []),
     ...(panel.undo === true ? [byId("undo")] : []),
     ...(panel.action === undefined ? [] : [{ ...byId("approve-form"), label: panel.action }]),
     byId("close-panel"),

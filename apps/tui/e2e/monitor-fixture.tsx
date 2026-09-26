@@ -31,6 +31,17 @@ const host: Host.Host = {
       }
     }
     let answer = "Still here."
+    if (input.prompt === "watch a slow shell") {
+      input.runtime!.monitors!.create({
+        id: "shell", title: "Shell", watch: "the command changes",
+        source: { kind: "shell", command: "trap '' TERM; echo $$ > monitor.pid; sleep 30" }
+      })
+      answer = "Watching the shell."
+    }
+    if (input.prompt === "stop the shell watch") {
+      input.runtime!.monitors!.stop("shell")
+      answer = "Shell watch stopped."
+    }
     if (input.prompt === "watch the build") {
       input.runtime!.delegate!({ id: "build", title: "Build", prompt: "Run the build." })
       input.runtime!.monitors!.create({

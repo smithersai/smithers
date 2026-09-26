@@ -39,6 +39,7 @@ const host: Host.Host = {
     reply: async (_, choice) => {
       pending = false
       log(`reply ${choice}`)
+      return undefined
     }
   }
 }

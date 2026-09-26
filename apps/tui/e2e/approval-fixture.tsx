@@ -8,7 +8,7 @@ import type * as Host from "../src/host.ts"
 let settle = (_: Host.Outcome) => {}
 let pending = false
 const request: Approvals.Pending = {
-  requestId: "req-1", flow: "bash", subject: "true", source: "chat", action: "proc:spawn", tier: "irreversible", always: true
+  requestId: "req-1", flow: "bash", subject: process.env.TUI_APPROVAL_SUBJECT ?? "true", source: "chat", action: "proc:spawn", tier: "irreversible", always: true
 }
 const host: Host.Host = {
   cwd: process.cwd(), judged: false, compaction: async () => undefined, dispose: async () => {},
@@ -20,7 +20,7 @@ const host: Host.Host = {
   approvals: {
     authorize: async () => {},
     mode: "ask", pending: async () => pending ? [request] : [],
-    reply: async (_, choice) => { pending = false; settle({ _tag: "done", answer: `Choice: ${choice}` }) }
+    reply: async (_, choice) => { pending = false; settle({ _tag: "done", answer: `Choice: ${choice}` }); return undefined }
   }
 }
 const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })

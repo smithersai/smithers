@@ -1,7 +1,7 @@
 /** Flow runs over a controllable fake Port: persistence, receipts, and settlement only from the watch. */
 import { describe, expect, it } from "bun:test"
 import { Schema } from "effect"
-import { type Card, FlowError, FlowRuns, interrupted, type Listed, type Port, type Run, type Settled } from "../src/flows.ts"
+import { actions, type Card, FlowError, FlowRuns, interrupted, type Listed, type Port, type Run, type Settled } from "../src/flows.ts"
 import * as Session from "../src/session.ts"
 import { Workspace } from "../src/workspace.ts"
 import type * as Host from "../src/host.ts"
@@ -188,6 +188,7 @@ describe("flow runs", () => {
     f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
     await tick()
     expect(f.runs.get("r1")?.status).toBe("running")
+    expect(actions(f.runs.get("r1"))).toEqual({ retry: false, stop: true })
     f.watches[0]!.emit(call("control.agent.cell-call-started", 1))
     f.watches[0]!.emit(call("control.agent.cell-call-settled", 2))
     expect(f.runs.get("r1")?.status).toBe("running")
@@ -199,6 +200,7 @@ describe("flow runs", () => {
     done.watches[0]!.done.resolve({ kind: "done", answer: "Looks good." })
     await tick()
     expect(done.runs.get("r1")).toMatchObject({ status: "done", answer: "Looks good." })
+    expect(actions(done.runs.get("r1"))).toEqual({ retry: false, stop: false })
     expect(done.runs.get("r1")?.endedAt).toBeNumber()
     const panel = done.runs.panel("r1")
     expect(panel.summary).toBe("Looks good.")
@@ -210,6 +212,7 @@ describe("flow runs", () => {
     failed.watches[0]!.done.resolve({ kind: "failed", message: "boom" })
     await tick()
     expect(failed.runs.get("r1")).toMatchObject({ status: "failed", message: "boom" })
+    expect(actions(failed.runs.get("r1"))).toEqual({ retry: true, stop: false })
     expect(failed.runs.busy).toBe(false)
   })
 
@@ -225,6 +228,71 @@ describe("flow runs", () => {
     await tick()
     expect(f.runs.get("r1")?.status).toBe("cancelled")
     expect(f.runs.panel("r1").summary).toBe("Stopped.")
+  })
+
+  it("keeps parked and approval states through diagnostic events and resumes only on a run receipt", async () => {
+    const f = setup()
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    f.watches[0]!.emit(call("control.run.waiting-approval", 1))
+    f.watches[0]!.emit(call("control.agent.discipline-armed", 2))
+    expect(f.runs.get("r1")?.status).toBe("waiting")
+    f.watches[0]!.emit(call("control.run.parked", 3))
+    f.watches[0]!.emit({ ...call("control.agent.suspended", 4), payload: { reason: { message: "Which branch?" } } })
+    expect(f.runs.get("r1")?.status).toBe("parked")
+    expect(f.runs.busy).toBe(false)
+    expect(f.runs.panel("r1").summary).toBe("Which branch?")
+    f.watches[0]!.emit(call("control.run.running", 5))
+    expect(f.runs.get("r1")?.status).toBe("running")
+    expect(f.runs.get("r1")?.message).toBeUndefined()
+  })
+
+  it("queues a parked resume with its durable run ID and ignores a replaced watch", async () => {
+    const f = setup()
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    f.watches[0]!.emit(call("control.run.parked", 1))
+    for (const id of ["r2", "r3", "r4"]) f.runs.request({ id, flow: "review", input: {}, by: "user" })
+    await tick()
+    expect(f.starts).toHaveLength(4)
+    expect(f.runs.retry("r1")).toEqual({ id: "r1", status: "queued" })
+    expect(f.runs.get("r1")?.runId).toBe("run-1")
+    f.watches[1]!.done.resolve({ kind: "done", answer: "done" })
+    await tick()
+    expect(f.calls).toContain("resume:run-1")
+    expect(f.starts).toHaveLength(4)
+    f.resumes[0]!.resolve({ runId: "run-1" })
+    await tick()
+    f.watches[0]!.done.reject(new Error("old watch closed"))
+    f.watches[0]!.emit(call("control.run.parked", 9))
+    await tick()
+    expect(f.runs.get("r1")?.status).toBe("running")
+    const last = f.watches.at(-1)!
+    last.emit(call("control.run.parked", 10))
+    f.runs.cancel("r1")
+    expect(f.calls).toContain("cancel:run-1")
+    last.done.resolve({ kind: "cancelled" })
+    await tick()
+    expect(f.runs.get("r1")?.status).toBe("cancelled")
+  })
+
+  it("cancels a queued resume without launching a replacement or losing its watch", async () => {
+    const f = setup()
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    f.watches[0]!.emit(call("control.run.parked", 1))
+    for (const id of ["r2", "r3", "r4"]) f.runs.request({ id, flow: "review", input: {}, by: "user" })
+    await tick()
+    f.runs.retry("r1")
+    f.runs.cancel("r1")
+    expect(f.calls).toContain("cancel:run-1")
+    expect(f.calls).not.toContain("resume:run-1")
+    f.watches.at(-1)!.done.resolve({ kind: "cancelled" })
+    f.watches[1]!.done.resolve({ kind: "done", answer: "done" })
+    await tick()
+    expect(f.runs.get("r1")?.status).toBe("cancelled")
+    expect(f.starts).toHaveLength(4)
+    expect(f.resumes).toHaveLength(0)
   })
 
   it("a run parked for approval keeps its watch: resumes, and a stop settles it", async () => {
@@ -444,7 +512,7 @@ describe("flow runs", () => {
     f.runs.request({ id: "x", flow: "nope", input: {}, by: "user" })
     await tick()
     expect(f.runs.retry("x")).toEqual({ id: "x", status: "requested" })
-    expect(() => f.runs.retry("x")).toThrow("Only a failed or stopped run can be retried")
+    expect(() => f.runs.retry("x")).toThrow("Only a failed, stopped, or parked run can be retried")
   })
 
   it("queues a retry at the cap instead of throwing", async () => {

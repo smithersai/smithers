@@ -6,11 +6,16 @@ section: Start
 ---
 
 The new TUI is available from this source checkout. Use the Node version in `.node-version`, pnpm 11.25.0, and Bun 1.4 or later.
+Install jj 0.39.0 or later for flow execution and ripgrep (`rg`) for text search.
+Source checkouts also need the native filesystem helper built with Rust 1.98.0;
+compiled TUI releases embed it. On Alpine, the compiled musl executable
+also needs `apk add libstdc++`.
 
 ```bash
 git clone https://github.com/smithersai/smithers.git
 cd smithers
 pnpm install
+cargo +1.98.0 build --locked --release -p smithers-ffi --bin smithers-jj-export
 bun run tui /path/to/project
 ```
 

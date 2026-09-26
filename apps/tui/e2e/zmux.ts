@@ -18,7 +18,7 @@ import { join } from "node:path"
 
 export const zmuxd = (): string | undefined => {
   if (process.env.ZMUXD !== undefined) return process.env.ZMUXD
-  const found = spawnSync("which", ["zmuxd"], { encoding: "utf8" }).stdout.trim()
+  const found = (spawnSync("which", ["zmuxd"], { encoding: "utf8" }).stdout ?? "").trim()
   if (found !== "") return found
   const built = join(homedir(), "zmux", "zig-out", "bin", "zmuxd")
   return existsSync(built) ? built : undefined
@@ -81,8 +81,8 @@ export class Tui {
     private readonly daemon: ChildProcess,
     private readonly socket: Socket,
     private readonly directory: string,
-    readonly rows: number,
-    readonly cols: number
+    public rows: number,
+    public cols: number
   ) {
     this.terminal = new Terminal({ rows, cols, allowProposedApi: true })
     socket.setEncoding("utf8")
@@ -177,6 +177,14 @@ export class Tui {
         this.exited = { code: (message.params?.exit_code as number | null | undefined) ?? null }
       }
     }
+  }
+
+  /** Resize both the terminal emulator and its real PTY. */
+  async resize(cols: number, rows: number): Promise<void> {
+    this.cols = cols
+    this.rows = rows
+    this.terminal.resize(cols, rows)
+    await this.call("session.resize", { sessionId: "tui", cols, rows })
   }
 
   /** Sends raw bytes to the PTY. */

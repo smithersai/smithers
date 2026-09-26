@@ -1,10 +1,11 @@
 /**
  * The real `Flows.Port`: the native control host `smthrs up` drives, composed
- * for Bun and opened in-process. Discovery reads the registry only; warming
+ * for the current runtime and opened in-process. Discovery reads the registry only; warming
  * imports the project's flow modules.
  */
 import { NodeServices } from "@effect/platform-node"
 import * as BunControl from "@smthrs/cli/BunControl"
+import * as NodeControl from "@smthrs/cli/NodeControl"
 import { Control, type ControlSchema } from "@smthrs/control"
 import * as Diagnosis from "@smthrs/gateway/Diagnosis"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -21,6 +22,7 @@ import * as Extension from "./extension.ts"
 import type { Host } from "./host.ts"
 
 type ControlEvent = ControlSchema.ControlEvent
+const NativeControl = process.versions.bun === undefined ? NodeControl : BunControl
 interface Opened {
   readonly runtime: ManagedRuntime.ManagedRuntime<Control.Control, never>
   readonly catalog: Executable.Catalog
@@ -36,7 +38,7 @@ const typed = (error: unknown): FlowError => {
     : failure instanceof Error
     ? failure.message
     : String(failure)
-  return new FlowError(tag.endsWith("InvalidInput") ? "invalid_input" : "control", message || tag || "Control failed")
+  return new FlowError(tag.endsWith("InvalidInput") ? "invalid_input" : "control", message || tag || "Control failed", { cause: failure })
 }
 
 const payloadOf = (event: ControlEvent): Record<string, unknown> =>
@@ -57,7 +59,7 @@ export const make = (options: {
   const judge = (options.environment[Evaluator.environmentKey] ?? "").trim() !== ""
     ? Evaluator.layerFromEnvironment(options.environment, "smithers-tui").pipe(Layer.provide(FetchHttpClient.layer))
     : Evaluator.layerUnavailable()
-  const registry = () => BunControl.layerRegistry(options.cwd)
+  const registry = () => NativeControl.layerRegistry(options.cwd)
   let opening: Promise<Opened> | undefined
 
   const open = (): Promise<Opened> => {
@@ -70,10 +72,11 @@ export const make = (options: {
         ...catalog.executables.map((entry) => entry.layer)
       )
       const runtime = ManagedRuntime.make(
-        BunControl.layerControl(
+        NativeControl.layerControl(
           {
             root: options.cwd,
             startsRuns: true,
+            approvalChannel: true,
             evaluator: judge,
             ...(options.stateRoot === undefined ? {} : { stateRoot: options.stateRoot })
           },
@@ -151,7 +154,12 @@ export const make = (options: {
       // takes any JSON input, so the catalog's delegate refusal does not apply to it.
       if (await markdown(flow)) return undefined
       const refused = catalog.refused.find((entry) => entry.flow === flow)
-      if (refused !== undefined) throw new FlowError("refused", refused.message)
+      if (refused !== undefined) {
+        const cause = refused.cause instanceof Error ? refused.cause.message
+          : typeof refused.cause === "string" ? refused.cause : undefined
+        const reason = cause?.split("\n")[0]
+        throw new FlowError("refused", reason ? `${refused.message}: ${reason}` : refused.message, { cause: refused })
+      }
       throw new FlowError("unknown_flow", `Unknown flow ${flow}`)
     },
     plan: (flow, input) =>
@@ -268,7 +276,7 @@ export const make = (options: {
         Control.Control.pipe(
           Effect.flatMap(list),
           Effect.provide(
-            BunControl.layerControl({
+            NativeControl.layerControl({
               root: options.cwd,
               startsRuns: false,
               evaluator: judge,

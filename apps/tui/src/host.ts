@@ -47,6 +47,8 @@ import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { realpathSync } from "node:fs"
+import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import type * as Agents from "./agents.ts"
 import * as Approvals from "./approvals.ts"
 import * as Changes from "./changes.ts"
@@ -55,6 +57,7 @@ import * as Monitors from "./monitors.ts"
 import * as Panels from "./panels.ts"
 import * as Replay from "./replay.ts"
 import * as Runtime from "./runtime.ts"
+import * as Session from "./session.ts"
 import * as Subprocess from "./subprocess.ts"
 import * as Transcript from "./transcript.ts"
 
@@ -161,6 +164,20 @@ const turnFlow = (index: number) =>
     body: () => Node.succeed(undefined)
   })
 
+/** Resolve aliases even before a lazily-created session directory exists. */
+const physicalPath = (path: string): string => {
+  let ancestor = resolve(path)
+  const missing: Array<string> = []
+  for (;;) {
+    try { return join(realpathSync(ancestor), ...missing.toReversed()) } catch {
+      const parent = dirname(ancestor)
+      if (parent === ancestor) return resolve(path)
+      missing.push(basename(ancestor))
+      ancestor = parent
+    }
+  }
+}
+
 /** Builds a host for `cwd`. The runtime is shared by every turn. */
 export const make = (options: {
   readonly cwd: string
@@ -197,7 +214,12 @@ export const make = (options: {
     // Measures the tree at both ends of every worker frame. Without it a sealed read
     // is keyed on no workspace digest and replays its first answer after an
     // edit: write "one", read, write "two", read returned "one" twice.
-    NodeControl.layerObserver(options.cwd),
+    NodeControl.layerObserver(options.cwd, {
+      // Only our owned subtree and log, never every directory named "sessions"
+      // or the configured root itself (which may be the project directory).
+      excludePaths: [Session.directory(options.cwd), Log.path()].map((path) =>
+        relative(physicalPath(options.cwd), physicalPath(path)).split(sep).join("/"))
+    }),
     // Model HTTP keeps the noop store `executor` provides; this one only
     // answers `authorize` below.
     Approvals.layer(options.cwd, approvalMode),

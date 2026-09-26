@@ -20,127 +20,127 @@ Press Escape
 
 ## Global
 
-| Key                       | Action         |
-| ------------------------- | -------------- |
-| `?`                       | Keys.          |
-| `ctrl+c`                  | Clear.         |
-| `ctrl+d`                  | Exit.          |
-| `ctrl+t`                  | Timeline.      |
-| `ctrl+o`                  | Expand.        |
-| `ctrl+g`                  | Edit prompt.   |
-| `ctrl+k`                  | Search.        |
-| `ctrl+s`                  | Summary.       |
-| `ctrl+]` / `ctrl+right`   | Next tab.      |
-| `ctrl+\` / `ctrl+left`    | Previous tab.  |
-| `pageup` / `pagedown`     | Scroll.        |
+| Key | Action |
+| --- | --- |
+| `?` | Keys. |
+| `ctrl+c` | Clear. |
+| `ctrl+d` | Exit. |
+| `ctrl+t` | Timeline. |
+| `ctrl+o` | Expand. |
+| `ctrl+g` | Edit prompt. |
+| `ctrl+k` | Search. |
+| `ctrl+s` | Summary. |
+| `ctrl+]` / `ctrl+right` | Next tab. |
+| `ctrl+\` / `ctrl+left` | Previous tab. |
+| `pageup` / `pagedown` | Scroll. |
 | `shift+up` / `shift+down` | Scroll a line. |
 
 ## Composer
 
-| Key                                   | Action          |
-| ------------------------------------- | --------------- |
-| `enter`                               | Send.           |
-| `alt+enter`                           | Queue.          |
-| `alt+up`                              | Restore queue.  |
-| `shift+enter` / `ctrl+j` / `linefeed` | New line.       |
-| `up` / `down`                         | History.        |
-| `ctrl+l`                              | Pick model.     |
-| `ctrl+p`                              | Next model.     |
-| `ctrl+shift+p`                        | Previous model. |
-| `shift+tab`                           | Thinking level. |
-| `/`                                   | Commands.       |
-| `@`                                   | Mention file.   |
-| `!`                                   | Shell mode.     |
-| `tab`                                 | Cards.          |
+| Key | Action |
+| --- | --- |
+| `enter` | Send. |
+| `alt+enter` | Queue. |
+| `alt+up` | Restore queue. |
+| `shift+enter` / `ctrl+j` / `linefeed` | New line. |
+| `up` / `down` | History. |
+| `ctrl+l` | Pick model. |
+| `ctrl+p` | Next model. |
+| `ctrl+shift+p` | Previous model. |
+| `shift+tab` | Thinking level. |
+| `/` | Commands. |
+| `@` | Mention file. |
+| `!` | Shell mode. |
+| `tab` | Cards. |
 
 ## Working
 
-| Key         | Action         |
-| ----------- | -------------- |
-| `enter`     | Steer.         |
-| `alt+enter` | Queue.         |
-| `alt+up`    | Restore queue. |
-| `esc`       | Interrupt.     |
+| Key | Action |
+| --- | --- |
+| `enter` | Steer. |
+| `alt+enter` | Queue. |
+| `alt+up` | Restore queue. |
+| `esc` | Interrupt. |
 
 ## Shell
 
-| Key     | Action       |
-| ------- | ------------ |
+| Key | Action |
+| --- | --- |
 | `enter` | Run command. |
-| `esc`   | Cancel.      |
+| `esc` | Cancel. |
 
 ## Panel
 
-| Key                                                      | Action          |
-| -------------------------------------------------------- | --------------- |
-| `esc`                                                    | Chat.           |
-| `i`                                                      | Composer.       |
-| `j` / `k` / `h` / `l` / `up` / `down` / `left` / `right` | Navigate.       |
-| `enter` / `space`                                        | Expand row.     |
-| `d`                                                      | Toggle diff.    |
-| `v`                                                      | Split diff.     |
-| `r`                                                      | Resume.         |
-| `m`                                                      | Switch model.   |
-| `w`                                                      | Wait for reset. |
-| `x`                                                      | Stop.           |
-| `s`                                                      | Steer.          |
-| `c`                                                      | Open in chat.   |
-| `a`                                                      | Action.         |
-| `u`                                                      | Undo changes.   |
-| `tab`                                                    | Next tab.       |
+| Key | Action |
+| --- | --- |
+| `esc` | Chat. |
+| `i` | Composer. |
+| `j` / `k` / `h` / `l` / `up` / `down` / `left` / `right` | Navigate. |
+| `enter` / `space` | Expand row. |
+| `d` | Toggle diff. |
+| `v` | Split diff. |
+| `r` | Resume. |
+| `m` | Switch model. |
+| `w` | Wait for reset. |
+| `x` | Stop. |
+| `s` | Steer. |
+| `c` | Open in chat. |
+| `a` | Action. |
+| `u` | Undo changes. |
+| `tab` | Next tab. |
 
 ## Picker
 
-| Key                                 | Action  |
-| ----------------------------------- | ------- |
-| `esc`                               | Close.  |
-| `up` / `down` / `ctrl+p` / `ctrl+n` | Move.   |
-| `pageup` / `pagedown`               | Page.   |
-| `enter`                             | Choose. |
+| Key | Action |
+| --- | --- |
+| `esc` | Close. |
+| `up` / `down` / `ctrl+p` / `ctrl+n` | Move. |
+| `pageup` / `pagedown` | Page. |
+| `enter` | Choose. |
 
 ## Form
 
-| Key                | Action          |
-| ------------------ | --------------- |
-| `esc`              | Close.          |
-| `tab` / `down`     | Next field.     |
+| Key | Action |
+| --- | --- |
+| `esc` | Close. |
+| `tab` / `down` | Next field. |
 | `shift+tab` / `up` | Previous field. |
-| `space`            | Toggle.         |
-| `left` / `right`   | Choose.         |
-| `enter`            | Run.            |
+| `space` | Toggle. |
+| `left` / `right` | Choose. |
+| `enter` | Run. |
 
 ## Approval
 
-| Key | Action     |
-| --- | ---------- |
-| `y` | Allow.     |
-| `n` | Deny.      |
+| Key | Action |
+| --- | --- |
+| `y` | Allow. |
+| `n` | Deny. |
 | `a` | Allow all. |
 
 ## Selection
 
-| Key                                               | Action     |
-| ------------------------------------------------- | ---------- |
-| `up` / `down` / `left` / `right` / `home` / `end` | Move.      |
-| `[` / `]` / `shift+left` / `shift+right`          | Milestone. |
-| `esc` / `enter`                                   | Live.      |
+| Key | Action |
+| --- | --- |
+| `up` / `down` / `left` / `right` / `home` / `end` | Move. |
+| `[` / `]` / `shift+left` / `shift+right` | Milestone. |
+| `esc` / `enter` | Live. |
 
 ## Completion
 
-| Key                                 | Action    |
-| ----------------------------------- | --------- |
-| `up` / `down` / `ctrl+p` / `ctrl+n` | Move.     |
-| `tab`                               | Complete. |
-| `enter`                             | Choose.   |
-| `esc`                               | Close.    |
+| Key | Action |
+| --- | --- |
+| `up` / `down` / `ctrl+p` / `ctrl+n` | Move. |
+| `tab` | Complete. |
+| `enter` | Choose. |
+| `esc` | Close. |
 
 ## Card
 
-| Key                                 | Action     |
-| ----------------------------------- | ---------- |
-| `enter`                             | Open.      |
+| Key | Action |
+| --- | --- |
+| `enter` | Open. |
 | `up` / `down` / `tab` / `shift+tab` | Next card. |
-| `esc`                               | Composer.  |
+| `esc` | Composer. |
 
 ## Editor and mouse
 

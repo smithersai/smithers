@@ -169,7 +169,7 @@ describe("smthrs tui", () => {
     const { root, packageRoot, log } = stage()
     platformPackage(root, "@smthrs/tui-darwin-arm64", log)
     const status = await Tui.run(
-      { directory: "repo", model: "openai:gpt-6-sol", continue: true, resume: false, print: "hi" },
+      { directory: "repo", model: "openai:gpt-6-sol", continue: true, resume: false, print: "hi", approve: "deny" },
       { ...process.env, FAKE_STATUS: "7" },
       packageRoot,
       machine()
@@ -181,6 +181,8 @@ describe("smthrs tui", () => {
       "--continue",
       "--print",
       "hi",
+      "--approve",
+      "deny",
       "repo"
     ])
   })

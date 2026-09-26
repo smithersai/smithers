@@ -41,6 +41,45 @@ describe("rg search", () => {
     expect(outcome._tag === "done" ? outcome.hits : undefined).toEqual([{ path: "we:ird.js", line: 1, text: "needle here" }])
   })
 
+  it("finds hits in files with newline, tab, Unicode, quote, and backslash names, keeping exact paths", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tui-search-odd-"))
+    const names = ["new\nline.txt", "tab\there.txt", "café 日本.txt", 'say "hi".txt', "back\\slash.txt"]
+    for (const name of names) writeFileSync(join(dir, name), `a\tpin "q" \\ é\n`)
+    const outcome = await Search.run({ cwd: dir, query: "pin" }).done
+    expect(outcome._tag).toBe("done")
+    if (outcome._tag !== "done") return
+    expect(outcome.hits.map((hit) => hit.path).sort()).toEqual([...names].sort())
+    for (const hit of outcome.hits) {
+      expect(readFileSync(join(dir, hit.path), "utf8")).toContain("pin")
+      expect(hit).toMatchObject({ line: 1, text: 'a\tpin "q" \\ é' })
+    }
+  })
+
+  it("decodes rg's base64 bytes, caps line text, and skips a path it cannot name exactly", () => {
+    const b64 = (bytes: Buffer) => bytes.toString("base64")
+    const match = (path: object, lines: object) => JSON.stringify({ type: "match", data: { path, lines, line_number: 7 } })
+    expect(Search.parse(match({ bytes: b64(Buffer.from("./café.txt")) }, { bytes: b64(Buffer.from([0x70, 0x69, 0x6e, 0xff, 0x0a])) })))
+      .toEqual({ path: "café.txt", line: 7, text: "pin\ufffd" })
+    expect(Search.parse(match({ bytes: b64(Buffer.from([0x62, 0xff])) }, { text: "pin\n" }))).toBeUndefined()
+    expect(Search.parse(match({ text: "./long.txt" }, { text: `${"x".repeat(300)}\n` }))?.text).toHaveLength(200)
+    expect(Search.parse(JSON.stringify({ type: "begin", data: { path: { text: "a" } } }))).toBeUndefined()
+    expect(Search.parse("not json")).toBeUndefined()
+  })
+
+  it("keeps more than twenty matches from one file until the global cap", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tui-search-one-file-"))
+    writeFileSync(join(dir, "matches.txt"), "needle\n".repeat(75))
+    const complete = await Search.run({ cwd: dir, query: "needle" }).done
+    expect(complete._tag).toBe("done")
+    if (complete._tag !== "done") return
+    expect(complete.hits).toHaveLength(75)
+    expect(complete.hits.at(-1)?.line).toBe(75)
+    expect(complete.truncated).toBe(false)
+    const capped = await Search.run({ cwd: dir, query: "needle", limit: 50 }).done
+    expect(capped._tag === "done" ? capped.hits.length : undefined).toBe(50)
+    expect(capped._tag === "done" && capped.truncated).toBe(true)
+  })
+
   it("stops at the cap and says so", async () => {
     const outcome = await Search.run({ cwd, query: "repeated", limit: 50 }).done
     expect(outcome._tag).toBe("done")

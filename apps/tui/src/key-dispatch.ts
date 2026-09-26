@@ -62,14 +62,20 @@ const typing = (key: KeyEvent): string | undefined => {
 }
 
 /**
- * The `?` popup. Any key closes it: esc and `?` only close, a listed key then
+ * The `?` popup. Page keys scroll it; esc and `?` close it, a listed key then
  * acts, and other typing becomes `?` plus that character, so a message that
  * starts with `?` is never lost. True when the key was consumed.
  */
 export const whichKeyKey = (key: KeyEvent, binding: Keys.Binding | undefined, act: {
   readonly close: () => void
   readonly type: (text: string) => void
+  readonly scroll: (direction: -1 | 1) => void
 }): boolean => {
+  if (!key.ctrl && !key.meta && !key.option && !key.shift && (key.name === "pageup" || key.name === "pagedown")) {
+    key.preventDefault()
+    act.scroll(key.name === "pageup" ? -1 : 1)
+    return true
+  }
   act.close()
   if (key.name === "escape" || binding?.id === "keys") {
     key.preventDefault()
@@ -252,6 +258,7 @@ export const panelKey = (key: KeyEvent, panel: Panels.Panel, state: {
   readonly navigation: Panels.Navigation
   /** The shown worker tab, whose actions are its own keys. */
   readonly worker: Tab | undefined
+  readonly flow: { readonly retry: boolean; readonly stop: boolean }
 }, act: {
   /** Back to the chat. */
   readonly close: () => void
@@ -273,8 +280,8 @@ export const panelKey = (key: KeyEvent, panel: Panels.Panel, state: {
   key.preventDefault()
   if (key.name === "escape") return act.close()
   if (key.name === "i") return act.release()
-  if (key.name === "r" && surface.startsWith("flow:")) return act.retryRun(surface.slice(5))
-  if (key.name === "x" && surface.startsWith("flow:")) return act.cancelRun(surface.slice(5))
+  if (key.name === "r" && surface.startsWith("flow:") && state.flow.retry) return act.retryRun(surface.slice(5))
+  if (key.name === "x" && surface.startsWith("flow:") && state.flow.stop) return act.cancelRun(surface.slice(5))
   if (key.name === "a" && surface.startsWith("flow:")) return act.fillRun(surface.slice(5))
   if (key.name === "u" && (surface === "summary" || surface.startsWith("tab:"))) {
     return act.undo(panel.rows[Math.min(navigation.selected, panel.rows.length - 1)], surface.startsWith("tab:") ? surface.slice(4) : undefined)

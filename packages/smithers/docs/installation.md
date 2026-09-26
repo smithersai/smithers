@@ -86,6 +86,7 @@ npx smthrs@next tui              # open the TUI here
 smthrs tui ../repo -c            # continue the latest session in ../repo
 smthrs tui -m openai:gpt-6-sol   # choose the chat seat
 smthrs tui -p "Summarize README" # print one answer and exit
+smthrs tui --approve ask        # ask before consequential calls
 ```
 
 ## Workspace target commands

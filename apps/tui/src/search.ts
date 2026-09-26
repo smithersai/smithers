@@ -20,6 +20,39 @@ export type Outcome =
 /** The most hits one search returns. */
 export const limit = 200
 
+/** The most characters of a matched line kept; rg ignores `--max-columns` with `--json`. */
+const maxColumns = 200
+
+type Data = { readonly text: string } | { readonly bytes: string }
+
+/** rg's `text`, or its base64 `bytes` when the value is not valid UTF-8; `exact` refuses a lossy decode. */
+const decode = (data: Data | undefined, exact: boolean): string | undefined => {
+  if (data === undefined) return undefined
+  if ("text" in data) return data.text
+  const bytes = Buffer.from(data.bytes, "base64")
+  const text = bytes.toString("utf8")
+  return exact && !Buffer.from(text, "utf8").equals(bytes) ? undefined : text
+}
+
+/**
+ * One `rg --json` line as a hit, or undefined for any other message. The path
+ * is exact, so a hit's mention names its file; a path that is not UTF-8 cannot
+ * be named and is skipped. Line text is decoded lossily for display.
+ */
+export const parse = (line: string): Hit | undefined => {
+  let message: { readonly type?: string; readonly data?: { readonly path?: Data; readonly lines?: Data; readonly line_number?: number } }
+  try {
+    message = JSON.parse(line)
+  } catch {
+    return undefined
+  }
+  if (message.type !== "match" || !Number.isInteger(message.data?.line_number)) return undefined
+  const path = decode(message.data!.path, true)
+  const text = decode(message.data!.lines, false)
+  if (path === undefined || text === undefined) return undefined
+  return { path: path.replace(/^\.\//, ""), line: message.data!.line_number!, text: text.replace(/\r?\n$/, "").slice(0, maxColumns) }
+}
+
 export const run = (options: {
   readonly cwd: string
   readonly query: string
@@ -31,14 +64,8 @@ export const run = (options: {
 }): { readonly done: Promise<Outcome>; readonly cancel: () => void } => {
   const cap = options.limit ?? limit
   const args = [
-    "--null",
-    "--line-number",
-    "--no-heading",
-    "--color", "never",
+    "--json",
     "--smart-case",
-    "--max-columns", "200",
-    "--max-columns-preview",
-    "--max-count", "20",
     ...(options.regex === undefined ? ["-F"] : []),
     "-e", options.regex ?? options.query,
     "--", "."
@@ -69,14 +96,8 @@ export const run = (options: {
     resolve(outcome)
   }
   const take = (line: string) => {
-    // `path\0line:text`, so a colon in the path cannot split it.
-    const nul = line.indexOf("\0")
-    if (nul < 0) return
-    const rest = line.slice(nul + 1)
-    const colon = rest.indexOf(":")
-    const number = Number(rest.slice(0, colon))
-    if (colon < 0 || !Number.isInteger(number)) return
-    hits.push({ path: line.slice(0, nul).replace(/^\.\//, ""), line: number, text: rest.slice(colon + 1) })
+    const hit = parse(line)
+    if (hit !== undefined) hits.push(hit)
   }
   child.stdout.setEncoding("utf8")
   child.stdout.on("data", (chunk: string) => {

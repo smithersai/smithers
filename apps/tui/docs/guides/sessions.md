@@ -89,4 +89,6 @@ Capture "Compact context, or report that nothing needs dropping."
 
 The default is `~/.smithers/tui/sessions/<cwd>--<hash>/`. `SMITHERS_TUI_SESSION_DIR` overrides the root. Sessions are owner-only JSONL. An incomplete last line is dropped on recovery; earlier corruption renames the file to `.damaged` and excludes it from the picker.
 
+Long directory names are shortened to fit the filesystem limit; the hash still identifies the complete working directory. Existing session folders remain readable.
+
 Credential-shaped text in prompts, output, and calls is redacted. File patches retain their exact bytes so undo can apply them. Treat the session directory as private project data.

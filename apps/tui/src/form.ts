@@ -146,8 +146,40 @@ export const parseArgs = (
       return { error: "Invalid JSON" }
     }
   }
+  const tokens: Array<string> = []
+  let token = ""
+  let quote: "'" | '"' | undefined
+  let started = false
+  for (let index = 0; index < trimmed.length; index++) {
+    const character = trimmed[index]!
+    if (character === "\\" && quote !== "'") {
+      const next = trimmed[index + 1]
+      if (next === undefined) return { error: "Trailing escape" }
+      // Preserve ordinary path backslashes; only syntax needs escaping.
+      if (next === "\\" || next === '"' || next === "'" || /\s/.test(next)) {
+        token += next
+        index++
+      } else token += character
+      started = true
+    } else if (quote !== undefined) {
+      if (character === quote) quote = undefined
+      else token += character
+    } else if (character === '"' || character === "'") {
+      quote = character
+      started = true
+    } else if (/\s/.test(character)) {
+      if (started) tokens.push(token)
+      token = ""
+      started = false
+    } else {
+      token += character
+      started = true
+    }
+  }
+  if (quote !== undefined) return { error: "Unclosed quote" }
+  if (started) tokens.push(token)
   return {
-    input: Object.fromEntries(trimmed.split(/\s+/).map((token) => {
+    input: Object.fromEntries(tokens.map((token) => {
       const separator = token.indexOf("=")
       return separator < 1 ? [token, true] : [token.slice(0, separator), token.slice(separator + 1)]
     }))
