@@ -823,3 +823,77 @@ for (const kind of ["plan", "run"] as const) {
     } finally { first.resolve() }
   })
 }
+
+
+describe("run graph commands retain the recorded gateway scope", () => {
+  const workspaceA = "11111111-1111-1111-1111-111111111111"
+  const workspaceB = "22222222-2222-2222-2222-222222222222"
+  const trace = (id: string, repo = REPO, workspaceId?: string): Extract<Card, { kind: "run-trace" }> => ({
+    id, kind: "run-trace", title: id, status: "acted", createdAt: 1, ordinal: 1,
+    payload: { repo, workspaceId, runId: RUN, workflow: FLOW, phase: "completed", steps: [], result: null, lastSeq: 0,
+      graph: { node: "gate", tab: "declaration" },
+      plan: { planId: "plan-1", digest: "d".repeat(64), nodes: [
+        { id: "gate", kind: "step", key: "key1_" + "0".repeat(64), dependsOn: [], tier: "sealed", status: "run" },
+        { id: "steady", kind: "step", key: "key1_" + "1".repeat(64), dependsOn: ["gate"], tier: "sealed", status: "run" },
+      ], graph: { edges: [], sourceRevision: REVISION, nodes: [{ id: "gate", declaredAt: { path: "flows/review/flow.ts", line: 1 } }] } }
+    }
+  })
+  const ready = async (cards: Card[]) => {
+    const store = await webStore()
+    await signIn(store)
+    for (const card of cards) await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const served = relay({ source: "export const source = true" })
+    const controller = createAppController(store, silentAgent, served.services)
+    return { store, controller, reads: served.reads }
+  }
+  const view = (store: Awaited<ReturnType<typeof webStore>>, id: string) => {
+    const card = store.collections.cards.get(id)
+    return card?.kind === "run-trace" ? card.payload.graph : undefined
+  }
+
+  test.each([
+    ["different workspaces", trace("a", REPO, workspaceA), trace("b", REPO, workspaceB)],
+    ["different repositories", trace("a", REPO, workspaceA), trace("b", "another/repository", workspaceA)],
+    ["legacy and bound gateways", trace("a"), trace("b", REPO, workspaceA)],
+  ] as const)("unqualified selection and tabs refuse %s without modifying either graph", async (_name, first, second) => {
+    const { store, controller, reads } = await ready([first, second])
+    expect(said(await controller.commands.run("runs.graph.select", `${RUN} steady`))).toContain("conflicting")
+    expect(said(await controller.commands.run("runs.graph.tab", `${RUN} code`))).toContain("conflicting")
+    await settle(10)
+    expect(view(store, first.id)).toEqual(first.payload.graph)
+    expect(view(store, second.id)).toEqual(second.payload.graph)
+    expect(reads).toHaveLength(0)
+  })
+
+  test("a conflicting listing also refuses rather than overriding its recorded gateway", async () => {
+    const first = trace("a", REPO, workspaceA)
+    const listing: Card = { id: "other-list", kind: "run-list", title: "Other runs", status: "acted", createdAt: 1, ordinal: 2,
+      payload: { repo: REPO, workspaceId: workspaceB, gatewayBindingVersion: 1,
+        runs: [{ runId: RUN, flowId: FLOW, status: "completed", createdAt: 1, turns: 0, calls: 0 }] } }
+    const { store, controller } = await ready([first, listing])
+    expect(said(await controller.commands.run("runs.graph.select", `${RUN} steady`))).toContain("conflicting")
+    expect(view(store, first.id)).toEqual(first.payload.graph)
+  })
+
+  test("explicit source cards select exactly their run despite another matching ID", async () => {
+    const first = trace("a", REPO, workspaceA)
+    const second = trace("b", REPO, workspaceB)
+    const { store, controller } = await ready([first, second])
+    expect(said(await controller.commands.run("runs.graph.select", `sourceCard=b ${RUN} steady`))).toContain("graph-select")
+    expect(said(await controller.commands.run("runs.graph.tab", `sourceCard=b ${RUN} events`))).toContain("graph-tab")
+    expect(view(store, first.id)).toEqual(first.payload.graph)
+    expect(view(store, second.id)).toEqual({ node: "steady", tab: "events" })
+    expect(said(await controller.commands.run("runs.graph.select", `sourceCard=missing ${RUN} gate`))).toContain("Open the run first")
+    expect(said(await controller.commands.run("runs.graph.select", `sourceCard=b another-run gate`))).toContain("Open the run first")
+    expect(view(store, second.id)).toEqual({ node: "steady", tab: "events" })
+  })
+
+  test("duplicate views of one recorded run retain deterministic selection", async () => {
+    const first = trace("a", REPO, workspaceA)
+    const second = trace("b", REPO, workspaceA)
+    const { store, controller } = await ready([second, first])
+    expect(said(await controller.commands.run("runs.graph.select", `${RUN} steady`))).toContain("graph-select")
+    expect(view(store, first.id)?.node).toBe("steady")
+    expect(view(store, second.id)).toEqual(second.payload.graph)
+  })
+})

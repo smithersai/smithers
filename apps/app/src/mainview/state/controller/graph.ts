@@ -20,6 +20,8 @@ import type { CommandResult } from "../../flows/Flows"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import { actorSharedState } from "../ActorBindings"
+import { gatewayRunContextFor } from "../RepoContext"
+import { runCardInScope } from "../RunReference"
 import { TOAST_SUPERSEDED } from "./failures"
 
 type RunTraceCard = Extract<Card, { kind: "run-trace" }>
@@ -187,17 +189,17 @@ export const createGraphController = (
   /*
    * The run's own card. A `sourceCard` names the card the act was raised
    * from, so it must be that run's card and not another's; without one the
-   * lowest-id card recording this run is the card, exactly as every other
-   * run reference resolves it (RunReference.ts runCardInScope).
+   * recorded gateway scope must be unambiguous before choosing its lowest-id
+   * view, just as other run references resolve it.
    */
-  const runCardFor = (runId: string, sourceCard?: string): RunTraceCard | undefined => {
+  const runCardFor = (runId: string, sourceCard?: string): RunTraceCard | { readonly error: string } | undefined => {
     if (sourceCard !== undefined) {
       const source = store.collections.cards.get(sourceCard)
       return source?.kind === "run-trace" && source.payload.runId === runId ? source : undefined
     }
-    return [...store.collections.cards.values()]
-      .flatMap((card) => (card.kind === "run-trace" && card.payload.runId === runId ? [card] : []))
-      .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))[0]
+    const scope = gatewayRunContextFor(store, runId)
+    if (scope === undefined || "error" in scope) return scope
+    return runCardInScope(store, { ...scope, runId })
   }
 
   /** Every node id this run's graph can draw: the plan's own, and the journal's. */
@@ -235,6 +237,7 @@ export const createGraphController = (
   const selectGraphNode = async (runId: string, nodeId?: string, sourceCard?: string): Promise<CommandResult> => {
     const card = runCardFor(runId, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the graph lives on its card.`
+    if ("error" in card) return card.error
     if (nodeId !== undefined && !runNodeIds(card).has(nodeId)) return `Run ${runId} has no graph node ${nodeId}.`
     /*
      * `card.updated` MERGES a payload and an undefined value disappears in
@@ -258,6 +261,7 @@ export const createGraphController = (
   const graphNodeTab = (runId: string, tab: GraphDrawerTab, sourceCard?: string): CommandResult => {
     const card = runCardFor(runId, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the graph lives on its card.`
+    if ("error" in card) return card.error
     const graph = card.payload.graph
     if (graph?.node === undefined) return `Select a node on run ${runId} before choosing one of its tabs.`
     store.dispatch({
