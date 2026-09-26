@@ -498,6 +498,11 @@ const withCapacity = (
 ): EngineLike.EngineLike => {
   const primary = seats[0]!.engine
   const cooling = new Map<string, QuotaPolicy.Park>()
+  const coolingFor = (entry: { readonly key: string; readonly accountKey: string }): QuotaPolicy.Park | undefined => {
+    const model = cooling.get(entry.key)
+    const account = cooling.get(entry.accountKey)
+    return (model?.wakeAt ?? 0) > (account?.wakeAt ?? 0) ? model : account ?? model
+  }
   const policy = QuotaPolicy.makeDefault({ defaultWaitMillis: 15 * 60_000, maxWaitMillis: Infinity })
   const maxParks = capacity?.maxParks ?? QuotaPolicy.defaultMaxParks
   let parkCount = 0
@@ -515,20 +520,24 @@ const withCapacity = (
           const now = yield* Clock.currentTimeMillis
           const entries = yield* Effect.forEach(seats, ({ seat, engine }) => {
             const request = ModelRequest.ModelRequest.make({ ...step.request, modelId: seat.modelId })
-            return EngineLike.resolve(engine, request).pipe(Effect.map((resolved) => ({
-              seat,
-              engine,
-              request,
-              key: Option.isSome(resolved) && Option.isSome(resolved.value.binding)
-                ? resolved.value.binding.value.routeId
-                : seat.id
-            })))
+            return EngineLike.resolve(engine, request).pipe(Effect.map((resolved) => {
+              const identity = Option.isSome(resolved) && Option.isSome(resolved.value.binding)
+                ? ["route", resolved.value.binding.value.routeId]
+                : ["seat", seat.id]
+              return {
+                seat,
+                engine,
+                request,
+                accountKey: JSON.stringify(identity),
+                key: JSON.stringify([...identity, seat.modelId])
+              }
+            }))
           })
           const selected = entries.findIndex((entry, index) =>
-            !tried.has(index) && (cooling.get(entry.key)?.wakeAt ?? 0) <= now
+            !tried.has(index) && (coolingFor(entry)?.wakeAt ?? 0) <= now
           )
           if (selected < 0) {
-            const earliest = entries.map((entry) => ({ entry, park: cooling.get(entry.key)! }))
+            const earliest = entries.map((entry) => ({ entry, park: coolingFor(entry)! }))
               .sort((a, b) => a.park.wakeAt - b.park.wakeAt)[0]!
             if (
               capacity?.park === false ||
@@ -570,7 +579,6 @@ const withCapacity = (
             )
             cycle++
             tried.clear()
-            cooling.clear()
             lastError = undefined
             previous = -1
             return attempt()
@@ -622,7 +630,12 @@ const withCapacity = (
                   })
                 })
                 lastError = error as Model.ModelFailure | HarnessError
-                cooling.set(entry.key, park)
+                // A generic rate limit proves only that this model was refused.
+                // Shared quota and overload retain the account-wide boundary;
+                // adapters can state either scope without parsing provider prose.
+                const scope = model!.quotaScope ??
+                  (model!.code === "quota_exceeded" || model!.httpStatus === 529 ? "account" : "model")
+                cooling.set(scope === "account" ? entry.accountKey : entry.key, park)
                 tried.add(selected)
                 previous = selected
                 return Stream.concat(
