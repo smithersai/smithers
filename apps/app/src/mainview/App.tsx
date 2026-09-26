@@ -163,7 +163,9 @@ function AppContent() {
   const streamingMessageId = typing ? messages[messages.length - 1]?.id : undefined
   const identity = identityRows[0]
 
-  const focusChatDoor = (): void => { requestAnimationFrame(() => chatTriggerRef.current?.focus()) }
+  // The door is already mounted. Restore focus in this gesture, before the
+  // user's next focus choice can be overwritten by a delayed frame.
+  const focusChatDoor = (): void => { chatTriggerRef.current?.focus() }
   const dismissComposer = (): void => {
     controller.closePalette(controller.store.session().draft)
     focusChatDoor()
@@ -173,7 +175,12 @@ function AppContent() {
   const onShellPointerDownCapture = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const target = event.target
     if (!(target instanceof Element)) return
-    if (session.paletteOpen === true && target.matches(".composer-overlay")) dismissComposer()
+    if (session.paletteOpen === true && target.matches(".composer-overlay")) {
+      // The backdrop's native pointer focus would otherwise blur the door
+      // immediately after we restore it.
+      event.preventDefault()
+      dismissComposer()
+    }
     if (session.chatFilterMenuOpen === true && target.closest(".chat-filter-control") === null) {
       controller.runCommand("chat.filter")
     }

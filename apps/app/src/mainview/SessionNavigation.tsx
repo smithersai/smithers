@@ -29,7 +29,7 @@ export function SessionNavigation() {
       controller.dismissHint("chat")
       if (controller.store.session().paletteOpen) {
         controller.closePalette(controller.store.session().draft)
-        requestAnimationFrame(() => doc.querySelector<HTMLButtonElement>(`.app-chat-controls ${flowSelector("chat.open")}`)?.focus())
+        doc.querySelector<HTMLButtonElement>(`.app-chat-controls ${flowSelector("chat.open")}`)?.focus()
       }
       else {
         controller.runCommand('chat.open')

@@ -20,6 +20,45 @@ const expectReadableTurn = async (page: Page, text: string) => {
   }
 }
 
+for (const dismissal of ['Escape', 'Control+k', 'backdrop']) test(`closing Chat with ${dismissal} preserves a newer focus choice`, async ({ page }) => {
+  await page.addInitScript(() => {
+    const request = window.requestAnimationFrame.bind(window)
+    const cancel = window.cancelAnimationFrame.bind(window)
+    const held = new Map<number, FrameRequestCallback>()
+    const probe = { armed: false, frame: () => new Promise<void>(resolve => request(() => resolve())), release: () => {
+      probe.armed = false
+      const callbacks = [...held.values()]
+      held.clear()
+      for (const callback of callbacks) callback(performance.now())
+    } }
+    ;(window as any).chatFocusFrames = probe
+    window.requestAnimationFrame = callback => {
+      const id = request(time => { if (probe.armed) held.set(id, callback); else callback(time) })
+      return id
+    }
+    window.cancelAnimationFrame = id => { held.delete(id); cancel(id) }
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  const input = page.getByTestId('composer-input')
+  await input.fill('keep this draft')
+  await page.evaluate(() => { (window as any).chatFocusFrames.armed = true })
+  try {
+    if (dismissal === 'backdrop') await page.getByTestId('composer-overlay').click({ position: { x: 1, y: 1 } })
+    else await input.press(dismissal)
+    await expect(input).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Chat', exact: true })).toBeFocused()
+    // Let the browser reach the frame while its app callbacks stay held.
+    await page.evaluate(() => (window as any).chatFocusFrames.frame())
+    const next = page.getByRole('button', { name: 'Mode: Normal', exact: true })
+    await next.focus()
+    await page.evaluate(() => (window as any).chatFocusFrames.release())
+    await expect(next).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('menuitemradio', { name: 'Normal', exact: true })).toBeFocused()
+  } finally { await page.evaluate(() => (window as any).chatFocusFrames.release()) }
+})
+
 test.use({ actionTimeout: 3_000, navigationTimeout: 10_000 })
 test.setTimeout(30_000)
 
@@ -134,4 +173,3 @@ for (const path of ["/", "/smithersai/smithers/"]) {
     await expect(input).toHaveValue(draft)
   })
 }
-
