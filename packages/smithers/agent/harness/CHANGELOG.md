@@ -10,6 +10,13 @@
 
 ### Fixed
 
+- A sealed reading of the live tree keys on the digest of the workspace the
+  frame opened on (`Cell.TreeEpoch.tree`), or on the run's session and frame when no
+  whole-tree measurement exists. Each frame remeasures after the model wait,
+  so external edits made while the model thinks invalidate live reads without
+  being attributed to that frame (#1986). A read in a later run no longer replays an
+  earlier run's answer over an edit made between the two (#1948).
+
 - A reply that makes a call, leaves its result for the model alone (printed
   or bound, read by nothing but `console.*`), and completes in the same
   program (several `cell` blocks run as one) no longer ends the run before

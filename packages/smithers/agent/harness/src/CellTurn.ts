@@ -1792,9 +1792,9 @@ const RecordedCompletion = Schema.Struct({
  * walk a tree that has moved on since the original attempt, compare it against
  * the recorded state of a different one, and invent a mutation nobody made.
  *
- * `phase` distinguishes the two measurements a frame can take. Only the first
- * frame of a run takes an opening one; every later frame opens on what its
- * predecessor closed with.
+ * The opening/closing pair measures this frame's mutations. Opening happens
+ * after the model wait: another worker may have edited the shared directory.
+ * Each frame and phase has its own replay key.
  */
 const witness = (
   engine: EngineLike.EngineLike,
@@ -2134,6 +2134,14 @@ const budgetMessage = (state: State): string =>
  * wherever it likes. The count advances when the call is issued, so a replayed
  * frame — which issues the same calls in the same order — derives the same
  * epochs and keys the same boundaries.
+ *
+ * `live` names the tree the frame opened on, which the counters alone cannot:
+ * they start at zero in every run, so a read in a later run keyed the same as
+ * one in an earlier run and replayed its answer over an edit made between the
+ * two (#1948). It is the digest of a journaled measurement taken after the
+ * model wait, so a replayed frame keys the same boundaries; without a whole
+ * measurement it is the session and frame, and an unmeasured tree is reused
+ * only inside the frame that read it.
  */
 const callHandler = (
   state: State,
@@ -2144,6 +2152,7 @@ const callHandler = (
   performed: Set<number>,
   restored: Set<string>,
   tree: { writes: number },
+  live: Cell.LiveTree,
   callMs: number,
   replaying: boolean,
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
@@ -2209,8 +2218,8 @@ const callHandler = (
       }
     }
     const sealed = descriptor.effects.tier === "sealed"
-    const epoch = sealed && at === undefined && (state.mutations > 0 || tree.writes > 0)
-      ? { frames: state.mutations, calls: tree.writes }
+    const epoch = sealed && at === undefined
+      ? { frames: state.mutations, calls: tree.writes, ...live }
       : undefined
     const call = Cell.callOf(descriptor, {
       input: invocation.input,
@@ -2734,6 +2743,7 @@ const evaluate = (
   engine: EngineLike.EngineLike,
   sandbox: Sandbox.Sandbox,
   realm: Sandbox.Realm,
+  opened: Option.Option<EngineLike.Observation>,
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
 ): Effect.Effect<Evaluated, HarnessError | Sandbox.SandboxError> =>
   Effect.gen(function*() {
@@ -2751,6 +2761,9 @@ const evaluate = (
     const restored = new Set<string>()
     /** Calls of this frame that may have written; see {@link callHandler}. */
     const tree = { writes: 0 }
+    const live: Cell.LiveTree = Option.isSome(opened) && opened.value.complete
+      ? { tree: opened.value.digest }
+      : { session: state.session, frame: state.frame }
     // The per-call ceiling this frame enforces, resolved once. It is applied
     // where the settlement is recorded rather than in the drive loop, so the
     // number a run armed and the number its journal holds are the same one.
@@ -2766,6 +2779,7 @@ const evaluate = (
         performed,
         restored,
         tree,
+        live,
         callMs,
         replaying,
         emit
@@ -3259,11 +3273,23 @@ const frame = (
       })
     )
 
-    // What the tree looked like before this frame's calls. Every frame after
-    // the first opens on the measurement its predecessor closed with, so this
-    // walks the workspace only when the run has none yet.
-    const opened = state.workspace ?? (yield* witness(engine, state, cell.digest, "open"))
-    const ran = yield* evaluate(input, state, sealed.success, engine, sandbox, realm, emit)
+    // The prior close predates the model wait. Measure again before this
+    // frame so another worker's edits neither reuse stale reads nor count as
+    // this frame's own mutations. A missing or bounded observer stays so.
+    const opened = state.workspace !== undefined &&
+        (Option.isNone(state.workspace) || !state.workspace.value.complete)
+      ? state.workspace
+      : yield* witness(engine, state, cell.digest, "open")
+    const ran = yield* evaluate(
+      input,
+      state,
+      sealed.success,
+      engine,
+      sandbox,
+      realm,
+      opened,
+      emit
+    )
     const outcome = yield* Cell.decodeOutcome(ran.frame.outcome)
     const printed = printsObservation(ran.frame.prints)
     yield* emit(

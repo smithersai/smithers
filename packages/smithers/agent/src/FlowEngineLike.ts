@@ -238,9 +238,9 @@ export const callMaterial = (
     // spreads to nothing, so every key that existed before checkpoints is
     // byte-identical.
     ...(call.at === undefined ? {} : { at: call.at }),
-    // Which version of the live tree a sealed reading is taken against. The
-    // controller stamps it only once something has written, so a read before
-    // any write keys as it always did, and one after a write is a new question.
+    // Which version of the live tree a sealed reading is taken against: the
+    // tree the frame opened on and the writes issued since, so a read after
+    // any write, this run's or another's, is a new question.
     ...(call.epoch === undefined ? {} : { epoch: call.epoch }),
     ...(Option.isSome(call.placement) ? { placement: call.placement.value } : {}),
     ...(call.effects.tier === "sealed" ? {} : {

@@ -404,7 +404,13 @@ export const TreeEpoch = Schema.Struct({
   /** Earlier frames of this run that changed the workspace. */
   frames: NonNegativeSafeInt,
   /** Calls of this frame that may write, issued before this one. */
-  calls: NonNegativeSafeInt
+  calls: NonNegativeSafeInt,
+  /** Digest of the whole-tree measurement the frame opened on. */
+  tree: Schema.optional(Schema.String),
+  /** The run, when no whole-tree measurement exists: the reading is reused only inside it. */
+  session: Schema.optional(Schema.String),
+  /** The frame, beside `session`: an unmeasured tree may change during a model wait. */
+  frame: Schema.optional(NonNegativeSafeInt)
 })
 
 /**
@@ -414,6 +420,14 @@ export const TreeEpoch = Schema.Struct({
  * @since 1.0.0-rc.1
  */
 export type TreeEpoch = typeof TreeEpoch.Type
+
+/**
+ * The tree a frame's sealed readings stand on: a measured digest, or the run and frame.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export type LiveTree = { readonly tree: string } | { readonly session: string; readonly frame: number }
 
 /**
  * The complete identity of one flow call made inside one cell.
@@ -495,10 +509,14 @@ export class Call extends Schema.Class<Call>("flows/harness/Cell/Call")({
    * were issued before this one. Both are derived from the journaled call
    * sequence, so a replayed frame derives the same epoch and replays.
    *
-   * Absent when nothing has written yet, and absent on every call that is not
-   * a sealed reading of the live tree (a checkpoint is immutable, and a
-   * non-sealed call already keys on its ordinal), so every key that existed
-   * before the epoch is byte-identical.
+   * The counters restart with every run, so they cannot tell a later run's
+   * read from an earlier run's across an edit made between them. `tree` is
+   * the digest of a journaled measurement taken after the model wait, which
+   * can; without a whole measurement, `session` and `frame` keep the reading
+   * to the frame that took it.
+   *
+   * Absent on every call that is not a sealed reading of the live tree: a
+   * checkpoint is immutable, and a non-sealed call already keys on its ordinal.
    */
   epoch: Schema.optional(TreeEpoch),
   /**

@@ -1872,18 +1872,16 @@ describe("CellTurn observed mutation", () => {
     ])
   })
 
-  it("measures once per frame and journals both measurements as durable boundaries", async () => {
+  it("measures before and after each frame through durable boundaries", async () => {
     const { engine } = await shell(
       [reading, reading],
       [{ _tag: "Success", value: null }, { _tag: "Success", value: null }]
     )
 
-    // The opening walk happens once, on the first frame; every later frame
-    // opens on what its predecessor closed with. Both are recorded boundaries,
-    // so a resumed frame replays the measurement instead of walking a tree
-    // that has moved on.
+    // Each frame measures after its model wait, because another worker can
+    // change the tree in between. Replay reads the recorded measurements.
     const names = engine.recorder.records.map((record) => record.name)
-    expect(names.filter((name) => name === "workspace-open")).toHaveLength(1)
+    expect(names.filter((name) => name === "workspace-open")).toHaveLength(2)
     expect(names.filter((name) => name === "workspace-close")).toHaveLength(2)
     expect(engine.recorder.records[0]?.identity).toMatchObject({ session: "session-1", frame: 0 })
   })
