@@ -14,6 +14,12 @@ former integer-cent balances into it.
   the account row first, so concurrent reservations cannot overspend.
 - A reservation left open longer than `AbandonAfter` (default 6 h) is
   charged its bound when the account next reserves.
+- `Ledger.SignupGrantNanos` is the deployment's one-time signup credit.
+  `EnsureAccount` grants it under `signup_grant` in the transaction that
+  creates an owner's account; an existing or imported account never receives
+  it. Every ledger that can create a payer's account (commerce via
+  `commerce.Config.SignupCreditGrantCents`, and any model proxy resolving the
+  payer) must carry the same amount.
 - `credit_events` is append-only. Per grant, its deltas sum to the available
   amount. Per account, they sum to the debt.
 

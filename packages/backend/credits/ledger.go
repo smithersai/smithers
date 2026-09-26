@@ -33,6 +33,9 @@ var (
 	ErrOutcomeUnknown = errors.New("credits: model outcome unknown; charged the reserved bound")
 )
 
+// SignupGrantKey is the source key of the one-time signup grant.
+const SignupGrantKey = "signup_grant"
+
 // Ledger is the exact credit ledger over the product database.
 type Ledger struct {
 	DB *pgxpool.Pool
@@ -40,6 +43,11 @@ type Ledger struct {
 	// older open reservations at their full bound: the provider may have
 	// charged for a call whose settlement was lost. Zero means DefaultAbandonAfter.
 	AbandonAfter time.Duration
+	// SignupGrantNanos is the deployment's one-time signup credit. EnsureAccount
+	// grants it under SignupGrantKey in the transaction that creates an owner's
+	// account, so it is never granted twice and never reaches an account that
+	// already existed or was imported. Zero grants nothing.
+	SignupGrantNanos int64
 }
 
 // Reservation is one request key's hold on credit.
@@ -73,28 +81,42 @@ func validOwner(ownerType string, ownerID int64) bool {
 	return (ownerType == "user" || ownerType == "org") && ownerID > 0
 }
 
-// EnsureAccount returns the owner's credit account, creating it once.
+// EnsureAccount returns the owner's credit account, creating it once with the
+// signup grant.
 func (l Ledger) EnsureAccount(ctx context.Context, ownerType string, ownerID int64) (int64, error) {
 	if !validOwner(ownerType, ownerID) {
 		return 0, errors.New("credits: owner type user or org and a positive owner id required")
 	}
+	if l.SignupGrantNanos < 0 {
+		return 0, errors.New("credits: signup grant must be non-negative")
+	}
 	var id int64
 	err := l.transaction(ctx, func(tx pgx.Tx) error {
+		var created bool
 		var e error
-		id, e = ensureAccount(ctx, tx, ownerType, ownerID)
+		if id, created, e = ensureAccount(ctx, tx, ownerType, ownerID); e != nil || !created || l.SignupGrantNanos == 0 {
+			return e
+		}
+		a, e := lockAccount(ctx, tx, id)
+		if e != nil {
+			return e
+		}
+		_, e = insertGrant(ctx, tx, a, SignupGrantKey, l.SignupGrantNanos, nil, "grant")
 		return e
 	})
 	return id, err
 }
 
-func ensureAccount(ctx context.Context, tx pgx.Tx, ownerType string, ownerID int64) (int64, error) {
+// ensureAccount returns the owner's account and whether this call created it.
+func ensureAccount(ctx context.Context, tx pgx.Tx, ownerType string, ownerID int64) (int64, bool, error) {
 	var id int64
 	err := tx.QueryRow(ctx, `INSERT INTO credit_accounts (owner_type, owner_id) VALUES ($1, $2)
 		ON CONFLICT (owner_type, owner_id) DO NOTHING RETURNING id`, ownerType, ownerID).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = tx.QueryRow(ctx, `SELECT id FROM credit_accounts WHERE owner_type = $1 AND owner_id = $2`, ownerType, ownerID).Scan(&id)
+		return id, false, err
 	}
-	return id, err
+	return id, err == nil, err
 }
 
 type lockedAccount struct {

@@ -461,3 +461,63 @@ func TestGrantExpiryReplaysAtStoredPrecision(t *testing.T) {
 	}
 	mustBalance(t, l, id, 10)
 }
+
+func TestSignupGrantOnlyWhenEnsureAccountCreates(t *testing.T) {
+	ctx := context.Background()
+	plain := Ledger{DB: testPool(t)}
+	existing, err := plain.EnsureAccount(ctx, "user", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const signup = 1000 * NanosPerCent
+	l := Ledger{DB: plain.DB, SignupGrantNanos: signup}
+
+	// An account that already existed, or was imported, never receives it.
+	if id, err := l.EnsureAccount(ctx, "user", 1); err != nil || id != existing {
+		t.Fatalf("id=%d err=%v", id, err)
+	}
+	mustBalance(t, l, existing, 0)
+
+	// Concurrent first uses create one account with exactly one grant.
+	ids := make([]int64, 16)
+	var wg sync.WaitGroup
+	var failures atomic.Int32
+	for i := range ids {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			id, err := l.EnsureAccount(ctx, "org", 2)
+			if err != nil {
+				failures.Add(1)
+			}
+			ids[i] = id
+		}()
+	}
+	wg.Wait()
+	if failures.Load() != 0 {
+		t.Fatalf("%d concurrent EnsureAccount calls failed", failures.Load())
+	}
+	for _, id := range ids[1:] {
+		if id != ids[0] {
+			t.Fatalf("concurrent EnsureAccount returned different accounts: %v", ids)
+		}
+	}
+	mustBalance(t, l, ids[0], signup)
+	var grants int
+	if err := l.DB.QueryRow(ctx, `SELECT count(*) FROM credit_grants WHERE account_id = $1 AND source_key = $2`, ids[0], SignupGrantKey).Scan(&grants); err != nil || grants != 1 {
+		t.Fatalf("signup grants=%d err=%v", grants, err)
+	}
+
+	// Ensuring an existing account again never grants it twice.
+	if err := l.Grant(ctx, ids[0], "other", 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.EnsureAccount(ctx, "org", 2); err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, ids[0], signup+1)
+
+	if _, err := (Ledger{DB: l.DB, SignupGrantNanos: -1}).EnsureAccount(ctx, "user", 3); err == nil {
+		t.Fatal("a negative signup grant was accepted")
+	}
+}

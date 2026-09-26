@@ -64,6 +64,10 @@ type Config struct {
 	// MonthlyCreditGrantCents is the monthly platform credit per billing
 	// account, granted in the exact credit ledger. Zero grants nothing.
 	MonthlyCreditGrantCents int64
+	// SignupCreditGrantCents is the one-time platform credit granted when an
+	// owner's credit account is created (credits.Ledger.SignupGrantNanos).
+	// Zero grants nothing.
+	SignupCreditGrantCents int64
 }
 
 // New constructs API commerce over the same ledger, metering, and transactional
@@ -81,6 +85,9 @@ func New(pool *pgxpool.Pool, client Client, cfg Config) (Service, error) {
 	if cfg.Usage == nil {
 		return nil, errors.New("commerce: usage factory is required")
 	}
+	if cfg.MonthlyCreditGrantCents < 0 || cfg.SignupCreditGrantCents < 0 {
+		return nil, errors.New("commerce: credit grants must be non-negative")
+	}
 	queries, err := billingstore.Bind(pool, cfg.Usage)
 	if err != nil {
 		return nil, err
@@ -96,7 +103,7 @@ func New(pool *pgxpool.Pool, client Client, cfg Config) (Service, error) {
 		TeamMonthlyPriceID: p.TeamMonthly, TeamAnnualPriceID: p.TeamAnnual,
 		EnterpriseMonthlyPriceID: p.EnterpriseMonthly, EnterpriseAnnualPriceID: p.EnterpriseAnnual,
 		MonthlyCreditGrantCents: cfg.MonthlyCreditGrantCents,
-	}, services.WithBillingEmailSender(cfg.EmailSender), services.WithBillingCreditLedger(credits.Ledger{DB: pool}))
+	}, services.WithBillingEmailSender(cfg.EmailSender), services.WithBillingCreditLedger(credits.Ledger{DB: pool, SignupGrantNanos: cfg.SignupCreditGrantCents * credits.NanosPerCent}))
 	return &authority{BillingService: service, emailSender: cfg.EmailSender}, nil
 }
 

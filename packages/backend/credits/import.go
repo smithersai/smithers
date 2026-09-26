@@ -285,7 +285,7 @@ func importOne(ctx context.Context, tx pgx.Tx, a normalized) (Disposition, error
 	}
 	var accountID int64
 	if d == Owned {
-		if accountID, err = ensureAccount(ctx, tx, a.OwnerType, a.OwnerID); err != nil {
+		if accountID, _, err = ensureAccount(ctx, tx, a.OwnerType, a.OwnerID); err != nil {
 			return "", err
 		}
 	} else if err = tx.QueryRow(ctx, `INSERT INTO credit_accounts (disposition) VALUES ($1) RETURNING id`, string(d)).Scan(&accountID); err != nil {
@@ -470,7 +470,7 @@ func (l Ledger) AttachOwner(ctx context.Context, sourceID, ownerType string, own
 		if !exists {
 			return ErrSealed
 		}
-		ownerAccount, err := ensureAccount(ctx, tx, ownerType, ownerID)
+		ownerAccount, _, err := ensureAccount(ctx, tx, ownerType, ownerID)
 		if err != nil {
 			return err
 		}
