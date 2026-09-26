@@ -4274,8 +4274,8 @@ describe("CellTurn context ordering", () => {
     const spanned = await texts(3)
     expect(spanned.filter((text) => !text.includes("realm"))).toEqual(["start", "ask one", "ask two", "ask three"])
     expect(spanned[1]).toContain("realm")
-    // More asks than the window holds: the count is clamped, and with no tail
-    // left to hold the section it is read last, as with no asks at all.
+    // More asks than the tail holds: the walk reaches the prefix, which may
+    // not carry the section, so it is read last, as with no asks at all.
     const clamped = await texts(9)
     expect(clamped.slice(0, -1)).toEqual(["start", "ask one", "ask two", "ask three"])
     expect(clamped.at(-1)).toContain("realm")

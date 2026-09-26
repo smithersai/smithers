@@ -1474,9 +1474,9 @@ describe("CellTurn frame failures", () => {
     expect(of(events, "turn-opened")).toHaveLength(1)
     expect(of(events, "model-settled")).toHaveLength(0)
 
-    // A later frame opens on the section the frame before it wrote, so nothing
-    // renders the window until its request is assembled; that is where the
-    // same window has to fail the same way.
+    // A state that already carries its section (as every frame after the
+    // first does) skips that render, so the same window has to fail the same
+    // way where its request is assembled.
     const later = await run({
       script: [emits(`ctx.done("done")`)],
       state: new CellTurn.State({ ...state({ contextWindow: corrupt }), sectioned: true })

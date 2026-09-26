@@ -874,8 +874,9 @@ describe("a long claim, read one sentence at a time", () => {
     expect(failure.code).toBe("completion_unjudged")
   })
 
-  it("meters both questions, and keeps the whole question's usage when the sentences report none", async () => {
-    const metered = (sentenceUsage: { inputTokens: number; outputTokens: number } | undefined) =>
+  it("meters both questions, and keeps whichever usage was reported when one reading reports none", async () => {
+    type Usage = { inputTokens: number; outputTokens: number } | undefined
+    const metered = (wholeUsage: Usage, sentenceUsage: Usage) =>
       Layer.succeed(Evaluator.Evaluator)(
         Evaluator.Evaluator.of({
           evaluate: (request) =>
@@ -888,7 +889,7 @@ describe("a long claim, read one sentence at a time", () => {
                     invented: { type: "boolean", probability: 0.91 }
                   },
                   latencyMs: 7,
-                  usage: { inputTokens: 300, outputTokens: 10 }
+                  ...(wholeUsage === undefined ? {} : { usage: wholeUsage })
                 }
                 : {
                   answers: Object.fromEntries(
@@ -901,7 +902,7 @@ describe("a long claim, read one sentence at a time", () => {
         })
       )
     const summed = await settled({
-      layer: metered({ inputTokens: 200, outputTokens: 4 }),
+      layer: metered({ inputTokens: 300, outputTokens: 10 }, { inputTokens: 200, outputTokens: 4 }),
       calls: [probe],
       claim: truthful,
       changes: { claimCap: 1, claimDemands: 1 }
@@ -909,12 +910,20 @@ describe("a long claim, read one sentence at a time", () => {
     expect(summed.observed).toMatchObject({ invented: 0.2, usage: { inputTokens: 500, outputTokens: 14 } })
 
     const unmetered = await settled({
-      layer: metered(undefined),
+      layer: metered({ inputTokens: 300, outputTokens: 10 }, undefined),
       calls: [probe],
       claim: truthful,
       changes: { claimCap: 1, claimDemands: 1 }
     })
     expect(unmetered.observed).toMatchObject({ invented: 0.2, usage: { inputTokens: 300, outputTokens: 10 } })
+
+    const sentencesOnly = await settled({
+      layer: metered(undefined, { inputTokens: 200, outputTokens: 4 }),
+      calls: [probe],
+      claim: truthful,
+      changes: { claimCap: 1, claimDemands: 1 }
+    })
+    expect(sentencesOnly.observed).toMatchObject({ invented: 0.2, usage: { inputTokens: 200, outputTokens: 4 } })
   })
 
   it("lists a container check by its route, its program and what it printed", async () => {

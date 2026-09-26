@@ -840,10 +840,15 @@ export const read = (
       Effect.mapError(failed)
     )
     const scores = Object.values(read.answers).map((answer) => (answer as { readonly probability: number }).probability)
-    const usage = whole.usage === undefined || read.asked.usage === undefined ? whole.usage : {
-      inputTokens: whole.usage.inputTokens + read.asked.usage.inputTokens,
-      outputTokens: whole.usage.outputTokens + read.asked.usage.outputTokens
-    }
+    // Either reading may come back unmetered; the claim costs what was metered.
+    const usage = whole.usage === undefined
+      ? read.asked.usage
+      : read.asked.usage === undefined
+      ? whole.usage
+      : {
+        inputTokens: whole.usage.inputTokens + read.asked.usage.inputTokens,
+        outputTokens: whole.usage.outputTokens + read.asked.usage.outputTokens
+      }
     return {
       ...whole,
       invented: Math.max(...scores),
