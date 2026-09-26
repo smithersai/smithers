@@ -21,6 +21,7 @@ export interface AccountController {
 }
 
 export interface AccountControllerDeps {
+  readonly provider: "github" | "local"
   /** The next transcript ordinal — the card surfaces at the end, never mid-history. */
   readonly nextOrdinal: () => number
   /** auth.prompt's renderer: the sign-in step as a message whose action is the sign-in button. */
@@ -76,7 +77,7 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
       deps.promptSignIn(false, { name: "account.show" })
       return { value: SIGNED_OUT_VALUE }
     }
-    const scopes = await readScopes()
+    const scopes = deps.provider === "github" ? await readScopes() : []
     const boxes = [...collections.cloudWorkspaces.values()]
       .map((workspace) => ({ id: workspace.id, repoId: workspace.repoId, name: workspace.name, status: workspace.status }))
       .sort((left, right) => left.repoId.localeCompare(right.repoId) || left.name.localeCompare(right.name))
@@ -89,6 +90,7 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
       ordinal: deps.nextOrdinal(),
       payload: {
         login: identity.login,
+        provider: deps.provider,
         scopes: [...scopes],
         allowlisted: identity.allowlisted,
         accessRequested: identity.accessRequested,
@@ -98,7 +100,7 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
     ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
     const access = identity.allowlisted ? "allowed" : identity.accessRequested ? "requested" : "not yet allowed"
     return {
-      value: `account: @${identity.login}; access ${access}; ${scopes.length} GitHub App permission(s); GitHub OAuth scope read:user; ${boxes.length} box(es) listed`
+      value: `account: @${identity.login}; access ${access}; ${deps.provider === "github" ? `${scopes.length} GitHub App permission(s); GitHub OAuth scope read:user; ` : ""}${boxes.length} box(es) listed`
     }
   }
 

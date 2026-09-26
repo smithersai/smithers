@@ -107,7 +107,7 @@ describe("experimental card rendering", () => {
     const { controller } = await boot(false)
     const account: CardOf<"account"> = {
       id: "account-test", kind: "account", title: "Account", status: "active", createdAt: 1, ordinal: 1,
-      payload: { login: "will", allowlisted: true, accessRequested: false, scopes: [], boxes: [] }
+      payload: { login: "will", provider: "github", allowlisted: true, accessRequested: false, scopes: [], boxes: [] }
     }
     const view = await mount(<CardView card={account} maximized={false} {...cardActions(controller)} worldDocuments={[]} />)
     expect(view.host.querySelector('[role="switch"]')).toBeNull()

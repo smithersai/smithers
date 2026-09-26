@@ -1492,6 +1492,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     minimal: { login: "will", scopes: [], allowlisted: false, accessRequested: false, boxes: [] },
     full: {
       login: "will",
+      provider: "github",
       scopes: [{ scope: "repo", plain: "read and write your repositories" }],
       allowlisted: true,
       accessRequested: true,

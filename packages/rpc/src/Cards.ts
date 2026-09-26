@@ -1864,6 +1864,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     kind: z.literal("account"),
     payload: z.object({
       login: z.string(),
+      /** Absent on legacy cards, which cannot prove a provider or OAuth grant. */
+      provider: z.enum(["github", "local"]).optional(),
       /** GET /api/auth/scopes rows, one plain sentence per scope; empty when the seam did not answer, and the section is then absent. */
       scopes: z.array(z.object({ scope: z.string(), plain: z.string() })),
       allowlisted: z.boolean(),

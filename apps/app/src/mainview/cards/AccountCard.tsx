@@ -1,7 +1,7 @@
 import { flowAction } from "../flows/FlowAction"
 /*
  * The account card (factory mock 21, design session §6c): read-only seam
- * facts about the signed-in person, and the Sign out door. The GitHub login
+ * facts about the signed-in person, and the Sign out door. The login
  * and the allowlist answer always render (the identity seam holds both); the
  * GitHub App permissions section renders only when the identity worker answered.
  * OAuth requests only read:user for the profile. The
@@ -28,8 +28,8 @@ export const AccountCardBody = ({
     <table className="secrets-table" aria-label="Account">
       <tbody>
         <tr data-testid="account-login">
-          <th scope="row">GitHub</th>
-          <td>Connected as @{card.payload.login}</td>
+          <th scope="row">{card.payload.provider === "github" ? "GitHub" : "Account"}</th>
+          <td>{card.payload.provider === "github" ? "Connected as " : ""}@{card.payload.login}</td>
         </tr>
         <tr data-testid="account-access">
           <th scope="row">Access</th>
@@ -37,11 +37,13 @@ export const AccountCardBody = ({
         </tr>
       </tbody>
     </table>
-    <p className="secrets-scope">GitHub scopes</p>
-    <table className="secrets-table" aria-label="GitHub scopes">
-      <tbody><tr><th scope="row">read:user</th><td>See your GitHub profile.</td></tr></tbody>
-    </table>
-    {card.payload.scopes.length === 0 ? null : (
+    {card.payload.provider !== "github" ? null : <>
+      <p className="secrets-scope">GitHub scopes</p>
+      <table className="secrets-table" aria-label="GitHub scopes">
+        <tbody><tr><th scope="row">read:user</th><td>See your GitHub profile.</td></tr></tbody>
+      </table>
+    </>}
+    {card.payload.provider !== "github" || card.payload.scopes.length === 0 ? null : (
       <>
         <p className="secrets-scope">GitHub App permissions</p>
         <table className="secrets-table" aria-label="GitHub App permissions">

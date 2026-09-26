@@ -6,6 +6,7 @@ import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import { ControllerContext } from "../ControllerContext"
 import type { AppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
+import { memoryStorage } from "../state/TestFixtures"
 import { FIRST_RUN_JOBS } from "./FirstRunActions"
 import { resolveSteps, SETUP_STEPS, SetupChecklist, SetupChecklistCard, hasRegisteredSetup } from "./SetupChecklist"
 
@@ -23,6 +24,27 @@ const jobTitles = ["Handle issues", "Review PRs", "Set up CI", "Build a feature"
 const jobCommands = [...commands, ...FIRST_RUN_JOBS.map((name, index) => ({ name, summary: jobTitles[index]! }))]
 const empty = { signedIn: false, hasRepo: false, hasSetup: false }
 const done = { signedIn: true, hasRepo: true, hasSetup: true }
+
+test("local owner setup names sign-in before and after authentication", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const host = document.createElement("div")
+  const root = createRoot(host)
+  const calls: string[] = []
+  const render = () => flushSync(() => root.render(<ControllerContext value={{ store, localAuth: {}, commands: { all: () => commands }, runCommand: (name: string) => { calls.push(name) } } as unknown as AppController}><SetupChecklist /></ControllerContext>))
+  try {
+    render()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const button = host.querySelector<HTMLButtonElement>('[data-flow="auth.sign-in"]')!
+    expect(button.textContent).toBe("Sign in")
+    button.click()
+    expect(calls).toEqual(["auth.sign-in"])
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(host.querySelector("li")?.textContent).toBe("✓Sign in")
+    expect(host.querySelector("li")?.getAttribute("data-complete")).toBe("true")
+    expect(host.textContent).not.toContain("Connect GitHub")
+  } finally { flushSync(() => root.unmount()); await store.dispose?.() }
+})
 
 test("only a current account's selected repository registration completes setup", () => {
   const setup = initialSetup("will/demo", "issues", "will")

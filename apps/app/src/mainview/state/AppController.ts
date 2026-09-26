@@ -1460,7 +1460,10 @@ export const createAppController = (
    * sign-in step when no one is, through auth.prompt's renderer.
    */
   const account = actors.pair(ctx, (context) =>
-    createAccountController(context, { nextOrdinal: store.nextOrdinal, promptSignIn }))
+    createAccountController(context, {
+      nextOrdinal: store.nextOrdinal, promptSignIn,
+      provider: localAuth !== undefined || (applicationIdentity !== undefined && services.bootstrap?.host !== "cloud") ? "local" : "github"
+    }))
   const signup = actors.pair(ctx, (context) => createSignupController(context))
 
   /*

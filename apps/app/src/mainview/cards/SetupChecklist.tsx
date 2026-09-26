@@ -18,6 +18,7 @@ import "./SetupChecklist.css"
  */
 export interface SetupProgress {
   readonly signedIn: boolean
+  readonly localAuth?: boolean
   readonly hasRepo: boolean
   readonly hasSetup: boolean
 }
@@ -49,7 +50,7 @@ export function resolveSteps(commands: readonly CatalogItem[], state: SetupProgr
   const catalog = visible(commands)
   return SETUP_STEPS.map(step => {
     const flow = step.flows.find(name => catalog.some(item => item.name === name))
-    return { id: step.id, label: step.label, complete: step.done(state), flow, args: flow === "issues.setup" ? repo : undefined }
+    return { id: step.id, label: step.id === "connect-github" && state.localAuth ? "Sign in" : step.label, complete: step.done(state), flow, args: flow === "issues.setup" ? repo : undefined }
   })
 }
 
@@ -122,6 +123,7 @@ export function SetupChecklist({ commands }: { commands?: readonly CatalogItem[]
   const owner = identity?.state === "signed-in" ? identity.accountOwnerLogin ?? identity.login : null
   const steps = resolveSteps(commands ?? controller.commands.all(), {
     signedIn: identities[0]?.state === "signed-in",
+    localAuth: controller.localAuth !== undefined,
     hasRepo: repos.length > 0 || repositories.some(row => row.catalog !== true),
     hasSetup: hasRegisteredSetup(cards, repo, owner),
   }, repo)
