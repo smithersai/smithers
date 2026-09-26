@@ -991,6 +991,11 @@ The public request shape of `ModelRequest`: `modelId`, `system` text parts,
 declared request state rather than a wire field, so two requests that differ
 only there are different calls and must not share a replay digest.
 
+`cacheKey` and `cacheBoundary` mirror the production provider cache hints
+(`ModelLike.ProviderCacheHint`). They never reach the model, and `cacheKey` is
+keyed to the run, so `recordedRequest` drops both: a fixture stores a
+`ModelLike.RecordedRequestLike`, and the replay digest ignores them.
+
 ### ModelLike.ModelEventLike
 
 The public event shape of `ModelEvent`, copied from its streaming protocol.
@@ -1096,7 +1101,7 @@ fixture is written to a file and read back.
 
 ```ts
 interface RecordedCall {
-  readonly request: ModelRequestLike
+  readonly request: RecordedRequestLike
   readonly model: string
   readonly events: ReadonlyArray<ModelEventLike>
   readonly failure?: ModelErrorLike | undefined
