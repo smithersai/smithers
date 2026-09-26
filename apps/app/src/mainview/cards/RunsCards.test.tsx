@@ -170,6 +170,34 @@ describe("the approvals inbox card", () => {
     expect(decisions[0]).toEqual({ id: approvalActionId(`approvals-inbox-${REPO}`, { runId: "run-a", requestId: "req-1" }), decision: "approved" })
   })
 
+  test("only undecided rows count as pending, including in-flight and failed submissions", () => {
+    const host = render(<ApprovalsInboxCardBody card={inboxCard([
+      { ...gate, requestId: "approved", decision: "approved" },
+      { ...gate, requestId: "denied", decision: "denied" },
+      { ...gate, requestId: "sending", pending: true },
+      { ...gate, requestId: "failed", decisionError: "Offline" },
+    ])} onDecideApproval={() => {}} />)
+    expect(host.querySelector("[data-testid='approvals-inbox-count']")?.textContent).toBe("2 approvals pending")
+    const settled = render(<ApprovalsInboxCardBody card={inboxCard([
+      { ...gate, decision: "approved" },
+      { ...gate, requestId: "denied", decision: "denied" },
+    ])} onDecideApproval={() => {}} />)
+    expect(settled.querySelector("[data-testid='approvals-inbox-count']")?.textContent).toBe("0 approvals pending")
+  })
+
+  for (const decision of ["approved", "denied"] as const) {
+    test(`a ${decision} row retains its grant title or human question without answer controls`, () => {
+      const host = render(<ApprovalsInboxCardBody card={inboxCard([
+        { ...gate, decision },
+        { ...gate, requestId: "question", title: "Human input", decision,
+          question: { kind: "ask", prompt: "Which service owns the retry budget?" } },
+      ])} onDecideApproval={() => {}} />)
+      expect([...host.querySelectorAll(".sui-approval-question")].map(node => node.textContent))
+        .toEqual(["Run the deploy script?", "Which service owns the retry budget?"])
+      expect(host.querySelectorAll("button, textarea, input").length).toBe(0)
+    })
+  }
+
   test("a decided row freezes; a refused one names the error", () => {
     const decided = render(
       <ApprovalsInboxCardBody card={inboxCard([{ ...gate, decision: "approved" }])} onDecideApproval={() => {}} />

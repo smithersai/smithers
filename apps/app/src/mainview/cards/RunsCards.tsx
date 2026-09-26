@@ -158,13 +158,14 @@ export const ApprovalsInboxCardBody = ({
   readonly onRunCommand?: RunCommand
 }) => {
   const { repo, approvals } = card.payload
+  const pendingCount = approvals.filter(approval => approval.decision === undefined).length
   if (approvals.length === 0) {
     return <p className="smithers-card-note">No approvals are pending on {repo}.</p>
   }
   return (
     <div className="world-card-list">
       <p className="smithers-card-note" data-testid="approvals-inbox-count">
-        {approvals.length} approval{approvals.length === 1 ? "" : "s"} pending
+        {pendingCount} approval{pendingCount === 1 ? "" : "s"} pending
       </p>
       {approvals.map((approval) => {
         // The row id the decision flows take: the inbox card plus the gate it names.
@@ -177,15 +178,13 @@ export const ApprovalsInboxCardBody = ({
         const stamp = approval.decidedAt === undefined
           ? undefined
           : `${approval.decision === "denied" ? "Denied" : "Approved"} — ${clockLabel(approval.decidedAt)}`
-        /* A question row's headline is the prompt the form renders — printing
-         * the gate's title too stacked the same ask twice. Provenance is the
-         * caption line above it; a grant gate keeps its title as the headline. */
+        // The answer form carries its prompt while editable; every other
+        // state retains that prompt or the grant title beside its receipt.
         return (
           <Confirmation key={approvalRowKey(approval)} state={state}>
+            {approval.question === undefined || approval.decision !== undefined || approval.pending === true ?
+              <div className="sui-approval-question">{approval.question?.prompt ?? approval.title}</div> : null}
             <ConfirmationRequest>
-              {approval.question === undefined ?
-                <div className="sui-approval-question">{approval.title}</div> :
-                null}
               <p className="sui-approval-meta">run <code>{approval.runId}</code> · {clockLabel(approval.requestedAt)}</p>
             </ConfirmationRequest>
             {approval.decision !== undefined || approval.pending === true ?

@@ -51,6 +51,8 @@ const json = (body: unknown, status = 200) => ({
 
 /** Install the server double: signed in as the scoped-down user, one loaded repo, one gateway that accepts everything. */
 const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>> = [], options: {
+  readonly approvals?: ReadonlyArray<Record<string, unknown>>
+  readonly submitApproval?: () => Promise<boolean>
   readonly completedRequest?: boolean
   readonly health?: () => StatusRollup
   readonly inputSchema?: unknown
@@ -94,6 +96,7 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
         return route.fulfill(json({ ok: true, payload: { _tag: "Accepted", receiptId: "r",
           runId: options.completedRequest && planned?.flowId === "coding/vibe" ? "vibe-e2e" : RUN_ID } }))
       case "Approval.Submit":
+        if (options.submitApproval && !await options.submitApproval()) return route.fulfill(json({ ok: false, error: { message: "Approval unavailable" } }))
         // The launch path auto-approves the plan it just made.
         return route.fulfill(json({ ok: true, payload: { decision: { _tag: "Accepted", receiptId: "a" } } }))
       case "Steer":
@@ -115,7 +118,7 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
               ...(options.health === undefined ? {} : { statusRollup: options.health() }),
               ...(options.completedRequest ? { runId: selector.runId ?? RUN_ID, flowId: selector.runId === "vibe-e2e" ? "coding/vibe" : "coding/request" } : {}), steeringPending }])
           case "approvals":
-            return rows("approvals", [])
+            return rows("approvals", options.approvals ?? [])
           case "transcript":
             return rows("transcript", [])
           case "run-events": {
@@ -166,6 +169,59 @@ test.beforeEach(async ({ page }) => {
       // Storage the browser refuses is the empty store already.
     }
   })
+})
+
+test("T1: approval counts settle with receipts and decided questions survive reload", async ({ page }) => {
+  const gate = (requestId: string, title: string) => ({
+    runId: RUN_ID, requestId, title, requestedAt: Date.now(), status: "pending",
+    request: {}, payload: { target: { _tag: "Node", runId: RUN_ID, requestId,
+      digest: "sha256:test", envelope: { capabilities: [], flows: [], budget: {} } },
+      scope: "run", idempotencyKey: `approve:${requestId}` }
+  })
+  let release!: (accepted: boolean) => void
+  const held = new Promise<boolean>(resolve => { release = resolve })
+  let submissions = 0
+  const prompt = "Which service owns retries?"
+  const { rpc } = await serve(page, [], {
+    approvals: [gate("grant", "Run the deploy script?"),
+      { ...gate("question", "Human input"), waitRunId: "wait-1", request: { kind: "ask", prompt } }],
+    submitApproval: async () => ++submissions === 1 ? held : true,
+  })
+  try {
+    await page.goto("/")
+    await finishGuide(page)
+    await send(page, `/approvals.list ${REPO}`)
+    const card = page.locator('[data-kind="approvals-inbox"]')
+    const count = card.getByTestId("approvals-inbox-count")
+    const grant = card.locator('[data-slot="confirmation"]').filter({ hasText: "Run the deploy script?" })
+    await expect(count).toHaveText("2 approvals pending")
+    await grant.getByRole("button", { name: "Approve", exact: true }).focus()
+    await page.keyboard.press("Enter")
+    await expect.poll(() => submissions).toBe(1)
+    await expect(count).toHaveText("2 approvals pending")
+    await page.keyboard.press("Control+k")
+    await expect(page.getByTestId("composer-input")).toBeFocused()
+    await page.keyboard.press("Escape")
+    release(false)
+    await expect(card.getByRole("alert")).toContainText("Approval unavailable")
+    await expect(count).toHaveText("2 approvals pending")
+    await grant.getByRole("button", { name: "Deny", exact: true }).click()
+    await expect(count).toHaveText("1 approval pending")
+    await expect(grant).toContainText("Denied")
+    await card.getByRole("textbox", { name: prompt, exact: true }).fill("The scheduler")
+    await card.getByTestId("approval-answer-send").focus()
+    await page.keyboard.press("Enter")
+    await expect(count).toHaveText("0 approvals pending")
+    await expect(card.locator('.sui-approval-question').filter({ hasText: prompt })).toBeVisible()
+    expect(rpc.filter(call => call.procedure === "Approval.Submit").at(-1)?.payload.answer).toBe("The scheduler")
+    await page.reload()
+    await expect(count).toHaveText("0 approvals pending")
+    await expect(card).toContainText("Run the deploy script?")
+    await expect(card).toContainText(prompt)
+    await expect(card.getByRole("textbox")).toHaveCount(0)
+    await expect(card.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0)
+    await card.screenshot({ path: test.info().outputPath("approvals-settled.png") })
+  } finally { release(false) }
 })
 
 test("T1: launch a fixture flow, steer it, stop it, and see it in the run inbox", async ({ page }) => {
