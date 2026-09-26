@@ -18,8 +18,9 @@ import * as Route from "@smthrs/model/Route"
 import type * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Container from "@smthrs/std/Container"
 import * as TestRunner from "@smthrs/std/TestRunner"
-import { Context, Effect, Layer, Redacted } from "effect"
+import { Clock, Context, Effect, Layer, Redacted } from "effect"
 import type { Path, Result } from "effect"
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import { existsSync } from "node:fs"
 import { isAbsolute, relative } from "node:path"
 import * as CodexAuth from "../CodexAuth.ts"
@@ -48,26 +49,41 @@ const openaiAuthVariable = "SMITHERS_OPENAI_AUTH"
 const anthropicSubscriptionVariables = ["ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"] as const
 
 /**
- * A Smithers account pool (`{base}/provider-pool`): each route listed in
- * `SMITHERS_ACCOUNT_POOL_PROVIDERS` (`anthropic`, `chatgpt`) sends its calls to
- * `${pool}/anthropic` or `${pool}/chatgpt` with the seat's key holding the pool
- * credential, and the pool picks the connected account per request. `SMITHERS_MODEL_PROXY_URL` serves ChatGPT
- * mode the same way.
+ * A Smithers account pool (`SMITHERS_ACCOUNT_POOL_URL`, `{base}/provider-pool`)
+ * holding connected Claude and Codex accounts. `SMITHERS_ACCOUNT_POOL_PROVIDERS`
+ * lists the routes (`anthropic`, `chatgpt`) the host may take to it and
+ * `SMITHERS_ACCOUNT_POOL_KEY` holds the pool credential. Which routes have
+ * accounts the pool answers at `GET {pool}/routes`, asked when a seat resolves
+ * and remembered briefly, so an account connected after boot serves the next
+ * seat: the anthropic seat then calls `${pool}/anthropic`, and the openai seat
+ * runs in ChatGPT mode against `${pool}/chatgpt`. The pool picks the account
+ * per request.
  */
 const accountPoolVariable = "SMITHERS_ACCOUNT_POOL_URL"
+const accountPoolKeyVariable = "SMITHERS_ACCOUNT_POOL_KEY"
+const accountPoolRoutesTtlMillis = 30_000
+
+type AccountPoolRoute = "anthropic" | "chatgpt"
+
+interface AccountPool {
+  readonly origin: string
+  readonly key: string
+  readonly routes: ReadonlyArray<string>
+}
 
 const origin = (value: string | undefined): string | undefined =>
   value === undefined || value === "" ? undefined : value.replace(/\/+$/, "")
 
-/** The pool origin when it serves `route` (`SMITHERS_ACCOUNT_POOL_PROVIDERS`). */
-const accountPool = (
-  environment: Readonly<Record<string, string | undefined>>,
-  route: "anthropic" | "chatgpt"
-): string | undefined =>
-  (Environment_.read(environment, "SMITHERS_ACCOUNT_POOL_PROVIDERS") ?? "").split(",").map((item) => item.trim())
-      .includes(route)
-    ? origin(Environment_.read(environment, accountPoolVariable))
-    : undefined
+/** The configured account pool, when the host may take any route to it. */
+const accountPoolOf = (environment: Readonly<Record<string, string | undefined>>): AccountPool | undefined => {
+  const poolOrigin = origin(Environment_.read(environment, accountPoolVariable))
+  const key = environment[accountPoolKeyVariable]
+  const routes = (Environment_.read(environment, "SMITHERS_ACCOUNT_POOL_PROVIDERS") ?? "").split(",")
+    .map((item) => item.trim()).filter((item) => item !== "")
+  return poolOrigin === undefined || key === undefined || key === "" || routes.length === 0
+    ? undefined
+    : { origin: poolOrigin, key, routes }
+}
 
 /**
  * The native seat resolver: it turns a `provider:modelId` seat into a live model
@@ -113,6 +129,25 @@ const providerSeats = (
   environment: Readonly<Record<string, string | undefined>>,
   executor: RequestExecutor.RequestExecutor
 ): SeatResolver.Service => {
+  const pool = accountPoolOf(environment)
+  let served: { readonly until: number; readonly routes: ReadonlyArray<string> } | undefined
+  // The pool route serving `route` for this seat, or undefined when the pool
+  // has no accounts for it (the seat keeps its own credential).
+  const pooled = (route: AccountPoolRoute, modelId: string) =>
+    Effect.gen(function*() {
+      if (pool === undefined || !pool.routes.includes(route)) return undefined
+      const now = yield* Clock.currentTimeMillis
+      if (served === undefined || served.until <= now) {
+        // Only an answer that lists the route sends a seat to the pool: a
+        // pool that does not answer leaves every seat on its own credential
+        // until the next ask.
+        const routes = yield* accountPoolRoutes(pool, executor, modelId).pipe(
+          Effect.orElseSucceed((): ReadonlyArray<string> => [])
+        )
+        served = { until: now + accountPoolRoutesTtlMillis, routes }
+      }
+      return served.routes.includes(route) ? pool : undefined
+    })
   const codexStores = new Map<string, CodexAuth.Store>()
   const codexStore = (file: string): CodexAuth.Store => {
     let store = codexStores.get(file)
@@ -175,17 +210,44 @@ const providerSeats = (
             message: `${openaiAuthVariable} must be "api-key" or "chatgpt" to run the ${seat} seat`
           })
         }
-        const pool = accountPool(environment, "chatgpt")
-        const chatgptOrigin = pool === undefined ? Endpoint.proxyOrigin("chatgpt", environment) : `${pool}/chatgpt`
+        // Behind a Smithers account pool with accounts for this provider the
+        // pool owns the credential: it picks an account per request and signs
+        // it. The host holds only the pool credential.
+        // An explicit `SMITHERS_OPENAI_AUTH=api-key` keeps the openai seat on
+        // its key.
+        const poolRoute = provider === "anthropic"
+          ? "anthropic"
+          : provider === "openai" && configured !== "api-key"
+          ? "chatgpt"
+          : undefined
+        const accounts = poolRoute === undefined ? undefined : yield* pooled(poolRoute, modelId)
+        if (accounts !== undefined) {
+          return yield* provider === "anthropic"
+            ? seatOf(
+              Route.anthropic({ apiKey: Redacted.make(accounts.key), baseUrl: `${accounts.origin}/anthropic` }),
+              executor,
+              seat,
+              modelId
+            )
+            : seatOf(
+              OpenAIChatGPT.make({
+                auth: Auth.bearer(Redacted.make(accounts.key)),
+                baseUrl: `${accounts.origin}/chatgpt`
+              }),
+              executor,
+              seat,
+              modelId
+            )
+        }
+        const chatgptOrigin = Endpoint.proxyOrigin("chatgpt", environment)
         if (authMode === "chatgpt" && chatgptOrigin !== undefined) {
-          // Behind a Smithers account pool the pool owns the ChatGPT accounts:
-          // it picks one per request and signs it. The guest holds only the
-          // pool credential, bound as the `openai` seat's key.
+          // Behind the Smithers model proxy the ChatGPT seat carries the
+          // proxy credential as the `openai` seat's key.
           const key = environment[variable]
           if (key === undefined || key.length === 0) {
             return yield* new Seat.SeatUnresolved({
               seat,
-              message: `Set ${variable} to run the ${seat} seat through the account pool`
+              message: `Set ${variable} to run the ${seat} seat through the model proxy`
             })
           }
           return yield* seatOf(
@@ -247,12 +309,7 @@ const providerSeats = (
         // through the compatible constructor.
         return yield* provider === "anthropic"
           ? seatOf(
-            Route.anthropic({
-              apiKey: Redacted.make(key),
-              baseUrl: accountPool(environment, "anthropic") === undefined
-                ? Endpoint.providerOrigin("anthropic", environment)
-                : `${accountPool(environment, "anthropic")}/anthropic`
-            }),
+            Route.anthropic({ apiKey: Redacted.make(key), baseUrl: Endpoint.providerOrigin("anthropic", environment) }),
             executor,
             seat,
             modelId
@@ -288,6 +345,32 @@ const providerSeats = (
       })
   })
 }
+
+/** Asks the pool which routes have connected accounts right now. */
+const accountPoolRoutes = (
+  pool: AccountPool,
+  executor: RequestExecutor.RequestExecutor,
+  modelId: string
+): Effect.Effect<ReadonlyArray<string>, unknown> =>
+  Effect.scoped(Effect.gen(function*() {
+    const request = HttpClientRequest.get(`${pool.origin}/routes`).pipe(
+      HttpClientRequest.bearerToken(pool.key),
+      HttpClientRequest.acceptJson
+    )
+    const response = yield* executor.execute(request, { modelId })
+    const text = yield* response.text.pipe(Effect.mapError(() => ({ message: "the answer could not be read" })))
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = undefined
+    }
+    const routes = typeof parsed === "object" && parsed !== null ? (parsed as { routes?: unknown }).routes : undefined
+    if (!Array.isArray(routes)) {
+      return yield* Effect.fail({ message: "the answer named no routes" })
+    }
+    return routes.filter((route): route is string => typeof route === "string")
+  }))
 
 const seatOf = <Body, Frame, Event, State>(
   configured: Result.Result<Route.Route<Body, Frame, Event, State>, ModelError.ModelError>,

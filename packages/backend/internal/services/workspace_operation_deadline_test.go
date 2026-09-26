@@ -85,7 +85,7 @@ func TestWorkspaceService_MicrosandboxOperationsHavePerCallDeadlines(t *testing.
 			},
 		}
 		svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceSandboxClient(vm))
-		_, err := svc.forkWorkspaceSandbox(context.Background(), "vm-source", "container", nil, nil)
+		_, err := svc.forkWorkspaceSandbox(context.Background(), "vm-source", "container", nil)
 		require.NoError(t, err)
 	})
 

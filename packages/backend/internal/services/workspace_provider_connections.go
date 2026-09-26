@@ -16,11 +16,13 @@ import (
 type workspaceProviderBinding struct {
 	environment AgentEnvironmentProvisioningConfig
 	egress      *sandbox.EgressProxyPolicy
-	files       map[string]sandbox.SandboxFile
+	// pooled are the seats connected accounts serve at boot; they count as
+	// available when the coding model is chosen.
+	pooled []string
 }
 
 func (s *WorkspaceService) resolveWorkspaceProviderBindings(ctx context.Context, workspace db.Workspace) (*workspaceProviderBinding, error) {
-	binding := &workspaceProviderBinding{files: map[string]sandbox.SandboxFile{}}
+	binding := &workspaceProviderBinding{}
 	var err error
 	binding.egress, err = s.workspaceEgressProxy(ctx, workspace.RepositoryID)
 	if err != nil {
@@ -100,6 +102,9 @@ func workspaceDeclaresProvider(config AgentEnvironmentProvisioningConfig, key st
 
 func (b *workspaceProviderBinding) availableProviderNames() map[string]bool {
 	names := map[string]bool{}
+	for _, name := range b.pooled {
+		names[name] = true
+	}
 	for _, secret := range b.egress.Secrets {
 		if secret.Value != sandbox.EgressProxyPlaceholder(secret.Name) && secret.Value != "[redacted]" && IsUsableProviderCredential(secret.Value) && slices.Contains(b.environment.ProxyBound, secret.Name) {
 			names[secret.Name] = true
@@ -179,33 +184,6 @@ func (b *workspaceProviderBinding) apply(req *sandbox.CreateRequest) {
 		return
 	}
 	req.EgressProxy = b.egress
-	if req.Files == nil {
-		req.Files = map[string]sandbox.SandboxFile{}
-	}
-	for path, file := range b.files {
-		req.Files[path] = file
-	}
-}
-
-func (s *WorkspaceService) prepareWorkspaceProviderFiles(ctx context.Context, vmID string, binding *workspaceProviderBinding) error {
-	if _, codex := binding.files[codexAuthGuestPath]; !codex {
-		return nil
-	}
-	// SandboxFile has no owner field. Set ownership after the bootstrap creates
-	// developer, before setup or the coding host runs. The shared Codex home is
-	// under /root, so its ancestor needs search permission (but no directory listing).
-	client, ok := s.sandbox.(workspaceAgentEnvironmentVMClient)
-	if !ok {
-		return pkgerrors.Internal("workspace provider file setup unavailable")
-	}
-	response, err := client.Execute(ctx, vmID, sandbox.ExecRequest{
-		Command:   "chmod o+x /root && chown " + shellQuote(defaultWorkspaceUser+":"+defaultWorkspaceUser) + " " + shellQuote(codexHomeGuestPath) + " " + shellQuote(codexAuthGuestPath) + " && chmod 700 " + shellQuote(codexHomeGuestPath) + " && chmod 600 " + shellQuote(codexAuthGuestPath),
-		TimeoutMS: agentEnvironmentInt64Ptr(30_000),
-	})
-	if err != nil || !successfulExecStatus(response) {
-		return pkgerrors.Internal("prepare workspace provider authentication")
-	}
-	return nil
 }
 
 // bindWorkspaceModelProxy offers the platform seats the repository does not

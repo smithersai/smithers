@@ -62,19 +62,11 @@ type agentDispatch struct {
 	// credential guard recognize a placeholder. Both are empty when the
 	// deployment runs with the legacy in-guest path.
 	egressSecrets []sandbox.EgressProxySecret
-	// replacedSeats are platform model providers a connected account serves.
-	replacedSeats map[string]struct{}
 	// repositorySeats are platform model providers the repository keys itself.
 	repositorySeats map[string]struct{}
 	// secretsInjected is set once repository secrets are in the service env.
 	secretsInjected bool
-	// guestFiles are placeholder-only files the connection binding plants in
-	// the guest (for example the Codex auth.json); never a credential.
-	guestFiles map[string]sandbox.SandboxFile
-	// providerConnectionID names the subscription a run authenticated with,
-	// for logs and the session record; empty on the platform path.
-	providerConnectionID string
-	egressNames          map[string]struct{}
+	egressNames     map[string]struct{}
 
 	// VM state
 	agentServiceSpec sandbox.ServiceSpec
@@ -716,22 +708,6 @@ func (d *agentDispatch) agentPath() string {
 	return "/usr/local/bin:/root/.bun/bin:/usr/bin:/bin"
 }
 
-// rerootAgentGuestFiles moves placeholder files declared under /root to the
-// workspace user's home (the agent runs with that HOME in workspace mode).
-func rerootAgentGuestFiles(files map[string]sandbox.SandboxFile) map[string]sandbox.SandboxFile {
-	if len(files) == 0 {
-		return nil
-	}
-	out := make(map[string]sandbox.SandboxFile, len(files))
-	for path, file := range files {
-		if rest, ok := strings.CutPrefix(path, "/root/"); ok {
-			path = defaultWorkspaceHome + "/" + rest
-		}
-		out[path] = file
-	}
-	return out
-}
-
 // createAgentWorkspaceVM is the workspace-mode createVM (RFD-004): the run's
 // computer is a kind=agent workspace provisioned by the workspace service
 // with the run's egress bindings merged into the VM's proxy policy.
@@ -766,7 +742,6 @@ func (d *agentDispatch) createAgentWorkspaceVM() error {
 		RepoName:       d.input.RepoName,
 		SourceBookmark: d.input.SourceBookmark,
 		EgressSecrets:  append([]sandbox.EgressProxySecret(nil), d.egressSecrets...),
-		GuestFiles:     rerootAgentGuestFiles(d.guestFiles),
 		Members:        members,
 	})
 	d.vmCreateDuration = time.Since(vmCreateStartedAt)
@@ -871,7 +846,6 @@ func (d *agentDispatch) carriesAgentToken(name string) bool {
 
 // bindModelSeats points the platform model seats at the metered proxy with
 // the run's agent token, bound at the egress proxy like the callback token.
-// A seat a connected account replaced stays off.
 func (d *agentDispatch) bindModelSeats() {
 	for _, name := range []string{modelproxy.URLEnv, modelproxy.ProvidersEnv} {
 		delete(d.agentServiceSpec.Env, name)
@@ -891,7 +865,7 @@ func (d *agentDispatch) bindModelSeats() {
 	}
 	var seats []modelproxy.Seat
 	for _, seat := range d.svc.sandboxConfig.ModelSeats {
-		if _, replaced := d.replacedSeats[seat.Provider]; replaced || d.repositoryDeclares(seat) {
+		if d.repositoryDeclares(seat) {
 			continue
 		}
 		seats = append(seats, seat)
@@ -923,16 +897,6 @@ func (d *agentDispatch) repositoryDeclares(seat modelproxy.Seat) bool {
 		}
 	}
 	return false
-}
-
-// replaceModelSeat takes a platform seat off the metered proxy because the
-// run's own connected account serves that provider.
-func (d *agentDispatch) replaceModelSeat(provider string) {
-	if d.replacedSeats == nil {
-		d.replacedSeats = map[string]struct{}{}
-	}
-	d.replacedSeats[provider] = struct{}{}
-	d.bindModelSeats()
 }
 
 // apiHost is the host the per-run credentials are bound to at the proxy.
@@ -987,11 +951,7 @@ func (d *agentDispatch) injectSecrets() error {
 	// unconditionally, so setting these before injection is not sufficient.
 	d.secretsInjected = true
 	d.applyReservedRuntimeEnv()
-	// A connected subscription wins over the platform credential for the same
-	// provider, and like every other credential it only ever reaches the
-	// proxy: the guest gets placeholders and, for Codex, a placeholder-only
-	// auth.json.
-	return d.bindProviderConnection()
+	return nil
 }
 
 func (d *agentDispatch) injectAgentEnvironmentVariables() error {
@@ -1010,46 +970,6 @@ func (d *agentDispatch) injectAgentEnvironmentVariables() error {
 			continue
 		}
 		d.agentServiceSpec.Env[variable.Name] = variable.Value
-	}
-	return nil
-}
-
-// bindProviderConnection resolves the run's bring-your-own subscription
-// (RFD-003) and binds its access token through the egress proxy. No
-// connection means the platform path stays exactly as it was.
-func (d *agentDispatch) bindProviderConnection() error {
-	if d.svc.providerConnections == nil {
-		return nil
-	}
-	provider := ProviderConnectionProviderClaude
-	if normalizeAgentProvider(d.input.AgentProvider) == "codex" {
-		provider = ProviderConnectionProviderCodex
-	}
-	resolved, err := d.svc.providerConnections.ResolveForRun(d.ctx, d.input.UserID, d.input.RepositoryID, provider)
-	if err != nil {
-		return d.markInfraFailed("resolve provider connection: " + err.Error())
-	}
-	if resolved == nil {
-		return nil
-	}
-	d.providerConnectionID = resolved.ConnectionID
-	switch resolved.Provider {
-	case ProviderConnectionProviderClaude:
-		// The platform Anthropic credential would otherwise compete for
-		// provider selection inside the guest; the subscription replaces it.
-		d.replaceModelSeat(modelproxy.ProviderAnthropic)
-		d.unbindEgressSecret("ANTHROPIC_API_KEY")
-		for _, secret := range ClaudeConnectionProxySecrets(resolved) {
-			d.bindEgressSecret(secret)
-		}
-	case ProviderConnectionProviderCodex:
-		d.replaceModelSeat(modelproxy.ProviderOpenAI)
-		d.bindEgressSecret(CodexProxySecret(resolved.AccessToken))
-		d.agentServiceSpec.Env["CODEX_HOME"] = codexHomeGuestPath
-		if d.guestFiles == nil {
-			d.guestFiles = map[string]sandbox.SandboxFile{}
-		}
-		d.guestFiles[codexAuthGuestPath] = sandbox.SandboxFile{Content: string(CodexGuestAuthJSON(resolved.AccountID, resolved.AccountEmail, resolved.Plan, time.Now()))}
 	}
 	return nil
 }
@@ -1195,14 +1115,6 @@ func (d *agentDispatch) createVM() error {
 	// request, to the worker that seeds the proxy process. The controller
 	// redacts them before any durable write (SanitizeCreateRequest); the
 	// guest never sees them.
-	if len(d.guestFiles) > 0 {
-		if d.vmReq.Files == nil {
-			d.vmReq.Files = map[string]sandbox.SandboxFile{}
-		}
-		for path, file := range d.guestFiles {
-			d.vmReq.Files[path] = file
-		}
-	}
 	d.vmReq.EgressProxy = &sandbox.EgressProxyPolicy{Enabled: true, Secrets: append([]sandbox.EgressProxySecret(nil), d.egressSecrets...)}
 	if err := d.vmReq.EgressProxy.Validate(); err != nil {
 		return d.markInfraFailed("egress proxy bindings: " + err.Error())

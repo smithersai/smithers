@@ -594,15 +594,6 @@ func (s *WorkspaceService) resumeWorkspaceVM(ctx context.Context, workspace db.W
 		return workspace, err
 	}
 	if binding != nil {
-		client, ok := s.sandbox.(workspaceAgentEnvironmentVMClient)
-		if !ok {
-			return workspace, pkgerrors.Internal("workspace provider file setup unavailable")
-		}
-		for path, file := range binding.files {
-			if err := client.WriteFile(resumeCtx, workspace.VmID, path, sandbox.WriteFileRequest{Content: file.Content}); err != nil {
-				return workspace, pkgerrors.Internal("stage workspace provider authentication").WithCause(err)
-			}
-		}
 		// Refresh persistent auth settings without repeating the repository setup script.
 		binding.environment.SetupScript = ""
 		if err := s.runWorkspaceAgentEnvironmentSetup(resumeCtx, workspace, workspace.VmID, binding); err != nil {

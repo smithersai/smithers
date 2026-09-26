@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // plainCodec is a reversible stand-in for the AES-GCM codec.
@@ -142,33 +142,36 @@ func (f *fakeProviderConnectionQuerier) ClaimProviderConnectionForRefresh(_ cont
 	}
 	return db.ProviderConnection{}, pgx.ErrNoRows
 }
-func (f *fakeProviderConnectionQuerier) ResolveActiveOrgProviderConnection(_ context.Context, a db.ResolveActiveOrgProviderConnectionParams) (db.ProviderConnection, error) {
+func (f *fakeProviderConnectionQuerier) eligible(userID int64, provider string, repositoryID int64, excluded []string) []db.ProviderConnection {
+	repo := f.repos[repositoryID]
+	var out []db.ProviderConnection
 	for _, r := range f.rows {
-		if r.OwnerType == "org" && r.OrgID == a.OrgID && r.Provider == a.Provider && r.State == "active" {
-			return r, nil
-		}
-	}
-	return db.ProviderConnection{}, pgx.ErrNoRows
-}
-func (f *fakeProviderConnectionQuerier) ResolveActiveUserProviderConnectionForRepository(_ context.Context, a db.ResolveActiveUserProviderConnectionForRepositoryParams) (db.ProviderConnection, error) {
-	repo := f.repos[a.RepositoryID]
-	for _, r := range f.rows {
-		if r.OwnerType != "user" || r.UserID != a.UserID || r.Provider != a.Provider || r.State != "active" {
+		if r.OwnerType != "user" || r.UserID.Int64 != userID || r.Provider != provider || r.State != "active" || slices.Contains(excluded, r.ID) {
 			continue
 		}
-		if repo.UserID.Valid && repo.UserID == a.UserID {
-			return r, nil
+		if repo.UserID.Valid && repo.UserID.Int64 == userID {
+			out = append(out, r)
+			continue
 		}
 		for _, g := range f.grants {
-			if g.ConnectionID != r.ID {
-				continue
-			}
-			if g.AllRepositories || (g.RepositoryID.Valid && g.RepositoryID.Int64 == a.RepositoryID) || (g.OrgID.Valid && repo.OrgID.Valid && g.OrgID.Int64 == repo.OrgID.Int64) {
-				return r, nil
+			if g.ConnectionID == r.ID && (g.AllRepositories || (g.RepositoryID.Valid && g.RepositoryID.Int64 == repositoryID) || (g.OrgID.Valid && repo.OrgID.Valid && g.OrgID.Int64 == repo.OrgID.Int64)) {
+				out = append(out, r)
+				break
 			}
 		}
 	}
-	return db.ProviderConnection{}, pgx.ErrNoRows
+	return out
+}
+func (f *fakeProviderConnectionQuerier) ProviderConnectionPoolStatus(_ context.Context, a db.ProviderConnectionPoolStatusParams) (db.ProviderConnectionPoolStatusRow, error) {
+	n := int64(len(f.eligible(a.UserID, a.Provider, a.RepositoryID, nil)))
+	return db.ProviderConnectionPoolStatusRow{Active: n, Usable: n}, nil
+}
+func (f *fakeProviderConnectionQuerier) PickProviderConnection(_ context.Context, a db.PickProviderConnectionParams) (db.ProviderConnection, error) {
+	rows := f.eligible(a.UserID, a.Provider, a.RepositoryID, a.Excluded)
+	if len(rows) == 0 {
+		return db.ProviderConnection{}, pgx.ErrNoRows
+	}
+	return rows[0], nil
 }
 func (f *fakeProviderConnectionQuerier) AddProviderConnectionGrant(_ context.Context, a db.AddProviderConnectionGrantParams) (db.ProviderConnectionGrant, error) {
 	g := db.ProviderConnectionGrant{ID: int64(len(f.grants) + 1), ConnectionID: a.ConnectionID, RepositoryID: a.RepositoryID, OrgID: a.OrgID, AllRepositories: a.AllRepositories}
@@ -280,7 +283,7 @@ func TestProviderConnection_WebRequestIsIdempotentAndAccountScoped(t *testing.T)
 	assert.Equal(t, first.ID, replayed.ID)
 	assert.Equal(t, 1, len(q.rows))
 	assert.Equal(t, "enc:sk-ant-oat01-first", string(q.rows[first.ID].AccessTokenEncrypted))
-	foreign, err := svc.ResolveForRun(context.Background(), 8, 2, "claude")
+	foreign, err := resolveForRun(svc, context.Background(), 8, 2, "claude")
 	require.NoError(t, err)
 	assert.Nil(t, foreign, "a collaborator cannot resolve the owner's connection")
 	other, err := svc.ConnectForUser(context.Background(), bob, ConnectProviderInput{Provider: "claude", Label: "web-request-1", AccessToken: "sk-ant-oat01-bob"})
@@ -308,7 +311,7 @@ func TestProviderConnection_OrganizationConnectionsNeverServeRuns(t *testing.T) 
 	require.NoError(t, err)
 	for _, preference := range []string{ProviderConnectionPreferenceOrgFirst, ProviderConnectionPreferenceOrgOnly, ProviderConnectionPreferenceUserFirst} {
 		require.NoError(t, svc.SetRepositoryPreference(context.Background(), 1, preference))
-		resolved, err := svc.ResolveForRun(context.Background(), 7, 1, "claude")
+		resolved, err := resolveForRun(svc, context.Background(), 7, 1, "claude")
 		require.NoError(t, err)
 		assert.Nil(t, resolved, preference)
 	}
@@ -329,42 +332,42 @@ func TestProviderConnection_ResolveOnlyTheRunUsersOwnConnection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Org repo without a grant: nothing.
-	resolved, err := svc.ResolveForRun(context.Background(), 7, 1, "smithers")
+	resolved, err := resolveForRun(svc, context.Background(), 7, 1, "smithers")
 	require.NoError(t, err)
 	assert.Nil(t, resolved)
 
 	// With an org grant the user's own run on the org repo uses it.
 	_, err = svc.AddGrant(context.Background(), user, userConn.ID, ProviderConnectionGrantInput{OrgID: ptrInt64(3)})
 	require.NoError(t, err)
-	resolved, err = svc.ResolveForRun(context.Background(), 7, 1, "smithers")
+	resolved, err = resolveForRun(svc, context.Background(), 7, 1, "smithers")
 	require.NoError(t, err)
 	require.NotNil(t, resolved)
 	assert.Equal(t, userConn.ID, resolved.ConnectionID)
 	assert.Equal(t, "sk-ant-oat01-user", resolved.AccessToken)
 
 	// Another user's run on the same repo never gets it.
-	resolved, err = svc.ResolveForRun(context.Background(), 9, 1, "smithers")
+	resolved, err = resolveForRun(svc, context.Background(), 9, 1, "smithers")
 	require.NoError(t, err)
 	assert.Nil(t, resolved)
 
 	// The user's own repo needs no grant.
-	resolved, err = svc.ResolveForRun(context.Background(), 7, 2, "smithers")
+	resolved, err = resolveForRun(svc, context.Background(), 7, 2, "smithers")
 	require.NoError(t, err)
 	assert.Equal(t, userConn.ID, resolved.ConnectionID)
 
 	// platform_only never resolves; a codex run finds no codex connection.
 	require.NoError(t, svc.SetRepositoryPreference(context.Background(), 2, ProviderConnectionPreferencePlatformOnly))
-	resolved, err = svc.ResolveForRun(context.Background(), 7, 2, "smithers")
+	resolved, err = resolveForRun(svc, context.Background(), 7, 2, "smithers")
 	require.NoError(t, err)
 	assert.Nil(t, resolved)
-	resolved, err = svc.ResolveForRun(context.Background(), 7, 1, "codex")
+	resolved, err = resolveForRun(svc, context.Background(), 7, 1, "codex")
 	require.NoError(t, err)
 	assert.Nil(t, resolved)
 
 	// A revoked connection is skipped.
 	require.NoError(t, svc.SetRepositoryPreference(context.Background(), 2, ProviderConnectionPreferenceUserFirst))
 	require.NoError(t, svc.Revoke(context.Background(), user, userConn.ID))
-	resolved, err = svc.ResolveForRun(context.Background(), 7, 2, "smithers")
+	resolved, err = resolveForRun(svc, context.Background(), 7, 2, "smithers")
 	require.NoError(t, err)
 	assert.Nil(t, resolved)
 }
@@ -385,7 +388,7 @@ func TestProviderConnection_DisabledDeploymentResolvesNothing(t *testing.T) {
 		"explicit": NewProviderConnectionService(q, plainCodec{}, refresher, WithSubscriptionConnectionsEnabled(false)),
 	} {
 		t.Run(name, func(t *testing.T) {
-			resolved, err := svc.ResolveForRun(context.Background(), 7, 2, "claude")
+			resolved, err := resolveForRun(svc, context.Background(), 7, 2, "claude")
 			require.NoError(t, err)
 			assert.Nil(t, resolved)
 
@@ -432,7 +435,7 @@ func TestProviderConnection_RevocationDuringResolutionFailsClosed(t *testing.T) 
 		decrypted = true
 		require.NoError(t, svc.Revoke(context.Background(), owner, connection.ID))
 	}}
-	resolved, err := svc.ResolveForRun(context.Background(), 7, 2, "claude")
+	resolved, err := resolveForRun(svc, context.Background(), 7, 2, "claude")
 	require.NoError(t, err)
 	assert.Nil(t, resolved)
 	assert.True(t, decrypted)
@@ -494,7 +497,7 @@ func TestProviderConnection_DispatchRefreshesExpiringTokenSynchronously(t *testi
 	soon := time.Now().Add(time.Minute)
 	_, err := svc.ConnectForUser(context.Background(), &db.User{ID: 7}, ConnectProviderInput{Provider: "codex", AccessToken: "stale", RefreshToken: "r", AccountID: "acct", AccessExpiresAt: &soon})
 	require.NoError(t, err)
-	resolved, err := svc.ResolveForRun(context.Background(), 7, 2, "codex")
+	resolved, err := resolveForRun(svc, context.Background(), 7, 2, "codex")
 	require.NoError(t, err)
 	require.NotNil(t, resolved)
 	assert.Equal(t, "fresh", resolved.AccessToken)
@@ -539,28 +542,6 @@ func TestHTTPProviderTokenRefresher_ClaudeAndCodex(t *testing.T) {
 	assert.ErrorIs(t, err, ErrProviderRefreshInvalidGrant)
 }
 
-func TestCodexGuestAuthJSONCarriesNoCredential(t *testing.T) {
-	doc := CodexGuestAuthJSON("acct_42", "p@example.com", "pro", time.Now())
-	var parsed struct {
-		AuthMode string `json:"auth_mode"`
-		Tokens   struct {
-			IDToken      string `json:"id_token"`
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
-			AccountID    string `json:"account_id"`
-		} `json:"tokens"`
-	}
-	require.NoError(t, json.Unmarshal(doc, &parsed))
-	assert.Equal(t, "chatgpt", parsed.AuthMode)
-	assert.Equal(t, sandbox.EgressProxyPlaceholder(codexAccessTokenEnvName), parsed.Tokens.AccessToken)
-	assert.Equal(t, "acct_42", parsed.Tokens.AccountID)
-	accountID, email, plan := codexIdentityClaims(parsed.Tokens.IDToken)
-	assert.Equal(t, "acct_42", accountID)
-	assert.Equal(t, "p@example.com", email)
-	assert.Equal(t, "pro", plan)
-	assert.Len(t, strings.Split(parsed.Tokens.IDToken, "."), 3)
-}
-
 func testIDToken(t *testing.T, accountID, plan, email string) string {
 	t.Helper()
 	claims, _ := json.Marshal(map[string]any{"email": email, "https://api.openai.com/auth": map[string]any{"chatgpt_account_id": accountID, "chatgpt_plan_type": plan}})
@@ -601,4 +582,11 @@ func TestProviderConnection_ManualRefreshRecoversFailedConnection(t *testing.T) 
 	assert.Equal(t, ProviderConnectionStateActive, updated.State)
 	assert.Equal(t, "enc:fresh", string(q.rows[connection.ID].AccessTokenEncrypted))
 	assert.Zero(t, q.rows[connection.ID].RefreshFailures)
+}
+
+// resolveForRun picks the account the pool would serve a run's next model
+// call with, or nil when the run keeps the platform credentials.
+func resolveForRun(svc *ProviderConnectionService, ctx context.Context, userID, repositoryID int64, provider string) (*ResolvedProviderConnection, error) {
+	pick, err := svc.PickForModelCall(ctx, userID, repositoryID, provider, nil)
+	return pick.Connection, err
 }

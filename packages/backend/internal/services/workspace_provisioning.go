@@ -237,7 +237,7 @@ func (s *WorkspaceService) createWorkspaceVMAttempt(ctx context.Context, req san
 // so it is sized from the kind exactly like a cold create (see
 // workspaceSizeForKind); without that it is admitted and booted at the
 // provider defaults, 512 MiB and 1 vCPU.
-func (s *WorkspaceService) forkWorkspaceSandbox(ctx context.Context, sourceVMID, kind string, egress *sandbox.EgressProxyPolicy, files map[string]sandbox.SandboxFile) (sandbox.CreateResult, error) {
+func (s *WorkspaceService) forkWorkspaceSandbox(ctx context.Context, sourceVMID, kind string, egress *sandbox.EgressProxyPolicy) (sandbox.CreateResult, error) {
 	forkCtx, cancel := context.WithTimeout(ctx, workspaceForkTimeout)
 	defer cancel()
 	memoryMB, vcpuCount := s.workspaceSizeForKind(kind)
@@ -251,7 +251,6 @@ func (s *WorkspaceService) forkWorkspaceSandbox(ctx context.Context, sourceVMID,
 		},
 		Workdir:     defaultWorkspaceClonePath,
 		EgressProxy: egress,
-		Files:       files,
 		MemSizeMB:   memoryMB,
 		VCPUCount:   vcpuCount,
 		Kind:        sandboxKindForWorkspace(kind),
@@ -1755,7 +1754,7 @@ func (s *WorkspaceService) tryForkDerivedFromPrimary(ctx context.Context, worksp
 		slog.Warn("fork egress policy unavailable; falling back to cold clone", "workspace_id", workspace.ID, "error", err)
 		return workspace, false
 	}
-	vm, err := s.forkWorkspaceSandbox(forkCtx, source.VmID, workspace.Kind, binding.egress, binding.files)
+	vm, err := s.forkWorkspaceSandbox(forkCtx, source.VmID, workspace.Kind, binding.egress)
 	if err != nil {
 		// Interface implementations can return a VM id alongside an error even
 		// though the real client reaps partial responses itself. Never let that
@@ -2078,7 +2077,7 @@ func (s *WorkspaceService) forkWorkspaceVM(ctx context.Context, workspace, sourc
 		s.markWorkspaceProvisionFailed(ctx, workspace, err)
 		return workspace, err
 	}
-	vm, err := s.forkWorkspaceSandbox(forkCtx, source.VmID, workspace.Kind, binding.egress, binding.files)
+	vm, err := s.forkWorkspaceSandbox(forkCtx, source.VmID, workspace.Kind, binding.egress)
 	duration := time.Since(startedAt)
 	if s.sandboxMetrics != nil {
 		status := "success"

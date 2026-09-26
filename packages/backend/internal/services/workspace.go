@@ -579,7 +579,7 @@ type WorkspaceService struct {
 	// agentEnvironment supplies setup-only secrets and persistent nonsecret
 	// variables for new repository workspace VMs.
 	agentEnvironment    AgentEnvironmentProvisioningProvider
-	providerConnections WorkspaceProviderPool
+	providerConnections ProviderPoolOffer
 	providerBootstrap   bool
 	platformSeats       []modelproxy.Seat
 	codingDefaultModel  string
@@ -638,16 +638,10 @@ func WithWorkspaceAgentEnvironment(provider AgentEnvironmentProvisioningProvider
 	return func(s *WorkspaceService) { s.agentEnvironment = provider }
 }
 
-// WorkspaceProviderPool reports whether a workspace's repository has
-// connected provider accounts (services.ProviderConnectionService).
-type WorkspaceProviderPool interface {
-	HasPool(ctx context.Context, userID, repositoryID int64, provider string) (bool, error)
-}
-
 // WithWorkspaceProviderConnections offers the owner's connected accounts to
 // each workspace boot through the account pool route. Self-host only: the
 // server wires it only when feature_flags.subscription_connections is on.
-func WithWorkspaceProviderConnections(pool WorkspaceProviderPool) WorkspaceServiceOption {
+func WithWorkspaceProviderConnections(pool ProviderPoolOffer) WorkspaceServiceOption {
 	return func(s *WorkspaceService) { s.providerConnections = pool }
 }
 

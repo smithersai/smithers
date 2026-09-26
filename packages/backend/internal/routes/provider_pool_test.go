@@ -75,6 +75,17 @@ func (p *fakePool) ForceRefresh(_ context.Context, id string) error {
 	return assert.AnError
 }
 
+func (p *fakePool) HasPool(_ context.Context, _, _ int64, provider string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, account := range p.accounts {
+		if account.Provider == provider {
+			return p.pooled, nil
+		}
+	}
+	return false, nil
+}
+
 func contains(list []string, value string) bool {
 	for _, item := range list {
 		if item == value {
@@ -86,8 +97,8 @@ func contains(list []string, value string) bool {
 
 type fakeScopes struct{ ok bool }
 
-func (s fakeScopes) Scope(_ context.Context, info *middleware.AuthInfo) (int64, int64, bool) {
-	return 7, 42, s.ok && info != nil
+func (s fakeScopes) Scope(ctx context.Context, bearer string) (int64, int64, bool) {
+	return 7, 42, s.ok && bearer != "" && middleware.AuthInfoFromContext(ctx) != nil
 }
 
 type providerCall struct {
@@ -272,8 +283,13 @@ func TestProviderPool_RefusesWithoutAWorkspaceCredentialOrAPool(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code, "no connected accounts: nothing to serve, no platform fallback")
 	assert.Empty(t, calls)
 
+	var via string
+	userAuth := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { via = "user"; next.ServeHTTP(w, r) })
+	}
+	auth := func(next http.Handler) http.Handler { return ProviderPoolAuth(userAuth)(next) }
 	rec = httptest.NewRecorder()
-	ProviderPoolAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Bearer key-from-sdk", r.Header.Get("Authorization"), "an Anthropic SDK key header is the bearer")
 		assert.Empty(t, r.Header.Get("Cookie"))
 	})).ServeHTTP(rec, func() *http.Request {
@@ -282,10 +298,52 @@ func TestProviderPool_RefusesWithoutAWorkspaceCredentialOrAPool(t *testing.T) {
 		req.Header.Set("Cookie", "session=abc")
 		return req
 	}())
+	assert.Equal(t, "user", via)
+	via = ""
 	rec = httptest.NewRecorder()
-	ProviderPoolAuth(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("a cookie alone never authenticates") })).
+	auth(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(rec, func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/provider-pool/chatgpt/codex/responses", nil)
+		req.Header.Set("X-Api-Key", "smithers_flowhost_binding.mac")
+		return req
+	}())
+	assert.Empty(t, via, "a managed host's model credential is verified by the scope, not the user auth")
+	rec = httptest.NewRecorder()
+	auth(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("a cookie alone never authenticates") })).
 		ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/provider-pool/anthropic/v1/messages", nil))
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestProviderPool_RoutesListsProvidersWithAccountsNow(t *testing.T) {
+	pool := &fakePool{pooled: true, limited: map[string]time.Time{}, accounts: claudeAccounts("a")}
+	h := poolHandler(pool, "")
+	get := func(ctx context.Context) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/provider-pool/routes", nil).WithContext(ctx)
+		req.Header.Set("Authorization", "Bearer smithers_pooltoken")
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	rec := get(workspaceContext())
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `{"routes":["anthropic"]}`, rec.Body.String())
+
+	// The first Codex account, connected while the guest runs, is listed on
+	// the next ask: no restart.
+	pool.mu.Lock()
+	pool.accounts = append(pool.accounts, services.ResolvedProviderConnection{ConnectionID: "c", Provider: "codex", Kind: "oauth", AccessToken: "codex-c", AccountID: "acct-c"})
+	pool.mu.Unlock()
+	assert.JSONEq(t, `{"routes":["anthropic","chatgpt"]}`, get(workspaceContext()).Body.String())
+
+	assert.JSONEq(t, `{"routes":[]}`, func() string {
+		empty := poolHandler(&fakePool{limited: map[string]time.Time{}}, "")
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/provider-pool/routes", nil).WithContext(workspaceContext())
+		req.Header.Set("Authorization", "Bearer smithers_pooltoken")
+		empty.ServeHTTP(rec, req)
+		return rec.Body.String()
+	}())
+	h.Scopes = fakeScopes{ok: false}
+	assert.Equal(t, http.StatusForbidden, get(workspaceContext()).Code)
 }
 
 func TestProviderPool_StreamedLimitParksTheAccount(t *testing.T) {

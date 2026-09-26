@@ -14,13 +14,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/flowhost"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
-// The provider account pool route. A workspace's model calls for Claude and
-// Codex reach here (POST /provider-pool/{anthropic,chatgpt}/...) with the
-// workspace's pool credential instead of a provider key. The handler asks the
+// The provider account pool route. Workspaces' and managed Flow hosts'
+// (coding runs', the librarian's) model calls for Claude and Codex reach here
+// (POST /provider-pool/{anthropic,chatgpt}/...) with the workspace's pool
+// credential or the host's model credential instead of a provider key; GET /provider-pool/routes tells the guest which routes have
+// connected accounts right now. The handler asks the
 // pool for the next account per request, and on a usage limit or a refused
 // credential records it and tries the next account before anything reaches
 // the caller. Provider tokens never leave this process.
@@ -31,12 +34,13 @@ type ProviderPool interface {
 	MarkLimited(ctx context.Context, connectionID string, until time.Time) error
 	MarkRejected(ctx context.Context, connectionID string, generation int64, reason string) error
 	ForceRefresh(ctx context.Context, connectionID string) error
+	HasPool(ctx context.Context, userID, repositoryID int64, provider string) (bool, error)
 }
 
-// ProviderPoolScopes binds an authenticated call to its workspace's
+// ProviderPoolScopes binds an authenticated call to its pool's user and
 // repository (services.ProviderPoolScopes).
 type ProviderPoolScopes interface {
-	Scope(ctx context.Context, info *middleware.AuthInfo) (userID, repositoryID int64, ok bool)
+	Scope(ctx context.Context, bearer string) (userID, repositoryID int64, ok bool)
 }
 
 // ProviderPoolUses records which account took a workspace's model call
@@ -68,6 +72,10 @@ const providerPoolDefaultMaxBody = 16 << 20
 // ServeHTTP answers one model call from the caller's connected accounts.
 func (h *ProviderPoolHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	provider, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, services.ProviderPoolPath+"/"), "/")
+	if provider == "routes" && rest == "" && r.Method == http.MethodGet {
+		h.serveRoutes(w, r)
+		return
+	}
 	route, ok := modelPoolRoutes[provider]
 	if !ok {
 		writeModelPoolError(w, provider, http.StatusNotFound, "not_found_error", "Unknown provider.", 0)
@@ -77,9 +85,9 @@ func (h *ProviderPoolHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writeModelPoolError(w, provider, http.StatusNotFound, "not_found_error", "Only POST "+route.path+" is served.", 0)
 		return
 	}
-	userID, repositoryID, ok := h.Scopes.Scope(r.Context(), middleware.AuthInfoFromContext(r.Context()))
+	userID, repositoryID, ok := h.Scopes.Scope(r.Context(), poolBearer(r))
 	if !ok {
-		writeModelPoolError(w, provider, http.StatusForbidden, "permission_error", "A workspace pool credential is required.", 0)
+		writeModelPoolError(w, provider, http.StatusForbidden, "permission_error", "A pool credential is required.", 0)
 		return
 	}
 	limit := h.MaxBodyBytes
@@ -92,6 +100,33 @@ func (h *ProviderPoolHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.servePool(w, r, provider, route, body, userID, repositoryID)
+}
+
+// serveRoutes lists the routes with connected accounts in the caller's
+// scope, limited or not: {"routes":["anthropic","chatgpt"]}. A guest asks
+// when it resolves a seat, so an account connected after boot serves the next
+// seat without a restart.
+func (h *ProviderPoolHandler) serveRoutes(w http.ResponseWriter, r *http.Request) {
+	userID, repositoryID, ok := h.Scopes.Scope(r.Context(), poolBearer(r))
+	if !ok {
+		writeModelPoolError(w, "", http.StatusForbidden, "permission_error", "A pool credential is required.", 0)
+		return
+	}
+	routes := []string{}
+	for _, name := range []string{"anthropic", "chatgpt"} {
+		has, err := h.Pool.HasPool(r.Context(), userID, repositoryID, modelPoolRoutes[name].pool)
+		if err != nil {
+			slog.Error("provider pool routes failed", "repository_id", repositoryID, "error", err)
+			writeModelPoolError(w, "", http.StatusBadGateway, "api_error", "Connected accounts are unavailable.", 0)
+			return
+		}
+		if has {
+			routes = append(routes, name)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string][]string{"routes": routes})
 }
 
 // modelPoolModelPattern bounds what is recorded as a call's model: a model
@@ -142,21 +177,38 @@ func (h *ProviderPoolHandler) recordUse(ctx context.Context, conn *services.Reso
 }
 
 // ProviderPoolAuth reads an Anthropic SDK's x-api-key as the bearer
-// credential, so both SDK conventions authenticate the same way. A cookie
-// alone never spends an account.
-func ProviderPoolAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.TrimSpace(r.Header.Get("Authorization")) == "" {
-			key := strings.TrimSpace(r.Header.Get("X-Api-Key"))
-			if key == "" {
-				writeModelPoolError(w, "", http.StatusUnauthorized, "authentication_error", "Authentication required.", 0)
+// credential, so both SDK conventions authenticate the same way. A managed
+// Flow host's model credential is verified by the scope; any other token
+// goes through userAuth. A cookie alone never spends an account.
+func ProviderPoolAuth(userAuth func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		user := userAuth(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.TrimSpace(r.Header.Get("Authorization")) == "" {
+				key := strings.TrimSpace(r.Header.Get("X-Api-Key"))
+				if key == "" {
+					writeModelPoolError(w, "", http.StatusUnauthorized, "authentication_error", "Authentication required.", 0)
+					return
+				}
+				r.Header.Set("Authorization", "Bearer "+key)
+			}
+			r.Header.Del("Cookie")
+			if strings.HasPrefix(poolBearer(r), flowhost.ModelCredentialPrefix) {
+				next.ServeHTTP(w, r)
 				return
 			}
-			r.Header.Set("Authorization", "Bearer "+key)
-		}
-		r.Header.Del("Cookie")
-		next.ServeHTTP(w, r)
-	})
+			user.ServeHTTP(w, r)
+		})
+	}
+}
+
+// poolBearer is the request's bearer credential, or "".
+func poolBearer(r *http.Request) string {
+	scheme, token, _ := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
+	if !strings.EqualFold(scheme, "bearer") {
+		return ""
+	}
+	return strings.TrimSpace(token)
 }
 
 const (

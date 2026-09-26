@@ -45,18 +45,6 @@ func newWorkspaceModeDispatch(t *testing.T, backend AgentWorkspaceBackend) *agen
 	return d
 }
 
-func TestRerootAgentGuestFiles(t *testing.T) {
-	t.Parallel()
-	out := rerootAgentGuestFiles(map[string]sandbox.SandboxFile{
-		"/root/.codex/auth.json": {Content: "{}"},
-		"/etc/smithers/x":        {Content: "y"},
-	})
-	assert.Contains(t, out, "/home/developer/.codex/auth.json")
-	assert.Contains(t, out, "/etc/smithers/x")
-	assert.NotContains(t, out, "/root/.codex/auth.json")
-	assert.Nil(t, rerootAgentGuestFiles(nil))
-}
-
 func TestAgentDispatch_WorkspaceMode_ServiceRunsAsWorkspaceUser(t *testing.T) {
 	t.Parallel()
 	d := newWorkspaceModeDispatch(t, &agentWorkspaceBackendStub{})
@@ -97,7 +85,6 @@ func TestAgentDispatch_WorkspaceMode_CreateVMUsesBackendAndMergesBindings(t *tes
 	require.NoError(t, d.prepareRepoClone())
 	require.NoError(t, d.buildServiceSpec())
 	require.NoError(t, d.injectSecrets())
-	d.guestFiles = map[string]sandbox.SandboxFile{"/root/.codex/auth.json": {Content: "{}"}}
 	d.gitRepos = append(d.gitRepos, sandbox.GitRepositorySpec{Repo: "https://git.example/acme/lib", Path: defaultWorkspaceClonePath + "/acme/lib", Rev: "abc"})
 	require.NoError(t, d.createVM())
 	assert.Equal(t, "ws-9", d.workspaceID)
@@ -107,7 +94,6 @@ func TestAgentDispatch_WorkspaceMode_CreateVMUsesBackendAndMergesBindings(t *tes
 	assert.Equal(t, "alice", got.RepoOwner)
 	assert.Equal(t, "demo", got.RepoName)
 	assert.Equal(t, "sess-1", got.SessionID)
-	assert.Contains(t, got.GuestFiles, "/home/developer/.codex/auth.json", "guest files are re-rooted under the workspace home")
 	require.Len(t, got.Members, 1, "only changeset members are handed over; the primary clone is the workspace's job")
 	assert.Equal(t, "abc", got.Members[0].Rev)
 	for _, secret := range got.EgressSecrets {

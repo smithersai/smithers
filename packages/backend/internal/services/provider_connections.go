@@ -20,7 +20,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
-	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // Bring-your-own subscriptions (RFD-003). A provider connection is one Claude
@@ -47,20 +46,9 @@ const (
 	ProviderConnectionPreferenceUserOnly     = "user_only"
 	ProviderConnectionPreferencePlatformOnly = "platform_only"
 
-	// Guest-visible names. The proxy swaps the placeholder on the bound host
-	// and header; the value never enters the guest.
-	claudeAuthTokenEnvName      = "ANTHROPIC_AUTH_TOKEN"
-	claudeCodeOAuthTokenEnvName = "CLAUDE_CODE_OAUTH_TOKEN"
-	codexAccessTokenEnvName     = "OPENAI_CODEX_ACCESS_TOKEN"
-	codexHomeGuestPath          = "/root/.codex"
-	codexAuthGuestPath          = codexHomeGuestPath + "/auth.json"
-
-	claudeAPIHost = "api.anthropic.com"
-	codexAPIHost  = "chatgpt.com"
-
 	// providerConnectionRefreshHorizon is how close to expiry the worker
-	// refreshes; providerConnectionDispatchHorizon is how close a dispatch
-	// refreshes synchronously before binding.
+	// refreshes; providerConnectionDispatchHorizon is how close a pool pick
+	// refreshes synchronously before handing the token to a model call.
 	providerConnectionRefreshHorizon  = 30 * time.Minute
 	providerConnectionDispatchHorizon = 5 * time.Minute
 	providerConnectionRefreshLease    = 5 * time.Minute
@@ -87,8 +75,6 @@ type ProviderConnectionQuerier interface {
 	UpdateProviderConnectionTokens(ctx context.Context, arg db.UpdateProviderConnectionTokensParams) error
 	MarkProviderConnectionRefreshFailure(ctx context.Context, arg db.MarkProviderConnectionRefreshFailureParams) error
 	ClaimProviderConnectionForRefresh(ctx context.Context, arg db.ClaimProviderConnectionForRefreshParams) (db.ProviderConnection, error)
-	ResolveActiveOrgProviderConnection(ctx context.Context, arg db.ResolveActiveOrgProviderConnectionParams) (db.ProviderConnection, error)
-	ResolveActiveUserProviderConnectionForRepository(ctx context.Context, arg db.ResolveActiveUserProviderConnectionForRepositoryParams) (db.ProviderConnection, error)
 	ProviderConnectionPoolStatus(ctx context.Context, arg db.ProviderConnectionPoolStatusParams) (db.ProviderConnectionPoolStatusRow, error)
 	PickProviderConnection(ctx context.Context, arg db.PickProviderConnectionParams) (db.ProviderConnection, error)
 	PickProviderConnectionWaiting(ctx context.Context, arg db.PickProviderConnectionWaitingParams) (db.ProviderConnection, error)
@@ -376,13 +362,10 @@ type ProviderConnectionGrantInput struct {
 // token and the non-secret identity the guest may see.
 type ResolvedProviderConnection struct {
 	ConnectionID string
-	OwnerType    string
 	Provider     string
 	Kind         string
 	AccessToken  string
 	AccountID    string
-	AccountEmail string
-	Plan         string
 	// RefreshGeneration fences a later refusal of this token (MarkRejected).
 	RefreshGeneration int64
 	HasRefreshToken   bool
@@ -769,48 +752,6 @@ func (s *ProviderConnectionService) SetRepositoryPreference(ctx context.Context,
 	return nil
 }
 
-// ResolveForRun returns the run user's own connection for the provider, or
-// nil when the run should keep the platform credentials. Only the connecting
-// user's own runs ever use a connection: organization rows never resolve, and
-// a user connection reaches a repository the user does not own only through
-// that user's grant. It refreshes an access token that is about to expire.
-func (s *ProviderConnectionService) ResolveForRun(ctx context.Context, userID, repositoryID int64, provider string) (*ResolvedProviderConnection, error) {
-	if s == nil || !s.enabled || repositoryID <= 0 || userID <= 0 {
-		return nil, nil
-	}
-	provider, err := normalizeProviderConnectionProvider(provider)
-	if err != nil {
-		return nil, nil
-	}
-	if use, err := s.usesUserConnections(ctx, repositoryID); err != nil || !use {
-		return nil, err
-	}
-	params := db.ResolveActiveUserProviderConnectionForRepositoryParams{UserID: pgtype.Int8{Int64: userID, Valid: true}, Provider: provider, RepositoryID: repositoryID}
-	row, err := s.q.ResolveActiveUserProviderConnectionForRepository(ctx, params)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("resolve user provider connection: %w", err)
-	}
-	resolved, err := s.materialize(ctx, row)
-	if err != nil {
-		s.logger.Warn("provider connection unusable for run", "connection_id", row.ID, "provider", provider, "error", err)
-		return nil, nil
-	}
-	// Refresh and decrypt may wait on a provider while the owner revokes this
-	// connection or its repository grant. Recheck the scoped active selection
-	// before handing a token to a new run.
-	current, err := s.q.ResolveActiveUserProviderConnectionForRepository(ctx, params)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && current.ID != row.ID) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("recheck provider connection: %w", err)
-	}
-	return resolved, nil
-}
-
 // usesUserConnections reports whether the repository's preference lets a
 // run's user draw on their own connections. A subscription serves only its
 // account holder's own runs: organization rows (legacy) never resolve, and
@@ -851,8 +792,8 @@ func (s *ProviderConnectionService) materialize(ctx context.Context, row db.Prov
 		return nil, errors.New("failed to decrypt access token")
 	}
 	return &ResolvedProviderConnection{
-		ConnectionID: row.ID, OwnerType: row.OwnerType, Provider: row.Provider, Kind: row.Kind,
-		AccessToken: plaintext, AccountID: row.AccountID, AccountEmail: row.AccountEmail, Plan: row.Plan,
+		ConnectionID: row.ID, Provider: row.Provider, Kind: row.Kind,
+		AccessToken: plaintext, AccountID: row.AccountID,
 		RefreshGeneration: row.RefreshGeneration, HasRefreshToken: len(row.RefreshTokenEncrypted) > 0,
 	}, nil
 }
@@ -1066,64 +1007,4 @@ func (w *ProviderConnectionRefreshWorker) PollOnce(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// Guest-side shapes.
-
-// ClaudeProxySecrets are the placeholders a Claude connection binds: the SDK
-// name the agent runtime selects on, and the name the Claude Code CLI reads.
-func ClaudeProxySecrets(accessToken string) []sandbox.EgressProxySecret {
-	return []sandbox.EgressProxySecret{
-		{Name: claudeAuthTokenEnvName, Value: accessToken, Hosts: []string{claudeAPIHost}, MatchHeaders: []string{"authorization"}},
-		{Name: claudeCodeOAuthTokenEnvName, Value: accessToken, Hosts: []string{claudeAPIHost}, MatchHeaders: []string{"authorization"}},
-	}
-}
-
-// ClaudeConnectionProxySecrets are the placeholders a resolved Claude
-// connection binds: an API-key connection is the ANTHROPIC_API_KEY seat
-// (x-api-key), a subscription the bearer placeholders.
-func ClaudeConnectionProxySecrets(resolved *ResolvedProviderConnection) []sandbox.EgressProxySecret {
-	if resolved.Kind == ProviderConnectionKindAPIKey {
-		if secret, ok := ProviderCredentialEgressSecret("ANTHROPIC_API_KEY", resolved.AccessToken); ok {
-			return []sandbox.EgressProxySecret{secret}
-		}
-		return nil
-	}
-	return ClaudeProxySecrets(resolved.AccessToken)
-}
-
-// CodexProxySecret is the placeholder a Codex connection binds.
-func CodexProxySecret(accessToken string) sandbox.EgressProxySecret {
-	return sandbox.EgressProxySecret{Name: codexAccessTokenEnvName, Value: accessToken, Hosts: []string{codexAPIHost}, MatchHeaders: []string{"authorization"}}
-}
-
-// CodexGuestAuthJSON is the $CODEX_HOME/auth.json the guest gets: ChatGPT
-// mode, placeholder tokens, the real non-secret account id, and an unsigned
-// identity token carrying only the claims the CLI reads (verified against
-// codex-cli 0.152.1). last_refresh is now so the CLI does not try its own
-// refresh; the refresh placeholder is never bound, so such an attempt fails
-// closed at the provider.
-func CodexGuestAuthJSON(accountID, email, plan string, now time.Time) []byte {
-	if plan == "" {
-		plan = "unknown"
-	}
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT","kid":"smithers-placeholder"}`))
-	claims, _ := json.Marshal(map[string]any{
-		"iat": now.Unix(), "exp": now.Add(240 * time.Hour).Unix(), "sub": "smithers-placeholder", "email": email, "email_verified": true,
-		"https://api.openai.com/auth":    map[string]any{"chatgpt_account_id": accountID, "chatgpt_plan_type": plan, "chatgpt_user_id": "smithers-placeholder", "user_id": "smithers-placeholder"},
-		"https://api.openai.com/profile": map[string]any{"email": email, "email_verified": true},
-	})
-	idToken := header + "." + base64.RawURLEncoding.EncodeToString(claims) + "." + base64.RawURLEncoding.EncodeToString([]byte("smithers-placeholder-signature"))
-	doc, _ := json.Marshal(map[string]any{
-		"auth_mode":      "chatgpt",
-		"OPENAI_API_KEY": nil,
-		"tokens": map[string]any{
-			"id_token":      idToken,
-			"access_token":  sandbox.EgressProxyPlaceholder(codexAccessTokenEnvName),
-			"refresh_token": "OPENAI_CODEX_REFRESH_TOKEN_NOT_AVAILABLE_IN_GUEST",
-			"account_id":    accountID,
-		},
-		"last_refresh": now.UTC().Format(time.RFC3339Nano),
-	})
-	return append(doc, '\n')
 }

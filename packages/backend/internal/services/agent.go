@@ -185,13 +185,6 @@ type AgentEnvironmentVariablesLoader interface {
 	LoadVariables(ctx context.Context, repositoryID int64) ([]AgentEnvironmentVariable, error)
 }
 
-// AgentProviderConnectionResolver picks the bring-your-own subscription an
-// agent run authenticates its model calls with (RFD-003). A nil result means
-// the run keeps the platform provider credentials.
-type AgentProviderConnectionResolver interface {
-	ResolveForRun(ctx context.Context, userID, repositoryID int64, provider string) (*ResolvedProviderConnection, error)
-}
-
 // SecretDeliveryMetricsRecorder counts which path each agent secret took.
 // Optional: metrics recorders that do not implement it are simply skipped.
 type SecretDeliveryMetricsRecorder interface {
@@ -392,7 +385,6 @@ type AgentService struct {
 	sandboxConfig         AgentSandboxConfig
 	environmentVariables  AgentEnvironmentVariablesLoader
 	boundSecrets          AgentEnvironmentBoundSecretsLoader
-	providerConnections   AgentProviderConnectionResolver
 	sandboxMetrics        SandboxMetricsRecorder
 	workflowMetrics       WorkflowRunMetricsObserver
 	sessionMetrics        AgentSessionMetricsObserver
@@ -537,15 +529,6 @@ func WithAgentEnvironmentBoundSecrets(loader AgentEnvironmentBoundSecretsLoader)
 func WithAgentEnvironmentVariables(loader AgentEnvironmentVariablesLoader) AgentServiceOption {
 	return func(s *AgentService) {
 		s.environmentVariables = loader
-	}
-}
-
-// WithAgentProviderConnections lets dispatch bind the run user's own connected
-// Claude or Codex subscription through the egress proxy. Self-host only: the
-// server wires it only when feature_flags.subscription_connections is on.
-func WithAgentProviderConnections(resolver AgentProviderConnectionResolver) AgentServiceOption {
-	return func(s *AgentService) {
-		s.providerConnections = resolver
 	}
 }
 

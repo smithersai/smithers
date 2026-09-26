@@ -50,6 +50,11 @@ func BuildProcessSpec(launch HostLaunch, paths WorkspacePaths, port uint16) (Pro
 			environment[seat.KeyEnv] = credential
 		}
 	}
+	if launch.Catalog.AccountPoolURL != "" {
+		environment[AccountPoolURLEnv] = launch.Catalog.AccountPoolURL
+		environment[AccountPoolProvidersEnv] = AccountPoolRoutes
+		environment[AccountPoolKeyEnv] = ModelCredential(launch.Binding.ID, launch.Credential)
+	}
 	environment["SMITHERS_API_KEY"] = launch.Credential
 	environment["SMITHERS_GATEWAY_ID"] = launch.Binding.ID
 	environment["SMITHERS_OWNER_GENERATION"] = strconv.FormatInt(launch.Binding.OwnerGeneration, 10)

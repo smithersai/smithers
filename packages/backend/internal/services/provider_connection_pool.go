@@ -20,9 +20,9 @@ import (
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
-// The provider account pool. A run's scope (the repository preference's
-// first owner with any connection for the provider) is one pool; the model
-// proxy asks it for an account per request, least recently used first, and
+// The provider account pool. A scope (a user's own connections that apply to
+// a repository, under its preference) is one pool; the pool route asks it
+// for an account per request, least recently used first, and
 // reports usage limits and refusals back so the next request skips that
 // account until it resets.
 
@@ -110,6 +110,18 @@ func (s *ProviderConnectionService) PickForModelCall(ctx context.Context, userID
 		pick.Connection = resolved
 		return pick, nil
 	}
+}
+
+// ServesPool reports whether the user's connected accounts may serve the
+// repository at all: the deployment allows subscription connections and the
+// repository's preference lets a user draw on their own accounts. A guest
+// offered the pool asks it which providers have accounts when it resolves a
+// seat, so an account connected after boot serves the next seat.
+func (s *ProviderConnectionService) ServesPool(ctx context.Context, userID, repositoryID int64) (bool, error) {
+	if s == nil || repositoryID <= 0 || userID <= 0 {
+		return false, nil
+	}
+	return s.usesUserConnections(ctx, repositoryID)
 }
 
 // HasPool reports whether the run user has any connection for the provider,

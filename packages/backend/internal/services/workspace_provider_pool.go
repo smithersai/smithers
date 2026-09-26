@@ -3,12 +3,17 @@ package services
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/flowhost"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -19,21 +24,48 @@ const (
 	ProviderPoolPath = "/provider-pool"
 	// ProviderPoolURLEnvName names the pool origin for the guest's model
 	// routes (NativeEquipment): ${SMITHERS_ACCOUNT_POOL_URL}/{anthropic,chatgpt}.
-	ProviderPoolURLEnvName = "SMITHERS_ACCOUNT_POOL_URL"
-	// ProviderPoolProvidersEnvName lists the pooled routes ("anthropic",
-	// "chatgpt"), so a provider without connected accounts keeps its own
-	// credential and origin.
-	ProviderPoolProvidersEnvName = "SMITHERS_ACCOUNT_POOL_PROVIDERS"
+	ProviderPoolURLEnvName = flowhost.AccountPoolURLEnv
+	// ProviderPoolKeyEnvName holds the guest's pool credential as an
+	// egress-proxy placeholder, bound for the API host only.
+	ProviderPoolKeyEnvName = flowhost.AccountPoolKeyEnv
+	// ProviderPoolProvidersEnvName lists the routes ("anthropic", "chatgpt")
+	// the guest may take to the pool: a provider the repository keys itself
+	// keeps that key. Which of them have connected accounts the guest asks
+	// the pool (GET /provider-pool/routes) when it resolves a seat, so an
+	// account connected after boot serves without a restart.
+	ProviderPoolProvidersEnvName = flowhost.AccountPoolProvidersEnv
 
 	providerPoolTokenPrefix = "provider-pool-workspace-"
 	providerPoolTokenTTL    = 7 * 24 * time.Hour
 )
 
+// providerPoolSeat is one guest seat a pool can serve.
+type providerPoolSeat struct{ seat, provider, route, modelProvider string }
+
 // providerPoolSeats are the guest seats a pool serves: the Anthropic seat
 // for Claude accounts, the OpenAI seat in ChatGPT mode for Codex accounts.
-var providerPoolSeats = []struct{ seat, provider, route string }{
-	{"ANTHROPIC_API_KEY", ProviderConnectionProviderClaude, "anthropic"},
-	{"OPENAI_API_KEY", ProviderConnectionProviderCodex, "chatgpt"},
+var providerPoolSeats = []providerPoolSeat{
+	{"ANTHROPIC_API_KEY", ProviderConnectionProviderClaude, "anthropic", modelproxy.ProviderAnthropic},
+	{"OPENAI_API_KEY", ProviderConnectionProviderCodex, "chatgpt", modelproxy.ProviderOpenAI},
+}
+
+// providerPoolGuestRoutes lists the pool routes whose seat the repository
+// does not key itself.
+func providerPoolGuestRoutes(declares func(providerPoolSeat) bool) []string {
+	var routes []string
+	for _, pool := range providerPoolSeats {
+		if !declares(pool) {
+			routes = append(routes, pool.route)
+		}
+	}
+	return routes
+}
+
+// ProviderPoolOffer decides whether a guest is offered the account pool
+// (services.ProviderConnectionService).
+type ProviderPoolOffer interface {
+	ServesPool(ctx context.Context, userID, repositoryID int64) (bool, error)
+	HasPool(ctx context.Context, userID, repositoryID int64, provider string) (bool, error)
 }
 
 // ProviderPoolTokenScopes binds a pool credential to one repository and one
@@ -49,11 +81,18 @@ type providerPoolTokenLister interface {
 	ListAccessTokensByUserID(ctx context.Context, userID int64) ([]db.AccessToken, error)
 }
 
-// bindWorkspaceProviderPool offers the pool for each provider with connected
-// accounts. The pool credential is minted once per boot, replacing the
-// workspace's earlier one; the seats carry it as their placeholder value on
-// the API host only, so no provider token is ever bound or visible.
+// bindWorkspaceProviderPool offers the pool whenever the owner's accounts
+// may serve the repository, whether or not any is connected yet. The pool
+// credential is minted once per boot, replacing the workspace's earlier one,
+// and bound as its placeholder value on the API host only, so no provider
+// token is ever bound or visible. The platform seats stay bound: a seat the
+// pool has no accounts for keeps them.
 func (s *WorkspaceService) bindWorkspaceProviderPool(ctx context.Context, workspace db.Workspace, binding *workspaceProviderBinding) error {
+	// The pool's names are reserved: a repository value never stands in for
+	// the platform's, whether or not this boot offers the pool.
+	binding.environment.Env = slices.DeleteFunc(binding.environment.Env, func(v AgentEnvironmentVariable) bool {
+		return v.Name == ProviderPoolURLEnvName || v.Name == ProviderPoolProvidersEnvName || v.Name == ProviderPoolKeyEnvName
+	})
 	if workspace.RepositoryID <= 0 || workspace.UserID <= 0 {
 		return nil
 	}
@@ -62,10 +101,22 @@ func (s *WorkspaceService) bindWorkspaceProviderPool(ctx context.Context, worksp
 	if !sandbox.ValidEgressHost(host) {
 		return nil
 	}
-	var seats, routes []string
-	chatgpt := false
+	routes := providerPoolGuestRoutes(func(pool providerPoolSeat) bool {
+		return workspaceDeclaresProvider(binding.environment, pool.seat)
+	})
+	if len(routes) == 0 {
+		return nil
+	}
+	serves, err := s.providerConnections.ServesPool(ctx, workspace.UserID, workspace.RepositoryID)
+	if err != nil {
+		return pkgerrors.Internal("resolve workspace provider accounts").WithCause(err)
+	}
+	if !serves {
+		return nil
+	}
+	// The coding model defaults from the providers that can serve right now.
 	for _, pool := range providerPoolSeats {
-		if workspaceDeclaresProvider(binding.environment, pool.seat) {
+		if !slices.Contains(routes, pool.route) {
 			continue
 		}
 		has, err := s.providerConnections.HasPool(ctx, workspace.UserID, workspace.RepositoryID, pool.provider)
@@ -73,13 +124,8 @@ func (s *WorkspaceService) bindWorkspaceProviderPool(ctx context.Context, worksp
 			return pkgerrors.Internal("resolve workspace provider accounts").WithCause(err)
 		}
 		if has {
-			seats = append(seats, pool.seat)
-			routes = append(routes, pool.route)
-			chatgpt = chatgpt || pool.provider == ProviderConnectionProviderCodex
+			binding.pooled = append(binding.pooled, pool.seat)
 		}
-	}
-	if len(seats) == 0 {
-		return nil
 	}
 	s.revokeProviderPoolTokens(ctx, workspace)
 	token, err := issueTemporaryRepoTokenWithTTL(ctx, s.q, workspace.UserID, providerPoolTokenPrefix+workspace.ID,
@@ -87,14 +133,9 @@ func (s *WorkspaceService) bindWorkspaceProviderPool(ctx context.Context, worksp
 	if err != nil {
 		return pkgerrors.Internal("mint workspace provider pool credential").WithCause(err)
 	}
-	for _, seat := range seats {
-		binding.bind(sandbox.EgressProxySecret{Name: seat, Value: token.Plaintext, Hosts: []string{host}, MatchHeaders: []string{"authorization", "x-api-key"}})
-	}
+	binding.bind(sandbox.EgressProxySecret{Name: ProviderPoolKeyEnvName, Value: token.Plaintext, Hosts: []string{host}, MatchHeaders: []string{"authorization", "x-api-key"}})
 	binding.setEnv(ProviderPoolURLEnvName, strings.TrimRight(base, "/")+ProviderPoolPath)
 	binding.setEnv(ProviderPoolProvidersEnvName, strings.Join(routes, ","))
-	if chatgpt {
-		binding.setEnv("SMITHERS_OPENAI_AUTH", "chatgpt")
-	}
 	return nil
 }
 
@@ -121,21 +162,43 @@ type providerPoolScopeQuerier interface {
 	GetWorkspace(ctx context.Context, id string) (db.Workspace, error)
 }
 
-// ProviderPoolScopes binds a pool call to the workspace's repository.
+// ProviderPoolScopes binds a pool call to a (user, repository) scope.
 type ProviderPoolScopes struct {
-	q providerPoolScopeQuerier
+	q     providerPoolScopeQuerier
+	pool  *pgxpool.Pool
+	codec flowhost.SecretCodec
 }
 
-func NewProviderPoolScopes(q providerPoolScopeQuerier) *ProviderPoolScopes {
-	return &ProviderPoolScopes{q: q}
+// NewProviderPoolScopes resolves pool scopes over product SQL. codec opens
+// managed Flow hosts' stored credentials (the Flow host store's codec).
+func NewProviderPoolScopes(q providerPoolScopeQuerier, pool *pgxpool.Pool, codec flowhost.SecretCodec) *ProviderPoolScopes {
+	return &ProviderPoolScopes{q: q, pool: pool, codec: codec}
 }
 
-// Scope answers the pool (user, repository) of an authenticated call: the
-// token must be the workspace's platform-minted pool credential (not another
-// workspace-bound token, such as the head reporter's), bound to that
-// workspace and its repository, and the workspace must belong to its user.
-func (p *ProviderPoolScopes) Scope(ctx context.Context, info *middleware.AuthInfo) (userID, repositoryID int64, ok bool) {
-	if p == nil || info == nil || !info.IsTokenAuth || info.User == nil {
+// Scope answers the pool (user, repository) of an authenticated call.
+//
+// A managed Flow host (a coding run's host, the librarian) presents its
+// binding's model credential: it draws on the accounts of the binding's
+// user, the user who initiated the run, on the binding's repository; the
+// repository preference and that user's grants decide the rest.
+//
+// Otherwise the token must be the workspace's platform-minted pool
+// credential (not another workspace-bound token, such as the head
+// reporter's), bound to that workspace and its repository, and the workspace
+// must belong to its user.
+func (p *ProviderPoolScopes) Scope(ctx context.Context, bearer string) (userID, repositoryID int64, ok bool) {
+	if p == nil {
+		return 0, 0, false
+	}
+	if strings.HasPrefix(bearer, flowhost.ModelCredentialPrefix) {
+		binding, err := flowhost.VerifyModelCredential(ctx, p.pool, p.codec, bearer)
+		if err != nil || binding.UserID <= 0 || binding.RepositoryID <= 0 {
+			return 0, 0, false
+		}
+		return binding.UserID, binding.RepositoryID, true
+	}
+	info := middleware.AuthInfoFromContext(ctx)
+	if info == nil || !info.IsTokenAuth || info.User == nil {
 		return 0, 0, false
 	}
 	workspaceID := info.WorkspaceRestriction()

@@ -48,10 +48,6 @@ func (s *WorkspaceService) runWorkspaceAgentEnvironmentSetup(ctx context.Context
 	var err error
 	if len(prepared) > 0 && prepared[0] != nil {
 		config = prepared[0].environment
-		if err := s.prepareWorkspaceProviderFiles(ctx, vmID, prepared[0]); err != nil {
-			s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
-			return err
-		}
 	} else if s.agentEnvironment != nil {
 		config, err = s.agentEnvironment.LoadForProvisioning(ctx, workspace.RepositoryID)
 	}

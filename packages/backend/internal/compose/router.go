@@ -616,16 +616,19 @@ func buildRouter(
 	r.Route("/api/internal", func(chi.Router) {})
 
 	// The provider account pool (self-host only, behind
-	// feature_flags.subscription_connections): workspaces' Claude and Codex model calls,
-	// authenticated by the workspace's pool credential. Outside /api: calls
+	// feature_flags.subscription_connections): workspaces' and managed Flow
+	// hosts' Claude and Codex model calls, authenticated by the workspace's
+	// pool credential or the host's model credential. Outside /api: calls
 	// stream for minutes, and workspace-bound credentials are confined away
 	// from the /api surface.
 	if providerConnectionHandler != nil && providerConnectionHandler.Pool != nil {
 		r.Group(func(r chi.Router) {
 			r.Use(gateSubscriptionConnections)
-			r.Use(routes.ProviderPoolAuth)
-			r.Use(authLoader(queries, cfg.Auth))
-			r.With(middleware.RequireAuth).Post(services.ProviderPoolPath+"/*", providerConnectionHandler.Pool.ServeHTTP)
+			r.Use(routes.ProviderPoolAuth(func(next http.Handler) http.Handler {
+				return authLoader(queries, cfg.Auth)(middleware.RequireAuth(next))
+			}))
+			r.Get(services.ProviderPoolPath+"/routes", providerConnectionHandler.Pool.ServeHTTP)
+			r.Post(services.ProviderPoolPath+"/*", providerConnectionHandler.Pool.ServeHTTP)
 		})
 	}
 

@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"os/exec"
 	"strings"
 	"testing"
@@ -81,8 +80,10 @@ func TestWorkspaceProviderBootstrapPrecedenceAndRedaction(t *testing.T) {
 				require.Contains(t, binding.egress.Secrets, secret, "the repository's own key wins")
 				require.ElementsMatch(t, []string{"OPENAI_API_KEY", "CEREBRAS_API_KEY"}, keys(metered))
 			case "subscription":
-				// The account pool serves Anthropic, unmetered; the rest are metered.
-				require.ElementsMatch(t, []string{"OPENAI_API_KEY", "CEREBRAS_API_KEY"}, keys(metered))
+				// The account pool key is its own binding; every platform
+				// seat stays metered for a provider without accounts.
+				require.ElementsMatch(t, []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CEREBRAS_API_KEY"}, keys(metered))
+				require.Contains(t, binding.egress.SecretNames(), ProviderPoolKeyEnvName)
 			case "platform":
 				require.ElementsMatch(t, []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CEREBRAS_API_KEY"}, keys(metered))
 			}
@@ -101,11 +102,8 @@ func TestWorkspaceProviderBootstrapPrecedenceAndRedaction(t *testing.T) {
 			require.Equal(t, poolTestBaseURL+"/model-proxy", env[modelproxy.URLEnv])
 			profile, err := renderWorkspaceAgentEnvironmentProfile(binding.environment.Env, binding.environment.ProxyBound)
 			require.NoError(t, err)
-			files, err := json.Marshal(binding.files)
-			require.NoError(t, err)
 			require.NotContains(t, profile, "private")
 			require.NotContains(t, profile, "smithers_", "the model credential stays in the egress proxy")
-			require.NotContains(t, string(files), "private")
 			require.Empty(t, binding.environment.Secrets)
 			for _, secret := range binding.egress.Secrets {
 				require.NotEmpty(t, secret.Hosts)

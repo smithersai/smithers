@@ -51,7 +51,23 @@ type Catalog struct {
 	// the binding's model credential (ModelCredential), never a provider key.
 	ModelProxyURL string
 	ModelSeats    []modelproxy.Seat
+	// AccountPoolURL is the provider account pool ({base}/provider-pool)
+	// reachable from the host, set when the deployment allows subscription
+	// connections. The host's key is the binding's model credential; the
+	// pool serves the binding user's connected accounts on its repository,
+	// and the host asks the pool which providers have any.
+	AccountPoolURL string
 }
+
+// The account pool's guest environment (NativeEquipment): its origin, the
+// routes a host may take to it, and the host's pool key.
+const (
+	AccountPoolURLEnv       = "SMITHERS_ACCOUNT_POOL_URL"
+	AccountPoolProvidersEnv = "SMITHERS_ACCOUNT_POOL_PROVIDERS"
+	AccountPoolKeyEnv       = "SMITHERS_ACCOUNT_POOL_KEY"
+	// AccountPoolRoutes are every route a pool serves.
+	AccountPoolRoutes = "anthropic,chatgpt"
+)
 
 type WorkspacePaths struct {
 	Root     string

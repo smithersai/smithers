@@ -21,10 +21,17 @@ const poolTestBaseURL = "https://api.example.test"
 // workspaceProviderPool is a pool fake: which providers have connected
 // accounts for the workspace's repository.
 type workspaceProviderPool struct {
-	pools                map[string]bool
+	pools map[string]bool
+	// closed: the repository preference keeps platform credentials.
+	closed               bool
 	calls                []string
 	userID, repositoryID int64
 	err                  error
+}
+
+func (p *workspaceProviderPool) ServesPool(_ context.Context, userID, repositoryID int64) (bool, error) {
+	p.userID, p.repositoryID = userID, repositoryID
+	return !p.closed, p.err
 }
 
 func (p *workspaceProviderPool) HasPool(_ context.Context, userID, repositoryID int64, provider string) (bool, error) {
@@ -111,32 +118,19 @@ func TestWorkspaceProviderPoolProvisioning(t *testing.T) {
 					assert.Equal(t, workspace.RepositoryID, pool.repositoryID)
 					require.NotNil(t, policy)
 					profile := files[workspaceAgentEnvironmentProfilePath]
-					if provider == "none" {
-						assert.Empty(t, policy.Secrets)
-						assert.Empty(t, minted)
-						assert.NotContains(t, profile, ProviderPoolURLEnvName)
-						return
-					}
+					// Offered with or without accounts: the first account
+					// connected later serves without a restart.
 					require.Len(t, minted, 1, "one pool credential per boot")
 					assert.Equal(t, "provider-pool-workspace-"+workspace.ID, minted[0].Name)
 					assert.Equal(t, ProviderPoolTokenScopes(workspace.RepositoryID, workspace.ID), minted[0].Scopes)
 					assert.Contains(t, profile, "export "+ProviderPoolURLEnvName+"='"+poolTestBaseURL+ProviderPoolPath+"'")
-					routes := map[string]string{ProviderConnectionProviderClaude: "anthropic", ProviderConnectionProviderCodex: "chatgpt", "both": "anthropic,chatgpt"}[provider]
-					assert.Contains(t, profile, "export "+ProviderPoolProvidersEnvName+"='"+routes+"'")
+					assert.Contains(t, profile, "export "+ProviderPoolProvidersEnvName+"='anthropic,chatgpt'")
+					assert.Equal(t, []string{ProviderPoolKeyEnvName}, policy.SecretNames(), "the pool key is the only credential; no provider token is bound")
 					for _, secret := range policy.Secrets {
-						assert.Equal(t, []string{"api.example.test"}, secret.Hosts, "pool seats are bound to the API host only")
+						assert.Equal(t, []string{"api.example.test"}, secret.Hosts, "the pool key is bound to the API host only")
 					}
-					names := policy.SecretNames()
-					if pool.pools[ProviderConnectionProviderClaude] {
-						assert.Contains(t, names, "ANTHROPIC_API_KEY")
-					}
-					if pool.pools[ProviderConnectionProviderCodex] {
-						assert.Contains(t, names, "OPENAI_API_KEY")
-						assert.Contains(t, profile, "export SMITHERS_OPENAI_AUTH='chatgpt'")
-					} else {
-						assert.NotContains(t, profile, "SMITHERS_OPENAI_AUTH")
-					}
-					assert.NotContains(t, files, codexAuthGuestPath, "no provider session file enters the guest")
+					assert.NotContains(t, profile, "SMITHERS_OPENAI_AUTH", "ChatGPT mode is the guest's per-seat choice")
+					assert.NotContains(t, files, "/root/.codex/auth.json", "no provider session file enters the guest")
 					for _, secret := range policy.Secrets {
 						for path, content := range files {
 							assert.NotContains(t, content, secret.Value, path)
@@ -171,33 +165,36 @@ func TestWorkspaceProviderPoolRepositorySecretPrecedence(t *testing.T) {
 			require.NoError(t, err)
 			assert.Empty(t, pool.calls)
 			assert.Equal(t, env.bound, binding.egress.Secrets)
-			assert.Empty(t, binding.files)
 			assert.Equal(t, *config, binding.environment)
 		})
 	}
 }
 
-func TestWorkspaceProviderPoolReplacesPlatformKey(t *testing.T) {
+func TestWorkspaceProviderPoolKeepsPlatformSeats(t *testing.T) {
 	var minted []db.CreateAccessTokenParams
 	pool := &workspaceProviderPool{pools: map[string]bool{ProviderConnectionProviderClaude: true}}
 	service := newWorkspaceServiceForTests(poolTokenQuerier(&minted), WithWorkspaceGitBaseURL(poolTestBaseURL),
 		WithWorkspaceProviderBootstrap([]modelproxy.Seat{modelproxy.Seats[0]}, ""), WithWorkspaceProviderConnections(pool))
 	binding, err := service.resolveWorkspaceProviderBindings(context.Background(), sampleDBWorkspace("ws-platform"))
 	require.NoError(t, err)
-	require.Len(t, binding.egress.Secrets, 1)
-	assert.Equal(t, "ANTHROPIC_API_KEY", binding.egress.Secrets[0].Name)
-	assert.Equal(t, []string{"api.example.test"}, binding.egress.Secrets[0].Hosts)
-	for _, token := range minted {
-		assert.NotContains(t, token.Name, "model-proxy", "the pool serves Anthropic; the platform seat is not metered")
+	assert.ElementsMatch(t, []string{ProviderPoolKeyEnvName, "ANTHROPIC_API_KEY"}, binding.egress.SecretNames(),
+		"the metered seat stays for a seat the pool has no accounts for")
+	for _, secret := range binding.egress.Secrets {
+		assert.Equal(t, []string{"api.example.test"}, secret.Hosts)
 	}
-	assert.Equal(t, "anthropic:claude-sonnet-4-6", bootstrapModel(binding.environment))
+	var names []string
+	for _, token := range minted {
+		names = append(names, strings.SplitN(token.Name, "-workspace-", 2)[0])
+	}
+	assert.ElementsMatch(t, []string{"provider-pool", "model-proxy"}, names)
+	assert.Equal(t, "anthropic:claude-sonnet-4-6", bootstrapModel(binding.environment), "connected accounts count for the default model")
 	profile, err := renderWorkspaceAgentEnvironmentProfile(binding.environment.Env, binding.environment.ProxyBound)
 	require.NoError(t, err)
 	assert.NotContains(t, profile, "private")
 }
 
 func TestWorkspaceProviderPoolNoConnectionPreservesRequest(t *testing.T) {
-	service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceGitBaseURL(poolTestBaseURL), WithWorkspaceProviderConnections(&workspaceProviderPool{}))
+	service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceGitBaseURL(poolTestBaseURL), WithWorkspaceProviderConnections(&workspaceProviderPool{closed: true}))
 	req, err := service.buildWorkspaceVMRequest(context.Background(), "", nil, 101, "container")
 	require.NoError(t, err)
 	before, err := json.Marshal(req)
@@ -241,12 +238,16 @@ func TestWorkspaceProviderPoolPrecedenceIsPerProvider(t *testing.T) {
 			binding, err := service.resolveWorkspaceProviderBindings(context.Background(), sampleDBWorkspace("ws-precedence"))
 			require.NoError(t, err)
 			assert.Contains(t, binding.egress.Secrets, env.bound[0])
+			vars := map[string]string{}
+			for _, variable := range binding.environment.Env {
+				vars[variable.Name] = variable.Value
+			}
 			if key == "OPENAI_API_KEY" {
 				assert.Equal(t, []string{ProviderConnectionProviderClaude}, pool.calls)
-				assert.Contains(t, binding.egress.SecretNames(), "ANTHROPIC_API_KEY")
+				assert.Equal(t, "anthropic", vars[ProviderPoolProvidersEnvName])
 			} else {
 				assert.Equal(t, []string{ProviderConnectionProviderCodex}, pool.calls)
-				assert.Contains(t, binding.egress.SecretNames(), "OPENAI_API_KEY")
+				assert.Equal(t, "chatgpt", vars[ProviderPoolProvidersEnvName])
 			}
 		})
 	}
@@ -259,12 +260,19 @@ func TestProviderPoolScopesBindOnlyTheWorkspaceCredential(t *testing.T) {
 		2: {ID: 2, UserID: workspace.UserID, Name: "sandbox-workspace-" + workspace.ID, SystemIssued: true},
 		3: {ID: 3, UserID: workspace.UserID, Name: "provider-pool-workspace-" + workspace.ID},
 	}}
-	scopes := NewProviderPoolScopes(q)
+	scopes := NewProviderPoolScopes(q, nil, nil)
 	tokenID := int64(1)
 	info := func(userID int64, raw string) *middleware.AuthInfo {
 		return &middleware.AuthInfo{User: &db.User{ID: userID}, IsTokenAuth: true, TokenID: tokenID, RawScopes: raw}
 	}
-	user, repo, ok := scopes.Scope(context.Background(), info(workspace.UserID, ProviderPoolTokenScopes(workspace.RepositoryID, workspace.ID)))
+	scope := func(info *middleware.AuthInfo) (int64, int64, bool) {
+		ctx := context.Background()
+		if info != nil {
+			ctx = middleware.ContextWithAuthInfo(ctx, info)
+		}
+		return scopes.Scope(ctx, "smithers_pooltoken")
+	}
+	user, repo, ok := scope(info(workspace.UserID, ProviderPoolTokenScopes(workspace.RepositoryID, workspace.ID)))
 	require.True(t, ok)
 	assert.Equal(t, [2]int64{workspace.UserID, workspace.RepositoryID}, [2]int64{user, repo})
 	for name, candidate := range map[string]*middleware.AuthInfo{
@@ -274,14 +282,22 @@ func TestProviderPoolScopesBindOnlyTheWorkspaceCredential(t *testing.T) {
 		"another workspace":      info(workspace.UserID, ProviderPoolTokenScopes(workspace.RepositoryID, "ws-other")),
 		"a session, not a token": nil,
 	} {
-		_, _, ok := scopes.Scope(context.Background(), candidate)
+		_, _, ok := scope(candidate)
 		assert.False(t, ok, name)
 	}
 	for _, id := range []int64{2, 3, 99} {
 		tokenID = id
-		_, _, ok := scopes.Scope(context.Background(), info(workspace.UserID, workspaceHeadTokenScopes(workspace.RepositoryID, workspace.ID)))
+		_, _, ok := scope(info(workspace.UserID, workspaceHeadTokenScopes(workspace.RepositoryID, workspace.ID)))
 		assert.False(t, ok, "token %d: only the workspace's pool credential spends an account", id)
 	}
+}
+
+// A managed host's credential never passes on syntax alone: without its
+// live binding it has no pool.
+func TestProviderPoolScopesVerifyAHostCredential(t *testing.T) {
+	scopes := NewProviderPoolScopes(&poolScopeQuerier{}, nil, nil)
+	_, _, ok := scopes.Scope(context.Background(), "smithers_flowhost_11111111-1111-4111-8111-111111111111.forged")
+	assert.False(t, ok)
 }
 
 type poolScopeQuerier struct {

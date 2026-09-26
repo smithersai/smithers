@@ -125,8 +125,9 @@ precedence, and routes `openai:*` seats to ChatGPT (`SMITHERS_OPENAI_AUTH=chatgp
 An expired Claude Code login is refused with the fix: open `claude` once, or
 use a setup token. `SMITHERS_ORG_AUTH=api-key` reads `OPENAI_API_KEY` and
 `ANTHROPIC_API_KEY` instead. A Smithers account pool
-(`SMITHERS_ACCOUNT_POOL_URL`, `SMITHERS_ACCOUNT_POOL_PROVIDERS`) serves
-hosted workspaces and is not used here.
+(`SMITHERS_ACCOUNT_POOL_URL`, `SMITHERS_ACCOUNT_POOL_PROVIDERS`,
+`SMITHERS_ACCOUNT_POOL_KEY`) serves hosted workspaces and agent runs and is
+not used here.
 
 `doctor` resolves every seat the way the host does and names the login a seat
 lacks. A provider refusal (for example no credits) fails the run with the

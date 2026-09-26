@@ -679,13 +679,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	)
 	providerConnectionRefreshWorker := services.NewProviderConnectionRefreshWorker(providerConnectionService, time.Minute, slog.Default())
 	// Self-host only: with feature_flags.subscription_connections off (the
-	// hosted product) no run or workspace is handed a resolver, so a stored
-	// subscription token can never bind. Keep these nil interfaces, not typed
-	// nil pointers.
-	var subscriptionResolver services.AgentProviderConnectionResolver
-	var subscriptionPool services.WorkspaceProviderPool
+	// hosted product) no run or workspace is offered the pool, so a stored
+	// subscription token can never serve. Keep this a nil interface, not a
+	// typed nil pointer.
+	var subscriptionPool services.ProviderPoolOffer
 	if cfg.FeatureFlags.SubscriptionConnections {
-		subscriptionResolver = providerConnectionService
 		subscriptionPool = providerConnectionService
 	}
 	neverStartedTimeout, _ := time.ParseDuration(cfg.Agents.NeverStartedTimeout)
@@ -709,7 +707,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		}),
 		services.WithAgentEnvironmentVariables(agentEnvironmentService),
 		services.WithAgentEnvironmentBoundSecrets(agentEnvironmentService),
-		services.WithAgentProviderConnections(subscriptionResolver),
 		services.WithAgentSandboxMetrics(smithersMetrics),
 		services.WithAgentWorkflowMetrics(smithersMetrics),
 		services.WithAgentSessionMetrics(smithersMetrics),
@@ -1035,7 +1032,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Service: gitHubSyncedRepoService,
 	}
 	providerConnectionHandler := &routes.ProviderConnectionHandler{Service: providerConnectionService,
-		Pool: &routes.ProviderPoolHandler{Pool: providerConnectionService, Scopes: services.NewProviderPoolScopes(queries), Uses: queries}}
+		Pool: &routes.ProviderPoolHandler{Pool: providerConnectionService, Scopes: services.NewProviderPoolScopes(queries, pool, webhookSecretCodec), Uses: queries}}
 	secretHandler := &routes.SecretHandler{
 		Service:          secretService,
 		AgentEnvironment: agentEnvironmentService,

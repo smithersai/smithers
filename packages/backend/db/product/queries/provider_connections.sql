@@ -77,32 +77,6 @@ FROM due
 WHERE pc.id = due.id
 RETURNING pc.*;
 
--- name: ResolveActiveOrgProviderConnection :one
-SELECT * FROM provider_connections
-WHERE owner_type = 'org' AND org_id = $1 AND provider = $2 AND state = 'active'
-ORDER BY updated_at DESC, id
-LIMIT 1;
-
--- name: ResolveActiveUserProviderConnectionForRepository :one
--- A user's connection applies to repositories the user owns, and to any other
--- repository or organization the connection was explicitly granted to.
-SELECT c.* FROM provider_connections c
-WHERE c.owner_type = 'user' AND c.user_id = sqlc.arg(user_id) AND c.provider = sqlc.arg(provider) AND c.state = 'active'
-  AND (
-      EXISTS (SELECT 1 FROM repositories r WHERE r.id = sqlc.arg(repository_id) AND r.user_id = sqlc.arg(user_id))
-      OR EXISTS (
-          SELECT 1 FROM provider_connection_grants g
-          WHERE g.connection_id = c.id
-            AND (
-                g.all_repositories
-                OR g.repository_id = sqlc.arg(repository_id)
-                OR g.org_id = (SELECT r2.org_id FROM repositories r2 WHERE r2.id = sqlc.arg(repository_id))
-            )
-      )
-  )
-ORDER BY c.updated_at DESC, c.id
-LIMIT 1;
-
 -- name: AddProviderConnectionGrant :one
 INSERT INTO provider_connection_grants (connection_id, repository_id, org_id, all_repositories)
 VALUES (sqlc.arg(connection_id), sqlc.narg(repository_id), sqlc.narg(org_id), sqlc.arg(all_repositories))

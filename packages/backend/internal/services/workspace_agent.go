@@ -33,13 +33,10 @@ type CreateAgentWorkspaceInput struct {
 	RepoOwner      string
 	RepoName       string
 	SourceBookmark string
-	// EgressSecrets are the run's proxy bindings (provider credentials, BYO
-	// connection, the per-run cache token). They are merged over the
+	// EgressSecrets are the run's proxy bindings (platform model seats, the
+	// per-run cache token). They are merged over the
 	// repository's own bound secrets; the run's bindings win on a name clash.
 	EgressSecrets []sandbox.EgressProxySecret
-	// GuestFiles are placeholder-only files (never credentials), already
-	// re-rooted under the workspace home.
-	GuestFiles map[string]sandbox.SandboxFile
 	// Members are cross-repository changeset members to clone beside the
 	// primary checkout (authenticated clone URLs, pinned revisions).
 	Members []sandbox.GitRepositorySpec
@@ -252,7 +249,7 @@ func (s *WorkspaceService) agentForkSource(ctx context.Context, workspace db.Wor
 func (s *WorkspaceService) forkAgentWorkspace(ctx context.Context, workspace db.Workspace, input CreateAgentWorkspaceInput, egress *sandbox.EgressProxyPolicy, source db.Workspace, sameBookmark bool) (out AgentWorkspaceResult, retErr error) {
 	defer func() { s.observeWorkspaceLifecycle("start", retErr) }()
 	forkCtx := sandboxProvisionContext(ctx, "fork", "workspace", workspace.ID, workspaceProvisionAttempt(workspace.ProvisioningGeneration, "agent-"+source.ID))
-	vm, err := s.forkWorkspaceSandbox(forkCtx, source.VmID, workspace.Kind, egress, input.GuestFiles)
+	vm, err := s.forkWorkspaceSandbox(forkCtx, source.VmID, workspace.Kind, egress)
 	if err != nil {
 		s.deleteOrphanedWorkspaceVM(ctx, vm.ID)
 		return AgentWorkspaceResult{}, err
@@ -271,10 +268,6 @@ func (s *WorkspaceService) forkAgentWorkspace(ctx context.Context, workspace db.
 		return AgentWorkspaceResult{}, err
 	}
 	if err := s.cloneAgentWorkspaceMembers(ctx, vm.ID, input.Members); err != nil {
-		s.deleteOrphanedWorkspaceVM(ctx, vm.ID)
-		return AgentWorkspaceResult{}, err
-	}
-	if err := s.chownAgentGuestFiles(ctx, vm.ID, input.GuestFiles); err != nil {
 		s.deleteOrphanedWorkspaceVM(ctx, vm.ID)
 		return AgentWorkspaceResult{}, err
 	}
@@ -315,12 +308,6 @@ func (s *WorkspaceService) provisionFreshAgentWorkspace(ctx context.Context, wor
 		return AgentWorkspaceResult{}, err
 	}
 	req.EgressProxy = egress
-	for path, file := range input.GuestFiles {
-		if req.Files == nil {
-			req.Files = map[string]sandbox.SandboxFile{}
-		}
-		req.Files[path] = file
-	}
 	createCtx := sandboxProvisionContext(ctx, "create", "workspace", workspace.ID, workspaceProvisionAttempt(workspace.ProvisioningGeneration, "agent"))
 	vm, err := s.createWorkspaceVMAttempt(createCtx, req)
 	if err != nil {
@@ -349,9 +336,6 @@ func (s *WorkspaceService) provisionFreshAgentWorkspace(ctx context.Context, wor
 	}
 	if err := s.cloneAgentWorkspaceMembers(ctx, vm.ID, input.Members); err != nil {
 		return fail("members", err)
-	}
-	if err := s.chownAgentGuestFiles(ctx, vm.ID, input.GuestFiles); err != nil {
-		return fail("guest-files", err)
 	}
 	workspace = s.installWorkspaceHeadReporterBestEffort(ctx, workspace, vm.ID)
 	updated, err := s.q.UpdateWorkspaceExecutionInfo(ctx, db.UpdateWorkspaceExecutionInfoParams{
@@ -491,38 +475,6 @@ func buildAgentMemberCloneCommand(members []sandbox.GitRepositorySpec) string {
 		}
 	}
 	return strings.Join(lines, "\n")
-}
-
-// chownAgentGuestFiles hands placeholder files written by the provider (as
-// root) to the workspace user, whose home they live in.
-func (s *WorkspaceService) chownAgentGuestFiles(ctx context.Context, vmID string, files map[string]sandbox.SandboxFile) error {
-	if len(files) == 0 {
-		return nil
-	}
-	execClient, ok := s.sandbox.(sandboxExecClient)
-	if !ok {
-		return nil
-	}
-	user := defaultWorkspaceUser
-	lines := []string{"set -eu"}
-	for path := range files {
-		if !strings.HasPrefix(path, defaultWorkspaceHome+"/") {
-			continue
-		}
-		lines = append(lines, "chown -R "+shellQuote(user)+":"+shellQuote(user)+" "+shellQuote(path)+" 2>/dev/null || true")
-	}
-	if len(lines) == 1 {
-		return nil
-	}
-	timeoutMS := int64(30000)
-	resp, err := execClient.Execute(ctx, vmID, sandbox.ExecRequest{Command: strings.Join(lines, "\n"), TimeoutMS: &timeoutMS})
-	if err != nil {
-		return pkgerrors.Internal("chown agent guest files: " + err.Error())
-	}
-	if resp.StatusCode != nil && *resp.StatusCode != 0 {
-		return pkgerrors.Internal(fmt.Sprintf("chown agent guest files failed with status %d", *resp.StatusCode))
-	}
-	return nil
 }
 
 // SuspendAgentWorkspace suspends the computer of a finished or cancelled

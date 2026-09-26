@@ -67,4 +67,22 @@ func TestBuildProcessSpecGivesModelSeatsADerivedCredential(t *testing.T) {
 	assert.Equal(t, "vercel", spec.Environment[modelproxy.ProvidersEnv])
 	assert.NotContains(t, spec.Identity, credential)
 	assert.NotEqual(t, ModelCredential(binding.ID, "rotated"), credential)
+	_, pooled := spec.Environment[AccountPoolURLEnv]
+	assert.False(t, pooled, "no pool unless the deployment offers one")
+
+	// With the account pool offered, the host reaches it with the same
+	// derived credential; the pool serves the binding user's accounts.
+	catalog.AccountPoolURL = "https://backend.internal/provider-pool"
+	_, err = validateCatalog(catalog)
+	require.NoError(t, err)
+	spec, err = BuildProcessSpec(HostLaunch{Binding: binding, Authority: authority, Catalog: catalog, Credential: "control-credential"},
+		WorkspacePaths{Root: "/workspace/repo", StateDir: "/workspace/state"}, 4317)
+	require.NoError(t, err)
+	assert.Equal(t, "https://backend.internal/provider-pool", spec.Environment[AccountPoolURLEnv])
+	assert.Equal(t, "anthropic,chatgpt", spec.Environment[AccountPoolProvidersEnv])
+	assert.Equal(t, credential, spec.Environment[AccountPoolKeyEnv])
+	assert.NotContains(t, spec.Identity, credential)
+	catalog.AccountPoolURL = "file:///etc/passwd"
+	_, err = validateCatalog(catalog)
+	require.Error(t, err)
 }

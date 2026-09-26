@@ -30,6 +30,7 @@ var reservedEnvironment = map[string]struct{}{
 	"SMITHERS_SOURCE_REVISION": {}, "SMITHERS_REPO": {},
 	"SMITHERS_PRODUCT_API_URL": {}, "SMITHERS_CODING_IMPLEMENT_MODEL": {},
 	"SMITHERS_LIBRARIAN_MODEL": {},
+	AccountPoolURLEnv:          {}, AccountPoolProvidersEnv: {}, AccountPoolKeyEnv: {},
 }
 
 type Resolver struct {
@@ -103,10 +104,13 @@ func validateCatalog(catalog Catalog) (Catalog, error) {
 	}
 	catalog.Environment = copyEnvironment
 	catalog.ModelSeats = slices.Clone(catalog.ModelSeats)
-	if catalog.ModelProxyURL != "" {
-		parsed, err := url.Parse(catalog.ModelProxyURL)
+	for name, value := range map[string]string{"model proxy": catalog.ModelProxyURL, "account pool": catalog.AccountPoolURL} {
+		if value == "" {
+			continue
+		}
+		parsed, err := url.Parse(value)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" {
-			return Catalog{}, fmt.Errorf("flow host catalog %q model proxy URL is invalid", catalog.Key)
+			return Catalog{}, fmt.Errorf("flow host catalog %q %s URL is invalid", catalog.Key, name)
 		}
 	}
 	return catalog, nil

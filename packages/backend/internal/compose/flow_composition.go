@@ -50,13 +50,20 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 	if len(modelSeats) > 0 {
 		modelProxyURL = productAPIURL + modelproxy.Path
 	}
+	// With subscription connections allowed, managed hosts (coding runs,
+	// the librarian) also reach the account pool: the binding user's
+	// connected Claude and Codex accounts, per request.
+	accountPoolURL := ""
+	if cfg.FeatureFlags.SubscriptionConnections {
+		accountPoolURL = productAPIURL + services.ProviderPoolPath
+	}
 	catalogs := []flowhost.Catalog{
 		{
 			Key: flowhost.CatalogCoding, Family: flowhost.CatalogCoding,
 			Executable: registry.Coding.Executable, ArtifactDigest: registry.Coding.SHA256,
 			ServiceName: "smithers-coding-host", ImplementationModel: strings.TrimSpace(cfg.Sandbox.WorkspaceCodingDefaultModel),
 			Environment:   codingHostEnvironment(options.topology),
-			ModelProxyURL: modelProxyURL, ModelSeats: modelSeats,
+			ModelProxyURL: modelProxyURL, ModelSeats: modelSeats, AccountPoolURL: accountPoolURL,
 		},
 		{
 			Key: flowhost.CatalogLibrarian, Family: flowhost.CatalogLibrarian,
@@ -64,7 +71,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 			ServiceName: "smithers-librarian-host", ProductAPIURL: productAPIURL,
 			ImplementationModel: strings.TrimSpace(os.Getenv("SMITHERS_LIBRARIAN_MODEL")),
 			Environment:         librarianHostEnvironment(options.topology),
-			ModelProxyURL:       modelProxyURL, ModelSeats: modelSeats,
+			ModelProxyURL:       modelProxyURL, ModelSeats: modelSeats, AccountPoolURL: accountPoolURL,
 		},
 	}
 	bindings, err := flowhost.NewStore(pool, codec)
