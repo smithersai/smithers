@@ -11,6 +11,8 @@ Give Smithers a concrete outcome and the context it needs to work on the selecte
 
 ## Give it a task
 
+Select **Chat**, or press **Command+K** on macOS or **Ctrl+K** on Windows and Linux, to open the composer. The same shortcut dismisses it. In Normal mode it floats over the conversation; Vim mode keeps a dock so other panes remain reachable.
+
 1. Check the repository name beside the message box.
 2. Write what you want to change and how you will judge the result.
 3. Select **Send message**.
@@ -43,6 +45,8 @@ Select **Maximize card** to inspect a larger result. Return to the conversation 
 ## Keep working while a flow runs
 
 You can continue chatting after launching a flow. To change the instructions of a particular run, use its **Steer** control and name the correction. That directs the message to the run you are inspecting.
+
+While the current turn is running, **Enter** sends a steer and **Alt+Enter** queues a follow-up. Queued prompts remain with their conversation and can be edited or removed. Background progress stays in the shared toast stack, with controls appropriate to the worker; the run card keeps the detailed output.
 
 For progress, stopping, and resuming, see [Inspect and steer a run](/docs/app/runs/).
 

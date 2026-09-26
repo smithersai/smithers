@@ -70,10 +70,9 @@ ${description}
 
 Open [the Smithers repository](https://smithers.sh/smithersai/smithers) in your browser.
 Explore its files, ask for a task in chat, and inspect runs and changes in the conversation.
-The hosted private alpha is free for selected public repositories. Sign in with GitHub
-when you are ready to contribute. Follow the [app quickstart](https://smithers.sh/docs/quickstart/).
-
-![The Smithers app with its repository home, featured flows, and conversation.](apps/site/public/images/app/home.png)
+Sign in with GitHub when you are ready to contribute. See
+[Pricing](https://smithers.sh/docs/pricing/) for Free and Pro plans and deployment
+availability. Follow the [app quickstart](https://smithers.sh/docs/quickstart/).
 
 For local execution and authoring, use the CLI and libraries described below.
 

@@ -3,10 +3,16 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { docsText } from "./docs-text.mjs"
 
-test("Dispatcher documents the registration refusal and supported alternatives until registration crosses the relay", () => {
+test("Dispatcher documents reviewed registration and keeps the local scheduler distinct", () => {
   const source = readFileSync(new URL("../src/content/docs/docs/app/dispatcher.mdx", import.meta.url), "utf8")
-  assert.doesNotMatch(source, /\b(?:trigger|registration) form\b/i)
-  assert.ok(source.includes("A rule cannot be registered on owner/repo from here yet: declare it in .smithers/FACTORY.ts, or register it with the smthrs CLI on the box."))
+  const flows = readFileSync(new URL("../../app/src/mainview/flows/entries/triggers.ts", import.meta.url), "utf8")
+  assert.match(flows, /name: "triggers\.approve"[\s\S]*?userOnly: true/)
+  assert.doesNotMatch(source, /always refuses registration|cannot be registered.*from here yet/)
+  assert.match(source, /Only the human can approve/)
+  assert.match(source, /token and time limits/)
+  assert.match(source, /Run now/)
+  assert.match(source, /Pause/)
+  assert.match(source, /accepting the request does not mean the schedule is registered/)
   assert.ok(source.includes('"schedule:0 9 * * 1-5"'))
   assert.ok(source.includes('smthrs triggers register nightly-lint --flow lint --cron "0 9 * * 1-5"'))
   assert.ok(source.includes("/docs/guides/triggers/"))

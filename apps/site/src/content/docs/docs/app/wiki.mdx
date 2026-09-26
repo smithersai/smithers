@@ -27,9 +27,15 @@ Editing a note is distinct from landing a code change. Review code through the [
 
 ## Read the repository's guide files
 
-For the repository's README and contribution guide, return to the welcome card and select **just exploring**. The app lists the guide files it finds.
+Use `/files.read README.md` or `/files.read CONTRIBUTING.md` to read the selected repository's guide files in the conversation.
 
-The hosted alpha can show a starter note named **World**. That note is not evidence that the repository has a generated wiki. When no generated wiki exists, the Exploring card says so and offers the repository's existing guide files.
+A starter note named **World** is not evidence that the repository has a generated wiki.
+
+## Generate or browse repository pages
+
+Use `/wiki.create owner/repo` to request generation in the background and `/wiki.cloud owner/repo` to browse published pages when the host enables the Wiki service. Follow the generation run to completion; opening the Wiki or accepting the request does not mean pages have been published.
+
+The app's current generator creates a source index of tracked paths at a named revision. The separate engineering recipe reviews explanations against citations, but that reviewed output is not yet the app generator's output. Automatic refresh after a landed change is still tracked in [#1923](https://github.com/smithersai/smithers/issues/1923). Check a page's source revision before treating it as current.
 
 ## Inspect the factory
 

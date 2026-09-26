@@ -1,100 +1,69 @@
 ---
 title: "Quickstart"
-description: "Open Smithers, explore a repository, find a flow, and make your first contribution through the app."
+description: "Connect a repository, set up a job, and inspect its real result in the Smithers app."
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components"
-import AppScreenshot from "../../../components/AppScreenshot.astro"
 
-Open the Smithers repository, read its contribution guide, and find the flows that help maintain it. Then sign in to start work in a box and review the result.
+Open [Smithers](https://smithers.sh/smithersai/smithers) in your browser. You do not need the CLI to use the app. Available actions depend on sign-in, repository permissions, and the services enabled by your host.
 
-The repository tour works in your browser without an account. Running flows requires GitHub sign-in and approved alpha access. You do not need to install the CLI.
+## 1. Connect your account
 
-## 1. Open the repository
+Select **Connect GitHub** or **Sign in with GitHub**, review the requested permissions, and return to Smithers. Complete the account fields if signup appears; its poll questions are optional. Select **Start Automating** when your workspace is ready.
 
-Open [smithersai/smithers](https://smithers.sh/smithersai/smithers). This is the repository Smithers uses to build itself.
+The setup checklist follows three steps: **Connect GitHub**, **Add a repository**, and **Set up a job**. A step completes from the actual account, repository, or registration state.
 
-The home card shows featured flows, and the welcome card offers three ways to begin. Check that **smithersai/smithers** appears beside the message box.
+## 2. Choose a repository
 
-<AppScreenshot src="/images/app/home.png" alt="The Smithers home card shows featured flows and three choices for getting started." caption="Your starting point: the repository home, its featured flows, and the conversation." />
+Select **Add a repository** and follow the import flow, or open a repository already available to your account. Check the selected owner and repository before requesting work.
 
-## 2. Read the contribution guide
+Open **Chat** with Command-K on macOS or Control-K on Windows and Linux. Read the selected repository's instructions with:
 
-Select **just exploring**. The Exploring card lists the repository's guide files. Select **CONTRIBUTING.md** to open the contribution guide in chat.
+```text
+/files.read CONTRIBUTING.md
+```
 
-Read the setup and check instructions. Use **Maximize card** if you want more room. If the preview is truncated, follow the source repository for the full file.
+A file card opens in the conversation. Use **Maximize card** for more room. If the repository has no contribution guide, open `/files.read README.md` instead.
 
-<AppScreenshot src="/images/app/explore.png" alt="The Exploring card offers README.md and CONTRIBUTING.md as actions in the chat." caption="Read the project's own instructions before asking Smithers to change it." />
+For search, type `?` in Chat to choose a search type. Type `/` to browse commands and repository flows.
 
-You have opened a repository and read its contribution guidance without leaving the app.
+## 3. Ask a bounded question
 
-## 3. Ask about the project
-
-Enter this prompt in the message box and select **Send message**:
+Try a read-only request:
 
 ```text
 Explain this repository. Which files should I read before making a small
 documentation change? Do not modify files or start a flow.
 ```
 
-Read the response and open any file cards Smithers returns. If the app requests sign-in or reports an unavailable service, complete the access step or use the guide files from step 2.
+Read the response and inspect the referenced files. Complete any access step the app requests. [Account and access](/docs/app/account/) explains access labels; [Boxes](/docs/app/boxes/) covers execution environments.
 
-Select **Wiki** to inspect the project's notes beside the conversation. Use **Back to the conversation** to close that pane.
+## 4. Set up a job
 
-## 4. Find a flow
+Select **Set up a job**, or a recommended repository job. Review its configuration and proposed plan before approving registration. Follow the run card and background toast until registration finishes. The checklist does not complete merely because you pressed the button.
 
-Type `/review` in the message box. The menu shows the repository's review flow and the Review command group.
+The repository's job buttons remain available after setup and show their current state. Use [Dispatcher](/docs/app/dispatcher/) to inspect declarations and live registrations, prepare a schedule, or run an enabled registration now.
 
-Read the flow description, then press **Escape** and clear the draft. You will run a flow after connecting your account and box.
+## 5. Make and inspect a change
 
-<AppScreenshot src="/images/app/slash.png" alt="The command menu finds the review flow by its slash name." caption="You can discover a flow from the same message box you use to talk to Smithers." />
-
-For broader search, press **Command+K** on macOS or **Ctrl+K** on Windows and Linux. The palette lets you search by type, including files, flows, and wiki pages.
-
-## 5. See what starts work automatically
-
-Select **Dispatcher**. Read one event and the flows associated with it.
-
-<AppScreenshot src="/images/app/dispatcher.png" alt="Dispatcher lists the repository's declared rules, including reviews on new Changes." caption="The public Dispatcher view explains declared automation. It does not establish that those rules are running." />
-
-Select **History** to inspect the repository's mythical history. If the card says no mythical history exists, there is nothing to browse in that view. The source repository still has its Git history.
-
-## 6. Connect your account and box
-
-Select **Account**, then **Sign in with GitHub**. Review the permissions and complete sign-in.
-
-<AppScreenshot src="/images/app/account.png" alt="The Account action presents the next GitHub sign-in step in the conversation." caption="Sign in when you are ready to contribute. Browsing does not require an account." />
-
-Open **Account** again and check the access label. If access is not allowed, use the access-request action offered by the app. Continue once the account has access.
-
-Type `/`, choose the **Boxes** group, and select `/workspace.open`. Select the repository and bookmark if requested. Review and approve the launch, then wait for the box to be ready.
-
-The box gives you a working copy and a place to run the repository's tools. Its files and sessions appear under the repository in the sidebar.
-
-## 7. Make and review a small change
-
-Ask for a bounded task, using an issue or an improvement you found while reading:
+Choose a small issue and state the expected result and checks. For example:
 
 ```text
-Find one unclear instruction in the contribution guide. Explain your
-proposed wording and wait for me to choose it before making the edit.
+Update the contribution guide's stale setup instruction to match the current
+package scripts. Run the documentation checks and show me the diff.
 ```
 
-After choosing the edit, ask Smithers to make it and run the relevant checks. Use **Flows** or the featured `/review` flow to inspect the working-copy change.
+Chat remains usable while background work runs. A request acknowledgment means the work was requested; inspect the run's status and output to learn whether it started or completed. Use **Steer** on the run for a correction. During the current chat turn, Enter steers and Alt-Enter queues a follow-up.
 
-Follow the run card. You can keep chatting while it runs, and use **Steer** on the run to send a correction. If an approval appears, inspect the requested action before deciding.
+Read the resulting Change's **Diff**, **Checks**, and **Review**. For issue work on the repository's mythical stack, use `/stack.show` to inspect its lane and pull request. On send-upstream repositories, including Smithers, the owner merges the GitHub PR. Verify the resulting main commit before treating it as landed.
 
-<AppScreenshot src="/images/app/run-example.png" alt="Example run card with a progress trace and controls for steering or stopping work." caption="Example data in the local app shows where to inspect and steer a run. Your run has its own status and output." />
-
-Open the resulting Change and read its **Diff**, **Checks**, and **Review** views. Land it only after you have reviewed the result and the repository's requirements are satisfied.
-
-## Continue with your next task
+## Continue
 
 <CardGrid>
-  <LinkCard title="Run a flow" href="/docs/app/flows/" description="Choose a task and provide the inputs it needs." />
-  <LinkCard title="Inspect a run" href="/docs/app/runs/" description="Read its trace, send a correction, or stop work." />
+  <LinkCard title="Run a flow" href="/docs/app/flows/" description="Choose a task and provide its inputs." />
+  <LinkCard title="Inspect a run" href="/docs/app/runs/" description="Read its trace, steer, or stop work." />
   <LinkCard title="Review a change" href="/docs/app/changes/" description="Check the diff and evidence before landing." />
-  <LinkCard title="Troubleshoot the app" href="/docs/app/troubleshooting/" description="Resolve sign-in, box, and run problems." />
+  <LinkCard title="Troubleshoot the app" href="/docs/app/troubleshooting/" description="Resolve access, box, and run problems." />
 </CardGrid>
 
-Prefer a terminal? Follow the separate [CLI quickstart](/docs/cli-quickstart/).
+Prefer a terminal? Follow the [CLI quickstart](/docs/cli-quickstart/).

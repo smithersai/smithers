@@ -43,6 +43,6 @@ When the checks and required reviews permit landing, use the **Land** action. It
 
 If landing is blocked, read the reason on the card and complete the missing requirement. A passing agent review does not replace a required human review.
 
-A Change lands through Smithers Cloud. A pull request is the GitHub object used for upstream review. The repository's policy determines how work reaches GitHub; the terms refer to different steps.
+The repository's policy determines the final step. A send-upstream repository opens a GitHub pull request for its owner to merge; Smithers' own repository uses this path. Verify the merged main commit before calling the work landed. The stack service owns `mythical`, and main remains append-only with one commit per stack item. See [History and the Stack](/docs/app/history/).
 
 For the runtime evidence behind a result, see [Inspect and steer a run](/docs/app/runs/).

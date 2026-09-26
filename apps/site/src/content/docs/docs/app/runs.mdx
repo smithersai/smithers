@@ -13,7 +13,7 @@ These controls require sign-in and a connected repository box.
 
 ## Open a run
 
-After launching a flow, use the run card in the conversation. To find an earlier run, enter `/runs.list` and select the run from the list. You can also use the **view runs** action on the maintainer welcome card.
+After launching a flow, use the run card in the conversation. To find an earlier run, enter `/runs.list` and select the run from the list.
 
 Read the run's own status. A list card marked **Done** means the list loaded; it does not mean every run in the list completed.
 
@@ -36,11 +36,13 @@ Keep the existing public API. Fix the internal parser and add a regression
 test for the failing input.
 ```
 
-When steering is pending, the run has not consumed the correction yet. Check the following output for the requested change in direction.
+When steering is pending, the run has not consumed the correction yet. Check the following output for the requested change in direction. Once the run is terminal, pending steering is no longer presented as a promise of future delivery.
 
 ## Stop or resume work
 
 Use the run's stop action to request cancellation. Confirm the action if asked, then check the resulting run status.
+
+Background toasts offer the controls supported by the current worker and remain active through launch and execution. A cancelled run is shown as cancelled, separately from a failed run.
 
 For a parked run, use `/runs.resume` and supply the run shown in the app. Resuming continues that run. Starting it again creates another execution, so choose the action that matches your intent.
 

@@ -1,6 +1,6 @@
 ---
 title: "Inspect the Dispatcher"
-description: "Read automation rules and distinguish declared events from triggers registered on a running box."
+description: "Inspect declared rules, register a schedule after reviewing its plan, and follow its runs."
 sidebar:
   order: 6
 ---
@@ -27,9 +27,15 @@ For a particular event, inspect the resulting [run](/docs/app/runs/) to determin
 
 ## Register a rule
 
-**Register a rule** leads to sign-in when signed out. Once signed in, it always refuses registration, even when the box's trigger service is available. For `owner/repo`, it returns:
+Select **Register a rule** and sign in if needed. Fill in the repository, flow, schedule name, five-field cron expression, and any JSON input the flow needs. Select **Prepare**, inspect the returned plan, and approve it to register the schedule. Registration needs the repository's connected workspace and registrar.
 
-> A rule cannot be registered on owner/repo from here yet: declare it in .smithers/FACTORY.ts, or register it with the smthrs CLI on the box.
+Every unattended run needs token and time limits. The form uses the flow's declared limits when available; otherwise supply both `--tokens` and `--minutes`. Only the human can approve the previewed plan. If the plan changes, prepare it again.
+
+Approval starts registration in the background. Follow its run card and toast to completion; accepting the request does not mean the schedule is registered.
+
+Named registrations offer **Run now** and **Pause**. Run now starts one occurrence of an enabled registration; Pause stops future scheduled work. Follow the resulting run to its terminal status. A disabled row can still show Run now, but the registrar rejects dispatch while it is disabled.
+
+## Declare rules or use the local scheduler
 
 To declare a rule, add an entry to the `on` table in `.smithers/FACTORY.ts`, such as `"schedule:0 9 * * 1-5": { flow: "lint", description: "Weekday lint" }`. Dispatcher reads declarations from the repository's `.smithers/factory.json` projection. A declaration does not register a live trigger.
 
@@ -39,4 +45,4 @@ To register a live cron schedule, run the CLI in the project on the box. Use `sm
 smthrs triggers register nightly-lint --flow lint --cron "0 9 * * 1-5" --timezone America/New_York
 ```
 
-Keep `smthrs serve` or `smthrs triggers serve` running against that project for schedules to fire. See [Triggers](/docs/guides/triggers/) for registration fields, scheduler operation, and the limits of app access.
+Keep `smthrs serve` or `smthrs triggers serve` running against that project for local schedules to fire. This CLI writes the local trigger store; the app's registration uses the repository registrar. See [Triggers](/docs/guides/triggers/) for the local scheduler contract.

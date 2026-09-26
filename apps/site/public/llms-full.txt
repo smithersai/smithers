@@ -8,9 +8,9 @@ Smithers is an orchestration agent, primarily used to orchestrate maintaining a 
 [Open Smithers](https://smithers.sh/smithersai/smithers)
 [Follow the quickstart](/docs/quickstart/)
 
-![Smithers repository home with featured flows, welcome choices, chat, and the six sidebar buttons.](/images/app/home.png)
+![An earlier Smithers repository home with featured flows and the conversation.](/images/app/home.png)
 
-The Smithers repository opens in the app. Start with a featured flow or choose how you want to explore.
+Repository home preview. Follow the quickstart for the current setup checklist.
 
 ## Start with a repository
 
@@ -25,7 +25,7 @@ Each repository has a **factory**: its flows, automation rules, knowledge, and e
   - [Run a flow](/docs/app/flows/): Choose a repository flow and follow its progress.
   - [Review a change](/docs/app/changes/): Read the diff, check the evidence, and decide what to land.
   - [Explore the interface](/docs/app/): Find Wiki, Dispatcher, Flows, Secrets, History, and Account.
-  - [Pricing and access](/docs/pricing/): What the free hosted alpha includes and how access works.
+  - [Pricing and access](/docs/pricing/): Free and Pro plans, model credit, and checkout availability.
 
 ## Work from your own tools
 
@@ -38,108 +38,66 @@ Reading with an agent? [`/llms.txt`](/llms.txt) indexes the docs, including the 
 # Quickstart
 https://smithers.sh/docs/quickstart/
 
-Open the Smithers repository, read its contribution guide, and find the flows that help maintain it. Then sign in to start work in a box and review the result.
+Open [Smithers](https://smithers.sh/smithersai/smithers) in your browser. You do not need the CLI to use the app. Available actions depend on sign-in, repository permissions, and the services enabled by your host.
 
-The repository tour works in your browser without an account. Running flows requires GitHub sign-in and approved alpha access. You do not need to install the CLI.
+## 1. Connect your account
 
-## 1. Open the repository
+Select **Connect GitHub** or **Sign in with GitHub**, review the requested permissions, and return to Smithers. Complete the account fields if signup appears; its poll questions are optional. Select **Start Automating** when your workspace is ready.
 
-Open [smithersai/smithers](https://smithers.sh/smithersai/smithers). This is the repository Smithers uses to build itself.
+The setup checklist follows three steps: **Connect GitHub**, **Add a repository**, and **Set up a job**. A step completes from the actual account, repository, or registration state.
 
-The home card shows featured flows, and the welcome card offers three ways to begin. Check that **smithersai/smithers** appears beside the message box.
+## 2. Choose a repository
 
-![The Smithers home card shows featured flows and three choices for getting started.](/images/app/home.png)
+Select **Add a repository** and follow the import flow, or open a repository already available to your account. Check the selected owner and repository before requesting work.
 
-Your starting point: the repository home, its featured flows, and the conversation.
+Open **Chat** with Command-K on macOS or Control-K on Windows and Linux. Read the selected repository's instructions with:
 
-## 2. Read the contribution guide
+```text
+/files.read CONTRIBUTING.md
+```
 
-Select **just exploring**. The Exploring card lists the repository's guide files. Select **CONTRIBUTING.md** to open the contribution guide in chat.
+A file card opens in the conversation. Use **Maximize card** for more room. If the repository has no contribution guide, open `/files.read README.md` instead.
 
-Read the setup and check instructions. Use **Maximize card** if you want more room. If the preview is truncated, follow the source repository for the full file.
+For search, type `?` in Chat to choose a search type. Type `/` to browse commands and repository flows.
 
-![The Exploring card offers README.md and CONTRIBUTING.md as actions in the chat.](/images/app/explore.png)
+## 3. Ask a bounded question
 
-Read the project's own instructions before asking Smithers to change it.
-
-You have opened a repository and read its contribution guidance without leaving the app.
-
-## 3. Ask about the project
-
-Enter this prompt in the message box and select **Send message**:
+Try a read-only request:
 
 ```text
 Explain this repository. Which files should I read before making a small
 documentation change? Do not modify files or start a flow.
 ```
 
-Read the response and open any file cards Smithers returns. If the app requests sign-in or reports an unavailable service, complete the access step or use the guide files from step 2.
+Read the response and inspect the referenced files. Complete any access step the app requests. [Account and access](/docs/app/account/) explains access labels; [Boxes](/docs/app/boxes/) covers execution environments.
 
-Select **Wiki** to inspect the project's notes beside the conversation. Use **Back to the conversation** to close that pane.
+## 4. Set up a job
 
-## 4. Find a flow
+Select **Set up a job**, or a recommended repository job. Review its configuration and proposed plan before approving registration. Follow the run card and background toast until registration finishes. The checklist does not complete merely because you pressed the button.
 
-Type `/review` in the message box. The menu shows the repository's review flow and the Review command group.
+The repository's job buttons remain available after setup and show their current state. Use [Dispatcher](/docs/app/dispatcher/) to inspect declarations and live registrations, prepare a schedule, or run an enabled registration now.
 
-Read the flow description, then press **Escape** and clear the draft. You will run a flow after connecting your account and box.
+## 5. Make and inspect a change
 
-![The command menu finds the review flow by its slash name.](/images/app/slash.png)
-
-You can discover a flow from the same message box you use to talk to Smithers.
-
-For broader search, press **Command+K** on macOS or **Ctrl+K** on Windows and Linux. The palette lets you search by type, including files, flows, and wiki pages.
-
-## 5. See what starts work automatically
-
-Select **Dispatcher**. Read one event and the flows associated with it.
-
-![Dispatcher lists the repository's declared rules, including reviews on new Changes.](/images/app/dispatcher.png)
-
-The public Dispatcher view explains declared automation. It does not establish that those rules are running.
-
-Select **History** to inspect the repository's mythical history. If the card says no mythical history exists, there is nothing to browse in that view. The source repository still has its Git history.
-
-## 6. Connect your account and box
-
-Select **Account**, then **Sign in with GitHub**. Review the permissions and complete sign-in.
-
-![The Account action presents the next GitHub sign-in step in the conversation.](/images/app/account.png)
-
-Sign in when you are ready to contribute. Browsing does not require an account.
-
-Open **Account** again and check the access label. If access is not allowed, use the access-request action offered by the app. Continue once the account has access.
-
-Type `/`, choose the **Boxes** group, and select `/workspace.open`. Select the repository and bookmark if requested. Review and approve the launch, then wait for the box to be ready.
-
-The box gives you a working copy and a place to run the repository's tools. Its files and sessions appear under the repository in the sidebar.
-
-## 7. Make and review a small change
-
-Ask for a bounded task, using an issue or an improvement you found while reading:
+Choose a small issue and state the expected result and checks. For example:
 
 ```text
-Find one unclear instruction in the contribution guide. Explain your
-proposed wording and wait for me to choose it before making the edit.
+Update the contribution guide's stale setup instruction to match the current
+package scripts. Run the documentation checks and show me the diff.
 ```
 
-After choosing the edit, ask Smithers to make it and run the relevant checks. Use **Flows** or the featured `/review` flow to inspect the working-copy change.
+Chat remains usable while background work runs. A request acknowledgment means the work was requested; inspect the run's status and output to learn whether it started or completed. Use **Steer** on the run for a correction. During the current chat turn, Enter steers and Alt-Enter queues a follow-up.
 
-Follow the run card. You can keep chatting while it runs, and use **Steer** on the run to send a correction. If an approval appears, inspect the requested action before deciding.
+Read the resulting Change's **Diff**, **Checks**, and **Review**. For issue work on the repository's mythical stack, use `/stack.show` to inspect its lane and pull request. On send-upstream repositories, including Smithers, the owner merges the GitHub PR. Verify the resulting main commit before treating it as landed.
 
-![Example run card with a progress trace and controls for steering or stopping work.](/images/app/run-example.png)
+## Continue
 
-Example data in the local app shows where to inspect and steer a run. Your run has its own status and output.
-
-Open the resulting Change and read its **Diff**, **Checks**, and **Review** views. Land it only after you have reviewed the result and the repository's requirements are satisfied.
-
-## Continue with your next task
-
-  - [Run a flow](/docs/app/flows/): Choose a task and provide the inputs it needs.
-  - [Inspect a run](/docs/app/runs/): Read its trace, send a correction, or stop work.
+  - [Run a flow](/docs/app/flows/): Choose a task and provide its inputs.
+  - [Inspect a run](/docs/app/runs/): Read its trace, steer, or stop work.
   - [Review a change](/docs/app/changes/): Check the diff and evidence before landing.
-  - [Troubleshoot the app](/docs/app/troubleshooting/): Resolve sign-in, box, and run problems.
+  - [Troubleshoot the app](/docs/app/troubleshooting/): Resolve access, box, and run problems.
 
-Prefer a terminal? Follow the separate [CLI quickstart](/docs/cli-quickstart/).
+Prefer a terminal? Follow the [CLI quickstart](/docs/cli-quickstart/).
 
 ---
 
@@ -213,7 +171,7 @@ A workspace contains packages and their build targets. Select a file to inspect 
 
 <HeroStage />
 
-![Monorepo tasks materialize into a planned dependency graph, then execute: each finished step caches its outputs. Agent 1 edits ui/src/button.tsx: only the ui build and test go stale and re-run, the rest comes back from cache. When a docs:api step joins the graph, fed by core/src/parse.ts, an edit to parse.ts re-runs build, test, and docs together. The wiki and AGENTS.md sit downstream of docs, and agent 2 sits downstream of the wiki, so every change regenerates the docs the next agent works from and they never drift. A CI scene shows an issue flowing through reproduction, fix, checks, and a human approval gate into a pull request. Finally, a remote cache serves every runner: CI reads and writes it, humans and agents read it.](/images/how-smithers-works.gif)
+![Monorepo tasks materialize into a planned dependency graph, then execute: each finished step caches its outputs. Agent 1 edits ui/src/button.tsx: only the ui build and test go stale and re-run, the rest comes back from cache. When a docs:api step joins the graph, fed by core/src/parse.ts, an edit to parse.ts re-runs build, test, and docs together. The illustration places the wiki and AGENTS.md downstream of docs, then shows a second agent consuming the wiki. This is the intended refresh pipeline; the app wiki still requires separate generation and publication evidence. A CI scene shows an issue flowing through reproduction, fix, checks, and a human approval gate into a pull request. Finally, a remote cache serves every runner: CI reads and writes it, humans and agents read it.](/images/how-smithers-works.gif)
 
 ## Supported platforms
 
@@ -438,11 +396,7 @@ For help choosing what to automate next, run `smthrs suggest`. It scans the proj
 # The interface
 https://smithers.sh/docs/app/
 
-Smithers keeps your task and its results in one conversation. The repository selector sets the context. The message box is where you ask for work, and cards show files, runs, approvals, and changes.
-
-![The Smithers app with repository context, a home card, welcome choices, and the message box.](/images/app/home.png)
-
-The repository name beside the message box tells you where you are working.
+Smithers keeps your task and its results in one conversation. The repository selector sets the context. Open **Chat** with Command-K / Control-K to ask for work; cards show files, runs, approvals, and changes.
 
 ## The six main areas
 
@@ -451,10 +405,10 @@ The sidebar keeps these areas available as you work:
 | Area | What you use it for |
 | --- | --- |
 | [Wiki](/docs/app/wiki/) | Read and edit notes about the project. |
-| [Dispatcher](/docs/app/dispatcher/) | See which events are declared to start which flows. |
+| [Dispatcher](/docs/app/dispatcher/) | Inspect rules, prepare schedules, and follow registered work. |
 | [Flows](/docs/app/flows/) | Find flows and follow their runs. |
 | [Secrets](/docs/app/secrets/) | Inspect the names and scope of repository secrets. |
-| [History](/docs/app/history/) | Explore the repository's mythical history when it has been generated. |
+| [History](/docs/app/history/) | Read mythical history and inspect live work with `/stack.show`. |
 | [Account](/docs/app/account/) | Check your GitHub identity and alpha access. |
 
 Wiki and Flows open panes beside the conversation. Other results appear as cards in chat. Use **Back to the conversation** to close a pane. Use **Maximize card** when you need more room for a file or a run.
@@ -490,27 +444,15 @@ Open a repository to give your conversation a project context. In the hosted alp
 2. Find the repository under **Available repos**.
 3. Select **Open Smithers**.
 
-The repository's home card shows its description and featured flows. The welcome card offers three ways to continue.
+The repository's home card shows its description and featured flows. New sessions also show the setup checklist and recommended actions.
 
 ## Choose how to start
 
-Select the option that matches your task:
-
-| Choice | What happens next |
-| --- | --- |
-| **just exploring** | Shows guide files you can read, including the README and contribution guide when present. |
-| **contributing to this repo** | After sign-in, offers actions to report an issue, prototype a feature request, or read the contribution guide. |
-| **maintaining this repo** | After sign-in, shows repository activity and actions for issues, pull requests, runs, and triggers. |
-
-These choices change the starting guidance. Selecting the maintainer option does not grant repository permissions.
-
-![The Exploring card links to the Smithers README and contribution guide.](/images/app/explore.png)
-
-Exploration uses the guide files the repository actually contains.
+Use the setup checklist to **Connect GitHub**, **Add a repository**, and **Set up a job**. Recommended actions come from the flows available on your host. The repository's job buttons remain available after setup. Choosing a job does not grant repository permissions.
 
 ## Read a guide file
 
-Select **README.md** or **CONTRIBUTING.md** on the Exploring card. The file opens in the conversation. Use **Maximize card** to read it with more room.
+Open Chat and use `/files.read README.md` or `/files.read CONTRIBUTING.md`. The file opens in the conversation. Use **Maximize card** to read it with more room.
 
 A file card can contain a shortened preview. If it says the file is truncated, open the source repository to read the full file.
 
@@ -541,6 +483,8 @@ https://smithers.sh/docs/app/chat/
 Give Smithers a concrete outcome and the context it needs to work on the selected repository.
 
 ## Give it a task
+
+Select **Chat**, or press **Command+K** on macOS or **Ctrl+K** on Windows and Linux, to open the composer. The same shortcut dismisses it. In Normal mode it floats over the conversation; Vim mode keeps a dock so other panes remain reachable.
 
 1. Check the repository name beside the message box.
 2. Write what you want to change and how you will judge the result.
@@ -577,6 +521,8 @@ Select **Maximize card** to inspect a larger result. Return to the conversation 
 
 You can continue chatting after launching a flow. To change the instructions of a particular run, use its **Steer** control and name the correction. That directs the message to the run you are inspecting.
 
+While the current turn is running, **Enter** sends a steer and **Alt+Enter** queues a follow-up. Queued prompts remain with their conversation and can be edited or removed. Background progress stays in the shared toast stack, with controls appropriate to the worker; the run card keeps the detailed output.
+
 For progress, stopping, and resuming, see [Inspect and steer a run](/docs/app/runs/).
 
 ## Use the command menu
@@ -598,11 +544,11 @@ Use the search palette when you know what you want but do not know which card or
 
 ## Open search
 
-1. Press **Command+K** on macOS or **Ctrl+K** on Windows and Linux.
-2. Enter a name or part of a name.
+1. Open **Chat** with **Command+K** on macOS or **Ctrl+K** on Windows and Linux.
+2. Type `?` to choose a search type, then enter a name or part of a name.
 3. Select a result or use the arrow keys and **Enter**.
 
-Press **Escape** to close the palette. Type `?` in the palette to list search types and their prefixes. Typing `/` in the message box opens the flow and command menu.
+The composer accepts ordinary chat as well as searches. Search prefixes select files, flows, and other result types; typing `/` opens the flow and command menu. Press **Escape** to dismiss the current menu before closing Chat.
 
 ![The Smithers search palette lists search types and their prefixes after entering a question mark.](/images/app/search.png)
 
@@ -651,9 +597,15 @@ Editing a note is distinct from landing a code change. Review code through the [
 
 ## Read the repository's guide files
 
-For the repository's README and contribution guide, return to the welcome card and select **just exploring**. The app lists the guide files it finds.
+Use `/files.read README.md` or `/files.read CONTRIBUTING.md` to read the selected repository's guide files in the conversation.
 
-The hosted alpha can show a starter note named **World**. That note is not evidence that the repository has a generated wiki. When no generated wiki exists, the Exploring card says so and offers the repository's existing guide files.
+A starter note named **World** is not evidence that the repository has a generated wiki.
+
+## Generate or browse repository pages
+
+Use `/wiki.create owner/repo` to request generation in the background and `/wiki.cloud owner/repo` to browse published pages when the host enables the Wiki service. Follow the generation run to completion; opening the Wiki or accepting the request does not mean pages have been published.
+
+The app's current generator creates a source index of tracked paths at a named revision. The separate engineering recipe reviews explanations against citations, but that reviewed output is not yet the app generator's output. Automatic refresh after a landed change is still tracked in [#1923](https://github.com/smithersai/smithers/issues/1923). Check a page's source revision before treating it as current.
 
 ## Inspect the factory
 
@@ -690,9 +642,15 @@ For a particular event, inspect the resulting [run](/docs/app/runs/) to determin
 
 ## Register a rule
 
-**Register a rule** leads to sign-in when signed out. Once signed in, it always refuses registration, even when the box's trigger service is available. For `owner/repo`, it returns:
+Select **Register a rule** and sign in if needed. Fill in the repository, flow, schedule name, five-field cron expression, and any JSON input the flow needs. Select **Prepare**, inspect the returned plan, and approve it to register the schedule. Registration needs the repository's connected workspace and registrar.
 
-> A rule cannot be registered on owner/repo from here yet: declare it in .smithers/FACTORY.ts, or register it with the smthrs CLI on the box.
+Every unattended run needs token and time limits. The form uses the flow's declared limits when available; otherwise supply both `--tokens` and `--minutes`. Only the human can approve the previewed plan. If the plan changes, prepare it again.
+
+Approval starts registration in the background. Follow its run card and toast to completion; accepting the request does not mean the schedule is registered.
+
+Named registrations offer **Run now** and **Pause**. Run now starts one occurrence of an enabled registration; Pause stops future scheduled work. Follow the resulting run to its terminal status. A disabled row can still show Run now, but the registrar rejects dispatch while it is disabled.
+
+## Declare rules or use the local scheduler
 
 To declare a rule, add an entry to the `on` table in `.smithers/FACTORY.ts`, such as `"schedule:0 9 * * 1-5": { flow: "lint", description: "Weekday lint" }`. Dispatcher reads declarations from the repository's `.smithers/factory.json` projection. A declaration does not register a live trigger.
 
@@ -702,7 +660,7 @@ To register a live cron schedule, run the CLI in the project on the box. Use `sm
 smthrs triggers register nightly-lint --flow lint --cron "0 9 * * 1-5" --timezone America/New_York
 ```
 
-Keep `smthrs serve` or `smthrs triggers serve` running against that project for schedules to fire. See [Triggers](/docs/guides/triggers/) for registration fields, scheduler operation, and the limits of app access.
+Keep `smthrs serve` or `smthrs triggers serve` running against that project for local schedules to fire. This CLI writes the local trigger store; the app's registration uses the repository registrar. See [Triggers](/docs/guides/triggers/) for the local scheduler contract.
 
 ---
 
@@ -743,7 +701,7 @@ For a first run, use `/review` on a small change in your box. If there is no cha
 
 Submit the flow's inputs. If Smithers asks for permission, review the requested action and select **Approve** to proceed or **Deny** to decline it.
 
-A successful launch produces a run card. Read its status and output to follow the work. A sign-in prompt or launch error means you have another step to complete; it is not a running flow.
+A request is recorded before background launch. The shared toast follows launch and execution, and the run card keeps the detailed output. Wait for the real run status: an accepted request is not yet a running or completed flow. A sign-in prompt or launch error means another step is needed.
 
 Keep chatting while the flow runs. For its trace, steering, and controls, see [Inspect and steer a run](/docs/app/runs/). For the resulting diff, see [Review a change](/docs/app/changes/).
 
@@ -764,7 +722,7 @@ These controls require sign-in and a connected repository box.
 
 ## Open a run
 
-After launching a flow, use the run card in the conversation. To find an earlier run, enter `/runs.list` and select the run from the list. You can also use the **view runs** action on the maintainer welcome card.
+After launching a flow, use the run card in the conversation. To find an earlier run, enter `/runs.list` and select the run from the list.
 
 Read the run's own status. A list card marked **Done** means the list loaded; it does not mean every run in the list completed.
 
@@ -789,11 +747,13 @@ Keep the existing public API. Fix the internal parser and add a regression
 test for the failing input.
 ```
 
-When steering is pending, the run has not consumed the correction yet. Check the following output for the requested change in direction.
+When steering is pending, the run has not consumed the correction yet. Check the following output for the requested change in direction. Once the run is terminal, pending steering is no longer presented as a promise of future delivery.
 
 ## Stop or resume work
 
 Use the run's stop action to request cancellation. Confirm the action if asked, then check the resulting run status.
+
+Background toasts offer the controls supported by the current worker and remain active through launch and execution. A cancelled run is shown as cancelled, separately from a failed run.
 
 For a parked run, use `/runs.resume` and supply the run shown in the app. Resuming continues that run. Starting it again creates another execution, so choose the action that matches your intent.
 
@@ -922,7 +882,7 @@ When the checks and required reviews permit landing, use the **Land** action. It
 
 If landing is blocked, read the reason on the card and complete the missing requirement. A passing agent review does not replace a required human review.
 
-A Change lands through Smithers Cloud. A pull request is the GitHub object used for upstream review. The repository's policy determines how work reaches GitHub; the terms refer to different steps.
+The repository's policy determines the final step. A send-upstream repository opens a GitHub pull request for its owner to merge; Smithers' own repository uses this path. Verify the merged main commit before calling the work landed. The stack service owns `mythical`, and main remains append-only with one commit per stack item. See [History and the Stack](/docs/app/history/).
 
 For the runtime evidence behind a result, see [Inspect and steer a run](/docs/app/runs/).
 
@@ -958,9 +918,15 @@ The hosted alpha's Secrets card is read-only. Ask the repository operator to con
 
 Personal secret management and a secret editor are not available in this card. For model credentials used by your local CLI, see [Model seats](/docs/guides/model-seats/).
 
+## Coding subscription accounts
+
+Hosted Smithers disables Claude and ChatGPT subscription connections and hides their connection buttons. It also rejects recognized subscription tokens submitted as secrets, variables, or agent environment values. A provider API key is a separate credential type.
+
+Self-hosted operators can enable `SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS` for each user's own subscription. See the [self-hosted distribution guide](https://github.com/smithersai/smithers/blob/main/distribution/README.md#subscription-connections). Local CLI model-seat authentication is configured separately.
+
 ---
 
-# Explore History
+# History and the Stack
 https://smithers.sh/docs/app/history/
 
 **History** opens the repository's **mythical history**: a narrative of how the code fits together, organized into smaller changes. It is separate from the list of flow runs.
@@ -973,7 +939,15 @@ Select **History** in the sidebar. Read the history returned for the repository,
 
 An empty History card means there is no mythical history to display. It does not imply that the repository has no Git commits.
 
-The mythical history is an alpha feature. Opening this view does not create that history, rewrite the repository, or establish that the full history-generation process is running.
+Opening History reads the available history. Its **Create** action asks the server to bootstrap the repository's mythical stack from main. Sign-in and repository permission are required. Follow the background toast until the stack is active; a request acknowledgment is not a completed bootstrap.
+
+## Inspect the live Stack
+
+Run `/stack.show` for the selected repository, or `/stack.show owner/repo`. The Stack card shows issue work, active lanes, checks, failures, and pull requests. A lane can include elapsed time, the account, and the model seat reported by the server. Open the associated run or pull request to inspect its evidence.
+
+Repository administrators can use `/stack.backfill` to admit open issues, `/stack.parallel` to set one to eight lanes, and `/stack.retry` to retry a blocked, rejected, or declined item. These actions run in the background and report their results through the shared toast stack.
+
+Only the stack service writes `mythical`. For repositories configured to send work upstream, the owner merges the GitHub pull request; main remains append-only, with one commit per item. A ready stack item or open pull request is not a landed change.
 
 ## Find a different kind of history
 
@@ -984,6 +958,7 @@ Use the view that matches what you need to inspect:
 | What did a flow do? | [Runs](/docs/app/runs/) and the run trace. |
 | What changed between revisions? | [The Change card](/docs/app/changes/) and its revision comparisons. |
 | What commits exist in the source repository? | The repository's GitHub history. |
+| Which issues are being planned, implemented, or checked? | `/stack.show` and its linked runs. |
 | How is the code explained through mythical history? | **History**, when the repository provides it. |
 
 ---
@@ -1023,7 +998,7 @@ If the app offers an access request, submit it and wait for approval. Signing in
 
 When available, the card shows GitHub scopes with their descriptions and the boxes the app has loaded. A missing section means that information was not supplied; it is not a statement that the account has no permissions or boxes.
 
-The hosted alpha Account card is read-only apart from **Sign out**. It does not provide a billing, usage, or subscription-management screen. See [Pricing](/docs/pricing/) for the alpha's terms.
+The Account card is read-only apart from **Sign out**. Use `/billing.plans` for plan, credit, and sandbox usage, and `/billing.portal` for subscription management when the deployment enables billing. See [Pricing](/docs/pricing/) for Free and Pro.
 
 ## Sign out
 
@@ -1060,7 +1035,7 @@ If a slash command is not recognized, type `/` to browse the commands available 
 
 ## Wiki or History is empty
 
-The alpha does not guarantee a generated wiki or mythical history for every repository. Use **just exploring** to read the existing guide files. Use the repository's GitHub page for its source history.
+Use `/files.read README.md` or `/files.read CONTRIBUTING.md` to read existing guide files. [Wiki generation](/docs/app/wiki/#generate-or-browse-repository-pages) and [stack creation](/docs/app/history/) are separate background operations. Use the repository's GitHub page for its source history.
 
 ## A run stopped or is waiting
 
@@ -1072,7 +1047,7 @@ For sending a correction, stopping, or resuming, see [Inspect and steer a run](/
 
 Check [Smithers status](https://status.smithers.sh) for service problems. For a reproducible app issue, include the action you selected, the visible error, the repository, and the run identifier when available. Include a screenshot with private information removed.
 
-Use the contributor welcome card's **report an issue** action when you have access, or open an issue in the [Smithers repository](https://github.com/smithersai/smithers/issues). Keep credentials and private source code out of the report.
+Open an issue in the [Smithers repository](https://github.com/smithersai/smithers/issues). Keep credentials and private source code out of the report.
 
 ---
 
@@ -6187,25 +6162,32 @@ Comment `@smithers review` on an open pull request. The action posts the narrati
 # Run CI on Smithers Cloud
 https://smithers.sh/docs/guides/cloud-ci/
 
-Smithers Cloud does not yet run your checks when code changes. This page states what runs `PACKAGE.ts` checks today and records the planned event-driven Cloud CI so that the design is visible before it ships. The planned material sits under the [Planned](#planned-event-driven-cloud-ci) heading and nothing in it is available.
+Smithers' backend dispatches repository workflows from matching events and executes CI on its sandbox plane. The proposed `S.Automation` API is still unimplemented; it is separate from the workflow service that runs today. Hosted availability depends on the repository connection and deployment's execution services.
 
 ## What runs checks today
 
-Three shipped paths run the targets declared in `PACKAGE.ts`:
+The target graph runs wherever the CLI is installed; a workflow job can invoke it:
 
 | Path | What it does | Where it is documented |
 | --- | --- | --- |
+| Smithers Cloud workflow | Loads repository workflow definitions for an event, queues CI, and runs jobs through the backend sandbox scheduler. Jobs can invoke `smthrs ci`. | [Cloud CI reference](/docs/reference/cloud-ci/) |
 | `smthrs ci <pattern>` | Runs build, test, lint, and docs targets as one graph on the machine you run it on, with normal cache reuse. | [Build targets](/docs/guides/build-targets/) |
 | `Smithers.GithubCiGen` | A target that generates the GitHub Actions workflow files from declared attrs. GitHub Actions then runs `smthrs ci` on push and pull request events. | [`@smthrs/targets`](/docs/reference/api/targets/) |
 | `smthrs flow start` in a CI job | Launches a durable flow from GitHub Actions and gives the job an exit status when the run completes, fails, or parks. | [Run flows in CI](/docs/guides/ci/) |
 
-To start a flow on a schedule instead of from a CI job, register a cron trigger and host the scheduler with `smthrs serve` on a machine you control. See [Define triggers](/docs/guides/triggers/). Smithers Cloud workspaces do not host that scheduler yet.
+This repository's [`.smithers/workflows/ci.tsx`](https://github.com/smithersai/smithers/blob/main/.smithers/workflows/ci.tsx) declares push-to-main and manual triggers. Its task groups invoke [`scripts/ci/cloud.sh`](https://github.com/smithersai/smithers/blob/main/scripts/ci/cloud.sh), including package, app, docs, and drift checks. A checked-in declaration alone does not prove a particular Cloud run succeeded.
 
-If you are replacing a hand-written GitHub Actions workflow, generate the replacement with `Smithers.GithubCiGen`, verify one passing and one failing run, and then delete the old workflow. Required status checks keep pointing at GitHub Actions.
+For scheduled flows, use the app's [Dispatcher](/docs/app/dispatcher/) to prepare and approve a registration. To host the local scheduler yourself, use `smthrs serve` or `smthrs triggers serve`; see [Define triggers](/docs/guides/triggers/).
+
+## Verify a Cloud run
+
+Inspect the run's source revision, job results, logs, and final status. Connected GitHub repositories can receive a check named `smithers / <workflow name>` when the deployment supplies the GitHub App services. A queued run or accepted dispatch is not a passing check. Confirm the actual check name and completed result before making it required.
+
+For Smithers' own factory, Cloud owns coding and CI/CD; GitHub retains synchronization and essential checks. See [the contributor workflow](https://github.com/smithersai/smithers/blob/main/CONTRIBUTING.md).
 
 ## Planned: event-driven Cloud CI
 
-This section describes work that is not built. `@smthrs/targets` exports no `S.Automation`, `S.Package` accepts no `automations` entry, and Smithers Cloud registers no repository subscriptions. The type-level proof of the intended declaration surface is [`apps/site/examples/cloud-triggers/contract.d.ts`](https://github.com/smithersai/smithers/blob/main/apps/site/examples/cloud-triggers/contract.d.ts); its README states that it does not implement trigger registration, matching, dispatch, or the `S.Automation` runtime.
+This section describes a declaration API that is not built. `@smthrs/targets` exports no `S.Automation` and `S.Package` accepts no `automations` entry. The type-level proof is [`apps/site/examples/cloud-triggers/contract.d.ts`](https://github.com/smithersai/smithers/blob/main/apps/site/examples/cloud-triggers/contract.d.ts); it does not implement trigger registration, matching, dispatch, or the `S.Automation` runtime.
 
 The intended shape declares a suite and binds it to repository events in `PACKAGE.ts`:
 
@@ -6229,9 +6211,7 @@ export const Package = S.Package({
 })
 ```
 
-The planned service would register the declarations from the default branch or bookmark when you enable CI for a connected repository, start a run on each matching push or review event, execute the target graph in an isolated worker with normal cache reuse, and publish a **Smithers CI** result on the tested commit through the Smithers GitHub App or on the Plue landing request, so that the result could be a required check. A newer source revision on a review would cancel its earlier unfinished run. The [Cloud CI reference](/docs/reference/cloud-ci/) records the planned defaults, result meanings, and revision rules under the same disclaimer.
-
-None of that runs today. GitHub Actions remains the shipped way to run checks on repository events.
+The proposal would bind target or flow labels directly to typed selectors in `PACKAGE.ts`. Use the existing workflow service or registrar until that API is implemented; the example above does not compile against the current packages.
 
 ---
 
@@ -6363,13 +6343,13 @@ Every occurrence ends with one recorded outcome:
 
 Signed in to Smithers, run `/triggers.list` or ask "list the triggers on owner/repo". The Dispatcher card prints one row per trigger: the schedule in words, the flow it runs, whether it is enabled, and when it last fired.
 
-The card reads the workspace's gateway. When that gateway does not serve its trigger store, the card prints the gateway's own reason instead of an empty list, and never a made-up row. Smithers Cloud workspaces do not serve the store yet, so today the card reports that and points you at `smthrs triggers list` on the host that runs the scheduler. Registering and editing triggers from the app is not available; use the CLI.
+The card reads declared factory rules and, when connected, live workspace registrations. **Register a rule** prepares a flow plan for human approval before the repository registrar writes the schedule. Named registrations offer **Run now** and **Pause**. See [Dispatcher](/docs/app/dispatcher/) for inputs, limits, and completion receipts. When the workspace or registrar is unavailable, the app reports that failure.
 
 ## Accept a verified webhook
 
 `@smthrs/triggers/Webhook` builds a webhook door in code. `Webhook.make` takes a channel configuration and a required credential reference, verifies the request signature over the raw bytes in constant time, and hands the decoded payload to Control's channel coordinator. It exposes `register` and `ingest` and no direct execution method, so a valid signature and valid JSON never bypass Control.
 
-There is no `smthrs webhooks` verb and no webhook row in the app yet. For the module contract, see [`@smthrs/triggers`](/docs/reference/api/triggers/#webhook). For GitHub webhooks that reconcile against `.smithers/listeners.json`, see `smthrs integrations reconcile` in the [CLI reference](/docs/reference/cli/).
+There is no `smthrs webhooks` verb. Dispatcher can display webhook channels returned by its connected workspace. For the module contract, see [`@smthrs/triggers`](/docs/reference/api/triggers/#webhook). For GitHub webhooks that reconcile against `.smithers/listeners.json`, see `smthrs integrations reconcile` in the [CLI reference](/docs/reference/cli/).
 
 ## Planned: repository events and PACKAGE.ts declarations
 
@@ -6394,7 +6374,7 @@ export const Package = S.Package({
 
 The planned selectors are `T.push` with branch and path filters, `T.review` for GitHub pull requests and Plue landing requests, `T.tag`, `T.schedule` as the declared form of today's cron trigger, `T.manual` with a typed input schema, `T.event` for authenticated external publishers, and `T.succeeded` to chain one automation after another. Filters combine with AND, list values with OR, and an exclusion always wins. The [Trigger reference](/docs/reference/triggers/) records the planned event fields and matching rules under the same disclaimer.
 
-Until that lands, the shipped way to start work from a repository event is a CI job: [Run flows in CI](/docs/guides/ci/) launches a flow from GitHub Actions, and the [`Smithers.GithubCiGen` target](/docs/reference/api/targets/) generates the workflow files that run `smthrs ci`.
+Repository events can already start backend workflows through [Smithers Cloud CI](/docs/guides/cloud-ci/). Those workflows and the integration listeners use their own declarations; they do not implement the proposed `S.Automation` API. For another CI host, [Run flows in CI](/docs/guides/ci/) shows how to launch a flow from a job.
 
 ---
 
@@ -46789,55 +46769,41 @@ Every command that touches durable state resolves the same project root, in this
 # Smithers Cloud CI
 https://smithers.sh/docs/reference/cloud-ci/
 
-Smithers Cloud CI is not shipped. Smithers Cloud registers no repository subscriptions, starts no runs from repository events, and publishes no **Smithers CI** check. Everything below this paragraph is the planned design, kept here so that the intended contract is reviewable before it is built. For what runs `PACKAGE.ts` checks today, see [Run CI on Smithers Cloud](/docs/guides/cloud-ci/#what-runs-checks-today). For the shipped cron trigger, see the [Trigger reference](/docs/reference/triggers/).
+The common Go backend owns workflow discovery, event matching, durable run admission, sandbox execution, and result publication. A deployment supplies repository storage, sandbox provisioning, and optional GitHub App services. Source support does not establish that these services are configured for every installation.
 
-The declaration surface this design depends on, `S.Automation` and `Package.automations`, exists only as the type-level proof in [`apps/site/examples/cloud-triggers/contract.d.ts`](https://github.com/smithersai/smithers/blob/main/apps/site/examples/cloud-triggers/contract.d.ts). Its README states that it does not implement trigger registration, matching, dispatch, or the `S.Automation` runtime.
+For the repository's current workflow example, see [Run CI on Smithers Cloud](/docs/guides/cloud-ci/). The local cron library and scheduler are documented separately in [Triggers](/docs/reference/triggers/).
 
-## Planned defaults
+## Dispatch and execution
 
-| Setting | Planned value |
+| Surface | Current behavior |
 | --- | --- |
-| API origin | `https://api.jjhub.tech` |
-| CI automation selected during setup | `//:ci` |
-| Declaration | An `S.Automation` exported through `Package.automations`. |
-| Automatic events | Those declared in `on`; no events added by the name `ci`. |
-| Workspace | `.smithers/WORKSPACE.ts` and committed dependency lockfiles. |
-| Check name | **Smithers CI** |
-| Execution | Isolated Linux workers on Smithers Cloud's Plue infrastructure. |
-| Target selection | The complete dependency graph of the referenced target, with normal cache reuse. |
-| Review concurrency | A newer source revision cancels earlier unfinished CI for that review. |
+| Definitions | Repository workflows loaded for the event's source commit. |
+| Admission | Matching events create durable workflow runs and tasks. |
+| Execution plane | Every CI run is created on the sandbox plane. Agent runs use the separate agent plane. |
+| Job environment | NixOS VM jobs use the repository's registered closure image or the platform base closure. A repository does not need its own `.smithers/environment.nix` to enter CI. |
+| `runs-on` | Workflow metadata; it cannot select another execution plane. |
+| Graph checks | A job invokes `smthrs ci <pattern>` to run the `PACKAGE.ts` target graph. |
+| GitHub check | `smithers / <workflow name>`, when GitHub App publication is configured. |
 
-## Planned repository activation
+The backend's [execution-plane tests](https://github.com/smithersai/smithers/blob/main/packages/backend/internal/services/workflow_run_execution_plane_test.go) cover admission without a repository closure and refusal to select the agent plane through `runs-on`.
 
-Enabling CI would authorize the repository's automation and register its triggers from the default branch or bookmark. Activation would emit no repository event; the next matching event would start work. A target named `ci` without an automation would acquire no triggers.
+## Caches and artifacts
 
-The selected automation would have to resolve to executable work. Missing references, empty suites, unsupported worker requirements, and invalid declarations would fail CI. An enabled requirement would stay in effect if a revision deleted the automation or changed its triggers to exclude the review.
+Sandbox jobs receive credentials scoped to their repository, run, and task for workflow cache and artifact operations. Cache restoration and artifact publication belong to the workflow job lifecycle. They are separate from the target graph's action cache and the Flow engine's step cache.
 
-Routing would use the trusted registered selectors; the work would load from the event's execution revision, and the run would record both revisions. A review could change its checks but not rewrite its own routing policy or grant itself additional credentials.
+See the [sandbox CI implementation](https://github.com/smithersai/smithers/blob/main/packages/backend/internal/services/workflow_nix_ci.go) and [job credential tests](https://github.com/smithersai/smithers/blob/main/packages/backend/internal/services/workflow_nix_ci_job_credentials_test.go) for the enforced boundaries.
 
-## Planned execution and caching
+## Completion and GitHub results
 
-A worker would prepare the workspace, resolve declared tools, install dependencies from the lockfiles, and evaluate the work in isolation. Target dependencies would determine order; independent checks could execute concurrently within worker capacity. Cached results would be reused only when declared inputs, execution environment, and cache policy permit. Trigger path filters would decide whether to start work and would not replace target dependency tracking.
+The terminal publisher updates the run's commit status and GitHub check run, emits its `workflow_run` event, and dispatches eligible downstream workflows. Publication errors are logged; a successful local run does not prove GitHub received its result.
 
-Repository credentials would come from the Cloud connection and target or flow declarations. Repository code would not receive the service's infrastructure credentials. Fork execution would require an explicitly authorized isolated policy. A lost worker whose work cannot be recovered would fail the attempt; a rerun could reuse valid completed cache entries. The service deadline would bound queue time, execution, and approval waits.
+Inspect the run ID, tested commit, task results, and terminal status, then check the corresponding GitHub result when the repository requires one. Cancellation is distinct from failure. An accepted dispatch, queued task, or in-progress check is not completion.
 
-## Planned results and required checks
+The owning code is [workflow_run_terminal.go](https://github.com/smithersai/smithers/blob/main/packages/backend/internal/services/workflow_run_terminal.go); its tests cover sandbox-run completion and publication.
 
-The service would publish **Smithers CI** on the tested commit, on the Plue landing request or through the Smithers GitHub App with a link to the run.
+## Proposed target automation API
 
-| Result | Planned meaning |
-| --- | --- |
-| Pending | Work is queued, executing, or waiting for an authorized approval. |
-| Passed | Required work completed successfully, including valid cached target results. |
-| Failed | Configuration, workspace preparation, a check, or unrecoverable execution failed. |
-| Cancelled | A user cancelled the attempt or a newer review revision superseded it. |
-| Timed out | The run exceeded its deadline. |
-
-Only a passed result would satisfy a required check. For a review revision where CI is required, a selector or predicate that excluded it would produce a failure naming the unmatched requirement rather than an unexplained pending check. Results would stay bound to their attempt and commit; a late result from an earlier revision could not replace the current one. Review runs would test the source commit, not a merge result.
-
-## Status
-
-The shipped surfaces that this design would build on are the `PACKAGE.ts` target graph, `smthrs ci`, the `Smithers.GithubCiGen` target, the cron trigger store and scheduler in `@smthrs/triggers`, and the Smithers GitHub App connection used by the app. When the automation declaration and the event subscriptions land, this page drops the planned framing.
+`S.Automation` and `Package.automations` remain a [type-level proposal](https://github.com/smithersai/smithers/blob/main/apps/site/examples/cloud-triggers/contract.d.ts). They are not exported by the current packages. The existing backend workflow service does not make that proposed `PACKAGE.ts` syntax executable.
 
 ---
 
@@ -49901,15 +49867,15 @@ The ledger has no CLI or app listing yet. Rows are readable in `.flows/control.d
 
 ## Reading triggers in the app
 
-The `triggers.list` flow (slash command `/triggers.list`, or ask the agent to list the triggers on a repository) renders the Dispatcher card: one row per trigger with the schedule in words, the flow it runs, `enabled` or `disabled`, and the last fire time. The card is read-only; registering and editing happen through the CLI.
+The `triggers.list` flow (slash command `/triggers.list`, or ask the agent to list the triggers on a repository) renders the Dispatcher card: declared factory rules and live rows with the schedule, flow, enabled state, and fire times. `/triggers.register` prepares a plan; human approval registers it through the repository registrar. Named registrations expose **Run now** and **Pause**. See [Dispatcher](/docs/app/dispatcher/).
 
-The card reads the workspace gateway. A gateway that does not serve its trigger store answers with a reason, and the card prints that reason verbatim instead of an empty list. Smithers Cloud workspaces do not serve the store yet, so the card reports that today. Signed-out visitors get the sign-in door.
+Live state requires a connected workspace. An unavailable gateway or registrar produces a visible failure. Signed-out visitors can inspect declared rules; writes require sign-in.
 
 ## Webhooks
 
 `Webhook.make` from `@smthrs/triggers/Webhook` builds a verified door in code. It requires a credential reference, verifies the signature header over a private copy of the raw request bytes in constant time, refuses an absent or empty signature before computing anything, and hands the decoded payload to Control's channel coordinator. It exposes `register` and `ingest` and no direct execution method. `ingest` does not register the channel; run `register` first.
 
-There is no `smthrs webhooks` verb, no persisted webhook registry, and no webhook row in the Dispatcher card. For the module contract, see [`@smthrs/triggers`](/docs/reference/api/triggers/#webhook).
+There is no `smthrs webhooks` verb. The Dispatcher card displays webhook channels when its workspace returns them. For the library's module contract, see [`@smthrs/triggers`](/docs/reference/api/triggers/#webhook).
 
 ## Planned: event selectors and automations
 

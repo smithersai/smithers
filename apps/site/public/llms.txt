@@ -7,7 +7,7 @@
 ## Start here
 
 - [Welcome to Smithers](https://smithers.sh/docs/): Smithers is an orchestration agent, primarily used to orchestrate maintaining a codebase, but it can be used for orchestration in general. Agents plan, run, and review changes through flows declared beside the code.
-- [Quickstart](https://smithers.sh/docs/quickstart/): Open Smithers, explore a repository, find a flow, and make your first contribution through the app.
+- [Quickstart](https://smithers.sh/docs/quickstart/): Connect a repository, set up a job, and inspect its real result in the Smithers app.
 - [Pricing](https://smithers.sh/docs/pricing/): Free and Pro plans. Smithers runs the models; model usage draws on your account credit.
 - [CLI and libraries](https://smithers.sh/docs/developers/): Use Smithers from your terminal, define flows beside your code, and build on the TypeScript libraries.
 - [Installation](https://smithers.sh/docs/installation/): Install the Smithers CLI or library, keep Effect pinned, and verify the install.
@@ -16,18 +16,18 @@
 ## Use the app
 
 - [The interface](https://smithers.sh/docs/app/): Find your way around the Smithers app: repositories, chat, cards, and the six main areas.
-- [Open a repository](https://smithers.sh/docs/app/repositories/): Open an available repository and choose whether to explore, contribute, or maintain it.
+- [Open a repository](https://smithers.sh/docs/app/repositories/): Open or import a repository, read its guide files, and select the context for your work.
 - [Talk to Smithers](https://smithers.sh/docs/app/chat/): Describe a task, inspect the cards in the conversation, and steer work while it runs.
 - [Search the app](https://smithers.sh/docs/app/search/): Use the command palette to find files, flows, notes, and other project information.
 - [Read and edit the Wiki](https://smithers.sh/docs/app/wiki/): Open project notes, follow their sources, and understand the difference between notes and a generated repository wiki.
-- [Inspect the Dispatcher](https://smithers.sh/docs/app/dispatcher/): Read automation rules and distinguish declared events from triggers registered on a running box.
+- [Inspect the Dispatcher](https://smithers.sh/docs/app/dispatcher/): Inspect declared rules, register a schedule after reviewing its plan, and follow its runs.
 - [Run a flow](https://smithers.sh/docs/app/flows/): Choose a repository flow in the app, supply its inputs, and inspect the run that starts.
 - [Inspect and steer a run](https://smithers.sh/docs/app/runs/): Follow a flow's status, inspect its execution trace, send a correction, and stop or resume work.
 - [Work in a box](https://smithers.sh/docs/app/boxes/): Open a cloud box, inspect its files and terminal, and use its services and snapshots.
 - [Review an approval](https://smithers.sh/docs/app/approvals/): Inspect a requested action and approve or deny it from the Smithers conversation.
 - [Review a change](https://smithers.sh/docs/app/changes/): Inspect a Change's diff, checks, reviews, and revisions before landing it.
 - [Repository secrets](https://smithers.sh/docs/app/secrets/): Inspect the scope and metadata of secrets available to a repository's sessions.
-- [Explore History](https://smithers.sh/docs/app/history/): Read the repository's mythical history and distinguish it from run history and Change revisions.
+- [History and the Stack](https://smithers.sh/docs/app/history/): Read mythical history, inspect live issue lanes, and follow changes to their upstream pull requests.
 - [Account and access](https://smithers.sh/docs/app/account/): Sign in with GitHub, check your alpha access, and understand what the Account card shows.
 - [Troubleshoot the app](https://smithers.sh/docs/app/troubleshooting/): Resolve sign-in, access, box, search, and run problems in the Smithers app.
 
@@ -72,7 +72,7 @@
 - [Run flows in CI](https://smithers.sh/docs/guides/ci/): Launch a flow from CI, handle its exit status, and keep evidence when the run fails or waits.
 - [Test your flows](https://smithers.sh/docs/guides/testing-flows/): Run flows on the in-memory engine under vitest, assert on recorded results and journal entries, and replay recorded model responses instead of calling a provider.
 - [Review pull requests with the Smithers action](https://smithers.sh/docs/guides/pr-review-action/): Add the Smithers review GitHub Action to a repository, trigger agent reviews with a PR comment, and run the same review from a terminal.
-- [Run CI on Smithers Cloud](https://smithers.sh/docs/guides/cloud-ci/): What runs your PACKAGE.ts checks today, and the planned Smithers Cloud CI that would run them from repository events.
+- [Run CI on Smithers Cloud](https://smithers.sh/docs/guides/cloud-ci/): Run repository workflows on Smithers Cloud, inspect their results, and distinguish them from the proposed PACKAGE.ts automation API.
 - [Define triggers](https://smithers.sh/docs/guides/triggers/): Register a durable cron trigger that starts a flow, host the scheduler, fire an occurrence by hand, and read the fire ledger. Repository-event triggers are planned.
 
 ## Concepts
@@ -161,7 +161,7 @@
 - [llms.txt](https://smithers.sh/docs/reference/llms-txt/): Agent-facing entry points: the curated llms.txt index and the full-prose llms-full.txt, regenerated from the docs tree.
 - [MCP tools](https://smithers.sh/docs/reference/mcp-tools/): Discover and call the Smithers command tree through its stdio MCP server.
 - [Project layout](https://smithers.sh/docs/reference/project-layout/): The files of a Smithers project: flows/ sources, .flows/ run state, and the root resolution rules.
-- [Smithers Cloud CI](https://smithers.sh/docs/reference/cloud-ci/): The planned Smithers Cloud CI service: activation, execution, caching, and required results. Not shipped; recorded so the design is visible.
+- [Smithers Cloud CI](https://smithers.sh/docs/reference/cloud-ci/): The backend workflow service's dispatch, sandbox execution, caches, artifacts, and completion results.
 - [smthrs approve](https://smithers.sh/docs/reference/cli/approve/): Approve the complete serialized approval payload
 - [smthrs bug](https://smithers.sh/docs/reference/cli/bug/): Report a bug with a run digest attached
 - [smthrs cancel](https://smithers.sh/docs/reference/cli/cancel/): Cancel a durable run
