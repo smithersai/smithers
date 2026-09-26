@@ -16,7 +16,8 @@ The decoder reuses the owning schemas:
 - `@smthrs/journal/EngineEvent` for current attempt markers and v2 evidence.
 
 Those first two packages are explicit UI dependencies for their existing data
-contracts. `EngineTrace` holds an ephemeral render projection;
+contracts. `EngineTrace`, shared from `@smthrs/gateway/EngineTrace` with the
+terminal monitor, holds an ephemeral render projection;
 the source remains the card's persisted journal records in TanStack DB.
 
 Attempt identity includes execution ID, native rewind generation, step digest,

@@ -1,5 +1,6 @@
 /** Repository flows, release workflows, and the retained migration fixtures. */
 import { Smithers } from "@smthrs/targets"
+import codingProject from "../.smithers/coding-project.json" with { type: "json" }
 
 const pack = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//flows/pack.test.mjs")]),
@@ -109,17 +110,11 @@ const codingSources = [sources, Smithers.glob("//flows/**/*.mjs"), Smithers.glob
   Smithers.pnpmWorkspace("//pnpm-workspace.yaml"),
   Smithers.file("//pnpm-lock.yaml"), Smithers.file("//flows/tsconfig.json")]
 const codingDependencies = [...codingBackend, codingScripts]
-// The repository config test reads the public page documents and evidence too.
+// The repository config test reads every wiki page's document and inputs too.
 // Declare them so both runtime targets track changes outside their TS sources.
 const codingProjectSources = [
-  ".smithers/coding-project.json", ".smithers/factory.json", "factory/wiki/pages/runtime-packages.md",
-  "factory/wiki/pages/app-workspace.md", "factory/wiki/pages/worker-gateway.md",
-  "factory/wiki/pages/coding-workspace.md", "factory/wiki/pages/health-contract.md",
-  "packages/smithers/README.md", "packages/smithers/agent/README.md", "packages/smithers/build/README.md",
-  "apps/app/README.md", "apps/app/package.json", "apps/app/docs/LOCAL-APP.md",
-  "apps/app/src/mainview/cards/CodingPlan.ts",
-  "apps/server/docs/EFFECT.md", "apps/server/src/index.ts", "apps/server/src/Environment.ts", "apps/server/src/Boundary.ts",
-  "flows/README.md", "docs/design/agent-flow-health.md"
+  ".smithers/coding-project.json", ".smithers/factory.json",
+  ...new Set(codingProject.pages.flatMap(page => [page.document, ...page.inputs]))
 ].map(path => Smithers.file(`//${path}`))
 const codingProjectInputs = [...codingProjectSources, Smithers.glob("//flows/checks/**/flow.mdx"),
   // The built-in authoring bodies the host installs on every workspace.
@@ -177,7 +172,7 @@ const codingBundleBun = Smithers.Shell.Test({ bin: Smithers.Runtime.bin, runtime
   args: ["flows/test/coding-native-gate.mjs", "bundle"], data: [...codingSources, ...codingDependencies], timeout: "45m" })
 const wiki = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//flows/test/wiki.test.ts")]),
-  srcs: [sources, Smithers.file("//factory/wiki/catalog.ts")], deps: [], cwd
+  srcs: [sources], deps: [], cwd
 })
 
 // The judge the coding host installs reaches the gateway through the proxy its

@@ -127,8 +127,8 @@ full native JJ change ID, and a new atom uses `null` until JJ creates it.
 
 The history window must end at the captured head and contain one parent per
 atom. An append uses the current head as base. An amendment chooses a visible
-earlier base and retains every existing descendant in native order before
-adding new atoms. Missing context, omitted/reordered descendants, duplicate
+earlier base and retains every existing descendant after it in native
+order; new atoms may sit anywhere after the base. Missing context, omitted/reordered descendants, duplicate
 ownership, unknown checks, and paths escaping the repository or entering native
 metadata are refused. Each Change receives all configured required checks and
 needs a required fast and required slow check. New atoms may be inserted between

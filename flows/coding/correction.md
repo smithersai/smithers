@@ -157,9 +157,11 @@ exports, real check processes and SQLite. Planner/editor behavior and earlier
 owner classification are scripted, so it proves correction, gates and replay,
 not the quality of a live model's repair choice or a deployed host.
 
-The configured `Request` composition already connects verified wiki refresh,
-memory gathering and clarification, disposable POC feedback, second planning and
-this correction recipe. History cleanup, vibing, append-to-main and optional
-delivery/canary stages remain further composition work. The underlying memory
-flows, HumanTask, artifacts, Plue native operations and landing service provide
-the relevant primitives; this recipe does not replace those facilities.
+The configured `Request` composition prepares a plan (reading the published
+wiki as memory only when `planning.wiki: true`), admits the observed
+source, then runs a coordinator that drains queued feedback and invokes this
+correction recipe; feedback before implementation or after correction replans
+through the same coordinator. The disposable POC is a separate opt-in
+`coding/Prototype` flow and never enters correction or landing. The underlying
+memory flows, HumanTask, artifacts, native JJ operations and landing service
+provide the relevant primitives; this recipe does not replace those facilities.

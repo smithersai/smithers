@@ -16,42 +16,426 @@
   },
   "pages": [
     {
+      "id": "start-here",
+      "title": "Start here",
+      "purpose": "Find the owning layer and follow work through Smithers.",
+      "kind": "current",
+      "document": "factory/wiki/pages/start-here.md",
+      "inputs": [
+        "apps/tui/docs/automation/flows.md",
+        "packages/smithers/flows/src/NodeRuntime.ts",
+        "packages/smithers/agent/docs/concepts/agent-loop.md",
+        "packages/smithers/build/targets/docs/README.md"
+      ],
+      "related": [
+        "flows",
+        "runtime",
+        "agent",
+        "build-graph",
+        "product-ui",
+        "coding-request",
+        "coding-direction"
+      ]
+    },
+    {
+      "id": "flows",
+      "title": "Flows, actions and replay",
+      "purpose": "Declare a typed action once and attach its Effect implementation.",
+      "kind": "current",
+      "document": "factory/wiki/pages/flows.md",
+      "inputs": [
+        "packages/smithers/flows/flow/docs/README.md",
+        "packages/smithers/flows/flow/docs/concepts/flows-and-actions.md"
+      ],
+      "related": [
+        "runtime",
+        "storage",
+        "agent",
+        "build-graph"
+      ]
+    },
+    {
+      "id": "runtime",
+      "title": "Runtime portability and ownership",
+      "purpose": "Run the same durable program on Bun or Node through injected platform services.",
+      "kind": "current",
+      "document": "factory/wiki/pages/runtime.md",
+      "inputs": [
+        "packages/smithers/flows/docs/concepts/runtime-portability.md",
+        "packages/smithers/flows/src/Runtime.ts",
+        "packages/smithers/flows/src/NodeRuntime.ts",
+        "packages/smithers/flows/src/BunRuntime.ts",
+        "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
+      ],
+      "related": [
+        "flows",
+        "storage",
+        "wiki-generation"
+      ]
+    },
+    {
+      "id": "storage",
+      "title": "Journal and durable stores",
+      "purpose": "Use existing persisted execution facts instead of another coding ledger.",
+      "kind": "current",
+      "document": "factory/wiki/pages/storage.md",
+      "inputs": [
+        "packages/smithers/flows/docs/concepts/runtime-portability.md",
+        "packages/smithers/flows/journal/docs/README.md",
+        "packages/smithers/flows/run-store/docs/README.md"
+      ],
+      "related": [
+        "runtime",
+        "flows",
+        "wiki-generation"
+      ]
+    },
+    {
+      "id": "build-graph",
+      "title": "Dependency-bound build targets",
+      "purpose": "Declare the exact code and documentation inputs that invalidate an output.",
+      "kind": "current",
+      "document": "factory/wiki/pages/build-graph.md",
+      "inputs": [
+        "packages/smithers/build/targets/docs/README.md",
+        "packages/smithers/build/docs/reference/targets/filegroup.md",
+        "flows/wiki/PACKAGE.ts"
+      ],
+      "related": [
+        "wiki-generation",
+        "flows",
+        "runtime"
+      ]
+    },
+    {
+      "id": "agent",
+      "title": "Agents are flow callers",
+      "purpose": "Understand cells, schema-bound model output and host-resolved model seats.",
+      "kind": "current",
+      "document": "factory/wiki/pages/agent.md",
+      "inputs": [
+        "packages/smithers/agent/docs/README.md",
+        "flows/wiki/workflow.ts",
+        "flows/wiki/runtime.ts"
+      ],
+      "related": [
+        "flows",
+        "wiki-generation",
+        "product-ui"
+      ]
+    },
+    {
+      "id": "wiki-generation",
+      "title": "How this wiki stays accountable",
+      "purpose": "Review every page against exact inputs and publish only verified pages.",
+      "kind": "current",
+      "document": "factory/wiki/pages/wiki-generation.md",
+      "inputs": [
+        "factory/wiki/README.md"
+      ],
+      "related": [
+        "coding-planning",
+        "coding-checks",
+        "cloud-wiki",
+        "coding-host",
+        "build-graph"
+      ]
+    },
+    {
+      "id": "coding-direction",
+      "title": "Mythical coding product contract",
+      "purpose": "Read the intended coding lifecycle without confusing it with shipped behavior.",
+      "kind": "intent",
+      "document": "factory/wiki/pages/coding-direction.md",
+      "inputs": [
+        "packages/smithers/flows/docs/concepts/runtime-portability.md",
+        "flows/coding/design.md"
+      ],
+      "related": [
+        "product-ui",
+        "coding-request",
+        "coding-progression",
+        "coding-experience"
+      ]
+    },
+    {
+      "id": "coding-host",
+      "title": "Configured coding host",
+      "purpose": "Compose the native host and operator policy without a new product service.",
+      "kind": "current",
+      "document": "factory/wiki/pages/coding-host.md",
+      "inputs": [
+        "flows/coding/host.md",
+        "flows/coding/wiki-policy.ts"
+      ],
+      "related": [
+        "native-control",
+        "coding-request",
+        "coding-checks",
+        "runtime",
+        "wiki-generation"
+      ]
+    },
+    {
+      "id": "coding-request",
+      "title": "Prompt to coding outcome",
+      "purpose": "Follow a prompt through planning, source admission, bounded correction and safe-boundary feedback as ordinary native children.",
+      "kind": "current",
+      "document": "factory/wiki/pages/coding-request.md",
+      "inputs": [
+        "flows/coding/request.md",
+        "flows/coding/request/flow.ts",
+        "flows/coding/request.ts",
+        "flows/coding/prototype/flow.ts"
+      ],
+      "related": [
+        "coding-planning",
+        "coding-poc",
+        "coding-correction",
+        "coding-host",
+        "coding-ui"
+      ]
+    },
+    {
+      "id": "coding-planning",
+      "title": "Planning from repository memory",
+      "purpose": "Gather current source, history and optional verified wiki memory, clarify or decline, and bind the Plan to native source and catalog definitions.",
+      "kind": "current",
+      "document": "factory/wiki/pages/coding-planning.md",
+      "inputs": [
+        "flows/coding/planning.md",
+        "flows/coding/planning-authority.md"
+      ],
+      "related": [
+        "wiki-generation",
+        "coding-request",
+        "coding-progression",
+        "coding-poc"
+      ]
+    },
+    {
+      "id": "coding-poc",
+      "title": "Saved disposable source prototypes",
+      "purpose": "Retain measured source changes for hindsight without claiming an executable prototype or mutating the original.",
+      "kind": "current",
+      "document": "factory/wiki/pages/coding-poc.md",
+      "inputs": [
+        "flows/coding/poc.md",
+        "flows/coding/prototype/flow.ts",
+        "flows/coding/poc-schema.ts"
+      ],
+      "related": [
+        "coding-request",
+        "coding-planning",
+        "coding-ui"
+      ]
+    },
+    {
+      "id": "coding-progression",
+      "title": "Coding progression and validation",
+      "purpose": "Follow exact JJ revisions through fast gates and overlapping slow checks.",
+      "kind": "current",
+      "document": "factory/wiki/pages/coding-progression.md",
+      "inputs": [
+        "flows/coding/README.md",
+        "flows/coding/flow.ts"
+      ],
+      "related": [
+        "coding-direction",
+        "flows",
+        "coding-request",
+        "coding-correction",
+        "coding-checks"
+      ]
+    },
+    {
+      "id": "coding-correction",
+      "title": "Bounded owner correction",
+      "purpose": "Repair the earliest owning atom and remeasure rewritten descendants while preserving exact native evidence.",
+      "kind": "current",
+      "document": "factory/wiki/pages/coding-correction.md",
+      "inputs": [
+        "flows/coding/correction.md"
+      ],
+      "related": [
+        "coding-progression",
+        "coding-checks",
+        "coding-request",
+        "coding-ui"
+      ]
+    },
+    {
+      "id": "coding-checks",
+      "title": "Checks against immutable source",
+      "purpose": "Measure the pinned revision with declared commands, confined processes and durable receipts.",
+      "kind": "current",
+      "document": "factory/wiki/pages/coding-checks.md",
+      "inputs": [
+        "flows/coding/checks.md",
+        "flows/coding/checks.ts"
+      ],
+      "related": [
+        "coding-progression",
+        "coding-correction",
+        "coding-host",
+        "build-graph"
+      ]
+    },
+    {
+      "id": "coding-finalization",
+      "title": "Admission and native history cleanup",
+      "purpose": "Admit a validated request, fix its original source, and clean native history before landing.",
+      "kind": "current",
+      "document": "factory/wiki/pages/coding-finalization.md",
+      "inputs": [
+        "flows/coding/finalization.md"
+      ],
+      "related": [
+        "coding-request",
+        "coding-progression",
+        "coding-checks",
+        "coding-ui"
+      ]
+    },
+    {
+      "id": "coding-ui",
+      "title": "Coding evidence in recursive run cards",
+      "purpose": "Keep predicted work, recorded outcomes, retained prototypes and Vibe progress distinct in the run card.",
+      "kind": "current",
+      "document": "factory/wiki/pages/coding-ui.md",
+      "inputs": [
+        "apps/app/docs/workbench-lanes/coding-plans.md"
+      ],
+      "related": [
+        "product-ui",
+        "native-engine-evidence",
+        "coding-request",
+        "coding-finalization",
+        "coding-experience"
+      ]
+    },
+    {
+      "id": "coding-experience",
+      "title": "Stack and debugger interaction study",
+      "purpose": "Apply concrete prior-art interactions while labeling recommendations separately from current UI behavior.",
+      "kind": "intent",
+      "document": "factory/wiki/pages/coding-experience.md",
+      "inputs": [
+        "apps/app/docs/workbench-lanes/runs.md",
+        "factory/wiki/pages/coding-direction.md"
+      ],
+      "related": [
+        "coding-direction",
+        "coding-ui",
+        "product-ui",
+        "native-engine-evidence"
+      ]
+    },
+    {
+      "id": "product-ui",
+      "title": "Embedded UI and recursive inspection",
+      "purpose": "Follow the embed, three-door, collection-state and run-trace rules of the app.",
+      "kind": "current",
+      "document": "factory/wiki/pages/product-ui.md",
+      "inputs": [
+        "apps/app/README.md",
+        "apps/app/docs/workbench-lanes/runs.md"
+      ],
+      "related": [
+        "app",
+        "coding-ui",
+        "cloud-wiki",
+        "native-engine-evidence"
+      ]
+    },
+    {
+      "id": "cloud-wiki",
+      "title": "Collaborative repository Wiki",
+      "purpose": "Separate local app revisions, remote page revisions and pending edits in the app Wiki.",
+      "kind": "current",
+      "document": "factory/wiki/pages/cloud-wiki.md",
+      "inputs": [
+        "apps/app/docs/workbench-lanes/wiki-collaboration.md",
+        "apps/app/src/mainview/wiki/CloudWikiState.ts",
+        "apps/app/src/mainview/flows/entries/wiki.ts"
+      ],
+      "related": [
+        "wiki-generation",
+        "product-ui",
+        "app"
+      ]
+    },
+    {
+      "id": "native-control",
+      "title": "Portable native control and authority",
+      "purpose": "Locate the one injected host, module admission, approved-root authority and native observation boundary.",
+      "kind": "current",
+      "document": "factory/wiki/pages/native-control.md",
+      "inputs": [
+        "packages/smithers/NATIVE-CONTROL.md",
+        "packages/smithers/src/internal/BunControl.ts",
+        "packages/smithers/src/internal/NodeControlHost.ts",
+        "packages/smithers/src/internal/ModuleAdmission.ts"
+      ],
+      "related": [
+        "runtime",
+        "storage",
+        "coding-host",
+        "native-engine-evidence"
+      ]
+    },
+    {
+      "id": "native-engine-evidence",
+      "title": "Native execution evidence and observation",
+      "purpose": "Read native attempts and terminal results without confusing reader completion with product validation.",
+      "kind": "current",
+      "document": "factory/wiki/pages/native-engine-evidence.md",
+      "inputs": [
+        "apps/app/docs/workbench-lanes/native-engine-evidence.md",
+        "packages/smithers/ENGINE-JOURNAL-PROJECTION.md",
+        "apps/app/src/mainview/cards/EngineTrace.ts"
+      ],
+      "related": [
+        "native-control",
+        "coding-ui",
+        "storage",
+        "product-ui"
+      ]
+    },
+    {
+      "id": "tui-docs",
+      "title": "Executable terminal documentation",
+      "purpose": "Build the terminal recordings and verify browser checkpoint recovery and sponsored model boundaries.",
+      "kind": "current",
+      "document": "factory/wiki/pages/tui-docs.md",
+      "inputs": [
+        "apps/tui-docs/README.md",
+        "apps/tui/docs/reference/recordings.md",
+        "apps/tui-docs/PACKAGE.ts",
+        "apps/tui-docs/scripts/targets.ts",
+        "apps/tui-docs/package.json"
+      ],
+      "related": [
+        "agent",
+        "runtime",
+        "build-graph"
+      ]
+    },
+    {
       "id": "packages",
       "title": "Smithers runtime packages",
       "purpose": "Explain packages/smithers: the CLI host, durable flow runtime, agent composition, and build targets.",
       "kind": "current",
       "document": "factory/wiki/pages/runtime-packages.md",
       "inputs": [
-        "packages/smithers/package.json",
-        "packages/smithers/src/Application.ts",
-        "packages/smithers/flows/src/Runtime.ts",
-        "packages/smithers/agent/README.md",
-        "packages/smithers/build/README.md"
+        "packages/smithers/docs/installation.md",
+        "packages/smithers/flows/docs/concepts/runtime-portability.md",
+        "packages/smithers/agent/docs/concepts/agent-loop.md"
       ],
-      "excerpts": {
-        "packages/smithers/package.json": [
-          {
-            "start": 1,
-            "end": 56
-          }
-        ],
-        "packages/smithers/agent/README.md": [
-          {
-            "start": 1,
-            "end": 26
-          }
-        ],
-        "packages/smithers/build/README.md": [
-          {
-            "start": 1,
-            "end": 41
-          }
-        ]
-      },
       "related": [
         "app",
         "server",
-        "flows"
+        "repository-flows"
       ]
     },
     {
@@ -66,11 +450,6 @@
         "apps/app/docs/LOCAL-APP.md",
         "apps/app/src/mainview/cards/CodingPlan.ts"
       ],
-      "related": [
-        "packages",
-        "server",
-        "flows"
-      ],
       "excerpts": {
         "apps/app/docs/LOCAL-APP.md": [
           {
@@ -78,7 +457,12 @@
             "end": 90
           }
         ]
-      }
+      },
+      "related": [
+        "packages",
+        "server",
+        "repository-flows"
+      ]
     },
     {
       "id": "server",
@@ -87,37 +471,16 @@
       "kind": "current",
       "document": "factory/wiki/pages/worker-gateway.md",
       "inputs": [
-        "apps/server/docs/EFFECT.md",
-        "apps/server/src/index.ts",
-        "apps/server/src/Environment.ts",
-        "apps/server/src/Boundary.ts"
+        "apps/server/docs/EFFECT.md"
       ],
       "related": [
         "app",
         "packages",
-        "flows"
-      ],
-      "excerpts": {
-        "apps/server/docs/EFFECT.md": [
-          {
-            "start": 1,
-            "end": 32
-          }
-        ],
-        "apps/server/src/index.ts": [
-          {
-            "start": 259,
-            "end": 290
-          },
-          {
-            "start": 420,
-            "end": 437
-          }
-        ]
-      }
+        "repository-flows"
+      ]
     },
     {
-      "id": "flows",
+      "id": "repository-flows",
       "title": "Repository flows and coding host",
       "purpose": "Explain how the configured coding host loads its project and which entry points it registers.",
       "kind": "current",
@@ -127,12 +490,6 @@
         "flows/coding/project-config.md",
         "flows/coding/verify/flow.ts",
         "flows/coding/wiki/flow.ts"
-      ],
-      "related": [
-        "packages",
-        "app",
-        "server",
-        "docs"
       ],
       "excerpts": {
         "flows/coding/host.md": [
@@ -155,7 +512,13 @@
             "end": 13
           }
         ]
-      }
+      },
+      "related": [
+        "packages",
+        "app",
+        "server",
+        "docs"
+      ]
     },
     {
       "id": "docs",
@@ -167,11 +530,6 @@
         "docs/design/agent-flow-health.md",
         "packages/smithers/control/src/Health.ts",
         "packages/smithers/control/src/Monitor.ts"
-      ],
-      "related": [
-        "packages",
-        "app",
-        "flows"
       ],
       "excerpts": {
         "docs/design/agent-flow-health.md": [
@@ -196,7 +554,12 @@
             "end": 230
           }
         ]
-      }
+      },
+      "related": [
+        "packages",
+        "app",
+        "repository-flows"
+      ]
     }
   ],
   "checks": [

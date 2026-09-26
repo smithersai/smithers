@@ -6,7 +6,7 @@ import { test } from "node:test"
 import { NodeServices } from "@effect/platform-node"
 import { Effect } from "effect"
 import { staleWikiNotes, wikiMemory } from "../coding/planning-memory.ts"
-import { cloudWikiBody } from "../coding/wiki-refresh.ts"
+import { cloudWikiBody, reviewCounts } from "../coding/wiki-refresh.ts"
 import { operations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 
@@ -57,4 +57,13 @@ test("cloud wiki bodies link pages by slug and name sources by path", () => {
   const titles = new Map([["runtime", "Runtime"], ["flows", "Flows"]])
   const body = "See [Flows](./flows.md) · [Gone](./gone.md)\n\n- [runtime.ts](../sources/runtime.ts) — `abc`\n"
   assert.equal(cloudWikiBody(body, titles), "See [[generated-flows|Flows]] · [Gone](./gone.md)\n\n- `runtime.ts` — `abc`\n")
+})
+
+test("the refresh reports pages reviewed cold apart from pages that reused an earlier review", () => {
+  const attempt = { executionId: "wiki-1", nodeId: "review", attempt: 1 }
+  assert.deepEqual(reviewCounts([
+    { verification: {} },
+    { verification: { provenance: { reusedFrom: null } } },
+    { verification: { provenance: { reusedFrom: attempt } } }
+  ]), { cold: 2, reused: 1 })
 })

@@ -4,6 +4,8 @@ import { chmod, mkdir, writeFile, readFile, readdir } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { policySources } from "../wiki/reuse.ts"
+import { wikiPolicyIdentity } from "./wiki-policy.ts"
 
 /** Used to build the same runtime acceptance entry with the deployment bundler; not a package export. */
 export const bundle = async (entryPoint, outfile) => {
@@ -67,13 +69,18 @@ export const bundle = async (entryPoint, outfile) => {
   for (const name of ["issue/repro", "issue/poc"]) {
     pack[name] = await readFile(resolve(root, "flows", name, "flow.mdx"), "utf8")
   }
+  // The wiki review task's identity, from the same policy files the source
+  // host reads. Review reuse keys on it, so a host build that leaves the
+  // review task alone keeps prior reviews (#1971).
+  const policyTexts = new Map()
+  for (const source of policySources) policyTexts.set(source, await readFile(resolve(root, source), "utf8"))
   const compiled = result.outputFiles[0].text.replace(/^(#![^\n]*\n)/,
-    `$1const __SMITHERS_CREATE_FLOW_PACK__ = ${JSON.stringify(pack)};\n`)
+    `$1const __SMITHERS_CREATE_FLOW_PACK__ = ${JSON.stringify(pack)};\nconst __SMITHERS_CODING_WIKI_POLICY__ = ${JSON.stringify(wikiPolicyIdentity(policyTexts))};\n`)
   if (compiled === result.outputFiles[0].text) throw new Error("Coding artifact has no executable banner")
   const digest = createHash("sha256").update(compiled).digest("hex")
   // Hash the exact compiled artifact before inserting its own identity. This
-  // includes the reviewer implementation and its complete bundled dependency
-  // graph, with no dependency on files vendored in the target repository.
+  // includes its complete bundled dependency graph, with no dependency on files
+  // vendored in the target repository.
   const output = compiled.replace(/^(#![^\n]*\n)/,
     `$1const __SMITHERS_CODING_ARTIFACT_DIGEST__ = ${JSON.stringify(digest)};\n`)
   if (output === compiled) throw new Error("Coding artifact has no executable banner")

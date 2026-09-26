@@ -1,21 +1,28 @@
 # Journal and durable stores
 
-The shared runtime composes the existing journal, run store, attempt store, cache store and engine state over an injected SQL client. Product coding work should reuse those execution records. It should not open an independent command ledger or recreate ownership and leases.
-
-## A journal is structured execution evidence
-
-Journal entries are ordered, typed records. Its durable lifecycle channel waits for persistence; its telemetry channel uses a bounded queue and can drop under pressure. An emission reports acceptance, duplication or dropping. Producer identity makes a retried emission distinguishable from new evidence.
-
-The journal also supports checkpoints and compaction. Append-only emission is not a promise that all historical rows remain forever. UI history readers must respect the retained record, not assume missing data can be reconstructed from today's objects.
+The shared runtime composes the journal and durable stores over an injected database. Coding work should reuse these records rather than open a second ledger.
 
 ## Share the injected database
 
-`Runtime.storage` composes migrations and stores without choosing a SQL driver. The executable provides the SQL layer and the platform services. `DurableWriter` supplies the shared serialized transaction policy used by durable writes.
+The shared `@smthrs/flows/Runtime.storage` composition builds journal and durable store layers over injected services; it does not select a SQL driver. The native Node and Bun compositions supply that driver, and stores use the existing `DurableWriter` transaction policy.
 
-The existing `NodeRuntime` and `BunRuntime` facades select the native database adapter. The common storage function's filename locates artifact storage; the injected SQL client chooses the actual database connection. If an application already owns the SQL instance, compose at this seam.
+Coding plans, checks, results, waits and recovery should use the current flow execution identity and the existing durable stores. A product-specific projection may have its own migration namespace in the injected database. It must not create a separate connection, job queue, command ledger or lease system.
 
-## Separate facts with different owners
+## The journal is the run's history
 
-The run store summarizes run lifecycle. The journal records execution evidence. Action outputs carry typed results for downstream work. A product projection may be useful for querying these facts, but it should point to the original run and revision rather than pretend to be a second source of execution truth.
+`@smthrs/journal` records what a long-running piece of work did, in order, in SQLite. Rows are appended and never updated.
 
-Wiki source snapshots are artifacts of a flow, not another scheduler. Collaborative human-authored pages belong to the wiki's persistence boundary, separately from the generation artifact and the flow's own replay record.
+- A lifecycle event is on disk before its call returns. A telemetry event goes through a bounded queue that drops under pressure. Both land in one per-run sequence.
+- An emission returns `Accepted`, `Duplicate` or `Dropped`.
+- Producer identity is `(runId, sourceId, sourceSeq)`, so a replay after a crash gets `Duplicate` rather than doubling history.
+- Payloads are scrubbed of credentials on the write path, before encoding.
+- The durable channel takes an owner token; a replaced process fails with `fence_lost`.
+- A checkpoint pins replay state to a sequence, and compaction deletes the entries below it.
+
+## The run store owns run state and ownership
+
+`@smthrs/run-store` provides `RunStore` and `AttemptStore`. `RunStore` keeps one row per run with its status, owner, heartbeat, cancellation request and the executable state a resume re-enters. An owner identity is `{ hostId, pid, nonce }`, compared inside the same SQL statement as the mutation it guards. Losing a race returns `AlreadyClaimed`, `HeartbeatFresh` or `FenceLost` as a success value. `AttemptStore` records each step attempt and refuses writes from a process that no longer owns the run.
+
+## Other facts live in neighboring stores
+
+Sealed step results live in `@smthrs/step-cache`. Durable deferred and clock tables live in `@smthrs/engine-store`, which composes all of these stores. `@smthrs/database` is the single write boundary they share.

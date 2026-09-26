@@ -46,10 +46,11 @@ causes a fresh review; there is no second cache or wiki ledger. The lookup scans
 at most 256 recent runs and 1 MiB of retained state, so heavy unrelated work can
 cause a safe cold miss.
 
-The configured host supplies its actual source or deployed-artifact fingerprint.
+The configured host supplies the identity of its review task: a digest of the
+review policy sources, injected at bundle time into the deployed artifact.
 That trusted policy and reviewer identify the reuse pool; target projects do not
 need to vendor Smithers reviewer files. Standalone wiki composition without a
-host fingerprint retains its existing four-source compatibility policy.
+host identity reads the same policy sources from the repository.
 
 ## Bind one approval and execution identity
 

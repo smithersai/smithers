@@ -1,29 +1,39 @@
 # How this wiki stays accountable
 
-This wiki is a repository recipe over ordinary Smithers flows. It adds no wiki database, queue, lease service or generic gateway. The catalog is the repository-specific part; source capture, per-page review and snapshot writing use existing Effect and Flow primitives.
+This wiki is a repository recipe over ordinary Smithers flows. It creates no separate wiki ledger or cache table; semantic review runs through the existing AgentAction reviewer and engine journal.
 
-## Capture exact public inputs
+## One page catalog
 
-Each catalog page names its owning Markdown and explicit supporting source files. The collector only reads repository-relative text files, rejects paths outside the source root and refuses common private/runtime paths. Symlink resolution cannot escape that root. Catalog contributors must select only public engineering source. The collector rejects Smithers-Ops paths; the private vault must never become generation input.
+The page catalog is the `pages` array of `.smithers/coding-project.json`. The Cloud refresh (`coding/wiki`) and the standalone `flows/wiki/main.ts` command both read it; there is no second catalog. Each page has a purpose, linked neighbors, an owning Markdown document and exact inputs.
 
-Full-file digests and the page specification define each input identity. The snapshot stores complete source files, not just links to a moving branch. Its source revision is a content-addressed working-tree snapshot; it does not claim that the tree matched a Git or JJ commit. Evidence is bounded per file and page. Explicit catalog excerpts reduce reviewer context while preserving original line numbers; edits outside those excerpts still invalidate the whole source identity.
+The flow caps review evidence at 90 KB per page, full-file capture at 300 KB per page, and accepts at most 30 pages. This repository keeps every page at or under 30 KB of review evidence. Inputs are hand-written documentation and small stable source files, never generated projections. Whole files are preferred to line-range excerpts, because a range that outgrows a shrinking file fails the refresh.
+
+Only explicitly chosen public engineering files belong in the catalog; Smithers-Ops, credentials, runtime databases and deployment secrets never do. Repository content is data for the reviewer, not instructions.
+
+## Capture exact inputs
+
+Complete input files are hashed and archived, so a change outside an excerpt still invalidates the page. Snapshots live under `.flows/wiki/snapshots/<artifact-digest>/`, and `current.json` is atomically replaced only after a complete immutable snapshot exists. The source revision is a content-addressed working-tree snapshot, not a Git or JJ commit claim.
 
 ## Review meaning, not hashes
 
-The preview mode produces an explicitly unreviewed artifact. Verified mode invokes a real `AgentAction` reviewer with the page and its exact source evidence. With `--reuse-run`, compatible supported reviews may instead come from a terminal run in the same existing engine database. The lookup uses the journal and attempt store, validates the policy identity and reviewer ID, and requires identical page, source, content, and section identities. Current citation checks still run; a changed page or policy requires a new model review. Each incremental page records its origin run and the reused attempt identity, when applicable. Every section requires a supported result, an explanation and exact source citations. Quoted fragments match one visible source line exactly after trimming ASCII spaces and tabs only at their edges. Interior whitespace, text, paths and line numbers must still match. Raw model receipts and original source indentation remain available; the immutable artifact and review digests identify this assessment policy. Multiline output uses the agent's existing bounded schema-correction path and cannot pass the assessor. The full generation flow collects independent page reviews before deterministic steps check section coverage and citation integrity. A structurally decoded review that fails exact assessment receives one additional call to the same reviewer, carrying the prior review, a bounded list of detected invalid citations and unchanged captured evidence. The replacement must pass the same validator; a second failure is terminal. This does not automatically move citation lines or retry valid unsupported claims. Incremental generation validates each page before recording its bound provenance.
+The reviewer has no tools, and reviews fan out through `Node.all`. Each quoted citation must match one visible source line exactly after trimming ASCII spaces and tabs at its edges. A review with invalid coverage or citations gets one additional call with the validator feedback and the same captured source; a second validation failure is terminal. The host never shifts citation lines.
 
-The writer checks the source again after review. Changed inputs invalidate the attempt. Unsupported or uncertain sections leave a reviewable artifact and fail the verified flow. A passing model review is recorded evidence, not a formal proof, a passing test suite or a deployment receipt.
+Exact assessment does not prove a cited line bears on its claim, so Jev then classifies each claim and citation as `supports`, `contradicts` or `unrelated`. A confident `contradicts` or `unrelated` refuses the page, and an unavailable Jev fails the step, so a page is never published unchecked.
 
-## Preserve intent and atomic publication
+A failed semantic review writes its findings in a `needs-changes` preview and fails the verified flow. Source changes while reviewing reject the write, and no mode overwrites canonical human-authored pages.
 
-Generated pages use this recipe's `generated-` slug convention. Their front matter records source, content and review digests. Configure a dedicated output directory separate from canonical human-authored pages. The catalog can include an intent page whose generated copy and source evidence become part of the snapshot. The local writer installs an immutable snapshot directory before atomically updating one current pointer; it does not rewrite the canonical human pages.
+## Reuse unchanged reviews
 
-The local generation flow does not implement cloud publication or CRDT synchronization. Its output defines an integration policy for a future publisher: accept only a verified snapshot, compare the existing page to its last accepted generated body digest, and use the destination's revision precondition. A manually changed generated page must be treated as a conflict to resolve, not permission to overwrite human edits. This policy does not assert that a cloud publisher already enforces it.
+Incremental generation reuses supported reviews from a terminal run through the journal and attempt store. It requires the same reviewer ID and review-policy sources, matches the page specification, input, content and section digests, and revalidates citations; changed or uncertain pages receive a new model review.
 
-## Keep coding edits under semantic backpressure
+The configured coding host keys that reuse on the identity of its review task: a digest of the review policy sources (`policySources` in `flows/wiki/reuse.ts`), injected by the bundler into the deployed artifact. Nothing else in the host build is covered, so a host deploy that leaves the review task alone keeps prior reviews reusable.
 
-The configured request refreshes verified wiki evidence before planning. An operator can also register `checks/wiki` as a required slow check; this repository's default coding configuration includes it. Plan finalization appends every omitted operator-required check to each Change, retaining the configured check objects.
+## Publish after every fold
 
-`coding/WikiCheck` uses the same immutable-source helper as command checks. It captures the configured pages from the exact exported implementation revision before the scoped export closes. Existing selection, semantic review and citation assessment run in the same native flow runtime over those recorded values. Supported unchanged pages can reuse compatible native review evidence. Valid unsupported or uncertain prose becomes an ordinary failed Receipt with its owning Change, exact source commit and Markdown path. Malformed citations get the same bounded reviewer correction against the captured immutable evidence. If the replacement still fails exact assessment, the check refuses; this is not a claim that the source is wrong.
+Cloud publication belongs to the mythical stack worker. After every fold it runs `coding/wiki` on the folded main, accepts only a verified result, and publishes each page as `generated-<id>` with an expected revision. A page a person edited, renamed or deleted is kept and counted as edited. Its receipt records how many pages were reviewed cold and how many reused an earlier review.
 
-The slow check never publishes a current pointer. Verified publication remains a separate source-fenced refresh: an intermediate passing receipt cannot make an older wiki snapshot current. This closes the source-validation part of continuous backpressure when the check is configured; final publication must still run against the final source.
+Planning reads the published pages and never generates the wiki.
+
+## Optional semantic check
+
+The configured host can also register `coding/WikiCheck` as a slow-check delegate that an operator adds to the project `checks`. It reviews the exact implemented source and turns unsupported or uncertain prose into an ordinary failed coding Receipt with owner findings. A slow check creates no second publication pointer; final verified publication stays source-fenced and separate from check receipts.

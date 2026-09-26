@@ -121,7 +121,7 @@ func wikiResult(commit, pool string, pages ...string) string {
 	}
 	encoded, _ := json.Marshal(map[string]any{"commitId": commit, "wikiRunId": "wiki-run", "artifactDigest": fmt.Sprintf("%064d", 1),
 		"receipt": map[string]any{"schemaVersion": 1, "sourceRevision": "sha256:x", "inputDigest": "x", "output": "/o", "pages": len(out), "verification": "verified"},
-		"pool":    json.RawMessage(pool), "pages": out})
+		"reviews": map[string]any{"cold": len(out) - 1, "reused": 1}, "pool": json.RawMessage(pool), "pages": out})
 	return string(encoded)
 }
 
@@ -203,6 +203,10 @@ func TestMythicalWikiRefreshesAfterEveryFoldAndKeepsEdits(t *testing.T) {
 	o.wake()
 	assert.Len(t, o.launcher.requests, 1)
 
+	// Migration 0037 counted the retired source-index pages it removed.
+	_, err = o.pool.Exec(ctx, `UPDATE mythical_wikis SET legacy_pages_removed = 3 WHERE repository_id = $1`, o.repoID)
+	require.NoError(t, err)
+
 	// It succeeds: the pages are published as generated-<id>, and the
 	// workspace is retired.
 	o.project(request, jobs.StateCompleted, "wiki-run-1", wikiResult(stack.TipCommit, `{"policyDigest":"p","policySources":[],"candidates":{}}`,
@@ -222,6 +226,8 @@ func TestMythicalWikiRefreshesAfterEveryFoldAndKeepsEdits(t *testing.T) {
 	require.NoError(t, json.Unmarshal(row.Receipt, &receipt))
 	assert.Equal(t, "wiki-run-1", receipt["runId"])
 	assert.Equal(t, "verified", receipt["verification"])
+	assert.Equal(t, map[string]any{"cold": 1.0, "reused": 1.0}, receipt["reviews"], "the receipt says how many pages were reviewed cold")
+	assert.Equal(t, 3.0, receipt["legacyPagesRemoved"])
 
 	// A stack request plans with the published pages.
 	require.NoError(t, o.service.ObserveIssue(ctx, o.repoID, mythicalIssue{Number: 7, Title: "Docs", State: "open", AuthorAssociation: "OWNER"}, ""))

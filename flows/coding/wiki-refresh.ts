@@ -33,6 +33,8 @@ export const WikiRefreshResult = Schema.Struct({
   commitId: StackBase.fields.commitId,
   wikiRunId: Schema.String, artifactDigest: Digest64,
   receipt: Receipt,
+  /** Pages the reviewer read this refresh (cold) and pages whose earlier review was reused. */
+  reviews: Schema.Struct({ cold: Schema.Int, reused: Schema.Int }),
   /** This refresh's reviews, for the next refresh to carry. */
   pool: Pool,
   pages: Schema.Array(PublishedWikiPage).check(Schema.isMinLength(1), Schema.isMaxLength(30))
@@ -53,7 +55,8 @@ const Snapshot = Schema.Struct({
     id: Schema.String, title: Schema.String, kind: Schema.Literals(["current", "intent"]), body: Schema.String,
     inputDigest: Schema.String, contentDigest: Schema.String,
     sources: Schema.Array(Schema.Struct({ path: Schema.String, digest: Schema.String })),
-    verification: Schema.Struct({ reviewDigest: Schema.NullOr(Schema.String) })
+    verification: Schema.Struct({ reviewDigest: Schema.NullOr(Schema.String),
+      provenance: Schema.optionalKey(Schema.Struct({ reusedFrom: Schema.Unknown })) })
   }))
 })
 
@@ -65,6 +68,12 @@ export const cloudWikiBody = (body: string, titles: ReadonlyMap<string, string>)
   .replace(/\[([^\]\n]*)\]\(\.\/([A-Za-z0-9._-]+)\.md\)/g, (whole, label: string, id: string) =>
     titles.has(id) ? `[[generated-${id}|${label || titles.get(id)}]]` : whole)
   .replace(/\[([^\]\n]*)\]\(\.\.\/sources\/[^)\n]*\)/g, (_whole, label: string) => `\`${label}\``)
+
+/** How many snapshot pages the reviewer read this refresh and how many reused an earlier review. */
+export const reviewCounts = (pages: ReadonlyArray<{ readonly verification: { readonly provenance?: { readonly reusedFrom: unknown } } }>) => {
+  const reused = pages.filter(page => page.verification.provenance?.reusedFrom != null).length
+  return { cold: pages.length - reused, reused }
+}
 
 export const readPublishedWiki = (options: {
   readonly repositoryPath: string
@@ -88,7 +97,8 @@ export const readPublishedWiki = (options: {
   const pool = yield* reuseOperations({ root: options.repositoryPath, output: options.wikiOutput, fs: options.fs, hostPolicy: options.hostPolicy })
     .load({ priorRunId: refreshed.wikiRunId, reviewer: options.reviewer })
   const result: WikiRefreshResult = {
-    commitId: base.commitId, wikiRunId: refreshed.wikiRunId, artifactDigest: snapshot.artifactDigest, receipt: refreshed.receipt, pool,
+    commitId: base.commitId, wikiRunId: refreshed.wikiRunId, artifactDigest: snapshot.artifactDigest, receipt: refreshed.receipt,
+    reviews: reviewCounts(snapshot.pages), pool,
     pages: snapshot.pages.map(page => ({ id: page.id, title: page.title, kind: page.kind, body: cloudWikiBody(page.body, titles),
       inputDigest: page.inputDigest, contentDigest: page.contentDigest, reviewDigest: page.verification.reviewDigest,
       sources: page.sources.map(({ path, digest }) => ({ path, digest })) }))

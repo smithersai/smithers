@@ -30,8 +30,8 @@ The host reads `<root>/.smithers/coding-project.json` by default for
 this host-side lookup, so the backend does not pass a project path. With the
 provisioned landing binding and reserved `SMITHERS_JJHUB_TOKEN` and
 `SMITHERS_JJHUB_API_URL`, the same launch also registers `coding/vibe`.
-It always registers `coding/verify`, which the mythical stack runs on rebased
-candidates, and `coding/wiki` when the project enables its wiki: the stack
+With a project it also registers `coding/verify`, which the mythical stack runs
+on rebased candidates, and `coding/wiki` when the project enables its wiki: the stack
 runs it after every fold to refresh and review the declared pages.
 See [project-config.md](project-config.md) for missing and invalid file behavior.
 
@@ -97,12 +97,13 @@ register. Planning, prototype and wiki review receive their configured
 `planningModel`, `pocModel` and `wikiModel`, each falling back to the explicit
 implementation model, through the existing seat resolver. All these model roles
 use the evidence-only authority recipe. When Wiki is enabled, its required `reviewer` policy,
-selected wiki model and gateway identity participate in review reuse identity.
-The same identity includes the running host's policy fingerprint. A deployed
-bundle embeds a digest of its exact compiled bytes before inserting the digest
-declaration. Source mode hashes its own module-relative reviewer, schema,
-evidence, assessor, reuse and authority inputs plus dependency pins. It does not
-read the target repository to identify the running host. Target source captures
+and selected wiki model participate in review reuse identity. The same identity
+includes the running host's review task: a digest of the wiki review policy
+sources (`policySources` in `flows/wiki/reuse.ts`). Source mode reads them
+beside its own module; the deployment bundler computes the same digest and
+embeds it in the artifact. Nothing else in the host build is covered, so a host
+deploy that leaves the review task alone keeps prior reviews reusable. It does
+not read the target repository to identify the running host. Target source captures
 still independently invalidate affected pages, and reused reviews still pass
 the current assessor. Source hosts must restart after their recipe changes.
 

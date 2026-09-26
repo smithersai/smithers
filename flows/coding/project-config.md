@@ -91,23 +91,14 @@ reviewer identity. Operator data is never accepted from model output or a
 gateway request. Startup diagnostics identify the invalid contract without
 printing the JSON contents.
 
-
-For this Smithers repository, generate the opinionated configuration from the
-repository-owned target configuration:
-
-```sh
-node factory/coding/project.ts ../smithers-wiki > /tmp/smithers-project.json
-SMITHERS_CODING_PROJECT=/tmp/smithers-project.json smithers-coding-host serve --root .
-```
-
-`factory/coding/project.ts` selects existing PACKAGE targets: codingPolicy blocks
-as the policy gate; codingRuntime, native Node/Bun, deployment bundle Node/Bun,
-run as required slow checks. Wiki is off in this generated default; calling
-`smithersProject(output, true)` includes the public page catalog and required
-semantic Wiki check. The ordinary `checks/*`
+This Smithers repository declares its own configuration in
+`.smithers/coding-project.json`: the policy and runtime checks are required
+fast gates; native Node/Bun and deployment bundle Node/Bun run as required slow
+checks; lint is advisory; and the `pages` array is the one wiki page catalog, which the Cloud
+refresh and `flows/wiki/main.ts` both read. The ordinary `checks/*`
 declarations contain only target invocations, not copied test lists. The host
 must provide `smithers-build`, the declared toolchain, native helpers and build
 cache through its existing command environment. An immutable source export does
 not borrow the editing checkout's node_modules. Cold toolchain/bootstrap cost
 may make the blocking target slow; its label is policy, not a latency receipt.
-The default config is generated without provider credentials or private Ops data.
+The configuration carries no provider credentials or private Ops data.

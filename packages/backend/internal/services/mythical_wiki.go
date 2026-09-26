@@ -86,6 +86,13 @@ type mythicalWikiResult struct {
 		Verification   string `json:"verification"`
 		Pages          int    `json:"pages"`
 	} `json:"receipt"`
+	// Reviews counts the pages the reviewer read this refresh (cold) and the
+	// pages whose earlier review was reused; absent from an older host, whose
+	// receipt then says nothing rather than zero.
+	Reviews *struct {
+		Cold   int `json:"cold"`
+		Reused int `json:"reused"`
+	} `json:"reviews"`
 	Pool  json.RawMessage `json:"pool"`
 	Pages []struct {
 		ID            string  `json:"id"`
@@ -396,8 +403,10 @@ func mythicalWikiBackoff(attempt int32) time.Duration {
 }
 
 // mythicalWikiReceipt is what the row retains of a published refresh: the
-// runs, the reviewed commits, the snapshot, and per page its review and
-// exact sources. The review evidence itself stays in the run's journal.
+// runs, the reviewed commits, the snapshot, how many pages were reviewed cold
+// or reused an earlier review, the retired source-index pages migration 0037
+// removed, and per page its review and exact sources. The review evidence
+// itself stays in the run's journal.
 func mythicalWikiReceipt(row db.MythicalWiki, result mythicalWikiResult) json.RawMessage {
 	type page struct {
 		ID            string  `json:"id"`
@@ -410,9 +419,14 @@ func mythicalWikiReceipt(row db.MythicalWiki, result mythicalWikiResult) json.Ra
 	for _, p := range result.Pages {
 		pages = append(pages, page{ID: p.ID, InputDigest: p.InputDigest, ContentDigest: p.ContentDigest, ReviewDigest: p.ReviewDigest, Sources: p.Sources})
 	}
-	encoded, _ := json.Marshal(map[string]any{"runId": row.RunID, "wikiRunId": result.WikiRunID, "commit": row.CommitID,
+	receipt := map[string]any{"runId": row.RunID, "wikiRunId": result.WikiRunID, "commit": row.CommitID,
 		"reviewedCommit": result.CommitID, "artifactDigest": result.ArtifactDigest, "sourceRevision": result.Receipt.SourceRevision,
-		"inputDigest": result.Receipt.InputDigest, "verification": result.Receipt.Verification, "pages": pages})
+		"inputDigest": result.Receipt.InputDigest, "verification": result.Receipt.Verification, "reviews": result.Reviews,
+		"legacyPagesRemoved": row.LegacyPagesRemoved, "pages": pages}
+	if result.Reviews == nil {
+		delete(receipt, "reviews")
+	}
+	encoded, _ := json.Marshal(receipt)
 	return encoded
 }
 

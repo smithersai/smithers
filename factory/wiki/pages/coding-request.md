@@ -1,33 +1,27 @@
 # From a prompt to a measured coding outcome
 
-`coding/request` is a private discovered repository flow. Its module IS the `coding/Request` flow, so the catalog lowers it without a delegate. Its input is `{ prompt, feedback?, maxRounds? }`; it uses the ordinary gateway plan, approval, run and watch operations. No new endpoint or execution store is introduced.
+`coding/request` is a private repository flow whose module is the `coding/Request` flow, so it names no delegate. Its input is `{ prompt, feedback?, maxRounds? }`. It is not a public Smithers package API: the gateway keeps its existing plan, approval, run and watch operations, with no additional endpoint, database, queue or executor.
 
-## Make each stage observable
+## Compose ordinary native children
 
-The request composes visible native children in this order: first planning, source admission, disposable POC, source admission again, then a coordinator that plans from retained feedback, admits the prepared source and runs bounded correction. Planning reads the fresh published wiki pages a stack request carries; it does not refresh the wiki.
+`coding/Request` prepares a plan with a `PrepareRequest` child, admits that plan's source with `AdmitSource`, then hands the prepared plan to a private `coding/CoordinateRequest` child. A stack request with a `base` first stands on a fresh working change before preparing.
 
-The complete `Poc` result remains in that child's durable output. Only its measured feedback is passed into second planning. This is a saved file-level source prototype marked `drafted-unvalidated`; the request does not claim that the prototype compiled, ran tests or produced an executable application preview. The production implementation starts independently of the discarded proposal.
+The coordinator receives feedback before implementation. With no new messages it admits the source again and runs the bounded `CorrectPlan` child, then receives feedback once more after correction. With no messages at either boundary it finishes with `{ plan, outcome }`.
+
+Prototypes are not part of this request. `coding/Prototype` is a separate opt-in flow that prepares and admits source, runs the disposable `Poc` child, then admits the source again; it can neither enter correction nor land.
 
 ## Fence the inspected source
 
-A prepared Plan includes its full native `observedHead` as well as its base. Those may differ when the plan amends earlier ownership. `AdmitSource` first reads and compares the native head and base. In cloud publication mode it calls `publishOriginalSource` with its durable request identity before taking the admission snapshot. The explicit local-only mode skips that publication call. It then snapshots current bytes through the injected JJ service and compares the measured source again. A changed source refuses the dependent stage instead of silently refreshing its premise. Legacy manually supplied plans without the observation cannot pass this request admission.
-
-Admission is a boundary check, not a lock covering every future instruction. Actual native mutations and checks retain their own parent, operation, commit and executable fences. The host owns exclusive editing coordination; the request does not invent a new locking protocol.
+`AdmitSource` compares the observed native head and base with the prepared plan and refuses a changed source. Legacy plans without `observedHead` cannot pass this admission. Admission is an initial check, not a lock for the whole run; later native mutations keep their own operation-level fences.
 
 ## Read the domain result
 
-The result pairs the final prepared `plan` with the correction `outcome`. Its domain status is `validated`, `changes-requested` or `blocked`. The first implementation counts toward `maxRounds`; the default is three and the admitted range is one through eight.
-
-A completed outer engine run can carry a blocked product outcome with a real failed child ID. A failed child can also be the deliberate early-feedback signal inside a continuing correction. Neither an engine status nor a queued feedback acknowledgement means validation, vibed, landing or shipment. The [coding UI](coding-ui.md) reads recorded domain outputs separately from engine lifecycle.
-
-## Keep host policy explicit
-
-Project configuration owns the public wiki catalog, reviewer policy, registered implementation/check names and model roles. A prompt cannot replace credentials, check commands, source roots or executable digests. Planning and review models receive captured evidence under enforced empty tool authority; the implementation model receives only the approved standard tool context.
-
-The request-host fixture covers the composed wiki, two planning passes, retained POC, native implementation and command checks on injected Node and Bun services. It uses scripted model choices and real platform operations. Live-provider quality and deployed behavior require their own evidence. Final history cleanup, vibing and delivery are later lifecycle work.
+The result pairs the final prepared `plan` with the correction `outcome`, whose status is `validated`, `changes-requested` or `blocked`. `maxRounds` defaults to three and admits one through eight; the first implementation counts as a pass. A `blocked` outcome carries the actual failed execution ID and does not assert validation, even when the surrounding engine run completed.
 
 ## Apply feedback at safe boundaries
 
-Root request messages are received after the POC, before implementation, and after correction. New feedback before implementation causes another prepared plan before any mutation. Feedback arriving during implementation waits for correction to settle, then gathers fresh source and wiki evidence. The POC runs once. The private coordinator uses an ordinary durable trampoline, with at most eight post-POC planning passes and no silently truncated feedback.
+A message delivered before implementation causes another planning pass before any mutation. A message delivered during implementation waits for correction to settle, then triggers a new plan against freshly gathered source. The coordinator never edits an executing plan or interrupts a writer.
 
-An empty final after-correction receipt closes that coordinator for new feedback. Admission checks the existing receipt in its Control transaction: a message admitted first reaches the drain, while a message arriving after closure is refused. An exact retry of an accepted message retains its original receipt. This is a safe boundary protocol, not preemption of a writer or an automatic human pause.
+The coordinator cursor is ordinary durable Flow payload driven by the existing trampoline. There are at most eight planning passes; reaching that limit is a typed refusal naming the retained message IDs. Merged feedback keeps the exact message IDs, text and provenance, and nothing is silently truncated.
+
+The empty final after-correction receipt closes the coordinator for new feedback. A message that wins that race is drained and replanned; a later message is refused, and the caller can start another request.

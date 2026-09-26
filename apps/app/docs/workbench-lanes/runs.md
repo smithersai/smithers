@@ -58,6 +58,8 @@ Selecting a turn opens that turn's recursive call tree and recorded detail in
 the same card. The selected span controls source, input, output, failure, usage
 and timing. Breadcrumbs navigate the recorded ancestors. **Timeline** exposes
 the existing full tree and waterfall when wider execution context is useful.
+**Graph** draws the run as flow nodes with their recorded status, falling back
+to the plan's nodes; its button appears only when the card has either.
 The card stays embedded until the human explicitly maximizes it; both
 presentations retain the composer and the same card identity.
 
@@ -88,7 +90,7 @@ full journal for explicit inspection.
 These are application flows, available through button, slash and agent doors:
 
 ```text
-/runs.trace.view <runId> <turns|timeline>  # new
+/runs.trace.view <runId> <turns|timeline|graph>  # new
 /runs.trace.live <runId>                 # new
 /runs.trace.filter <runId> <filter>      # existing; now agent-invocable
 /runs.trace.select <runId> <nodeId> [seq] # existing; now pins by default
@@ -103,7 +105,7 @@ it, and serializing `undefined` would lose that intent.
 The shared private RPC card schema adds one optional field:
 
 ```ts
-traceView?: "turns" | "timeline" // absence means turns
+traceView?: "turns" | "timeline" | "graph" // absence means turns
 ```
 
 The existing `selection`, `cursorSeq`, `liveTail`, `filter` and `events` fields

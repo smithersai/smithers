@@ -1,25 +1,29 @@
 # Dependency-bound build targets
 
-`PACKAGE.ts` declares repository targets using `@smthrs/targets`; `.smithers/WORKSPACE.ts` declares shared toolchain and host configuration. A target's input files and dependency edges participate in its key. A documentation generator needs those code dependencies just as a compiler does.
+`.smithers/WORKSPACE.ts` declares the toolchain once, and each `PACKAGE.ts` declares that package's targets. Both import one namespace from `@smthrs/targets`.
 
-## Declare exact wiki inputs
+## Declarations are data
 
-The catalog's page helper accepts an owning Markdown path and source inputs. Its `sourceFiles` definition unions those paths across the configured pages. `flows/wiki/PACKAGE.ts` imports that list and turns it into explicit repository-root file inputs, alongside the generator's own dependencies.
+Every target constructor is pure. It validates its attributes, records the inputs and dependencies it names, and returns a declaration; `@smthrs/build-cli` runs it.
 
-This matters across package boundaries. File globs are package scoped. A named `Filegroup` is the reusable way to carry another package's set of files into a consumer; explicit file inputs are appropriate for this small curated recipe.
+- Declared inputs such as `Smithers.file` and `Smithers.glob` name what a target reads. Their content digests are the target's key.
+- A target that exits zero without producing a declared output fails.
+- `Smithers.Secret` names an environment variable, never a value.
 
-## Distinguish generation and verification
+Tool-running rules ask the workspace declaration for their interpreter and package manager, so switching either is one edit to `WORKSPACE.ts`.
 
-The wiki's preview build performs deterministic source capture and rendering. It carries an unreviewed status. The verified run calls a model-backed semantic reviewer for every section of every page and refuses verified success if any section remains unsupported or uncertain.
+## Crossing package boundaries
 
-A source digest proves which bytes were read. It cannot prove that prose accurately explains those bytes. The review gate is therefore a separate operation with its own source-bound receipt, and the writer rechecks inputs after the review.
+Globs are package scoped: expansion never descends into a subdirectory holding a `PACKAGE.ts` file. A `Filegroup` names a set of files under one label; its `cwd` defaults to the declaring package, and an explicit value is workspace relative. A group in another target's attributes is a dependency edge, so editing any member invalidates every consumer. A `//`-anchored `file()` reference may also name a file in another package directly.
 
-## Understand the portability boundary
+## The wiki's targets
 
-The workspace currently declares a Node toolchain for repository targets and separately declares Bun. Selecting Node for the build command is a repository policy; it is not a reason for a reusable flow to import Node filesystem or SQL APIs. The generation actions depend on Effect services, and the executable selects the Node or Bun runtime composition.
+`flows/wiki/PACKAGE.ts` declares three targets over `flows/wiki/main.ts`, with exact `//` file inputs rather than cross-package globs:
 
-## Give coding checks real graph inputs
+| Target | Runs |
+| --- | --- |
+| `preview` | `main.ts`, writing `.flows/wiki` |
+| `verify` | `main.ts --verified` |
+| `freshness` | `main.ts --check`, after `preview` |
 
-The private coding gate recipe declares source-only Filegroups with each owning package directory. The CLI honors explicit Filegroup cwd consistently in planning, target indexing and affected-file matching; the default remains the declaring package. Package-scoped glob and escape checks remain in force. The coding inventory also depends on the workspace membership manifest and package export maps, so another package's source change cannot hide behind a stale partial glob.
-
-Fast policy targets, slower runtime/native targets and bundle acceptance are distinct existing targets. Native launchers refuse missing Plue/JJ helpers before opt-in fixtures could skip; they invoke the selected Node or Bun runtime and run fixtures sequentially. A per-fixture timeout is not the enclosing target's total timeout. See the owning coding testing guide for exact labels and limits; declaring those targets is not a receipt that they passed.
+Every page's document and inputs, the catalog itself and the wiki recipe files are the targets' `data`, so editing any of them invalidates the wiki. The page catalog is the `pages` array of `.smithers/coding-project.json`.

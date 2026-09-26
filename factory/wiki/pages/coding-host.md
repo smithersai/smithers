@@ -1,35 +1,27 @@
-# The configured native coding host
+# Configured coding host
 
-The coding host is a private repository recipe over the existing native Control factory, executable catalog, flow runtime, AgentAction, QuickJS, and Plue JJ adapter. Its deployment configuration selects existing services; there is no separate CodingService, ledger, queue or gateway extension. See [native control](native-control.md) for the shared authority and observation boundary.
+`host.ts` is this repository's private deployment recipe. It composes the existing native Control host, executable catalog, `AgentAction`, QuickJS sandbox, packaged JJ helper and immutable command checks; it is not a public coding service, database or second executor.
 
-## Select one portable host
+## One composition on Node and Bun
 
-`flows/coding/host.ts` receives a platform and trusted operator options. Node and Bun adapters provide their own SQL, filesystem, subprocess, crypto, HTTP and model transport implementations. The same recipe and durable engine execute on both runtimes; Bun does not launch a Node sidecar. Node's rebuildable Undici transport and Bun's existing fetch transport retain their platform-specific behavior.
+The same Effect composition runs on Node and Bun, with concrete adapters for filesystem, subprocess containment, crypto, SQLite, model transport and HTTP. No Node sidecar is required on Bun.
 
-The existing `Serve` protocol remains the network boundary. A configured host advertises `coding-plan/v1` only after the expected executable delegates and provisioned native repository binding are available; native conflicts refuse startup. An ordinary CLI does not advertise that capability. Enabling the explicit project planning configuration also installs `coding/request` and advertises `coding-request/v1`.
+## Operator configuration
 
-## Keep operator choices outside the prompt
+The host reads `<root>/.smithers/coding-project.json` by default, and `SMITHERS_CODING_PROJECT` overrides that path. It registers `coding/verify`, and registers `coding/wiki` when the project enables its wiki. The `coding/implement` role maps to a seat alias or an explicit `provider:model`; the deployment entry requires `SMITHERS_CODING_IMPLEMENT_MODEL` and `SMITHERS_GATEWAY_ID`. Startup requires a credential or an explicitly supplied approval authority even on loopback.
 
-The separate executable is `smithers-coding-host`. `SMITHERS_CODING_PROJECT` names one bounded JSON configuration file; the loader does not discover a file from repository contents or accept one from a model. It names public wiki inputs, output, reviewer policy, and registered implementation/check flows. The verified catalog supplies the executable digests. The wiki destination must be outside the canonical source workspace. Before publication, its path is resolved and checked again so an ancestor changed during review cannot redirect output into source. An absent option retains the manual plan route; an invalid explicit file refuses startup.
+Host databases live outside the `--root` working copy, by default in `<parent of root>/.smithers-coding-state/<basename of root>`. A state directory inside `--root` is refused at startup unless `SMITHERS_CODING_STATE_IN_ROOT=1` opts back in.
 
-`SMITHERS_CODING_IMPLEMENT_MODEL` explicitly selects a `provider:model`. Optional PLAN, POC and WIKI model variables map the existing logical seats and otherwise use that explicitly selected implementation model. Existing workspace/user provider setup supplies authentication. The owning gateway ID and API key remain deployment credentials, never plan fields. A configured host requires a credential or explicit operator approval authority even on loopback. Restart the host to adopt a changed configuration or pinned catalog.
+## Authority stays with the approved root
 
-## Preserve existing authority
+Every native handler traverses recorded parent edges to its one active, approved Control root and receives that root's approved capability envelope. Planning, prototype and wiki review models use the evidence-only authority recipe. The configured wiki output must resolve outside the canonical source workspace.
 
-Every native module handler is bound to its recorded active approved root. Model tools use the existing guarded filesystem, contained spawner, capability envelope and shared budget. Evidence-only planning, prototype and review actions have an empty tool catalog and capability ceiling. A prompt saying “do not edit” is not the enforcement mechanism.
+## Review policy identity
 
-Deterministic wiki publication, source capture and scratch cleanup retain the existing trusted host filesystem as a service value. That value is not installed over the model tools. Immutable check processes still use the contained, permission-checked spawner. Compensable file tools use immutable native preimages and final-target eligibility; arbitrary shell commands remain irreversible.
+When Wiki is enabled, the reviewer policy, selected wiki model and gateway identity participate in review reuse identity. The host's own contribution is a digest of exactly the wiki review policy sources: the deployment bundler injects it, and source mode reads those files beside the module. Nothing else in the host build is covered, so a host deploy that leaves the review task alone keeps prior reviews reusable.
 
-## Bind the running reviewer to approval
+Only `coding/WikiCheck` descriptors receive a derived policy identity; source-authored policy metadata cannot override the host.
 
-The private host hashes its actual source reviewer recipe or compiled artifact bytes before the digest declaration is inserted. Reviewer identity includes that host policy, the operator's policy label, selected model and gateway. A target repository does not need to carry the Smithers reviewer implementation.
+## Deployment artifact
 
-Only declarations that delegate to `coding/WikiCheck` receive a derived policy identity covering the configured pages and reviewer. A model-written frontmatter value cannot override it. The same Registry layer supplies planning, approval, native module authority and executable loading. Its derived execution digest must match before the original registry verifies the exact original body bytes. Changing host policy invalidates old approval and review reuse; ordinary descriptors keep their identity.
-
-`factory/coding/project.ts` is the repository-specific configuration. It names the existing PACKAGE fast and slow test targets and a required semantic wiki check. Ordinary check declarations call those existing build targets instead of copying their test inventories. The operator supplies the installed build toolchain and explicit environment.
-
-## Inspect the packaged boundary
-
-The private build entry emits one executable ESM artifact using the existing esbuild dependency. Node's shebang is the default; invoking the same artifact with Bun selects the Bun composition. QuickJS is bundled, SQLite is the runtime builtin, and existing process containment helpers retain their embedded source. Plue separately provisions JJ, Python and the native adapter/exporter. General CLI commands keep their existing executable.
-
-The bundle harness builds and launches a selected acceptance fixture under the chosen runtime. Those test definitions describe the exercised contracts; their existence does not certify a deployment or the quality of live model decisions. Consult the [request lifecycle](coding-request.md) and [checks](coding-checks.md) for domain behavior.
+`flows/coding/build.mjs` emits one executable ESM file. The Node shebang selects the default runtime, and running it with Bun uses the Bun adapters. It is installed as `/usr/local/bin/smithers-coding-host`, and `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` must name the packaged JJ helper by absolute path. The host catalog is pinned for its process lifetime, so a changed executable definition requires a restart.

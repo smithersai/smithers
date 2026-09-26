@@ -70,6 +70,7 @@ var migrationRegistry = []migrationSpec{
 	{34, "migrations/0034_billing_subscription_payment_reversed.sql"},
 	{35, "migrations/0035_landing_github_merges.sql"},
 	{36, "migrations/0036_mythical_wikis.sql"},
+	{37, "migrations/0037_retire_source_index_wiki_pages.sql"},
 }
 
 type migration struct {

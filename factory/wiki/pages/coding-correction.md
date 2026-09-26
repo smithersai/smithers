@@ -1,21 +1,29 @@
 # Repair the earliest owning Change
 
-The private `CorrectPlan` flow composes the existing native coding, agent, check and runtime services. Its configured host supplies these layers.
+`CorrectPlan` is an opt-in repository recipe in `correction.ts`. It does not change `coding/ImplementPlan`, register a gateway capability or create a coding ledger; a host composes it with the existing coding, agent, native JJ, executable catalog and check layers.
 
 ## Bound the correction loop
 
-`maxRounds` is one through eight and counts the initial implementation pass. A validated result stops the loop. Exhausting the bound with unresolved findings returns `changes-requested`. Execution failures return a typed `blocked` outcome with the failed child execution ID and any previous result. Cancellation stays cancellation. The parent completing its procedure does not mean its domain outcome is validated.
+`maxRounds` counts validation passes, including the first implementation pass, and must be one through eight. A validated result stops immediately. At the bound, unresolved findings return `changes-requested`. Each round uses the existing durable trampoline and each pass is a recorded child execution.
 
-The first pass uses `ObservePlan`. Its native deferred results retain finished implementations and actionable check evidence. When the implementation branch has finished and a valid finding exists, early feedback can end observation before unrelated slow checks finish. Correction requests cancellation and requires bounded terminal acknowledgement before continuing; a cancellation request alone is insufficient. A failed implementation or required fast gate ends its pass directly.
+Every unvalidated pass before the last feeds `@smthrs/flow`'s `Stall` with each atom's JJ tree id, the failing check receipts and the findings the next repair would receive. The default policy `{ rounds: 2, on: "park" }` ends correction when two passes in a row show the same signal: `park` returns `blocked`, `stop` returns `changes-requested`, and `escalate` fails with `stalled`.
 
-## Preserve native ownership
+## Stop early on actionable feedback
 
-Repair selects an atom belonging to the earliest Change with findings. The configured host wraps the selection agent in `evidenceOnly`; standalone compositions must supply their own authority. The implementation delegate edits the selected native JJ atom. It does not allocate a replacement identity for that atom.
+The first pass uses `ObservePlan`. Each fast-gated implementation and validated slow-check receipt is recorded in the native `DurableDeferred` store. Once every planned implementation exists and feedback is actionable, a typed `EarlyFeedback` outcome stops the pass before unrelated slow checks finish. An implementation or fast-gate failure ends the pass directly.
 
-Before and after mutation, the recipe reads the known native IDs and checks their commit, tree and parent identities. It rejects an altered prefix, conflicts, missing ownership or a broken linear chain. It restores the known tip using a prepared native request and refuses an intervening operation instead of silently refreshing that fence. Its host must coordinate exclusive editing.
+Before continuing, correction requests cancellation and requires terminal states for the pass and its descendants; a cancellation request alone is insufficient. Without acknowledgement within 300 observations 100 ms apart, it returns blocked evidence.
 
-## Recheck changed evidence
+## Repair the owner in place
 
-An exactly unchanged implementation can retain matching individual receipts. Rewritten source receives fresh revision references and new checks. A missing check is still required even if another check for the same Change passed. Fast checks gate the next Change; slow checks can overlap subsequent work. Final assessment validates every required receipt, its exact input digest and finding ownership.
+Correction chooses the earliest owning Change among completed receipts. An `AgentAction` selects one existing atom in that Change; the configured host wraps it with `evidenceOnly`, and standalone compositions must supply equivalent authority. A deterministic action rejects an unknown or foreign atom. The implementation delegate edits that atom in place, preserving its JJ change ID.
 
-The native fixture contains assertions for bounded correction, unchanged-prefix receipt reuse, rewritten checks, a refused foreign atom, cancelled checker cleanup and cold-host replay. These are executable test definitions, not evidence that a particular test run or deployment passed. The configured request flow composes planning and disposable POC feedback with correction.
+Before and after editing, the recipe re-reads the base and every known atom, refuses changed code, missing IDs or conflicts, and requires one linear native parent chain. It restores the known tip with a prepared native request and refuses an intervening operation instead of refreshing its fence.
+
+## Recheck rewritten source
+
+Only an exactly unchanged implementation keeps its old receipts; rewritten source gets fresh revision references and is measured again. Missing checks run even when other checks for that Change passed. Final assessment requires every configured receipt and validates source commits and finding ownership.
+
+## Read the outcome
+
+`CorrectionResult.status` is `validated`, `changes-requested` or `blocked`. An execution failure returns `blocked` with the failed pass's native execution ID. The parent flow completes with that outcome while the failed child keeps its failed status, so a completed run alone does not mean the code is validated. Cancellation remains cancellation.

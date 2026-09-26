@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// MythicalWiki is one repository's wiki refresh state (migration 0036).
+// MythicalWiki is one repository's wiki refresh state (migrations 0036, 0037).
 type MythicalWiki struct {
 	RepositoryID    int64              `json:"repository_id"`
 	Version         int64              `json:"version"`
@@ -31,17 +31,21 @@ type MythicalWiki struct {
 	Pool            json.RawMessage    `json:"pool"`
 	Error           string             `json:"error"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	// LegacyPagesRemoved counts the retired per-folder source-index pages
+	// migration 0037 deleted from this repository's wiki. Written only there.
+	LegacyPagesRemoved int32 `json:"legacy_pages_removed"`
 }
 
 const mythicalWikiColumns = `repository_id, version, generation, state, requested, commit_id, base_commit, workspace_id, run_id, outcome,
-result, attempt, started_at, next_attempt_at, published_commit, published_base, published_at, receipt, pages, pool, error, updated_at`
+result, attempt, started_at, next_attempt_at, published_commit, published_base, published_at, receipt, pages, pool, error, updated_at,
+legacy_pages_removed`
 
 func scanMythicalWiki(row interface{ Scan(...any) error }) (MythicalWiki, error) {
 	var w MythicalWiki
 	var result, receipt, pages, pool []byte
 	err := row.Scan(&w.RepositoryID, &w.Version, &w.Generation, &w.State, &w.Requested, &w.CommitID, &w.BaseCommit, &w.WorkspaceID,
 		&w.RunID, &w.Outcome, &result, &w.Attempt, &w.StartedAt, &w.NextAttemptAt, &w.PublishedCommit, &w.PublishedBase,
-		&w.PublishedAt, &receipt, &pages, &pool, &w.Error, &w.UpdatedAt)
+		&w.PublishedAt, &receipt, &pages, &pool, &w.Error, &w.UpdatedAt, &w.LegacyPagesRemoved)
 	w.Result, w.Receipt, w.Pages, w.Pool = rawJSON(result), rawJSON(receipt), rawJSON(pages), rawJSON(pool)
 	return w, err
 }

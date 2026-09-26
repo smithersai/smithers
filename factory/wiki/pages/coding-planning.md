@@ -1,27 +1,25 @@
-# Planning from current repository memory
+# Planning from current repository evidence
 
-Planning is a private composition of existing flows, actions, AgentAction and HumanTask. `PreparePlan` returns the existing coding Plan. It reads the repository wiki as optional context: a stack request carries the published pages, and only pages whose inputs still hash to the current source are used.
+`PreparePlan` is a private repository recipe composed from ordinary `Flow`, `Action`, `AgentAction` and `HumanTask`. It returns the existing coding `Plan`; it does not execute that plan or create another storage service. Its observations, model results, question, answer and final plan persist in the existing flow journal and database.
 
-## Refresh documentation after every fold
+## Gather evidence
 
-The stack service runs `coding/wiki` after every fold, which records a `coding/RefreshWiki` child. A bounded lookup of completed compatible refreshes supplies an earlier wiki-run hint; it is not itself a review receipt. The existing incremental workflow reuses a page only when its source, prose, section boundaries, reviewer and policy match and current citation validation succeeds. Changed pages receive a model review. A lookup miss runs ordinary generation. The bounded lookup can miss an old refresh after enough unrelated native work; that causes a fresh review. The configured host supplies its actual deployed or source reviewer-policy identity, so target repositories need not vendor the Smithers reviewer implementation.
+`GatherContext` snapshots current bytes through the configured native `Jj` service, reads a bounded linear native history, and reads request paths and existing repository documents within source byte and path bounds. Generated Wiki memory is empty by default.
 
-Unsupported or uncertain prose fails the refresh, which stays visible and retried, and retains the wiki's needs-changes artifact; planning proceeds without unverified pages. Publication hashes establish captured identity, not semantic truth. Human intent remains labeled separately from current implementation. Only the configured public engineering catalog is read; private Smithers-Ops is outside the recipe's inputs.
+A stack request carries the stack's published wiki pages; gather keeps only pages whose inputs still hash to the current source. With the operator's `wiki: true`, the Wiki verifier checks the host's snapshot for freshness, publication integrity and recorded semantic review. A missing or stale wiki never refuses gather; planning proceeds without it. Selected pages keep explicit `current` or `intent` labels.
 
-## Capture enough evidence to make a plan
+`PlanningContext` is durable action input/output, not a database table. It holds the native head and history, selected memory, bounded source text with digests, paths that were missing, verified implementation/check definitions and a canonical `memoryRevision`.
 
-`GatherContext` snapshots current working bytes through the native JJ service, reads a bounded linear native history and verifies the wiki publication. The existing keyword scorer selects complete current and intent pages within a memory byte budget. `PlanningContext` records the native head/history, selected pages and digests, verified implementation/check definitions and a canonical memory identity. It is ordinary durable output, not another table.
+## Clarify or decline
 
-`ReviewRequest` either proceeds or emits a bundled material clarification. The existing HumanTask call asks the material question and passes its answer into planning. `DraftPlan` chooses existing native atoms or predicted new atoms, grouping them into Changes and predicting file reads/writes. Existing atomic IDs come from JJ; a new atom uses null until JJ creates it.
+`ReviewRequest` explains material constraints and either proceeds or emits one bundled clarification. A nonempty question calls the existing durable `HumanTask`, and a restarted host can answer that same token. When the request is not actionable, the review's `decline` fails the plan with `CodingError{code:"declined"}` and nothing is drafted.
 
-## Verify after the model or human wait
+## Draft and finalize
 
-`VerifyContext` observes current bytes again, checks native identities and ancestry, and rechecks wiki freshness. `FinalizePlan` binds the proposal to measured executable digests, memory revision, base and observed head. Unknown checks, omitted or reordered existing descendants, duplicate ownership and escaping paths are refused. Every configured required check is retained on every Change, even when the model selected another check in that tier. Optional available checks remain model choices. Each Change still needs a required fast and required slow check; delivery checks keep their later tier.
+`DraftPlan` chooses native atoms, predicts reads and writes, and selects implementation/check names only from measured host catalog entries. An existing atom uses its full JJ change ID; a new atom uses `null` until JJ creates it.
 
-The current planner supports append or a complete visible suffix amendment. It does not insert new atoms among retained descendants or reorder history. The model is taught small emoji conventional commits. Request source admission separately fences dependent stages after planning.
+`VerifyContext` captures current bytes again after any human wait and model draft, verifies every gathered native identity, and refuses a result whose code changed while planning. `FinalizePlan` binds the choices to the verified executable digests, memory identity, native base and `observedHead`. Every operator-required check is included on every Change, and each Change needs a required fast and a required slow check. Omitted or reordered descendants, duplicate ownership, unknown checks and escaping paths are refused.
 
-## Enforce planning authority
+## Enforce evidence-only authority
 
-The host maps the `coding/plan` seat through the existing resolver. Its evidence-only wrapper runs after native authority restoration and supplies an empty callable catalog and capability ceiling, including for plugin declarations. Budgets, observation, model routing and existing steering remain. The existing unmoved completion option allows a planning answer without a file edit. The prompt is not the security boundary.
-
-Feedback is bounded evidence text. Receiving it does not prove a POC ran; the composed request calls its POC child before the post-POC planning pass. A model rationale is not measured success.
+The configured host applies `evidenceOnly` to `coding/review-request` and `coding/draft-plan` at action execution, after native authority restoration. It supplies an empty callable catalog and capability ceiling while keeping budgets, steering and model routing. These roles also run with `unmovedCap: 0`, so a planning answer need not change workspace files. The prompt is not the security boundary.

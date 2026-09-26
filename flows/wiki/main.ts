@@ -1,11 +1,11 @@
 /** Executable boundary only: Node-compatible process APIs also run under Bun. */
 import { NodeServices } from "@effect/platform-node"
-import { Effect, Layer } from "effect"
 import { parseArgs } from "node:util"
+import { Effect, Layer, Schema } from "effect"
+import { readFile } from "node:fs/promises"
 import { isAbsolute, relative, resolve, sep } from "node:path"
-import { pages, sourceFiles } from "../../factory/wiki/catalog.ts"
 import { operations } from "./operations.ts"
-import type { Input } from "./schema.ts"
+import { type Input, PageSpec } from "./schema.ts"
 
 const { values } = parseArgs({ options: {
   check: { type: "boolean" }, root: { type: "string" }, output: { type: "string" }, verified: { type: "boolean" },
@@ -16,6 +16,11 @@ if (values.help) {
   console.log("node --experimental-strip-types flows/wiki/main.ts [--verified] [--model provider:model] [--output path] [--database .flows/engine.db] [--run id] [--reuse-run terminal-run-id]\nDefault: a clearly unreviewed preview. --verified performs real AgentAction semantic review and fails if any section lacks support. Runtime host is selected from the actual Node/Bun executable.")
 } else {
   const root = resolve(values.root ?? process.cwd()), output = resolve(root, values.output ?? ".flows/wiki")
+  // The one page catalog: the `pages` of the repository's coding project,
+  // the same declaration the Cloud refresh (coding/wiki) publishes.
+  const project = JSON.parse(await readFile(resolve(root, ".smithers/coding-project.json"), "utf8")) as { pages?: unknown }
+  const pages = Schema.decodeUnknownSync(Schema.Array(PageSpec).check(Schema.isMinLength(1), Schema.isMaxLength(30)))(project.pages)
+  const sourceFiles = [...new Set(pages.flatMap((page) => [page.document, ...page.inputs]))]
   if (values.check) {
     console.log(JSON.stringify(await Effect.runPromise(operations({ root, output }).check(pages, values.verified).pipe(Effect.provide(NodeServices.layer))), null, 2))
   } else {

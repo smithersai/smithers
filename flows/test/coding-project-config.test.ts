@@ -40,7 +40,8 @@ test("repository coding project decodes with registered flows, real source paths
     await access(resolve(root, entry))
     await access(resolve(root, check.target))
   }
-  assert.ok(project.pages.length >= 3 && project.pages.length <= 6)
+  // One catalog: every page this repository publishes is declared here.
+  assert.ok(project.pages.length >= 3 && project.pages.length <= 30)
   for (const page of project.pages) {
     assert.ok(page.inputs.length > 0, `Page needs source evidence: ${page.id}`)
     for (const input of [page.document, ...page.inputs]) {

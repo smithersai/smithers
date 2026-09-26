@@ -31,7 +31,8 @@ only that first JSON declaration line, so appended input cannot replace it.
 
 ## Export immutable source
 
-The action asks Plue's `smithers-jj-export` to materialize the full commit ID in
+The action asks the host environment's `smithers-jj-export` helper (by default
+`/usr/local/bin/smithers-jj-export`) to materialize the full commit ID in
 a new temporary directory. It verifies the returned commit, tree and JJ change
 IDs before running the command. The host must supply the intended read-only
 exporter implementation; returned identity checks alone do not establish that an

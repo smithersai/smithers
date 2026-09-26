@@ -1,31 +1,31 @@
 # Admission and native history cleanup
 
-Finalization begins with the completed request's retained evidence. The private `coding/AdmitVibe` and `coding/CleanVibeHistory` flows reuse existing native stores, authority and check gates. Their receipts distinguish permission to start cleanup from completed cleanup. Neither receipt asserts landing or shipment.
+The public `coding/vibe` descriptor's module is the `coding/Vibe` flow. It runs three private children in order: `coding/AdmitVibe`, `coding/CleanVibeHistory` and `coding/LandVibe`. This page covers the first two. Each child leaves its own receipt, and admission is not cleanup or landing.
 
 ## Read the approved request
 
-`VibeInput` contains only `requestExecutionId`. Admission requires the per-handler `coding/vibe` owner. It reads a successful native `coding/Request`, its matching descriptor bridge and one completed approved control wrapper. Missing, ambiguous, cancelled or collected ancestry refuses. Lookup walks at most 1,024 executions and bounds decoded state; it does not scan the global run catalog.
+`VibeInput` accepts only `{ requestExecutionId }`. `ReadVibeRequest` reads the completed native Request, checks its successful domain outcome, and walks at most 1,024 retained executions to one completed approved control wrapper. Lookup is bounded to 16 MiB per retained state and 32 MiB of decoded state in total; it does not scan the global catalog.
 
-The original source comes from exactly one completed POC directly owned by that Request. Its retained result must match its captured input. Later steering can move a plan's starting point, so the final plan alone cannot identify the source before the whole request. `VibeEvidence` retains that original source, request result and existing request, control, approval and POC identities.
+The finalization owner comes from the per-handler ModuleOwner service; an absent owner refuses. The host registers `coding/vibe` only when the prompt route's project configuration and a landing binding are both present.
+
+## Fix the original source
+
+The immutable source base is the source captured before the whole request. The final Plan's observed head is not sufficient proof of it, because later steering can revise earlier implementation. Admission reads the unique completed `PrepareRequest` child under the Request and retains its observed source. Legacy executions without a preparation child still require the unique Poc child with matching input and result source.
+
+Before any snapshot, admission calls the `coding/PublishVibeSource` child with the original source. Its retained cloud acknowledgment must succeed; a local-only host or missing publication capability refuses.
 
 ## Reuse current validation policy
 
-Admission checks the retained result through the existing ValidatePlan, FastGate and Assess actions. Duplicate check IDs, an unsuccessful domain outcome or a stale source refuse. A fresh native snapshot and read must still match the validated final revision. The resulting `VibeAdmission` adds a current operation fence for the first cleanup mutation.
+`VerifyVibe` reuses ValidatePlan, FastGate and Assess rather than a weaker policy. It rejects duplicate check IDs, then snapshots the native source and retains a fresh operation fence for the first mutation. `VibeEvidence` stores the existing identities, original source and RequestResult; `VibeAdmission` adds the current validated head.
 
 ## Describe the same native atoms
 
-The evidence-only ReviewHistory action uses the configured implementation role to propose a summary and descriptions for the same ordered atoms, up to 128. Each subject must follow the emoji conventional-commit form. This proposal cannot add, remove or reorder atoms or edit source.
+`CleanVibeHistory` uses an evidence-only ReviewHistory action through the `coding/implement` model role. It proposes one summary and a description for each validated atom, in order, up to 128. Every subject must be an emoji conventional commit. The model cannot insert, remove or reorder atoms or edit source.
 
-Each description rewrite records an exact operation fence and a flow-derived request identity. The existing ApplyNative action receives that recorded payload; confirmation requires the requested description and unchanged source tree. RefreshHistory reads native atoms in batches of at most 100 under one observed head and operation, preserving every atom's tree, native change ID and linear parent relationship.
+For each atom, PrepareDescription captures the exact native operation fence and request ID. ApplyNative executes that recorded payload, and a lost acknowledgment retries the identical payload. ConfirmDescription checks the requested text and the preserved source tree.
 
-## Recheck before continuing
+## Recheck before landing
 
-Cleanup invokes the actual declared fast and slow checks through RunCheck, FastGate and Assess. Even already-clean descriptions are revalidated. Failed checks refuse finalization while leaving completed native rewrites and receipts inspectable. A final source fence must still match the admission tree.
+RefreshHistory reads native atoms in batches of at most 100 under one observed head and operation, verifying every atom tree and linear parent relationship. RecheckFinalHistory runs the required fast and slow checks through RunCheck, FastGate and Assess, even when every description was already clean. Failed checks refuse finalization while keeping the completed rewrites and receipts; there is no rollback.
 
-`VibeCleanup` contains the admission, summary, refreshed result and native head. These are private Effect schemas for ordinary flow values. The subsequent source publication, complete `coding/vibe` composition, append and delivery stages remain separate responsibilities; this cleanup receipt cannot stand in for their evidence.
-
-## Inspect the recorded stage
-
-The request card's Vibe invitation requires a completed validated Request, matching plan and coherent recorded bridge ancestry. It also requires the latest unambiguous catalog for that card's repository and workspace to advertise `coding/vibe`. Without that advertised capability, the card offers to check available flows. The server still validates authority and source when invoked.
-
-The recursive card derives `CodingVibeProgress` from completed admission or cleanup child receipts with matching request identity and owned ancestry. Its compact text distinguishes admission from cleaned descriptions and revalidated checks. The Inspect button selects that exact native child in the existing debugger; a completed parent alone supplies neither stage.
+The private `VibeCleanup` receipt contains the admission, summary, refreshed Result and native head. It proves description cleanup and revalidation only. `LandVibe` then retains the cleaned source and continues through the existing landing policy.

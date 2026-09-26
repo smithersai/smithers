@@ -783,6 +783,18 @@
       {
         "kind": "file",
         "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/bunfig.toml"
+      },
+      {
+        "kind": "file",
+        "path": "package.json"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/require-toolchain.mjs"
       }
     ],
     "outputs": [],
@@ -939,11 +951,19 @@
       },
       {
         "kind": "file",
+        "path": "apps/app/bunfig.toml"
+      },
+      {
+        "kind": "file",
         "path": "package.json"
       },
       {
         "kind": "file",
         "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/require-toolchain.mjs"
       }
     ],
     "outputs": [],
@@ -1085,11 +1105,19 @@
       },
       {
         "kind": "file",
+        "path": "apps/app/bunfig.toml"
+      },
+      {
+        "kind": "file",
         "path": "package.json"
       },
       {
         "kind": "file",
         "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/require-toolchain.mjs"
       },
       {
         "kind": "file",
@@ -15111,6 +15139,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/time-travel/src/migrations/0005_operation_id.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/gateway/package.json"
       },
       {
@@ -15668,6 +15700,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/src/commands/Migrate.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/commands/Open.ts"
       },
       {
         "kind": "file",
@@ -16932,243 +16968,23 @@
     "inputs": [
       {
         "kind": "file",
-        "path": ".smithers/WORKSPACE.ts"
+        "path": "factory/wiki/pages/start-here.md"
       },
       {
         "kind": "file",
-        "path": "apps/app/AGENTS.md"
+        "path": "apps/tui/docs/automation/flows.md"
       },
       {
         "kind": "file",
-        "path": "apps/app/docs/ONBOARDING.md"
+        "path": "packages/smithers/flows/src/NodeRuntime.ts"
       },
       {
         "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
+        "path": "packages/smithers/agent/docs/concepts/agent-loop.md"
       },
       {
         "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/runs.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPlan.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPlanCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPoc.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPoc.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPocCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingVibe.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingVibeCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/ConversationCards.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/RunTrace.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/RunTraceCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/flows/entries/runs.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/runtime/FrameHistory.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/RunReference.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/controller/cloud-wiki.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/controller/runs.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/controller/workflow-pump.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/CloudWiki.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/CloudWiki.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/PACKAGE.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/browser-record.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/browser-test.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/inputs.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/record.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/scenarios.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/scripts.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/targets.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/server/sponsor.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/src/playground/agent.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/src/playground/provider.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/src/playground/store.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/test/coverage.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/test/playground.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "factory/coding/project.ts"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/catalog.ts"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/agent.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/build-graph.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/cloud-wiki.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-correction.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-direction.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-experience.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-finalization.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-host.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-planning.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-progression.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-request.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-ui.md"
+        "path": "packages/smithers/build/targets/docs/README.md"
       },
       {
         "kind": "file",
@@ -17176,15 +16992,31 @@
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/native-control.md"
+        "path": "packages/smithers/flows/flow/docs/README.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/product-ui.md"
+        "path": "packages/smithers/flows/flow/docs/concepts/flows-and-actions.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/start-here.md"
+        "path": "factory/wiki/pages/runtime.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/Runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/BunRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
       },
       {
         "kind": "file",
@@ -17192,27 +17024,135 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/journal/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/build-graph.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/docs/reference/targets/filegroup.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/agent.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/runtime.ts"
+      },
+      {
+        "kind": "file",
         "path": "factory/wiki/pages/wiki-generation.md"
       },
       {
         "kind": "file",
-        "path": "flows/PACKAGE.ts"
+        "path": "factory/wiki/README.md"
       },
       {
         "kind": "file",
-        "path": "flows/checks/wiki/flow.ts"
+        "path": "factory/wiki/pages/coding-direction.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/atoms.ts"
+        "path": "flows/coding/design.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/build.mjs"
+        "path": "factory/wiki/pages/coding-host.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/catalog.ts"
+        "path": "flows/coding/host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/prototype/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-authority.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-progression.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-checks.md"
       },
       {
         "kind": "file",
@@ -17224,15 +17164,7 @@
       },
       {
         "kind": "file",
-        "path": "flows/coding/correction.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/feedback-schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/feedback.ts"
+        "path": "factory/wiki/pages/coding-finalization.md"
       },
       {
         "kind": "file",
@@ -17240,207 +17172,47 @@
       },
       {
         "kind": "file",
-        "path": "flows/coding/flow.ts"
+        "path": "factory/wiki/pages/coding-ui.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/host.md"
+        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/host.ts"
+        "path": "factory/wiki/pages/coding-experience.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/immutable-source.ts"
+        "path": "apps/app/docs/workbench-lanes/runs.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/native.ts"
+        "path": "factory/wiki/pages/product-ui.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-authority.ts"
+        "path": "apps/app/README.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-memory.ts"
+        "path": "factory/wiki/pages/cloud-wiki.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-wiki.md"
+        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-wiki.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning.ts"
+        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
       },
       {
         "kind": "file",
-        "path": "flows/coding/poc-schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/poc-source.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/poc.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/poc.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/project-config.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/project-config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/registration.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/request.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/request.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/request/flow.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/serve.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/source-admission.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/steering.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/testing.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-admission.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-cleanup.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-evidence.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-check.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-check.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-output.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-policy.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-registry.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/workflow.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-checks.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-correction.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-host-bundle.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-host.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-native-gate.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-poc.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-request-host.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/PACKAGE.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/evidence.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/main.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/operations.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/reuse.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/runtime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/workflow.ts"
+        "path": "factory/wiki/pages/native-control.md"
       },
       {
         "kind": "file",
@@ -17448,183 +17220,7 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/agent/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/agent/registry/src/Executable.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/agent/registry/src/MarkdownFlow.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/agent/src/AgentAction.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/Affected.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/TargetIndex.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/internal/InputPackage.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/internal/PackagePlanner.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/docs/reference/filegroup.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/src/Filegroup.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/src/Shell.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/core/src/Digest.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/DurableWriter.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/bun/BunDatabase.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/internal/SqliteOpen.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/node/NodeDatabase.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/Action/Action.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/Action/make.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/DurableDeferred.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/Flow/make.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/journal/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/src/AtomicFileSystem.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/src/internal/AtomicFileSystemTransport.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/test/AtomicFileSystemRuntimeParity.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/test/fixtures/atomic-helper-identity.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/run-store/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/BunRuntime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/NodeRuntime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/Runtime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/internal/NativeRuntime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntime.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntimeContainment.integration.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntimeSignals.integration.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntimeStartup.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/fixtures/native-runtime.ts"
-      },
-      {
-        "kind": "file",
         "path": "packages/smithers/src/internal/BunControl.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/EngineJournalProjection.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/EngineJournalSupervisor.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/ModuleAuthority.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/NativeControl.ts"
       },
       {
         "kind": "file",
@@ -17632,7 +17228,139 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ENGINE-JOURNAL-PROJECTION.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/tui-docs.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/docs/reference/recordings.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/targets.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime-packages.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/docs/installation.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/app-workspace.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/LOCAL-APP.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/worker-gateway.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/docs/EFFECT.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-workspace.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/project-config.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/verify/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/health-contract.md"
+      },
+      {
+        "kind": "file",
+        "path": "docs/design/agent-flow-health.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Health.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Monitor.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/coding-project.json"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/evidence.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/operations.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/main.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/reuse.ts"
       },
       {
         "kind": "file",
@@ -17641,6 +17369,10 @@
       {
         "kind": "file",
         "path": "flows/repository/jev-checks.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/schema.ts"
       },
       {
         "kind": "file",
@@ -17667,243 +17399,23 @@
     "inputs": [
       {
         "kind": "file",
-        "path": ".smithers/WORKSPACE.ts"
+        "path": "factory/wiki/pages/start-here.md"
       },
       {
         "kind": "file",
-        "path": "apps/app/AGENTS.md"
+        "path": "apps/tui/docs/automation/flows.md"
       },
       {
         "kind": "file",
-        "path": "apps/app/docs/ONBOARDING.md"
+        "path": "packages/smithers/flows/src/NodeRuntime.ts"
       },
       {
         "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
+        "path": "packages/smithers/agent/docs/concepts/agent-loop.md"
       },
       {
         "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/runs.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPlan.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPlanCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPoc.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPoc.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPocCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingVibe.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingVibeCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/ConversationCards.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/RunTrace.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/RunTraceCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/flows/entries/runs.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/runtime/FrameHistory.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/RunReference.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/controller/cloud-wiki.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/controller/runs.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/controller/workflow-pump.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/CloudWiki.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/CloudWiki.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/PACKAGE.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/browser-record.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/browser-test.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/inputs.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/record.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/scenarios.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/scripts.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/targets.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/server/sponsor.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/src/playground/agent.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/src/playground/provider.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/src/playground/store.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/test/coverage.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/test/playground.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "factory/coding/project.ts"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/catalog.ts"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/agent.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/build-graph.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/cloud-wiki.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-correction.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-direction.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-experience.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-finalization.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-host.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-planning.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-progression.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-request.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-ui.md"
+        "path": "packages/smithers/build/targets/docs/README.md"
       },
       {
         "kind": "file",
@@ -17911,15 +17423,31 @@
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/native-control.md"
+        "path": "packages/smithers/flows/flow/docs/README.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/product-ui.md"
+        "path": "packages/smithers/flows/flow/docs/concepts/flows-and-actions.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/start-here.md"
+        "path": "factory/wiki/pages/runtime.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/Runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/BunRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
       },
       {
         "kind": "file",
@@ -17927,27 +17455,135 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/journal/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/build-graph.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/docs/reference/targets/filegroup.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/agent.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/runtime.ts"
+      },
+      {
+        "kind": "file",
         "path": "factory/wiki/pages/wiki-generation.md"
       },
       {
         "kind": "file",
-        "path": "flows/PACKAGE.ts"
+        "path": "factory/wiki/README.md"
       },
       {
         "kind": "file",
-        "path": "flows/checks/wiki/flow.ts"
+        "path": "factory/wiki/pages/coding-direction.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/atoms.ts"
+        "path": "flows/coding/design.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/build.mjs"
+        "path": "factory/wiki/pages/coding-host.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/catalog.ts"
+        "path": "flows/coding/host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/prototype/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-authority.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-progression.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-checks.md"
       },
       {
         "kind": "file",
@@ -17959,15 +17595,7 @@
       },
       {
         "kind": "file",
-        "path": "flows/coding/correction.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/feedback-schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/feedback.ts"
+        "path": "factory/wiki/pages/coding-finalization.md"
       },
       {
         "kind": "file",
@@ -17975,207 +17603,47 @@
       },
       {
         "kind": "file",
-        "path": "flows/coding/flow.ts"
+        "path": "factory/wiki/pages/coding-ui.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/host.md"
+        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/host.ts"
+        "path": "factory/wiki/pages/coding-experience.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/immutable-source.ts"
+        "path": "apps/app/docs/workbench-lanes/runs.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/native.ts"
+        "path": "factory/wiki/pages/product-ui.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-authority.ts"
+        "path": "apps/app/README.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-memory.ts"
+        "path": "factory/wiki/pages/cloud-wiki.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-wiki.md"
+        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-wiki.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning.ts"
+        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
       },
       {
         "kind": "file",
-        "path": "flows/coding/poc-schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/poc-source.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/poc.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/poc.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/project-config.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/project-config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/registration.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/request.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/request.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/request/flow.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/serve.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/source-admission.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/steering.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/testing.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-admission.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-cleanup.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-evidence.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-check.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-check.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-output.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-policy.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-registry.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/workflow.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-checks.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-correction.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-host-bundle.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-host.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-native-gate.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-poc.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-request-host.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/PACKAGE.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/evidence.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/main.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/operations.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/reuse.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/runtime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/workflow.ts"
+        "path": "factory/wiki/pages/native-control.md"
       },
       {
         "kind": "file",
@@ -18183,183 +17651,7 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/agent/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/agent/registry/src/Executable.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/agent/registry/src/MarkdownFlow.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/agent/src/AgentAction.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/Affected.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/TargetIndex.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/internal/InputPackage.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/internal/PackagePlanner.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/docs/reference/filegroup.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/src/Filegroup.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/src/Shell.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/core/src/Digest.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/DurableWriter.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/bun/BunDatabase.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/internal/SqliteOpen.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/node/NodeDatabase.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/Action/Action.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/Action/make.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/DurableDeferred.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/Flow/make.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/journal/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/src/AtomicFileSystem.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/src/internal/AtomicFileSystemTransport.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/test/AtomicFileSystemRuntimeParity.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/test/fixtures/atomic-helper-identity.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/run-store/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/BunRuntime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/NodeRuntime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/Runtime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/internal/NativeRuntime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntime.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntimeContainment.integration.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntimeSignals.integration.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntimeStartup.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/fixtures/native-runtime.ts"
-      },
-      {
-        "kind": "file",
         "path": "packages/smithers/src/internal/BunControl.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/EngineJournalProjection.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/EngineJournalSupervisor.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/ModuleAuthority.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/NativeControl.ts"
       },
       {
         "kind": "file",
@@ -18367,7 +17659,139 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ENGINE-JOURNAL-PROJECTION.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/tui-docs.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/docs/reference/recordings.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/targets.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime-packages.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/docs/installation.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/app-workspace.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/LOCAL-APP.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/worker-gateway.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/docs/EFFECT.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-workspace.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/project-config.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/verify/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/health-contract.md"
+      },
+      {
+        "kind": "file",
+        "path": "docs/design/agent-flow-health.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Health.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Monitor.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/coding-project.json"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/evidence.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/operations.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/main.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/reuse.ts"
       },
       {
         "kind": "file",
@@ -18376,6 +17800,10 @@
       {
         "kind": "file",
         "path": "flows/repository/jev-checks.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/schema.ts"
       },
       {
         "kind": "file",
@@ -18400,243 +17828,23 @@
     "inputs": [
       {
         "kind": "file",
-        "path": ".smithers/WORKSPACE.ts"
+        "path": "factory/wiki/pages/start-here.md"
       },
       {
         "kind": "file",
-        "path": "apps/app/AGENTS.md"
+        "path": "apps/tui/docs/automation/flows.md"
       },
       {
         "kind": "file",
-        "path": "apps/app/docs/ONBOARDING.md"
+        "path": "packages/smithers/flows/src/NodeRuntime.ts"
       },
       {
         "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
+        "path": "packages/smithers/agent/docs/concepts/agent-loop.md"
       },
       {
         "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/runs.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPlan.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPlanCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPoc.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPoc.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingPocCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingVibe.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/CodingVibeCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/ConversationCards.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/RunTrace.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/cards/RunTraceCard.tsx"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/flows/entries/runs.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/runtime/FrameHistory.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/RunReference.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/controller/cloud-wiki.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/controller/runs.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/state/controller/workflow-pump.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/CloudWiki.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/CloudWiki.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/PACKAGE.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/browser-record.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/browser-test.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/inputs.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/record.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/scenarios.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/scripts.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/scripts/targets.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/server/sponsor.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/src/playground/agent.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/src/playground/provider.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/src/playground/store.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/test/coverage.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/tui-docs/test/playground.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "factory/coding/project.ts"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/catalog.ts"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/agent.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/build-graph.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/cloud-wiki.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-correction.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-direction.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-experience.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-finalization.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-host.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-planning.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-progression.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-request.md"
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/pages/coding-ui.md"
+        "path": "packages/smithers/build/targets/docs/README.md"
       },
       {
         "kind": "file",
@@ -18644,15 +17852,31 @@
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/native-control.md"
+        "path": "packages/smithers/flows/flow/docs/README.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/product-ui.md"
+        "path": "packages/smithers/flows/flow/docs/concepts/flows-and-actions.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/start-here.md"
+        "path": "factory/wiki/pages/runtime.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/Runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/BunRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
       },
       {
         "kind": "file",
@@ -18660,27 +17884,135 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/journal/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/build-graph.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/docs/reference/targets/filegroup.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/agent.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/runtime.ts"
+      },
+      {
+        "kind": "file",
         "path": "factory/wiki/pages/wiki-generation.md"
       },
       {
         "kind": "file",
-        "path": "flows/PACKAGE.ts"
+        "path": "factory/wiki/README.md"
       },
       {
         "kind": "file",
-        "path": "flows/checks/wiki/flow.ts"
+        "path": "factory/wiki/pages/coding-direction.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/atoms.ts"
+        "path": "flows/coding/design.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/build.mjs"
+        "path": "factory/wiki/pages/coding-host.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/catalog.ts"
+        "path": "flows/coding/host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/prototype/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-authority.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-progression.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-checks.md"
       },
       {
         "kind": "file",
@@ -18692,15 +18024,7 @@
       },
       {
         "kind": "file",
-        "path": "flows/coding/correction.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/feedback-schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/feedback.ts"
+        "path": "factory/wiki/pages/coding-finalization.md"
       },
       {
         "kind": "file",
@@ -18708,207 +18032,47 @@
       },
       {
         "kind": "file",
-        "path": "flows/coding/flow.ts"
+        "path": "factory/wiki/pages/coding-ui.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/host.md"
+        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/host.ts"
+        "path": "factory/wiki/pages/coding-experience.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/immutable-source.ts"
+        "path": "apps/app/docs/workbench-lanes/runs.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/native.ts"
+        "path": "factory/wiki/pages/product-ui.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-authority.ts"
+        "path": "apps/app/README.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-memory.ts"
+        "path": "factory/wiki/pages/cloud-wiki.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-wiki.md"
+        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning-wiki.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
       },
       {
         "kind": "file",
-        "path": "flows/coding/planning.ts"
+        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
       },
       {
         "kind": "file",
-        "path": "flows/coding/poc-schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/poc-source.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/poc.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/poc.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/project-config.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/project-config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/registration.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/request.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/request.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/request/flow.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/serve.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/source-admission.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/steering.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/testing.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-admission.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-cleanup.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-evidence.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/vibe-schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-check.md"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-check.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-output.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-policy.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/wiki-registry.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/workflow.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-checks.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-correction.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-host-bundle.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-host.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-native-gate.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-poc.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding-request-host.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/test/coding.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/PACKAGE.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/evidence.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/main.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/operations.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/reuse.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/runtime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/schema.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/wiki/workflow.ts"
+        "path": "factory/wiki/pages/native-control.md"
       },
       {
         "kind": "file",
@@ -18916,183 +18080,7 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/agent/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/agent/registry/src/Executable.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/agent/registry/src/MarkdownFlow.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/agent/src/AgentAction.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/Affected.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/TargetIndex.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/internal/InputPackage.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/build-cli/src/internal/PackagePlanner.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/docs/reference/filegroup.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/src/Filegroup.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/build/targets/src/Shell.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/core/src/Digest.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/DurableWriter.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/bun/BunDatabase.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/internal/SqliteOpen.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/database/src/node/NodeDatabase.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/Action/Action.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/Action/make.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/DurableDeferred.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/flow/src/Flow/make.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/journal/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/src/AtomicFileSystem.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/src/internal/AtomicFileSystemTransport.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/test/AtomicFileSystemRuntimeParity.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/platform-node/test/fixtures/atomic-helper-identity.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/run-store/docs/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/BunRuntime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/NodeRuntime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/Runtime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/src/internal/NativeRuntime.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntime.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntimeContainment.integration.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntimeSignals.integration.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/NodeRuntimeStartup.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/test/fixtures/native-runtime.ts"
-      },
-      {
-        "kind": "file",
         "path": "packages/smithers/src/internal/BunControl.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/EngineJournalProjection.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/EngineJournalSupervisor.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/ModuleAuthority.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/src/internal/NativeControl.ts"
       },
       {
         "kind": "file",
@@ -19100,7 +18088,139 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ENGINE-JOURNAL-PROJECTION.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/tui-docs.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/docs/reference/recordings.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/targets.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime-packages.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/docs/installation.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/app-workspace.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/LOCAL-APP.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/worker-gateway.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/docs/EFFECT.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-workspace.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/project-config.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/verify/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/health-contract.md"
+      },
+      {
+        "kind": "file",
+        "path": "docs/design/agent-flow-health.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Health.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Monitor.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/coding-project.json"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/evidence.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/operations.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/main.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/reuse.ts"
       },
       {
         "kind": "file",
@@ -19109,6 +18229,10 @@
       {
         "kind": "file",
         "path": "flows/repository/jev-checks.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/schema.ts"
       },
       {
         "kind": "file",
@@ -19375,39 +18499,319 @@
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/runtime-packages.md"
+        "path": "factory/wiki/pages/start-here.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/app-workspace.md"
+        "path": "apps/tui/docs/automation/flows.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/worker-gateway.md"
+        "path": "packages/smithers/flows/src/NodeRuntime.ts"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/coding-workspace.md"
+        "path": "packages/smithers/agent/docs/concepts/agent-loop.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/health-contract.md"
+        "path": "packages/smithers/build/targets/docs/README.md"
       },
       {
         "kind": "file",
-        "path": "packages/smithers/README.md"
+        "path": "factory/wiki/pages/flows.md"
       },
       {
         "kind": "file",
-        "path": "packages/smithers/agent/README.md"
+        "path": "packages/smithers/flows/flow/docs/README.md"
       },
       {
         "kind": "file",
-        "path": "packages/smithers/build/README.md"
+        "path": "packages/smithers/flows/flow/docs/concepts/flows-and-actions.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/Runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/BunRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/storage.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/journal/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/build-graph.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/docs/reference/targets/filegroup.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/agent.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/wiki-generation.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-direction.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/design.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/prototype/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-authority.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-progression.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-checks.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-ui.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-experience.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/runs.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/product-ui.md"
       },
       {
         "kind": "file",
         "path": "apps/app/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/cloud-wiki.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-control.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/NATIVE-CONTROL.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/BunControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NodeControlHost.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ENGINE-JOURNAL-PROJECTION.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/tui-docs.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/docs/reference/recordings.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/targets.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime-packages.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/docs/installation.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/app-workspace.md"
       },
       {
         "kind": "file",
@@ -19423,27 +18827,43 @@
       },
       {
         "kind": "file",
+        "path": "factory/wiki/pages/worker-gateway.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/server/docs/EFFECT.md"
       },
       {
         "kind": "file",
-        "path": "apps/server/src/index.ts"
+        "path": "factory/wiki/pages/coding-workspace.md"
       },
       {
         "kind": "file",
-        "path": "apps/server/src/Environment.ts"
+        "path": "flows/coding/project-config.md"
       },
       {
         "kind": "file",
-        "path": "apps/server/src/Boundary.ts"
+        "path": "flows/coding/verify/flow.ts"
       },
       {
         "kind": "file",
-        "path": "flows/README.md"
+        "path": "flows/coding/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/health-contract.md"
       },
       {
         "kind": "file",
         "path": "docs/design/agent-flow-health.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Health.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Monitor.ts"
       },
       {
         "kind": "glob",
@@ -19613,39 +19033,319 @@
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/runtime-packages.md"
+        "path": "factory/wiki/pages/start-here.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/app-workspace.md"
+        "path": "apps/tui/docs/automation/flows.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/worker-gateway.md"
+        "path": "packages/smithers/flows/src/NodeRuntime.ts"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/coding-workspace.md"
+        "path": "packages/smithers/agent/docs/concepts/agent-loop.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/health-contract.md"
+        "path": "packages/smithers/build/targets/docs/README.md"
       },
       {
         "kind": "file",
-        "path": "packages/smithers/README.md"
+        "path": "factory/wiki/pages/flows.md"
       },
       {
         "kind": "file",
-        "path": "packages/smithers/agent/README.md"
+        "path": "packages/smithers/flows/flow/docs/README.md"
       },
       {
         "kind": "file",
-        "path": "packages/smithers/build/README.md"
+        "path": "packages/smithers/flows/flow/docs/concepts/flows-and-actions.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/Runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/BunRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/storage.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/journal/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/build-graph.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/docs/reference/targets/filegroup.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/agent.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/wiki-generation.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-direction.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/design.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/prototype/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-authority.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-progression.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-checks.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-ui.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-experience.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/runs.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/product-ui.md"
       },
       {
         "kind": "file",
         "path": "apps/app/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/cloud-wiki.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-control.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/NATIVE-CONTROL.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/BunControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NodeControlHost.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ENGINE-JOURNAL-PROJECTION.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/tui-docs.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/docs/reference/recordings.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/targets.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime-packages.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/docs/installation.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/app-workspace.md"
       },
       {
         "kind": "file",
@@ -19661,27 +19361,43 @@
       },
       {
         "kind": "file",
+        "path": "factory/wiki/pages/worker-gateway.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/server/docs/EFFECT.md"
       },
       {
         "kind": "file",
-        "path": "apps/server/src/index.ts"
+        "path": "factory/wiki/pages/coding-workspace.md"
       },
       {
         "kind": "file",
-        "path": "apps/server/src/Environment.ts"
+        "path": "flows/coding/project-config.md"
       },
       {
         "kind": "file",
-        "path": "apps/server/src/Boundary.ts"
+        "path": "flows/coding/verify/flow.ts"
       },
       {
         "kind": "file",
-        "path": "flows/README.md"
+        "path": "flows/coding/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/health-contract.md"
       },
       {
         "kind": "file",
         "path": "docs/design/agent-flow-health.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Health.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Monitor.ts"
       },
       {
         "kind": "glob",
@@ -19831,39 +19547,319 @@
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/runtime-packages.md"
+        "path": "factory/wiki/pages/start-here.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/app-workspace.md"
+        "path": "apps/tui/docs/automation/flows.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/worker-gateway.md"
+        "path": "packages/smithers/flows/src/NodeRuntime.ts"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/coding-workspace.md"
+        "path": "packages/smithers/agent/docs/concepts/agent-loop.md"
       },
       {
         "kind": "file",
-        "path": "factory/wiki/pages/health-contract.md"
+        "path": "packages/smithers/build/targets/docs/README.md"
       },
       {
         "kind": "file",
-        "path": "packages/smithers/README.md"
+        "path": "factory/wiki/pages/flows.md"
       },
       {
         "kind": "file",
-        "path": "packages/smithers/agent/README.md"
+        "path": "packages/smithers/flows/flow/docs/README.md"
       },
       {
         "kind": "file",
-        "path": "packages/smithers/build/README.md"
+        "path": "packages/smithers/flows/flow/docs/concepts/flows-and-actions.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/Runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/BunRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/storage.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/journal/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/build-graph.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/docs/reference/targets/filegroup.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/agent.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/wiki-generation.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-direction.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/design.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/prototype/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-authority.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-progression.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-checks.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-ui.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-experience.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/runs.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/product-ui.md"
       },
       {
         "kind": "file",
         "path": "apps/app/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/cloud-wiki.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-control.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/NATIVE-CONTROL.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/BunControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NodeControlHost.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ENGINE-JOURNAL-PROJECTION.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/tui-docs.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/docs/reference/recordings.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/targets.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/runtime-packages.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/docs/installation.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/app-workspace.md"
       },
       {
         "kind": "file",
@@ -19879,27 +19875,43 @@
       },
       {
         "kind": "file",
+        "path": "factory/wiki/pages/worker-gateway.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/server/docs/EFFECT.md"
       },
       {
         "kind": "file",
-        "path": "apps/server/src/index.ts"
+        "path": "factory/wiki/pages/coding-workspace.md"
       },
       {
         "kind": "file",
-        "path": "apps/server/src/Environment.ts"
+        "path": "flows/coding/project-config.md"
       },
       {
         "kind": "file",
-        "path": "apps/server/src/Boundary.ts"
+        "path": "flows/coding/verify/flow.ts"
       },
       {
         "kind": "file",
-        "path": "flows/README.md"
+        "path": "flows/coding/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/health-contract.md"
       },
       {
         "kind": "file",
         "path": "docs/design/agent-flow-health.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Health.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Monitor.ts"
       },
       {
         "kind": "glob",
@@ -20526,10 +20538,6 @@
         "kind": "glob",
         "pattern": "flows/**/*.ts",
         "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "factory/wiki/catalog.ts"
       }
     ],
     "outputs": [],

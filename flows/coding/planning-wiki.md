@@ -104,12 +104,15 @@ filesystem. A changed output ancestor cannot silently turn wiki publication into
 an edit of the coding workspace. This is an option on the private wiki recipe;
 it does not change the standalone wiki CLI's local artifact policy.
 
-The configured coding host supplies its actual running reviewer fingerprint to
-reuse policy. Such target repositories need only their own declared public page
-inputs; they do not vendor Smithers' reviewer implementation. Standalone wiki
-composition retains the older four-source policy when no host identity is
-provided. The reviewer string also retains model, gateway and operator policy,
-so a host upgrade cannot inherit a review under the old identity.
+The configured coding host supplies the identity of its review task to reuse
+policy: a digest of the review policy sources (`policySources` in
+`flows/wiki/reuse.ts`), which the bundler injects into the deployed artifact.
+Such target repositories need only their own declared public page inputs; they
+do not vendor Smithers' reviewer implementation. Standalone wiki composition
+reads those policy sources from the repository when no host identity is
+provided. The reviewer string also retains the model and operator policy, so a
+changed review task, model or policy never inherits an old review, while a host
+deploy that leaves them alone keeps every review reusable.
 
 Required `checks/wiki` entries now run semantic review as ordinary asynchronous
 backpressure after implementation and rewritten-source checks. They capture an

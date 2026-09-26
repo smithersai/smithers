@@ -1,34 +1,46 @@
 # Flows, actions and replay
 
-`@smthrs/flow` separates declarations from execution. An action is a stable name with payload, success and error schemas. A flow's pure body composes action calls into a plan. Implementations arrive separately as Effect layers.
+`@smthrs/flow` is the authoring model for durable workflows. An action is a stable name and the schemas on either side of it. A flow's body is a pure function that builds a plan. The code that does the work attaches separately, as an Effect layer. The package carries no engine; it declares the `FlowRuntime` port that an engine implements.
 
 ## Declare and implement one capability
 
 ```ts
-import { Action, Flow } from "@smthrs/flow"
-import { Effect, Schema } from "effect"
+const Summarize = Action.make("digest/Summarize", {
+  payload: { url: Schema.String },
+  success: Schema.String
+})
 
-const Describe = Action.make("example/Describe", {
-  payload: { name: Schema.String }, success: Schema.String
+const Digest = Flow.make("digest/Digest", {
+  payload: { url: Schema.String },
+  success: Schema.String,
+  body: Node.capture(
+    { action: Summarize.name, implementationVersion: "digest/v1" },
+    (payload) => Summarize.call(payload)
+  )
 })
-const Greeting = Flow.make("example/Greeting", {
-  payload: { name: Schema.String }, success: Schema.String,
-  body: (input) => Describe.call(input)
-})
-const implementation = Describe.toLayer(({ name }) =>
-  Effect.succeed(`Hello, ${name}.`))
+
+const layer = Interpreter.layerWithImplementations(
+  Digest,
+  Summarize.toLayer(({ url }) => Effect.succeed(`A summary of ${url}.`))
+)
 ```
 
-This declares work and its implementation. An executable still provides an engine, an interpreter for the flow, implementation registration and platform services. Declaring the flow does not start it.
+`Summarize.call` plans a step and runs nothing. A flow has no `toLayer`: its only behavior is its body. `Action.make` with a string tag is the declared form, pure data with no code; the inline form carries its `execute` effect directly.
 
-## Keep planning pure
+## Missing implementations fail at compile time
 
-The action call records a node; it does not perform the operation. Filesystem reads, model calls and writes belong in action implementations. The same payload must describe the same topology when the runtime evaluates the body again.
+Each declared action mints one context key from its tag. `Flow.make` reads the union of those keys off the node its body returns, and `toLayer` provides the key, so a composition missing an implementation fails to compile. At run time `Action.Implementations` is a table keyed by action tag, and `Action.layerImplementations` goes under the implementation layers.
 
-Schemas and names are persisted contracts. Changing them changes what an existing execution can decode or reuse, so review such changes with the same care as a persistence migration. Do not add an unrelated table of completed commands to obtain replay; recorded actions already provide that responsibility.
+`Action.makeSystem` erases the requirement. `Sleep`, `WaitFor` and `HumanTask` use it, so waiting pushes no layer obligation onto callers.
 
-## Read replay claims precisely
+## Tiers describe retries
 
-The engine records settled work under an execution identity. Running the flow again under that identity can replay its recorded results. The declaration package itself carries no engine: a memory fixture and a durable SQL engine implement the same runtime port.
+| Tier | Meaning |
+| --- | --- |
+| `sealed` | The default; a recorded result can be replayed. |
+| `compensable` | The engine restores a workspace pre-image before the next attempt. |
+| `irreversible` | Retrying without a declared `idempotencyKey` fails. |
 
-Use the runtime page for host composition. Use the build graph page for code-input invalidation; a flow's existence alone does not declare every file its implementation reads.
+## Replay is keyed by execution id
+
+An engine records each step as it settles, so a re-run under the same execution id reads the recorded result rather than repeating the work. `Node.capture` declares semantic values outside the callback source, including a version for imported behavior; changed source, captures or implementation versions require a newly planned run. `FlowEngine.layerMemory` is the in-memory engine; the SQLite-backed engine in `@smthrs/engine-store` makes the same behavior survive a restart.

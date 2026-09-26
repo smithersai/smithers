@@ -1,25 +1,35 @@
-# Read coding evidence in the existing run card
+# Coding evidence in the existing run card
 
-The coding UI extends the existing card, frame history, actor-tagged dispatcher and TanStack DB state. The default run presentation combines compact recorded turns with selected recursive execution detail. Coding-specific projections decode the private recipe's actual schemas instead of copying a Plan or result contract into another store.
+Coding requests reuse the existing run card. Predicted work, recorded outcomes, the retained prototype and Vibe progress are separate projections of recorded native evidence. The owning guide is `apps/app/docs/workbench-lanes/coding-plans.md`.
 
 ## Show predictions as predictions
 
-A compact ordered Change list exposes planned atomic messages, existing native JJ IDs, intent, predicted reads/writes and fast/slow/delivery checks. Planned null IDs remain unassigned. Selection is persisted through `runs.coding.select`; selecting the current Change again collapses it. Slash commands, buttons and agent calls use the same flow and schema-derived form path.
+The card shows a compact ordered list of predicted Changes before execution. Selecting a Change reveals its atomic commit messages, known native JJ change IDs, intent, predicted reads and writes, and planned fast, slow and delivery checks. These are predictions, not execution or passing-check claims. Planned null atomic IDs remain unassigned.
 
-Manual runs retain their input Plan. Prompt requests derive the latest Plan from a successfully completed owned PreparePlan or PrepareWithWiki child, or from a completed owned Request result. Native ancestry, generation and the selected historical cursor fence that projection. An earlier historical selection cannot show a later prepared plan; ambiguous or malformed evidence creates no substitute plan.
+`/runs.coding.select RUN_ID CHANGE_ID` selects a Change through the same actor-tagged dispatcher for slash, button and agent doors. Selecting the current Change again collapses it. The selection persists as `run-trace.payload.codingChangeId`.
 
-## Separate product outcomes from execution status
+Manual runs retain their recorded `input.plan`. Prompt requests derive the latest `Plan` from a completed `coding/PreparePlan` or `coding/PrepareWithWiki` child. The renderer imports the recipe's actual `Plan` schema; there is no separate plan table. Missing, malformed, foreign or ambiguous evidence supplies no plan, and scrubbing backward cannot expose a later plan.
 
-The recorded CorrectPlan output or enclosing Request outcome supplies validated, changes-requested or blocked. Engine completion alone cannot supply those states. A blocked child links through recorded native trace evidence while retaining the source card's workspace binding. The UI shows raw receipts and results in recursive detail; it does not manufacture a passing check from a successful procedure that returned a failure value.
+## Structured flow input
 
-Gateway and workspace identity qualify persisted run references. Separate workspace databases may both contain the same run ID, so navigation and commands must retain the originating card's binding. Native child execution IDs are inspected inside their owning trace, not sent as unrelated Control run IDs.
+`flow.run` accepts an optional JSON object after its existing arguments, for example `/flow.run coding will/repo {"plan":{...}}`. Arrays, scalar inputs, malformed JSON and text after the object are refused. A malformed object stays on the form with its parse error. The registered descriptor is `coding`; the internal tag `coding/ImplementPlan` is not the name to pass.
+
+## Separate outcomes from execution status
+
+The actual `coding/CorrectPlan` output, or its enclosing `coding/Request` result, supplies validated, changes requested or blocked. An engine-completed parent alone is not validation. Recorded blocked child IDs link through the recursive trace and keep their source card's workspace binding.
+
+While correction is active, an owned `coding/ObservePlan` or `coding/RepairPass` failure can supply a short review excerpt. **Inspect review feedback** selects that execution through `runs.trace.select`. It does not claim that repair started or validation passed.
 
 ## Retain the prototype for inspection
 
-A completed owned Poc child supplies the saved prototype only when its result names the exact input source. The card displays the drafted-unvalidated finding and expandable full before/after source as escaped text. It does not execute retained HTML. The existing steer form can submit feedback; queue acknowledgement alone does not establish replanning or revision acceptance.
+A completed owned `coding/Poc` child supplies the disposable prototype only when its result names the exact source in its recorded input. The card shows a short finding and complete before/after source as escaped text, never executing retained HTML. The `runs.steer` form submits feedback; a queued receipt does not prove a revised plan.
 
-Keyboard-accessible source panels and historical cursor selection use the existing card projection. The current shell keeps chat history in the main view and summons only the bottom composer with Command-K or Control-K.
+## Vibe invitation and progress
 
-## Keep proof provenance visible
+**Vibe this change** appears only when the current `coding/Request` result validates, its plan matches, its recorded ancestry is coherent, and the source gateway's recorded catalog includes `coding/vibe`. Without that catalog, **Check available flows** runs `flow.list`. Both `flow.list` and `flow.run` accept an optional `sourceCard` that keeps the originating workspace.
 
-The projection tests define regressions for schema, source identity, ancestry, cursor and generation boundaries. Their fixtures are evidence of the cases the tests exercise; a test file is not a receipt that the tests ran. The owning workbench guide records broader browser checks and their retained-versus-synthetic fixture limits. A browser fixture is not a deployed coding canary.
+`CodingVibeProgress` is a render-only structure derived from completed `coding/AdmitVibe` and `coding/CleanVibeHistory` receipts, with `original-retained` and `cleaned-retained` stages for source retention. None of these stages claims append, landing or shipment. Its Inspect button opens the exact native child in the existing debugger.
+
+## Test boundary
+
+Chromium tests use retained native host evidence and separate synthetic layout fixtures. The browser fixture is not a live coding canary.

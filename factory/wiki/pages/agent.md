@@ -1,19 +1,19 @@
 # Agents are flow callers
 
-The Smithers agent runs model-authored JavaScript cells in a QuickJS sandbox. A cell reaches capabilities through `ctx.call(flowName, input)`. The host controls the available registry and capability envelope; the agent does not gain ambient filesystem or network access by writing JavaScript.
+`@smthrs/agent` runs a coding agent as a durable program. Each turn the model writes a JavaScript cell that runs in a QuickJS sandbox. A cell's only authority is `ctx.call(flowName, input)`, so reading a file or running a command is a flow call that the engine keys, journals and can replay.
 
 ## Use a typed model action
 
-`AgentAction.make` declares a model-backed step with a payload, an output schema, a named seat, system teaching and a prompt. Its `.call` composes like an ordinary action and its `.layer` supplies the implementation. The output is decoded against the declared schema before later steps consume it.
+`AgentAction.make` declares a model-backed step with a payload, an output schema, a seat, system text and a prompt. `.call` records the same plan node as any other action, and `.layer` is its implementation. The step answers with a value decoded by the output schema, so later steps read typed fields.
 
-A seat names a model without carrying its credential. The host resolves the seat and provides model routing, budgets and limits. Keep that host choice outside a repository page or workflow's source content.
+`AgentAction` runs the agent loop as one typed step inside a larger flow. `AgentSession` runs it as one whole durable run that an operator steers and approves.
+
+## Seats are resolved by the host
+
+A seat string names a model without carrying a credential. Resolving it into a live model is the host's job.
 
 ## The wiki reviewer is an ordinary agent action
 
-The wiki's `ReviewPage` receives the page and bounded source evidence selected by the catalog. Original line numbers remain available, and full source files are captured separately. Its registry has no tools and its capability envelope is empty. It must assess every section and return structured findings with exact source citations. The deterministic assessment step checks coverage and citation integrity before the write gate accepts the result.
+`ReviewPage` in `flows/wiki/workflow.ts` is an `AgentAction` on the `wiki/reviewer` seat whose output is a `Review`. Its system text says it has no tools or authority to edit files and that a current-behavior section must cite a file other than its own page. Its host supplies an empty descriptor registry, an empty capability envelope and at most 8 frames.
 
-The model decides semantic support. Citation validation only establishes that the cited text exists at the claimed location; it does not turn an incorrect argument into a proof. Review uncertainty stays visible and blocks the verified publication path.
-
-## Preserve the evidence needed for inspection
-
-Model calls and capability calls belong to durable execution. The product contract calls for a cheap explanation first, followed by lower-level evidence. An explanation of intent and a recorded action outcome are different facts, and should stay linked rather than be merged into an invented success story.
+A review that fails exact validation gets one correction call; a second failure is terminal. Surviving reviews then pass `CheckCitations`, which judges whether each cited line supports its claim.

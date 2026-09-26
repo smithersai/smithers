@@ -14,17 +14,16 @@ import { bindWikiRegistry } from "../coding/wiki-registry.ts"
 import { checkDelegate } from "../coding/checks.ts"
 import { wikiCheckDelegate } from "../coding/wiki-check.ts"
 import { jevCheckDelegate } from "../coding/jev-check.ts"
-import { smithersProject } from "../../factory/coding/project.ts"
+import { loadProject } from "../coding/project-config.ts"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
 
-test("the actual Smithers default check declarations lower under the configured host delegates", async () => {
-  const config = smithersProject()
-  assert.equal(config.wiki, false)
-  assert.equal(config.pages, undefined)
-  assert.equal(config.checks.some(check => check.flow === "checks/wiki"), false)
-  assert.equal(smithersProject(undefined, true).checks.find(check => check.id === "wiki")?.required, true)
-  const names = new Set(config.checks.map(check => check.flow))
+test("the actual Smithers check declarations and the wiki check lower under the configured host delegates", async () => {
+  const config = await Effect.runPromise(loadProject(fileURLToPath(new URL("../../", import.meta.url)), undefined).pipe(Effect.provide(platform)))
+  assert.ok(config)
+  // An operator may add the semantic wiki check; it lowers like the others.
+  const checks = [...config.checks, { id: "wiki", target: "public engineering wiki", flow: "checks/wiki", tier: "slow" as const, required: true }]
+  const names = new Set(checks.map(check => check.flow))
   const base = await Effect.runPromise(Registry.make({ sources: [{ source: "project",
     root: fileURLToPath(new URL("../", import.meta.url)), naming: "path" }] })
     .pipe(Effect.provide(Discovery.layer), Effect.provide(platform)))
@@ -34,7 +33,7 @@ test("the actual Smithers default check declarations lower under the configured 
     .pipe(Effect.provideService(Registry.Registry, selected), Effect.provide(platform)))
   assert.deepEqual(built.refused, [])
   assert.equal(built.executables.length, names.size)
-  for (const check of config.checks) {
+  for (const check of checks) {
     const entry = built.executables.find(entry => entry.descriptor.name === check.flow)
     assert.ok(entry, `${check.id} must resolve its actual declaration`)
     assert.equal(entry.delegate, check.id === "wiki" ? wikiCheckDelegate._tag : check.id === "lint" ? jevCheckDelegate._tag : checkDelegate._tag)
