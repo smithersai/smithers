@@ -64,7 +64,7 @@ export interface RunsController {
   readonly steerRunThinking: (runId: string, thinking: string, sourceCard?: string) => Promise<CommandResult>
   readonly steerRunTools: (runId: string, toolNames: string, sourceCard?: string) => Promise<CommandResult>
   readonly showRunLogs: (runId: string, follow?: boolean, sourceCard?: string) => Promise<CommandResult>
-  readonly showRunSteps: (runId: string, sourceCard?: string) => CommandResult
+  readonly showRunSteps: (runId: string, sourceCard?: string) => Promise<CommandResult>
   readonly showRunEvents: (runId: string, sourceCard?: string) => Promise<CommandResult>
   /*
    * Where the reader parked is durable state, so each of these gestures answers
@@ -90,6 +90,7 @@ export interface RunsController {
   readonly listApprovals: (repo?: string) => Promise<CommandResult>
   /** Reconnect every persisted inbox read the current account still owns; idempotent. */
   readonly resumeApprovalRequests: () => void
+  readonly resumeRunFacetRequests: () => void
   readonly openApproval: (runId: string, sourceCard?: string) => Promise<CommandResult>
 }
 
@@ -408,70 +409,168 @@ export const createRunsController = (
       : steer(runId, { kind: "Tools", toolNames: names }, sourceCard)
   }
 
-  /**
-   * The transcript facet. `--follow` toggles the live merge (the pump keeps
-   * the rows current while the run moves); without it the tab is one snapshot
-   * of where the transcript stood when asked.
-   */
-  const showRunLogs = async (runId: string, follow?: boolean, sourceCard?: string): Promise<CommandResult> => {
-    const target = resolveRun(runId, sourceCard)
-    if ("error" in target) return target.error
-    const card = runCardFor(target)
-    if (card === undefined) return `Open the run first (runs.open ${runId}) — the transcript lives on its card.`
-    const guard = workflows.workflowIdentityGuard()
-    if (guard !== undefined) return guard
-    const following = follow === true ? card.payload.follow !== true : false
-    const transcript = await gateway.transcript(target.repo, runId, { workspaceId: target.workspaceId })
-    if (transcript.status !== "ok") return transcript.message
-    await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
-      scope: target, transcript: [...transcript.value], transcriptCursor: transcript.cursor
-    } }).isPersisted.promise
-    patchRunCard(target, {
-      facet: "transcript",
-      follow: following,
-      transcriptAtRevision: following ? undefined : store.session().revision,
-      ...(following ? {} : { transcriptRows: transcript.value.map((row) => ({
-        sequence: row.sequence,
-        ...(row.turn === undefined ? {} : { turn: row.turn }),
-        ...(row.at === undefined ? {} : { at: row.at }),
-        kind: row.kind,
-        text: row.text
-      })) })
-    })
-    if (following) pokeRun(target)
-    return { value: following ? `following run=${runId}` : `transcript run=${runId}` }
+  type RunCard = Extract<Card, { kind: "run-trace" }>
+  type FacetRequest = NonNullable<RunCard["payload"]["facetRequest"]>
+  const facetReads = actorSharedState(ctx, "run-facet-reads", () => ({
+    inFlight: new Map<string, { id: string; epoch: number; work: Promise<unknown> }>(),
+    persisting: new Map<string, Promise<unknown>>()
+  }))
+  const facetCard = (cardId: string, request: FacetRequest): RunCard | undefined => {
+    const card = store.collections.cards.get(cardId)
+    return card?.kind === "run-trace" && sameRunScope(card.payload, request) && card.payload.facetRequest?.id === request.id ? card : undefined
   }
 
-  /** Back to the default facet; unfollows the transcript if it was following. */
-  const showRunSteps = (runId: string, sourceCard?: string): CommandResult => {
+  /** Only the saved request owns its response; a new facet or account retires it. */
+  const readRunFacet = (cardId: string, request: FacetRequest): Promise<unknown> => {
+    const epoch = ctx.accountEpoch
+    const running = facetReads.inFlight.get(cardId)
+    if (running?.id === request.id && running.epoch === epoch) return running.work
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === request.owner && facetCard(cardId, request) !== undefined
+    const title = request.facet === "transcript" ? "Transcript" : "Events"
+    const key = `runs.facet.${cardId}`
+    const saveFailure = "The facet result could not be saved. Try again."
+    const work = ctx.withToast(key, `Loading ${title.toLowerCase()}…`, `${title} loaded`, async () => {
+      try {
+        if (!current()) return TOAST_SUPERSEDED
+        const binding = { workspaceId: request.workspaceId }
+        const target: RunScope = { repo: request.repo, runId: request.runId, ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }) }
+        const result = request.facet === "transcript"
+          ? { facet: "transcript" as const, answer: await gateway.transcript(request.repo, request.runId, binding) }
+          : { facet: "events" as const, answer: await gateway.runEvents(request.repo, request.runId, binding) }
+        if (!current()) return TOAST_SUPERSEDED
+        if (result.answer.status !== "ok") throw new Error(result.answer.message)
+        // The shared observation is run data; the reader's choice remains on its exact card.
+        if (result.facet === "transcript") {
+          await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+            scope: target, transcript: [...result.answer.value], transcriptCursor: result.answer.cursor
+          } }).isPersisted.promise
+        } else {
+          await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+            scope: target, journal: { mode: "full", events: [...result.answer.value] }
+          } }).isPersisted.promise
+        }
+        if (!current()) return TOAST_SUPERSEDED
+        const card = facetCard(cardId, request)!
+        const { transcriptAtRevision: previousRevision, ...payload } = card.payload
+        const transcript = result.facet === "transcript" ? {
+          follow: request.follow === true,
+          ...(request.follow === true ? {} : { transcriptAtRevision: store.session().revision }),
+          transcriptRows: result.answer.value.map(row => ({
+            sequence: row.sequence, ...(row.turn === undefined ? {} : { turn: row.turn }),
+            ...(row.at === undefined ? {} : { at: row.at }), kind: row.kind, text: row.text
+          }))
+        } : previousRevision === undefined ? {} : { transcriptAtRevision: previousRevision }
+        await store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, payload: {
+          ...payload, ...transcript, facetRequest: { ...request, state: "complete" }
+        } } }).isPersisted.promise
+        if (!current()) return TOAST_SUPERSEDED
+        if (request.follow === true) pokeRun(request)
+        return true
+      } catch (error) {
+        if (!current()) return TOAST_SUPERSEDED
+        const message = error instanceof Error ? error.message : String(error)
+        const card = facetCard(cardId, request)!
+        try {
+          await store.dispatch({ type: "card.updated", actor: "system", id: cardId,
+            patch: { payload: { ...card.payload, facetRequest: { ...request, state: "failed", error: message } } }
+          }).isPersisted.promise
+        } catch { return current() ? saveFailure : TOAST_SUPERSEDED }
+        return current() ? message : TOAST_SUPERSEDED
+      }
+    }, false, current)
+    const entry = { id: request.id, epoch, work }
+    facetReads.inFlight.set(cardId, entry)
+    void work.then(outcome => {
+      // A failure inside the toast debounce still has a durable card error and a failed notice.
+      if (typeof outcome !== "string" || !current() || facetReads.inFlight.get(cardId) !== entry) return
+      if (store.collections.toasts.get(`toast-${key}`) === undefined) store.dispatch({ type: "toast.shown", actor: "system", key, title })
+      ctx.resolveToast(key, { status: "failed", title, detail: outcome })
+    }).finally(() => {
+      if (facetReads.inFlight.get(cardId) === entry) facetReads.inFlight.delete(cardId)
+    }).catch(error => ctx.failures.report("toast.work", error, key))
+    return work
+  }
+
+  const requestRunFacet = async (runId: string, facet: "transcript" | "events", toggleFollow = false, sourceCard?: string): Promise<CommandResult> => {
+    const guard = workflows.workflowIdentityGuard()
+    if (guard !== undefined) return guard
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
-    const card = runCardFor(target)
+    const selected = runCardFor(target, sourceCard)
+    if (selected === undefined) return `Open the run first (runs.open ${runId}).`
+    const owner = ctx.accountOwner()
+    if (typeof owner !== "string") return "Sign in with GitHub first."
+    const epoch = ctx.accountEpoch
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
+    const changed = "The run or account changed before the facet could be read. Try again."
+    // The user and agent doors share admission as well as the subsequent read.
+    for (let saving = facetReads.persisting.get(selected.id); saving !== undefined; saving = facetReads.persisting.get(selected.id)) {
+      try { await saving } catch { /* The original request reports its failed admission. */ }
+      if (!current()) return changed
+    }
+    const card = store.collections.cards.get(selected.id)
+    if (!current() || card?.kind !== "run-trace" || !sameRunScope(card.payload, target)) return changed
+    const recorded = card.payload.facetRequest
+    const running = facetReads.inFlight.get(card.id)
+    const acknowledgment = { value: facet === "transcript" ? "Transcript requested." : "Events requested." }
+    if (recorded?.owner === owner && sameRunScope(recorded, target) && recorded.facet === facet &&
+      (recorded.toggleFollow === true) === toggleFollow && recorded.state !== "failed" &&
+      (recorded.state === "pending" || running?.id === recorded.id && running.epoch === epoch)) {
+      void readRunFacet(card.id, recorded)
+      return acknowledgment
+    }
+    const request: FacetRequest = { id: crypto.randomUUID(), owner, ...target, facet, state: "pending",
+      ...(facet === "transcript" ? { toggleFollow, follow: toggleFollow ? card.payload.follow !== true : false } : {}) }
+    const saving = store.dispatch({ type: "card.updated", actor: ctx.commandActor, id: card.id,
+      patch: { payload: { ...card.payload, facet, facetRequest: request } }
+    }).isPersisted.promise
+    facetReads.persisting.set(card.id, saving)
+    try { await saving } finally {
+      if (facetReads.persisting.get(card.id) === saving) facetReads.persisting.delete(card.id)
+    }
+    if (!current() || facetCard(card.id, request) === undefined) return changed
+    void readRunFacet(card.id, request)
+    return acknowledgment
+  }
+
+  const showRunLogs = (runId: string, follow?: boolean, sourceCard?: string): Promise<CommandResult> =>
+    requestRunFacet(runId, "transcript", follow === true, sourceCard)
+
+  /** Steps also retires an in-flight facet read, so its late answer cannot change this choice. */
+  const showRunSteps = async (runId: string, sourceCard?: string): Promise<CommandResult> => {
+    const target = resolveRun(runId, sourceCard)
+    if ("error" in target) return target.error
+    const card = runCardFor(target, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}).`
-    patchRunCard(target, { facet: "steps", follow: false })
+    const { facetRequest: _request, ...payload } = card.payload
+    await store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, payload: { ...payload, facet: "steps", follow: false } } }).isPersisted.promise
     return { value: `steps run=${runId}` }
   }
 
-  /** The raw journal, a debug surface: it exists only where verbose does. */
   const showRunEvents = async (runId: string, sourceCard?: string): Promise<CommandResult> => {
     const guard = workflows.workflowIdentityGuard()
     if (guard !== undefined) return guard
-    if (store.session().verbose !== true) {
-      return "The events tab is the run's raw journal — a debug view. Turn on /debug.verbose first."
-    }
-    const target = resolveRun(runId, sourceCard)
-    if ("error" in target) return target.error
-    const card = runCardFor(target)
-    if (card === undefined) return `Open the run first (runs.open ${runId}) — the events live on its card.`
-    const events = await gateway.runEvents(target.repo, runId, { workspaceId: target.workspaceId })
-    if (events.status !== "ok") return events.message
-    await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
-      scope: target, journal: { mode: "full", events: [...events.value] }
-    } }).isPersisted.promise
-    patchRunCard(target, {
-      facet: "events"
-    })
-    return { value: `events run=${runId}` }
+    if (store.session().verbose !== true) return "The events tab is the run's raw journal — a debug view. Turn on /debug.verbose first."
+    return requestRunFacet(runId, "events", false, sourceCard)
+  }
+
+  const resumeRunFacetRequests = (): void => {
+    const epoch = ctx.accountEpoch
+    const owner = ctx.accountOwner()
+    if (ctx.disposed || typeof owner !== "string") return
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
+    const timer = setTimeout(() => {
+      if (!current()) return
+      void (store.settled?.() ?? Promise.resolve()).then(() => {
+        if (!current() || workflows.workflowIdentityGuard() !== undefined) return
+        for (const card of store.collections.cards.values()) {
+          if (card.kind !== "run-trace") continue
+          const request = card.payload.facetRequest
+          if (request?.state === "pending" && request.owner === owner && sameRunScope(card.payload, request)) void readRunFacet(card.id, request)
+        }
+      }, () => {})
+    }, 0)
+    ctx.unref(timer)
   }
 
   /*
@@ -919,6 +1018,7 @@ export const createRunsController = (
     stopAllRuns,
     listApprovals,
     resumeApprovalRequests,
+    resumeRunFacetRequests,
     openApproval
   }
 }

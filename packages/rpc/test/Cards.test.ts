@@ -946,6 +946,18 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       waiting: "approval",
       steeringPending: true,
       facet: "transcript",
+      facetRequest: {
+        id: "facet-request-1",
+        owner: "will",
+        repo: "smithersai/smithers",
+        runId: "run-1",
+        workspaceId: gatewayWorkspaceId,
+        facet: "transcript",
+        state: "failed",
+        follow: true,
+        toggleFollow: true,
+        error: "Transcript unavailable"
+      },
       follow: true,
       transcriptRows: [{ sequence: 1, turn: 1, at: 1_757_000_000_000, kind: "message", text: "reading" }],
       transcriptAtRevision: 17,

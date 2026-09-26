@@ -63,6 +63,8 @@ export const WorkflowRunCardBody = ({
   const { phase, error, observationError, runId, kind } = card.payload
   const failure = runFailureOf(card.payload)
   const facet = card.payload.facet ?? "steps"
+  const facetRequest = card.payload.facetRequest
+  const facetUnready = facetRequest !== undefined && facetRequest.state !== "complete" && facetRequest.facet === facet
   /* A tutorial plan card is the plan alone: no facets, no lifecycle acts, no steer. */
   const planOnly = kind === "change-plan"
   return (
@@ -88,7 +90,8 @@ export const WorkflowRunCardBody = ({
         flowDurations={flowDurations}
         fileCards={fileCards}
       />
-      {facet === "transcript" && !timelineRowsShown ?
+      {facetRequest?.state === "failed" ? <p className="sui-approval-error" role="alert">{facetRequest.error}</p> : null}
+      {facet === "transcript" && !timelineRowsShown && !facetUnready ?
         card.payload.transcriptRows === undefined || card.payload.transcriptRows.length === 0 ?
           <p className="smithers-card-note">The transcript is empty so far.</p> :
           (
@@ -104,7 +107,7 @@ export const WorkflowRunCardBody = ({
             </ol>
           ) :
         null}
-      {facet === "events" && debugVerbose ?
+      {facet === "events" && debugVerbose && !facetUnready ?
         card.payload.events === undefined || card.payload.events.length === 0 ?
           <p className="smithers-card-note">No events recorded yet.</p> :
           (

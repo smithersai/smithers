@@ -36,6 +36,11 @@ const REPO = "codeplanesmithers/smithers-demo"
 const said = (outcome: { status: string; value?: string; error?: string }): string =>
   outcome.status === "failed" ? (outcome.error ?? "") : (outcome.value ?? "")
 
+const waitForFacet = (store: Awaited<ReturnType<typeof webStore>>, id: string) => waitFor(() => {
+  const card = store.collections.cards.get(id)
+  return card?.kind === "run-trace" && card.payload.facetRequest?.state === "complete"
+})
+
 interface SummarySpec {
   readonly runId: string
   readonly flowId: string
@@ -631,7 +636,8 @@ describe("the run card's facets — transcript, follow, and the verbose events t
     await controller.commands.run("runs.open", "run-6")
 
     const shown = await controller.commands.run("runs.logs", "run-6")
-    expect(said(shown)).toContain("transcript run=run-6")
+    expect(said(shown)).toBe("Transcript requested.")
+    await waitForFacet(store, "flow-run-run-6")
     let card = store.collections.cards.get("flow-run-run-6")
     expect(card?.kind === "run-trace" && card.payload.facet).toBe("transcript")
     expect(card?.kind === "run-trace" && card.payload.follow).toBe(false)
@@ -639,7 +645,8 @@ describe("the run card's facets — transcript, follow, and the verbose events t
       .toEqual(["turn 1 begins", "asks: deploy?"])
 
     const followed = await controller.commands.run("runs.logs", "run-6 --follow")
-    expect(said(followed)).toContain("following run=run-6")
+    expect(said(followed)).toBe("Transcript requested.")
+    await waitForFacet(store, "flow-run-run-6")
     card = store.collections.cards.get("flow-run-run-6")
     expect(card?.kind === "run-trace" && card.payload.follow).toBe(true)
     // The pump merges the transcript on its own cycle while follow holds.
@@ -649,6 +656,7 @@ describe("the run card's facets — transcript, follow, and the verbose events t
     })
     // Following again unfollows.
     await controller.commands.run("runs.logs", "run-6 --follow")
+    await waitForFacet(store, "flow-run-run-6")
     card = store.collections.cards.get("flow-run-run-6")
     expect(card?.kind === "run-trace" && card.payload.follow).toBe(false)
     // And the Steps tab is the way back.
@@ -672,7 +680,8 @@ describe("the run card's facets — transcript, follow, and the verbose events t
 
     await controller.commands.run("debug.verbose")
     const shown = await controller.commands.run("runs.events", "run-7")
-    expect(said(shown)).toContain("events run=run-7")
+    expect(said(shown)).toBe("Events requested.")
+    await waitForFacet(store, "flow-run-run-7")
     const card = store.collections.cards.get("flow-run-run-7")
     expect(card?.kind === "run-trace" && card.payload.facet).toBe("events")
     expect(card?.kind === "run-trace" && card.payload.events).toHaveLength(1)
@@ -1803,6 +1812,7 @@ describe("workspace-bound run cards", () => {
       expect((await controller.commands.run("runs.signal", `${source} go {"text":"a  b sourceCard=literal"}`)).status).toBe("executed")
       expect(double.state.signaled.at(-1)?.signal).toEqual({ name: "go", payload: { text: "a  b sourceCard=literal" } })
       expect((await controller.commands.run("runs.logs", source)).status).toBe("executed")
+      await waitForFacet(store, card.id)
       expect(runCardInScope(store, card.payload)?.payload.transcriptRows?.[0]?.text).toBe(seat)
       const other = double === a ? b : a
       const otherReads = other.calls.length
@@ -2221,5 +2231,259 @@ describe("trace gestures retain their source view", () => {
       expect(payload(fixture.store, "a")).toEqual(before[0])
       expect(payload(fixture.store, "b")).not.toEqual(before[1])
     })
+  }
+})
+
+describe("durable run facet requests", () => {
+  const card = (id: string): Extract<Card, { kind: "run-trace" }> => ({
+    id, kind: "run-trace", title: id, status: "acted", createdAt: 1, ordinal: 1,
+    payload: { repo: REPO, runId: "run-facet", workflow: "review", phase: "completed", steps: [], result: null,
+      lastSeq: 0, facet: "steps", follow: false }
+  })
+  const current = (store: Awaited<ReturnType<typeof webStore>>, id = "b") => {
+    const row = store.collections.cards.get(id)
+    return row?.kind === "run-trace" ? row : undefined
+  }
+  const ready = async (gate?: Promise<void>, storage = memoryStorage()) => {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    await signIn(store)
+    for (const id of ["a", "b"]) await store.dispatch({ type: "card.upsert", actor: "system", card: card(id) }).isPersisted.promise
+    const double = relay({ transcriptLines: [{ runId: "run-facet", sequence: 1, turn: 1, at: 1, kind: "assistant", text: "Facet source" }] })
+    let reads = 0
+    let finished = 0
+    let refusal: string | undefined
+    const services = { ...double.services, toastDebounceMs: 0, fetchImpl: async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      const tag = body?.payload?.selector?._tag
+      if (body?.procedure === "Projection.Snapshot" && (tag === "transcript" || tag === "run-events")) {
+        reads += 1
+        await gate
+        const response = refusal === undefined ? await double.services.fetchImpl!(input, init)
+          : json(200, { ok: false, error: { message: refusal } })
+        finished += 1
+        return response
+      }
+      return double.services.fetchImpl!(input, init)
+    } }
+    const controller = createAppController(store, silentAgent, services)
+    await controller.commands.run("debug.verbose")
+    return { store, controller, storage, services, refuse: (message?: string) => { refusal = message }, reads: () => reads, finished: () => finished }
+  }
+
+  test("Steps preserves its source view and waits for the write receipt", async () => {
+    const fixture = await ready()
+    for (const id of ["a", "b"]) {
+      const before = current(fixture.store, id)!
+      await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: { ...before, payload: { ...before.payload, facet: "transcript" } } }).isPersisted.promise
+    }
+    const dispatch = fixture.store.dispatch
+    const saved = Promise.withResolvers<void>()
+    let held = false
+    let answered = false
+    Object.assign(fixture.store, { dispatch: (transition: Parameters<typeof dispatch>[0]) => {
+      const write = dispatch(transition)
+      if (transition.type === "card.upsert" && transition.card.id === "b") {
+        held = true
+        return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+      }
+      return write
+    } })
+    const result = fixture.controller.commands.run("runs.steps", "sourceCard=b run-facet").then(result => { answered = true; return result })
+    try {
+      await waitFor(() => held)
+      await settle(15)
+      expect(answered).toBe(false)
+      saved.resolve()
+      expect((await result).status).toBe("executed")
+      expect(current(fixture.store)?.payload.facet).toBe("steps")
+      expect(current(fixture.store, "a")?.payload.facet).toBe("transcript")
+    } finally { saved.resolve(); Object.assign(fixture.store, { dispatch }); await result }
+  })
+
+  for (const [flow, facet] of [["runs.logs", "transcript"], ["runs.events", "events"]] as const) {
+    test(`${flow} acknowledges its saved request before the read, shares duplicates, and keeps Chat usable`, async () => {
+      const gate = Promise.withResolvers<void>()
+      const fixture = await ready(gate.promise)
+      let answered = false
+      const result = fixture.controller.commands.run(flow, "sourceCard=b run-facet").then(result => { answered = true; return result })
+      try {
+        await waitFor(() => fixture.reads() === 1)
+        await waitFor(() => answered)
+        expect(said(await result)).toContain("requested")
+        expect(current(fixture.store)?.payload.facetRequest?.state).toBe("pending")
+        expect(current(fixture.store, "a")?.payload.facet).toBe("steps")
+        await fixture.controller.commands.runForAgent(flow, "sourceCard=b run-facet")
+        expect(fixture.reads()).toBe(1)
+        await fixture.store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat during a facet read" }).isPersisted.promise
+        expect([...fixture.store.collections.toasts.values()].some(toast => toast.status === "running")).toBe(true)
+        gate.resolve()
+        await waitFor(() => current(fixture.store)?.payload.facetRequest?.state === "complete")
+        expect(current(fixture.store)?.payload.facet).toBe(facet)
+        expect(current(fixture.store, "a")?.payload.facet).toBe("steps")
+      } finally { gate.resolve(); await result }
+    })
+
+    test(`${flow} cannot reopen a facet after Steps supersedes its pending read`, async () => {
+      const gate = Promise.withResolvers<void>()
+      const fixture = await ready(gate.promise)
+      const result = fixture.controller.commands.run(flow, "sourceCard=b run-facet")
+      try {
+        await waitFor(() => fixture.reads() === 1)
+        await fixture.controller.commands.run("runs.steps", "sourceCard=b run-facet")
+        gate.resolve()
+        await result
+        await waitFor(() => fixture.finished() === 1)
+        await settle(15)
+        expect(current(fixture.store)?.payload.facet).toBe("steps")
+        expect(current(fixture.store)?.payload.facetRequest).toBeUndefined()
+        expect(current(fixture.store, "a")?.payload.facet).toBe("steps")
+      } finally { gate.resolve(); await result }
+    })
+
+    test(`${flow} duplicate input waits for the admission receipt before any read`, async () => {
+      const fixture = await ready()
+      const dispatch = fixture.store.dispatch
+      const saved = Promise.withResolvers<void>()
+      let held = false
+      let answered = 0
+      Object.assign(fixture.store, { dispatch: (transition: Parameters<typeof dispatch>[0]) => {
+        const write = dispatch(transition)
+        if (!held && transition.type === "card.updated" && transition.id === "b") {
+          held = true
+          return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+        }
+        return write
+      } })
+      const first = fixture.controller.commands.run(flow, "sourceCard=b run-facet").then(result => { answered += 1; return result })
+      try {
+        await waitFor(() => held)
+        const second = fixture.controller.commands.runForAgent(flow, "sourceCard=b run-facet").then(result => { answered += 1; return result })
+        await settle(15)
+        expect(answered).toBe(0)
+        expect(fixture.reads()).toBe(0)
+        saved.resolve()
+        expect((await first).status).toBe("executed")
+        expect((await second).status).toBe("executed")
+        await waitForFacet(fixture.store, "b")
+        expect(fixture.reads()).toBe(1)
+      } finally { saved.resolve(); Object.assign(fixture.store, { dispatch }); await first }
+    })
+
+    test(`${flow} reconnects its saved request after reload without changing its identity`, async () => {
+      const gate = Promise.withResolvers<void>()
+      const fixture = await ready(gate.promise)
+      let restored: Awaited<ReturnType<typeof webStore>> | undefined
+      let reopened: AppController | undefined
+      try {
+        await fixture.controller.commands.run(flow, "sourceCard=b run-facet")
+        await waitFor(() => fixture.reads() === 1)
+        const id = current(fixture.store)?.payload.facetRequest?.id
+        await fixture.controller.dispose()
+        await fixture.store.dispose?.()
+        restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
+        reopened = createAppController(restored, silentAgent, fixture.services)
+        await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+        await waitFor(() => fixture.reads() === 2)
+        expect(current(restored)?.payload.facetRequest?.id).toBe(id)
+        gate.resolve()
+        await waitForFacet(restored, "b")
+        expect(current(restored)?.payload.facet).toBe(facet)
+        expect(current(restored, "a")?.payload.facet).toBe("steps")
+      } finally { gate.resolve(); await reopened?.dispose(); await restored?.dispose?.() }
+    })
+
+    test(`${flow} retains a fast refusal and retries from the existing facet button`, async () => {
+      const fixture = await ready()
+      fixture.refuse("Facet unavailable")
+      await fixture.controller.commands.run(flow, "sourceCard=b run-facet")
+      await waitFor(() => current(fixture.store)?.payload.facetRequest?.state === "failed")
+      expect(current(fixture.store)?.payload.facetRequest?.error).toContain("Facet unavailable")
+      await waitFor(() => [...fixture.store.collections.toasts.values()].some(toast => toast.status === "failed" && toast.key.startsWith("runs.facet.")))
+      fixture.refuse()
+      await fixture.controller.commands.run(flow, "sourceCard=b run-facet")
+      await waitForFacet(fixture.store, "b")
+      expect(current(fixture.store)?.payload.facetRequest?.error).toBeUndefined()
+      expect(fixture.reads()).toBe(2)
+    })
+
+    for (const boundary of ["admission", "result"] as const) {
+      test(`${flow} does not claim success when ${boundary} storage is refused`, async () => {
+        const backing = memoryStorage()
+        let armed = false
+        let refused = 0
+        const marker = JSON.stringify(`"state":"${boundary === "admission" ? "pending" : "complete"}"`).slice(1, -1)
+        const storage = { ...backing, setItem: (key: string, value: string) => {
+          if (armed && key.endsWith(".staged") && value.includes(marker)) {
+            armed = false
+            refused += 1
+            throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError", code: 22 })
+          }
+          backing.setItem(key, value)
+        } }
+        const fixture = await ready(undefined, storage)
+        armed = true
+        const result = await fixture.controller.commands.run(flow, "sourceCard=b run-facet")
+        if (boundary === "admission") {
+          expect(result.status).toBe("failed")
+          expect(fixture.reads()).toBe(0)
+          expect(current(fixture.store)?.payload.facetRequest).toBeUndefined()
+          expect(current(fixture.store)?.payload.facet).toBe("steps")
+        } else {
+          await waitFor(() => current(fixture.store)?.payload.facetRequest?.state === "failed")
+          expect([...fixture.store.collections.toasts.values()].some(toast => toast.status === "ok" && toast.key.startsWith("runs.facet."))).toBe(false)
+        }
+        expect(refused).toBe(1)
+        await fixture.controller.commands.run(flow, "sourceCard=b run-facet")
+        await waitForFacet(fixture.store, "b")
+      })
+    }
+
+    test(`${flow} keeps its toast running through the result receipt and shares duplicate input`, async () => {
+      const gate = Promise.withResolvers<void>()
+      const saved = Promise.withResolvers<void>()
+      const fixture = await ready(gate.promise)
+      const dispatch = fixture.store.dispatch
+      let held = false
+      Object.assign(fixture.store, { dispatch: (transition: Parameters<typeof dispatch>[0]) => {
+        const write = dispatch(transition)
+        if (transition.type === "card.upsert" && transition.card.kind === "run-trace" && transition.card.payload.facetRequest?.state === "complete") {
+          held = true
+          return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+        }
+        return write
+      } })
+      try {
+        await fixture.controller.commands.run(flow, "sourceCard=b run-facet")
+        await waitFor(() => [...fixture.store.collections.toasts.values()].some(toast => toast.status === "running"))
+        gate.resolve()
+        await waitFor(() => held)
+        expect([...fixture.store.collections.toasts.values()].some(toast => toast.status === "running")).toBe(true)
+        await fixture.controller.commands.runForAgent(flow, "sourceCard=b run-facet")
+        expect(fixture.reads()).toBe(1)
+        saved.resolve()
+        await waitFor(() => [...fixture.store.collections.toasts.values()].some(toast => toast.status === "ok" && toast.key.startsWith("runs.facet.")))
+      } finally { gate.resolve(); saved.resolve(); Object.assign(fixture.store, { dispatch }) }
+    })
+
+    for (const change of ["replacement", "account"] as const) {
+      test(`${flow} discards a late response after source ${change}`, async () => {
+        const gate = Promise.withResolvers<void>()
+        const fixture = await ready(gate.promise)
+        try {
+          await fixture.controller.commands.run(flow, "sourceCard=b run-facet")
+          await waitFor(() => fixture.reads() === 1)
+          if (change === "account") await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+          const replacement = card("b")
+          await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: { ...replacement, payload: { ...replacement.payload, runId: "replacement" } } }).isPersisted.promise
+          gate.resolve()
+          await waitFor(() => fixture.finished() === 1)
+          await settle(15)
+          expect(current(fixture.store)?.payload.runId).toBe("replacement")
+          expect(current(fixture.store)?.payload.facet).toBe("steps")
+          expect(current(fixture.store)?.payload.facetRequest).toBeUndefined()
+          expect(fixture.store.collections.runtimeRuns.has(runtimeRunKey({ repo: REPO, runId: "run-facet" }))).toBe(false)
+        } finally { gate.resolve() }
+      })
+    }
   }
 })

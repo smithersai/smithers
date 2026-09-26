@@ -2062,6 +2062,7 @@ export const createAppController = (
     repositorySetup.resumeRepositorySetups()
     repoImportSeam.resume()
     runs.resumeApprovalRequests()
+    runs.resumeRunFacetRequests()
   })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
   const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => {

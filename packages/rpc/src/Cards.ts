@@ -1133,6 +1133,19 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       steeringPending: z.boolean().optional(),
       /** Which secondary tab the card shows under the trace; the steps tail by default. */
       facet: z.enum(["steps", "transcript", "events"]).optional(),
+      /** A remote facet read, pinned to its original card, account and gateway. */
+      facetRequest: z.object({
+        id: z.string(),
+        owner: z.string(),
+        repo: z.string(),
+        runId: z.string(),
+        workspaceId: z.string().optional(),
+        facet: z.enum(["transcript", "events"]),
+        state: z.enum(["pending", "complete", "failed"]),
+        follow: z.boolean().optional(),
+        toggleFollow: z.boolean().optional(),
+        error: z.string().optional()
+      }).optional(),
       /** Whether the transcript keeps following the live run. */
       follow: z.boolean().optional(),
       /** The transcript tab's rows, merged from the transcript projection while the card follows. */

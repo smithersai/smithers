@@ -31,6 +31,10 @@ export default showcase({
     const steers: Array<{ kind: string; body?: string }> = []
     const cancelled = new Set<string>()
     const summaries = new Map<string, number>()
+    const transcriptReceipt = Promise.withResolvers<void>()
+    let holdTranscript = false
+    let transcriptReads = 0
+    let refuseTranscript = false
     const base = { editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0, diagnosis: "Recorded status" }
     const row = (runId: string) => {
       if (runId === CODING) return { ...base, runId, flowId: "coding", status: "failed", createdAt: now - 3_600_000, updatedAt: now - 3_000_000, turns: 2, calls: 2, callsFailed: 1, verdict: "failed" }
@@ -40,7 +44,7 @@ export default showcase({
     }
     await backend.cloud({ capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
     await backend.json("/api/workflow/provision", { status: "ready", repo: REPO, gatewayId: "gw-1" })
-    await backend.route(url => url.pathname === "/api/workflow/rpc", route => {
+    await backend.route(url => url.pathname === "/api/workflow/rpc", async route => {
       const call = route.request().postDataJSON() as { procedure: string; payload: { runId?: string; message?: { kind: string }; selector?: { _tag?: string; runId?: string }; after?: { value: number } } }
       const ok = (payload: unknown) => route.fulfill({ json: { ok: true, payload } })
       const rows = (projection: string, value: ReadonlyArray<unknown>) => ok({ cursor: { projection, runId: null, value: 0 }, rows: value })
@@ -56,6 +60,8 @@ export default showcase({
             return rows("run-events", journal.filter(event => event.sequence > (call.payload.after?.value ?? 0)))
           }
           if (selector._tag === "transcript" && JSON.stringify(call.payload).includes(CODING)) {
+            if (holdTranscript) { transcriptReads += 1; await transcriptReceipt.promise }
+            if (refuseTranscript) { refuseTranscript = false; return route.fulfill({ json: { ok: false, error: { message: "Transcript unavailable" } } }) }
             return rows("transcript", [
               { runId: CODING, sequence: 7, turn: 1, at: now - 3_400_000, kind: "cell", text: 'const text = await ctx.call("read", { path: "src/memory.ts" })' },
               { runId: CODING, sequence: 12, turn: 2, at: now - 3_300_000, kind: "cell", text: "bun run check //memory:typecheck  →  exit 1" }
@@ -90,11 +96,43 @@ export default showcase({
     await expect(trace.getByLabel("Waterfall", { exact: true })).toBeVisible()
     await app.show(trace.getByLabel("Waterfall", { exact: true }))
     await app.beat(900)
-    await app.click(coding.getByTestId(`flow-run-facet-transcript-${CODING}`))
-    await expect(coding.getByTestId(`flow-run-facet-transcript-${CODING}`)).toHaveAttribute("aria-selected", "true")
-    await app.beat(900)
-    await app.click(coding.getByTestId(`flow-run-facet-steps-${CODING}`))
-    await expect(coding.getByTestId(`flow-run-facet-steps-${CODING}`)).toHaveAttribute("aria-selected", "true")
+    const transcript = coding.getByTestId(`flow-run-facet-transcript-${CODING}`)
+    const steps = coding.getByTestId(`flow-run-facet-steps-${CODING}`)
+    const reading = page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Loading transcript" })
+    holdTranscript = true
+    try {
+      await transcript.focus()
+      await page.keyboard.press("Enter")
+      await expect.poll(() => transcriptReads).toBe(1)
+      await expect(transcript).toHaveAttribute("aria-selected", "true")
+      await expect(reading).toHaveCount(1)
+      await page.keyboard.press("ControlOrMeta+k")
+      await page.getByTestId("composer-input").fill("Chat during a transcript read")
+      await expect(page.getByTestId("composer-input")).toHaveValue("Chat during a transcript read")
+      await page.keyboard.press("Escape")
+      await transcript.focus()
+      await page.keyboard.press("Enter")
+      expect(transcriptReads).toBe(1)
+      await page.reload()
+      await page.getByRole("button", { name: "Chat", exact: true }).waitFor()
+      await expect.poll(() => transcriptReads).toBe(2)
+      await expect(transcript).toHaveAttribute("aria-selected", "true")
+      await expect(reading).toHaveCount(1)
+    } finally { holdTranscript = false; transcriptReceipt.resolve() }
+    await expect(reading).toHaveCount(0)
+    await expect(page.locator('.toast[data-toast-status="ok"]').filter({ hasText: "Transcript loaded" })).toHaveCount(1)
+    refuseTranscript = true
+    await transcript.focus()
+    await page.keyboard.press("Enter")
+    await expect(coding.getByRole("alert").filter({ hasText: "Transcript unavailable" })).toHaveCount(1)
+    await transcript.focus()
+    await page.keyboard.press("Enter")
+    await expect(coding.getByRole("alert").filter({ hasText: "Transcript unavailable" })).toHaveCount(0)
+    await steps.focus()
+    await page.keyboard.press("Enter")
+    await expect(steps).toHaveAttribute("aria-selected", "true")
+    await page.reload()
+    await expect(steps).toHaveAttribute("aria-selected", "true")
     const reads = summaries.get(CODING) ?? 0
     await app.click(coding.getByRole("button", { name: "Check again" }))
     await expect.poll(() => summaries.get(CODING) ?? 0).toBeGreaterThan(reads)

@@ -2,12 +2,12 @@ import { describe, expect, test } from "vitest"
 import {
   isSettledItemState,
   MYTHICAL_ROUTES,
-  MythicalWikiSchema,
   MythicalEventSchema,
   MythicalLaneSchema,
   MythicalLaneSubmissionSchema,
   mythicalRoute,
-  MythicalStackSchema
+  MythicalStackSchema,
+  MythicalWikiSchema
 } from "../src/Mythical.ts"
 
 /*
