@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -69,8 +70,10 @@ func readUserRefIndex(gitDir string) (map[string]int64, error) {
 		return nil, fmt.Errorf("read user ref index: %w", err)
 	}
 	index := map[string]int64{}
+	// A corrupt index only restamps every ref, which lengthens lives; it
+	// must not lock the repository's user refs.
 	if err := json.Unmarshal(data, &index); err != nil {
-		return nil, fmt.Errorf("parse user ref index: %w", err)
+		return map[string]int64{}, nil
 	}
 	return index, nil
 }
@@ -100,7 +103,7 @@ func writeUserRefIndex(gitDir string, index map[string]int64) error {
 // reconcileUserRefs brings the index in line with refs and deletes expired
 // user refs. It must run under the repository write lock. refs is updated in
 // place; the answer is the index after reconciliation, already persisted.
-func (s *Server) reconcileUserRefs(ctx context.Context, gitDir string, refs map[string]string) (map[string]int64, error) {
+func (s *Server) reconcileUserRefs(ctx context.Context, gitDir string, refs map[string]string, keep ...string) (map[string]int64, error) {
 	index, err := readUserRefIndex(gitDir)
 	if err != nil {
 		return nil, err
@@ -124,7 +127,10 @@ func (s *Server) reconcileUserRefs(ctx context.Context, gitDir string, refs map[
 			changed = true
 			continue
 		}
-		if now.Before(time.Unix(pushed, 0).Add(ttl)) {
+		// A ref being pushed or renewed right now is not expired: git still
+		// advertises an expired ref until it is deleted, so its owner's
+		// lease and renewal name it.
+		if now.Before(time.Unix(pushed, 0).Add(ttl)) || slices.Contains(keep, ref) {
 			continue
 		}
 		if err := deleteGitRef(ctx, gitDir, ref, oid); err != nil {
@@ -249,7 +255,7 @@ func (s *Server) userRefInfo(ref, oid string, pushed int64) repohost.UserRefInfo
 
 // userRefsFor opens a repository for a user ref operation: its git
 // directory under the write lock, with expired refs already deleted.
-func (s *Server) userRefsFor(r *http.Request) (gitDir string, userID int64, refs map[string]string, index map[string]int64, unlock func(), err error) {
+func (s *Server) userRefsFor(r *http.Request, keepName string) (gitDir string, userID int64, refs map[string]string, index map[string]int64, unlock func(), err error) {
 	owner, repo, err := parseRepoID(chi.URLParam(r, "id"))
 	if err != nil {
 		return "", 0, nil, nil, nil, err
@@ -272,7 +278,11 @@ func (s *Server) userRefsFor(r *http.Request) (gitDir string, userID int64, refs
 	if err != nil {
 		return fail(internalError("failed to list refs", err))
 	}
-	index, err = s.reconcileUserRefs(r.Context(), gitDir, refs)
+	var keep []string
+	if keepName != "" {
+		keep = append(keep, repohost.UserRef(userID, keepName))
+	}
+	index, err = s.reconcileUserRefs(r.Context(), gitDir, refs, keep...)
 	if err != nil {
 		return fail(internalError("failed to expire user refs", err))
 	}
@@ -281,7 +291,7 @@ func (s *Server) userRefsFor(r *http.Request) (gitDir string, userID int64, refs
 
 // listUserRefs answers GET /repos/{id}/user-refs/{user_id}.
 func (s *Server) listUserRefs(w http.ResponseWriter, r *http.Request) error {
-	_, userID, refs, index, unlock, err := s.userRefsFor(r)
+	_, userID, refs, index, unlock, err := s.userRefsFor(r, "")
 	if err != nil {
 		return err
 	}
@@ -311,7 +321,7 @@ func (s *Server) retainUserRef(w http.ResponseWriter, r *http.Request) error {
 	if _, _, ok := repohost.WorkspaceSourceFromRef(repohost.WorkspaceSourceRef(req.WorkspaceID, strings.Repeat("a", 40))); !ok {
 		return badRequest("invalid workspace id")
 	}
-	gitDir, userID, refs, index, unlock, err := s.userRefsFor(r)
+	gitDir, userID, refs, index, unlock, err := s.userRefsFor(r, "")
 	if err != nil {
 		return err
 	}
@@ -355,7 +365,7 @@ func (s *Server) renewUserRef(w http.ResponseWriter, r *http.Request) error {
 	if !repohost.ValidUserRefName(req.Name) {
 		return badRequest("invalid user ref name")
 	}
-	gitDir, userID, refs, index, unlock, err := s.userRefsFor(r)
+	gitDir, userID, refs, index, unlock, err := s.userRefsFor(r, req.Name)
 	if err != nil {
 		return err
 	}

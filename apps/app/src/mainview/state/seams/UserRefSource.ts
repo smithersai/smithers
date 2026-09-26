@@ -27,6 +27,8 @@ export const pinUserRefSource = async (
   const [owner, name] = repo.split("/")
   const path = `/repos/${encodeURIComponent(owner ?? "")}/${encodeURIComponent(name ?? "")}/workspaces/${encodeURIComponent(workspaceId)}/user-source`
   const answer = await createCloudClient(ctx).send("POST", path, source.explicit ? { name: source.name } : {}, `your pushed ${source.name}`, signal)
+  // A backend without the route cannot have pinned a head nobody asked for.
+  if ("error" in answer && !source.explicit && answer.status === 404) return { base: null }
   if ("error" in answer) return { code: answer.code ?? "user_source_unavailable", message: answer.error }
   const body = answer.body
   const base = typeof body === "object" && body !== null ? (body as { base?: unknown }).base : undefined

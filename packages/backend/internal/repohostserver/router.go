@@ -892,7 +892,11 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 	maxInputSize := maxDecompressedGitRequestSize
 	userRefs := writesUserRef(commands)
 	if userRefs {
-		if _, err := s.reconcileUserRefs(r.Context(), gitDir, beforeRefs); err != nil {
+		named := make([]string, 0, len(commands))
+		for _, command := range commands {
+			named = append(named, command.RefName)
+		}
+		if _, err := s.reconcileUserRefs(r.Context(), gitDir, beforeRefs, named...); err != nil {
 			return internalError("failed to expire user refs", err)
 		}
 		policy := s.config.userRefPolicy()
@@ -948,20 +952,22 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	// A user ref's push time is part of the push: a push whose time cannot
+	// be recorded is rolled back. A later rollback leaves a newer stamp,
+	// which only lengthens a life.
+	if userRefs {
+		if err := stampUserRefPushes(gitDir, commands, afterRefs); err != nil {
+			s.pushOutbox.discard(outboxPaths)
+			return rollBackPublishedPush(enforceCtx, gitDir, beforeRefs, afterRefs, err)
+		}
+	}
+
 	if err := s.ffi.ImportGitRefs(repoPath); err != nil {
 		if s.logger != nil {
 			s.logger.Warn("git receive-pack succeeded but jj ref import failed", "owner", owner, "repo", repo, "error", err)
 		}
 		s.pushOutbox.discard(outboxPaths)
 		return rollBackPublishedPush(enforceCtx, gitDir, beforeRefs, afterRefs, fmt.Errorf("import git refs after receive-pack: %w", err))
-	}
-
-	// Stamp only a push that stands. A lost stamp is not fatal: the ref is
-	// stamped when next seen, which only lengthens its life.
-	if userRefs {
-		if err := stampUserRefPushes(gitDir, commands, afterRefs); err != nil && s.logger != nil {
-			s.logger.Warn("user ref push time not recorded", "owner", owner, "repo", repo, "error", err)
-		}
 	}
 
 	// Pay the export here, while the write lock is already held, rather than

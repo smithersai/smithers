@@ -143,8 +143,8 @@ test("change.request returns before an unresolved launch, keeps Chat usable, ded
     const path = String(url)
     if (path.endsWith("/api/auth/session")) return json(200, { login: "owner", allowlisted: true, admin: false })
     if (path.endsWith("/api/workflow/provision")) return json(200, { status: "ready" })
-    // No pushed head: the change starts from the workspace as it is.
-    if (path.endsWith(`/workspaces/${workspaceId}/user-source`)) return json(200, { name: "head", base: null })
+    // A backend without the route: the change starts from the workspace as it is.
+    if (path.endsWith(`/workspaces/${workspaceId}/user-source`)) return json(404, {})
     if (!path.endsWith("/api/workflow/rpc")) return json(404, {})
     const body = JSON.parse(String(init?.body))
     procedures.push(body)

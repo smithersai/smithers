@@ -62,11 +62,17 @@ func userRefHostMissing(err error) bool {
 
 func userRefHostError(err error) error {
 	var upstream *repohost.StatusError
-	if errors.As(err, &upstream) && upstream.StatusCode >= 400 && upstream.StatusCode < 500 {
-		if upstream.StatusCode == http.StatusNotFound {
+	if errors.As(err, &upstream) {
+		switch {
+		case upstream.Code == "user_ref_missing":
 			return pkgerrors.New(pkgerrors.CodeUserRefMissing, upstream.Message)
+		case upstream.StatusCode == http.StatusNotFound:
+			return pkgerrors.NotFound(upstream.Message)
+		case upstream.StatusCode == http.StatusBadRequest:
+			return pkgerrors.BadRequest(upstream.Message)
+		case upstream.StatusCode == http.StatusConflict:
+			return pkgerrors.Conflict(upstream.Message)
 		}
-		return pkgerrors.Conflict(upstream.Message)
 	}
 	return pkgerrors.Internal("repository host: " + err.Error())
 }

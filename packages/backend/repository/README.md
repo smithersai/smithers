@@ -35,8 +35,9 @@ user may write there. The engine bounds them on every push that writes one:
 | Expiry after the ref's last push | 30 days | `SMITHERS_USER_REF_TTL`, e.g. `720h` (`UserRefTTL`) |
 
 Push times live in the git directory's `smithers-user-refs.json`. An expired
-ref is treated as absent at once and deleted by the next push that writes a
-user ref, by an hourly sweep, or when listed. `smithers repo push` renews the
+ref is deleted by the next push that writes a user ref, by an hourly sweep,
+or when listed or retained; until then git still advertises it, and its
+owner's push or renewal revives it. `smithers repo push` renews the
 expiry (also for an unchanged commit) and prints `expires_at`;
 `smithers repo push --list` shows every ref of yours with its expiry. A fork
 does not copy them. A coding run started from one pins its commit under the

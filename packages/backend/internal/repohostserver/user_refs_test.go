@@ -304,3 +304,49 @@ func TestForkLeavesUserRefsBehind(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist)
 	assert.Equal(t, tip, f.repo.refs()[repohost.UserRef(42, "head")], "the source keeps its refs")
 }
+
+// Git still advertises an expired ref until it is deleted, so its owner's
+// renewal and next push (with a lease on it) revive it instead of losing it.
+func TestAnExpiredButAdvertisedRefIsRevivedByItsOwner(t *testing.T) {
+	f := newLaneHTTPFixture(t, nil)
+	start := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	withUserRefClock(t, start)
+	tip := f.commit("local work", func(dir string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "work.txt"), []byte("work\n"), 0o644))
+	})
+	ref := repohost.UserRef(42, "head")
+	rec := pushAs(t, f, "42", f.userRefPush(laneZeroOID, tip, ref))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	renewed := start.Add(repohost.DefaultUserRefTTL + time.Hour)
+	withUserRefClock(t, renewed)
+	rec = userRefRequest(t, f, http.MethodPost, "42/renew", map[string]string{"name": "head"})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var info repohost.UserRefInfo
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
+	assert.Equal(t, renewed.Add(repohost.DefaultUserRefTTL), info.ExpiresAt)
+	assert.Equal(t, tip, f.repo.refs()[ref])
+
+	withUserRefClock(t, renewed.Add(repohost.DefaultUserRefTTL+time.Hour))
+	next := f.commit("more", func(dir string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "work.txt"), []byte("more\n"), 0o644))
+	})
+	rec = pushAs(t, f, "42", f.userRefPush(tip, next, ref))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, next, f.repo.refs()[ref])
+}
+
+func TestACorruptIndexOnlyRestampsRefs(t *testing.T) {
+	f := newLaneHTTPFixture(t, nil)
+	tip := f.commit("local work", func(dir string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "work.txt"), []byte("work\n"), 0o644))
+	})
+	rec := pushAs(t, f, "42", f.userRefPush(laneZeroOID, tip, repohost.UserRef(42, "head")))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NoError(t, os.WriteFile(filepath.Join(f.repo.gitDir, userRefIndexFile), []byte("{not json"), 0o644))
+	rec = userRefRequest(t, f, http.MethodGet, "42", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var listed repohost.UserRefList
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &listed))
+	require.Len(t, listed.Refs, 1)
+}
