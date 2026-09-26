@@ -3371,9 +3371,9 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
            * re-inserted, which one transaction refuses (ListReload.test.ts).
            */
           const wanted = new Map(transition.rows.map((row) =>
-            [flowDurationRowId(transition.repo, transition.flowId, row.actionTag), row]))
+            [flowDurationRowId(transition.repo, transition.flowId, row.actionTag, transition.workspaceId), row]))
           for (const row of collections.flowDurations.values()) {
-            if (row.repo !== transition.repo || row.flowId !== transition.flowId) continue
+            if (row.repo !== transition.repo || row.flowId !== transition.flowId || row.workspaceId !== transition.workspaceId) continue
             if (!wanted.has(row.id)) collections.flowDurations.delete(row.id)
           }
           for (const [id, row] of wanted) {
@@ -3381,6 +3381,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
               collections.flowDurations.insert({
                 id,
                 repo: transition.repo,
+                ...(transition.workspaceId === undefined ? {} : { workspaceId: transition.workspaceId }),
                 flowId: transition.flowId,
                 actionTag: row.actionTag,
                 samples: row.samples,

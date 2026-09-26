@@ -246,7 +246,7 @@ export const FlowRunGraph = ({
   readonly fileCards?: ReadonlyArray<Extract<Card, { kind: "file" }>>
 }) => {
   const { runId, graph, repo, events } = card.payload
-  const measured = useMemo(() => flowDurations.filter((row) => row.repo === repo && row.flowId === card.payload.workflow), [flowDurations, repo, card.payload.workflow])
+  const measured = useMemo(() => flowDurations.filter((row) => row.repo === repo && row.flowId === card.payload.workflow && row.workspaceId === card.payload.workspaceId), [flowDurations, repo, card.payload.workflow, card.payload.workspaceId])
   // The surface extends this last engine timestamp with a subscribed
   // monotonic clock while nodes run, even between journal pages.
   const observedAt = observedAtOf(events)

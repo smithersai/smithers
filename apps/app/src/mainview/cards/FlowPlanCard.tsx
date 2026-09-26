@@ -71,7 +71,7 @@ export const FlowPlanCardBody = ({
    * been measured: a partial sum reads as an estimate and is short by
    * whatever the unmeasured nodes take (D-030).
    */
-  const measured = flowDurations.filter((row) => row.repo === repo && row.flowId === flowId)
+  const measured = flowDurations.filter((row) => row.repo === repo && row.flowId === flowId && row.workspaceId === card.payload.workspaceId)
   const eta = nodes === undefined || nodes.length === 0 ? undefined : criticalPathEta(nodes, measured, flowId)
   const drill = {
     repo,

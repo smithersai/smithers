@@ -474,7 +474,7 @@ export const createWorkflowController = (
     }))?.events ?? []
     const previousNodes = card.payload.plan.nodes
     const durations = [...store.collections.flowDurations.values()]
-      .filter((row) => row.repo === repo && row.flowId === flowId)
+      .filter((row) => row.repo === repo && row.flowId === flowId && row.workspaceId === binding.workspaceId)
     return rekeySummary({
       flowId,
       previousNodes,

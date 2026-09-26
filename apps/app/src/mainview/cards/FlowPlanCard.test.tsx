@@ -343,3 +343,16 @@ describe("the schedules that fire the plan", () => {
     expect(host.querySelector(".flow-trigger-panel")).toBeNull()
   })
 })
+
+
+test("a plan estimates from its own workspace and never from default-gateway history", () => {
+  const history = [
+    ...MEASURED,
+    ...MEASURED.map(row => ({ ...row, workspaceId: "ws-1", p50Ms: row.p50Ms * 2 })),
+    ...MEASURED.map(row => ({ ...row, workspaceId: "ws-2", p50Ms: row.p50Ms * 3 }))
+  ]
+  for (const [workspaceId, expected] of [[undefined, "~5.0s"], ["ws-1", "~10.0s"], ["ws-2", "~15.0s"], ["unmeasured", undefined]] as const) {
+    const host = render(<FlowPlanCardBody card={card({ status: "done", nodes: NODES, workspaceId })} onRunCommand={() => {}} flowDurations={history} />)
+    expect(host.querySelector(".flow-plan-eta")?.textContent).toBe(expected)
+  }
+})

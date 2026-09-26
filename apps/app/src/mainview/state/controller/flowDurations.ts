@@ -13,6 +13,7 @@
  * which is exactly what a flow with no history shows. A toast for a
  * prediction nobody asked for would be an error message about an enhancement.
  */
+import { gatewayBindingFor } from "../RepoContext"
 import type { ControllerContext } from "./context"
 import type { GatewayWorkspaceBinding } from "./gateway"
 
@@ -24,7 +25,7 @@ export type FlowDurationsReader = (
 ) => Promise<void>
 
 /**
- * The reader, with the guard that keeps two reads of one flow in order.
+ * The reader keeps reads of one flow on one workspace in order.
  *
  * Every read takes a turn number, and an answer writes only while its turn is
  * the newest one started. Two reads of the same flow can be in flight — a
@@ -34,16 +35,22 @@ export type FlowDurationsReader = (
 export const createFlowDurationsReader = (ctx: ControllerContext): FlowDurationsReader => {
   const turns = new Map<string, number>()
   return async (repo, flowId, binding) => {
-    const key = `${repo}\u0000${flowId}`
+    if (ctx.disposed) return
+    const resolved = binding ?? gatewayBindingFor(ctx.store, repo)
+    if ("error" in resolved) return
+    const pinned = { workspaceId: resolved.workspaceId }
+    const epoch = ctx.accountEpoch
+    const key = JSON.stringify([repo, pinned.workspaceId ?? null, flowId])
     const turn = (turns.get(key) ?? 0) + 1
     turns.set(key, turn)
-    const durations = await ctx.gateway.flowDurations(repo, flowId, binding)
-    if (ctx.disposed || turns.get(key) !== turn) return
+    const durations = await ctx.gateway.flowDurations(repo, flowId, pinned)
+    if (ctx.disposed || ctx.accountEpoch !== epoch || turns.get(key) !== turn) return
     if (durations.status !== "ok") return
     await ctx.store.dispatch({
       type: "flow-durations.loaded",
       actor: "system",
       repo,
+      ...(pinned.workspaceId === undefined ? {} : { workspaceId: pinned.workspaceId }),
       flowId,
       rows: durations.value.map((row) => ({
         actionTag: row.actionTag,

@@ -54,7 +54,7 @@ export default showcase({
       return route.fulfill({ json: { status: "ok", paused: 1 } })
     })
     await backend.route(url => url.pathname === "/api/workflow/rpc", async route => {
-      const call = route.request().postDataJSON() as { procedure: string; payload: { flowId?: string; input?: { operation?: string }; selector?: { _tag?: string; runId?: string } } }
+      const call = route.request().postDataJSON() as { procedure: string; payload: { flowId?: string; input?: { operation?: string }; selector?: { _tag?: string; runId?: string; flowId?: string } } }
       const ok = (payload: unknown) => route.fulfill({ json: { ok: true, payload } })
       switch (call.procedure) {
         case "List": return ok({ _tag: "flows", items: [
@@ -85,7 +85,7 @@ export default showcase({
           const tag = call.payload.selector?._tag
           const runId = call.payload.selector?.runId ?? "run-review-71"
           if (runId === "run-resume-1" && resumed) paused = false
-          const rows = tag === "run-summary" ? [{ runId, flowId: runId === "run-review-71" ? FLOW : "create-flow", status: (runId === "run-resume-1" && resumed) || (runId === "run-register-1" && registered) ? "completed" : "running", createdAt: 1, updatedAt: 2,
+          const rows = tag === "flow-durations" ? NODES.map((node, index) => ({ flowId: call.payload.selector?.flowId ?? FLOW, actionTag: node.material.body.action, samples: 4, p50Ms: (index + 1) * 1000, p90Ms: (index + 1) * 2000 })) : tag === "run-summary" ? [{ runId, flowId: runId === "run-review-71" ? FLOW : "create-flow", status: (runId === "run-resume-1" && resumed) || (runId === "run-register-1" && registered) ? "completed" : "running", createdAt: 1, updatedAt: 2,
             turns: 1, calls: 2, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0, verdict: "running", diagnosis: "running" }] : []
           return ok({ cursor: { projection: tag, runId: null, value: 0 }, rows })
         }
@@ -107,6 +107,7 @@ export default showcase({
     await page.keyboard.press("Enter")
     const plan = page.locator('[data-kind="flow-plan"]').last()
     await expect(plan.locator(".flow-plan-count")).toHaveText("3")
+    await expect(plan.locator(".flow-plan-eta")).toHaveText("~6.0s")
     await app.show(plan)
     await app.maximize(plan)
     await app.beat(500)

@@ -61,7 +61,7 @@ export const useFileCardRows = (cards: AppCollections["cards"]): ReadonlyArray<E
  * Every measured duration row the session holds.
  *
  * One live read for the whole transcript: a plan card filters to its own
- * repository and flow. The collection is small (one row per measured action
+ * repository, workspace and flow. The collection is small (one row per measured action
  * tag of the flows this session has opened) and empty until something reads
  * the projection, which is what a flow with no history looks like.
  */

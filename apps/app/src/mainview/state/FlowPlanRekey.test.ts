@@ -123,6 +123,7 @@ const RUN_CARD: Extract<Card, { kind: "run-trace" }> = {
 
 /** What the workspace answers with: one edit, and one measured history. */
 interface Served {
+  readonly plan?: ReturnType<typeof planAnswer>
   /** The plan nodes whose key the edit moved. */
   readonly edited?: ReadonlyArray<string>
   /**
@@ -136,7 +137,7 @@ const relay = (served: Served = {}) => async (input: RequestInfo | URL, init?: R
   const path = new URL(String(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url), "https://app.test").pathname
   const body = typeof init?.body === "string" ? JSON.parse(init.body) as { procedure?: string; payload?: { selector?: { _tag?: string } } } : undefined
   if (path === "/api/workflow/provision") return json(200, { status: "ready", repo: REPO, gatewayId: "gw-1" })
-  if (path === "/api/workflow/rpc" && body?.procedure === "Plan") return json(200, { ok: true, payload: planAnswer(served.edited) })
+  if (path === "/api/workflow/rpc" && body?.procedure === "Plan") return json(200, { ok: true, payload: served.plan ?? planAnswer(served.edited) })
   if (path === "/api/workflow/rpc" && body?.payload?.selector?._tag === "flow-durations") {
     return served.durations === "refused"
       ? json(200, { ok: false, error: { message: "Unknown projection selector" } })
@@ -268,4 +269,23 @@ test("a comparison uses only the matching workspace's run with that id", async (
   await controller.planFlow(FLOW, REPO, undefined, "workspace-source", RUN)
   await settle(15)
   expect(scoped()?.payload.rekey?.rerun).toBe(3)
+})
+
+
+test("a re-key estimate ignores measurements from a different workspace", async () => {
+  const plan = planAnswer([])
+  const first = plan.nodes[0]!
+  const actionTag = cardNodes[0]!.action ?? FLOW
+  const { store, controller } = await ready([], { plan: { ...plan, nodes: [{ ...first, dependsOn: [] }] }, durations: "refused" })
+  await store.dispatch({ type: "flow-durations.loaded", actor: "system", repo: REPO, flowId: FLOW, workspaceId: "another-workspace",
+    rows: [{ actionTag, samples: 4, p50Ms: 9000, p90Ms: 10000 }] }).isPersisted.promise
+  await controller.planFlow(FLOW, REPO, undefined, undefined, RUN)
+  await settle(15)
+  expect(preview(store)?.status).toBe("done")
+  expect(preview(store)?.rekey?.etaMs).toBeUndefined()
+  await store.dispatch({ type: "flow-durations.loaded", actor: "system", repo: REPO, flowId: FLOW,
+    rows: [{ actionTag, samples: 4, p50Ms: 1000, p90Ms: 2000 }] }).isPersisted.promise
+  await controller.planFlow(FLOW, REPO, undefined, undefined, RUN)
+  await settle(15)
+  expect(preview(store)?.rekey?.etaMs).toBe(1000)
 })

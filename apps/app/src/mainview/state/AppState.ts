@@ -151,9 +151,11 @@ export const repoTreeRowId = (copyId: string, path: string): string => `${copyId
  * unmeasured prediction.
  */
 export const FlowDurationsRowSchema = z.object({
-  /** `flowDurationRowId(repo, flowId, actionTag)`. */
+  /** `flowDurationRowId(repo, flowId, actionTag, workspaceId)`. */
   id: z.string(),
   repo: z.string(),
+  /** Absent only for the repository default gateway. */
+  workspaceId: z.string().optional(),
   flowId: z.string(),
   /** The action or flow the measured nodes dispatched. */
   actionTag: z.string(),
@@ -164,8 +166,8 @@ export const FlowDurationsRowSchema = z.object({
   loadedAt: z.number()
 })
 export type FlowDurationsRow = z.infer<typeof FlowDurationsRowSchema>
-export const flowDurationRowId = (repo: string, flowId: string, actionTag: string): string =>
-  `${repo}:${flowId}:${actionTag}`
+export const flowDurationRowId = (repo: string, flowId: string, actionTag: string, workspaceId?: string): string =>
+  JSON.stringify([repo, workspaceId ?? null, flowId, actionTag])
 
 /*
  * A target this user starred (target.star): the targets card's Featured
@@ -1722,7 +1724,7 @@ export type AppTransition =
   /* The repository's declared flows landed (or went absent: an empty list) from its factory projection. */
   | { type: "repository-flows.loaded"; actor: "system"; repo: string; flows: ReadonlyArray<RepositoryFlow>; home?: RepositoryFlowsRow["home"] }
   /* The whole of one flow's measured history, replacing whatever was read before. */
-  | { type: "flow-durations.loaded"; actor: "system"; repo: string; flowId: string; rows: ReadonlyArray<{ readonly actionTag: string; readonly samples: number; readonly p50Ms: number; readonly p90Ms: number }> }
+  | { type: "flow-durations.loaded"; actor: "system"; repo: string; workspaceId?: string; flowId: string; rows: ReadonlyArray<{ readonly actionTag: string; readonly samples: number; readonly p50Ms: number; readonly p90Ms: number }> }
   /* The workspace heading: its name, and the inline editor the pencil opens. */
   | { type: "workspace.renamed"; actor: Actor; name: string }
   | { type: "workspace.rename.toggled"; actor: "user"; open: boolean }

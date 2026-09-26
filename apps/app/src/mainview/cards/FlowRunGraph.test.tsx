@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import type { Card } from "../state/AppState"
-import { focusedRunNode, observedAtOf, runGraphOfCard } from "./FlowRunGraph"
+import { FlowRunGraph, focusedRunNode, observedAtOf, runGraphOfCard } from "./FlowRunGraph"
 import { FlowRunGraphSurface, layoutRunGraph, stateWord } from "./FlowRunGraphSurface"
 import type { NodeRun, RunGraphEdge, RunGraphNode } from "./FlowGraphStatus"
 import { RunTraceBody } from "./RunTraceCard"
@@ -601,4 +601,20 @@ describe("the run card's graph door", () => {
     expect(host.querySelector(".run-trace-bar[data-view=\"graph\"]")).toBeNull()
     expect(host.querySelector(".run-trace-empty")).not.toBeNull()
   })
+})
+
+
+test("run graph timings follow the card's workspace when the same component changes scope", async () => {
+  const history = [undefined, "ws-1", "ws-2"].map((workspaceId, index) => ({
+    id: `timing-${index}`, repo: "codeplanesmithers/smithers-demo", flowId: RECORDED.flow, workspaceId,
+    actionTag: "gateway/graph/Steady", samples: 4, p50Ms: (index + 1) * 1000, p90Ms: (index + 1) * 2000, loadedAt: 0
+  }))
+  const base = runCard({ plan: RECORDED.plan })
+  const drawing = runGraphOfCard(base)!
+  const host = render(<FlowRunGraph card={base} view={drawing} flowDurations={history} onRunCommand={() => {}} />)
+  const root = mounted.at(-1)!.root
+  for (const [workspaceId, expected] of [[undefined, "~1.0s"], ["ws-1", "~2.0s"], ["ws-2", "~3.0s"], ["unmeasured", undefined]] as const) {
+    await act(async () => root.render(<FlowRunGraph card={{ ...base, payload: { ...base.payload, workspaceId } }} view={drawing} flowDurations={history} onRunCommand={() => {}} />))
+    expect(host.querySelector('[data-node="root.flow.then.map.all.steady"] .flow-graph-node-eta')?.textContent).toBe(expected)
+  }
 })
