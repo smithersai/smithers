@@ -918,6 +918,8 @@ impl RepoHandle {
         Ok(files)
     }
 
+    /// One page of one directory level, read from the tree object at
+    /// `prefix` without flattening the rest of the tree.
     fn list_directory(
         &self,
         change_id: &str,
@@ -926,41 +928,54 @@ impl RepoHandle {
         limit: u32,
     ) -> Result<Vec<TreeEntry>, JjError> {
         let prefix = prefix.trim_matches('/');
-        let files = self.list_files_at_change(change_id, Some(prefix))?;
-        let mut entries = std::collections::BTreeMap::new();
-        for file in files {
-            let rest = if prefix.is_empty() {
-                file.path.as_str()
-            } else if let Some(rest) = file
-                .path
-                .strip_prefix(prefix)
-                .and_then(|rest| rest.strip_prefix('/'))
-            {
-                rest
-            } else {
-                continue;
-            };
-            let Some((child, tail)) = rest.split_once('/') else {
-                if !rest.is_empty() {
-                    entries.insert(file.path, "file");
-                }
-                continue;
-            };
-            if !child.is_empty() && !tail.is_empty() {
-                let path = if prefix.is_empty() {
-                    child.to_string()
-                } else {
-                    format!("{prefix}/{child}")
-                };
-                entries.insert(path, "dir");
+        let dir = RepoPathBuf::from_internal_string(prefix)
+            .map_err(|_| JjError::BadRequest(format!("invalid path: {prefix}")))?;
+        let commit_id = resolve_change_or_commit_id(&self.repo, change_id)?;
+        let commit = self.repo.store().get_commit(&commit_id).map_err(|err| {
+            JjError::Internal(format!("failed to load commit for tree listing: {err}"))
+        })?;
+        let trees = commit
+            .tree()
+            .trees()
+            .block_on()
+            .map_err(|err| JjError::Internal(format!("failed to read tree: {err}")))?;
+        let Some(trees) = trees
+            .sub_tree_recursive(&dir)
+            .block_on()
+            .map_err(|err| JjError::Internal(format!("failed to read tree: {err}")))?
+        else {
+            return Ok(Vec::new());
+        };
+        let same_change = self.repo.store().merge_options().same_change;
+        let mut entries = Vec::new();
+        for (name, values) in jj_lib::merged_tree::all_merged_tree_entries(&trees) {
+            if entries.len() == limit as usize {
+                break;
             }
+            let path = dir.join(name).as_internal_file_string().to_string();
+            if path.as_str() <= after {
+                continue;
+            }
+            let kind = match values.resolve_trivial(same_change) {
+                Some(None) => continue,
+                Some(Some(TreeValue::Tree(_))) => "dir",
+                Some(Some(_)) => "file",
+                None if values
+                    .iter()
+                    .flatten()
+                    .all(|value| matches!(value, TreeValue::Tree(_))) =>
+                {
+                    "dir"
+                }
+                None => {
+                    return Err(JjError::Conflict(format!(
+                        "cannot list unresolved conflict at {path}"
+                    )))
+                }
+            };
+            entries.push(TreeEntry { path, kind });
         }
-        Ok(entries
-            .into_iter()
-            .filter(|(path, _)| path.as_str() > after)
-            .take(limit as usize)
-            .map(|(path, kind)| TreeEntry { path, kind })
-            .collect())
+        Ok(entries)
     }
 
     fn get_conflicts(&self, change_id: &str) -> Result<Vec<Conflict>, JjError> {
@@ -4707,6 +4722,102 @@ mod tests {
                 "story"
             );
         }
+    }
+
+    #[test]
+    fn directory_pages_read_one_level_of_a_tree_over_ten_thousand_files() {
+        let tmp = TempDir::new().unwrap();
+        let path = repo_path(&tmp);
+        init_repo(&path).unwrap();
+        let git = gix::open(path.join(".jj/repo/store/git")).unwrap();
+        let blob = git.write_blob(b"x").unwrap().detach();
+        let file = |name: String| gix::objs::tree::Entry {
+            mode: gix::objs::tree::EntryKind::Blob.into(),
+            filename: name.into(),
+            oid: blob,
+        };
+        let tree = |entries: Vec<gix::objs::tree::Entry>| {
+            let mut entries = entries;
+            entries.sort();
+            git.write_object(gix::objs::Tree { entries })
+                .unwrap()
+                .detach()
+        };
+        let big = tree((0..12_000).map(|i| file(format!("f{i:05}"))).collect());
+        let nested = tree(vec![gix::objs::tree::Entry {
+            mode: gix::objs::tree::EntryKind::Tree.into(),
+            filename: "big".into(),
+            oid: big,
+        }]);
+        let root = tree(vec![
+            file("README.md".into()),
+            gix::objs::tree::Entry {
+                mode: gix::objs::tree::EntryKind::Tree.into(),
+                filename: "a".into(),
+                oid: big,
+            },
+            gix::objs::tree::Entry {
+                mode: gix::objs::tree::EntryKind::Tree.into(),
+                filename: "src".into(),
+                oid: nested,
+            },
+        ]);
+        let signature = gix::actor::SignatureRef::from_bytes(
+            b"Smithers <smithers@example.com> 1711398853 +0000",
+        )
+        .unwrap();
+        let id = git
+            .commit_as(
+                signature,
+                signature,
+                "refs/heads/big",
+                "big",
+                root,
+                std::iter::empty::<gix::ObjectId>(),
+            )
+            .unwrap()
+            .detach()
+            .to_string();
+        let handle = RepoHandle::open(&path).unwrap();
+        assert!(matches!(
+            handle.list_files_at_change(&id, None),
+            Err(JjError::BadRequest(_))
+        ));
+        let page = |prefix: &str, after: &str, limit: u32| {
+            handle
+                .list_directory(&id, prefix, after, limit)
+                .unwrap()
+                .into_iter()
+                .map(|entry| (entry.path, entry.kind))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            page("", "", 5),
+            vec![
+                ("README.md".to_string(), "file"),
+                ("a".to_string(), "dir"),
+                ("src".to_string(), "dir"),
+            ]
+        );
+        assert_eq!(page("", "README.md", 1), vec![("a".to_string(), "dir")]);
+        assert_eq!(
+            page("/src/big/", "src/big/f09999", 2),
+            vec![
+                ("src/big/f10000".to_string(), "file"),
+                ("src/big/f10001".to_string(), "file"),
+            ]
+        );
+        let mut after = String::new();
+        let mut seen = 0;
+        loop {
+            let entries = page("src/big", &after, 1000);
+            let Some(last) = entries.last() else { break };
+            after = last.0.clone();
+            seen += entries.len();
+        }
+        assert_eq!(seen, 12_000);
+        assert_eq!(page("src/big/f00001", "", 5), vec![]);
+        assert_eq!(page("missing", "", 5), vec![]);
     }
 
     #[test]
