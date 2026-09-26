@@ -130,14 +130,21 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
        */
       return { refusal: browserWriteRefusal(error), persistenceFailed: true, writeRefused: true }
     }
+    const clearRetiredInput = (): void => {
+      // Navigation fences execution before pagehide, but its accepted private
+      // input still belongs to the next page. A refused write above or an
+      // account/turn change must continue to discard it.
+      if (ctx.services.pageLifetime?.aborted !== true || ctx.accountEpoch !== epoch ||
+        request.invocation?.signal?.aborted || !currentHttpCall(ctx, request.httpCall)) pendingInput?.clear()
+    }
     const accepted = ctx.store.collections.commandIntents.get(id)
     if (ctx.disposed || ctx.accountEpoch !== epoch || request.invocation?.signal?.aborted || accepted?.status !== "accepted"
       || !currentHttpCall(ctx, request.httpCall)) {
-      pendingInput?.clear()
+      clearRetiredInput()
       return { refusal: "The command's controller, account, or turn changed before it could start.", persistenceFailed: true }
     }
     onAccepted?.(request)
-    return { receipt: { id, actor: request.actor, acceptedRevision: accepted.acceptedRevision }, ...(pendingInput === undefined ? {} : { pendingInput }) }
+    return { receipt: { id, actor: request.actor, acceptedRevision: accepted.acceptedRevision }, ...(pendingInput === undefined ? {} : { pendingInput: { clear: clearRetiredInput } }) }
   },
   canExecute: (receipt, request) => {
     const row = ctx.store.collections.commandIntents.get(receipt.id)

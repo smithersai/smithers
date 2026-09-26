@@ -257,7 +257,8 @@ describe("durable command intent at the active shared door", () => {
     expect(reads).toBe(rejected ? 0 : 1)
   })
 
-  for (const close of [false, true]) test(`pending human form input is staged before acceptance and cleared on ${close ? "controller refusal" : "completion"}`, async () => {
+  for (const boundary of ["completion", "disposal", "departure"] as const) test(`pending human form input follows ${boundary} during admission`, async () => {
+    const close = boundary !== "completion", pageLifetime = new AbortController()
     const bytes = memoryStorage()
     const store = await open(bytes)
     const held = deferred(), entered = deferred()
@@ -268,7 +269,7 @@ describe("durable command intent at the active shared door", () => {
         staged.push({ cardId, card, intentId })
         return { clear: () => { cleared++ } }
       }
-    })
+    }, { pageLifetime: pageLifetime.signal })
     controller.renderFlowForm({ name: "repo.tree", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.String }) })
     await store.settled?.()
     const pending = controller.commands.run("form.set", "form-repo.tree purpose pending words")
@@ -278,10 +279,11 @@ describe("durable command intent at the active shared door", () => {
     const before = store.collections.cards.get("form-repo.tree")
     expect(before?.kind === "flow-form" && before.payload.draft).toEqual({})
     await entered.promise
-    if (close) await controller.dispose()
+    if (boundary === "disposal") await controller.dispose()
+    if (boundary === "departure") pageLifetime.abort()
     held.resolve()
     expect((await pending).status).toBe(close ? "failed" : "executed")
-    expect(cleared).toBe(1)
+    expect(cleared).toBe(boundary === "departure" ? 0 : 1)
     const readable = close ? await open(bytes) : store
     const after = readable.collections.cards.get("form-repo.tree")
     expect(after?.kind === "flow-form" && after.payload.draft).toEqual(close ? {} : { purpose: "pending words" })

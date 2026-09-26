@@ -138,3 +138,29 @@ for (const refusal of ["write", "disposed", "account"] as const) test(`${refusal
     } finally { held.resolve(); await pending; await controller.dispose() }
   })
 })
+
+for (const boundary of ["reload", "reload-account", "reload-write"] as const) test(`${boundary} during signup admission preserves only still-owned input for the next page`, async () => {
+  await withRecovery(async (store, recovery, reopen) => {
+    const held = Promise.withResolvers<void>(), pageLifetime = new AbortController()
+    const controller = controllerFor({ ...store, dispatch: transition => {
+      const receipt = store.dispatch(transition)
+      return transition.type !== "command.intent.accepted" ? receipt : new Proxy(receipt, { get: (target, property, receiver) => property === "isPersisted"
+        ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held.promise) } : Reflect.get(target, property, receiver) })
+    } }, silentAgent, { pageLifetime: pageLifetime.signal })
+    const pending = controller.commands.run("signup.set", flowArgs("signup.set", { field: "name", value: "Retried Name" }))
+    try {
+      expect(readEntityRecoveries(recovery)).toHaveLength(1)
+      pageLifetime.abort() // The browser's beforeunload fence, before pagehide.
+      if (boundary === "reload-account") await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "new-owner", provider: "github", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+      if (boundary === "reload-write") held.reject(new Error("refused write during navigation")); else held.resolve()
+      expect((await pending).status).toBe("failed")
+      expect(store.session().signup?.draft.name).toBeUndefined()
+      if (boundary === "reload") expect(readEntityRecoveries(recovery)).toMatchObject([{ value: { kind: "signup", signup: { draft: { name: "Retried Name" } } } }])
+      else expect(readEntityRecoveries(recovery)).toEqual([])
+      const restored = await reopen()
+      expect(restored.session().signup?.draft.name).toBe(boundary === "reload" ? "Retried Name" : undefined)
+      expect(restored.session().signup?.stage).toBe("account")
+      expect((await restored.verifyState()).valid).toBe(true)
+    } finally { held.resolve(); await pending; await controller.dispose() }
+  })
+})
