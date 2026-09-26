@@ -163,10 +163,9 @@ action name.
 `Action.make` adds `tier` (default `"sealed"`), optional `idempotencyKey`,
 and opaque `metadata`. Compensable dispatch requires the local
 `SnapshotBoundary` hook (`snapshot`, `restore`, `diff`) and restores before a
-retry. The interface carries
-`// TODO(piece-6): bind to @smthrs/kernel Jj in @smthrs/engine-store`; this package
-does not import `@smthrs/kernel`. An irreversible retry without a declared
-idempotency key dies with structured
+retry. `@smthrs/engine-store` provides the boundary over `@smthrs/kernel`
+`Jj`; this package does not import `@smthrs/kernel`. An irreversible retry
+without a declared idempotency key dies with structured
 `IrreversibleRetryRequiresIdempotencyKey` before redispatch.
 
 This eliminates replay collisions caused by reused or renamed action names,

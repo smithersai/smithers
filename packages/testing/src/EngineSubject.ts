@@ -12,7 +12,6 @@
  *
  * @since 0.0.0
  */
-// TODO(engine): replace with the vendored flow engine's public seam when it lands.
 import { Context, Effect, Layer } from "effect"
 import type { EngineSubjectError } from "./TestingError.ts"
 import { EngineUnavailableError } from "./TestingError.ts"
