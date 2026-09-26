@@ -312,6 +312,14 @@ describe("the run card, per phase and waiting reason", () => {
     expect(dispatched[0]).toEqual({ name: "runs.rerun", args: "sourceCard=flow-run-run-1 run-1" })
   })
 
+  for (const phase of ["completed", "failed", "cancelled", "no-capacity"] as const) {
+    test(`a ${phase} run does not promise another turn for pending steering`, () => {
+      const { host } = renderRun({ phase, steeringPending: true })
+      expect(host.textContent).not.toContain("steering pending")
+      expect(host.textContent).not.toContain("delivered at the next turn")
+    })
+  }
+
   test("a queued steer reads 'steering pending · delivered at the next turn'", () => {
     const { host } = renderRun({ phase: "running", steeringPending: true })
     expect(host.textContent).toContain("steering pending · delivered at the next turn")

@@ -266,6 +266,7 @@ test("T1: launch a fixture flow, steer it, stop it, and see it in the run inbox"
   expect(cancel.payload.runId).toBe(RUN_ID)
   await expect(card.getByTestId(`run-outcome-${RUN_ID}`)).toHaveAttribute("data-phase", "cancelled")
   await expect(card.locator(".smithers-card-header")).toContainText("Stopped")
+  await expect(card).not.toContainText("steering pending")
   await expect(notice).toHaveAttribute("data-toast-status", "cancelled")
   await expect(notice).toHaveAttribute("role", "status")
   await expect(notice.locator(".toast-detail")).toHaveText("Cancelled")

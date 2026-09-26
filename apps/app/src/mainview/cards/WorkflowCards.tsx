@@ -77,7 +77,7 @@ export const WorkflowRunCardBody = ({
           </p>
         ) :
         null}
-      {card.payload.steeringPending === true ?
+      {card.payload.steeringPending === true && !TERMINAL_RUN_PHASES.has(phase) ?
         <p className="smithers-card-note">steering pending · delivered at the next turn</p> :
         null}
       {/* The run as a trace (spec 06): the card's body for every run kind. Its rows dispatch runs.trace.*. */}
