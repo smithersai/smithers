@@ -8,7 +8,8 @@
  * the workspace machines of runs the engine database says are unfinished,
  * which those runs reattach when they resume; build the host; serve the
  * gateway behind the state directory's credential ({@link credentialOf}); and, when both Slack tokens are set, run the Slack intake beside
- * it; with `wiki.commit`, commit what the host writes to the wiki
+ * it; without Slack, notify the owner on this Mac of gates and failures
+ * (`notify.ts`); with `wiki.commit`, commit what the host writes to the wiki
  * (`wiki.ts`). Runs a previous process parked (an approval gate, a model call cut
  * short) resume from the engine database; Ctrl-C stops the process and leaves
  * them parked.
@@ -30,11 +31,12 @@ import { executionDatabasePath } from "../../packages/smithers/src/internal/Exec
 import type * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import type { Control as ControlPort } from "./client.ts"
-import { ControlRefused, credentialFile, readCredential } from "./client.ts"
+import { ControlRefused, credentialFile, operations, readCredential } from "./client.ts"
 import { executionRoot, layer } from "./host.ts"
 import type { Settings } from "./settings.ts"
 import * as SetupMicrosandbox from "./setup/microsandbox.ts"
 import * as Subscriptions from "./setup/subscriptions.ts"
+import * as Notify from "./notify.ts"
 import * as SlackIntake from "./slack.ts"
 import * as Wiki from "./wiki.ts"
 
@@ -140,6 +142,8 @@ export interface StartOptions {
   /** A fixture's plaintext Slack socket. */
   readonly allowPlaintextSocket?: boolean | undefined
   readonly log?: ((line: string) => void) | undefined
+  /** Shows the owner a notice when Slack is off; a macOS notification by default. */
+  readonly notify?: ((notice: Notify.Notice) => void) | undefined
 }
 
 /** Starts a host and serves until interrupted. */
@@ -199,6 +203,15 @@ export const start = async (options: StartOptions) => {
         environment,
         allowPlaintextSocket: options.allowPlaintextSocket
       }).pipe(Effect.catchCause((cause) => Effect.logError("organization Slack intake stopped", cause))))
+    }
+    if (Notify.enabled(environment, slack)) {
+      const ops = operations(inProcess(yield* Control.Control))
+      yield* Effect.forkScoped(Notify.watcher({
+        stateDir: settings.stateDir,
+        runs: async () => [...await ops.runs({ status: "waiting-approval" }), ...await ops.runs({ status: "failed" })],
+        notify: options.notify ?? Notify.macNotifier,
+        log
+      }))
     }
     if (settings.organization.wiki.commit) {
       yield* Effect.forkScoped(Wiki.committer(settings.root, Wiki.hostPaths(settings.organization), log))

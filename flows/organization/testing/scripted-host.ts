@@ -65,7 +65,8 @@ import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import { Effect, Stream } from "effect"
-import { existsSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { parseArgs } from "node:util"
 import { platform } from "../../../packages/smithers/src/internal/NodeControlHost.ts"
 import { start } from "../serve.ts"
@@ -380,5 +381,7 @@ NodeRuntime.runMain(await start({
   platform,
   seats,
   // A Slack fixture serves Socket Mode over plaintext on loopback.
-  allowPlaintextSocket: environment.SMITHERS_ORGANIZATION_SLACK_FIXTURE === "1"
+  allowPlaintextSocket: environment.SMITHERS_ORGANIZATION_SLACK_FIXTURE === "1",
+  // The owner's notices go to a file a test reads, never to this Mac's screen.
+  notify: (notice) => appendFileSync(join(settings.stateDir, "notices.log"), `${notice.text}\n`)
 }))

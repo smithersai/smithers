@@ -133,6 +133,12 @@ describe("the organization host", { skip: missing === undefined ? false : `skipp
     await handle.start()
     const resumed = await settled(handle, runId, ["waiting-approval", "completed", "failed"])
     assert.equal(resumed.status, "waiting-approval", "the gate is still open after the restart")
+    // Without Slack the owner is told once, across the restart.
+    const notices = join(handle.stateDir, "notices.log")
+    for (const deadline = Date.now() + 30_000; !existsSync(notices) && Date.now() < deadline;) {
+      await pause(250)
+    }
+    assert.equal(readFileSync(notices, "utf8"), "answer land: Land this change?\n", handle.output())
 
     assert.equal(run(handle, "answer", "land", "approve"), `approved land for ${runId}`)
     assert.equal((await settled(handle, runId)).status, "completed", handle.output())

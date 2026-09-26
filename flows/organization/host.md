@@ -59,6 +59,8 @@ Flags override variables, variables override the state directory's `.env`
 | Calendar (one-on-ones, bookings) | | `SMITHERS_ORG_CALENDAR_ID` with `SMITHERS_GOOGLE_ACCESS_TOKEN`, or `SMITHERS_GOOGLE_REFRESH_TOKEN` + `SMITHERS_GOOGLE_CLIENT_ID`/`_SECRET` | not connected |
 | Seat credentials | | `SMITHERS_ORG_AUTH` (`subscription` or `api-key`) | `subscription` |
 | Slack | | `SMITHERS_SLACK_BOT_TOKEN`, `SMITHERS_SLACK_APP_TOKEN`, `SMITHERS_SLACK_TEAM_IDS`, `SMITHERS_SLACK_USER_IDS` | off |
+| Mac notifications without Slack | | `SMITHERS_ORG_NOTIFY` (`off` turns them off) | on |
+| Node for `install-service` | | `SMITHERS_ORG_NODE` | found on `PATH`, fnm, Volta, nvm, Homebrew |
 
 A repository is named as the roster's `grants.repositories` name it. A bare
 path is named by its `origin` remote's `owner/name`, else its directory name;
@@ -66,6 +68,12 @@ use `name=path` when that differs. `doctor` fails on a name no active role
 holding `workspace` is granted. Seats resolve from the environment
 (see [Model access](#model-access)). With `judge: none` role results are
 checked by the flow, not by a judge.
+
+## Notifications
+
+Without Slack, a host on macOS shows a notification when a run parks at a
+gate (`answer land: Land this change?`) or fails (`<run> failed`), once per
+gate or run, across restarts (`<state>/notified.json`).
 
 ## Wiki commits
 
