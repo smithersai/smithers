@@ -5,11 +5,15 @@ import { cloudCapabilities, localCapabilities } from "../src/HostCapabilities.ts
 const booleans = [false, true] as const
 
 test("balance support is explicit and independent of identity and checkout", () => {
-  for (const balance of booleans) for (const checkout of booleans) {
-    const cloud = cloudCapabilities({ identity: true, cloud: true, agent: true, terminal: false, balance, checkout })
-    expect(cloud.includes("billing.balance")).toBe(balance)
-    expect(cloud.includes("billing.checkout")).toBe(checkout)
-    expect(localCapabilities({ identity: true, cloud: true, agent: true, balance }).includes("billing.balance")).toBe(balance)
+  for (const balance of booleans) {
+    for (const checkout of booleans) {
+      const cloud = cloudCapabilities({ identity: true, cloud: true, agent: true, terminal: false, balance, checkout })
+      expect(cloud.includes("billing.balance")).toBe(balance)
+      expect(cloud.includes("billing.checkout")).toBe(checkout)
+      expect(localCapabilities({ identity: true, cloud: true, agent: true, balance }).includes("billing.balance")).toBe(
+        balance
+      )
+    }
   }
   expect(localCapabilities({ identity: true, cloud: true, agent: true })).not.toContain("billing.balance")
 })
@@ -116,14 +120,29 @@ describe("localCapabilities (the Bun server, host local)", () => {
 })
 
 test("overview, plans and portal are independent from checkout", () => {
-  for (const overview of booleans) for (const plans of booleans) for (const portal of booleans) for (const checkout of booleans) {
-    const cloud = cloudCapabilities({ identity: true, cloud: true, agent: true, terminal: false, overview, plans, portal, checkout })
-    const local = localCapabilities({ identity: true, cloud: true, agent: true, overview, plans, portal })
-    for (const emitted of [cloud, local]) {
-      expect(emitted.includes("billing.overview")).toBe(overview)
-      expect(emitted.includes("billing.plans")).toBe(plans)
-      expect(emitted.includes("billing.portal")).toBe(portal)
+  for (const overview of booleans) {
+    for (const plans of booleans) {
+      for (const portal of booleans) {
+        for (const checkout of booleans) {
+          const cloud = cloudCapabilities({
+            identity: true,
+            cloud: true,
+            agent: true,
+            terminal: false,
+            overview,
+            plans,
+            portal,
+            checkout
+          })
+          const local = localCapabilities({ identity: true, cloud: true, agent: true, overview, plans, portal })
+          for (const emitted of [cloud, local]) {
+            expect(emitted.includes("billing.overview")).toBe(overview)
+            expect(emitted.includes("billing.plans")).toBe(plans)
+            expect(emitted.includes("billing.portal")).toBe(portal)
+          }
+          expect(cloud.includes("billing.checkout")).toBe(checkout)
+        }
+      }
     }
-    expect(cloud.includes("billing.checkout")).toBe(checkout)
   }
 })
