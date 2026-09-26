@@ -1307,6 +1307,56 @@ describe("triggers seam: watching the registration run", () => {
     }])
   })
 
+  test("completed registration settles while its listing refresh is held", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    const refresh = Promise.withResolvers<Response>()
+    const { store, controller } = await readyToRegister(ROUTES(calls, run, { [REGISTRATIONS]: () => refresh.promise }))
+    try {
+      const requestId = await approved(store, controller)
+      await waitFor(() => registrationRun(store, requestId)?.payload.phase === "running")
+      await waitFor(() => registrationToast(store)?.status === "running")
+      run.status = "completed"
+      await waitFor(() => registrationRun(store, requestId)?.payload.phase === "completed")
+      await new Promise(resolve => setTimeout(resolve, 100))
+      expect(registrationToast(store)?.status).toBe("ok")
+      expect([...store.collections.toasts.values()].filter(toast => toast.status === "running")).toEqual([])
+    } finally { refresh.resolve(json(200, { status: "ok", rows: [] })) }
+  })
+
+  test("a failed listing refresh stays visible without reversing registration completion", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    let unavailable = false
+    const { store, controller } = await readyToRegister(ROUTES(calls, run, {
+      [PROJECTION]: () => unavailable ? json(503, { status: "error" }) : projectionDocument(DAY_ONE)
+    }))
+    const requestId = await approved(store, controller)
+    await waitFor(() => registrationToast(store)?.status === "running")
+    unavailable = true
+    run.status = "completed"
+    await waitFor(() => registrationRun(store, requestId)?.payload.phase === "completed")
+    await waitFor(() => registrationToast(store)?.status === "ok")
+    await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.key === "trigger.refresh.will/flows" && toast.status === "failed"))
+    expect(registrationToast(store)?.status).toBe("ok")
+    expect(store.collections.toasts.get("toast-trigger.refresh.will/flows")?.detail).toContain("The rules of will/flows couldn't be read")
+  })
+
+  test("a cancelled registration settles neutrally without refreshing the listing", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    let refreshes = 0
+    const { store, controller } = await readyToRegister(ROUTES(calls, run, {
+      [REGISTRATIONS]: () => { refreshes++; return json(200, { status: "ok", rows: [] }) }
+    }))
+    await approved(store, controller)
+    await waitFor(() => registrationToast(store)?.status === "running")
+    run.status = "cancelled"
+    run.verdict = "Cancelled"
+    await waitFor(() => registrationToast(store)?.status === "cancelled")
+    expect(refreshes).toBe(0)
+  })
+
   test("a run that never settles keeps the notice running, the card running, and chat usable", async () => {
     const calls: Array<RelayCall> = []
     const { store, controller } = await readyToRegister(ROUTES(calls, { status: "running", verdict: "" }))

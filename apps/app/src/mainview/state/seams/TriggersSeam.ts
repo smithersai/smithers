@@ -1088,7 +1088,8 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     const scope = held?.kind === "run-trace" ? held.payload : undefined
     const summary = scope === undefined ? undefined : ctx.store.committedRuntimeRun(runtimeRunKey(scope))?.summary
     if (summary?.status === "completed") {
-      await listTriggers(repo)
+      // The run is done; a slow or failed read owns only its refresh notice.
+      void runtime.withToast(`trigger.refresh.${repo}`, `Dispatcher · ${repo}`, `Dispatcher · ${repo}`, () => listTriggers(repo), true)
       return { value: settled }
     }
     if (summary?.status === "cancelled") return TOAST_CANCELLED
