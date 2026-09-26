@@ -37,6 +37,12 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	require.NoError(t, err)
 	_, source, _, _ := runtime.Caller(0)
 	root := filepath.Clean(filepath.Join(filepath.Dir(source), "../.."))
+	// The host bundle is built with the workspace's esbuild; a checkout
+	// without `pnpm install` cannot build it, which is not a product failure
+	// unless this run requires the database suites.
+	if _, err := os.Stat(filepath.Join(root, "apps/model-host/node_modules/esbuild")); err != nil && os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") != "1" {
+		t.Skip("apps/model-host dependencies are not installed; run pnpm install")
+	}
 	bundleDir := t.TempDir()
 	bundle := filepath.Join(bundleDir, "smithers-model-host")
 	build := exec.Command(node, filepath.Join(root, "apps/model-host/build.mjs"), bundle)

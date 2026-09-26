@@ -49,6 +49,12 @@ func TestLocalChatComposedModelTurn(t *testing.T) {
 	_, source, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	root := filepath.Clean(filepath.Join(filepath.Dir(source), "../../../.."))
+	// The host bundle is built with the workspace's esbuild; a checkout
+	// without `pnpm install` cannot build it, which is not a product failure
+	// unless this run requires the database suites.
+	if _, err := os.Stat(filepath.Join(root, "apps/model-host/node_modules/esbuild")); err != nil && os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") != "1" {
+		t.Skip("apps/model-host dependencies are not installed; run pnpm install")
+	}
 	bundle := filepath.Join(t.TempDir(), "smithers-model-host")
 	build := exec.Command(node, filepath.Join(root, "apps/model-host/build.mjs"), bundle)
 	build.Dir = root
