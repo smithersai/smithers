@@ -799,6 +799,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
   }
   collections.sessions.update(SESSION_ID, (draft) => {
     const branchId = draft.activeBranchId ?? DEFAULT_BRANCH_ID
+    if (draft.signup !== undefined) draft.signup = initialSignup()
     draft.draft = ""
     delete draft.queuedPrompts
     delete draft.promptQueuePaused

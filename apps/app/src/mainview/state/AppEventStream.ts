@@ -25,7 +25,8 @@ export const APP_EVENT_FORMAT_VERSION = 1
  */
 // v14 associates tool acts with their turn; v15 clears dismissed card navigation.
 // v16 removes the unused chain journal projections; v17 narrows signup to the GitHub door.
-export const APP_PROJECTOR_VERSION = 17
+// v18 retires signup details with their account.
+export const APP_PROJECTOR_VERSION = 18
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)

@@ -15,6 +15,7 @@ export const SignupSchema = z.object({
   stage: z.enum(SIGNUP_STAGES),
   door: z.literal("github").optional(),
   name: z.string().optional(),
+  /** Login prefill at the account step; Continue saves the chosen draft here. */
   account: z.string().optional(),
   /** Index into SIGNUP_QUESTIONS while the stage is `poll`. */
   question: z.number().int().nonnegative(),
@@ -81,6 +82,16 @@ export const signupAfterIdentity = (signup: Signup | undefined, state: "signed-i
   if (signup === undefined) {
     if (previousOwner) return undefined
     return { ...initialSignup(), stage: "account", door: "github", account: accountSlug(login), draft: { account: accountSlug(login) } }
+  }
+  // Old releases retained the automatic prefill across an account change.
+  // Repair only an untouched form: entered legacy details have no owner
+  // receipt, and a chosen slug is not evidence of whose account supplied it.
+  if (signup.stage === "account" && signup.question === 0 && signup.account !== undefined &&
+    signup.account !== accountSlug(login) && (signup.name ?? "") === "" && signup.repo === undefined &&
+    Object.keys(signup.answers).length === 0 &&
+    (signup.draft.account === undefined || signup.draft.account === signup.account) &&
+    Object.entries(signup.draft).every(([field, value]) => field === "account" || value === "")) {
+    return { ...signup, account: accountSlug(login), draft: { ...signup.draft, account: accountSlug(login) } }
   }
   if (signup.stage !== "sign-in") return signup
   return { ...signup, stage: "account", door: signup.door ?? "github", account: signup.account ?? accountSlug(login), draft: { ...signup.draft, account: signup.draft.account ?? accountSlug(login) } }

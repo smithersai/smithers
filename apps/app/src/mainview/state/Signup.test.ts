@@ -46,6 +46,20 @@ describe("Signup", () => {
     expect(SIGNUP_QUESTIONS.filter(q => q.required).map(q => q.id)).toEqual([])
   })
 
+  test("an untouched legacy account prefill follows the current identity", () => {
+    const old = { ...initialSignup(), stage: "account" as const, door: "github" as const,
+      account: "old-owner", draft: { account: "old-owner" } }
+    expect(signupAfterIdentity(old, "signed-in", "new-owner", "new-owner"))
+      .toEqual({ ...old, account: "new-owner", draft: { account: "new-owner" } })
+    expect(signupAfterIdentity(old, "signed-in", "old-owner", "old-owner")).toBe(old)
+    // A manually edited or submitted legacy row cannot be assigned by its slug.
+    for (const row of [
+      { ...old, draft: { account: "chosen-slug" } },
+      { ...old, draft: { ...old.draft, name: "Entered name" } },
+      { ...old, stage: "poll" as const, name: "Entered name" }
+    ]) expect(signupAfterIdentity(row, "signed-in", "new-owner", "new-owner")).toBe(row)
+  })
+
   test("signup.changed merges onto the row and a sign-in advances an unfinished signup through the projection", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     try {
