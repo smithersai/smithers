@@ -743,7 +743,8 @@ describe("microsandbox machines with environments", () => {
     expect(none).toMatchObject({ disableNetwork: true })
     expect(based!["image"]).toBeUndefined()
     expect(based!["rootDisk"]).toBeUndefined()
-    expect(based!["fromSnapshot"]).toMatch(/^smthrs-env-[0-9a-f]{8}-fam-base$/)
+    expect(based!["fromSnapshot"]).toBe(`${Workspace.basePrefix("o")}fam-base`)
+    expect(Workspace.basePrefix("o")).toMatch(/^smthrs-env-[0-9a-f]{8}-$/)
     expect(based!["networkPolicy"]).toEqual({
       defaultEgress: "deny",
       defaultIngress: "deny",

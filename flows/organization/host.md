@@ -317,7 +317,8 @@ Runs every case under the organization's cases directory (`casesDir`,
 default `Org/Cases`) against a host it starts itself, with real seats, over a
 scratch state directory, a scratch copy of `Org/` and the pages roles'
 knowledge names, and scratch clones of the repositories: the live host's
-state, memory, receipts and branches are never touched. A role case is one
+state, memory, receipts and branches are never touched; the run's machines
+and prepared bases are removed when it ends. A role case is one
 `organization/qualify` run; a delivery case (`request:` instead of `task:`)
 is one request through intake (`--delivery-runs` times). A workspace case
 may start at a named `revision`, and may have the change its principal left

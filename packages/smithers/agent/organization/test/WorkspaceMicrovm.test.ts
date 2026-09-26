@@ -17,7 +17,6 @@ import * as MicrosandboxSandbox from "@smthrs/sandbox/MicrosandboxSandbox"
 import { Cause, Effect, Layer } from "effect"
 import * as Microsandbox from "microsandbox"
 import { spawnSync } from "node:child_process"
-import { createHash } from "node:crypto"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
@@ -105,11 +104,7 @@ describe.skipIf(missing !== undefined)("Workspace against real microVMs", () => 
       MicrosandboxSandbox.reap({ sdk: Microsandbox, owner, isAlive: () => Effect.succeed(false) }).pipe(
         // The prepared bases this run captured are its own, by owner.
         Effect.andThen(
-          MicrosandboxSandbox.pruneSnapshots(
-            Microsandbox,
-            `smthrs-env-${createHash("sha256").update(owner).digest("hex").slice(0, 8)}-`,
-            0
-          )
+          MicrosandboxSandbox.pruneSnapshots(Microsandbox, Workspace.basePrefix(owner), 0)
         )
       )
     ), 120_000)

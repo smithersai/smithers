@@ -27,6 +27,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { parseArgs } from "node:util"
 import { Effect } from "effect"
 import * as Actions from "../../../packages/smithers/agent/organization/src/Actions.ts"
+import * as Workspace from "../../../packages/smithers/agent/organization/src/Workspace.ts"
 import * as MicrosandboxSandbox from "../../../packages/smithers/flows/sandbox/src/MicrosandboxSandbox/index.ts"
 import { operations, readCredential, rpc } from "../client.ts"
 import { environmentOf, resolve, type Settings } from "../settings.ts"
@@ -108,13 +109,21 @@ const cloneRepositories = (settings: Settings, into: string) =>
     return [name, clone] as const
   })
 
-/** Removes every machine the qualification host's installation booted and left behind. */
+/**
+ * Removes every machine and prepared base the qualification host's
+ * installation left behind. The installation lives only as long as the run,
+ * so its bases would otherwise stay on disk (several GiB each) for good.
+ */
 const reap = async (owner: string) => {
   const install = SetupMicrosandbox.locate()
   if (install === undefined) return
   const sdk = await SetupMicrosandbox.sdkOf(install)
   sdk.setDefaultBackend("local")
-  await Effect.runPromise(MicrosandboxSandbox.reap({ sdk, owner, isAlive: () => Effect.succeed(false) }))
+  await Effect.runPromise(
+    MicrosandboxSandbox.reap({ sdk, owner, isAlive: () => Effect.succeed(false) }).pipe(
+      Effect.andThen(MicrosandboxSandbox.pruneSnapshots(sdk, Workspace.basePrefix(owner), 0))
+    )
+  )
 }
 
 /** The wiki root's git commit, `+` when its tree has uncommitted changes; `undefined` outside git. */

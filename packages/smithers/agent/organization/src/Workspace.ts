@@ -586,6 +586,16 @@ const networkOptions = (network: Network): {
 }
 
 /**
+ * The name prefix of every prepared base an installation owns, as a
+ * Microsandbox snapshot: bases are an installation's own, so another owner's
+ * never collide, and removing an installation's bases removes these.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const basePrefix = (owner: string): string => `smthrs-env-${sha256Hex(owner).slice(0, 8)}-`
+
+/**
  * Local Microsandbox microVMs as {@link Machines}: sticky workspace machines
  * that survive between steps and host restarts, each labelled with its
  * workspace key ({@link workspaceLabel}), ephemeral fresh ones, and a forced
@@ -606,8 +616,7 @@ export const microsandbox = (options: MicrosandboxOptions): Machines => {
     idleTimeoutSecs: options.idleTimeoutSecs ?? 3_600,
     pullPolicy: options.pullPolicy ?? "if-missing"
   }
-  // Bases are this installation's own: another owner's never collide.
-  const prefix = `smthrs-env-${sha256Hex(options.owner).slice(0, 8)}-`
+  const prefix = basePrefix(options.owner)
   const booted = (boot: Boot | undefined) => ({
     ...shape,
     ...(boot?.base === undefined ? { image: options.image } : { snapshot: `${prefix}${boot.base}` }),
