@@ -79,6 +79,9 @@ const plans = [
 test("the plans card fits a 390 px phone, hides Max, and states included, remaining and reset credit", async ({ page }) => {
   await page.setViewportSize(PHONE)
   await signedOutVisitor(page)
+  // A cloud host with a billing upstream declares its billing routes.
+  await page.route("**/api/bootstrap", route => route.fulfill(json({ apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
+    capabilities: ["identity", "cloud", "agent", "billing.balance", "billing.overview", "billing.plans"], authFlow: "redirect", sandbox: null })))
   await page.route("**/api/auth/session", route => route.fulfill(json({ status: "signed-in", login: "adapark", allowlisted: true, admin: false })))
   await page.route("**/api/billing/plans", route => route.fulfill(json({ plans, current_plan_key: "pro" })))
   await page.route("**/api/billing", route => route.fulfill(json({ credit_balance_cents: 1234, usage_period_end: "2026-10-01T00:00:00Z",
