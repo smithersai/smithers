@@ -897,3 +897,122 @@ describe("run graph commands retain the recorded gateway scope", () => {
     expect(view(store, second.id)).toEqual(second.payload.graph)
   })
 })
+
+for (const kind of ["plan", "run"] as const) {
+  const ready = async (readGate?: Promise<void>) => {
+    const options = { sites: [{ id: "gate", declaredAt: { path: "flows/review/flow.ts", line: 1 } }], source: "export const gate = true", readGate }
+    const seed = await (kind === "plan" ? planned(options) : launched(options))
+    const original = kind === "plan" ? planCard(seed.store)! : runCard(seed.store)!
+    const view = { node: "gate", tab: "declaration" as const }
+    const card = original.kind === "flow-plan" ? { ...original, payload: { ...original.payload, view } }
+      : { ...original, payload: { ...original.payload, graph: view } }
+    const backing = memoryStorage()
+    let refuse = false
+    let refused = 0
+    const marker = JSON.stringify('"tab":"code"').slice(1, -1)
+    const storage = { ...backing, setItem: (key: string, value: string) => {
+      if (refuse && key.endsWith(".staged") && value.includes(marker)) {
+        refuse = false
+        refused += 1
+        throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError", code: 22 })
+      }
+      backing.setItem(key, value)
+    } }
+    const store = await createAppStore({ kind: "localStorage", storage })
+    await signIn(store)
+    await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const served = relay(options)
+    const controller = createAppController(store, silentAgent, served.services)
+    const flow = kind === "plan" ? "flow.plan.tab" : "runs.graph.tab"
+    const tab = (value = "code") => controller.commands.run(flow, kind === "plan" ? `${card.id} ${value}` : `sourceCard=${card.id} ${RUN} ${value}`)
+    const shown = (from = store) => {
+      const current = from.collections.cards.get(card.id)
+      return current?.kind === "flow-plan" ? current.payload.view : current?.kind === "run-trace" ? current.payload.graph : undefined
+    }
+    const hold = () => {
+      const gate = Promise.withResolvers<void>()
+      const dispatch = store.dispatch
+      let held = false
+      Object.assign(store, { dispatch: (transition: Parameters<typeof dispatch>[0]) => {
+        const transaction = dispatch(transition)
+        if (!held && transition.type === "card.updated" && transition.id === card.id) {
+          held = true
+          return { ...transaction, isPersisted: { promise: transaction.isPersisted.promise.then(() => gate.promise) } }
+        }
+        return transaction
+      } })
+      return { release: gate.resolve, held: () => held, restore: () => Object.assign(store, { dispatch }) }
+    }
+    return { store, controller, storage, card, services: served.services, reads: served.reads, tab, shown, hold, refuse: () => { refuse = true }, refused: () => refused }
+  }
+
+  test(`${kind}: tab acknowledgment and declaration read wait for storage, not the source response`, async () => {
+    const source = Promise.withResolvers<void>()
+    const fixture = await ready(source.promise)
+    const held = fixture.hold()
+    let answered = false
+    try {
+      const result = fixture.tab().then(result => { answered = true; return result })
+      await waitFor(held.held)
+      await settle(15)
+      expect(answered).toBe(false)
+      expect(fixture.reads).toHaveLength(0)
+      await fixture.store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat while the tab saves" }).isPersisted.promise
+      held.release()
+      expect(said(await result)).toContain("tab=")
+      await waitFor(() => fixture.reads.length === 1)
+      expect(answered).toBe(true)
+      expect(fixture.shown()?.tab).toBe("code")
+    } finally { held.release(); held.restore(); source.resolve() }
+  })
+
+  test(`${kind}: refused tab storage fails visibly, reads nothing, and preserves the previous tab on reload`, async () => {
+    const fixture = await ready()
+    fixture.refuse()
+    const result = await fixture.tab()
+    await settle(15)
+    expect(fixture.refused()).toBe(1)
+    expect(result.status).toBe("failed")
+    expect(said(result)).toMatch(/not.*saved/)
+    expect(fixture.reads).toHaveLength(0)
+    expect(fixture.shown()?.tab).toBe("declaration")
+    await fixture.controller.dispose()
+    await fixture.store.dispose?.()
+    const restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
+    const retry = createAppController(restored, silentAgent, fixture.services)
+    try {
+      expect(fixture.shown(restored)?.tab).toBe("declaration")
+      const result = await retry.commands.run(kind === "plan" ? "flow.plan.tab" : "runs.graph.tab",
+        kind === "plan" ? `${fixture.card.id} code` : `sourceCard=${fixture.card.id} ${RUN} code`)
+      expect(said(result)).toContain("tab=code")
+      await waitFor(() => fixture.reads.length === 1)
+    } finally { await retry.dispose(); await restored.dispose?.() }
+  })
+
+  test(`${kind}: a successful tab choice is restored after immediate reload`, async () => {
+    const fixture = await ready()
+    expect(said(await fixture.tab("events"))).toContain("tab=events")
+    await fixture.controller.dispose()
+    await fixture.store.dispose?.()
+    const restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
+    try { expect(fixture.shown(restored)?.tab).toBe("events") } finally { await restored.dispose?.() }
+  })
+
+  test(`${kind}: an account change during the tab receipt cannot launch an old declaration read`, async () => {
+    const fixture = await ready()
+    const held = fixture.hold()
+    try {
+      const result = fixture.tab()
+      await waitFor(held.held)
+      await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+      const card = fixture.card.kind === "flow-plan"
+        ? { ...fixture.card, payload: { ...fixture.card.payload, view: { node: "gate", tab: "code" as const } } }
+        : { ...fixture.card, payload: { ...fixture.card.payload, graph: { node: "gate", tab: "code" as const } } }
+      await fixture.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+      held.release()
+      await result
+      await settle(15)
+      expect(fixture.reads).toHaveLength(0)
+    } finally { held.release(); held.restore() }
+  })
+}

@@ -47,11 +47,11 @@ export interface GraphController {
   /** `runs.graph.select <runId> [nodeId]`: open a run graph node's drawer, or close it. */
   readonly selectGraphNode: (runId: string, nodeId?: string, sourceCard?: string) => Promise<CommandResult>
   /** `runs.graph.tab <runId> <tab>`: which tab of the open node the run's graph shows. */
-  readonly graphNodeTab: (runId: string, tab: GraphDrawerTab, sourceCard?: string) => CommandResult
+  readonly graphNodeTab: (runId: string, tab: GraphDrawerTab, sourceCard?: string) => Promise<CommandResult>
   /** `flow.plan.select <cardId> [nodeId]`: open a plan node's drawer, or close it. */
   readonly selectPlanNode: (cardId: string, nodeId?: string) => Promise<CommandResult>
   /** `flow.plan.tab <cardId> <tab>`: which tab of the open node the plan card shows. */
-  readonly planNodeTab: (cardId: string, tab: GraphDrawerTab) => CommandResult
+  readonly planNodeTab: (cardId: string, tab: GraphDrawerTab) => Promise<CommandResult>
 }
 
 /** The tabs a refusal names, so the sentence and the enum cannot drift. */
@@ -258,20 +258,21 @@ export const createGraphController = (
     return { value: `graph-select run=${runId} node=${nodeId ?? "none"}` }
   }
 
-  const graphNodeTab = (runId: string, tab: GraphDrawerTab, sourceCard?: string): CommandResult => {
+  const graphNodeTab = async (runId: string, tab: GraphDrawerTab, sourceCard?: string): Promise<CommandResult> => {
     const card = runCardFor(runId, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the graph lives on its card.`
     if ("error" in card) return card.error
     const graph = card.payload.graph
     if (graph?.node === undefined) return `Select a node on run ${runId} before choosing one of its tabs.`
-    store.dispatch({
+    const epoch = ctx.accountEpoch
+    await store.dispatch({
       type: "card.updated",
       actor: ctx.commandActor,
       id: card.id,
       patch: { payload: { ...card.payload, graph: { ...graph, tab } } }
-    })
+    }).isPersisted.promise
     /* The Code tab is a viewer, so opening it reads what it shows. */
-    if (tab === "code") readDeclaration(card.id, card.payload.repo, graph.node, runSite(card, graph.node))
+    if (!ctx.disposed && ctx.accountEpoch === epoch && tab === "code") readDeclaration(card.id, card.payload.repo, graph.node, runSite(card, graph.node))
     return { value: `graph-tab run=${runId} tab=${tab}` }
   }
 
@@ -333,18 +334,19 @@ export const createGraphController = (
     return { value: `plan-select card=${cardId} node=${nodeId ?? "none"}` }
   }
 
-  const planNodeTab = (cardId: string, tab: GraphDrawerTab): CommandResult => {
+  const planNodeTab = async (cardId: string, tab: GraphDrawerTab): Promise<CommandResult> => {
     const card = planCardFor(cardId)
     if (card === undefined) return "Open the plan first: the graph lives on its card."
     const view = card.payload.view
     if (view?.node === undefined) return "Select a node on that plan before choosing one of its tabs."
-    store.dispatch({
+    const epoch = ctx.accountEpoch
+    await store.dispatch({
       type: "card.updated",
       actor: ctx.commandActor,
       id: card.id,
       patch: { payload: { ...card.payload, view: { ...view, tab } } }
-    })
-    if (tab === "code") readDeclaration(card.id, card.payload.repo, view.node, planSite(card, view.node))
+    }).isPersisted.promise
+    if (!ctx.disposed && ctx.accountEpoch === epoch && tab === "code") readDeclaration(card.id, card.payload.repo, view.node, planSite(card, view.node))
     return { value: `plan-tab card=${cardId} tab=${tab}` }
   }
 
