@@ -862,7 +862,7 @@ is the key to pass on to `Control.signal`.
 | `PostMessage`   | `integrations/slack/post-message`   | `connectionId`, `channel`, `text`, `key`, optional `threadTs`, `blocks`, `persona` (`username` and one of `iconEmoji`/`iconUrl`, needs `chat:write.customize`). Stamps `key` into message metadata. Irreversible. Answers `Posted`. |
 | `UpdateMessage` | `integrations/slack/update-message` | Replaces `text` and `blocks` of `ts`. Irreversible.                                                                                                                                                                                 |
 | `Reconcile`     | `integrations/slack/reconcile-post` | Finds a post by `key` in the conversation or a thread: `found` with its `ts`, `absent`, or `inconclusive` when `maxPages` ran out.                                                                                                  |
-| `layer`         | —                                   | All three implementations, requiring `SlackConnections`.                                                                                                                                                                            |
+| `layer`         |                                     | All three implementations, requiring `SlackConnections`.                                                                                                                                                                            |
 
 `findPosted(client, options)` is the reconcile search over a bare client;
 `metadata(key)` and `personaParams(persona)` are the parameters the post

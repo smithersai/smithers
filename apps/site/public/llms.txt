@@ -124,7 +124,7 @@
 - [@smthrs/fs](https://smithers.sh/docs/reference/api/fs/): Private metadata routing and schema-checked command projections for Smithers flows
 - [@smthrs/gateway](https://smithers.sh/docs/reference/api/gateway/): Effect workspace gateway contracts, projections, and supervision ports for flows
 - [@smthrs/harness](https://smithers.sh/docs/reference/api/harness/): The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls
-- [@smthrs/integrations](https://smithers.sh/docs/reference/api/integrations/): GitHub, Linear, and Telegram adapters over the Smithers control plane
+- [@smthrs/integrations](https://smithers.sh/docs/reference/api/integrations/): GitHub, Linear, Telegram, Slack, Google Calendar, Gmail, and X adapters over the Smithers control plane
 - [@smthrs/jj](https://smithers.sh/docs/reference/api/jj/): Jujutsu version control as a portable Effect host service
 - [@smthrs/journal](https://smithers.sh/docs/reference/api/journal/): Effect services for the Smithers event journal: the immutable run history and the owner fence on its durable channel
 - [@smthrs/kernel](https://smithers.sh/docs/reference/api/kernel/): Capability kernel: effect tiers, monotone capability sets, grant store, and permission-decorating layers over the Host services
@@ -135,6 +135,7 @@
 - [@smthrs/model](https://smithers.sh/docs/reference/api/model/): Schema-first Effect model protocols, routes, and streaming events for flows
 - [@smthrs/notifications](https://smithers.sh/docs/reference/api/notifications/): Durable notification queue, admission policy, and journal projection for flows
 - [@smthrs/observability](https://smithers.sh/docs/reference/api/observability/): Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers
+- [@smthrs/organization](https://smithers.sh/docs/reference/api/organization/): Agent organizations on Smithers: role profiles and grants, roster validation, composed role prompts, pinned skill packs, hiring lifecycle, weekly meeting planning, configurable gates, role-task authority, and microVM task workspaces
 - [@smthrs/patterns](https://smithers.sh/docs/reference/api/patterns/): Higher-order flow patterns and decorators for flows. It composes @smthrs/flow and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.
 - [@smthrs/plan](https://smithers.sh/docs/reference/api/plan/): The persisted flows plan: a keyed action graph, its append-only store, and its diff
 - [@smthrs/plan-store](https://smithers.sh/docs/reference/api/plan-store/): The persisted plan's append-only SQLite store and the migrations that own its tables

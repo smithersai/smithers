@@ -22,12 +22,15 @@ import { Package as harnessPackage } from "../../packages/smithers/agent/harness
 import { Package as integrationsPackage } from "../../packages/smithers/agent/integrations/PACKAGE.ts"
 import { Package as memoryPackage } from "../../packages/smithers/agent/memory/PACKAGE.ts"
 import { Package as modelPackage } from "../../packages/smithers/agent/model/PACKAGE.ts"
+import { Package as organizationPackage } from "../../packages/smithers/agent/organization/PACKAGE.ts"
 import { Package as agentPackage } from "../../packages/smithers/agent/PACKAGE.ts"
 import { Package as pluginPackage } from "../../packages/smithers/agent/plugin/PACKAGE.ts"
 import { Package as registryPackage } from "../../packages/smithers/agent/registry/PACKAGE.ts"
 import { Package as scorersPackage } from "../../packages/smithers/agent/scorers/PACKAGE.ts"
 import { Package as stdPackage } from "../../packages/smithers/agent/std/PACKAGE.ts"
 import { Package as triggersPackage } from "../../packages/smithers/agent/triggers/PACKAGE.ts"
+import { Package as buildCliPackage } from "../../packages/smithers/build/build-cli/PACKAGE.ts"
+import { Package as buildPackage } from "../../packages/smithers/build/PACKAGE.ts"
 import { Package as targetsPackage } from "../../packages/smithers/build/targets/PACKAGE.ts"
 import { Package as controlPackage } from "../../packages/smithers/control/PACKAGE.ts"
 import { Package as createAppPackage } from "../../packages/smithers/create-app/PACKAGE.ts"
@@ -47,6 +50,7 @@ import { Package as keysPackage } from "../../packages/smithers/flows/keys/PACKA
 import { Package as observabilityPackage } from "../../packages/smithers/flows/observability/PACKAGE.ts"
 import { Package as flowsPackage } from "../../packages/smithers/flows/PACKAGE.ts"
 import { Package as patternsPackage } from "../../packages/smithers/flows/patterns/PACKAGE.ts"
+import { Package as planStorePackage } from "../../packages/smithers/flows/plan-store/PACKAGE.ts"
 import { Package as planPackage } from "../../packages/smithers/flows/plan/PACKAGE.ts"
 import { Package as platformBrowserPackage } from "../../packages/smithers/flows/platform-browser/PACKAGE.ts"
 import { Package as platformBunPackage } from "../../packages/smithers/flows/platform-bun/PACKAGE.ts"
@@ -194,6 +198,8 @@ const cliData = Smithers.Generate({
 const apiPackages = {
   agent: agentPackage,
   artifacts: artifactsPackage,
+  build: buildPackage,
+  "build-cli": buildCliPackage,
   canonical: canonicalPackage,
   capability: capabilityPackage,
   chain: chainPackage,
@@ -221,8 +227,10 @@ const apiPackages = {
   model: modelPackage,
   notifications: notificationsPackage,
   observability: observabilityPackage,
+  organization: organizationPackage,
   patterns: patternsPackage,
   plan: planPackage,
+  "plan-store": planStorePackage,
   "platform-browser": platformBrowserPackage,
   "platform-bun": platformBunPackage,
   "platform-node": platformNodePackage,

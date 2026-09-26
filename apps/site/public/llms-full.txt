@@ -155,10 +155,10 @@ Smithers picks and runs the models. Model usage draws on your account credit. Ne
 | Price | $0 | $50 per month |
 | Model credit | $10 once, at signup | $50 per month |
 | Running sandboxes | 1 | 3 |
-| Idle sleep | 30 minutes | 4 hours |
+| Idle sleep | 30 minutes | 1 hour |
 | Sandbox-hours per day | 4 | Unlimited |
 
-Pro's monthly credit is added at the start of each calendar month (UTC). The plans card shows the credit you have left, the credit your plan includes, and the date the next credit arrives.
+Pro's monthly credit is added when each monthly payment succeeds and expires at the end of that month; unused credit does not roll over. A refund or cancellation ends it. The plans card shows the credit you have left, the credit your plan includes, and the date the next credit arrives.
 
 When credit runs out, new model calls stop until more credit arrives. The plans card then offers Upgrade to Pro.
 
@@ -7407,6 +7407,7 @@ The release roster comes from [readWorkspaceManifests and publishedPackages](htt
 | `@smthrs/model`            | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/package.json)            |
 | `@smthrs/notifications`    | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/package.json)          |
 | `@smthrs/observability`    | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/package.json)    |
+| `@smthrs/organization`     | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/organization/package.json)     |
 | `@smthrs/patterns`         | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/package.json)         |
 | `@smthrs/plan`             | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/package.json)             |
 | `@smthrs/plan-store`       | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/package.json)       |
@@ -13135,13 +13136,29 @@ not answer fails the call.
 ### StandardFlows.memory
 
 ```ts
+interface MemoryScope {
+  readonly policy: WithMemory.Policy
+  readonly provenance?: MemoryStore.Provenance | undefined
+}
+
 const memory: (
-  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>
+  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
+  scope?: MemoryScope
 ) => FlowBinding.Source
 ```
 
 Durable memory as two ordinary flows, `remember` and `recall` from
-[`@smthrs/memory`](/docs/reference/api/memory/).
+[`@smthrs/memory`](/docs/reference/api/memory/). Without a `scope`, a call reaches any bank it
+names. With one, both flows are bound through `WithMemory.withMemory` and
+`Flows.handlersFor`: a bank outside `policy.namespace` fails with
+`invalid_namespace` before any I/O, a recall naming no bank reads the policy
+namespace, and `recall: "none"` and `retain: "never"` behave as the memory
+package defines them. `remember` still requires a bank, so tell the model its
+bank (`<kind>-<id>`). `provenance` is recorded on every remembered fact. The
+policy and provenance are the scope's declaration identity, so give each run
+its own `provenance.runId` and keep it across that run's resumes: a sealed
+recall recorded under one scope never answers another. A policy that does not
+decode binds nothing, and composing the catalog fails with `assembly_failed`.
 
 ### StandardFlows.clock
 
@@ -18224,14 +18241,14 @@ does not require a grant scope because it grants nothing. See the
 The durable `ControlRuntime` over a SQL database and the fenced run store from
 [`@smthrs/run-store`](/docs/reference/api/run-store/).
 
-| Export           | Kind      | Signature                                                                                                                                                                                                                            |
-| ---------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DurableFlow`    | type      | `MemoryFlow`, so one catalog serves either runtime.                                                                                                                                                                                  |
-| `Options`        | interface | `{ flows?: ReadonlyArray<DurableFlow>; loadFlows?: () => Effect<ReadonlyArray<DurableFlow>, PersistenceError>; owner?: Ownership.OwnerId; principal?: Omit<Principal, "stampedAt">; approvalAuthority?: ApprovalAuthority.Service }` |
-| `migrate`        | effect    | `Effect<void, PersistenceError, SqlClient>`. Creates every control-plane table, idempotently.                                                                                                                                        |
-| `make`           | function  | `(options?: Options) => Effect<Service, PersistenceError, Crypto \| DurableWriter \| SqlClient \| RunStore>`                                                                                                                         |
-| `layer`          | layer     | `(options?: Options) => Layer<ControlRuntime, PersistenceError, Crypto \| DurableWriter \| SqlClient \| RunStore>`                                                                                                                   |
-| `layerWithStore` | layer     | The same, with `RunStore.layer` provided.                                                                                                                                                                                            |
+| Export           | Kind      | Signature                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DurableFlow`    | type      | `MemoryFlow`, so one catalog serves either runtime.                                                                                                                                                                                                                                                                                                                   |
+| `Options`        | interface | `{ flows?: ReadonlyArray<DurableFlow>; loadFlows?: () => Effect<ReadonlyArray<DurableFlow>, PersistenceError>; owner?: Ownership.OwnerId; isAlive?: Ownership.LivenessCheck; principal?: Omit<Principal, "stampedAt">; approvalAuthority?: ApprovalAuthority.Service }`; with `isAlive`, `resume` takes over a running run whose owner is gone once its lease expired |
+| `migrate`        | effect    | `Effect<void, PersistenceError, SqlClient>`. Creates every control-plane table, idempotently.                                                                                                                                                                                                                                                                         |
+| `make`           | function  | `(options?: Options) => Effect<Service, PersistenceError, Crypto \| DurableWriter \| SqlClient \| RunStore>`                                                                                                                                                                                                                                                          |
+| `layer`          | layer     | `(options?: Options) => Layer<ControlRuntime, PersistenceError, Crypto \| DurableWriter \| SqlClient \| RunStore>`                                                                                                                                                                                                                                                    |
+| `layerWithStore` | layer     | The same, with `RunStore.layer` provided.                                                                                                                                                                                                                                                                                                                             |
 
 `loadFlows` replaces the static `flows` or default system catalog. It runs afresh
 for each `plan` and `listFlows` operation, and one plan uses one complete catalog
@@ -25909,9 +25926,10 @@ https://smithers.sh/docs/reference/api/integrations/
 
 > **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/errors`](/docs/reference/api/errors/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/)
 
-The package exports four namespaces from the aggregate entry point
+The package exports eight namespaces from the aggregate entry point
 `@smthrs/integrations` and from the per-provider subpaths
-`@smthrs/integrations/core`, `/github`, `/linear`, and `/telegram`. The
+`@smthrs/integrations/core`, `/github`, `/linear`, `/telegram`, `/slack`,
+`/googlecalendar`, `/gmail`, and `/x`. The
 `Environment` module is reachable as `@smthrs/integrations/Environment`.
 
 Conventions worth knowing before the signatures:
@@ -26119,6 +26137,56 @@ of type assertions.
 
 `HasHeaders` is anything with `headers` in the `RawInbound` shape.
 
+### Core.AccessToken
+
+Where a client gets its bearer token. `AccessTokenSource` has `token`
+(`Effect<Redacted<string>, IntegrationError>`) and `invalidate`, which drops a
+cached token after the provider refused it. `fixed(token)` always answers the
+same token.
+
+### Core.OAuthToken
+
+Short-lived OAuth access tokens minted from a stored refresh token, behind an
+`AccessTokenSource`. `make(options)` caches a token until `skew` before it
+expires and refreshes on demand; a rotated refresh token is written back
+through the `RefreshTokenStore` (`memoryStore`, or `credentialStore(credentials, reference)`
+over the control plane's credential boundary with a compare-and-set).
+`exchangeCode` completes an authorization-code grant. `reasonForOAuthError`
+maps an OAuth error code to an `IntegrationError` reason.
+
+### Core.Connection
+
+A configured provider connection as journal-safe data: `id`, `provider`,
+`label`, `credential` (a `CredentialReference`, never the secret), the granted
+`scopes`, `personal`, `containers`, and an optional `apiBaseUrl`.
+
+| Export              | Signature                                                                                           | Notes                                                                                                                              |
+| ------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection`        | schema                                                                                              | `decode` decodes an unknown value.                                                                                                 |
+| `ANY_CONTAINER`     | `"*"`                                                                                               | Allows every container. An empty list allows none.                                                                                 |
+| `containersAllowed` | `(connection, container: string) => boolean`                                                        | Whether the connection lists the container or `*`.                                                                                 |
+| `personalPolicy`    | `({ personalPrincipals, shared? }) => Authorize`                                                    | Fail-closed host policy: a personal connection only for the named principals.                                                      |
+| `resolveSecret`     | `({ credentials, connection, principal, authorize }) => Effect<Redacted<string>, IntegrationError>` | Asks `authorize` first, then the broker. A refusal is `permission-denied`; missing or unopenable storage is `credentials-missing`. |
+
+### Core.SourceRecord, Core.SourceStore, Core.Source, Core.Sync
+
+Retrieved provider objects as versioned, access-scoped records, and the
+driver that keeps them current.
+
+- `SourceRecord`: the record schema (identity, `access` scope and containers,
+  `thread`, author, text, payload, version, deletion) with `compare`,
+  `supersedes`, `tombstone`, and `reference`.
+- `SourceStore`: `layerMemory` and `layerSql` (requires `Core.Migrations`).
+  `commit` applies a page and advances the stream cursor in one transaction;
+  a copy replaces the stored one only when it is newer; tombstones and
+  revocation purge content; `retrieve` filters by the caller's `Grant`s inside
+  the query; `validate` re-checks references a run kept.
+- `Sync.runSync(adapter, options)`: reads the committed cursor, asks the
+  `SyncAdapter` for pages, and commits each. A `reset` listing tombstones
+  whatever it did not contain. A revoked connection is refused first.
+- `Source.runWithCursor`: the polling-source loop over `CursorStore` that
+  commits a cursor only after the handler succeeds.
+
 ## Environment
 
 `@smthrs/integrations/Environment`: explicit access to the host's process
@@ -26308,6 +26376,17 @@ explains the pattern.
 | `Comment`               | schema                                                        | The comment GitHub created: `id` and `url`.                                                                                                                                                            |
 | `layerCommentOnIssue`   | `Layer<Requirement<...>, never, GitHubClient \| FlowRuntime>` | Implements the action over the client in context.                                                                                                                                                      |
 | `layer`                 | same                                                          | Every GitHub action's implementation in one layer.                                                                                                                                                     |
+
+### GitHub.Sync
+
+`make(options)` is a `Core.Sync` adapter over one repository's issues, pull
+requests, and issue comments, paged by change time so an item edited during a
+walk is met again. External ids use the numeric repository id
+(`repo:<id>:issue:<number>`, `repo:<id>:comment:<id>`); `issueId` and
+`commentId` build them. Public repositories give `public` records, private
+ones `container`-scoped records. Deletions are not listed by GitHub; run a
+`fullListing` adapter periodically or map the deletion webhooks to
+tombstones.
 
 ## Linear
 
@@ -26623,6 +26702,169 @@ and everything else passes through.
 | `Sent`               | schema                                                          | `chatId`, `messageIds`, `chunkCount`, `usedPlainTextFallback`.                                                                                                                                                                 |
 | `layerSendMessage`   | `Layer<Requirement<...>, never, TelegramClient \| FlowRuntime>` | Implements the action over the client in context, mapping `TelegramApiError` through `toIntegrationError` before `fromIntegrationError`.                                                                                       |
 | `layer`              | same                                                            | Every Telegram action's implementation in one layer.                                                                                                                                                                           |
+
+## Slack
+
+The Slack surface, exported as `Slack` or from `@smthrs/integrations/slack`.
+The [Slack guide](https://integrations.smithers.sh/guides/slack/) shows a host end to end.
+
+### Slack.Config
+
+`resolve(config?, env?)` applies `SMITHERS_SLACK_BOT_TOKEN`,
+`SMITHERS_SLACK_APP_TOKEN`, `SMITHERS_SLACK_SIGNING_SECRET`, and
+`SMITHERS_SLACK_API_BASE_URL`, validates every limit (`maxRateLimitRetries`,
+`maxRetryAfterSeconds`, `maxRetries`, `retryBaseDelay`, `requestTimeout`), and
+returns each secret as `Redacted`. A secret may be supplied as a string or
+already `Redacted`. `policy(env?)` builds a `Payload.Policy` from
+`SMITHERS_SLACK_TEAM_IDS`, `SMITHERS_SLACK_CHANNEL_IDS`,
+`SMITHERS_SLACK_USER_IDS`, and `SMITHERS_SLACK_SELF_USER_IDS` (comma-separated)
+and throws `invalid-config` for one that admits nothing. `ENV` names every
+variable.
+
+### Slack.SlackClient
+
+The Web API client: `call(method, params?, { auth?: "bot" | "app", write? })`
+and `paginate(method, itemsKey, params?, { maxPages?, limit? })`. A refusal
+(`ok: false`) is typed with `details.slackError`; auth and scope refusals are
+`permission-denied`. Rate limits (429 and `ratelimited`) retry for every
+method. A 5xx, a server error code, a dropped connection, or a timeout on a
+write (`chat.*`, `reactions.*`, `conversations.join`, `conversations.open`)
+fails `outcomeUnknown` and is never repeated; on a read it retries with
+backoff. `make(config?, env?, tokens?)` and `layer`; `tokens` supplies
+`AccessTokenSource`s that take precedence and are treated as rotating.
+
+### Slack.Payload
+
+The schemas (`EventCallback`, `MessageEvent`, `BlockActions`,
+`SocketEnvelope`, `ChannelId`, `Ts`, …) and the admission every door shares.
+
+| Export                  | Signature                                                        | Notes                                                                                                                                                                                              |
+| ----------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Policy`                | interface                                                        | `allowedTeamIds` (required), `allowedChannelIds`, `allowedUserIds`, `selfUserIds`.                                                                                                                 |
+| `requirePolicy`         | `(policy, where) => Policy`                                      | Throws `invalid-config` without a workspace, or without a conversation and a person.                                                                                                               |
+| `classify`              | `(payload, policy) => Classification`                            | `Admitted` with the delivery key and names, or `Refused` with `unsupported`, `team-not-allowed`, `channel-not-allowed`, `bot-author`, `self-author`, or `user-not-allowed`, checked in that order. |
+| `isDirectMessage`       | `(channelId) => boolean`                                         | A `D…` conversation. Admitted without listing it when `allowedUserIds` is set.                                                                                                                     |
+| `toExternalEvent`       | `(payload, { policy, source?, receivedAtMs? }) => ExternalEvent` | Names the event at its most specific form, correlates it to its thread, removes `token` and `response_url`. Throws `SlackRefused` for a refused delivery.                                          |
+| `idempotencyKey`        | `(payload) => string \| undefined`                               | `slack:<team>:<event id>` or `slack:<team>:action:<trigger id>`.                                                                                                                                   |
+| `correlations`, `names` | `(payload) => …`                                                 | The thread, channel, `null` ladder, and the event names, most specific first.                                                                                                                      |
+
+When `allowedUserIds` is set, every admitted delivery's author (a button's
+presser) must be one of those people.
+
+### Slack.SocketSource
+
+`make(options, env?)` builds a Socket Mode source; `run(onBatch)` connects
+with the app token, waits for `hello`, and delivers each admitted
+`events_api` or `interactive` envelope as a one-event batch. The envelope is
+acknowledged only after `onBatch` succeeds; a failing `onBatch` fails `run`
+unacknowledged. Refused, unsupported, and oversized envelopes are
+acknowledged and dropped. A redelivered event handled in this process is
+acknowledged and not delivered again. `disconnect` reconnects at once; a
+dropped connection after `reconnect.initialDelay`; `link_disabled` fails
+`permission-denied`; `reconnect.maxAttempts` consecutive failed connections
+fail `poll-failed`. Options: `policy` (required), `sourceId`, `client`,
+`reconnect`, `helloTimeout`, `dedupeCapacity`, `maxEnvelopeBytes`,
+`allowPlaintextSocket`, and the `SlackConfig` fields. `idempotencyKey(event)`
+is the key to pass on to `Control.signal`.
+
+### Slack.Connections
+
+| Export                 | Signature                                                                    | Notes                                                                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SlackConnections`     | service                                                                      | `resolve(connectionId, channel)`: the client, once the channel is in the connection's containers (`*` allows all). Otherwise `permission-denied`, no request. |
+| `make`, `layer`        | `(entries: Resolved[]) => …`                                                 | Refuse a non-Slack or duplicated connection with `invalid-config`.                                                                                            |
+| `fromEnvironment`      | `({ containers, connectionId?, scopes?, ...limits }, env?) => Resolved`      | Connection `slack` (by default) from `SMITHERS_SLACK_BOT_TOKEN` (required, else `credentials-missing`) and `SMITHERS_SLACK_APP_TOKEN`.                        |
+| `layerFromEnvironment` | same `=> Layer<SlackConnections, IntegrationError>`                          | The resolver over that one connection.                                                                                                                        |
+| `fromConnection`       | `({ connection, credentials, access, appCredential?, limits? }) => Resolved` | Tokens resolved per call through `Core.Connection.resolveSecret`, host policy first.                                                                          |
+| `clientFor`            | `(connection, tokens, limits?) => SlackClient`                               | A client pinned to the connection's API origin.                                                                                                               |
+
+### Slack.Actions
+
+| Export          | Tag                                 | Notes                                                                                                                                                                                                                               |
+| --------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PostMessage`   | `integrations/slack/post-message`   | `connectionId`, `channel`, `text`, `key`, optional `threadTs`, `blocks`, `persona` (`username` and one of `iconEmoji`/`iconUrl`, needs `chat:write.customize`). Stamps `key` into message metadata. Irreversible. Answers `Posted`. |
+| `UpdateMessage` | `integrations/slack/update-message` | Replaces `text` and `blocks` of `ts`. Irreversible.                                                                                                                                                                                 |
+| `Reconcile`     | `integrations/slack/reconcile-post` | Finds a post by `key` in the conversation or a thread: `found` with its `ts`, `absent`, or `inconclusive` when `maxPages` ran out.                                                                                                  |
+| `layer`         |                                     | All three implementations, requiring `SlackConnections`.                                                                                                                                                                            |
+
+`findPosted(client, options)` is the reconcile search over a bare client;
+`metadata(key)` and `personaParams(persona)` are the parameters the post
+sends.
+
+### Slack.Approval
+
+Block Kit button approvals. `token(id)` namespaces a prompt; `blocks(spec)`
+builds the `actions` block (`approve` mode: approve and reject buttons;
+`select` mode: one per option). `decision(payload, spec, nowMs?)` answers
+`Decided` only for a press by a user in `spec.allowedUserIds` (and a workspace
+in `spec.allowedTeamIds` when given) of an option this prompt offered; every
+other press is `Ignored` with `foreign-prompt`, `unauthorized`, or
+`unknown-option`, and the approval stays pending. `pressedToken(payload)`
+names the prompt a press belongs to. `actionId` and `parseActionId` encode
+`sap:<token>:a|d|s:<key>`.
+
+### Slack.Webhook
+
+The Events API door: `verify` (the `v0` HMAC over the exact bytes, with a
+timestamp skew bound), `challenge`, `answer` (for a host that owns the HTTP
+response), `decode`, `idempotencyKey`, and `channel(options)`, a
+`@smthrs/control` channel that verifies, decodes, and routes one event.
+
+### Slack.Sync
+
+`make(options)` is a `Core.Sync` adapter over one conversation's history and
+recent threads (`connectionId`, `channel`, `client`, optional `channelType`,
+`pageSize`, `initialOldest`, `maxTrackedThreads`, `threadWindowSeconds`,
+`maxReplyPages`, `workspaceUrl`). `messageRecord` and `eventRecord` map
+messages and `message_changed`/`message_deleted` events to source records.
+
+## Google Calendar
+
+Exported as `GoogleCalendar` or from `@smthrs/integrations/googlecalendar`.
+See the [Google Calendar guide](https://integrations.smithers.sh/guides/google-calendar/).
+
+- `Config`: `resolve` over `SMITHERS_GOOGLE_*`; `SCOPES`.
+- `CalendarClient`: events list/get/insert/patch/delete/instances, free/busy,
+  token refresh on 401, rate-limit waits. `make`, `layer`,
+  `layerFromConnection(connection, access, config?, env?)`.
+- `Event`, `EventId`: event schemas and input validation; `EventId.fromKey`
+  derives the deterministic base32hex id an upsert inserts under.
+- `Actions`: `UpsertEvent`, `PatchEvent`, `CancelEvent`, `FreeBusy`, each with
+  an `idempotencyKey`, `implementationVersion`, and the bounded
+  `retryPolicy`; `EventConflict` when an upsert's id holds a different event.
+- `Sync`: `make` builds the `syncToken` change feed; `render` and `toRecord`
+  map events to records.
+
+## Gmail
+
+Exported as `Gmail` or from `@smthrs/integrations/gmail`. See the
+[Gmail guide](https://integrations.smithers.sh/guides/gmail/).
+
+- `Config`: `resolve`; the token is an `AccessTokenSource`, never ambient.
+- `Capabilities`: operations, the scopes that allow each, `allows`,
+  `refusal`.
+- `GmailClient`: messages, history, profile, drafts, and send, scope-checked
+  against the bound connection.
+- `Mime`: `compose` builds an RFC 2822 message and refuses control characters
+  in headers; `KEY_HEADER` carries the reconcile key.
+- `Actions`: `CreateDraft`, `SendMessage` (irreversible, `outcomeUnknown` on a
+  lost answer), `FindByKey`.
+- `Reconcile`: `findByKey` over the mailbox.
+- `Records`, `Sync`: `mailbox` and `search` over messages and history as
+  private source records.
+
+## X
+
+Exported as `X` or from `@smthrs/integrations/x`. **Read-only**: see the
+[X guide](https://integrations.smithers.sh/guides/x/).
+
+- `Config`: `resolve`; the token is an `AccessTokenSource`, never ambient.
+- `Capabilities`: operations and the scopes each needs.
+- `XClient`: `me`, `mentions`, `userTweets`, `dmEvents`,
+  `conversationEvents`; also `createTweet` and `sendDirectMessage`, which are
+  not durable actions.
+- `Records`: `fromMention`, `fromDirectMessage`.
+- `Sync`: `mentions` and `directMessages` change feeds.
 
 ---
 
@@ -33519,6 +33761,199 @@ and bridges nothing.
 
 ---
 
+# @smthrs/organization
+https://smithers.sh/docs/reference/api/organization/
+
+> **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/organization/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/organization/docs/api.md) · [package docs](https://organization.smithers.sh)
+
+> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/std`](/docs/reference/api/std/)
+
+Every module is importable from the root as a namespace
+(`import { Roster } from "@smthrs/organization"`) and from its own subpath
+(`@smthrs/organization/Roster`). Functions that can refuse return a `Result`
+or an `Effect` failing with the module's tagged error; each error carries a
+stable `code` or `reason` and a message that never repeats a field's value.
+Loaders need `FileSystem` and `Path` from `effect`; the workspace also needs a
+`ChildProcessSpawner` for host `git`.
+
+## `@smthrs/organization/Profile`
+
+| Export                                                                                                                                            | Behavior                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Profile`                                                                                                                                         | The complete role profile schema: id, name, kind, status, version, `reportsTo`, seat, charter, grants, budget, memory, skills, cases, identities. |
+| `Grants`, `ConnectionGrant`, `HiringLimits`                                                                                                       | Every authority a principal holds; anything not listed is not granted.                                                                            |
+| `Charter`, `OutputField`                                                                                                                          | The charter sections and the declared output fields.                                                                                              |
+| `BudgetPolicy`                                                                                                                                    | `tokensPerTask`, `tasksPerDay`, `concurrency`, optional `usdPerMonth`.                                                                            |
+| `TaskContract`, `RoleResult`, `Evidence`                                                                                                          | What a principal is asked to do, and the one result schema every role task returns.                                                               |
+| `PrincipalId`, `Superior`, `Kind`, `Status`, `Contact`, `Tool`, `Access`                                                                          | Identifier and enumeration schemas. `owner` is reserved.                                                                                          |
+| `ReferenceName`, `Container`, `KnowledgeGrant`, `SkillName`, `BankName`, `Instant`, `Version`, `Seat`, `TaskId`, `Line`, `Paragraph`, `FieldName` | Field schemas. A reference shaped like a provider token is refused; a knowledge grant is a relative file or a `/`-terminated subtree.             |
+| `decodeProfile`, `decodeGrants`, `decodeTaskContract`, `decodeRoleResult`                                                                         | Decoders that refuse unknown keys.                                                                                                                |
+| `defaultMemoryNamespace(id)`                                                                                                                      | `agent-<id>`.                                                                                                                                     |
+| `maxPrincipalIdLength`                                                                                                                            | 120.                                                                                                                                              |
+
+## `@smthrs/organization/Grants`
+
+| Export                                                                        | Behavior                                                                                                                      |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `widenings(child, parent, options?)`                                          | Every way `child` reaches beyond `parent`. With `hired` (the default) a child never holds personal accounts or owner contact. |
+| `subsetOf(child, parent, options?)`                                           | `widenings(...).length === 0`.                                                                                                |
+| `isAssistant(profile)`                                                        | The active, unhired core principal with personal accounts and `owner-direct` contact.                                         |
+| `canRead(principal, record, connections)`                                     | Refuses tombstones, personal records for anyone but the assistant, and ungranted containers.                                  |
+| `canWrite(principal, connection, container, connections)`                     | Requires write access on the container.                                                                                       |
+| `canResolveCredential(principal, connection, connections)`                    | The connection is configured and granted; personal connections resolve only for the assistant.                                |
+| `canReadKnowledge(principal, path)`                                           | A relative file path covered by a knowledge grant.                                                                            |
+| `makeReceiptIssuer(issuedBy)`, `canContactOwner(principal, receipt, context)` | Owner contact: the assistant always; others only with an in-process receipt for that principal, destination, and window.      |
+| `Denied`, `DeniedReason`, `Widening`, `maxReceiptWindowMs`                    | The refusal, its reasons, one widening, and the longest receipt window (one day).                                             |
+
+## `@smthrs/organization/Roster`
+
+| Export                                                                                                          | Behavior                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `parseProfile(path, text)`                                                                                      | Parses one profile file. Fails with `RosterError` codes `frontmatter`, `schema`, or `body`.                                       |
+| `renderProfile(profile)`                                                                                        | The inverse of `parseProfile`: canonical key order and fixed section order.                                                       |
+| `load(dir)`                                                                                                     | Loads `Roles/*.md` and `Specialists/*.md`, confined to the real path of `dir`, at most `maxProfileBytes` each. Does not validate. |
+| `make(profiles, sources)`, `revisionOf(...)`                                                                    | Builds a roster; the revision is the SHA-256 of the canonical profiles and source digests, independent of input order.            |
+| `validate(profiles, policy)`                                                                                    | Every broken invariant as a `Violation` with a `ViolationCode`. Empty means valid.                                                |
+| `validateResult(profile, result)`                                                                               | Undeclared fields, and for `done`: missing declared fields and missing evidence.                                                  |
+| `resolveActive(roster, id)`                                                                                     | The profile when it and every principal up its hiring chain are active; otherwise `Grants.Denied`.                                |
+| `childrenOf`, `hireChain`, `isHired`, `dailyTokens`                                                             | Roster queries used by validation and hiring.                                                                                     |
+| `RosterError`, `RosterErrorCode`, `Violation`, `ViolationCode`, `Policy`, `Roster`, `Source`, `maxProfileBytes` | Errors, codes, and models.                                                                                                        |
+
+## `@smthrs/organization/Prompt`
+
+| Export                                                                                                             | Behavior                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `compose(input)`                                                                                                   | Composes `{ system, prompt, digest, parts }`, or fails with `PromptError` codes `skill-not-granted`, `skill-missing`, `duplicate-skill`, `invalid-context`, `part-too-large`, `total-too-large`, `invalid-limits`. |
+| `renderCharter(profile)`, `renderTask(task)`                                                                       | The charter and task texts `compose` uses.                                                                                                                                                                         |
+| `renderContext(entry)`, `dataNotice`                                                                               | Fences one context entry as escaped data.                                                                                                                                                                          |
+| `defaultLimits`                                                                                                    | Common 8 KiB, charter 12 KiB, each skill 16 KiB, task 16 KiB, all context 48 KiB, total 192 KiB.                                                                                                                   |
+| `Common`, `SkillText`, `ContextEntry`, `Part`, `PartKind`, `Limits`, `ComposeInput`, `Composed`, `PromptErrorCode` | Inputs and outputs.                                                                                                                                                                                                |
+
+## `@smthrs/organization/Skills`
+
+| Export                                                             | Behavior                                                                                                                                  |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `loadPack(dir)`                                                    | Loads every `<name>/SKILL.md`, ignoring hidden entries and loose files, confined to the real path of `dir`, at most `maxSkillBytes` each. |
+| `parseSkill(directory, text)`                                      | Checks keys, name, description, license, compatibility, `allowed-tools`, metadata, and adapted provenance.                                |
+| `select(pack, names)`                                              | The `Prompt.SkillText` for each name, in order, pinned at its revision; `missing` when a name is not in the pack.                         |
+| `revisionOf(skills)`                                               | The pack revision over every name and file digest.                                                                                        |
+| `allowedLicenses`                                                  | `Apache-2.0`, `MIT`, `CC-BY-4.0`; an organization's own skills may carry `LicenseRef-<name>` instead.                                     |
+| `SkillsError`, `SkillsErrorCode`, `Skill`, `Pack`, `maxSkillBytes` | Errors and models.                                                                                                                        |
+
+## `@smthrs/organization/Hiring`
+
+| Export                                                                                                            | Behavior                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `propose(request, roster, policy)`                                                                                | The `proposed` hire, or every violation it introduces (`invalid-profile`, `parent-inactive`, `grants-widen`, limits, `duplicate-id`...). |
+| `specialistId(parent, slug)`                                                                                      | `<parent>.<slug>`, refused past the id grammar.                                                                                          |
+| `transition(profile, action, at)`                                                                                 | `activate`, `pause`, `resume`, `retire`; retirement revokes grants and records `retiredAt`. Fails with `TransitionRefused`.              |
+| `retireWithHires(roster, id, at)`                                                                                 | Retires a principal and every unretired hire below it, root first.                                                                       |
+| `settleTask(roster, taskId, at)`                                                                                  | Retires the helpers scoped to a task and their hires.                                                                                    |
+| `RosterStore`, `layerFileSystem({ dir })`                                                                         | Stores hired profiles in `Specialists/<id>.md` atomically. `write(profile, expectedDigest?)` creates, or compare-and-sets on the digest. |
+| `HireRequest`, `Slug`, `Action`, `revokedGrants`, `Stored`, `Service`, `RosterStoreError`, `RosterStoreErrorCode` | Inputs, errors, and models.                                                                                                              |
+
+## `@smthrs/organization/Meetings`
+
+| Export                                                                                                                                                                               | Behavior                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `planWeekly(request)`                                                                                                                                                                | A contiguous weekly block; refuses a wrong weekday, repeated principals, a block past midnight, and any boundary in a gap within `gapHorizonDays`. |
+| `occurrences(plan, fromMs, toMs)`                                                                                                                                                    | Every meeting starting in `[fromMs, toMs)`, ordered by start, at most `maxExpansionWeeks` weeks.                                                   |
+| `occurrenceKey(eventKey, localDate)`                                                                                                                                                 | `<eventKey>@<local date>`, stable across recomputation.                                                                                            |
+| `conflicts(intervals, busy)`                                                                                                                                                         | Overlapping pairs; touching intervals do not overlap.                                                                                              |
+| `findSlot(request)`                                                                                                                                                                  | The first free grid-aligned interval in a weekly window within `maxHorizonDays`, skipping gap times.                                               |
+| `WeeklyRequest`, `Weekday`, `LocalTime`, `LocalDate`, `SeriesId`, `Slot`, `WeeklyPlan`, `Occurrence`, `Interval`, `FindSlotRequest`, `FoundSlot`, `MeetingError`, `MeetingErrorCode` | Inputs, outputs, and errors.                                                                                                                       |
+
+## `@smthrs/organization/Config`
+
+| Export                                                                                 | Behavior                                                                                                                                           |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `load(root, file?)`                                                                    | Reads `Org/Organization.md` (or `file`) and the policy, connections, and meetings pages it names, confined to the real path of `root`.             |
+| `parseOrganization`, `parseGatePolicy`, `parseConnections`, `parseMeetings`            | Parse one page's frontmatter; unknown keys are refused and values are never repeated in errors. Unsupported gate kinds are refused at policy load. |
+| `weeklyRequest(meetings)`                                                              | The `Meetings.WeeklyRequest` a meetings page describes, or `undefined` while its inputs are unset.                                                 |
+| `Organization`, `Connection`, `Connections`, `Meetings`, `Seats`, `WikiPath`, `Loaded` | Page schemas and the loaded result.                                                                                                                |
+| `ConfigError`, `ConfigErrorCode`, `maxPageBytes`, `defaultOrganizationFile`            | Errors and constants.                                                                                                                              |
+
+## `@smthrs/organization/Gates`
+
+| Export                                                                                                | Behavior                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `before(policy, at, subject, next, options?)`                                                         | `next` unchanged when no gate matches `at`; otherwise the matching Approval and Review gates in policy order, then `next`. Unsupported kinds are refused. |
+| `select(policy, at)`, `empty(revision)`                                                               | The gates attached at a boundary and target (`*` matches any target); an empty policy.                                                                    |
+| `answer({ token, subjectDigest, approved, reason? })`, `pending(request)`                             | Record an authenticated person's approval answer; read a waiting row as an approval question.                                                             |
+| `ReviewTask`, `reviewTask`, `Reviewer`, `ReviewRequest`, `ReviewVerdict`, `ReviewFailed`              | The Review gate's declared step, its default reviewer node, and its models. `GatesLive.layer({ review })` implements it.                                  |
+| `GatePolicy`, `GateSpec`, `Approval`, `Review`, `Budget`, `Concurrency`, `Window`, `Condition`, `At`  | Policy schemas. Only Approval and Review run (`supportedKinds`, `unsupported`).                                                                           |
+| `GateRecord`, `GateRefused`, `GateUnsupported`, `Outcome`, `Subject`, `Decide`, `Binding`, `Response` | The sealed decision record, the refusals, and the declared steps a gate is made of.                                                                       |
+
+## `@smthrs/organization/GatesLive`
+
+| Export                                 | Behavior                                                                                                               |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `layer({ review? })`                   | Implements the gate steps and `HumanTask`. Without `review`, every Review gate is denied. See `Actions.reviewHandler`. |
+| `bind(gate, subject)`, `subjectDigest` | The question name, prompt, and digest a gate binds its subject to.                                                     |
+| `decide(gate, digest, response, at)`   | The pure decision: passed, denied, or expired, and who decided.                                                        |
+| `ReviewHandler`, `maxExcerptLength`    | The reviewer a host supplies; the subject excerpt bound in a prompt.                                                   |
+
+## `@smthrs/organization/Authority`
+
+| Export                                                                                                                      | Behavior                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `loadSnapshot(root, loaded)`                                                                                                | Loads the roster (`rosterDir`), the skill pack (`skillsDir`, empty when unset), and the common instructions (`commonFile`, empty when unset) from a wiki root, confined by real path, and validates the roster against the pack.                                                                 |
+| `makeSnapshot({ roster, common, skills, weeklyMeeting? })`                                                                  | Validates and pins; the revision covers the roster revision, the common text, and the pack revision. Fails with `AuthorityError` `invalid-roster` listing every violation.                                                                                                                       |
+| `makeRegistry(initial)`, `layerRegistry(initial)`, `RosterRegistry`                                                         | The trusted registry: `pin(snapshot)` (keeps every pinned revision, makes it current), `current`, `get(revision)`, `resolve(revision, id)`. Only host code fills it.                                                                                                                             |
+| `resolvePrincipal(pinned, current, id)`                                                                                     | The pinned profile when it and every hirer up its chain are active in both rosters and its pinned grants are still inside its current grants.                                                                                                                                                    |
+| `RoleTaskPayload`, `TaskWorkspace`, `promptOf(payload)`                                                                     | A role task names `revision`, `principal`, `seat`, `task`, `context`, `digest`, and optionally a `workspace { key, repository }`. It never carries a profile, grants, or a system prompt.                                                                                                        |
+| `compose(snapshot, profile, task, context)`                                                                                 | The principal's composition from the snapshot: common instructions, charter, and the profile's skills from the pack, then the task and context.                                                                                                                                                  |
+| `authorize(payload, executionId)`                                                                                           | Every dispatch check. Refuses with `DispatchRefused` reasons `malformed-payload`, `unknown-revision`, `unknown-principal`, `inactive`, `grants-narrowed`, `seat-mismatch`, `composition-failed`, `composition-mismatch`, `workspace-not-granted`, `repository-not-granted`, `workspace-foreign`. |
+| `layer(actions)`                                                                                                            | Wraps `FlowRuntime.register` and `Action.Implementations.add` for `organization/role-task` so every execution is authorized and runs under its `RoleHost` and `CapabilitySet.attenuate` of that host's envelope. A refusal is an `assembly_failed` `HarnessError` before any model call.         |
+| `roleTaskTag`, `Snapshot`, `Registry`, `Authorized`, `AuthorityError`, `DispatchRefused`, `RefusalReason`, `maxCommonBytes` | Constants, models, and errors.                                                                                                                                                                                                                                                                   |
+
+A role task is resolved again whenever its step executes, including on resume.
+A host restarted with a different roster no longer holds the old revision, so a
+run pinned to it is refused with `unknown-revision` rather than run under a
+roster it was not composed against.
+
+## `@smthrs/organization/RoleHost`
+
+| Export                                                                                                                                 | Behavior                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make(options)`                                                                                                                        | Builds one role task's `AgentAction.Host`: registry limited to the profile's skills; flows only for granted families (`memory`: scoped `StandardFlows.memory`; `wiki-read`: `wikiRead`; `workspace`: standard file and shell flows over the workspace session); envelope = those flows' capabilities. A granted family without its resource fails composition. |
+| `Resources`, `layerResources(resources)`                                                                                               | What the host lends role tasks: `memory` (store and recall), `wiki { root, services, maxBytes? }`, `skills` (a registry), `claimCap` (0 when the judge is `none`).                                                                                                                                                                                             |
+| `skillsRegistry(base, names)`                                                                                                          | A registry view in which only `names` exist.                                                                                                                                                                                                                                                                                                                   |
+| `wikiRead(profile, wiki)`, `wikiReadFlow`, `WikiReadInput`, `WikiReadOutput`, `WikiReadRefused`, `wikiReadName`, `defaultWikiMaxBytes` | The `wiki-read` flow: a granted relative file only, real-path confined, so a symlink to an ungranted page is refused.                                                                                                                                                                                                                                          |
+| `workspaceNotice(workdir)`, `WorkspaceTools`, `Options`, `Built`                                                                       | The teaching a workspace role gets, and the models.                                                                                                                                                                                                                                                                                                            |
+
+`retrieval`, `wiki-write`, and `delegate` grants bind no flow yet.
+
+## `@smthrs/organization/Workspace`
+
+| Export                                                                                                                                                                                                                                                                                           | Behavior                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `microsandbox(options)`                                                                                                                                                                                                                                                                          | `Machines` over local Microsandbox microVMs: sticky workspace machines, ephemeral fresh ones, forced removal by remote id. Networking is off unless `network: true`. The provider refuses a hosted backend. Workspace machines carry their key in the `workspaceLabel` (`smithers.workspace`) label.                                                                       |
+| `layer({ machines, maxConcurrentVMs, limits?, identity? })`                                                                                                                                                                                                                                      | The `Workspace` service; a semaphore bounds machine operations. Requires `ChildProcessSpawner`, `FileSystem`, and `Path`.                                                                                                                                                                                                                                                  |
+| `prepare({ key, repoPath, commit })`                                                                                                                                                                                                                                                             | Seeds `/workspace` from `git archive` of the resolved commit and records a guest baseline commit. Reuses a workspace seeded at the same commit; refuses one seeded at another (`occupied`).                                                                                                                                                                                |
+| `session(key, { commit? })`                                                                                                                                                                                                                                                                      | Reattaches the workspace machine for a scope, holding a machine permit. Refuses a machine holding no seeded workspace (`unseeded`: lost with its host, or never prepared) and one seeded from another commit than `commit` (`occupied`).                                                                                                                                   |
+| `collect(prepared)`                                                                                                                                                                                                                                                                              | The binary-safe diff against the baseline and per-file statistics; `too-large` above `limits.diffBytes`.                                                                                                                                                                                                                                                                   |
+| `runChecks({ key, repoPath, commit, patch, checks })`                                                                                                                                                                                                                                            | Seeds a fresh machine, applies the patch, runs each `Check { name, argv, timeoutMs? }`, and returns receipts with bounded stdout and stderr (`truncated` and full `bytes` are recorded). `passed` only when every check exits 0.                                                                                                                                           |
+| `dispose(prepared)`                                                                                                                                                                                                                                                                              | Removes the workspace machine.                                                                                                                                                                                                                                                                                                                                             |
+| `applyChange({ repoPath, branch, parent, patch, message, runId, principal, at })`                                                                                                                                                                                                                | Lands the patch on `branch` with a temporary index and `commit-tree`, `Smithers-Run` and `Smithers-Principal` trailers, and a compare-and-set ref update against `parent`. Never pushes, never touches the working tree or index, refuses a checked-out branch (`checked-out`) and a moved branch (`moved-parent`). Landing the same request twice yields the same commit. |
+| `Prepared`, `Diff`, `FileStat`, `Check`, `CheckReceipt`, `Checks`, `Output`, `Applied`, `Key`, `CommitId`, `Machines`, `Limits`, `defaultLimits`, `Identity`, `defaultIdentity`, `WorkspaceError`, `WorkspaceErrorCode`, `parseNumstat`, `maxCheckTimeoutMs`, `SessionOptions`, `workspaceLabel` | Models, errors, and constants.                                                                                                                                                                                                                                                                                                                                             |
+
+## `@smthrs/organization/Actions`
+
+| Export                                                                                            | Behavior                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PinRoster`                                                                                       | Records the registry's current revision (nondeterministic, so replay reads the recorded one).                                                                                                                      |
+| `ComposeTask`                                                                                     | Resolves a principal at a revision and returns a ready `RoleTaskPayload`, or `DispatchRefused`.                                                                                                                    |
+| `RoleTask`                                                                                        | The `AgentAction` returning `Profile.RoleResult`; install `Authority.layer(RoleTask.layer)`.                                                                                                                       |
+| `ValidateResult`, `Validation`                                                                    | A result's charter check at a pinned revision.                                                                                                                                                                     |
+| `PrepareWorkspace`, `CollectDiff`, `RunChecks`, `DisposeWorkspace`, `ApplyChange`, `ApplyPayload` | Workspace steps over named repositories. The workspace key is `<execution>/<repository>/<slug>`, and `executionOfWorkspace(key)` reads its execution back; `ApplyChange` is irreversible and keyed by its content. |
+| `WriteReceipt`, `ReceiptName`, `ReceiptFailed`, `runDirectory`                                    | Writes `<generatedDir>/<run>/<name>.json` atomically, confined to the wiki root.                                                                                                                                   |
+| `layer({ repositories, wiki: { root, generatedDir } })`                                           | Implements every declaration but `RoleTask`. Requires `RosterRegistry`, `Workspace`, `FileSystem`, `Path`.                                                                                                         |
+| `reviewHandler({ verdictField? })`                                                                | A `GatesLive.ReviewHandler` running the reviewer's role task on the gate subject; approve only for a charter-valid `done` result whose `verdict` field is `approve`.                                               |
+| `Repository`, `Slug`, `Options`, `ReviewOptions`, `Requirements`                                  | Models.                                                                                                                                                                                                            |
+
+---
+
 # @smthrs/patterns
 https://smithers.sh/docs/reference/api/patterns/
 
@@ -39616,17 +40051,17 @@ Each check acquires a fresh session. The file checks verify binary, empty, and 6
 
 One row per bundled provider. Every cell is read from the provider's source and its tests. "Byte-exact command output" is about a command's own `stdout` and `stderr`; file transfer is byte-exact on all nine.
 
-| Provider              | What a machine is                                                                 | How the vendor surface arrives                                                          | Reattaches an existing machine on the same session key                                                                        | Declares `kill`                                                  | Byte-exact command output                            | Proven against                                                                     |
-| --------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `DirectorySandbox`    | one host directory under `root`                                                   | injected services: the host `FileSystem` and `ChildProcessSpawner`                      | yes, the recursive `makeDirectory` leaves a crash-left directory and its files in place                                       | yes, the host handle's signal                                    | yes                                                  | host directories and processes                                                     |
-| `ContainerSandbox`    | one container from `image`, held on `sleep infinity`                              | injected spawner running a Docker-compatible CLI                                        | yes, a refused create whose name `container inspect` finds is reattached                                                      | yes, a pidfile plus a `/proc` descendant walk                    | yes                                                  | a real Docker daemon                                                               |
-| `KubernetesSandbox`   | one Pod from `image`, held on `sleep infinity`                                    | injected spawner running `kubectl`                                                      | yes, `AlreadyExists` is reattached                                                                                            | yes, the same pidfile script over `kubectl exec`                 | yes                                                  | a real Kubernetes cluster (OrbStack)                                               |
-| `JustBashSandbox`     | one directory in a shared virtual filesystem; commands are interpreted in-process | injected interpreter slice (`JustBashLike`) and `FileSystem`                            | not applicable, in-process                                                                                                    | no                                                               | no, `exec` reports output as strings                 | none, fake only                                                                    |
-| `MicrosandboxSandbox` | one local microVM from an image or a snapshot                                     | injected SDK slice (`Sdk`)                                                              | yes, `sandboxAlreadyExists` connects to or restarts it; `persistence: "sticky"` keeps it running for that purpose             | no                                                               | yes, the SDK's byte-typed output                     | a real Microsandbox microVM                                                        |
-| `VercelSandbox`       | one named persistent Vercel sandbox                                               | injected SDK slice (`Sdk`) plus caller-supplied credentials                             | yes, `getOrCreate` with `persistent: true` and `resume: true`                                                                 | no                                                               | no, `runCommand` reports output as strings           | none, fake only                                                                    |
-| `DaytonaSandbox`      | one named Daytona sandbox                                                         | injected SDK slice: a configured `Daytona` client                                       | yes, `get(name)` first, `create` on a 404, `start` when attached                                                              | no                                                               | no, `executeCommand` reports one `result` string     | none, fake only                                                                    |
-| `AwsSandbox`          | one Fargate task from `RunTask`                                                   | injected SDK slice for the lifecycle, the AWS CLI over an injected spawner for commands | yes, `ListTasks` by the `startedBy` tag adopts a leftover that is RUNNING or still PENDING, and stops any duplicate beside it | yes, a pidfile plus the descendant walk through a second session | no, the Session Manager channel is a pseudo-terminal | none live; the fake reproduces the Session Manager framing over a real local shell |
-| `CloudflareSandbox`   | one Sandbox Durable Object behind a Worker binding                                | caller-supplied binding, through an injected `getSandbox` slice                         | yes, the Durable Object id is derived from the key, so the same object answers                                                | no                                                               | no, the SDK reports output as strings                | none, fake only                                                                    |
+| Provider              | What a machine is                                                                 | How the vendor surface arrives                                                          | Reattaches an existing machine on the same session key                                                                        | Declares `kill`                                                      | Byte-exact command output                            | Proven against                                                                     |
+| --------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `DirectorySandbox`    | one host directory under `root`                                                   | injected services: the host `FileSystem` and `ChildProcessSpawner`                      | yes, the recursive `makeDirectory` leaves a crash-left directory and its files in place                                       | yes, the host handle's signal                                        | yes                                                  | host directories and processes                                                     |
+| `ContainerSandbox`    | one container from `image`, held on `sleep infinity`                              | injected spawner running a Docker-compatible CLI                                        | yes, a refused create whose name `container inspect` finds is reattached                                                      | yes, a pidfile plus a `/proc` descendant walk                        | yes                                                  | a real Docker daemon                                                               |
+| `KubernetesSandbox`   | one Pod from `image`, held on `sleep infinity`                                    | injected spawner running `kubectl`                                                      | yes, `AlreadyExists` is reattached                                                                                            | yes, the same pidfile script over `kubectl exec`                     | yes                                                  | a real Kubernetes cluster (OrbStack)                                               |
+| `JustBashSandbox`     | one directory in a shared virtual filesystem; commands are interpreted in-process | injected interpreter slice (`JustBashLike`) and `FileSystem`                            | not applicable, in-process                                                                                                    | no                                                                   | no, `exec` reports output as strings                 | none, fake only                                                                    |
+| `MicrosandboxSandbox` | one local microVM from an image or a snapshot                                     | injected SDK slice (`Sdk`)                                                              | yes, `sandboxAlreadyExists` connects to or restarts it; `persistence: "sticky"` keeps it running for that purpose             | yes, an in-guest descendant walk plus the SDK's process-group signal | yes, the SDK's byte-typed output, streamed           | a real Microsandbox microVM                                                        |
+| `VercelSandbox`       | one named persistent Vercel sandbox                                               | injected SDK slice (`Sdk`) plus caller-supplied credentials                             | yes, `getOrCreate` with `persistent: true` and `resume: true`                                                                 | no                                                                   | no, `runCommand` reports output as strings           | none, fake only                                                                    |
+| `DaytonaSandbox`      | one named Daytona sandbox                                                         | injected SDK slice: a configured `Daytona` client                                       | yes, `get(name)` first, `create` on a 404, `start` when attached                                                              | no                                                                   | no, `executeCommand` reports one `result` string     | none, fake only                                                                    |
+| `AwsSandbox`          | one Fargate task from `RunTask`                                                   | injected SDK slice for the lifecycle, the AWS CLI over an injected spawner for commands | yes, `ListTasks` by the `startedBy` tag adopts a leftover that is RUNNING or still PENDING, and stops any duplicate beside it | yes, a pidfile plus the descendant walk through a second session     | no, the Session Manager channel is a pseudo-terminal | none live; the fake reproduces the Session Manager framing over a real local shell |
+| `CloudflareSandbox`   | one Sandbox Durable Object behind a Worker binding                                | caller-supplied binding, through an injected `getSandbox` slice                         | yes, the Durable Object id is derived from the key, so the same object answers                                                | no                                                                   | no, the SDK reports output as strings                | none, fake only                                                                    |
 
 ### DirectorySandbox
 
@@ -39734,9 +40169,27 @@ const provider = MicrosandboxSandbox.make({
 })
 ```
 
-The machine name is `smthrs-msb-<slug>`. `acquire` configures the builder and calls `create`; when the SDK answers `sandboxAlreadyExists` it fetches the handle and connects when the machine is running or starts it (detached, for sticky sessions) when it is stopped. Machine creation is registered as a scoped resource before guest setup, so a microVM that boots but cannot prepare its workspace is stopped. `ephemeral` persistence, the default, stops the machine when the scope closes; `sticky` deliberately leaves it running so the next acquire of the same session key can reconnect, and only stops a sticky machine it created but could not prepare. Commands run through `execStreamWith(shell, ["-c", command])` with the workdir applied per execution, because Microsandbox validates a builder workdir before the selected image has booted, and the single-drain handle is collected exactly once; output comes back through the byte-typed `stdoutBytes()` and `stderrBytes()`. Writes use the SDK's byte-safe `fs().write` and reads its byte-typed `fs().read`; standard input rides the exec builder's own `stdinBytes` channel. `ping` reads `/etc/hostname`.
+`Sdk` is the structural slice of the `microsandbox` module the provider drives, and the real module is assignable to it: `Sandbox.builder(name)` with its fluent options and `create()`, `Sandbox.get(name)` returning a lifecycle handle (`status`, `configJson`, `connect`, `start`, `startDetached`, `refresh`, `modify`, `destroy`), `Sandbox.listWith(configure)` with `label` and `cursor` paging, `defaultBackendKind()`, and `setDefaultBackend("local")`. A booted machine exposes `name`, `backendKind`, `fs()`, `execStreamWith(program, configure)`, and `destroy({ timeoutMs, force? })`; a command handle exposes `recv()`, `signal(number)`, and `kill()`.
 
-`image` and `snapshot` are exclusive; naming both fails with `unavailable` before any vendor call. Output is collected after the command finishes: one stdout chunk, one stderr chunk, no streaming, and no `kill`. A stopped ephemeral machine is gone with its files. The real-backend suite runs the conformance check against a real microVM only where the `microsandbox` binary answers `--version` and the host can actually boot one.
+The machine name is `smthrs-msb-<slug>`. `acquire` configures the builder and calls `create`; when the SDK answers `sandboxAlreadyExists` it fetches the handle, records the current ownership labels as a next-start modification, and connects when the machine is running or starts it (detached, for sticky sessions) when it is stopped. Machine creation is registered as a scoped resource before guest setup, so a microVM that boots but cannot prepare its workspace is removed. `ephemeral` persistence, the default, removes the machine when the scope closes; `sticky` deliberately leaves it running so the next acquire of the same session key can reconnect, and only removes a sticky machine it created but could not prepare. Removal is `destroy({ timeoutMs: 3000 })`, a graceful stop; when that fails for any reason but the machine being gone, a second `destroy({ timeoutMs: 3000, force: true })` follows, and the whole teardown is bounded at five seconds. Writes use the SDK's byte-safe `fs().write` and reads its byte-typed `fs().read`; standard input rides the exec builder's own `stdinBytes` channel. `ping` reads `/etc/hostname`.
+
+Commands run through `execStreamWith(shell, ["-c", command])` with the workdir applied per execution, because Microsandbox validates a builder workdir before the selected image has booted. `spawn` returns once the SDK has started the command, and one fiber scoped to the spawn drains the handle's `recv()` events: `started` records the guest pid, `stdout` and `stderr` chunks reach the streams as the guest writes them, and `exited` ends both streams and settles `exitCode`. A stream that ends without `exited`, or a `recv` that rejects, means the machine went away, and both streams and `exitCode` fail with `unavailable` at once. A guest that cannot start the command at all (a missing program or working directory, which the SDK hands back as an `undefined` event) fails them with `spawn_error`.
+
+`kill(process, signal)` signals the command and everything it started. A second guest command walks the process tree below the recorded pid (`pgrep -P`, or `/proc` where there is none), stops the whole collected set, delivers the signal, and continues it, so no shell in the tree runs its next statement between one `kill(2)` and the next; the walk reaches descendants that left the command's process group with `setsid` while their parent is alive. The SDK's `signal(number)` then reaches the command's process group, which covers a guest without the walk's tools and a command whose pid is not known yet. Delivery succeeds when either did, and a command seen to exit is never signalled again. Closing a spawn's scope before its exit was observed, as an interrupted caller does, sends `SIGTERM` the same way, waits two seconds for the exit, and sends `SIGKILL` to whatever ignored it, all inside the five-second teardown bound. A start that the caller abandoned while the SDK was still starting it is killed when its handle arrives.
+
+`image` and `snapshot` are exclusive; naming both fails with `unavailable` before any vendor call. A removed machine is gone with its files. With the default `backend: "local"`, `acquire` refuses before provisioning unless `sdk.defaultBackendKind()` is `local`, and refuses again when the opened machine reports another `backendKind`, so an ambient `MSB_BACKEND`, `MSB_API_KEY`, or `MSB_PROFILE` cannot move guest work off the host; a composition that must stay local also calls `sdk.setDefaultBackend("local")` once at startup. `backend: "any"` accepts the hosted backend. `cpus`, `maxCpus`, `memoryMib`, `maxMemoryMib`, `maxDurationSecs`, `idleTimeoutSecs`, `security`, `pullPolicy`, `scripts`, and `disableNetwork` go to the builder as named.
+
+Every machine carries three ownership labels beside any `labels` the caller passes, and the provider's own values win: `smithers.provider` (`providerLabel`) is always `microsandbox` (`providerName`), `smithers.owner` (`ownerLabel`) is `owner` (default `smithers`), and `smithers.holder` (`holderLabel`) is `holder` (default a random token per `make` call). `reap({ sdk, owner, isAlive, retain?, stopTimeoutMs? })` lists that owner's machines by the provider and owner labels, page by page, asks `isAlive` about each one's holder, and removes those whose holder is dead the same graceful-then-forced way, whatever their persistence, except those `retain` keeps by the labels their configuration records (a sticky machine a resuming run will reattach). Just before each removal the machine is read again, and one whose holder label changed since the listing (a live holder reattached it) or that disappeared is skipped. Machines of other owners, machines without a readable holder label, and machines this package did not create are never touched. Every candidate is attempted; the effect resolves with the removed machines, or fails with `unavailable` naming those that could not be removed after the others were. Reattachment relabels a machine to the new holder as a next-start modification, so a host reaps at startup, before it acquires.
+
+```ts
+const orphans = yield * MicrosandboxSandbox.reap({
+  sdk: Microsandbox,
+  owner: "my-installation",
+  isAlive: (holder) => Effect.succeed(holder === currentHolder)
+})
+```
+
+The real-backend suite runs where the `microsandbox` binary answers `--version` and the host can boot a microVM, and names its skip otherwise. It runs the conformance suite with `kill`, `interrupt`, and `ephemeral` claimed, interrupts a command whose `setsid` descendant must not write afterwards, interrupts ten freshly booted single-vCPU commands whose shells must not run their next statement, keeps two concurrent machines' files apart, reaps a sticky machine whose holder is dead while keeping one whose holder lives, fails an unstartable command with `spawn_error`, and fails a running command with `unavailable` within ten seconds of its machine being destroyed from outside.
 
 `environment` plants the workspace's Nix environment in the microVM and runs every command under it:
 

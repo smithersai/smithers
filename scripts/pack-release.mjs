@@ -35,7 +35,7 @@ import { nativeHelperFiles } from "./release-native-helpers.mjs"
 export const releaseGroups = new Set(["engine", "agent", "tooling"])
 
 /**
- * The package names published at 1.0.0-rc.0.
+ * The package names published by the current release candidate.
  *
  * Group membership alone would let a new or newly public package join the
  * release by declaring a group, and it would let a package leave by flipping
@@ -74,6 +74,7 @@ export const publishedPackages = [
   "@smthrs/model",
   "@smthrs/notifications",
   "@smthrs/observability",
+  "@smthrs/organization",
   "@smthrs/patterns",
   "@smthrs/plan",
   "@smthrs/plan-store",

@@ -1,6 +1,6 @@
 ---
 title: "@smthrs/integrations"
-description: "GitHub, Linear, and Telegram adapters over the Smithers control plane"
+description: "GitHub, Linear, Telegram, Slack, Google Calendar, Gmail, and X adapters over the Smithers control plane"
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/integrations/docs/api.md"
 ---
 
@@ -10,9 +10,10 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/age
 
 > **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/errors`](/docs/reference/api/errors/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/)
 
-The package exports four namespaces from the aggregate entry point
+The package exports eight namespaces from the aggregate entry point
 `@smthrs/integrations` and from the per-provider subpaths
-`@smthrs/integrations/core`, `/github`, `/linear`, and `/telegram`. The
+`@smthrs/integrations/core`, `/github`, `/linear`, `/telegram`, `/slack`,
+`/googlecalendar`, `/gmail`, and `/x`. The
 `Environment` module is reachable as `@smthrs/integrations/Environment`.
 
 Conventions worth knowing before the signatures:
@@ -220,6 +221,56 @@ of type assertions.
 
 `HasHeaders` is anything with `headers` in the `RawInbound` shape.
 
+### Core.AccessToken
+
+Where a client gets its bearer token. `AccessTokenSource` has `token`
+(`Effect<Redacted<string>, IntegrationError>`) and `invalidate`, which drops a
+cached token after the provider refused it. `fixed(token)` always answers the
+same token.
+
+### Core.OAuthToken
+
+Short-lived OAuth access tokens minted from a stored refresh token, behind an
+`AccessTokenSource`. `make(options)` caches a token until `skew` before it
+expires and refreshes on demand; a rotated refresh token is written back
+through the `RefreshTokenStore` (`memoryStore`, or `credentialStore(credentials, reference)`
+over the control plane's credential boundary with a compare-and-set).
+`exchangeCode` completes an authorization-code grant. `reasonForOAuthError`
+maps an OAuth error code to an `IntegrationError` reason.
+
+### Core.Connection
+
+A configured provider connection as journal-safe data: `id`, `provider`,
+`label`, `credential` (a `CredentialReference`, never the secret), the granted
+`scopes`, `personal`, `containers`, and an optional `apiBaseUrl`.
+
+| Export              | Signature                                                                                           | Notes                                                                                                                              |
+| ------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection`        | schema                                                                                              | `decode` decodes an unknown value.                                                                                                 |
+| `ANY_CONTAINER`     | `"*"`                                                                                               | Allows every container. An empty list allows none.                                                                                 |
+| `containersAllowed` | `(connection, container: string) => boolean`                                                        | Whether the connection lists the container or `*`.                                                                                 |
+| `personalPolicy`    | `({ personalPrincipals, shared? }) => Authorize`                                                    | Fail-closed host policy: a personal connection only for the named principals.                                                      |
+| `resolveSecret`     | `({ credentials, connection, principal, authorize }) => Effect<Redacted<string>, IntegrationError>` | Asks `authorize` first, then the broker. A refusal is `permission-denied`; missing or unopenable storage is `credentials-missing`. |
+
+### Core.SourceRecord, Core.SourceStore, Core.Source, Core.Sync
+
+Retrieved provider objects as versioned, access-scoped records, and the
+driver that keeps them current.
+
+- `SourceRecord`: the record schema (identity, `access` scope and containers,
+  `thread`, author, text, payload, version, deletion) with `compare`,
+  `supersedes`, `tombstone`, and `reference`.
+- `SourceStore`: `layerMemory` and `layerSql` (requires `Core.Migrations`).
+  `commit` applies a page and advances the stream cursor in one transaction;
+  a copy replaces the stored one only when it is newer; tombstones and
+  revocation purge content; `retrieve` filters by the caller's `Grant`s inside
+  the query; `validate` re-checks references a run kept.
+- `Sync.runSync(adapter, options)`: reads the committed cursor, asks the
+  `SyncAdapter` for pages, and commits each. A `reset` listing tombstones
+  whatever it did not contain. A revoked connection is refused first.
+- `Source.runWithCursor`: the polling-source loop over `CursorStore` that
+  commits a cursor only after the handler succeeds.
+
 ## Environment
 
 `@smthrs/integrations/Environment`: explicit access to the host's process
@@ -409,6 +460,17 @@ explains the pattern.
 | `Comment`               | schema                                                        | The comment GitHub created: `id` and `url`.                                                                                                                                                            |
 | `layerCommentOnIssue`   | `Layer<Requirement<...>, never, GitHubClient \| FlowRuntime>` | Implements the action over the client in context.                                                                                                                                                      |
 | `layer`                 | same                                                          | Every GitHub action's implementation in one layer.                                                                                                                                                     |
+
+### GitHub.Sync
+
+`make(options)` is a `Core.Sync` adapter over one repository's issues, pull
+requests, and issue comments, paged by change time so an item edited during a
+walk is met again. External ids use the numeric repository id
+(`repo:<id>:issue:<number>`, `repo:<id>:comment:<id>`); `issueId` and
+`commentId` build them. Public repositories give `public` records, private
+ones `container`-scoped records. Deletions are not listed by GitHub; run a
+`fullListing` adapter periodically or map the deletion webhooks to
+tombstones.
 
 ## Linear
 
@@ -724,3 +786,166 @@ and everything else passes through.
 | `Sent`               | schema                                                          | `chatId`, `messageIds`, `chunkCount`, `usedPlainTextFallback`.                                                                                                                                                                 |
 | `layerSendMessage`   | `Layer<Requirement<...>, never, TelegramClient \| FlowRuntime>` | Implements the action over the client in context, mapping `TelegramApiError` through `toIntegrationError` before `fromIntegrationError`.                                                                                       |
 | `layer`              | same                                                            | Every Telegram action's implementation in one layer.                                                                                                                                                                           |
+
+## Slack
+
+The Slack surface, exported as `Slack` or from `@smthrs/integrations/slack`.
+The [Slack guide](https://integrations.smithers.sh/guides/slack/) shows a host end to end.
+
+### Slack.Config
+
+`resolve(config?, env?)` applies `SMITHERS_SLACK_BOT_TOKEN`,
+`SMITHERS_SLACK_APP_TOKEN`, `SMITHERS_SLACK_SIGNING_SECRET`, and
+`SMITHERS_SLACK_API_BASE_URL`, validates every limit (`maxRateLimitRetries`,
+`maxRetryAfterSeconds`, `maxRetries`, `retryBaseDelay`, `requestTimeout`), and
+returns each secret as `Redacted`. A secret may be supplied as a string or
+already `Redacted`. `policy(env?)` builds a `Payload.Policy` from
+`SMITHERS_SLACK_TEAM_IDS`, `SMITHERS_SLACK_CHANNEL_IDS`,
+`SMITHERS_SLACK_USER_IDS`, and `SMITHERS_SLACK_SELF_USER_IDS` (comma-separated)
+and throws `invalid-config` for one that admits nothing. `ENV` names every
+variable.
+
+### Slack.SlackClient
+
+The Web API client: `call(method, params?, { auth?: "bot" | "app", write? })`
+and `paginate(method, itemsKey, params?, { maxPages?, limit? })`. A refusal
+(`ok: false`) is typed with `details.slackError`; auth and scope refusals are
+`permission-denied`. Rate limits (429 and `ratelimited`) retry for every
+method. A 5xx, a server error code, a dropped connection, or a timeout on a
+write (`chat.*`, `reactions.*`, `conversations.join`, `conversations.open`)
+fails `outcomeUnknown` and is never repeated; on a read it retries with
+backoff. `make(config?, env?, tokens?)` and `layer`; `tokens` supplies
+`AccessTokenSource`s that take precedence and are treated as rotating.
+
+### Slack.Payload
+
+The schemas (`EventCallback`, `MessageEvent`, `BlockActions`,
+`SocketEnvelope`, `ChannelId`, `Ts`, …) and the admission every door shares.
+
+| Export                  | Signature                                                        | Notes                                                                                                                                                                                              |
+| ----------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Policy`                | interface                                                        | `allowedTeamIds` (required), `allowedChannelIds`, `allowedUserIds`, `selfUserIds`.                                                                                                                 |
+| `requirePolicy`         | `(policy, where) => Policy`                                      | Throws `invalid-config` without a workspace, or without a conversation and a person.                                                                                                               |
+| `classify`              | `(payload, policy) => Classification`                            | `Admitted` with the delivery key and names, or `Refused` with `unsupported`, `team-not-allowed`, `channel-not-allowed`, `bot-author`, `self-author`, or `user-not-allowed`, checked in that order. |
+| `isDirectMessage`       | `(channelId) => boolean`                                         | A `D…` conversation. Admitted without listing it when `allowedUserIds` is set.                                                                                                                     |
+| `toExternalEvent`       | `(payload, { policy, source?, receivedAtMs? }) => ExternalEvent` | Names the event at its most specific form, correlates it to its thread, removes `token` and `response_url`. Throws `SlackRefused` for a refused delivery.                                          |
+| `idempotencyKey`        | `(payload) => string \| undefined`                               | `slack:<team>:<event id>` or `slack:<team>:action:<trigger id>`.                                                                                                                                   |
+| `correlations`, `names` | `(payload) => …`                                                 | The thread, channel, `null` ladder, and the event names, most specific first.                                                                                                                      |
+
+When `allowedUserIds` is set, every admitted delivery's author (a button's
+presser) must be one of those people.
+
+### Slack.SocketSource
+
+`make(options, env?)` builds a Socket Mode source; `run(onBatch)` connects
+with the app token, waits for `hello`, and delivers each admitted
+`events_api` or `interactive` envelope as a one-event batch. The envelope is
+acknowledged only after `onBatch` succeeds; a failing `onBatch` fails `run`
+unacknowledged. Refused, unsupported, and oversized envelopes are
+acknowledged and dropped. A redelivered event handled in this process is
+acknowledged and not delivered again. `disconnect` reconnects at once; a
+dropped connection after `reconnect.initialDelay`; `link_disabled` fails
+`permission-denied`; `reconnect.maxAttempts` consecutive failed connections
+fail `poll-failed`. Options: `policy` (required), `sourceId`, `client`,
+`reconnect`, `helloTimeout`, `dedupeCapacity`, `maxEnvelopeBytes`,
+`allowPlaintextSocket`, and the `SlackConfig` fields. `idempotencyKey(event)`
+is the key to pass on to `Control.signal`.
+
+### Slack.Connections
+
+| Export                 | Signature                                                                    | Notes                                                                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SlackConnections`     | service                                                                      | `resolve(connectionId, channel)`: the client, once the channel is in the connection's containers (`*` allows all). Otherwise `permission-denied`, no request. |
+| `make`, `layer`        | `(entries: Resolved[]) => …`                                                 | Refuse a non-Slack or duplicated connection with `invalid-config`.                                                                                            |
+| `fromEnvironment`      | `({ containers, connectionId?, scopes?, ...limits }, env?) => Resolved`      | Connection `slack` (by default) from `SMITHERS_SLACK_BOT_TOKEN` (required, else `credentials-missing`) and `SMITHERS_SLACK_APP_TOKEN`.                        |
+| `layerFromEnvironment` | same `=> Layer<SlackConnections, IntegrationError>`                          | The resolver over that one connection.                                                                                                                        |
+| `fromConnection`       | `({ connection, credentials, access, appCredential?, limits? }) => Resolved` | Tokens resolved per call through `Core.Connection.resolveSecret`, host policy first.                                                                          |
+| `clientFor`            | `(connection, tokens, limits?) => SlackClient`                               | A client pinned to the connection's API origin.                                                                                                               |
+
+### Slack.Actions
+
+| Export          | Tag                                 | Notes                                                                                                                                                                                                                               |
+| --------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PostMessage`   | `integrations/slack/post-message`   | `connectionId`, `channel`, `text`, `key`, optional `threadTs`, `blocks`, `persona` (`username` and one of `iconEmoji`/`iconUrl`, needs `chat:write.customize`). Stamps `key` into message metadata. Irreversible. Answers `Posted`. |
+| `UpdateMessage` | `integrations/slack/update-message` | Replaces `text` and `blocks` of `ts`. Irreversible.                                                                                                                                                                                 |
+| `Reconcile`     | `integrations/slack/reconcile-post` | Finds a post by `key` in the conversation or a thread: `found` with its `ts`, `absent`, or `inconclusive` when `maxPages` ran out.                                                                                                  |
+| `layer`         |                                     | All three implementations, requiring `SlackConnections`.                                                                                                                                                                            |
+
+`findPosted(client, options)` is the reconcile search over a bare client;
+`metadata(key)` and `personaParams(persona)` are the parameters the post
+sends.
+
+### Slack.Approval
+
+Block Kit button approvals. `token(id)` namespaces a prompt; `blocks(spec)`
+builds the `actions` block (`approve` mode: approve and reject buttons;
+`select` mode: one per option). `decision(payload, spec, nowMs?)` answers
+`Decided` only for a press by a user in `spec.allowedUserIds` (and a workspace
+in `spec.allowedTeamIds` when given) of an option this prompt offered; every
+other press is `Ignored` with `foreign-prompt`, `unauthorized`, or
+`unknown-option`, and the approval stays pending. `pressedToken(payload)`
+names the prompt a press belongs to. `actionId` and `parseActionId` encode
+`sap:<token>:a|d|s:<key>`.
+
+### Slack.Webhook
+
+The Events API door: `verify` (the `v0` HMAC over the exact bytes, with a
+timestamp skew bound), `challenge`, `answer` (for a host that owns the HTTP
+response), `decode`, `idempotencyKey`, and `channel(options)`, a
+`@smthrs/control` channel that verifies, decodes, and routes one event.
+
+### Slack.Sync
+
+`make(options)` is a `Core.Sync` adapter over one conversation's history and
+recent threads (`connectionId`, `channel`, `client`, optional `channelType`,
+`pageSize`, `initialOldest`, `maxTrackedThreads`, `threadWindowSeconds`,
+`maxReplyPages`, `workspaceUrl`). `messageRecord` and `eventRecord` map
+messages and `message_changed`/`message_deleted` events to source records.
+
+## Google Calendar
+
+Exported as `GoogleCalendar` or from `@smthrs/integrations/googlecalendar`.
+See the [Google Calendar guide](https://integrations.smithers.sh/guides/google-calendar/).
+
+- `Config`: `resolve` over `SMITHERS_GOOGLE_*`; `SCOPES`.
+- `CalendarClient`: events list/get/insert/patch/delete/instances, free/busy,
+  token refresh on 401, rate-limit waits. `make`, `layer`,
+  `layerFromConnection(connection, access, config?, env?)`.
+- `Event`, `EventId`: event schemas and input validation; `EventId.fromKey`
+  derives the deterministic base32hex id an upsert inserts under.
+- `Actions`: `UpsertEvent`, `PatchEvent`, `CancelEvent`, `FreeBusy`, each with
+  an `idempotencyKey`, `implementationVersion`, and the bounded
+  `retryPolicy`; `EventConflict` when an upsert's id holds a different event.
+- `Sync`: `make` builds the `syncToken` change feed; `render` and `toRecord`
+  map events to records.
+
+## Gmail
+
+Exported as `Gmail` or from `@smthrs/integrations/gmail`. See the
+[Gmail guide](https://integrations.smithers.sh/guides/gmail/).
+
+- `Config`: `resolve`; the token is an `AccessTokenSource`, never ambient.
+- `Capabilities`: operations, the scopes that allow each, `allows`,
+  `refusal`.
+- `GmailClient`: messages, history, profile, drafts, and send, scope-checked
+  against the bound connection.
+- `Mime`: `compose` builds an RFC 2822 message and refuses control characters
+  in headers; `KEY_HEADER` carries the reconcile key.
+- `Actions`: `CreateDraft`, `SendMessage` (irreversible, `outcomeUnknown` on a
+  lost answer), `FindByKey`.
+- `Reconcile`: `findByKey` over the mailbox.
+- `Records`, `Sync`: `mailbox` and `search` over messages and history as
+  private source records.
+
+## X
+
+Exported as `X` or from `@smthrs/integrations/x`. **Read-only**: see the
+[X guide](https://integrations.smithers.sh/guides/x/).
+
+- `Config`: `resolve`; the token is an `AccessTokenSource`, never ambient.
+- `Capabilities`: operations and the scopes each needs.
+- `XClient`: `me`, `mentions`, `userTweets`, `dmEvents`,
+  `conversationEvents`; also `createTweet` and `sendDirectMessage`, which are
+  not durable actions.
+- `Records`: `fromMention`, `fromDirectMessage`.
+- `Sync`: `mentions` and `directMessages` change feeds.
