@@ -469,3 +469,15 @@ SELECT (
 
 )::bigint;
 
+
+-- name: MarkBillingSubscriptionsPaymentReversed :execrows
+UPDATE billing_subscriptions
+SET payment_reversed_at = sqlc.arg(reversed_at)
+WHERE billing_account_id = sqlc.arg(billing_account_id)
+  AND status IN ('trialing', 'active', 'past_due');
+
+-- name: ClearBillingSubscriptionPaymentReversed :exec
+UPDATE billing_subscriptions
+SET payment_reversed_at = NULL
+WHERE billing_account_id = sqlc.arg(billing_account_id)
+  AND stripe_subscription_id = sqlc.arg(stripe_subscription_id);

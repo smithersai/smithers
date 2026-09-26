@@ -84,6 +84,10 @@ type ModelProxyCallers struct {
 	q     modelProxyCallerQuerier
 	pool  *pgxpool.Pool
 	codec flowhost.SecretCodec
+	// PaidPlan reports whether an owner has a paid plan. When set, automation
+	// on an organization's repository charges the organization only when it
+	// has one, and otherwise the user the run or host acts for.
+	PaidPlan func(ctx context.Context, ownerType string, ownerID int64) (bool, error)
 }
 
 // NewModelProxyCallers resolves payers over product SQL. codec opens managed
@@ -98,6 +102,9 @@ func (c *ModelProxyCallers) ResolveModelCaller(r *http.Request) (modelproxy.Call
 	ctx := r.Context()
 	if run := middleware.WorkflowRunFromContext(ctx); run != nil {
 		caller, err := c.repositoryOwner(ctx, run.RepositoryID)
+		if err == nil {
+			caller, err = c.automationPayer(ctx, caller, func() (int64, error) { return c.runActor(ctx, run.ID) })
+		}
 		caller.Source, caller.RepositoryID, caller.WorkflowRunID = modelproxy.SourceAgentRun, run.RepositoryID, run.ID
 		return caller, err
 	}
@@ -110,6 +117,9 @@ func (c *ModelProxyCallers) ResolveModelCaller(r *http.Request) (modelproxy.Call
 			return modelproxy.Caller{}, err
 		}
 		caller, err := c.repositoryOwner(ctx, binding.RepositoryID)
+		if err == nil {
+			caller, err = c.automationPayer(ctx, caller, func() (int64, error) { return binding.UserID, nil })
+		}
 		caller.Source, caller.UserID, caller.RepositoryID = modelproxy.SourceFlowHost, binding.UserID, binding.RepositoryID
 		caller.WorkspaceID, caller.Reference = binding.WorkspaceID, binding.ID
 		return caller, err
@@ -150,6 +160,36 @@ func (c *ModelProxyCallers) ResolveModelCaller(r *http.Request) (modelproxy.Call
 		return user, nil
 	}
 	return modelproxy.Caller{}, modelproxy.ErrForbidden
+}
+
+// automationPayer is the account automation on a repository charges. An
+// organization without a paid plan does not pay for it: the acting user does,
+// so a paying user can work on a Free organization's repositories. Without a
+// known actor the organization pays.
+func (c *ModelProxyCallers) automationPayer(ctx context.Context, owner modelproxy.Caller, actor func() (int64, error)) (modelproxy.Caller, error) {
+	if owner.OwnerType != "org" || c.PaidPlan == nil {
+		return owner, nil
+	}
+	paid, err := c.PaidPlan(ctx, owner.OwnerType, owner.OwnerID)
+	if err != nil || paid {
+		return owner, err
+	}
+	userID, err := actor()
+	if err != nil || userID <= 0 {
+		return owner, err
+	}
+	return modelproxy.Caller{OwnerType: "user", OwnerID: userID, UserID: userID}, nil
+}
+
+// runActor is the user whose agent session a run works for, or 0.
+func (c *ModelProxyCallers) runActor(ctx context.Context, runID int64) (int64, error) {
+	var userID int64
+	err := c.pool.QueryRow(ctx, `SELECT user_id FROM agent_sessions WHERE workflow_run_id = $1 AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT 1`, runID).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	return userID, err
 }
 
 func (c *ModelProxyCallers) repositoryOwner(ctx context.Context, repositoryID int64) (modelproxy.Caller, error) {

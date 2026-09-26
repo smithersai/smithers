@@ -237,17 +237,21 @@ func TestBilling_Cov_OrgCheckoutOverviewAndRepoAuthorizations(t *testing.T) {
 		listEntitlementsFn: func(context.Context, string) ([]string, error) { return nil, nil },
 	}
 	svc := NewBillingService(queries, client, BillingServiceConfig{
-		BaseURL:           "https://smithers.test",
-		TeamAnnualPriceID: "price_team_annual",
+		BaseURL:            "https://smithers.test",
+		TeamMonthlyPriceID: "price_team_monthly",
+		TeamAnnualPriceID:  "price_team_annual",
 	})
 
-	checkout, err := svc.CreateOrgCheckout(ctx, actor, " Acme ", BillingPlanTeam, "year")
+	// Annual billing is refused even with an annual price configured.
+	_, err := svc.CreateOrgCheckout(ctx, actor, " Acme ", BillingPlanTeam, "year")
+	assert.Equal(t, 400, httpStatus(err))
+	checkout, err := svc.CreateOrgCheckout(ctx, actor, " Acme ", BillingPlanTeam, "month")
 	require.NoError(t, err)
 	assert.Equal(t, "https://checkout.stripe.test/org", checkout.URL)
-	assert.Equal(t, "price_team_annual", gotCheckout.PriceID)
+	assert.Equal(t, "price_team_monthly", gotCheckout.PriceID)
 	assert.Equal(t, int64(1), gotCheckout.Quantity, "empty orgs still buy at least one seat")
 	assert.Equal(t, "org", gotCheckout.Metadata["owner_type"])
-	assert.Equal(t, BillingIntervalAnnual, gotCheckout.Metadata["interval"])
+	assert.Equal(t, BillingIntervalMonthly, gotCheckout.Metadata["interval"])
 
 	overview, err := svc.GetOrgOverview(ctx, actor, "acme")
 	require.NoError(t, err)

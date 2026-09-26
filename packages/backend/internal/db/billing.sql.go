@@ -37,6 +37,23 @@ func (q *Queries) ClaimStripeProcessedEvent(ctx context.Context, arg ClaimStripe
 	return event_id, err
 }
 
+const clearBillingSubscriptionPaymentReversed = `-- name: ClearBillingSubscriptionPaymentReversed :exec
+UPDATE billing_subscriptions
+SET payment_reversed_at = NULL
+WHERE billing_account_id = $1
+  AND stripe_subscription_id = $2
+`
+
+type ClearBillingSubscriptionPaymentReversedParams struct {
+	BillingAccountID     int64  `json:"billing_account_id"`
+	StripeSubscriptionID string `json:"stripe_subscription_id"`
+}
+
+func (q *Queries) ClearBillingSubscriptionPaymentReversed(ctx context.Context, arg ClearBillingSubscriptionPaymentReversedParams) error {
+	_, err := q.db.Exec(ctx, clearBillingSubscriptionPaymentReversed, arg.BillingAccountID, arg.StripeSubscriptionID)
+	return err
+}
+
 const countAgentRunsByOwner = `-- name: CountAgentRunsByOwner :one
 WITH owned_repos AS (
     SELECT id
@@ -234,7 +251,7 @@ func (q *Queries) GetCreditLedgerByIdempotencyKey(ctx context.Context, arg GetCr
 }
 
 const getLatestBillingSubscriptionByAccount = `-- name: GetLatestBillingSubscriptionByAccount :one
-SELECT id, billing_account_id, stripe_subscription_id, stripe_price_id, plan_key, billing_interval, status, quantity, trial_end, current_period_start, current_period_end, past_due_since, cancel_at_period_end, canceled_at, raw_payload, created_at, updated_at
+SELECT id, billing_account_id, stripe_subscription_id, stripe_price_id, plan_key, billing_interval, status, quantity, trial_end, current_period_start, current_period_end, past_due_since, cancel_at_period_end, canceled_at, raw_payload, created_at, updated_at, payment_reversed_at
 FROM billing_subscriptions
 WHERE billing_account_id = $1
 ORDER BY updated_at DESC, id DESC
@@ -262,12 +279,13 @@ func (q *Queries) GetLatestBillingSubscriptionByAccount(ctx context.Context, bil
 		&i.RawPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PaymentReversedAt,
 	)
 	return i, err
 }
 
 const getLatestLiveBillingSubscriptionByAccount = `-- name: GetLatestLiveBillingSubscriptionByAccount :one
-SELECT id, billing_account_id, stripe_subscription_id, stripe_price_id, plan_key, billing_interval, status, quantity, trial_end, current_period_start, current_period_end, past_due_since, cancel_at_period_end, canceled_at, raw_payload, created_at, updated_at
+SELECT id, billing_account_id, stripe_subscription_id, stripe_price_id, plan_key, billing_interval, status, quantity, trial_end, current_period_start, current_period_end, past_due_since, cancel_at_period_end, canceled_at, raw_payload, created_at, updated_at, payment_reversed_at
 FROM billing_subscriptions
 WHERE billing_account_id = $1
   AND status IN ('trialing', 'active', 'past_due')
@@ -296,6 +314,7 @@ func (q *Queries) GetLatestLiveBillingSubscriptionByAccount(ctx context.Context,
 		&i.RawPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PaymentReversedAt,
 	)
 	return i, err
 }
@@ -548,7 +567,7 @@ func (q *Queries) ListBillingEntitlementsByAccount(ctx context.Context, billingA
 }
 
 const listBillingSubscriptionsByAccount = `-- name: ListBillingSubscriptionsByAccount :many
-SELECT id, billing_account_id, stripe_subscription_id, stripe_price_id, plan_key, billing_interval, status, quantity, trial_end, current_period_start, current_period_end, past_due_since, cancel_at_period_end, canceled_at, raw_payload, created_at, updated_at
+SELECT id, billing_account_id, stripe_subscription_id, stripe_price_id, plan_key, billing_interval, status, quantity, trial_end, current_period_start, current_period_end, past_due_since, cancel_at_period_end, canceled_at, raw_payload, created_at, updated_at, payment_reversed_at
 FROM billing_subscriptions
 WHERE billing_account_id = $1
 ORDER BY updated_at DESC, id DESC
@@ -581,6 +600,7 @@ func (q *Queries) ListBillingSubscriptionsByAccount(ctx context.Context, billing
 			&i.RawPayload,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PaymentReversedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -691,6 +711,26 @@ func (q *Queries) ListCreditLedgerByAccount(ctx context.Context, arg ListCreditL
 		return nil, err
 	}
 	return items, nil
+}
+
+const markBillingSubscriptionsPaymentReversed = `-- name: MarkBillingSubscriptionsPaymentReversed :execrows
+UPDATE billing_subscriptions
+SET payment_reversed_at = $1
+WHERE billing_account_id = $2
+  AND status IN ('trialing', 'active', 'past_due')
+`
+
+type MarkBillingSubscriptionsPaymentReversedParams struct {
+	ReversedAt       pgtype.Timestamptz `json:"reversed_at"`
+	BillingAccountID int64              `json:"billing_account_id"`
+}
+
+func (q *Queries) MarkBillingSubscriptionsPaymentReversed(ctx context.Context, arg MarkBillingSubscriptionsPaymentReversedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markBillingSubscriptionsPaymentReversed, arg.ReversedAt, arg.BillingAccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const sumStorageBytesByOwner = `-- name: SumStorageBytesByOwner :one
@@ -1002,7 +1042,7 @@ SET billing_account_id = EXCLUDED.billing_account_id,
     canceled_at = EXCLUDED.canceled_at,
     raw_payload = EXCLUDED.raw_payload,
     updated_at = NOW()
-RETURNING id, billing_account_id, stripe_subscription_id, stripe_price_id, plan_key, billing_interval, status, quantity, trial_end, current_period_start, current_period_end, past_due_since, cancel_at_period_end, canceled_at, raw_payload, created_at, updated_at
+RETURNING id, billing_account_id, stripe_subscription_id, stripe_price_id, plan_key, billing_interval, status, quantity, trial_end, current_period_start, current_period_end, past_due_since, cancel_at_period_end, canceled_at, raw_payload, created_at, updated_at, payment_reversed_at
 `
 
 type UpsertBillingSubscriptionParams struct {
@@ -1056,6 +1096,7 @@ func (q *Queries) UpsertBillingSubscription(ctx context.Context, arg UpsertBilli
 		&i.RawPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PaymentReversedAt,
 	)
 	return i, err
 }

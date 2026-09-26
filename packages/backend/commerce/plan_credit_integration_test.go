@@ -80,13 +80,38 @@ func TestPlanCreditFollowsPaidInvoices(t *testing.T) {
 	invoice("evt_in2", "in_2", 1200, end)
 	require.Equal(t, int64(7200), balance())
 
-	// A refund forfeits the unspent plan credit; the signup grant stays.
+	worker, err := admission.NewMetered(pool, admission.Config{Usage: admission.ProductUsage, Prices: admission.Prices{ProMonthly: "price_pro"}})
+	require.NoError(t, err)
+	plan := func() string {
+		entitlement, err := worker.SandboxEntitlement(ctx, owner)
+		require.NoError(t, err)
+		return entitlement.PlanKey
+	}
+	paid := func() bool {
+		ok, err := api.OwnerHasPaidPlan(ctx, "user", owner)
+		require.NoError(t, err)
+		return ok
+	}
+	require.Equal(t, "pro", plan())
+	require.True(t, paid())
+
+	// A refund forfeits the unspent plan credit, the signup grant stays, and
+	// paid entitlements are suspended while the provider still reports the
+	// subscription active (plue 0511eb46e).
 	deliver("evt_refund", "charge.refunded", `{"id":"ch_1","customer":"cus_plan","amount_refunded":5000,"currency":"usd"}`)
 	require.Equal(t, int64(1000), balance())
+	require.Equal(t, "free", plan())
+	require.False(t, paid())
+	deliver("evt_still_active", "customer.subscription.updated", `{"id":"sub_plan","customer":"cus_plan"}`)
+	require.Equal(t, "free", plan(), "a later subscription event does not clear the reversal")
 
-	// Cancellation forfeits the next invoice's credit too.
+	// The next paid invoice restores the plan and grants its credit.
 	invoice("evt_in3", "in_3", 5000, end)
 	require.Equal(t, int64(6000), balance())
+	require.Equal(t, "pro", plan())
+	require.True(t, paid())
+
+	// Cancellation forfeits that credit too.
 	transport.status = "canceled"
 	deliver("evt_canceled", "customer.subscription.updated", `{"id":"sub_plan","customer":"cus_plan"}`)
 	require.Equal(t, int64(1000), balance())

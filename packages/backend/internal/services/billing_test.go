@@ -23,6 +23,8 @@ import (
 )
 
 type billingQuerierMock struct {
+	paymentReversals          []int64
+	paymentRestores           []string
 	countActiveSandboxesFn    func(context.Context, int64) (int, error)
 	countOtherSandboxResumeFn func(context.Context, db.CountOtherActiveSandboxesForWorkspaceResumeParams) (db.CountOtherActiveSandboxesForWorkspaceResumeRow, error)
 	countActiveAgentsFn       func(context.Context, int64) (int64, error)
@@ -193,6 +195,16 @@ func (m *billingQuerierMock) UpsertBillingSubscription(ctx context.Context, arg 
 		CreatedAt:            time.Now().UTC(),
 		UpdatedAt:            time.Now().UTC(),
 	}, nil
+}
+
+func (m *billingQuerierMock) MarkBillingSubscriptionsPaymentReversed(_ context.Context, arg db.MarkBillingSubscriptionsPaymentReversedParams) (int64, error) {
+	m.paymentReversals = append(m.paymentReversals, arg.BillingAccountID)
+	return 1, nil
+}
+
+func (m *billingQuerierMock) ClearBillingSubscriptionPaymentReversed(_ context.Context, arg db.ClearBillingSubscriptionPaymentReversedParams) error {
+	m.paymentRestores = append(m.paymentRestores, arg.StripeSubscriptionID)
+	return nil
 }
 
 func (m *billingQuerierMock) DeactivateBillingEntitlementsByAccount(context.Context, int64) error {
@@ -1160,9 +1172,10 @@ func TestBillingService_HandleStripeWebhook_InvoicePaymentFailedSendsDunningNoti
 		TeamMonthlyPriceID:  "price_team_monthly",
 	}, WithBillingEmailSender(emailSender))
 	payload, signature := signedStripeEvent(t, "evt_invoice_failed", "invoice.payment_failed", map[string]any{
-		"id":                   "in_test_123",
-		"customer":             "cus_test_123",
-		"subscription":         "sub_test_123",
+		"id":       "in_test_123",
+		"customer": "cus_test_123",
+		// API 2026-08-26.dahlia: the subscription id lives under parent.
+		"parent":               map[string]any{"subscription_details": map[string]any{"subscription": "sub_test_123"}},
 		"number":               "INV-123",
 		"hosted_invoice_url":   "https://invoice.stripe.test/pay",
 		"amount_due":           2500,

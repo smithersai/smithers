@@ -258,6 +258,7 @@ type BillingSubscription struct {
 	RawPayload           json.RawMessage    `json:"raw_payload"`
 	CreatedAt            time.Time          `json:"created_at"`
 	UpdatedAt            time.Time          `json:"updated_at"`
+	PaymentReversedAt    pgtype.Timestamptz `json:"payment_reversed_at"`
 }
 
 type BillingUsageCounter struct {

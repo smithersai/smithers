@@ -302,6 +302,20 @@ type stripeInvoicePaymentFailedPayload struct {
 	AttemptCount       int64  `json:"attempt_count"`
 	CustomerEmail      string `json:"customer_email"`
 	CustomerName       string `json:"customer_name"`
+	// Since API version 2025-03-31 (Basil) the subscription id lives here;
+	// the top-level field is empty on current payloads.
+	Parent struct {
+		SubscriptionDetails struct {
+			Subscription string `json:"subscription"`
+		} `json:"subscription_details"`
+	} `json:"parent"`
+}
+
+func (p stripeInvoicePaymentFailedPayload) subscriptionID() string {
+	if id := strings.TrimSpace(p.Parent.SubscriptionDetails.Subscription); id != "" {
+		return id
+	}
+	return strings.TrimSpace(p.Subscription)
 }
 
 type stripeChargePayload struct {
@@ -1921,8 +1935,8 @@ func (s *BillingService) handleInvoicePaymentFailed(ctx context.Context, payload
 		}
 		account = &updated
 	}
-	if s.stripe != nil && strings.TrimSpace(payload.Subscription) != "" {
-		snapshot, err := s.stripe.GetSubscription(ctx, payload.Subscription)
+	if subscriptionID := payload.subscriptionID(); s.stripe != nil && subscriptionID != "" {
+		snapshot, err := s.stripe.GetSubscription(ctx, subscriptionID)
 		if err != nil {
 			return pkgerrors.Internal("failed to refresh stripe subscription after payment failure").WithCause(err)
 		}
@@ -1982,7 +1996,7 @@ func (s *BillingService) handleChargeRefunded(ctx context.Context, eventID strin
 		return err
 	}
 	reason := fmt.Sprintf("Stripe charge refunded: %s (%s)", strings.TrimSpace(payload.ID), formatMoneyCents(payload.AmountRefunded, payload.Currency))
-	if err := s.forfeitPlanCredit(ctx, *account, reason); err != nil {
+	if err := s.reversePayment(ctx, *account, reason); err != nil {
 		return err
 	}
 	return s.recordStripeCreditAudit(ctx, *account, eventID, "refund", "stripe_charge", reason)
@@ -2009,7 +2023,7 @@ func (s *BillingService) handleChargeDisputeCreated(ctx context.Context, eventID
 		strings.TrimSpace(payload.Status),
 		formatMoneyCents(payload.Amount, payload.Currency),
 	)
-	if err := s.forfeitPlanCredit(ctx, *account, reason); err != nil {
+	if err := s.reversePayment(ctx, *account, reason); err != nil {
 		return err
 	}
 	return s.recordStripeCreditAudit(ctx, *account, eventID, "adjustment", "stripe_dispute", reason)
@@ -2372,6 +2386,11 @@ func (s *BillingService) checkoutPlan(ownerType, planKey, interval string) (bill
 			return billingPlanDefinition{}, pkgerrors.BadRequest("unsupported billing interval")
 		}
 		normalizedInterval = BillingIntervalMonthly
+	}
+	if normalizedInterval == BillingIntervalAnnual {
+		// Annual pricing is not approved; a configured annual price id must
+		// not make it purchasable.
+		return billingPlanDefinition{}, pkgerrors.BadRequest("annual billing is not offered")
 	}
 	plan, ok := s.checkoutPlans[ownerType][key+":"+normalizedInterval]
 	if !ok || plan.Unlisted || strings.TrimSpace(plan.PriceID) == "" {

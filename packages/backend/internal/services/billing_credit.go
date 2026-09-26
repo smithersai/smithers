@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -23,7 +24,10 @@ import (
 //     is no rollover. The ledger spends the soonest-expiring credit first, so
 //     plan credit goes before the signup grant.
 //   - Unspent plan credit is forfeited when the account has no active or
-//     trialing subscription, and on a refund or dispute.
+//     trialing subscription, and on a refund or dispute. A refund or dispute
+//     also suspends the account's paid entitlements
+//     (billing_subscriptions.payment_reversed_at) until a later invoice is
+//     paid (plue 0511eb46e).
 //
 // Calendar-month grants (monthly_grant:YYYY-MM) issued before this rule are
 // left as they are.
@@ -51,7 +55,7 @@ var StripeWebhookEvents = []string{
 // subscription is active or trialing. past_due keeps sandbox access through
 // the dunning grace period, but not the credit a paid invoice bought.
 func planCreditSpendable(subscription *db.BillingSubscription) bool {
-	if subscription == nil {
+	if subscription == nil || subscription.PaymentReversedAt.Valid {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(subscription.Status)) {
@@ -188,7 +192,49 @@ func (s *BillingService) handleInvoicePaid(ctx context.Context, invoice stripeIn
 		// Not projected yet; fail so Stripe retries after the subscription event.
 		return pkgerrors.Internal("paid invoice " + invoiceID + " references unknown subscription " + subscriptionID)
 	}
+	if subscription.PaymentReversedAt.Valid {
+		// A later paid invoice restores the subscription a refund or dispute
+		// suspended.
+		if err := s.queries.ClearBillingSubscriptionPaymentReversed(ctx, db.ClearBillingSubscriptionPaymentReversedParams{
+			BillingAccountID: account.ID, StripeSubscriptionID: subscriptionID,
+		}); err != nil {
+			return pkgerrors.Internal("failed to restore paid subscription").WithCause(err)
+		}
+		subscription.PaymentReversedAt = pgtype.Timestamptz{}
+	}
 	return s.grantInvoiceCredit(ctx, *account, subscription, invoice)
+}
+
+// reversePayment handles a refund or dispute: the unspent plan credit is
+// forfeited and the account's live subscriptions lose paid entitlements until
+// a later invoice is paid.
+func (s *BillingService) reversePayment(ctx context.Context, account db.BillingAccount, reason string) error {
+	if err := s.forfeitPlanCredit(ctx, account, reason); err != nil {
+		return err
+	}
+	if _, err := s.queries.MarkBillingSubscriptionsPaymentReversed(ctx, db.MarkBillingSubscriptionsPaymentReversedParams{
+		ReversedAt: pgtype.Timestamptz{Time: s.now(), Valid: true}, BillingAccountID: account.ID,
+	}); err != nil {
+		return pkgerrors.Internal("failed to suspend reversed subscription").WithCause(err)
+	}
+	return nil
+}
+
+// OwnerHasPaidPlan reports whether an owner's latest live subscription grants
+// paid entitlements.
+func (s *BillingService) OwnerHasPaidPlan(ctx context.Context, ownerType string, ownerID int64) (bool, error) {
+	account, err := s.findBillingAccountByOwner(ctx, ownerType, ownerID)
+	if err != nil || account == nil {
+		return false, err
+	}
+	row, err := s.queries.GetLatestLiveBillingSubscriptionByAccount(ctx, account.ID)
+	if stdErrors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, pkgerrors.Internal("failed to load billing subscription").WithCause(err)
+	}
+	return s.subscriptionGrantsPaidAccess(&row), nil
 }
 
 // grantInvoiceCredit grants the plan credit one paid invoice bought.

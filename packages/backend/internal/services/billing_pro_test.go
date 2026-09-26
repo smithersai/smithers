@@ -54,10 +54,9 @@ func TestBillingService_CreateUserCheckout_ProPlan(t *testing.T) {
 	assert.Equal(t, int64(1), gotCheckout.Quantity)
 	assert.Equal(t, BillingPlanPro, gotCheckout.Metadata["plan_key"])
 
-	// Annual resolves the annual price for the same plan key.
+	// Annual is refused even with an annual price configured.
 	_, err = svc.CreateUserCheckout(context.Background(), user, BillingPlanPro, BillingIntervalAnnual)
-	require.NoError(t, err)
-	assert.Equal(t, "price_pro_annual", gotCheckout.PriceID)
+	assert.Equal(t, 400, httpStatus(err))
 }
 
 func TestBillingService_CheckoutPlan_ProIsUserOnlyAndNeedsAPrice(t *testing.T) {
@@ -160,8 +159,10 @@ func TestBillingService_CheckoutPlan_RejectsUnknownInterval(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported billing interval")
 
-	// The documented aliases still resolve.
-	plan, err := svc.checkoutPlan(BillingOwnerTypeUser, BillingPlanPro, "year")
+	// The documented aliases still resolve, and annual is not offered.
+	plan, err := svc.checkoutPlan(BillingOwnerTypeUser, BillingPlanPro, "month")
 	require.NoError(t, err)
-	assert.Equal(t, "price_pro_annual", plan.PriceID)
+	assert.Equal(t, "price_pro_monthly", plan.PriceID)
+	_, err = svc.checkoutPlan(BillingOwnerTypeUser, BillingPlanPro, "year")
+	assert.ErrorContains(t, err, "annual billing is not offered")
 }

@@ -164,3 +164,57 @@ func TestModelProxyChargesTheRightPayerPostgres(t *testing.T) {
 		{"app", "user", alice.ID, 0, "", ""},
 	}, got)
 }
+
+// Automation on an organization's repository charges the organization only
+// when it has a paid plan, and otherwise the user the run or host acts for
+// (smithersai/plue#528, plue 0511eb46e).
+func TestModelProxyChargesActingUserForFreeOrganizationPostgres(t *testing.T) {
+	raw := os.Getenv("SMITHERS_TEST_DATABASE_URL")
+	if raw == "" {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatal("PostgreSQL required")
+		}
+		t.Skip("PostgreSQL not configured")
+	}
+	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	ctx := context.Background()
+	q := db.New(pool)
+	alice, err := q.CreateUser(ctx, db.CreateUserParams{Username: "alice", LowerUsername: "alice", DisplayName: "Alice"})
+	require.NoError(t, err)
+	org, err := q.CreateOrganization(ctx, db.CreateOrganizationParams{Name: "acme", LowerName: "acme", Visibility: "private"})
+	require.NoError(t, err)
+	repo, err := q.CreateOrgRepo(ctx, db.CreateOrgRepoParams{OrgID: pgtype.Int8{Int64: org.ID, Valid: true}, Name: "app", LowerName: "app", DefaultBookmark: "main"})
+	require.NoError(t, err)
+	var definitionID, runID, unattendedRunID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workflow_definitions (repository_id, name, path, config) VALUES ($1, 'agent', '.smithers/agent.ts', '{}') RETURNING id`, repo.ID).Scan(&definitionID))
+	for _, id := range []*int64{&runID, &unattendedRunID} {
+		require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workflow_runs (repository_id, workflow_definition_id, status, trigger_event) VALUES ($1, $2, 'running', 'agent') RETURNING id`, repo.ID, definitionID).Scan(id))
+	}
+	_, err = pool.Exec(ctx, `INSERT INTO agent_sessions (id, repository_id, user_id, workflow_run_id, status) VALUES ($1, $2, $3, $4, 'active')`, uuid.NewString(), repo.ID, alice.ID, runID)
+	require.NoError(t, err)
+
+	paid := false
+	callers := services.NewModelProxyCallers(q, pool, webhook.NoopSecretCodec{})
+	callers.PaidPlan = func(_ context.Context, ownerType string, ownerID int64) (bool, error) {
+		require.Equal(t, "org", ownerType)
+		require.Equal(t, org.ID, ownerID)
+		return paid, nil
+	}
+	resolve := func(runID int64) modelproxy.Caller {
+		request := httptest.NewRequest(http.MethodPost, "/model-proxy/anthropic/v1/messages", nil)
+		request = request.WithContext(middleware.ContextWithWorkflowRun(request.Context(), &db.WorkflowRun{ID: runID, RepositoryID: repo.ID}))
+		caller, err := callers.ResolveModelCaller(request)
+		require.NoError(t, err)
+		require.Equal(t, runID, caller.WorkflowRunID)
+		return caller
+	}
+	free := resolve(runID)
+	require.Equal(t, "user", free.OwnerType)
+	require.Equal(t, alice.ID, free.OwnerID)
+	unattended := resolve(unattendedRunID)
+	require.Equal(t, "org", unattended.OwnerType, "a run with no acting user bills the organization")
+	paid = true
+	orgPays := resolve(runID)
+	require.Equal(t, "org", orgPays.OwnerType)
+	require.Equal(t, org.ID, orgPays.OwnerID)
+}

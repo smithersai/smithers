@@ -60,6 +60,10 @@ type Service interface {
 	// CreditLedger is the exact credit ledger with this deployment's grants,
 	// shared by every platform-model charge.
 	CreditLedger() credits.Ledger
+	// OwnerHasPaidPlan reports whether an owner's subscription grants paid
+	// entitlements. The model proxy charges an organization's automation to
+	// the acting user when it does not.
+	OwnerHasPaidPlan(ctx context.Context, ownerType string, ownerID int64) (bool, error)
 }
 
 type Config struct {

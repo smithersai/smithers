@@ -116,6 +116,9 @@ func overageQuantity(consumed, included int64) int64 {
 // treating any past_due row as live for checkout duplicate guards — the
 // subscription still exists in Stripe and a second checkout would double-charge.
 func (s *BillingService) subscriptionGrantsPaidAccess(subscription *db.BillingSubscription) bool {
+	if subscription.PaymentReversedAt.Valid {
+		return false // refunded or disputed; the next paid invoice clears it
+	}
 	switch strings.ToLower(strings.TrimSpace(subscription.Status)) {
 	case "trialing", "active":
 		return true
