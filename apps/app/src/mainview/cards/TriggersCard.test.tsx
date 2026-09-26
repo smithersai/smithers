@@ -286,4 +286,5 @@ test("a paused named schedule offers Resume with its repository and slug", () =>
   button.click()
   expect(raised).toEqual([["triggers.resume", `nightly ${REPO}`]])
   expect(host.querySelector("[data-testid='trigger-pause-nightly']")).toBeNull()
+  expect(host.querySelector("[data-testid='trigger-run-nightly']") === null).toBe(true)
 })

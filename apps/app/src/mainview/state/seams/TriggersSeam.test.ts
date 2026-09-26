@@ -1733,6 +1733,41 @@ describe("triggers seam: running a registered schedule now", () => {
     } finally { lookup.resolve(json(200, paused)) }
   })
 
+  test("a stale Run now request refuses the paused lookup and retries after resume", async () => {
+    const calls: Array<RelayCall> = []
+    const lookup = Promise.withResolvers<Response>()
+    let enabled = false
+    const { store, controller } = await readyToRegister(watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: () => enabled ? json(200, REGISTERED) : lookup.promise,
+      [RPC]: relayRoute(calls, workspaceAnswers())
+    })))
+    let answered = false
+    const command = controller.commands.run("triggers.run", "nightly will/flows").then(outcome => { answered = true; return outcome })
+    try {
+      await new Promise(resolve => setTimeout(resolve, 100))
+      expect(answered).toBe(true)
+      expect((await command).status).toBe("executed")
+      expect(calls).toEqual([])
+      await store.dispatch({ type: "composer.changed", actor: "user", draft: "still chatting" }).isPersisted.promise
+      expect(store.session().draft).toBe("still chatting")
+      lookup.resolve(json(200, { ...REGISTERED, rows: REGISTERED.rows.map(row => ({ ...row, enabled: false })) }))
+      await waitFor(() => dispatchCards(store)[0]?.payload.phase === "failed")
+      const card = dispatchCards(store)[0]!
+      const original = workflowLaunchOf(card)!
+      expect(original.error?.code).toBe("trigger_paused")
+      expect(card.payload.error).toBe('Resume "nightly" before running it.')
+      expect(calls).toEqual([])
+      await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.sourceCard === card.id && toast.status === "failed"))
+      enabled = true
+      await controller.commands.run("flow.run.retry", card.id)
+      await waitFor(() => dispatchCards(store)[0]?.payload.runId === REGISTRAR_RUN)
+      expect(workflowLaunchOf(dispatchCards(store)[0])?.id).toBe(original.id)
+      expect(calls.filter(call => call.procedure === "Run")).toHaveLength(1)
+      expect(calls.find(call => call.procedure === "Plan")?.payload.input).toMatchObject({ requestId: original.input.requestId })
+    } finally { lookup.resolve(json(200, REGISTERED)); await command }
+  })
+
   test("Resume refuses a schedule that was already enabled before lookup completed", async () => {
     const calls: Array<RelayCall> = []
     const { store, controller } = await readyToRegister(ROUTES(calls))

@@ -30,6 +30,7 @@ export default showcase({
     let planned = FLOW
     let resuming = false
     let resumed = false
+    const triggerOperations: Array<string | undefined> = []
     await backend.cloud({ capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
     await backend.json("/api/workflow/provision", { status: "ready", repo: REPO, gatewayId: "gw-1" })
     await backend.json("/api/workflow/triggers", { status: "ok", repo: REPO, live: true, triggers: [], webhooks: [{ name: "github-pull-request", flowId: FLOW }] })
@@ -45,7 +46,11 @@ export default showcase({
           { flowId: FLOW, description: "Review a pull request and comment on it" },
           { flowId: "triage-issue", description: "Label and route a new issue" }
         ] })
-        case "Plan": planned = call.payload.flowId ?? FLOW; resuming = call.payload.input?.operation === "resume"; return ok({
+        case "Plan":
+          planned = call.payload.flowId ?? FLOW
+          resuming = call.payload.input?.operation === "resume"
+          if (planned === "repository/trigger") triggerOperations.push(call.payload.input?.operation)
+          return ok({
           planId: `${planned}-plan`, flowId: planned, digest: DIGEST, inputSummary: "{}", envelope: ENVELOPE, deployClass: false, nodes: NODES,
           graph: { edges: [{ from: "read-diff", to: "check", reason: "value" }, { from: "read-diff", to: "comment", reason: "value" }, { from: "check", to: "comment", reason: "value" }] },
           approval: { target: { _tag: "Plan", planId: `${planned}-plan`, digest: DIGEST, envelope: ENVELOPE }, scope: "run", idempotencyKey: `approve:${planned}-plan` }
@@ -140,8 +145,17 @@ export default showcase({
     await expect(dispatchToast).toHaveCount(1)
     await expect(dispatchToast.getByRole("button", { name: "Stop", exact: true })).toBeVisible()
     await app.show(dispatcher)
-    await app.click(dispatcher.getByTestId("trigger-pause-nightly-review"))
+    await dispatcher.getByTestId("trigger-pause-nightly-review").focus()
+    await page.keyboard.press("Enter")
     await expect(dispatcher.getByTestId("trigger-state-reg-nightly")).toContainText("disabled", { timeout: 10_000 })
+    await app.show(dispatcher)
+    await expect(dispatcher.getByTestId("trigger-run-nightly-review")).toHaveCount(0)
+    await expect(dispatcher.getByTestId("trigger-resume-nightly-review")).toBeFocused()
+    await app.slash(`/triggers.run nightly-review ${REPO}`)
+    const refusedRun = page.locator('[data-kind="run-trace"]').filter({ hasText: "Run nightly-review" }).last()
+    await expect(refusedRun).toContainText('Resume "nightly-review" before running it.')
+    expect(triggerOperations).toEqual(["fire"])
+    await app.closeComposer()
     await app.show(dispatcher)
     const resume = dispatcher.getByTestId("trigger-resume-nightly-review")
     await resume.focus()
@@ -157,5 +171,7 @@ export default showcase({
     await expect(resumeCard).toContainText("Done", { timeout: 15_000 })
     await expect(dispatcher.getByTestId("trigger-pause-nightly-review")).toBeVisible()
     await expect(resumeToast).toHaveCount(0)
+    await expect(dispatcher.getByTestId("trigger-run-nightly-review")).toBeVisible()
+    expect(triggerOperations).toEqual(["fire", "resume"])
   }
 })

@@ -92,14 +92,16 @@ export const TriggerListCardBody = ({
                 </span>
                 {trigger.slug === undefined ? null : (
                   <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      data-testid={`trigger-run-${trigger.slug}`}
-                      {...flowAction(onRunCommand, "triggers.run", flowArgs("triggers.run", { slug: trigger.slug, repo }))}
-                    >
-                      Run now
-                    </Button>
+                    {trigger.enabled ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        data-testid={`trigger-run-${trigger.slug}`}
+                        {...flowAction(onRunCommand, "triggers.run", flowArgs("triggers.run", { slug: trigger.slug, repo }))}
+                      >
+                        Run now
+                      </Button>
+                    ) : null}
                     <Button
                       variant="ghost"
                       size="sm"

@@ -186,7 +186,7 @@ describe("the doors, and the registry each row comes from", () => {
 
   test("a trigger-store row has no slug, so it has no door: no Control RPC addresses one", () => {
     const host = render([boxRow()])
-    expect(host.querySelector("[data-testid='trigger-run-nightly']")).toBeNull()
+    expect(host.querySelector("[data-testid='trigger-run-nightly']") === null).toBe(true)
     expect(host.querySelector("[data-testid='trigger-pause-nightly']")).toBeNull()
   })
 
@@ -221,4 +221,5 @@ test("a paused graph schedule has the same Resume door", () => {
   button.click()
   expect(raised).toEqual([["triggers.resume", `nightly ${REPO}`]])
   expect(host.querySelector("[data-testid='trigger-pause-nightly']")).toBeNull()
+  expect(host.querySelector("[data-testid='trigger-run-nightly']") === null).toBe(true)
 })

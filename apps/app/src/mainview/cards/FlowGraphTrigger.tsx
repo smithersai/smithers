@@ -133,14 +133,16 @@ const TriggerPane = ({
       )}
       {slug === undefined ? null : (
         <span className="flow-trigger-doors">
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid={`trigger-run-${slug}`}
-            {...flowAction(onRunCommand, "triggers.run", flowArgs("triggers.run", { slug, repo }))}
-          >
-            Run now
-          </Button>
+          {row.enabled ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid={`trigger-run-${slug}`}
+              {...flowAction(onRunCommand, "triggers.run", flowArgs("triggers.run", { slug, repo }))}
+            >
+              Run now
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
