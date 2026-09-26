@@ -10,7 +10,7 @@
 import { type KeyMaterial, Placement } from "@smthrs/core"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Capability, Permission } from "@smthrs/kernel"
-import { CanonicalJson, Model, ModelEvent, ModelRequest } from "@smthrs/model"
+import { CanonicalJson, Model, ModelError, ModelEvent, ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Descriptor } from "@smthrs/registry"
@@ -1297,7 +1297,10 @@ describe("CellTurn defaults and refusals a shipped binding cannot reach", () => 
       }
     )
 
-    expect(failure).toMatchObject({ code: "engine_failed", message: "The cell frame failed" })
+    expect(failure).toMatchObject({
+      code: "engine_failed",
+      message: "The cell frame failed: runtime_failed: the realm died"
+    })
     expect((failure as HarnessError).cause).toMatchObject({ code: "runtime_failed" })
   })
 })
@@ -1353,9 +1356,40 @@ describe("CellTurn frame failures", () => {
 
     // The script has one step and the budget has three frames: the second
     // frame's provider call fails outright.
-    expect(failure).toMatchObject({ code: "model_failed", message: "The cell frame failed" })
+    expect(failure).toMatchObject({ code: "model_failed" })
+    expect((failure as HarnessError).message).toMatch(/^The cell frame failed: invalid_provider_output: \S/)
     expect((failure as HarnessError).cause).toMatchObject({ code: "invalid_provider_output" })
     expect(of(events, "turn-opened")).toHaveLength(2)
+  })
+
+  it("names the provider's refusal in the failure's message, not only in its cause", async () => {
+    const refusal = new ModelError.ModelError({
+      code: "quota_exceeded",
+      message: "Your credit balance is too low\n to access the API."
+    })
+    const model = Model.make({ stream: () => Stream.fail(refusal) })
+    const { failure } = await collect({ state: state(), flows: [lister] }, {
+      engine: ScriptedEngine.make(model, []).layer
+    })
+
+    expect(failure).toMatchObject({
+      code: "model_failed",
+      message: "The cell frame failed: quota_exceeded: Your credit balance is too low to access the API."
+    })
+    expect((failure as HarnessError).cause).toBe(refusal)
+
+    const failingWith = async (error: unknown) => {
+      const model = Model.make({ stream: () => Stream.fail(error as never) })
+      const { failure } = await collect({ state: state(), flows: [lister] }, {
+        engine: ScriptedEngine.make(model, []).layer
+      })
+      return (failure as HarnessError).message
+    }
+    expect(await failingWith(new Error("socket hang up"))).toBe("The cell frame failed: socket hang up")
+    // A failure that says nothing keeps the headline alone.
+    for (const silent of [{ message: " " }, { message: 7 }, "refused"]) {
+      expect(await failingWith(silent)).toBe("The cell frame failed")
+    }
   })
 
   it("parks when the sealed model step itself raises the permission request", async () => {

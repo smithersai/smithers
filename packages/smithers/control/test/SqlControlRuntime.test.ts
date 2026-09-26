@@ -681,6 +681,62 @@ describe("SqlControlRuntime", () => {
     expect(observed.evicted).toBeInstanceOf(ClaimLost)
   })
 
+  it("takes over a running run whose owner is gone only once its lease has expired", async () => {
+    const owner = { hostId: "mac", pid: 101, nonce: "first" }
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const first = yield* ControlRuntime
+        const store = yield* RunStore.RunStore
+        const sql = yield* SqlClient.SqlClient
+        const { runId } = yield* started
+        const asked: Array<string> = []
+        const successor = (hostId: string, alive: boolean) =>
+          SqlControlRuntime.make({
+            owner: { hostId, pid: 202, nonce: `${hostId}-successor` },
+            isAlive: (expected, context) =>
+              Effect.sync(() => {
+                asked.push(`${expected.hostId}:${expected.pid} asked by ${context.claimant.hostId}`)
+                return alive
+              })
+          }).pipe(Effect.orDie)
+        // No liveness check: a running run is its owner's for good.
+        const unchecked = yield* SqlControlRuntime.make({ owner: { hostId: "mac", pid: 303, nonce: "x" } }).pipe(
+          Effect.orDie
+        )
+        const withoutCheck = yield* Effect.flip(unchecked.resume(runId))
+        const ownerAlive = yield* Effect.flip((yield* successor("mac", true)).resume(runId))
+        const leaseFresh = yield* Effect.flip((yield* successor("mac", false)).resume(runId))
+        // The dead owner's lease runs out.
+        yield* sql`UPDATE flows_runs SET heartbeat_at_ms = heartbeat_at_ms - 60000 WHERE run_id = ${runId}`
+        const sameHost = yield* successor("mac", false)
+        const taken = yield* sameHost.resume(runId)
+        const fence = JSON.parse(yield* sameHost.claimFence(runId)) as Ownership.OwnerId
+        const evicted = yield* Effect.flip(first.claimFence(runId))
+        // Across hosts the claim rests on the expired lease alone.
+        yield* sql`UPDATE flows_runs SET heartbeat_at_ms = heartbeat_at_ms - 60000 WHERE run_id = ${runId}`
+        const otherHost = yield* successor("linux", false)
+        const moved = yield* otherHost.resume(runId)
+        const row = yield* store.get(runId)
+        return { withoutCheck, ownerAlive, leaseFresh, taken, fence, evicted, moved, row, asked }
+      }).pipe(Effect.provide(durable({ owner })), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.withoutCheck).toBeInstanceOf(ClaimLost)
+    expect(observed.ownerAlive).toBeInstanceOf(ClaimLost)
+    expect(observed.leaseFresh).toBeInstanceOf(ClaimLost)
+    expect(observed.taken.status).toBe("accepted")
+    expect(observed.fence).toMatchObject({ hostId: "mac", pid: 202 })
+    expect(observed.evicted).toBeInstanceOf(ClaimLost)
+    expect(observed.moved.status).toBe("accepted")
+    expect(observed.row.owner).toMatchObject({ hostId: "linux", pid: 202 })
+    expect(observed.asked).toEqual([
+      "mac:101 asked by mac",
+      "mac:101 asked by mac",
+      "mac:101 asked by mac",
+      "mac:202 asked by linux"
+    ])
+  })
+
   it("lets exactly one of two concurrent resumes claim a parked run", async () => {
     const directory = mkdtempSync(join(tmpdir(), "control-resume-race-"))
     try {

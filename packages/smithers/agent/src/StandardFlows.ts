@@ -33,16 +33,19 @@
  *
  * @since 0.1.0
  */
+import * as Digest from "@smthrs/core/Digest"
 import * as Flow from "@smthrs/core/Flow"
 import { DurableClock } from "@smthrs/flow"
 import type { FlowRuntime } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
-import type { HarnessError } from "@smthrs/harness/HarnessError"
+import { HarnessError } from "@smthrs/harness/HarnessError"
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import type * as Path from "@smthrs/kernel/Path"
 import * as MemoryFlows from "@smthrs/memory/Flows"
+import type { MemoryError } from "@smthrs/memory/MemoryError"
 import type * as MemoryStore from "@smthrs/memory/MemoryStore"
-import type * as Recall from "@smthrs/memory/Recall"
+import * as Recall from "@smthrs/memory/Recall"
+import * as WithMemory from "@smthrs/memory/WithMemory"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ApplyPatch from "@smthrs/std/ApplyPatch"
@@ -65,6 +68,7 @@ import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
+import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 
 /** These refusal classes carry host-authored text separately from diagnostic causes. */
@@ -271,12 +275,25 @@ export const tests = (
   ])
 
 /**
- * Durable memory, as two ordinary flows.
+ * The one memory namespace a run's model-facing `remember` and `recall` may
+ * reach.
  *
- * @category constructors
+ * `policy` is `WithMemory.Policy` exactly as `@smthrs/memory` defines it: the
+ * namespace, whether recall answers at all (`"none"` answers no rows), the
+ * default recall budget, and whether writes are kept (`"never"` drops them).
+ * `provenance` is recorded on every fact the bound `remember` writes and is
+ * part of the scope's identity, so a host binds the run coordinates it knows
+ * when it composes the run.
+ *
+ * @category models
  * @since 0.1.0
  */
-export const memory = (
+export interface MemoryScope {
+  readonly policy: WithMemory.Policy
+  readonly provenance?: MemoryStore.Provenance | undefined
+}
+
+const unscopedMemory = (
   services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>
 ): FlowBinding.Source =>
   FlowBinding.source("memory", [
@@ -289,6 +306,105 @@ export const memory = (
       services
     )
   ])
+
+/**
+ * A scoped refusal leads with its stable code, and a foreign bank also names
+ * the bank this run may use: `remember` requires a bank, so the model has to
+ * learn which one is its own.
+ */
+const scopedRefusal = (bank: string) => (error: MemoryError): string =>
+  error.code === "invalid_namespace"
+    ? `${error.code}: ${error.message}; this run's memory bank is ${bank}.`
+    : `${error.code}: ${error.message}`
+
+/**
+ * The executable identity of a scoped handler: its code, the policy it
+ * enforces, and the run coordinates the scope records. `recall` is sealed, and
+ * a sealed call is content-addressed on its declaration across runs, so two
+ * scopes must never share one: a recall recorded in one namespace would
+ * otherwise answer the same call in another, and a recall recorded by one run
+ * would answer the next run from memory that run may since have changed. The
+ * coordinates are fixed-order JSON so a host's key order and a non-finite
+ * iteration cannot change or break the identity.
+ */
+const scopedBodyDigest = (
+  handler: (input: never) => unknown,
+  policy: WithMemory.Policy,
+  provenance: MemoryStore.Provenance
+): string =>
+  Digest.digest(Digest.canonical({
+    handler: Function.prototype.toString.call(handler),
+    policy,
+    provenance: JSON.stringify([provenance.runId ?? null, provenance.nodeId ?? null, provenance.iteration ?? null])
+  }))
+
+const decodePolicy = Schema.decodeUnknownResult(WithMemory.Policy)
+
+const scopedMemory = (
+  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
+  scope: MemoryScope
+): FlowBinding.Source => {
+  const decoded = decodePolicy(scope.policy)
+  if (Result.isFailure(decoded)) {
+    // Falling back to the unscoped bindings would hand the run every bank.
+    const refused = new HarnessError({
+      code: "assembly_failed",
+      message: "The memory scope's policy is invalid, so no memory flows were bound.",
+      cause: decoded.failure
+    })
+    return { name: "memory", bindings: () => Effect.fail(refused) }
+  }
+  const policy = decoded.success
+  const provenance = scope.provenance ?? {}
+  const remember = WithMemory.withMemory(MemoryFlows.remember, policy)
+  const recall = WithMemory.withMemory(MemoryFlows.recall, policy)
+  const rememberHandler = MemoryFlows.handlersFor(remember, provenance).remember
+  const recallHandler = MemoryFlows.handlersFor(recall).recall
+  const publicError = scopedRefusal(Recall.bankForNamespace(policy.namespace))
+  return FlowBinding.source("memory", [
+    FlowBinding.provide(
+      FlowBinding.make({
+        flow: remember,
+        handler: rememberHandler,
+        publicError,
+        bodyDigest: scopedBodyDigest(rememberHandler, policy, provenance)
+      }),
+      services
+    ),
+    FlowBinding.provide(
+      FlowBinding.make({
+        flow: recall,
+        handler: recallHandler,
+        publicError,
+        bodyDigest: scopedBodyDigest(recallHandler, policy, provenance)
+      }),
+      services
+    )
+  ])
+}
+
+/**
+ * Durable memory, as two ordinary flows.
+ *
+ * Without a `scope` the two flows reach any bank a call names. With one, they
+ * are bound the way `@smthrs/memory` binds model-facing memory,
+ * `WithMemory.withMemory` then `Flows.handlersFor`, so the policy namespace
+ * is enforced before any I/O: a call naming a bank outside it fails with
+ * `invalid_namespace`, a recall naming no bank reads the policy namespace, and
+ * `recall: "none"` and `retain: "never"` behave as the memory package defines
+ * them. A scope's policy and provenance are its declaration identity, so a
+ * sealed recall recorded under one scope never answers a call under another;
+ * give each run its own `provenance.runId` and keep it across that run's
+ * resumes. A policy that does not decode binds nothing: composing the source
+ * fails with `assembly_failed`.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const memory = (
+  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
+  scope?: MemoryScope | undefined
+): FlowBinding.Source => scope === undefined ? unscopedMemory(services) : scopedMemory(services, scope)
 
 /**
  * The largest `state` one `jev` call sends, in UTF-8 bytes of its JSON, when

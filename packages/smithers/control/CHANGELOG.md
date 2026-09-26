@@ -4,6 +4,11 @@
 
 ### Added
 
+- `SqlControlRuntime` takes `isAlive`: with it, `resume` takes over a running
+  run whose owner is gone (a host killed mid-run) once the dead owner's lease
+  has expired, instead of answering `ClaimLost`; the run store verifies the
+  expired lease.
+
 - `ControlExecutor.makeObserving` wraps an executor for a host that observes
   runs and drives none: `readExecution`, `requestCancel`, `deliverSignal` and
   `settleCancelledPark` pass through, and `launch` and `resumeRun` die. A host

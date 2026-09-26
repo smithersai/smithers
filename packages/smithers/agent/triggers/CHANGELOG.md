@@ -26,6 +26,17 @@
   (`Scheduler.defaultFireRetention`): a tick prunes settled fires older than
   that at most once an hour. The `0004_fire_run_index` migration indexes the
   ledger by run id.
+- Daylight-saving tests pin occurrence computation for `America/Los_Angeles`
+  and `America/New_York` across the 2026 transitions. A weekly Friday 09:00
+  keeps its wall clock, launches once a week over the SQL store, and keys each
+  launch by its UTC instant. The tests also pin three unfixed defects. After
+  spring forward swallows a daily 02:30, `Cron.previousAtOrBefore` fails with
+  `unsatisfiable_cron` until the next real 02:30, so the scheduler never
+  launches the gap day. In the repeated fall-back hour, the second 01:30 also
+  matches, so a tick inside it launches the day again under a second key.
+  `previousAtOrBefore` zeroes milliseconds in host-local time, so on a host
+  whose own zone is repeating an hour, a matched occurrence comes back one hour
+  early.
 - The scheduler traces `Scheduler.runOnce`, `Scheduler.processTrigger`, and
   `Scheduler.launch`, and records `smithers.triggers.fires` by outcome plus
   tick and launch duration histograms (`Scheduler.durationBoundaries`).

@@ -3030,6 +3030,17 @@ export const make = (
           // unrequested round this guard exists to refuse. The sequence check
           // keeps a resume requested since this read.
           yield* runtime.clearResume(payload.runId, pending.sequence)
+        } else if (controlRun !== undefined) {
+          // A running run this process does not own is one the engine took
+          // over from a host that died mid-run: it re-drives an execution only
+          // after its owner's lease expired. The control record still names
+          // the dead host, and every status write is fenced on it, so the run
+          // is claimed here before it executes; a live owner refuses.
+          const owned = yield* runtime.claimFence(payload.runId).pipe(
+            Effect.as(true),
+            Effect.catchTag("/control/ClaimLost", () => Effect.succeed(false))
+          )
+          if (!owned) yield* claimForResume(payload.runId)
         }
         const fiber = yield* Effect.forkChild(
           body(payload, instance).pipe(

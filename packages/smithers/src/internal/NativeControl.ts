@@ -721,13 +721,19 @@ export const make = (
         Layer.orDie
       )
     const runtime = registry === undefined
-      ? SqlControlRuntime.layer({ ...authorization, owner }).pipe(Layer.provide([stores, native.crypto]), Layer.orDie)
+      ? SqlControlRuntime.layer({ ...authorization, owner, isAlive: Ownership.sameHostPidProbe }).pipe(
+        Layer.provide([stores, native.crypto]),
+        Layer.orDie
+      )
       : Layer.effect(ControlRuntime.ControlRuntime)(
         Effect.gen(function*() {
           const registryService = yield* Registry.Registry
           return yield* SqlControlRuntime.make({
             ...authorization,
             owner,
+            // A run whose host was killed mid-run is taken over by the host
+            // whose engine re-drives it, once the dead owner's lease expires.
+            isAlive: Ownership.sameHostPidProbe,
             loadFlows: () =>
               registryService.list().pipe(
                 Effect.map((discovered) => {

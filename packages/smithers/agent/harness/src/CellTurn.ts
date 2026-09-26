@@ -1822,6 +1822,21 @@ const mutatedOf = (value: Schema.Json): boolean =>
   (value as Record<string, unknown>)[mutatedKey] === true
 
 /**
+ * The message of a frame failure that is not already a harness error: the
+ * fixed headline and the failure's own code and sentence, on one bounded
+ * line, so a reader of the message alone (a receipt, a reply) learns why,
+ * such as a provider refusing for want of credits. The typed failure stays
+ * the error's `cause`.
+ */
+const frameFailureMessage = (error: unknown): string => {
+  const row = typeof error === "object" && error !== null ? error as Record<string, unknown> : {}
+  const said = typeof row["message"] === "string" ? row["message"].replace(/\s+/g, " ").trim() : ""
+  if (said === "") return "The cell frame failed"
+  const code = typeof row["code"] === "string" && row["code"] !== "" ? `${row["code"].slice(0, 64)}: ` : ""
+  return `The cell frame failed: ${code}${said.slice(0, 1_000)}`
+}
+
+/**
  * What a run says when its frame budget, rather than the run, ended it.
  *
  * A run that never completed has only the budget to report. A run whose
@@ -3325,7 +3340,7 @@ export const run = (
               return Effect.fail(
                 error instanceof HarnessError ? error : new HarnessError({
                   code: error instanceof Sandbox.SandboxError ? "engine_failed" : "model_failed",
-                  message: "The cell frame failed",
+                  message: frameFailureMessage(error),
                   cause: error
                 })
               )

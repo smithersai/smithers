@@ -437,7 +437,7 @@ test("a quiz refusal reaches the result and walkthrough as a warning", async () 
   const repo = tempRepo(1);
   const result = await runReview(repo, { narrate: false, quiz: "on", verify: false, out: join(repo, "w.html") }, answerFor({ refuse: new Set(["quiz"]) }));
   expect(result.review.status).toBe("completed_with_warnings");
-  expect(result.review.warnings).toContainEqual(expect.objectContaining({ type: "quiz_error", message: "The cell frame failed" }));
+  expect(result.review.warnings).toContainEqual(expect.objectContaining({ type: "quiz_error", message: "The cell frame failed: invalid_request: scripted model refused" }));
   expect(result.quiz).toBeNull();
   expect(readFileSync(result.walkthrough.path, "utf8")).toContain("quiz_error");
 });

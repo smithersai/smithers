@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- A frame failure that is not a harness error keeps its own code and sentence
+  in the `HarnessError` message (`The cell frame failed: quota_exceeded: …`),
+  so a provider refusal such as an account with no credits reaches a reader
+  of the message, not only of its `cause`.
+
 - Every frame request sets `cacheBoundary` to the transcript before the state
   section, so Anthropic's moving cache breakpoint lands on bytes the next
   frame repeats instead of on the state section it replaces.

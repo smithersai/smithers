@@ -133,6 +133,14 @@ export interface Options {
    */
   readonly loadFlows?: (() => Effect.Effect<ReadonlyArray<DurableFlow>, PersistenceError>) | undefined
   readonly owner?: Ownership.OwnerId | undefined
+  /**
+   * Whether the process a running run's owner names is still working. With
+   * it, `resume` takes over a running run whose owner is gone (a host killed
+   * mid-run) once that owner's lease has expired, instead of answering
+   * `ClaimLost`; the run store verifies the expired lease. Without it a
+   * running run belongs to its recorded owner for good.
+   */
+  readonly isAlive?: Ownership.LivenessCheck | undefined
   readonly principal?: Omit<Principal, "stampedAt"> | undefined
   readonly approvalAuthority?: ApprovalAuthority.Service | undefined
 }
@@ -401,6 +409,7 @@ const makeRuntime = (
       nonce: randomId()
     })
     : Object.freeze({ ...options.owner })
+  const isAlive = options.isAlive
   const approvalAuthority = options.approvalAuthority ?? ApprovalAuthority.local
   const authorizeApproval = approvalAuthority.authorize.bind(approvalAuthority)
 
@@ -1091,15 +1100,42 @@ const makeRuntime = (
         return next
       })
 
-    /** Takes ownership of a suspended or pending run under a fresh nonce. */
+    /**
+     * Evidence that a running row's owner is gone, from the configured
+     * liveness check, or `undefined` when there is no check or the owner is
+     * alive. A pid is evidence only on its own host; elsewhere the claim
+     * rests on the expired lease the run store verifies.
+     */
+    const deadOwner = (
+      row: RunStore.RunRow
+    ): Effect.Effect<Ownership.LivenessEvidence | undefined> =>
+      Effect.gen(function*() {
+        if (isAlive === undefined || row.owner === null) return undefined
+        const nowMs = yield* now
+        const alive = yield* isAlive(row.owner, { claimant: owner, heartbeatAtMs: row.heartbeatAtMs, nowMs })
+        if (alive) return undefined
+        return {
+          expectedOwner: row.owner,
+          checkedAtMs: nowMs,
+          kind: Ownership.sameHostIncarnation(row.owner, owner)
+            ? "same-host-pid-dead" as const
+            : "lease-expired" as const
+        }
+      })
+
+    /**
+     * Takes ownership of a suspended or pending run under a fresh nonce, or
+     * of a running one whose owner `evidence` says is gone.
+     */
     const claim = (
       runId: RunId,
-      row: RunStore.RunRow
+      row: RunStore.RunRow,
+      evidence?: Ownership.LivenessEvidence | undefined
     ): Effect.Effect<RunSummary, RunNotFound | ClaimLost | PersistenceError> =>
       Effect.gen(function*() {
-        const timestamp = yield* now
+        const timestamp = evidence?.checkedAtMs ?? (yield* now)
         const claimant: Ownership.OwnerId = { ...owner, nonce: randomId() }
-        const outcome = yield* runStore.claimAndOwn(runId, snapshotOf(row), claimant, timestamp).pipe(
+        const outcome = yield* runStore.claimAndOwn(runId, snapshotOf(row), claimant, timestamp, evidence).pipe(
           Effect.mapError(persistence("claim a run"))
         )
         if (outcome._tag === "NotFound") return yield* Effect.fail(new RunNotFound({ runId }))
@@ -1878,9 +1914,12 @@ const makeRuntime = (
         const summary = yield* summaryOf(row)
         if (terminal(summary.status)) return summary
         // Start-or-join: owning the run already means resume is a no-op, and a
-        // run owned by a live peer is theirs to drive.
+        // run owned by a live peer is theirs to drive. A run whose owner is
+        // gone is taken over, with the evidence the run store checks.
         if (row.status === "running") {
-          return ownedByUs(row) ? summary : yield* new ClaimLost({ runId })
+          if (ownedByUs(row)) return summary
+          const evidence = yield* deadOwner(row)
+          return evidence === undefined ? yield* new ClaimLost({ runId }) : yield* claim(runId, row, evidence)
         }
         // Every public Control resume and steer wake uses launched scope.
         // Engine-created runs keep their continuation and driver. Unrestricted

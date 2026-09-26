@@ -53,6 +53,18 @@ transport, defaulting to the docker or podman CLI, which is what makes `bash`'s
 durable engine; nothing in `Agent` imports it, and `AgentSession` composes it
 for you.
 
+`memory` reaches any bank a call names. Pass a scope to confine a run to one
+namespace:
+
+```ts
+StandardFlows.memory(memoryServices, {
+  policy: { namespace: { kind: "agent", id: "builder" }, recall: "auto", maxTokens: 2048, retain: "on-complete" },
+  provenance: { runId }
+})
+```
+
+A call naming any other bank fails with `invalid_namespace` before any I/O.
+
 ## Approval needs a human
 
 `approval` takes a narrow injected `Asker` port rather than a fake: one `ask`

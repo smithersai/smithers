@@ -1241,13 +1241,29 @@ not answer fails the call.
 ### StandardFlows.memory
 
 ```ts
+interface MemoryScope {
+  readonly policy: WithMemory.Policy
+  readonly provenance?: MemoryStore.Provenance | undefined
+}
+
 const memory: (
-  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>
+  services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
+  scope?: MemoryScope
 ) => FlowBinding.Source
 ```
 
 Durable memory as two ordinary flows, `remember` and `recall` from
-[`@smthrs/memory`](https://memory.smithers.sh/reference/api/).
+[`@smthrs/memory`](https://memory.smithers.sh/reference/api/). Without a `scope`, a call reaches any bank it
+names. With one, both flows are bound through `WithMemory.withMemory` and
+`Flows.handlersFor`: a bank outside `policy.namespace` fails with
+`invalid_namespace` before any I/O, a recall naming no bank reads the policy
+namespace, and `recall: "none"` and `retain: "never"` behave as the memory
+package defines them. `remember` still requires a bank, so tell the model its
+bank (`<kind>-<id>`). `provenance` is recorded on every remembered fact. The
+policy and provenance are the scope's declaration identity, so give each run
+its own `provenance.runId` and keep it across that run's resumes: a sealed
+recall recorded under one scope never answers another. A policy that does not
+decode binds nothing, and composing the catalog fails with `assembly_failed`.
 
 ### StandardFlows.clock
 

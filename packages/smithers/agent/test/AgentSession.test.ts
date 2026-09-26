@@ -261,6 +261,8 @@ interface StackOptions {
   readonly bare?: boolean | undefined
   /** The host's reasoning-effort default, beneath a flow's own `effort:`. */
   readonly reasoningEffort?: ModelRequest.ReasoningEffort | undefined
+  /** Replaces methods of the control runtime the stack builds. */
+  readonly wrapRuntime?: ((runtime: ControlRuntime.Service) => ControlRuntime.Service) | undefined
 }
 
 /**
@@ -274,7 +276,11 @@ const stack = (options: StackOptions) => {
   engineRoots.add(root)
   const journal = TestJournal.layer()
   const notifications = NotificationQueue.layer.pipe(Layer.provide(journal))
-  const runtime = ControlRuntime.layerMemory({ flows: memoryFlows }).pipe(Layer.provide(NodeCrypto.layer))
+  const memory = ControlRuntime.layerMemory({ flows: memoryFlows }).pipe(Layer.provide(NodeCrypto.layer))
+  const wrap = options.wrapRuntime
+  const runtime = wrap === undefined ? memory : Layer.effect(ControlRuntime.ControlRuntime)(
+    Effect.map(ControlRuntime.ControlRuntime, (service) => ControlRuntime.make(wrap(service)))
+  ).pipe(Layer.provide(memory))
   const registry = Layer.succeed(Registry.Registry)(options.registry ?? registryService)
   const noteSource = FlowBinding.source("test/notes", [
     FlowBinding.make({
@@ -888,6 +894,58 @@ describe("AgentSession", () => {
     expect(outcome.child.status).toBe("completed")
     expect(outcome.child.runId).not.toBe(outcome.parent.runId)
   })
+  it("claims a running run it re-drives for a host that died, before executing it", async () => {
+    const model = Model.make({ stream: () => Stream.fromIterable(cellEvents("ctx.done(\"taken over\")", "takeover")) })
+    const resumed: Array<string> = []
+    const fences: Array<string> = []
+    const outcome = await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        return yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          const card = yield* control.plan({ flowId: "agents/notes", input: {} })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "run:taken-over"
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+            return yield* Effect.die("expected an accepted run")
+          }
+          yield* awaitStatus(runtime, receipt.runId, "completed")
+          return yield* runtime.getRun(receipt.runId)
+        }).pipe(Effect.provide(stack({
+          resolve: seat(model),
+          notes: [],
+          gate,
+          // The fence the executor asks for before it executes (the second;
+          // the launch takes the first) names a dead host's claim, the way a
+          // restarted host finds the run it took over.
+          wrapRuntime: (runtime) => ({
+            ...runtime,
+            claimFence: (runId) =>
+              Effect.suspend(() => {
+                fences.push(runId)
+                return fences.length === 2
+                  ? Effect.fail(new ControlError.ClaimLost({ runId }))
+                  : runtime.claimFence(runId)
+              }),
+            resume: (runId, options) => {
+              resumed.push(runId)
+              return runtime.resume(runId, options)
+            }
+          })
+        })))
+      }).pipe(Effect.scoped)
+    )
+    expect(outcome.status).toBe("completed")
+    expect(resumed).toEqual([outcome.runId])
+  })
+
   it("waits through an accepted control row before driving the engine", async () => {
     let reads = 0
     await expect(Effect.runPromise(

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The native control plane takes over a run whose host process died mid-run
+  (`isAlive: sameHostPidProbe`), so a restarted host finishes it instead of
+  failing it with `ClaimLost`.
+
 ### Removed
 
 - The Jev harness is retired
