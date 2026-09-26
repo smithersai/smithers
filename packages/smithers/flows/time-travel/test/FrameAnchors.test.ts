@@ -177,6 +177,26 @@ describe("the snapshot projector", () => {
       ])
     }))
 
+  it.effect("resumes a lineage's operation from its stored anchor, so a carried record keeps it", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make()
+      yield* store.recordSnapshot({ runId: "run", frame: { lineageId, seq: 0 }, changeId: "c1", operationId: "op1" })
+      const state = yield* SnapshotProjector.project("run", { pageSize: 2 }).pipe(
+        Effect.provide(pagingJournal([
+          { seq: 0, eventType: "flows.engine.snapshot-identified", payload: { snapshotId: "c1", operationId: "op1" } },
+          { seq: 1, eventType: "flows.engine.snapshot-identified", payload: { carried: true } }
+        ], 2)),
+        Effect.provideService(TimeTravelStore.TimeTravelStore, store)
+      )
+      expect(state.lineages[lineageId]).toEqual({ changeId: "c1", operationId: "op1", planDigest: undefined })
+      expect(yield* store.snapshotAt("run", { lineageId, seq: 1 })).toEqual({
+        runId: "run",
+        frame: { lineageId, seq: 1 },
+        changeId: "c1",
+        operationId: "op1"
+      })
+    }))
+
   it.effect("anchors a graph recorded with no digest, and keeps the digest a naming record put in force", () =>
     Effect.gen(function*() {
       // An interpreted flow records the graph it was driven from and has no

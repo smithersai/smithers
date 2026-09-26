@@ -421,7 +421,8 @@ describe("durable history CLI", () => {
     "restores a bookmark moved during the run with rewind --whole-repo",
     async () => {
       const root = await fixture(true)
-      const jj = (...args: Array<string>) => execFileSync("jj", args, { cwd: root, encoding: "utf8" })
+      const jj = (...args: Array<string>) =>
+        execFileSync("jj", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
       // A bookmark on a closed change, so it does not follow later working-copy captures.
       jj("commit", "--message=base")
       jj("bookmark", "create", "release", "-r", "@-")

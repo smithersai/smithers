@@ -4,6 +4,7 @@ import { Jj } from "@smthrs/kernel"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import { Effect, Layer, Option } from "effect"
+import { EventTypes } from "../src/EventTypes.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
@@ -32,8 +33,13 @@ const jjLayer = (snapshots: Array<string>, restores: Array<string>) =>
         Effect.sync(() => {
           const changeId = `snapshot-${snapshots.length}`
           snapshots.push(changeId)
-          // A distinct change id: the engine must journal the commit id.
-          return { commitId: changeId as never, changeId: `moving-${changeId}` as never }
+          // A distinct change id: the engine must journal the commit id. Every
+          // second snapshot also reports its jj operation, as NodeJj does.
+          return {
+            commitId: changeId as never,
+            changeId: `moving-${changeId}` as never,
+            ...(snapshots.length % 2 === 0 ? { operationId: `operation-${changeId}` } : {})
+          }
         }),
       restore: (changeId) =>
         Effect.sync(() => {
@@ -101,7 +107,23 @@ describe("engine-store action tiers", () => {
         yield* runner({ action: {}, attempt: 2, key: "caller-key/compensable", tier: "compensable" })
         const attempts = yield* AttemptStore.AttemptStore
         const cache = yield* CacheStore.CacheStore
+        const journal = yield* Journal.Journal
+        yield* journal.flush
         return {
+          first: yield* attempts.get({
+            runId: "compensable",
+            stepKeyDigest: sha256("caller-key/compensable"),
+            attempt: 1
+          }),
+          announced: (yield* journal.entries({ runId: "compensable" as never, limit: 100 })).entries
+            .filter((entry) => entry.eventType === EventTypes.snapshotIdentified)
+            .map((entry) => {
+              const { snapshotId, operationId } = entry.payload as {
+                readonly snapshotId?: string
+                readonly operationId?: string
+              }
+              return { snapshotId, ...(operationId === undefined ? {} : { operationId }) }
+            }),
           retry: yield* attempts.get({
             runId: "compensable",
             stepKeyDigest: sha256("caller-key/compensable"),
@@ -118,7 +140,16 @@ describe("engine-store action tiers", () => {
       expect(executions).toBe(2)
       expect(snapshots).toEqual(["snapshot-0", "snapshot-1"])
       expect(restores).toEqual(["snapshot-0"])
-      expect(Option.getOrThrow(result.retry).meta).toMatchObject({ snapshotId: "snapshot-1", tier: "compensable" })
+      expect(Option.getOrThrow(result.retry).meta).toMatchObject({
+        snapshotId: "snapshot-1",
+        snapshotOperationId: "operation-snapshot-1",
+        tier: "compensable"
+      })
+      expect(Option.getOrThrow(result.first).meta).not.toHaveProperty("snapshotOperationId")
+      expect(result.announced).toEqual([
+        { snapshotId: "snapshot-0" },
+        { snapshotId: "snapshot-1", operationId: "operation-snapshot-1" }
+      ])
       expect(Option.isNone(result.cached)).toBe(true)
     }))
 

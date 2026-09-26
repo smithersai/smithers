@@ -121,7 +121,8 @@ describe("Jj facade", () => {
         // The optional operations are stubbed too: a test that reaches one
         // gets the named failure, not `undefined is not a function`.
         ["root", jj.root!("/lane")],
-        ["revert", jj.revert!("abc")]
+        ["revert", jj.revert!("abc")],
+        ["opRestore", jj.opRestore!("abc")]
       ]
 
       for (const [method, effect] of calls) {

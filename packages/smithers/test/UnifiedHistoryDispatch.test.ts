@@ -166,13 +166,29 @@ describe("unified historical command dispatch", () => {
         limit: 10_000,
         sequence: 7,
         preview: false,
-        yes: true
+        yes: true,
+        wholeRepo: false
       },
       "rewind",
       controller.signal
     )
     expect(JSON.parse(result.stdout)).toEqual(mutation)
     expect(ports.preview).not.toHaveBeenCalled()
+  })
+
+  it("forwards --whole-repo to the rewind mutation", async () => {
+    const controller = new AbortController()
+    await invoke(["rewind", "run-1", "--root", directory, "--at", "7", "--yes", "--whole-repo"], {
+      environment: {},
+      signal: controller.signal
+    })
+    expect(ports.mutate).toHaveBeenCalledExactlyOnceWith(
+      directory,
+      "run-1",
+      expect.objectContaining({ sequence: 7, yes: true, wholeRepo: true }),
+      "rewind",
+      controller.signal
+    )
   })
 
   it.each([false, true])("keeps preview read-only even when confirmation is also present (%s)", async (yes) => {
@@ -194,7 +210,8 @@ describe("unified historical command dispatch", () => {
       limit: 10_000,
       sequence: 7,
       preview: true,
-      yes
+      yes,
+      wholeRepo: false
     }, controller.signal)
     expect(JSON.parse(result.stdout)).toEqual(preview)
     expect(ports.mutate).not.toHaveBeenCalled()

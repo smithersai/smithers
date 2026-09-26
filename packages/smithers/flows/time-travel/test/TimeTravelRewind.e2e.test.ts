@@ -257,6 +257,33 @@ describe.skipIf(!jjInstalled)("real file-backed rewind", () => {
   )
 
   it.effect(
+    "refuses a whole-repository rewind of a run that never recorded a jj operation",
+    () =>
+      Effect.gen(function*() {
+        yield* withRealFixture("flows-time-travel-sealed-whole-repo-", (fixture) =>
+          Effect.gen(function*() {
+            const refusal = yield* runRealEngine(
+              fixture.databaseFile,
+              "rewind-sealed-whole-repo",
+              Effect.gen(function*() {
+                yield* parkSealedFlow("sealed-whole-repo-run")
+                const journal = yield* Journal.Journal
+                yield* journal.flush
+                const timeTravel = yield* TimeTravel
+                return yield* Effect.flip(timeTravel.rewind({
+                  runId: "sealed-whole-repo-run",
+                  frame: { lineageId: FlowEngine.Lineage.root("sealed-whole-repo-run"), seq: 0 }
+                }, { wholeRepo: true }))
+              })
+            )
+            expect(refusal.code).toBe("irreversible")
+            expect(refusal.message).toContain("--whole-repo")
+          }))
+      }),
+    { timeout: 60_000 }
+  )
+
+  it.effect(
     "refuses a whole-repository rewind to a frame that recorded no jj operation",
     () =>
       Effect.gen(function*() {

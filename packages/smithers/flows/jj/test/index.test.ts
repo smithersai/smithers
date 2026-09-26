@@ -66,7 +66,8 @@ describe("BrowserJj", () => {
         ["workspaceForget", jj.workspaceForget("lane"), "jj workspace forget"],
         ["status", jj.status(), "jj status"],
         ["root", jj.root!("/tmp"), "jj root"],
-        ["revert", jj.revert!("abc"), "jj revert"]
+        ["revert", jj.revert!("abc"), "jj revert"],
+        ["opRestore", jj.opRestore!("abc"), "jj op restore"]
       ]
 
       for (const [method, effect, command] of calls) {

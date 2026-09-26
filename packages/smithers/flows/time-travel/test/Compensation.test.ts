@@ -516,6 +516,62 @@ describe("Compensation.prepareWorkspace then restorePreparedWorkspace", () => {
       expect(calls).toEqual(["target-op", "current-op"])
     }))
 
+  for (const rollbackFails of [false, true]) {
+    it.effect(`refuses a whole-repository restore with no current operation (rollback fails=${rollbackFails})`, () =>
+      Effect.gen(function*() {
+        const rolledBack: Array<string> = []
+        const registry = registryOf([{
+          kind: "send",
+          tier: "irreversible",
+          requiresIdempotencyKey: true,
+          residue: () => "residue",
+          revert: () => Effect.succeed({}),
+          rollback: (effect) =>
+            Effect.suspend(() => {
+              rolledBack.push(effect.id)
+              return rollbackFails ? Effect.fail(error("compensation_failed", "rollback refused")) : Effect.void
+            })
+        }])
+        const plan = yield* Compensation.assess([compensable], "target", {
+          wholeRepo: true,
+          targetOperationId: "target-op"
+        }).pipe(Effect.provide(cache()), Effect.provide(registryOf([])))
+        const receipt = {
+          id: "send:rollback",
+          effect: record({ id: "send", kind: "send", tier: "irreversible", seq: 2 }),
+          data: {}
+        }
+        const failure = yield* Effect.flip(
+          restoreWorkspace(plan, [receipt]).pipe(
+            Effect.provide(registry),
+            Effect.provide(jjOf({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) }))
+          )
+        )
+        expect(failure.code).toBe("compensation_failed")
+        expect(failure.cause === undefined).toBe(!rollbackFails)
+        expect(rolledBack).toEqual(["send"])
+      }))
+  }
+
+  it.effect("reports a host without operation restore as not installed", () =>
+    Effect.gen(function*() {
+      const plan = yield* Compensation.assess([compensable], "target", {
+        wholeRepo: true,
+        targetOperationId: "target-op"
+      }).pipe(Effect.provide(cache()), Effect.provide(registryOf([])))
+      const { opRestore: _absent, ...withoutOpRestore } = Jj.makeNoop({
+        snapshot: () => Effect.succeed({ commitId: "current", changeId: "current", operationId: "current-op" })
+      })
+      const failure = yield* Effect.flip(
+        restoreWorkspace(plan, []).pipe(
+          Effect.provide(registryOf([])),
+          Effect.provide(Layer.succeed(Jj.Jj, Jj.make(withoutOpRestore)))
+        )
+      )
+      expect(failure.code).toBe("compensation_failed")
+      expect(failure.message).toContain("cannot restore an operation")
+    }))
+
   it.effect("blocks a whole-repository restore to a frame with no recorded operation", () =>
     Effect.gen(function*() {
       const plan = yield* Compensation.assess([compensable], "target", { wholeRepo: true }).pipe(
