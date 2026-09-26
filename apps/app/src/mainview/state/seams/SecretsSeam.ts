@@ -41,6 +41,17 @@ const connections = (raw: unknown): Connection[] | undefined => Array.isArray(ra
     limitedUntil: text(row.limited_until), sortOrder: typeof row.sort_order === "number" ? row.sort_order : index
   })) : undefined
 const PROVIDERS = ["claude", "codex"] as const
+/*
+ * plue answers every provider-connections route with the feature gate's 403
+ * when the deployment does not store subscription logins (hosted smithers.sh;
+ * self-hosters opt in with SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS).
+ */
+const UNAVAILABLE = "Coding accounts are not available on this deployment."
+const featureGated = async (response: Response): Promise<boolean> => {
+  if (response.status !== 403) return false
+  const body = await response.clone().json().catch(() => undefined) as { message?: unknown } | undefined
+  return typeof body?.message === "string" && body.message.startsWith("feature not available")
+}
 type AccountsCard = Extract<Card, { kind: "provider-accounts" }>
 type Account = AccountsCard["payload"]["accounts"][number]
 type PendingCode = NonNullable<AccountsCard["payload"]["pending"]>
@@ -135,6 +146,23 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
   const accountsCard = (): AccountsCard | undefined => {
     const card = ctx.store.collections.cards?.get(ACCOUNTS_CARD)
     return card?.kind === "provider-accounts" ? card : undefined
+  }
+  /** Mark the Accounts card unavailable; its connect buttons disappear. */
+  const withdraw = (surface: boolean): void => {
+    const previous = accountsCard()
+    if (!previous && !surface) return
+    ctx.dispatch({ type: "card.upsert", actor: "system", card: {
+      ...previous,
+      id: ACCOUNTS_CARD, kind: "provider-accounts", title: "Accounts", status: "active", loading: false,
+      createdAt: previous?.createdAt ?? Date.now(),
+      ordinal: surface || !previous ? ctx.nextOrdinal() : previous.ordinal,
+      payload: { accounts: [], unavailable: true }
+    } })
+  }
+  /** A gated answer fails the request with the plain message and withdraws the card. */
+  const gatedFailure = async (row: Pending, current: () => boolean) => {
+    withdraw(false)
+    return await fail(row, current, UNAVAILABLE)
   }
   const publish = (rows: ReadonlyArray<Connection> | undefined, pending: PendingCode | null | undefined, surface: boolean): void => {
     const previous = accountsCard()
@@ -332,6 +360,7 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
         if (!current()) return TOAST_SUPERSEDED
         const response = await ctx.http(`${ctx.baseUrl}${CONNECTIONS}`, { method: "POST", headers: { "content-type": "application/json" }, body: sending })
         if (!current()) return TOAST_SUPERSEDED
+        if (await featureGated(response)) return await gatedFailure(row, current)
         if (!response.ok) return await fail(row, current, `Claude connection failed (HTTP ${response.status}).`)
         // User-owned repositories resolve their owner's connection without a grant.
         // Organization repositories require an explicit grant through their own scope door.
@@ -373,6 +402,7 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
         if (!current()) return TOAST_SUPERSEDED
         const response = await ctx.http(`${ctx.baseUrl}${CODEX_DEVICE}`, { method: "POST" })
         if (!current()) return TOAST_SUPERSEDED
+        if (await featureGated(response)) return await gatedFailure(row, current)
         if (!response.ok) return await fail(row, current, `Codex sign-in failed (HTTP ${response.status}).`)
         const answer = deviceOf(await response.json().catch(() => undefined))
         if (!current()) return TOAST_SUPERSEDED
@@ -431,6 +461,7 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
     try {
       const { response, rows, fresh } = await readPool()
       if (!current()) return "Account changed."
+      if (await featureGated(response)) { withdraw(true); return UNAVAILABLE }
       if (!response.ok) return `Coding connections unavailable (HTTP ${response.status}).`
       if (!rows) return "Coding connections unavailable."
       publish(fresh() ? rows : undefined, undefined, true)

@@ -398,3 +398,36 @@ test("an older read answering last never reverts the card, and a pending order k
   await held.seam.listCodingProviders()
   expect(held.accounts()?.accounts.map(row => row.id)).toEqual(["c", "b", "a", "x"])
 })
+
+/*
+ * Hosted smithers.sh does not store subscription logins: plue answers every
+ * provider-connections route with the feature gate's 403. The Accounts card
+ * then drops its connect buttons and every door says the feature is absent.
+ */
+const gated = () => Response.json({ message: "feature not available" }, { status: 403 })
+const UNAVAILABLE = "Coding accounts are not available on this deployment."
+
+test("a feature-gated connections list shows the Accounts card without connect buttons", async () => {
+  const h = harness({ http: async () => gated() })
+  expect(await h.seam.listCodingProviders()).toBe(UNAVAILABLE)
+  expect(h.accounts()).toEqual({ accounts: [], unavailable: true })
+})
+
+test("a feature-gated Claude or Codex connect fails its toast plainly and hides the buttons", async () => {
+  const claude = harness({ card: true, http: async () => gated() })
+  expect(await claude.seam.connectCodingProvider(writeOnlyGesture("secrets.connect", { value: "sk-ant-oat01-fixture" }))).toEqual({ value: "Requested" })
+  expect(await claude.work[0]).toBe(UNAVAILABLE)
+  expect(claude.accounts()?.unavailable).toBe(true)
+  expect(claude.rows()[0]).toMatchObject({ state: "failed" })
+
+  const codex = harness({ card: true, http: async () => gated() })
+  expect(await codex.seam.connectCodex()).toEqual({ value: "Requested" })
+  expect(await codex.work[0]).toBe(UNAVAILABLE)
+  expect(codex.accounts()?.unavailable).toBe(true)
+})
+
+test("any other 403 keeps the connect buttons", async () => {
+  const h = harness({ http: async () => Response.json({ message: "forbidden" }, { status: 403 }) })
+  expect(await h.seam.listCodingProviders()).toBe("Coding connections unavailable (HTTP 403).")
+  expect(h.accounts()).toBeUndefined()
+})

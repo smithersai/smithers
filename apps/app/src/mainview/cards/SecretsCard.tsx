@@ -76,7 +76,8 @@ const accountState = (account: Account): string => {
 /*
  * The account's coding-provider pool: rows per provider in the order sessions
  * try them, each with its state, a move within the order, and Revoke. A
- * pending Codex sign-in shows its code and where to enter it.
+ * pending Codex sign-in shows its code and where to enter it. A deployment
+ * that does not offer coding accounts (`unavailable`) shows no connect buttons.
  */
 export const ProviderAccountsCardBody = ({
   card, onRunCommand
@@ -84,13 +85,15 @@ export const ProviderAccountsCardBody = ({
   readonly card: AccountsCard
   readonly onRunCommand: RunCommand
 }) => {
-  const { accounts, pending } = card.payload
+  const { accounts, pending, unavailable } = card.payload
   return (
     <div className="world-card-list">
-      <div className="provider-accounts-actions">
-        <Button size="sm" {...flowAction(onRunCommand, "secrets.connect")}>Add Claude</Button>
-        <Button size="sm" {...flowAction(onRunCommand, "secrets.connect.codex")}>Add Codex</Button>
-      </div>
+      {unavailable ? null : (
+        <div className="provider-accounts-actions">
+          <Button size="sm" {...flowAction(onRunCommand, "secrets.connect")}>Add Claude</Button>
+          <Button size="sm" {...flowAction(onRunCommand, "secrets.connect.codex")}>Add Codex</Button>
+        </div>
+      )}
       {pending === undefined ? null : (
         <p className="provider-accounts-pending" data-testid="codex-pending">
           <code>{pending.userCode}</code>{" "}

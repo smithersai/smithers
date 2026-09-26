@@ -60,3 +60,10 @@ test("a pending Codex sign-in shows its code and an Open link, nothing else", ()
   const pending = /<p[^>]*data-testid="codex-pending"[^>]*>(.*?)<\/p>/.exec(html)?.[1] ?? ""
   expect(pending).toBe('<code>ABCD-EFGH</code> <a href="https://auth.openai.com/codex/device" target="_blank" rel="noopener noreferrer">Open</a>')
 })
+
+test("a deployment without coding accounts renders no connect buttons", () => {
+  const gated: Extract<Card, { kind: "provider-accounts" }> = { ...card(), payload: { accounts: [], unavailable: true } }
+  const body = ProviderAccountsCardBody({ card: gated, onRunCommand: () => {} })
+  expect(buttons(body).map(button => button["data-flow"])).toEqual([])
+  expect(renderToStaticMarkup(body)).not.toContain("Add Claude")
+})

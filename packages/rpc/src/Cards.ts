@@ -1698,6 +1698,9 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * non-revoked connections in pool order, metadata only. `limitedUntil` is
    * the RFC3339 time a usage limit parks the account until; `pending` is a
    * Codex device sign-in awaiting the person (its code and where to enter it).
+   * `unavailable` marks a deployment that does not offer coding accounts
+   * (plue's feature-gated 403; hosted smithers.sh stores no subscription
+   * logins): the card shows no connect buttons.
    */
   z.object({
     ...cardBaseShape,
@@ -1711,7 +1714,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         state: z.string(),
         limitedUntil: z.string().nullable()
       })),
-      pending: z.object({ userCode: z.string(), verificationUri: z.string() }).optional()
+      pending: z.object({ userCode: z.string(), verificationUri: z.string() }).optional(),
+      unavailable: z.literal(true).optional()
     })
   }),
   /*
