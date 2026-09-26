@@ -1312,13 +1312,6 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 		if run.Status != "cancelled" && run.Status != "failure" {
 			return pkgerrors.Conflict(fmt.Sprintf("cannot resume workflow run with status %q; only cancelled or failed runs can be resumed", run.Status))
 		}
-		unsettled, err := txQueries.HasUnsettledRunnerOwnershipForWorkflowRun(ctx, run.ID)
-		if err != nil {
-			return pkgerrors.Internal("failed to check workflow runner ownership").WithCause(err)
-		}
-		if unsettled {
-			return pkgerrors.Conflict("cannot resume workflow run while its previous runner is still settling a task")
-		}
 		if err := txQueries.ResumeWorkflowTasks(ctx, run.ID); err != nil {
 			return pkgerrors.Internal("failed to resume workflow tasks").WithCause(err)
 		}
@@ -1350,13 +1343,6 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 
 	if run.Status != "cancelled" && run.Status != "failure" {
 		return pkgerrors.Conflict(fmt.Sprintf("cannot resume workflow run with status %q; only cancelled or failed runs can be resumed", run.Status))
-	}
-	unsettled, err := s.queries.HasUnsettledRunnerOwnershipForWorkflowRun(ctx, run.ID)
-	if err != nil {
-		return pkgerrors.Internal("failed to check workflow runner ownership").WithCause(err)
-	}
-	if unsettled {
-		return pkgerrors.Conflict("cannot resume workflow run while its previous runner is still settling a task")
 	}
 
 	if err := s.queries.ResumeWorkflowTasks(ctx, run.ID); err != nil {

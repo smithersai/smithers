@@ -370,9 +370,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		webhookDispatcher = linearDispatcher
 	}
 	sshAuthzService := services.NewSSHAuthorizationService(queries)
-	gitHTTPOptions := []services.GitHTTPProxyServiceOption{
-		services.WithGitHTTPRunnerTaskTokenSecret(os.Getenv("SMITHERS_AGENT_TOKEN")),
-	}
+	var gitHTTPOptions []services.GitHTTPProxyServiceOption
 	if config.IsSingleOwner(cfg.Auth) {
 		gitHTTPOptions = append(gitHTTPOptions, services.WithGitHTTPSingleOwnerBoundary(queries))
 	}

@@ -352,8 +352,6 @@ func TestMetricsEndpoint_PrometheusTextFormatSpec(t *testing.T) {
 		"smithers_active_agent_sessions",
 		"smithers_agent_session_timeouts_total",
 		"smithers_agent_sessions_completed_total",
-		"smithers_runner_pool_available",
-		"smithers_runner_pool_claimed",
 		"smithers_workflow_runs_total",
 		"smithers_workflow_duration_seconds",
 		"smithers_repo_host_client_operation_duration_seconds",

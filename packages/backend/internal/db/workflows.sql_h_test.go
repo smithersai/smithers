@@ -128,9 +128,6 @@ func TestWorkflowsSQL_H_DefinitionsRunsTasksAndStatusesRoundTrip(t *testing.T) {
 	assert.Equal(t, int64(1), affected)
 
 	blocked := workflowsSQLHCreateTask(t, q, run.ID, buildStep.ID, repoID, "blocked", `{"task":"blocked"}`)
-	blockedRows, err := q.ListBlockedTasksForRun(ctx, run.ID)
-	require.NoError(t, err)
-	assert.True(t, workflowsSQLHHasBlockedTask(blockedRows, blocked.ID))
 	require.NoError(t, q.SkipBlockedWorkflowTask(ctx, blocked.ID))
 
 	blockedForUnblock := workflowsSQLHCreateTask(t, q, run.ID, buildStep.ID, repoID, "blocked", `{"task":"unblock"}`)
@@ -142,9 +139,6 @@ func TestWorkflowsSQL_H_DefinitionsRunsTasksAndStatusesRoundTrip(t *testing.T) {
 	latestTask, err := q.GetWorkflowTaskByRunID(ctx, run.ID)
 	require.NoError(t, err)
 	assert.Equal(t, blockedForUnblock.ID, latestTask.ID)
-	stepID, err := q.GetWorkflowTaskStepID(ctx, assigned.ID)
-	require.NoError(t, err)
-	assert.Equal(t, buildStep.ID, stepID)
 
 	taskInfo, err := q.ListTaskStepInfoForRun(ctx, run.ID)
 	require.NoError(t, err)
@@ -306,8 +300,6 @@ func TestWorkflowsSQL_H_MissingRowsAndConstraintErrors(t *testing.T) {
 	require.ErrorIs(t, err, pgx.ErrNoRows)
 	_, err = q.GetWorkflowTaskByRunID(ctx, 999999999)
 	require.ErrorIs(t, err, pgx.ErrNoRows)
-	_, err = q.GetWorkflowTaskStepID(ctx, 999999999)
-	require.ErrorIs(t, err, pgx.ErrNoRows)
 	_, err = q.MarkWorkflowTaskTerminalByID(ctx, MarkWorkflowTaskTerminalByIDParams{Status: "done", ID: 999999999})
 	require.ErrorIs(t, err, pgx.ErrNoRows)
 	_, err = q.UpdateLatestCommitStatusByWorkflowRunID(ctx, UpdateLatestCommitStatusByWorkflowRunIDParams{WorkflowRunID: pgtype.Int8{Int64: 999999999, Valid: true}, Status: "success"})
@@ -353,7 +345,6 @@ func TestWorkflowsSQL_H_ManyErrorBranches(t *testing.T) {
 			})
 			return err
 		}},
-		{"ListBlockedTasksForRun", func(q *Queries) error { _, err := q.ListBlockedTasksForRun(context.Background(), 1); return err }},
 		{"ListCommitStatusesByRef", func(q *Queries) error {
 			_, err := q.ListCommitStatusesByRef(context.Background(), ListCommitStatusesByRefParams{RepositoryID: 1, Ref: pgtype.Text{String: "ref", Valid: true}, PageOffset: 0, PageSize: 1})
 			return err
@@ -405,10 +396,6 @@ func TestWorkflowsSQL_H_ExecErrorBranches(t *testing.T) {
 			return q.DeactivateWorkflowDefinitionByPath(context.Background(), DeactivateWorkflowDefinitionByPathParams{RepositoryID: 1, Path: "path"})
 		}},
 		{"FailWorkflowRun", func() error { return q.FailWorkflowRun(context.Background(), 1) }},
-		{"MarkWorkflowTaskRunning", func() error {
-			_, err := q.MarkWorkflowTaskRunning(context.Background(), MarkWorkflowTaskRunningParams{ID: 1, RunnerID: pgtype.Int8{Int64: 1, Valid: true}})
-			return err
-		}},
 		{"MarkWorkflowTaskVMRunning", func() error {
 			_, err := q.MarkWorkflowTaskVMRunning(context.Background(), MarkWorkflowTaskVMRunningParams{VmID: pgtype.Text{String: "vm", Valid: true}, ID: 1})
 			return err
@@ -463,15 +450,6 @@ func workflowsSQLHHasDefinition(defs []WorkflowDefinition, id int64) bool {
 func workflowsSQLHHasRun(runs []WorkflowRun, id int64) bool {
 	for _, run := range runs {
 		if run.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func workflowsSQLHHasBlockedTask(tasks []ListBlockedTasksForRunRow, id int64) bool {
-	for _, task := range tasks {
-		if task.ID == id {
 			return true
 		}
 	}

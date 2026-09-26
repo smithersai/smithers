@@ -36,20 +36,13 @@ type GitHTTPRepoHostClient interface {
 
 // GitHTTPProxyService handles authn/authz and proxy dispatch for git smart HTTP routes.
 type GitHTTPProxyService struct {
-	queries                      GitHTTPProxyQuerier
-	authorizer                   SSHAuthorizer
-	repoHost                     GitHTTPRepoHostClient
-	runnerTaskTokenSigningSecret string
-	ownerBoundary                identity.OwnerAuthorizer
+	queries       GitHTTPProxyQuerier
+	authorizer    SSHAuthorizer
+	repoHost      GitHTTPRepoHostClient
+	ownerBoundary identity.OwnerAuthorizer
 }
 
 type GitHTTPProxyServiceOption func(*GitHTTPProxyService)
-
-func WithGitHTTPRunnerTaskTokenSecret(token string) GitHTTPProxyServiceOption {
-	return func(s *GitHTTPProxyService) {
-		s.runnerTaskTokenSigningSecret = strings.TrimSpace(token)
-	}
-}
 
 // WithGitHTTPSingleOwnerBoundary applies the installation-owner invariant to
 // Git smart HTTP, whose token resolver intentionally lives outside AuthLoader.
@@ -57,11 +50,6 @@ func WithGitHTTPSingleOwnerBoundary(queries identity.OwnerQuerier) GitHTTPProxyS
 	return func(s *GitHTTPProxyService) {
 		s.ownerBoundary = identity.NewSingleOwnerBoundary(queries)
 	}
-}
-
-type gitHTTPRunnerTaskQuerier interface {
-	GetWorkflowRunByRunID(ctx context.Context, runID int64) (db.WorkflowRun, error)
-	GetWorkflowTaskForRunner(ctx context.Context, taskID int64) (db.GetWorkflowTaskForRunnerRow, error)
 }
 
 func NewGitHTTPProxyService(q GitHTTPProxyQuerier, authorizer SSHAuthorizer, repoHost GitHTTPRepoHostClient, opts ...GitHTTPProxyServiceOption) *GitHTTPProxyService {
@@ -87,20 +75,6 @@ func (s *GitHTTPProxyService) ProxyInfoRefs(
 	if err != nil {
 		return "", err
 	}
-	if mode == AccessModeRead {
-		taskToken, authErr := s.authorizeRunnerTaskRead(ctx, token, owner, repo)
-		if authErr != nil {
-			return "", authErr
-		}
-		if taskToken {
-			contentType, err := s.repoHost.InfoRefs(ctx, owner, repo, service, stdout)
-			if err != nil {
-				return "", gitProxyFailure(ctx, "info refs", owner, repo, err)
-			}
-			return contentType, nil
-		}
-	}
-
 	user, scopes, err := s.authenticateToken(ctx, token, owner, repo)
 	if err != nil {
 		return "", err
@@ -131,17 +105,6 @@ func (s *GitHTTPProxyService) ProxyUploadPack(
 	stdin io.Reader,
 	stdout io.Writer,
 ) error {
-	taskToken, authErr := s.authorizeRunnerTaskRead(ctx, token, owner, repo)
-	if authErr != nil {
-		return authErr
-	}
-	if taskToken {
-		if err := s.repoHost.ProxyUploadPack(ctx, owner, repo, stdin, stdout); err != nil {
-			return gitProxyFailure(ctx, "upload-pack", owner, repo, err)
-		}
-		return nil
-	}
-
 	user, scopes, err := s.authenticateToken(ctx, token, owner, repo)
 	if err != nil {
 		return err
@@ -168,9 +131,6 @@ func (s *GitHTTPProxyService) ProxyReceivePack(
 	stdin io.Reader,
 	stdout io.Writer,
 ) error {
-	if middleware.IsRunnerTaskTokenSyntax(token) {
-		return errors.Unauthorized("runner task credentials are read-only")
-	}
 	user, scopes, allowedPaths, workspaceID, err := s.authenticateTokenWithPaths(ctx, token, owner, repo)
 	if err != nil {
 		return err
@@ -409,76 +369,6 @@ func (s *GitHTTPProxyService) authorize(ctx context.Context, userID int64, owner
 		return err
 	}
 	return errors.Internal("failed to authorize repository access")
-}
-
-// authorizeRunnerTaskRead recognizes the task-token envelope and, when
-// present, binds the requested owner/repo to the signed RepositoryID. It also
-// revalidates the task and run on every Git smart-HTTP request so completion,
-// cancellation, runner reassignment, or expiry revokes clone access.
-func (s *GitHTTPProxyService) authorizeRunnerTaskRead(
-	ctx context.Context,
-	token, owner, repo string,
-) (bool, error) {
-	token = strings.TrimSpace(token)
-	if !middleware.IsRunnerTaskTokenSyntax(token) {
-		return false, nil
-	}
-
-	claims, err := middleware.VerifyRunnerTaskToken(token, s.runnerTaskTokenSigningSecret)
-	if err != nil {
-		return true, errors.Unauthorized("invalid or expired runner task token")
-	}
-	querier, ok := s.queries.(gitHTTPRunnerTaskQuerier)
-	if !ok {
-		return true, errors.Internal("runner task authorization is not configured")
-	}
-
-	run, err := querier.GetWorkflowRunByRunID(ctx, claims.WorkflowRunID)
-	if stdErrors.Is(err, pgx.ErrNoRows) {
-		return true, errors.Unauthorized("invalid or expired runner task token")
-	}
-	if err != nil {
-		return true, errors.Internal("failed to authorize runner task token").WithCause(err)
-	}
-	if run.ID != claims.WorkflowRunID || run.RepositoryID != claims.RepositoryID || gitHTTPRunIsTerminal(run.Status) {
-		return true, errors.Unauthorized("invalid or expired runner task token")
-	}
-
-	task, err := querier.GetWorkflowTaskForRunner(ctx, claims.TaskID)
-	if stdErrors.Is(err, pgx.ErrNoRows) {
-		return true, errors.Unauthorized("invalid or expired runner task token")
-	}
-	if err != nil {
-		return true, errors.Internal("failed to authorize runner task token").WithCause(err)
-	}
-	if task.ID != claims.TaskID || task.WorkflowRunID != claims.WorkflowRunID || task.RepositoryID != claims.RepositoryID ||
-		task.Attempt != claims.Attempt || !task.RunnerID.Valid || task.RunnerID.Int64 != claims.RunnerID || task.Status != "running" {
-		return true, errors.Unauthorized("invalid or expired runner task token")
-	}
-
-	repository, err := s.queries.GetRepoByOwnerAndLowerName(ctx, db.GetRepoByOwnerAndLowerNameParams{
-		Owner:     strings.ToLower(owner),
-		LowerName: strings.ToLower(repo),
-	})
-	if stdErrors.Is(err, pgx.ErrNoRows) {
-		return true, errors.Unauthorized("runner task token is not authorized for repository")
-	}
-	if err != nil {
-		return true, errors.Internal("failed to resolve repository").WithCause(err)
-	}
-	if repository.ID != claims.RepositoryID {
-		return true, errors.Unauthorized("runner task token is not authorized for repository")
-	}
-	return true, nil
-}
-
-func gitHTTPRunIsTerminal(status string) bool {
-	switch status {
-	case "success", "failure", "cancelled", "error":
-		return true
-	default:
-		return false
-	}
 }
 
 // gitProxyFailure logs the repo-host error behind a failed git proxy call and

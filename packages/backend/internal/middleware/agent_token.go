@@ -3,11 +3,9 @@ package middleware
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -20,37 +18,16 @@ import (
 
 const agentTokenContextKey contextKey = "agent_token"
 const workflowRunContextKey contextKey = "workflow_run"
-const sharedAgentTokenContextKey contextKey = "shared_agent_token"
 
 type AgentTokenQuerier interface {
 	GetWorkflowRunByAgentToken(ctx context.Context, agentTokenHash pgtype.Text) (db.WorkflowRun, error)
 }
 
-type runnerTaskTokenRunQuerier interface {
-	GetWorkflowRunByRunID(ctx context.Context, runID int64) (db.WorkflowRun, error)
-}
-
-type runnerTaskTokenTaskQuerier interface {
-	GetWorkflowTaskForRunner(ctx context.Context, taskID int64) (db.GetWorkflowTaskForRunnerRow, error)
-}
-
+// RequireAgentToken authenticates a per-run workflow agent token and puts its
+// workflow run in the request context.
 func RequireAgentToken(queries AgentTokenQuerier) func(http.Handler) http.Handler {
-	sharedToken := strings.TrimSpace(os.Getenv("SMITHERS_AGENT_TOKEN"))
-	var sharedTokenHash []byte
-	if sharedToken != "" {
-		h := sha256.Sum256([]byte(sharedToken))
-		sharedTokenHash = h[:]
-	}
-
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Extract the bearer credential without agent-token format
-			// validation: the shared runner-pod credential is operator-minted
-			// and carries no required format (the runner lifecycle routes
-			// accept it via RequireSharedBearerToken, which never format-gates),
-			// so it must reach the shared-token comparison below. The
-			// smithers_agent_ format gate applies only to DB-backed per-run
-			// tokens, immediately before the lookup.
 			token, ok := extractBearerCredential(r)
 			if !ok {
 				smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or missing agent token"))
@@ -60,66 +37,6 @@ func RequireAgentToken(queries AgentTokenQuerier) func(http.Handler) http.Handle
 			// Add raw token to context
 			ctx := context.WithValue(r.Context(), agentTokenContextKey, token)
 
-			if isRunnerTaskTokenSyntax(token) {
-				claims, err := verifyRunnerTaskToken(token, sharedToken, time.Now())
-				if err != nil {
-					smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or expired runner task token"))
-					return
-				}
-				runQuerier, ok := queries.(runnerTaskTokenRunQuerier)
-				if !ok {
-					smitherserrors.WriteError(w, smitherserrors.Internal("internal server error"))
-					return
-				}
-				run, err := runQuerier.GetWorkflowRunByRunID(ctx, claims.WorkflowRunID)
-				if errors.Is(err, pgx.ErrNoRows) {
-					smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or expired runner task token"))
-					return
-				} else if err != nil {
-					smitherserrors.WriteError(w, smitherserrors.Internal("internal server error").WithCause(err))
-					return
-				}
-				if run.ID != claims.WorkflowRunID || run.RepositoryID != claims.RepositoryID || isTerminalAgentTokenRunStatus(run.Status) {
-					smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or expired runner task token"))
-					return
-				}
-				taskQuerier, ok := queries.(runnerTaskTokenTaskQuerier)
-				if !ok {
-					smitherserrors.WriteError(w, smitherserrors.Internal("internal server error"))
-					return
-				}
-				task, err := taskQuerier.GetWorkflowTaskForRunner(ctx, claims.TaskID)
-				if errors.Is(err, pgx.ErrNoRows) {
-					smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or expired runner task token"))
-					return
-				} else if err != nil {
-					smitherserrors.WriteError(w, smitherserrors.Internal("internal server error").WithCause(err))
-					return
-				}
-				if task.ID != claims.TaskID || task.WorkflowRunID != claims.WorkflowRunID || task.RepositoryID != claims.RepositoryID ||
-					task.Attempt != claims.Attempt || !task.RunnerID.Valid || task.RunnerID.Int64 != claims.RunnerID || task.Status != "running" {
-					smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or expired runner task token"))
-					return
-				}
-				ctx = context.WithValue(ctx, workflowRunContextKey, &run)
-				ctx = contextWithRunnerTaskToken(ctx, claims)
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-
-			// Hash token; comparing fixed-length hashes keeps the shared-token
-			// check constant-time (no content- or length-timing signal).
-			hash := sha256.Sum256([]byte(token))
-			tokenHash := hex.EncodeToString(hash[:])
-
-			// Constant-time compare so the shared runner-pod credential can't be
-			// recovered via a timing side channel (mirrors RequireSharedBearerToken).
-			if sharedTokenHash != nil && subtle.ConstantTimeCompare(hash[:], sharedTokenHash) == 1 {
-				ctx = context.WithValue(ctx, sharedAgentTokenContextKey, true)
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-
 			// Per-run agent tokens are DB-backed and must match the issued
 			// smithers_agent_ format; gate here so arbitrary strings never
 			// reach the database.
@@ -127,6 +44,8 @@ func RequireAgentToken(queries AgentTokenQuerier) func(http.Handler) http.Handle
 				smitherserrors.WriteError(w, smitherserrors.Unauthorized("invalid or missing agent token"))
 				return
 			}
+			hash := sha256.Sum256([]byte(token))
+			tokenHash := hex.EncodeToString(hash[:])
 
 			if queries == nil {
 				smitherserrors.WriteError(w, smitherserrors.Internal("internal server error"))
@@ -174,15 +93,6 @@ func WorkflowRunFromContext(ctx context.Context) *db.WorkflowRun {
 	return run
 }
 
-// IsSharedAgentToken reports whether RequireAgentToken authenticated the
-// runner-pod credential rather than a workflow-run credential. Services use
-// this marker to apply the narrower claimed-task lookup appropriate to the
-// trusted runner control plane without relaxing per-run ownership checks.
-func IsSharedAgentToken(ctx context.Context) bool {
-	shared, _ := ctx.Value(sharedAgentTokenContextKey).(bool)
-	return shared
-}
-
 // ContextWithWorkflowRun adds a workflow run to the context.
 // Useful for testing handlers that depend on RequireAgentToken middleware.
 func ContextWithWorkflowRun(ctx context.Context, run *db.WorkflowRun) context.Context {
@@ -195,17 +105,8 @@ func ContextWithAgentToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, agentTokenContextKey, token)
 }
 
-// ContextWithSharedAgentToken marks a test context as authenticated with the
-// runner-pod credential. Production contexts receive this marker only from
-// RequireAgentToken after a constant-time comparison with the configured
-// shared token.
-func ContextWithSharedAgentToken(ctx context.Context) context.Context {
-	return context.WithValue(ctx, sharedAgentTokenContextKey, true)
-}
-
-// extractBearerCredential returns the bearer credential without agent-token
-// format validation, so credential classes with no mandated format (the shared
-// runner-pod token) can be compared before the per-run format gate.
+// extractBearerCredential returns the bearer credential; RequireAgentToken
+// applies the per-run token format gate before any lookup.
 func extractBearerCredential(r *http.Request) (string, bool) {
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))
 	if auth == "" {
@@ -224,9 +125,6 @@ func extractBearerCredential(r *http.Request) (string, bool) {
 }
 
 func isValidAgentToken(token string) bool {
-	if isRunnerTaskTokenSyntax(token) {
-		return true
-	}
 	if !strings.HasPrefix(token, "smithers_agent_") {
 		return false
 	}

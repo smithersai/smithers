@@ -270,12 +270,11 @@ func buildRouter(
 		if queries != nil {
 			querier = queries
 		}
-		// Runner-pool lifecycle and workspace status callbacks operate purely on
-		// IDs from the URL/body with no per-run ownership scoping, so they must
-		// only be reachable with the shared runner pod credential
-		// (SMITHERS_AGENT_TOKEN) — never with per-run agent tokens handed to
-		// untrusted sandboxes, which could otherwise terminate other tenants'
-		// runners, steal tasks, or spoof any workspace's status.
+		// Workspace status callbacks operate purely on IDs from the URL/body
+		// with no per-run ownership scoping, so they must only be reachable with
+		// the shared deployment credential (SMITHERS_AGENT_TOKEN) — never with
+		// per-run agent tokens handed to untrusted sandboxes, which could
+		// otherwise spoof any workspace's status.
 		sharedAgentToken := strings.TrimSpace(os.Getenv("SMITHERS_AGENT_TOKEN"))
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireSharedBearerToken(sharedAgentToken))

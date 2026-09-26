@@ -2,21 +2,9 @@ package routes
 
 import "github.com/prometheus/client_golang/prometheus"
 
-// WorkflowMetrics holds Prometheus metrics for workflow execution, runner pool
-// management, task queue depth, and agent session tracking.
+// WorkflowMetrics holds Prometheus metrics for workflow execution and agent
+// session tracking.
 type WorkflowMetrics struct {
-	// RunnerPoolAvailable tracks idle runners available to claim.
-	RunnerPoolAvailable prometheus.Gauge
-
-	// RunnerPoolClaimed tracks runners currently executing tasks.
-	RunnerPoolClaimed prometheus.Gauge
-
-	// TaskQueueDepth tracks claimable pending workflow tasks.
-	TaskQueueDepth prometheus.Gauge
-
-	// TaskQueueOldestAgeSeconds tracks the age of the oldest claimable workflow task.
-	TaskQueueOldestAgeSeconds prometheus.Gauge
-
 	// RunsTotal counts completed workflow runs by status.
 	RunsTotal *prometheus.CounterVec
 
@@ -59,22 +47,6 @@ func NewWorkflowMetrics(reg prometheus.Registerer) *WorkflowMetrics {
 	)
 
 	m := &WorkflowMetrics{
-		RunnerPoolAvailable: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "smithers_runner_pool_available",
-			Help: "Number of runner pods available (idle) in the warm pool.",
-		}),
-		RunnerPoolClaimed: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "smithers_runner_pool_claimed",
-			Help: "Number of runner pods currently claimed and executing tasks.",
-		}),
-		TaskQueueDepth: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "smithers_workflow_task_queue_depth",
-			Help: "Number of claimable pending workflow tasks waiting for runner capacity.",
-		}),
-		TaskQueueOldestAgeSeconds: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "smithers_workflow_task_queue_oldest_age_seconds",
-			Help: "Age in seconds of the oldest claimable pending workflow task.",
-		}),
 		RunsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "smithers_workflow_runs_total",
@@ -116,10 +88,6 @@ func NewWorkflowMetrics(reg prometheus.Registerer) *WorkflowMetrics {
 
 	if reg != nil {
 		reg.MustRegister(
-			m.RunnerPoolAvailable,
-			m.RunnerPoolClaimed,
-			m.TaskQueueDepth,
-			m.TaskQueueOldestAgeSeconds,
 			m.RunsTotal,
 			m.DurationSeconds,
 			m.ActiveAgentSessions,

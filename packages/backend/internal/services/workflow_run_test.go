@@ -25,28 +25,27 @@ import (
 // ─── Mock querier for workflow run service ────────────────────────────────────
 
 type mockWorkflowRunQuerier struct {
-	getRepoByIDFn                 func(ctx context.Context, id int64) (db.Repository, error)
-	getUserByIDFn                 func(ctx context.Context, id int64) (db.User, error)
-	getOrgByIDFn                  func(ctx context.Context, id int64) (db.Organization, error)
-	listDefsFn                    func(ctx context.Context, arg db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error)
-	getDefFn                      func(ctx context.Context, arg db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error)
-	ensureDefRefFn                func(ctx context.Context, arg db.EnsureWorkflowDefinitionReferenceParams) (db.WorkflowDefinition, error)
-	createRunFn                   func(ctx context.Context, arg db.CreateWorkflowRunParams) (db.WorkflowRun, error)
-	createStepFn                  func(ctx context.Context, arg db.CreateWorkflowStepParams) (db.WorkflowStep, error)
-	createTaskFn                  func(ctx context.Context, arg db.CreateWorkflowTaskParams) (db.WorkflowTask, error)
-	createCommitStatusFn          func(ctx context.Context, arg db.CreateCommitStatusParams) (db.CommitStatus, error)
-	updateCheckRunFn              func(ctx context.Context, arg db.UpdateWorkflowRunCheckRunParams) (db.WorkflowRun, error)
-	getRunFn                      func(ctx context.Context, arg db.GetWorkflowRunParams) (db.WorkflowRun, error)
-	updateTokenFn                 func(ctx context.Context, arg db.UpdateWorkflowRunAgentTokenParams) (db.WorkflowRun, error)
-	cancelRunFn                   func(ctx context.Context, id int64) error
-	cancelTaskFn                  func(ctx context.Context, workflowRunID int64) error
-	hasUnsettledRunnerOwnershipFn func(ctx context.Context, workflowRunID int64) (bool, error)
-	resumeRunFn                   func(ctx context.Context, id int64) error
-	resumeTasksFn                 func(ctx context.Context, workflowRunID int64) error
-	resumeStepsFn                 func(ctx context.Context, workflowRunID int64) error
-	notifyRunFn                   func(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
-	bindAlertRunFn                func(ctx context.Context, arg runtimeports.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
-	getBookmarkCommitFn           func(ctx context.Context, arg db.GetRepositoryBookmarkCommitIDParams) (string, error)
+	getRepoByIDFn        func(ctx context.Context, id int64) (db.Repository, error)
+	getUserByIDFn        func(ctx context.Context, id int64) (db.User, error)
+	getOrgByIDFn         func(ctx context.Context, id int64) (db.Organization, error)
+	listDefsFn           func(ctx context.Context, arg db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error)
+	getDefFn             func(ctx context.Context, arg db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error)
+	ensureDefRefFn       func(ctx context.Context, arg db.EnsureWorkflowDefinitionReferenceParams) (db.WorkflowDefinition, error)
+	createRunFn          func(ctx context.Context, arg db.CreateWorkflowRunParams) (db.WorkflowRun, error)
+	createStepFn         func(ctx context.Context, arg db.CreateWorkflowStepParams) (db.WorkflowStep, error)
+	createTaskFn         func(ctx context.Context, arg db.CreateWorkflowTaskParams) (db.WorkflowTask, error)
+	createCommitStatusFn func(ctx context.Context, arg db.CreateCommitStatusParams) (db.CommitStatus, error)
+	updateCheckRunFn     func(ctx context.Context, arg db.UpdateWorkflowRunCheckRunParams) (db.WorkflowRun, error)
+	getRunFn             func(ctx context.Context, arg db.GetWorkflowRunParams) (db.WorkflowRun, error)
+	updateTokenFn        func(ctx context.Context, arg db.UpdateWorkflowRunAgentTokenParams) (db.WorkflowRun, error)
+	cancelRunFn          func(ctx context.Context, id int64) error
+	cancelTaskFn         func(ctx context.Context, workflowRunID int64) error
+	resumeRunFn          func(ctx context.Context, id int64) error
+	resumeTasksFn        func(ctx context.Context, workflowRunID int64) error
+	resumeStepsFn        func(ctx context.Context, workflowRunID int64) error
+	notifyRunFn          func(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
+	bindAlertRunFn       func(ctx context.Context, arg runtimeports.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
+	getBookmarkCommitFn  func(ctx context.Context, arg db.GetRepositoryBookmarkCommitIDParams) (string, error)
 
 	createRunCalls      []db.CreateWorkflowRunParams
 	createStepCalls     []db.CreateWorkflowStepParams
@@ -230,13 +229,6 @@ func (m *mockWorkflowRunQuerier) CancelWorkflowTasks(ctx context.Context, workfl
 		return m.cancelTaskFn(ctx, workflowRunID)
 	}
 	return nil
-}
-
-func (m *mockWorkflowRunQuerier) HasUnsettledRunnerOwnershipForWorkflowRun(ctx context.Context, workflowRunID int64) (bool, error) {
-	if m.hasUnsettledRunnerOwnershipFn != nil {
-		return m.hasUnsettledRunnerOwnershipFn(ctx, workflowRunID)
-	}
-	return false, nil
 }
 
 func (m *mockWorkflowRunQuerier) ResumeWorkflowRun(ctx context.Context, id int64) error {

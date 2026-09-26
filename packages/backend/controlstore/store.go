@@ -5,7 +5,6 @@ package controlstore
 import (
 	context "context"
 
-	pgtype "github.com/jackc/pgx/v5/pgtype"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -52,21 +51,14 @@ type AnalyticsWorkspacesByKindStatusParams = db.AnalyticsWorkspacesByKindStatusP
 type AnalyticsWorkspacesByKindStatusRow = db.AnalyticsWorkspacesByKindStatusRow
 type CommitStatus = db.CommitStatus
 type FindAlertRemediationWorkflowRunParams = db.FindAlertRemediationWorkflowRunParams
-type GetTerminalWorkflowTaskForRunnerParams = db.GetTerminalWorkflowTaskForRunnerParams
 type GetWorkflowDefinitionByPathParams = db.GetWorkflowDefinitionByPathParams
-type GetWorkflowTaskForRunnerRow = db.GetWorkflowTaskForRunnerRow
-type GetWorkflowTaskRuntimeContextParams = db.GetWorkflowTaskRuntimeContextParams
-type GetWorkflowTaskRuntimeContextRow = db.GetWorkflowTaskRuntimeContextRow
 type HasLegacyAlertRemediationWorkflowRunParams = db.HasLegacyAlertRemediationWorkflowRunParams
 type InsertAuditLogParams = db.InsertAuditLogParams
 type InsertWorkflowLogNextSequenceParams = db.InsertWorkflowLogNextSequenceParams
 type InsertWorkflowLogNextSequenceRow = db.InsertWorkflowLogNextSequenceRow
 type InsertWorkflowLogParams = db.InsertWorkflowLogParams
-type ListBlockedTasksForRunRow = db.ListBlockedTasksForRunRow
 type ListTaskStepInfoForRunRow = db.ListTaskStepInfoForRunRow
 type ListWorkflowLogsSinceParams = db.ListWorkflowLogsSinceParams
-type MarkWorkflowTaskDoneParams = db.MarkWorkflowTaskDoneParams
-type MarkWorkflowTaskRunningParams = db.MarkWorkflowTaskRunningParams
 type NotifyAgentSessionParams = db.NotifyAgentSessionParams
 type NotifyWorkflowLogParams = db.NotifyWorkflowLogParams
 type NotifyWorkflowRunEventParams = db.NotifyWorkflowRunEventParams
@@ -86,15 +78,12 @@ type Workspace = db.Workspace
 // DBTX is the caller-owned connection or transaction; New never opens a pool.
 type DBTX = db.DBTX
 
-type GetClaimableWorkflowTaskBacklogRow = db.GetClaimableWorkflowTaskBacklogRow
-
 // Product contains only queries consumed by deployment control services.
 
 type Product interface {
 	AnalyticsStatementTimeout(context.Context) error
 	IsStorageDeletionObjectActive(context.Context, db.IsStorageDeletionObjectActiveParams) (bool, error)
 	GetRepoByOwnerAndName(context.Context, db.GetRepoByOwnerAndNameParams) (db.GetRepoByOwnerAndNameRow, error)
-	GetClaimableWorkflowTaskBacklog(context.Context) (GetClaimableWorkflowTaskBacklogRow, error)
 	AdminListAgentSessions(ctx context.Context, arg db.AdminListAgentSessionsParams) ([]db.AdminListAgentSessionsRow, error)
 	AdminListTokens(ctx context.Context, arg db.AdminListTokensParams) ([]db.AdminListTokensRow, error)
 	AdminListWorkspaces(ctx context.Context, arg db.AdminListWorkspacesParams) ([]db.AdminListWorkspacesRow, error)
@@ -117,36 +106,27 @@ type Product interface {
 	AnalyticsWorkspacesActive(ctx context.Context, includeSynthetic bool) (int64, error)
 	AnalyticsWorkspacesByDay(ctx context.Context, arg db.AnalyticsWorkspacesByDayParams) ([]db.AnalyticsWorkspacesByDayRow, error)
 	AnalyticsWorkspacesByKindStatus(ctx context.Context, arg db.AnalyticsWorkspacesByKindStatusParams) ([]db.AnalyticsWorkspacesByKindStatusRow, error)
-	ClaimPendingTask(ctx context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error)
 	FindAlertRemediationWorkflowRun(ctx context.Context, arg db.FindAlertRemediationWorkflowRunParams) (db.WorkflowRun, error)
 	GetAgentSession(ctx context.Context, id string) (db.AgentSession, error)
 	GetLandingQueueDepth(ctx context.Context) (int64, error)
 	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
 	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
-	GetTerminalWorkflowTaskForRunner(ctx context.Context, arg db.GetTerminalWorkflowTaskForRunnerParams) (int64, error)
 	GetUserByID(ctx context.Context, id int64) (db.User, error)
 	GetWorkflowDefinitionByPath(ctx context.Context, arg db.GetWorkflowDefinitionByPathParams) (db.WorkflowDefinition, error)
 	GetWorkflowDefinitionNameByRunID(ctx context.Context, id int64) (string, error)
 	GetWorkflowRunByRunID(ctx context.Context, id int64) (db.WorkflowRun, error)
 	GetWorkflowTaskByRunID(ctx context.Context, workflowRunID int64) (db.WorkflowTask, error)
-	GetWorkflowTaskForRunner(ctx context.Context, taskID int64) (db.GetWorkflowTaskForRunnerRow, error)
-	GetWorkflowTaskRuntimeContext(ctx context.Context, arg db.GetWorkflowTaskRuntimeContextParams) (db.GetWorkflowTaskRuntimeContextRow, error)
-	GetWorkflowTaskStepID(ctx context.Context, id int64) (int64, error)
 	GetWorkspace(ctx context.Context, id string) (db.Workspace, error)
 	HasLegacyAlertRemediationWorkflowRun(ctx context.Context, arg db.HasLegacyAlertRemediationWorkflowRunParams) (bool, error)
 	InsertAuditLog(ctx context.Context, arg db.InsertAuditLogParams) error
 	InsertWorkflowLog(ctx context.Context, arg db.InsertWorkflowLogParams) (db.WorkflowLog, error)
 	InsertWorkflowLogNextSequence(ctx context.Context, arg db.InsertWorkflowLogNextSequenceParams) (db.InsertWorkflowLogNextSequenceRow, error)
-	ListBlockedTasksForRun(ctx context.Context, workflowRunID int64) ([]db.ListBlockedTasksForRunRow, error)
 	ListTaskStepInfoForRun(ctx context.Context, workflowRunID int64) ([]db.ListTaskStepInfoForRunRow, error)
 	ListWorkflowLogsSince(ctx context.Context, arg db.ListWorkflowLogsSinceParams) ([]db.WorkflowLog, error)
-	MarkWorkflowTaskDone(ctx context.Context, arg db.MarkWorkflowTaskDoneParams) (int64, error)
-	MarkWorkflowTaskRunning(ctx context.Context, arg db.MarkWorkflowTaskRunningParams) (int64, error)
 	NotifyAgentSession(ctx context.Context, arg db.NotifyAgentSessionParams) error
 	NotifyWorkflowLog(ctx context.Context, arg db.NotifyWorkflowLogParams) error
 	NotifyWorkflowRunEvent(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
 	NotifyWorkflowRunLog(ctx context.Context, arg db.NotifyWorkflowRunLogParams) error
-	RequeueTasksForRunner(ctx context.Context, runnerID pgtype.Int8) (int64, error)
 	SkipBlockedWorkflowTask(ctx context.Context, id int64) error
 	UnblockWorkflowTask(ctx context.Context, id int64) error
 	UpdateAgentSessionTerminalStatus(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusParams) (db.AgentSession, error)

@@ -127,10 +127,6 @@ func (m *cancelRunQuerierMock) CancelWorkflowTasks(ctx context.Context, workflow
 	return nil
 }
 
-func (m *cancelRunQuerierMock) HasUnsettledRunnerOwnershipForWorkflowRun(_ context.Context, _ int64) (bool, error) {
-	return false, nil
-}
-
 func (m *cancelRunQuerierMock) ResumeWorkflowRun(_ context.Context, _ int64) error {
 	return nil
 }

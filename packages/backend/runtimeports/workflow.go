@@ -30,7 +30,6 @@ type WorkflowRunQuerier interface {
 	// never created.
 	FailWorkflowRun(ctx context.Context, id int64) error
 	CancelWorkflowTasks(ctx context.Context, workflowRunID int64) error
-	HasUnsettledRunnerOwnershipForWorkflowRun(ctx context.Context, workflowRunID int64) (bool, error)
 	ResumeWorkflowRun(ctx context.Context, id int64) error
 	ResumeWorkflowTasks(ctx context.Context, workflowRunID int64) error
 	ResumeWorkflowSteps(ctx context.Context, workflowRunID int64) error

@@ -52,7 +52,6 @@ another product composition root.
 - `packages/backend/sandbox/guest`
 - `packages/backend/security`
 - `packages/backend/ssh`
-- `packages/backend/taskrunner`
 - `packages/backend/telemetry`
 - `packages/backend/testkit`
 - `packages/backend/webapp`
@@ -99,9 +98,6 @@ needed by adapters without copying product queries or schemas.
 - `packages/backend/internal/smitherscli`
 - `packages/backend/internal/sse`
 - `packages/backend/internal/ssh`
-- `packages/backend/internal/taskrunner`
-- `packages/backend/internal/taskrunner/client`
-- `packages/backend/internal/taskrunner/executor`
 - `packages/backend/internal/testutil/postgresfixture`
 - `packages/backend/internal/webhook`
 - `packages/backend/internal/webhooks`

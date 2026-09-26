@@ -7,7 +7,6 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -91,74 +90,6 @@ func (q *Queries) GetWorkflowRunByIDAndRepo(ctx context.Context, arg GetWorkflow
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getWorkflowTaskForRunner = `-- name: GetWorkflowTaskForRunner :one
-SELECT id, workflow_run_id, workflow_step_id, repository_id, runner_id, status, attempt, payload
-FROM workflow_tasks
-WHERE id = $1
-  AND status = 'running'
-`
-
-type GetWorkflowTaskForRunnerRow struct {
-	ID             int64           `json:"id"`
-	WorkflowRunID  int64           `json:"workflow_run_id"`
-	WorkflowStepID int64           `json:"workflow_step_id"`
-	RepositoryID   int64           `json:"repository_id"`
-	RunnerID       pgtype.Int8     `json:"runner_id"`
-	Status         string          `json:"status"`
-	Attempt        int32           `json:"attempt"`
-	Payload        json.RawMessage `json:"payload"`
-}
-
-func (q *Queries) GetWorkflowTaskForRunner(ctx context.Context, taskID int64) (GetWorkflowTaskForRunnerRow, error) {
-	row := q.db.QueryRow(ctx, getWorkflowTaskForRunner, taskID)
-	var i GetWorkflowTaskForRunnerRow
-	err := row.Scan(
-		&i.ID,
-		&i.WorkflowRunID,
-		&i.WorkflowStepID,
-		&i.RepositoryID,
-		&i.RunnerID,
-		&i.Status,
-		&i.Attempt,
-		&i.Payload,
-	)
-	return i, err
-}
-
-const getWorkflowTaskRuntimeContext = `-- name: GetWorkflowTaskRuntimeContext :one
-SELECT id, workflow_run_id, repository_id, status, payload
-FROM workflow_tasks
-WHERE id = $1
-  AND workflow_run_id = $2
-  AND status IN ('assigned', 'running')
-`
-
-type GetWorkflowTaskRuntimeContextParams struct {
-	TaskID        int64 `json:"task_id"`
-	WorkflowRunID int64 `json:"workflow_run_id"`
-}
-
-type GetWorkflowTaskRuntimeContextRow struct {
-	ID            int64           `json:"id"`
-	WorkflowRunID int64           `json:"workflow_run_id"`
-	RepositoryID  int64           `json:"repository_id"`
-	Status        string          `json:"status"`
-	Payload       json.RawMessage `json:"payload"`
-}
-
-func (q *Queries) GetWorkflowTaskRuntimeContext(ctx context.Context, arg GetWorkflowTaskRuntimeContextParams) (GetWorkflowTaskRuntimeContextRow, error) {
-	row := q.db.QueryRow(ctx, getWorkflowTaskRuntimeContext, arg.TaskID, arg.WorkflowRunID)
-	var i GetWorkflowTaskRuntimeContextRow
-	err := row.Scan(
-		&i.ID,
-		&i.WorkflowRunID,
-		&i.RepositoryID,
-		&i.Status,
-		&i.Payload,
 	)
 	return i, err
 }

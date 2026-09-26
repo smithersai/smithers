@@ -41,62 +41,6 @@ func (q *Queries) CancelWorkflowTasks(ctx context.Context, workflowRunID int64) 
 	return err
 }
 
-const claimPendingTask = `-- name: ClaimPendingTask :one
-WITH claimed AS (
-    SELECT wt.id
-    FROM workflow_tasks wt
-    JOIN workflow_runs wr ON wr.id = wt.workflow_run_id
-    WHERE wt.status = 'pending'
-      AND wt.available_at <= NOW()
-      AND wr.status IN ('queued', 'running')
-      AND wr.execution_plane = 'runner'
-    ORDER BY wt.priority DESC, wt.created_at ASC, wt.id ASC
-    FOR UPDATE OF wt SKIP LOCKED
-    LIMIT 1
-)
-UPDATE workflow_tasks wt
-SET status = 'assigned',
-    attempt = wt.attempt + 1,
-    runner_id = $1,
-    assigned_at = NOW(),
-    updated_at = NOW()
-FROM claimed
-WHERE wt.id = claimed.id
-RETURNING wt.id, wt.workflow_run_id, wt.workflow_step_id, wt.repository_id, wt.status, wt.priority, wt.payload, wt.available_at, wt.attempt, wt.runner_id, wt.vm_id, wt.assigned_at, wt.started_at, wt.finished_at, wt.last_error, wt.created_at, wt.updated_at
-`
-
-// Runner-plane claim contract: the gVisor task runner may only claim tasks
-// whose run has execution_plane = 'runner'. Sandbox-plane runs ('sandbox')
-// are executed whole by the sandbox scheduler via ClaimQueuedWorkflowRuns, and
-// agent runs ('agent') are driven by agent dispatch, so their tasks must never
-// be claimable here — otherwise one run could execute on two planes at once.
-// execution_plane is immutable after insert, so only the task row needs the
-// FOR UPDATE lock.
-func (q *Queries) ClaimPendingTask(ctx context.Context, runnerID pgtype.Int8) (WorkflowTask, error) {
-	row := q.db.QueryRow(ctx, claimPendingTask, runnerID)
-	var i WorkflowTask
-	err := row.Scan(
-		&i.ID,
-		&i.WorkflowRunID,
-		&i.WorkflowStepID,
-		&i.RepositoryID,
-		&i.Status,
-		&i.Priority,
-		&i.Payload,
-		&i.AvailableAt,
-		&i.Attempt,
-		&i.RunnerID,
-		&i.VmID,
-		&i.AssignedAt,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.LastError,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const countCommitStatusesByRef = `-- name: CountCommitStatusesByRef :one
 SELECT COUNT(*)
 FROM commit_statuses
@@ -473,35 +417,6 @@ func (q *Queries) FailWorkflowRun(ctx context.Context, id int64) error {
 	return err
 }
 
-const getClaimableWorkflowTaskBacklog = `-- name: GetClaimableWorkflowTaskBacklog :one
-SELECT
-    COUNT(*)::bigint AS depth,
-    COALESCE(EXTRACT(EPOCH FROM NOW() - MIN(wt.available_at)), 0)::double precision AS oldest_age_seconds
-FROM workflow_tasks wt
-JOIN workflow_runs wr ON wr.id = wt.workflow_run_id
-WHERE wt.status = 'pending'
-  AND wt.available_at <= NOW()
-  AND wr.status IN ('queued', 'running')
-  AND wr.execution_plane = 'runner'
-`
-
-type GetClaimableWorkflowTaskBacklogRow struct {
-	Depth            int64   `json:"depth"`
-	OldestAgeSeconds float64 `json:"oldest_age_seconds"`
-}
-
-// Mirrors ClaimPendingTask's predicate (including the runner-plane filter):
-// the backlog gauge feeds runner-pool scaling, so it must only count work the
-// gVisor runner is actually allowed to claim. Sandbox-plane tasks sit pending
-// while the sandbox scheduler executes the whole run and would otherwise
-// inflate the backlog.
-func (q *Queries) GetClaimableWorkflowTaskBacklog(ctx context.Context) (GetClaimableWorkflowTaskBacklogRow, error) {
-	row := q.db.QueryRow(ctx, getClaimableWorkflowTaskBacklog)
-	var i GetClaimableWorkflowTaskBacklogRow
-	err := row.Scan(&i.Depth, &i.OldestAgeSeconds)
-	return i, err
-}
-
 const getLatestCommitStatusBySHA = `-- name: GetLatestCommitStatusBySHA :one
 SELECT id, repository_id, change_id, commit_sha, context, status, description, target_url, workflow_run_id, targets_affected, targets_ran, targets_cached, duration_ms, workspace_id, created_at, updated_at
 FROM commit_statuses
@@ -584,30 +499,6 @@ func (q *Queries) GetLatestCommitStatusesByChangeIDsAndContexts(ctx context.Cont
 		return nil, err
 	}
 	return items, nil
-}
-
-const getTerminalWorkflowTaskForRunner = `-- name: GetTerminalWorkflowTaskForRunner :one
-SELECT workflow_run_id
-FROM workflow_tasks
-WHERE id = $1
-  AND runner_id = $2
-  AND status IN ('done', 'failed', 'cancelled')
-`
-
-type GetTerminalWorkflowTaskForRunnerParams struct {
-	TaskID   int64       `json:"task_id"`
-	RunnerID pgtype.Int8 `json:"runner_id"`
-}
-
-// Exact acknowledgement lookup for a runner whose child exits after an
-// operator cancelled the task. The ordinary runtime lookup intentionally
-// exposes only running tasks (so cancelled task credentials are revoked),
-// while this internal path lets the owning runner settle its busy lease.
-func (q *Queries) GetTerminalWorkflowTaskForRunner(ctx context.Context, arg GetTerminalWorkflowTaskForRunnerParams) (int64, error) {
-	row := q.db.QueryRow(ctx, getTerminalWorkflowTaskForRunner, arg.TaskID, arg.RunnerID)
-	var workflow_run_id int64
-	err := row.Scan(&workflow_run_id)
-	return workflow_run_id, err
 }
 
 const getWorkflowDefinition = `-- name: GetWorkflowDefinition :one
@@ -810,69 +701,6 @@ func (q *Queries) GetWorkflowTaskByRunID(ctx context.Context, workflowRunID int6
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const getWorkflowTaskStepID = `-- name: GetWorkflowTaskStepID :one
-SELECT workflow_step_id FROM workflow_tasks WHERE id = $1
-`
-
-func (q *Queries) GetWorkflowTaskStepID(ctx context.Context, id int64) (int64, error) {
-	row := q.db.QueryRow(ctx, getWorkflowTaskStepID, id)
-	var workflow_step_id int64
-	err := row.Scan(&workflow_step_id)
-	return workflow_step_id, err
-}
-
-const hasUnsettledRunnerOwnershipForWorkflowRun = `-- name: HasUnsettledRunnerOwnershipForWorkflowRun :one
-SELECT EXISTS (
-    SELECT 1 FROM workflow_tasks wt
-    WHERE wt.workflow_run_id = $1
-      AND wt.status IN ('cancelled', 'failed')
-      AND wt.runner_id IS NOT NULL
-) AS has_unsettled_ownership
-`
-
-// A cancelled or failed task remains owned until its executor explicitly
-// releases runner_id. Resume must fail closed while this marker exists.
-func (q *Queries) HasUnsettledRunnerOwnershipForWorkflowRun(ctx context.Context, workflowRunID int64) (bool, error) {
-	row := q.db.QueryRow(ctx, hasUnsettledRunnerOwnershipForWorkflowRun, workflowRunID)
-	var has_unsettled_ownership bool
-	err := row.Scan(&has_unsettled_ownership)
-	return has_unsettled_ownership, err
-}
-
-const listBlockedTasksForRun = `-- name: ListBlockedTasksForRun :many
-SELECT wt.id, wt.payload, ws.name as step_name
-FROM workflow_tasks wt
-JOIN workflow_steps ws ON ws.id = wt.workflow_step_id
-WHERE wt.workflow_run_id = $1
-  AND wt.status = 'blocked'
-`
-
-type ListBlockedTasksForRunRow struct {
-	ID       int64           `json:"id"`
-	Payload  json.RawMessage `json:"payload"`
-	StepName string          `json:"step_name"`
-}
-
-func (q *Queries) ListBlockedTasksForRun(ctx context.Context, workflowRunID int64) ([]ListBlockedTasksForRunRow, error) {
-	rows, err := q.db.Query(ctx, listBlockedTasksForRun, workflowRunID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListBlockedTasksForRunRow{}
-	for rows.Next() {
-		var i ListBlockedTasksForRunRow
-		if err := rows.Scan(&i.ID, &i.Payload, &i.StepName); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listCommitStatusesByRef = `-- name: ListCommitStatusesByRef :many
@@ -1355,61 +1183,6 @@ func (q *Queries) MarkWorkflowRunSuperseded(ctx context.Context, arg MarkWorkflo
 	return err
 }
 
-const markWorkflowTaskDone = `-- name: MarkWorkflowTaskDone :one
-UPDATE workflow_tasks
-SET status = $3,
-    last_error = $4,
-    finished_at = NOW(),
-    updated_at = NOW()
-WHERE id = $1
-  AND runner_id = $2
-  AND status = 'running'
-  AND $3 IN ('done', 'failed', 'cancelled')
-RETURNING workflow_run_id
-`
-
-type MarkWorkflowTaskDoneParams struct {
-	ID        int64       `json:"id"`
-	RunnerID  pgtype.Int8 `json:"runner_id"`
-	Status    string      `json:"status"`
-	LastError pgtype.Text `json:"last_error"`
-}
-
-func (q *Queries) MarkWorkflowTaskDone(ctx context.Context, arg MarkWorkflowTaskDoneParams) (int64, error) {
-	row := q.db.QueryRow(ctx, markWorkflowTaskDone,
-		arg.ID,
-		arg.RunnerID,
-		arg.Status,
-		arg.LastError,
-	)
-	var workflow_run_id int64
-	err := row.Scan(&workflow_run_id)
-	return workflow_run_id, err
-}
-
-const markWorkflowTaskRunning = `-- name: MarkWorkflowTaskRunning :execrows
-UPDATE workflow_tasks
-SET status = 'running',
-    started_at = COALESCE(started_at, NOW()),
-    updated_at = NOW()
-WHERE id = $1
-  AND runner_id = $2
-  AND status = 'assigned'
-`
-
-type MarkWorkflowTaskRunningParams struct {
-	ID       int64       `json:"id"`
-	RunnerID pgtype.Int8 `json:"runner_id"`
-}
-
-func (q *Queries) MarkWorkflowTaskRunning(ctx context.Context, arg MarkWorkflowTaskRunningParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markWorkflowTaskRunning, arg.ID, arg.RunnerID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const markWorkflowTaskTerminalByID = `-- name: MarkWorkflowTaskTerminalByID :one
 UPDATE workflow_tasks
 SET status = $1,
@@ -1473,56 +1246,6 @@ type NotifyWorkflowRunEventParams struct {
 func (q *Queries) NotifyWorkflowRunEvent(ctx context.Context, arg NotifyWorkflowRunEventParams) error {
 	_, err := q.db.Exec(ctx, notifyWorkflowRunEvent, arg.RunID, arg.Payload)
 	return err
-}
-
-const requeueTasksForRunner = `-- name: RequeueTasksForRunner :one
-WITH affected AS (
-    SELECT id, workflow_step_id, status
-    FROM workflow_tasks
-    WHERE workflow_tasks.runner_id = $1
-      AND workflow_tasks.status IN ('assigned', 'running')
-    FOR UPDATE
-),
-requeued AS (
-    UPDATE workflow_tasks wt
-    SET status = 'pending',
-        runner_id = NULL,
-        assigned_at = NULL,
-        started_at = NULL,
-        available_at = NOW() + (
-            INTERVAL '1 second' * LEAST(
-                300,
-                POWER(2, LEAST(GREATEST(wt.attempt - 1, 0), 9))
-            )
-        ),
-        updated_at = NOW()
-    FROM affected
-    WHERE wt.id = affected.id
-    RETURNING affected.workflow_step_id, affected.status
-),
-reset_steps AS (
-    UPDATE workflow_steps ws
-    SET status = 'queued',
-        started_at = NULL,
-        completed_at = NULL,
-        updated_at = NOW()
-    WHERE ws.id IN (
-        SELECT workflow_step_id
-        FROM requeued
-        WHERE status = 'running'
-    )
-      AND ws.status = 'running'
-    RETURNING ws.id
-)
-SELECT COUNT(*)::bigint
-FROM requeued
-`
-
-func (q *Queries) RequeueTasksForRunner(ctx context.Context, runnerID pgtype.Int8) (int64, error) {
-	row := q.db.QueryRow(ctx, requeueTasksForRunner, runnerID)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
 }
 
 const resumeWorkflowRun = `-- name: ResumeWorkflowRun :exec

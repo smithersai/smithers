@@ -121,46 +121,6 @@ func TestWorkflowRunService_ResumeRun_RejectsInternalAlertRemediation(t *testing
 	assert.Empty(t, mock.resumeRunCalls)
 }
 
-func TestWorkflowRunService_ResumeRun_BlocksWhileCancelledTaskRunnerIsUnsettled(t *testing.T) {
-	t.Parallel()
-
-	mock := &mockWorkflowRunQuerier{
-		getRunFn: func(_ context.Context, arg db.GetWorkflowRunParams) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: arg.ID, RepositoryID: arg.RepositoryID, Status: "cancelled"}, nil
-		},
-		hasUnsettledRunnerOwnershipFn: func(_ context.Context, workflowRunID int64) (bool, error) {
-			assert.Equal(t, int64(7), workflowRunID)
-			return true, nil
-		},
-	}
-
-	err := NewWorkflowRunService(mock).ResumeRun(context.Background(), 42, 7)
-	assert.Equal(t, 409, resumeRunStatus(t, err))
-	assert.Contains(t, err.Error(), "runner is still settling")
-	assert.Empty(t, mock.resumeTasksCalls)
-	assert.Empty(t, mock.resumeStepsCalls)
-	assert.Empty(t, mock.resumeRunCalls)
-}
-
-func TestWorkflowRunService_ResumeRun_RunnerOwnershipCheckFailureIsInternal(t *testing.T) {
-	t.Parallel()
-
-	mock := &mockWorkflowRunQuerier{
-		getRunFn: func(_ context.Context, arg db.GetWorkflowRunParams) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: arg.ID, RepositoryID: arg.RepositoryID, Status: "failure"}, nil
-		},
-		hasUnsettledRunnerOwnershipFn: func(context.Context, int64) (bool, error) {
-			return false, errors.New("ownership lookup failed")
-		},
-	}
-
-	err := NewWorkflowRunService(mock).ResumeRun(context.Background(), 42, 7)
-	assert.Equal(t, 500, resumeRunStatus(t, err))
-	assert.Empty(t, mock.resumeTasksCalls)
-	assert.Empty(t, mock.resumeStepsCalls)
-	assert.Empty(t, mock.resumeRunCalls)
-}
-
 func TestWorkflowRunService_ResumeRun_CompletedRun_ReturnsConflict(t *testing.T) {
 	t.Parallel()
 

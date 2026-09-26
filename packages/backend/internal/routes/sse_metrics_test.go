@@ -183,65 +183,6 @@ func TestSSEActiveConnectionsGauge_CanGoNegative(t *testing.T) {
 // Runner Pool Gauge Tests
 // ---------------------------------------------------------------------------
 
-// TestRunnerPoolGauge_TransitionFromAvailableToClaimed verifies that when a
-// runner is claimed, the available gauge decrements and claimed increments.
-func TestRunnerPoolGauge_TransitionFromAvailableToClaimed(t *testing.T) {
-	t.Parallel()
-
-	m := routes.NewSmithersMetrics()
-
-	// Initial state: 10 available, 0 claimed.
-	m.RunnerPoolAvailable.Set(10)
-	m.RunnerPoolClaimed.Set(0)
-
-	assertGaugeValue(t, m, "smithers_runner_pool_available", 10)
-	assertGaugeValue(t, m, "smithers_runner_pool_claimed", 0)
-
-	// Claim a runner.
-	m.RunnerPoolAvailable.Dec()
-	m.RunnerPoolClaimed.Inc()
-
-	assertGaugeValue(t, m, "smithers_runner_pool_available", 9)
-	assertGaugeValue(t, m, "smithers_runner_pool_claimed", 1)
-
-	// Release the runner.
-	m.RunnerPoolAvailable.Inc()
-	m.RunnerPoolClaimed.Dec()
-
-	assertGaugeValue(t, m, "smithers_runner_pool_available", 10)
-	assertGaugeValue(t, m, "smithers_runner_pool_claimed", 0)
-}
-
-// TestRunnerPoolGauge_MultipleTransitions verifies runner pool gauge
-// consistency across multiple claim/release cycles.
-func TestRunnerPoolGauge_MultipleTransitions(t *testing.T) {
-	t.Parallel()
-
-	m := routes.NewSmithersMetrics()
-
-	// Start with pool of 5.
-	m.RunnerPoolAvailable.Set(5)
-	m.RunnerPoolClaimed.Set(0)
-
-	// Claim 3 runners.
-	for i := 0; i < 3; i++ {
-		m.RunnerPoolAvailable.Dec()
-		m.RunnerPoolClaimed.Inc()
-	}
-
-	assertGaugeValue(t, m, "smithers_runner_pool_available", 2)
-	assertGaugeValue(t, m, "smithers_runner_pool_claimed", 3)
-
-	// Release 2 runners.
-	for i := 0; i < 2; i++ {
-		m.RunnerPoolAvailable.Inc()
-		m.RunnerPoolClaimed.Dec()
-	}
-
-	assertGaugeValue(t, m, "smithers_runner_pool_available", 4)
-	assertGaugeValue(t, m, "smithers_runner_pool_claimed", 1)
-}
-
 // TestActiveAgentSessionsGauge_SimulatedSessionLifecycle verifies the
 // active agent sessions gauge tracks concurrent sessions correctly.
 func TestActiveAgentSessionsGauge_SimulatedSessionLifecycle(t *testing.T) {

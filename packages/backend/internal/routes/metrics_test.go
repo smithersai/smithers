@@ -90,8 +90,6 @@ func TestSmithersMetrics_AllRequiredMetricsPresent(t *testing.T) {
 		"smithers_active_agent_sessions",
 		"smithers_agent_session_timeouts_total",
 		"smithers_agent_sessions_completed_total",
-		"smithers_runner_pool_available",
-		"smithers_runner_pool_claimed",
 		"smithers_workflow_runs_total",
 		"smithers_workflow_duration_seconds",
 		"smithers_repo_host_client_operation_duration_seconds",
@@ -141,10 +139,6 @@ func TestSmithersMetrics_Gauges_SetAndRead(t *testing.T) {
 	// Set gauge values
 	m.ActiveAgentSessions.Set(3)
 	m.ActiveAgentSessionOldestAgeSeconds.Set(1805)
-	m.RunnerPoolAvailable.Set(10)
-	m.RunnerPoolClaimed.Set(2)
-	m.WorkflowTaskQueueDepth.Set(6)
-	m.WorkflowTaskQueueOldestAgeSeconds.Set(42)
 	m.SSEActiveConnections.Set(5)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -159,14 +153,6 @@ func TestSmithersMetrics_Gauges_SetAndRead(t *testing.T) {
 		"active agent sessions gauge must reflect set value")
 	assert.Contains(t, output, "smithers_active_agent_session_oldest_age_seconds 1805",
 		"oldest active agent session age gauge must reflect set value")
-	assert.Contains(t, output, "smithers_runner_pool_available 10",
-		"runner pool available gauge must reflect set value")
-	assert.Contains(t, output, "smithers_runner_pool_claimed 2",
-		"runner pool claimed gauge must reflect set value")
-	assert.Contains(t, output, "smithers_workflow_task_queue_depth 6",
-		"workflow task queue depth gauge must reflect set value")
-	assert.Contains(t, output, "smithers_workflow_task_queue_oldest_age_seconds 42",
-		"workflow task queue oldest age gauge must reflect set value")
 	assert.Contains(t, output, "smithers_sse_active_connections 5",
 		"SSE active connections gauge must reflect set value")
 }
@@ -541,10 +527,6 @@ func TestSmithersMetrics_MetricsEndpoint_ContainsHELPAndTYPELines(t *testing.T) 
 		"smithers_active_agent_sessions",
 		"smithers_agent_session_timeouts_total",
 		"smithers_agent_sessions_completed_total",
-		"smithers_runner_pool_available",
-		"smithers_runner_pool_claimed",
-		"smithers_workflow_task_queue_depth",
-		"smithers_workflow_task_queue_oldest_age_seconds",
 		"smithers_workflow_runs_total",
 		"smithers_workflow_duration_seconds",
 		"smithers_repo_host_client_operation_duration_seconds",

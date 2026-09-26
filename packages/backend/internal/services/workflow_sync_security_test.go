@@ -19,8 +19,8 @@ import (
 //
 // With the TSX migration (JJH-125), workflows are imported and rendered by
 // Bun's native JSX runtime. The security boundary for untrusted code execution
-// is the sandbox VM sandbox — the renderer itself runs inside a sandboxed
-// runner pod, not on the API server. The API server only persists the JSON
+// is the sandbox guest — user workflow code runs there, not on the API
+// server. The API server only persists the JSON
 // output from the renderer.
 func TestWorkflowSyncService_Security_RejectsInvalidTSXExport(t *testing.T) {
 	queries := &mockWorkflowSyncQuerier{

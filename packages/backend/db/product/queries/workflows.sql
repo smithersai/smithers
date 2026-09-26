@@ -6,14 +6,6 @@ VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 
--- name: ListBlockedTasksForRun :many
-SELECT wt.id, wt.payload, ws.name as step_name
-FROM workflow_tasks wt
-JOIN workflow_steps ws ON ws.id = wt.workflow_step_id
-WHERE wt.workflow_run_id = $1
-  AND wt.status = 'blocked';
-
-
 -- name: ListTaskStepInfoForRun :many
 SELECT wt.id, wt.status, ws.name as step_name
 FROM workflow_tasks wt
@@ -193,23 +185,6 @@ WHERE EXISTS (
 RETURNING *;
 
 
--- name: GetClaimableWorkflowTaskBacklog :one
--- Mirrors ClaimPendingTask's predicate (including the runner-plane filter):
--- the backlog gauge feeds runner-pool scaling, so it must only count work the
--- gVisor runner is actually allowed to claim. Sandbox-plane tasks sit pending
--- while the sandbox scheduler executes the whole run and would otherwise
--- inflate the backlog.
-SELECT
-    COUNT(*)::bigint AS depth,
-    COALESCE(EXTRACT(EPOCH FROM NOW() - MIN(wt.available_at)), 0)::double precision AS oldest_age_seconds
-FROM workflow_tasks wt
-JOIN workflow_runs wr ON wr.id = wt.workflow_run_id
-WHERE wt.status = 'pending'
-  AND wt.available_at <= NOW()
-  AND wr.status IN ('queued', 'running')
-  AND wr.execution_plane = 'runner';
-
-
 -- name: MarkWorkflowTaskVMRunning :execrows
 UPDATE workflow_tasks
 SET status = 'running',
@@ -218,51 +193,6 @@ SET status = 'running',
     updated_at = NOW()
 WHERE id = sqlc.arg(id)
   AND status IN ('pending', 'assigned');
-
-
--- name: ClaimPendingTask :one
--- Runner-plane claim contract: the gVisor task runner may only claim tasks
--- whose run has execution_plane = 'runner'. Sandbox-plane runs ('sandbox')
--- are executed whole by the sandbox scheduler via ClaimQueuedWorkflowRuns, and
--- agent runs ('agent') are driven by agent dispatch, so their tasks must never
--- be claimable here — otherwise one run could execute on two planes at once.
--- execution_plane is immutable after insert, so only the task row needs the
--- FOR UPDATE lock.
-WITH claimed AS (
-    SELECT wt.id
-    FROM workflow_tasks wt
-    JOIN workflow_runs wr ON wr.id = wt.workflow_run_id
-    WHERE wt.status = 'pending'
-      AND wt.available_at <= NOW()
-      AND wr.status IN ('queued', 'running')
-      AND wr.execution_plane = 'runner'
-    ORDER BY wt.priority DESC, wt.created_at ASC, wt.id ASC
-    FOR UPDATE OF wt SKIP LOCKED
-    LIMIT 1
-)
-UPDATE workflow_tasks wt
-SET status = 'assigned',
-    attempt = wt.attempt + 1,
-    runner_id = sqlc.arg(runner_id),
-    assigned_at = NOW(),
-    updated_at = NOW()
-FROM claimed
-WHERE wt.id = claimed.id
-RETURNING wt.*;
-
-
--- name: MarkWorkflowTaskRunning :execrows
-UPDATE workflow_tasks
-SET status = 'running',
-    started_at = COALESCE(started_at, NOW()),
-    updated_at = NOW()
-WHERE id = $1
-  AND runner_id = $2
-  AND status = 'assigned';
-
-
--- name: GetWorkflowTaskStepID :one
-SELECT workflow_step_id FROM workflow_tasks WHERE id = $1;
 
 
 -- name: UpdateWorkflowStepStatusRunning :execrows
@@ -279,19 +209,6 @@ SET status = @status,
     completed_at = NOW(),
     updated_at = NOW()
 WHERE workflow_steps.id = @step_id;
-
-
--- name: MarkWorkflowTaskDone :one
-UPDATE workflow_tasks
-SET status = $3,
-    last_error = $4,
-    finished_at = NOW(),
-    updated_at = NOW()
-WHERE id = $1
-  AND runner_id = $2
-  AND status = 'running'
-  AND $3 IN ('done', 'failed', 'cancelled')
-RETURNING workflow_run_id;
 
 
 -- name: MarkWorkflowTaskTerminalByID :one
@@ -312,49 +229,6 @@ FROM workflow_tasks
 WHERE workflow_run_id = $1
 ORDER BY id DESC
 LIMIT 1;
-
-
--- name: RequeueTasksForRunner :one
-WITH affected AS (
-    SELECT id, workflow_step_id, status
-    FROM workflow_tasks
-    WHERE workflow_tasks.runner_id = sqlc.arg(runner_id)
-      AND workflow_tasks.status IN ('assigned', 'running')
-    FOR UPDATE
-),
-requeued AS (
-    UPDATE workflow_tasks wt
-    SET status = 'pending',
-        runner_id = NULL,
-        assigned_at = NULL,
-        started_at = NULL,
-        available_at = NOW() + (
-            INTERVAL '1 second' * LEAST(
-                300,
-                POWER(2, LEAST(GREATEST(wt.attempt - 1, 0), 9))
-            )
-        ),
-        updated_at = NOW()
-    FROM affected
-    WHERE wt.id = affected.id
-    RETURNING affected.workflow_step_id, affected.status
-),
-reset_steps AS (
-    UPDATE workflow_steps ws
-    SET status = 'queued',
-        started_at = NULL,
-        completed_at = NULL,
-        updated_at = NOW()
-    WHERE ws.id IN (
-        SELECT workflow_step_id
-        FROM requeued
-        WHERE status = 'running'
-    )
-      AND ws.status = 'running'
-    RETURNING ws.id
-)
-SELECT COUNT(*)::bigint
-FROM requeued;
 
 
 -- name: UpdateWorkflowRunStatusBasedOnTasks :one
@@ -417,18 +291,6 @@ SELECT *
 FROM workflow_tasks
 WHERE id = sqlc.arg(id)
   AND repository_id = sqlc.arg(repository_id);
-
-
--- name: GetTerminalWorkflowTaskForRunner :one
--- Exact acknowledgement lookup for a runner whose child exits after an
--- operator cancelled the task. The ordinary runtime lookup intentionally
--- exposes only running tasks (so cancelled task credentials are revoked),
--- while this internal path lets the owning runner settle its busy lease.
-SELECT workflow_run_id
-FROM workflow_tasks
-WHERE id = sqlc.arg(task_id)
-  AND runner_id = sqlc.arg(runner_id)
-  AND status IN ('done', 'failed', 'cancelled');
 
 
 -- name: FailWorkflowRun :exec
@@ -641,12 +503,3 @@ GROUP BY requested.context
 HAVING NOT bool_and(COALESCE(latest.status = 'success', false))
 ORDER BY requested.context;
 
--- name: HasUnsettledRunnerOwnershipForWorkflowRun :one
--- A cancelled or failed task remains owned until its executor explicitly
--- releases runner_id. Resume must fail closed while this marker exists.
-SELECT EXISTS (
-    SELECT 1 FROM workflow_tasks wt
-    WHERE wt.workflow_run_id = sqlc.arg(workflow_run_id)
-      AND wt.status IN ('cancelled', 'failed')
-      AND wt.runner_id IS NOT NULL
-) AS has_unsettled_ownership;

@@ -120,7 +120,7 @@ func WithWorkflowParserEvaluatorPath(path string) WorkflowParserOption {
 // user code. The evaluator reads the workflow file, walks the AST, and emits a
 // JSON config object without ever calling eval(), require(), or dynamic import.
 // User-supplied workflow logic (shell commands, agent instructions, etc.) is
-// only executed inside sandboxed runner pods, never on the API server.
+// only executed inside sandbox guests, never on the API server.
 //
 // The security boundary is enforced at the evaluator level: user TSX is written
 // to a temporary file whose path is passed to the evaluator, but the evaluator

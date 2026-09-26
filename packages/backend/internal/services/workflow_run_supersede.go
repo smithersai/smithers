@@ -69,27 +69,15 @@ func parseWorkflowConcurrency(configJSON json.RawMessage) *WorkflowConcurrencyCo
 // same (repository, workflow definition, trigger ref) as the run just created.
 //
 // It routes each cancellation through CancelRun rather than a bare status
-// UPDATE, so a superseded run settles exactly the way an operator cancel does.
-// What that buys, per plane:
-//
-//   - Queued work disappears immediately. CancelWorkflowTasks moves every
-//     pending/assigned/blocked task to 'cancelled' and CancelWorkflowRun moves
-//     the run out of ('queued','running'); ClaimRunnerWorkflowTask and
-//     ClaimPendingTask both require wt.status = 'pending' AND
-//     wr.status IN ('queued','running') inside one locking statement, so a
-//     cancelled task can never be claimed afterwards. This is the whole fix:
-//     the 2026-09-15 starvation was 40+ PENDING tasks, not running ones.
-//   - Sandbox-plane runs stop within one lease heartbeat (~30s). The
-//     trg_workflow_runs_90_invalidate_sandbox_claim trigger bumps the claim
-//     generation when status becomes 'cancelled', so RenewWorkflowSandboxClaim
-//     matches nothing, the scheduler's maintainClaimLease cancels the run
-//     context, and the guest is torn down.
-//   - Runner-plane tasks already dispatched keep executing. The gVisor runner
-//     has no cancel channel: heartbeat is one-way and 204, and there is no
-//     task-status endpoint, so an in-flight child runs to its own exit or
-//     TaskTimeout and settles through acknowledgeTerminalRunnerTask on its
-//     /complete callback. Superseding therefore frees at most one runner slot
-//     per superseded run immediately and the rest as the children exit.
+// UPDATE, so a superseded run settles exactly the way an operator cancel does:
+// CancelWorkflowTasks moves every pending/assigned/blocked task to 'cancelled'
+// and CancelWorkflowRun moves the run out of ('queued','running'), so a queued
+// run is never claimed afterwards. A running sandbox-plane run stops within
+// one lease heartbeat (~30s): the
+// trg_workflow_runs_90_invalidate_sandbox_claim trigger bumps the claim
+// generation when status becomes 'cancelled', so RenewWorkflowSandboxClaim
+// matches nothing, the scheduler's maintainClaimLease cancels the run context,
+// and its guests are torn down.
 //
 // Credentials are revoked, and the commit status and GitHub check run are
 // closed out, by CancelRun in every case.

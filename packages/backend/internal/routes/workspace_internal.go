@@ -17,7 +17,7 @@ type WorkspaceInternalRouteService interface {
 }
 
 // WorkspaceInternalHandler handles internal workspace callback endpoints.
-// These are called by runner pods via agent tokens.
+// The deployment calls them with the shared SMITHERS_AGENT_TOKEN credential.
 type WorkspaceInternalHandler struct {
 	Service WorkspaceInternalRouteService
 }

@@ -40,18 +40,6 @@ type SmithersMetrics struct {
 	// ActiveAgentSessions tracks the number of currently open AI agent sessions.
 	ActiveAgentSessions prometheus.Gauge
 
-	// RunnerPoolAvailable tracks idle runners available to claim.
-	RunnerPoolAvailable prometheus.Gauge
-
-	// RunnerPoolClaimed tracks runners currently executing tasks.
-	RunnerPoolClaimed prometheus.Gauge
-
-	// WorkflowTaskQueueDepth tracks claimable pending workflow tasks.
-	WorkflowTaskQueueDepth prometheus.Gauge
-
-	// WorkflowTaskQueueOldestAgeSeconds tracks the age of the oldest claimable workflow task.
-	WorkflowTaskQueueOldestAgeSeconds prometheus.Gauge
-
 	// WorkflowRunsTotal counts completed workflow runs by status.
 	WorkflowRunsTotal *prometheus.CounterVec
 
@@ -321,13 +309,9 @@ func NewSmithersMetrics() *SmithersMetrics {
 		HTTPGitOperationsTotal:           httpM.GitOperationsTotal,
 		HTTPGitOperationDurationSeconds:  httpM.GitOperationDurationSeconds,
 
-		ActiveAgentSessions:               workflowM.ActiveAgentSessions,
-		RunnerPoolAvailable:               workflowM.RunnerPoolAvailable,
-		RunnerPoolClaimed:                 workflowM.RunnerPoolClaimed,
-		WorkflowTaskQueueDepth:            workflowM.TaskQueueDepth,
-		WorkflowTaskQueueOldestAgeSeconds: workflowM.TaskQueueOldestAgeSeconds,
-		WorkflowRunsTotal:                 workflowM.RunsTotal,
-		WorkflowDurationSeconds:           workflowM.DurationSeconds,
+		ActiveAgentSessions:     workflowM.ActiveAgentSessions,
+		WorkflowRunsTotal:       workflowM.RunsTotal,
+		WorkflowDurationSeconds: workflowM.DurationSeconds,
 
 		WebhookDeliveryAttemptsTotal:         webhookM.DeliveryAttemptsTotal,
 		WebhookDeliveryTerminalOutcomesTotal: webhookM.DeliveryTerminalOutcomesTotal,
@@ -430,38 +414,6 @@ func (m *SmithersMetrics) SetDBConnectionsMax(n float64) {
 		return
 	}
 	m.HTTP.DBConnectionsMax.Set(n)
-}
-
-// SetRunnerPoolAvailable updates the gauge for idle runners.
-func (m *SmithersMetrics) SetRunnerPoolAvailable(n float64) {
-	if m == nil {
-		return
-	}
-	m.Workflow.RunnerPoolAvailable.Set(n)
-}
-
-// SetRunnerPoolClaimed updates the gauge for claimed runners.
-func (m *SmithersMetrics) SetRunnerPoolClaimed(n float64) {
-	if m == nil {
-		return
-	}
-	m.Workflow.RunnerPoolClaimed.Set(n)
-}
-
-// SetWorkflowTaskQueueDepth updates the gauge for claimable pending workflow tasks.
-func (m *SmithersMetrics) SetWorkflowTaskQueueDepth(n float64) {
-	if m == nil {
-		return
-	}
-	m.Workflow.TaskQueueDepth.Set(n)
-}
-
-// SetWorkflowTaskQueueOldestAgeSeconds updates the gauge for the oldest claimable task age.
-func (m *SmithersMetrics) SetWorkflowTaskQueueOldestAgeSeconds(n float64) {
-	if m == nil {
-		return
-	}
-	m.Workflow.TaskQueueOldestAgeSeconds.Set(n)
 }
 
 // SetActiveAgentSessions updates the gauge for active agent sessions.

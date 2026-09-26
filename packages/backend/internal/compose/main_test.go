@@ -150,7 +150,6 @@ func TestBuildServer_WiresGitHTTPProxyWebhookDependencies(t *testing.T) {
 	require.NoError(t, err)
 
 	found := false
-	runnerTokenOption := false
 	singleOwnerOption := false
 	singleOwnerGuard := false
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -173,20 +172,6 @@ func TestBuildServer_WiresGitHTTPProxyWebhookDependencies(t *testing.T) {
 			return true
 		}
 		if pkgIdent.Name != "services" {
-			return true
-		}
-		if sel.Sel.Name == "WithGitHTTPRunnerTaskTokenSecret" {
-			runnerTokenOption = true
-			require.Len(t, call.Args, 1)
-			envCall, ok := call.Args[0].(*ast.CallExpr)
-			require.True(t, ok)
-			envSelector, ok := envCall.Fun.(*ast.SelectorExpr)
-			require.True(t, ok)
-			assert.Equal(t, "Getenv", envSelector.Sel.Name)
-			require.Len(t, envCall.Args, 1)
-			literal, ok := envCall.Args[0].(*ast.BasicLit)
-			require.True(t, ok)
-			assert.Equal(t, `"SMITHERS_AGENT_TOKEN"`, literal.Value)
 			return true
 		}
 		if sel.Sel.Name == "WithGitHTTPSingleOwnerBoundary" {
@@ -213,7 +198,6 @@ func TestBuildServer_WiresGitHTTPProxyWebhookDependencies(t *testing.T) {
 	})
 
 	require.True(t, found, "expected services.NewGitHTTPProxyService call in main.go")
-	require.True(t, runnerTokenOption, "Git HTTP proxy must have the task-token secret")
 	require.True(t, singleOwnerOption, "single-owner mode must fence Git HTTP requests")
 	require.True(t, singleOwnerGuard, "single-owner fencing must follow the configured auth mode")
 }

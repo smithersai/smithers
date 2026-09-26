@@ -12,8 +12,8 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 )
 
-// buildInternalAuthTestRouter builds a router with runner-pool and workspace
-// internal handlers wired, using the given shared agent token via env.
+// buildInternalAuthTestRouter builds a router with the workspace internal
+// handlers wired, using the given shared agent token via env.
 func buildInternalAuthTestRouter(t *testing.T, sharedToken string) http.Handler {
 	t.Helper()
 	t.Setenv("SMITHERS_AGENT_TOKEN", sharedToken)
@@ -61,12 +61,11 @@ func buildInternalAuthTestRouter(t *testing.T, sharedToken string) http.Handler 
 	)
 }
 
-// Regression (IDOR): runner-pool lifecycle routes and the workspace status
-// callback operate purely on IDs from the URL with no per-run scoping, so they
-// must only accept the shared runner pod credential — never the per-run agent
-// tokens handed to untrusted sandboxes.
+// Regression (IDOR): the workspace status callback operates purely on IDs from
+// the URL with no per-run scoping, so it must only accept the shared deployment
+// credential — never the per-run agent tokens handed to untrusted sandboxes.
 func TestWorkspaceStatus_RejectsPerRunTokens(t *testing.T) {
-	const sharedToken = "shared-runner-pod-token"
+	const sharedToken = "shared-deployment-token"
 	// A syntactically valid per-run agent token (smithers_agent_ + 40 hex).
 	const perRunToken = "smithers_agent_0123456789abcdef0123456789abcdef01234567"
 

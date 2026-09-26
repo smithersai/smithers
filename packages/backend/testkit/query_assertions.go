@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -34,7 +33,6 @@ type QueryAssertions interface {
 	AnalyticsWorkspacesByKindStatus(ctx context.Context, arg db.AnalyticsWorkspacesByKindStatusParams) ([]db.AnalyticsWorkspacesByKindStatusRow, error)
 	CancelWorkflowRun(ctx context.Context, id int64) error
 	CancelWorkflowTasks(ctx context.Context, workflowRunID int64) error
-	ClaimPendingTask(ctx context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error)
 	ClaimStripeProcessedEvent(ctx context.Context, arg db.ClaimStripeProcessedEventParams) (string, error)
 	ClaimWorkflowCacheDeletion(ctx context.Context, arg db.ClaimWorkflowCacheDeletionParams) (db.WorkflowCach, error)
 	CloseOrphanedSandboxUsageIntervals(ctx context.Context) error
@@ -61,7 +59,6 @@ type QueryAssertions interface {
 	FindAlertRemediationWorkflowRun(ctx context.Context, arg db.FindAlertRemediationWorkflowRunParams) (db.WorkflowRun, error)
 	GetBillingAccountByOwner(ctx context.Context, arg db.GetBillingAccountByOwnerParams) (db.BillingAccount, error)
 	GetBillingAccountByStripeCustomerID(ctx context.Context, stripeCustomerID string) (db.BillingAccount, error)
-	GetClaimableWorkflowTaskBacklog(ctx context.Context) (db.GetClaimableWorkflowTaskBacklogRow, error)
 	GetCreditLedgerByIdempotencyKey(ctx context.Context, arg db.GetCreditLedgerByIdempotencyKeyParams) (db.BillingCreditLedger, error)
 	GetLatestBillingSubscriptionByAccount(ctx context.Context, billingAccountID int64) (db.BillingSubscription, error)
 	GetLatestLiveBillingSubscriptionByAccount(ctx context.Context, billingAccountID int64) (db.BillingSubscription, error)
@@ -80,12 +77,9 @@ type QueryAssertions interface {
 	ListCreditLedgerByAccount(ctx context.Context, arg db.ListCreditLedgerByAccountParams) ([]db.BillingCreditLedger, error)
 	ListWorkflowDefinitionsByRepo(ctx context.Context, arg db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error)
 	ListWorkflowRunsByRepo(ctx context.Context, arg db.ListWorkflowRunsByRepoParams) ([]db.WorkflowRun, error)
-	MarkWorkflowTaskDone(ctx context.Context, arg db.MarkWorkflowTaskDoneParams) (int64, error)
-	MarkWorkflowTaskRunning(ctx context.Context, arg db.MarkWorkflowTaskRunningParams) (int64, error)
 	MarkWorkflowTaskVMRunning(ctx context.Context, arg db.MarkWorkflowTaskVMRunningParams) (int64, error)
 	NotifyWorkflowRunEvent(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
 	OpenSandboxUsageInterval(ctx context.Context, arg db.OpenSandboxUsageIntervalParams) error
-	RequeueTasksForRunner(ctx context.Context, runnerID pgtype.Int8) (int64, error)
 	ResumeWorkflowRun(ctx context.Context, id int64) error
 	ResumeWorkflowTasks(ctx context.Context, workflowRunID int64) error
 	SumSandboxAwakeSecondsForUserSince(ctx context.Context, userID int64, since time.Time) (int64, error)
@@ -152,8 +146,6 @@ type ListBillingUsageCountersByOwnerAndPeriodParams = db.ListBillingUsageCounter
 type ListCreditLedgerByAccountParams = db.ListCreditLedgerByAccountParams
 type ListWorkflowDefinitionsByRepoParams = db.ListWorkflowDefinitionsByRepoParams
 type ListWorkflowRunsByRepoParams = db.ListWorkflowRunsByRepoParams
-type MarkWorkflowTaskDoneParams = db.MarkWorkflowTaskDoneParams
-type MarkWorkflowTaskRunningParams = db.MarkWorkflowTaskRunningParams
 type MarkWorkflowTaskVMRunningParams = db.MarkWorkflowTaskVMRunningParams
 type NotifyWorkflowRunEventParams = db.NotifyWorkflowRunEventParams
 type OpenSandboxUsageIntervalParams = db.OpenSandboxUsageIntervalParams

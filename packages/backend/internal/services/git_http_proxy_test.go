@@ -8,7 +8,6 @@ import (
 	stdErrors "errors"
 	"io"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -16,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
@@ -28,7 +26,6 @@ type mockGitHTTPProxyQuerier struct {
 	getRepoByOwnerAndLowerNameFn    func(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error)
 	listAllProtectedBookmarksFn     func(ctx context.Context, repositoryID int64) ([]db.ProtectedBookmark, error)
 	getWorkflowRunByRunIDFn         func(ctx context.Context, runID int64) (db.WorkflowRun, error)
-	getWorkflowTaskForRunnerFn      func(ctx context.Context, taskID int64) (db.GetWorkflowTaskForRunnerRow, error)
 	getSelfHostOwnerFn              func(ctx context.Context) (db.User, error)
 	getAuthInfoByTokenHashCall      int
 	updateLastUsedCall              int
@@ -47,13 +44,6 @@ func (m *mockGitHTTPProxyQuerier) GetWorkflowRunByRunID(ctx context.Context, run
 		return m.getWorkflowRunByRunIDFn(ctx, runID)
 	}
 	return db.WorkflowRun{}, pgx.ErrNoRows
-}
-
-func (m *mockGitHTTPProxyQuerier) GetWorkflowTaskForRunner(ctx context.Context, taskID int64) (db.GetWorkflowTaskForRunnerRow, error) {
-	if m.getWorkflowTaskForRunnerFn != nil {
-		return m.getWorkflowTaskForRunnerFn(ctx, taskID)
-	}
-	return db.GetWorkflowTaskForRunnerRow{}, pgx.ErrNoRows
 }
 
 func (m *mockGitHTTPProxyQuerier) GetAuthInfoByTokenHash(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
@@ -226,66 +216,6 @@ func TestGitHTTPProxyService_SelfhostRejectsForeignUserToken(t *testing.T) {
 	assert.Zero(t, q.updateLastUsedCall, "rejected foreign tokens must not record authenticated use")
 }
 
-func TestGitHTTPProxyService_InfoRefs_TaskTokenAuthorizesOnlyClaimedRepository(t *testing.T) {
-	t.Parallel()
-
-	const signingSecret = "runner-control-secret"
-	claims := middleware.RunnerTaskTokenClaims{
-		TaskID: 11, WorkflowRunID: 22, RepositoryID: 33, RunnerID: 44, Attempt: 1,
-		ExpiresAtUnix: time.Now().Add(time.Hour).Unix(),
-	}
-	taskToken, err := middleware.MintRunnerTaskToken(signingSecret, claims)
-	require.NoError(t, err)
-
-	q := &mockGitHTTPProxyQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			t.Fatal("db access-token lookup should not run for task token")
-			return db.GetAuthInfoByTokenHashRow{}, nil
-		},
-		getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
-			return db.Repository{ID: claims.RepositoryID}, nil
-		},
-		getWorkflowRunByRunIDFn: func(context.Context, int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: claims.WorkflowRunID, RepositoryID: claims.RepositoryID, Status: "running"}, nil
-		},
-		getWorkflowTaskForRunnerFn: func(context.Context, int64) (db.GetWorkflowTaskForRunnerRow, error) {
-			return db.GetWorkflowTaskForRunnerRow{
-				ID: claims.TaskID, WorkflowRunID: claims.WorkflowRunID, RepositoryID: claims.RepositoryID,
-				RunnerID: pgtype.Int8{Int64: claims.RunnerID, Valid: true}, Status: "running", Attempt: claims.Attempt,
-			}, nil
-		},
-	}
-	repoHost := &mockGitHTTPRepoHostClient{
-		infoRefsFn: func(ctx context.Context, owner, repo, service string, stdout io.Writer) (string, error) {
-			assert.Equal(t, "alice", owner)
-			assert.Equal(t, "demo", repo)
-			assert.Equal(t, "git-upload-pack", service)
-			_, _ = io.WriteString(stdout, "internal-advertisement")
-			return "application/x-git-upload-pack-advertisement", nil
-		},
-	}
-	authorizer := &mockGitHTTPAuthorizer{
-		authorizeFn: func(ctx context.Context, userID int64, owner, repo string, mode AccessMode) error {
-			t.Fatal("user authorizer should not run for repository-bound task token")
-			return nil
-		},
-	}
-	svc := NewGitHTTPProxyService(
-		q,
-		authorizer,
-		repoHost,
-		WithGitHTTPRunnerTaskTokenSecret(signingSecret),
-	)
-
-	out := &bytes.Buffer{}
-	contentType, err := svc.ProxyInfoRefs(context.Background(), "alice", "demo", "git-upload-pack", taskToken, out)
-	require.NoError(t, err)
-	assert.Equal(t, "application/x-git-upload-pack-advertisement", contentType)
-	assert.Equal(t, "internal-advertisement", out.String())
-	assert.Equal(t, 0, q.getAuthInfoByTokenHashCall)
-	assert.Equal(t, 0, q.updateLastUsedCall)
-}
-
 func TestGitHTTPProxyService_InfoRefs_PrivateReadWithoutToken_Challenges(t *testing.T) {
 	t.Parallel()
 
@@ -366,74 +296,6 @@ func TestGitHTTPProxyService_UploadPack_ReadScopeRequired(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 403, apiStatus(t, err))
 	assert.Equal(t, 0, repoHost.uploadPackCalls)
-}
-
-func TestGitHTTPProxyService_UploadPack_TaskTokenBypassesUserAuthForBoundRepository(t *testing.T) {
-	t.Parallel()
-
-	const signingSecret = "runner-control-secret"
-	claims := middleware.RunnerTaskTokenClaims{
-		TaskID: 11, WorkflowRunID: 22, RepositoryID: 33, RunnerID: 44, Attempt: 1,
-		ExpiresAtUnix: time.Now().Add(time.Hour).Unix(),
-	}
-	taskToken, err := middleware.MintRunnerTaskToken(signingSecret, claims)
-	require.NoError(t, err)
-
-	q := &mockGitHTTPProxyQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			t.Fatal("db access-token lookup should not run for task token")
-			return db.GetAuthInfoByTokenHashRow{}, nil
-		},
-		getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
-			return db.Repository{ID: claims.RepositoryID}, nil
-		},
-		getWorkflowRunByRunIDFn: func(context.Context, int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: claims.WorkflowRunID, RepositoryID: claims.RepositoryID, Status: "running"}, nil
-		},
-		getWorkflowTaskForRunnerFn: func(context.Context, int64) (db.GetWorkflowTaskForRunnerRow, error) {
-			return db.GetWorkflowTaskForRunnerRow{
-				ID: claims.TaskID, WorkflowRunID: claims.WorkflowRunID, RepositoryID: claims.RepositoryID,
-				RunnerID: pgtype.Int8{Int64: claims.RunnerID, Valid: true}, Status: "running", Attempt: claims.Attempt,
-			}, nil
-		},
-	}
-	repoHost := &mockGitHTTPRepoHostClient{
-		proxyUploadFn: func(ctx context.Context, owner, repo string, stdin io.Reader, stdout io.Writer) error {
-			assert.Equal(t, "alice", owner)
-			assert.Equal(t, "demo", repo)
-			body, err := io.ReadAll(stdin)
-			require.NoError(t, err)
-			assert.Equal(t, "upload-request", string(body))
-			_, _ = io.WriteString(stdout, "upload-response")
-			return nil
-		},
-	}
-	authorizer := &mockGitHTTPAuthorizer{
-		authorizeFn: func(ctx context.Context, userID int64, owner, repo string, mode AccessMode) error {
-			t.Fatal("user authorizer should not run for task token")
-			return nil
-		},
-	}
-	svc := NewGitHTTPProxyService(
-		q,
-		authorizer,
-		repoHost,
-		WithGitHTTPRunnerTaskTokenSecret(signingSecret),
-	)
-
-	var out bytes.Buffer
-	err = svc.ProxyUploadPack(
-		context.Background(),
-		"alice",
-		"demo",
-		taskToken,
-		bytes.NewBufferString("upload-request"),
-		&out,
-	)
-	require.NoError(t, err)
-	assert.Equal(t, "upload-response", out.String())
-	assert.Equal(t, 0, q.getAuthInfoByTokenHashCall)
-	assert.Equal(t, 0, q.updateLastUsedCall)
 }
 
 func TestGitHTTPProxyService_ReceivePack_WriteScopeRequired(t *testing.T) {

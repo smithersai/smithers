@@ -850,7 +850,7 @@ func TestServerRouter_WorkspaceSSEStreamPreflightIncludesCORSHeaders(t *testing.
 }
 
 // TestServerRouter_WorkspaceInternalRoutesRegistered verifies that internal
-// workspace callback routes (for runner pods) are registered.
+// workspace callback routes are registered.
 func TestServerRouter_WorkspaceInternalRoutesRegistered(t *testing.T) {
 	t.Parallel()
 

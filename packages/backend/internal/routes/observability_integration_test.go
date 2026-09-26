@@ -155,8 +155,6 @@ func TestMetricsEndpoint_ContainsAllRequiredMetrics(t *testing.T) {
 		"smithers_active_agent_sessions",
 		"smithers_agent_session_timeouts_total",
 		"smithers_agent_sessions_completed_total",
-		"smithers_runner_pool_available",
-		"smithers_runner_pool_claimed",
 		"smithers_workflow_runs_total",
 		"smithers_workflow_duration_seconds",
 		"smithers_repo_host_client_operation_duration_seconds",
@@ -202,10 +200,6 @@ func TestMetricsEndpoint_GaugesReflectSetValues(t *testing.T) {
 	r, m := buildObservabilityRouter(t)
 
 	m.ActiveAgentSessions.Set(7)
-	m.RunnerPoolAvailable.Set(15)
-	m.RunnerPoolClaimed.Set(3)
-	m.WorkflowTaskQueueDepth.Set(4)
-	m.WorkflowTaskQueueOldestAgeSeconds.Set(75)
 	m.SSEActiveConnections.Set(12)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -215,14 +209,6 @@ func TestMetricsEndpoint_GaugesReflectSetValues(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, "smithers_active_agent_sessions 7",
 		"active agent sessions gauge must be visible via router")
-	assert.Contains(t, body, "smithers_runner_pool_available 15",
-		"runner pool available gauge must be visible via router")
-	assert.Contains(t, body, "smithers_runner_pool_claimed 3",
-		"runner pool claimed gauge must be visible via router")
-	assert.Contains(t, body, "smithers_workflow_task_queue_depth 4",
-		"workflow task queue depth gauge must be visible via router")
-	assert.Contains(t, body, "smithers_workflow_task_queue_oldest_age_seconds 75",
-		"workflow task queue oldest age gauge must be visible via router")
 	assert.Contains(t, body, "smithers_sse_active_connections 12",
 		"SSE connections gauge must be visible via router")
 }
@@ -275,10 +261,6 @@ func TestMetricsEndpoint_HelpAndTypeLines(t *testing.T) {
 		{"smithers_active_agent_sessions", "gauge"},
 		{"smithers_agent_session_timeouts_total", "counter"},
 		{"smithers_agent_sessions_completed_total", "counter"},
-		{"smithers_runner_pool_available", "gauge"},
-		{"smithers_runner_pool_claimed", "gauge"},
-		{"smithers_workflow_task_queue_depth", "gauge"},
-		{"smithers_workflow_task_queue_oldest_age_seconds", "gauge"},
 		{"smithers_workflow_runs_total", "counter"},
 		{"smithers_workflow_duration_seconds", "histogram"},
 		{"smithers_repo_host_client_operation_duration_seconds", "histogram"},

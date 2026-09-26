@@ -28,21 +28,6 @@ func TestWorkflowLogsSQL_H_RuntimeAndLogsRoundTrip(t *testing.T) {
 	_, err = q.GetWorkflowRunByIDAndRepo(ctx, GetWorkflowRunByIDAndRepoParams{RunID: runID, RepositoryID: repoID + 9999})
 	require.ErrorIs(t, err, pgx.ErrNoRows)
 
-	assigned, err := q.CreateWorkflowTask(ctx, CreateWorkflowTaskParams{
-		WorkflowRunID: runID, WorkflowStepID: stepID, RepositoryID: repoID, Status: "assigned", Priority: 1, Payload: json.RawMessage(`{"kind":"assigned"}`),
-	})
-	require.NoError(t, err)
-	runtimeCtx, err := q.GetWorkflowTaskRuntimeContext(ctx, GetWorkflowTaskRuntimeContextParams{TaskID: assigned.ID, WorkflowRunID: runID})
-	require.NoError(t, err)
-	assert.Equal(t, "assigned", runtimeCtx.Status)
-
-	done, err := q.CreateWorkflowTask(ctx, CreateWorkflowTaskParams{
-		WorkflowRunID: runID, WorkflowStepID: stepID, RepositoryID: repoID, Status: "done", Priority: 1, Payload: json.RawMessage(`{"kind":"done"}`),
-	})
-	require.NoError(t, err)
-	_, err = q.GetWorkflowTaskRuntimeContext(ctx, GetWorkflowTaskRuntimeContextParams{TaskID: done.ID, WorkflowRunID: runID})
-	require.ErrorIs(t, err, pgx.ErrNoRows)
-
 	log1, err := q.InsertWorkflowLogNextSequence(ctx, InsertWorkflowLogNextSequenceParams{WorkflowRunID: runID, WorkflowStepID: stepID, Stream: "stdout", Entry: "hello"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), log1.Sequence)
@@ -369,8 +354,6 @@ func TestWorkflowLogsSQL_H_ErrorBranches(t *testing.T) {
 
 	rowQ := New(workflowLogsSQLHDB{row: workflowLogsSQLHRow{err: sentinel}})
 	_, err := rowQ.GetWorkflowRunByIDAndRepo(context.Background(), GetWorkflowRunByIDAndRepoParams{})
-	require.ErrorIs(t, err, sentinel)
-	_, err = rowQ.GetWorkflowTaskRuntimeContext(context.Background(), GetWorkflowTaskRuntimeContextParams{})
 	require.ErrorIs(t, err, sentinel)
 	_, err = rowQ.InsertWorkflowLogNextSequence(context.Background(), InsertWorkflowLogNextSequenceParams{})
 	require.ErrorIs(t, err, sentinel)

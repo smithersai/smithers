@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -88,33 +87,6 @@ func TestInsertWorkflowLog_AllowsSameSequenceForDifferentSteps(t *testing.T) {
 	assert.Equal(t, int64(4), firstLog.Sequence)
 	assert.Equal(t, int64(4), secondLog.Sequence)
 	assert.NotEqual(t, firstLog.WorkflowStepID, secondLog.WorkflowStepID)
-}
-
-func TestGetWorkflowTaskForRunner_ReturnsRunningTask(t *testing.T) {
-	q, pool := newQueries(t)
-	fixture := mustCreateWorkflowTaskFixture(t, q, pool, "workflow-log-get-running")
-
-	task := mustCreateWorkflowTask(t, q, fixture, "running")
-	_, err := pool.Exec(context.Background(), `UPDATE workflow_tasks SET attempt = 3 WHERE id = $1`, task.ID)
-	require.NoError(t, err)
-	got, err := q.GetWorkflowTaskForRunner(context.Background(), task.ID)
-	require.NoError(t, err)
-
-	assert.Equal(t, task.ID, got.ID)
-	assert.Equal(t, fixture.runID, got.WorkflowRunID)
-	assert.Equal(t, fixture.stepID, got.WorkflowStepID)
-	assert.Equal(t, "running", got.Status)
-	assert.Equal(t, int32(3), got.Attempt)
-}
-
-func TestGetWorkflowTaskForRunner_RejectsNonRunningTask(t *testing.T) {
-	q, pool := newQueries(t)
-	fixture := mustCreateWorkflowTaskFixture(t, q, pool, "workflow-log-get-not-running")
-
-	task := mustCreateWorkflowTask(t, q, fixture, "pending")
-	_, err := q.GetWorkflowTaskForRunner(context.Background(), task.ID)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, pgx.ErrNoRows)
 }
 
 func TestNotifyWorkflowLog_Executes(t *testing.T) {

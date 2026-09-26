@@ -101,9 +101,6 @@ func (c *ModelProxyCallers) ResolveModelCaller(r *http.Request) (modelproxy.Call
 		caller.Source, caller.RepositoryID, caller.WorkflowRunID = modelproxy.SourceAgentRun, run.RepositoryID, run.ID
 		return caller, err
 	}
-	if middleware.IsSharedAgentToken(ctx) {
-		return modelproxy.Caller{}, modelproxy.ErrForbidden
-	}
 	if token := bearerCredential(r); strings.HasPrefix(token, flowhost.ModelCredentialPrefix) {
 		binding, err := flowhost.VerifyModelCredential(ctx, c.pool, c.codec, token)
 		if err != nil {

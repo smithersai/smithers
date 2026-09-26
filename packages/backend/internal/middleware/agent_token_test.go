@@ -97,74 +97,35 @@ func TestRequireAgentToken_ValidTokenNoExpiry(t *testing.T) {
 	}
 }
 
-func TestRequireAgentToken_AllowsSharedRunnerToken(t *testing.T) {
-	sharedToken := "smithers_agent_abcdef0123456789abcdef0123456789abcdef01"
-	require.NoError(t, os.Setenv("SMITHERS_AGENT_TOKEN", sharedToken))
-	t.Cleanup(func() { _ = os.Unsetenv("SMITHERS_AGENT_TOKEN") })
+// The deployment's shared SMITHERS_AGENT_TOKEN guards only the workspace
+// status callbacks (RequireSharedBearerToken). It is not a workflow credential:
+// on per-run routes it is rejected like any other unknown token.
+func TestRequireAgentToken_RejectsSharedDeploymentToken(t *testing.T) {
+	for _, sharedToken := range []string{
+		"smithers_agent_abcdef0123456789abcdef0123456789abcdef01",
+		"e105942e3f8e0a62e105942e3f8e0a62e105942e3f8e0a62",
+	} {
+		t.Setenv("SMITHERS_AGENT_TOKEN", sharedToken)
+		mock := &mockAgentTokenQuerier{
+			getWorkflowRunByAgentTokenFn: func(context.Context, pgtype.Text) (db.WorkflowRun, error) {
+				return db.WorkflowRun{}, pgx.ErrNoRows
+			},
+		}
+		handler := RequireAgentToken(mock)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("the shared deployment token must not authenticate a workflow route")
+		}))
 
-	lookedUp := false
-	mock := &mockAgentTokenQuerier{
-		getWorkflowRunByAgentTokenFn: func(ctx context.Context, hash pgtype.Text) (db.WorkflowRun, error) {
-			lookedUp = true
-			return db.WorkflowRun{}, nil
-		},
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer "+sharedToken)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusUnauthorized, rr.Code)
 	}
-
-	handler := RequireAgentToken(mock)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, sharedToken, AgentTokenFromContext(r.Context()))
-		assert.True(t, IsSharedAgentToken(r.Context()))
-		assert.Nil(t, WorkflowRunFromContext(r.Context()))
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer "+sharedToken)
-	rr := httptest.NewRecorder()
-
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.False(t, lookedUp)
 }
 
-// The production runner-pod credential is an operator-minted random string
-// with no smithers_agent_ prefix. RequireSharedBearerToken accepts it on the
-// runner lifecycle routes without any format check, so RequireAgentToken must
-// accept the identical credential on the task settlement routes: gating it on
-// the per-run token format left runners able to register and claim but never
-// complete a task (401 "invalid or missing agent token" crash loop).
-func TestRequireAgentToken_AllowsSharedRunnerTokenWithoutAgentFormat(t *testing.T) {
-	sharedToken := "e105942e3f8e0a62e105942e3f8e0a62e105942e3f8e0a62"[:48]
-	require.NoError(t, os.Setenv("SMITHERS_AGENT_TOKEN", sharedToken))
-	t.Cleanup(func() { _ = os.Unsetenv("SMITHERS_AGENT_TOKEN") })
-
-	lookedUp := false
-	mock := &mockAgentTokenQuerier{
-		getWorkflowRunByAgentTokenFn: func(ctx context.Context, hash pgtype.Text) (db.WorkflowRun, error) {
-			lookedUp = true
-			return db.WorkflowRun{}, nil
-		},
-	}
-
-	handler := RequireAgentToken(mock)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, sharedToken, AgentTokenFromContext(r.Context()))
-		assert.True(t, IsSharedAgentToken(r.Context()))
-		assert.Nil(t, WorkflowRunFromContext(r.Context()))
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer "+sharedToken)
-	rr := httptest.NewRecorder()
-
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.False(t, lookedUp)
-}
-
-// A token that neither matches the shared credential nor the per-run token
-// format must still 401 at the format gate without ever reaching the database.
+// A token that does not match the per-run token
+// format must 401 at the format gate without ever reaching the database.
 func TestRequireAgentToken_RejectsUnformattedTokenWithoutDBLookup(t *testing.T) {
 	require.NoError(t, os.Setenv("SMITHERS_AGENT_TOKEN", "shared-credential-value"))
 	t.Cleanup(func() { _ = os.Unsetenv("SMITHERS_AGENT_TOKEN") })

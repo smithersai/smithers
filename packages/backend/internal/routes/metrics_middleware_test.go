@@ -330,31 +330,6 @@ func TestSmithersMetrics_GaugeIncDec(t *testing.T) {
 		"SSE connections gauge must reflect increments and decrements")
 }
 
-// TestSmithersMetrics_RunnerPoolGauge verifies runner pool gauges reflect current state.
-func TestSmithersMetrics_RunnerPoolGauge(t *testing.T) {
-	t.Parallel()
-
-	m := routes.NewSmithersMetrics()
-
-	// Simulate runner pool state: 10 available, 3 claimed.
-	m.RunnerPoolAvailable.Set(10)
-	m.RunnerPoolClaimed.Set(3)
-
-	// One runner gets claimed.
-	m.RunnerPoolAvailable.Dec()
-	m.RunnerPoolClaimed.Inc()
-
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	rec := httptest.NewRecorder()
-	m.Handler().ServeHTTP(rec, req)
-
-	body := rec.Body.String()
-	assert.Contains(t, body, "smithers_runner_pool_available 9",
-		"available pool must decrease when runner is claimed")
-	assert.Contains(t, body, "smithers_runner_pool_claimed 4",
-		"claimed pool must increase when runner is claimed")
-}
-
 // TestSmithersMetrics_WorkflowMetricsCoverage verifies the full workflow run lifecycle
 // is observable: start (nothing), success, failure, timeout.
 func TestSmithersMetrics_WorkflowMetricsCoverage(t *testing.T) {

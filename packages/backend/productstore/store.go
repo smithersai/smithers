@@ -103,7 +103,6 @@ type Product interface {
 	GetWorkspaceSnapshot(ctx context.Context, id string) (db.WorkspaceSnapshot, error)
 	GetWorkspaceSnapshotByRepo(ctx context.Context, arg db.GetWorkspaceSnapshotByRepoParams) (db.WorkspaceSnapshot, error)
 	GetWorkspaceSnapshotForUserRepo(ctx context.Context, arg db.GetWorkspaceSnapshotForUserRepoParams) (db.WorkspaceSnapshot, error)
-	HasUnsettledRunnerOwnershipForWorkflowRun(ctx context.Context, workflowRunID int64) (bool, error)
 	HasWritableWorkspaceShares(ctx context.Context, workspaceID string) (bool, error)
 	InsertAuditLog(ctx context.Context, arg db.InsertAuditLogParams) error
 	InsertWorkflowRunLogNextSequence(ctx context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error)
