@@ -48,7 +48,8 @@ import { refuseCloudSignIn, SIGN_OUT_REFUSAL } from "./CloudSignIn"
  * it holds the newest AGENT_TRANSCRIPT_ROW_CAP messages.
  */
 import { actorSharedState } from "../ActorBindings"
-import type { Card } from "../AppState"
+import { CardSchema, type Card } from "../AppState"
+import { canonicalStoredJsonValue } from "../EventValue"
 import { resolveTargetRepo } from "../RepoContext"
 import { cloudFailure, cloudUnreachable, createCloudClient } from "./CloudClient"
 import type { CloudFailure } from "./CloudClient"
@@ -302,6 +303,17 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     return epoch
   }
 
+  /** Replayed transport facts must not manufacture accepted journal events. */
+  const persistObservation = async (card: Card, actor: "user" | "smithers" | "system"): Promise<void> => {
+    const committed = ctx.store.committedCard(card.id)
+    const current = ctx.store.collections.cards.get(card.id)
+    const value = canonicalStoredJsonValue(CardSchema.parse(card))
+    // A differing queued edit still needs this observation after its receipt.
+    if (committed !== undefined && current !== undefined &&
+      canonicalStoredJsonValue(committed) === value && canonicalStoredJsonValue(CardSchema.parse(current)) === value) return
+    await ctx.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise
+  }
+
   /** Merge observations newer than a listing request, including successful deletion. */
   const updateListedSession = async (repo: string, id: string, patch: Partial<AgentSessionRow> | null, actor: "user" | "smithers" | "system" = ctx.actor()): Promise<void> => {
     for (const listing of shared.pendingLists) {
@@ -310,7 +322,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const card = ctx.store.collections.cards.get(listCardId(repo))
     if (card?.kind !== "agents" || !("cloud" in card.payload)) return
     const sessions = card.payload.sessions.flatMap(row => row.id !== id ? [row] : patch === null ? [] : [{ ...row, ...patch }])
-    await ctx.dispatch({ type: "card.upsert", actor, card: { ...card, payload: { ...card.payload, sessions } } }).isPersisted.promise
+    await persistObservation({ ...card, payload: { ...card.payload, sessions } }, actor)
   }
 
   /** The card as one upsert; the live window's facts come from the arguments, never invented. */
@@ -346,7 +358,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       payload
     }
     await Promise.all([
-      ctx.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise,
+      persistObservation(card, actor),
       updateListedSession(facts.repo, session.id, { title: session.title, status: session.status, workspaceId: session.workspaceId }, actor)
     ])
   }
@@ -356,12 +368,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const existing = ctx.store.collections.cards.get(cardIdOf(sessionId))
     if (existing?.kind !== "agent" || !("cloud" in existing.payload)) return
     const { error: priorError, ...payload } = existing.payload
-    if (priorError === error) return
-    await ctx.dispatch({
-      type: "card.upsert",
-      actor,
-      card: { ...existing, payload: { ...payload, ...(error === undefined ? {} : { error }) } }
-    }).isPersisted.promise
+    await persistObservation({ ...existing, payload: { ...payload, ...(error === undefined ? {} : { error }) } }, actor)
   }
 
   /* ---- the stream ---- */
@@ -382,11 +389,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       const message = parseMessage(parsed.message)
       if (message === null || message.sessionId !== sessionId || (frame.id !== null && frame.id !== String(message.id))) return
       const payload = existing.payload
-      await ctx.dispatch({
-        type: "card.upsert",
-        actor: "system",
-        card: { ...existing, payload: { ...payload, transcript: [...appendRow(payload.transcript, rowOf(message))] } }
-      }).isPersisted.promise
+      await persistObservation({ ...existing, payload: { ...payload, transcript: [...appendRow(payload.transcript, rowOf(message))] } }, "system")
       return
     }
     if (parsed.action === "status") {
@@ -394,11 +397,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       if (status === null) return
       const payload = existing.payload
       await Promise.all([
-        ctx.dispatch({
-          type: "card.upsert",
-          actor: "system",
-          card: { ...existing, payload: { ...payload, state: status } }
-        }).isPersisted.promise,
+        persistObservation({ ...existing, payload: { ...payload, state: status } }, "system"),
         updateListedSession(payload.repo, sessionId, { status }, "system")
       ])
       /* The session is over: no message follows a terminal status, so the stream's work is done. */
@@ -475,10 +474,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       const card = ctx.store.collections.cards.get(cardIdOf(sessionId))
       if (card?.kind !== "agent" || !("cloud" in card.payload)) return
       const transcript = rows.reduce<ReadonlyArray<TranscriptRow>>((prior, row) => appendRow(prior, row), card.payload.transcript)
-      const displayName = session.title === "" ? "Agent session" : session.title
-      if (card.payload.state !== session.status || card.payload.displayName !== displayName || card.payload.workspaceId !== session.workspaceId || JSON.stringify(card.payload.transcript) !== JSON.stringify(transcript)) {
-        await renderSession(session, { repo, provider: card.payload.provider }, { transcript: [...transcript] }, "system")
-      }
+      await renderSession(session, { repo, provider: card.payload.provider }, { transcript: [...transcript] }, "system")
       if (current() && AGENT_SESSION_TERMINAL.has(session.status)) detach()
     }
     const pause = (): Promise<void> => new Promise(resolve => {

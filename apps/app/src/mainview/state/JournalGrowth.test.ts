@@ -348,3 +348,62 @@ test("identical repository-import polls do not grow the committed journal or SQL
     repoImportPolling.delayMs = previousDelay
   }
 })
+
+for (const action of ["message", "status", "repair"] as const) test(`replayed agent-session ${action} observations do not grow SQLite`, async () => {
+  const { createAgentSessionSeam } = await import("./seams/AgentSessionSeam")
+  const { AGENT_SESSION_WIRE: wire, sseFrame } = await import("./seams/fixtures/AgentSessionWire")
+  const fixture = await open(), store = fixture.store
+  await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+  const session = wire.session({ message_count: 1 }), message = wire.message()
+  let channel!: ReadableStreamDefaultController<Uint8Array>, pulls = 0, repairReads = 0
+  const body = new ReadableStream<Uint8Array>({ start(controller) { channel = controller }, pull() { pulls++ } }, { highWaterMark: 0 })
+  const seam = createAgentSessionSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    stream: async () => new Response(body, { headers: { "content-type": "text/event-stream" } }),
+    http: async input => {
+      if (!input.includes("/messages") && !input.split("?")[0]!.endsWith("/sessions")) repairReads++
+      return Response.json(input.includes("/messages") ? [message] : input.split("?")[0]!.endsWith("/sessions") ? [session] : session)
+    }
+  }, { repairIntervalMs: action === "repair" ? 2 : 60_000 })
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Agent stream did not request its next frame")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  const send = async (data: unknown, id?: number) => {
+    const next = pulls + 1
+    channel.enqueue(new TextEncoder().encode(sseFrame(data, id === undefined ? {} : { id })))
+    // With no stream buffer, the next read follows the prior save receipt.
+    await waitFor(() => pulls === next)
+  }
+  try {
+    await seam.listSessions("owner/repo")
+    expect(store.committedCard("agent-sessions-owner/repo")).toMatchObject({ kind: "agents" })
+    await seam.viewSession(session.id, "owner/repo")
+    await waitFor(() => pulls === 1)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    if (action === "repair") {
+      const observed = repairReads
+      await waitFor(() => repairReads >= observed + 10)
+    } else for (let index = 0; index < 10; index++) {
+      if (action === "message") await send(wire.messageEvent(message), message.id)
+      else await send(wire.statusEvent("active"))
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    const changed = wire.message({ id: 42, sequence: 2, role: "assistant", parts: [{ part_index: 0, type: "text", content: { value: "A new observation" } }] })
+    await send(wire.messageEvent(changed), 42)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    channel.enqueue(new TextEncoder().encode(sseFrame(wire.statusEvent("completed"))))
+    await waitFor(() => {
+      const card = store.committedCard(`agent-session-${session.id}`)
+      return card?.kind === "agent" && "cloud" in card.payload && card.payload.state === "completed"
+    })
+    await store.settled?.()
+    const reopened = await open(fixture.path)
+    expect(reopened.store.committedCard(`agent-session-${session.id}`)).toMatchObject({ payload: { state: "completed", transcript: [{ id: 41 }, { id: 42 }] } })
+    expect(reopened.store.committedCard("agent-sessions-owner/repo")).toMatchObject({ payload: { sessions: [{ status: "completed" }] } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally { seam.dispose() }
+})
