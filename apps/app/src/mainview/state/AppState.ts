@@ -1179,6 +1179,7 @@ export type AppTransition =
   | { type: "prompt.removed"; actor: "user"; id: string; edit?: boolean }
   | { type: "prompt.queue.paused"; actor: Actor; paused: boolean }
   | { type: "composer.changed"; actor: Actor; draft: string; recoveryScope?: PendingRecoveryScope }
+  | { type: "chat.sign-in.required"; actor: "system"; draft: string; provider: "github" | "local"; turnId?: string; attemptId?: string }
   | { type: "message.submitted"; actor: "user" | "smithers"; turnId: string; text: string }
   | {
     type: "message.response.delta"

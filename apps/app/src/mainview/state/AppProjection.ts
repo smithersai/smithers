@@ -187,6 +187,7 @@ export const APP_TRANSITION_TYPES = {
   "prompt.removed": true,
   "prompt.queue.paused": true,
   "composer.changed": true,
+  "chat.sign-in.required": true,
   "message.submitted": true,
   "message.response.delta": true,
   "message.response.completed": true,
@@ -1406,6 +1407,23 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, draft => { draft.promptQueuePaused = transition.paused })
           break
 
+        case "chat.sign-in.required": {
+          if (transition.turnId !== undefined && (current.phase !== "responding" || current.turnId !== transition.turnId)) return
+          if (transition.attemptId !== undefined) {
+            const turn = collections.httpTurns.get(transition.attemptId)
+            if (turn?.status !== "active" || turn.turnId !== transition.turnId) return
+            reduce({ type: "http.turn.interrupted", actor: "system", attemptId: turn.id, status: "failed", detail: "Sign in required.", silent: true }, 0)
+          } else if (transition.turnId !== undefined) {
+            reduce({ type: "message.response.completed", actor: "smithers", turnId: transition.turnId }, 0)
+          }
+          // The refusal and both recovery outputs share one durable receipt.
+          if (current.draft === "" && transition.draft !== "") {
+            reduce({ type: "composer.changed", actor: "system", draft: transition.draft }, 1)
+          }
+          const label = transition.provider === "github" ? "Sign in with GitHub" : "Sign in"
+          reduce({ type: "message.appended", actor: "system", text: `${label} to send this message.`, action: { flow: "auth.sign-in", label } }, 2)
+          break
+        }
         case "composer.changed":
           if (transition.recoveryScope && !sameRecoveryScope(transition.recoveryScope, pendingRecoveryScope(current))) {
             const scope = transition.recoveryScope, branch = collections.branches.get(scope.branchId)

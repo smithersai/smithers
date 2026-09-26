@@ -78,6 +78,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "prompt.removed": z.object({ type: z.literal("prompt.removed"), actor: z.literal("user"), id: z.string(), edit: z.boolean().optional() }).strict(),
   "prompt.queue.paused": z.object({ type: z.literal("prompt.queue.paused"), actor: ActorSchema, paused: z.boolean() }).strict(),
   "composer.changed": z.object({ "type": z.literal("composer.changed"), "actor": ActorSchema, "draft": z.string(), recoveryScope: PendingRecoveryScopeSchema.optional() }).strict(),
+  "chat.sign-in.required": z.object({ type: z.literal("chat.sign-in.required"), actor: z.literal("system"), draft: z.string(), provider: z.enum(["github", "local"]), turnId: z.string().optional(), attemptId: z.string().optional() }).strict(),
   "message.submitted": z.object({ "type": z.literal("message.submitted"), "actor": z.enum(["user", "smithers"]), "turnId": z.string(), "text": z.string() }).strict(),
   "message.response.delta": z.object({ "type": z.literal("message.response.delta"), "actor": z.literal("smithers"), "turnId": z.string(), "channel": z.enum(["text", "reasoning"]), "delta": z.string() }).strict(),
   "message.response.completed": z.object({ "type": z.literal("message.response.completed"), "actor": z.literal("smithers"), "turnId": z.string() }).strict(),

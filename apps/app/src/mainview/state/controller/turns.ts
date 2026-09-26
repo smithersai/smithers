@@ -107,17 +107,10 @@ export const createTurnController = (
     && store.collections.identitySessions.get("identity")?.state === "signed-out"
     && activeCatalogRepositoryId(store) === null
 
-  const offerChatSignIn = (draft: string): void => {
-    // A refused request can return after the human has started another draft.
-    if (store.session().draft === "" && draft !== "") {
-      store.dispatch({ type: "composer.changed", actor: "user", draft })
-    }
-    const label = identityProviderFor(ctx.services) === "github" ? "Sign in with GitHub" : "Sign in"
-    store.dispatch({
-      type: "message.appended", actor: "system",
-      text: `${label} to send this message.`,
-      action: { flow: "auth.sign-in", label },
-    })
+  const offerChatSignIn = async (draft: string, turnId?: string, attemptId?: string): Promise<void> => {
+    await store.dispatch({ type: "chat.sign-in.required", actor: "system", draft,
+      provider: identityProviderFor(ctx.services), ...(turnId === undefined ? {} : { turnId }),
+      ...(attemptId === undefined ? {} : { attemptId }) }).isPersisted.promise
   }
 
   /*
@@ -705,7 +698,7 @@ export const createTurnController = (
       ? agent.startTurn(request)
       : cancellation.then(() => isCurrentTurn(turn) ? agent.startTurn(request) : undefined)
     void started
-      .then((result) => {
+      .then(async (result) => {
         if (!isCurrentTurn(turn)) {
           // Cancellation can beat a delayed start acknowledgement at the host.
           // Do not let that acknowledgement leave the revoked turn running.
@@ -713,14 +706,17 @@ export const createTurnController = (
           return
         }
         if (result?.status !== "error") return
-        ctx.activeTurn = undefined
         // §1: a leg that never started still ends a turn that launched a
         // run, and a claim streamed before the launch is already on screen.
         settleRunClaims(turn)
         if (result.refusal?.code === "sign_in_required") {
           const draft = store.collections.messages.get(`message-${turnId}-user`)?.text ?? ""
-          store.dispatch({ type: "message.response.completed", actor: "smithers", turnId })
-          offerChatSignIn(draft)
+          try { await offerChatSignIn(draft, turnId) }
+          catch (error) {
+            if (!isCurrentTurn(turn)) return
+            ctx.failures.report("turn.sign-in", error)
+            store.dispatch({ type: "message.response.failed", actor: "system", turnId, message: "Sign-in recovery could not be saved." })
+          }
         } else if (result.refusal === undefined || !refuseAnonymousTurn(turnId, result.refusal)) {
           store.dispatch({
             type: "message.response.failed",
@@ -730,6 +726,8 @@ export const createTurnController = (
           })
           if (result.refusal?.code === "out_of_credit") offerCreditUpgrade()
         }
+        if (revokedTurn(turn)) return
+        if (ctx.activeTurn === turn) ctx.activeTurn = undefined
         settleTurnBilling()
       })
       .catch(() => {
@@ -1140,8 +1138,7 @@ export const createTurnController = (
       return
     }
     if (chatNeedsSignIn()) {
-      offerChatSignIn(text)
-      return
+      return offerChatSignIn(text).then(() => false)
     }
     const turnId = admission?.turnId ?? crypto.randomUUID()
     if (agent.journal !== undefined) {
@@ -1295,7 +1292,7 @@ export const createTurnController = (
     const turnId = last?.id.match(/^message-(.+)-user$/)?.[1]
     if (turnId === undefined) return "Nothing to retry yet — send a message first."
     if (chatNeedsSignIn()) {
-      offerChatSignIn(last?.text ?? "")
+      void offerChatSignIn(last?.text ?? "").catch(error => ctx.failures.report("turn.sign-in", error))
       return
     }
     if (agent.journal !== undefined) {
@@ -1319,8 +1316,8 @@ export const createTurnController = (
 
   const httpTurns = createHttpTurnDriver(ctx, {
     ownTurn, isCurrentTurn, contextMessages, composeTurn, settled: settleTurnBilling,
-    refused: (turnId, result) => {
-      if (result.refusal?.code === "sign_in_required") offerChatSignIn(store.collections.messages.get(`message-${turnId}-user`)?.text ?? "")
+    refused: (turnId, result, attemptId) => {
+      if (result.refusal?.code === "sign_in_required") return offerChatSignIn(store.collections.messages.get(`message-${turnId}-user`)?.text ?? "", turnId, attemptId)
       else if (result.refusal?.code === "out_of_credit") offerCreditUpgrade()
       else if (result.refusal !== undefined) refuseAnonymousTurn(turnId, result.refusal)
     }

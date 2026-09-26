@@ -75,6 +75,7 @@ function AppContent() {
   const { data: messageRows } = useLiveQuery((q) =>
     q.from({ message: collections.messages }).orderBy(({ message }) => message.ordinal)
   )
+  const { data: savedSignInPrompts } = useLiveQuery(q => q.from({ receipt: collections.savedSignInPrompts }))
   /*
    * The shell reads the session WITHOUT the draft.
    *
@@ -138,7 +139,9 @@ function AppContent() {
    * where it started), and this filter reads it.
    */
   const conversationTabId = conversationTabIdOf(session)
-  const messages = messageRows.filter((message) => inConversation(message, conversationTabId))
+  // A recovery door is an acknowledgment only once its journal receipt exists.
+  const messages = messageRows.filter((message) => inConversation(message, conversationTabId) &&
+    (message.action?.flow !== "auth.sign-in" || savedSignInPrompts.some(receipt => receipt.id === message.id)))
   const conversationRows = cardRows.filter((card) => inConversation(card, conversationTabId))
   const conversationCards = conversationRows
   /*

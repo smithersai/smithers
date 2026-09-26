@@ -15,7 +15,7 @@ interface Dependencies {
   readonly contextMessages: () => ReadonlyArray<AgentChatMessage>
   readonly composeTurn: () => Pick<StartAgentTurnRequest, "commands" | "context" | "instructions">
   readonly settled: () => void
-  readonly refused: (turnId: string, result: Extract<StartAgentTurnResult, { status: "error" }>) => void
+  readonly refused: (turnId: string, result: Extract<StartAgentTurnResult, { status: "error" }>, attemptId?: string) => void | Promise<void>
 }
 
 const capability = (): AgentTurnJournalRequest => {
@@ -107,7 +107,12 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
         return
       }
       if (result.status === "error" && result.refusal !== undefined) {
-        const silent = result.refusal.code === "sign_in_required" || store.collections.identitySessions.get("identity")?.state === "signed-out"
+        if (result.refusal.code === "sign_in_required") {
+          try { await dependencies.refused(turn.turnId, result, attemptId); finish(attemptId) }
+          catch { await fail(attemptId) }
+          return
+        }
+        const silent = store.collections.identitySessions.get("identity")?.state === "signed-out"
         await interrupt(attemptId, "failed", result.message, silent)
         if (!ctx.disposed) dependencies.refused(turn.turnId, result)
       } else if (result.status === "error") launchFailures.set(leg.id, result.message)
