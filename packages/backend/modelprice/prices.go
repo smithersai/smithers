@@ -118,9 +118,10 @@ var Table = map[string]Price{
 	"gpt-6-sol":   openaiTiered(2, 0.2, 2.5, 10),
 	"gpt-6-luna":  openaiTiered(0.1, 0.01, 0.125, 0.5),
 	// Promotional through at least 2026-11-21; re-check before then.
-	"gpt-5.6-sol":  openaiTiered(4, 0.4, 5, 20),
-	"gpt-5.6-luna": openaiTiered(0.2, 0.02, 0.25, 1.2),
-	"gpt-5.5":      openaiTiered(5, 0.5, 5, 30),
+	"gpt-5.6-sol":   openaiTiered(4, 0.4, 5, 20),
+	"gpt-5.6-terra": openaiTiered(2, 0.2, 2.5, 12),
+	"gpt-5.6-luna":  openaiTiered(0.2, 0.02, 0.25, 1.2),
+	"gpt-5.5":       openaiTiered(5, 0.5, 5, 30),
 	// 128k context window, one rate card.
 	"gpt-4o": {Provider: "openai", Context: ContextFlat, Rates: Rates{InputPerMTok: usd(2.5), OutputPerMTok: usd(10), CacheReadPerMTok: usd(1.25), CacheWritePerMTok: usd(2.5)}},
 

@@ -339,6 +339,41 @@ func TestProxy_ProviderFailureReleases(t *testing.T) {
 	require.Equal(t, "failed", f.rows()[1].outcome)
 }
 
+// A provider spend cap on the platform key is released, relayed in the
+// provider's own shape, and re-checked hourly; an ordinary rate limit keeps
+// the provider's Retry-After (smithersai/plue#528, plue 67f084ea1).
+func TestProxy_ProviderSpendCapParksHourly(t *testing.T) {
+	f := newProxyFixture(t)
+	f.grant(1_000_000_000_000)
+	before := f.balance()
+	for _, tc := range []struct {
+		path, body, answer, retry string
+	}{
+		{"/model-proxy/anthropic/v1/messages", anthropicBody(1000),
+			`{"type":"error","error":{"type":"rate_limit_error","message":"You will regain access on 2099-10-01 at 00:00 UTC.","details":{"error_code":"enforced_spend_limit_reached"}}}`, "3600"},
+		{"/model-proxy/openai/v1/chat/completions", `{"model":"gpt-5.5","messages":[{"role":"user","content":"hi"}]}`,
+			`{"error":{"type":"insufficient_quota","code":"insufficient_quota","message":"You exceeded your current quota."}}`, "3600"},
+		{"/model-proxy/anthropic/v1/messages", anthropicBody(1000),
+			`{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`, "7"},
+	} {
+		f.upstream = func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "7")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(tc.answer))
+		}
+		recorder := f.call(tc.path, tc.body)
+		require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+		require.Equal(t, tc.retry, recorder.Header().Get("Retry-After"))
+		require.JSONEq(t, tc.answer, recorder.Body.String())
+	}
+	require.Equal(t, before, f.balance())
+	for _, row := range f.rows() {
+		require.Equal(t, "released", row.status)
+	}
+	require.Contains(t, f.logs.String(), "spend cap reached")
+}
+
 // A call whose usage cannot be read is charged its full bound: a stream cut
 // before its final frame, and a success with no usage.
 func TestProxy_UnknownOutcomeChargesTheBound(t *testing.T) {

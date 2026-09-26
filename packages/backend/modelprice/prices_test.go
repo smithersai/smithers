@@ -62,12 +62,13 @@ func TestUnknownContextPricingIsRefused(t *testing.T) {
 func TestOpenAILongContextPremiumAtBelowAndAboveThreshold(t *testing.T) {
 	type card struct{ in, cacheRead, cacheWrite, out float64 }
 	cards := map[string]card{
-		"gpt-6-astra":  {10, 1, 12.5, 50},
-		"gpt-6-sol":    {2, 0.2, 2.5, 10},
-		"gpt-6-luna":   {0.1, 0.01, 0.125, 0.5},
-		"gpt-5.6-sol":  {4, 0.4, 5, 20},
-		"gpt-5.6-luna": {0.2, 0.02, 0.25, 1.2},
-		"gpt-5.5":      {5, 0.5, 5, 30},
+		"gpt-6-astra":   {10, 1, 12.5, 50},
+		"gpt-6-sol":     {2, 0.2, 2.5, 10},
+		"gpt-6-luna":    {0.1, 0.01, 0.125, 0.5},
+		"gpt-5.6-sol":   {4, 0.4, 5, 20},
+		"gpt-5.6-terra": {2, 0.2, 2.5, 12},
+		"gpt-5.6-luna":  {0.2, 0.02, 0.25, 1.2},
+		"gpt-5.5":       {5, 0.5, 5, 30},
 	}
 	for model, c := range cards {
 		price, ok := Lookup(model)

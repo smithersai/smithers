@@ -206,8 +206,17 @@ func (h *Handler) forward(ctx context.Context, w http.ResponseWriter, r *http.Re
 			WriteError(w, provider, http.StatusBadGateway, "api_error", "The provider refused the platform credential.")
 			return Result{Outcome: outcome, Status: resp.StatusCode}, err
 		}
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, defaultMaxBody))
+		if resp.StatusCode == http.StatusTooManyRequests && providerSpendCap(raw) {
+			// The platform key's spend cap, not this caller's rate limit:
+			// every caller is refused until the cap is raised. The provider's
+			// body classifies it as an exhausted quota, so the run parks;
+			// Retry-After re-checks hourly instead of waiting for the reset.
+			slog.Error("model provider spend cap reached: platform model calls are parked", "provider", provider, "model", parsed.model)
+			w.Header().Set("Retry-After", spendCapRetryAfter)
+		}
 		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, io.LimitReader(resp.Body, defaultMaxBody))
+		_, _ = w.Write(raw)
 		return Result{Outcome: outcome, Status: resp.StatusCode}, err
 	}
 	w.WriteHeader(resp.StatusCode)
@@ -233,6 +242,32 @@ func (h *Handler) forward(ctx context.Context, w http.ResponseWriter, r *http.Re
 		result.Outcome, result.Usage = credits.ModelSucceeded, usage
 	}
 	return result, nil
+}
+
+// spendCapRetryAfter is how long a parked run waits before trying again:
+// access returns when the cap is raised, at any time.
+const spendCapRetryAfter = "3600"
+
+// providerSpendCap reports a 429 body that is an account-level spend cap:
+// Anthropic's enforced_spend_limit_reached
+// (https://platform.claude.com/docs/en/api/rate-limits) or OpenAI's
+// insufficient_quota. Neither clears on retry.
+func providerSpendCap(body []byte) bool {
+	var doc struct {
+		Error struct {
+			Type    string `json:"type"`
+			Code    any    `json:"code"`
+			Details struct {
+				ErrorCode string `json:"error_code"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &doc) != nil {
+		return false
+	}
+	code, _ := doc.Error.Code.(string)
+	return doc.Error.Details.ErrorCode == "enforced_spend_limit_reached" ||
+		doc.Error.Type == "insufficient_quota" || code == "insufficient_quota"
 }
 
 // refusedAfterRunning reports a status that does not prove the provider

@@ -495,6 +495,9 @@ func TestBillingService_CreateUserCheckout_CreatesCustomerAndCheckout(t *testing
 	assert.Equal(t, int64(1), gotCheckout.Quantity)
 	assert.Equal(t, "personal", gotCheckout.Metadata["plan_key"])
 	assert.Equal(t, "monthly", gotCheckout.Metadata["interval"])
+	// Checkout states the renewal terms beside the required Terms checkbox.
+	assert.Contains(t, gotCheckout.TermsOfServiceAcceptance, "renews automatically every month")
+	assert.Contains(t, gotCheckout.TermsOfServiceAcceptance, "(https://smithers.sh/terms)")
 }
 
 func TestBillingService_CreateUserCheckout_ExpiresMismatchedOpenSession(t *testing.T) {

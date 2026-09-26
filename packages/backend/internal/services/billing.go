@@ -208,6 +208,9 @@ type billingPlanDefinition struct {
 	Interval     string
 	PriceID      string
 	Limits       billingPlanLimits
+	// Unlisted plans still resolve for existing subscriptions but are not
+	// offered in the plans list and refuse checkout.
+	Unlisted bool
 }
 
 type BillingService struct {
@@ -375,9 +378,10 @@ func (s *BillingService) bootstrapCatalog() {
 		Seats:        1,
 	}
 	// Pro: the heavy single-user plan — sits between personal and team on
-	// every quota but stays Seats:1 (user-owned, like personal).
+	// every quota but stays Seats:1 (user-owned, like personal). Pro
+	// workspaces sleep after 1 hour idle.
 	proLimits := billingPlanLimits{
-		ConcurrentSandboxes: 3, SandboxIdleTimeoutSecs: 14400, SandboxHoursPerDay: unlimitedBillingQuantity,
+		ConcurrentSandboxes: 3, SandboxIdleTimeoutSecs: 3600, SandboxHoursPerDay: unlimitedBillingQuantity,
 		PrivateRepos: 500,
 		StorageBytes: 500 * 1024 * 1024 * 1024,
 		CIMinutes:    50000,
@@ -401,6 +405,9 @@ func (s *BillingService) bootstrapCatalog() {
 		Seats:        unlimitedBillingQuantity,
 	}
 
+	// Max promises 64 never-sleeping sandboxes, more than the fleet runs. It
+	// is unlisted (not purchasable); the definition stays for any existing
+	// subscription.
 	maxLimits := proLimits
 	maxLimits.ConcurrentSandboxes = 64
 	maxLimits.SandboxIdleTimeoutSecs = 0
@@ -439,8 +446,8 @@ func (s *BillingService) bootstrapCatalog() {
 		PriceID:      strings.TrimSpace(s.config.ProAnnualPriceID),
 		Limits:       proLimits,
 	})
-	s.registerPlan(billingPlanDefinition{Key: BillingPlanMax, AllowedOwner: BillingOwnerTypeUser, Interval: BillingIntervalMonthly, PriceID: strings.TrimSpace(s.config.MaxMonthlyPriceID), PriceCents: 50000, Limits: maxLimits})
-	s.registerPlan(billingPlanDefinition{Key: BillingPlanMax, AllowedOwner: BillingOwnerTypeUser, Interval: BillingIntervalAnnual, PriceID: strings.TrimSpace(s.config.MaxAnnualPriceID), PriceCents: 50000, Limits: maxLimits})
+	s.registerPlan(billingPlanDefinition{Key: BillingPlanMax, AllowedOwner: BillingOwnerTypeUser, Interval: BillingIntervalMonthly, PriceID: strings.TrimSpace(s.config.MaxMonthlyPriceID), PriceCents: 50000, Limits: maxLimits, Unlisted: true})
+	s.registerPlan(billingPlanDefinition{Key: BillingPlanMax, AllowedOwner: BillingOwnerTypeUser, Interval: BillingIntervalAnnual, PriceID: strings.TrimSpace(s.config.MaxAnnualPriceID), PriceCents: 50000, Limits: maxLimits, Unlisted: true})
 	s.registerPlan(billingPlanDefinition{
 		Key:          BillingPlanTeam,
 		AllowedOwner: BillingOwnerTypeOrg,
@@ -1724,6 +1731,7 @@ func (s *BillingService) createCheckoutSession(ctx context.Context, owner billin
 			"interval":          plan.Interval,
 			"checkout_quantity": strconv.FormatInt(quantity, 10),
 		},
+		TermsOfServiceAcceptance: checkoutRenewalTerms(plan.Interval),
 	})
 	if err != nil {
 		return BillingSessionResult{}, pkgerrors.Internal("failed to create stripe checkout session").WithCause(err)
@@ -2333,6 +2341,22 @@ func (s *BillingService) planFromPrice(ownerType, priceID, interval string) bill
 	return plan
 }
 
+// smithersTermsURL is where the Terms of Service, including the renewal and
+// cancellation terms, are published.
+const smithersTermsURL = "https://smithers.sh/terms"
+
+// checkoutRenewalTerms is the automatic-renewal disclosure shown beside the
+// required Terms checkbox (Stripe allows 1200 characters).
+func checkoutRenewalTerms(interval string) string {
+	period := "month"
+	if normalizeBillingInterval(interval) == BillingIntervalAnnual {
+		period = "year"
+	}
+	return "Your subscription renews automatically every " + period + " at the price shown, charged to this payment method, until you cancel. " +
+		"You can cancel online at any time from Billing in Smithers; cancellation stops the next renewal. " +
+		"I agree to the [Terms of Service](" + smithersTermsURL + "), including these renewal terms."
+}
+
 func (s *BillingService) checkoutPlan(ownerType, planKey, interval string) (billingPlanDefinition, error) {
 	key := strings.TrimSpace(planKey)
 	if key == "" {
@@ -2350,7 +2374,7 @@ func (s *BillingService) checkoutPlan(ownerType, planKey, interval string) (bill
 		normalizedInterval = BillingIntervalMonthly
 	}
 	plan, ok := s.checkoutPlans[ownerType][key+":"+normalizedInterval]
-	if !ok || strings.TrimSpace(plan.PriceID) == "" {
+	if !ok || plan.Unlisted || strings.TrimSpace(plan.PriceID) == "" {
 		return billingPlanDefinition{}, pkgerrors.BadRequest("requested billing plan is not configured")
 	}
 	return plan, nil

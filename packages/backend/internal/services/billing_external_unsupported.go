@@ -13,6 +13,11 @@ type StripeCreateCheckoutSessionInput struct {
 	Quantity                                   int64
 	CheckoutGeneration                         string
 	Metadata                                   map[string]string
+	// TermsOfServiceAcceptance is the automatic-renewal disclosure (California
+	// BPC §17602). The adapter must require the Terms of Service checkbox
+	// (consent_collection.terms_of_service=required) and show this text beside
+	// it (custom_text.terms_of_service_acceptance.message).
+	TermsOfServiceAcceptance string
 }
 type StripeCreatePortalSessionInput struct{ CustomerID, ReturnURL string }
 type StripeCheckoutSessionResult struct{ ID, URL string }

@@ -57,6 +57,9 @@ func (s *BillingService) GetUserPlans(ctx context.Context, user *db.User) (Billi
 		if key == BillingPlanFree {
 			plan = s.defaultPlan(BillingOwnerTypeUser)
 		}
+		if plan.Unlisted {
+			continue
+		}
 		l := plan.Limits
 		out.Plans = append(out.Plans, BillingPlanSummary{
 			Key: key, DisplayName: billingPlanDisplayName(key), PriceCents: plan.PriceCents, Interval: BillingIntervalMonthly,

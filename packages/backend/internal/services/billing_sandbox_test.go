@@ -42,7 +42,7 @@ func TestBillingService_AuthorizeSandboxStart(t *testing.T) {
 		{name: "hours exhausted", plan: "free", seconds: 14400, kind: "sandbox_hours_per_day", upgrade: "pro"},
 		{name: "hours boundary below", plan: "free", seconds: 14399},
 		{name: "paid hours unlimited", plan: "pro", seconds: 999999},
-		{name: "pro at cap", plan: "pro", live: 3, kind: "concurrent_sandboxes", upgrade: "max"},
+		{name: "pro at cap, no Max upsell", plan: "pro", live: 3, kind: "concurrent_sandboxes"},
 		{name: "max at cap", plan: "max", live: 64, kind: "concurrent_sandboxes"},
 		{name: "live error", plan: "free", dbError: "live"},
 		{name: "agent error", plan: "free", dbError: "agent"},
@@ -197,44 +197,38 @@ func TestBillingService_SandboxMonthlyUsage(t *testing.T) {
 	}
 }
 
-func TestBillingService_PlansAndMaxCheckout(t *testing.T) {
-	var checkout StripeCreateCheckoutSessionInput
-	client := &stripeBillingClientMock{createCustomerFn: func(context.Context, StripeCreateCustomerInput) (string, error) { return "cus_max", nil }, createCheckoutFn: func(_ context.Context, input StripeCreateCheckoutSessionInput) (StripeCheckoutSessionResult, error) {
-		checkout = input
+// Max is not sold: the plans list omits it and checkout refuses it, while an
+// existing Max subscription keeps its limits (smithersai/plue#528, plue
+// 67f084ea1).
+func TestBillingService_PlansOmitMaxAndCheckoutRefusesIt(t *testing.T) {
+	client := &stripeBillingClientMock{createCustomerFn: func(context.Context, StripeCreateCustomerInput) (string, error) { return "cus_max", nil }, createCheckoutFn: func(context.Context, StripeCreateCheckoutSessionInput) (StripeCheckoutSessionResult, error) {
 		return StripeCheckoutSessionResult{ID: "cs_max", URL: "https://checkout.stripe.test/max"}, nil
 	}}
 	svc := NewBillingService(newBillingQuerierMock(), client, BillingServiceConfig{ProMonthlyPriceID: "price_pro", MaxMonthlyPriceID: "price_max", MaxAnnualPriceID: "price_max_annual"})
 	user := &db.User{ID: 7, Username: "ada"}
 	plans, err := svc.GetUserPlans(context.Background(), user)
 	require.NoError(t, err)
-	require.Len(t, plans.Plans, 3)
+	require.Len(t, plans.Plans, 2)
 	assert.Equal(t, "free", plans.CurrentPlanKey)
-	for i, key := range []string{"free", "pro", "max"} {
-		assert.Equal(t, key, plans.Plans[i].Key)
-	}
+	assert.Equal(t, "free", plans.Plans[0].Key)
+	assert.Equal(t, "pro", plans.Plans[1].Key)
 	assert.Equal(t, int64(5000), plans.Plans[1].PriceCents)
-	assert.Equal(t, int64(50000), plans.Plans[2].PriceCents)
-	assert.Equal(t, int64(64), plans.Plans[2].Limits.ConcurrentSandboxes)
-	assert.Equal(t, int64(-1), plans.Plans[2].Limits.HoursPerDay)
-	assert.Zero(t, plans.Plans[2].Limits.IdleTimeoutSecs)
+	assert.Equal(t, int64(3600), plans.Plans[1].Limits.IdleTimeoutSecs)
 	assert.False(t, plans.Plans[0].CheckoutAvailable)
-	assert.True(t, plans.Plans[2].CheckoutAvailable)
+	assert.True(t, plans.Plans[1].CheckoutAvailable)
 	for _, interval := range []string{BillingIntervalMonthly, BillingIntervalAnnual} {
 		_, err = svc.CreateUserCheckout(context.Background(), user, BillingPlanMax, interval)
-		require.NoError(t, err)
-		expected := "price_max"
-		if interval == BillingIntervalAnnual {
-			expected = "price_max_annual"
-		}
-		assert.Equal(t, expected, checkout.PriceID)
-		assert.Equal(t, "max", checkout.Metadata["plan_key"])
+		assert.Equal(t, 400, httpStatus(err), interval)
 	}
 	_, err = svc.checkoutPlan(BillingOwnerTypeOrg, BillingPlanMax, BillingIntervalMonthly)
 	require.Error(t, err)
+	existing := svc.planForSubscription(BillingOwnerTypeUser, &db.BillingSubscription{PlanKey: BillingPlanMax, StripePriceID: "price_max", BillingInterval: BillingIntervalMonthly, Status: "active"})
+	assert.Equal(t, BillingPlanMax, existing.Key)
+	assert.Equal(t, int64(64), existing.Limits.ConcurrentSandboxes)
 	svc.stripe = nil
 	plans, err = svc.GetUserPlans(context.Background(), user)
 	require.NoError(t, err)
-	assert.False(t, plans.Plans[2].CheckoutAvailable)
+	assert.False(t, plans.Plans[1].CheckoutAvailable)
 	entitlement := SandboxEntitlement{HoursPerDay: -1}
 	payload, err := json.Marshal(entitlement)
 	require.NoError(t, err)
