@@ -4,7 +4,8 @@ Release candidate scope, host requirements and compatibility review are defined 
 
 **Documentation:** https://integrations.smithers.sh
 
-GitHub, Linear, and Telegram adapters over the Smithers control plane.
+GitHub, Linear, Telegram, Slack, Google Calendar, Gmail, and X adapters over
+the Smithers control plane.
 
 Smithers is a durable control plane for long-running agents: work runs as a
 flow whose every step is journaled, so a crash resumes where it stopped
@@ -28,10 +29,17 @@ Import the whole surface or one provider at a time. The aggregate entry point
 and the per-provider subpaths export the same names:
 
 ```ts
-import { Core, GitHub, Linear, Telegram } from "@smthrs/integrations"
+import { Core, GitHub, Gmail, GoogleCalendar, Linear, Slack, Telegram, X } from "@smthrs/integrations"
 // or only what you use:
 import * as GitHub from "@smthrs/integrations/github"
+import * as Slack from "@smthrs/integrations/slack"
 ```
+
+Slack is the provider a local Smithers host talks to its owner through:
+Socket Mode intake that admits the owner's direct messages, threaded replies
+under a role's name and icon, and Block Kit approval buttons. Google Calendar
+and Gmail are tested library code with no host wiring yet, and X is
+read-only.
 
 The export map is the allowlist. A source module it does not name carries
 no promise, and `./internal/*` stays null-mapped.
@@ -99,15 +107,24 @@ long-poll source instead.
 
 ## Actions
 
-One durable action per provider, over the client of the same name:
+Durable actions over the client of the same provider:
 
-| Action                          | Tag                                    | Does                                                           |
-| ------------------------------- | -------------------------------------- | -------------------------------------------------------------- |
-| `GitHub.Actions.CommentOnIssue` | `integrations/github/comment-on-issue` | Comments on an issue or pull request.                          |
-| `Linear.Actions.CreateIssue`    | `integrations/linear/create-issue`     | Files an issue, resolving team, state, and label names to ids. |
-| `Telegram.Actions.SendMessage`  | `integrations/telegram/send-message`   | Sends a message, chunked, with a plain-text fallback.          |
+| Action                               | Tag                                        | Does                                                           |
+| ------------------------------------ | ------------------------------------------ | -------------------------------------------------------------- |
+| `GitHub.Actions.CommentOnIssue`      | `integrations/github/comment-on-issue`     | Comments on an issue or pull request.                          |
+| `Linear.Actions.CreateIssue`         | `integrations/linear/create-issue`         | Files an issue, resolving team, state, and label names to ids. |
+| `Telegram.Actions.SendMessage`       | `integrations/telegram/send-message`       | Sends a message, chunked, with a plain-text fallback.          |
+| `Slack.Actions.PostMessage`          | `integrations/slack/post-message`          | Posts to a channel or thread, optionally as a role persona.    |
+| `Slack.Actions.UpdateMessage`        | `integrations/slack/update-message`        | Replaces a message's text and blocks.                          |
+| `Slack.Actions.Reconcile`            | `integrations/slack/reconcile-post`        | Finds a post by its key after an unknown outcome.              |
+| `GoogleCalendar.Actions.UpsertEvent` | `integrations/googlecalendar/upsert-event` | Creates or confirms an event under a deterministic id.         |
+| `Gmail.Actions.SendMessage`          | `integrations/gmail/send-message`          | Sends a composed message stamped with a reconcile key.         |
 
-All three are `tier: "irreversible"`, because the remote side has acted by the
+The Calendar and Gmail modules carry more (patch, cancel, free/busy, drafts,
+find-by-key); the [API reference](https://integrations.smithers.sh/reference/api/)
+lists them.
+
+The GitHub, Linear, Telegram, Slack, and Gmail writes are `tier: "irreversible"`, because the remote side has acted by the
 time the call returns. Neither the engine nor the client underneath repeats
 one: a rate limit is retried for every method, since a refused request was not
 performed, but a 5xx or a dropped connection on a write reports
@@ -127,15 +144,20 @@ same client is the intended way to reach an endpoint these three do not cover.
 
 ## Credentials
 
-| Variable                                     | Used by                                      |
-| -------------------------------------------- | -------------------------------------------- |
-| `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN` | `GitHub.GitHubClient`, `ListenerRegistry`    |
-| `SMITHERS_GITHUB_API_BASE_URL`               | GitHub Enterprise or a fixture server        |
-| `SMITHERS_GITHUB_WEBHOOK_SECRET`             | `GitHub.Config.resolve`                      |
-| `SMITHERS_LINEAR_API_KEY`                    | `Linear.LinearClient`                        |
-| `SMITHERS_LINEAR_WEBHOOK_SECRET`             | `Linear.Config.resolve`                      |
-| `SMITHERS_LINEAR_API_BASE_URL`               | A fixture server                             |
-| `SMITHERS_TELEGRAM_BOT_TOKEN`                | `Telegram.TelegramClient`, `Telegram.Source` |
+| Variable                                               | Used by                                      |
+| ------------------------------------------------------ | -------------------------------------------- |
+| `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN`           | `GitHub.GitHubClient`, `ListenerRegistry`    |
+| `SMITHERS_GITHUB_API_BASE_URL`                         | GitHub Enterprise or a fixture server        |
+| `SMITHERS_GITHUB_WEBHOOK_SECRET`                       | `GitHub.Config.resolve`                      |
+| `SMITHERS_LINEAR_API_KEY`                              | `Linear.LinearClient`                        |
+| `SMITHERS_LINEAR_WEBHOOK_SECRET`                       | `Linear.Config.resolve`                      |
+| `SMITHERS_LINEAR_API_BASE_URL`                         | A fixture server                             |
+| `SMITHERS_TELEGRAM_BOT_TOKEN`                          | `Telegram.TelegramClient`, `Telegram.Source` |
+| `SMITHERS_SLACK_BOT_TOKEN`                             | `Slack.SlackClient`, `Slack.Connections`     |
+| `SMITHERS_SLACK_APP_TOKEN`                             | `Slack.SocketSource`                         |
+| `SMITHERS_SLACK_SIGNING_SECRET`                        | `Slack.Config.resolve`                       |
+| `SMITHERS_SLACK_TEAM_IDS`, `_USER_IDS`, `_CHANNEL_IDS` | `Slack.Config.policy`                        |
+| `SMITHERS_GOOGLE_*`                                    | `GoogleCalendar.Config.resolve`              |
 
 `GitHub.Config.resolve` and `Linear.Config.resolve` read the corresponding
 `SMITHERS_*_WEBHOOK_SECRET` variables. Webhook channels require an explicit

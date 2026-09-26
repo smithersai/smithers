@@ -31,36 +31,32 @@ export default defineConfig({
       //
       // - `core/Channel.ts:68` can only see `Unauthorized`, the declared failure
       //   of `Credential.resolve`; its other arm needs a fake implementation
-      //   that violates the service type. `core/Channel.ts:153` is the `map`
+      //   that violates the service type. `core/Channel.ts:156` is the `map`
       //   placeholder that the returned channel's provider decoder bypasses.
       // - `core/Signature.ts:83` is the catch around Node's permissive
       //   `Buffer.from(value, "base64")`, which does not throw for a string.
-      // - `github/GitHubClient.ts:212` is the null fallback for capture group 1
-      //   after a regex that requires that group. At `:401`, Node fetch rejects
-      //   with an `Error`, so the primitive-cause formatter needs a transport
-      //   mock. At `:421`, `Schedule.while` removes non-retryable failures
-      //   before `Schedule.addDelay` can see one.
-      // - `github/ListenerRegistry.ts:793` formats a primitive thrown from an
-      //   internal attempt, but its call sites throw `IntegrationError` or a
-      //   Node file-system `Error`. The `:1007-1009` invariant guard needs a
+      // - `github/GitHubClient.ts:245` is the null fallback for capture group 1
+      //   after a regex that requires that group. At `:507`, `Schedule.while`
+      //   removes non-retryable failures before `Schedule.addDelay` can see one.
+      // - `github/ListenerRegistry.ts:1057` is an invariant guard that needs a
       //   create or update action with no listener; exported reconciliation
       //   builds both the plan and listener map from the same registry.
-      // - `linear/LinearClient.ts:397` needs Effect to enter `tryPromise` with
+      // - `linear/LinearClient.ts:434` needs Effect to enter `tryPromise` with
       //   an already-aborted signal. Effect stops an already-aborted run before
       //   the callback, and no interrupt can land between the two synchronous
       //   statements once it starts.
-      // - `telegram/InitData.ts:266-267` and `:365` are the two `UNSUPPORTED`
+      // - `telegram/InitData.ts:267` and `:365` are the two `UNSUPPORTED`
       //   runtime checks. Supported Node has `crypto.subtle` and Ed25519;
       //   deleting either would remove a runtime capability check.
-      // - `telegram/TelegramClient.ts:343-345` has the same Effect signal
-      //   boundary as Linear. The `:367` default API URL has no observable
-      //   value without a real api.telegram.org request or transport mock. At
-      //   `:403`, Node fetch again rejects with an `Error`, not a primitive.
+      // - `telegram/TelegramClient.ts:354-355` has the same Effect signal
+      //   boundary as Linear.
+      //
+      // Slack, Google Calendar, Gmail, and X reach every line and branch.
       thresholds: {
-        branches: 99.15,
-        functions: 99.72,
-        lines: 99.56,
-        statements: 99.51
+        branches: 99.72,
+        functions: 99.9,
+        lines: 99.82,
+        statements: 99.8
       }
     }
   }

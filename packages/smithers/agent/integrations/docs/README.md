@@ -1,15 +1,16 @@
 ---
 title: "@smthrs/integrations"
-description: "GitHub, Linear, and Telegram adapters for Smithers: verified webhook ingress, typed provider clients, and durable actions a flow can call."
+description: "GitHub, Linear, Telegram, Slack, Google Calendar, Gmail, and X adapters for Smithers: verified ingress, typed provider clients, and durable actions a flow can call."
 ---
 
 Smithers is a durable control plane for long-running agents: work runs as a
 flow whose every step is journaled, so a crash resumes where it stopped
 instead of starting over. `@smthrs/integrations` connects a Smithers
-application to GitHub, Linear, and Telegram. Each provider gets a typed
-client, a webhook door that verifies the delivery's signature before anything
-else runs, one normalized event shape, and a durable action a flow calls to
-comment, file an issue, or send a message.
+application to GitHub, Linear, Telegram, and Slack, and carries tested
+library code for Google Calendar, Gmail, and (read-only) X. Each provider gets
+a typed client, a door that verifies or authenticates a delivery before
+anything else runs, one normalized event shape, and durable actions a flow
+calls to comment, file an issue, or send a message.
 
 ## What it solves
 
@@ -44,12 +45,16 @@ Import the whole surface or one provider at a time. The aggregate entry point
 and the per-provider subpaths export the same names:
 
 ```ts
-import { Core, GitHub, Linear, Telegram } from "@smthrs/integrations"
+import { Core, GitHub, Gmail, GoogleCalendar, Linear, Slack, Telegram, X } from "@smthrs/integrations"
 // or only what you use:
 import * as Core from "@smthrs/integrations/core"
 import * as GitHub from "@smthrs/integrations/github"
+import * as Gmail from "@smthrs/integrations/gmail"
+import * as GoogleCalendar from "@smthrs/integrations/googlecalendar"
 import * as Linear from "@smthrs/integrations/linear"
+import * as Slack from "@smthrs/integrations/slack"
 import * as Telegram from "@smthrs/integrations/telegram"
+import * as X from "@smthrs/integrations/x"
 ```
 
 ## The shortest real example
@@ -144,8 +149,12 @@ Each provider ships the same four parts:
 | `GitHub.Actions.CommentOnIssue` | `integrations/github/comment-on-issue` | Comments on an issue or pull request.                          |
 | `Linear.Actions.CreateIssue`    | `integrations/linear/create-issue`     | Files an issue, resolving team, state, and label names to ids. |
 | `Telegram.Actions.SendMessage`  | `integrations/telegram/send-message`   | Sends a message, chunked, with a plain-text fallback.          |
+| `Slack.Actions.PostMessage`     | `integrations/slack/post-message`      | Posts to a channel or thread, optionally as a role persona.    |
 
-Three actions is not the closed set. They are declarations over the clients,
+Slack also ships `UpdateMessage` and `Reconcile`; Google Calendar and Gmail
+ship their own actions, listed in the [API reference](./api.md).
+
+These actions are not the closed set. They are declarations over the clients,
 and an endpoint they do not cover is your own `Action.make` over the same
 client. See [durable actions](./concepts/durable-actions.md).
 
@@ -158,15 +167,20 @@ the OAuth helpers) live in the `Core` namespace.
 Explicit configuration always wins. What it omits falls back to the
 environment:
 
-| Variable                                     | Used by                                      |
-| -------------------------------------------- | -------------------------------------------- |
-| `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN` | `GitHub.GitHubClient`, `ListenerRegistry`    |
-| `SMITHERS_GITHUB_API_BASE_URL`               | GitHub Enterprise or a fixture server        |
-| `SMITHERS_GITHUB_WEBHOOK_SECRET`             | `GitHub.Webhook`                             |
-| `SMITHERS_LINEAR_API_KEY`                    | `Linear.LinearClient`                        |
-| `SMITHERS_LINEAR_WEBHOOK_SECRET`             | `Linear.Webhook`                             |
-| `SMITHERS_LINEAR_API_BASE_URL`               | A fixture server                             |
-| `SMITHERS_TELEGRAM_BOT_TOKEN`                | `Telegram.TelegramClient`, `Telegram.Source` |
+| Variable                                               | Used by                                      |
+| ------------------------------------------------------ | -------------------------------------------- |
+| `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN`           | `GitHub.GitHubClient`, `ListenerRegistry`    |
+| `SMITHERS_GITHUB_API_BASE_URL`                         | GitHub Enterprise or a fixture server        |
+| `SMITHERS_GITHUB_WEBHOOK_SECRET`                       | `GitHub.Webhook`                             |
+| `SMITHERS_LINEAR_API_KEY`                              | `Linear.LinearClient`                        |
+| `SMITHERS_LINEAR_WEBHOOK_SECRET`                       | `Linear.Webhook`                             |
+| `SMITHERS_LINEAR_API_BASE_URL`                         | A fixture server                             |
+| `SMITHERS_TELEGRAM_BOT_TOKEN`                          | `Telegram.TelegramClient`, `Telegram.Source` |
+| `SMITHERS_SLACK_BOT_TOKEN`                             | `Slack.SlackClient`, `Slack.Connections`     |
+| `SMITHERS_SLACK_APP_TOKEN`                             | `Slack.SocketSource`                         |
+| `SMITHERS_SLACK_SIGNING_SECRET`                        | `Slack.Webhook`                              |
+| `SMITHERS_SLACK_TEAM_IDS`, `_USER_IDS`, `_CHANNEL_IDS` | `Slack.Config.policy`                        |
+| `SMITHERS_GOOGLE_*`                                    | `GoogleCalendar.Config.resolve`              |
 
 Every client, and the Telegram source, takes an `env` argument that replaces
 the ambient environment rather than layering over it, so a caller that
@@ -178,7 +192,9 @@ which account a call runs as.
 - [Quickstart](./quickstart.md): from install to a durable GitHub comment, in
   a flow, against the live API.
 - Guides per adapter: [GitHub](./guides/github.md), [Linear](./guides/linear.md),
-  [Telegram](./guides/telegram.md).
+  [Telegram](./guides/telegram.md), [Slack](./guides/slack.md),
+  [Google Calendar](./guides/google-calendar.md), [Gmail](./guides/gmail.md),
+  [X](./guides/x.md).
 - Concepts: [how adapters sit on the control plane](./concepts/control-plane.md),
   [events, signals, and cursors](./concepts/events-and-signals.md), and
   [durable actions](./concepts/durable-actions.md).

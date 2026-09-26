@@ -16,10 +16,10 @@
  * @since 1.0.0
  */
 import { Duration, Effect, Schedule } from "effect"
-import { CursorStore } from "../core/CursorStore.ts"
 import type { ExternalEvent } from "../core/ExternalEvent.ts"
 import { IntegrationError, isIntegrationError } from "../core/IntegrationError.ts"
 import * as SignalName from "../core/SignalName.ts"
+import * as CoreSource from "../core/Source.ts"
 import * as Environment from "../Environment.ts"
 import type { TelegramConfig } from "./Config.ts"
 import { isTelegramApiError, make as makeClient, type TelegramClient } from "./TelegramClient.ts"
@@ -195,7 +195,7 @@ const updateChatId = (update: Record<string, any>): number | string | null =>
     update["callback_query"]?.message?.chat?.id ?? null
 
 /**
- * One poll turn's result.
+ * One poll turn's result: the core `Source.Batch`.
  *
  * `cursor` is the offset to commit once `events` are handled. It is absent
  * when the poll returned nothing, which leaves the stored offset alone.
@@ -203,10 +203,7 @@ const updateChatId = (update: Record<string, any>): number | string | null =>
  * @category models
  * @since 1.0.0
  */
-export interface Batch {
-  readonly events: ReadonlyArray<ExternalEvent>
-  readonly cursor?: string | undefined
-}
+export type Batch = CoreSource.Batch
 
 /**
  * What the source needs.
@@ -234,28 +231,20 @@ export interface Options extends Partial<TelegramConfig> {
 }
 
 /**
- * A source bound to one bot.
+ * A source bound to one bot: the core `Source.Source`.
+ *
+ * `poll` is one turn against the stored offset and commits nothing. `run`
+ * reads the cursor, polls, hands the batch to `onBatch`, and commits the
+ * offset only after `onBatch` succeeds. The default schedule polls forever
+ * with 250 milliseconds between turns. A transient `getUpdates` failure is
+ * logged and retried with capped exponential backoff; a permanent one fails
+ * `run`. A caller-supplied finite schedule ends polling normally with
+ * `undefined`.
  *
  * @category services
  * @since 1.0.0
  */
-export interface Source {
-  readonly sourceId: string
-  /** One poll turn against the stored offset. Commits nothing. */
-  readonly poll: (cursor: string | null) => Effect.Effect<Batch, IntegrationError>
-  /**
-   * Reads the cursor, polls, hands the batch to `onBatch`, and
-   * commits the offset only after `onBatch` succeeds.
-   * The default schedule polls forever with 250 milliseconds between turns.
-   * A transient `getUpdates` failure is logged and retried with capped
-   * exponential backoff; a permanent one fails `run`.
-   * A caller-supplied finite schedule ends polling normally with `undefined`.
-   */
-  readonly run: <E, R>(
-    onBatch: (events: ReadonlyArray<ExternalEvent>) => Effect.Effect<void, E, R>,
-    options?: { readonly schedule?: Schedule.Schedule<unknown> | undefined }
-  ) => Effect.Effect<void, IntegrationError | E, R | CursorStore>
-}
+export type Source = CoreSource.Source
 
 /**
  * Builds a long-poll source.
@@ -392,23 +381,20 @@ export const make = (
     })
 
   const run: Source["run"] = (onBatch, runOptions) =>
-    Effect.gen(function*() {
-      const cursors = yield* CursorStore
-      const turn = Effect.gen(function*() {
-        const cursor = yield* cursors.get(sourceId)
-        const batch = yield* poll(cursor).pipe(
+    CoreSource.runWithCursor(
+      sourceId,
+      (cursor) =>
+        poll(cursor).pipe(
           Effect.tapError((error) =>
             isRetryablePollFailure(error)
               ? Effect.logWarning(`Telegram source "${sourceId}" poll failed; retrying`, error)
               : Effect.void
           ),
           Effect.retry(pollRetrySchedule)
-        )
-        yield* onBatch(batch.events)
-        if (batch.cursor !== undefined) yield* cursors.set(sourceId, batch.cursor)
-      })
-      return yield* Effect.asVoid(Effect.repeat(turn, runOptions?.schedule ?? Schedule.spaced("250 millis")))
-    })
+        ),
+      onBatch,
+      runOptions
+    )
 
   return { sourceId, poll, run }
 }

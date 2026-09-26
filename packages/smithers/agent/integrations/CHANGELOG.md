@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Slack`: a Web API client, the Events API door, a Socket Mode source that
+  acknowledges an envelope only after its handler succeeds, durable
+  `PostMessage`/`UpdateMessage`/`Reconcile` actions, Block Kit approvals, and
+  a conversation change feed. `Slack.Payload.Policy.allowedUserIds` admits an
+  owner's direct messages without listing the `D…` conversation and limits
+  every admitted delivery to those people. `Slack.Config.policy` reads the
+  allowlists from `SMITHERS_SLACK_*` variables. `Slack.Connections.fromEnvironment`,
+  `layerFromEnvironment`, and `fromConnection` build the connection an action
+  posts through from the environment or the credential broker; tokens stay
+  `Redacted`, and the `"*"` container admits every channel.
+  `PostMessage.persona` posts under a role's name and icon
+  (`chat:write.customize`). `Slack.Approval.pressedToken` names the prompt a
+  press belongs to.
+- `GoogleCalendar`, `Gmail`, and `X` as library code: clients, change feeds
+  into source records, Calendar event actions, and Gmail draft/send actions.
+  X is read-only; its client writes are not durable actions.
+- `Core.AccessToken`, `Core.OAuthToken`, `Core.Connection`, `Core.Source`,
+  `Core.SourceRecord`, `Core.SourceStore`, `Core.Sync`, and `GitHub.Sync`:
+  connections, token sources, source records, and the sync driver, with
+  public subpaths.
+
 ### Changed
 
 - `Telegram.Approval.decision` returns an `Outcome`: `Decided` only for an

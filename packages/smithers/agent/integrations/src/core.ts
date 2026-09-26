@@ -5,6 +5,12 @@
  */
 
 /**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as AccessToken from "./core/AccessToken.ts"
+
+/**
  * @category schemas
  * @since 1.0.0
  */
@@ -21,6 +27,12 @@ export * as AuthorizationUrl from "./core/AuthorizationUrl.ts"
  * @since 1.0.0
  */
 export * as Channel from "./core/Channel.ts"
+
+/**
+ * @category schemas
+ * @since 1.0.0
+ */
+export * as Connection from "./core/Connection.ts"
 
 /**
  * @category services
@@ -56,6 +68,12 @@ export * as Migrations from "./core/Migrations.ts"
  * @category constructors
  * @since 1.0.0
  */
+export * as OAuthToken from "./core/OAuthToken.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
 export * as Pkce from "./core/Pkce.ts"
 
 /**
@@ -69,3 +87,27 @@ export * as Signature from "./core/Signature.ts"
  * @since 1.0.0
  */
 export * as SignalName from "./core/SignalName.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as Source from "./core/Source.ts"
+
+/**
+ * @category schemas
+ * @since 1.0.0
+ */
+export * as SourceRecord from "./core/SourceRecord.ts"
+
+/**
+ * @category services
+ * @since 1.0.0
+ */
+export * as SourceStore from "./core/SourceStore.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as Sync from "./core/Sync.ts"

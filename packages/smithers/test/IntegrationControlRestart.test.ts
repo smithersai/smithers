@@ -34,7 +34,8 @@ it("composes control, memory, and integration cursors in a fresh database and re
     { migration_id: 6001, name: "control_control_tables" },
     { migration_id: 7001, name: "memory_initial" },
     { migration_id: 7002, name: "memory_indexes" },
-    { migration_id: 8001, name: "integrations_integration_cursors" }
+    { migration_id: 8001, name: "integrations_integration_cursors" },
+    { migration_id: 8002, name: "integrations_integration_records" }
   ]))
   expect(new Set(written.ledger.map((row: { migration_id: number }) => row.migration_id)).size).toBe(
     written.ledger.length
@@ -47,6 +48,10 @@ it("adds cursors after a control and memory database already exists without losi
   const before = invoke("control-first", filename)
   const appended = invoke("append", filename)
   expect(appended).toMatchObject({ cursor: "99", control: before.control, fact: before.fact })
-  expect(appended.ledger).toEqual([...before.ledger, { migration_id: 8001, name: "integrations_integration_cursors" }])
+  expect(appended.ledger).toEqual([
+    ...before.ledger,
+    { migration_id: 8001, name: "integrations_integration_cursors" },
+    { migration_id: 8002, name: "integrations_integration_records" }
+  ])
   expect(invoke("read", filename)).toEqual(appended)
 })

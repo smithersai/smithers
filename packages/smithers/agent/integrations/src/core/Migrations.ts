@@ -14,9 +14,11 @@
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Layer from "effect/Layer"
 import { integrationCursors } from "./IntegrationCursorMigration.ts"
+import { integrationRecords } from "./IntegrationRecordsMigration.ts"
 
 /**
- * The integration cursor set, in migration id block 8000.
+ * The integration set, in migration id block 8000: the polling cursor table,
+ * then the source record store's tables.
  *
  * The blocks below it are journal `0`, run-store `1000`, step-cache `2000`,
  * engine-store `3000`, plan `4000`, time-travel `5000`, control `6000`,
@@ -28,11 +30,29 @@ import { integrationCursors } from "./IntegrationCursorMigration.ts"
 export const set: DatabaseMigrations.MigrationSet = {
   namespace: "integrations",
   idOffset: DatabaseMigrations.idBlock * 8,
-  migrations: { "0001_integration_cursors": integrationCursors }
+  migrations: {
+    "0001_integration_cursors": integrationCursors,
+    "0002_integration_records": integrationRecords
+  }
 }
 
 /**
- * Applies the integration cursor schema migrations.
+ * Applies the integration schema migrations.
+ *
+ * A host that keeps integration state in its control database lists
+ * {@link set} beside the control and memory sets it already runs, so one
+ * `flows_migrations` ledger records all of them:
+ *
+ * ```ts
+ * import * as DatabaseMigrations from "@smthrs/database/Migrations"
+ * import { Core } from "@smthrs/integrations"
+ *
+ * const migrate = DatabaseMigrations.run([controlSet, memorySet, Core.Migrations.set])
+ * ```
+ *
+ * A database that already applied `0001_integration_cursors` gains
+ * `0002_integration_records` on its next open: the loader applies an append
+ * to an installed block before its ordinary forward pass.
  *
  * @category migrations
  * @since 1.0.0
