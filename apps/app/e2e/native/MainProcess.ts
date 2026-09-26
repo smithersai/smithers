@@ -18,6 +18,7 @@
  * not have. The local server is the real one.
  */
 import { mock } from "bun:test"
+import { dlopen, FFIType, JSCallback, ptr } from "bun:ffi"
 import * as os from "node:os"
 import { mkdtemp, rm } from "node:fs/promises"
 import { join } from "node:path"
@@ -50,13 +51,37 @@ interface RpcConfig {
 }
 
 const listeners = new Map<string, Array<(event: unknown) => void>>()
-/*
- * A cold launch by URL: macOS delivers the link as the SDK initializes, so a
- * launch URL is emitted the moment the entrypoint registers its listener.
- */
-const launchUrls = [...(scenario.openUrlsAtLaunch ?? [])]
 const emit = (name: string, data: unknown): void => {
   for (const listener of listeners.get(name) ?? []) listener({ name, data })
+}
+
+/*
+ * A cold launch by URL, delivered the way Electrobun 2.0.1 delivers it (#1969).
+ * macOS may call application:openURLs: before the SDK loads; the native
+ * wrapper keeps those URLs, and setURLOpenHandler, called while
+ * `electrobun/main` evaluates, flushes them synchronously into a threadsafe
+ * JSCallback. Bun runs such a callback as a task, even from the JS thread.
+ * So this fake flushes the launch URLs through a real threadsafe JSCallback,
+ * called from native code (libc qsort's comparator) while the fake SDK module
+ * is first imported: a listener registered any later than the entrypoint's
+ * would miss them.
+ */
+const nativeCallbacks: Array<JSCallback> = []
+const flushLaunchUrlsLikeNative = (urls: ReadonlyArray<string>): void => {
+  if (urls.length === 0) return
+  const pending = [...urls]
+  const libc = dlopen(process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libc.so.6", {
+    qsort: { args: [FFIType.ptr, FFIType.u64, FFIType.u64, FFIType.function], returns: FFIType.void }
+  })
+  const callback = new JSCallback(() => {
+    const url = pending.shift()
+    if (url !== undefined) emit("open-url", { url })
+    return 0
+  }, { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32, threadsafe: true })
+  nativeCallbacks.push(callback)
+  // qsort compares n-1 times at least for n elements; one comparison per URL.
+  const items = new Int32Array(urls.length + 1)
+  libc.symbols.qsort(ptr(items), items.length, 4, callback.ptr)
 }
 
 const fakeSdk = {
@@ -64,7 +89,6 @@ const fakeSdk = {
     events: {
       on: (name: string, listener: (event: unknown) => void) => {
         listeners.set(name, [...(listeners.get(name) ?? []), listener])
-        if (name === "open-url") for (const url of launchUrls.splice(0)) emit(name, { url })
       }
     }
   },
@@ -110,8 +134,15 @@ const fakeSdk = {
     }
   }
 }
-mock.module("electrobun/main", () => fakeSdk)
-mock.module("electrobun/bun", () => fakeSdk)
+// Both specifiers resolve to one file of the npm stub, so they share one mock.
+let sdkLoaded = false
+const loadFakeSdk = (): typeof fakeSdk => {
+  if (!sdkLoaded) flushLaunchUrlsLikeNative(scenario.openUrlsAtLaunch ?? [])
+  sdkLoaded = true
+  return fakeSdk
+}
+mock.module("electrobun/main", loadFakeSdk)
+mock.module("electrobun/bun", loadFakeSdk)
 
 // A probe must never restore or rewrite the signed-in user's real application state.
 // The caller may own the home so it can reach the state a scenario leaves behind.

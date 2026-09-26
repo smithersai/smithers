@@ -481,6 +481,27 @@ suite is running. Failed package staging removes its temporary workspace and
 reports both errors if cleanup also fails. The packaged lane is macOS-only and
 the GitHub fixture scenario requires network access.
 
+### Deep links
+
+`smithers://open/<owner>/<repo>` (`src/bun/DeepLink.ts`) opens that
+repository page. On a cold launch macOS can deliver the link before the SDK
+loads. Electrobun 2.0.1's native wrapper holds such links until
+`setURLOpenHandler` runs while `electrobun/main` evaluates, then flushes them
+into a threadsafe `JSCallback`, which Bun runs as a task after the importing
+module's continuation. `src/bun/NativeApp.ts` registers its `open-url`
+listener in that continuation, before anything else awaits. The native probe
+(`src/bun/Main.test.ts`) delivers launch links through a real threadsafe
+callback called from native code during the SDK import; a listener registered
+one task later fails it.
+
+Registration needs a bundle in `/Applications`, so the packaged check is
+manual (#1969):
+
+1. Quit Smithers; install the stable build in `/Applications`.
+2. `open smithers://open/smithersai/smithers`.
+3. The first window shows the smithersai/smithers page. Repeat with the app
+   running: the open window navigates to the link.
+
 ### Approval ownership
 
 Approval and approvals-inbox cards are created by runtime transitions from
