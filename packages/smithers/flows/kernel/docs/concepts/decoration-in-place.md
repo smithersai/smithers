@@ -35,13 +35,13 @@ composition guards the whole surface at once.
 Five tags, and everything that touches the outside world enters through one of
 them:
 
-| Slot       | Tag                   | Owner                   | Actions checked                                                                                                        |
-| ---------- | --------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Filesystem | `FileSystem`          | Effect                  | `fs:read`, `fs:write`                                                                                                  |
-| Paths      | `Path`                | Effect                  | none, by decision                                                                                                      |
-| Processes  | `ChildProcessSpawner` | Effect                  | `proc:spawn`                                                                                                           |
-| Repository | `Jj`                  | [`@smthrs/jj`](/api/jj) | `jj:status`, `jj:diff`, `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:root`, `jj:revert` |
-| Network    | `HttpClient`          | Effect                  | `net:get`, `net:post`, `model:call`                                                                                    |
+| Slot       | Tag                   | Owner                   | Actions checked                                                                                                                         |
+| ---------- | --------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Filesystem | `FileSystem`          | Effect                  | `fs:read`, `fs:write`                                                                                                                   |
+| Paths      | `Path`                | Effect                  | none, by decision                                                                                                                       |
+| Processes  | `ChildProcessSpawner` | Effect                  | `proc:spawn`                                                                                                                            |
+| Repository | `Jj`                  | [`@smthrs/jj`](/api/jj) | `jj:status`, `jj:diff`, `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:root`, `jj:revert`, `jj:op-restore` |
+| Network    | `HttpClient`          | Effect                  | `net:get`, `net:post`, `model:call`                                                                                                     |
 
 `HostServices.HostServiceTags` is that list as values and
 `HostServices.HostServiceIds` is the matching stable id per slot

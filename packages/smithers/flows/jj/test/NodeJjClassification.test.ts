@@ -24,11 +24,6 @@ import { budgeted } from "./budgeted.ts"
 
 const script = `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "jj 0.39.0"; exit 0; fi
-if [ "$FLOWS_FAKE_JJ" = "describe-fails" ]; then
-  if [ "$1" = "describe" ]; then echo "Error: description refused" 1>&2; exit 1; fi
-  if [ "$1" = "log" ]; then echo "snapshotid"; fi
-  exit 0
-fi
 case "$FLOWS_FAKE_JJ" in
   refused) echo "Warning: Refused to snapshot some files:" 1>&2; echo "  artifact.bin: 2.0MiB (2097152 bytes); the maximum size allowed is 1.0MiB (1048576 bytes)" 1>&2; exit 0 ;;
   conflict) echo "Error: would leave conflicts in note.txt" 1>&2; exit 1 ;;
@@ -288,13 +283,15 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
   it.live("bounds the command it records so a caller's message cannot ride into the journal", () =>
     Effect.gen(function*() {
       // `command` is journaled with the error and the argv holds whatever the
-      // caller passed as a snapshot message.
-      process.env.FLOWS_FAKE_JJ = "describe-fails"
-      const error = asJjError(yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.snapshot("m".repeat(2000))))))
+      // caller passed as a workspace name.
+      process.env.FLOWS_FAKE_JJ = "conflict"
+      const error = asJjError(
+        yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.workspaceForget("m".repeat(2000)))))
+      )
 
       expect(error.command!.length).toBeLessThan(600)
       expect(error.command!.endsWith("…")).toBe(true)
-      expect(error.command!.startsWith("jj describe -r snapshotid -m=mmm")).toBe(true)
+      expect(error.command!.startsWith("jj workspace forget")).toBe(true)
     }))
 
   it.live("names a starting path that is not there when asked for its root", () =>
@@ -313,16 +310,16 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
     Effect.gen(function*() {
       // `node:child_process` THROWS for an argument carrying a NUL byte rather
       // than emitting an `error` event, so an unguarded spawn turned a caller's
-      // `snapshot` message into a defect no `Jj` caller can catch.
+      // workspace name into a defect no `Jj` caller can catch.
       process.env.FLOWS_FAKE_JJ = "ok"
       const nul = String.fromCharCode(0)
       const error = yield* run(
-        Effect.flip(Effect.flatMap(Jj, (jj) => jj.snapshot(`held${nul}message`)))
+        Effect.flip(Effect.flatMap(Jj, (jj) => jj.workspaceForget(`held${nul}name`)))
       )
 
       expect(error.code).toBe("unknown")
       expect(error.message).toContain("null bytes")
-      expect(error).toMatchObject({ module: "NodeJj", method: "snapshot" })
+      expect(error).toMatchObject({ module: "NodeJj", method: "workspaceForget" })
     }))
 
   it.live("stops a child that never stops printing, instead of buffering it", () =>

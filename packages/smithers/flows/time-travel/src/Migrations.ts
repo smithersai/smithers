@@ -16,6 +16,7 @@ import { initial } from "./migrations/0001_initial.ts"
 import { archiveGeneration } from "./migrations/0002_archive_generation.ts"
 import { lineageProbes } from "./migrations/0003_lineage_probes.ts"
 import { planDigest } from "./migrations/0004_plan_digest.ts"
+import { operationId } from "./migrations/0005_operation_id.ts"
 
 /**
  * Time travel's namespaced migration set.
@@ -33,7 +34,8 @@ export const set: DatabaseMigrations.MigrationSet = {
     "0001_initial": initial,
     "0002_archive_generation": archiveGeneration,
     "0003_lineage_probes": lineageProbes,
-    "0004_plan_digest": planDigest
+    "0004_plan_digest": planDigest,
+    "0005_operation_id": operationId
   }
 }
 

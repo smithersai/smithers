@@ -417,6 +417,60 @@ describe("durable history CLI", () => {
     }
   )
 
+  it.skipIf(spawnSync("jj", ["--version"], { stdio: "ignore" }).status !== 0)(
+    "restores a bookmark moved during the run with rewind --whole-repo",
+    async () => {
+      const root = await fixture(true)
+      const jj = (...args: Array<string>) => execFileSync("jj", args, { cwd: root, encoding: "utf8" })
+      // A bookmark on a closed change, so it does not follow later working-copy captures.
+      jj("commit", "--message=base")
+      jj("bookmark", "create", "release", "-r", "@-")
+      const before = jj("log", "--no-graph", "-r", "release", "-T", "commit_id")
+      const operationId = jj("op", "log", "-n1", "--no-graph", "-T", "id")
+      const commitId = jj("log", `--at-op=${operationId}`, "-r", "@", "--no-graph", "-T", "commit_id")
+      const meta = JSON.stringify({ lineageId: "fixture/root" })
+      editDatabase(root, "engine", (db) => {
+        const insert = db.prepare(
+          "INSERT INTO flows_journal_events(run_id,seq,event_id,source_id,source_seq,emitted_at_ms,event_type,payload_json,meta_json) VALUES('run-1',?,?,'fixture',?,0,?,?,?)"
+        )
+        insert.run(
+          3,
+          "snapshot",
+          3,
+          "flows.engine.snapshot-identified",
+          JSON.stringify({ snapshotId: commitId, operationId }),
+          meta
+        )
+        insert.run(
+          4,
+          "effect",
+          4,
+          "flows.time-travel.effect-boundary",
+          JSON.stringify({
+            version: 1,
+            effect: {
+              id: "move",
+              kind: "jj",
+              tier: "compensable",
+              status: "succeeded",
+              runId: "run-1",
+              lineageId: "fixture/root",
+              durableBoundary: true,
+              providerStream: false
+            }
+          }),
+          meta
+        )
+      })
+      jj("bookmark", "set", "release", "-r", "root()", "--allow-backwards")
+
+      const result = await serve(root, ["rewind", "run-1", "--at", "3", "--yes", "--whole-repo"])
+
+      expect(result.exitCode).toBe(0)
+      expect(jj("log", "--no-graph", "-r", "release", "-T", "commit_id")).toBe(before)
+    }
+  )
+
   it("replays real stored evidence without modifying the database or building recovery", async () => {
     const root = await fixture()
     const before = await readFile(join(root, ".flows", "engine.db"))

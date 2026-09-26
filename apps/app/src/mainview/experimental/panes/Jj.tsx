@@ -2,7 +2,7 @@
  * Mock: Version control. Behind VITE_SMITHERS_EXPERIMENTAL, reached by
  * `/experimental.jj`. Self-contained on purpose — see ../Pane.ts.
  *
- * Eight operations behind one service tag, every one of them a capability the
+ * Nine operations behind one service tag, every one of them a capability the
  * kernel checks and a `jj` argv some layer spawned. A run's tree moves and the
  * only evidence today is whatever the step printed, so a `snapshot_refused`
  * reads as "the agent did nothing" rather than as jj refusing a file.
@@ -53,7 +53,7 @@ const LOG: ReadonlyArray<Entry> = [
     action: "jj:snapshot",
     tier: "compensable",
     argument: "before the risky step",
-    command: "jj new --quiet · jj describe -r kqmzxrolnvpt -m=before the risky step --quiet",
+    command: "jj op log -n1 -T id · jj log --at-op=<operation> -r @",
     result: "kqmzxrolnvpt",
     ms: "184 ms",
     tone: "ok"
@@ -86,7 +86,7 @@ const LOG: ReadonlyArray<Entry> = [
     action: "jj:snapshot",
     tier: "compensable",
     argument: "after the risky step",
-    command: "jj new --quiet",
+    command: "jj op log -n1 -T id",
     result: "snapshot_refused",
     ms: "240 ms",
     tone: "bad",
@@ -129,7 +129,7 @@ const LOG: ReadonlyArray<Entry> = [
 ]
 
 const OPERATIONS = [
-  { id: "snapshot", action: "jj:snapshot", tier: "compensable", member: "required", command: "jj new --quiet" },
+  { id: "snapshot", action: "jj:snapshot", tier: "compensable", member: "required", command: "jj op log -n1 -T id" },
   { id: "restore", action: "jj:restore", tier: "compensable", member: "required", command: "jj restore --from <rev>" },
   { id: "diff", action: "jj:diff", tier: "sealed", member: "required", command: "jj diff --from <a> --to <b> --git" },
   {
@@ -148,7 +148,8 @@ const OPERATIONS = [
   },
   { id: "status", action: "jj:status", tier: "sealed", member: "required", command: "jj status" },
   { id: "root", action: "jj:root", tier: "sealed", member: "optional", command: "jj root" },
-  { id: "revert", action: "jj:revert", tier: "compensable", member: "optional", command: "jj revert -r <rev> --insert-before @" }
+  { id: "revert", action: "jj:revert", tier: "compensable", member: "optional", command: "jj revert -r <rev> --insert-before @" },
+  { id: "opRestore", action: "jj:op-restore", tier: "compensable", member: "optional", command: "jj op restore <operation>" }
 ]
 
 export const Pane = pane({

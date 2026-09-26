@@ -518,16 +518,18 @@ export const make: Effect.Effect<
 
     const upsertSnapshot = (snapshot: TimeTravelStore.Snapshot) =>
       sql`
-        INSERT INTO flows_time_travel_snapshots (run_id, lineage_id, seq, change_id, plan_digest)
+        INSERT INTO flows_time_travel_snapshots (run_id, lineage_id, seq, change_id, operation_id, plan_digest)
         VALUES (
           ${snapshot.runId},
           ${snapshot.frame.lineageId},
           ${snapshot.frame.seq},
           ${snapshot.changeId},
+          ${snapshot.operationId ?? null},
           ${snapshot.planDigest ?? null}
         )
         ON CONFLICT (run_id, lineage_id, seq) DO UPDATE SET
           change_id = excluded.change_id,
+          operation_id = excluded.operation_id,
           plan_digest = excluded.plan_digest
       `
 
@@ -535,14 +537,20 @@ export const make: Effect.Effect<
       snapshotAt: Effect.fn("TimeTravelStore.snapshotAt")((runId, frame) =>
         Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
           sql<
-            { readonly change_id: string; readonly seq: number; readonly plan_digest: string | null }
-          >`SELECT change_id, seq, plan_digest FROM flows_time_travel_snapshots WHERE run_id = ${runId} AND lineage_id = ${frame.lineageId} AND seq <= ${frame.seq} ORDER BY seq DESC LIMIT 1`
+            {
+              readonly change_id: string
+              readonly seq: number
+              readonly operation_id: string | null
+              readonly plan_digest: string | null
+            }
+          >`SELECT change_id, seq, operation_id, plan_digest FROM flows_time_travel_snapshots WHERE run_id = ${runId} AND lineage_id = ${frame.lineageId} AND seq <= ${frame.seq} ORDER BY seq DESC LIMIT 1`
             .pipe(
               Effect.map((rows) =>
                 rows[0] === undefined ? undefined : {
                   runId,
                   frame: { lineageId: frame.lineageId, seq: rows[0].seq },
                   changeId: rows[0].change_id,
+                  ...(rows[0].operation_id === null ? {} : { operationId: rows[0].operation_id }),
                   ...(rows[0].plan_digest === null ? {} : { planDigest: rows[0].plan_digest })
                 }
               ),
@@ -578,9 +586,10 @@ export const make: Effect.Effect<
               readonly lineage_id: string
               readonly seq: number
               readonly change_id: string
+              readonly operation_id: string | null
               readonly plan_digest: string | null
             }
-          >`SELECT lineage_id, seq, change_id, plan_digest FROM flows_time_travel_snapshots
+          >`SELECT lineage_id, seq, change_id, operation_id, plan_digest FROM flows_time_travel_snapshots
             WHERE run_id = ${runId} AND (lineage_id, seq) IN (
               SELECT lineage_id, MAX(seq) FROM flows_time_travel_snapshots WHERE run_id = ${runId} GROUP BY lineage_id
             )
@@ -590,6 +599,7 @@ export const make: Effect.Effect<
                 runId,
                 frame: { lineageId: row.lineage_id, seq: row.seq },
                 changeId: row.change_id,
+                ...(row.operation_id === null ? {} : { operationId: row.operation_id }),
                 ...(row.plan_digest === null ? {} : { planDigest: row.plan_digest })
               }))
             ),

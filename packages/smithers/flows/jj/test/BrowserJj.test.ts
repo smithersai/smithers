@@ -90,6 +90,10 @@ describe("BrowserJj over the fake ABI module", () => {
         code: "not_installed",
         command: "jj revert"
       })
+      expect(yield* (Effect.flip(jj.opRestore!("0a1b2c")))).toMatchObject({
+        code: "not_installed",
+        command: "jj op restore"
+      })
       expect(stderr.slice(1).map((request) => JSON.parse(request))).toEqual([
         { op: "snapshot", root: "/repo", message: "checkpoint" },
         { op: "snapshot", root: "/repo" },

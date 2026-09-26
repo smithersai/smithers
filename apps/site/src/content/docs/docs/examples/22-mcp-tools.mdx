@@ -76,7 +76,7 @@ export const grant = `proc:spawn:mcp/${serverName}`
  *
  * `McpFlows` cannot describe what opaque tool code will reach, so it declares
  * the widest authority it can name: one entry per host action, `fs:read:**`
- * through `jj:revert:**`. It spells each one out because the cell boundary
+ * through `jj:op-restore:**`. It spells each one out because the cell boundary
  * reads a declared capability with `Capability.parse` as an EXACT
  * `namespace:operation:resource` triple. A bare `"*"` parses as nothing and
  * counts as unauthorized under every envelope, however wide. That is the

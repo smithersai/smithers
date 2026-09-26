@@ -136,6 +136,10 @@ describe("Jj", () => {
         Effect.sync(() => {
           calls.push(`revert:${changeId}`)
           return { reverted: ["src/a.ts"] }
+        }),
+      opRestore: (operationId) =>
+        Effect.sync(() => {
+          calls.push(`opRestore:${operationId}`)
         })
     })
 
@@ -143,10 +147,12 @@ describe("Jj", () => {
       const jj = yield* Jj.Jj
       expect(yield* jj.root!("/repository/lane")).toBe("/repository")
       expect(yield* jj.revert!("change")).toEqual({ reverted: ["src/a.ts"] })
-      expect(calls).toEqual(["root:/repository/lane", "revert:change"])
+      yield* jj.opRestore!("abc123")
+      expect(calls).toEqual(["root:/repository/lane", "revert:change", "opRestore:abc123"])
       expect(checks).toEqual([
         { action: "jj:root", resource: "/repository/lane" },
-        { action: "jj:revert", resource: "change" }
+        { action: "jj:revert", resource: "change" },
+        { action: "jj:op-restore", resource: "abc123" }
       ])
     }).pipe(
       Effect.provide(Jj.layer),
@@ -282,6 +288,7 @@ describe("Jj", () => {
       const jj = yield* Jj.Jj
       expect(jj.root).toBeUndefined()
       expect(jj.revert).toBeUndefined()
+      expect(jj.opRestore).toBeUndefined()
       expect(yield* jj.status()).toBe("status")
     }).pipe(
       Effect.provide(Jj.layer),

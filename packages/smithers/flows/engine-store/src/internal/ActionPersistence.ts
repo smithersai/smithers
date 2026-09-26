@@ -347,6 +347,12 @@ const AttemptMeta = Schema.Struct({
    */
   hardViolation: Schema.optional(Schema.Literal(true)),
   snapshotId: Schema.optional(Schema.String),
+  /**
+   * The jj operation that recorded `snapshotId`, when the host reports one.
+   * A whole-repository rewind restores it to undo bookmark moves, rebases,
+   * `describe`, and `abandon` that a tree restore leaves in place.
+   */
+  snapshotOperationId: Schema.optional(Schema.String),
   // The incarnation that admitted the running row. Since issues #102/#103
   // the adoption decision rests on the admission permit rather than this
   // nonce — a live same-key fiber of this process would be holding the
@@ -2021,11 +2027,16 @@ export const make = (deps: Dependencies) => {
             yield* emitCallInvoked
           }))
 
-          const announceSnapshot = (snapshotId: string) =>
+          const announceSnapshot = (snapshotId: string, operationId: string | undefined) =>
             emitLifecycle(
-              JournalRecords.snapshotIdentified(attemptSource("snapshot"), { ...attemptId, snapshotId })
+              JournalRecords.snapshotIdentified(attemptSource("snapshot"), {
+                ...attemptId,
+                snapshotId,
+                ...(operationId === undefined ? {} : { operationId })
+              })
             )
           let snapshotId: string | undefined
+          let snapshotOperationId: string | undefined
           if (input.tier !== "compensable") {
             /**
              * THE TIER-2 ANCHOR FOR AN ORDINARY FRAME.
@@ -2059,9 +2070,10 @@ export const make = (deps: Dependencies) => {
               // compensation baseline instead of snapshotting the dirty state.
               yield* jj.restore(runningMeta.snapshotId)
               snapshotId = runningMeta.snapshotId
+              snapshotOperationId = runningMeta.snapshotOperationId
               // Re-announcing a pre-image the row already records durably:
               // there is no state write to pair this announcement with.
-              yield* announceSnapshot(snapshotId)
+              yield* announceSnapshot(snapshotId, snapshotOperationId)
             } else {
               if (input.attempt > 1) {
                 const previous = yield* attempts.get({ ...attemptId, attempt: input.attempt - 1 })
@@ -2077,6 +2089,7 @@ export const make = (deps: Dependencies) => {
               // pointer, and a change id would follow an agent's rewrite of the
               // pre-image change (`jj squash`) and restore the step's edits.
               snapshotId = snapshot.commitId
+              snapshotOperationId = snapshot.operationId
               // Persist the pre-image into the running row before announcing it
               // (issue #87): a SIGKILL mid-attempt must not lose the only
               // reference to the clean tree, or adoption re-executes on top of
@@ -2086,8 +2099,13 @@ export const make = (deps: Dependencies) => {
               // outside: a host call must never run inside a write transaction.
               yield* atomically(
                 attempts.patch(attemptId, {
-                  meta: { ...declarationMeta, admittedBy: deps.owner, snapshotId } satisfies AttemptMeta
-                }, deps.owner).pipe(Effect.andThen(announceSnapshot(snapshotId)))
+                  meta: {
+                    ...declarationMeta,
+                    admittedBy: deps.owner,
+                    snapshotId,
+                    ...(snapshotOperationId === undefined ? {} : { snapshotOperationId })
+                  } satisfies AttemptMeta
+                }, deps.owner).pipe(Effect.andThen(announceSnapshot(snapshotId, snapshotOperationId)))
               )
             }
           }
@@ -2231,7 +2249,8 @@ export const make = (deps: Dependencies) => {
             ...runningMeta,
             ...declarationMeta,
             admittedBy: deps.owner,
-            ...(snapshotId === undefined ? {} : { snapshotId })
+            ...(snapshotId === undefined ? {} : { snapshotId }),
+            ...(snapshotOperationId === undefined ? {} : { snapshotOperationId })
           } satisfies AttemptMeta
           /**
            * Commits a crossing into the attempt row, with the boundary record
@@ -2346,7 +2365,8 @@ export const make = (deps: Dependencies) => {
               meta: {
                 ...declarationMeta,
                 ...(violation ? { hardViolation: true as const } : {}),
-                ...(snapshotId === undefined ? {} : { snapshotId })
+                ...(snapshotId === undefined ? {} : { snapshotId }),
+                ...(snapshotOperationId === undefined ? {} : { snapshotOperationId })
               }
             }, [
               ...(violation
@@ -2461,6 +2481,7 @@ export const make = (deps: Dependencies) => {
           const meta: AttemptMeta = {
             ...declarationMeta,
             ...(snapshotId === undefined ? {} : { snapshotId }),
+            ...(snapshotOperationId === undefined ? {} : { snapshotOperationId }),
             ...(evidence === undefined ? {} : { boundary: evidence }),
             ...(readSetVerified ? { readSetVerified: true as const } : {})
           }

@@ -449,6 +449,40 @@ describe("Compensation.prepareWorkspace then restorePreparedWorkspace", () => {
       expect(result.workspace).toEqual({ currentChangeId: "current", targetChangeId: "target" })
     }))
 
+  it.effect("restores and rolls back the whole repository by operation when asked", () =>
+    Effect.gen(function*() {
+      const calls: Array<string> = []
+      const plan = yield* Compensation.assess([compensable], "target", {
+        wholeRepo: true,
+        targetOperationId: "target-op"
+      }).pipe(Effect.provide(cache()), Effect.provide(registryOf([])))
+      const jj = jjOf({
+        snapshot: () => Effect.succeed({ commitId: "current", changeId: "current", operationId: "current-op" }),
+        restore: (revision: string) => Effect.sync(() => void calls.push(`restore:${revision}`)),
+        opRestore: (operationId: string) => Effect.sync(() => void calls.push(`opRestore:${operationId}`))
+      })
+
+      const result = yield* restoreWorkspace(plan, []).pipe(Effect.provide(registryOf([])), Effect.provide(jj))
+      expect(result.workspace).toEqual({
+        currentChangeId: "current",
+        targetChangeId: "target",
+        currentOperationId: "current-op",
+        targetOperationId: "target-op"
+      })
+      yield* Compensation.rollback(result).pipe(Effect.provide(registryOf([])), Effect.provide(jj))
+      expect(calls).toEqual(["opRestore:target-op", "opRestore:current-op"])
+    }))
+
+  it.effect("blocks a whole-repository restore to a frame with no recorded operation", () =>
+    Effect.gen(function*() {
+      const plan = yield* Compensation.assess([compensable], "target", { wholeRepo: true }).pipe(
+        Effect.provide(cache()),
+        Effect.provide(registryOf([]))
+      )
+      expect(plan.assessments.map((assessment) => assessment.classification)).toEqual(["blocking"])
+      expect(plan.targetOperationId).toBeUndefined()
+    }))
+
   it.effect("rolls handler receipts back when the pre-restore snapshot fails", () =>
     Effect.gen(function*() {
       const rolledBack: Array<string> = []

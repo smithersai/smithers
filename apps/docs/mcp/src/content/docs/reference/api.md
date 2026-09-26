@@ -378,7 +378,8 @@ from `Capability.Action.literals` and frozen.
   "jj:workspace-add:**",
   "jj:workspace-forget:**",
   "jj:root:**",
-  "jj:revert:**"
+  "jj:revert:**",
+  "jj:op-restore:**"
 ]
 ```
 

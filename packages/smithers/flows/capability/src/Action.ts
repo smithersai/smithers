@@ -27,7 +27,8 @@ export const Action = Schema.Literals(
     "jj:workspace-add",
     "jj:workspace-forget",
     "jj:root",
-    "jj:revert"
+    "jj:revert",
+    "jj:op-restore"
   ] as const
 )
 

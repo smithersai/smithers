@@ -3835,6 +3835,11 @@
               "default": false,
               "description": "Confirm archiving the suffix and restoring the historical frame",
               "type": "boolean"
+            },
+            "wholeRepo": {
+              "default": false,
+              "description": "Restore the whole jj repository (bookmarks, rebases, descriptions) to the frame's recorded operation",
+              "type": "boolean"
             }
           },
           "required": [
@@ -3842,7 +3847,8 @@
             "at",
             "limit",
             "preview",
-            "yes"
+            "yes",
+            "wholeRepo"
           ],
           "additionalProperties": false
         }

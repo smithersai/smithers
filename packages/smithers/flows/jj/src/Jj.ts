@@ -224,10 +224,25 @@ export type ChangeId = string
 export type Revision = string
 
 /**
- * What {@link Jj.snapshot} recorded: the closed commit.
+ * A jj operation id: the full hex id `jj op log -T id` prints.
+ *
+ * An operation names the whole repository view at one point: every bookmark,
+ * every head, and every workspace's working-copy commit. Restoring one undoes
+ * bookmark moves, rebases, `describe`, and `abandon`, which a tree restore to
+ * a {@link Revision} cannot.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type OperationId = string
+
+/**
+ * What {@link Jj.snapshot} recorded.
  *
  * `commitId` is the pointer to journal and restore. `changeId` names the same
- * change for people and moves with rewrites.
+ * change for people and moves with rewrites. `operationId` is the operation
+ * that recorded the capture, for {@link Jj.opRestore}; a backend that cannot
+ * report it leaves it absent.
  *
  * @category models
  * @since 1.0.0
@@ -235,6 +250,7 @@ export type Revision = string
 export interface Snapshot {
   readonly commitId: Revision
   readonly changeId: ChangeId
+  readonly operationId?: OperationId | undefined
 }
 
 /**
@@ -269,8 +285,9 @@ export type JjFailure = JjError | Permission.PermissionError
  */
 export interface Jj {
   /**
-   * Commits the working copy and returns the closed commit. Restore to its
-   * `commitId`; the `changeId` moves if anything later rewrites the change.
+   * Captures the working copy and returns the commit that holds it. Restore to
+   * its `commitId`; the `changeId` moves if anything later rewrites the change.
+   * The CLI layers capture without closing a change and ignore `message`.
    */
   readonly snapshot: (message?: string) => Effect.Effect<Snapshot, JjFailure>
   /** Puts the working copy back to `revision`. */
@@ -326,6 +343,12 @@ export interface Jj {
   readonly revert?:
     | ((revision: Revision) => Effect.Effect<{ readonly reverted: ReadonlyArray<string> }, JjFailure>)
     | undefined
+  /**
+   * Restores the whole repository to `operationId`, as `jj op restore` does:
+   * bookmarks, heads, and working-copy commits return to that operation's
+   * view, and the working copy is updated to match.
+   */
+  readonly opRestore?: ((operationId: OperationId) => Effect.Effect<void, JjFailure>) | undefined
 }
 
 /**
@@ -372,6 +395,7 @@ export const makeNoop = (overrides: Partial<Jj>): Jj => {
     status: () => missing("status"),
     root: () => missing("root"),
     revert: () => missing("revert"),
+    opRestore: () => missing("opRestore"),
     ...overrides
   })
 }

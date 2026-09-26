@@ -90,7 +90,10 @@ export const appendHistoryCommands = (cli: Cli.Cli, runtime: Bridge.Runtime = {}
       args,
       options: mutationOptions.extend({
         preview: z.boolean().default(false).describe("Show the affected suffix and effects without changing anything"),
-        yes: z.boolean().default(false).describe("Confirm archiving the suffix and restoring the historical frame")
+        yes: z.boolean().default(false).describe("Confirm archiving the suffix and restoring the historical frame"),
+        wholeRepo: z.boolean().default(false).describe(
+          "Restore the whole jj repository (bookmarks, rebases, descriptions) to the frame's recorded operation"
+        )
       }),
       destructive: true,
       run(c) {

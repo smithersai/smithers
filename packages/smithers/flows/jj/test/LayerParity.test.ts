@@ -78,10 +78,11 @@ describe.skipIf(!jjInstalled || wasmBytes === undefined)("Jj layer parity", () =
           expect(browserSaved.commitId).toMatch(/^[0-9a-f]{128}$/)
           expect(saved.changeId).toMatch(/^[k-z]{12}$/)
           expect(browserSaved.changeId).toMatch(/^[k-z]{12}$/)
+          // The CLI layers keep the label in the journal, never in the repository.
           expect(execFileSync("jj", ["log", "-r", saved.commitId, "--no-graph", "-T", "description"], {
             cwd: repository,
             encoding: "utf8"
-          })).toBe(message === "" ? "" : `${message}\n`)
+          })).toBe("")
           yield* node.restore(saved.commitId)
           yield* browser.restore(browserSaved.commitId)
         }

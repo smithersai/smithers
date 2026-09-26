@@ -126,7 +126,9 @@ is an error rather than permission to run in the parent workspace.
 
 `runs rewind <run> --at <sequence> --preview` shows the suffix and effect
 boundaries. `--yes` archives the suffix and restores the frame for a pending
-or suspended engine run; use `fork` for terminal history. Active runs and
+or suspended engine run; use `fork` for terminal history. `--whole-repo` also
+restores the frame's recorded jj operation, undoing bookmark moves, rebases,
+descriptions, and abandons made after it. Active runs and
 unsafe effect boundaries are refused. Evaluation artifacts live under
 `.flows/evals/runs/`; baselines default to `evals/<encoded-suite>.baseline.json`
 and require `--force` to overwrite. Evaluation comparison exits 1 for

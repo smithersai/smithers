@@ -32,7 +32,7 @@ describe.skipIf(!jjInstalled)("rewind crash recovery over file SQLite", () => {
               yield* store.recordSnapshot({
                 runId,
                 frame: { lineageId: `${runId}/root`, seq: 0 },
-                changeId: target.changeId
+                changeId: target.commitId
               })
               const sql = yield* SqlClient.SqlClient
               yield* sql`

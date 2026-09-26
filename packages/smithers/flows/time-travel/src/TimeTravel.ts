@@ -174,6 +174,13 @@ export interface RewindOptions {
   readonly detachedChildren?: "block" | "cancel" | undefined
   readonly pageSize?: number | undefined
   readonly maxHistoryEntries?: number | undefined
+  /**
+   * Restore the whole repository to the jj operation the frame recorded,
+   * rather than only the working-copy tree. Bookmark moves, rebases,
+   * `describe`, and `abandon` after the frame are undone with it. A frame
+   * with no recorded operation refuses with `irreversible`.
+   */
+  readonly wholeRepo?: boolean | undefined
 }
 
 /**
@@ -649,6 +656,7 @@ export const makeWith = (
                         owner,
                         compensationTimeout,
                         detachedChildPolicy,
+                        ...(options?.wholeRepo === true ? { wholeRepo: true } : {}),
                         childLivenessEvidence: (_childRunId, row, claimant, nowMs) => liveness(row, claimant, nowMs),
                         maxEntries,
                         // The tail validation observed, re-checked under the

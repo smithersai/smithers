@@ -3,10 +3,10 @@ title: "@smthrs/jj"
 description: "Jujutsu version control as an Effect service: snapshot a working copy, restore it, diff two revisions, and open a workspace lane, through the jj CLI on Node and Bun or through jj-lib compiled to WebAssembly in a browser tab."
 ---
 
-`@smthrs/jj` gives you eight version-control operations as an
+`@smthrs/jj` gives you nine version-control operations as an
 [Effect](https://effect.website) service: snapshot the working copy, restore
 it, diff two revisions, add and forget a workspace, read status, find the
-repository root, and revert one change. One program written against that
+repository root, revert one change, and restore a whole operation. One program written against that
 service runs against the [Jujutsu](https://jj-vcs.github.io) command line on
 Node and Bun, or against jj-lib compiled to WebAssembly in a browser tab.
 
@@ -38,8 +38,8 @@ Behind a service, each of those becomes a decision the composition makes once:
   succeeding.
 - **The same program runs in a tab.** `BrowserJj.layer({ fs, wasm })` runs the
   real jj-lib over a synchronous filesystem you mount, with real change ids and
-  a real operation log. Seven of the eight operations work there; `revert` is
-  not in the compiled module and says so when you call it.
+  a real operation log. Seven of the nine operations work there; `revert` and
+  `opRestore` are not in the compiled module and say so when you call them.
 
 The contract stays small on purpose. There is no `commit`, no `push`, and no
 `log`, because every backend owes an answer for every operation, including one
@@ -130,7 +130,7 @@ step of a run you start from a terminal.
 - [Quickstart](./quickstart.md): snapshot a real repository, diff two
   snapshots, and restore the working copy, in one file.
 - [Version control as a capability](./concepts/version-control-as-a-capability.md):
-  why the contract holds these eight operations and no others, and the grants
+  why the contract holds these nine operations and no others, and the grants
   the kernel checks.
 - [How a jj failure is reported](./concepts/failures.md): the six codes, how
   each backend classifies onto them, and why a cause is plain data.

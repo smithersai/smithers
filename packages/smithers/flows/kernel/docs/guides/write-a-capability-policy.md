@@ -61,6 +61,7 @@ built. These are the resources the kernel names:
 | `jj:restore`, `jj:revert` | The change id.                                                                                                             |
 | `jj:workspace-add`        | The canonicalized destination. This one also requires `fs:write` on the same resource.                                     |
 | `jj:workspace-forget`     | The workspace name.                                                                                                        |
+| `jj:op-restore`           | The operation id.                                                                                                          |
 | `jj:root`                 | The canonicalized starting directory.                                                                                      |
 
 Because `https` is the implicit scheme, a grant for `api.example.com` never

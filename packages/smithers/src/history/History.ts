@@ -36,6 +36,8 @@ export interface Options {
   readonly sequence?: number | undefined
   readonly lineage?: string | undefined
   readonly limit?: number | undefined
+  /** Rewind only: restore the frame's jj operation instead of only its tree. */
+  readonly wholeRepo?: boolean | undefined
 }
 
 /**
@@ -360,7 +362,10 @@ export const mutate = async (
           }
           : {
             kind: "rewind" as const,
-            result: yield* service.rewind(observed.position, { maxHistoryEntries: options.limit ?? 10_000 })
+            result: yield* service.rewind(observed.position, {
+              maxHistoryEntries: options.limit ?? 10_000,
+              ...(options.wholeRepo === true ? { wholeRepo: true } : {})
+            })
           }
       }).pipe(Effect.provide(writerLayer(root, workspace)), Effect.scoped),
       signal

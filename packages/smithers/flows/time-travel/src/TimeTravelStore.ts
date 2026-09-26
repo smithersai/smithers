@@ -43,6 +43,12 @@ export const Snapshot = Schema.Struct({
   runId: Schema.NonEmptyString,
   frame: Frame,
   changeId: Schema.NonEmptyString,
+  /**
+   * The jj operation that recorded `changeId`, when the host reported one. A
+   * whole-repository rewind restores it; an anchor without one supports only
+   * a tree restore.
+   */
+  operationId: Schema.optionalKey(Schema.NonEmptyString),
   planDigest: Schema.optionalKey(Schema.NonEmptyString)
 })
 /**

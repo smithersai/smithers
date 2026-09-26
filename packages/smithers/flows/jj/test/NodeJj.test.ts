@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
-import { isJjError, Jj } from "../src/Jj.ts"
+import { isJjError, Jj, type Snapshot } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
 
@@ -49,6 +49,14 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
   let editorMarker: string
 
   const run = <A, E>(effect: Effect.Effect<A, E, Jj>) => Effect.provide(effect, budgeted(NodeJj.layer))
+  /** Closes the working copy as a named change and returns its commit id. */
+  const commitWorkingCopy = (message: string) => {
+    execFileSync("jj", ["commit", `--message=${message}`], { cwd: repository, stdio: "ignore" })
+    return execFileSync("jj", ["log", "--no-graph", "-r", "@-", "-T", "commit_id"], {
+      cwd: repository,
+      encoding: "utf8"
+    })
+  }
 
   beforeAll(async () => {
     previousCwd = process.cwd()
@@ -82,47 +90,80 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       const file = join(repository, "note.txt")
       yield* Effect.promise(() => writeFile(file, "first\n"))
 
-      const { changeId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("first commit")))
-      expect(changeId).toMatch(/^[a-z]+$/)
+      const first = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("first commit")))
+      expect(first.changeId).toMatch(/^[k-z]+$/)
+      expect(first.commitId).toMatch(/^[0-9a-f]{40}$/)
 
       yield* Effect.promise(() => writeFile(file, "second\n"))
-      yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("second commit")))
+      const second = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("second commit")))
 
-      const diff = yield* run(Effect.flatMap(Jj, (jj) => jj.diff(changeId, "@-")))
+      const diff = yield* run(Effect.flatMap(Jj, (jj) => jj.diff(first.commitId, second.commitId)))
       expect(diff).toContain("note.txt")
       expect(diff).toContain("+second")
+
+      yield* run(Effect.flatMap(Jj, (jj) => jj.restore(first.commitId)))
+      expect(readFileSync(file, "utf8")).toBe("first\n")
 
       const status = yield* run(Effect.flatMap(Jj, (jj) => jj.status()))
       expect(status).toContain("Working copy")
     }))
 
-  it.effect("preserves the operator's description when closing a snapshot", () =>
+  it.effect("captures attempts without closing, describing, or committing a change", () =>
     Effect.gen(function*() {
       const description = "operator's work\n\nKeep these notes.\n"
       execFileSync("jj", ["describe", `--message=${description}`], { cwd: repository, stdio: "ignore" })
-      const { changeId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("engine checkpoint")))
-      const readDescription = (revision: string) =>
-        execFileSync(
-          "jj",
-          ["log", "--no-graph", "-r", revision, "-T", "description"],
-          { cwd: repository, encoding: "utf8" }
+      const jjText = (...args: ReadonlyArray<string>) =>
+        execFileSync("jj", [...args], { cwd: repository, encoding: "utf8" })
+      const changeBefore = jjText("log", "--no-graph", "-r", "@", "-T", "change_id.short()").trim()
+      const commitsBefore = jjText("log", "--no-graph", "-r", "all()", "-T", "change_id ++ \"\\n\"")
+      const file = join(repository, "attempts.txt")
+      const snapshots: Array<Snapshot> = []
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        yield* Effect.promise(() => writeFile(file, `attempt ${attempt}\n`))
+        snapshots.push(
+          yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot(`smithers action digest attempt ${attempt}`)))
         )
-      expect(readDescription(changeId)).toBe(description)
-      expect(readDescription("@")).toBe("")
+      }
+
+      expect(jjText("log", "--no-graph", "-r", "@", "-T", "change_id.short()").trim()).toBe(changeBefore)
+      expect(jjText("log", "--no-graph", "-r", "@", "-T", "description")).toBe(description)
+      expect(jjText("log", "--no-graph", "-r", "all()", "-T", "change_id ++ \"\\n\"")).toBe(commitsBefore)
+      expect(jjText("log", "--no-graph", "-r", "all()", "-T", "description")).not.toContain("smithers action")
+      expect(new Set(snapshots.map((snapshot) => snapshot.changeId))).toEqual(new Set([changeBefore]))
+      expect(new Set(snapshots.map((snapshot) => snapshot.commitId)).size).toBe(3)
+      for (const snapshot of snapshots) expect(snapshot.operationId).toMatch(/^[0-9a-f]{128}$/)
+      expect(snapshots.at(-1)!.operationId).toBe(jjText("op", "log", "-n1", "--no-graph", "-T", "id"))
+
+      yield* run(Effect.flatMap(Jj, (jj) => jj.restore(snapshots[0]!.commitId)))
+      expect(readFileSync(file, "utf8")).toBe("attempt 1\n")
     }))
 
-  it.effect("labels an unnamed closed snapshot and leaves the fresh working copy unnamed", () =>
+  it.effect("restores a moved bookmark from a snapshot's operation", () =>
     Effect.gen(function*() {
-      execFileSync("jj", ["describe", "--message="], { cwd: repository, stdio: "ignore" })
-      const { changeId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("engine checkpoint")))
-      expect(execFileSync("jj", ["log", "--no-graph", "-r", changeId, "-T", "description"], {
-        cwd: repository,
-        encoding: "utf8"
-      })).toBe("engine checkpoint\n")
-      expect(execFileSync("jj", ["log", "--no-graph", "-r", "@", "-T", "description"], {
-        cwd: repository,
-        encoding: "utf8"
-      })).toBe("")
+      const jjText = (...args: ReadonlyArray<string>) =>
+        execFileSync("jj", [...args], { cwd: repository, encoding: "utf8" })
+      const file = join(repository, "operation.txt")
+      yield* Effect.promise(() => writeFile(file, "before\n"))
+      jjText("bookmark", "set", "op-restore", "-r", "@", "--allow-backwards")
+      const target = jjText("log", "--no-graph", "-r", "op-restore", "-T", "commit_id")
+      const snapshot = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot()))
+
+      yield* Effect.promise(() => writeFile(file, "after\n"))
+      jjText("bookmark", "set", "op-restore", "-r", "root()", "--allow-backwards")
+      expect(jjText("log", "--no-graph", "-r", "op-restore", "-T", "commit_id")).not.toBe(target)
+
+      yield* run(Effect.flatMap(Jj, (jj) => jj.opRestore!(snapshot.operationId!)))
+
+      expect(jjText("log", "--no-graph", "-r", "op-restore", "-T", "commit_id")).toBe(target)
+      expect(readFileSync(file, "utf8")).toBe("before\n")
+    }))
+
+  it.effect("refuses an operation id that is not hex without spawning jj, and one jj does not know", () =>
+    Effect.gen(function*() {
+      const flag = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.opRestore!("--what=repo"))))
+      expect(flag).toMatchObject({ code: "invalid_ref", command: "jj op restore" })
+      const unknown = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.opRestore!("abcdef00"))))
+      expect(isJjError(unknown) && unknown.code).toBe("invalid_ref")
     }))
 
   it.effect("captures and restores a new 2 MiB artifact", () =>
@@ -130,9 +171,9 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       const file = join(repository, "large-artifact.bin")
       const contents = Buffer.alloc(2 * 1024 * 1024, 0x61)
       yield* Effect.promise(() => writeFile(file, contents))
-      const { changeId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("large artifact")))
+      const { commitId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("large artifact")))
       yield* Effect.promise(() => rm(file))
-      yield* run(Effect.flatMap(Jj, (jj) => jj.restore(changeId)))
+      yield* run(Effect.flatMap(Jj, (jj) => jj.restore(commitId)))
       expect(readFileSync(file).equals(contents)).toBe(true)
     }))
 
@@ -173,10 +214,10 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
   it.effect("snapshots without a message when none is supplied", () =>
     Effect.gen(function*() {
       yield* Effect.promise(() => writeFile(join(repository, "unnamed.txt"), "x\n"))
-      const { changeId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot()))
+      const { changeId, commitId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot()))
 
       expect(changeId).not.toBe("")
-      const log = execFileSync("jj", ["log", "-r", changeId, "--no-graph", "-T", "change_id.short()"], {
+      const log = execFileSync("jj", ["log", "-r", commitId, "--no-graph", "-T", "change_id.short()"], {
         cwd: repository,
         encoding: "utf8"
       })
@@ -218,12 +259,14 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
             )
           }).pipe(Effect.provide(budgeted(NodeJj.layerAt(target))))
 
-          expect(snapshots[0].changeId).not.toBe(snapshots[1].changeId)
+          // Serialized captures of one tree name one working-copy commit; a
+          // race would have left divergent working-copy commits.
+          expect(snapshots[0].commitId).toBe(snapshots[1].commitId)
 
           yield* Effect.gen(function*() {
             const jj = yield* Jj
-            yield* jj.restore(snapshots[0].changeId)
-            yield* jj.restore(snapshots[1].changeId)
+            yield* jj.restore(snapshots[0].commitId)
+            yield* jj.restore(snapshots[1].commitId)
           }).pipe(Effect.provide(budgeted(NodeJj.layerAt(target))))
         }),
       (target) => Effect.promise(() => rm(target, { recursive: true, force: true }))
@@ -268,14 +311,14 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
           const outputs = yield* Effect.all(Array.from({ length: 4 }, (_, i) => invoke(`process ${i}`)), {
             concurrency: "unbounded"
           })
-          const snapshots = outputs.map(({ stdout }) => JSON.parse(stdout) as { readonly changeId: string })
+          const snapshots = outputs.map(({ stdout }) => JSON.parse(stdout) as { readonly commitId: string })
 
-          expect(new Set(snapshots.map((snapshot) => snapshot.changeId)).size).toBe(snapshots.length)
+          expect(new Set(snapshots.map((snapshot) => snapshot.commitId)).size).toBe(1)
 
           yield* Effect.gen(function*() {
             const jj = yield* Jj
             for (const snapshot of snapshots) {
-              yield* jj.restore(snapshot.changeId)
+              yield* jj.restore(snapshot.commitId)
               expect(readFileSync(join(target, "shared.txt"), "utf8")).toBe("one state\n")
             }
           }).pipe(Effect.provide(budgeted(NodeJj.layerAt(target))))
@@ -315,26 +358,23 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
         Effect.gen(function*() {
           yield* Effect.promise(() => writeFile(join(repository, "caller-only.txt"), "caller\n"))
           yield* Effect.promise(() => writeFile(join(target, "target-only.txt"), "target\n"))
+          // `--ignore-working-copy` reads the last recorded capture without
+          // making one, so only the bound layer's snapshot can move it.
           const current = (cwd: string) =>
-            execFileSync("jj", ["log", "-r", "@", "--no-graph", "-T", "change_id.short()"], {
+            execFileSync("jj", ["log", "--ignore-working-copy", "-r", "@", "--no-graph", "-T", "commit_id"], {
               cwd,
               encoding: "utf8"
             }).trim()
           const callerBefore = current(repository)
           const targetBefore = current(target)
 
-          yield* Effect.flatMap(Jj, (jj) => jj.snapshot("bound target")).pipe(
+          const snapshot = yield* Effect.flatMap(Jj, (jj) => jj.snapshot("bound target")).pipe(
             Effect.provide(budgeted(NodeJj.layerAt(target)))
           )
 
           expect(current(repository)).toBe(callerBefore)
           expect(current(target)).not.toBe(targetBefore)
-          expect(
-            execFileSync("jj", ["log", "-r", "@-", "--no-graph", "-T", "change_id.short()"], {
-              cwd: target,
-              encoding: "utf8"
-            }).trim()
-          ).toBe(targetBefore)
+          expect(snapshot.commitId).toBe(current(target))
         }),
       (target) => Effect.promise(() => rm(target, { recursive: true, force: true }))
     ))
@@ -386,12 +426,12 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
     Effect.gen(function*() {
       const file = join(repository, "pinned.txt")
       yield* Effect.promise(() => writeFile(file, "first\n"))
-      const { changeId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("pinned base")))
+      const { commitId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("pinned base")))
       yield* Effect.promise(() => writeFile(file, "second\n"))
       yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("after base")))
 
       const lane = join(repository, "..", `pinned-${process.pid}`)
-      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceAdd("pinned", lane, changeId)))
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceAdd("pinned", lane, commitId)))
       expect(readFileSync(join(lane, "pinned.txt"), "utf8")).toBe("first\n")
 
       yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceForget("pinned")))
@@ -469,10 +509,11 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
   it.effect("undoes one change and reports the paths it touched", () =>
     Effect.gen(function*() {
       const file = join(repository, "revert-me.txt")
+      commitWorkingCopy("before revert-me")
       yield* Effect.promise(() => writeFile(file, "unwanted\n"))
-      const { changeId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("add revert-me")))
+      const changeId = commitWorkingCopy("add revert-me")
       yield* Effect.promise(() => writeFile(join(repository, "keep.txt"), "kept\n"))
-      yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("add keep")))
+      commitWorkingCopy("add keep")
 
       const result = yield* run(Effect.flatMap(Jj, (jj) => jj.revert!(changeId)))
 
@@ -552,12 +593,12 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       const trail = join(repository, "trail .txt")
       // Close whatever earlier cases left in the working copy, so the change
       // under test touches exactly the two spacey names.
-      yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("before spacey")))
+      commitWorkingCopy("before spacey")
       yield* Effect.promise(() => writeFile(lead, "a\n"))
       yield* Effect.promise(() => writeFile(trail, "b\n"))
-      const { changeId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("spacey names")))
+      const changeId = commitWorkingCopy("spacey names")
       yield* Effect.promise(() => writeFile(join(repository, "after-spacey.txt"), "c\n"))
-      yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("after spacey")))
+      commitWorkingCopy("after spacey")
 
       const result = yield* run(Effect.flatMap(Jj, (jj) => jj.revert!(changeId)))
 

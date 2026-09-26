@@ -79,6 +79,7 @@ export const tierOf = (capability: Capability, options: TierOptions): EffectTier
     case "jj:workspace-add":
     case "jj:workspace-forget":
     case "jj:revert":
+    case "jj:op-restore":
       return "compensable"
     case "net:post":
     case "proc:spawn":

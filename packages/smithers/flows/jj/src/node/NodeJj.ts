@@ -102,7 +102,8 @@ const REVISION_VOCABULARY = [
   /no such revision/,
   /revision not found/,
   /failed to parse revset/,
-  /\b(?:revision|change)\b[^\n]*doesn't exist/
+  /\b(?:revision|change)\b[^\n]*doesn't exist/,
+  /no operation id matching/
 ]
 
 /**
@@ -584,44 +585,33 @@ const operations = (run: Run, repositoryRoot?: string) => {
     Effect.suspend(() => withRepositoryLock(method, repositoryRoot ?? process.cwd(), effect))
 
   /**
-   * Close the current change before labeling it, and preserve any operator
-   * description.
+   * Capture the working copy without closing a change.
    *
-   * The restore pointer is the closed commit's full commit id, read AFTER the
-   * label lands: a describe rewrites the commit, and a change id would follow
-   * any later rewrite too, such as an agent's `jj squash` folding the step's
-   * edits into it. A commit id names one tree forever, hidden or not.
+   * `jj op log` snapshots the working copy and names the operation that holds
+   * it; `jj log --at-op` then reads `@` at exactly that operation, so the
+   * commit and the operation name the same capture even if another process
+   * operates on the repository in between. Nothing is committed, described,
+   * or opened: a compensable attempt leaves no change of its own in the log.
+   * The commit id stays resolvable after later edits rewrite `@`, because jj
+   * keeps every commit an operation references. `message` is not written to
+   * the repository; the engine keeps its label in the journal.
    */
-  const snapshot = (message?: string) =>
+  const snapshot = (_message?: string) =>
     repositoryCritical(
       "snapshot",
       Effect.gen(function*() {
+        const operationId = (yield* inRepository("snapshot", ["op", "log", "-n1", "--no-graph", "-T", "id"])).trim()
         const output = yield* inRepository("snapshot", [
           "log",
+          `--at-op=${operationId}`,
           "-r",
           "@",
           "--no-graph",
           "-T",
-          "commit_id ++ \"\\n\" ++ change_id.short() ++ \"\\n\" ++ description"
+          "commit_id ++ \"\\n\" ++ change_id.short()"
         ])
-        const [closedCommitId = "", changeLine = "", ...description] = output.split("\n")
-        const changeId = changeLine.trim()
-        let commitId = closedCommitId.trim()
-        yield* inRepository("snapshot", ["new", "--quiet"])
-        // Describing @ would overwrite the operator's active work. Only add an
-        // engine label to an unnamed, closed change; never erase existing notes.
-        if (message !== undefined && description.join("\n") === "") {
-          yield* inRepository("snapshot", ["describe", "-r", commitId, `-m=${message}`, "--quiet"])
-          commitId = (yield* inRepository("snapshot", [
-            "log",
-            "-r",
-            "@-",
-            "--no-graph",
-            "-T",
-            "commit_id"
-          ])).trim()
-        }
-        return { commitId, changeId }
+        const [commitId = "", changeId = ""] = output.split("\n").map((line) => line.trim())
+        return { commitId, changeId, operationId }
       })
     )
 
@@ -718,7 +708,24 @@ const operations = (run: Run, repositoryRoot?: string) => {
         )
     )
 
-  return { snapshot, restore, diff, workspaceAdd, workspaceForget, status, root, revert }
+  /**
+   * `jj op restore` puts back the whole repository view the operation
+   * recorded. Only a hex id is passed, so a value cannot be read as a flag.
+   */
+  const opRestore = (operationId: string) =>
+    /^[0-9a-f]+$/.test(operationId)
+      ? Effect.asVoid(repositoryCritical("opRestore", inRepository("opRestore", ["op", "restore", operationId])))
+      : Effect.fail(
+        new JjError({
+          code: "invalid_ref",
+          module: MODULE,
+          method: "opRestore",
+          command: "jj op restore",
+          message: `jj opRestore: ${JSON.stringify(operationId.slice(0, 80))} is not an operation id`
+        })
+      )
+
+  return { snapshot, restore, diff, workspaceAdd, workspaceForget, status, root, revert, opRestore }
 }
 
 // Cache only within the runner that performed the check. A direct probe cannot

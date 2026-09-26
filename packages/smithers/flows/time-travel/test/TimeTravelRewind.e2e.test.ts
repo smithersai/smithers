@@ -2,6 +2,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
+import { execFileSync } from "node:child_process"
+import { writeFileSync } from "node:fs"
 import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { TimeTravel } from "../src/TimeTravel.ts"
@@ -182,6 +184,112 @@ describe.skipIf(!jjInstalled)("real file-backed rewind", () => {
             )
             expect.soft(result.restored).toBe("anchored\n")
             expect.soft(yield* Effect.promise(() => readFile(note, "utf8"))).toBe("anchored\n")
+          }))
+      }),
+    { timeout: 60_000 }
+  )
+
+  it.effect(
+    "restores a bookmark moved during the run on a whole-repository rewind, leaving no attempt commits",
+    () =>
+      Effect.gen(function*() {
+        yield* withRealFixture("flows-time-travel-whole-repo-", (fixture) =>
+          Effect.gen(function*() {
+            const jjText = (...args: ReadonlyArray<string>) =>
+              execFileSync("jj", [...args], { cwd: fixture.repository, encoding: "utf8" })
+            const note = join(fixture.repository, "note.txt")
+            yield* Effect.promise(() => writeFile(note, "anchored\n"))
+            jjText("bookmark", "create", "release", "-r", "@")
+            const bookmarkBefore = jjText("log", "--no-graph", "-r", "release", "-T", "commit_id")
+            const result = yield* runRealEngine(
+              fixture.databaseFile,
+              "rewind-whole-repo",
+              Effect.gen(function*() {
+                yield* parkCompensableFlow(
+                  "whole-repo-run",
+                  Effect.sync(() => {
+                    writeFileSync(note, "effect-output\n")
+                    jjText("bookmark", "set", "release", "-r", "root()", "--allow-backwards")
+                    return "moved"
+                  })
+                )
+                const journal = yield* Journal.Journal
+                yield* journal.flush
+                const sql = yield* Effect.service(SqlClient.SqlClient)
+                const rows = yield* sql<JournalRow>`
+              SELECT run_id, seq, event_type, payload_json
+              FROM flows_journal_events
+              WHERE run_id = 'whole-repo-run'
+              ORDER BY seq
+            `
+                const anchor = rows.find((row) => {
+                  if (row.event_type !== "flows.engine.snapshot-identified") return false
+                  const payload = JSON.parse(row.payload_json) as { readonly snapshotId?: string }
+                  return payload.snapshotId !== undefined
+                })
+                if (anchor === undefined) return yield* Effect.die(new Error("engine did not commit a jj anchor"))
+                const payload = JSON.parse(anchor.payload_json) as {
+                  readonly snapshotId: string
+                  readonly operationId?: string
+                }
+                const movedTo = jjText("log", "--no-graph", "-r", "release", "-T", "commit_id")
+                const timeTravel = yield* TimeTravel
+                const rewind = yield* timeTravel.rewind({
+                  runId: "whole-repo-run",
+                  frame: { lineageId: FlowEngine.Lineage.root("whole-repo-run"), seq: anchor.seq }
+                }, { wholeRepo: true })
+                return { payload, movedTo, rewind }
+              })
+            )
+
+            expect(result.payload.snapshotId).toMatch(/^[0-9a-f]{40}$/)
+            expect(result.payload.operationId).toMatch(/^[0-9a-f]{128}$/)
+            expect(result.movedTo).not.toBe(bookmarkBefore)
+            expect(result.rewind.assessments.some((assessment) => assessment.effect.tier === "compensable")).toBe(
+              true
+            )
+            expect(jjText("log", "--no-graph", "-r", "release", "-T", "commit_id")).toBe(bookmarkBefore)
+            expect(yield* Effect.promise(() => readFile(note, "utf8"))).toBe("anchored\n")
+            expect(jjText("log", "--no-graph", "-r", "all()", "-T", "description")).not.toContain("smithers action")
+          }))
+      }),
+    { timeout: 60_000 }
+  )
+
+  it.effect(
+    "refuses a whole-repository rewind to a frame that recorded no jj operation",
+    () =>
+      Effect.gen(function*() {
+        yield* withRealFixture("flows-time-travel-no-operation-", (fixture) =>
+          Effect.gen(function*() {
+            const refusal = yield* runRealEngine(
+              fixture.databaseFile,
+              "rewind-no-operation",
+              Effect.gen(function*() {
+                yield* parkCompensableFlow("no-operation-run")
+                const sql = yield* Effect.service(SqlClient.SqlClient)
+                const journal = yield* Journal.Journal
+                yield* journal.flush
+                const timeTravel = yield* TimeTravel
+                const rows = yield* sql<JournalRow>`
+              SELECT run_id, seq, event_type, payload_json
+              FROM flows_journal_events
+              WHERE run_id = 'no-operation-run' AND event_type = 'flows.engine.snapshot-identified'
+              ORDER BY seq
+            `
+                const seq = rows.find((row) => JSON.parse(row.payload_json).snapshotId !== undefined)!.seq
+                // An anchor journaled before operations were recorded has none.
+                yield* sql`UPDATE flows_journal_events
+                  SET payload_json = json_remove(payload_json, '$.operationId')
+                  WHERE run_id = 'no-operation-run'`
+                return yield* Effect.flip(timeTravel.rewind({
+                  runId: "no-operation-run",
+                  frame: { lineageId: FlowEngine.Lineage.root("no-operation-run"), seq }
+                }, { wholeRepo: true }))
+              })
+            )
+            expect(refusal.code).toBe("irreversible")
+            expect(JSON.stringify(refusal.cause)).toContain("The target frame has no recorded jj operation.")
           }))
       }),
     { timeout: 60_000 }

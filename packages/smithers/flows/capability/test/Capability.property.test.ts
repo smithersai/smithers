@@ -30,7 +30,8 @@ const exactActions = [
   "jj:workspace-add",
   "jj:workspace-forget",
   "jj:root",
-  "jj:revert"
+  "jj:revert",
+  "jj:op-restore"
 ] as const satisfies ReadonlyArray<Capability.Action>
 
 const actionArb = FastCheck.constantFrom<Capability.Action>(...exactActions)

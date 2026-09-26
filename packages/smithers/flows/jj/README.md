@@ -8,10 +8,10 @@ all Smithers packages share one Effect runtime.
 
 **Documentation:** https://jj.smithers.sh
 
-Jujutsu version control as a portable Effect host service. Eight operations
+Jujutsu version control as a portable Effect host service. Nine operations
 behind one service tag: snapshot the working copy, restore it, diff two
 revisions, add and forget a workspace, read status, find the repository root,
-and revert one change.
+revert one change, and restore a whole operation.
 
 One program written against that service runs against the
 [jj](https://jj-vcs.github.io) command line on Node and Bun, or against jj-lib
@@ -42,28 +42,28 @@ import * as Effect from "effect/Effect"
 const program = Effect.gen(function*() {
   const jj = yield* Jj
 
-  // `snapshot` describes the current change, reads its id, and opens a fresh
-  // one, so the id names the change just closed.
-  const { changeId } = yield* jj.snapshot("before the risky step")
+  // `snapshot` captures the working copy without closing a change; the
+  // commit id names exactly that tree.
+  const { commitId } = yield* jj.snapshot("before the risky step")
 
   // ... do the work a step would do ...
 
-  const patch = yield* jj.diff(changeId, "@")
-  yield* jj.restore(changeId)
+  const patch = yield* jj.diff(commitId, "@")
+  yield* jj.restore(commitId)
   return patch
 }).pipe(Effect.provide(NodeJj.layerAt("/srv/checkouts/main")))
 
 Effect.runPromise(program)
 ```
 
-`snapshot(message)` closes the current change and opens a fresh one, then labels
-only the closed change if it had no description. Existing operator descriptions
-are preserved even when the engine supplies a message. With no message, no
-`describe` runs and no editor opens. The returned change id always identifies
-the closed change, and the new working copy remains unnamed.
-
-`changeId` is a durable handle: it is the string jj prints, it survives a
-process restart, and it is what you store to reach the same tree later.
+On Node and Bun, `snapshot(message)` captures the working copy without closing,
+describing, or opening a change, so the user's log gains no commit per
+snapshot. It returns `{ commitId, changeId, operationId }`: `commitId` is the
+durable handle to store and restore, `changeId` is the display name and moves
+with rewrites, and `operationId` is the jj operation that recorded the capture.
+`opRestore(operationId)` runs `jj op restore`, which also undoes bookmark
+moves, rebases, `describe`, and `abandon` made after it. The message is not
+written to the repository.
 `layerAt` binds jj to one absolute repository root, so a later change to
 `process.cwd()` cannot redirect a restore into another checkout.
 
@@ -96,9 +96,9 @@ executed, so a broken explicit path is reported rather than a different binary
 being quietly substituted.
 
 Snapshot messages are opaque strings on both browser and CLI layers, including
-empty strings, leading `-`, quotes, and newlines. Node and Bun pass messages as
-`-m=<message>`; workspace names and paths use `--name=` and `--` so option-like
-values are not interpreted as CLI flags.
+empty strings, leading `-`, quotes, and newlines. Node and Bun never pass them
+to jj; workspace names and paths use `--name=` and `--` so option-like values
+are not interpreted as CLI flags.
 
 Node and Bun require **jj 0.39.0 or newer**, pinned by the exported
 `NodeJj.minimumVersion` constant. Before exposing `Jj`, all CLI layers await a
@@ -174,9 +174,10 @@ const program = Effect.gen(function*() {
 }).pipe(Effect.provide(BrowserJj.layer({ fs, wasm, root: "/repo" })))
 ```
 
-Seven of the eight operations work there, with real change ids and a real
-operation log. `revert` has no operation in the compiled module and reports
-`not_installed`. The backend also diverges from the command line in ways worth
+Seven of the nine operations work there, with real change ids and a real
+operation log. `revert` and `opRestore` have no operation in the compiled
+module and report `not_installed`; its snapshot still closes a change and
+reports no operation id. The backend also diverges from the command line in ways worth
 reading before you assume parity: repositories use jj's Simple backend with no
 git interop, only `snapshot` creates a missing repository while `status`,
 `diff`, and `restore` refuse one with `unknown` and write nothing, real

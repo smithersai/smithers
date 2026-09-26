@@ -61,6 +61,7 @@ type Action =
   | "jj:workspace-forget"
   | "jj:root"
   | "jj:revert"
+  | "jj:op-restore"
 
 const Action: Schema.Literals<[...]>
 ```
@@ -313,11 +314,11 @@ const tierOf: (capability: Capability, options: TierOptions) => EffectTier
 
 Classifies an exact capability.
 
-| Tier           | Actions                                                                                                                     |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `sealed`       | `fs:read`, `net:get`, `model:call`, `jj:status`, `jj:diff`, `jj:root`                                                       |
-| `compensable`  | `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:revert`, and an `fs:write` inside the workspace |
-| `irreversible` | `net:post`, `proc:spawn`, and an `fs:write` that escapes the workspace                                                      |
+| Tier           | Actions                                                                                                                                      |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sealed`       | `fs:read`, `net:get`, `model:call`, `jj:status`, `jj:diff`, `jj:root`                                                                        |
+| `compensable`  | `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:revert`, `jj:op-restore`, and an `fs:write` inside the workspace |
+| `irreversible` | `net:post`, `proc:spawn`, and an `fs:write` that escapes the workspace                                                                       |
 
 Workspace containment is lexical, so symlinks are invisible: a caller that
 materializes workspace snapshots resolves real paths before classifying a

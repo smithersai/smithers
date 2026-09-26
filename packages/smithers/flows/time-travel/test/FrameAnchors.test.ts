@@ -160,6 +160,23 @@ describe("the snapshot projector", () => {
       ])
     }))
 
+  it.effect("carries the jj operation with its pointer, and a new pointer replaces both", () =>
+    Effect.gen(function*() {
+      const result = yield* projectInto([
+        { seq: 0, eventType: "flows.engine.snapshot-identified", payload: { snapshotId: "c1", operationId: "op1" } },
+        { seq: 1, eventType: "flows.engine.snapshot-identified", payload: { carried: true } },
+        { seq: 2, eventType: "flows.engine.snapshot-identified", payload: { snapshotId: "c2" } },
+        { seq: 3, eventType: "flows.engine.snapshot-identified", payload: { carried: true } }
+      ])
+
+      expect(result.snapshots).toEqual([
+        { runId: "run", frame: { lineageId, seq: 0 }, changeId: "c1", operationId: "op1" },
+        { runId: "run", frame: { lineageId, seq: 1 }, changeId: "c1", operationId: "op1" },
+        { runId: "run", frame: { lineageId, seq: 2 }, changeId: "c2" },
+        { runId: "run", frame: { lineageId, seq: 3 }, changeId: "c2" }
+      ])
+    }))
+
   it.effect("anchors a graph recorded with no digest, and keeps the digest a naming record put in force", () =>
     Effect.gen(function*() {
       // An interpreted flow records the graph it was driven from and has no

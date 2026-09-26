@@ -362,11 +362,11 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
               })
             const otherBefore = current(other)
 
-            const { changeId } = yield* Effect.flatMap(Jj, (jj) => jj.snapshot("bound snapshot")).pipe(
+            const { commitId } = yield* Effect.flatMap(Jj, (jj) => jj.snapshot("bound snapshot")).pipe(
               Effect.provide(layer)
             )
             writeFileSync(join(bound, "tracked.txt"), "second\n")
-            yield* Effect.flatMap(Jj, (jj) => jj.restore(changeId)).pipe(Effect.provide(layer))
+            yield* Effect.flatMap(Jj, (jj) => jj.restore(commitId)).pipe(Effect.provide(layer))
 
             // The bound repository was snapshotted and restored. If the
             // spawner dropped the bound cwd, jj would have run in the CALLER's

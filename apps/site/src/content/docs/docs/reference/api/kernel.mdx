@@ -1169,7 +1169,8 @@ Operation-specific capability checks: `jj:status` on `"."`, `jj:diff` on
 `<from>:<to>`, `jj:snapshot` on the message, `jj:restore` and `jj:revert` on
 the change id, `jj:workspace-add` on the canonicalized destination (which also
 requires `fs:write` on it), `jj:workspace-forget` on the workspace name, and
-`jj:root` on the canonicalized starting directory. `workspaceAdd` and `root`
+`jj:root` on the canonicalized starting directory, and `jj:op-restore` on the
+operation id. `workspaceAdd` and `root`
 canonicalize through the **raw** filesystem first, so an existing symlink
 cannot turn an inside-workspace grant into outside authority or separate the
 authorized path from the directory jj runs in.

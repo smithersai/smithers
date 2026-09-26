@@ -7648,6 +7648,7 @@ Options:
   --limit <number>       Maximum journal entries to read (default: 10000)
   --preview              Show the affected suffix and effects without changing anything
   --yes                  Confirm archiving the suffix and restoring the historical frame
+  --whole-repo           Restore the whole jj repository (bookmarks, rebases, descriptions) to the frame's recorded operation
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
@@ -15790,6 +15791,7 @@ type Action =
   | "jj:workspace-forget"
   | "jj:root"
   | "jj:revert"
+  | "jj:op-restore"
 
 const Action: Schema.Literals<[...]>
 ```
@@ -16042,11 +16044,11 @@ const tierOf: (capability: Capability, options: TierOptions) => EffectTier
 
 Classifies an exact capability.
 
-| Tier           | Actions                                                                                                                     |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `sealed`       | `fs:read`, `net:get`, `model:call`, `jj:status`, `jj:diff`, `jj:root`                                                       |
-| `compensable`  | `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:revert`, and an `fs:write` inside the workspace |
-| `irreversible` | `net:post`, `proc:spawn`, and an `fs:write` that escapes the workspace                                                      |
+| Tier           | Actions                                                                                                                                      |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sealed`       | `fs:read`, `net:get`, `model:call`, `jj:status`, `jj:diff`, `jj:root`                                                                        |
+| `compensable`  | `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:revert`, `jj:op-restore`, and an `fs:write` inside the workspace |
+| `irreversible` | `net:post`, `proc:spawn`, and an `fs:write` that escapes the workspace                                                                       |
 
 Workspace containment is lexical, so symlinks are invisible: a caller that
 materializes workspace snapshots resolves real paths before classifying a
@@ -26912,8 +26914,8 @@ The root entry point re-exports every member of `Jj.ts` flat.
 
 `Jj` is deliberately small: only the operations that make a step reversible.
 `snapshot`, `restore`, `diff`, `workspaceAdd`, `workspaceForget`, and `status`
-are required of every backend. `root` and `revert` are optional on the type, so
-a hand-written test double may leave them out.
+are required of every backend. `root`, `revert`, and `opRestore` are optional
+on the type, so a hand-written test double may leave them out.
 
 | Member                                | Signature                                                                                       |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -26925,14 +26927,14 @@ a hand-written test double may leave them out.
 | `status()`                            | `() => Effect<string, JjFailure>`                                                               |
 | `root(from)` (optional)               | `(from: string) => Effect<string, JjFailure \| PlatformError>`                                  |
 | `revert(revision)` (optional)         | `(revision: Revision) => Effect<{ readonly reverted: ReadonlyArray<string> }, JjFailure>`       |
+| `opRestore(operationId)` (optional)   | `(operationId: OperationId) => Effect<void, JjFailure>`                                         |
 
-`snapshot` commits the working copy and returns `{ commitId, changeId }` for the
-change it closes, then opens a fresh one. Restore to `commitId`: it is content
-addressed, and jj resolves it even after the commit is hidden. `changeId` is
-for display; a later rewrite such as `jj squash` moves it to a different tree. Node and Bun only
-label a closed change that has no existing description.
-With no message there is no `describe` at all, because `jj describe` without
-`-m` starts `$JJ_EDITOR` and waits for it.
+`snapshot` captures the working copy and returns `{ commitId, changeId,
+operationId? }`. Restore to `commitId`: it is content addressed, and jj
+resolves it even after later edits rewrite the working copy and hide it.
+`changeId` is for display; a later rewrite such as `jj squash` moves it to a
+different tree. `operationId` is the jj operation that recorded the capture;
+Node and Bun report it, the browser layer does not.
 
 `restore` puts the working copy back to `revision`, replacing the tree rather
 than merging into it. `diff` is a git-format unified diff between two
@@ -26951,11 +26953,16 @@ discards everything committed after the recorded point. `revert` undoes one
 change and keeps the rest, which is what an operator means by "undo that
 attempt".
 
+`opRestore` runs `jj op restore`: the whole repository view returns to the
+operation, so bookmark moves, rebases, `describe`, and `abandon` made after it
+are undone along with the tree. It accepts only a hex operation id, and an id
+jj does not know fails `invalid_ref`.
+
 `PlatformError` is in two error channels because the guarded implementation
 canonicalizes a path against the workspace root before it asks for a
 capability, and resolving a path is a filesystem operation that can itself fail.
 
-Every layer this package ships defines both optional members anyway, and
+Every layer this package ships defines the optional members anyway, and
 answers `not_installed` in the error channel where the backend cannot perform
 them. **Feature detection is by error code, never by property absence**:
 `"revert" in jj` is true for `makeNoop`, for `BrowserJj.make`, and for
@@ -26963,8 +26970,8 @@ them. **Feature detection is by error code, never by property absence**:
 reads the code it gets back. An absent capability is a capability with an
 answer.
 
-Both optional operations are capability-checked like every other one:
-`jj:root` is `sealed` and `jj:revert` is `compensable`.
+The optional operations are capability-checked like every other one:
+`jj:root` is `sealed`, and `jj:revert` and `jj:op-restore` are `compensable`.
 
 ### Service construction
 
@@ -27046,11 +27053,12 @@ directory, so pass absolute lane paths. `root(from)` is exempt from the binding
 by design, because its argument names the directory jj must run in. A relative
 root is a wiring mistake and throws a `TypeError` at construction.
 
-Node and Bun `snapshot(message)` first close the current change, then describe
-that closed change only if it was unnamed. Existing operator descriptions are
-preserved; the fresh working copy remains unnamed. Without a message, no
-`describe` or editor runs. The browser's frozen WASM ABI still replaces the
-closed change's description when a message is supplied.
+Node and Bun `snapshot` capture without closing a change: `jj op log -n1 -T id`
+snapshots the working copy and names the operation, and `jj log --at-op` reads
+`@` at exactly that operation. Nothing is committed, described, or opened, so a
+compensable attempt leaves no change of its own in the log, and the message is
+not written to the repository. The browser's frozen WASM ABI still closes the
+current change and replaces its description when a message is supplied.
 
 Repository state operations are fenced as a unit. `snapshot`, `restore`, and
 `diff` share one single-permit semaphore per repository inside a process and an
@@ -27061,9 +27069,9 @@ same host whose process is dead. Permission-denied probes count as alive;
 foreign-host and legacy owner markers require operator cleanup.
 
 Snapshot messages are opaque strings on both browser and CLI layers, including
-empty strings, leading `-`, quotes, and newlines. Node and Bun pass messages as
-`-m=<message>`; workspace names and paths use `--name=` and `--` so option-like
-values are not interpreted as CLI flags.
+empty strings, leading `-`, quotes, and newlines. Node and Bun never pass them
+to jj; workspace names and paths use `--name=` and `--` so option-like values
+are not interpreted as CLI flags.
 
 Node and Bun require **jj 0.39.0 or newer**, pinned by the exported
 `NodeJj.minimumVersion` constant. Before exposing `Jj`, all CLI layers await a
@@ -29088,7 +29096,8 @@ Operation-specific capability checks: `jj:status` on `"."`, `jj:diff` on
 `<from>:<to>`, `jj:snapshot` on the message, `jj:restore` and `jj:revert` on
 the change id, `jj:workspace-add` on the canonicalized destination (which also
 requires `fs:write` on it), `jj:workspace-forget` on the workspace name, and
-`jj:root` on the canonicalized starting directory. `workspaceAdd` and `root`
+`jj:root` on the canonicalized starting directory, and `jj:op-restore` on the
+operation id. `workspaceAdd` and `root`
 canonicalize through the **raw** filesystem first, so an existing symlink
 cannot turn an inside-workspace grant into outside authority or separate the
 authorized path from the directory jj runs in.
@@ -29800,7 +29809,8 @@ from `Capability.Action.literals` and frozen.
   "jj:workspace-add:**",
   "jj:workspace-forget:**",
   "jj:root:**",
-  "jj:revert:**"
+  "jj:revert:**",
+  "jj:op-restore:**"
 ]
 ```
 
@@ -43923,6 +43933,7 @@ interface RewindOptions {
   readonly detachedChildren?: "block" | "cancel" | undefined
   readonly pageSize?: number | undefined
   readonly maxHistoryEntries?: number | undefined
+  readonly wholeRepo?: boolean | undefined
 }
 ```
 
@@ -43933,7 +43944,11 @@ through `Journal.maxEntriesLimit` (10,000). Any other value is refused with
 `Options.maxHistoryEntries` for one call. `workspaceRoot` defaults to `.flows/forks` and only moves which lane
 the derived workspace name lands in. `retainWorkspace` keeps the child lane
 registered after the service scope closes. `detachedChildren` defaults to
-`"block"`.
+`"block"`. `wholeRepo` restores the jj operation the frame recorded instead of
+only its working-copy tree, so bookmark moves, rebases, `describe`, and
+`abandon` after the frame are undone too; it runs `jj op restore`, which also
+resets other workspaces' working-copy commits to that operation. A frame whose
+anchor recorded no operation refuses it with `irreversible`.
 
 `engineEvents` is the `EngineEvent.Consumer` from `@smthrs/journal` that a
 versioned engine record is decoded against: its `runId` and `lineageId` must
@@ -54568,7 +54583,7 @@ export const grant = `proc:spawn:mcp/${serverName}`
  *
  * `McpFlows` cannot describe what opaque tool code will reach, so it declares
  * the widest authority it can name: one entry per host action, `fs:read:**`
- * through `jj:revert:**`. It spells each one out because the cell boundary
+ * through `jj:op-restore:**`. It spells each one out because the cell boundary
  * reads a declared capability with `Capability.parse` as an EXACT
  * `namespace:operation:resource` triple. A bare `"*"` parses as nothing and
  * counts as unauthorized under every envelope, however wide. That is the

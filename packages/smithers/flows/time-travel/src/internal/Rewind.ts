@@ -129,6 +129,7 @@ export const AuditDetail = Schema.Struct({
   suffixCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   suffixTailSeq: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   targetChangeId: Schema.optionalKey(Schema.NonEmptyString),
+  targetOperationId: Schema.optionalKey(Schema.NonEmptyString),
   compensation: Schema.optionalKey(Compensation.Result),
   warnings: Schema.Array(DetachedChildWarning),
   cancelledChildren: Schema.Array(Schema.NonEmptyString),
@@ -194,6 +195,8 @@ export interface Options {
    */
   readonly maxEntries?: number | undefined
   readonly detachedChildPolicy?: DetachedChildPolicy | undefined
+  /** Restore the frame's jj operation instead of only its tree. */
+  readonly wholeRepo?: boolean | undefined
   readonly rateLimit?:
     | ((options: {
       readonly runId: string
@@ -788,7 +791,10 @@ const preflight = (context: Context, progress: Progress) =>
     const plannedChildren = [...childAssessment.cancellable].sort(
       (left, right) => right.edge.parentSeq - left.edge.parentSeq
     )
-    const plan = yield* Compensation.assess(effects, snapshot?.changeId)
+    const plan = yield* Compensation.assess(effects, snapshot?.changeId, {
+      wholeRepo: options.wholeRepo === true,
+      targetOperationId: snapshot?.operationId
+    })
     const blocking = plan.assessments.filter(
       (assessment) => assessment.classification === "blocking"
     )
@@ -811,6 +817,7 @@ const preflight = (context: Context, progress: Progress) =>
       suffixCount: suffix.count,
       ...(suffix.tailSeq === undefined ? {} : { suffixTailSeq: suffix.tailSeq }),
       ...(snapshot === undefined ? {} : { targetChangeId: snapshot.changeId }),
+      ...(plan.targetOperationId === undefined ? {} : { targetOperationId: plan.targetOperationId }),
       warnings: childAssessment.warnings
     })
     yield* StepHook.run("rewind", options.hooks?.beforeStep, "assess-boundary")

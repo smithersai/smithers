@@ -15,7 +15,7 @@
  */
 import type { Action } from "@smthrs/capability/Capability"
 import { permissionDenied } from "@smthrs/capability/Permission"
-import { Jj, type Revision } from "@smthrs/jj"
+import { Jj, type OperationId, type Revision } from "@smthrs/jj"
 import { Effect, FileSystem as EffectFileSystem, Layer, Path as EffectPath } from "effect"
 import { canonicalResource } from "./FileSystem.ts"
 import { GrantStore } from "./GrantStore.ts"
@@ -82,6 +82,7 @@ export const layer: Layer.Layer<
     const jj = yield* Jj
     const jjRoot = jj.root
     const jjRevert = jj.revert
+    const jjOpRestore = jj.opRestore
     const fileSystem = yield* EffectFileSystem.FileSystem
     const path = yield* EffectPath.Path
     const workspace = yield* Workspace
@@ -124,7 +125,7 @@ export const layer: Layer.Layer<
       workspaceForget: Effect.fn("Jj.workspaceForget")((name) =>
         check("jj:workspace-forget", name).pipe(Effect.andThen(jj.workspaceForget(name)))
       ),
-      // `root` and `revert` are optional on the service, so the decorator
+      // `root`, `revert`, and `opRestore` are optional on the service, so the decorator
       // forwards the ABSENCE too. A backend that cannot revert must keep
       // reading as a backend that cannot revert: replacing it with a guarded
       // method that fails on call would turn "this host has no revert" into
@@ -145,6 +146,11 @@ export const layer: Layer.Layer<
       ...jjRevert === undefined ? {} : {
         revert: Effect.fn("Jj.revert")((revision: Revision) =>
           check("jj:revert", revision).pipe(Effect.andThen(jjRevert(revision)))
+        )
+      },
+      ...jjOpRestore === undefined ? {} : {
+        opRestore: Effect.fn("Jj.opRestore")((operationId: OperationId) =>
+          check("jj:op-restore", operationId).pipe(Effect.andThen(jjOpRestore(operationId)))
         )
       }
     })

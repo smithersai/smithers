@@ -44,6 +44,7 @@ import { LineageMetadata } from "./LineageMetadata.ts"
  */
 export interface LineageState {
   readonly changeId: string | undefined
+  readonly operationId?: string | undefined
   readonly planDigest: string | undefined
 }
 
@@ -81,6 +82,7 @@ const emptyLineage: LineageState = { changeId: undefined, planDigest: undefined 
 const SnapshotPayload = Schema.Struct({
   version: Schema.optionalKey(Schema.Literal(1)),
   snapshotId: Schema.optionalKey(Schema.NonEmptyString),
+  operationId: Schema.optionalKey(Schema.NonEmptyString),
   carried: Schema.optionalKey(Schema.Boolean)
 })
 
@@ -147,15 +149,26 @@ export const step = (
     // address rather than another lineage's.
     const changeId = payload.snapshotId ?? lineage.changeId
     if (changeId === undefined) return { state, anchor: undefined }
+    // The operation travels with the pointer it recorded: a new snapshot
+    // replaces both, and a carried record inherits both.
+    const operationId = payload.snapshotId === undefined ? lineage.operationId : payload.operationId
     return {
       state: {
-        lineages: { ...state.lineages, [lineageId]: { changeId, planDigest: lineage.planDigest } },
+        lineages: {
+          ...state.lineages,
+          [lineageId]: {
+            changeId,
+            ...(operationId === undefined ? {} : { operationId }),
+            planDigest: lineage.planDigest
+          }
+        },
         anchors: state.anchors + 1
       },
       anchor: {
         runId: entry.runId,
         frame: { lineageId, seq: entry.seq },
         changeId,
+        ...(operationId === undefined ? {} : { operationId }),
         ...(lineage.planDigest === undefined ? {} : { planDigest: lineage.planDigest })
       }
     }
@@ -225,7 +238,11 @@ const resume = (
     for (const anchor of latest) {
       if (anchor.runId !== runId) continue
       if (highWater === undefined || anchor.frame.seq > highWater) highWater = anchor.frame.seq
-      lineages[anchor.frame.lineageId] = { changeId: anchor.changeId, planDigest: anchor.planDigest }
+      lineages[anchor.frame.lineageId] = {
+        changeId: anchor.changeId,
+        ...(anchor.operationId === undefined ? {} : { operationId: anchor.operationId }),
+        planDigest: anchor.planDigest
+      }
     }
     let state: State = { lineages, anchors: 0 }
     if (highWater === undefined) return { state, highWater }

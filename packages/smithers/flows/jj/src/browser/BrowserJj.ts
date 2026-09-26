@@ -616,10 +616,12 @@ const create = (options: BrowserJjOptions): {
             message: `jj root: ${from} is not inside the workspace root ${root}`
           })
         ),
-    // The frozen rc.0 wasm ABI has no revert operation. The method remains
-    // present and fails explicitly so feature detection never depends on an
-    // optional property disappearing.
-    revert: () => fail("revert", "jj revert")
+    // The frozen rc.0 wasm ABI has no revert or operation-restore operation,
+    // and its snapshot reports no operation id. The methods remain present
+    // and fail explicitly so feature detection never depends on an optional
+    // property disappearing.
+    revert: () => fail("revert", "jj revert"),
+    opRestore: () => fail("opRestore", "jj op restore")
   })
   return { jj, dispose }
 }
@@ -716,5 +718,6 @@ export const layerUnsupported: Layer.Layer<Jj> = Layer.succeed(Jj)({
   workspaceForget: () => fail("workspaceForget", "jj workspace forget"),
   status: () => fail("status", "jj status"),
   root: () => fail("root", "jj root"),
-  revert: () => fail("revert", "jj revert")
+  revert: () => fail("revert", "jj revert"),
+  opRestore: () => fail("opRestore", "jj op restore")
 })

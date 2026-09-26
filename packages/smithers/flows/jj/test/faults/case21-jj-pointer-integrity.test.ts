@@ -79,11 +79,9 @@ describe.skipIf(!jjInstalled)("case21 jj pointer integrity", () => {
     const second = await run(Effect.flatMap(Jj, (jj) => jj.snapshot("smithers e2e second")))
     expect(second.commitId).not.toBe(first.commitId)
 
-    // The labeled commit is the one returned: the describe rewrote the closed
-    // commit, so a pointer read before the label would already be hidden.
-    expect(jjText(["log", "-r", first.commitId, "--no-graph", "-T", "description"]).trim()).toBe(
-      "smithers e2e first"
-    )
+    // Both captures are the same change: nothing was closed or labeled.
+    expect(second.changeId).toBe(first.changeId)
+    expect(jjText(["log", "-r", first.commitId, "--no-graph", "-T", "description"])).toBe("")
 
     // The two pointers really do address different trees.
     const diff = await run(Effect.flatMap(Jj, (jj) => jj.diff(first.commitId, second.commitId)))
@@ -101,15 +99,15 @@ describe.skipIf(!jjInstalled)("case21 jj pointer integrity", () => {
     expect(readFileSync(file, "utf8")).toBe("two\n")
   }, 120_000)
 
-  it("restores the pre-image after the step squashes its edits into the snapshot", async () => {
+  it("restores the pre-image after the step commits its edits into the snapshot's change", async () => {
     const file = join(repository, "squashed.txt")
     writeFileSync(file, "a")
     const before = await run(Effect.flatMap(Jj, (jj) => jj.snapshot()))
 
-    // The agent inside the step edits, then folds @ into @-: the snapshot's
-    // change now holds the step's edit under the same change id.
+    // The agent inside the step edits and commits: the snapshot's change now
+    // holds the step's edit under the same change id.
     writeFileSync(file, "b")
-    jjText(["squash"])
+    jjText(["commit", "--message=step"])
 
     // The falsifier: the change id follows the rewrite and restores the edit.
     await run(Effect.flatMap(Jj, (jj) => jj.restore(before.changeId)))

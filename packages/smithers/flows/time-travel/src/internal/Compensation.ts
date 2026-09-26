@@ -3,7 +3,7 @@
  *
  * @since 0.1.0
  */
-import { Jj } from "@smthrs/jj"
+import { Jj, jjError } from "@smthrs/jj"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Cause from "effect/Cause"
 import * as Duration from "effect/Duration"
@@ -56,7 +56,9 @@ export const blockingSummary = (assessment: Assessment) => ({
 export const Plan = Schema.Struct({
   effects: Schema.Array(EffectRecord),
   assessments: Schema.Array(Assessment),
-  targetChangeId: Schema.optionalKey(Schema.NonEmptyString)
+  targetChangeId: Schema.optionalKey(Schema.NonEmptyString),
+  /** Present for a whole-repository restore: the jj operation to restore. */
+  targetOperationId: Schema.optionalKey(Schema.NonEmptyString)
 })
 /**
  * The value form of {@link Plan}.
@@ -74,7 +76,13 @@ export type Plan = typeof Plan.Type
  */
 export const WorkspaceReceipt = Schema.Struct({
   currentChangeId: Schema.NonEmptyString,
-  targetChangeId: Schema.NonEmptyString
+  targetChangeId: Schema.NonEmptyString,
+  /**
+   * Both operations are present for a whole-repository restore, and both
+   * absent for a tree restore: the receipt is undone the way it was applied.
+   */
+  currentOperationId: Schema.optionalKey(Schema.NonEmptyString),
+  targetOperationId: Schema.optionalKey(Schema.NonEmptyString)
 })
 /**
  * The value form of {@link WorkspaceReceipt}.
@@ -115,6 +123,22 @@ export const defaultTimeout = Duration.minutes(3)
 const bounded = <A, E, R>(work: Effect.Effect<A, E, R>, timeout: Duration.Input) =>
   Effect.interruptible(work).pipe(Effect.timeout(timeout))
 
+/**
+ * Puts the repository back to one side of a workspace receipt: the whole
+ * repository to its operation when one is named, otherwise the working-copy
+ * tree to its commit.
+ */
+const restorePoint = (jj: Jj, changeId: string, operationId: string | undefined) =>
+  operationId === undefined
+    ? jj.restore(changeId)
+    : jj.opRestore === undefined
+    ? Effect.fail(jjError({
+      code: "not_installed",
+      method: "opRestore",
+      description: "this jj host cannot restore an operation"
+    }))
+    : jj.opRestore(operationId)
+
 const sealedAssessment = (
   effect: EffectRecord,
   classification: "warning" | "blocking",
@@ -128,7 +152,8 @@ const sealedAssessment = (
 
 const compensableAssessment = (
   effect: EffectRecord,
-  targetChangeId: string | undefined
+  targetChangeId: string | undefined,
+  whole: WholeRepo
 ): Assessment =>
   targetChangeId === undefined
     ? {
@@ -137,12 +162,38 @@ const compensableAssessment = (
       reason: "The target frame has no recorded jj snapshot pointer.",
       residue: "Workspace mutations cannot be restored to the selected frame."
     }
+    : whole.wholeRepo && whole.targetOperationId === undefined
+    ? {
+      effect,
+      classification: "blocking",
+      reason: "The target frame has no recorded jj operation.",
+      residue: "Repository changes cannot be restored to the selected frame."
+    }
+    : whole.wholeRepo
+    ? {
+      effect,
+      classification: "revertible",
+      reason: `The repository will be restored to jj operation ${whole.targetOperationId}.`,
+      residue: "Repository state after the target frame is discarded into the jj operation log."
+    }
     : {
       effect,
       classification: "revertible",
       reason: `The workspace will be restored to jj change ${targetChangeId}.`,
       residue: "Workspace state after the target frame is discarded into jj history."
     }
+
+/**
+ * Whether a rewind restores the whole repository, and the operation it would
+ * restore.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface WholeRepo {
+  readonly wholeRepo: boolean
+  readonly targetOperationId?: string | undefined
+}
 
 /**
  * Resolves every crossed effect before any compensation or workspace mutation.
@@ -156,7 +207,8 @@ const compensableAssessment = (
  */
 export const assess = (
   effects: ReadonlyArray<EffectRecord>,
-  targetChangeId?: string | undefined
+  targetChangeId?: string | undefined,
+  whole: WholeRepo = { wholeRepo: false }
 ): Effect.Effect<
   Plan,
   TimeTravelError,
@@ -188,7 +240,7 @@ export const assess = (
       }
 
       if (effect.tier === "compensable") {
-        assessments.push(compensableAssessment(effect, targetChangeId))
+        assessments.push(compensableAssessment(effect, targetChangeId, whole))
         continue
       }
 
@@ -199,7 +251,10 @@ export const assess = (
     return {
       effects: ordered,
       assessments,
-      ...(targetChangeId === undefined ? {} : { targetChangeId })
+      ...(targetChangeId === undefined ? {} : { targetChangeId }),
+      ...(whole.wholeRepo && whole.targetOperationId !== undefined
+        ? { targetOperationId: whole.targetOperationId }
+        : {})
     }
   })
 
@@ -377,9 +432,23 @@ export const prepareWorkspace = (
           )
         }
 
+        const currentOperationId = currentExit.value.operationId
+        if (plan.targetOperationId !== undefined && currentOperationId === undefined) {
+          const handlerRollback = yield* Effect.exit(rollbackHandlers(registry, handlerReceipts, timeout))
+          return yield* Effect.fail(
+            error(
+              "compensation_failed",
+              "could not read the current jj operation to restore the whole repository",
+              Exit.isFailure(handlerRollback) ? handlerRollback.cause : undefined
+            )
+          )
+        }
         const workspace: WorkspaceReceipt = {
           currentChangeId: currentExit.value.commitId,
-          targetChangeId: plan.targetChangeId!
+          targetChangeId: plan.targetChangeId!,
+          ...(plan.targetOperationId === undefined
+            ? {}
+            : { currentOperationId: currentOperationId!, targetOperationId: plan.targetOperationId })
         }
         return { handlerReceipts, workspace }
       })
@@ -402,14 +471,20 @@ export const restorePreparedWorkspace = (
     if (workspace === undefined) return result
     const jj = yield* Jj
     const registry = yield* EffectHandlerRegistry
-    const restoreExit = yield* Effect.exit(bounded(jj.restore(workspace.targetChangeId), timeout))
+    const restoreExit = yield* Effect.exit(
+      bounded(restorePoint(jj, workspace.targetChangeId, workspace.targetOperationId), timeout)
+    )
     if (Exit.isFailure(restoreExit)) {
-      const workspaceRollback = yield* Effect.exit(bounded(jj.restore(workspace.currentChangeId), timeout))
+      const workspaceRollback = yield* Effect.exit(
+        bounded(restorePoint(jj, workspace.currentChangeId, workspace.currentOperationId), timeout)
+      )
       const handlerRollback = yield* Effect.exit(rollbackHandlers(registry, handlerReceipts, timeout))
       return yield* Effect.fail(
         error(
           "compensation_failed",
-          `could not restore jj state ${workspace.targetChangeId}: ${causeMessage(restoreExit.cause)}`,
+          `could not restore jj state ${workspace.targetOperationId ?? workspace.targetChangeId}: ${
+            causeMessage(restoreExit.cause)
+          }`,
           {
             restore: restoreExit.cause,
             workspaceRollback: Exit.isFailure(workspaceRollback) ? workspaceRollback.cause : undefined,
@@ -441,7 +516,12 @@ export const rollback = (
       Effect.gen(function*() {
         const failures: Array<unknown> = []
         if (result.workspace !== undefined) {
-          const workspaceExit = yield* Effect.exit(bounded(jj.restore(result.workspace.currentChangeId), timeout))
+          const workspaceExit = yield* Effect.exit(
+            bounded(
+              restorePoint(jj, result.workspace.currentChangeId, result.workspace.currentOperationId),
+              timeout
+            )
+          )
           if (Exit.isFailure(workspaceExit)) failures.push(workspaceExit.cause)
         }
         const handlerExit = yield* Effect.exit(rollbackHandlers(registry, result.handlerReceipts, timeout))

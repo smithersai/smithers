@@ -1,6 +1,6 @@
 ---
 title: "Version control as a capability"
-description: "Why jj is a service behind a layer rather than a spawn: the eight operations of the Jj contract, the optional members, feature detection by error code, and the capability grants the kernel checks."
+description: "Why jj is a service behind a layer rather than a spawn: the nine operations of the Jj contract, the optional members, feature detection by error code, and the capability grants the kernel checks."
 sidebar:
   order: 1
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/jj/docs/concepts/version-control-as-a-capability.md"
@@ -19,16 +19,17 @@ service, so the host decides all of that in one place.
 The interface is deliberately small. It holds only the operations that make a
 step reversible, and nothing that merely happens to be a jj subcommand:
 
-| Operation                        | What it does                                                            |
-| -------------------------------- | ----------------------------------------------------------------------- |
-| `snapshot(message?)`             | Commits the working copy and returns the commit id to restore to later. |
-| `restore(revision)`              | Puts the working copy back to that revision.                            |
-| `diff(from, to)`                 | Git-format unified diff between two revisions.                          |
-| `workspaceAdd(name, path, rev?)` | Adds a named workspace rooted at `path`, one lane per parallel agent.   |
-| `workspaceForget(name)`          | Drops a named workspace without touching the commits made in it.        |
-| `status()`                       | The working copy's status, as jj prints it.                             |
-| `root(from)`                     | The repository root that contains a path.                               |
-| `revert(revision)`               | Applies the reverse of one change and reports the paths that changed.   |
+| Operation                        | What it does                                                             |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `snapshot(message?)`             | Captures the working copy and returns the commit id to restore to later. |
+| `restore(revision)`              | Puts the working copy back to that revision.                             |
+| `diff(from, to)`                 | Git-format unified diff between two revisions.                           |
+| `workspaceAdd(name, path, rev?)` | Adds a named workspace rooted at `path`, one lane per parallel agent.    |
+| `workspaceForget(name)`          | Drops a named workspace without touching the commits made in it.         |
+| `status()`                       | The working copy's status, as jj prints it.                              |
+| `root(from)`                     | The repository root that contains a path.                                |
+| `revert(revision)`               | Applies the reverse of one change and reports the paths that changed.    |
+| `opRestore(operationId)`         | Restores the whole repository to a jj operation.                         |
 
 There is no `commit`, no `push`, no `log`. Adding one would mean every backend
 owes an answer for it, including the WebAssembly build in a browser tab, so the
@@ -49,10 +50,10 @@ implementation canonicalizes a path against the workspace root before it asks
 for a grant, and resolving a path is itself a filesystem operation that can
 fail.
 
-## Two members are optional, and none of them is absent
+## Three members are optional, and none of them is absent
 
-`root` and `revert` are optional on the type, so a hand-written test double may
-leave them out. Every layer this package ships defines both anyway, and answers
+`root`, `revert`, and `opRestore` are optional on the type, so a hand-written
+test double may leave them out. Every layer this package ships defines them anyway, and answers
 in the error channel where the backend cannot perform them.
 
 That makes property presence useless as a probe. `"revert" in jj` is true for
@@ -64,7 +65,7 @@ needs to know calls the method and reads the code it gets back:
 capability with an answer.
 
 The one place absence still travels is the kernel decorator, which forwards a
-missing `root` or `revert` as missing rather than replacing it with a guarded
+missing `root`, `revert`, or `opRestore` as missing rather than replacing it with a guarded
 method that fails on call. Turning "this host has no revert" into "your revert
 was refused" would be a different answer to a caller deciding what it can
 offer.
@@ -100,9 +101,10 @@ before it runs:
 | `workspaceAdd`    | `jj:workspace-add`    | `compensable` |
 | `workspaceForget` | `jj:workspace-forget` | `compensable` |
 | `revert`          | `jj:revert`           | `compensable` |
+| `opRestore`       | `jj:op-restore`       | `compensable` |
 
 The three reads are `sealed`, so their results are content addressable and
-replay from the journal. The five writes are `compensable`, so the engine can
+replay from the journal. The six writes are `compensable`, so the engine can
 undo them.
 
 `workspaceAdd` asks for two grants, `jj:workspace-add` and `fs:write`, and

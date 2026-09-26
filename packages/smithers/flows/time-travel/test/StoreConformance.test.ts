@@ -351,7 +351,13 @@ describe("TimeTravelStore conformance", () => {
             yield* store.recordSnapshots([])
             yield* store.recordSnapshots([
               { runId: "run", frame: { ...frame, seq: 0 }, changeId: "first" },
-              { runId: "run", frame: { ...frame, seq: 4 }, changeId: "root-4", planDigest: "plan-4" },
+              {
+                runId: "run",
+                frame: { ...frame, seq: 4 },
+                changeId: "root-4",
+                operationId: "operation-4",
+                planDigest: "plan-4"
+              },
               { runId: "run", frame: { lineageId: "other", seq: 2 }, changeId: "other-2" },
               { runId: "run", frame: { lineageId: "other", seq: 3 }, changeId: "other-3" },
               { runId: "peer", frame: { ...frame, seq: 9 }, changeId: "peer" },
@@ -361,16 +367,30 @@ describe("TimeTravelStore conformance", () => {
             return {
               empty,
               latest: yield* store.latestSnapshots("run"),
-              replaced: yield* store.snapshotAt("run", { ...frame, seq: 0 })
+              replaced: yield* store.snapshotAt("run", { ...frame, seq: 0 }),
+              withOperation: yield* store.snapshotAt("run", { ...frame, seq: 5 })
             }
           })
         const expected = {
           empty: [],
           latest: [
             { runId: "run", frame: { lineageId: "other", seq: 3 }, changeId: "other-3" },
-            { runId: "run", frame: { ...frame, seq: 4 }, changeId: "root-4", planDigest: "plan-4" }
+            {
+              runId: "run",
+              frame: { ...frame, seq: 4 },
+              changeId: "root-4",
+              operationId: "operation-4",
+              planDigest: "plan-4"
+            }
           ],
-          replaced: { runId: "run", frame: { ...frame, seq: 0 }, changeId: "replaced" }
+          replaced: { runId: "run", frame: { ...frame, seq: 0 }, changeId: "replaced" },
+          withOperation: {
+            runId: "run",
+            frame: { ...frame, seq: 4 },
+            changeId: "root-4",
+            operationId: "operation-4",
+            planDigest: "plan-4"
+          }
         }
         const actual = backend === "memory"
           ? yield* exercise(MemoryTimeTravelStore.make())

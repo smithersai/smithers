@@ -61,14 +61,14 @@ describe.skipIf(!jjInstalled)("NodeJj workspaces and restore", () => {
     Effect.gen(function*() {
       const tracked = join(repository, "tracked.txt")
       yield* Effect.promise(() => writeFile(tracked, "captured\n"))
-      const { changeId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("capture")))
+      const { commitId } = yield* run(Effect.flatMap(Jj, (jj) => jj.snapshot("capture")))
 
       // An uncommitted edit and a file that did not exist at capture time.
       const added = join(repository, "added-after.txt")
       yield* Effect.promise(() => writeFile(tracked, "edited after capture\n"))
       yield* Effect.promise(() => writeFile(added, "later\n"))
 
-      yield* run(Effect.flatMap(Jj, (jj) => jj.restore(changeId)))
+      yield* run(Effect.flatMap(Jj, (jj) => jj.restore(commitId)))
 
       // Both halves of the 0.x requirement: the edit is overwritten without a
       // rejection, and the later file is removed. A caller that expects a

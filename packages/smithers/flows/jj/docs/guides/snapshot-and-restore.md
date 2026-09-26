@@ -21,17 +21,21 @@ const before = Effect.gen(function*() {
 })
 ```
 
-`snapshot` describes the current change with your message, reads back the
-closed commit, and opens a fresh empty change on top. It returns two ids:
+On Node and Bun, `snapshot` captures the working copy into the current change
+without closing it, describing it, or opening a new one, so repeated snapshots
+add no commits to your log. It returns three ids:
 
-- `commitId` names the tree that was just closed. It is content addressed, so
+- `commitId` names the captured tree. It is content addressed, so
   nothing done later can change what it names, and jj still resolves it after
   the commit is hidden. Keep it: Smithers journals it so a retry, a resumed
   run, or a rewind returns to exactly that tree.
-- `changeId` is the change's short human name. A rewrite moves it: if the step
-  that runs next folds its edits into the closed change with `jj squash`, the
-  change id names the step's edits, and an `abandon` makes it stop resolving.
-  Show it to people; never restore to it.
+- `changeId` is the change's short human name. A rewrite moves it: the step
+  that runs next edits the same change, so the change id names the step's
+  edits, and an `abandon` makes it stop resolving. Show it to people; never
+  restore to it.
+- `operationId` names the jj operation that recorded the capture. Pass it to
+  `opRestore` to put the whole repository back, bookmarks and rebases
+  included. The browser layer does not report it.
 
 Journal rows written before 1.0.0-rc.2 hold a change id. Change ids are reverse
 hex (`k-z`) and commit ids are hex (`0-9a-f`), so both still resolve unchanged
@@ -47,17 +51,10 @@ const unnamed = Effect.gen(function*() {
 })
 ```
 
-With no message the adapter runs no `jj describe` at all. Two reasons, and both
-matter:
-
-- `jj describe` without `-m` starts `$JJ_EDITOR` (`nano` when unset) and waits
-  for it, even with stdout on a pipe and stdin on `/dev/null`. An unnamed
-  snapshot would hold an interactive child process that no process ledger knows
-  about and no cancel deadline covers.
-- `-m ""` would erase a description the caller never asked to change.
-
-The ids still come back, because every jj command snapshots the working copy
-first, so the `log` that reads them is itself the snapshot.
+The message is optional. Node and Bun never run `jj describe` for a snapshot,
+with or without one: the engine keeps its label in the journal. The browser
+layer writes a supplied message as the change description and runs no describe
+without one.
 
 ## Undo the whole point: restore
 
@@ -69,7 +66,7 @@ const rewind = (commitId: string) =>
   })
 ```
 
-`restore` replaces the working copy with the tree recorded at `changeId`. It is
+`restore` replaces the working copy with the tree recorded at `commitId`. It is
 a replacement, not a merge:
 
 - An uncommitted edit to a tracked file is overwritten, without a rejection.
@@ -103,16 +100,32 @@ its spaces intact.
 
 `revert` is optional on the interface, hence the `!`. Every layer this package
 ships defines it, and answers `not_installed` where the backend cannot perform
-it. See [Version control as a capability](../concepts/version-control-as-a-capability.md#two-members-are-optional-and-none-of-them-is-absent)
+it. See [Version control as a capability](../concepts/version-control-as-a-capability.md#three-members-are-optional-and-none-of-them-is-absent)
 for why that is the shape.
+
+## Undo the whole repository: opRestore
+
+```ts
+const rewindRepository = (operationId: string) =>
+  Effect.gen(function*() {
+    const jj = yield* Jj
+    yield* jj.opRestore!(operationId)
+  })
+```
+
+`opRestore` runs `jj op restore`. Bookmarks, heads, and working-copy commits
+return to the operation's view, so bookmark moves, rebases, `describe`, and
+`abandon` made after the snapshot are undone along with the tree. The
+operations after it stay in `jj op log`.
 
 ## Which one to use
 
-| You mean                                           | Use                 |
-| -------------------------------------------------- | ------------------- |
-| Rewind the run to the checkpoint it opened on      | `restore(changeId)` |
-| Undo that one attempt and keep everything after it | `revert(changeId)`  |
-| Show what changed between two points               | `diff(from, to)`    |
+| You mean                                           | Use                      |
+| -------------------------------------------------- | ------------------------ |
+| Rewind the run to the checkpoint it opened on      | `restore(commitId)`      |
+| Also undo bookmark moves, rebases, and abandons    | `opRestore(operationId)` |
+| Undo that one attempt and keep everything after it | `revert(changeId)`       |
+| Show what changed between two points               | `diff(from, to)`         |
 
 ## Read the difference first
 

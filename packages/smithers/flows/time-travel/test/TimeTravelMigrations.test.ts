@@ -43,7 +43,7 @@ describe("time-travel migrations", () => {
       const sql = yield* SqlClient.SqlClient
       const rows = yield* sql<{ readonly migration_id: number }>`SELECT migration_id
         FROM flows_migrations WHERE migration_id >= 5000 ORDER BY migration_id`
-      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004])
+      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005])
       // A completed rung is not a schema repair hook on each store build.
       yield* sql`DROP INDEX flows_journal_events_child_spawn_idx`
       yield* SqlTimeTravelStore.make
@@ -99,7 +99,7 @@ describe("time-travel migrations", () => {
           yield* DatabaseMigrations.run([{
             ...Migrations.set,
             migrations: Object.fromEntries(
-              Object.entries(Migrations.set.migrations).filter(([key]) => key !== "0004_plan_digest")
+              Object.entries(Migrations.set.migrations).filter(([key]) => key < "0004_plan_digest")
             )
           }])
           const sql = yield* SqlClient.SqlClient
@@ -131,15 +131,16 @@ describe("time-travel migrations", () => {
       yield* EngineMigrations.run
       for (const migration of Object.values(Migrations.set.migrations)) yield* migration
       const sql = yield* SqlClient.SqlClient
-      yield* sql`INSERT INTO flows_time_travel_snapshots VALUES ('run', 'lineage', 0, 'change', 'plan')`
+      yield* sql`INSERT INTO flows_time_travel_snapshots VALUES ('run', 'lineage', 0, 'change', 'plan', 'operation')`
       yield* SqlTimeTravelStore.make
-      expect(yield* sql`SELECT change_id, plan_digest FROM flows_time_travel_snapshots`).toEqual([{
+      expect(yield* sql`SELECT change_id, plan_digest, operation_id FROM flows_time_travel_snapshots`).toEqual([{
         change_id: "change",
-        plan_digest: "plan"
+        plan_digest: "plan",
+        operation_id: "operation"
       }])
       const rows = yield* sql<{ readonly migration_id: number }>`SELECT migration_id FROM flows_migrations
         WHERE migration_id >= 5000 ORDER BY migration_id`
-      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004])
+      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005])
     }).pipe(Effect.provide(TestDatabase.layer)))
 
   it.effect("widens a legacy snapshots table that predates plan_digest", () =>
@@ -167,6 +168,7 @@ describe("time-travel migrations", () => {
         )
 
         expect(columns.map((column) => column.name)).toContain("plan_digest")
+        expect(columns.map((column) => column.name)).toContain("operation_id")
       } finally {
         yield* Effect.promise(() => rm(directory, { recursive: true, force: true }))
       }
@@ -245,7 +247,7 @@ describe("time-travel migrations", () => {
           )
         )
 
-        expect(rows).toEqual([5001, 5002, 5003, 5004].map((migration_id) => ({ migration_id })))
+        expect(rows).toEqual([5001, 5002, 5003, 5004, 5005].map((migration_id) => ({ migration_id })))
       } finally {
         yield* Effect.promise(() => rm(directory, { recursive: true, force: true }))
       }
