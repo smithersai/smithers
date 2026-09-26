@@ -369,11 +369,18 @@
 	width: 100%;
 	padding: var(--sp-4) var(--sp-4) var(--sp-2);
 	gap: 6px;
-	border-color: var(--border-strong);
+}
+
+/* The composer and the queued-prompt strip that floats with it share one surface. */
+.app-shell .smithers-composer,
+.app-shell .prompt-queue {
+	border: 1px solid var(--border-strong);
 	/* The guide palette's layer is --r-4; the app composer was a one-off 20px
 	   blob. One radius system. */
 	border-radius: var(--r-4);
 	background: var(--surface-glass-strong);
+	-webkit-backdrop-filter: blur(20px) saturate(180%);
+	backdrop-filter: blur(20px) saturate(180%);
 	box-shadow: var(--shadow-2);
 }
 
@@ -1116,7 +1123,7 @@
   .chat-run-timeline .run-outcome { font-size: var(--fs-small); }
 }
 
-.prompt-queue { padding: 8px 12px; max-height: 30vh; overflow: auto; }
+.prompt-queue { margin-top: 8px; padding: 8px 12px; max-height: 30vh; overflow: auto; }
 .prompt-queue-heading, .prompt-queue li { display: flex; align-items: baseline; gap: 8px; }
 .prompt-queue-heading { justify-content: space-between; }
 .prompt-queue ol { list-style: none; padding: 0; margin: 4px 0 0; }
