@@ -141,6 +141,14 @@ describe("unified root command dispatch", () => {
     expect(ports.suggest).not.toHaveBeenCalled()
   })
 
+  it("routes open to the checkout it names and refuses one that does not exist", async () => {
+    const missing = join(tmpdir(), "smithers-open-missing-checkout")
+    const result = await invoke(["open", missing, "--json"])
+    // A usage refusal exits 2.
+    expect(result.codes).toContain(2)
+    expect(result.stdout + result.stderr).toContain(`${missing} does not exist.`)
+  })
+
   it("passes explicit initialization names, resolved roots and caller environment", async () => {
     const environment = { INIT_MARKER: "caller" }
     const result = await invoke(["init", "sample", "--root", "relative-project", "--json"], { environment })
