@@ -1,5 +1,5 @@
 import { createModelTurnHandler, environmentModelResolver, MODEL_HOST_PROTOCOL } from "@smthrs/model-host"
-import { createModelProbe } from "../../app/src/bun/ModelProbe.ts"
+import { createModelProbe } from "@smthrs/model-host/ModelProbe"
 import { MODEL_TEST_BODY_MAX_BYTES, ModelTestRequestSchema } from "@smthrs/rpc/ConfiguredModel"
 import { createServer } from "node:http"
 import type { IncomingMessage, ServerResponse } from "node:http"

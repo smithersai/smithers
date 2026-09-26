@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { Message } from "@smthrs/model/ModelRequest"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { Effect } from "effect"
-import { planOnLocal, sealedTurn } from "./ConfiguredModelHost"
+import { planOnLocal } from "@smthrs/model-host/LocalModel"
+import { sealedTurn } from "./ConfiguredModelHost"
 
 /*
  * What a sealed turn publishes when its provider says the credential back.

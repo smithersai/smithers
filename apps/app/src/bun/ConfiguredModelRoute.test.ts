@@ -10,7 +10,7 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import { PROVIDER_CONFIDENCE, PROVIDER_MODEL, PROVIDER_REPLY } from "../../e2e/real/support/model-provider-behaviors"
 import { launchModelProvider } from "../../e2e/real/support/model-provider-process"
 import type { ModelProvider } from "../../e2e/real/support/model-provider-process"
-import { toEvaluatorLayer, toModel, withRoute } from "./ConfiguredModelRoute"
+import { toEvaluatorLayer, toModel, withRoute } from "@smthrs/model-host/ConfiguredModelRoute"
 
 const KEY = "sk-route-REDACTME-0123456789"
 const apiKey = Redacted.make(KEY)

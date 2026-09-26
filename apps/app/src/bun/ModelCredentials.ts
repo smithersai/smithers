@@ -6,6 +6,7 @@ import {
   ModelCredentialResultSchema, modelOriginOf
 } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelCredentialEnv, ModelCredentialListing } from "@smthrs/rpc/ConfiguredModel"
+import type { ModelCredentials } from "@smthrs/model-host/LocalModel"
 import { darwinKeychain, type CloudKeychain } from "./CloudAuth"
 
 const vaultSchema = z.strictObject({ version: z.literal(1), entries: z.array(z.strictObject({
@@ -13,20 +14,11 @@ const vaultSchema = z.strictObject({ version: z.literal(1), entries: z.array(z.s
 })).max(59), receipts: z.array(z.strictObject({ id: z.string(), result: ModelCredentialResultSchema })).max(128) })
 type Vault = z.infer<typeof vaultSchema>
 
-/**
- * Model values stay behind this host-only interface. Listing and planning never
- * hold one. The keychain vault is read only: the app no longer enrolls keys.
- */
-export interface ModelCredentials {
-  readonly refresh: () => Promise<void>
-  readonly list: () => ReadonlyArray<ModelCredentialListing>
-  readonly read: (name: string) => Redacted.Redacted<string> | undefined
-}
-
 /** Scope isolates native, headless and test hosts without putting a path in the keychain account. */
 export const modelKeychainAccount = (scope: string): string => createHash("sha256").update(scope).digest("hex")
 export const MODEL_KEYCHAIN_SERVICE = "smithers-model-credentials"
 
+/** Model values behind the host keychain vault, which is read only: the app no longer enrolls keys. */
 export const createModelCredentials = async (options: {
   readonly env: ModelCredentialEnv
   readonly scope: string

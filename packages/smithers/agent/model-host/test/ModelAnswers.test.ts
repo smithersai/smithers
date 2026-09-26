@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { decodeModelAnswers } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelQuestion } from "@smthrs/rpc/ConfiguredModel"
 import { Effect, Exit, Schema } from "effect"
-import { modelAnswersOf } from "./ModelProbe"
+import { describe, expect, test } from "vitest"
+import { modelAnswersOf } from "../src/ModelProbe.ts"
 
 /*
  * Two decoders, one meaning. The local host decodes a composed decision
@@ -25,7 +25,9 @@ const typed = Object.fromEntries(Object.entries(questions).map(([id, question]) 
 
 const classifier = (raw: unknown) => {
   const exit = Effect.runSyncExit(Classifier.decodeAnswers(typed, raw as Evaluator.RawAnswers))
-  return Exit.isSuccess(exit) ? { ok: true as const, answers: modelAnswersOf(typed, exit.value) } : { ok: false as const }
+  return Exit.isSuccess(exit)
+    ? { ok: true as const, answers: modelAnswersOf(typed, exit.value) }
+    : { ok: false as const }
 }
 
 const cases: ReadonlyArray<readonly [string, unknown]> = [
@@ -53,13 +55,47 @@ const cases: ReadonlyArray<readonly [string, unknown]> = [
     risk: { type: "score", score: 0 },
     digits: { type: "score", score: 0 }
   }],
-  ["a missing answer", { ok: { type: "boolean", probability: 0.7 }, which: { type: "choice", choice: "a" }, risk: { type: "score", score: 0 } }],
-  ["an answer of the wrong type", { ok: { type: "choice", choice: "a" }, which: { type: "choice", choice: "a" }, risk: { type: "score", score: 0 }, digits: { type: "score", score: 0 } }],
-  ["a probability outside the unit interval", { ok: { type: "boolean", probability: 1.2 }, which: { type: "choice", choice: "a" }, risk: { type: "score", score: 0 }, digits: { type: "score", score: 0 } }],
-  ["an option that was not offered", { ok: { type: "boolean", probability: 0.2 }, which: { type: "choice", choice: "c" }, risk: { type: "score", score: 0 }, digits: { type: "score", score: 0 } }],
-  ["a score outside the rungs", { ok: { type: "boolean", probability: 0.2 }, which: { type: "choice", choice: "a" }, risk: { type: "score", score: 3 }, digits: { type: "score", score: 0 } }],
-  ["a distribution entry outside the unit interval", { ok: { type: "boolean", probability: 0.2 }, which: { type: "choice", choice: "a", probabilities: { a: 2 } }, risk: { type: "score", score: 0 }, digits: { type: "score", score: 0 } }],
-  ["a score distribution mixing indexes and labels", { ok: { type: "boolean", probability: 0.2 }, which: { type: "choice", choice: "a" }, risk: { type: "score", score: 0, probabilities: { "0": 1, high: 0 } }, digits: { type: "score", score: 0 } }],
+  ["a missing answer", {
+    ok: { type: "boolean", probability: 0.7 },
+    which: { type: "choice", choice: "a" },
+    risk: { type: "score", score: 0 }
+  }],
+  ["an answer of the wrong type", {
+    ok: { type: "choice", choice: "a" },
+    which: { type: "choice", choice: "a" },
+    risk: { type: "score", score: 0 },
+    digits: { type: "score", score: 0 }
+  }],
+  ["a probability outside the unit interval", {
+    ok: { type: "boolean", probability: 1.2 },
+    which: { type: "choice", choice: "a" },
+    risk: { type: "score", score: 0 },
+    digits: { type: "score", score: 0 }
+  }],
+  ["an option that was not offered", {
+    ok: { type: "boolean", probability: 0.2 },
+    which: { type: "choice", choice: "c" },
+    risk: { type: "score", score: 0 },
+    digits: { type: "score", score: 0 }
+  }],
+  ["a score outside the rungs", {
+    ok: { type: "boolean", probability: 0.2 },
+    which: { type: "choice", choice: "a" },
+    risk: { type: "score", score: 3 },
+    digits: { type: "score", score: 0 }
+  }],
+  ["a distribution entry outside the unit interval", {
+    ok: { type: "boolean", probability: 0.2 },
+    which: { type: "choice", choice: "a", probabilities: { a: 2 } },
+    risk: { type: "score", score: 0 },
+    digits: { type: "score", score: 0 }
+  }],
+  ["a score distribution mixing indexes and labels", {
+    ok: { type: "boolean", probability: 0.2 },
+    which: { type: "choice", choice: "a" },
+    risk: { type: "score", score: 0, probabilities: { "0": 1, high: 0 } },
+    digits: { type: "score", score: 0 }
+  }],
   ["not a map at all", "nonsense"]
 ]
 
@@ -87,7 +123,9 @@ describe("the contract's answer decoder agrees with the classifier", () => {
       if (!worker.ok) throw new Error("the contract refused the answer")
       for (const id of ["risk", "which"]) {
         const [here, there] = [worker.answers[id], local[id]]
-        if (here === undefined || there === undefined || here.type === "boolean" || there.type === "boolean") throw new Error("the answer holds no distribution")
+        if (here === undefined || there === undefined || here.type === "boolean" || there.type === "boolean") {
+          throw new Error("the answer holds no distribution")
+        }
         expect(Object.entries(here.probabilities)).toEqual(Object.entries(there.probabilities))
         expect(Object.hasOwn(here.probabilities, "__proto__")).toBe(true)
         expect([here.value, here.confidence]).toEqual([there.value, there.confidence])
@@ -101,6 +139,10 @@ describe("the contract's answer decoder agrees with the classifier", () => {
       expect(decodeModelAnswers(questions, raw)).toEqual(classifier(raw))
     })
   }
+  test("an answer no question names passes through as the classifier gave it", () => {
+    const answer = { value: true, probability: 0.4 } as Classifier.Answer
+    expect(modelAnswersOf({}, { stray: answer })).toEqual({ stray: answer })
+  })
   test("the fixtures cover both outcomes", () => {
     const outcomes = new Set(cases.map(([, raw]) => classifier(raw).ok))
     expect([...outcomes].sort()).toEqual([false, true])

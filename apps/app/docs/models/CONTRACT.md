@@ -533,7 +533,7 @@ modelStateFieldsOf(state)      // a recorded JSON state back as fields, one per 
 modelCallDefault(kind)         // the fixed Test as a request: MODEL_TEST_PROMPT/MODEL_TEST_MAX_TOKENS, or MODEL_TEST_DECISION as fields + its one boolean question
 ModelAnswerSchema     // boolean { value, probability } | choice { value, probabilities, confidence } | score { value, label, probabilities, confidence }
 ModelCallOutputSchema // decision { answers: Record<id, ModelAnswer> } | generation { text (max MODEL_CALL_TEXT_MAX, credential cut) }
-decodeModelAnswers(questions, raw)   // the Worker's decoder; apps/app/src/bun/ModelAnswers.test.ts holds it to Classifier.decodeAnswers on every shape and refusal; distributions accumulate in a null-prototype object, as the classifier's do
+decodeModelAnswers(questions, raw)   // the Worker's decoder; packages/smithers/agent/model-host/test/ModelAnswers.test.ts holds it to Classifier.decodeAnswers on every shape and refusal; distributions accumulate in a null-prototype object, as the classifier's do
 modelCallSample(output, secret)      // the row's sample of an output (section 2)
 ModelCallPendingSchema     // { requestId, request: ModelCallDraft, binding: ModelBinding, owner: string | null }   an ask that is out: written before dispatch, never edited
 ModelCallCardPayloadSchema // { model, request: ModelCallDraft, pending?: ModelCallPending, response?: { askedAt, request, binding?, result: ModelTestResult }, fixture?: string, asking?: boolean }   `asking` and a response without `binding` are cards written before the snapshot; they replay, and resume nothing

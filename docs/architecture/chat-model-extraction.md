@@ -34,10 +34,13 @@ not required by the single-owner container.
 - A deployment injects `ModelTurnResolver`. The public executable supplies the
   environment-backed single-owner resolver. Plue supplies its owner-scoped
   credential resolver to the same handler and model runtime.
+- `LocalModel` plans a binding against the host's credentials, reports the
+  catalog, refuses redirects, and maps provider failures to the contract.
+- `ModelProbe` runs the one bounded model Test both local hosts serve.
 
 `apps/model-host` is only a loopback executable and immutable bundle builder.
-The app Bun modules are compatibility exports. Neither entrypoint owns another
-agent loop or Flow graph.
+The app imports the package directly. Neither entrypoint owns another agent
+loop or Flow graph.
 
 The packaged process contract is:
 
