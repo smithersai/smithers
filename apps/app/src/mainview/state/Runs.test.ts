@@ -2074,3 +2074,152 @@ test("an answer whose input cannot persist submits nothing", async () => {
   fail = false
   await controller.dispose()
 })
+
+describe("trace gestures retain their source view", () => {
+  const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
+  const card = (id: string): Extract<Card, { kind: "run-trace" }> => ({
+    id, kind: "run-trace", title: id, status: "acted", createdAt: 1, ordinal: 1,
+    payload: { repo: REPO, workspaceId, runId: "run-reader", workflow: "coding", phase: "completed", steps: [], result: null, lastSeq: 2,
+      input: { plan: CODING_PLAN }, filter: "all", traceView: "turns", selection: "frame-1", cursorSeq: 2, liveTail: false,
+      graph: { follow: true, node: "gate", tab: "code" },
+      events: [
+        { kind: "control.agent.turn-opened", payload: { seat: "openai:gpt-5.6-sol", at: 100 }, sequence: 1, occurredAt: 100 },
+        { kind: "control.agent.cell-call-started", payload: { flowName: "files.read", input: { path: "README.md" }, at: 250 }, sequence: 2, occurredAt: 250 }
+      ]
+    }
+  })
+  const cases = [
+    ["runs.trace.filter", "failed", { filter: "failed" }],
+    ["runs.trace.select", "call-1 2", { selection: "call-1", cursorSeq: 2, liveTail: false }],
+    ["runs.trace.view", "timeline", { traceView: "timeline" }],
+    ["runs.trace.live", "", { liveTail: true }],
+    ["runs.graph.follow", "off", { graph: { follow: false, node: "gate", tab: "code" } }],
+    ["runs.coding.select", "memory", { codingChangeId: "memory" }]
+  ] as const
+  const payload = (store: Awaited<ReturnType<typeof webStore>>, id: string) => {
+    const found = store.collections.cards.get(id)
+    return found?.kind === "run-trace" ? found.payload : undefined
+  }
+  const ready = async (storage = memoryStorage(), cards = [card("a"), card("b")]) => {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    await signIn(store)
+    for (const row of cards) await store.dispatch({ type: "card.upsert", actor: "system", card: row }).isPersisted.promise
+    const double = relay()
+    const controller = createAppController(store, silentAgent, double.services)
+    return { store, controller, double, storage }
+  }
+
+  test.each(cases)("%s changes only its named view and restores that choice after reload", async (flow, args, expected) => {
+    const fixture = await ready()
+    const before = payload(fixture.store, "a")
+    expect((await fixture.controller.commands.runForAgent(flow, `sourceCard=b run-reader ${args}`)).status).toBe("executed")
+    expect(payload(fixture.store, "a")).toEqual(before)
+    expect(payload(fixture.store, "b")).toMatchObject(expected)
+    expect(fixture.double.calls).toHaveLength(0)
+    expect((await fixture.store.eventHistory()).events.some(event => {
+      if (event.type !== "card.updated" && event.type !== "card.upsert") return false
+      const saved = decodeEventValue(event.input) as { actor?: string; id?: string; card?: { id?: string } }
+      return saved.actor === "smithers" && (saved.id === "b" || saved.card?.id === "b")
+    })).toBe(true)
+    if (flow === "runs.trace.live") {
+      expect(payload(fixture.store, "b")?.selection).toBeUndefined()
+      expect(payload(fixture.store, "b")?.cursorSeq).toBeUndefined()
+    }
+    await fixture.controller.dispose()
+    await fixture.store.dispose?.()
+    const restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
+    try {
+      expect(payload(restored, "a")).toEqual(before)
+      expect(payload(restored, "b")).toMatchObject(expected)
+      if (flow === "runs.trace.live") {
+        expect(payload(restored, "b")?.selection).toBeUndefined()
+        expect(payload(restored, "b")?.cursorSeq).toBeUndefined()
+      }
+    } finally { await restored.dispose?.() }
+  })
+
+  test("selection validates the named view's own journal and coding plan", async () => {
+    const first = card("a")
+    const second = card("b")
+    const fixture = await ready(memoryStorage(), [{ ...first, payload: { ...first.payload, input: {}, events: [] } }, second])
+    expect((await fixture.controller.commands.run("runs.trace.select", "sourceCard=b run-reader call-1 2")).status).toBe("executed")
+    expect((await fixture.controller.commands.run("runs.coding.select", "sourceCard=b run-reader memory")).status).toBe("executed")
+    expect(said(await fixture.controller.commands.run("runs.trace.select", "sourceCard=a run-reader call-1 2"))).toContain("no recorded journal sequence")
+    expect(said(await fixture.controller.commands.run("runs.coding.select", "sourceCard=a run-reader memory"))).toContain("no recorded planned Change")
+  })
+
+  test("missing and wrong-run sources refuse every gesture without falling back", async () => {
+    const fixture = await ready()
+    const before = [payload(fixture.store, "a"), payload(fixture.store, "b")]
+    for (const [flow, args] of cases) {
+      expect(said(await fixture.controller.commands.run(flow, `sourceCard=missing run-reader ${args}`))).toContain("does not record run")
+      expect(said(await fixture.controller.commands.run(flow, `sourceCard=b another-run ${args}`))).toContain("does not record run")
+    }
+    expect([payload(fixture.store, "a"), payload(fixture.store, "b")]).toEqual(before)
+  })
+
+  test("unqualified references stay deterministic within one scope and refuse conflicting scopes", async () => {
+    const fixture = await ready()
+    expect((await fixture.controller.commands.run("runs.trace.filter", "run-reader failed")).status).toBe("executed")
+    expect(payload(fixture.store, "a")?.filter).toBe("failed")
+    expect(payload(fixture.store, "b")?.filter).toBe("all")
+    const other = card("other")
+    await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: { ...other, payload: { ...other.payload, workspaceId: "83e75ae5-0920-4000-8000-000000000002" } } }).isPersisted.promise
+    for (const [flow, args] of cases) expect(said(await fixture.controller.commands.run(flow, `run-reader ${args}`))).toContain("conflicting")
+    expect((await fixture.controller.commands.run("runs.trace.filter", "sourceCard=b run-reader failed")).status).toBe("executed")
+    expect(payload(fixture.store, "other")?.filter).toBe("all")
+  })
+
+  for (const [flow, args] of cases.slice(4)) {
+    test(`${flow} waits for its card receipt while Chat remains usable`, async () => {
+      const fixture = await ready()
+      const dispatch = fixture.store.dispatch
+      const saved = Promise.withResolvers<void>()
+      let held = false
+      let answered = false
+      Object.assign(fixture.store, { dispatch: (transition: Parameters<typeof dispatch>[0]) => {
+        const write = dispatch(transition)
+        if (!held && transition.type === "card.upsert" && transition.card.kind === "run-trace") {
+          held = true
+          return { ...write, isPersisted: { promise: write.isPersisted.promise.then(() => saved.promise) } }
+        }
+        return write
+      } })
+      try {
+        const result = fixture.controller.commands.run(flow, `sourceCard=b run-reader ${args}`).then(result => { answered = true; return result })
+        await waitFor(() => held)
+        await settle(15)
+        expect(answered).toBe(false)
+        await dispatch({ type: "composer.changed", actor: "user", draft: "Chat while the choice saves" }).isPersisted.promise
+        saved.resolve()
+        expect((await result).status).toBe("executed")
+      } finally { saved.resolve(); Object.assign(fixture.store, { dispatch }) }
+    })
+
+    test(`${flow} reports a refused card save and can retry without changing another view`, async () => {
+      const backing = memoryStorage()
+      let armed = false
+      let refused = 0
+      const marker = JSON.stringify(flow === "runs.graph.follow" ? '"follow":false' : '"codingChangeId":"memory"').slice(1, -1)
+      const storage = { ...backing, setItem: (key: string, value: string) => {
+        if (armed && key.endsWith(".staged") && value.includes(marker)) {
+          armed = false
+          refused += 1
+          throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError", code: 22 })
+        }
+        backing.setItem(key, value)
+      } }
+      const fixture = await ready(storage)
+      const before = [payload(fixture.store, "a"), payload(fixture.store, "b")]
+      armed = true
+      const result = await fixture.controller.commands.run(flow, `sourceCard=b run-reader ${args}`)
+      expect(refused).toBe(1)
+      expect(result.status).toBe("failed")
+      expect(said(result)).toMatch(/not.*saved/)
+      expect([payload(fixture.store, "a"), payload(fixture.store, "b")]).toEqual(before)
+      expect((await fixture.controller.commands.run(flow, `sourceCard=b run-reader ${args}`)).status).toBe("executed")
+      expect(payload(fixture.store, "a")).toEqual(before[0])
+      expect(payload(fixture.store, "b")).not.toEqual(before[1])
+    })
+  }
+})

@@ -226,6 +226,17 @@ export default showcase({
     await expect(runDrawer).toHaveAttribute("data-node", "check")
     await expect(runDrawer.locator(".flow-graph-code")).toContainText("export const check = true")
     expect(checkReads).toBe(2)
+    const follow = run.getByRole("button", { name: "Follow", exact: true })
+    await follow.focus()
+    await page.keyboard.press("Enter")
+    await expect(follow).toHaveAttribute("aria-pressed", "false")
+    await page.reload()
+    await page.getByRole("button", { name: "Chat", exact: true }).waitFor({ timeout: 20_000 })
+    await expect(follow).toHaveAttribute("aria-pressed", "false")
+    await expect(runDrawer.getByRole("tab", { name: "Code", exact: true })).toHaveAttribute("aria-selected", "true")
+    await follow.focus()
+    await page.keyboard.press("Enter")
+    await expect(follow).toHaveAttribute("aria-pressed", "true")
 
     // A new flow from one sentence: an authoring run on the workspace.
     await app.slash(`/flow.create Mark issues idle for 30 days stale ${REPO}`)

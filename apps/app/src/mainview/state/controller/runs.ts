@@ -78,9 +78,9 @@ export interface RunsController {
   readonly traceSelect: (runId: string, nodeId: string, seq?: number, sourceCard?: string) => Promise<CommandResult>
   readonly traceView: (runId: string, view: TraceView, sourceCard?: string) => Promise<CommandResult>
   /** `runs.graph.follow <runId> <on|off>`: whether the graph's camera follows the running node. */
-  readonly graphFollow: (runId: string, follow: boolean, sourceCard?: string) => CommandResult
+  readonly graphFollow: (runId: string, follow: boolean, sourceCard?: string) => Promise<CommandResult>
   readonly traceLive: (runId: string, sourceCard?: string) => Promise<CommandResult>
-  readonly selectCodingChange: (runId: string, changeId: string, sourceCard?: string) => CommandResult
+  readonly selectCodingChange: (runId: string, changeId: string, sourceCard?: string) => Promise<CommandResult>
   readonly stopAllRuns: (repo?: string, sourceCard?: string) => Promise<CommandResult>
   /**
    * `approvals.list [owner/repo]`: persist the read request for the target
@@ -110,7 +110,12 @@ export const createRunsController = (
 ): RunsController => {
   const { store, gateway } = ctx
 
-  const runCardFor = (scope: RunScope) => runCardInScope(store, scope)
+  // A named trace is the reader's exact view; ancillary cards identify only a run scope.
+  const runCardFor = (scope: RunScope, sourceCard?: string) => {
+    const source = sourceCard === undefined ? undefined : store.collections.cards.get(sourceCard)
+    if (source?.kind === "run-trace") return sameRunScope(source.payload, scope) ? source : undefined
+    return runCardInScope(store, scope)
+  }
   const prepareRunHandoff: RunsController["prepareRunHandoff"] = (runId, sourceCard) => {
     const source = sourceCard === undefined ? undefined : store.collections.cards.get(sourceCard)
     const target = resolveRun(runId, sourceCard)
@@ -479,7 +484,7 @@ export const createRunsController = (
   const traceFilter = async (runId: string, filter: TraceFilter, sourceCard?: string): Promise<CommandResult> => {
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
-    const card = runCardFor(target)
+    const card = runCardFor(target, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the trace lives on its card.`
     await store.dispatch({
       type: "card.updated",
@@ -493,7 +498,7 @@ export const createRunsController = (
   const traceSelect = async (runId: string, nodeId: string, seq?: number, sourceCard?: string): Promise<CommandResult> => {
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
-    const card = runCardFor(target)
+    const card = runCardFor(target, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the trace lives on its card.`
     // The node must be one the journal in hand folds to; a made-up id selects nothing, so say so.
     const { workflow, phase, kind, events } = card.payload
@@ -526,22 +531,22 @@ export const createRunsController = (
     return { value: `trace-select run=${runId} node=${nodeId}${seq === undefined ? "" : ` seq=${seq}`}` }
   }
 
-  const selectCodingChange = (runId: string, changeId: string, sourceCard?: string): CommandResult => {
+  const selectCodingChange = async (runId: string, changeId: string, sourceCard?: string): Promise<CommandResult> => {
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
-    const card = runCardFor(target)
+    const card = runCardFor(target, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): its plan lives on the card.`
     if (!codingPlanOf(card)?.changes.some((change) => change.id === changeId)) return `Run ${runId} has no recorded planned Change ${changeId}.`
     const { codingChangeId: previous, ...payload } = card.payload
     const selected = previous === changeId ? {} : { codingChangeId: changeId }
-    store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, payload: { ...payload, ...selected } } })
+    await store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, payload: { ...payload, ...selected } } }).isPersisted.promise
     return { value: `coding-plan-selection run=${runId} change=${previous === changeId ? "none" : changeId}` }
   }
 
   const traceView = async (runId: string, view: TraceView, sourceCard?: string): Promise<CommandResult> => {
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
-    const card = runCardFor(target)
+    const card = runCardFor(target, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the trace lives on its card.`
     await store.dispatch({
       type: "card.updated",
@@ -552,10 +557,10 @@ export const createRunsController = (
     return { value: `trace-view run=${runId} view=${view}` }
   }
 
-  const graphFollow = (runId: string, follow: boolean, sourceCard?: string): CommandResult => {
+  const graphFollow = async (runId: string, follow: boolean, sourceCard?: string): Promise<CommandResult> => {
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
-    const card = runCardFor(target)
+    const card = runCardFor(target, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the graph lives on its card.`
     const { graph: _graph, ...payload } = card.payload
     // The camera and the open node are different reader gestures on one field,
@@ -564,18 +569,18 @@ export const createRunsController = (
     const graph = { ...held, follow }
     // Follow defaults on. Persist an explicit false so reload preserves the
     // reader's choice, independently of drawer selection.
-    store.dispatch({
+    await store.dispatch({
       type: "card.upsert",
       actor: ctx.commandActor,
       card: { ...card, payload: { ...payload, graph } }
-    })
+    }).isPersisted.promise
     return { value: `graph-follow run=${runId} follow=${follow ? "on" : "off"}` }
   }
 
   const traceLive = async (runId: string, sourceCard?: string): Promise<CommandResult> => {
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
-    const card = runCardFor(target)
+    const card = runCardFor(target, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the trace lives on its card.`
     const { selection: _selection, cursorSeq: _cursorSeq, ...payload } = card.payload
     // card.updated merges payload fields. Replace the card to remove the cursor
