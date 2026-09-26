@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ModelRequest.serverTools`: provider-run tools a call may use, today
+  `{ type: "web_search", allowedDomains? }`. OpenAI Responses (API key and
+  ChatGPT plan) declares it as `{ type: "web_search", filters }` even under
+  `toolChoice: "none"`, because no call reaches the caller; other protocols
+  omit it. The Responses body's `tools` element is now a union, so a reader
+  of `entry.name` checks `entry.type` first. Live on `gpt-6-luna` and
+  `gpt-6-sol` over the ChatGPT plan on 2026-09-25: searches ran, the answer
+  cited its URLs, and a later request that replayed the answer without the
+  `web_search_call` items was accepted.
+
 ### Fixed
 
 - Anthropic Messages requests now carry prompt-cache breakpoints: one on the

@@ -20,6 +20,7 @@ import * as FailedCall from "./FailedCall.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as DemandText from "./internal/demandText.ts"
 import { printsObservation } from "./internal/printsObservation.ts"
+import * as UnobservedCall from "./internal/unobservedCall.ts"
 
 /**
  * Journal and model-key format after summaries became user context.
@@ -197,6 +198,7 @@ const decodeNarrowOnlyDemanded = Schema.decodeUnknownResult(AgentEvent.NarrowOnl
 const decodeUnmovedDemanded = Schema.decodeUnknownResult(AgentEvent.UnmovedDemanded)
 const decodeUnresolvedDemanded = Schema.decodeUnknownResult(AgentEvent.UnresolvedDemanded)
 const decodeFailedCallDemanded = Schema.decodeUnknownResult(AgentEvent.FailedCallDemanded)
+const decodeUnobservedDemanded = Schema.decodeUnknownResult(AgentEvent.UnobservedDemanded)
 const decodeClaimDemanded = Schema.decodeUnknownResult(AgentEvent.ClaimDemanded)
 
 const transcriptMessage = (
@@ -414,6 +416,12 @@ export const projectStateResult = (
         const decoded = decode(decodeFailedCallDemanded, entry)
         if (Result.isFailure(decoded)) return Result.fail(decoded.failure)
         appendDemand(FailedCall.demand(decoded.success.failures))
+        break
+      }
+      case eventType.unobservedDemanded: {
+        const decoded = decode(decodeUnobservedDemanded, entry)
+        if (Result.isFailure(decoded)) return Result.fail(decoded.failure)
+        appendDemand(UnobservedCall.demand(decoded.success.calls))
         break
       }
       case eventType.claimDemanded: {

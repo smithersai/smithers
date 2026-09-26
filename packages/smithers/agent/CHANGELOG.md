@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `AgentAction.Host.serverTools` and `Agent.Options.serverTools`: provider-run
+  tools, such as the provider's web search, forwarded to every frame.
+
 ### Fixed
 
 - A run the engine re-drives for a host that died mid-run is claimed in the

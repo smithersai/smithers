@@ -2,7 +2,22 @@
 
 ## [Unreleased]
 
+### Added
+
+- `CellTurn.make({ serverTools })`: provider-run tools (such as the
+  provider's web search) every frame's request declares, while the frame
+  still forbids declared tool calls. Absent, requests are unchanged.
+
 ### Fixed
+
+- A reply that makes a call, leaves its result for the model alone (printed
+  or bound, read by nothing but `console.*`), and completes in the same
+  program (several `cell` blocks run as one) no longer ends the run before
+  the model sees that result. The completion is refused once per run as
+  `UnobservedDemanded`, and the frame continues with the cell's prints, the
+  call results and "Answer after reading the calls' output". A cell whose
+  program branches on a result, passes it to another call, or completes
+  from it, and one whose calls discard their results, still completes.
 
 - A frame failure that is not a harness error keeps its own code and sentence
   in the `HarnessError` message (`The cell frame failed: quota_exceeded: …`),

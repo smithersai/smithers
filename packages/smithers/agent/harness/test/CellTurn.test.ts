@@ -69,6 +69,7 @@ const state = (
     readonly narrowingCap?: number
     readonly unmovedCap?: number
     readonly unresolvedCap?: number
+    readonly serverTools?: ReadonlyArray<ModelRequest.ServerTool>
   } = {}
 ) =>
   CellTurn.make({
@@ -87,7 +88,8 @@ const state = (
     ...(overrides.repeatCap === undefined ? {} : { repeatCap: overrides.repeatCap }),
     ...(overrides.narrowingCap === undefined ? {} : { narrowingCap: overrides.narrowingCap }),
     ...(overrides.unmovedCap === undefined ? {} : { unmovedCap: overrides.unmovedCap }),
-    ...(overrides.unresolvedCap === undefined ? {} : { unresolvedCap: overrides.unresolvedCap })
+    ...(overrides.unresolvedCap === undefined ? {} : { unresolvedCap: overrides.unresolvedCap }),
+    ...(overrides.serverTools === undefined ? {} : { serverTools: overrides.serverTools })
   })
 
 /**
@@ -576,6 +578,17 @@ console.log(kept)`
 
     expect(model.recorder.requests[0]?.tools).toEqual([])
     expect(model.recorder.requests[0]?.toolChoice).toBe("none")
+  })
+
+  it("offers declared provider-run tools while still forbidding declared calls", async () => {
+    const searching = state({ serverTools: [{ type: "web_search" }, { type: "web_search" }] })
+    const { model } = await run({ state: searching, script: [emits(`ctx.done("done")`)] })
+
+    expect(searching.serverTools).toEqual([{ type: "web_search" }])
+    expect(model.recorder.requests[0]?.serverTools).toEqual([{ type: "web_search" }])
+    expect(model.recorder.requests[0]?.tools).toEqual([])
+    expect(model.recorder.requests[0]?.toolChoice).toBe("none")
+    expect(state({ serverTools: [] }).serverTools).toBeUndefined()
   })
 
   it("teaches host environment facts through the public API", () => {

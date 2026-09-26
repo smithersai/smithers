@@ -510,6 +510,54 @@ describe("OpenAIResponses", () => {
     expect(body(withTools()).tools).toHaveLength(1)
   })
 
+  it("declares provider-run web search even when the request forbids tool use", () => {
+    const searching = (toolChoice?: "none"): Request.ModelRequest =>
+      Request.ModelRequest.make({
+        modelId: "gpt-6-luna",
+        system: [],
+        messages: [Request.Message.user("hi")],
+        tools: [Request.ToolDefinition.make({ name: "search", description: "local", parameters: {} })],
+        params: Request.GenerationParams.make(),
+        ...(toolChoice === undefined ? {} : { toolChoice }),
+        serverTools: [{ type: "web_search" }, { type: "web_search" }]
+      })
+
+    expect(body(searching("none")).tools).toEqual([{ type: "web_search" }])
+    const filtered = Request.ModelRequest.make({
+      ...searching("none"),
+      serverTools: [{ type: "web_search", allowedDomains: ["nodejs.org"] }]
+    })
+    expect(body(filtered).tools).toEqual([{ type: "web_search", filters: { allowed_domains: ["nodejs.org"] } }])
+    expect(body(searching()).tools?.map((tool) => tool.type)).toEqual(["function", "web_search"])
+    const chatgpt = Effect.runSync(OpenAIResponses.chatgptProtocol.body.from(searching("none"), { native: true }))
+    expect(chatgpt.tools).toEqual([{ type: "web_search" }])
+    expect(Schema.decodeUnknownSync(OpenAIResponses.ChatGPTBody)(chatgpt).tools).toEqual([{ type: "web_search" }])
+    const { serverTools: _serverTools, ...rest } = searching("none")
+    const plain = Request.ModelRequest.make(rest)
+    expect(body(plain).tools).toBeUndefined()
+    // Absent, the field changes nothing a sealed step key hashes.
+    expect(Object.keys(Schema.encodeSync(Request.ModelRequest)(plain))).not.toContain("serverTools")
+  })
+
+  it("settles a searched answer as a stop with its cited text", () => {
+    // The event shapes the ChatGPT backend streamed for gpt-6-luna on 2026-09-25.
+    const events = replayData([
+      "{\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ws_1\",\"type\":\"web_search_call\",\"status\":\"in_progress\"}}",
+      "{\"type\":\"response.web_search_call.searching\",\"item_id\":\"ws_1\"}",
+      "{\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ws_1\",\"type\":\"web_search_call\",\"status\":\"completed\",\"action\":{\"type\":\"search\",\"query\":\"node lts\"}}}",
+      "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"delta\":\"v24 (https://nodejs.org/en/download)\"}",
+      "{\"type\":\"response.output_text.annotation.added\",\"item_id\":\"msg_1\",\"annotation\":{\"type\":\"url_citation\",\"url\":\"https://nodejs.org/en/download\"}}",
+      "{\"type\":\"response.output_text.done\",\"item_id\":\"msg_1\"}",
+      "{\"type\":\"response.completed\",\"response\":{\"id\":\"r\"}}"
+    ])
+    expect(events).toEqual([
+      { type: "text-start", id: "msg_1" },
+      { type: "text-delta", id: "msg_1", text: "v24 (https://nodejs.org/en/download)" },
+      { type: "text-end", id: "msg_1" },
+      { type: "settle", stopReason: "stop", responseId: "r" }
+    ])
+  })
+
   it("settles a completed response with neither an id nor usage", () => {
     expect(replayData(["{\"type\":\"response.completed\",\"response\":{}}"])).toEqual([
       { type: "settle", stopReason: "stop", responseId: undefined }

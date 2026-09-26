@@ -463,6 +463,30 @@ export const ToolChoice = Schema.Literal("none")
 export type ToolChoice = typeof ToolChoice.Type
 
 /**
+ * A tool the provider runs itself, inside the model call. `web_search` lets
+ * the model search the public web and cite what it found, restricted to
+ * `allowedDomains` (each with its subdomains) when set. Unlike a
+ * {@link ToolDefinition} no call reaches the caller: the provider runs the
+ * search and the model answers with it. A protocol whose provider serves no
+ * such tool omits it; OpenAI Responses (API key and ChatGPT plan) serves it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export const ServerTool = Schema.Struct({
+  type: Schema.Literal("web_search"),
+  allowedDomains: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
+})
+
+/**
+ * A provider-run tool.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type ServerTool = typeof ServerTool.Type
+
+/**
  * The declaration order below is load-bearing: it is the stable step-key
  * serialization order for a sealed model step.
  *
@@ -501,7 +525,14 @@ export class ModelRequest extends Schema.Class<ModelRequest>("flows/model/ModelR
    * Protocols that cache automatically ignore it, and it never reaches the
    * model.
    */
-  cacheBoundary: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
+  cacheBoundary: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  /**
+   * Provider-run tools the model may use in this call. They are not declared
+   * tools, so `toolChoice: "none"` does not remove them: a cell-first frame
+   * still forbids function calls while its model may search. Unset or empty
+   * leaves the request as it was.
+   */
+  serverTools: Schema.optional(Schema.Array(ServerTool))
 }) {
   /** @category constructors @since 0.1.0 */
   static override make(input: ModelRequest | ConstructorParameters<typeof ModelRequest>[0]): ModelRequest {

@@ -309,7 +309,9 @@ describe("GPT-6 deferred tools against the 2026-09-24 live probe", () => {
       const body = Effect.runSync(OpenAIResponses.chatgptProtocol.body.from(probeRequest(model), { native: true }))
       const native = probe.records.find((record) => record.model === model && record.mode === "native")
       expect(OpenAIResponses.chatgptProtocol.supportsDeferred(model)).toBe(true)
-      expect(body.tools?.map((entry) => entry.name)).toEqual(native?.sent.tools)
+      expect(body.tools?.map((entry) => entry.type === "function" ? entry.name : entry.type)).toEqual(
+        native?.sent.tools
+      )
       expect(body.input.map((item) => ("type" in item ? item.type : item.role))).toEqual(native?.sent.input_types)
     }
   })

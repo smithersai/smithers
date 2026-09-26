@@ -245,6 +245,11 @@ export interface Options {
    */
   readonly claimCap?: number | undefined
   /**
+   * Provider-run tools every model call of this run may use, such as the
+   * provider's own web search; see `CellTurn.make`. Omitted declares none.
+   */
+  readonly serverTools?: ReadonlyArray<ModelRequest.ServerTool> | undefined
+  /**
    * Whether a human can answer this run; see `CellTurn.make`.
    *
    * The default is false, because the default run is unattended. Only a caller
@@ -775,7 +780,8 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             unmovedCap: options.unmovedCap,
             unresolvedCap: options.unresolvedCap,
             claimCap: options.claimCap,
-            approvalChannel: options.approvalChannel
+            approvalChannel: options.approvalChannel,
+            serverTools: options.serverTools
           })
           const memory = yield* supervisorMemory(options)
           return CellTurn.run({

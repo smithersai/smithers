@@ -986,6 +986,21 @@ export const trace = (
           nextFrame: event.nextFrame
         }
       }
+    case "unobserved-demanded":
+      // Each call the completion was written without reading, with the head
+      // of the result the next frame was shown in its place.
+      return {
+        eventType: "control.agent.unobserved-demanded",
+        payload: {
+          calls: event.calls.map((call) => ({
+            flow: call.flow,
+            ordinal: call.ordinal,
+            ok: call.ok,
+            summary: tracedField(call.summary)
+          })),
+          nextFrame: event.nextFrame
+        }
+      }
     case "claim-demanded":
       // All three probabilities and the latency, on every reading rather than
       // only on a firing, because this is the one demand a grader cannot

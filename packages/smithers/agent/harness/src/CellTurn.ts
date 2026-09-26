@@ -611,6 +611,14 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     Schema.withDecodingDefaultKey(Effect.succeed(0))
   ),
   /**
+   * Completions this run has already had bounced for calls their own cell
+   * made and never read before completing. Capped at `UnobservedCall.cap`.
+   */
+  unobservedDemands: NonNegativeSafeInt.pipe(
+    Schema.withConstructorDefault(Effect.succeed(0)),
+    Schema.withDecodingDefaultKey(Effect.succeed(0))
+  ),
+  /**
    * Frames this run may be given to prove a claim its own record does not
    * support. Past it an unproven claim fails the run rather than standing.
    * Zero disarms the brake. See {@link defaultClaimDemands} and
@@ -648,6 +656,11 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<string>>([])),
     Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<string>>([]))
   ),
+  /**
+   * Provider-run tools every frame's model call may use (see
+   * `ModelRequest.serverTools`). Absent means none.
+   */
+  serverTools: Schema.optionalKey(Schema.Array(ModelRequest.ServerTool)),
   /**
    * Content address of the workspace this run opened on.
    *
@@ -942,6 +955,11 @@ export const make = (options: {
    * which nobody mints, working.
    */
   readonly checkpointCap?: number | undefined
+  /**
+   * Provider-run tools every frame's model call may use, such as the
+   * provider's own web search. Omitted or empty declares none.
+   */
+  readonly serverTools?: ReadonlyArray<ModelRequest.ServerTool> | undefined
 }): State =>
   new State({
     session: options.session,
@@ -971,6 +989,7 @@ export const make = (options: {
     unresolvedCap: options.unresolvedCap ?? defaultUnresolvedDemands,
     unresolvedDemands: 0,
     failedCallDemands: 0,
+    unobservedDemands: 0,
     claimCap: options.claimCap ?? defaultClaimDemands,
     claimDemands: 0,
     openingDigest: "",
@@ -985,7 +1004,14 @@ export const make = (options: {
     workspace: undefined,
     truncatedOutputs: [],
     checkpointCap: options.checkpointCap ?? defaultMaxCheckpoints,
-    checkpointIds: []
+    checkpointIds: [],
+    ...(options.serverTools === undefined || options.serverTools.length === 0
+      ? {}
+      : {
+        serverTools: [
+          ...new Map(options.serverTools.map((tool) => [CanonicalJson.stringify(tool), tool])).values()
+        ]
+      })
   })
 
 /**
@@ -1174,7 +1200,10 @@ const requestFrom = (
       // The state section is rebuilt every frame, so Anthropic's moving cache
       // breakpoint stops at the transcript before it; the next frame repeats
       // that transcript and reads its prefix back.
-      cacheBoundary: withState.stable
+      cacheBoundary: withState.stable,
+      // Provider-run tools are not declared tools: the model may search
+      // inside the call while `ctx.call` stays the only invocation path.
+      ...(state.serverTools === undefined ? {} : { serverTools: state.serverTools })
     })
   )
 }
@@ -1521,6 +1550,7 @@ const RecordedCompletion = Schema.Struct({
       AgentEvent.UnmovedDemanded,
       AgentEvent.UnresolvedDemanded,
       AgentEvent.FailedCallDemanded,
+      AgentEvent.UnobservedDemanded,
       AgentEvent.NarrowedDemanded,
       AgentEvent.NarrowOnlyDemanded,
       AgentEvent.ClaimDemanded
@@ -1531,6 +1561,7 @@ const RecordedCompletion = Schema.Struct({
       unmovedDemands: Schema.optionalKey(NonNegativeSafeInt),
       unresolvedDemands: Schema.optionalKey(NonNegativeSafeInt),
       failedCallDemands: Schema.optionalKey(NonNegativeSafeInt),
+      unobservedDemands: Schema.optionalKey(NonNegativeSafeInt),
       narrowingDemands: Schema.optionalKey(NonNegativeSafeInt),
       claimDemands: Schema.optionalKey(NonNegativeSafeInt)
     })
@@ -3099,7 +3130,18 @@ const frame = (
           // was already holding, not a projected context: a completion names
           // no context for a next frame, and a run answering this one needs
           // the frame it just wrote.
-          contextWindow: observedOn(contextWindow, answer, demanded.note, liveCellEcho),
+          //
+          // A completion written before its own calls returned is shown what
+          // they printed first, the way a continuing frame is: reading them
+          // is the whole of what the demand asks. See `UnobservedCall`.
+          contextWindow: demanded.event._tag === "unobserved-demanded"
+            ? appended(
+              contextWindow,
+              answer,
+              [ModelRequest.Message.user(printed), ModelRequest.Message.user(demanded.note)],
+              liveCellEcho
+            )
+            : observedOn(contextWindow, answer, demanded.note, liveCellEcho),
           // The note is the ask this frame appended; the run's memory goes
           // above it. See `withStateSection`.
           interventions: 1,

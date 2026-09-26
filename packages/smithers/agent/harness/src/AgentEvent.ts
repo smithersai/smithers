@@ -648,6 +648,29 @@ export class FailedCallDemanded extends Schema.TaggedClass<FailedCallDemanded>(
 }) {}
 
 /**
+ * The controller handing back a completion its own cell wrote before reading
+ * the calls it made.
+ *
+ * `calls` names each call the completing frame settled, in ledger order, with
+ * the head of the result the next frame was shown, so the record says which
+ * results the completion was written without.
+ *
+ * @category events
+ * @since 1.0.0-rc.1
+ */
+export class UnobservedDemanded extends Schema.TaggedClass<UnobservedDemanded>(
+  "flows/harness/AgentEvent/UnobservedDemanded"
+)("unobserved-demanded", {
+  eventType: Schema.Literal("flows.harness.unobserved-demanded.v1"),
+  /** The calls the completion was written without reading, oldest first. */
+  calls: Schema.Array(
+    Schema.Struct({ flow: Schema.String, ordinal: Schema.Int, ok: Schema.Boolean, summary: Schema.String })
+  ),
+  /** The frame the demand was attached to, which is the one that must answer it. */
+  nextFrame: Schema.Int
+}) {}
+
+/**
  * The controller refusing one completion that holds a single reading.
  *
  * Written when a frame returns `complete` while the last check it ran names
@@ -1320,6 +1343,7 @@ export const AgentEvent = Schema.Union([
   UnmovedDemanded,
   UnresolvedDemanded,
   FailedCallDemanded,
+  UnobservedDemanded,
   ClaimDemanded,
   DecisionSettled,
   SupervisorSettled,
@@ -1399,5 +1423,6 @@ export const eventType = {
   unmovedDemanded: "flows.harness.unmoved-demanded.v1",
   unresolvedDemanded: "flows.harness.unresolved-demanded.v1",
   failedCallDemanded: "flows.harness.failed-call-demanded.v1",
+  unobservedDemanded: "flows.harness.unobserved-demanded.v1",
   vacuousVerificationObserved: "flows.harness.vacuous-verification-observed.v1"
 } as const

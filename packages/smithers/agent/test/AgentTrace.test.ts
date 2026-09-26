@@ -423,6 +423,23 @@ describe("trace", () => {
         }
       ],
       [
+        "unobserved-demanded",
+        new AgentEvent.UnobservedDemanded({
+          eventType: "flows.harness.unobserved-demanded.v1",
+          calls: [{ flow: "bash", ordinal: 1, ok: true, summary: "{\"exitCode\":0,\"stdout\":\"ok\\n\"}" }],
+          nextFrame: 2
+        }),
+        {
+          eventType: "control.agent.unobserved-demanded",
+          // The calls the completion was written without reading, with the
+          // head of each result the next frame was shown.
+          payload: {
+            calls: [{ flow: "bash", ordinal: 1, ok: true, summary: "{\"exitCode\":0,\"stdout\":\"ok\\n\"}" }],
+            nextFrame: 2
+          }
+        }
+      ],
+      [
         "sufficiency-observed",
         new AgentEvent.SufficiencyObserved({
           eventType: "flows.harness.sufficiency-observed.v1",

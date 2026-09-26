@@ -193,6 +193,11 @@ describe("AgentEvent", () => {
         failures: [{ flow: "agent.delegate", message: "Flow agent.delegate failed: Three workers are active" }],
         nextFrame: 7
       }),
+      new AgentEvent.UnobservedDemanded({
+        eventType: "flows.harness.unobserved-demanded.v1",
+        calls: [{ flow: "bash", ordinal: 3, ok: true, summary: "{\"exitCode\":0}" }],
+        nextFrame: 7
+      }),
       new AgentEvent.ClaimDemanded({
         eventType: "flows.harness.claim-demanded.v1",
         complete: 0.12,

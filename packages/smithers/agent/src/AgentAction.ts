@@ -120,6 +120,11 @@ export interface Host {
    */
   readonly claimCap?: number | undefined
   /**
+   * Provider-run tools every model call of an action may use, such as the
+   * provider's own web search. Forwarded to `Agent.Options.serverTools`.
+   */
+  readonly serverTools?: ReadonlyArray<ModelRequest.ServerTool> | undefined
+  /**
    * How many times a decode miss may be re-prompted when an action declares no
    * budget of its own.
    *
@@ -714,7 +719,8 @@ export const make = <
               limits: host.limits,
               maxFrames: options.maxFrames ?? host.maxFrames,
               readOnlyCap: options.readOnlyCap,
-              claimCap: host.claimCap
+              claimCap: host.claimCap,
+              serverTools: host.serverTools
             }).pipe(
               Stream.provideService(AgentEvent.Observer, atSource ? observe : () => Effect.void),
               (stream) => agentOutcome(stream, atSource ? () => Effect.void : observe)

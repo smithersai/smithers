@@ -32,6 +32,7 @@ import * as VariablesPanel from "../VariablesPanel.ts"
 import * as bytes from "./bytes.ts"
 import * as DemandText from "./demandText.ts"
 import * as elide from "./elide.ts"
+import * as UnobservedCall from "./unobservedCall.ts"
 
 /** The one journal-event-type table; see `AgentEvent.eventType`. */
 const eventType = AgentEvent.eventType
@@ -474,6 +475,7 @@ export interface CompletionDemand {
     | AgentEvent.UnmovedDemanded
     | AgentEvent.UnresolvedDemanded
     | AgentEvent.FailedCallDemanded
+    | AgentEvent.UnobservedDemanded
     | AgentEvent.NarrowedDemanded
     | AgentEvent.NarrowOnlyDemanded
     | AgentEvent.ClaimDemanded
@@ -483,7 +485,9 @@ export interface CompletionDemand {
    * Whether the answer this demand takes away may come back as the run's
    * answer when the frame budget runs out; see `CellTurn.budgetMessage`.
    *
-   * True for the five measured demands. Each of them says the record is
+   * True for the measured demands except `FailedCall` and `UnobservedCall`,
+   * whose answers were written before their cell's results existed. Each of
+   * the others says the record is
    * missing a fact, not that the sentence is wrong, so a run that spends its
    * last frame and never completes again is better served by the answer it
    * wrote than by a bare budget notice.
@@ -660,8 +664,8 @@ const checksRun = (
     .map((entry) => ({ command: entry.label, outcome: entry.failing ? "failed" as const : "passed" as const }))
 
 /**
- * The four demands a completion's own measurements produce, in precedence
- * order, or nothing. Every fact read here was taken by the frame that is
+ * The demands a completion's own measurements produce, in precedence order —
+ * `FailedCall`, `UnobservedCall`, then the four below — or nothing. Every fact read here was taken by the frame that is
  * completing or by an earlier one, so this is a pure function of the state
  * and the accounting and it is what `judgeCompletion` consults first.
  *
@@ -692,6 +696,25 @@ const measuredDemand = (
         note: FailedCall.demand(failures),
         keeps: false,
         spent: { failedCallDemands: state.failedCallDemands + 1 }
+      }
+    }
+  }
+  // Second, for the same reason: the claim was written before any result of
+  // its own cell existed, so every demand below would grade a sentence the
+  // model wrote without reading. Not kept, like the one above. See
+  // `UnobservedCall`.
+  if (state.unobservedDemands < UnobservedCall.cap) {
+    const unread = UnobservedCall.find(calls, accounting.source)
+    if (unread.length > 0) {
+      return {
+        event: new AgentEvent.UnobservedDemanded({
+          eventType: eventType.unobservedDemanded,
+          calls: unread,
+          nextFrame
+        }),
+        note: UnobservedCall.demand(unread),
+        keeps: false,
+        spent: { unobservedDemands: state.unobservedDemands + 1 }
       }
     }
   }

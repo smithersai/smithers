@@ -28,6 +28,13 @@ const FunctionTool = Schema.Struct({
   defer_loading: Schema.optional(Schema.Boolean)
 })
 
+const WebSearchTool = Schema.Struct({
+  type: Schema.Literal("web_search"),
+  filters: Schema.optional(Schema.Struct({ allowed_domains: Schema.Array(Schema.String) }))
+})
+
+const Tool = Schema.Union([FunctionTool, WebSearchTool])
+
 const ReasoningInput = Schema.Struct({
   type: Schema.Literal("reasoning"),
   id: Schema.optional(Schema.String),
@@ -84,7 +91,7 @@ export const Body = Schema.Struct({
   model: Schema.String,
   instructions: Schema.optional(Schema.String),
   input: Schema.Array(InputItem),
-  tools: Schema.optional(Schema.Array(FunctionTool)),
+  tools: Schema.optional(Schema.Array(Tool)),
   reasoning: Schema.optional(Schema.Struct({
     effort: ReasoningEffort,
     summary: Schema.optional(Schema.Literals(["auto", "concise", "detailed"]))
@@ -335,11 +342,22 @@ const buildBody = (
     ? { immediate: [], deferred: [], activatedNames: [] }
     : DeferredTools.resolve(request, native)
   const instructions = systemInstructions(request)
+  // Provider-run tools are not declared tools: `toolChoice: "none"` keeps
+  // them, and the search runs inside this call with no call reaching us.
+  const declared: ReadonlyArray<typeof Tool.Type> = [
+    ...tools.immediate.map((tool) => functionTool(tool)),
+    ...[...new Map((request.serverTools ?? []).map((tool) => [CanonicalJson.stringify(tool), tool])).values()].map(
+      (tool) => ({
+        type: tool.type,
+        ...(tool.allowedDomains === undefined ? {} : { filters: { allowed_domains: tool.allowedDomains } })
+      })
+    )
+  ]
   return {
     model: request.modelId,
     ...(instructions === undefined ? {} : { instructions }),
     input: lowerInput(request, tools.deferred),
-    ...(tools.immediate.length === 0 ? {} : { tools: tools.immediate.map((tool) => functionTool(tool)) }),
+    ...(declared.length === 0 ? {} : { tools: declared }),
     ...(request.params.reasoningEffort === undefined ? {} : { reasoning: { effort: request.params.reasoningEffort } }),
     ...(request.params.maxTokens === undefined ? {} : { max_output_tokens: request.params.maxTokens }),
     ...(request.params.temperature === undefined ? {} : { temperature: request.params.temperature }),
