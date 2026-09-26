@@ -14,7 +14,7 @@
  * A completion is handed back, once per run, when its own cell made a call,
  * kept that call's result, and left it for the model alone: printed or
  * bound, and read by nothing in the program but `console.*` and guards that
- * only decide what `console.*` prints (`if (r.exitCode) console.log(r.stderr)`),
+ * only decide what `console.*` prints (`if (r.exitCode)` around a `console.log` of `r.stderr`),
  * so the completion reads no result either. It is also handed back when the
  * program acted on some results but a completion that reads none — in its
  * output or a guard around it — follows a result the program only printed.
@@ -319,7 +319,7 @@ const consoleCall = (node: Node): boolean => {
     !node.arguments.some(functionLike)
 }
 
-/** An expression that only prints, or yields nothing: `console.log(r)`, `null`, `void 0`. */
+/** An expression that only prints, or yields nothing: a `console.log` of `r`, `null`, `void 0`. */
 const logging = (node: Node): boolean =>
   consoleCall(node) || node.type === "NullLiteral" || (node.type === "Identifier" && node.name === "undefined") ||
   (node.type === "UnaryExpression" && node.operator === "void" && node.argument.type === "NumericLiteral") ||
@@ -328,7 +328,7 @@ const logging = (node: Node): boolean =>
 
 /**
  * A statement that only prints, whatever it prints under: a guard such as
- * `if (r.exitCode) console.log(r.stderr)` shows a result to the model and
+ * `if (r.exitCode)` around a `console.log` of `r.stderr` shows a result to the model and
  * decides nothing, so the result it tests stays unread by the program. A
  * `return`, `throw`, `break` out of a loop, or any other statement is control
  * flow or an effect and is not logging.
