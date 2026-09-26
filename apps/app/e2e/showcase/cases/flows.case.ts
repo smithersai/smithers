@@ -103,7 +103,8 @@ export default showcase({
     await app.show(list)
     await app.beat(500)
 
-    await app.click(list.getByRole("button", { name: "Plan" }).first())
+    await list.getByRole("button", { name: "Plan" }).first().focus()
+    await page.keyboard.press("Enter")
     const plan = page.locator('[data-kind="flow-plan"]').last()
     await expect(plan.locator(".flow-plan-count")).toHaveText("3")
     await app.show(plan)

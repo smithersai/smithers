@@ -15,7 +15,7 @@ import { gatewayBindingFor, resolveTargetRepo, type GatewayBinding } from "../Re
 import { repositoryJobWorkspace } from "../RepositoryJobs"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
-import { dismissReadyWorkspaceFailures, ZERO_BALANCE_EXHAUSTED_TEXT } from "./failures"
+import { dismissReadyWorkspaceFailures, TOAST_SUPERSEDED, ZERO_BALANCE_EXHAUSTED_TEXT } from "./failures"
 import { Schema } from "effect"
 import { declaredInput, formFieldsFor, draftFrom, missingFields } from "../../flows/FlowForms"
 import type { FormsController } from "./forms"
@@ -393,9 +393,9 @@ export const createWorkflowController = (
    * `toast-flow.plan:<id>`, and `JSON.stringify` is key-order sensitive, so
    * the same input typed twice in another order would grow a second card.
    */
-  const planCardId = (repo: string, name: string, input: Record<string, unknown>, against?: string): string =>
+  const planCardId = (repo: string, name: string, input: Record<string, unknown>, against?: string, workspaceId?: string): string =>
     `flow-plan-${repo}-${name}-${Object.keys(input).length === 0 ? "" : digest(canonical(input)).slice(0, 16)}${
-      against === undefined ? "" : `-vs-${against}`}`
+      against === undefined ? "" : `-vs-${against}`}-workspace-${workspaceId === undefined ? "default" : digest(workspaceId).slice(0, 16)}`
 
   /*
    * Plan dedup state, shared by the user and agent bindings.
@@ -432,8 +432,8 @@ export const createWorkflowController = (
       })
     }
     return {
-      /** The plan requests in flight, by card id. */
-      planning: new Set<string>(),
+      /** The account generation of each in-flight plan, by card id. */
+      planning: new Map<string, number>(),
       /** The newest ask per card, so an older answer that lands late writes nothing. */
       planAttempts: new Map<string, number>()
     }
@@ -459,11 +459,13 @@ export const createWorkflowController = (
   const previewRekey = (
     repo: string,
     flowId: string,
+    binding: GatewayWorkspaceBinding,
     against: string,
     nextNodes: ReadonlyArray<PreviewNode>
   ): RekeySummary | undefined => {
     const card = [...store.collections.cards.values()].find((candidate) =>
-      candidate.kind === "run-trace" && candidate.payload.runId === against && candidate.payload.repo === repo)
+      candidate.kind === "run-trace" && candidate.payload.runId === against && candidate.payload.repo === repo &&
+      candidate.payload.workspaceId === binding.workspaceId && candidate.payload.workflow === flowId)
     if (card?.kind !== "run-trace" || card.payload.plan === undefined) return undefined
     const events = store.committedRuntimeRun(runtimeRunKey({
       repo,
@@ -491,15 +493,17 @@ export const createWorkflowController = (
     readonly name: string
     readonly input: Record<string, unknown>
     readonly attempt: number
+    readonly epoch: number
     /** The run this plan was asked to be compared against (the re-key preview). */
     readonly against?: string
     readonly previousPlan?: Extract<Card, { kind: "flow-plan" }>["payload"]["previousPlan"]
     readonly sourceReceipt?: Extract<Card, { kind: "flow-plan" }>["payload"]["sourceReceipt"]
   }): Promise<void> => {
+    const current = () => !ctx.disposed && ctx.accountEpoch === args.epoch && planAttempts.get(args.id) === args.attempt
     const settle = (patch: Extract<Card, { kind: "flow-plan" }>["payload"]): string | void => {
       // An answer to an older ask, or to a controller that has since closed,
       // writes nothing: the card belongs to whatever was asked last.
-      if (ctx.disposed || planAttempts.get(args.id) !== args.attempt) return
+      if (!current()) return
       const card = store.collections.cards.get(args.id)
       if (card?.kind !== "flow-plan") return
       /*
@@ -526,9 +530,12 @@ export const createWorkflowController = (
     }
     try {
       await withToast(`flow.plan:${args.id}`, `Planning ${args.name}`, `Planned ${args.name}`, async () => {
-        const provisioned = await provisionWorkspace(args.repo, args.binding)
-        if (provisioned !== true) return settle(refusedPlan(args, provisioned)) ?? provisioned
+        if (!current()) return TOAST_SUPERSEDED
+        const provisioned = await provisionWorkspaceImpl(args.repo, args.binding)
+        if (!current()) return TOAST_SUPERSEDED
+        if (provisioned !== true) return settle(refusedPlan(args, provisioned.message)) ?? provisioned.message
         const planned = await gateway.plan(args.repo, args.name, args.input, args.binding)
+        if (!current()) return TOAST_SUPERSEDED
         if (planned.status !== "ok") return settle(refusedPlan(args, planned.message)) ?? planned.message
         const nodes = planned.value.nodes.map(planCardNode)
         /*
@@ -542,9 +549,10 @@ export const createWorkflowController = (
          * else.
          */
         if (args.against !== undefined) await readFlowDurations?.(args.repo, args.name, args.binding)
+        if (!current()) return TOAST_SUPERSEDED
         /* The comparison is over evidence already on the card and in the
          * collections, so it happens here, with the fresh plan in hand. */
-        const rekey = args.against === undefined ? undefined : previewRekey(args.repo, args.name, args.against, nodes)
+        const rekey = args.against === undefined ? undefined : previewRekey(args.repo, args.name, args.binding, args.against, nodes)
         settle({
           repo: args.repo,
           flowId: args.name,
@@ -574,9 +582,9 @@ export const createWorkflowController = (
         // failure line, so a drawn graph that answered with one would resolve
         // its own toast as a failure. The card is the claim surface anyway.
         return true
-      })
+      }, false, current)
     } finally {
-      planning.delete(args.id)
+      if (planAttempts.get(args.id) === args.attempt) planning.delete(args.id)
     }
   }
 
@@ -878,7 +886,7 @@ export const createWorkflowController = (
     if ("error" in target) return target.error
     const { repo, binding } = target
     const input = inputArg ?? {}
-    // One card per (repo, flow, input): asking twice for the same plan moves
+    // One card per (repo, workspace, flow, input): asking twice for the same plan moves
     // the card rather than growing a second one, and a second ask while the
     // first is in flight is the same request, not a second durable Plan.
     /* A preview is its own card: it states numbers about one run, and a
@@ -888,11 +896,12 @@ export const createWorkflowController = (
     const prior = previousCard?.kind === "flow-plan" ? previousCard.payload : undefined
     const previousPlan = prior?.planId === undefined || prior.digest === undefined || prior.nodes === undefined ? undefined
       : { planId: prior.planId, digest: prior.digest, nodes: prior.nodes }
-    const id = previousCard?.id ?? planCardId(repo, name, input, against)
-    if (planning.has(id)) return { value: `plan-requested flow=${name} repo=${repo}` }
+    const id = previousCard?.id ?? planCardId(repo, name, input, against, binding.workspaceId)
+    const epoch = ctx.accountEpoch
+    if (planning.get(id) === epoch) return { value: `plan-requested flow=${name} repo=${repo}` }
     const attempt = (planAttempts.get(id) ?? 0) + 1
     planAttempts.set(id, attempt)
-    planning.add(id)
+    planning.set(id, epoch)
     const existing = store.collections.cards.get(id)
     const held = existing?.kind === "flow-plan" ? existing.payload : undefined
     const source = sourceCard === undefined ? undefined : store.collections.cards.get(sourceCard)
@@ -927,7 +936,7 @@ export const createWorkflowController = (
         }
       }
     })
-    void fillPlanCard({ id, repo, binding, name, input, attempt, previousPlan: previousPlan ?? held?.previousPlan, sourceReceipt, ...(against === undefined ? {} : { against }) })
+    void fillPlanCard({ id, repo, binding, name, input, attempt, epoch, previousPlan: previousPlan ?? held?.previousPlan, sourceReceipt, ...(against === undefined ? {} : { against }) })
     return { value: `plan-requested flow=${name} repo=${repo}` }
   }
 

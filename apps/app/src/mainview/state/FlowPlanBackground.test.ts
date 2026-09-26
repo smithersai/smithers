@@ -17,7 +17,7 @@ const createAppController = scopedControllers()
 
 const REPO = "smithersai/smithers"
 const FLOW = "review"
-const CARD = `flow-plan-${REPO}-${FLOW}-`
+const CARD = `flow-plan-${REPO}-${FLOW}--workspace-default`
 const TOAST = `toast-flow.plan:${CARD}`
 
 const planCard = (payload: {
@@ -279,4 +279,120 @@ describe("the plan door returns before the workspace answers", () => {
     expect([...store.collections.cards.values()].filter((row) => row.kind === "flow-plan")).toHaveLength(1)
     expect(held(store)?.payload.status).toBe("failed")
   })
+})
+
+const WORKSPACES = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"] as const
+
+describe("plan workspace and account ownership", () => {
+  test.each([false, true])("plans from different workspaces have independent cards (first settled=%s)", async firstSettled => {
+    const gates = WORKSPACES.map(() => Promise.withResolvers<void>())
+    const calls: string[] = []
+    const relay = scriptedRelay(() => ({}))
+    const { store, controller } = await readyController({ ...relay, fetchImpl: async (url, init) => {
+      if (String(url).endsWith("/api/workflow/provision")) return json(200, { status: "ready" })
+      const body = JSON.parse(String(init?.body ?? "{}"))
+      if (body.procedure !== "Plan") return json(404, {})
+      calls.push(body.workspaceId)
+      const index = WORKSPACES.indexOf(body.workspaceId)
+      await gates[index]!.promise
+      return json(200, { ok: true, payload: { ...planCard({}), planId: `plan-${index}` } })
+    } })
+    for (const [index, workspaceId] of WORKSPACES.entries()) {
+      await store.dispatch({ type: "card.upsert", actor: "system", card: {
+        id: `source-${index}`, kind: "flow-plan", title: "Source", status: "active", createdAt: 1, ordinal: index,
+        payload: { repo: REPO, flowId: FLOW, status: "done", workspaceId }
+      } }).isPersisted.promise
+    }
+    const cards = () => [...store.collections.cards.values()].filter((card): card is Extract<typeof card, { kind: "flow-plan" }> => card.kind === "flow-plan" && !card.id.startsWith("source-"))
+    try {
+      await controller.planFlow(FLOW, REPO, {}, "source-0")
+      await settle(10)
+      if (firstSettled) { gates[0]!.resolve(); await settle(10) }
+      await controller.planFlow(FLOW, REPO, {}, "source-1")
+      await controller.planFlow(FLOW, REPO, {}, "source-1")
+      await settle(10)
+      expect(calls).toEqual([...WORKSPACES])
+      expect(cards()).toHaveLength(2)
+      gates[1]!.resolve()
+      await settle(10)
+      gates[0]!.resolve()
+      await settle(10)
+      expect(WORKSPACES.map(workspaceId => cards().find(card => card.payload.workspaceId === workspaceId)?.payload.planId)).toEqual(["plan-0", "plan-1"])
+    } finally { gates.forEach(gate => gate.resolve()) }
+  })
+
+  test.each(["will", "another"])("account %s can plan after sign-out while the old reply is held", async login => {
+    const gates = [Promise.withResolvers<void>(), Promise.withResolvers<void>()]
+    let calls = 0
+    const relay = scriptedRelay(() => ({}))
+    const { store, controller } = await readyController({ ...relay, fetchImpl: async (url, init) => {
+      if (String(url).endsWith("/api/workflow/provision")) return json(200, { status: "ready" })
+      const body = JSON.parse(String(init?.body ?? "{}"))
+      if (body.procedure !== "Plan") return json(404, {})
+      const index = calls++
+      await gates[index]!.promise
+      return json(200, { ok: true, payload: { ...planCard({}), planId: `account-${index}` } })
+    } })
+    try {
+      await controller.planFlow(FLOW, REPO)
+      await settle(10)
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+      await settle(10)
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+      await controller.planFlow(FLOW, REPO)
+      await settle(10)
+      expect(calls).toBe(2)
+      gates[0]!.resolve()
+      await settle(10)
+      expect(held(store)?.payload.status).toBe("pending")
+      await controller.planFlow(FLOW, REPO)
+      expect(calls).toBe(2)
+      gates[1]!.resolve()
+      await settle(10)
+      expect(held(store)?.payload.planId).toBe("account-1")
+    } finally { gates.forEach(gate => gate.resolve()) }
+  })
+})
+
+test("an account change during provisioning sends no Plan and resolves no successful toast", async () => {
+  const provisioning = Promise.withResolvers<void>()
+  let entered = false
+  let plans = 0
+  const relay = scriptedRelay(() => ({}))
+  const { store, controller } = await readyController({ ...relay, fetchImpl: async (url, init) => {
+    if (String(url).endsWith("/api/workflow/provision")) { entered = true; await provisioning.promise; return json(200, { status: "ready" }) }
+    if (JSON.parse(String(init?.body ?? "{}")).procedure === "Plan") plans++
+    return json(200, { ok: true, payload: planCard({}) })
+  } })
+  try {
+    await controller.planFlow(FLOW, REPO)
+    await settle(10)
+    expect(entered).toBe(true)
+    expect([...store.collections.toasts.values()].filter(toast => toast.status === "running")).toHaveLength(1)
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+    provisioning.resolve()
+    await settle(15)
+    expect(plans).toBe(0)
+    expect(held(store)).toBeUndefined()
+    expect([...store.collections.toasts.values()].some(toast => toast.status === "ok" && /Planned|Workspace ready/.test(toast.title))).toBe(false)
+  } finally { provisioning.resolve() }
+})
+
+test("a default-gateway plan cannot replace an older card bound to another workspace", async () => {
+  const relay = scriptedRelay(() => ({ ok: true, payload: planCard({}) }))
+  const { store, controller } = await readyController(relay)
+  const legacyId = `flow-plan-${REPO}-${FLOW}-`
+  await store.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: legacyId, kind: "flow-plan", title: "Earlier plan", status: "active", ordinal: 1, createdAt: 1,
+    payload: { repo: REPO, flowId: FLOW, status: "done", workspaceId: WORKSPACES[0], planId: "earlier" }
+  } }).isPersisted.promise
+  try {
+    await controller.planFlow(FLOW, REPO)
+    relay.release()
+    await settle(15)
+    const earlier = store.collections.cards.get(legacyId)
+    expect(earlier?.kind === "flow-plan" && earlier.payload.planId).toBe("earlier")
+    expect(held(store)?.payload.workspaceId).toBeUndefined()
+    expect(held(store)?.payload.planId).toBe("plan-1")
+  } finally { relay.release() }
 })

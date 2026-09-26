@@ -37,7 +37,7 @@ const RECORDED: Recorded = JSON.parse(
   readFileSync(new URL("../cards/fixtures/GraphRunJournal.json", import.meta.url), "utf8")
 )
 const FLOW = RECORDED.flow
-const CARD = `flow-plan-${REPO}-${FLOW}--vs-${RUN}`
+const CARD = `flow-plan-${REPO}-${FLOW}--vs-${RUN}-workspace-default`
 const EDITED = ["root.flow.then.map.all.cached", "root.flow.then.map", "root"]
 
 /** The recorded plan's nodes, as the card carries them. */
@@ -210,7 +210,7 @@ describe("a plan compared against a run this client launched", () => {
     await controller.planFlow(FLOW, REPO)
     await settle(12)
     expect(preview(store)?.rekey?.rerun).toBe(3)
-    const plain = store.collections.cards.get(`flow-plan-${REPO}-${FLOW}-`)
+    const plain = store.collections.cards.get(`flow-plan-${REPO}-${FLOW}--workspace-default`)
     expect(plain?.kind === "flow-plan" && plain.payload.rekey).toBeUndefined()
   })
 
@@ -242,9 +242,30 @@ describe("a plan compared against a run this client launched", () => {
     const { store, controller } = await ready(RECORDED.rows)
     await controller.planFlow(FLOW, REPO, undefined, undefined, "run-elsewhere")
     await settle(12)
-    const card = store.collections.cards.get(`flow-plan-${REPO}-${FLOW}--vs-run-elsewhere`)
+    const card = store.collections.cards.get(`flow-plan-${REPO}-${FLOW}--vs-run-elsewhere-workspace-default`)
     expect(card?.kind === "flow-plan" && card.payload.status).toBe("done")
     expect(card?.kind === "flow-plan" && card.payload.rekey).toBeUndefined()
     expect(card?.kind === "flow-plan" && card.payload.against).toBe("run-elsewhere")
   })
+})
+
+test("a comparison uses only the matching workspace's run with that id", async () => {
+  const { store, controller } = await ready(RECORDED.rows)
+  const workspaceId = "11111111-1111-4111-8111-111111111111"
+  await store.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: "workspace-source", kind: "flow-plan", title: "Source", status: "active", ordinal: 2, createdAt: 1,
+    payload: { repo: REPO, flowId: FLOW, status: "done", workspaceId }
+  } }).isPersisted.promise
+  const scoped = () => [...store.collections.cards.values()].find((card): card is Extract<typeof card, { kind: "flow-plan" }> =>
+    card.kind === "flow-plan" && card.payload.workspaceId === workspaceId && card.payload.against === RUN)
+  await controller.planFlow(FLOW, REPO, undefined, "workspace-source", RUN)
+  await settle(15)
+  expect(scoped()?.payload.status).toBe("done")
+  expect(scoped()?.payload.rekey).toBeUndefined()
+  await store.dispatch({ type: "card.upsert", actor: "system", card: {
+    ...RUN_CARD, id: "workspace-run", payload: { ...RUN_CARD.payload, workspaceId }
+  } }).isPersisted.promise
+  await controller.planFlow(FLOW, REPO, undefined, "workspace-source", RUN)
+  await settle(15)
+  expect(scoped()?.payload.rekey?.rerun).toBe(3)
 })

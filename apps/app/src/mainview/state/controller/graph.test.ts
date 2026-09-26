@@ -29,7 +29,7 @@ const REPO = "codeplanesmithers/smithers-demo"
 const REVISION = "b".repeat(40)
 const FLOW = "gateway/GraphFixture"
 const RUN = "run-1"
-const PLAN_CARD = `flow-plan-${REPO}-${FLOW}-`
+const PLAN_CARD = `flow-plan-${REPO}-${FLOW}--workspace-default`
 
 const said = (outcome: { status: string; value?: string; error?: string }): string =>
   outcome.status === "failed" ? (outcome.error ?? "") : (outcome.value ?? "")
