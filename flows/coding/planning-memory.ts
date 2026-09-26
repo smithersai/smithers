@@ -1,8 +1,10 @@
 /** Default gathering uses source files and native JJ history. Generated Wiki
- * memory participates only when the operator explicitly enables it.
+ * memory participates when a stack request carries the published pages or the
+ * operator's own verified snapshot exists, and only while it is fresh.
  * Projects can replace GatherContext's action layer with their own workflow.
  */
 import * as RecallKeyword from "../../packages/smithers/agent/memory/src/RecallKeyword.ts"
+import * as Digest from "@smthrs/core/Digest"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
@@ -37,6 +39,61 @@ const Pointer = Schema.Struct({
 const failure = (message: string) => new CodingError({ code: "stale_revision", message })
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
 
+type WikiPage = { readonly id: string; readonly title: string; readonly kind: "current" | "intent"; readonly body: string; readonly inputDigest: string }
+
+/** The pages whose inputs still hash to this source under this host's own catalog. */
+const freshWikiPages = (options: MemoryOptions, pages: ReadonlyArray<WikiPage>, hostFilesystem?: FileSystem.FileSystem) =>
+  Effect.gen(function*() {
+    const ops = wikiOperations({ root: options.repositoryPath, output: options.wikiOutput ?? options.repositoryPath, fs: hostFilesystem })
+    const fresh: Array<WikiPage> = []
+    for (const page of pages) {
+      const spec = options.pages?.find(spec => spec.id === page.id)
+      if (spec === undefined) continue
+      const current = yield* Effect.result(ops.collect(spec))
+      if (current._tag === "Success" && current.success.inputDigest === page.inputDigest) fresh.push(page)
+    }
+    return fresh
+  })
+
+/**
+ * Wiki memory is optional context: planning never generates the wiki and never
+ * waits on it. A stack request carries the stack's published pages (or null);
+ * any other request reads this host's own verified snapshot when one exists.
+ * Either way only pages still fresh against this source are used.
+ */
+export const wikiMemory = (options: MemoryOptions, input: typeof PlanningInput.Type, hostFilesystem?: FileSystem.FileSystem) =>
+  Effect.gen(function*() {
+    if (input.wiki === null || !options.pages?.length) return undefined
+    if (input.wiki !== undefined) {
+      const pages = yield* freshWikiPages(options, input.wiki.pages, hostFilesystem)
+      if (pages.length === 0) return undefined
+      return { sourceRevision: input.wiki.sourceRevision, pages,
+        digest: Digest.digest(Digest.canonical(pages.map(page => ({ id: page.id, inputDigest: page.inputDigest, body: Digest.digest(page.body) })))) }
+    }
+    if (options.wiki !== true || !options.wikiOutput) return undefined
+    const fs = hostFilesystem ?? (yield* FileSystem.FileSystem), path = yield* Path.Path
+    const pointer = path.resolve(options.wikiOutput, "current.json")
+    if (!(yield* fs.exists(pointer)) || (yield* fs.stat(pointer)).size > BigInt(16 * 1024 * 1024)) return undefined
+    const captured = yield* fs.readFileString(pointer)
+    // Use the owning verifier. Digest equality alone does not prove semantic
+    // review, nor may old generated explanations silently stand in for new code.
+    const checked = yield* Effect.result(wikiOperations({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }).check(options.pages, true))
+    if (checked._tag === "Failure" || (yield* fs.readFileString(pointer)) !== captured) return undefined
+    const wiki = yield* Effect.try({ try: () => JSON.parse(captured) as unknown, catch: () => failure("Invalid verified wiki pointer") }).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Pointer)), Effect.option)
+    if (wiki._tag === "None") return undefined
+    return { sourceRevision: wiki.value.sourceRevision, pages: wiki.value.pages, digest: wiki.value.artifactDigest }
+  })
+
+/** The notes whose page inputs no longer hash to this source. */
+export const staleWikiNotes = (options: MemoryOptions, notes: typeof PlanningContext.Type["memory"], hostFilesystem?: FileSystem.FileSystem) =>
+  Effect.gen(function*() {
+    if (notes.length === 0) return []
+    const pages = notes.map(note => ({ id: note.id, title: note.title, kind: note.kind, body: note.markdown, inputDigest: note.inputDigest }))
+    const fresh = new Set((yield* freshWikiPages(options, pages, hostFilesystem)).map(page => page.id))
+    return notes.filter(note => !fresh.has(note.id)).map(note => note.id)
+  })
+
 /** No model or database participates in selecting and identifying source facts. */
 export const gather = (options: MemoryOptions, input: typeof PlanningInput.Type, hostFilesystem?: FileSystem.FileSystem) => Effect.gen(function*() {
   const limit = options.historyLimit ?? 100, maximum = options.maxMemoryBytes ?? 48 * 1024
@@ -53,20 +110,9 @@ export const gather = (options: MemoryOptions, input: typeof PlanningInput.Type,
     return yield* failure("Planning requires bounded resolved native history; inspect conflicts or update the installed adapter")
   }
   const memory: Array<typeof PlanningContext.Type["memory"][number]> = []
-  let wikiDigest: string | null = null
-  if (options.wiki === true) {
-    if (!options.wikiOutput || !options.pages?.length) return yield* failure("Enabled Wiki memory requires a publication path and page configuration")
-    const pointer = path.resolve(options.wikiOutput, "current.json")
-    if ((yield* fs.stat(pointer)).size > BigInt(16 * 1024 * 1024)) return yield* failure("Wiki pointer exceeds the bounded planning input size")
-    const captured = yield* fs.readFileString(pointer)
-    // Use the owning verifier. Digest equality alone does not prove semantic
-    // review, nor may old generated explanations silently stand in for new code.
-    yield* wikiOperations({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }).check(options.pages, true)
-    if ((yield* fs.readFileString(pointer)) !== captured) return yield* failure("Wiki publication changed while gathering memory; retry gathering")
-    const wiki = yield* Effect.try({ try: () => JSON.parse(captured) as unknown, catch: () => failure("Invalid verified wiki pointer") }).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Pointer)),
-      Effect.mapError(() => failure("The wiki has no valid verified snapshot; regenerate it before planning"))
-    )
+  const wiki = yield* wikiMemory(options, input, hostFilesystem)
+  const wikiDigest = wiki?.digest ?? null
+  if (wiki !== undefined) {
     const terms = RecallKeyword.normalizeQueryTerms(`${input.prompt}\n${input.feedback}`)
     const ranked = wiki.pages.map(page => ({ page, score: RecallKeyword.scoreRow(terms, {
       key: `${page.id} ${page.title}`, text: page.body, tags: [], updatedAtMs: 0
@@ -78,8 +124,6 @@ export const gather = (options: MemoryOptions, input: typeof PlanningInput.Type,
       // equivalent explanation; a project can supply a finer-grained gather flow.
       if (bytes([...memory, note]) <= maximum) memory.push(note)
     }
-    if (memory.length === 0) return yield* failure("No complete wiki page fits the configured memory budget")
-    wikiDigest = wiki.artifactDigest
   }
   const catalog = yield* Executable.Catalog
   const identity = (name: string) => {
@@ -169,10 +213,9 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
     const stale = yield* staleSources(yield* sourceReader(options.repositoryPath, hostFilesystem),
       { sources: context.sources ?? [], missing: context.missing ?? [] })
     if (stale.length > 0) return yield* failure(`Attached source files changed during planning or clarification; gather and plan again: ${stale.join(", ")}`)
-    if (options.wiki === true) {
-      if (!options.wikiOutput || !options.pages?.length) return yield* failure("Enabled Wiki memory requires a publication path and page configuration")
-      yield* wikiOperations({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }).check(options.pages, true)
-    }
+    // Every wiki note still explains exactly the source the plan is made against.
+    const stalePages = yield* staleWikiNotes(options, context.memory, hostFilesystem)
+    if (stalePages.length > 0) return yield* failure(`Wiki pages changed source during planning or clarification; gather and plan again: ${stalePages.join(", ")}`)
     return context
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : failure(
     "Planning context no longer matches current source: " + (error instanceof Error ? error.message : String(error))

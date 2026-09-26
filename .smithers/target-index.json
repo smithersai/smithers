@@ -19760,6 +19760,10 @@
       },
       {
         "kind": "file",
+        "path": "flows/test/coding-wiki-memory.test.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/test/coding-catalog-refresh.test.ts"
       },
       {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
@@ -24,7 +25,17 @@ type fakeMythicalRoute struct {
 	parallel   int32
 	retried    string
 	backfills  int
+	wikis      int
+	wikiErr    error
 	viewers    []services.MythicalViewer
+}
+
+func (f *fakeMythicalRoute) RequestWiki(context.Context, int64) error {
+	if f.wikiErr != nil {
+		return f.wikiErr
+	}
+	f.wikis++
+	return nil
 }
 
 func (f *fakeMythicalRoute) Backfill(context.Context, int64) error { f.backfills++; return nil }
@@ -157,4 +168,35 @@ func TestMythicalWriteRoutes(t *testing.T) {
 	handler.Retry(rec, withRepo(req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))))
 	require.Equal(t, http.StatusAccepted, rec.Code)
 	assert.Equal(t, "item-9", service.retried)
+}
+
+func TestMythicalWikiRoute(t *testing.T) {
+	service := &fakeMythicalRoute{}
+	handler := &MythicalHandler{Service: service}
+	request := func(user bool) *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		ctx := middleware.ContextWithRepoContext(r.Context(), &middleware.RepoContext{Owner: "o",
+			Repository: &db.Repository{ID: 19, Name: "r"}}, middleware.PermissionWrite)
+		if user {
+			ctx = context.WithValue(ctx, middleware.UserContextKey, &db.User{ID: 7})
+		}
+		return r.WithContext(ctx)
+	}
+	rec := httptest.NewRecorder()
+	handler.Wiki(rec, request(false))
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Zero(t, service.wikis)
+
+	// Requested, not done: the snapshot answers at once.
+	rec = httptest.NewRecorder()
+	handler.Wiki(rec, request(true))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Equal(t, 1, service.wikis)
+	assert.Contains(t, rec.Body.String(), `"repository":"o/r"`)
+
+	service.wikiErr = pkgerrors.Conflict("this repository declares no wiki in .smithers/coding-project.json")
+	rec = httptest.NewRecorder()
+	handler.Wiki(rec, request(true))
+	assert.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "declares no wiki")
 }

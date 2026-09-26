@@ -40,10 +40,12 @@ a bounded, resolved linear native history, then reads request paths and existing
 repository documents under the source byte and path bounds. Generated Wiki
 memory is empty by default. This path creates no knowledge artifact.
 
-With the operator's `wiki: true`, the owning Wiki verifier checks source
-freshness, publication integrity and recorded semantic review. Missing or stale
-Wiki artifacts refuse this explicitly enabled gather; `PrepareWithWiki` refreshes
-them before gathering in the composed request. The existing keyword scorer ranks
+A stack request carries the stack's published wiki pages; gather keeps only
+those whose page inputs, under this host's own catalog, still hash to the
+current source. Otherwise, with the operator's `wiki: true`, the owning Wiki
+verifier checks the host's own snapshot for source freshness, publication
+integrity and recorded semantic review. A missing or stale wiki never refuses
+gather; planning proceeds without it. The existing keyword scorer ranks
 complete current-behavior and intent
 pages against the request and saved feedback. It retains complete pages within
 a byte budget, with source identities and explicit current/intent labels.

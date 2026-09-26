@@ -12,7 +12,6 @@ import { Graph } from "@smthrs/flow"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Option } from "effect"
 import { catalog } from "./host.ts"
-import wiki from "./wiki/flow.ts"
 import history from "./history/flow.ts"
 import { buildProductHost } from "./build.mjs"
 
@@ -20,7 +19,7 @@ const exec = promisify(execFile)
 test("catalog keeps write-once artifact identity and honest configured model metadata", async t => {
   const root = await mkdtemp(join(tmpdir(), "librarian-identity-"))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const options = { root, stateRoot: join(root, "state"), repo: "test/repo", gatewayId: "test", credential: "test", artifactDigest: "a".repeat(64), sourceRevision: "b".repeat(40), ownerGeneration: 1, model: "openai:test", persistWiki: async () => {} }
+  const options = { root, stateRoot: join(root, "state"), repo: "test/repo", gatewayId: "test", credential: "test", artifactDigest: "a".repeat(64), sourceRevision: "b".repeat(40), ownerGeneration: 1, model: "openai:test" }
   const first = await catalog(options), again = await catalog(options)
   for (const [index, entry] of first.entries()) {
     assert.deepEqual(entry.descriptor, again[index]!.descriptor)
@@ -33,44 +32,40 @@ test("catalog keeps write-once artifact identity and honest configured model met
   await assert.rejects(catalog(options), /identity was modified/)
 })
 
-test("both product flows are their own delegate and carry the declaration's authority", async t => {
+test("the product flow is its own delegate and carries the declaration's authority", async t => {
   const root = await mkdtemp(join(tmpdir(), "librarian-collapse-"))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const options = { root, stateRoot: join(root, "state"), repo: "test/repo", gatewayId: "test", credential: "test", artifactDigest: "b".repeat(64), sourceRevision: "c".repeat(40), ownerGeneration: 1, model: "openai:test", persistWiki: async () => {} }
+  const options = { root, stateRoot: join(root, "state"), repo: "test/repo", gatewayId: "test", credential: "test", artifactDigest: "b".repeat(64), sourceRevision: "c".repeat(40), ownerGeneration: 1, model: "openai:test" }
   const entries = await catalog(options)
 
-  assert.deepEqual(entries.map(entry => entry.descriptor.name), ["librarian/wiki", "librarian/history"])
+  assert.deepEqual(entries.map(entry => entry.descriptor.name), ["librarian/history"])
   for (const entry of entries) {
     // The module IS the flow, so the descriptor names no delegate at all.
     assert.deepEqual(entry.descriptor.flows, [])
-    // This host implements both actions, so its own catalog still offers them,
+    // This host implements the action, so its own catalog still offers it,
     // while the declaration says `modelInvocable: false` for every other scan.
     assert.equal(entry.descriptor.modelInvocable, true)
   }
-  assert.deepEqual(entries[0]!.descriptor.capabilities, ["fs:read:**", "wiki:write"])
-  assert.deepEqual(entries[1]!.descriptor.capabilities, ["fs:read:**", "fs:write:.git/**"])
-  assert.deepEqual(entries[0]!.descriptor.effects.writes, ["wiki/**"])
-  assert.deepEqual(entries[1]!.descriptor.effects.writes,
+  assert.deepEqual(entries[0]!.descriptor.capabilities, ["fs:read:**", "fs:write:.git/**"])
+  assert.deepEqual(entries[0]!.descriptor.effects.writes,
     [".git/objects/**", ".git/refs/heads/mythical", ".git/refs/notes/mythical"])
 
-  // Each flow's payload is the caller's own input, and its whole body is the
+  // The flow's payload is the caller's own input, and its whole body is the
   // one action this host implements. That is what a delegating declaration
   // plus a wrapper flow used to say between two values.
-  for (const [flow, action] of [[wiki, "librarian/create-wiki"], [history, "librarian/create-history"]] as const) {
-    const calls = Graph.nodes(Graph.build(flow, { repo: "test/repo" }))
-      .filter(node => node.kind === "ActionCall")
-    assert.deepEqual(calls.map(node => (node.draft.material.body as { action: string }).action), [action])
-    assert.deepEqual({ ...calls[0]!.payload as object }, { repo: "test/repo" })
-  }
+  const calls = Graph.nodes(Graph.build(history, { repo: "test/repo" }))
+    .filter(node => node.kind === "ActionCall")
+  assert.deepEqual(calls.map(node => (node.draft.material.body as { action: string }).action), ["librarian/create-history"])
+  assert.deepEqual({ ...calls[0]!.payload as object }, { repo: "test/repo" })
 
-  // A host that registers no delegate at all still makes both runnable,
-  // because each module default-exports the flow it declares.
+  // A host that registers no delegate at all still makes it runnable,
+  // because the module default-exports the flow it declares.
   const delegates = await Effect.runPromise(Effect.forEach(entries, entry =>
     Executable.fromDescriptor(entry.descriptor, {
       delegates: [], load: () => Effect.succeed({ default: entry.declaration })
     }).pipe(Effect.map(executable => executable.delegate ?? "self"))
   ).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))))
-  assert.deepEqual(delegates, ["self", "self"])
+  assert.deepEqual(delegates, ["self"])
 })
 
 test("built artifact regenerates its sidecar and refuses off-loopback transcript startup", { timeout: 120_000 }, async t => {

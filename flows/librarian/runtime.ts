@@ -54,8 +54,7 @@ const preserveProvider = <E>(failure: E): E | HarnessError => {
     cause: { librarianProvider: [surfaced.code, surfaced.message] } }) : failure
 }
 
-// 30 pages × author/reviewer × one correction can approach 120 requests.
-// Four million tokens allows typical evidence slices, not 120 maximal slices;
+// Four million tokens allows typical evidence slices, not maximal ones;
 // two hours bounds admission across parks/restarts, not an in-flight call.
 export const budgetPolicy: Budget.Policy = {
   tokens: { max: 4_000_000, onExceeded: "fail" },
@@ -63,7 +62,6 @@ export const budgetPolicy: Budget.Policy = {
 }
 // Evidence is supplied by deterministic readers. Cells only format answers, so
 // no tools are exposed; eight frames leave room to construct structured output.
-// Reuse flows/wiki's cell envelope for bounded evidence and JSON assembly.
 // Outages fail promptly; another attempt belongs to the explicit Retry door.
 export const hostLimits = {
   limits: { memoryBytes: 128 * 1024 * 1024, steps: 25_000_000, calls: 8 },

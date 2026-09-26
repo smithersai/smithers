@@ -30,6 +30,9 @@ The host reads `<root>/.smithers/coding-project.json` by default for
 this host-side lookup, so the backend does not pass a project path. With the
 provisioned landing binding and reserved `SMITHERS_JJHUB_TOKEN` and
 `SMITHERS_JJHUB_API_URL`, the same launch also registers `coding/vibe`.
+It always registers `coding/verify`, which the mythical stack runs on rebased
+candidates, and `coding/wiki` when the project enables its wiki: the stack
+runs it after every fold to refresh and review the declared pages.
 See [project-config.md](project-config.md) for missing and invalid file behavior.
 
 `--help` and `--version` work before opening the repository or resolving provider credentials. The same `Serve.refuse` policy requires a credential and explicit `--listen` for a non-loopback bind. The Plue service owns its workspace lifetime lock and process scope.

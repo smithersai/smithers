@@ -9,7 +9,6 @@ import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { packageVersion } from "../../packages/smithers/src/Version.ts"
 import { configured, fromEnvironment } from "./seats.ts"
 import { layer } from "./host.ts"
-import { persistWiki } from "./wiki-persistence.ts"
 import * as LibrarianState from "./state.ts"
 const parsed = parseArgs({ args: process.argv.slice(2), allowPositionals: true, options: {
   root: { type: "string" }, host: { type: "string", default: "127.0.0.1" },
@@ -18,7 +17,7 @@ const parsed = parseArgs({ args: process.argv.slice(2), allowPositionals: true, 
   help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" }
 } })
 if (parsed.values.version) console.log(packageVersion)
-else if (parsed.values.help) console.log("smithers-product-host serve --root <workspace> --state-dir <state> --host <host> --port <port> --listen\nRequires SMITHERS_API_KEY, SMITHERS_GATEWAY_ID, SMITHERS_REPO, SMITHERS_PRODUCT_API_URL, SMITHERS_FLOW_ARTIFACT_SHA256, SMITHERS_SOURCE_REVISION, SMITHERS_OWNER_GENERATION.")
+else if (parsed.values.help) console.log("smithers-product-host serve --root <workspace> --state-dir <state> --host <host> --port <port> --listen\nRequires SMITHERS_API_KEY, SMITHERS_GATEWAY_ID, SMITHERS_REPO, SMITHERS_FLOW_ARTIFACT_SHA256, SMITHERS_SOURCE_REVISION, SMITHERS_OWNER_GENERATION.")
 else {
   if (parsed.positionals.length !== 1 || parsed.positionals[0] !== "serve") throw new Error("Expected serve command")
   const seats = fromEnvironment(process.env)
@@ -33,7 +32,6 @@ else {
   const refusal = Serve.refuse(bind)
   if (refusal) throw refusal
   const repo = process.env.SMITHERS_REPO ?? ""
-  const publish = persistWiki({ repo, apiUrl: process.env.SMITHERS_PRODUCT_API_URL ?? "", token: credential, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "" })
   // Git subprocesses must never inherit the gateway operator credential.
   delete process.env.SMITHERS_API_KEY
   const artifactDigest = createHash("sha256").update(await readFile(process.argv[1]!)).digest("hex")
@@ -42,7 +40,7 @@ else {
   if (!Number.isSafeInteger(ownerGeneration) || ownerGeneration <= 0) throw new Error("SMITHERS_OWNER_GENERATION must be a positive safe integer")
   const sourceRevision = process.env.SMITHERS_SOURCE_REVISION ?? ""
   if (!/^[0-9a-f]{40}$/.test(sourceRevision)) throw new Error("SMITHERS_SOURCE_REVISION must be an immutable 40-character revision")
-  const options = { ...seats, root, stateRoot, repo, credential, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "", artifactDigest, sourceRevision, ownerGeneration, persistWiki: publish }
+  const options = { ...seats, root, stateRoot, repo, credential, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "", artifactDigest, sourceRevision, ownerGeneration }
   if ("Bun" in globalThis) {
     const [{ platform }, runtime] = await Promise.all([import("../../packages/smithers/src/internal/BunControl.ts"), import("@effect/platform-bun/BunRuntime")])
     runtime.runMain(Serve.host(bind, root).pipe(Effect.provide(layer(platform, options))))

@@ -466,6 +466,19 @@
       "modelInvocable": true
     },
     {
+      "id": "coding/wiki",
+      "description": "Refresh the repository wiki on one retained commit of the mythical stack and answer its verified pages.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/wiki/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true
+    },
+    {
       "id": "create-flow",
       "description": "Turns a plain-English request into a working Smithers flow in this workspace, through the clarify, provision, design, scaffold, fix and document stages.",
       "summary": null,
@@ -863,20 +876,6 @@
       "modelInvocable": false
     },
     {
-      "id": "librarian/wiki",
-      "description": "Create a Markdown Wiki from the repository source tree with revision provenance and linked pages.",
-      "summary": null,
-      "featured": false,
-      "kind": "ts",
-      "path": "flows/librarian/wiki/flow.ts",
-      "capabilities": [
-        "fs:read:**",
-        "wiki:write"
-      ],
-      "model": null,
-      "modelInvocable": false
-    },
-    {
       "id": "organization/deliver",
       "description": "Deliver one admitted owner request through the organization: the assistant routes it, a lead writes the contract, a builder changes the repository in a microVM workspace, the change is checked in a fresh microVM and judged by an independent checker, and an approved change lands on a branch with a receipt.",
       "summary": null,
@@ -993,16 +992,19 @@
     {
       "event": "change.landed",
       "flow": [
-        "wiki",
         "history.fold",
+        "coding/wiki",
         "improve.mine"
       ],
-      "description": "Regenerate the wiki, fold main into the mythical history, mine the landing"
+      "description": "Fold main into the mythical history, refresh the wiki, mine the landing"
     },
     {
       "event": "github.push:main",
-      "flow": "history.fold",
-      "description": "Fold outside merges into the mythical history"
+      "flow": [
+        "history.fold",
+        "coding/wiki"
+      ],
+      "description": "Fold outside merges into the mythical history and refresh the wiki"
     },
     {
       "event": "schedule:0 9 * * 1-5",

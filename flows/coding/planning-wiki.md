@@ -1,13 +1,15 @@
-# Verified wiki before prompt planning
+# The verified repository wiki refresh
 
-`PrepareWithWiki` is a private repository flow. It makes the existing wiki
-workflow a durable upstream dependency of the existing `PreparePlan` flow.
-Its input is the same `{ prompt, feedback }`; its success value is the existing
-coding `Plan`, including any captured native head. A generated publication is
-not a successful plan, implementation, vibed state or delivery receipt.
+`coding/RefreshWiki` is the private flow that refreshes the verified wiki the
+project declares. The stack service runs it through `coding/wiki`
+(wiki/flow.ts) on the folded tip after every fold, and publishes the pages it
+answers (see [wiki-refresh.ts](wiki-refresh.ts)). Planning never runs it:
+planning reads the published pages as context when they are fresh
+(planning-memory.ts). A generated publication is not a plan, implementation,
+vibed state or delivery receipt.
 
 ```ts
-import { PrepareWithWiki, planningWikiLayers } from "./planning-wiki.ts"
+import { RefreshWiki, planningWikiLayers } from "./planning-wiki.ts"
 
 const wiki = planningWikiLayers({
   repositoryPath,
@@ -15,8 +17,9 @@ const wiki = planningWikiLayers({
   pages: engineeringPageCatalog,
   reviewer: "configured-reviewer-policy"
 })
-// Compose this layer with the existing planning/memory/agent host layers.
-const plan = yield* PrepareWithWiki.execute({ prompt, feedback: "" })
+// Compose this layer with the host's agent layers; `pool` is the reviews an
+// earlier refresh answered, or null.
+const refreshed = yield* RefreshWiki.execute({ pool: null })
 ```
 
 This adds no public package API, database, generator service or pointer store.
@@ -30,19 +33,19 @@ steering, seat routing and injected services. The old standalone wiki agent
 runtime is not installed over that parent context. A prompt requesting no tools
 is not a capability boundary; the host must apply the narrowing helper.
 
-Each new request creates a real `coding/RefreshWiki` child. It captures its
-operator configuration and asks the existing engine run catalog for one page
-of at most twenty completed refreshes. A compatible refresh's native result is
-only a hint to its earlier wiki child execution. The first generation invokes
-`smithers/Wiki`; later compatible generations invoke `smithers/IncrementalWiki`.
-Those existing flows collect exact source bytes and perform semantic review,
-assessment and immutable publication through their ordinary actions.
-
-The configured `coding/request` runs this dependency twice: before first
-planning and again after the disposable POC. The latter refresh normally reuses
-the unchanged reviewed pages. The host includes the selected wiki model and
-owning gateway in the operator's reviewer identity, so changing those routes
-invalidates reuse through this same protocol.
+Each refresh captures its operator configuration and asks the existing engine
+run catalog for one page of at most twenty completed refreshes. A compatible
+refresh's native result is only a hint to its earlier wiki child execution.
+Without one, a `pool` the caller carried (the reviews an earlier refresh on
+another workspace answered) is admitted only under exactly this host's current
+reviewer policy and seat. The first generation invokes `smithers/Wiki`; later
+generations invoke `smithers/IncrementalWiki`. Those existing flows collect
+exact source bytes and perform semantic review, assessment and immutable
+publication through their ordinary actions; a carried review is reused only
+after the same recapture and citation revalidation as a journaled one. The
+host includes the selected wiki model and owning gateway in the operator's
+reviewer identity, so changing those routes invalidates reuse through this
+same protocol.
 
 The configuration scope hashes the complete PageSpec catalog, reviewer identity,
 canonical source root, configured output path, composition policy and lookup
@@ -70,19 +73,18 @@ as the ordinary native run result. It is not another ledger. The private
 configuration and prior-selection actions are captured once per refresh
 execution; resumed executions replay their existing decisions. A new request
 recollects current source. The wiki writer checks source again before accepting
-its publication; `PreparePlan` then performs its own normal gather and final
-freshness checks, including after a human clarification wait.
+its publication.
 
-Unsupported or uncertain semantic review fails the wiki child before planning
-starts. The existing wiki writer retains its source-pinned `needs-changes`
+Unsupported or uncertain semantic review fails the refresh; the stack service
+shows it as failed and retries it. The existing wiki writer retains its source-pinned `needs-changes`
 artifact for inspection. The recipe does not relabel that draft as verified,
-feed it to the planner, or infer correctness from matching hashes alone.
+publish it, or infer correctness from matching hashes alone.
 
 The native acceptance fixture runs on both Node and Bun with real JJ history,
 SQLite, source collection, citation validation and immutable wiki artifacts.
 It checks child ordering, restart replay, unchanged-page model reuse, targeted
-source invalidation, reviewer-configuration invalidation, and refusal before
-planning on unsupported prose. Semantic and planning decisions are scripted in
+source invalidation, reviewer-configuration invalidation, and refusal on
+unsupported prose. Semantic decisions are scripted in
 that fixture; it does not claim a live provider evaluation or deployed host.
 
 The prior-review hint reads the latest 256 run IDs through the existing indexed

@@ -11,7 +11,7 @@ import { Effect, Schema, Stream } from "effect"
 
 // The existing native Anthropic route supports this explicit, versioned model.
 export const defaultModel = "anthropic:claude-sonnet-4-5"
-export const roles = ["librarian/wiki-author", "librarian/history-author", "librarian/reviewer"] as const
+export const roles = ["librarian/history-author", "librarian/reviewer"] as const
 export interface Options {
   readonly model?: string | undefined
   readonly transcripts?: string | undefined
@@ -86,9 +86,7 @@ export const roleResolver = (base: SeatResolver.Service, model: string = default
   configured({ ...options, model })
   const replay = options.transcripts === undefined ? undefined : transcriptModel(options.transcripts)
   return SeatResolver.make({ resolve: id => {
-    // The reused flows/wiki review action still declares its original seat.
-    const role = roles.some(role => role === id) || id === "wiki/reviewer"
-    if (!role) return base.resolve(id)
+    if (!roles.some(role => role === id)) return base.resolve(id)
     // Replay never resolves the provider, even when inherited credentials exist.
     if (replay !== undefined && !options.record) return Effect.succeed(Seat.make({
       id, modelId: Seat.modelIdOf(model), model: replay,

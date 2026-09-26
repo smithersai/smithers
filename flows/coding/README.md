@@ -96,12 +96,14 @@ optional durable clarification, a model draft, and source verification before
 binding the existing `Plan` schema. See [planning.md](planning.md) for context
 shapes, native-history windows and deployment authority.
 
-`PrepareRequest` uses this source-only path by default. With the operator's
-`planning.wiki: true`, it calls `PrepareWithWiki` to refresh and verify the
-configured page catalog first. Wiki memory reuses the owning verifier and
-keyword scorer, refusing stale documentation; unchanged pages reuse exact
-native review evidence. See [planning-wiki.md](planning-wiki.md). Mythical history
-is not required; ordinary native JJ history remains part of every coding plan.
+`PrepareRequest` plans; it never generates the wiki. A stack request carries
+the stack's published wiki pages, and any other request with the operator's
+`planning.wiki: true` reads the host's own verified snapshot when one exists.
+Only pages whose inputs still hash to the source are used, ranked by the
+existing keyword scorer; without them planning proceeds on source and history.
+The stack service refreshes the wiki with `coding/wiki` after every fold; see
+[planning-wiki.md](planning-wiki.md). Ordinary native JJ history remains part
+of every coding plan.
 
 `registration.ts` is private repository configuration, not a new package API.
 Provide the host's existing executable catalog to `registration` and pass the

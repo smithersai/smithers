@@ -913,6 +913,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	gitHubMainPullService.SetMainMoved(mythicalService.MainMoved)
 	gitHubMainPullService.SetSynced(services.NewLandingGitHubMergeService(queries, repoHostClient, repoConnectionService, webhookDispatcher).Reconcile)
 	gitHubWebhookEventWorker.SetMythical(mythicalService)
+	mythicalService.SetWiki(wikiService)
 	mythicalService.SetOrchestration(services.NewMythicalGitHub(queries, repoConnectionService, gitHubUserReposService, repoConnectionService),
 		nil, services.NewWorkspaceMythicalLanes(workspaceService))
 	mythicalHandler := &routes.MythicalHandler{Service: mythicalService, Broker: sseBroker,
@@ -1207,7 +1208,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			Service:         repoGatewayService,
 			RelayService:    repoGatewayService,
 			RelayToken:      cfg.Sandbox.PreviewRelayToken,
-			WikiPublisher:   services.NewGatewayWikiPublisher(repoGatewayService, queries, wikiService),
 			PushTokens:      services.NewGatewayPushTokenService(repoGatewayService, queries, auditService),
 		}
 

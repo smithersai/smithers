@@ -1,12 +1,12 @@
 # Planning from current repository memory
 
-Planning is a private composition of existing flows, actions, AgentAction and HumanTask. `PreparePlan` returns the existing coding Plan. `PrepareWithWiki` places the existing dependency-bound wiki workflow before it, making source capture and semantic review real durable upstream work.
+Planning is a private composition of existing flows, actions, AgentAction and HumanTask. `PreparePlan` returns the existing coding Plan. It reads the repository wiki as optional context: a stack request carries the published pages, and only pages whose inputs still hash to the current source are used.
 
-## Refresh documentation before using it
+## Refresh documentation after every fold
 
-Every new request records a `coding/RefreshWiki` child. A bounded lookup of completed compatible refreshes supplies an earlier wiki-run hint; it is not itself a review receipt. The existing incremental workflow reuses a page only when its source, prose, section boundaries, reviewer and policy match and current citation validation succeeds. Changed pages receive a model review. A lookup miss runs ordinary generation. The bounded lookup can miss an old refresh after enough unrelated native work; that causes a fresh review. The configured host supplies its actual deployed or source reviewer-policy identity, so target repositories need not vendor the Smithers reviewer implementation.
+The stack service runs `coding/wiki` after every fold, which records a `coding/RefreshWiki` child. A bounded lookup of completed compatible refreshes supplies an earlier wiki-run hint; it is not itself a review receipt. The existing incremental workflow reuses a page only when its source, prose, section boundaries, reviewer and policy match and current citation validation succeeds. Changed pages receive a model review. A lookup miss runs ordinary generation. The bounded lookup can miss an old refresh after enough unrelated native work; that causes a fresh review. The configured host supplies its actual deployed or source reviewer-policy identity, so target repositories need not vendor the Smithers reviewer implementation.
 
-Unsupported or uncertain prose blocks planning and retains the wiki's needs-changes artifact. Publication hashes establish captured identity, not semantic truth. Human intent remains labeled separately from current implementation. Only the configured public engineering catalog is read; private Smithers-Ops is outside the recipe's inputs.
+Unsupported or uncertain prose fails the refresh, which stays visible and retried, and retains the wiki's needs-changes artifact; planning proceeds without unverified pages. Publication hashes establish captured identity, not semantic truth. Human intent remains labeled separately from current implementation. Only the configured public engineering catalog is read; private Smithers-Ops is outside the recipe's inputs.
 
 ## Capture enough evidence to make a plan
 

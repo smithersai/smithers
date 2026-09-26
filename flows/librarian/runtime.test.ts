@@ -83,7 +83,7 @@ test("descendants share a root allowance; independent runs and tighter native bu
   await Effect.runPromise(Effect.gen(function*() {
     const budget = yield* Budget.make({ tokens: { max: 10, onExceeded: "fail" } })
     const child = <A, E, R>(work: Effect.Effect<A, E, R>, rootId: string, executionId: string) => bounded(work, budget).pipe(
-      Effect.provideService(ModuleOwner, { rootId, flowId: "librarian/wiki" }),
+      Effect.provideService(ModuleOwner, { rootId, flowId: "librarian/history" }),
       Effect.provideService(FlowRuntime.FlowInstance, { executionId, lineageId: executionId, flow: Once, scope: Scope.makeUnsafe(), suspended: false, interrupted: false, waiting: undefined, handoff: undefined, cause: undefined, actionState: { count: 0, latch: Latch.makeUnsafe(), nextOrdinal: () => 1, snapshots: new Map(), keylessInFlight: new Set<string>() } })
     )
     yield* child(Effect.flatMap(Budget.Budget, service => service.record("call", { totalTokens: 10 })), "run-a", "child-a")

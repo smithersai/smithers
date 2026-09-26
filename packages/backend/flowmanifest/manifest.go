@@ -20,7 +20,7 @@ const maxManifestBytes = 1 << 20
 
 var expectedFlows = map[string][]string{
 	"coding":    {"coding/dispatch"},
-	"librarian": {"librarian/history", "librarian/wiki"},
+	"librarian": {"librarian/history"},
 }
 
 // Host is a validated packaged executable. Source revision is deliberately

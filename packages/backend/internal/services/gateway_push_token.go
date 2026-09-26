@@ -25,7 +25,7 @@ type GatewayPushTokenQuerier interface {
 }
 
 // GatewayPushTokenService exchanges the gateway operator credential for a
-// short-lived PAT, using the same repository permission check as PublishWiki.
+// short-lived PAT after rechecking the owner's repository write permission.
 type GatewayPushTokenService struct {
 	gateway interface {
 		AuthorizeRelay(context.Context, string, string) (RepoGatewayRelayTarget, error)

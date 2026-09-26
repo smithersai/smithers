@@ -31,7 +31,7 @@ export const writeFlowHostManifest = async ({ output, coding, librarian }) => {
   await mkdir(root, { recursive: true })
   const hosts = {
     coding: await host(root, coding, ["coding/dispatch"]),
-    librarian: await host(root, librarian, ["librarian/history", "librarian/wiki"])
+    librarian: await host(root, librarian, ["librarian/history"])
   }
   for (const entry of Object.values(hosts)) {
     await writeFile(

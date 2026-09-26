@@ -33,8 +33,11 @@ export type Pool = typeof Pool.Type
 const Selection = Schema.Struct({ review: Schema.NullOr(Review), provenance: Provenance, reason: Schema.String })
 const BoundPage = Schema.Struct({ ...ReviewedPage.fields, provenance: Provenance })
 
+/** The reviews a run may reuse: a prior terminal run in this engine, or a pool
+ * a trusted host carried from an earlier run elsewhere. */
 export const Load = Action.make("wiki/load-recorded-reviews", {
-  payload: { priorRunId: Schema.String, reviewer: Schema.String }, success: Pool, error: WikiError
+  payload: { priorRunId: Schema.optionalKey(Schema.String), pool: Schema.optionalKey(Pool), reviewer: Schema.String },
+  success: Pool, error: WikiError
 })
 export const Select = Action.make("wiki/select-recorded-review", {
   payload: { evidence: Evidence, pool: Pool, reviewer: Schema.String }, success: Selection, error: WikiError
@@ -46,9 +49,12 @@ export const Publish = Action.make("wiki/publish-recorded-reviews", {
   payload: { pages: Schema.Record(Schema.String, BoundPage) }, success: Receipt, error: WikiError, nondeterministic: true
 })
 export const IncrementalWiki = Flow.make("smithers/IncrementalWiki", {
-  payload: Schema.Struct({ ...Input.fields, mode: Schema.Literal("verified"), priorRunId: Schema.String }), success: Receipt,
+  // The reviews to reuse: a prior run in this engine, or a pool carried from elsewhere.
+  payload: Schema.Struct({ ...Input.fields, mode: Schema.Literal("verified"), priorRunId: Schema.optionalKey(Schema.String),
+    pool: Schema.optionalKey(Pool) }), success: Receipt,
   error: Schema.Union([WikiError, AgentAction.AgentFailure]),
-  body: (input) => Node.bindPlanned(Load.call({ priorRunId: input.priorRunId, reviewer: input.reviewer }), (pool) =>
+  body: (input) => Node.bindPlanned(Load.call({ reviewer: input.reviewer, ...(input.pool === undefined ? {} : { pool: input.pool }),
+    ...(input.priorRunId === undefined ? {} : { priorRunId: input.priorRunId }) }), (pool) =>
     Node.bindPlanned(Node.all(Object.fromEntries(input.pages.map((spec, index) => [`page-${index}`, Collect.call({ spec })]))), (evidence) =>
       Node.bindPlanned(Node.all(Object.fromEntries(input.pages.map((_, index) => [`page-${index}`,
         Node.bindPlanned(Select.call({ evidence: evidence[`page-${index}`]!, pool, reviewer: input.reviewer }), (selection) =>
@@ -85,8 +91,19 @@ export const reuseOperations = (options: ReuseOptions) => {
     }))
     return { policyDigest: yield* digest(canonical({ version: 1, reviewer, sources })), policySources: sources }
   })
-  const load = ({ priorRunId, reviewer }: { priorRunId: string; reviewer: string }) => guarded(Effect.gen(function*() {
+  const load = ({ priorRunId, pool, reviewer }: { priorRunId?: string | undefined; pool?: Pool | undefined; reviewer: string }) => guarded(Effect.gen(function*() {
     const current = yield* policy(reviewer)
+    if (pool !== undefined) {
+      // Select still recaptures every page and revalidates each citation; a
+      // pool reviewed under another policy or seat is simply not reused.
+      const compatible = pool.policyDigest === current.policyDigest &&
+        Object.values(pool.candidates).every(candidate => candidate.reviewer === reviewer)
+      return { ...current, candidates: compatible ? pool.candidates : {} }
+    }
+    if (priorRunId === undefined) return yield* Effect.fail(fail("Reusing reviews needs a prior run or a carried pool"))
+    return yield* loadRun(priorRunId, reviewer, current)
+  }))
+  const loadRun = (priorRunId: string, reviewer: string, current: Omit<Pool, "candidates">) => Effect.gen(function*() {
     const empty: Pool = { ...current, candidates: {} }
     const runStore = yield* RunStore.RunStore
     const run = yield* runStore.get(priorRunId)
@@ -151,8 +168,8 @@ export const reuseOperations = (options: ReuseOptions) => {
         originRunId: Option.isSome(inherited) ? inherited.value.provenance.originRunId : priorRunId }
     }
     if (current.policySources.some((source) => captured.get(source.path) !== source.digest)) return empty
-    return { ...current, candidates }
-  }))
+    return { ...current, candidates } as Pool
+  })
   const select = ({ evidence, pool, reviewer }: { evidence: Evidence; pool: Pool; reviewer: string }) => guarded(Effect.gen(function*() {
     const instance = yield* FlowRuntime.FlowInstance
     const fresh = (reason: string): typeof Selection.Type => ({ review: null, reason,

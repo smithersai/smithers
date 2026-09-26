@@ -1,4 +1,4 @@
-/** Verified wiki refresh is an ordinary upstream child of prompt planning. */
+/** The verified repository wiki refresh the host runs for `coding/wiki` and the wiki check. */
 import * as Digest from "@smthrs/core/Digest"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { RunState } from "@smthrs/engine-store/RunState"
@@ -7,12 +7,10 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import { Node } from "@smthrs/plan"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Exit, FileSystem, Layer, Option, Path, Schema } from "effect"
-import { IncrementalWiki, policySources, reuseLayers } from "../wiki/reuse.ts"
+import { IncrementalWiki, policySources, Pool, reuseLayers } from "../wiki/reuse.ts"
 import { actionLayers } from "../wiki/runtime.ts"
 import { Input as WikiInput, type PageSpec, Receipt, WikiError } from "../wiki/schema.ts"
 import Wiki from "../wiki/flow.ts"
-import { PlanningInput, PreparePlan } from "./planning.ts"
-import { Plan } from "./schema.ts"
 import { separateWikiOutput } from "./wiki-output.ts"
 
 /** Operator configuration, never model-supplied paths, catalog or reviewer. */
@@ -31,7 +29,7 @@ export interface PlanningWikiOptions {
 }
 const Config = Schema.Struct({ ...WikiInput.fields, mode: Schema.Literal("verified"),
   scopeDigest: Schema.String, output: Schema.String })
-const Refreshed = Schema.Struct({ scopeDigest: Schema.String, wikiRunId: Schema.String, receipt: Receipt })
+export const Refreshed = Schema.Struct({ scopeDigest: Schema.String, wikiRunId: Schema.String, receipt: Receipt })
 const Configure = Action.make("coding/configure-planning-wiki", {
   payload: {}, success: Config, error: WikiError, nondeterministic: true
 })
@@ -39,18 +37,18 @@ const Prior = Action.make("coding/find-planning-wiki-review", {
   payload: { config: Config }, success: Schema.NullOr(Schema.String), error: WikiError, nondeterministic: true
 })
 const Generate = Action.make("coding/refresh-planning-wiki", {
-  payload: { config: Config, priorRunId: Schema.NullOr(Schema.String) }, success: Refreshed, error: WikiError, nondeterministic: true
+  payload: { config: Config, priorRunId: Schema.NullOr(Schema.String), pool: Schema.optionalKey(Schema.NullOr(Pool)) },
+  success: Refreshed, error: WikiError, nondeterministic: true
 })
-const RefreshWiki = Flow.make("coding/RefreshWiki", {
-  payload: {}, success: Refreshed, error: WikiError,
-  body: () => Configure.call({}).pipe(Node.bindPlanned(config =>
-    Prior.call({ config }).pipe(Node.bindPlanned(priorRunId => Generate.call({ config, priorRunId })))))
-})
-
-/** Success is the existing Plan, never the upstream wiki's publication receipt. */
-export const PrepareWithWiki = Flow.make("coding/PrepareWithWiki", {
-  payload: PlanningInput, success: Plan, error: Schema.Union([PreparePlan.errorSchema, WikiError]),
-  body: input => RefreshWiki.child({}).pipe(Node.andThen(PreparePlan.child(input)))
+/**
+ * The verified wiki for this host's catalog. It reuses the last compatible
+ * review run in this engine, else the review pool the caller carried from an
+ * earlier run elsewhere (the stack service keeps it between wiki workspaces).
+ */
+export const RefreshWiki = Flow.make("coding/RefreshWiki", {
+  payload: { pool: Schema.optionalKey(Schema.NullOr(Pool)) }, success: Refreshed, error: WikiError,
+  body: input => Configure.call({}).pipe(Node.bindPlanned(config =>
+    Prior.call({ config }).pipe(Node.bindPlanned(priorRunId => Generate.call({ config, priorRunId, pool: input.pool ?? null })))))
 })
 
 const maximumCatalogBytes = 128 * 1024
@@ -120,20 +118,23 @@ export const planningWikiLayers = (options: PlanningWikiOptions, hostFilesystem?
   const publicationRoot = separateWikiOutput(options.repositoryPath, options.wikiOutput).pipe(
     effect => hostFilesystem === undefined ? effect : Effect.provideService(effect, FileSystem.FileSystem, hostFilesystem))
   return Layer.mergeAll(
-  Interpreter.layer(PrepareWithWiki), Interpreter.layer(RefreshWiki), Interpreter.layer(Wiki),
+  Interpreter.layer(RefreshWiki), Interpreter.layer(Wiki),
   actionLayers({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem, publicationRoot, evaluator: options.evaluator }),
   reuseLayers({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem, publicationRoot, hostPolicy: options.hostPolicy }),
   Configure.toLayer(() => planningWikiConfiguration(options, hostFilesystem)),
   Prior.toLayer(({ config }) => findPlanningWikiReview(config)),
-  Generate.toLayer(({ config, priorRunId }) => guarded(Effect.gen(function*() {
+  Generate.toLayer(({ config, priorRunId, pool }) => guarded(Effect.gen(function*() {
     const currentOutput = yield* publicationRoot
     if (currentOutput !== config.output) return yield* fail("Wiki output boundary changed after configuration", "output-conflict")
     const instance = yield* FlowRuntime.FlowInstance, runtime = yield* FlowRuntime.FlowRuntime
-    const wikiRunId = Digest.digest(Digest.canonical(["coding/wiki-child/v1", instance.executionId, config, priorRunId]))
+    const wikiRunId = Digest.digest(Digest.canonical(["coding/wiki-child/v1", instance.executionId, config, priorRunId, pool ?? null]))
     const input = { pages: config.pages, mode: "verified" as const, reviewer: config.reviewer }
-    const receipt = yield* (priorRunId === null
-      ? runtime.execute(Wiki, { executionId: wikiRunId, payload: input })
-      : runtime.execute(IncrementalWiki, { executionId: wikiRunId, payload: { ...input, priorRunId } }))
+    const carried = priorRunId === null && pool != null && Object.keys(pool.candidates).length > 0 ? pool : undefined
+    const receipt = yield* (priorRunId !== null
+      ? runtime.execute(IncrementalWiki, { executionId: wikiRunId, payload: { ...input, priorRunId } })
+      : carried !== undefined
+      ? runtime.execute(IncrementalWiki, { executionId: wikiRunId, payload: { ...input, pool: carried } })
+      : runtime.execute(Wiki, { executionId: wikiRunId, payload: input }))
       .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Receipt)))
     const fs = hostFilesystem ?? (yield* FileSystem.FileSystem)
     const output = yield* fs.realPath(config.output)

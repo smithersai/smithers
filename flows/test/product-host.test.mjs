@@ -18,7 +18,7 @@ const runtime = process.env.SMITHERS_PRODUCT_HOST_RUNTIME ?? process.execPath
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 const git = (root, ...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim()
 
-test("standalone product gateway executes real librarian flows, publishes before completion, and survives restart", { timeout: 180_000 }, async t => {
+test("standalone product gateway executes the real librarian flow and survives restart", { timeout: 180_000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), "product-gateway-"))
   const stateRoot = await mkdtemp(join(tmpdir(), "product-gateway-state-"))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -31,17 +31,6 @@ test("standalone product gateway executes real librarian flows, publishes before
   await writeFile(join(root, "README.md"), "# Fixture\n")
   git(root, "add", "."); git(root, "commit", "-m", "Fixture")
   const sourceHead = git(root, "rev-parse", "HEAD")
-  let published, failPublication = false
-  const publisher = createServer(async (request, response) => {
-    assert.equal(request.url, "/api/gateways/11111111-1111-4111-8111-111111111111/wiki-pages")
-    assert.equal(request.headers.authorization, "Bearer fixture")
-    let body = ""; for await (const part of request) body += part
-    published = JSON.parse(body)
-    response.writeHead(failPublication ? 503 : 200, { "content-type": "application/json" })
-    response.end(JSON.stringify({ pages: published.pages.map(page => ({ id: page.id, slug: "source-fixture" })) }))
-  })
-  await new Promise(resolve => publisher.listen(0, "127.0.0.1", resolve))
-  t.after(() => new Promise(resolve => publisher.close(resolve)))
   const portServer = createServer(); await new Promise(resolve => portServer.listen(0, "127.0.0.1", resolve))
   const port = portServer.address().port; await new Promise(resolve => portServer.close(resolve))
   const base = `http://127.0.0.1:${port}`
@@ -53,7 +42,7 @@ test("standalone product gateway executes real librarian flows, publishes before
       env: { ...process.env, SMITHERS_API_KEY: "fixture", SMITHERS_GATEWAY_ID: "11111111-1111-4111-8111-111111111111",
         SMITHERS_OWNER_GENERATION: "7", SMITHERS_SOURCE_REVISION: sourceHead,
         SMITHERS_FLOW_ARTIFACT_SHA256: artifactDigest,
-        SMITHERS_REPO: "fixture/demo", SMITHERS_PRODUCT_API_URL: `http://127.0.0.1:${publisher.address().port}` }, stdio: ["ignore", "pipe", "pipe"] })
+        SMITHERS_REPO: "fixture/demo" }, stdio: ["ignore", "pipe", "pipe"] })
     child.stdout.on("data", data => { logs += data }); child.stderr.on("data", data => { logs += data })
     for (let i = 0; i < 300; i++) {
       if (child.exitCode !== null) throw new Error(logs)
@@ -104,7 +93,7 @@ test("standalone product gateway executes real librarian flows, publishes before
     body: JSON.stringify({ _tag: "Request", id: 1, tag: "List", payload: { _tag: "flows" }, headers: [] }) + "\n" })
   assert.match(await unauthorized.text(), /Unauthorized|unauthorized/)
   const list = await rpc("List", { _tag: "flows" })
-  assert.deepEqual(list.items.map(item => item.flowId).sort(), ["librarian/history", "librarian/wiki"])
+  assert.deepEqual(list.items.map(item => item.flowId), ["librarian/history"])
   const bridgeRequest = { protocol: "smithers.flow-runtime/v1", operation: "launch", applicationRequestId: "product-host-bridge",
     ownerGeneration: 7, attempt: 1, runtimeArtifactDigest: artifactDigest, sourceRevision: sourceHead,
     flowId: "librarian/history", payload: { repo: "fixture/demo", _librarian: { kind: "history" } } }
@@ -129,11 +118,6 @@ test("standalone product gateway executes real librarian flows, publishes before
     headers: { authorization: "Bearer fixture", "content-type": "application/json" },
     body: JSON.stringify({ ...bridgeRequest, protocol: "smithers.flow-runtime/v2" }) })
   assert.equal(incompatible.status, 400)
-  const wiki = await run("wiki")
-  assert.equal(wiki.status, "completed", logs)
-  assert.equal(published.sourceHead, sourceHead)
-  assert.equal(published.pages.length, 2)
-  assert.match(published.pages[1].body, /README.md/)
   // Production workspaces can have a detached source commit after provisioning.
   git(root, "checkout", "--detach", sourceHead)
   const history = await run("history")
@@ -141,11 +125,8 @@ test("standalone product gateway executes real librarian flows, publishes before
   assert.equal(git(root, "rev-parse", "mythical^{tree}"), git(root, "rev-parse", "main^{tree}"))
   assert.equal(git(root, "rev-parse", "HEAD"), sourceHead)
   assert.match(git(root, "notes", "--ref=mythical", "show", "mythical"), new RegExp(sourceHead))
-  assert.equal((await run("wiki", "someone/else")).status, "failed")
-  failPublication = true
-  assert.equal((await run("wiki")).status, "failed", "unpublished Wiki must not report completion")
+  assert.equal((await run("history", "someone/else")).status, "failed")
   await stop(); await start()
-  assert.equal((await settled(wiki.runId)).status, "completed")
   assert.equal((await settled(history.runId)).status, "completed")
   assert.ok((await readFile(join(stateRoot, ".flows", "control.db"))).length > 0)
   await assert.rejects(readFile(join(root, ".flows", "control.db")), { code: "ENOENT" })

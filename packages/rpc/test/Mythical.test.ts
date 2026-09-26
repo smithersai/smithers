@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import {
   isSettledItemState,
   MYTHICAL_ROUTES,
+  MythicalWikiSchema,
   MythicalEventSchema,
   MythicalLaneSchema,
   MythicalLaneSubmissionSchema,
@@ -89,7 +90,17 @@ const snapshot = {
     }
   ],
   limits: { maxParallel: 2 },
-  updatedAt: "2026-09-25T12:00:00Z"
+  updatedAt: "2026-09-25T12:00:00Z",
+  wiki: {
+    state: "refreshing",
+    commit: "3".repeat(40),
+    publishedCommit: "4".repeat(40),
+    publishedAt: "2026-09-25T11:00:00Z",
+    pages: 5,
+    edited: 1,
+    attempt: 1,
+    runId: "run-wiki"
+  }
 }
 
 describe("the mythical stack contract", () => {
@@ -141,6 +152,14 @@ describe("the mythical stack contract", () => {
     }
     expect(MythicalLaneSubmissionSchema.parse(submission)).toEqual(submission)
     expect(MythicalLaneSubmissionSchema.safeParse({ ...submission, source: "HEAD" }).success).toBe(false)
+  })
+
+  test("the wiki decodes in each state and refuses any other", () => {
+    for (const state of ["refreshing", "current", "stale", "failed"]) {
+      expect(MythicalWikiSchema.parse({ state, pages: 0, edited: 0, attempt: 0 }).state).toBe(state)
+    }
+    expect(MythicalWikiSchema.safeParse({ state: "done", pages: 0, edited: 0, attempt: 0 }).success).toBe(false)
+    expect(mythicalRoute("wiki", "o", "r")).toBe("/api/repos/o/r/mythical/wiki")
   })
 
   test("routes fill owner, repository and item", () => {

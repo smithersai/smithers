@@ -43,9 +43,6 @@ type RepoGatewayHandler struct {
 	PushTokens interface {
 		Mint(context.Context, string, string, services.GatewayPushTokenInput) (services.GatewayPushTokenResult, error)
 	}
-	WikiPublisher interface {
-		Publish(context.Context, string, string, services.GatewayWikiPublishInput) (services.GatewayWikiPublishResult, error)
-	}
 }
 
 // MintPushToken handles POST /api/gateways/{gatewayID}/push-token.
@@ -72,31 +69,6 @@ func (h *RepoGatewayHandler) MintPushToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	pkgerrors.WriteJSON(w, http.StatusCreated, result)
-}
-
-// PublishWiki accepts only this gateway's repository-scoped publication.
-func (h *RepoGatewayHandler) PublishWiki(w http.ResponseWriter, r *http.Request) {
-	if h.WikiPublisher == nil {
-		pkgerrors.WriteError(w, pkgerrors.Internal("gateway wiki publication unavailable"))
-		return
-	}
-	var input services.GatewayWikiPublishInput
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20))
-	if err := decoder.Decode(&input); err != nil {
-		pkgerrors.WriteError(w, pkgerrors.BadRequest("invalid wiki publication request"))
-		return
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		pkgerrors.WriteError(w, pkgerrors.BadRequest("wiki publication must contain one JSON object"))
-		return
-	}
-	result, err := h.WikiPublisher.Publish(r.Context(), chi.URLParam(r, "gatewayID"), bearerToken(r.Header.Get("Authorization")), input)
-	if err != nil {
-		writeRouteError(w, r, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	pkgerrors.WriteJSON(w, http.StatusOK, result)
 }
 
 // PostRepoGateway handles POST /api/repos/{owner}/{repo}/gateway.

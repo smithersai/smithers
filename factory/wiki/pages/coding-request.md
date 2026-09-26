@@ -4,7 +4,7 @@
 
 ## Make each stage observable
 
-The request composes visible native children in this order: verified wiki and first planning, source admission, disposable POC, source admission again, then a coordinator that refreshes wiki, plans from retained feedback, admits the prepared source and runs bounded correction. `PrepareWithWiki` may reuse exact previously supported pages; a refresh is still a real durable child with its own receipt.
+The request composes visible native children in this order: first planning, source admission, disposable POC, source admission again, then a coordinator that plans from retained feedback, admits the prepared source and runs bounded correction. Planning reads the fresh published wiki pages a stack request carries; it does not refresh the wiki.
 
 The complete `Poc` result remains in that child's durable output. Only its measured feedback is passed into second planning. This is a saved file-level source prototype marked `drafted-unvalidated`; the request does not claim that the prototype compiled, ran tests or produced an executable application preview. The production implementation starts independently of the discarded proposal.
 

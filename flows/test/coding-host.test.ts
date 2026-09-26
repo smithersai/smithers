@@ -26,12 +26,17 @@ test("the repository default and a landing binding select the coding routes", as
   assert.deepEqual(configuredCodingRoutes({ planning, landing }), [
     { name: "coding/request", capability: "coding-request/v1" },
     { name: "coding/vibe", capability: "coding-vibe/v1" },
-    { name: "coding/verify", capability: "coding-verify/v1" }
+    { name: "coding/verify", capability: "coding-verify/v1" },
+    { name: "coding/wiki", capability: "coding-wiki/v1" }
   ])
   assert.deepEqual(configuredCodingRoutes({ planning }), [
     { name: "coding/request", capability: "coding-request/v1" },
-    { name: "coding/verify", capability: "coding-verify/v1" }
+    { name: "coding/verify", capability: "coding-verify/v1" },
+    { name: "coding/wiki", capability: "coding-wiki/v1" }
   ])
+  // A project without a wiki registers no wiki route.
+  assert.deepEqual(configuredCodingRoutes({ planning: { ...planning, wiki: false } }).map(route => route.name),
+    ["coding/request", "coding/verify"])
   assert.deepEqual(configuredCodingRoutes({ landing }), [])
 })
 

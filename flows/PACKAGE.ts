@@ -148,7 +148,7 @@ const codingRuntime = Smithers.NodeTest({
     Smithers.file("//flows/test/coding-steering.test.ts"), Smithers.file("//flows/test/coding-request-coordinator.test.ts"),
     Smithers.file("//flows/test/coding-correction-stall.test.ts"),
     Smithers.file("//flows/test/coding-host-policy.test.ts"), Smithers.file("//flows/test/coding-wiki-registry.test.ts"),
-    Smithers.file("//flows/test/coding-create-flow-registry.test.ts"), Smithers.file("//flows/test/coding-jev-check.test.ts"),
+    Smithers.file("//flows/test/coding-create-flow-registry.test.ts"), Smithers.file("//flows/test/coding-jev-check.test.ts"), Smithers.file("//flows/test/coding-wiki-memory.test.ts"),
     Smithers.file("//flows/test/coding-catalog-refresh.test.ts"),
     Smithers.file("//flows/test/coding-vibe-evidence.test.ts"), Smithers.file("//flows/test/coding-vibe-admission.test.ts"),
     Smithers.file("//flows/test/coding-landing.test.ts"), Smithers.file("//flows/test/coding-landing-config.test.ts"), Smithers.file("//flows/test/coding-vibe-landing.test.ts"),

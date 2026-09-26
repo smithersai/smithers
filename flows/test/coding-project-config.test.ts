@@ -23,7 +23,7 @@ test("repository coding project decodes with registered flows, real source paths
     ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
   const project = await Effect.runPromise(loadProject(root, undefined).pipe(Effect.provide(platform)))
   assert.ok(project)
-  assert.equal(project.wiki, false)
+  assert.equal(project.wiki, true)
   assert.ok(project.pages)
   assert.ok(project.wikiOutput)
   assert.equal(project.implementation, "coding/implementation")
@@ -45,6 +45,9 @@ test("repository coding project decodes with registered flows, real source paths
     assert.ok(page.inputs.length > 0, `Page needs source evidence: ${page.id}`)
     for (const input of [page.document, ...page.inputs]) {
       assert.ok((await stat(resolve(root, input))).isFile(), `Wiki source must be a file: ${input}`)
+      // Generated projections rewrite whole regions on unrelated changes, so
+      // their line excerpts drift; a page reads the hand-written owner instead.
+      assert.ok(!/^\.smithers\/[^/]+\.json$/.test(input), `${page.id}: read the owning source, not the generated projection ${input}`)
     }
     const sources = await Promise.all([...new Set([page.document, ...page.inputs])].map(async path => ({
       path, text: await readFile(resolve(root, path), "utf8"), digest: "size-validation"

@@ -26,6 +26,7 @@ import { memoryLayer, type MemoryOptions } from "./planning-memory.ts"
 import { declineLayer, DraftPlan, planningPolicy, PreparePlan, ReviewRequest } from "./planning.ts"
 import { stackBaseLayer } from "./stack.ts"
 import { verifyRegistration } from "./verify.ts"
+import { wikiRefreshRegistration } from "./wiki-route.ts"
 import { evidenceOnly } from "./planning-authority.ts"
 import { requestRegistration } from "./request.ts"
 import { sourceAdmission } from "./source-admission.ts"
@@ -101,7 +102,9 @@ export const configuredCodingRoutes = (options: Pick<Options, "planning" | "land
   ...(options.planning === undefined ? [] : [{ name: "coding/request", capability: "coding-request/v1" }]),
   ...(options.planning === undefined || options.landing === undefined ? [] : [{ name: "coding/vibe", capability: "coding-vibe/v1" }]),
   // The mythical stack verifies rebased candidates with the same checks.
-  ...(options.planning === undefined ? [] : [{ name: "coding/verify", capability: "coding-verify/v1" }])
+  ...(options.planning === undefined ? [] : [{ name: "coding/verify", capability: "coding-verify/v1" }]),
+  // The stack service refreshes the repository wiki the project declares.
+  ...(options.planning?.wiki === true ? [{ name: "coding/wiki", capability: "coding-wiki/v1" }] : [])
 ]
 
 const configured = (options: Options) => {
@@ -192,8 +195,10 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     const wikiEnabled = options.planning?.wiki === true
     const reviewerPolicy = !wikiEnabled ? undefined : yield* runningWikiPolicy
     const wikiOutput = !wikiEnabled ? undefined : yield* separateWikiOutput(options.repositoryPath, options.planning!.wikiOutput!)
+    // No per-workspace identity (the gateway is the binding): the stack carries
+    // reviews from one refresh workspace to the next.
     const wikiReviewer = !wikiEnabled ? undefined : Digest.canonical({ policy: options.planning!.reviewer,
-      model: effectiveSeats(options)["wiki/reviewer"] ?? options.wikiModel ?? options.implementationModel, gateway: options.gatewayId, hostPolicy: reviewerPolicy })
+      model: effectiveSeats(options)["wiki/reviewer"] ?? options.wikiModel ?? options.implementationModel, hostPolicy: reviewerPolicy })
     const wikiOptions = !wikiEnabled ? undefined : { ...options.planning!, pages: options.planning!.pages!, wikiOutput: wikiOutput!,
       repositoryPath: options.repositoryPath, reviewer: wikiReviewer!, hostPolicy: reviewerPolicy!, evaluator }
     const repositoryBundle = yield* runningRepositoryPolicy
@@ -207,8 +212,8 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     ).pipe(Layer.provide(native.layerRegistry(options.repositoryPath)))
     const request = options.planning === undefined ? Layer.empty : Layer.mergeAll(
       memoryLayer({ ...options.planning, ...(wikiOutput === undefined ? {} : { wikiOutput }), repositoryPath: options.repositoryPath }, fs),
-      preparationLayers(wikiEnabled), prototypeRegistration,
-      ...(wikiOptions === undefined ? [] : [planningWikiLayers(wikiOptions, fs),
+      preparationLayers, prototypeRegistration,
+      ...(wikiOptions === undefined ? [] : [planningWikiLayers(wikiOptions, fs), wikiRefreshRegistration(wikiOptions, fs),
         wikiCheckLayers({ ...wikiOptions, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment })]),
       planningPolicy, declineLayer, Interpreter.layer(PreparePlan), HumanTask.layer, correctionLayers, sourceAdmission, stackBaseLayer, requestRegistration, feedbackLayer,
       verifyRegistration,

@@ -52,12 +52,29 @@ export const Plan = Schema.Struct({
   changes: Schema.Array(Change).check(Schema.isMinLength(1))
 })
 export type Plan = typeof Plan.Type
+/**
+ * The repository wiki the stack service published, handed to a stack request
+ * so its lane plans with it instead of reviewing the pages again. Planning
+ * keeps only the pages whose inputs still hash to the lane's source.
+ */
+export const SuppliedWiki = Schema.Struct({
+  sourceRevision: Text.check(Schema.isMaxLength(256)),
+  pages: Schema.Array(Schema.Struct({
+    id: Text.check(Schema.isMaxLength(128)), title: Text.check(Schema.isMaxLength(512)),
+    kind: Schema.Literals(["current", "intent"]),
+    body: Text.check(Schema.isMaxLength(64 * 1024)), inputDigest: Text.check(Schema.isMaxLength(128))
+  })).check(Schema.isMaxLength(30))
+})
+export type SuppliedWiki = typeof SuppliedWiki.Type
 export const PlanningInput = Schema.Struct({
   prompt: Text.check(Schema.isMaxLength(32_768)),
   // Feedback is not evidence that a disposable POC was actually executed.
   // The second pass preserves both the bounded user feedback and retained POC
   // feedback (32,768 characters each), separated by two newlines.
-  feedback: Schema.String.check(Schema.isMaxLength(65_538))
+  feedback: Schema.String.check(Schema.isMaxLength(65_538)),
+  // Present (the pages, or null when none is published) only on a stack
+  // request: the host then never generates the wiki for this request.
+  wiki: Schema.optionalKey(Schema.NullOr(SuppliedWiki))
 })
 /** The mythical stack tip a request starts from: an exact commit the stack
  * service retained into this workspace's source ref. */
@@ -72,7 +89,9 @@ export const RequestInput = Schema.Struct({
   maxRounds: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(8))),
   // Start on the mythical stack: import this tip and plan on a fresh working
   // change on it (stack.ts). Absent, the request plans on the workspace as is.
-  base: Schema.optionalKey(StackBase)
+  base: Schema.optionalKey(StackBase),
+  // The stack's published wiki (null: none yet); see SuppliedWiki.
+  wiki: Schema.optionalKey(Schema.NullOr(SuppliedWiki))
 })
 export const Finding = Schema.Struct({
   owner: Id,

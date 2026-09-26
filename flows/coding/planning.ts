@@ -106,7 +106,10 @@ export const VerifyContext = Action.make("coding/verify-planning-context", {
 /** Every branch and human wait is visible in the existing execution graph. */
 export const PreparePlan = Flow.make("coding/PreparePlan", {
   payload: PlanningInput, success: Plan, error: Error,
-  body: input => GatherContext.call(input).pipe(Node.bindPlanned(context =>
+  body: planning => {
+    // The supplied wiki reaches the model once, as gathered memory notes.
+    const input = { prompt: planning.prompt, feedback: planning.feedback }
+    return GatherContext.call(planning).pipe(Node.bindPlanned(context =>
     ReviewRequest.call({ input, context }).pipe(Node.bindPlanned(review =>
       Node.branch(Node.succeed(review), {
         // A declined request plans nothing: the reason is the visible refusal.
@@ -122,6 +125,7 @@ export const PreparePlan = Flow.make("coding/PreparePlan", {
           Node.bindPlanned(draft => VerifyContext.call({ context, draft }).pipe(
             Node.bindPlanned(context => FinalizePlan.call({ input, context, draft })))))
       })))))
+  }
 })
 
 const invalid = (message: string) => new CodingError({ code: "invalid_plan", message })

@@ -26,9 +26,8 @@ test("supplied seats resolve each role through the configured provider:model", a
   } })
   const resolver = roleResolver(base, "openai:test")
   for (const role of roles) assert.equal((await Effect.runPromise(resolver.resolve(role))).id, role)
-  assert.equal((await Effect.runPromise(resolver.resolve("wiki/reviewer"))).id, "wiki/reviewer")
   await Effect.runPromise(resolver.resolve("unrelated"))
-  assert.deepEqual(calls, ["openai:test", "openai:test", "openai:test", "openai:test", "unrelated"])
+  assert.deepEqual(calls, ["openai:test", "openai:test", "unrelated"])
 })
 
 test("environment model/default, native credential resolution, and missing/invalid models", async () => {
@@ -94,7 +93,7 @@ test("record opt-in uses supplied live seats and never persists failed provider 
   let calls = 0
   const base = SeatResolver.make({ resolve: id => Effect.succeed({ id, modelId: "test", contextWindowTokens: 10000,
     route: { prepare: () => Effect.die("unused") }, model: Model.make({ stream: () => { calls++; return Stream.fromIterable(events) } }) }) })
-  const seat = await Effect.runPromise(roleResolver(base, options.model, options).resolve(roles[2]))
+  const seat = await Effect.runPromise(roleResolver(base, options.model, options).resolve(roles[1]))
   assert.deepEqual(await collect(seat.model), events)
   assert.equal(calls, 1)
   const failed = transcriptModel(directory, Model.make({ stream: () => Stream.fail(new ModelError({ code: "transport", message: "offline" })) }))

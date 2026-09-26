@@ -68,7 +68,7 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 		sum := sha256.Sum256(content)
 		flows := []string{"coding/dispatch"}
 		if family == "librarian" {
-			flows = []string{"librarian/history", "librarian/wiki"}
+			flows = []string{"librarian/history"}
 		}
 		hosts[family] = map[string]any{"executable": name, "sha256": hex.EncodeToString(sum[:]), "flows": flows}
 	}

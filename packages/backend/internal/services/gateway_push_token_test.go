@@ -15,11 +15,12 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type gatewayPushStore struct {
 	*mockWikiQuerier
-	gatewayWikiUser
+	gatewayPushUser
 	sandboxHelperTokenStore
 	rate func(context.Context, db.ConsumeSearchRateLimitTokenParams) (db.ConsumeSearchRateLimitTokenRow, error)
 }
@@ -34,12 +35,19 @@ func (a *gatewayPushAudit) Log(_ context.Context, event AuditEvent) {
 	a.events = append(a.events, event)
 }
 
-type gatewayPushCredentials struct{ gatewayWikiCredentials }
+type gatewayPushUser struct{}
 
-func (g gatewayPushCredentials) AuthorizeRelay(ctx context.Context, id, token string) (RepoGatewayRelayTarget, error) {
-	target, err := g.gatewayWikiCredentials.AuthorizeRelay(ctx, id, token)
-	target.GatewayID = "gateway"
-	return target, err
+func (gatewayPushUser) GetUserByIDNotDeleted(context.Context, int64) (db.User, error) {
+	return db.User{ID: 2, Username: "collaborator", IsActive: true}, nil
+}
+
+type gatewayPushCredentials struct{}
+
+func (gatewayPushCredentials) AuthorizeRelay(_ context.Context, id, token string) (RepoGatewayRelayTarget, error) {
+	if id != "gateway" || token != "operator" {
+		return RepoGatewayRelayTarget{}, pkgerrors.Unauthorized("invalid gateway credentials")
+	}
+	return RepoGatewayRelayTarget{GatewayID: "gateway", UserID: 2, RepositoryID: 42}, nil
 }
 
 func TestGatewayPushToken_MintRefusalsAndGitLifecycle(t *testing.T) {

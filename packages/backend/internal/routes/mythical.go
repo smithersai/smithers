@@ -25,6 +25,7 @@ type MythicalRouteService interface {
 	SubmitLane(ctx context.Context, repositoryID, userID int64, input services.MythicalLaneSubmission) (services.MythicalLaneReceipt, error)
 	SetMaxParallel(ctx context.Context, repositoryID int64, maxParallel int32) error
 	RetryItem(ctx context.Context, repositoryID int64, itemID string) (services.MythicalItemView, error)
+	RequestWiki(ctx context.Context, repositoryID int64) error
 }
 
 // MythicalHandler serves /api/repos/{owner}/{repo}/mythical: the stack
@@ -254,4 +255,27 @@ func (h *MythicalHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkgerrors.WriteJSON(w, http.StatusAccepted, item)
+}
+
+// Wiki requests a wiki refresh now, or a retry of a failed one, and answers
+// the snapshot showing the request. The stack worker does the work.
+func (h *MythicalHandler) Wiki(w http.ResponseWriter, r *http.Request) {
+	if _, err := requireRouteUser(r); err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	repoCtx, ok := h.repository(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Service.RequestWiki(r.Context(), repoCtx.Repository.ID); err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	view, err := h.snapshot(r, repoCtx)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusAccepted, view)
 }

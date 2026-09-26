@@ -56,11 +56,17 @@ export const factory = S.Factory({
     "issue.labeled:smithers": { flow: "implement", description: "Implement an issue labeled smithers" },
     "change.opened": { flow: "review", description: "Review every Change" },
     "change.updated": { flow: "review", description: "Review every Change" },
+    // The stack service folds main after every landing and GitHub main
+    // pull, then refreshes the wiki on the folded tip (coding/wiki); these
+    // two rows declare that work, which the service runs exactly once.
     "change.landed": {
-      flow: ["wiki", "history.fold", "improve.mine"],
-      description: "Regenerate the wiki, fold main into the mythical history, mine the landing"
+      flow: ["history.fold", "coding/wiki", "improve.mine"],
+      description: "Fold main into the mythical history, refresh the wiki, mine the landing"
     },
-    "github.push:main": { flow: "history.fold", description: "Fold outside merges into the mythical history" },
+    "github.push:main": {
+      flow: ["history.fold", "coding/wiki"],
+      description: "Fold outside merges into the mythical history and refresh the wiki"
+    },
     "schedule:0 9 * * 1-5": { flow: "review", description: "Weekday morning review of main" },
     "nomination": {
       flow: "factory.bootstrap",

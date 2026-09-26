@@ -422,7 +422,17 @@ type mythicalProjection struct {
 // and wakes the worker. A projection of an older generation changes nothing.
 func (s *MythicalService) ProjectFlowRuntime(ctx context.Context, update flowdispatch.ProjectionUpdate) error {
 	var projection mythicalProjection
-	if json.Unmarshal(update.Checkpoint.Projection, &projection) != nil || projection.Kind != mythicalBindingKind {
+	if json.Unmarshal(update.Checkpoint.Projection, &projection) != nil {
+		return nil
+	}
+	if projection.Kind == mythicalWikiBindingKind {
+		var wiki mythicalWikiProjection
+		if json.Unmarshal(update.Checkpoint.Projection, &wiki) != nil {
+			return nil
+		}
+		return s.projectWiki(ctx, update, wiki)
+	}
+	if projection.Kind != mythicalBindingKind {
 		return nil
 	}
 	id, err := uuid.Parse(projection.ItemID)
@@ -1039,8 +1049,13 @@ func (st *mythicalItemStep) start(ctx context.Context, item db.MythicalItem) (*d
 	if err != nil {
 		return mythicalLater(item, "the stack tip could not reach the lane: "+err.Error(), st.now), false, nil
 	}
-	payload, _ := json.Marshal(map[string]any{"prompt": st.prompt(item, next.Attempt), "maxRounds": 3,
-		"base": map[string]string{"commitId": r.row.TipCommit, "ref": ref}})
+	request := map[string]any{"prompt": st.prompt(item, next.Attempt), "maxRounds": 3,
+		"base": map[string]string{"commitId": r.row.TipCommit, "ref": ref}}
+	// The lane plans with the published wiki; it never reviews the pages again.
+	if wiki, ok := s.suppliedWiki(ctx, r.row.RepositoryID); ok {
+		request["wiki"] = wiki
+	}
+	payload, _ := json.Marshal(request)
 	next.State, next.Reason, next.NextAttemptAt = "running", "", pgtype.Timestamptz{}
 	saved, err := st.commit(ctx, next, "request", "coding/request", payload)
 	if err == nil {
@@ -1491,6 +1506,9 @@ func NewMythicalFlowHostTargetResolver(service *MythicalService) *MythicalFlowHo
 }
 
 func (resolver *MythicalFlowHostTargetResolver) ResolveFlowHostTarget(ctx context.Context, target flowruntime.FlowRuntimeTarget) (flowhost.Authority, error) {
+	if resolver != nil && resolver.service != nil && target.BindingKind == mythicalWikiBindingKind {
+		return resolver.resolveWikiTarget(ctx, target)
+	}
 	if resolver == nil || resolver.service == nil || target.BindingKind != mythicalBindingKind {
 		return flowhost.Authority{}, mythicalFlowFailure{code: "runtime_target_unsupported"}
 	}

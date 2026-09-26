@@ -33,7 +33,8 @@ export const Coordinate: CoordinateFlow = Flow.make("coding/CoordinateRequest", 
   payload: Cursor, success: RequestResult, error: PrepareRequest.errorSchema,
   maxRounds: maximumPlanningPasses,
   body: cursor => (cursor.preparedPlan === undefined
-    ? PrepareRequest.child({ prompt: cursor.prompt, feedback: cursor.feedback }) : Node.succeed(cursor.preparedPlan)).pipe(
+    ? PrepareRequest.child({ prompt: cursor.prompt, feedback: cursor.feedback, ...(cursor.wiki === undefined ? {} : { wiki: cursor.wiki }) })
+    : Node.succeed(cursor.preparedPlan)).pipe(
     // bindPlanned exposes a reference and permits independent descendants.
     // Explicit sequencing makes each entire feedback subtree wait for the
     // referenced producer, even though the drain payload is only a boundary.
@@ -67,11 +68,12 @@ export default Flow.make("coding/Request", {
   effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
   payload: RequestInput, success: RequestResult, error: PrepareRequest.errorSchema,
   body: input => {
-    const prepare = PrepareRequest.child({ prompt: input.prompt, feedback: input.feedback ?? "" })
+    const wiki = input.wiki === undefined ? {} : { wiki: input.wiki }
+    const prepare = PrepareRequest.child({ prompt: input.prompt, feedback: input.feedback ?? "", ...wiki })
     // A stack request first stands on a fresh working change on the tip.
     return (input.base === undefined ? prepare : admitStackBase(input.base).pipe(Node.andThen(prepare))).pipe(
       Node.bindPlanned(plan => AdmitSource.call({ plan })),
-      Node.bindPlanned(preparedPlan => Coordinate.child({ prompt: input.prompt, feedback: input.feedback ?? "",
+      Node.bindPlanned(preparedPlan => Coordinate.child({ prompt: input.prompt, feedback: input.feedback ?? "", ...wiki,
         maxRounds: input.maxRounds ?? 3, revision: 0, preparedPlan }))
     )
   }

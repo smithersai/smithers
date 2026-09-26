@@ -569,7 +569,6 @@ func buildRouter(
 		// still has to terminate browser preflights before gateway-token auth.
 		r.Group(func(r chi.Router) {
 			r.Use(cors.Handler(apiCORS))
-			r.Post("/api/gateways/{gatewayID}/wiki-pages", repoGatewayHandler.PublishWiki)
 			r.Post("/api/gateways/{gatewayID}/push-token", repoGatewayHandler.MintPushToken)
 			r.With(gateWorkflows).Put("/api/gateways/{gatewayID}/repository-jobs/{job}", repoGatewayHandler.PutRepositoryJob)
 			r.With(gateWorkflows).Put("/api/gateways/{gatewayID}/repository-jobs/{job}/trials/{requestID}", repoGatewayHandler.PutRepositoryJobTrial)
@@ -1209,6 +1208,7 @@ func buildRouter(
 					r.With(adminRepo...).Put("/mythical/config", extras.Mythical.Config)
 					r.With(writeRepo...).Post("/mythical/items/{id}/retry", extras.Mythical.Retry)
 					r.With(writeRepo...).Put("/mythical/lanes", extras.Mythical.Lanes)
+					r.With(writeRepo...).Post("/mythical/wiki", extras.Mythical.Wiki)
 				}
 
 				r.With(writeRepo...).Post("/statuses/{sha}", commitStatusHandler.CreateCommitStatus)

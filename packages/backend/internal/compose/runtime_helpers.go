@@ -52,9 +52,6 @@ var apiCSRFExemptRoutes = []string{
 	// include WebSocket/non-JSON traffic, so CSRF does not apply.
 	"/api/gateways/{gatewayID}",
 	"/api/gateways/{gatewayID}/*",
-	// Publication is a separately registered POST route using the same gateway
-	// bearer authority. Name it explicitly for the route coverage contract.
-	"/api/gateways/{gatewayID}/wiki-pages",
 	// Push-token minting and repository-job reports are separately registered
 	// writes under the same gateway bearer authority; they read no session
 	// cookie. Name them for the route coverage contract.

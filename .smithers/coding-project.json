@@ -1,5 +1,5 @@
 {
-  "wiki": false,
+  "wiki": true,
   "wikiOutput": "../smithers-coding-wiki",
   "reviewer": "smithers-public-engineering-v1",
   "implementation": "coding/implementation",
@@ -119,16 +119,14 @@
     {
       "id": "flows",
       "title": "Repository flows and coding host",
-      "purpose": "Describe flows, the workspace-bound coding/request host, registered checks, and declared acceptance targets.",
+      "purpose": "Explain how the configured coding host loads its project and which entry points it registers.",
       "kind": "current",
       "document": "factory/wiki/pages/coding-workspace.md",
       "inputs": [
         "flows/coding/host.md",
-        "flows/README.md",
-        "flows/PACKAGE.ts",
-        "flows/coding/serve.ts",
-        "flows/coding/request/flow.ts",
-        ".smithers/factory.json"
+        "flows/coding/project-config.md",
+        "flows/coding/verify/flow.ts",
+        "flows/coding/wiki/flow.ts"
       ],
       "related": [
         "packages",
@@ -140,41 +138,21 @@
         "flows/coding/host.md": [
           {
             "start": 1,
-            "end": 18
-          }
-        ],
-        ".smithers/factory.json": [
-          {
-            "start": 270,
-            "end": 305
+            "end": 5
           },
           {
-            "start": 367,
-            "end": 405
+            "start": 28,
+            "end": 36
+          },
+          {
+            "start": 51,
+            "end": 58
           }
         ],
-        "flows/README.md": [
+        "flows/coding/project-config.md": [
           {
             "start": 1,
-            "end": 25
-          }
-        ],
-        "flows/PACKAGE.ts": [
-          {
-            "start": 1,
-            "end": 43
-          },
-          {
-            "start": 136,
-            "end": 142
-          },
-          {
-            "start": 169,
-            "end": 176
-          },
-          {
-            "start": 269,
-            "end": 271
+            "end": 13
           }
         ]
       }
@@ -269,13 +247,6 @@
       "target": ".",
       "flow": "checks/lint",
       "tier": "fast",
-      "required": false
-    },
-    {
-      "id": "wiki",
-      "target": ".",
-      "flow": "checks/wiki",
-      "tier": "slow",
       "required": false
     }
   ],

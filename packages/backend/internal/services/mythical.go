@@ -70,6 +70,7 @@ type MythicalService struct {
 	github    mythicalGitHub
 	launcher  mythicalLauncher
 	lanes     mythicalLanes
+	wikiStore mythicalWikiStore
 	mu        sync.Mutex
 	backfills map[int64]time.Time
 }
@@ -355,8 +356,9 @@ func (s *MythicalService) run(ctx context.Context, row db.MythicalStack) mythica
 			short(r.tip), short(row.TipCommit))
 	}
 	if r.mainTip == row.LandedMain {
-		// The stack is current: this claim moves the items instead.
+		// The stack is current: this claim moves the items and the wiki instead.
 		s.advanceItems(ctx, r)
+		s.advanceWiki(ctx, r)
 		return mythicalOutcome{state: "active", clearPending: true}
 	}
 	return s.fold(ctx, r)

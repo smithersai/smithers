@@ -79,14 +79,16 @@ func TestLoadRejectsEscapedOrSubstitutedHost(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsMissingFlow(t *testing.T) {
-	path, hosts := bundledManifest(t)
-	librarian := hosts["librarian"]
-	librarian.Flows = []string{"librarian/wiki"}
-	hosts["librarian"] = librarian
-	writeManifest(t, path, hosts)
-	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "unexpected flows") {
-		t.Fatalf("incomplete flow host accepted: %v", err)
+func TestLoadRejectsMissingOrExtraFlow(t *testing.T) {
+	for _, flows := range [][]string{nil, {"librarian/history", "librarian/wiki"}} {
+		path, hosts := bundledManifest(t)
+		librarian := hosts["librarian"]
+		librarian.Flows = flows
+		hosts["librarian"] = librarian
+		writeManifest(t, path, hosts)
+		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "unexpected flows") {
+			t.Fatalf("flow host with %v accepted: %v", flows, err)
+		}
 	}
 }
 
@@ -133,9 +135,6 @@ func TestLoadManifestValidation(t *testing.T) {
 
 func TestLoadManifestAtSizeLimit(t *testing.T) {
 	path, hosts := bundledManifest(t)
-	librarian := hosts["librarian"]
-	librarian.Flows = []string{"librarian/wiki", "librarian/history"}
-	hosts["librarian"] = librarian
 	data, err := json.Marshal(rawManifest{Version: 1, Hosts: hosts})
 	if err != nil {
 		t.Fatal(err)
@@ -148,8 +147,8 @@ func TestLoadManifestAtSizeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(registry.Librarian.Flows, ",") != "librarian/history,librarian/wiki" {
-		t.Fatalf("flows were not canonicalized: %v", registry.Librarian.Flows)
+	if strings.Join(registry.Librarian.Flows, ",") != "librarian/history" {
+		t.Fatalf("unexpected librarian flows: %v", registry.Librarian.Flows)
 	}
 }
 

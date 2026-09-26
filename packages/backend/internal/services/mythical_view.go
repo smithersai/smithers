@@ -29,6 +29,7 @@ type MythicalStackView struct {
 	Limits     MythicalLimitsView   `json:"limits"`
 	LastError  string               `json:"lastError,omitempty"`
 	UpdatedAt  string               `json:"updatedAt,omitempty"`
+	Wiki       *MythicalWikiView    `json:"wiki,omitempty"`
 }
 
 type MythicalTipView struct {
@@ -130,6 +131,11 @@ func (s *MythicalService) Snapshot(ctx context.Context, repositoryID int64, slug
 		view.Tip = &MythicalTipView{ChangeID: stack.TipChange, CommitID: stack.TipCommit}
 	}
 	view.MainBehind = mainCommit != "" && stack.LandedMain != "" && mainCommit != stack.LandedMain
+	if wiki, err := q.GetMythicalWikiSummary(ctx, repositoryID); err == nil {
+		view.Wiki = mythicalWikiView(wiki, stack.LandedMain)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return view, err
+	}
 	if stack.UpdatedAt.Valid {
 		view.UpdatedAt = stack.UpdatedAt.Time.UTC().Format(time.RFC3339)
 	}

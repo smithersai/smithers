@@ -53,7 +53,9 @@ export const MYTHICAL_ROUTES = {
   /** `POST`: retry one blocked or rejected item. */
   retry: "/api/repos/{owner}/{repo}/mythical/items/{id}/retry",
   /** `PUT`: a coding host submits a lane result ({@link MythicalLaneSubmissionSchema}). */
-  lanes: "/api/repos/{owner}/{repo}/mythical/lanes"
+  lanes: "/api/repos/{owner}/{repo}/mythical/lanes",
+  /** `POST`: refresh the repository wiki now, or retry a failed refresh. */
+  wiki: "/api/repos/{owner}/{repo}/mythical/wiki"
 } as const
 
 /**
@@ -379,6 +381,44 @@ export const MythicalLaneSchema = z.object({
 export type MythicalLane = z.infer<typeof MythicalLaneSchema>
 
 /**
+ * The repository wiki the stack keeps current. After every fold the stack
+ * refreshes the pages its `.smithers/coding-project.json` declares
+ * (`coding/wiki` on a wiki workspace), reviews them against the folded
+ * source, and publishes the verified pages as `generated-<id>`.
+ *
+ * - `refreshing`: a refresh of `commit` is running.
+ * - `current`: the published pages were reviewed at `landedMain`.
+ * - `stale`: main moved past `publishedCommit`; a refresh is due.
+ * - `failed`: the refresh of `commit` failed (`error`); it is retried with
+ *   backoff, and the `wiki` route retries now.
+ *
+ * `pages` counts the published pages; `edited` those a person changed since,
+ * which a refresh keeps instead of overwriting.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const MythicalWikiSchema = z.object({
+  state: z.enum(["refreshing", "current", "stale", "failed"]),
+  commit: z.string().optional(),
+  publishedCommit: z.string().optional(),
+  publishedAt: z.string().optional(),
+  pages: z.number().int().nonnegative(),
+  edited: z.number().int().nonnegative(),
+  attempt: z.number().int().nonnegative(),
+  runId: z.string().optional(),
+  error: z.string().optional()
+})
+
+/**
+ * The decoded value accepted by {@link MythicalWikiSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type MythicalWiki = z.infer<typeof MythicalWikiSchema>
+
+/**
  * The snapshot `GET …/mythical` answers. `tip` is the bookmark's commit;
  * `landedMain` the last main commit folded into the stack; `mainBehind` is
  * true while main has moved past `landedMain`. `changes` are tip first,
@@ -401,7 +441,9 @@ export const MythicalStackSchema = z.object({
   lanes: z.array(MythicalLaneSchema),
   limits: z.object({ maxParallel: z.number().int().positive() }),
   lastError: z.string().optional(),
-  updatedAt: z.string().optional()
+  updatedAt: z.string().optional(),
+  /** Absent while the repository declares no wiki. */
+  wiki: MythicalWikiSchema.optional()
 })
 
 /**

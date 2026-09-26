@@ -13,7 +13,6 @@ import { agentRuntime } from "./runtime.ts"
 import { configured, roleResolver, type Options as SeatOptions } from "./seats.ts"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
-import wiki, { registration as wikiRegistration, type WikiReceipt } from "./wiki/flow.ts"
 import history, { registration as historyRegistration } from "./history/flow.ts"
 
 export { roleResolver } from "./seats.ts"
@@ -27,7 +26,6 @@ export interface Options extends SeatOptions {
   readonly artifactDigest: string
   readonly sourceRevision: string
   readonly ownerGeneration: number
-  readonly persistWiki: (receipt: WikiReceipt) => Promise<void | NonNullable<WikiReceipt["publishedPages"]>>
 }
 const sha = (value: string) => createHash("sha256").update(value).digest("hex")
 
@@ -37,7 +35,7 @@ export const catalog = async (options: Options) => {
   // checkout would dirty Git and change JJ's source snapshot during startup.
   const directory = join(options.stateRoot, "product", options.artifactDigest)
   await mkdir(directory, { recursive: true })
-  return Promise.all(([ ["wiki", wiki], ["history", history] ] as const).map(async ([kind, declaration]) => {
+  return Promise.all(([ ["history", history] ] as const).map(async ([kind, declaration]) => {
     const path = join(directory, `${kind}.json`)
     const source = JSON.stringify({ artifact: options.artifactDigest, flow: `librarian/${kind}` })
     try { await writeFile(path, source, { flag: "wx", mode: 0o444 }) } catch (error) {
@@ -54,7 +52,7 @@ export const catalog = async (options: Options) => {
       effects: Schema.decodeUnknownSync(Descriptor.EffectDeclaration)(Option.getOrThrow(Context.getOption(declaration.annotations, Flow.EffectEnvelope))),
       // The declaration says `modelInvocable: false` so a coding host scanning
       // this repository does not teach an agent a call it cannot serve. THIS
-      // host implements both actions, so its own catalog offers them.
+      // host implements the action, so its own catalog offers it.
       placement: Option.none(), modelInvocable: true, frontmatter: {},
       provenance: new Descriptor.Provenance({ source: "product", root: directory })
     })
@@ -75,8 +73,8 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
   ).pipe(Layer.provide(suppliedSeats === undefined ? NativeEquipment.layerSeatResolver(environment) : SeatResolver.layer(suppliedSeats))))
   return Layer.unwrap(Effect.promise(() => catalog(options)).pipe(Effect.map(entries => {
     const registry = Registry.layerFromDescriptors(entries.map(entry => entry.descriptor)).pipe(Layer.provide(platform.host))
-    // Both product flows are their own delegate: each module default-exports
-    // the `@smthrs/flow` flow it declares, so nothing is registered by name.
+    // The product flow is its own delegate: its module default-exports the
+    // `@smthrs/flow` flow it declares, so nothing is registered by name.
     const executableOptions: Executable.RefreshOptions = { delegates: [], refreshable: () => false, load: path => {
       const entry = entries.find(entry => entry.descriptor.path === path)
       return entry ? Effect.succeed({ default: entry.declaration }) : Effect.fail(new Error("Unknown product flow"))
@@ -90,7 +88,6 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
         ...built.executables.map(executable => executable.layer)
       ))
     )).pipe(
-      Layer.provideMerge(wikiRegistration(options.root, options.persistWiki, options.repo)),
       Layer.provideMerge(historyRegistration(options.root, options.repo)),
       agentRuntime, Layer.provide(registry), Layer.orDie
     )

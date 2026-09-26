@@ -238,7 +238,7 @@ func flowHostProductAPIURL(options runOptions, listenAddress string) (string, er
 
 func withMythicalTargets(base, mythical flowhost.TargetResolver) flowhost.TargetResolver {
 	return flowhost.TargetResolverFunc(func(ctx context.Context, target flowruntime.Target) (flowhost.Authority, error) {
-		if target.BindingKind == "mythical-item" {
+		if target.BindingKind == "mythical-item" || target.BindingKind == "mythical-wiki" {
 			return mythical.ResolveFlowHostTarget(ctx, target)
 		}
 		return base.ResolveFlowHostTarget(ctx, target)
