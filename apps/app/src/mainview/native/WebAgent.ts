@@ -92,7 +92,9 @@ const turnRefusal = (status: number, body: string): TurnRefusal | undefined => {
   try {
     const parsed: unknown = JSON.parse(body)
     if (
-      typeof parsed !== "object" || parsed === null || !("code" in parsed) || parsed.code !== expected ||
+      typeof parsed !== "object" || parsed === null || !("code" in parsed) ||
+      // The shared backend's authentication middleware uses `unauthorized`.
+      (parsed.code !== expected && !(status === 401 && parsed.code === "unauthorized")) ||
       !("message" in parsed) || typeof parsed.message !== "string" || parsed.message === ""
     ) {
       return undefined

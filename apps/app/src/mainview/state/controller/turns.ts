@@ -112,11 +112,11 @@ export const createTurnController = (
     if (store.session().draft === "" && draft !== "") {
       store.dispatch({ type: "composer.changed", actor: "user", draft })
     }
+    const label = identityProviderFor(ctx.services) === "github" ? "Sign in with GitHub" : "Sign in"
     store.dispatch({
       type: "message.appended", actor: "system",
-      text: "Sign in with GitHub to send this message. Your text is still here. You can keep using the controls and commands without sending a message."
-,
-      action: { flow: "auth.sign-in", label: "Sign in with GitHub" },
+      text: `${label} to send this message.`,
+      action: { flow: "auth.sign-in", label },
     })
   }
 
