@@ -774,6 +774,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/app/playwright.showcase.config.ts"
+      },
+      {
+        "kind": "file",
         "path": "apps/app/package.json"
       },
       {
@@ -845,6 +849,10 @@
       {
         "kind": "file",
         "path": "apps/app/playwright.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/playwright.showcase.config.ts"
       },
       {
         "kind": "file",

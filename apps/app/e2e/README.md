@@ -5,6 +5,7 @@
 | T1   | `pnpm --filter smithers-app test:e2e` | `playwright.config.ts` | `playwright/*.spec.ts`   |
 | T2   | `bun run test:e2e` (repository root) | `packaged/run.ts`      | `packaged/*.e2e.test.ts` |
 | Real | `pnpm --filter smithers-app test:e2e:real` | `scripts/run-real-e2e.ts` | `real/**/*.spec.ts` |
+| Showcase | `pnpm --dir apps/app showcase [id...]` | `playwright.showcase.config.ts` | `showcase/cases/*.case.ts` |
 
 T1 builds the SPA through `playwright/webserver.ts`, runs
 `scripts/browser-test-host.ts` on port 47311 with `SMITHERS_CHAT_STUB=1`,
@@ -25,6 +26,22 @@ stale-fixture report, or set `SMITHERS_E2E_RECOVER_STALE=1` to repair and
 continue explicitly. Failure logs, reports, and best-effort screenshots land
 under `test-results/electrobun-packaged/`. T2 currently requires macOS and
 network access to the public fixture remote.
+
+## The showcase (`showcase/`)
+
+One file per case, `showcase/cases/<id>.case.ts`, default-exporting
+`showcase({ id, order, title, summary, flows, run })`. `run` drives the T1
+host with the T1 fake-backend fixtures through `app` (open, slash, say, press,
+click, type, show, maximize) and `backend` (cloud, signedOut, json, route).
+The harness fails a case whose `flows` did not all actually run.
+
+`pnpm --dir apps/app showcase` records every case (`showcase <id>` records
+one), turns each video into a GIF, and rebuilds `showcase-out/index.html`
+with a coverage table over the flow registry (`showcase/coverage.ts`; its
+`UNAVAILABLE` list names what cannot run on this host). Recording needs
+`ffmpeg` and `gifski` (`brew install ffmpeg gifski`). `showcase-out/` is
+gitignored: the GIFs are several megabytes each and change on every
+recording. The PR browser tier runs the same cases without recording.
 
 ## The real tier (`real/`)
 

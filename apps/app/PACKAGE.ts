@@ -88,7 +88,8 @@ const check = Smithers.Typecheck({
     ...buildConfigs,
     Smithers.file("electrobun.config.ts"),
     Smithers.file("hutch.config.ts"),
-    Smithers.file("playwright.config.ts")
+    Smithers.file("playwright.config.ts"),
+    Smithers.file("playwright.showcase.config.ts")
   ],
   deps: [devkit],
   tsconfig: Smithers.file("tsconfig.json"),
@@ -181,7 +182,7 @@ const browserE2e = Smithers.NodeTest({
   timeout: "20m",
   srcs: [sources, componentSources, styleSources, harnessSources, suiteSources, ...buildConfigs,
     Smithers.file("playwright.config.ts"), Smithers.file("playwright.site.config.ts"), Smithers.file("playwright.graph.config.ts"),
-    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+    Smithers.file("playwright.showcase.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
   deps: [],
   env: { SMITHERS_CHAT_STUB: "1" },
   cwd

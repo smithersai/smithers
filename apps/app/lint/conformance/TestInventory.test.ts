@@ -10,6 +10,7 @@ import playwright from "../../playwright.config"
 import playwrightSite from "../../playwright.site.config"
 import playwrightReal from "../../playwright.real.config"
 import playwrightGraph from "../../playwright.graph.config"
+import playwrightShowcase from "../../playwright.showcase.config"
 
 const app = fileURLToPath(new URL("../../", import.meta.url))
 const root = fileURLToPath(new URL("../../../../", import.meta.url))
@@ -92,6 +93,7 @@ const prSteps = ciSteps(read("scripts/run-pr-e2e.mjs"))
 const playwrightStep = ["exec", "playwright", "test"]
 const siteStep = [...playwrightStep, "--config", "playwright.site.config.ts"]
 const graphStep = [...playwrightStep, "--config", "playwright.graph.config.ts"]
+const showcaseStep = [...playwrightStep, "--config", "playwright.showcase.config.ts"]
 const matches = (path: string, patterns: string | RegExp | readonly (string | RegExp)[]): boolean =>
   (Array.isArray(patterns) ? patterns : [patterns]).some((pattern) =>
     typeof pattern === "string" ? new Bun.Glob(pattern).match(path) : pattern.test(path))
@@ -113,6 +115,7 @@ const owners = (path: string): string[] => {
   if (scripts["test:e2e:packaged"] === "bun e2e/packaged/run.ts" && packaged.includes(path)) result.push("packaged native")
   if (realRunner && playwrightOwns(path, playwrightReal)) result.push("Playwright real")
   if (runsStep(prSteps, graphStep) && playwrightOwns(path, playwrightGraph)) result.push("Playwright graph")
+  if (runsStep(prSteps, showcaseStep) && playwrightOwns(path, playwrightShowcase)) result.push("Playwright showcase")
   return result
 }
 

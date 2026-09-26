@@ -45,3 +45,7 @@ playwright-report/
 
 # Bundled backend, toolchain, and database payloads
 .native/
+
+# Showcase recordings, page and failure context (pnpm showcase; regenerated on every run)
+showcase-out*/
+test-results-showcase/
