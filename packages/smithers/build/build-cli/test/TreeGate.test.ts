@@ -1,8 +1,50 @@
 import { Deferred, Effect, Fiber } from "effect"
 import { describe, expect, it } from "vitest"
 import * as TreeGate from "../src/internal/TreeGate.ts"
+import { takesExclusiveTreePermit } from "../src/PackageExec.ts"
 
 describe("whole-tree admission", () => {
+  it.each(["Generate", "Shell.Diff", "Changesets.Version", "Go.Generate", "Go.Lint"])(
+    "keeps a library rebuild outside the %s check snapshot and its cleanup",
+    (rule) =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const gate = yield* TreeGate.make(2)
+        const releaseSnapshot = yield* Deferred.make<void>()
+        const cleanupStarted = yield* Deferred.make<void>()
+        const releaseCleanup = yield* Deferred.make<void>()
+        const events: Array<string> = []
+        const checker = yield* gate(
+          takesExclusiveTreePermit({ rule, mode: "check" }),
+          Effect.gen(function*() {
+            events.push("snapshot")
+            yield* Deferred.await(releaseSnapshot)
+          }).pipe(Effect.ensuring(Effect.gen(function*() {
+            events.push("restore portals")
+            yield* Deferred.succeed(cleanupStarted, undefined)
+            yield* Deferred.await(releaseCleanup)
+          })))
+        ).pipe(Effect.forkScoped({ startImmediately: true }))
+        const build = yield* gate(
+          takesExclusiveTreePermit({ rule: "Shell.Build", mode: "execute" }),
+          Effect.sync(() => {
+            events.push("replace dist")
+          })
+        ).pipe(Effect.forkScoped({ startImmediately: true }))
+        // The peer must not replace a directory the check is still measuring,
+        // even though the check's generator itself writes only into scratch.
+        const duringSnapshot = [...events]
+        yield* Deferred.succeed(releaseSnapshot, undefined)
+        yield* Deferred.await(cleanupStarted)
+        const duringCleanup = [...events]
+        yield* Deferred.succeed(releaseCleanup, undefined)
+        yield* Fiber.join(checker)
+        yield* Fiber.join(build)
+        expect(duringSnapshot).toEqual(["snapshot"])
+        expect(duringCleanup).toEqual(["snapshot", "restore portals"])
+        expect(events).toEqual(["snapshot", "restore portals", "replace dist"])
+      })))
+  )
+
   it("admits a queued writer before a later reader", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const gate = yield* TreeGate.make(2)

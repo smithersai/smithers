@@ -2121,15 +2121,23 @@ describe("the whole-tree permit", () => {
     // candidate applier while their mode is `execute`, so a permit keyed on
     // write mode alone let them snapshot and revert the whole repository
     // beside a peer that was writing its own declared outputs.
-    for (const rule of ["Docs.Page", "Agent.Diff", "Agent.Pr"]) {
+    for (const rule of ["Docs.Page", "Agent.Diff", "Agent.Pr", "Git.Commit"]) {
       expect(takesExclusiveTreePermit({ rule, mode: "execute" })).toBe(true)
     }
-    // Every other guarded call site is reached only in write mode, and a
-    // reader must stay on the shared side or the executor loses its
-    // concurrency.
+    // Scratch checks census live ignored paths and restore escaping symlink
+    // targets too. A library rebuild must not race that census or rollback.
     expect(takesExclusiveTreePermit({ rule: "Generate", mode: "write" })).toBe(true)
-    expect(takesExclusiveTreePermit({ rule: "Generate", mode: "check" })).toBe(false)
+    for (const rule of ["Generate", "Shell.Diff", "Changesets.Version", "Go.Generate", "Go.Lint"]) {
+      expect(takesExclusiveTreePermit({ rule, mode: "check" })).toBe(true)
+    }
+    // An ordinary build remains shared; an overlay consumer uses the same
+    // scratch/portal bracket as a check and must exclude its peers.
     expect(takesExclusiveTreePermit({ rule: "Shell.Build", mode: "execute" })).toBe(false)
+    expect(takesExclusiveTreePermit({
+      rule: "Shell.Build",
+      mode: "execute",
+      overlays: [{ overlay: "//:patch", path: "input.txt", source: "patch.txt", digest: "patch-digest" }]
+    })).toBe(true)
     // Agent.Lint returns its report before it touches the applier in check
     // mode, and its fix mode is write mode, so it needs no special case.
     expect(takesExclusiveTreePermit({ rule: "Agent.Lint", mode: "check" })).toBe(false)

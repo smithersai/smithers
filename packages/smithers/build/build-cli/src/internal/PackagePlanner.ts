@@ -78,8 +78,9 @@ export const PACKAGE_EXECUTION_FORMAT = 3
  * @category execution
  * @since 0.1.0
  */
-export const takesExclusiveTreePermit = (node: Pick<PackageNode, "rule" | "mode">): boolean =>
-  node.mode === "write" || RulePolicy.of(node.rule).exclusive === true
+export const takesExclusiveTreePermit = (
+  node: Pick<PackageNode, "rule" | "mode"> & Partial<Pick<PackageNode, "overlays">>
+): boolean => node.mode === "write" || RulePolicy.of(node.rule).exclusive === true || (node.overlays?.length ?? 0) > 0
 
 /**
  * The placeholder a bundler build's key template carries where the graph
