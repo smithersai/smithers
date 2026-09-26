@@ -8,6 +8,7 @@
  * @since 0.1.0
  */
 import * as Flow from "@smthrs/flow/Flow"
+import * as Stall from "@smthrs/flow/Stall"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
@@ -16,6 +17,7 @@ import * as Compose from "./internal/Compose.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
+import * as Stalling from "./internal/Stalling.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -52,6 +54,11 @@ export interface Plan {
  * declares `maxRounds` rounds of one call per task and `maxRounds` reviews;
  * {@link run} performs the value-dependent short circuit.
  *
+ * `stall` ends the supervision once `stall.rounds` unaccepted rounds in a row
+ * left every task with the same outcome (`@smthrs/flow/Stall`): `stop` and
+ * `park` settle {@link Exhausted} with `stalled` set, `escalate` fails
+ * `PatternError` `stalled`.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -64,6 +71,7 @@ export interface MakeOptions<R = never> {
   readonly finalize: Member<R>
   readonly maxRounds: number
   readonly concurrency: number
+  readonly stall?: Stall.Options | undefined
 }
 
 /**
@@ -120,6 +128,7 @@ export interface RuntimeOptions<I, P extends Plan, Out, Review, Final, E, R, E2,
   }) => Effect.Effect<Final, E4, R4>
   readonly maxRounds: number
   readonly concurrency: number
+  readonly stall?: Stalling.RuntimeOptions<ReadonlyArray<Outcome<Out>>> | undefined
 }
 
 /**
@@ -135,8 +144,8 @@ export interface Completed<Final> {
 }
 
 /**
- * A supervision that ran out of rounds, or whose last review named nothing to
- * re-delegate. `finalize` is not called.
+ * A supervision that ran out of rounds, whose last review named nothing to
+ * re-delegate, or that stalled (`stalled` set). `finalize` is not called.
  *
  * @category models
  * @since 0.1.0
@@ -145,6 +154,7 @@ export interface Exhausted<Review> {
   readonly exhausted: true
   readonly rounds: number
   readonly review: Review
+  readonly stalled?: Stall.Stalled | undefined
 }
 
 /**
@@ -170,6 +180,10 @@ const retriable = (value: unknown): ReadonlyArray<string> => {
   const ids = value.retriable
   return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : []
 }
+
+/** A round's output signal: every task's latest outcome, without the round it ran in. */
+const unrounded = (results: unknown): unknown =>
+  (results as ReadonlyArray<Outcome<unknown>>).map(({ round: _round, ...outcome }) => outcome)
 
 const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
@@ -280,8 +294,16 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
   const maxRounds = options.maxRounds
   const concurrency = options.concurrency
   const names = workers.map(([name]) => name)
-  const captures = { maxRounds, concurrency, workers: names }
-  const { name, description } = Compose.label("supervisor", { workers: names, maxRounds, concurrency }, options)
+  const stall = Stalling.resolve("Supervisor", options.stall)
+  if (stall instanceof PatternError) throw stall
+  const captures = stall === undefined
+    ? { maxRounds, concurrency, workers: names }
+    : { maxRounds, concurrency, workers: names, stall }
+  const { name, description } = Compose.label(
+    "supervisor",
+    { workers: names, maxRounds, concurrency, stall: Stalling.labelOf(stall) },
+    options
+  )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const tasks = planned(input)
     const ids = tasks.map((task) => task.id)
@@ -394,7 +416,8 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
           round: number,
           previous: unknown,
           pending: Planned.Planned<ReadonlyArray<string>> | undefined,
-          latest: unknown
+          latest: unknown,
+          streaks: unknown
         ): Node.Node<unknown, unknown, R> =>
           Node.bindPlanned(
             delegate(round, previous, pending),
@@ -425,31 +448,49 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
                         const exhausted = (): Node.Node<unknown, unknown, R> =>
                           Node.succeed({ exhausted: true, rounds: round, review })
                         if (round >= maxRounds) return exhausted()
-                        const next = Node.map(
-                          Node.succeed(review),
-                          Node.capture(
-                            { ...captures, round, retriable: true },
-                            (value: unknown) => ids.filter((id) => retriable(value).includes(id))
+                        const redelegate = (carried: unknown): Node.Node<unknown, unknown, R> => {
+                          const next = Node.map(
+                            Node.succeed(review),
+                            Node.capture(
+                              { ...captures, round, retriable: true },
+                              (value: unknown) => ids.filter((id) => retriable(value).includes(id))
+                            )
                           )
-                        )
-                        return Node.bindPlanned(
-                          next,
-                          Node.capture({ ...captures, round }, (named: Planned.Planned<ReadonlyArray<string>>) =>
-                            Node.branch(Node.succeed(named), {
-                              if: Node.capture(
-                                { ...captures, round, retriable: true },
-                                (value: ReadonlyArray<string>) => value.length === 0
-                              ),
-                              then: exhausted,
-                              else: () => visit(round + 1, review, named, state.latest)
-                            }))
+                          return Node.bindPlanned(
+                            next,
+                            Node.capture({ ...captures, round }, (named: Planned.Planned<ReadonlyArray<string>>) =>
+                              Node.branch(Node.succeed(named), {
+                                if: Node.capture(
+                                  { ...captures, round, retriable: true },
+                                  (value: ReadonlyArray<string>) => value.length === 0
+                                ),
+                                then: exhausted,
+                                else: () => visit(round + 1, review, named, state.latest, carried)
+                              }))
+                          )
+                        }
+                        if (stall === undefined) return redelegate(streaks)
+                        // The round's results are the stall signal, compared
+                        // without the round each outcome ran in.
+                        return Stalling.guard(
+                          "Supervisor",
+                          stall,
+                          { ...captures, round },
+                          state.results,
+                          streaks as Stall.State,
+                          unrounded,
+                          {
+                            settle: (stalled) =>
+                              Node.succeed({ exhausted: true, rounds: round, review, stalled }),
+                            next: redelegate
+                          }
                         )
                       }
                     }
                   ))
               ))
           )
-        return visit(1, undefined, undefined, {})
+        return visit(1, undefined, undefined, {}, Stall.initial)
       })
     )
   }
@@ -508,7 +549,11 @@ export const run = <I, P extends Plan, Out, Review, Final, E, R, E2, R2, E3, R3,
       })
     )
   }
+  const stall = Stalling.resolve("Supervisor", options.stall)
+  if (stall instanceof PatternError) return Effect.fail(stall)
+  const signals = options.stall?.signals ?? ((results: ReadonlyArray<Outcome<Out>>) => ({ output: unrounded(results) }))
   return Effect.gen(function*() {
+    const observe = Stalling.tracker(stall, signals)
     const plan = yield* boss.plan(input)
     const tasks = validateTasks(plan)
     if (tasks instanceof PatternError) return yield* Effect.fail(tasks)
@@ -522,7 +567,7 @@ export const run = <I, P extends Plan, Out, Review, Final, E, R, E2, R2, E3, R3,
     const supervise = (
       pending: ReadonlyArray<Task>,
       round: number
-    ): Effect.Effect<Completed<Final> | Exhausted<Review>, E3 | E4, R2 | R3 | R4> =>
+    ): Effect.Effect<Completed<Final> | Exhausted<Review>, E3 | E4 | PatternError, R2 | R3 | R4> =>
       Effect.gen(function*() {
         const outcomes = yield* Effect.forEach(
           pending,
@@ -556,11 +601,15 @@ export const run = <I, P extends Plan, Out, Review, Final, E, R, E2, R2, E3, R3,
           const final = yield* boss.finalize({ plan, results, review, rounds: round, input })
           return { exhausted: false, rounds: round, final } satisfies Completed<Final>
         }
+        if (round === maxRounds) return { exhausted: true, rounds: round, review } satisfies Exhausted<Review>
+        const stalled = observe(results)
+        if (stalled !== undefined) {
+          if (stalled.on === "escalate") return yield* Effect.fail(Stalling.escalated("Supervisor", stalled.rounds))
+          return { exhausted: true, rounds: round, review, stalled } satisfies Exhausted<Review>
+        }
         const ids = retriable(review)
         const next = tasks.filter((task) => ids.includes(task.id))
-        if (next.length === 0 || round === maxRounds) {
-          return { exhausted: true, rounds: round, review } satisfies Exhausted<Review>
-        }
+        if (next.length === 0) return { exhausted: true, rounds: round, review } satisfies Exhausted<Review>
         return yield* supervise(next, round + 1)
       })
     return yield* supervise(tasks, 1)

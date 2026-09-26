@@ -517,3 +517,112 @@ describe("Loop.run", () => {
     expect(result).toEqual({ value: { done: false, iteration: 3 }, iterations: 3, exhausted: true })
   })
 })
+
+/** A body whose value never carries the iteration, so an idle round repeats it exactly. */
+const stuckBody = Flow.make("loop/stuck-body", {
+  payload: { input: Schema.Unknown, previous: Schema.Unknown, iteration: Schema.Number },
+  success: Schema.Struct({ done: Schema.Boolean, paths: Schema.Array(Schema.String) }),
+  error: Schema.String,
+  capabilities: ["loop/body"],
+  body: ({ iteration }) =>
+    Node.map(
+      glob.action.call({ pattern: `round-${iteration}/*.ts` }),
+      (found) => ({ done: false, paths: found.paths.length > 0 ? ["same.ts"] : [] })
+    )
+})
+
+describe("Loop stall", () => {
+  it("stops a declared ralph loop once its output repeats", async () => {
+    const loop = Loop.ralph({ body: stuckBody, maxIterations: 6, stall: { rounds: 2 } })
+    expect(loop._tag).toBe("loop(maxIterations=6, onMaxReached=return-last, stall=2/stop)")
+    const settled = await execute(
+      loop,
+      "seed",
+      "loop-stall-stop",
+      (pattern) => pattern === "round-1/*.ts" ? [] : ["x.ts"]
+    )
+
+    expect(settled).toEqual({
+      value: { done: false, paths: ["same.ts"] },
+      iterations: 3,
+      exhausted: false,
+      stalled: { _tag: "Stalled", signal: "output", rounds: 2, on: "stop" }
+    })
+    expect(globbed).toEqual(["round-1/*.ts", "round-2/*.ts", "round-3/*.ts"])
+  })
+
+  it("fails stalled under escalate, and leaves a moving loop alone", async () => {
+    const escalating = Loop.make({
+      body: stuckBody,
+      until: shallowUntil,
+      maxIterations: 4,
+      stall: { rounds: 3, on: "escalate" }
+    })
+    globbed.length = 0
+    answers = () => []
+    const failure = await Effect.runPromise(
+      escalating.execute({ input: "seed" }, { executionId: "loop-stall-escalate" }).pipe(
+        Effect.provide(services(escalating)),
+        Effect.scoped,
+        Effect.flip
+      ) as Effect.Effect<unknown, never, never>
+    )
+    expect(failure).toMatchObject({ code: "stalled" })
+    expect(globbed).toHaveLength(3)
+
+    const moving = Loop.ralph({ body, maxIterations: 2, stall: { rounds: 2 } })
+    expect(await execute(moving, "seed", "loop-stall-moving", () => [])).toEqual({
+      value: { done: false, paths: [], iteration: 2 },
+      iterations: 2,
+      exhausted: true
+    })
+  })
+
+  it("refuses a stall bound below two and spends one more plan level per iteration", () => {
+    expect(() => Loop.ralph({ body, maxIterations: 2, stall: { rounds: 1 } })).toThrow(PatternError)
+    expect(Effect.runSync(Effect.flip(Loop.runRalph("goal", {
+      maxIterations: 2,
+      stall: { rounds: 0 },
+      body: () => Effect.succeed(1)
+    })))).toMatchObject({ code: "invalid_decorator" })
+    // A stalling ralph iteration nests two levels, so 498 is its deepest bound.
+    expect(
+      Graph.nodes(
+        Graph.build(Loop.ralph({ body: shallowBody, maxIterations: 498, stall: { rounds: 2 } }), { input: "x" })
+      )
+        .length
+    ).toBeGreaterThan(0)
+    expect(() => Loop.ralph({ body, maxIterations: 499, stall: { rounds: 2 } })).toThrow(PatternError)
+  })
+
+  it("stops, parks or escalates the operational loop on a repeated signal", async () => {
+    const tree = (value: number) => ({ tree: String(Math.min(value, 2)) })
+    const stop = await Effect.runPromise(Loop.runRalph("goal", {
+      maxIterations: 9,
+      stall: { rounds: 2, on: "park", signals: tree },
+      body: ({ iteration }) => Effect.succeed(iteration)
+    }))
+    expect(stop).toEqual({
+      value: 3,
+      iterations: 3,
+      exhausted: false,
+      stalled: { _tag: "Stalled", signal: "tree", rounds: 2, on: "park" }
+    })
+
+    const checks = await Effect.runPromise(Effect.flip(Loop.run("goal", {
+      maxIterations: 9,
+      stall: { rounds: 3, on: "escalate", signals: () => ({ checks: ["lint"] }) },
+      body: ({ iteration }) => Effect.succeed(iteration),
+      until: () => Effect.succeed(false)
+    })))
+    expect(checks).toMatchObject({ code: "stalled", message: "Loop stalled: 3 rounds in a row changed nothing" })
+
+    const output = await Effect.runPromise(Loop.runRalph("goal", {
+      maxIterations: 9,
+      stall: { rounds: 2 },
+      body: () => Effect.succeed({ done: false })
+    }))
+    expect(output.stalled?.signal).toBe("output")
+    expect(output.iterations).toBe(2)
+  })
+})

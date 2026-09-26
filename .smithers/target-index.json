@@ -13639,6 +13639,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Stall.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/flow/src/WaitFor.ts"
       },
       {
@@ -14116,6 +14120,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/patterns/src/internal/Payload.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/internal/Stalling.ts"
       },
       {
         "kind": "file",

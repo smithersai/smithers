@@ -260,6 +260,10 @@ const statusLayer = Status.toLayer(({ attempt, id }) =>
 
 Three things make this the durable bound rather than a wall-clock one. The race records its winner under a name that carries the attempt, so a re-driven round reads the recorded outcome instead of racing again. The clock parks the execution rather than holding a fiber, so the bound outlives the process waiting on it. And the clock's branch answers `satisfied: false`, so a check that ran out of time costs the poll one attempt and nothing else: the round takes its declared interval and hands off to the next attempt exactly as an unsatisfied check does.
 
+## `Stall`
+
+`Stall` is the stall breaker round loops share. `Stall.policy({ rounds, on })` resolves `rounds` (at least two) and `on` (`stop`, the default, `park`, or `escalate`). `Stall.observe(policy, state, observation)` folds one round into the carried `State` and returns the next state with a `Stalled` verdict once one signal held for `rounds` rounds in a row. An observation reports any of `tree` (a tree fingerprint), `checks` (failing check ids, order ignored), and `output` (compared by the SHA-256 of its canonical JSON; a value with no canonical form is not compared). `Stall.initial` is the state before the first round. `State`, `Policy` and `Stalled` are schemas, so a trampoline carries the state in its payload and replay reads the same verdict. The loop decides what `on` means; `@smthrs/patterns` loops and the coding correction flow use it.
+
 ## `HumanTask`
 
 `HumanTask.action` is the declared `system/human-task` step: a typed question with re-asking and a deadline, built on `WaitFor`'s wait points and `DurableClock`.

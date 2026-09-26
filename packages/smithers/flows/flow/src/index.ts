@@ -75,6 +75,13 @@ export * as Interpreter from "./Interpreter.ts"
 export * as Poll from "./Poll.ts"
 
 /**
+ * The stall breaker: rounds whose tree, failing checks, or output held still.
+ *
+ * @since 1.0.0
+ */
+export * as Stall from "./Stall.ts"
+
+/**
  * Retry policy models and constructors.
  *
  * @since 0.1.0

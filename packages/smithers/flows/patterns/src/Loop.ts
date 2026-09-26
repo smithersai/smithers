@@ -19,6 +19,7 @@
  * @since 0.1.0
  */
 import * as Flow from "@smthrs/flow/Flow"
+import * as Stall from "@smthrs/flow/Stall"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import type * as Repetition from "@smthrs/plan/Repetition"
@@ -28,6 +29,7 @@ import * as Compose from "./internal/Compose.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
+import * as Stalling from "./internal/Stalling.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -56,6 +58,11 @@ export type OnMaxReached = Repetition.AtCeiling
  * runtime threshold over this loop, so two otherwise identical declarations
  * that differ in that threshold do not share a step key.
  *
+ * `stall` ends the loop once `stall.rounds` unsatisfied iterations in a row
+ * produced the same value (`@smthrs/flow/Stall`). `stop` and `park` settle
+ * {@link Result} with `stalled` set; `escalate` fails `PatternError`
+ * `stalled`.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -67,6 +74,7 @@ export interface MakeOptions<R = never> {
   readonly maxIterations: number
   readonly onMaxReached?: OnMaxReached | undefined
   readonly captures?: Readonly<Record<string, unknown>> | undefined
+  readonly stall?: Stall.Options | undefined
 }
 
 /**
@@ -96,6 +104,7 @@ export interface RuntimeOptions<I, A, E, R, E2, R2> {
     | undefined
   readonly maxIterations: number
   readonly onMaxReached?: OnMaxReached | undefined
+  readonly stall?: Stalling.RuntimeOptions<A> | undefined
 }
 
 /**
@@ -110,7 +119,8 @@ export type RalphRuntimeOptions<I, A, E, R> = Omit<RuntimeOptions<I, A, E, R, ne
  * The outcome of a bounded loop.
  *
  * `exhausted` is true when the bound stopped the loop rather than the
- * predicate. `iterations` counts the bodies that ran.
+ * predicate. `iterations` counts the bodies that ran. `stalled` is present
+ * when a stall policy stopped or parked it.
  *
  * @category models
  * @since 0.1.0
@@ -119,6 +129,7 @@ export interface Result<A> {
   readonly value: A
   readonly iterations: number
   readonly exhausted: boolean
+  readonly stalled?: Stall.Stalled | undefined
 }
 
 /**
@@ -142,6 +153,8 @@ export const done = (value: unknown): boolean =>
   (typeof value === "object" && value !== null && "done" in value && value.done === true)
 
 const defaultOnMaxReached: OnMaxReached = "return-last"
+
+const identity = (value: unknown): unknown => value
 
 const exhausted = (maxIterations: number): PatternError =>
   new PatternError({
@@ -198,24 +211,37 @@ export const make = <R = never>(options: MakeOptions<R>): LoopFlow<R> => {
   // `Node.bindPlanned`: that is how many levels one iteration nests. The calls
   // an iteration makes are the branch's own subject and the bind's, so they
   // cost no level of their own.
+  const stall = Stalling.resolve("Loop", options.stall)
+  if (stall instanceof PatternError) throw stall
+  // A stall policy adds one branch to every iteration that goes round again.
   const invalid = bound(maxIterations) ??
-    Compose.sequencedBoundRefusal("Loop", "maxIterations", maxIterations, declared.until === undefined ? 1 : 2)
+    Compose.sequencedBoundRefusal(
+      "Loop",
+      "maxIterations",
+      maxIterations,
+      (declared.until === undefined ? 1 : 2) + (stall === undefined ? 0 : 1)
+    )
   if (invalid !== undefined) throw invalid
   const onMaxReached = options.onMaxReached ?? defaultOnMaxReached
   const captures = {
     ...options.captures,
     maxIterations,
     onMaxReached,
-    predicate: declared.until === undefined ? "body" : "flow"
+    predicate: declared.until === undefined ? "body" : "flow",
+    ...(stall === undefined ? {} : { stall })
   }
-  const { name, description } = Compose.label("loop", { maxIterations, onMaxReached }, options)
+  const { name, description } = Compose.label(
+    "loop",
+    { maxIterations, onMaxReached, stall: Stalling.labelOf(stall) },
+    options
+  )
   const settled = (
     value: unknown,
     iteration: number,
     exhausted: boolean
   ): Node.Node<unknown, never, never> => Node.succeed({ value, iterations: iteration, exhausted })
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
-    const visit = (previous: unknown, iteration: number): Node.Node<unknown, unknown, R> => {
+    const visit = (previous: unknown, iteration: number, streaks: unknown): Node.Node<unknown, unknown, R> => {
       // The predicate is DIGESTED and run later, on the real value. It is
       // captured so two loops that differ only in their declared bound are
       // two declarations rather than one shared process-local callback.
@@ -226,11 +252,14 @@ export const make = <R = never>(options: MakeOptions<R>): LoopFlow<R> => {
       // exhausted. That test reads the declared bound, not a run value, so it
       // is the one decision that stays at plan time.
       const continued = (value: Planned.Planned<unknown>): Node.Node<unknown, unknown, R> =>
-        iteration < maxIterations
-          ? visit(value, iteration + 1)
-          : onMaxReached === "fail"
-          ? Node.fail(exhausted(maxIterations))
-          : settled(value, iteration, true)
+        iteration >= maxIterations
+          ? onMaxReached === "fail" ? Node.fail(exhausted(maxIterations)) : settled(value, iteration, true)
+          : stall === undefined
+          ? visit(value, iteration + 1, streaks)
+          : Stalling.guard("Loop", stall, { ...captures, iteration }, value, streaks as Stall.State, identity, {
+            settle: (stalled) => Node.succeed({ value, iterations: iteration, exhausted: false, stalled }),
+            next: (next) => visit(value, iteration + 1, next)
+          })
       const predicate = declared.until
       if (predicate === undefined) {
         return Node.branch(produced, {
@@ -252,7 +281,7 @@ export const make = <R = never>(options: MakeOptions<R>): LoopFlow<R> => {
           }))
       )
     }
-    return visit(undefined, 1)
+    return visit(undefined, 1, Stall.initial)
   }
   return Flow.make(name, {
     ...(description === undefined ? {} : { description }),
@@ -302,8 +331,12 @@ export const run = <I, A, E, R, E2, R2>(
   const maxIterations = options.maxIterations
   const invalid = bound(maxIterations)
   if (invalid !== undefined) return Effect.fail(invalid)
+  const stall = Stalling.resolve("Loop", options.stall)
+  if (stall instanceof PatternError) return Effect.fail(stall)
+  const signals = options.stall?.signals ?? ((output: A) => ({ output }))
   const onMaxReached = options.onMaxReached ?? defaultOnMaxReached
   return Effect.gen(function*() {
+    const observe = Stalling.tracker(stall, signals)
     let previous: A | undefined = undefined
     // `bound` rejected a maxIterations below one, so iteration 1 always runs
     // and the bound arm below always returns. The loop needs no exit test.
@@ -315,6 +348,11 @@ export const run = <I, A, E, R, E2, R2>(
       if (iteration >= maxIterations) {
         if (onMaxReached === "fail") return yield* Effect.fail(exhausted(maxIterations))
         return { value, iterations: iteration, exhausted: true }
+      }
+      const stalled = observe(value)
+      if (stalled !== undefined) {
+        if (stalled.on === "escalate") return yield* Effect.fail(Stalling.escalated("Loop", stalled.rounds))
+        return { value, iterations: iteration, exhausted: false, stalled }
       }
     }
   })

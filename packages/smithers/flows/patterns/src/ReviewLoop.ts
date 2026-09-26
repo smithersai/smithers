@@ -7,6 +7,7 @@
  * @since 0.1.0
  */
 import * as Flow from "@smthrs/flow/Flow"
+import * as Stall from "@smthrs/flow/Stall"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
@@ -15,6 +16,7 @@ import * as Compose from "./internal/Compose.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
+import * as Stalling from "./internal/Stalling.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -27,6 +29,10 @@ import { PatternError } from "./PatternError.ts"
  * really returned, so cancellation remains ordinary structured fiber
  * interruption.
  *
+ * `stall` ends the loop once `stall.rounds` refused rounds in a row reviewed
+ * the same output (`@smthrs/flow/Stall`): `stop` and `park` settle
+ * {@link Stalled}, `escalate` fails `PatternError` `stalled`.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -37,6 +43,7 @@ export interface MakeOptions<R = never> {
   readonly review: Member<R>
   readonly revise: Member<R>
   readonly maxRounds: number
+  readonly stall?: Stall.Options | undefined
 }
 
 /**
@@ -54,6 +61,7 @@ export interface RuntimeOptions<I, A, Review, E, R, E2, R2, E3, R3> {
     readonly round: number
   }) => Effect.Effect<A, E3, R3>
   readonly maxRounds: number
+  readonly stall?: Stalling.RuntimeOptions<A> | undefined
 }
 
 /**
@@ -84,8 +92,22 @@ export interface Exhausted<A, Review> {
 }
 
 /**
- * One unambiguous loop outcome: a review approved the output, or the rounds
- * ran out.
+ * An unapproved result whose revisions stopped changing, with the last review
+ * and the stall verdict.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Stalled<A, Review> {
+  readonly _tag: "Stalled"
+  readonly output: A
+  readonly review: Review
+  readonly stalled: Stall.Stalled
+}
+
+/**
+ * One unambiguous loop outcome: a review approved the output, the rounds
+ * ran out, or the revisions stalled.
  *
  * Both arms carry `_tag` and nest the produced value under `output`, so a
  * caller branches on the discriminator rather than on the shape of the value
@@ -94,7 +116,9 @@ export interface Exhausted<A, Review> {
  * @category models
  * @since 1.0.0
  */
-export type Settled<A, Review> = Approved<A> | Exhausted<A, Review>
+export type Settled<A, Review> = Approved<A> | Exhausted<A, Review> | Stalled<A, Review>
+
+const same = (output: unknown): unknown => output
 
 /**
  * Reads an accepted decision: `true`, `"approved"`, `{ approved: true }`, or
@@ -145,28 +169,38 @@ export const make = <R = never>(options: MakeOptions<R>): ReviewLoopFlow<R> => {
       message: "ReviewLoop maxRounds must be a positive safe integer"
     })
   }
-  const { name, description } = Compose.label("reviewLoop", { maxRounds }, options)
+  const stall = Stalling.resolve("ReviewLoop", options.stall)
+  if (stall instanceof PatternError) throw stall
+  const { name, description } = Compose.label("reviewLoop", { maxRounds, stall: Stalling.labelOf(stall) }, options)
+  const captured = stall === undefined ? { maxRounds } : { maxRounds, stall }
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
-    const visit = (output: unknown, round: number): Node.Node<unknown, unknown, R> => {
+    const visit = (output: unknown, round: number, streaks: unknown): Node.Node<unknown, unknown, R> => {
       // The predicate is DIGESTED and run later, on the review the reviewer
       // really returned. It is captured so two loops that differ only in their
       // declared bound are two declarations rather than one shared callback.
-      const approved = Node.capture({ maxRounds, round }, (verdict: unknown) => accepted(verdict))
+      const approved = Node.capture({ ...captured, round }, (verdict: unknown) => accepted(verdict))
+      const revise = (review: Planned.Planned<unknown>, next: unknown): Node.Node<unknown, unknown, R> =>
+        Node.bindPlanned(
+          callMember(stages.revise, { output, review, round }),
+          Node.capture({ ...captured, round }, (revised: Planned.Planned<unknown>) => visit(revised, round + 1, next))
+        )
       return Node.branch(callMember(stages.review, { output }), {
         if: approved,
         then: () => Node.succeed({ _tag: "Approved", output }),
         else: (review: Planned.Planned<unknown>) =>
           round >= maxRounds
             ? Node.succeed({ _tag: "Exhausted", output, review })
-            : Node.bindPlanned(
-              callMember(stages.revise, { output, review, round }),
-              Node.capture({ maxRounds, round }, (revised: Planned.Planned<unknown>) => visit(revised, round + 1))
-            )
+            : stall === undefined
+            ? revise(review, streaks)
+            : Stalling.guard("ReviewLoop", stall, { ...captured, round }, output, streaks as Stall.State, same, {
+              settle: (stalled) => Node.succeed({ _tag: "Stalled", output, review, stalled }),
+              next: (next) => revise(review, next)
+            })
       })
     }
     return Node.bindPlanned(
       callMember(stages.produce, { input }),
-      Node.capture({ maxRounds }, (initial: Planned.Planned<unknown>) => visit(initial, 1))
+      Node.capture(captured, (initial: Planned.Planned<unknown>) => visit(initial, 1, Stall.initial))
     )
   }
   return Flow.make(name, {
@@ -178,7 +212,7 @@ export const make = <R = never>(options: MakeOptions<R>): ReviewLoopFlow<R> => {
     // engine encodes a typed failure through it, and a review loop fails with
     // whatever the member it called failed with.
     error: Schema.Unknown,
-    body: Node.capture({ maxRounds }, body)
+    body: Node.capture(captured, body)
   })
 }
 
@@ -212,7 +246,11 @@ export const run = <I, A, Review, E, R, E2, R2, E3, R3>(
       })
     )
   }
+  const stall = Stalling.resolve("ReviewLoop", options.stall)
+  if (stall instanceof PatternError) return Effect.fail(stall)
+  const signals = options.stall?.signals ?? ((output: A) => ({ output }))
   return Effect.gen(function*() {
+    const observe = Stalling.tracker(stall, signals)
     let output = yield* stages.produce(input)
     let round = 1
     while (true) {
@@ -224,6 +262,12 @@ export const run = <I, A, Review, E, R, E2, R2, E3, R3>(
       if (round === maxRounds) {
         const spent: Exhausted<A, Review> = { _tag: "Exhausted", output, review }
         return spent
+      }
+      const stalled = observe(output)
+      if (stalled !== undefined) {
+        if (stalled.on === "escalate") return yield* Effect.fail(Stalling.escalated("ReviewLoop", stalled.rounds))
+        const parked: Stalled<A, Review> = { _tag: "Stalled", output, review, stalled }
+        return parked
       }
       output = yield* stages.revise({ output, review, round })
       round += 1

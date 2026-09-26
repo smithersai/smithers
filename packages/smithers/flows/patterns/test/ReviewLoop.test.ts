@@ -301,3 +301,67 @@ describe("ReviewLoop", () => {
       expect(refusal.message).toBe("ReviewLoop maxRounds must be a positive safe integer")
     }))
 })
+
+/** A reviser that hands back the draft it was given, so every revision repeats. */
+const stuckRevise: Scripted = Flow.make("reviewLoop/stuck-revise", {
+  payload: { output: Schema.Unknown, review: Schema.Unknown, round: Schema.Number },
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: () => draft.call({ input: "stuck", revision: 0 })
+}) as unknown as Scripted
+
+describe("ReviewLoop stall", () => {
+  it("settles Stalled once a declared revision repeats the reviewed output", async () => {
+    const loop = ReviewLoop.make({
+      produce,
+      review,
+      revise: stuckRevise,
+      maxRounds: 5,
+      stall: { rounds: 2, on: "park" }
+    })
+    expect(loop._tag).toBe("reviewLoop(maxRounds=5, stall=2/park)")
+    const settled = await settle(loop, "seed", "review-loop-stall", 99)
+
+    expect(settled).toEqual({
+      _tag: "Stalled",
+      output: { text: "draft-0", revision: 0 },
+      review: { approved: false },
+      stalled: { _tag: "Stalled", signal: "output", rounds: 2, on: "park" }
+    })
+    expect(reviewed).toHaveLength(2)
+  })
+
+  it("fails stalled under a declared escalate and refuses a bound below two", async () => {
+    const loop = ReviewLoop.make({
+      produce,
+      review,
+      revise: stuckRevise,
+      maxRounds: 5,
+      stall: { rounds: 2, on: "escalate" }
+    })
+    await expect(settle(loop, "seed", "review-loop-stall-escalate", 99)).rejects.toMatchObject({ code: "stalled" })
+    expect(() => ReviewLoop.make({ produce, review, revise, maxRounds: 2, stall: { rounds: 1 } })).toThrow(PatternError)
+  })
+
+  it.effect("stops, parks or escalates the operational loop on a repeated output", () =>
+    Effect.gen(function*() {
+      const options = {
+        maxRounds: 6,
+        produce: (input: string) => Effect.succeed(input),
+        review: () => Effect.succeed({ approved: false }),
+        revise: ({ output }: { readonly output: string }) => Effect.succeed(output)
+      }
+      expect(yield* ReviewLoop.run("draft", { ...options, stall: { rounds: 3 } })).toEqual({
+        _tag: "Stalled",
+        output: "draft",
+        review: { approved: false },
+        stalled: { _tag: "Stalled", signal: "output", rounds: 3, on: "stop" }
+      })
+      const escalated = yield* Effect.flip(
+        ReviewLoop.run("draft", { ...options, stall: { rounds: 2, on: "escalate" } })
+      )
+      expect(escalated).toMatchObject({ code: "stalled" })
+      const invalid = yield* Effect.flip(ReviewLoop.run("draft", { ...options, stall: { rounds: 1 } }))
+      expect(invalid).toMatchObject({ code: "invalid_decorator" })
+    }))
+})

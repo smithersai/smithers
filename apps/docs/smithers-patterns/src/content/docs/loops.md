@@ -100,6 +100,21 @@ naming the limit. `run` takes any positive safe integer, because it iterates
 instead of unrolling. See
 [Declaration size](/reference/api/#declaration-size).
 
+### Stall breaker
+
+A bound is only a budget. `stall: { rounds, on }` ends a loop whose last
+`rounds` unsatisfied iterations (at least two) produced the same value, using
+`@smthrs/flow`'s `Stall`. `on` defaults to `"stop"`: `stop` and `park` return
+the result with `stalled: { _tag: "Stalled", signal, rounds, on }`, and
+`escalate` fails `PatternError` `stalled`. `ReviewLoop` (a `Stalled` outcome
+when revisions repeat the reviewed output) and `Supervisor` (`Exhausted` with
+`stalled` when every task's outcome repeats) take the same option.
+
+The declared form compares each iteration's value by its canonical hash. The
+operational form also takes `signals`, a function from a value to
+`{ tree?, checks?, output? }`, so a caller can stall on a tree fingerprint or
+on the same failing checks. A stalling iteration nests one more plan level.
+
 ### Ralph
 
 `Loop.ralph` and `Loop.runRalph` are the loop with no separate predicate flow:

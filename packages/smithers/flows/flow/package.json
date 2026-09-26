@@ -56,6 +56,7 @@
     "./Poll": "./src/Poll.ts",
     "./RetryPolicy": "./src/RetryPolicy.ts",
     "./Sleep": "./src/Sleep.ts",
+    "./Stall": "./src/Stall.ts",
     "./WaitFor": "./src/WaitFor.ts",
     "./index": "./src/index.ts"
   },
@@ -250,6 +251,16 @@
         "require": {
           "types": "./dist/cjs/Sleep.d.ts",
           "default": "./dist/cjs/Sleep.js"
+        }
+      },
+      "./Stall": {
+        "import": {
+          "types": "./dist/esm/Stall.d.ts",
+          "default": "./dist/esm/Stall.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Stall.d.ts",
+          "default": "./dist/cjs/Stall.js"
         }
       },
       "./WaitFor": {

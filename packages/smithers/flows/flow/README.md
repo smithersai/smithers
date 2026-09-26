@@ -185,6 +185,7 @@ Every namespace below is exported from the root and from a matching
 | `Sleep`           | The system timer, declared as an ordinary action.                                       |
 | `WaitFor`         | The system wait point, declared as an ordinary action.                                  |
 | `Poll`            | The durable poller: attempts as rounds, waits as durable timers.                        |
+| `Stall`           | The stall breaker: ends rounds whose tree, failing checks, or output held still.        |
 | `HumanTask`       | Asking a person something, with validation, re-asking, and a deadline.                  |
 | `RetryPolicy`     | Data describing when a runtime should retry a failed action.                            |
 | `StepIdentity`    | The one canonical derivation of ordinal step identity.                                  |

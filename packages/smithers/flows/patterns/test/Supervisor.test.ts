@@ -741,3 +741,84 @@ describe("Supervisor", () => {
       expect(result).toEqual({ exhausted: false, rounds: 1, final: "final" })
     }))
 })
+
+describe("Supervisor stall", () => {
+  it("settles exhausted with the verdict once declared rounds leave every outcome unchanged", async () => {
+    recorded.length = 0
+    const review = { allDone: false, retriable: ["a"] }
+    scriptedReviews = [review, review, review, review]
+    const supervisor = Supervisor.make({
+      plan: step,
+      workers: { coder: recordingWorker },
+      review: recordingReview,
+      finalize: recordingFinalize,
+      maxRounds: 4,
+      concurrency: 1,
+      stall: { rounds: 2 }
+    })
+    expect(supervisor._tag).toBe("supervisor(workers=coder, maxRounds=4, concurrency=1, stall=2/stop)")
+
+    const result = await execute(
+      supervisor,
+      { input: { tasks: [{ id: "a", workerType: "coder" }] } },
+      "supervisor-stall",
+      ...recordingLayers
+    )
+
+    expect(recorded).toEqual(["work:1:a", "review:1", "work:2:a", "review:2"])
+    expect(result).toEqual({
+      exhausted: true,
+      rounds: 2,
+      review,
+      stalled: { _tag: "Stalled", signal: "output", rounds: 2, on: "stop" }
+    })
+  })
+
+  it("fails a declared escalate and refuses a stall bound below two", async () => {
+    const review = { allDone: false, retriable: ["a"] }
+    scriptedReviews = [review, review, review]
+    const options = {
+      plan: step,
+      workers: { coder: recordingWorker },
+      review: recordingReview,
+      finalize: recordingFinalize,
+      maxRounds: 3,
+      concurrency: 1
+    }
+    await expect(execute(
+      Supervisor.make({ ...options, stall: { rounds: 2, on: "escalate" } }),
+      { input: { tasks: [{ id: "a", workerType: "coder" }] } },
+      "supervisor-stall-escalate",
+      ...recordingLayers
+    )).rejects.toMatchObject({ code: "stalled" })
+    expect(() => Supervisor.make({ ...options, stall: { rounds: 1 } })).toThrow(PatternError)
+  })
+
+  it.effect("stops, parks or escalates the operational supervision on a repeated signal", () =>
+    Effect.gen(function*() {
+      const review = { allDone: false, retriable: ["a", "b", "c"] }
+      const options = {
+        maxRounds: 9,
+        concurrency: 3,
+        plan: () => Effect.succeed(plan),
+        worker: ({ task }: { readonly task: Supervisor.Task }) => Effect.succeed(`${task.id}-done`),
+        review: () => Effect.succeed(review),
+        finalize: () => Effect.succeed("never")
+      }
+      expect(yield* Supervisor.run("goal", { ...options, stall: { rounds: 3, on: "park" } })).toEqual({
+        exhausted: true,
+        rounds: 3,
+        review,
+        stalled: { _tag: "Stalled", signal: "output", rounds: 3, on: "park" }
+      })
+      const checks = yield* Supervisor.run("goal", {
+        ...options,
+        stall: { rounds: 2, signals: () => ({ checks: ["b", "a"] }) }
+      })
+      expect(checks).toMatchObject({ rounds: 2, stalled: { signal: "checks" } })
+      expect(yield* Effect.flip(Supervisor.run("goal", { ...options, stall: { rounds: 2, on: "escalate" } })))
+        .toMatchObject({ code: "stalled" })
+      expect(yield* Effect.flip(Supervisor.run("goal", { ...options, stall: { rounds: 1 } })))
+        .toMatchObject({ code: "invalid_decorator" })
+    }))
+})
