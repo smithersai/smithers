@@ -100,3 +100,28 @@ describe("packaged web-selfhost launcher", () => {
   })
 
 })
+
+test("temporary PostgreSQL socket readiness cannot start a TCP-dependent app", async () => {
+  const outputDir = temporary()
+  let tcpReady = false
+  let waits = 0
+  let earlyAppStarts = 0
+  const executor: CommandExecutor = async args => {
+    if (args.includes("inspect")) return { exitCode: 1, stdout: "", stderr: `Error: No such ${args[1]}: ${args.at(-1)}` }
+    if (args.includes("pg_isready")) {
+      // The initialization server accepts sockets before the final server accepts TCP.
+      const tcp = args.includes("-h") && args[args.indexOf("-h") + 1] === "127.0.0.1"
+      return { exitCode: !tcp || tcpReady ? 0 : 1, stdout: "", stderr: "" }
+    }
+    if (args.includes("SMITHERS_AUTH_MODE=selfhost")) {
+      if (!tcpReady) earlyAppStarts += 1
+      return { exitCode: 17, stdout: "", stderr: "stop after checking database readiness" }
+    }
+    return { exitCode: 0, stdout: "created\n", stderr: "" }
+  }
+  await expect(startPackagedWebSelfhost({ rootDir: outputDir, revision, outputDir, executor,
+    wait: async () => { waits += 1; tcpReady = true }
+  })).rejects.toThrow("stop after checking database readiness")
+  expect(earlyAppStarts).toBe(0)
+  expect(waits).toBe(1)
+})

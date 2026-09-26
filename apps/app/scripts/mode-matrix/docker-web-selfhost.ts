@@ -255,7 +255,8 @@ export const startPackagedWebSelfhost = async (options: WebSelfhostLaunchOptions
   const waitForPostgres = async (): Promise<void> => {
     let last = "PostgreSQL did not answer"
     for (let attempt = 0; attempt < 90; attempt += 1) {
-      const result = await executor(["docker", "exec", resources.postgresContainer, "pg_isready", "-U", "smithers", "-d", resources.database])
+      // Initialization briefly exposes a socket-only server; the app needs the final TCP listener.
+      const result = await executor(["docker", "exec", resources.postgresContainer, "pg_isready", "-h", "127.0.0.1", "-U", "smithers", "-d", resources.database])
       if (result.exitCode === 0) {
         commands.push({ label: "wait for PostgreSQL readiness", status: "passed", exitCode: 0 })
         report()
