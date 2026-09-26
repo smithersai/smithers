@@ -154,6 +154,7 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
   const selected = (label, job) => inventory.rows.filter((row) => row.label === label && row.job === job && row.required && row.selectedRoot)
   for (const [label, job] of [
     ["//apps/app:check", "apps-e2e"], ["//apps/app:unitTests", "apps-e2e"], ["//apps/app:browserE2e", "apps-e2e"],
+    ["//apps/tui:check", "apps-e2e"], ["//apps/tui:unitTests", "apps-e2e"],
     ["//apps/server:check", "test"], ["//apps/server:unitTests", "test"],
     ["//apps/review:unitTests", "test"], ["//apps/bug-worker:unitTests", "test"],
     ["//apps/review:check", "test"], ["//apps/review:checkTests", "test"],
@@ -200,10 +201,11 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
       assert.ok(name === "browserE2e" || name === "faults", `${row.label}: classify and verify this suite's E2E runner`)
     }
     if (/unitTests$/.test(row.label)) {
-      // One required UI job owns three distinct tiers; its unit step must
-      // still name and execute the unit runner, never claim browser coverage.
+      // One required UI job owns the app's three tiers and the TUI suite; each
+      // unit step must still name and execute a unit runner, never claim
+      // browser coverage.
       assert.doesNotMatch(row.step, /e2e|end.to.end/i)
-      if (row.job === "apps-e2e") assert.equal(row.label, "//apps/app:unitTests")
+      if (row.job === "apps-e2e") assert.ok(["//apps/app:unitTests", "//apps/tui:unitTests"].includes(row.label), row.label)
     }
     if (/browserE2e$/.test(row.label)) {
       assert.equal(row.rule, "NodeTest")

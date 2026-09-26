@@ -306,6 +306,16 @@ ensure_rust() {
   rustup toolchain install
 }
 
+# Builds the native workspace helper ci.yml's `cargoBinaries` step installs and
+# names it the way that step does. Needs the rust toolchain from ensure_rust.
+native_jj_export() {
+  rustup toolchain install 1.98.0 --profile minimal
+  cargo +1.98.0 build --locked -p smithers-ffi --bin smithers-jj-export
+  mkdir -p "$tools_dir/native"
+  install -m 755 target/debug/smithers-jj-export "$tools_dir/native/smithers-jj-export"
+  export SMITHERS_WORKSPACE_JJ_EXPORT_BINARY="$tools_dir/native/smithers-jj-export"
+}
+
 # Toolchains each gate needs, one gate per line so the contract test can read
 # them. Every gate needs js; the extras are what makes a group worth batching.
 # An unknown gate returns non-zero here, which is how both modes reject it
@@ -348,6 +358,7 @@ gate_tools() {
     ui-tests) echo 'js jj' ;;
     ui-conformance) echo 'js jj' ;;
     ui-browser) echo 'js jj' ;;
+    tui) echo 'js jj rust' ;;
     rust-lint) echo 'js rust' ;;
     third-party-notices) echo 'js rust' ;;
     rust-test) echo 'js rust' ;;
@@ -527,6 +538,10 @@ run_gate() {
       else
         pnpm exec smthrs test '//apps/app:browserE2e' --known-red '.github/ci-known-red.json' --verbose
       fi
+      ;;
+    tui)
+      native_jj_export
+      pnpm exec smthrs ci '//apps/tui/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     rust-lint)
       pnpm exec smthrs lint '//crates/flows-jj/...' --known-red '.github/ci-known-red.json' --verbose

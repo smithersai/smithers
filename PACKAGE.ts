@@ -532,7 +532,10 @@ const ci = Smithers.GithubCiGen({
         // The literal pin left the unit gate when `src/` became app source
         // only; it is its own lint target over `apps/app/lint/conformance`.
         { name: "UI conformance lint", verb: Smithers.Verb.Test, pattern: "//apps/app:conformance" },
-        { name: "UI browser end-to-end suite", verb: Smithers.Verb.Test, pattern: "//apps/app:browserE2e" }
+        { name: "UI browser end-to-end suite", verb: Smithers.Verb.Test, pattern: "//apps/app:browserE2e" },
+        // The terminal UI's typecheck and Bun suite. Its shell-change capture
+        // runs the native helper this job installs.
+        { name: "TUI typecheck and tests", verb: Smithers.Verb.Ci, pattern: "//apps/tui/..." }
       ]
     },
     {

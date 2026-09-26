@@ -96,6 +96,7 @@ export const releaseGates = [
   { name: "UI typecheck", verb: "build", target: "//apps/app:check" },
   { name: "UI unit tests", verb: "test", target: "//apps/app:unitTests" },
   { name: "UI conformance lint", verb: "test", target: "//apps/app:conformance" },
+  { name: "TUI typecheck and tests", verb: "ci", target: "//apps/tui/..." },
   { name: "Server typecheck and tests", verb: "ci", target: "//apps/server/..." },
   { name: "Review app and workers", verb: "ci", target: "//apps/review/..." },
   { name: "Bug worker", verb: "ci", target: "//apps/bug-worker/..." },
