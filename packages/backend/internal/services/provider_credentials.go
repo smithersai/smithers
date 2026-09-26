@@ -61,32 +61,6 @@ func IsUsableProviderCredential(value string) bool {
 	return true
 }
 
-// UsableProviderCredentials drops unusable values from a provider-credential
-// map so a placeholder is never injected into a VM. Injecting one is worse than
-// injecting nothing: a present-but-invalid key wins provider selection over a
-// provider whose credential is real.
-func UsableProviderCredentials(providerEnv map[string]string) map[string]string {
-	usable := make(map[string]string, len(providerEnv))
-	for name, value := range providerEnv {
-		if strings.TrimSpace(name) == "" || !IsUsableProviderCredential(value) {
-			continue
-		}
-		usable[name] = strings.TrimSpace(value)
-	}
-	return usable
-}
-
-// HasUsableProviderCredential reports whether env carries at least one
-// AI-provider credential a model call could authenticate with.
-func HasUsableProviderCredential(env map[string]string) bool {
-	for _, name := range AgentProviderCredentialEnvNames {
-		if IsUsableProviderCredential(env[name]) {
-			return true
-		}
-	}
-	return false
-}
-
 // ProviderCredentialBinding is where the egress proxy may substitute a
 // platform AI-provider credential: the provider's API host and the request
 // locations its SDKs put the key in. Anything else the guest sends the
@@ -141,8 +115,9 @@ func ProviderCredentialEgressSecret(name, value string) (sandbox.EgressProxySecr
 	}, true
 }
 
-// HasUsableProviderCredentialWithPlaceholders is HasUsableProviderCredential
-// for a proxy-backed guest: a provider credential whose env value is exactly
+// HasUsableProviderCredentialWithPlaceholders reports whether env carries at
+// least one AI-provider credential a model call could authenticate with, for a
+// proxy-backed guest: a provider credential whose env value is exactly
 // its placeholder counts as usable when the name is in proxied, because the
 // proxy holds the real value. A placeholder for a name that is NOT proxied is
 // still refused, so the old "placeholder-pending" 401-forever failure cannot

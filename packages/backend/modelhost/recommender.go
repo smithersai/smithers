@@ -8,10 +8,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
@@ -23,17 +27,17 @@ const (
 )
 
 // JevRecommender is the shared HTTP adapter for the Vercel AI Gateway
-// evaluation model. The API key never enters a route request or a persisted
-// recommendation row.
+// evaluation model. The platform key is resolved for each call and never
+// enters a route request or a persisted recommendation row. The caller meters
+// each call (routes.RecommendationHandler).
 type JevRecommender struct {
-	apiKey   string
+	keys     modelproxy.Keys
 	endpoint string
 	client   *http.Client
 }
 
-func NewJevRecommender(apiKey, endpoint string, client *http.Client) (*JevRecommender, error) {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
+func NewJevRecommender(keys modelproxy.Keys, endpoint string, client *http.Client) (*JevRecommender, error) {
+	if keys == nil || !slices.Contains(keys.PlatformModelProviders(), modelproxy.ProviderVercel) {
 		return nil, ports.ErrModelCredentialMissing
 	}
 	if strings.TrimSpace(endpoint) == "" {
@@ -44,9 +48,9 @@ func NewJevRecommender(apiKey, endpoint string, client *http.Client) (*JevRecomm
 		return nil, errors.New("Jev endpoint is invalid")
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 1500 * time.Millisecond}
+		client = &http.Client{Timeout: 1500 * time.Millisecond, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	}
-	return &JevRecommender{apiKey: apiKey, endpoint: endpoint, client: client}, nil
+	return &JevRecommender{keys: keys, endpoint: endpoint, client: client}, nil
 }
 
 func (j *JevRecommender) Recommend(ctx context.Context, input ports.RecommendationRequest) (ports.RecommendationResult, error) {
@@ -94,11 +98,21 @@ func (j *JevRecommender) Recommend(ctx context.Context, input ports.Recommendati
 	if err != nil {
 		return ports.RecommendationResult{}, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, j.endpoint, bytes.NewReader(body))
-	if err != nil {
-		return ports.RecommendationResult{}, err
+	apiKey, err := j.keys.PlatformModelKey(ctx, modelproxy.ProviderVercel)
+	if err != nil || !modelproxy.UsableKey(apiKey) {
+		return ports.RecommendationResult{}, errors.Join(modelproxy.ErrNotCharged, ports.ErrModelCredentialMissing)
 	}
-	request.Header.Set("Authorization", "Bearer "+j.apiKey)
+	var written atomic.Bool
+	traced := httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{WroteRequest: func(info httptrace.WroteRequestInfo) {
+		if info.Err == nil {
+			written.Store(true)
+		}
+	}})
+	request, err := http.NewRequestWithContext(traced, http.MethodPost, j.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return ports.RecommendationResult{}, errors.Join(modelproxy.ErrNotCharged, err)
+	}
+	request.Header.Set("Authorization", "Bearer "+apiKey)
 	request.Header.Set("ai-gateway-protocol-version", JevProtocolVersion)
 	request.Header.Set("ai-gateway-auth-method", "api-key")
 	request.Header.Set("ai-evaluation-model-specification-version", JevSpecificationVersion)
@@ -106,12 +120,15 @@ func (j *JevRecommender) Recommend(ctx context.Context, input ports.Recommendati
 	request.Header.Set("Content-Type", "application/json")
 	response, err := j.client.Do(request)
 	if err != nil {
+		if !written.Load() {
+			return ports.RecommendationResult{}, errors.Join(modelproxy.ErrNotCharged, err)
+		}
 		return ports.RecommendationResult{}, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-		return ports.RecommendationResult{}, fmt.Errorf("Jev answered HTTP %d", response.StatusCode)
+		return ports.RecommendationResult{}, errors.Join(modelproxy.ErrNotCharged, fmt.Errorf("Jev answered HTTP %d", response.StatusCode))
 	}
 	var envelope struct {
 		Answers map[string]struct {

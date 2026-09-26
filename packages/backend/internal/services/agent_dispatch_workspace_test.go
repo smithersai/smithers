@@ -109,11 +109,10 @@ func TestAgentDispatch_WorkspaceMode_CreateVMUsesBackendAndMergesBindings(t *tes
 	assert.Contains(t, got.GuestFiles, "/home/developer/.codex/auth.json", "guest files are re-rooted under the workspace home")
 	require.Len(t, got.Members, 1, "only changeset members are handed over; the primary clone is the workspace's job")
 	assert.Equal(t, "abc", got.Members[0].Rev)
-	names := map[string]bool{}
 	for _, secret := range got.EgressSecrets {
-		names[secret.Name] = true
+		assert.NotEqual(t, "ANTHROPIC_API_KEY", secret.Name, "a platform seat is metered, never an egress-bound provider key")
 	}
-	assert.True(t, names["ANTHROPIC_API_KEY"], "the run's provider binding travels to the workspace VM's proxy")
+	assert.Equal(t, "agent-token", d.agentServiceSpec.Env["ANTHROPIC_API_KEY"])
 	d.svc.cancelAgentRuntimeWatchdog(d.input.SessionID)
 }
 

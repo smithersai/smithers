@@ -12,6 +12,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -180,13 +181,15 @@ func TestWorkspaceProviderPoolReplacesPlatformKey(t *testing.T) {
 	var minted []db.CreateAccessTokenParams
 	pool := &workspaceProviderPool{pools: map[string]bool{ProviderConnectionProviderClaude: true}}
 	service := newWorkspaceServiceForTests(poolTokenQuerier(&minted), WithWorkspaceGitBaseURL(poolTestBaseURL),
-		WithWorkspaceProviderBootstrap(map[string]string{"ANTHROPIC_API_KEY": "sk-ant-platform-private"}, ""), WithWorkspaceProviderConnections(pool))
+		WithWorkspaceProviderBootstrap([]modelproxy.Seat{modelproxy.Seats[0]}, ""), WithWorkspaceProviderConnections(pool))
 	binding, err := service.resolveWorkspaceProviderBindings(context.Background(), sampleDBWorkspace("ws-platform"))
 	require.NoError(t, err)
 	require.Len(t, binding.egress.Secrets, 1)
 	assert.Equal(t, "ANTHROPIC_API_KEY", binding.egress.Secrets[0].Name)
-	assert.Equal(t, []string{"api.example.test"}, binding.egress.Secrets[0].Hosts, "the pool, not the platform key on the provider host")
-	assert.NotEqual(t, "sk-ant-platform-private", binding.egress.Secrets[0].Value)
+	assert.Equal(t, []string{"api.example.test"}, binding.egress.Secrets[0].Hosts)
+	for _, token := range minted {
+		assert.NotContains(t, token.Name, "model-proxy", "the pool serves Anthropic; the platform seat is not metered")
+	}
 	assert.Equal(t, "anthropic:claude-sonnet-4-6", bootstrapModel(binding.environment))
 	profile, err := renderWorkspaceAgentEnvironmentProfile(binding.environment.Env, binding.environment.ProxyBound)
 	require.NoError(t, err)

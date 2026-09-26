@@ -11,10 +11,12 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/runtimeports"
 
 	"github.com/jackc/pgx/v5"
@@ -357,14 +359,10 @@ type RepoGatewayService struct {
 	concurrencyMax     int
 	// accessQuerier backs the reaper's access-revocation sweep (nil disables it).
 	accessQuerier RepoGatewayAccessQuerier
-	// agentSeatAPIKey is the AI-provider credential injected into every new
-	// gateway VM's systemd env as CEREBRAS_API_KEY. Empty disables the seat:
-	// gateways are provisioned with the stock generated agents.ts and agent
-	// nodes honestly fail for lack of a provider (pre-wave-12b behavior).
-	agentSeatAPIKey string
-	// agentProviderEnv contains platform-owned provider credentials copied into
-	// every new gateway VM's systemd environment. Empty values are omitted.
-	agentProviderEnv map[string]string
+	// modelSeats are the platform model seats gateway VMs reach through the
+	// metered model proxy with a gateway model credential; the gateway's user
+	// pays. No provider key enters the VM.
+	modelSeats []modelproxy.Seat
 	// healthProbeBaseURL enables the resume-time liveness probe when non-empty
 	// (see repoGatewayHealthProbe*). Empty disables it for local dev, which has
 	// no preview gateway.
@@ -453,35 +451,10 @@ func WithRepoGatewayIdleTimeout(seconds int64) RepoGatewayServiceOption {
 	}
 }
 
-// WithRepoGatewayAgentSeat configures the platform Cerebras credential in the
-// gateway service environment. It never enters the immutable host artifact.
-func WithRepoGatewayAgentSeat(apiKey string) RepoGatewayServiceOption {
-	return func(s *RepoGatewayService) {
-		// An operator-seeded "placeholder-pending-..." value is non-empty, so
-		// without this filter it arms the seat with a credential that 401s on
-		// every model call — worse than an honestly disarmed seat, which fails
-		// agent nodes with a message instead of hanging.
-		if !IsUsableProviderCredential(apiKey) {
-			s.agentSeatAPIKey = ""
-			return
-		}
-		s.agentSeatAPIKey = strings.TrimSpace(apiKey)
-	}
-}
-
-// WithRepoGatewayProviderEnv wires platform-owned AI provider credentials into
-// every new gateway VM's systemd environment. The map is copied so callers can
-// safely reuse their configuration map after construction.
-func WithRepoGatewayProviderEnv(providerEnv map[string]string) RepoGatewayServiceOption {
-	return func(s *RepoGatewayService) {
-		if len(providerEnv) == 0 {
-			return
-		}
-		// Placeholders are filtered here too: a gateway VM selects its
-		// provider by env-var presence, so a placeholder key would win over a
-		// real one.
-		s.agentProviderEnv = UsableProviderCredentials(providerEnv)
-	}
+// WithRepoGatewayModelSeats offers the platform model seats to gateway VMs
+// through the metered model proxy.
+func WithRepoGatewayModelSeats(seats []modelproxy.Seat) RepoGatewayServiceOption {
+	return func(s *RepoGatewayService) { s.modelSeats = slices.Clone(seats) }
 }
 
 // WithRepoGatewayHealthProbe enables the resume-time liveness probe against
@@ -852,10 +825,11 @@ func (s *RepoGatewayService) reuseGateway(ctx context.Context, gateway runtimepo
 		// with its persistent workspace and every parked run on it, which is the
 		// exact harm this path exists to stop. Retry once, the same way the
 		// resume above absorbs a transient provider failure, then fall through.
-		if err := s.startGatewayService(gatewayCtx, gateway.VmID, s.productGatewayEnv(token, gateway.ID, input)); err != nil {
+		env := s.productGatewayEnv(gatewayCtx, token, gateway.ID, input)
+		if err := s.startGatewayService(gatewayCtx, gateway.VmID, env); err != nil {
 			slog.Warn("repo gateway service re-declare on resume failed; retrying once",
 				"gateway_id", gateway.ID, "vm_id", gateway.VmID, "error", err)
-			if err := s.startGatewayService(gatewayCtx, gateway.VmID, s.productGatewayEnv(token, gateway.ID, input)); err != nil {
+			if err := s.startGatewayService(gatewayCtx, gateway.VmID, env); err != nil {
 				slog.Warn("repo gateway service re-declare on resume failed; liveness probe decides",
 					"gateway_id", gateway.ID, "vm_id", gateway.VmID, "error", err)
 				redeclareFailed = true
@@ -1027,6 +1001,7 @@ func (s *RepoGatewayService) probeGatewayHealthChecked(ctx context.Context, vmID
 
 // discardGateway tombstones a gateway row and deletes its VM (best effort).
 func (s *RepoGatewayService) discardGateway(ctx context.Context, gateway runtimeports.RepoGateway) {
+	defer revokeModelProxyTokens(ctx, s.q, gateway.UserID, "gateway-"+gateway.ID)
 	defer meterSandboxUsage(ctx, s.q, gateway.UserID, "gateway", gateway.ID, false)
 	// Announce for both ownership modes, even when guest cleanup fails.
 	defer revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
@@ -1105,7 +1080,7 @@ func (s *RepoGatewayService) provisionGateway(ctx context.Context, input RepoGat
 		return RepoGatewayConnectionInfo{}, pkgerrors.Internal("encrypt gateway token: " + err.Error())
 	}
 
-	env := s.productGatewayEnv(token, gateway.ID, input)
+	env := s.productGatewayEnv(ctx, token, gateway.ID, input)
 
 	vm, err := s.createGatewayVM(ctx, gateway.ID)
 	if err != nil {
@@ -1509,19 +1484,31 @@ func (s *RepoGatewayService) buildGatewayEnv(token string) map[string]string {
 		"TMPDIR":         "/workspace/.tmp",
 		"XDG_CACHE_HOME": "/workspace/.cache",
 	}
-	for name, value := range s.agentProviderEnv {
-		if strings.TrimSpace(name) == "" || value == "" {
-			continue
-		}
+	return env
+}
+
+// bindGatewayModelSeats mints the gateway's model credential, replacing its
+// earlier one, and points the platform seats at the metered model proxy. The
+// credential is confined to the proxy and spends only on the gateway user's
+// credit. A mint failure leaves the seats unset rather than failing the
+// gateway; its model nodes then fail for lack of a provider.
+func (s *RepoGatewayService) bindGatewayModelSeats(ctx context.Context, env map[string]string, gatewayID string, input RepoGatewayConnectionInput) {
+	proxyURL := modelProxyURL(s.gitBaseURL)
+	if proxyURL == "" || len(s.modelSeats) == 0 || input.UserID <= 0 || input.RepositoryID <= 0 {
+		return
+	}
+	holder := "gateway-" + gatewayID
+	token, err := issueModelProxyToken(ctx, s.q, input.UserID, input.RepositoryID, holder, holder)
+	if err != nil {
+		slog.Warn("mint gateway model credential failed", "gateway_id", gatewayID, "error", err)
+		return
+	}
+	for _, seat := range s.modelSeats {
+		env[seat.KeyEnv] = token.Plaintext
+	}
+	for name, value := range modelproxy.GuestEnvironment(proxyURL, s.modelSeats) {
 		env[name] = value
 	}
-	if s.agentSeatAPIKey != "" {
-		// The AI-provider seat. Per-VM systemd env only: never baked into an
-		// image, and the relay RPC surface has no exec/env read, so it never
-		// leaves the VM or enters the immutable host artifact.
-		env["CEREBRAS_API_KEY"] = s.agentSeatAPIKey
-	}
-	return env
 }
 
 func (s *RepoGatewayService) startGatewayService(ctx context.Context, vmID string, env map[string]string) error {

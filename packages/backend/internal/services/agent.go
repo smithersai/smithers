@@ -23,6 +23,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -161,10 +162,12 @@ type AgentSandboxConfig struct {
 	VCPUCount    int32
 	RootfsSizeMB int64
 	MaxRuntime   time.Duration
-	// ProviderEnv contains platform-owned AI provider credentials for the VM.
-	// Values are re-applied after repository-secret injection so a repository
-	// secret cannot replace a platform-provided credential.
-	ProviderEnv map[string]string
+	// ModelSeats are the platform model seats the deployment pays for. The
+	// guest reaches them through the metered model proxy with the run's own
+	// agent token (the repository owner pays); no provider key enters the
+	// guest. Seats are re-applied after repository-secret injection so a
+	// repository secret cannot replace them.
+	ModelSeats  []modelproxy.Seat
 	IdleTimeout time.Duration
 }
 

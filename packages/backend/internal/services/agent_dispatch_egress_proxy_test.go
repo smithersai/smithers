@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -45,10 +46,7 @@ func newEgressDispatch(t *testing.T, sandboxClient SandboxVMClient) *agentDispat
 			sandbox:    sandboxClient,
 			apiBaseURL: "https://api.example.test",
 			sandboxConfig: AgentSandboxConfig{
-				ProviderEnv: map[string]string{
-					"ANTHROPIC_API_KEY": "sk-ant-real-value",
-					"CUSTOM_LLM_KEY":    "custom-real-value",
-				},
+				ModelSeats: []modelproxy.Seat{mustSeat(t, modelproxy.ProviderAnthropic)},
 			},
 		},
 		ctx:            context.Background(),
@@ -61,9 +59,16 @@ func newEgressDispatch(t *testing.T, sandboxClient SandboxVMClient) *agentDispat
 	}
 }
 
-// A platform credential with a known API host reaches the guest as NAME=NAME and the real value travels only inside the create
-// request's egress block. A provider without a binding keeps the legacy path.
-func TestAgentDispatch_EgressProxyReplacesBoundProviderCredentialsWithPlaceholders(t *testing.T) {
+func mustSeat(t *testing.T, provider string) modelproxy.Seat {
+	t.Helper()
+	seat, ok := modelproxy.SeatFor(provider)
+	require.True(t, ok)
+	return seat
+}
+
+// A platform seat reaches the guest as the run's own agent token pointed at
+// the metered model proxy; no provider key is in the guest or the egress block.
+func TestAgentDispatch_PlatformSeatsGoThroughTheMeteredModelProxy(t *testing.T) {
 	t.Parallel()
 	var created sandbox.CreateRequest
 	var started sandbox.ServiceSpec
@@ -78,8 +83,6 @@ func TestAgentDispatch_EgressProxyReplacesBoundProviderCredentialsWithPlaceholde
 		},
 	}
 	dispatch := newEgressDispatch(t, client)
-	metrics := &egressMetricsStub{}
-	dispatch.svc.sandboxMetrics = metrics
 
 	require.NoError(t, dispatch.buildServiceSpec())
 	require.NoError(t, dispatch.injectSecrets())
@@ -88,23 +91,12 @@ func TestAgentDispatch_EgressProxyReplacesBoundProviderCredentialsWithPlaceholde
 	require.NoError(t, dispatch.startService())
 
 	env := started.Env
-	assert.Equal(t, "ANTHROPIC_API_KEY", env["ANTHROPIC_API_KEY"], "bound credential is a placeholder in the guest")
-	assert.Equal(t, "custom-real-value", env["CUSTOM_LLM_KEY"], "an unbound provider keeps the legacy path")
-	assert.Equal(t, "agent-token", env["SMITHERS_AGENT_TOKEN"])
-
+	assert.Equal(t, "agent-token", env["ANTHROPIC_API_KEY"], "the seat carries the run's agent token")
+	assert.Equal(t, "https://api.example.test/model-proxy/anthropic", env["ANTHROPIC_BASE_URL"])
+	assert.Equal(t, "https://api.example.test/model-proxy", env[modelproxy.URLEnv])
+	assert.Equal(t, "anthropic", env[modelproxy.ProvidersEnv])
 	require.NotNil(t, created.EgressProxy)
-	assert.True(t, created.EgressProxy.Enabled)
-	require.Len(t, created.EgressProxy.Secrets, 1)
-	secret := created.EgressProxy.Secrets[0]
-	assert.Equal(t, "ANTHROPIC_API_KEY", secret.Name)
-	assert.Equal(t, "sk-ant-real-value", secret.Value)
-	assert.Equal(t, []string{"api.anthropic.com"}, secret.Hosts)
-	assert.ElementsMatch(t, []string{"x-api-key", "authorization"}, secret.MatchHeaders)
-
-	serviceJSON, err := json.Marshal(started)
-	require.NoError(t, err)
-	assert.NotContains(t, string(serviceJSON), "sk-ant-real-value", "the service spec sent to the guest never carries the value")
-	assert.Equal(t, 1, metrics.deliveries[secretDeliveryPathEgressProxy])
+	assert.NotContains(t, created.EgressProxy.SecretNames(), "ANTHROPIC_API_KEY")
 }
 
 // Bound agent-environment secrets reach the session only through the proxy,
@@ -228,8 +220,7 @@ func TestProviderCredentialEgressSecretBindsKnownProvidersOnly(t *testing.T) {
 
 // The proxy is not optional: a session with no bound secret at all still asks
 // the worker for its proxy, so the guest's only network path is the boundary
-// even when there is nothing to substitute yet. A provider without a known
-// host stays on the legacy environment path.
+// even when there is nothing to substitute yet.
 func TestAgentDispatch_EgressProxyIsRequestedForEverySession(t *testing.T) {
 	t.Parallel()
 	var created sandbox.CreateRequest
@@ -238,7 +229,7 @@ func TestAgentDispatch_EgressProxyIsRequestedForEverySession(t *testing.T) {
 		return sandbox.CreateResult{ID: "vm-unbound"}, nil
 	}}
 	dispatch := newEgressDispatch(t, client)
-	dispatch.svc.sandboxConfig.ProviderEnv = map[string]string{"CUSTOM_LLM_KEY": "custom-real-value"}
+	dispatch.svc.sandboxConfig.ModelSeats = nil
 	metrics := &egressMetricsStub{}
 	dispatch.svc.sandboxMetrics = metrics
 
@@ -249,7 +240,6 @@ func TestAgentDispatch_EgressProxyIsRequestedForEverySession(t *testing.T) {
 	require.NotNil(t, created.EgressProxy)
 	assert.True(t, created.EgressProxy.Enabled)
 	assert.Empty(t, created.EgressProxy.Secrets)
-	assert.Equal(t, "custom-real-value", dispatch.agentServiceSpec.Env["CUSTOM_LLM_KEY"], "an unbound provider keeps the legacy path")
 	assert.Equal(t, 0, metrics.deliveries[secretDeliveryPathEgressProxy])
 }
 
@@ -264,7 +254,7 @@ func TestAgentDispatch_BindsBuildCacheWriteTokenThroughProxy(t *testing.T) {
 		return sandbox.CreateResult{ID: "vm-cache"}, nil
 	}}
 	dispatch := newEgressDispatch(t, client)
-	dispatch.svc.sandboxConfig.ProviderEnv = map[string]string{}
+	dispatch.svc.sandboxConfig.ModelSeats = nil
 	dispatch.input.RepoOwner = "acme"
 	dispatch.input.RepoName = "app"
 	dispatch.jjhubToken = temporaryRepoCloneToken{ID: 1, Plaintext: "smithers_" + strings.Repeat("c", 40)}

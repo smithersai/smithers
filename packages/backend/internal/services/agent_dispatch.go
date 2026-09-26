@@ -16,6 +16,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -61,6 +62,8 @@ type agentDispatch struct {
 	// credential guard recognize a placeholder. Both are empty when the
 	// deployment runs with the legacy in-guest path.
 	egressSecrets []sandbox.EgressProxySecret
+	// replacedSeats are platform model providers a connected account serves.
+	replacedSeats map[string]struct{}
 	// guestFiles are placeholder-only files the connection binding plants in
 	// the guest (for example the Codex auth.json); never a credential.
 	guestFiles map[string]sandbox.SandboxFile
@@ -799,20 +802,7 @@ func (d *agentDispatch) applyReservedRuntimeEnv() {
 	}
 	d.agentServiceSpec.Env["SMITHERS_AGENT_TOKEN"] = d.plaintext
 	d.agentServiceSpec.Env["SMITHERS_API_BASE_URL"] = normalizePublicBaseURL(d.svc.apiBaseURL)
-	for name, value := range d.svc.sandboxConfig.ProviderEnv {
-		if strings.TrimSpace(name) == "" || value == "" {
-			continue
-		}
-		// Platform provider credentials with a known API host go through
-		// the proxy: the guest sees NAME=NAME. A provider without a
-		// binding keeps the legacy path rather than a placeholder the
-		// proxy would never swap.
-		if secret, ok := ProviderCredentialEgressSecret(name, value); ok {
-			d.bindEgressSecret(secret)
-			continue
-		}
-		d.agentServiceSpec.Env[name] = value
-	}
+	d.bindModelSeats()
 	if d.hasJJHubToken {
 		d.agentServiceSpec.Env["SMITHERS_JJHUB_TOKEN"] = d.jjhubToken.Plaintext
 		d.agentServiceSpec.Env["SMITHERS_JJHUB_API_URL"] = normalizePublicBaseURL(d.svc.apiBaseURL)
@@ -830,6 +820,47 @@ func (d *agentDispatch) applyReservedRuntimeEnv() {
 			d.agentServiceSpec.Env["SMITHERS_CACHE_URL"] = normalizePublicBaseURL(d.svc.apiBaseURL) + "/api/repos/" + d.input.RepoOwner + "/" + d.input.RepoName + "/build-cache"
 		}
 	}
+}
+
+// bindModelSeats points the platform model seats at the metered proxy with
+// the run's agent token. A seat a connected account replaced stays off.
+func (d *agentDispatch) bindModelSeats() {
+	for _, name := range []string{modelproxy.URLEnv, modelproxy.ProvidersEnv} {
+		delete(d.agentServiceSpec.Env, name)
+	}
+	for _, seat := range d.svc.sandboxConfig.ModelSeats {
+		if d.agentServiceSpec.Env[seat.KeyEnv] == d.plaintext {
+			delete(d.agentServiceSpec.Env, seat.KeyEnv)
+		}
+		delete(d.agentServiceSpec.Env, seat.BaseURLEnv)
+	}
+	proxyURL := modelProxyURL(d.svc.apiBaseURL)
+	if proxyURL == "" || d.plaintext == "" {
+		return
+	}
+	var seats []modelproxy.Seat
+	for _, seat := range d.svc.sandboxConfig.ModelSeats {
+		if _, replaced := d.replacedSeats[seat.Provider]; !replaced {
+			seats = append(seats, seat)
+		}
+	}
+	for _, seat := range seats {
+		d.unbindEgressSecret(seat.KeyEnv)
+		d.agentServiceSpec.Env[seat.KeyEnv] = d.plaintext
+	}
+	for name, value := range modelproxy.GuestEnvironment(proxyURL, seats) {
+		d.agentServiceSpec.Env[name] = value
+	}
+}
+
+// replaceModelSeat takes a platform seat off the metered proxy because the
+// run's own connected account serves that provider.
+func (d *agentDispatch) replaceModelSeat(provider string) {
+	if d.replacedSeats == nil {
+		d.replacedSeats = map[string]struct{}{}
+	}
+	d.replacedSeats[provider] = struct{}{}
+	d.bindModelSeats()
 }
 
 // apiHost is the host the per-run credentials are bound to at the proxy.
@@ -933,11 +964,13 @@ func (d *agentDispatch) bindProviderConnection() error {
 	case ProviderConnectionProviderClaude:
 		// The platform Anthropic credential would otherwise compete for
 		// provider selection inside the guest; the subscription replaces it.
+		d.replaceModelSeat(modelproxy.ProviderAnthropic)
 		d.unbindEgressSecret("ANTHROPIC_API_KEY")
 		for _, secret := range ClaudeConnectionProxySecrets(resolved) {
 			d.bindEgressSecret(secret)
 		}
 	case ProviderConnectionProviderCodex:
+		d.replaceModelSeat(modelproxy.ProviderOpenAI)
 		d.bindEgressSecret(CodexProxySecret(resolved.AccessToken))
 		d.agentServiceSpec.Env["CODEX_HOME"] = codexHomeGuestPath
 		if d.guestFiles == nil {

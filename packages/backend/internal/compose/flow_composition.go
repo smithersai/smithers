@@ -21,6 +21,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 )
 
 type flowComposition struct {
@@ -42,12 +43,20 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 		return nil, err
 	}
 	registry := options.FlowHostRegistry
+	// Managed hosts reach platform models through the metered proxy with a
+	// credential derived from their binding; the repository's owner pays.
+	modelSeats := modelproxy.OfferedSeats(options.PlatformModelKeys)
+	modelProxyURL := ""
+	if len(modelSeats) > 0 {
+		modelProxyURL = productAPIURL + modelproxy.Path
+	}
 	catalogs := []flowhost.Catalog{
 		{
 			Key: flowhost.CatalogCoding, Family: flowhost.CatalogCoding,
 			Executable: registry.Coding.Executable, ArtifactDigest: registry.Coding.SHA256,
 			ServiceName: "smithers-coding-host", ImplementationModel: strings.TrimSpace(cfg.Sandbox.WorkspaceCodingDefaultModel),
-			Environment: codingHostEnvironment(options.topology),
+			Environment:   codingHostEnvironment(options.topology),
+			ModelProxyURL: modelProxyURL, ModelSeats: modelSeats,
 		},
 		{
 			Key: flowhost.CatalogLibrarian, Family: flowhost.CatalogLibrarian,
@@ -55,6 +64,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 			ServiceName: "smithers-librarian-host", ProductAPIURL: productAPIURL,
 			ImplementationModel: strings.TrimSpace(os.Getenv("SMITHERS_LIBRARIAN_MODEL")),
 			Environment:         librarianHostEnvironment(options.topology),
+			ModelProxyURL:       modelProxyURL, ModelSeats: modelSeats,
 		},
 	}
 	bindings, err := flowhost.NewStore(pool, codec)
@@ -111,12 +121,8 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 }
 
 func codingHostEnvironment(role topology) map[string]string {
+	// A hosted host's model seats come from the catalog's model proxy.
 	environment := make(map[string]string)
-	if role.hosted() {
-		// The platform binds the real judge credential to the workspace egress
-		// proxy. Only its name crosses into the guest process environment.
-		environment["AI_GATEWAY_API_KEY"] = "AI_GATEWAY_API_KEY"
-	}
 	for _, name := range []string{"SMITHERS_WORKSPACE_JJ_EXPORT_BINARY", "SMITHERS_JJ_PATH"} {
 		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
 			environment[name] = value
@@ -135,9 +141,6 @@ func codingHostEnvironment(role topology) map[string]string {
 
 func librarianHostEnvironment(role topology) map[string]string {
 	environment := make(map[string]string)
-	if role.hosted() {
-		environment["AI_GATEWAY_API_KEY"] = "AI_GATEWAY_API_KEY"
-	}
 	if !role.hosted() {
 		for _, name := range []string{"AI_GATEWAY_API_KEY", "SMITHERS_EVALUATOR_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
 			if value := strings.TrimSpace(os.Getenv(name)); value != "" {

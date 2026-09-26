@@ -36,6 +36,7 @@ another product composition root.
 - `packages/backend/localbootstrap`
 - `packages/backend/modelhost`
 - `packages/backend/modelprice`
+- `packages/backend/modelproxy`
 - `packages/backend/native`
 - `packages/backend/operations`
 - `packages/backend/ports`

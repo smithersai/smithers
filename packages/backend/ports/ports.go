@@ -12,11 +12,17 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/repository"
 	"github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 var ErrModelCredentialMissing = errors.New("model credential is missing")
+
+// PlatformModelKeys supplies the provider keys the deployment pays for. Keys
+// are resolved per call by the metered model proxy and never cached, logged
+// or placed in a guest. Nil offers no platform models.
+type PlatformModelKeys = modelproxy.Keys
 
 const RecommendationModelID = "typesafe-ai/jev"
 

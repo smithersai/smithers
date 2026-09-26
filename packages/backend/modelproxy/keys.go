@@ -1,0 +1,165 @@
+// Package modelproxy is the one metering point for model calls made with a
+// platform (Smithers-paid) provider key. Guests, managed Flow hosts and the
+// product's own model features reach providers through it with a Smithers
+// credential; it reserves a provider-enforced bound in the credit ledger,
+// forwards the call with a key resolved at use, settles the reported usage
+// once and records the call in model_usage. Platform keys never leave this
+// process. Calls on a user's own connected accounts use the account pool
+// (/provider-pool) and are not metered here.
+package modelproxy
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"strings"
+)
+
+// Path is where the proxy is mounted: outside /api, because model calls
+// stream for minutes and guest credentials are confined away from /api.
+const Path = "/model-proxy"
+
+// APIPath serves the same proxy to the app's signed-in calls, which reach it
+// with the user's own token (apps/server modelPayer.ts).
+const APIPath = "/api/model"
+
+// Guest environment variables. URLEnv is the TypeScript model routes'
+// SMITHERS_MODEL_PROXY_URL; ProvidersEnv limits it to the listed providers so a
+// repository's own key for another provider keeps its provider origin.
+const (
+	URLEnv       = "SMITHERS_MODEL_PROXY_URL"
+	ProvidersEnv = "SMITHERS_MODEL_PROXY_PROVIDERS"
+)
+
+// Provider names, as they appear in the proxy path.
+const (
+	ProviderAnthropic  = "anthropic"
+	ProviderOpenAI     = "openai"
+	ProviderCerebras   = "cerebras"
+	ProviderOpenRouter = "openrouter"
+	ProviderVercel     = "vercel"
+)
+
+// ErrKeyMissing means the deployment offers no platform key for a provider.
+var ErrKeyMissing = errors.New("modelproxy: platform model key is not configured")
+
+// Keys is the deployment port for platform provider keys. PlatformModelKey is
+// called for every model call, so a rotated key applies to the next call; the
+// proxy never caches, logs or stores the value.
+type Keys interface {
+	// PlatformModelProviders lists the providers the deployment pays for.
+	PlatformModelProviders() []string
+	// PlatformModelKey returns the provider's key, or ErrKeyMissing.
+	PlatformModelKey(ctx context.Context, provider string) (string, error)
+}
+
+// Seat is the guest-side spelling of one platform provider: the key variable a
+// model SDK reads and the base URL variable that points it at the proxy.
+type Seat struct {
+	Provider   string
+	KeyEnv     string
+	BaseURLEnv string
+	// BaseURLPath follows the proxy URL in BaseURLEnv.
+	BaseURLPath string
+}
+
+// Seats are the platform seats in a stable order.
+var Seats = []Seat{
+	{ProviderAnthropic, "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "/anthropic"},
+	{ProviderOpenAI, "OPENAI_API_KEY", "OPENAI_BASE_URL", "/openai/v1"},
+	{ProviderCerebras, "CEREBRAS_API_KEY", "CEREBRAS_BASE_URL", "/cerebras/v1"},
+	{ProviderOpenRouter, "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "/openrouter/v1"},
+	{ProviderVercel, "AI_GATEWAY_API_KEY", "SMITHERS_EVALUATOR_BASE_URL", "/vercel/v4/ai/evaluation-model"},
+}
+
+// SeatFor returns the seat for a provider or a key variable name.
+func SeatFor(name string) (Seat, bool) {
+	name = strings.TrimSpace(name)
+	for _, seat := range Seats {
+		if seat.Provider == name || seat.KeyEnv == name {
+			return seat, true
+		}
+	}
+	return Seat{}, false
+}
+
+// OfferedSeats returns the seats of the providers keys offers, in Seats order.
+func OfferedSeats(keys Keys) []Seat {
+	if keys == nil {
+		return nil
+	}
+	offered := keys.PlatformModelProviders()
+	var out []Seat
+	for _, seat := range Seats {
+		if slices.Contains(offered, seat.Provider) {
+			out = append(out, seat)
+		}
+	}
+	return out
+}
+
+// GuestEnvironment is the non-secret environment that routes seats through
+// the proxy at proxyURL (an origin followed by Path). The seats' key variables
+// are set by the caller to a Smithers model credential, never a provider key.
+func GuestEnvironment(proxyURL string, seats []Seat) map[string]string {
+	proxyURL = strings.TrimRight(strings.TrimSpace(proxyURL), "/")
+	env := map[string]string{}
+	if proxyURL == "" || len(seats) == 0 {
+		return env
+	}
+	providers := make([]string, 0, len(seats))
+	for _, seat := range seats {
+		providers = append(providers, seat.Provider)
+		env[seat.BaseURLEnv] = proxyURL + seat.BaseURLPath
+	}
+	env[URLEnv] = proxyURL
+	env[ProvidersEnv] = strings.Join(providers, ",")
+	return env
+}
+
+// StaticKeys serves keys held in process configuration. Unusable values
+// (blank, operator placeholders, <templates>) are not offered.
+type StaticKeys map[string]string
+
+// NewStaticKeys keeps the usable keys of the known providers.
+func NewStaticKeys(byProvider map[string]string) StaticKeys {
+	out := StaticKeys{}
+	for provider, key := range byProvider {
+		if _, ok := SeatFor(provider); ok && UsableKey(key) {
+			out[provider] = strings.TrimSpace(key)
+		}
+	}
+	return out
+}
+
+func (k StaticKeys) PlatformModelProviders() []string {
+	var out []string
+	for _, seat := range Seats {
+		if _, ok := k[seat.Provider]; ok {
+			out = append(out, seat.Provider)
+		}
+	}
+	return out
+}
+
+func (k StaticKeys) PlatformModelKey(_ context.Context, provider string) (string, error) {
+	if key, ok := k[provider]; ok {
+		return key, nil
+	}
+	return "", ErrKeyMissing
+}
+
+// UsableKey rejects blanks, operator-seeded placeholders and <templates>.
+func UsableKey(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || (strings.HasPrefix(trimmed, "<") && strings.HasSuffix(trimmed, ">")) {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	for _, prefix := range []string{"placeholder", "changeme", "change-me", "replace-me", "replaceme", "todo", "unset", "example"} {
+		if strings.HasPrefix(lower, prefix) {
+			return false
+		}
+	}
+	return true
+}

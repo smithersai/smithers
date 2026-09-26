@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
@@ -23,7 +24,7 @@ func TestJevRecommender_UsesGatewayDecisionAndFiltersAtRouteBoundary(t *testing.
 		_, _ = w.Write([]byte(`{"answers":{"command1":{"type":"choice","choice":"review","probabilities":{"review":0.9,"help":0.1}}}}`))
 	}))
 	defer server.Close()
-	recommender, err := NewJevRecommender("gateway-key", server.URL, server.Client())
+	recommender, err := NewJevRecommender(modelproxy.StaticKeys{modelproxy.ProviderVercel: "gateway-key"}, server.URL, server.Client())
 	require.NoError(t, err)
 	result, err := recommender.Recommend(context.Background(), ports.RecommendationRequest{
 		Commands: []ports.RecommendationCommand{{Name: "review", Summary: "Review"}, {Name: "help", Summary: "Help"}},

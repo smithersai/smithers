@@ -242,7 +242,7 @@ mythical_stacks,product,product migration 0026
 mythical_changes,product,product migration 0026
 mythical_items,product,product migration 0026
 mythical_lanes,product,product migration 0026
-billing_model_usage,private,Plue model usage metering migration 0012
+billing_model_usage,private,Plue model usage metering migration 0012; superseded by product model_usage (migration 0030)
 credit_accounts,product,product migration 0027
 credit_grants,product,product migration 0027
 credit_reservations,product,product migration 0027
@@ -251,3 +251,4 @@ credit_events,product,product migration 0027
 credit_legacy_imports,product,product migration 0027
 canonical_import_receipts,product,product migration 0028
 workspace_provider_uses,product,product migration 0029
+model_usage,product,product migration 0030

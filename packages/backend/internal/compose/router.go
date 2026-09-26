@@ -22,6 +22,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 )
 
 type routerExtras struct {
@@ -31,6 +32,9 @@ type routerExtras struct {
 	ModelStream         *routes.ModelStreamHandler
 	Catalog             *routes.PublicRepositoryCatalogHandler
 	Mythical            *routes.MythicalHandler
+	// ModelProxy is the metered platform-model proxy; nil when the deployment
+	// offers no platform models.
+	ModelProxy http.Handler
 }
 
 func buildRouter(
@@ -599,6 +603,14 @@ func buildRouter(
 			r.Use(authLoader(queries, cfg.Auth))
 			r.With(middleware.RequireAuth).Post(services.ProviderPoolPath+"/*", providerConnectionHandler.Pool.ServeHTTP)
 		})
+	}
+
+	// The metered platform-model proxy: guests reach it at /model-proxy with a
+	// model credential or their run's agent token, and the app's signed-in
+	// calls at /api/model/{provider} with the user's token. Outside /api:
+	// calls stream for minutes, and the handler bounds its own bodies.
+	if extras.ModelProxy != nil {
+		mountModelProxy(r, queries, cfg, extras.ModelProxy)
 	}
 
 	// Build the rate-limit reject observer once so both the /api route group and
@@ -1846,4 +1858,18 @@ func authLoader(queries *db.Queries, cfg config.AuthConfig) func(http.Handler) h
 	return func(next http.Handler) http.Handler {
 		return load(guard(next))
 	}
+}
+
+// mountModelProxy serves the metered model proxy at /model-proxy and, for the
+// app's signed-in calls, at /api/model/{provider}.
+func mountModelProxy(r chi.Router, queries *db.Queries, cfg *config.Config, handler http.Handler) {
+	r.Group(func(r chi.Router) {
+		r.Use(routes.ModelProxyAuth(middleware.RequireAgentToken(queries), func(next http.Handler) http.Handler {
+			return authLoader(queries, cfg.Auth)(middleware.RequireAuth(next))
+		}))
+		r.Post(modelproxy.Path+"/*", handler.ServeHTTP)
+		for _, seat := range modelproxy.Seats {
+			r.Post(modelproxy.APIPath+"/"+seat.Provider+"/*", handler.ServeHTTP)
+		}
+	})
 }

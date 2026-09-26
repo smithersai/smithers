@@ -15,6 +15,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/localbootstrap"
 	"github.com/smithersai/smithers/packages/backend/modelhost"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/native"
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/postgres"
@@ -103,7 +104,8 @@ func run(ctx context.Context, args []string) (runErr error) {
 	}
 	var recommender ports.Recommender
 	if key := strings.TrimSpace(os.Getenv("AI_GATEWAY_API_KEY")); key != "" {
-		recommender, err = modelhost.NewJevRecommender(key, os.Getenv("SMITHERS_JEV_ENDPOINT"), nil)
+		// The owner's own key: a single-owner installation is not metered.
+		recommender, err = modelhost.NewJevRecommender(modelproxy.NewStaticKeys(map[string]string{modelproxy.ProviderVercel: key}), os.Getenv("SMITHERS_JEV_ENDPOINT"), nil)
 		if err != nil {
 			return fmt.Errorf("configure recommender: %w", err)
 		}

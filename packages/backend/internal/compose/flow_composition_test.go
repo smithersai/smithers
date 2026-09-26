@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -23,12 +24,15 @@ func TestCodingHostEnvironmentKeepsOwnerProviderInsideLocalRuntime(t *testing.T)
 	}
 }
 
-func TestHostedFlowHostsUseProxyJudgePlaceholder(t *testing.T) {
+func TestHostedFlowHostsCarryNoOperatorModelKey(t *testing.T) {
 	t.Setenv("AI_GATEWAY_API_KEY", "operator-secret-must-stay-out-of-guest")
+	t.Setenv("OPENAI_API_KEY", "operator-secret-must-stay-out-of-guest")
 	for _, role := range []topology{hostedAPITopology, hostedWorkerTopology} {
 		for _, environment := range []map[string]string{codingHostEnvironment(role), librarianHostEnvironment(role)} {
-			if environment["AI_GATEWAY_API_KEY"] != "AI_GATEWAY_API_KEY" {
-				t.Fatalf("%+v Flow host must receive the proxy placeholder, got %q", role, environment["AI_GATEWAY_API_KEY"])
+			for name, value := range environment {
+				if strings.Contains(value, "operator-secret") || name == "AI_GATEWAY_API_KEY" {
+					t.Fatalf("%+v Flow host environment carries %s; its model seats come from the metered proxy", role, name)
+				}
 			}
 		}
 	}

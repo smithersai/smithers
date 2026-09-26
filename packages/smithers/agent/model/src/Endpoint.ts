@@ -170,10 +170,38 @@ export type ProxiedProvider = keyof typeof providerOrigins
 export const modelProxyVariable = "SMITHERS_MODEL_PROXY_URL"
 
 /**
- * The origin a request to `provider` goes to. With
- * `SMITHERS_MODEL_PROXY_URL` set and non-empty it is
- * `${SMITHERS_MODEL_PROXY_URL}/${provider}`, a trailing slash stripped;
- * otherwise it is the provider's own origin.
+ * The variable limiting {@link modelProxyVariable} to the comma-separated
+ * providers it serves, such as `anthropic,vercel`. Unset, the proxy serves
+ * every provider; set, a provider it omits keeps its own origin, so a key the
+ * guest holds for that provider never reaches the proxy.
+ *
+ * @since 1.0.0-rc.1
+ * @category constants
+ */
+export const modelProxyProvidersVariable = "SMITHERS_MODEL_PROXY_PROVIDERS"
+
+/**
+ * The metered proxy's origin for `provider`, or `undefined` when no proxy is
+ * set or {@link modelProxyProvidersVariable} leaves `provider` out.
+ *
+ * @since 1.0.0-rc.1
+ * @category getters
+ */
+export const proxyOrigin = (
+  provider: string,
+  environment: Readonly<Record<string, string | undefined>>
+): string | undefined => {
+  const proxy = environment[modelProxyVariable]
+  if (proxy === undefined || proxy === "") return undefined
+  const providers = environment[modelProxyProvidersVariable]
+  if (providers !== undefined && !providers.split(",").map((item) => item.trim()).includes(provider)) return undefined
+  return `${proxy.replace(/\/+$/, "")}/${provider}`
+}
+
+/**
+ * The origin a request to `provider` goes to: the metered proxy's
+ * ({@link proxyOrigin}) when it serves `provider`, otherwise the provider's
+ * own origin.
  *
  * @since 1.0.0-rc.1
  * @category getters
@@ -181,9 +209,4 @@ export const modelProxyVariable = "SMITHERS_MODEL_PROXY_URL"
 export const providerOrigin = (
   provider: ProxiedProvider,
   environment: Readonly<Record<string, string | undefined>>
-): string => {
-  const proxy = environment[modelProxyVariable]
-  return proxy === undefined || proxy === ""
-    ? providerOrigins[provider]
-    : `${proxy.replace(/\/+$/, "")}/${provider}`
-}
+): string => proxyOrigin(provider, environment) ?? providerOrigins[provider]

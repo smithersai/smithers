@@ -7,6 +7,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -55,13 +56,8 @@ func (s *WorkspaceService) resolveWorkspaceProviderBindings(ctx context.Context,
 		if model == "" {
 			model = workspaceCodingModel(binding.availableProviderNames(), "")
 		}
-		for _, key := range AgentProviderCredentialEnvNames {
-			if workspaceDeclaresProvider(binding.environment, key) {
-				continue
-			}
-			if secret, ok := ProviderCredentialEgressSecret(key, s.platformProviderEnv[key]); ok {
-				binding.bind(secret)
-			}
+		if err := s.bindWorkspaceModelProxy(ctx, workspace, binding); err != nil {
+			return nil, err
 		}
 		if model == "" {
 			model = workspaceCodingModel(binding.availableProviderNames(), s.codingDefaultModel)
@@ -208,6 +204,39 @@ func (s *WorkspaceService) prepareWorkspaceProviderFiles(ctx context.Context, vm
 	})
 	if err != nil || !successfulExecStatus(response) {
 		return pkgerrors.Internal("prepare workspace provider authentication")
+	}
+	return nil
+}
+
+// bindWorkspaceModelProxy offers the platform seats the repository does not
+// supply itself (a key, or connected accounts) through the metered model
+// proxy. One workspace model credential, minted per boot and replacing the
+// earlier one, is bound for the API host only; the workspace's user pays.
+func (s *WorkspaceService) bindWorkspaceModelProxy(ctx context.Context, workspace db.Workspace, binding *workspaceProviderBinding) error {
+	proxyURL := modelProxyURL(s.gitBaseURL)
+	host := apiHost(proxyURL)
+	if proxyURL == "" || !sandbox.ValidEgressHost(host) {
+		return nil
+	}
+	var seats []modelproxy.Seat
+	for _, seat := range s.platformSeats {
+		if !workspaceDeclaresProvider(binding.environment, seat.KeyEnv) {
+			seats = append(seats, seat)
+		}
+	}
+	if len(seats) == 0 {
+		return nil
+	}
+	holder := "workspace-" + workspace.ID
+	token, err := issueModelProxyToken(ctx, s.q, workspace.UserID, workspace.RepositoryID, holder, workspace.ID)
+	if err != nil {
+		return pkgerrors.Internal("mint workspace model credential").WithCause(err)
+	}
+	for _, seat := range seats {
+		binding.bind(sandbox.EgressProxySecret{Name: seat.KeyEnv, Value: token.Plaintext, Hosts: []string{host}, MatchHeaders: []string{"authorization", "x-api-key"}})
+	}
+	for name, value := range modelproxy.GuestEnvironment(proxyURL, seats) {
+		binding.setEnv(name, value)
 	}
 	return nil
 }

@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
@@ -62,13 +64,17 @@ func (h *PublicRepositoryCatalogHandler) ServeHTTP(w http.ResponseWriter, r *htt
 	_ = json.NewEncoder(w).Encode(map[string]any{"repos": repos, "comingSoon": []any{}})
 }
 
+// RecommendationHandler asks the decision model (Jev) for the next commands.
+// With a Meter (a deployment that pays for Jev), every call is metered to the
+// signed-in user; a single-owner installation runs Jev on its owner's key.
 type RecommendationHandler struct {
 	Recommender ports.Recommender
 	Log         ports.RecommendationLog
+	Meter       *modelproxy.Meter
 }
 
-func NewRecommendationHandler(recommender ports.Recommender, log ports.RecommendationLog) *RecommendationHandler {
-	return &RecommendationHandler{Recommender: recommender, Log: log}
+func NewRecommendationHandler(recommender ports.Recommender, log ports.RecommendationLog, meter *modelproxy.Meter) *RecommendationHandler {
+	return &RecommendationHandler{Recommender: recommender, Log: log, Meter: meter}
 }
 
 const (
@@ -90,15 +96,23 @@ func (h *RecommendationHandler) Recommend(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"status":"error","code":"recommend_unavailable"}`, http.StatusNotFound)
 		return
 	}
+	user := middleware.UserFromContext(r.Context())
+	if h.Meter != nil && user == nil {
+		// A platform-key call needs a payer.
+		writeRecommendationError(w, http.StatusUnauthorized, "auth_required")
+		return
+	}
 	var input ports.RecommendationRequest
 	decoder := json.NewDecoder(io.LimitReader(r.Body, recommendBodyLimit+1))
 	if err := decoder.Decode(&input); err != nil || !validRecommendationRequest(input) {
 		writeRecommendationError(w, http.StatusBadRequest, "request_invalid")
 		return
 	}
-	result, err := h.Recommender.Recommend(r.Context(), input)
+	result, err := h.recommend(r.Context(), user, input)
 	if err != nil {
-		if errors.Is(err, ports.ErrModelCredentialMissing) {
+		if errors.Is(err, credits.ErrInsufficient) || errors.Is(err, credits.ErrSealed) {
+			writeRecommendationError(w, http.StatusPaymentRequired, modelproxy.OutOfCredit)
+		} else if errors.Is(err, ports.ErrModelCredentialMissing) {
 			writeRecommendationError(w, http.StatusServiceUnavailable, "credential_missing")
 		} else {
 			writeRecommendationError(w, http.StatusBadGateway, "recommend_failed")
@@ -119,6 +133,29 @@ func (h *RecommendationHandler) Recommend(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "commands": result.Commands, "model": result.Model})
+}
+
+// recommend runs one Jev call, metered to user when the deployment pays.
+func (h *RecommendationHandler) recommend(ctx context.Context, user *db.User, input ports.RecommendationRequest) (ports.RecommendationResult, error) {
+	if h.Meter == nil {
+		return h.Recommender.Recommend(ctx, input)
+	}
+	var result ports.RecommendationResult
+	caller := modelproxy.Caller{OwnerType: "user", OwnerID: user.ID, UserID: user.ID, Source: modelproxy.SourceRecommendation}
+	_, err := h.Meter.Execute(ctx, caller, modelproxy.Call{Provider: modelproxy.ProviderVercel, Model: modelproxy.JevModel},
+		func(ctx context.Context) (modelproxy.Result, error) {
+			var callErr error
+			result, callErr = h.Recommender.Recommend(ctx, input)
+			switch {
+			case callErr == nil:
+				return modelproxy.Result{Outcome: credits.ModelSucceeded}, nil
+			case errors.Is(callErr, modelproxy.ErrNotCharged), errors.Is(callErr, ports.ErrModelCredentialMissing):
+				return modelproxy.Result{Outcome: credits.ModelFailed}, callErr
+			default:
+				return modelproxy.Result{Outcome: credits.ModelUnknown}, callErr
+			}
+		})
+	return result, err
 }
 
 func (h *RecommendationHandler) Outcome(w http.ResponseWriter, r *http.Request) {

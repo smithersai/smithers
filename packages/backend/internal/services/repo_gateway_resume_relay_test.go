@@ -232,7 +232,7 @@ func TestRepoGatewayService_IdleSuspendResumeRelay_ServesTheSameVMAgain(t *testi
 	}}
 	vm := guest.vmClient()
 	svc := newTestRepoGatewayService(q, vm,
-		WithRepoGatewayAgentSeat("cerebras-test-key"),
+		WithRepoGatewayModelSeats(testGatewayModelSeats),
 		WithRepoGatewayHealthProbe(ingress.URL, ingress.Client()))
 	fastRepoGatewaySleep(svc)
 
@@ -255,7 +255,7 @@ func TestRepoGatewayService_IdleSuspendResumeRelay_ServesTheSameVMAgain(t *testi
 	require.Len(t, vm.systemdSpecs, 1, "a resumed VM boots with no gateway process; resume must re-declare it")
 	assert.Equal(t, token, vm.systemdSpecs[0].Env["SMITHERS_API_KEY"],
 		"the re-declare carries the real operator token, not the durable '[redacted]' shape")
-	assert.Equal(t, "cerebras-test-key", vm.systemdSpecs[0].Env["CEREBRAS_API_KEY"])
+	assertGatewayModelSeat(t, vm.systemdSpecs[0].Env)
 
 	powered, serving := guest.state()
 	assert.True(t, powered)

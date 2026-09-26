@@ -60,7 +60,9 @@ func TestAgentDispatch_ClaudeConnectionReplacesPlatformCredential(t *testing.T) 
 	assert.Equal(t, "ANTHROPIC_AUTH_TOKEN", started.Env["ANTHROPIC_AUTH_TOKEN"])
 	assert.Equal(t, "CLAUDE_CODE_OAUTH_TOKEN", started.Env["CLAUDE_CODE_OAUTH_TOKEN"])
 	_, hasPlatformKey := started.Env["ANTHROPIC_API_KEY"]
-	assert.False(t, hasPlatformKey, "the platform key must not compete with the subscription")
+	assert.False(t, hasPlatformKey, "the platform seat must not compete with the subscription")
+	_, hasPlatformURL := started.Env["ANTHROPIC_BASE_URL"]
+	assert.False(t, hasPlatformURL, "the subscription keeps Anthropic's own origin")
 
 	names := created.EgressProxy.SecretNames()
 	assert.ElementsMatch(t, []string{"ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"}, names)
@@ -82,7 +84,8 @@ func TestAgentDispatch_CodexConnectionPlantsPlaceholderAuthJSON(t *testing.T) {
 	assert.Equal(t, "codex", resolver.provider)
 	assert.Equal(t, "OPENAI_CODEX_ACCESS_TOKEN", started.Env["OPENAI_CODEX_ACCESS_TOKEN"])
 	assert.Equal(t, "/root/.codex", started.Env["CODEX_HOME"])
-	assert.Equal(t, "ANTHROPIC_API_KEY", started.Env["ANTHROPIC_API_KEY"], "the platform key stays bound for other providers")
+	assert.Equal(t, "agent-token", started.Env["ANTHROPIC_API_KEY"], "the platform seat stays metered for other providers")
+	assert.Equal(t, "anthropic", started.Env["SMITHERS_MODEL_PROXY_PROVIDERS"])
 
 	file, ok := created.Files["/root/.codex/auth.json"]
 	require.True(t, ok, "auth.json is planted in the guest")
@@ -110,12 +113,12 @@ func TestAgentDispatch_CodexConnectionPlantsPlaceholderAuthJSON(t *testing.T) {
 	assertNoSubscriptionTokenOutsideProxy(t, created, started, "chatgpt-access-secret")
 }
 
-// No connection means the platform path is untouched.
+// No connection means the platform seat stays on the metered model proxy.
 func TestAgentDispatch_NoConnectionKeepsPlatformPath(t *testing.T) {
 	t.Parallel()
 	created, started := runProviderConnectionDispatch(t, &providerConnectionResolverStub{}, "smithers")
-	assert.Equal(t, "ANTHROPIC_API_KEY", started.Env["ANTHROPIC_API_KEY"])
-	assert.Equal(t, []string{"ANTHROPIC_API_KEY"}, created.EgressProxy.SecretNames())
+	assert.Equal(t, "agent-token", started.Env["ANTHROPIC_API_KEY"])
+	assert.Empty(t, created.EgressProxy.SecretNames())
 	assert.Empty(t, created.Files)
 }
 

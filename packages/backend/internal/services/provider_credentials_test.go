@@ -28,38 +28,3 @@ func TestIsUsableProviderCredential(t *testing.T) {
 	assert.True(t, IsUsableProviderCredential("csk-abc123"))
 	assert.True(t, IsUsableProviderCredential("  sk-abc123  "))
 }
-
-func TestUsableProviderCredentials_DropsPlaceholders(t *testing.T) {
-	t.Parallel()
-
-	usable := UsableProviderCredentials(map[string]string{
-		"ANTHROPIC_API_KEY":  "placeholder-pending-h1-credential-seed",
-		"OPENAI_API_KEY":     "placeholder-pending-h1-credential-seed",
-		"OPENROUTER_API_KEY": "",
-		"CEREBRAS_API_KEY":   " csk-real ",
-		"":                   "orphan",
-	})
-
-	assert.Equal(t, map[string]string{"CEREBRAS_API_KEY": "csk-real"}, usable)
-}
-
-func TestHasUsableProviderCredential(t *testing.T) {
-	t.Parallel()
-
-	assert.False(t, HasUsableProviderCredential(nil))
-	assert.False(t, HasUsableProviderCredential(map[string]string{
-		"ANTHROPIC_API_KEY": "placeholder-pending-h1-credential-seed",
-		"OPENAI_API_KEY":    "",
-	}))
-	assert.True(t, HasUsableProviderCredential(map[string]string{
-		"ANTHROPIC_API_KEY": "placeholder-pending-h1-credential-seed",
-		"CEREBRAS_API_KEY":  "csk-real",
-	}))
-	assert.True(t, HasUsableProviderCredential(map[string]string{
-		"ANTHROPIC_AUTH_TOKEN": "smithers_subscription_token",
-	}))
-	// A repository secret is a legitimate source, not just the platform map.
-	assert.True(t, HasUsableProviderCredential(map[string]string{
-		"GOOGLE_API_KEY": "AIza-real",
-	}))
-}

@@ -303,22 +303,6 @@ type SandboxConfig struct {
 	WorkspaceSSHHost     string `mapstructure:"workspace_ssh_host"`
 	WorkspaceSSHDialHost string `mapstructure:"workspace_ssh_dial_host"`
 
-	// GatewayAgentCerebrasAPIKey is the AI-provider seat injected into
-	// repo-gateway VMs (CEREBRAS_API_KEY in the gateway systemd env). Without
-	// it the stock smithers pack falls back to a keyless OpenRouter default
-	// agent and every agent node on a gateway VM fails. The key is per-VM
-	// systemd env only — never baked into an image, never exposed over the
-	// relay. Env: SMITHERS_GATEWAY_AGENT_CEREBRAS_API_KEY.
-	GatewayAgentCerebrasAPIKey string `mapstructure:"gateway_agent_cerebras_api_key"`
-
-	// Platform-owned provider credentials copied into gateway and agent VM
-	// service environments. Empty values are omitted from VM specs.
-	// Env: SMITHERS_GATEWAY_AGENT_OPENROUTER_API_KEY,
-	// SMITHERS_GATEWAY_AGENT_ANTHROPIC_API_KEY, and
-	// SMITHERS_GATEWAY_AGENT_OPENAI_API_KEY.
-	GatewayAgentOpenRouterAPIKey string `mapstructure:"gateway_agent_openrouter_api_key"`
-	GatewayAgentAnthropicAPIKey  string `mapstructure:"gateway_agent_anthropic_api_key"`
-	GatewayAgentOpenAIAPIKey     string `mapstructure:"gateway_agent_openai_api_key"`
 	// Optional public model pin for platform-backed workspace coding. Repository
 	// model settings and authorized personal subscriptions keep precedence.
 	WorkspaceCodingDefaultModel string `mapstructure:"workspace_coding_default_model"`
@@ -827,11 +811,7 @@ func Load(configFile string) (*Config, error) {
 		{"sandbox.workspace_ssh_host", "SMITHERS_SANDBOX_WORKSPACE_SSH_HOST"},
 		{"sandbox.workspace_ssh_dial_host", "SMITHERS_SANDBOX_WORKSPACE_SSH_DIAL_HOST"},
 		{"sandbox.agent_snapshot_id", "SMITHERS_SANDBOX_AGENT_SNAPSHOT_ID"},
-		{"sandbox.gateway_agent_cerebras_api_key", "SMITHERS_GATEWAY_AGENT_CEREBRAS_API_KEY"},
 		{"sandbox.workspace_coding_default_model", "SMITHERS_WORKSPACE_CODING_DEFAULT_MODEL"},
-		{"sandbox.gateway_agent_openrouter_api_key", "SMITHERS_GATEWAY_AGENT_OPENROUTER_API_KEY"},
-		{"sandbox.gateway_agent_anthropic_api_key", "SMITHERS_GATEWAY_AGENT_ANTHROPIC_API_KEY"},
-		{"sandbox.gateway_agent_openai_api_key", "SMITHERS_GATEWAY_AGENT_OPENAI_API_KEY"},
 		{"sandbox.gateway_health_probe_base_url", "SMITHERS_GATEWAY_HEALTH_PROBE_BASE_URL"},
 		{"sandbox.preview_relay_token", "SMITHERS_PREVIEW_RELAY_TOKEN"},
 	} {

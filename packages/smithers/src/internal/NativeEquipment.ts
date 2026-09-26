@@ -175,9 +175,9 @@ const providerSeats = (
             message: `${openaiAuthVariable} must be "api-key" or "chatgpt" to run the ${seat} seat`
           })
         }
-        const pool = accountPool(environment, "chatgpt") ??
-          origin(Environment_.read(environment, Endpoint.modelProxyVariable))
-        if (authMode === "chatgpt" && pool !== undefined) {
+        const pool = accountPool(environment, "chatgpt")
+        const chatgptOrigin = pool === undefined ? Endpoint.proxyOrigin("chatgpt", environment) : `${pool}/chatgpt`
+        if (authMode === "chatgpt" && chatgptOrigin !== undefined) {
           // Behind a Smithers account pool the pool owns the ChatGPT accounts:
           // it picks one per request and signs it. The guest holds only the
           // pool credential, bound as the `openai` seat's key.
@@ -191,7 +191,7 @@ const providerSeats = (
           return yield* seatOf(
             OpenAIChatGPT.make({
               auth: Auth.bearer(Redacted.make(key)),
-              baseUrl: `${pool}/chatgpt`
+              baseUrl: chatgptOrigin
             }),
             executor,
             seat,

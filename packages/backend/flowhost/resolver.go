@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -100,6 +102,13 @@ func validateCatalog(catalog Catalog) (Catalog, error) {
 		copyEnvironment[name] = value
 	}
 	catalog.Environment = copyEnvironment
+	catalog.ModelSeats = slices.Clone(catalog.ModelSeats)
+	if catalog.ModelProxyURL != "" {
+		parsed, err := url.Parse(catalog.ModelProxyURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" {
+			return Catalog{}, fmt.Errorf("flow host catalog %q model proxy URL is invalid", catalog.Key)
+		}
+	}
 	return catalog, nil
 }
 

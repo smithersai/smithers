@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -23,12 +24,26 @@ func fastRepoGatewaySleep(svc *RepoGatewayService) {
 	svc.sleep = func(ctx context.Context, _ time.Duration) error { return nil }
 }
 
-func TestRepoGatewayProvision_WritesAgentSeatAndEnv(t *testing.T) {
+var testGatewayModelSeats = []modelproxy.Seat{modelproxy.Seats[2], modelproxy.Seats[4]}
+
+// assertGatewayModelSeat checks that a gateway reaches its platform seats
+// through the metered model proxy with a minted model credential.
+func assertGatewayModelSeat(t *testing.T, env map[string]string) {
+	t.Helper()
+	credential := env["CEREBRAS_API_KEY"]
+	assert.True(t, strings.HasPrefix(credential, "smithers_"), "the seat carries a Smithers model credential")
+	assert.Equal(t, credential, env["AI_GATEWAY_API_KEY"])
+	assert.Equal(t, "https://jjhub.example/model-proxy", env[modelproxy.URLEnv])
+	assert.Equal(t, "cerebras,vercel", env[modelproxy.ProvidersEnv])
+	assert.Equal(t, "https://jjhub.example/model-proxy/vercel/v4/ai/evaluation-model", env["SMITHERS_EVALUATOR_BASE_URL"])
+}
+
+func TestRepoGatewayProvision_PlatformSeatsUseTheMeteredModelProxy(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{}
 	vm := &fakeRepoGatewayVMClient{}
-	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayAgentSeat("cerebras-test-key"))
+	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayModelSeats(testGatewayModelSeats))
 
 	info, err := svc.GetRepoGatewayConnectionInfo(context.Background(), testRepoGatewayInput())
 	require.NoError(t, err)
@@ -38,31 +53,17 @@ func TestRepoGatewayProvision_WritesAgentSeatAndEnv(t *testing.T) {
 		assert.NotContains(t, req.Command, "smithers init --global")
 		assert.NotContains(t, req.Command, "SMITHERS_GATEWAY_ENGINE_PATCH")
 	}
-
-	// The systemd env carries the seat key; nothing else may see it.
 	require.Len(t, vm.systemdSpecs, 1)
-	assert.Equal(t, "cerebras-test-key", vm.systemdSpecs[0].Env["CEREBRAS_API_KEY"])
-}
-
-func TestRepoGatewayProvision_WiresPlatformProviderEnv(t *testing.T) {
-	t.Parallel()
-
-	q := &fakeRepoGatewayQuerier{}
-	vm := &fakeRepoGatewayVMClient{}
-	svc := newTestRepoGatewayService(q, vm,
-		WithRepoGatewayProviderEnv(map[string]string{
-			"OPENROUTER_API_KEY": "platform-openrouter-placeholder",
-			"ANTHROPIC_API_KEY":  "platform-anthropic-placeholder",
-			"OPENAI_API_KEY":     "platform-openai-placeholder",
-		}),
-	)
-
-	_, err := svc.GetRepoGatewayConnectionInfo(context.Background(), testRepoGatewayInput())
-	require.NoError(t, err)
-	require.Len(t, vm.systemdSpecs, 1)
-	assert.Equal(t, "platform-openrouter-placeholder", vm.systemdSpecs[0].Env["OPENROUTER_API_KEY"])
-	assert.Equal(t, "platform-anthropic-placeholder", vm.systemdSpecs[0].Env["ANTHROPIC_API_KEY"])
-	assert.Equal(t, "platform-openai-placeholder", vm.systemdSpecs[0].Env["OPENAI_API_KEY"])
+	assertGatewayModelSeat(t, vm.systemdSpecs[0].Env)
+	var minted []string
+	for _, token := range q.accessTokens {
+		if strings.HasPrefix(token.Name, "model-proxy-gateway-") {
+			minted = append(minted, token.Scopes)
+		}
+	}
+	require.Len(t, minted, 1)
+	assert.Contains(t, minted[0], "workspace:gateway-", "the credential is confined off the /api surface")
+	assert.Contains(t, minted[0], "repo:200")
 }
 
 func TestRepoGatewayProvision_NoSeatStillInstallsProductHost(t *testing.T) {
@@ -118,7 +119,7 @@ func TestRepoGatewayReuse_LegacyGatewayReprovisions(t *testing.T) {
 			return sandbox.ExecResult{StatusCode: &zero}, nil
 		},
 	}
-	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayAgentSeat("cerebras-test-key"))
+	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayModelSeats(testGatewayModelSeats))
 
 	info, err := svc.GetRepoGatewayConnectionInfo(context.Background(), testRepoGatewayInput())
 	require.NoError(t, err)
@@ -127,7 +128,7 @@ func TestRepoGatewayReuse_LegacyGatewayReprovisions(t *testing.T) {
 	assert.Contains(t, q.getSoftDeleted(), "gw-old")
 	// The replacement carries the seat.
 	require.NotEmpty(t, vm.systemdSpecs)
-	assert.Equal(t, "cerebras-test-key", vm.systemdSpecs[len(vm.systemdSpecs)-1].Env["CEREBRAS_API_KEY"])
+	assertGatewayModelSeat(t, vm.systemdSpecs[len(vm.systemdSpecs)-1].Env)
 }
 
 func TestRepoGatewayReuse_HostCheckTransportErrorDoesNotDiscard(t *testing.T) {
@@ -145,7 +146,7 @@ func TestRepoGatewayReuse_HostCheckTransportErrorDoesNotDiscard(t *testing.T) {
 			return sandbox.ExecResult{}, errors.New("sandbox provider transport blip")
 		},
 	}
-	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayAgentSeat("cerebras-test-key"))
+	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayModelSeats(testGatewayModelSeats))
 
 	_, err := svc.GetRepoGatewayConnectionInfo(context.Background(), testRepoGatewayInput())
 	require.Error(t, err)
@@ -375,7 +376,7 @@ func TestRepoGatewayVMRequest_MemSize(t *testing.T) {
 
 	q := &fakeRepoGatewayQuerier{}
 	vm := &fakeRepoGatewayVMClient{}
-	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayAgentSeat("k"))
+	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayModelSeats(testGatewayModelSeats))
 
 	_, err := svc.GetRepoGatewayConnectionInfo(context.Background(), testRepoGatewayInput())
 	require.NoError(t, err)

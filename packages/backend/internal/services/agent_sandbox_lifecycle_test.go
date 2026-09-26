@@ -14,6 +14,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -105,7 +106,7 @@ func TestDispatchAgentRun_FullVMLifecycleFlow(t *testing.T) {
 		MemoryMB:     8192,
 		VCPUCount:    4,
 		RootfsSizeMB: 20480,
-		ProviderEnv:  map[string]string{"CEREBRAS_API_KEY": "csk-test"},
+		ModelSeats:   []modelproxy.Seat{modelproxy.Seats[2]},
 	}
 	svc.sandbox = &mockSandboxVMClient{
 		createVMFn: func(ctx context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error) {

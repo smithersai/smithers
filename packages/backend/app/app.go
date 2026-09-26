@@ -92,6 +92,10 @@ type Config struct {
 	// at SMITHERS_METRICS_ADDR. Both require the SMITHERS_METRICS_TOKEN bearer
 	// token. A collector that conflicts with a product metric fails startup.
 	MetricsCollectors []prometheus.Collector
+	// PlatformModelKeys supplies the provider keys Smithers pays for. Every
+	// call on them goes through the metered model proxy. Nil offers none;
+	// guests then use repository keys and connected accounts only.
+	PlatformModelKeys ports.PlatformModelKeys
 }
 
 // Duties is one process's share of the product composition.
@@ -205,6 +209,7 @@ func (cfg Config) options() compose.Options {
 		RecommendationLog:      cfg.RecommendationLog,
 		ModelStreamHost:        cfg.ModelStreamHost,
 		MetricsCollectors:      append([]prometheus.Collector(nil), cfg.MetricsCollectors...),
+		PlatformModelKeys:      cfg.PlatformModelKeys,
 	}
 }
 

@@ -428,6 +428,24 @@ describe("NodeControl.seatResolver behind SMITHERS_MODEL_PROXY_URL", () => {
     expect(error.message).toBe("Set OPENAI_API_KEY to run the openai:gpt-6-luna seat through the account pool")
   })
 
+  it("keeps a provider the proxy does not serve on its own origin", async () => {
+    const limited = { SMITHERS_MODEL_PROXY_URL: proxy, SMITHERS_MODEL_PROXY_PROVIDERS: "anthropic,vercel" }
+    const anthropic = await Effect.runPromise(
+      resolve({ ...limited, ANTHROPIC_API_KEY: "cloud-token" }, "anthropic:claude-sonnet-4-5")
+    )
+    expect((await prepared(anthropic, anthropic.modelId)).url).toBe(
+      "https://cloud.example.test/api/model/anthropic/v1/messages"
+    )
+    const openai = await Effect.runPromise(resolve({ ...limited, OPENAI_API_KEY: "own-key" }, "openai:gpt-5.6-sol"))
+    expect((await prepared(openai, openai.modelId)).url).toBe("https://api.openai.com/v1/responses")
+    const chatgpt = await Effect.runPromise(
+      Effect.flip(
+        resolve({ ...limited, SMITHERS_OPENAI_AUTH: "chatgpt", CODEX_HOME: "/nonexistent" }, "openai:gpt-6-luna")
+      )
+    )
+    expect(chatgpt.message).toContain("codex login")
+  })
+
   it("treats an empty proxy variable as unset", async () => {
     const resolved = await Effect.runPromise(
       resolve({ SMITHERS_MODEL_PROXY_URL: "", ANTHROPIC_API_KEY: "key" }, "anthropic:claude-sonnet-4-5")

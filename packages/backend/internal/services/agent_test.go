@@ -24,6 +24,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
@@ -1468,7 +1469,7 @@ func newTestDispatchService(dq AgentDispatchQuerier, logStore AgentLogStore) *Ag
 		// the VM is created (requireProviderCredential). These fixtures test
 		// the rest of the pipeline, so give them a credential.
 		sandboxConfig: AgentSandboxConfig{
-			ProviderEnv: map[string]string{"CEREBRAS_API_KEY": "csk-test"},
+			ModelSeats: []modelproxy.Seat{modelproxy.Seats[2]},
 		},
 	}
 }
@@ -2466,11 +2467,7 @@ func TestDispatchAgentRun_PlatformProviderEnvCannotBeOverriddenByRepoSecret(t *t
 
 	var capturedEnv map[string]string
 	svc := newTestDispatchService(&mockAgentDispatchQuerier{}, nil)
-	svc.sandboxConfig.ProviderEnv = map[string]string{
-		"OPENROUTER_API_KEY": "platform-openrouter-placeholder",
-		"ANTHROPIC_API_KEY":  "platform-anthropic-placeholder",
-		"OPENAI_API_KEY":     "platform-openai-placeholder",
-	}
+	svc.sandboxConfig.ModelSeats = []modelproxy.Seat{modelproxy.Seats[0], modelproxy.Seats[1], modelproxy.Seats[3]}
 	svc.secretInjector = NewSecretInjector(&mockSecretInjectionQuerier{
 		listSecretValuesFn: func(_ context.Context, repositoryID int64) ([]db.ListSecretValuesRow, error) {
 			return []db.ListSecretValuesRow{
@@ -2493,15 +2490,15 @@ func TestDispatchAgentRun_PlatformProviderEnvCannotBeOverriddenByRepoSecret(t *t
 		UserID:       1,
 	})
 	require.NoError(t, err)
-	// Every platform provider here has a bound API host, so the guest holds
-	// the proxy placeholder for each; the repository secret must neither
-	// replace the placeholder nor smuggle its own value into the guest.
+	// Every platform seat carries the run's agent token to the metered model
+	// proxy; the repository secret must neither replace it nor smuggle its
+	// own value into the guest.
 	for _, name := range []string{"OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"} {
-		assert.Equal(t, sandbox.EgressProxyPlaceholder(name), capturedEnv[name], name)
+		assert.Equal(t, capturedEnv["SMITHERS_AGENT_TOKEN"], capturedEnv[name], name)
 	}
+	assert.Equal(t, "anthropic,openai,openrouter", capturedEnv["SMITHERS_MODEL_PROXY_PROVIDERS"])
 	for name, env := range capturedEnv {
 		assert.NotContains(t, env, "-attack", name)
-		assert.NotContains(t, env, "-placeholder", name)
 	}
 }
 
@@ -2515,7 +2512,7 @@ func TestDispatchAgentRun_UsesConfiguredMicrosandboxResourceLimits(t *testing.T)
 		MemoryMB:     4096,
 		VCPUCount:    2,
 		RootfsSizeMB: 10240,
-		ProviderEnv:  map[string]string{"CEREBRAS_API_KEY": "csk-test"},
+		ModelSeats:   []modelproxy.Seat{modelproxy.Seats[2]},
 	}
 	svc.sandbox = &mockSandboxVMClient{
 		createVMFn: func(ctx context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error) {
@@ -2546,7 +2543,7 @@ func TestDispatchAgentRun_UsesConfiguredIdleTimeout(t *testing.T) {
 	svc := newTestDispatchService(&mockAgentDispatchQuerier{}, nil)
 	svc.sandboxConfig = AgentSandboxConfig{
 		IdleTimeout: 15 * time.Minute,
-		ProviderEnv: map[string]string{"CEREBRAS_API_KEY": "csk-test"},
+		ModelSeats:  []modelproxy.Seat{modelproxy.Seats[2]},
 	}
 	svc.sandbox = &mockSandboxVMClient{
 		createVMFn: func(ctx context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error) {

@@ -666,7 +666,7 @@ func TestRepoGatewayService_Reuse_SuspendedVM_RedeclaresServiceWithSecrets(t *te
 			return sandbox.Sandbox{ID: vmID, State: sandbox.StateStopped}, nil
 		},
 	}
-	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayAgentSeat("cerebras-test-key"))
+	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayModelSeats(testGatewayModelSeats))
 
 	info, err := svc.GetRepoGatewayConnectionInfo(context.Background(), testRepoGatewayInput())
 	require.NoError(t, err)
@@ -675,7 +675,7 @@ func TestRepoGatewayService_Reuse_SuspendedVM_RedeclaresServiceWithSecrets(t *te
 	require.Len(t, vm.systemdSpecs, 1, "resume must re-declare the gateway service")
 	spec := vm.systemdSpecs[0]
 	assert.Equal(t, "smithers_gateway_cafe", spec.Env["SMITHERS_API_KEY"])
-	assert.Equal(t, "cerebras-test-key", spec.Env["CEREBRAS_API_KEY"])
+	assertGatewayModelSeat(t, spec.Env)
 
 	assert.Equal(t, "alice/demo", spec.Env["SMITHERS_REPO"])
 	assert.Equal(t, "gw-idle-seated", spec.Env["SMITHERS_GATEWAY_ID"])
@@ -722,7 +722,7 @@ func TestRepoGatewayService_Reuse_TransientServiceDeclareFailure_RetriesInPlace(
 			return sandbox.CreateServiceResult{Success: true, ServiceName: req.Name}, nil
 		},
 	}
-	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayAgentSeat("cerebras-test-key"))
+	svc := newTestRepoGatewayService(q, vm, WithRepoGatewayModelSeats(testGatewayModelSeats))
 
 	info, err := svc.GetRepoGatewayConnectionInfo(context.Background(), testRepoGatewayInput())
 	require.NoError(t, err)
@@ -733,7 +733,7 @@ func TestRepoGatewayService_Reuse_TransientServiceDeclareFailure_RetriesInPlace(
 	require.Len(t, vm.systemdSpecs, 2)
 	assert.Equal(t, "smithers_gateway_cafe", vm.systemdSpecs[1].Env["SMITHERS_API_KEY"],
 		"the retry carries the same full env, not a degraded one")
-	assert.Equal(t, "cerebras-test-key", vm.systemdSpecs[1].Env["CEREBRAS_API_KEY"])
+	assertGatewayModelSeat(t, vm.systemdSpecs[1].Env)
 }
 
 func TestRepoGatewayService_Reuse_TransientHardResumeFailure_RetriesInPlace(t *testing.T) {

@@ -1,0 +1,176 @@
+package services
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/flowhost"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
+)
+
+const (
+	// modelProxyTokenPrefix names every platform-minted model credential; the
+	// full name is prefix + holder ("workspace-<id>", "gateway-<id>").
+	modelProxyTokenPrefix = "model-proxy-"
+	modelProxyTokenTTL    = 7 * 24 * time.Hour
+)
+
+// modelProxyURL is the metered proxy under a public base URL, or "" when the
+// base URL names no host a guest can reach.
+func modelProxyURL(baseURL string) string {
+	base := normalizePublicBaseURL(baseURL)
+	if apiHost(base) == "" {
+		return ""
+	}
+	return base + modelproxy.Path
+}
+
+// modelProxyTokenScopes confines a model credential off the /api surface:
+// the workspace restriction admits no /api route but a workspace's own head
+// report, and a gateway holder names no workspace at all.
+func modelProxyTokenScopes(repositoryID int64, holder string) string {
+	return string(middleware.ScopeReadWorkspace) + "," +
+		middleware.RepositoryRestrictionScope(repositoryID) + "," +
+		middleware.WorkspaceRestrictionScope(holder)
+}
+
+// issueModelProxyToken mints holder's model credential for userID, revoking
+// the holder's earlier one first.
+func issueModelProxyToken(ctx context.Context, store accessTokenStore, userID, repositoryID int64, holder, restriction string) (temporaryRepoCloneToken, error) {
+	revokeModelProxyTokens(ctx, store, userID, holder)
+	return issueTemporaryRepoTokenWithTTL(ctx, store, userID, modelProxyTokenPrefix+holder,
+		modelProxyTokenScopes(repositoryID, restriction), modelProxyTokenTTL)
+}
+
+// revokeModelProxyTokens deletes holder's live model credentials.
+func revokeModelProxyTokens(ctx context.Context, store accessTokenStore, userID int64, holder string) {
+	lister, ok := store.(providerPoolTokenLister)
+	if !ok || userID <= 0 {
+		return
+	}
+	tokens, err := lister.ListAccessTokensByUserID(ctx, userID)
+	if err != nil {
+		slog.Warn("list model proxy credentials failed", "holder", holder, "error", err)
+		return
+	}
+	for _, token := range tokens {
+		if token.Name == modelProxyTokenPrefix+holder {
+			revokeTemporaryRepoCloneToken(ctx, store, userID, token.ID)
+		}
+	}
+}
+
+type modelProxyCallerQuerier interface {
+	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
+	GetAccessTokenByID(ctx context.Context, id int64) (db.AccessToken, error)
+	GetWorkspace(ctx context.Context, id string) (db.Workspace, error)
+}
+
+// ModelProxyCallers resolves who pays for a proxy call. Agent runs and
+// managed Flow hosts are repository automation and charge the repository's
+// owner; a workspace, a repo gateway, and a signed-in app call charge the
+// user.
+type ModelProxyCallers struct {
+	q    modelProxyCallerQuerier
+	pool *pgxpool.Pool
+}
+
+func NewModelProxyCallers(q modelProxyCallerQuerier, pool *pgxpool.Pool) *ModelProxyCallers {
+	return &ModelProxyCallers{q: q, pool: pool}
+}
+
+// ResolveModelCaller reads the credential the route's auth middleware
+// (routes.ModelProxyAuth) authenticated.
+func (c *ModelProxyCallers) ResolveModelCaller(r *http.Request) (modelproxy.Caller, error) {
+	ctx := r.Context()
+	if run := middleware.WorkflowRunFromContext(ctx); run != nil {
+		caller, err := c.repositoryOwner(ctx, run.RepositoryID)
+		caller.Source, caller.RepositoryID, caller.WorkflowRunID = modelproxy.SourceAgentRun, run.RepositoryID, run.ID
+		return caller, err
+	}
+	if middleware.IsSharedAgentToken(ctx) {
+		return modelproxy.Caller{}, modelproxy.ErrForbidden
+	}
+	if token := bearerCredential(r); strings.HasPrefix(token, flowhost.ModelCredentialPrefix) {
+		binding, err := flowhost.VerifyModelCredential(ctx, c.pool, token)
+		if err != nil {
+			if errors.Is(err, flowhost.ErrModelCredentialInvalid) {
+				return modelproxy.Caller{}, modelproxy.ErrUnauthenticated
+			}
+			return modelproxy.Caller{}, err
+		}
+		caller, err := c.repositoryOwner(ctx, binding.RepositoryID)
+		caller.Source, caller.UserID, caller.RepositoryID = modelproxy.SourceFlowHost, binding.UserID, binding.RepositoryID
+		caller.WorkspaceID, caller.Reference = binding.WorkspaceID, binding.ID
+		return caller, err
+	}
+	info := middleware.AuthInfoFromContext(ctx)
+	if info == nil || info.User == nil || !info.IsTokenAuth {
+		return modelproxy.Caller{}, modelproxy.ErrUnauthenticated
+	}
+	user := modelproxy.Caller{OwnerType: "user", OwnerID: info.User.ID, UserID: info.User.ID}
+	if !info.IsResourceBound() {
+		// The user's own token (the app's signed-in calls): the user pays.
+		// read:user spends model credit, as it did on the legacy proxy.
+		if !info.Scopes.Has(middleware.ScopeReadUser) {
+			return modelproxy.Caller{}, modelproxy.ErrForbidden
+		}
+		user.Source = modelproxy.SourceApp
+		return user, nil
+	}
+	token, err := c.q.GetAccessTokenByID(ctx, info.TokenID)
+	if err != nil || !token.SystemIssued || token.UserID != info.User.ID || !strings.HasPrefix(token.Name, modelProxyTokenPrefix) {
+		return modelproxy.Caller{}, modelproxy.ErrForbidden
+	}
+	repositoryID := info.RepositoryRestriction()
+	holder := strings.TrimPrefix(token.Name, modelProxyTokenPrefix)
+	restriction := info.WorkspaceRestriction()
+	user.RepositoryID = repositoryID
+	switch {
+	case strings.HasPrefix(holder, "workspace-") && restriction == strings.TrimPrefix(holder, "workspace-"):
+		workspace, err := c.q.GetWorkspace(ctx, restriction)
+		if err != nil || workspace.UserID != info.User.ID || workspace.RepositoryID != repositoryID || repositoryID <= 0 {
+			return modelproxy.Caller{}, modelproxy.ErrForbidden
+		}
+		user.Source, user.WorkspaceID = modelproxy.SourceWorkspace, workspace.ID
+		return user, nil
+	case strings.HasPrefix(holder, "gateway-") && restriction == holder && repositoryID > 0:
+		user.Source, user.Reference = modelproxy.SourceRepoGateway, strings.TrimPrefix(holder, "gateway-")
+		return user, nil
+	}
+	return modelproxy.Caller{}, modelproxy.ErrForbidden
+}
+
+func (c *ModelProxyCallers) repositoryOwner(ctx context.Context, repositoryID int64) (modelproxy.Caller, error) {
+	repo, err := c.q.GetRepoByID(ctx, repositoryID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return modelproxy.Caller{}, modelproxy.ErrForbidden
+	}
+	if err != nil {
+		return modelproxy.Caller{}, err
+	}
+	if repo.OrgID.Valid && repo.OrgID.Int64 > 0 {
+		return modelproxy.Caller{OwnerType: "org", OwnerID: repo.OrgID.Int64}, nil
+	}
+	if repo.UserID.Valid && repo.UserID.Int64 > 0 {
+		return modelproxy.Caller{OwnerType: "user", OwnerID: repo.UserID.Int64}, nil
+	}
+	return modelproxy.Caller{}, modelproxy.ErrForbidden
+}
+
+func bearerCredential(r *http.Request) string {
+	scheme, token, _ := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
+	if !strings.EqualFold(scheme, "bearer") {
+		return ""
+	}
+	return strings.TrimSpace(token)
+}

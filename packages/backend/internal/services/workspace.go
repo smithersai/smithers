@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
@@ -578,7 +580,7 @@ type WorkspaceService struct {
 	agentEnvironment    AgentEnvironmentProvisioningProvider
 	providerConnections WorkspaceProviderPool
 	providerBootstrap   bool
-	platformProviderEnv map[string]string
+	platformSeats       []modelproxy.Seat
 	codingDefaultModel  string
 	// environmentImages resolves the NixOS closure image kind=vm/desktop
 	// workspaces boot (nil → those kinds cannot be created).
@@ -647,17 +649,14 @@ func WithWorkspaceProviderConnections(pool WorkspaceProviderPool) WorkspaceServi
 	return func(s *WorkspaceService) { s.providerConnections = pool }
 }
 
-// WithWorkspaceProviderBootstrap supplies the existing platform fallback only
-// to the host-side egress proxy. No raw value is placed in a guest file or env.
-func WithWorkspaceProviderBootstrap(credentials map[string]string, model string) WorkspaceServiceOption {
+// WithWorkspaceProviderBootstrap offers the platform model seats as the
+// fallback after repository keys and connected accounts. The guest reaches
+// them through the metered model proxy with a workspace model credential that
+// only the host-side egress proxy holds; no provider key enters the guest.
+func WithWorkspaceProviderBootstrap(seats []modelproxy.Seat, model string) WorkspaceServiceOption {
 	return func(s *WorkspaceService) {
 		s.providerBootstrap = true
-		s.platformProviderEnv = UsableProviderCredentials(credentials)
-		for name, value := range s.platformProviderEnv {
-			if value == sandbox.EgressProxyPlaceholder(name) || value == "[redacted]" {
-				delete(s.platformProviderEnv, name)
-			}
-		}
+		s.platformSeats = slices.Clone(seats)
 		s.codingDefaultModel = strings.TrimSpace(model)
 	}
 }

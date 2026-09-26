@@ -23,6 +23,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/admission"
 	"github.com/smithersai/smithers/packages/backend/commerce"
+	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/internal/auth"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
@@ -44,6 +45,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/smithersai/smithers/packages/backend/modelhost"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/operations"
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
@@ -126,6 +128,10 @@ type Options struct {
 	// MetricsCollectors are deployment collectors exported with the product
 	// registry on this process's /metrics endpoint.
 	MetricsCollectors []prometheus.Collector
+	// PlatformModelKeys supplies the provider keys Smithers pays for. Nil
+	// offers no platform models: guests use repository keys and connected
+	// accounts only.
+	PlatformModelKeys modelproxy.Keys
 }
 
 // Duties splits one product composition across processes. A deployment
@@ -656,22 +662,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 
 	agentSnapshotID := cfg.Sandbox.AgentSnapshotID
-	// UsableProviderCredentials drops blanks AND the operator-seeded
-	// "placeholder-pending-..." stand-ins Secret Manager holds until a real
-	// credential is provisioned. Injecting a placeholder is worse than
-	// injecting nothing: the VM`s model selector picks a provider by env-var
-	// PRESENCE, so a placeholder ANTHROPIC_API_KEY beat the one credential
-	// that was real and every model call 401ed in silence.
-	agentProviderEnv := services.UsableProviderCredentials(map[string]string{
-		"OPENROUTER_API_KEY": cfg.Sandbox.GatewayAgentOpenRouterAPIKey,
-		"ANTHROPIC_API_KEY":  cfg.Sandbox.GatewayAgentAnthropicAPIKey,
-		"OPENAI_API_KEY":     cfg.Sandbox.GatewayAgentOpenAIAPIKey,
-		"CEREBRAS_API_KEY":   cfg.Sandbox.GatewayAgentCerebrasAPIKey,
-	})
-	if len(agentProviderEnv) == 0 {
-		slog.Error("no usable AI-provider credential is configured; agent runs will be refused",
-			"remediation", "configure a valid CEREBRAS_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY")
-	}
+	// Platform model seats reach providers only through the metered model
+	// proxy; no provider key is bound into a guest.
+	modelSeats := modelproxy.OfferedSeats(options.PlatformModelKeys)
 	changesetService := services.NewChangesetService(queries, repoHostClient, repoService, pool, services.WithChangesetLandingPolicy(landingService))
 	// Bring-your-own subscriptions (RFD-003): connections are encrypted with
 	// the same codec as agent-environment secrets and refreshed by a worker.
@@ -704,7 +697,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			RootfsSizeMB: cfg.Sandbox.AgentRootfsSizeMB,
 			MaxRuntime:   time.Duration(cfg.Sandbox.AgentMaxRuntimeSecs) * time.Second,
 			IdleTimeout:  time.Duration(cfg.Sandbox.AgentIdleTimeoutSecs) * time.Second,
-			ProviderEnv:  agentProviderEnv,
+			ModelSeats:   modelSeats,
 		}),
 		services.WithAgentEnvironmentVariables(agentEnvironmentService),
 		services.WithAgentEnvironmentBoundSecrets(agentEnvironmentService),
@@ -750,7 +743,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// and are stripped before the agent runs.
 		services.WithWorkspaceAgentEnvironment(agentEnvironmentService),
 		services.WithWorkspaceProviderConnections(providerConnectionService),
-		services.WithWorkspaceProviderBootstrap(agentProviderEnv, cfg.Sandbox.WorkspaceCodingDefaultModel),
+		services.WithWorkspaceProviderBootstrap(modelSeats, cfg.Sandbox.WorkspaceCodingDefaultModel),
 	)
 
 	// Golden sandbox snapshot: the pre-baked toolchain image fresh
@@ -818,12 +811,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			// write access, since the VM-local operator token is never re-checked
 			// against Smithers permissions on use.
 			services.WithRepoGatewayAccessRevocation(runtimeStores.RepoGateways),
-			// AI-provider seat for agent workflows on gateway VMs (Cerebras
-			// supplier key, per-VM systemd env at provision time). Empty disables
-			// the seat; gateways then honestly fail agent nodes for lack of a
-			// provider instead of pretending one exists.
-			services.WithRepoGatewayAgentSeat(cfg.Sandbox.GatewayAgentCerebrasAPIKey),
-			services.WithRepoGatewayProviderEnv(agentProviderEnv),
+			services.WithRepoGatewayModelSeats(modelSeats),
 			// Resume-time liveness probe through the preview ingress (the relay's
 			// own upstream). Empty in local dev: no preview gateway exists there.
 			services.WithRepoGatewayHealthProbe(cfg.Sandbox.GatewayHealthProbeBaseURL, nil),
@@ -1326,13 +1314,32 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	sshKeyService.SetRevocationPublisher(revocationPublisher)
 	deployKeyService.SetRevocationPublisher(revocationPublisher)
 	publicCatalog := routes.NewPublicRepositoryCatalog(queries)
+	// Every platform-key model call is metered in the exact credit ledger.
+	modelMeter := &modelproxy.Meter{Ledger: credits.Ledger{DB: pool}}
+	var modelProxyHandler http.Handler
+	if len(modelSeats) > 0 {
+		modelProxyHandler = &modelproxy.Handler{Meter: *modelMeter, Keys: options.PlatformModelKeys, Callers: services.NewModelProxyCallers(queries, pool)}
+	}
 	var recommendationHandler *routes.RecommendationHandler
+	recommender := options.Recommender
+	if recommender == nil && options.PlatformModelKeys != nil {
+		// Jev on the platform AI Gateway key, resolved per call.
+		if jev, err := modelhost.NewJevRecommender(options.PlatformModelKeys, "", nil); err == nil {
+			recommender = jev
+		}
+	}
 	recommendationLog := options.RecommendationLog
-	if options.Recommender != nil && recommendationLog == nil {
+	if recommender != nil && recommendationLog == nil {
 		recommendationLog = routes.NewPostgresRecommendationLog(pool)
 	}
-	if options.Recommender != nil && recommendationLog != nil {
-		recommendationHandler = routes.NewRecommendationHandler(options.Recommender, recommendationLog)
+	if recommender != nil && recommendationLog != nil {
+		// A multitenant deployment pays for Jev and meters it; a single-owner
+		// installation runs it on its owner's key.
+		var recommendationMeter *modelproxy.Meter
+		if options.topology.hosted() || options.PlatformModelKeys != nil {
+			recommendationMeter = modelMeter
+		}
+		recommendationHandler = routes.NewRecommendationHandler(recommender, recommendationLog, recommendationMeter)
 	}
 	var modelStreamHandler *routes.ModelStreamHandler
 	modelStreamHost := options.ModelStreamHost
@@ -1408,7 +1415,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubWebhookHandler,
 		smithersMetrics,
 		routerExtras{Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler,
-			Mythical: mythicalHandler},
+			Mythical: mythicalHandler, ModelProxy: modelProxyHandler},
 	)
 	if flow != nil && options.topology.servesHTTP() {
 		browser := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries, dispatcher: flow.dispatcher}

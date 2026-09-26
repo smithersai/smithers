@@ -51,8 +51,9 @@ func (s *RepoGatewayService) gatewayHasProductHost(ctx context.Context, vmID str
 	return resp.StatusCode != nil && *resp.StatusCode == 0, nil
 }
 
-func (s *RepoGatewayService) productGatewayEnv(token, gatewayID string, input RepoGatewayConnectionInput) map[string]string {
+func (s *RepoGatewayService) productGatewayEnv(ctx context.Context, token, gatewayID string, input RepoGatewayConnectionInput) map[string]string {
 	env := s.buildGatewayEnv(token)
+	s.bindGatewayModelSeats(ctx, env, gatewayID, input)
 	env["SMITHERS_GATEWAY_ID"] = gatewayID
 	env["SMITHERS_PRODUCT_API_URL"] = strings.TrimRight(s.gitBaseURL, "/")
 	env["SMITHERS_REPO"] = input.RepoOwner + "/" + input.RepoName

@@ -252,3 +252,10 @@ func isTerminalAgentTokenRunStatus(status string) bool {
 		return false
 	}
 }
+
+// IsAgentCredentialSyntax reports whether token is shaped like a per-run
+// agent token or a runner task token, so a route that accepts several
+// credential kinds can send it to RequireAgentToken.
+func IsAgentCredentialSyntax(token string) bool {
+	return isValidAgentToken(token)
+}

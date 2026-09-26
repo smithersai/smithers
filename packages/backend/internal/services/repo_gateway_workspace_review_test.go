@@ -26,8 +26,8 @@ import (
 
 func TestWorkspaceGateway_OwnerEnvironmentAndSharing(t *testing.T) {
 	s, q, vm, w := boundGatewayFixture(t)
-	s.agentSeatAPIKey = "platform-seat-must-not-enter-workspace"
-	s.agentProviderEnv = map[string]string{"OPENAI_API_KEY": "platform-provider", "ANTHROPIC_AUTH_TOKEN": "platform-auth"}
+	// A workspace gateway's seats come from its workspace, never the VM gateway's.
+	s.modelSeats = testGatewayModelSeats
 	input := RepoGatewayConnectionInput{RepositoryID: w.RepositoryID, UserID: w.UserID, WorkspaceID: w.ID}
 	q.writableWorkspaceShares = true
 	_, err := s.GetRepoGatewayConnectionInfo(context.Background(), input)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 )
 
 const (
@@ -45,6 +46,11 @@ type Catalog struct {
 	Environment         map[string]string
 	ProductAPIURL       string
 	ImplementationModel string
+	// ModelProxyURL is the metered platform-model proxy reachable from the
+	// host; ModelSeats are the platform seats it serves. Each seat's key is
+	// the binding's model credential (ModelCredential), never a provider key.
+	ModelProxyURL string
+	ModelSeats    []modelproxy.Seat
 }
 
 type WorkspacePaths struct {

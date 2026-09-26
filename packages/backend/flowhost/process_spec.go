@@ -9,6 +9,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
 )
 
 // BuildProcessSpec materializes the one reviewed host command after the
@@ -38,6 +40,15 @@ func BuildProcessSpec(launch HostLaunch, paths WorkspacePaths, port uint16) (Pro
 	environment := make(map[string]string, len(launch.Catalog.Environment)+8)
 	for name, value := range launch.Catalog.Environment {
 		environment[name] = value
+	}
+	if launch.Catalog.ModelProxyURL != "" && len(launch.Catalog.ModelSeats) > 0 {
+		for name, value := range modelproxy.GuestEnvironment(launch.Catalog.ModelProxyURL, launch.Catalog.ModelSeats) {
+			environment[name] = value
+		}
+		credential := ModelCredential(launch.Binding.ID, launch.Credential)
+		for _, seat := range launch.Catalog.ModelSeats {
+			environment[seat.KeyEnv] = credential
+		}
 	}
 	environment["SMITHERS_API_KEY"] = launch.Credential
 	environment["SMITHERS_GATEWAY_ID"] = launch.Binding.ID
