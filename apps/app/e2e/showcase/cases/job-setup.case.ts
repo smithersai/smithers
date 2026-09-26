@@ -31,7 +31,7 @@ export default showcase({
   order: 90,
   title: "Set up a job",
   summary: "Handle issues: eval it, trial it on a test issue, enable it, then run it on a real one.",
-  flows: ["issues.setup"],
+  flows: ["issues.setup", "form.submit", "setup.view", "setup.run", "setup.work"],
   run: async ({ page, app, backend }) => {
     await backend.cloud()
     await backend.json("/api/public/repos", { repos: [{ name: REPO }] })
