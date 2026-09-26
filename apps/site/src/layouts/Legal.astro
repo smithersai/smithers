@@ -1,0 +1,29 @@
+---
+/*
+ * Terms, Privacy and Refunds: plain Markdown pages (src/pages/*.md) in the
+ * site frame. COUNSEL REVIEW PENDING: these are Tevm Inc.'s own drafts of
+ * 2026-09-25 and have not been reviewed by a lawyer.
+ */
+import Base from "./Base.astro"
+
+const { frontmatter } = Astro.props
+---
+<Base title={`${frontmatter.title} · Smithers`} description={frontmatter.description}>
+  <main class="legal wrap">
+    <h1>{frontmatter.title}</h1>
+    <p class="updated">Last updated {frontmatter.updated}</p>
+    <div class="legal-copy"><slot /></div>
+  </main>
+</Base>
+<style>
+  .legal { max-width: 760px; padding-block: clamp(2.5rem, 6vw, 5rem); }
+  h1 { font-size: clamp(2.25rem, 6vw, 3.5rem); line-height: 1.08; letter-spacing: -.035em; margin: 0 0 .5rem; }
+  .updated { color: var(--text-muted); font-size: .9rem; margin: 0 0 2rem; }
+  .legal-copy { overflow-wrap: anywhere; }
+  .legal-copy :global(h2) { margin: 2.5rem 0 .75rem; font-size: 1.35rem; letter-spacing: -.02em; }
+  .legal-copy :global(p), .legal-copy :global(li) { color: var(--text-muted); line-height: 1.75; }
+  .legal-copy :global(strong) { color: var(--text); }
+  .legal-copy :global(a) { color: var(--brand); text-underline-offset: 3px; }
+  .legal-copy :global(table) { display: block; overflow-x: auto; border-collapse: collapse; margin-block: 1.2rem; font-size: .9rem; }
+  .legal-copy :global(th), .legal-copy :global(td) { text-align: left; padding: .6rem .8rem; border-bottom: 1px solid var(--border-strong); vertical-align: top; }
+</style>

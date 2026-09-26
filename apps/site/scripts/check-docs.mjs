@@ -79,7 +79,7 @@ function load(path) {
 walk(docsRoot)
 const routes = new Set(pages.map((p) => p.route))
 const byRoute = new Map(pages.map((p) => [p.route, p]))
-const staticRoutes = new Set(["/", "/download/", "/demo/", "/pricing/", "/migration/1.0", "/llms.txt", "/llms-full.txt"])
+const staticRoutes = new Set(["/", "/download/", "/demo/", "/pricing/", "/terms/", "/privacy/", "/refunds/", "/migration/1.0", "/llms.txt", "/llms-full.txt"])
 
 // --- repo package roster (any @smthrs/* package that exists in the tree) ---
 const roster = new Set()
