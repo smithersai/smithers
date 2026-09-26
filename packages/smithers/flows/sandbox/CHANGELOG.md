@@ -8,6 +8,7 @@
   `rootDiskMib`; `captureSnapshot`, `hasSnapshot`, and `pruneSnapshots` capture a prepared machine's disk and manage
   the named snapshots machines boot from. The `Sdk` slice gains `rootDisk`, `network`, a handle's `stop` and
   `snapshot`, and `Snapshot.get`/`list`/`remove`.
+- `pruneSnapshots` takes names to retain; `removeSnapshot` removes one snapshot.
 
 ### Changed
 

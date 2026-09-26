@@ -86,7 +86,8 @@ export const hasSnapshot = (sdk: Sdk, name: string): Effect.Effect<boolean, Prov
 
 /**
  * Removes the snapshots whose names start with `prefix`, except the `keep`
- * newest, and returns the removed names.
+ * newest and any named in `retain` (snapshots a machine is about to boot
+ * from), and returns the removed names.
  *
  * @category snapshots
  * @since 1.0.0
@@ -94,7 +95,8 @@ export const hasSnapshot = (sdk: Sdk, name: string): Effect.Effect<boolean, Prov
 export const pruneSnapshots = (
   sdk: Sdk,
   prefix: string,
-  keep: number
+  keep: number,
+  retain: ReadonlyArray<string> = []
 ): Effect.Effect<ReadonlyArray<string>, ProviderError> =>
   attempt(
     async () => {
@@ -103,6 +105,7 @@ export const pruneSnapshots = (
         .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
       const removed: Array<string> = []
       for (const entry of family.slice(Math.max(0, keep))) {
+        if (retain.includes(entry.name!)) continue
         await sdk.Snapshot.remove(entry.name!, { force: true })
         removed.push(entry.name!)
       }
@@ -110,4 +113,25 @@ export const pruneSnapshots = (
     },
     "unavailable",
     `the snapshots named ${prefix}* could not be pruned`
+  )
+
+/**
+ * Removes the named snapshot; one that is already gone is not an error.
+ *
+ * @category snapshots
+ * @since 1.0.0
+ */
+export const removeSnapshot = (sdk: Sdk, name: string): Effect.Effect<void, ProviderError> =>
+  Effect.tryPromise({ try: () => sdk.Snapshot.remove(name, { force: true }), catch: (cause) => cause }).pipe(
+    Effect.catch((cause) =>
+      isMissingSnapshot(cause)
+        ? Effect.void
+        : Effect.fail(
+          new ProviderError({
+            code: "unavailable",
+            message: `microsandbox: snapshot ${name} could not be removed`,
+            cause
+          })
+        )
+    )
   )

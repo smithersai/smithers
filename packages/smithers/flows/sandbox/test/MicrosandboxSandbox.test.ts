@@ -423,7 +423,7 @@ const fakeSdk = (controls: Controls = {}) => {
       },
       list: async () => [...[...snapshots.values()].map(snapshotEntry), { name: null, createdAt: new Date(0) }],
       remove: async (name) => {
-        snapshots.delete(name)
+        if (!snapshots.delete(name)) throw new Error(`GenericFailure [SnapshotNotFound] snapshot not found: ${name}`)
       }
     },
     Sandbox: {
@@ -1814,6 +1814,25 @@ describe("MicrosandboxSandbox snapshots", () => {
       expect(read).toMatchObject({ code: "unavailable", message: "microsandbox: snapshot base-1 could not be read" })
     }))
 
+  it.effect("removes one snapshot, and one already gone, and names a removal that fails", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      fake.plant("base", ownership("installation-a", "host"))
+      yield* MicrosandboxSandbox.captureSnapshot({ sdk: fake.sdk, machine: "base", name: "base" })
+      yield* MicrosandboxSandbox.removeSnapshot(fake.sdk, "base")
+      expect(fake.snapshots.has("base")).toBe(false)
+      yield* MicrosandboxSandbox.removeSnapshot(fake.sdk, "base")
+      const broken = {
+        ...fake.sdk,
+        Snapshot: { ...fake.sdk.Snapshot, remove: () => Promise.reject("index locked") }
+      }
+      const failure = yield* Effect.flip(MicrosandboxSandbox.removeSnapshot(broken, "base"))
+      expect(failure).toMatchObject({
+        code: "unavailable",
+        message: "microsandbox: snapshot base could not be removed"
+      })
+    }))
+
   it.effect("prunes a family down to its newest members and leaves every other snapshot", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
@@ -1823,6 +1842,7 @@ describe("MicrosandboxSandbox snapshots", () => {
       }
       expect(yield* MicrosandboxSandbox.pruneSnapshots(fake.sdk, "fam-", 1)).toEqual(["fam-b", "fam-a"])
       expect([...fake.snapshots.keys()].sort()).toEqual(["fam-c", "other-a"])
+      expect(yield* MicrosandboxSandbox.pruneSnapshots(fake.sdk, "other-", -1, ["other-a"])).toEqual([])
       expect(yield* MicrosandboxSandbox.pruneSnapshots(fake.sdk, "other-", -1)).toEqual(["other-a"])
       const broken = {
         ...fake.sdk,
