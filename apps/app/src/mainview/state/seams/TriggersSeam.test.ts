@@ -496,7 +496,7 @@ const REGISTRAR_RUN = "run-1"
 
 /** How the registrar run stands, as the workspace's own run-summary projection answers for it. */
 interface HostRun {
-  status: "running" | "completed" | "failed"
+  status: "running" | "completed" | "failed" | "cancelled"
   /** A completed run's own output line. A failed run's verdict is derived from its journal cause, as the gateway derives it. */
   verdict: string
   /**
@@ -566,7 +566,7 @@ const watched = (services: AppServices): AppServices => ({
 })
 
 const registrationToast = (store: AppStore, slug = "nightly") =>
-  store.collections.toasts.get(`toast-trigger.register.will/flows.${slug}`)
+  [...store.collections.toasts.values()].find(toast => toast.key.startsWith(`trigger.register.will/flows.${slug}.`))
 
 const registrationRun = (store: AppStore, requestId: string) => {
   const card = store.collections.cards.get(`trigger-register-${requestId}`)
@@ -1223,6 +1223,11 @@ describe("triggers seam: watching the registration run", () => {
     const requestId = await approved(store, controller)
     await waitFor(() => registrationRun(store, requestId)?.payload.phase === "running")
     expect(registrationRun(store, requestId)?.payload.workspaceId).toBe(JOB_WORKSPACE)
+    await waitFor(() => registrationToast(store)?.status === "running")
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect([...store.collections.toasts.values()].filter(t => t.status === "running")).toEqual([
+      expect.objectContaining({ sourceCard: registrationRun(store, requestId)?.id })
+    ])
     run.status = "completed"
     run.verdict = "Registered nightly on will/flows."
     await waitFor(() => registrationRun(store, requestId)?.payload.phase === "completed")
@@ -1596,9 +1601,12 @@ describe("triggers seam: running a registered schedule now", () => {
     const card = dispatchCards(store)[0]
     expect(card?.payload.runId).toBe(REGISTRAR_RUN)
     expect(card?.title).toBe("Run nightly · will/flows")
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const running = [...store.collections.toasts.values()].filter(t => t.status === "running")
+    expect(running).toEqual([expect.objectContaining({ sourceCard: card?.id })])
     run.status = "completed"
     run.verdict = "Dispatched nightly on will/flows."
-    await waitFor(() => store.collections.toasts.get("toast-trigger.run.will/flows.nightly")?.status === "ok")
+    await waitFor(() => store.collections.toasts.get(running[0]!.id)?.status === "ok")
   })
 
   test("two presses dispatch twice", async () => {
@@ -1611,6 +1619,27 @@ describe("triggers seam: running a registered schedule now", () => {
     const keys = calls.filter((call) => call.procedure === "Run").map((call) => String(call.payload.idempotencyKey))
     expect(new Set(keys).size).toBe(2)
     await waitFor(() => dispatchCards(store).length === 2)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const running = [...store.collections.toasts.values()].filter(t => t.status === "running")
+    expect(running).toHaveLength(2)
+    expect(new Set(running.map(t => t.sourceCard))).toEqual(new Set(dispatchCards(store).map(c => c.id)))
+  })
+
+  test("a cancelled dispatch resolves its only toast neutrally", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    const { store, controller } = await readyToRegister(ROUTES(calls, run))
+    await controller.commands.run("triggers.run", "nightly will/flows")
+    await waitFor(() => dispatchCards(store)[0]?.payload.phase === "running")
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const toast = [...store.collections.toasts.values()].find(t => t.sourceCard === dispatchCards(store)[0]?.id)!
+    expect(toast).toBeDefined()
+    run.status = "cancelled"
+    run.verdict = "Cancelled"
+    await waitFor(() => store.collections.toasts.get(toast.id)?.status !== "running")
+    expect([...store.collections.toasts.values()].filter(t => t.sourceCard === toast.sourceCard))
+      .toEqual([expect.objectContaining({ status: "cancelled" })])
+    expect([...store.collections.toasts.values()].filter(t => t.status === "failed")).toEqual([])
   })
 
   test("a name no schedule holds is refused before anything is asked of the workspace", async () => {

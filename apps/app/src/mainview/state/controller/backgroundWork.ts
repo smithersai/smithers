@@ -7,6 +7,8 @@ export const claimWorkToast = (store: ControllerContext["store"], cardId: string
   let claims = owners.get(store)
   if (!claims) owners.set(store, claims = new Map())
   claims.set(cardId, key)
+  const recovered = `toast-worker.${cardId}`
+  if (store.collections.toasts.has(recovered)) store.dispatch({ type: "toast.dismissed", actor: "system", id: recovered })
 }
 
 const phaseOf = (card: Card): "running" | "ok" | "failed" | "cancelled" | undefined => {

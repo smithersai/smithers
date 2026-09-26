@@ -6,12 +6,13 @@ import { workerToastActions } from "../../WorkerToastActions"
 import { createControllerContext } from "./context"
 import { createFailureController } from "./failures"
 import { observeBackgroundWork } from "./backgroundWork"
+import { createFlowAuthoringController } from "./flowAuthoring"
 import { createWorkflowLaunchController } from "./workflow-launch"
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-const fixture = async () => {
-  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+const fixture = async (storage = memoryStorage()) => {
+  const store = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
   const ctx = createControllerContext(store, unavailableAgent, { workflowPollMs: 1, toastAutoDismissMs: 10000 })
   const failures = createFailureController(ctx)
@@ -90,4 +91,86 @@ for (const kind of ["run-trace", "agent"] as const) test(`a recovered ${kind} ca
   await store.dispatch({ type: "card.upsert", actor: "system", card: stopped }).isPersisted.promise
   await waitFor(() => [...store.collections.toasts.values()][0]?.status !== "running")
   expect([...store.collections.toasts.values()][0]).toMatchObject({ status: "cancelled", detail: "Cancelled" })
+})
+
+for (const status of ["completed", "failed", "cancelled"] as const) test(`authoring owns one toast from held launch through ${status}`, async () => {
+  const { store, ctx } = await fixture()
+  const remote = Promise.withResolvers<{ status: "ok"; value: { runId: string } }>()
+  let launches = 0
+  ctx.gateway = { ...ctx.gateway, launch: async () => { launches++; return remote.promise } } as typeof ctx.gateway
+  observeBackgroundWork(ctx)
+  const author = createFlowAuthoringController(ctx, store.nextOrdinal, async () => true, async () => {})
+  await author.request("Review my changes", "owner/repo", {}, "user")
+  await author.request("Review my changes", "owner/repo", {}, "user")
+  expect(launches).toBe(1)
+  expect(store.collections.toasts.size).toBe(0)
+  await store.dispatch({ type: "composer.changed", actor: "user", draft: "still chatting" }).isPersisted.promise
+  expect(store.session()).toMatchObject({ draft: "still chatting", phase: "idle" })
+  await waitFor(() => store.collections.toasts.size > 0)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  expect(store.collections.toasts.size).toBe(1)
+  const toast = [...store.collections.toasts.values()][0]!
+  expect(toast.key).toStartWith("flow.author:")
+  expect(toast.sourceCard).toBe([...store.collections.cards.values()].find(c => c.kind === "run-trace")?.id)
+  remote.resolve({ status: "ok", value: { runId: "author-1" } })
+  await waitFor(() => [...store.collections.cards.values()].some(c => c.kind === "run-trace" && c.payload.runId === "author-1"))
+  await settle()
+  expect(store.collections.toasts.size).toBe(1)
+  expect(store.collections.toasts.get(toast.id)?.status).toBe("running")
+  expect(workerToastActions(store.collections.cards.get(toast.sourceCard!)).map(a => a.label)).toContain("Stop")
+  await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+    scope: { repo: "owner/repo", runId: "author-1" }, summary: { runId: "author-1", flowId: "create-flow", status,
+      createdAt: 1, updatedAt: 2, turns: 0, calls: 0, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0,
+      inputTokens: 0, outputTokens: 0, verdict: status, diagnosis: status }
+  } }).isPersisted.promise
+  await waitFor(() => store.collections.toasts.get(toast.id)?.status !== "running")
+  expect(store.collections.toasts.get(toast.id)?.status).toBe(status === "completed" ? "ok" : status)
+  expect(store.collections.toasts.size).toBe(1)
+})
+
+test("reloaded authoring adopts its recovered worker toast without relaunching", async () => {
+  const storage = memoryStorage()
+  const first = await fixture(storage)
+  first.ctx.gateway = { ...first.ctx.gateway, launch: async () => ({ status: "ok", value: { runId: "author-1" } }) } as typeof first.ctx.gateway
+  const author = createFlowAuthoringController(first.ctx, first.store.nextOrdinal, async () => true, async () => {})
+  await author.request("Review my changes", "owner/repo", {}, "user")
+  await waitFor(() => [...first.store.collections.cards.values()].some(c => c.kind === "run-trace" && c.payload.runId === "author-1"))
+  await first.ctx.dispose()
+  await first.store.dispose?.()
+
+  const { store, ctx } = await fixture(storage)
+  let launches = 0
+  ctx.gateway = { ...ctx.gateway, launch: async () => { launches++; throw Error("must reconnect") } } as typeof ctx.gateway
+  observeBackgroundWork(ctx)
+  await waitFor(() => store.collections.toasts.size === 1)
+  expect([...store.collections.toasts.values()][0]?.key).toStartWith("worker.")
+  const resumed = createFlowAuthoringController(ctx, store.nextOrdinal, async () => true, async () => {})
+  resumed.resume()
+  await waitFor(() => [...store.collections.toasts.values()].some(t => t.key.startsWith("flow.author:")))
+  expect([...store.collections.toasts.values()]).toEqual([expect.objectContaining({ status: "running", sourceCard: expect.any(String) })])
+  expect(launches).toBe(0)
+})
+
+test("a refused authoring launch keeps one failure toast and retries the same request", async () => {
+  const { store, ctx } = await fixture()
+  const remote = Promise.withResolvers<{ status: "error"; message: string }>()
+  const keys: unknown[] = []
+  ctx.gateway = { ...ctx.gateway, launch: async (...args: Parameters<typeof ctx.gateway.launch>) => { keys.push(args[4]); return remote.promise } } as typeof ctx.gateway
+  observeBackgroundWork(ctx)
+  const author = createFlowAuthoringController(ctx, store.nextOrdinal, async () => true, async () => {})
+  await author.request("Review my changes", "owner/repo", {}, "user")
+  await waitFor(() => store.collections.toasts.size > 0)
+  remote.resolve({ status: "error", message: "Workspace unavailable" })
+  await waitFor(() => [...store.collections.toasts.values()].some(t => t.status === "failed"))
+  const toast = [...store.collections.toasts.values()][0]!
+  expect(store.collections.toasts.size).toBe(1)
+  expect(toast.detail).toBe("Workspace unavailable")
+  expect(typeof toast.sourceCard).toBe("string")
+  ctx.gateway = { ...ctx.gateway, launch: async (...args: Parameters<typeof ctx.gateway.launch>) => { keys.push(args[4]); return { status: "ok", value: { runId: "author-retry" } } } } as typeof ctx.gateway
+  author.resume(toast.sourceCard)
+  await waitFor(() => store.collections.toasts.get(toast.id)?.status === "running")
+  expect(keys).toHaveLength(2)
+  expect(keys[0]).toBe(keys[1])
+  expect(store.collections.toasts.size).toBe(1)
+  expect(workerToastActions(store.collections.cards.get(toast.sourceCard!)).map(a => a.label)).toContain("Stop")
 })

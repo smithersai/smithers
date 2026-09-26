@@ -25,6 +25,7 @@ import { BudgetTokensSchema, SetupDraftSchema } from "@smthrs/rpc/RepositorySetu
 import { Schema, SchemaRepresentation } from "effect"
 import type { JsonSchema } from "effect"
 import type { Card } from "../AppState"
+import { TOAST_CANCELLED, type FailureController } from "../controller/failures"
 import { resolveTargetRepo } from "../RepoContext"
 import { repositoryJobWorkspace } from "../RepositoryJobs"
 import { runtimeRunKey } from "../RuntimeProjection"
@@ -203,7 +204,7 @@ export interface TriggersRuntime {
   /** Watch one run card; it settles when that run does. */
   readonly watchRun: (cardId: string) => Promise<void>
   /** Background work on the shared stack, under its 300 ms debounce; a string outcome is the failure line. */
-  readonly withToast: <T>(key: string, title: string, doneTitle: string, work: () => Promise<T | string>) => Promise<T | string>
+  readonly withToast: FailureController["withToast"]
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -966,7 +967,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     planId: string,
     planDigest: string,
     input: unknown
-  ): Promise<string | { readonly value: string }> => {
+  ): Promise<string | { readonly value: string } | typeof TOAST_CANCELLED> => {
     const cardId = registrationCardId(requestId)
     const title = `Register ${slug} · ${repo}`
     const refuse = async (message: string): Promise<string> => {
@@ -1067,7 +1068,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     flow: string,
     schedule: string,
     requestId: string
-  ): Promise<string | { readonly value: string }> => {
+  ): Promise<string | { readonly value: string } | typeof TOAST_CANCELLED> => {
     const cardId = dispatchCardId(requestId)
     const title = `Run ${slug} · ${repo}`
     const refuse = async (message: string): Promise<string> => {
@@ -1141,7 +1142,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     repo: string,
     settled: string,
     unwatched: string
-  ): Promise<string | { readonly value: string }> => {
+  ): Promise<string | { readonly value: string } | typeof TOAST_CANCELLED> => {
     await runtime.watchRun(cardId)
     /* The run this attempt reached is the one on its card, in the box the card names, not the one this call was handed. */
     const held = ctx.store.collections.cards.get(cardId)
@@ -1151,7 +1152,8 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       await listTriggers(repo)
       return { value: settled }
     }
-    if (scope !== undefined && (summary?.status === "failed" || summary?.status === "cancelled")) {
+    if (summary?.status === "cancelled") return TOAST_CANCELLED
+    if (scope !== undefined && summary?.status === "failed") {
       return refusalOfRun(scope) ?? summary.verdict
     }
     return unwatched
@@ -1193,10 +1195,11 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       held.payload.runId !== unlaunchedRunId(requestId)
     if (!attempts.has(requestId) && !watching) {
       const attempt = runtime.withToast(
-        `trigger.register.${repo}.${slug}`,
+        `trigger.register.${repo}.${slug}.${requestId}`,
         `Registering ${slug} on ${repo}…`,
         `${slug} registered`,
-        () => runRegistration(request, repo, slug, requestId, planId, planDigest, input)
+        () => runRegistration(request, repo, slug, requestId, planId, planDigest, input),
+        false, undefined, registrationCardId(requestId)
       )
       attempts.set(requestId, attempt)
       void attempt.finally(() => {
@@ -1223,10 +1226,11 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     if (row === undefined) return `No schedule "${slug}" is registered on ${repo}.`
     const requestId = crypto.randomUUID()
     void runtime.withToast(
-      `trigger.run.${repo}.${slug}`,
+      `trigger.run.${repo}.${slug}.${requestId}`,
       `Running ${slug} on ${repo}…`,
       `${slug} dispatched`,
-      () => dispatchTrigger(repo, slug, row.flowId, row.cron, requestId)
+      () => dispatchTrigger(repo, slug, row.flowId, row.cron, requestId),
+      false, undefined, dispatchCardId(requestId)
     )
     return { value: `Running ${slug} on ${repo}.` }
   }

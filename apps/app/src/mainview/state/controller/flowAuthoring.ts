@@ -7,7 +7,7 @@ import { engineProjectionPending } from "../../cards/EngineTrace"
 import { flowArgs } from "../../flows/FlowArgs"
 import type { ControllerContext } from "./context"
 import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
-import { TOAST_SUPERSEDED } from "./failures"
+import { TOAST_CANCELLED, TOAST_SUPERSEDED } from "./failures"
 
 type Run = Extract<Card, { kind: "run-trace" }>
 type Plan = Extract<Card, { kind: "flow-plan" }>
@@ -34,15 +34,25 @@ export const createFlowAuthoringController = (
   // One scope finalizer wakes the waits still open; a settled wait leaves the set.
   const waits = new Set<() => void>()
   ctx.onDispose(() => { for (const wake of [...waits]) wake() })
-  const until = (done: () => boolean): Promise<void> => new Promise(resolve => {
+  const until = (done: () => boolean): Promise<void> => new Promise((resolve, reject) => {
     const subscriptions: Array<{ unsubscribe(): void }> = []
     let finished = false
-    const check = () => {
-      if (finished || !ctx.disposed && !done()) return
+    const close = () => {
       finished = true
       waits.delete(check)
       for (const subscription of subscriptions) subscription.unsubscribe()
-      resolve()
+    }
+    const check = () => {
+      if (finished) return
+      if (ctx.disposed) { close(); resolve(); return }
+      // Collection notifications can precede the durable receipt read by done().
+      // Evaluate after that write settles, even if no later journal page arrives.
+      void (async () => {
+        await store.settled?.()
+        if (finished || !ctx.disposed && !done()) return
+        close()
+        resolve()
+      })().catch(error => { if (!finished) { close(); reject(error) } })
     }
     for (const collection of [store.collections.cards, store.collections.runtimeRuns, store.collections.identitySessions]) subscriptions.push(collection.subscribeChanges(check))
     waits.add(check)
@@ -137,7 +147,7 @@ export const createFlowAuthoringController = (
         if (!card || !current(card)) return TOAST_SUPERSEDED
         await observe(id)
         const run = store.committedRuntimeRun(runtimeRunKey(card.payload))
-        return run?.observer?.error ?? (run?.summary?.status === "completed" ? true : run?.summary?.verdict ?? "The run could not be observed.")
+        return run?.observer?.error ?? (run?.summary?.status === "completed" ? true : run?.summary?.status === "cancelled" ? TOAST_CANCELLED : run?.summary?.verdict ?? "The run could not be observed.")
       } catch (error) {
         const card = read(id)
         if (!card || !current(card)) return TOAST_SUPERSEDED
@@ -146,7 +156,7 @@ export const createFlowAuthoringController = (
           authoring: { ...card.payload.authoring!, launchError: message } } })
         return message
       }
-    }).finally(() => pending.delete(id))
+    }, false, () => { const card = read(id); return card !== undefined && current(card) }, id).finally(() => pending.delete(id))
     pending.set(id, work)
     return work
   }

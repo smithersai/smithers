@@ -1906,7 +1906,13 @@ const initializeAppStore = async (
       wakeRemoteRetirement()
       return true
     },
-    settled: () => { commitDraft(); return collectionPersistence.settled() },
+    settled: async () => {
+      commitDraft()
+      // A collection subscriber runs before its transaction reaches the durable
+      // queue. Drain accepted transactions too, including their committed views.
+      while (pendingWrites.size > 0) await Promise.allSettled([...pendingWrites].map(transaction => transaction.isPersisted.promise))
+      await collectionPersistence.settled()
+    },
     dispose: () => {
       if (disposePromise !== undefined) return disposePromise
       disposed = true

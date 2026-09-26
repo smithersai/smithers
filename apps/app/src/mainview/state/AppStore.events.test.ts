@@ -892,3 +892,27 @@ describe("the live store's authoritative event path", () => {
     expect((await restored.store.verifyState()).valid).toBe(true)
   }, 120_000)
 })
+
+// Collection observers can see an optimistic row before its transaction is
+// queued for storage. The settled barrier must include that accepted write.
+test("settled from a collection observer includes its committed runtime receipt", async () => {
+  const store = await open(memoryStorage())
+  const observed = Promise.withResolvers<string | undefined>()
+  const subscription = store.collections.runtimeRuns.subscribeChanges(() => {
+    void store.settled!().then(() => {
+      const row = [...store.collections.runtimeRuns.values()][0]
+      observed.resolve(row && store.committedRuntimeRun(row.id)?.summary?.status)
+    }, observed.reject)
+  })
+  try {
+    const write = store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope: { repo: "owner/repo", runId: "run-1" }, summary: {
+        runId: "run-1", flowId: "review", status: "completed", createdAt: 1, updatedAt: 2,
+        turns: 0, calls: 0, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0,
+        inputTokens: 0, outputTokens: 0, verdict: "completed", diagnosis: "completed"
+      }
+    } })
+    expect(await observed.promise).toBe("completed")
+    await write.isPersisted.promise
+  } finally { subscription.unsubscribe() }
+})
