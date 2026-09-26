@@ -92,13 +92,6 @@ describe("child-process containment conformance", () => {
       "Test-support process-table probe; spawns only `ps` with fixed arguments and a bounded 64 MiB maxBuffer."
     ],
     [
-      "testing/src/Faults.ts",
-      "The fault tier's process primitives. `execFileSync` of `ps -o ppid=` reads the process "
-      + "TABLE. The other exports signal pids the test already owns. This test-only diagnostic "
-      + "is synchronous but has no explicit command timeout; it is not a host-spawn guarantee. "
-      + "Fault suites use it to verify actual parentage independently of the implementation."
-    ],
-    [
       "smithers/src/commands/Tui.ts",
       "Interactive CLI hand-off to the Bun terminal host, outside a durable flow. "
       + "Inherits the foreground terminal and awaits its direct child's exit status; "
@@ -116,6 +109,20 @@ describe("child-process containment conformance", () => {
       + "misses its admission deadline, and the child is itself a `smithers` engine that "
       + "composes the contained host, so everything IT spawns is inside the ledger and the "
       + "kill deadline (`packages/smithers/test/Detached.test.ts`)."
+    ],
+    [
+      "smithers/flows/platform-node/src/internal/WindowsProcessJob.ts",
+      "The Windows job guardian `ProcessSupervisor` attaches to a target before it activates. "
+      + "It is part of the contained spawner, so it cannot route through that spawner. Bounded: "
+      + "the trusted helper runs with an empty environment and no shell, its status stream is "
+      + "capped at 4 KiB, readiness is awaited under the supervisor's startup deadline, and "
+      + "closing its control pipe, including host death, terminates the job."
+    ],
+    [
+      "smithers/build/targets/src/ExecSandbox.ts",
+      "Build-sandbox host resolution on macOS reads the developer directory with "
+      + "`/usr/bin/xcode-select -p` when `DEVELOPER_DIR` is unset: a fixed absolute program, "
+      + "fixed arguments and a 2-second timeout, outside a durable host."
     ],
     [
       "smithers/build/build-cli/src/GitHooks.ts",

@@ -13,12 +13,6 @@
       "expires": "2026-10-10"
     },
     {
-      "label": "//scripts:repositoryConformance",
-      "owner": "will",
-      "reason": "Child-process containment conformance: testing/src/Faults.ts exemption and a direct spawn.",
-      "expires": "2026-10-10"
-    },
-    {
       "label": "//scripts:tierContracts",
       "owner": "will",
       "reason": "runner-contract browser sentinel case. Red in a local reproduction of the ci.yml step on 2026-09-26; CI has not reached this step since //packages went red. Not triaged; may be environment-specific.",

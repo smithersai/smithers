@@ -626,6 +626,7 @@ describe("coverage conformance", () => {
       // the same opaque-process provenance check as the remote providers.
       "smithers/flows/sandbox/src/DirectorySandbox/make.ts": 2,
       "smithers/flows/sandbox/src/JustBashSandbox/make.ts": 1,
+      "smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts": 1,
       // `spawn` is the only source of a `RemoteProcess`, and it records every
       // one it returns, so the scripted provider's kill lookup cannot miss.
       "smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemote.ts": 1,
