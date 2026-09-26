@@ -29,6 +29,7 @@ run-kind targets; `flow start` starts durable flows.
 | `install`, `git-hooks [--write]` | Use the declared installation toolchain and Git hooks. |
 | `cache status/prune/clear`, `clean [pattern]`, `gc` | Maintain action results, declared cleanup targets, or terminal run history. |
 | `memory`, `credentials`, `triggers`, `integrations`, `eval` | Operate the persistent agent features described below. |
+| `open [dir]`, `.` | Open the checkout's `owner/repo` in the Smithers app (`smithers://open/<owner>/<repo>`), the dev build inside the smithers checkout, or print its smithers.sh page. |
 | `serve`, `doctor`, `suggest`, `migrate`, `update`, `bug` | Host, diagnose, discover uses, migrate source, check versions, or submit a report. |
 
 Target patterns include `//...`, `//package/...`, and `//package:target`.

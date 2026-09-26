@@ -3016,6 +3016,22 @@
       }
     },
     {
+      "name": "open",
+      "description": "Open this checkout's repository in the Smithers app; `smthrs .` is the same",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "directory": {
+              "description": "Checkout directory; defaults to cwd",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
       "name": "owners",
       "description": "Resolve owners, reasons, and the agent policy for paths, or for the paths a diff touches",
       "schema": {
