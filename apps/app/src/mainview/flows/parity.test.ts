@@ -565,7 +565,7 @@ describe("launch-law parity: every affordance is a command", () => {
     expect(actions).toContain("runCommand(\"flow.repo.choose\"")
     expect(actions).toContain("runCommand(\"wiki.edit\"")
     for (const surface of ["../App.tsx", "../tabs/CardTabBody.tsx"] as const) {
-      expect(files[surface]).toContain("cardActions(controller)")
+      expect(files[surface]).toContain("cardActions(controller,")
     }
   })
 

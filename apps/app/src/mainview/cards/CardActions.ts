@@ -11,25 +11,32 @@
  * memoization — one streaming token re-ran the render function of every card
  * body in the transcript.
  *
- * The bindings depend on nothing but the controller, so they are built once
- * against it and reused: same controller, same object, props CardView's
- * React.memo can compare.
+ * Bindings are cached by controller and card record. Unchanged cards keep
+ * the same callbacks through unrelated transcript renders, and replaced
+ * records can be collected. Their origin affects presentation, never permission.
  */
 import type { CardViewProps } from "../ChatCards"
 import type { AppController } from "../state/AppController"
+import type { Card } from "../state/AppState"
 
-/** The CardView props a controller alone decides: the flow bindings. */
+/** The CardView callbacks that dispatch its flows. */
 type CardBindings = Omit<
   CardViewProps,
   "card" | "maximized" | "worldDocuments" | "debugVerbose" | "signedOut" | "workflowCatalogs" | "triggerCatalogs" | "fileCards"
 >
 
 const bound = new WeakMap<AppController, CardBindings>()
+const cardBound = new WeakMap<AppController, WeakMap<Card, CardBindings>>()
 
-/** Every CardView callback for this controller, stable across renders. */
-export const cardActions = (controller: AppController): CardBindings => {
-  const cached = bound.get(controller)
+/** Stable bindings capture the originating card, never its mutable presentation. */
+export const cardActions = (controller: AppController, card?: Card): CardBindings => {
+  const cards = cardBound.get(controller) ?? new WeakMap<Card, CardBindings>()
+  if (card !== undefined) cardBound.set(controller, cards)
+  const cached = card === undefined ? bound.get(controller) : cards.get(card)
   if (cached !== undefined) return cached
+  const runCommand: AppController["runCommand"] = (name, args) => card === undefined
+    ? controller.runCommand(name, args)
+    : controller.runCommand(name, args, card.id)
   const actions: CardBindings = {
     projectionStore: controller.store,
     pluginLibrary: controller.features?.pluginLibrary ?? false,
@@ -39,30 +46,31 @@ export const cardActions = (controller: AppController): CardBindings => {
     onDecideApproval: (id, decision, answer, question) =>
       // Structured human answers keep their value shape through the controller.
       answer === undefined
-        ? controller.runCommand(
+        ? runCommand(
           decision === "approved" ? "approval.approve" : "approval.deny",
           id
         )
         : controller.answerApproval(id, answer, question),
-    onGrantConfirm: (id) => controller.runCommand("admin.grant.confirm", id),
-    onGrantCancel: (id) => controller.runCommand("admin.grant.cancel", id),
-    onQueueApprove: (login) => controller.runCommand("admin.queue.approve", login),
-    onMaximize: (id) => controller.runCommand("card.maximize", id),
-    onMinimize: () => controller.runCommand("card.minimize"),
-    onFrameBack: () => controller.runCommand("frame.back"),
-    onFrameForward: () => controller.runCommand("frame.forward"),
-    onForkFrame: () => controller.runCommand("frame.fork"),
-    onOpenInTab: (id) => controller.runCommand("tab.card", id),
-    onConnectGitHub: () => controller.runCommand("auth.sign-in"),
-    onRunWorkflow: (name) => controller.runCommand("flow.run", name),
-    onStopRun: (id) => controller.runCommand("flow.run.stop", id),
-    onRetryRun: (id) => controller.runCommand("flow.run.retry", id),
-    onChooseWorkflowRepo: (name) => controller.runCommand("flow.repo.choose", name),
+    onGrantConfirm: (id) => runCommand("admin.grant.confirm", id),
+    onGrantCancel: (id) => runCommand("admin.grant.cancel", id),
+    onQueueApprove: (login) => runCommand("admin.queue.approve", login),
+    onMaximize: (id) => runCommand("card.maximize", id),
+    onMinimize: () => runCommand("card.minimize"),
+    onFrameBack: () => runCommand("frame.back"),
+    onFrameForward: () => runCommand("frame.forward"),
+    onForkFrame: () => runCommand("frame.fork"),
+    onOpenInTab: (id) => runCommand("tab.card", id),
+    onConnectGitHub: () => runCommand("auth.sign-in"),
+    onRunWorkflow: (name) => runCommand("flow.run", name),
+    onStopRun: (id) => runCommand("flow.run.stop", id),
+    onRetryRun: (id) => runCommand("flow.run.retry", id),
+    onChooseWorkflowRepo: (name) => runCommand("flow.repo.choose", name),
     onChangeWorldDocument: (id, body) =>
-      controller.runCommand("wiki.edit", `${id} ${JSON.stringify(body)}`),
+      runCommand("wiki.edit", `${id} ${JSON.stringify(body)}`),
     onAttachWorldEditor: controller.attachWorldEditor,
-    onRunCommand: (name, commandArgs) => controller.runCommand(name, commandArgs)
+    onRunCommand: (name, commandArgs) => runCommand(name, commandArgs)
   }
-  bound.set(controller, actions)
+  if (card === undefined) bound.set(controller, actions)
+  else cards.set(card, actions)
   return actions
 }

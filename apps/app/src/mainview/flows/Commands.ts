@@ -177,6 +177,8 @@ export interface FlowSubmission {
   readonly invocation?: AgentInvocation
   /** A form's original browser gesture, never serialized into its card. */
   readonly gesture?: CommandGesture
+  /** Presentation context only; it conveys no command authority. */
+  readonly originCardId?: string
 }
 
 export interface CommandRegistry {
@@ -201,7 +203,7 @@ export interface CommandRegistry {
   readonly slashTree: (needle: string) => Array<SlashRow<CatalogItem>>
   readonly recommended: () => CatalogItem
   readonly preload?: (name: string, args?: string) => Promise<void>
-  readonly run: (name: string, args?: string, source?: "automatic") => Promise<CommandOutcome>
+  readonly run: (name: string, args?: string, source?: "automatic", originCardId?: string) => Promise<CommandOutcome>
   /**
    * `run` at the agent boundary (requirement axis): an unmet requirement is an
    * honest failure carrying the reason — never a deferral, because a model must
@@ -468,7 +470,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     invocation?: AgentInvocation,
     named?: Record<string, unknown>,
     httpCall?: AgentToolCall["httpCall"],
-    inheritedGesture?: CommandGesture
+    inheritedGesture?: CommandGesture,
+    originCardId?: string
   ): Promise<CommandOutcome> => {
     invocation?.signal?.throwIfAborted()
     const declared = find(name)
@@ -486,9 +489,11 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     // Commands raised by a maximized card itself keep that presentation until
     // their own frame or card handler decides where to go. Chrome commands
     // render no card: Chat opens over the card and closes back to it.
-    const staysInMaximizedCard = name === "card.maximize" || name === "card.minimize" || name.startsWith("card.history.") ||
-      name.startsWith("frame.") || name.startsWith("files.") || OVER_MAXIMIZED_CARD.has(name)
-    if (invoker === "user" && actions.snapshot().maximizedCardId != null && !staysInMaximizedCard) actions.minimizeCard()
+    const maximizedCardId = actions.snapshot().maximizedCardId
+    const staysInMaximizedCard = (originCardId !== undefined && originCardId === maximizedCardId) ||
+      name === "card.maximize" || name === "card.minimize" || name.startsWith("card.history.") ||
+      name.startsWith("frame.") || OVER_MAXIMIZED_CARD.has(name)
+    if (invoker === "user" && maximizedCardId != null && !staysInMaximizedCard) actions.minimizeCard()
     // Only the human's local form edit has a synchronous recovery preparation.
     // Agent input waits for capability authorization in settle before dispatch.
     let pendingFormInput: PendingFormInput | undefined
@@ -753,7 +758,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     return outcome
   }
 
-  const run = (name: string, args?: string, source?: "automatic"): Promise<CommandOutcome> => runAs(source === "automatic" ? "system" : "user", name, args)
+  const run: CommandRegistry["run"] = (name, args, source, originCardId) =>
+    runAs(source === "automatic" ? "system" : "user", name, args, new Set(), undefined, undefined, undefined, undefined, originCardId)
 
   const callable = (): ReadonlyArray<FlowEntry> => entries().filter(modelInvocable)
 
@@ -800,9 +806,9 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
         signal: signal ?? invocation?.signal
       })
     },
-    submit: async ({ name, payload, actor, display, invocation, gesture }) => {
+    submit: async ({ name, payload, actor, display, invocation, gesture, originCardId }) => {
       const clean = canonicalCommandName(name)
-      if (actor === "user") return runAs("user", clean, display, new Set(), invocation, payload, undefined, gesture)
+      if (actor === "user") return runAs("user", clean, display, new Set(), invocation, payload, undefined, gesture, originCardId)
       const target = find(clean)
       if (target !== undefined && !modelInvocable(target)) {
         return { status: "failed", error: userOnlyError(clean, target.metadata.userOnlyReason) }

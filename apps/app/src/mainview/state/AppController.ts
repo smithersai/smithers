@@ -212,7 +212,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly askReset: () => void
   readonly cancelReset: () => void
   readonly submitCommand: (submission: FlowSubmission) => Promise<import("../flows/Commands").CommandOutcome>
-  readonly runCommand: (name: string, args?: string) => boolean
+  readonly runCommand: (name: string, args?: string, originCardId?: string) => boolean
   readonly makeConnectorReadOnly: (id: string) => string | void
   readonly askConnectorRemoval: (id: string) => string | void
   readonly cancelConnectorRemoval: () => void
@@ -2012,10 +2012,10 @@ export const createAppController = (
    */
   const commands: CommandRegistry = {
     ...registry,
-    run: async (name, args, source) => {
+    run: async (name, args, source, originCardId) => {
       if (ctx.disposed) return { status: "failed", error: "The controller is closed." }
       try {
-        return await registry.run(name, args, source)
+        return await registry.run(name, args, source, originCardId)
       } catch (error) {
         /*
          * The floor under the person's door. A handler's throw is classified
@@ -2093,12 +2093,12 @@ export const createAppController = (
     return outcome
   }
 
-  const runCommand = (name: string, args?: string): boolean => {
+  const runCommand: AppController["runCommand"] = (name, args, originCardId) => {
     if (ctx.disposed) return false
     if (commands.find(name) === undefined) return false
     /* Everything the door says from here on belongs to this press (controller/spokenLines.ts). */
     const saidBefore = latestOrdinal(store.collections)
-    void commands.run(name, args).then((outcome) => { if (!ctx.disposed) surfaceCommandFailure(name, outcome, saidBefore) })
+    void commands.run(name, args, undefined, originCardId).then((outcome) => { if (!ctx.disposed) surfaceCommandFailure(name, outcome, saidBefore) })
     return true
   }
 

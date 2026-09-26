@@ -1,6 +1,6 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { StorageApi } from "@tanstack/db"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test"
 import { useState } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
@@ -99,7 +99,7 @@ const mountUnderParent = (controller: AppController, card: Card): { readonly rer
           card={card}
           maximized={false}
           worldDocuments={NO_DOCUMENTS}
-          {...cardActions(controller)}
+          {...cardActions(controller, card)}
         />
       </>
     )
@@ -115,7 +115,22 @@ const mountUnderParent = (controller: AppController, card: Card): { readonly rer
   return { rerender: () => flushSync(() => bump?.()) }
 }
 
-describe("card bindings are built once per controller", () => {
+describe("card bindings are stable for their controller and origin", () => {
+  test("card bindings retain their origin and remain stable for unchanged records", async () => {
+    const controller = await newController()
+    const { card } = countingCard()
+    const run = spyOn(controller, "runCommand").mockReturnValue(true)
+    try {
+      const actions = cardActions(controller, card)
+      expect(cardActions(controller, card)).toBe(actions)
+      expect(cardActions(controller, { ...card, id: "other-card" })).not.toBe(actions)
+      actions.onRunCommand("appearance.theme", "paper")
+      expect(run).toHaveBeenLastCalledWith("appearance.theme", "paper", card.id)
+      actions.onStopRun("run-1")
+      expect(run).toHaveBeenLastCalledWith("flow.run.stop", "run-1", card.id)
+    } finally { run.mockRestore() }
+  })
+
   test("the same controller yields the very same binding object", async () => {
     const controller = await newController()
     expect(cardActions(controller)).toBe(cardActions(controller))

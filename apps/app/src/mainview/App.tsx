@@ -326,12 +326,6 @@ function AppContent() {
   })
   // Admin chrome follows the same capability-filtered registry as every act.
   const isAdmin = controller.commands.find("admin.devtools") !== undefined
-  /*
-   * One binding object for every card in the transcript, and the same one a
-   * card tab spreads (cards/CardActions.ts). Built against the controller, not
-   * this render, so a card whose record did not change can bail out.
-   */
-  const actions = cardActions(controller)
   const repositoryCatalog = controller.repositoryFlows()
   const homeCard: Extract<Card, { kind: "factory.home" }> | undefined = repositoryCatalog?.home === undefined || repositoryCatalog.home.kind === "none"
     ? undefined
@@ -554,7 +548,7 @@ function AppContent() {
                     flowDurations={flowDurations}
                     fileCards={fileCards}
                     timelineRowsShown={lanes.some(lane => lane.id === entry.card.id && lane.rows.length > 0)}
-                    {...actions}
+                    {...cardActions(controller, entry.card)}
                   />
                 ) :
                 <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />}

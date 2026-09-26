@@ -69,6 +69,20 @@ test("T1: a keyboard submission keeps the keyboard at the form card, never on <b
   expect(await activeElement(page)).not.toBe("body")
 })
 
+test("T1: a maximized form stays open while editing and reveals the submitted result", async ({ page }) => {
+  await page.route("**/api/repos/smithersai/smithers/contents/README.md*", route => route.fulfill({ json: README }))
+  const { form, path } = await askForPath(page)
+  const card = form.locator("xpath=ancestor::section[1]")
+  await card.locator('[data-testid^="card-maximize-"]').click()
+  await expect(card).toHaveAttribute("data-maximized", "true")
+  await path.fill("README.md")
+  await expect(form.getByTestId("flow-form-submit")).toBeEnabled()
+  await expect(card).toHaveAttribute("data-maximized", "true")
+  await path.press("Enter")
+  await expect(card).toHaveAttribute("data-maximized", "false")
+  await expect(page.getByTestId("card-file-smithersai/smithers-README.md")).toBeVisible()
+})
+
 test("T1: a restored form after reload does not take the keyboard; Cancel returns it to the next control", async ({ page }) => {
   const { path } = await askForPath(page)
   await expect(path).toBeFocused()

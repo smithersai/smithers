@@ -81,11 +81,28 @@ test("the Stack card follows lanes live, and a refused act is retried from the c
   // Settled with the open pull request: ok, or already dismissed on its own.
   await expect(page.locator('.toast-stack .toast[data-toast-status="running"]', { hasText: "#7 Issue i7" })).toHaveCount(0)
 
+  await card.locator('[data-testid^="card-maximize-"]').click()
+  await expect(card).toHaveAttribute("data-maximized", "true")
   await card.getByRole("button", { name: "Backfill", exact: true }).click()
   const failure = card.locator('[data-testid="stack-failure"][data-act="backfill"]')
   await expect(failure).toContainText("backfill")
+  await expect(card).toHaveAttribute("data-maximized", "true")
   backfill = 202
   await failure.getByRole("button", { name: "Retry" }).click()
   await expect.poll(() => writes).toEqual(["POST", "POST"])
   await expect(failure).toHaveCount(0)
+  await expect(card).toHaveAttribute("data-maximized", "true")
+
+  await page.reload()
+  await expect(card).toHaveAttribute("data-maximized", "true")
+  await card.getByRole("button", { name: "Backfill", exact: true }).focus()
+  await page.keyboard.press("Enter")
+  await expect.poll(() => writes.length).toBe(3)
+  await expect(card).toHaveAttribute("data-maximized", "true")
+
+  // The same flow entered as a new Chat command returns to the transcript.
+  await fillComposer(page, `/stack.backfill ${REPO}`)
+  await page.getByTestId("composer-send").click()
+  await expect.poll(() => writes.length).toBe(4)
+  await expect(card).toHaveAttribute("data-maximized", "false")
 })

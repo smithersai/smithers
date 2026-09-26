@@ -51,7 +51,7 @@ export function CardTabBody({ cardId }: { readonly cardId: string }) {
         triggerCatalogs={triggerCatalogs}
         flowDurations={flowDurations}
         fileCards={fileCards}
-        {...cardActions(controller)}
+        {...cardActions(controller, card)}
       />
     </div>
   )

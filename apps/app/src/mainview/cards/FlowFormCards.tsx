@@ -149,7 +149,7 @@ export const FlowFormCardBody = ({
           const values: Record<string, string> = {}
           for (const input of privateFields) { values[input.dataset.writeOnly!] = input.value; input.value = "" }
           const gesture = writeOnlyGesture("form.submit", values)
-          if (controller) void controller.submitCommand({ name: "form.submit", payload: { cardId: card.id }, actor: "user", gesture }).finally(gesture.release)
+          if (controller) void controller.submitCommand({ name: "form.submit", payload: { cardId: card.id }, actor: "user", originCardId: card.id, gesture }).finally(gesture.release)
           else gesture.release()
         }
       }

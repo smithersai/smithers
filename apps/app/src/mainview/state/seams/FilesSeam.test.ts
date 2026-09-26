@@ -360,7 +360,7 @@ describe("files seam — files.read", () => {
     controller.maximizeCard(files.id)
     expect(store.session().maximizedCardId).toBe(files.id)
 
-    expect((await controller.commands.run("files.read", "README.md")).status).toBe("executed")
+    expect((await controller.commands.run("files.read", "README.md", undefined, files.id)).status).toBe("executed")
     expect(store.collections.cards.get(files.id)).toMatchObject({
       id: files.id,
       kind: "file",
@@ -377,6 +377,19 @@ describe("files seam — files.read", () => {
     expect(store.session().maximizedCardId).toBeNull()
   })
 
+  test("a file command from Chat returns to the transcript without replacing the maximized Files card", async () => {
+    const { store, controller } = await freshController()
+    await ready(store)
+    await controller.commands.run("files.list", "")
+    const files = listCard(store, "files-will/flows-/")!
+    controller.maximizeCard(files.id)
+
+    expect((await controller.commands.run("files.read", "README.md")).status).toBe("executed")
+    expect(store.session().maximizedCardId).toBeNull()
+    expect(store.collections.cards.get(files.id)).toMatchObject({ kind: "file-list", payload: { path: "" } })
+    expect(fileCard(store, "file-will/flows-README.md")?.payload.content).toBe(README_TEXT)
+  })
+
   test("a slow file cannot replace a newer maximized navigation", async () => {
     const release = deferred<void>()
     const { store, controller } = await freshController((base) => async (input, init) => {
@@ -388,10 +401,10 @@ describe("files seam — files.read", () => {
     const files = listCard(store, "files-will/flows-/")!
     controller.maximizeCard(files.id)
 
-    const stale = controller.commands.run("files.read", "README.md")
+    const stale = controller.commands.run("files.read", "README.md", undefined, files.id)
     await settled()
     expect(store.collections.cards.get(files.id)).toMatchObject({ loading: true })
-    expect((await controller.commands.run("files.read", "plain.txt")).status).toBe("executed")
+    expect((await controller.commands.run("files.read", "plain.txt", undefined, files.id)).status).toBe("executed")
     expect(store.collections.cards.get(files.id)).toMatchObject({ kind: "file", payload: { path: "plain.txt" } })
     release.resolve(undefined)
     await stale
@@ -406,7 +419,7 @@ describe("files seam — files.read", () => {
     const files = listCard(store, "files-will/flows-/")!
     controller.maximizeCard(files.id)
 
-    const outcome = await controller.commands.run("files.read", "missing.txt")
+    const outcome = await controller.commands.run("files.read", "missing.txt", undefined, files.id)
     expect(outcome.status).toBe("failed")
     expect(store.collections.cards.get(files.id)).toMatchObject({
       status: "error",
