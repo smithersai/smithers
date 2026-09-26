@@ -186,8 +186,10 @@ export const nextActions = (value: unknown, context: Context = {}, next: FollowU
   }))
 }
 
+// A run of control characters is one space: Node 26.10 stopped folding a BEL
+// that trails an SGR sequence into it, and the output must not depend on that.
 const clean = (value: unknown): string =>
-  stripVTControlCharacters(String(Redaction.redact(value))).replace(/[\p{Cc}\p{Cf}]/gu, " ").slice(
+  stripVTControlCharacters(String(Redaction.redact(value))).replace(/[\p{Cc}\p{Cf}]+/gu, " ").slice(
     0,
     500
   )
