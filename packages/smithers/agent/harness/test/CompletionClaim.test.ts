@@ -1090,4 +1090,16 @@ describe("the evidence the brake sends", () => {
     expect(receipt).not.toContain("warning")
     expect(new TextEncoder().encode(receipt).length).toBeLessThanOrEqual(CompletionClaim.resultBytes + 128)
   })
+
+  it("keeps the newest bytes of each string inside a listed check's arrays", () => {
+    const receipt = CompletionClaim.receipt({
+      signal: null,
+      lines: ["compile".padEnd(512, ".") + "vm_test.go:40", "3 passed"]
+    })
+
+    expect(receipt).toContain("vm_test.go:40")
+    expect(receipt).toContain("3 passed")
+    expect(receipt).toContain("null")
+    expect(receipt).not.toContain("compile")
+  })
 })
