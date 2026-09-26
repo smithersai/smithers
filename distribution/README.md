@@ -46,6 +46,21 @@ docker exec smithers /opt/smithers/bin/smithers-backend credits balance -owner u
 
 `-owner` is `user:NAME` or `org:NAME`. A grant is applied once per `-key`; `-expires` takes an RFC 3339 time.
 
+## Subscription connections
+
+Claude and ChatGPT (Codex) subscription connections are disabled by default.
+The hosted product keeps them disabled. A self-hosted installation can set
+`SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS=true` in its backend environment
+and restart to let each user connect their own subscription for their own runs
+and workspaces.
+
+With the flag off, provider-connection routes return 403, the account refresh
+worker does not start, and execution does not resolve stored subscription
+tokens. The app hides the connection buttons. Secret, variable, and agent
+environment writes also reject recognized subscription credentials, including
+`CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_CODEX_ACCESS_TOKEN`, and `CODEX_AUTH_JSON`.
+Provider API keys remain supported through their existing credential paths.
+
 ## Native application
 
 The macOS package has two modes. `SMITHERS_BACKEND_MODE=own` starts the same Go backend plus the PostgreSQL 18 bundle copied at build time. `SMITHERS_BACKEND_MODE=plue` starts neither and uses `SMITHERS_API_ORIGIN`. Own mode is the default. Both canonical Flow hosts, their digest manifest, the canonical model host and checksum, the FFI library, the pinned `jj` CLI, relocatable Git helpers and templates, PostgreSQL server, and all PostgreSQL maintenance tools are inside the application; launch performs no download.
