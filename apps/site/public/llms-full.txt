@@ -4453,9 +4453,9 @@ The [MCP reference](/docs/reference/mcp-tools/) gives concrete request objects a
 
 ## Plan before launching
 
-Have the agent call `flow_plan` and show you the work and approval payload. Submit that exact payload through `approvals_approve`, then execute it with `flow_execute` when the work is authorized.
+Have the agent call `flow_plan` and show you the work and approval payload. Approve that exact payload with `smthrs approvals approve` from your shell, then have the agent execute it with `flow_execute`.
 
-`flow_start` combines planning, run-scope approval, and launch. Calling it is authorization to start the flow, so use the separate plan path when review needs to happen first.
+The MCP server never makes approval decisions: `flow start`, `approvals approve`, and `approvals deny` are not MCP tools.
 
 Apply tool approval policies in the agent client. The old `--surface` and `--read-only` examples belong to the earlier semantic MCP server and do not configure the current default entry point.
 
@@ -46131,22 +46131,23 @@ Nested CLI commands appear with underscore-separated names. The available schema
 | Task | Discover this tool |
 | --- | --- |
 | List or plan flows | `flow_list`, `flow_plan` |
-| Plan, approve, and launch | `flow_start` |
 | Execute a separately approved payload | `flow_execute` |
 | Inspect a run or its output | `runs_show`, `runs_logs`, `runs_output` |
 | Resume or cancel a run | `runs_resume`, `runs_cancel` |
 | Inspect or change historical state | `runs_inspect`, `runs_replay`, `runs_fork`, `runs_rewind` |
-| Read and answer approvals | `approvals_list`, `approvals_approve`, `approvals_deny` |
+| Read approvals | `approvals_list` |
 | Inspect target declarations | `targets` |
 | Operate agent state | Search for `memory`, `credentials`, `triggers`, or `eval`. |
 
 The long-running `serve` command is excluded from MCP, as is `eval run`, which imports and executes a local project module. Launch the control-plane server and evaluation runs from a shell.
 
+`flow start`, `approvals approve`, and `approvals deny` are also excluded: each makes an approval decision. The operator decides with `smthrs approvals approve` or `smthrs approvals deny` from a shell.
+
 ## Errors and execution boundaries
 
 Discovery of an unknown name returns an MCP tool error. Calling a tool with the wrong read/write wrapper also fails. Invalid arguments are checked against the command schema before its handler executes.
 
-A tool invocation runs the underlying command. `flow_start` grants run-scope plan approval and launches work, just as the CLI does. Tool discovery and schema inspection do not grant permission to execute that work.
+A tool invocation runs the underlying command. `flow_execute` launches only a plan the operator already approved. Tool discovery and schema inspection do not grant permission to execute that work.
 
 Historical mutations retain their CLI requirements. A rewind needs an exact frame and either a preview or explicit confirmation. Remote connectivity is command-specific: history and local operator commands require the host that owns the state.
 
@@ -47630,7 +47631,7 @@ GLOBAL FLAGS
 - [smthrs approve](/docs/reference/cli/approve/) records the decision the payload asks for.
 - [smthrs deny](/docs/reference/cli/deny/) records the opposite decision.
 - [Plan, approve, run](/docs/guides/plan-approve-run/) walks the three-step flow.
-- The MCP server has no plan-only tool; [`run_flow`](/docs/reference/mcp-tools/) plans, approves, and launches in one call.
+- The [MCP server](/docs/reference/mcp-tools/) has no launch tool: plan with `flow_plan`, approve with `smthrs approvals approve` in a shell, then `flow_execute`.
 
 ---
 
@@ -48312,7 +48313,7 @@ GLOBAL FLAGS
 - [smthrs run](/docs/reference/cli/run/) launches an approved payload or resumes a parked run.
 - [smthrs cancel](/docs/reference/cli/cancel/) ends the run durably.
 - [Plan, approve, run](/docs/guides/plan-approve-run/) shows the three-step path this verb compresses.
-- The [`run_flow`](/docs/reference/mcp-tools/) MCP tool is this verb's equivalent: it plans, approves for the run, and launches in one call.
+- The [MCP server](/docs/reference/mcp-tools/) has no launch tool: plan with `flow_plan`, approve with `smthrs approvals approve` in a shell, then `flow_execute`.
 
 ---
 

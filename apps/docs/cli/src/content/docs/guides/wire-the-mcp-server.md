@@ -88,15 +88,15 @@ page. An envelope without `nextCursor` is the last page. `list_flows` drops
 reserved system flows from each page, so a page can hold fewer than `limit`
 items and still have a `nextCursor`.
 
-The default semantic session exposes nine Control-backed tools plus ten
-unsupported compatibility entries. `run_workflow` and `resolve_approval` are
+The default semantic session exposes nine Control-backed tools plus twelve
+unsupported compatibility entries. `run_flow` and `resolve_approval` are
 excluded. A custom host can set `approvalTools: true` and a host-authenticated
 `principal: { id, kind }`; that only exposes the tools. The receiving Control
 runtime must independently delegate the exact identity, target kind, and scope
 using `ApprovalAuthority`. Without a configured principal the actor is
 `mcp/agent`, never the local operator. Tool arguments cannot choose that actor.
 
-`resolve_approval` defaults to `once`; `run_workflow` needs `run`-scope Plan
+`resolve_approval` defaults to `once`; `run_flow` needs `run`-scope Plan
 approval. `remembered` must be explicitly delegated. See
 [approval authority](https://control.smithers.sh/guides/approvals/#who-may-decide).
 If a host delegates approval to an agent, describe that as automated approval,

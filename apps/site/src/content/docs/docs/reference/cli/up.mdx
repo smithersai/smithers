@@ -82,4 +82,4 @@ The flag list above is curated. This is what the binary prints, captured by `app
 - [smthrs run](/docs/reference/cli/run/) launches an approved payload or resumes a parked run.
 - [smthrs cancel](/docs/reference/cli/cancel/) ends the run durably.
 - [Plan, approve, run](/docs/guides/plan-approve-run/) shows the three-step path this verb compresses.
-- The [`run_flow`](/docs/reference/mcp-tools/) MCP tool is this verb's equivalent: it plans, approves for the run, and launches in one call.
+- The [MCP server](/docs/reference/mcp-tools/) has no launch tool: plan with `flow_plan`, approve with `smthrs approvals approve` in a shell, then `flow_execute`.

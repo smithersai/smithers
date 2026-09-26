@@ -87,4 +87,4 @@ The flag list above is curated. This is what the binary prints, captured by `app
 - [smthrs approve](/docs/reference/cli/approve/) records the decision the payload asks for.
 - [smthrs deny](/docs/reference/cli/deny/) records the opposite decision.
 - [Plan, approve, run](/docs/guides/plan-approve-run/) walks the three-step flow.
-- The MCP server has no plan-only tool; [`run_flow`](/docs/reference/mcp-tools/) plans, approves, and launches in one call.
+- The [MCP server](/docs/reference/mcp-tools/) has no launch tool: plan with `flow_plan`, approve with `smthrs approvals approve` in a shell, then `flow_execute`.
