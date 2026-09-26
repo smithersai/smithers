@@ -83,8 +83,10 @@ test("the host's judge reaches the gateway through the proxy the environment nam
           questions: { violates: new Evaluator.BooleanQuestion({ instructions: "Does this hunk violate the rule?" }) }
         })).pipe(Effect.provide(evaluatorLayer(environment)))
     ))
-    assert.deepEqual([...proxy.seen], ["CONNECT ai-gateway.vercel.sh:443"],
-      `the judge asked the proxy for the gateway and nothing else; it answered ${JSON.stringify(answered)}`)
+    assert.equal(answered._tag, "Failure", "the refusing proxy cannot produce a model answer")
+    if (answered._tag === "Failure") assert.equal(answered.failure.code, "unreachable")
+    assert.deepEqual([...proxy.seen], Array.from({ length: Evaluator.defaultAttempts }, () => "CONNECT ai-gateway.vercel.sh:443"),
+      `every bounded retry asked the proxy for the gateway and nothing else; it answered ${JSON.stringify(answered)}`)
   } finally {
     await proxy.close()
   }
