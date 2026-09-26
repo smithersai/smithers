@@ -12,6 +12,7 @@
  * message, never an empty account.
  */
 import { AUTH_SCOPES_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { actorSharedState } from "../ActorBindings"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 
@@ -43,6 +44,8 @@ interface ScopeRow {
 }
 
 export const createAccountController = (ctx: ControllerContext, deps: AccountControllerDeps): AccountController => {
+  const reads = actorSharedState(ctx, "account.reads", () => ({ generation: 0 }))
+  const superseded = () => ({ value: "Account request is no longer current." })
   /*
    * The scopes the identity worker states, as `{ scope, plain }` rows. A
    * failed or malformed answer is an empty list, and the card then renders
@@ -69,6 +72,8 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
   }
 
   const showAccount = async (): Promise<string | { readonly value: string }> => {
+    const mine = ++reads.generation
+    if (ctx.disposed) return superseded()
     const { collections } = ctx.store
     const identity = collections.identitySessions.get("identity")
     if (identity === undefined || identity.state === "unknown") return IDENTITY_PENDING_TEXT
@@ -77,7 +82,12 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
       deps.promptSignIn(false, { name: "account.show" })
       return { value: SIGNED_OUT_VALUE }
     }
+    const epoch = ctx.accountEpoch
+    const actor = ctx.commandActor
+    const current = () => !ctx.disposed && mine === reads.generation && epoch === ctx.accountEpoch &&
+      ctx.accountOwner() === identity.login && collections.identitySessions.get("identity")?.state === "signed-in"
     const scopes = deps.provider === "github" ? await readScopes() : []
+    if (!current()) return superseded()
     const boxes = [...collections.cloudWorkspaces.values()]
       .map((workspace) => ({ id: workspace.id, repoId: workspace.repoId, name: workspace.name, status: workspace.status }))
       .sort((left, right) => left.repoId.localeCompare(right.repoId) || left.name.localeCompare(right.name))
@@ -97,7 +107,13 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
         boxes
       }
     }
-    ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
+    try {
+      await ctx.store.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise
+    } catch (error) {
+      if (!current()) return superseded()
+      throw error
+    }
+    if (!current()) return superseded()
     const access = identity.allowlisted ? "allowed" : identity.accessRequested ? "requested" : "not yet allowed"
     return {
       value: `account: @${identity.login}; access ${access}; ${deps.provider === "github" ? `${scopes.length} GitHub App permission(s); GitHub OAuth scope read:user; ` : ""}${boxes.length} box(es) listed`
