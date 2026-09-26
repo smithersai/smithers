@@ -20,7 +20,7 @@ export default showcase({
     ]
     let polls = 0
     const orders: string[][] = []
-    await backend.cloud()
+    await backend.cloud({ capabilities: ["agent", "identity", "cloud", "billing.balance"] })
     await backend.route(url => url.pathname === CONNECTIONS, route => route.fulfill({ json: rows }))
     await backend.route(url => url.pathname === `${CONNECTIONS}/order`, async route => {
       const { provider, ids } = route.request().postDataJSON() as { provider: string; ids: string[] }
