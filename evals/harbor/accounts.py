@@ -89,6 +89,12 @@ class ModelRouteError(Exception):
         self.cause = cause
 
 
+class RunParked(Exception):
+    """The run stopped at `waiting-approval` or another wait nobody on a
+    benchmark host answers: the harness held the trial, not the model.
+    Re-run, never scored."""
+
+
 class ContainerUnreachable(Exception):
     """The agent never ran a command inside the task container with exit 0:
     the trial measured the transport, not the model. Retried, never scored."""

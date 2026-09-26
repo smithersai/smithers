@@ -290,6 +290,8 @@ interface StackOptions {
   readonly system?: ReadonlyArray<string> | undefined
   /** Replaces methods of the control runtime the stack builds. */
   readonly wrapRuntime?: ((runtime: ControlRuntime.Service) => ControlRuntime.Service) | undefined
+  /** What an in-run ask does on this host. */
+  readonly asks?: "park" | "refuse" | undefined
 }
 
 /**
@@ -341,7 +343,8 @@ const stack = (options: StackOptions) => {
     promptRunner: options.promptRunner,
     reasoningEffort: options.reasoningEffort,
     judged: options.judged,
-    system: options.system
+    system: options.system,
+    asks: options.asks
   }).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provide(
@@ -2224,13 +2227,18 @@ const routedRun = (options: {
   readonly park?: { readonly beforeResume: () => void } | undefined
   /** Runs as soon as the launch is accepted, with the seats resolved so far. */
   readonly accepted?: ((resolved: ReadonlyArray<string>) => Effect.Effect<void>) | undefined
+  /** A host that refuses asks, whose run asks once and must not park. */
+  readonly refusing?: boolean | undefined
 }): Promise<Routed> =>
   Effect.runPromise(
     Effect.gen(function*() {
       const gate = yield* Deferred.make<void>()
       const resolved: Array<string> = []
       const captured: Array<Captured> = []
-      const model = scripted(options.park === undefined ? [`ctx.done("routed")`] : askThenDone, captured)
+      const model = scripted(
+        options.park === undefined && options.refusing !== true ? [`ctx.done("routed")`] : askThenDone,
+        captured
+      )
       const resolve: SeatResolver.Service["resolve"] = (id) =>
         Effect.suspend(() => {
           resolved.push(id)
@@ -2279,7 +2287,8 @@ const routedRun = (options: {
         bare: true,
         judge: options.judge,
         catalog: options.catalog,
-        system: options.system
+        system: options.system,
+        ...(options.refusing === true ? { asks: "refuse" as const } : {})
       })))
     }).pipe(Effect.scoped) as Effect.Effect<Routed, unknown>
   )
@@ -2292,6 +2301,39 @@ const routeSettled = (trail: ReadonlyArray<JournalEvent.Entry>) =>
     entry.eventType === "control.agent.decision-settled" &&
     (entry.payload as { readonly classifier?: unknown }).classifier === "seat/route"
   )
+
+describe("AgentSession on a host nobody answers", () => {
+  it("refuses an ask in-frame with a typed failure, registers no approval, and never parks", async () => {
+    // A benchmark trial called `ask` at frame 46 and spent the rest of its
+    // hour at `waiting-approval`. A refusing host answers the cell at once,
+    // and approves nothing on anyone's behalf.
+    const run = await routedRun({
+      flowId: "agents/notes",
+      judge: scriptedCompletionJudge,
+      status: "completed",
+      refusing: true
+    })
+
+    expect(run.trail.some((entry) => entry.eventType.includes("approval.requested"))).toBe(false)
+    expect(run.trail.some((entry) => entry.eventType.includes("waiting-approval"))).toBe(false)
+    const settled = run.trail.filter((entry) => entry.eventType === "control.agent.cell-call-settled")
+    expect(settled.map((entry) => (entry.payload as { readonly outcome?: unknown }).outcome)).toContain("failure")
+    expect(JSON.stringify(run.requests[1]?.messages)).toContain("nobody to ask")
+  })
+
+  it("still parks the same ask on a host an operator answers", async () => {
+    let parked = false
+    const run = await routedRun({
+      flowId: "agents/notes",
+      judge: scriptedCompletionJudge,
+      status: "completed",
+      park: { beforeResume: () => parked = true }
+    })
+
+    expect(parked).toBe(true)
+    expect(run.trail.some((entry) => entry.eventType.includes("approval.requested"))).toBe(true)
+  })
+})
 
 describe("AgentSession seat routing", () => {
   it.each(["agents/auto", "agents/seatless"])("routes %s once, onto the seat Jev picked", async (flowId) => {

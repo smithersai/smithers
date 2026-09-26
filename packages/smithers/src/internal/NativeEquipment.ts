@@ -24,6 +24,7 @@ import type { Path, Result } from "effect"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import { homedir } from "node:os"
 import { isAbsolute, relative } from "node:path"
+import * as CliError from "../CliError.ts"
 import * as CodexAuth from "../CodexAuth.ts"
 import * as Environment_ from "../Environment.ts"
 import * as Providers from "../Providers.ts"
@@ -559,6 +560,27 @@ export const sealedContainer = (
 ): string | undefined => {
   const container = Environment_.read(environment, "SMITHERS_BASH_CONTAINER")?.trim()
   return container === undefined || container === "" ? undefined : container
+}
+
+/**
+ * What an in-run `ask` does on this host.
+ *
+ * `SMITHERS_ASKS` names it. `park`, the default, parks the run on an approval
+ * an operator answers with `smithers approve`. `refuse` declares a host nobody
+ * answers — a benchmark, a cron, a CI lane — and every `ask` fails at once with
+ * `ApprovalUnavailable`, which the cell reads and the journal records as the
+ * call's failure. Nothing is approved on anyone's behalf. An unattended
+ * benchmark trial that parked here spent the rest of its hour waiting.
+ * Any other value throws a `UsageError` naming the variable.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.1
+ */
+export const askPolicy = (environment: Readonly<Record<string, string | undefined>>): "park" | "refuse" => {
+  const value = Environment_.read(environment, "SMITHERS_ASKS")?.trim() ?? ""
+  if (value === "" || value === "park") return "park"
+  if (value === "refuse") return "refuse"
+  throw new CliError.UsageError({ message: `SMITHERS_ASKS must be park or refuse, not ${JSON.stringify(value)}` })
 }
 
 /**

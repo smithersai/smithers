@@ -87,6 +87,7 @@ import * as LocalControl from "./LocalControl.ts"
 import * as ModuleAdmission from "./ModuleAdmission.ts"
 import * as ModuleAuthority from "./ModuleAuthority.ts"
 import {
+  askPolicy,
   cellLimits,
   checkpointStore,
   layerSeatCatalog,
@@ -1162,6 +1163,7 @@ export const make = (
           budget: Budget.layerFromEnvelope,
           orderTerminalStatus: supervisor.awaitSettled,
           approvalChannel: options.approvalChannel,
+          asks: askPolicy(environment),
           supervisor: supervisorOptions,
           judged: true
         })

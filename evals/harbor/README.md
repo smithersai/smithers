@@ -203,6 +203,13 @@ The 2026-09-22 smoke (oracle, this adapter, and the stock Codex CLI on
   those claims read at most 0.71 and 0.73 and a fabricated sentence 0.94 and
   0.92. Grade on the verifier's reward all the same, and read `run.status` as
   the harness's opinion of its own evidence.
+- **Nobody answers an `ask`.** The adapter runs the CLI with
+  `SMITHERS_ASKS=refuse`, so an in-run `ask` fails at once with
+  `ApprovalUnavailable` and the model decides without it; `smithers-run.json`
+  records `asks` and `run.asksRefused`. A run that still ends at a
+  `waiting-*` status raises `RunParked`, which `outcome.py` counts as infra.
+  Before this, luna-A-smoke2 `mp-checkpoint` asked at frame 46 and waited at
+  `waiting-approval` until its hour ran out.
 - **Jev is mandatory.** The CLI refuses to run without `AI_GATEWAY_API_KEY`,
   and a gateway 503 on the final completion fails the run as
   `completion_unjudged` after the work is done. Export the key before a run;

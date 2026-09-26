@@ -108,6 +108,9 @@ def check_environment() -> None:
     assert "OPENAI_API_KEY" not in chatgpt, "the chatgpt mode cannot fall back to the API key"
     assert "SMITHERS_TEST_COMMAND" not in chatgpt, "no stale test runner reaches the run"
     assert chatgpt["PATH"] == "/bin"
+    assert chatgpt["SMITHERS_ASKS"] == "refuse", "nobody answers a benchmark run, so an ask is refused, never parked"
+    assert agent.parked({"status": "waiting-approval", "frames": 47}) is not None
+    assert agent.parked({"status": "completed"}) is None and agent.parked({"status": None}) is None
     assert agent.HELPER_VARIABLE not in chatgpt, "no helper is named when none is given"
     named = agent.cli_environment(base, auth_mode="chatgpt", helper=Path("/opt/smithers-jj-export"))
     assert named[agent.HELPER_VARIABLE] == "/opt/smithers-jj-export"

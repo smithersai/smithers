@@ -80,6 +80,8 @@ def check_classification() -> None:
         (result("AgentSetupTimeoutError"), "infra"),
         (result("ContainerUnreachable"), "infra"),
         (result("ModelRouteError"), "infra"),
+        # A run held at waiting-approval was the harness's, never a 0.
+        (result("RunParked", "run ended at waiting-approval", reward=0.0), "infra"),
         (result("RuntimeError", "anything unforeseen"), "infra"),
         # A grade next to an infrastructure exception is still infra.
         (result("PlueError", "delete failed", reward=1.0), "infra"),
@@ -94,7 +96,7 @@ def check_classification() -> None:
     assert not any(outcome.is_healthy(k) for k in ("infra", "unplaceable", "running"))
     # The retry filter Harbor needs: every infra exception type seen above.
     for name in ("VerifierTimeoutError", "CancelledError", "PlueError", "EnvironmentStartTimeoutError",
-                 "AgentSetupTimeoutError", "ContainerUnreachable", "ModelRouteError",
+                 "AgentSetupTimeoutError", "ContainerUnreachable", "ModelRouteError", "RunParked",
                  # vba-userform-port, 2026-09-23: npm ECONNRESET through the egress
                  # proxy aborted test.sh before it wrote a reward.
                  "RewardFileNotFoundError", "RewardFileEmptyError", "VerifierOutputParseError",

@@ -220,6 +220,16 @@ export interface Options {
    */
   readonly approvalChannel?: boolean | undefined
   /**
+   * What an in-run `ask` does.
+   *
+   * `park`, the default, parks the run on an approval an operator answers
+   * with `smithers approve`. `refuse` is for a host nobody answers: the ask
+   * fails at once with `StandardFlows.ApprovalUnavailable`, which the cell
+   * reads and routes around, so the run never waits on a decision that will
+   * not come and nothing is approved on anyone's behalf.
+   */
+  readonly asks?: "park" | "refuse" | undefined
+  /**
    * The reasoning effort agent seats run at when their flow declares none.
    *
    * The flow's own `effort:` frontmatter wins; this is the host's default
@@ -2683,9 +2693,10 @@ export const make = (
           flows: [
             ...(options.flows ?? []),
             StandardFlows.clock(engineServices),
-            StandardFlows.approval(asker(payload.runId))
+            StandardFlows.approval(options.asks === "refuse" ? StandardFlows.askerNoop() : asker(payload.runId))
           ],
-          authorize: authorize(payload.runId, instance),
+          // A refusing host registers no approval and parks on nothing.
+          ...(options.asks === "refuse" ? {} : { authorize: authorize(payload.runId, instance) }),
           capabilityEnvelope: patterns(card.envelope.capabilities),
           limits: options.limits,
           maxFrames: options.maxFrames,

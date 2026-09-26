@@ -168,6 +168,13 @@ def render_prompt(instruction: str, *, seat: str, container: str, cwd: str, comm
 
 
 HELPER_VARIABLE = "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"
+
+# Nobody answers a benchmark run, so an in-run `ask` is refused at once with a
+# typed failure the cell reads, instead of parking the run until the agent
+# timeout (luna-A-smoke2 mp-checkpoint tGyE6hv waited at `waiting-approval`
+# from frame 46 to 3534 s). Nothing is approved on anyone's behalf.
+ASKS_VARIABLE = "SMITHERS_ASKS"
+ASKS = "refuse"
 HELPER_DEFAULT = Path("/usr/local/bin/smithers-jj-export")
 HELPER_BUILT_RELATIVE = Path("target/release/smithers-jj-export")
 
@@ -287,6 +294,7 @@ def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None
     for name in ("SMITHERS_TEST_COMMAND", "SMITHERS_TEST_CONTAINER", "SMITHERS_TEST_CWD", "SMITHERS_TEST_TIMEOUT_MS"):
         env.pop(name, None)
     env["SMITHERS_OPENAI_AUTH"] = auth_mode
+    env[ASKS_VARIABLE] = ASKS
     if auth_mode == "chatgpt":
         env.pop("OPENAI_API_KEY", None)
     if helper is not None:
@@ -368,7 +376,7 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     """Tokens, calls, route bindings and the run's own verdict, off the journal."""
     usage = {"inputTokens": 0, "cachedInputTokens": 0, "outputTokens": 0, "reasoningTokens": 0}
     seat = None
-    frames = model_calls = calls = 0
+    frames = model_calls = calls = asks_refused = 0
     bindings: list[Any] = []
     efforts: list[str] = []
     status = None
@@ -403,6 +411,9 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
                     usage[name] += int(value)
         elif kind == "control.agent.cell-call-started":
             calls += 1
+        elif kind == "control.agent.cell-call-settled":
+            if payload.get("flowName") == "ask" and payload.get("outcome") != "success":
+                asks_refused += 1
         elif kind == "control.agent.transition-applied":
             transition = payload.get("transition") or {}
             if transition.get("_tag") == "complete":
@@ -417,6 +428,7 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
         "frames": frames,
         "modelCalls": model_calls,
         "calls": calls,
+        "asksRefused": asks_refused,
         "usage": usage,
         "bindings": bindings,
         "efforts": efforts,
@@ -595,6 +607,15 @@ def failure_cause(log_text: str, summary: dict[str, Any]) -> str | None:
     return None
 
 
+def parked(summary: dict[str, Any]) -> str | None:
+    """Why the run is waiting rather than finished, when it is. A benchmark
+    host answers no wait, so a run that ends at one was held by the harness."""
+    status = summary.get("status")
+    if isinstance(status, str) and status.startswith("waiting"):
+        return f"run ended at {status} after {summary.get('frames')} frames; nobody answers a benchmark run"
+    return None
+
+
 def verdict(log_text: str, summary: dict[str, Any], events: list[dict[str, Any]]) -> tuple[str | None, str | None]:
     """(`seat` | `infra` | None, cause): whether the run's end was the
     infrastructure's and not the model's. A `quota_exceeded` retry in the
@@ -766,6 +787,7 @@ class SmithersAgent(BaseAgent):
                 "requeues": list(self._requeues),
                 "transport": "plue" if self._plue else "docker",
                 "openaiApiKeyInCliEnvironment": "OPENAI_API_KEY" in env,
+                "asks": env.get(ASKS_VARIABLE),
                 "helper": str(helper) if helper else None,
                 "container": container,
                 "cwd": cwd,
@@ -872,6 +894,9 @@ class SmithersAgent(BaseAgent):
             "container_commands": reached,
         }
         self._summary = summary
+        held = parked(summary)
+        if held is not None:
+            raise accounts.RunParked(held)
         if kind == "infra":
             raise accounts.ModelRouteError(cause or "model route failed")
         if kind == "seat":
