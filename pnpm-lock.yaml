@@ -248,6 +248,9 @@ importers:
       '@smthrs/notifications':
         specifier: workspace:*
         version: link:../../packages/smithers/notifications
+      '@smthrs/plan':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/plan
       '@smthrs/run-store':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/run-store

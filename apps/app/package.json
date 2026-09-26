@@ -74,6 +74,7 @@
     "@playwright/test": "1.62.1",
     "@smthrs/control": "workspace:*",
     "@smthrs/notifications": "workspace:*",
+    "@smthrs/plan": "workspace:*",
     "@smthrs/run-store": "workspace:*",
     "@smthrs/sync": "workspace:*",
     "@tailwindcss/postcss": "4.3.3",
