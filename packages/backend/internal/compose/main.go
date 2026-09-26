@@ -252,9 +252,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	logStartupConfig(cfg)
 
 	smithersMetrics := routes.NewSmithersMetrics()
-	if err := smithersMetrics.Register(options.MetricsCollectors...); err != nil {
-		return fmt.Errorf("register deployment metrics: %w", err)
-	}
 
 	// Initialize OpenTelemetry
 	var tp *trace.TracerProvider
@@ -1503,6 +1500,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		})
 	}
 
+	// Deployment collectors register after every product collector, so a
+	// name collision is reported here rather than panicking a later
+	// MustRegister, and before any worker can observe a metric.
+	if err := smithersMetrics.Register(options.MetricsCollectors...); err != nil {
+		return fmt.Errorf("register deployment metrics: %w", err)
+	}
 	var workerMetrics *workerMetricsServer
 	if cfg.Observability.MetricsAddr != "" {
 		workerMetrics, err = startWorkerMetricsServer(cfg.Observability.MetricsAddr, smithersMetrics)

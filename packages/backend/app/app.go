@@ -90,7 +90,8 @@ type Config struct {
 	// the global default registerer. They appear wherever this process serves
 	// /metrics: on the product router, or, for DutiesWorkers, on the listener
 	// at SMITHERS_METRICS_ADDR. Both require the SMITHERS_METRICS_TOKEN bearer
-	// token. A collector that conflicts with a product metric fails startup.
+	// token. Name them with a deployment prefix: a collector that conflicts
+	// with a product metric fails startup.
 	MetricsCollectors []prometheus.Collector
 	// PlatformModelKeys supplies the provider keys Smithers pays for. Every
 	// call on them goes through the metered model proxy. Nil offers none;

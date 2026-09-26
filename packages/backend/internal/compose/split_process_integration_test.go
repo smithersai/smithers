@@ -184,9 +184,15 @@ func TestMetricsListenerRequiresWorkersOnlyDuties(t *testing.T) {
 	}
 }
 
+// Collisions with product collectors registered early (the registry) or late
+// (cleanup sweeps) both fail startup with an error instead of a panic.
 func TestDeploymentCollectorConflictFailsStartup(t *testing.T) {
 	splitProcessEnvironment(t)
-	duplicate := prometheus.NewGauge(prometheus.GaugeOpts{Name: "smithers_db_connections_max", Help: "conflict"})
-	err := RunWithOptions(context.Background(), nil, io.Discard, io.Discard, Options{MetricsCollectors: []prometheus.Collector{duplicate}})
-	require.ErrorContains(t, err, "register deployment metrics")
+	for _, duplicate := range []prometheus.Collector{
+		prometheus.NewGauge(prometheus.GaugeOpts{Name: "smithers_db_connections_max", Help: "conflict"}),
+		prometheus.NewCounterVec(prometheus.CounterOpts{Name: "smithers_cleanup_sweep_failures_total", Help: "Cleanup sweeps that failed, by cleaner."}, []string{"cleaner"}),
+	} {
+		err := RunWithOptions(context.Background(), nil, io.Discard, io.Discard, Options{Duties: DutiesWorkers, MetricsCollectors: []prometheus.Collector{duplicate}})
+		require.ErrorContains(t, err, "register deployment metrics")
+	}
 }
