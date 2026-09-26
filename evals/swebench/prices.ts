@@ -92,6 +92,18 @@ export const prices: Record<string, Price> = {
     output: 10,
     source: "OpenAI API list price, https://developers.openai.com/api/docs/models/gpt-6-sol, verified 2026-09-22"
   },
+  "gpt-6-luna": {
+    input: 0.1,
+    cachedInput: 0.01,
+    output: 0.5,
+    source: "OpenAI API list price, https://developers.openai.com/api/docs/models/gpt-6-luna, verified 2026-09-26"
+  },
+  "openai:gpt-6-luna": {
+    input: 0.1,
+    cachedInput: 0.01,
+    output: 0.5,
+    source: "OpenAI API list price, https://developers.openai.com/api/docs/models/gpt-6-luna, verified 2026-09-26"
+  },
   // Jev, the decision model the harness asks through the Vercel AI Gateway:
   // the completion brake, the per-frame supervisor and the agent-callable
   // `jev` flow all bill against it. The gateway quotes per-token pricing of
