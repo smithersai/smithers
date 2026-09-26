@@ -114,7 +114,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     ...config,
     cliName: "smthrs",
     cliVersion: packageVersion,
-    cliDescription: "Build workspace targets and operate durable agent workflows"
+    cliDescription: "Build workspace targets and operate durable agent flows"
   })
   cli.use((context, next) => Presentation.scope(context, config, next))
   cli

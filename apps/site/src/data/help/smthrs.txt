@@ -1,4 +1,4 @@
-smthrs@1.0.0-rc.1 — Build workspace targets and operate durable agent workflows
+smthrs@1.0.0-rc.1 — Build workspace targets and operate durable agent flows
 
 Usage: smthrs <command>
 
@@ -16,7 +16,7 @@ Commands:
   doctor        Check project discovery, providers, tools, and durable-state compatibility
   eval          Run fixed evaluation suites and compare committed score baselines
   explain       Explain a target's actual planned cache key and local cache state
-  flow          Discover, plan, and start durable workflows
+  flow          Discover, plan, and start durable flows
   gc            Collect old terminal runs and compact their journals; separate from target caches
   generate      Scaffold apps, flows, packages, and CI configuration
   git-hooks     Check the WORKSPACE.ts gitHooks scripts against .git/hooks, or install them with --write

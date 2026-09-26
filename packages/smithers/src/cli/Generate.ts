@@ -24,7 +24,7 @@ import * as Presentation from "./Presentation.ts"
 export const scaffolded: Presentation.FollowUps = Presentation.runs({
   otherwise: [
     { command: "targets", description: "Inspect available workspace targets" },
-    { command: "flow list", description: "Inspect discovered workflows" }
+    { command: "flow list", description: "Inspect discovered flows" }
   ]
 })
 const safe = <A>(context: Presentation.Failing, body: () => Promise<A>) =>

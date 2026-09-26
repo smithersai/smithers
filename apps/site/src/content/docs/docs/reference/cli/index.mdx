@@ -7,7 +7,7 @@ sidebar:
 
 `smthrs` executes `PACKAGE.ts` target graphs and operates durable agent flows.
 `smithers` is an alias of the same executable. A target is a declaration, a
-flow is a workflow, and a run is a persisted flow execution.
+flow is a durable program built with `Flow.make`, and a run is a persisted flow execution.
 
 ## Commands
 
@@ -28,7 +28,7 @@ flow is a workflow, and a run is a persisted flow execution.
 | `doctor` | Check project discovery, providers, tools, and durable-state compatibility |
 | `eval` | Run fixed evaluation suites and compare committed score baselines |
 | `explain` | Explain a target's actual planned cache key and local cache state |
-| `flow` | Discover, plan, and start durable workflows |
+| `flow` | Discover, plan, and start durable flows |
 | `gc` | Collect old terminal runs and compact their journals; separate from target caches |
 | `generate` | Scaffold apps, flows, packages, and CI configuration |
 | `git-hooks` | Check the WORKSPACE.ts gitHooks scripts against .git/hooks, or install them with --write |
@@ -68,7 +68,7 @@ against the working tree, including untracked files; `--base`, `--head`, and
 select more work.
 
 Top-level [`run`](/docs/reference/cli/run/) executes run-kind targets.
-`flow start` plans, approves, and starts a durable workflow; `flow execute`
+`flow start` plans, approves, and starts a durable flow; `flow execute`
 submits a previously approved plan. `runs resume` re-drives a parked run.
 
 ## Operator groups

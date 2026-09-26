@@ -6,9 +6,9 @@ description: "Target execution, durable flow control, operator commands, and com
 ## Canonical commands
 
 `smthrs` combines the target graph and durable control plane. A **target** is a
-`PACKAGE.ts` declaration, a **flow** is a durable workflow, and a **run** is a
-persisted execution of a flow. `run` executes run-kind targets; `flow start`
-starts durable workflows.
+`PACKAGE.ts` declaration, a **flow** is a durable program built with
+`Flow.make`, and a **run** is a persisted execution of a flow. `run` executes
+run-kind targets; `flow start` starts durable flows.
 
 | Command | Purpose |
 | --- | --- |
@@ -20,7 +20,7 @@ starts durable workflows.
 | `affected <verb> [pattern]` | Select changed targets and dependents; `--list` previews selection. |
 | `watch <verb> [pattern]` | Replan and rerun after workspace changes; `--once` runs one cycle. |
 | `explain <label>` | Show the planned key and local cache state without running the target. |
-| `flow list/show/plan/start/execute` | Discover flows, compile plans, start workflows, or execute approved payloads. |
+| `flow list/show/plan/start/execute` | Discover flows, compile plans, start flows, or execute approved payloads. |
 | `runs list/show/logs/output/cancel/cancel-all/resume/signal/steer` | Inspect and operate durable runs. |
 | `runs inspect/replay/fork/rewind` | Read frames, branch history, or restore an earlier frame. |
 | `approvals list/approve/deny` | List pending decisions and submit the exact approval payload or `@file`. |

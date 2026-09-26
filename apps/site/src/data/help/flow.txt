@@ -1,4 +1,4 @@
-smthrs flow — Discover, plan, and start durable workflows
+smthrs flow — Discover, plan, and start durable flows
 
 Usage: smthrs flow <command>
 

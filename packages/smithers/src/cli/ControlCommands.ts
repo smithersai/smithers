@@ -39,7 +39,7 @@ const dataArgs = (data: string | undefined) => data === undefined ? [] : ["--dat
  */
 export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
   Cli.create("flow", {
-    description: "Discover, plan, and start durable workflows"
+    description: "Discover, plan, and start durable flows"
   })
     .command("list", {
       description: "List project flows",
