@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/internal/billingstore"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
@@ -73,7 +74,7 @@ func NewMetered(pool *pgxpool.Pool, cfg Config) (Policy, error) {
 		MaxMonthlyPriceID: p.MaxMonthly, MaxAnnualPriceID: p.MaxAnnual,
 		TeamMonthlyPriceID: p.TeamMonthly, TeamAnnualPriceID: p.TeamAnnual,
 		EnterpriseMonthlyPriceID: p.EnterpriseMonthly, EnterpriseAnnualPriceID: p.EnterpriseAnnual,
-	}), nil
+	}, services.WithBillingCreditLedger(credits.Ledger{DB: pool})), nil
 }
 
 // ProductUsage supplies only canonical product metering. Private adapters can

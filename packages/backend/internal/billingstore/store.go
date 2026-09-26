@@ -39,8 +39,6 @@ type Querier interface {
 
 	ClaimStripeProcessedEvent(ctx context.Context, arg db.ClaimStripeProcessedEventParams) (string, error)
 	DeleteStripeProcessedEvent(ctx context.Context, eventID string) error
-	GetCreditBalance(ctx context.Context, billingAccountID int64) (db.BillingCreditBalance, error)
-	UpsertCreditBalance(ctx context.Context, arg db.UpsertCreditBalanceParams) (db.BillingCreditBalance, error)
 	InsertCreditLedgerEntry(ctx context.Context, arg db.InsertCreditLedgerEntryParams) (db.BillingCreditLedger, error)
 	GetCreditLedgerByIdempotencyKey(ctx context.Context, arg db.GetCreditLedgerByIdempotencyKeyParams) (db.BillingCreditLedger, error)
 }

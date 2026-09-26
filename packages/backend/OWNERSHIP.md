@@ -21,6 +21,7 @@ another product composition root.
 - `packages/backend/cmd/failurecodes`
 - `packages/backend/commerce`
 - `packages/backend/controlstore`
+- `packages/backend/credits`
 - `packages/backend/db/product`
 - `packages/backend/errors`
 - `packages/backend/flowdispatch`
@@ -32,6 +33,7 @@ another product composition root.
 - `packages/backend/jobs`
 - `packages/backend/localbootstrap`
 - `packages/backend/modelhost`
+- `packages/backend/modelprice`
 - `packages/backend/native`
 - `packages/backend/operations`
 - `packages/backend/ports`

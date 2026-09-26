@@ -218,13 +218,6 @@ type BillingAccount struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
-type BillingCreditBalance struct {
-	BillingAccountID int64              `json:"billing_account_id"`
-	BalanceCents     int64              `json:"balance_cents"`
-	LastGrantAt      pgtype.Timestamptz `json:"last_grant_at"`
-	UpdatedAt        time.Time          `json:"updated_at"`
-}
-
 type BillingCreditLedger struct {
 	ID                int64     `json:"id"`
 	BillingAccountID  int64     `json:"billing_account_id"`

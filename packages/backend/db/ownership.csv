@@ -126,7 +126,7 @@ billing_subscriptions,product,product baseline; transitional copy also present
 billing_entitlements,product,product baseline; transitional copy also present
 billing_usage_counters,product,product baseline; transitional copy also present
 billing_credit_ledger,product,product baseline; transitional copy also present
-billing_credit_balances,product,product baseline; transitional copy also present
+billing_credit_balances,product,product baseline; carried into credit_grants and dropped by product migration 0027
 stripe_processed_events,product,product baseline; transitional copy also present
 linear_integrations,product,product baseline; transitional copy also present
 linear_issue_map,product,product baseline; transitional copy also present
@@ -243,3 +243,9 @@ mythical_changes,product,product migration 0026
 mythical_items,product,product migration 0026
 mythical_lanes,product,product migration 0026
 billing_model_usage,private,Plue model usage metering migration 0012
+credit_accounts,product,product migration 0027
+credit_grants,product,product migration 0027
+credit_reservations,product,product migration 0027
+credit_reservation_grants,product,product migration 0027
+credit_events,product,product migration 0027
+credit_legacy_imports,product,product migration 0027

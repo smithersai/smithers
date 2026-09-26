@@ -255,24 +255,8 @@ WHERE wr.repository_id IN (SELECT id FROM owned_repos)
   );
 
 -- ========================
--- Credit ledger & balances
+-- Credit audit history (balances live in credit_* tables)
 -- ========================
-
-
--- name: GetCreditBalance :one
-SELECT billing_account_id, balance_cents, last_grant_at, updated_at
-FROM billing_credit_balances
-WHERE billing_account_id = sqlc.arg(billing_account_id);
-
-
--- name: UpsertCreditBalance :one
-INSERT INTO billing_credit_balances (billing_account_id, balance_cents, last_grant_at, updated_at)
-VALUES (sqlc.arg(billing_account_id), sqlc.arg(balance_cents), sqlc.arg(last_grant_at), NOW())
-ON CONFLICT (billing_account_id) DO UPDATE
-SET balance_cents = EXCLUDED.balance_cents,
-    last_grant_at = EXCLUDED.last_grant_at,
-    updated_at = NOW()
-RETURNING *;
 
 
 -- name: InsertCreditLedgerEntry :one

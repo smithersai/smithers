@@ -62,7 +62,6 @@ type QueryAssertions interface {
 	GetBillingAccountByOwner(ctx context.Context, arg db.GetBillingAccountByOwnerParams) (db.BillingAccount, error)
 	GetBillingAccountByStripeCustomerID(ctx context.Context, stripeCustomerID string) (db.BillingAccount, error)
 	GetClaimableWorkflowTaskBacklog(ctx context.Context) (db.GetClaimableWorkflowTaskBacklogRow, error)
-	GetCreditBalance(ctx context.Context, billingAccountID int64) (db.BillingCreditBalance, error)
 	GetCreditLedgerByIdempotencyKey(ctx context.Context, arg db.GetCreditLedgerByIdempotencyKeyParams) (db.BillingCreditLedger, error)
 	GetLatestBillingSubscriptionByAccount(ctx context.Context, billingAccountID int64) (db.BillingSubscription, error)
 	GetLatestLiveBillingSubscriptionByAccount(ctx context.Context, billingAccountID int64) (db.BillingSubscription, error)
@@ -98,7 +97,6 @@ type QueryAssertions interface {
 	UpsertBillingEntitlement(ctx context.Context, arg db.UpsertBillingEntitlementParams) (db.BillingEntitlement, error)
 	UpsertBillingSubscription(ctx context.Context, arg db.UpsertBillingSubscriptionParams) (db.BillingSubscription, error)
 	UpsertBillingUsageCounter(ctx context.Context, arg db.UpsertBillingUsageCounterParams) (db.BillingUsageCounter, error)
-	UpsertCreditBalance(ctx context.Context, arg db.UpsertCreditBalanceParams) (db.BillingCreditBalance, error)
 	UpsertLFSUploadReservation(ctx context.Context, arg db.UpsertLFSUploadReservationParams) (db.LfsUploadReservation, error)
 	UpsertWorkflowDefinition(ctx context.Context, arg db.UpsertWorkflowDefinitionParams) (db.WorkflowDefinition, error)
 }
@@ -166,7 +164,6 @@ type UpsertBillingAccountParams = db.UpsertBillingAccountParams
 type UpsertBillingEntitlementParams = db.UpsertBillingEntitlementParams
 type UpsertBillingSubscriptionParams = db.UpsertBillingSubscriptionParams
 type UpsertBillingUsageCounterParams = db.UpsertBillingUsageCounterParams
-type UpsertCreditBalanceParams = db.UpsertCreditBalanceParams
 type UpsertLFSUploadReservationParams = db.UpsertLFSUploadReservationParams
 type UpsertWorkflowDefinitionParams = db.UpsertWorkflowDefinitionParams
 type WorkflowRun = db.WorkflowRun

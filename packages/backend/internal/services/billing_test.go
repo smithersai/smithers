@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -27,7 +29,6 @@ type billingQuerierMock struct {
 	accountsByOwner           map[string]db.BillingAccount
 	accountsByCustomer        map[string]db.BillingAccount
 	processedEvents           map[string]string
-	creditBalances            map[int64]db.BillingCreditBalance
 	creditLedger              map[string]db.BillingCreditLedger
 	creditEntries             []db.BillingCreditLedger
 	usage                     map[string]db.BillingUsageCounter
@@ -56,7 +57,6 @@ func newBillingQuerierMock() *billingQuerierMock {
 		accountsByOwner:    map[string]db.BillingAccount{},
 		accountsByCustomer: map[string]db.BillingAccount{},
 		processedEvents:    map[string]string{},
-		creditBalances:     map[int64]db.BillingCreditBalance{},
 		creditLedger:       map[string]db.BillingCreditLedger{},
 		usage:              map[string]db.BillingUsageCounter{},
 		nextUsageID:        1,
@@ -296,25 +296,6 @@ func (m *billingQuerierMock) ClaimStripeProcessedEvent(ctx context.Context, arg 
 func (m *billingQuerierMock) DeleteStripeProcessedEvent(_ context.Context, eventID string) error {
 	delete(m.processedEvents, eventID)
 	return nil
-}
-
-func (m *billingQuerierMock) GetCreditBalance(_ context.Context, billingAccountID int64) (db.BillingCreditBalance, error) {
-	balance, ok := m.creditBalances[billingAccountID]
-	if !ok {
-		return db.BillingCreditBalance{}, pgx.ErrNoRows
-	}
-	return balance, nil
-}
-
-func (m *billingQuerierMock) UpsertCreditBalance(_ context.Context, arg db.UpsertCreditBalanceParams) (db.BillingCreditBalance, error) {
-	balance := db.BillingCreditBalance{
-		BillingAccountID: arg.BillingAccountID,
-		BalanceCents:     arg.BalanceCents,
-		LastGrantAt:      arg.LastGrantAt,
-		UpdatedAt:        time.Now().UTC(),
-	}
-	m.creditBalances[arg.BillingAccountID] = balance
-	return balance, nil
 }
 
 func (m *billingQuerierMock) InsertCreditLedgerEntry(_ context.Context, arg db.InsertCreditLedgerEntryParams) (db.BillingCreditLedger, error) {
@@ -1484,6 +1465,60 @@ func TestBillingService_ReconcileOrgSeats_NoopWithoutAccount(t *testing.T) {
 	assert.Empty(t, client.updatedSeatQuantities)
 }
 
+const testBillingMonthlyCreditGrantCents int64 = 1000
+
+// fakeCreditLedger is an in-memory BillingCreditLedger; credits.Ledger's
+// PostgreSQL tests cover the real ledger.
+type fakeCreditLedger struct {
+	mu       sync.Mutex
+	accounts map[string]int64
+	grants   map[int64]map[string]int64
+	err      error
+}
+
+func newFakeCreditLedger() *fakeCreditLedger {
+	return &fakeCreditLedger{accounts: map[string]int64{}, grants: map[int64]map[string]int64{}}
+}
+
+func (f *fakeCreditLedger) EnsureAccount(_ context.Context, ownerType string, ownerID int64) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return 0, f.err
+	}
+	key := fmt.Sprintf("%s:%d", ownerType, ownerID)
+	if id, ok := f.accounts[key]; ok {
+		return id, nil
+	}
+	id := int64(len(f.accounts) + 1)
+	f.accounts[key] = id
+	f.grants[id] = map[string]int64{}
+	return id, nil
+}
+
+func (f *fakeCreditLedger) Grant(_ context.Context, accountID int64, key string, nanos int64, _ *time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if existing, ok := f.grants[accountID][key]; ok && existing != nanos {
+		return credits.ErrConflict
+	}
+	f.grants[accountID][key] = nanos
+	return nil
+}
+
+func (f *fakeCreditLedger) OwnerBalance(_ context.Context, ownerType string, ownerID int64) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return 0, f.err
+	}
+	var total int64
+	for _, n := range f.grants[f.accounts[fmt.Sprintf("%s:%d", ownerType, ownerID)]] {
+		total += n
+	}
+	return total, nil
+}
+
 func TestBillingService_MonthlyCreditGrant_GrantsOncePerMonth(t *testing.T) {
 	t.Parallel()
 
@@ -1496,81 +1531,79 @@ func TestBillingService_MonthlyCreditGrant_GrantsOncePerMonth(t *testing.T) {
 		OwnerType: BillingOwnerTypeUser,
 		OwnerID:   userID,
 	}
-	svc := NewBillingService(queries, nil, BillingServiceConfig{})
+	ledger := newFakeCreditLedger()
+	svc := NewBillingService(queries, nil, BillingServiceConfig{MonthlyCreditGrantCents: testBillingMonthlyCreditGrantCents}, WithBillingCreditLedger(ledger))
 	svc.now = func() time.Time { return now }
 
 	user := &db.User{ID: userID, Username: "alice"}
 	overview, err := svc.GetUserOverview(context.Background(), user)
 	require.NoError(t, err)
-	assert.Equal(t, billingMonthlyCreditGrantCents, overview.CreditBalanceCents)
-	require.Len(t, queries.creditEntries, 1)
-	assert.Equal(t, "monthly_grant", queries.creditEntries[0].Category)
-	assert.Equal(t, "monthly_grant:2026-07", queries.creditEntries[0].IdempotencyKey)
-	assert.Equal(t, billingMonthlyCreditGrantCents, queries.creditEntries[0].AmountCents)
+	assert.Equal(t, testBillingMonthlyCreditGrantCents, overview.CreditBalanceCents)
+	assert.Equal(t, testBillingMonthlyCreditGrantCents*credits.NanosPerCent, overview.CreditBalanceNanos)
+	assert.Equal(t, map[string]int64{"monthly_grant:2026-07": testBillingMonthlyCreditGrantCents * credits.NanosPerCent}, ledger.grants[1])
 
 	// Same month: no duplicate grant.
 	overview, err = svc.GetUserOverview(context.Background(), user)
 	require.NoError(t, err)
-	assert.Equal(t, billingMonthlyCreditGrantCents, overview.CreditBalanceCents)
-	require.Len(t, queries.creditEntries, 1)
+	assert.Equal(t, testBillingMonthlyCreditGrantCents, overview.CreditBalanceCents)
+	assert.Len(t, ledger.grants[1], 1)
 
 	// Next month: a fresh grant accrues on top of the balance.
 	now = time.Date(2026, 8, 2, 9, 0, 0, 0, time.UTC)
 	overview, err = svc.GetUserOverview(context.Background(), user)
 	require.NoError(t, err)
-	assert.Equal(t, 2*billingMonthlyCreditGrantCents, overview.CreditBalanceCents)
-	require.Len(t, queries.creditEntries, 2)
-	assert.Equal(t, "monthly_grant:2026-08", queries.creditEntries[1].IdempotencyKey)
+	assert.Equal(t, 2*testBillingMonthlyCreditGrantCents, overview.CreditBalanceCents)
+	assert.Contains(t, ledger.grants[1], "monthly_grant:2026-08")
+	assert.Empty(t, queries.creditEntries, "grants live in the exact ledger, not the audit history")
 }
 
-func TestBillingService_MonthlyCreditGrant_RepairsLostBalanceWrite(t *testing.T) {
-	t.Parallel()
-
-	const userID int64 = 42
-	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-
+func TestBillingService_MonthlyCreditGrantCarriedAtAnotherAmountIsNotRegranted(t *testing.T) {
 	queries := newBillingQuerierMock()
-	queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, userID)] = db.BillingAccount{
-		ID:        1,
-		OwnerType: BillingOwnerTypeUser,
-		OwnerID:   userID,
-	}
-	// Simulate a crash between the ledger insert and the balance upsert: the
-	// month's grant entry exists but the balance row was never written.
-	entry := db.BillingCreditLedger{
-		ID:                1,
-		BillingAccountID:  1,
-		AmountCents:       billingMonthlyCreditGrantCents,
-		BalanceAfterCents: billingMonthlyCreditGrantCents,
-		Category:          "monthly_grant",
-		IdempotencyKey:    "monthly_grant:2026-07",
-		CreatedAt:         now.Add(-time.Hour),
-	}
-	queries.creditEntries = append(queries.creditEntries, entry)
-	queries.creditLedger[queries.creditKey(1, entry.IdempotencyKey)] = entry
-
-	svc := NewBillingService(queries, nil, BillingServiceConfig{})
-	svc.now = func() time.Time { return now }
-
-	overview, err := svc.GetUserOverview(context.Background(), &db.User{ID: userID, Username: "alice"})
+	queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, 42)] = db.BillingAccount{ID: 1, OwnerType: BillingOwnerTypeUser, OwnerID: 42}
+	ledger := newFakeCreditLedger()
+	id, err := ledger.EnsureAccount(context.Background(), BillingOwnerTypeUser, 42)
 	require.NoError(t, err)
-	assert.Equal(t, billingMonthlyCreditGrantCents, overview.CreditBalanceCents,
-		"a granted-but-unapplied month must be repaired into the balance, not dropped by the idempotency short-circuit")
-	require.Len(t, queries.creditEntries, 1, "the repair must not double-insert the grant")
-	repaired := queries.creditBalances[1]
-	assert.True(t, repaired.LastGrantAt.Valid)
-	assert.Equal(t, entry.CreatedAt, repaired.LastGrantAt.Time)
+	require.NoError(t, ledger.Grant(context.Background(), id, "monthly_grant:2026-07", 500*credits.NanosPerCent, nil))
+	svc := NewBillingService(queries, nil, BillingServiceConfig{MonthlyCreditGrantCents: testBillingMonthlyCreditGrantCents}, WithBillingCreditLedger(ledger))
+	svc.now = func() time.Time { return time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC) }
+	require.NoError(t, svc.ensureMonthlyCreditGrant(context.Background(), queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, 42)]))
+	assert.Equal(t, map[string]int64{"monthly_grant:2026-07": 500 * credits.NanosPerCent}, ledger.grants[id])
+}
+
+func TestBillingService_MonthlyCreditGrantRequiresLedgerAndDeploymentConfig(t *testing.T) {
+	queries := newBillingQuerierMock()
+	queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, 42)] = db.BillingAccount{ID: 1, OwnerType: BillingOwnerTypeUser, OwnerID: 42}
+	ledger := newFakeCreditLedger()
+	for _, svc := range []*BillingService{
+		NewBillingService(queries, nil, BillingServiceConfig{}, WithBillingCreditLedger(ledger)),
+		NewBillingService(queries, nil, BillingServiceConfig{MonthlyCreditGrantCents: testBillingMonthlyCreditGrantCents}),
+	} {
+		overview, err := svc.GetUserOverview(context.Background(), &db.User{ID: 42, Username: "alice"})
+		require.NoError(t, err)
+		assert.Zero(t, overview.CreditBalanceCents)
+	}
+	assert.Empty(t, ledger.accounts)
+}
+
+func TestBillingService_CreditBalanceFailureFailsOverview(t *testing.T) {
+	queries := newBillingQuerierMock()
+	ledger := newFakeCreditLedger()
+	ledger.err = errors.New("ledger down")
+	svc := NewBillingService(queries, nil, BillingServiceConfig{}, WithBillingCreditLedger(ledger))
+	_, err := svc.GetUserOverview(context.Background(), &db.User{ID: 42, Username: "alice"})
+	assert.Equal(t, 500, httpStatus(err))
 }
 
 func TestBillingService_MonthlyCreditGrant_SkipsWhenNoAccount(t *testing.T) {
 	t.Parallel()
 
 	queries := newBillingQuerierMock()
-	svc := NewBillingService(queries, nil, BillingServiceConfig{})
+	ledger := newFakeCreditLedger()
+	svc := NewBillingService(queries, nil, BillingServiceConfig{MonthlyCreditGrantCents: testBillingMonthlyCreditGrantCents}, WithBillingCreditLedger(ledger))
 	overview, err := svc.GetUserOverview(context.Background(), &db.User{ID: 5, Username: "bob"})
 	require.NoError(t, err)
 	assert.Zero(t, overview.CreditBalanceCents)
-	assert.Empty(t, queries.creditEntries)
+	assert.Empty(t, ledger.accounts)
 }
 
 func (m *billingQuerierMock) CountActiveSandboxesForUser(ctx context.Context, userID int64) (int, error) {

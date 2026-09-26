@@ -1,0 +1,463 @@
+package credits
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
+	"github.com/smithersai/smithers/packages/backend/modelprice"
+)
+
+func testPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	raw := os.Getenv("SMITHERS_TEST_DATABASE_URL")
+	if raw == "" {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatal("SMITHERS_TEST_DATABASE_URL is required")
+		}
+		t.Skip("set SMITHERS_TEST_DATABASE_URL for PostgreSQL credit tests")
+	}
+	pool, _ := postgresfixture.NewProductDatabase(t, raw)
+	return pool
+}
+
+func testLedger(t *testing.T) (Ledger, int64) {
+	t.Helper()
+	l := Ledger{DB: testPool(t)}
+	id, err := l.EnsureAccount(context.Background(), "user", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l, id
+}
+
+func mustBalance(t *testing.T, l Ledger, id, want int64) {
+	t.Helper()
+	got, err := l.Balance(context.Background(), id)
+	if err != nil || got != want {
+		t.Fatalf("balance=%d err=%v want=%d", got, err, want)
+	}
+	assertInvariants(t, l)
+}
+
+// assertInvariants proves the event log explains every stored amount and that
+// every charged nano was paid from credit or is recorded as debt.
+func assertInvariants(t *testing.T, l Ledger) {
+	t.Helper()
+	ctx := context.Background()
+	var drift int
+	if err := l.DB.QueryRow(ctx, `SELECT count(*) FROM credit_grants g
+		WHERE g.available_nanos <> COALESCE((SELECT sum(available_delta_nanos) FROM credit_events e WHERE e.grant_id = g.id), 0)`).Scan(&drift); err != nil || drift != 0 {
+		t.Fatalf("grants whose events do not sum to available: %d err=%v", drift, err)
+	}
+	if err := l.DB.QueryRow(ctx, `SELECT count(*) FROM credit_accounts a
+		WHERE a.debt_nanos <> COALESCE((SELECT sum(debt_delta_nanos) FROM credit_events e WHERE e.account_id = a.id), 0)`).Scan(&drift); err != nil || drift != 0 {
+		t.Fatalf("accounts whose events do not sum to debt: %d err=%v", drift, err)
+	}
+	if err := l.DB.QueryRow(ctx, `SELECT count(*) FROM credit_reservations r
+		WHERE r.status = 'reserved' AND r.reserved_nanos <> (SELECT sum(reserved_nanos) FROM credit_reservation_grants WHERE reservation_id = r.id)`).Scan(&drift); err != nil || drift != 0 {
+		t.Fatalf("open reservations not fully held: %d err=%v", drift, err)
+	}
+	var charged, paid, owed, imported int64
+	if err := l.DB.QueryRow(ctx, `SELECT
+		COALESCE((SELECT sum(charged_nanos) FROM credit_reservations WHERE status <> 'reserved'), 0)::bigint,
+		COALESCE((SELECT sum(spent_nanos) FROM credit_events), 0)::bigint,
+		COALESCE((SELECT sum(debt_nanos) FROM credit_accounts), 0)::bigint,
+		COALESCE((SELECT sum(opening_debt_nanos) FROM credit_legacy_imports), 0)::bigint`).Scan(&charged, &paid, &owed, &imported); err != nil {
+		t.Fatal(err)
+	}
+	if charged+imported != paid+owed {
+		t.Fatalf("charged %d + imported debt %d != paid %d + owed %d", charged, imported, paid, owed)
+	}
+}
+
+func TestConcurrentReserveNeverOverspends(t *testing.T) {
+	l, id := testLedger(t)
+	ctx := context.Background()
+	soon := time.Now().Add(time.Hour)
+	if err := l.Grant(ctx, id, "promo", 60, &soon); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Grant(ctx, id, "paid", 40, nil); err != nil {
+		t.Fatal(err)
+	}
+	const callers = 64
+	var wg sync.WaitGroup
+	var won, refused atomic.Int64
+	errs := make(chan error, callers)
+	start := make(chan struct{})
+	for i := range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := l.Reserve(ctx, id, fmt.Sprintf("call:%d", i), 7)
+			switch {
+			case err == nil:
+				won.Add(1)
+			case errors.Is(err, ErrInsufficient):
+				refused.Add(1)
+			default:
+				errs <- err
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	if won.Load() != 14 || refused.Load() != callers-14 {
+		t.Fatalf("won=%d refused=%d; 100 nanos admit exactly 14 holds of 7", won.Load(), refused.Load())
+	}
+	mustBalance(t, l, id, 2)
+	var held int64
+	if err := l.DB.QueryRow(ctx, `SELECT sum(reserved_nanos) FROM credit_reservations WHERE status = 'reserved'`).Scan(&held); err != nil || held != 98 {
+		t.Fatalf("held=%d err=%v", held, err)
+	}
+	var promoLeft int64
+	if err := l.DB.QueryRow(ctx, `SELECT available_nanos FROM credit_grants WHERE source_key = 'promo'`).Scan(&promoLeft); err != nil || promoLeft != 0 {
+		t.Fatalf("the expiring grant must be spent first: promo left %d err=%v", promoLeft, err)
+	}
+}
+
+func TestSettleAndReleaseAreIdempotentUnderConcurrentRetries(t *testing.T) {
+	l, id := testLedger(t)
+	ctx := context.Background()
+	if err := l.Grant(ctx, id, "grant", 1000, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"settle", "release"} {
+		if _, err := l.Reserve(ctx, id, key, 300); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retry, err := l.Reserve(ctx, id, "settle", 300)
+	if err != nil || retry.Fresh || retry.Status != "reserved" {
+		t.Fatalf("reserve retry=%+v err=%v", retry, err)
+	}
+	if _, err = l.Reserve(ctx, id, "settle", 301); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed reserve retry: %v", err)
+	}
+	mustBalance(t, l, id, 400)
+
+	const retries = 24
+	var wg sync.WaitGroup
+	results := make(chan error, 2*retries)
+	start := make(chan struct{})
+	for range retries {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			r, err := l.Settle(ctx, id, "settle", 120)
+			if err == nil && (r.Status != "settled" || r.ChargedNanos != 120) {
+				err = fmt.Errorf("settle result %+v", r)
+			}
+			results <- err
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			r, err := l.Release(ctx, id, "release")
+			if err == nil && (r.Status != "released" || r.ChargedNanos != 0) {
+				err = fmt.Errorf("release result %+v", r)
+			}
+			results <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	for err := range results {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 1000 - 120 charged once; the released hold returned once.
+	mustBalance(t, l, id, 880)
+	var events int
+	if err = l.DB.QueryRow(ctx, `SELECT count(*) FROM credit_events WHERE kind IN ('settle', 'release')`).Scan(&events); err != nil || events != 2 {
+		t.Fatalf("finish events=%d err=%v; each reservation finishes exactly once", events, err)
+	}
+	if _, err = l.Settle(ctx, id, "settle", 121); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed settlement: %v", err)
+	}
+	if _, err = l.Settle(ctx, id, "release", 5); !errors.Is(err, ErrConflict) {
+		t.Fatalf("settle after release: %v", err)
+	}
+	if _, err = l.Settle(ctx, id, "never-reserved", 1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown key: %v", err)
+	}
+	finished, err := l.Reserve(ctx, id, "settle", 300)
+	if err != nil || finished.Fresh || finished.Status != "settled" || finished.ChargedNanos != 120 {
+		t.Fatalf("reserve after settle=%+v err=%v", finished, err)
+	}
+	mustBalance(t, l, id, 880)
+}
+
+func TestModelCallReachesProviderOnceUnderConcurrentRetries(t *testing.T) {
+	l, id := testLedger(t)
+	ctx := context.Background()
+	if err := l.Grant(ctx, id, "grant", 1000, nil); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int64
+	release := make(chan struct{})
+	spend := func(context.Context) (ModelResult, error) {
+		calls.Add(1)
+		<-release
+		return ModelResult{Outcome: ModelSucceeded, ActualNanos: 42}, nil
+	}
+	const retries = 16
+	var wg sync.WaitGroup
+	outcomes := make(chan error, retries)
+	for range retries {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := l.ExecuteModelCall(ctx, id, "turn-1", 500, spend)
+			outcomes <- err
+		}()
+	}
+	for calls.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	close(outcomes)
+	var ok, inFlight, finished int
+	for err := range outcomes {
+		switch {
+		case err == nil:
+			ok++
+		case errors.Is(err, ErrInFlight):
+			inFlight++
+		case errors.Is(err, ErrFinished):
+			finished++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if calls.Load() != 1 || ok != 1 || inFlight+finished != retries-1 {
+		t.Fatalf("calls=%d ok=%d inFlight=%d finished=%d", calls.Load(), ok, inFlight, finished)
+	}
+	mustBalance(t, l, id, 958)
+	if _, err := l.ExecuteModelCall(ctx, id, "turn-1", 500, spend); !errors.Is(err, ErrFinished) || calls.Load() != 1 {
+		t.Fatalf("retry after settle err=%v calls=%d", err, calls.Load())
+	}
+}
+
+func TestModelCallOutcomes(t *testing.T) {
+	l, id := testLedger(t)
+	ctx := context.Background()
+	if err := l.Grant(ctx, id, "grant", 1000, nil); err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("provider refused")
+	r, err := l.ExecuteModelCall(ctx, id, "failed", 300, func(context.Context) (ModelResult, error) {
+		return ModelResult{Outcome: ModelFailed}, refused
+	})
+	if !errors.Is(err, refused) || r.Status != "released" {
+		t.Fatalf("failed=%+v err=%v", r, err)
+	}
+	mustBalance(t, l, id, 1000)
+	lost := errors.New("stream cut")
+	r, err = l.ExecuteModelCall(ctx, id, "unknown", 300, func(context.Context) (ModelResult, error) {
+		return ModelResult{}, lost
+	})
+	if !errors.Is(err, ErrOutcomeUnknown) || !errors.Is(err, lost) || r.ChargedNanos != 300 {
+		t.Fatalf("unknown=%+v err=%v; an unreadable outcome is charged its bound", r, err)
+	}
+	mustBalance(t, l, id, 700)
+	cancelled, cancel := context.WithCancel(ctx)
+	r, err = l.ExecuteModelCall(cancelled, id, "cancelled", 100, func(context.Context) (ModelResult, error) {
+		cancel()
+		return ModelResult{Outcome: ModelSucceeded, ActualNanos: 30}, nil
+	})
+	if err != nil || r.ChargedNanos != 30 {
+		t.Fatalf("settlement must survive request cancellation: %+v err=%v", r, err)
+	}
+	mustBalance(t, l, id, 670)
+	if _, err = l.ExecuteModelCall(ctx, id, "too-big", 671, nil); !errors.Is(err, ErrInsufficient) {
+		t.Fatalf("over-balance bound: %v", err)
+	}
+}
+
+func TestPricedModelCallChargesExactSubCentUsage(t *testing.T) {
+	l, id := testLedger(t)
+	ctx := context.Background()
+	if err := l.Grant(ctx, id, "grant", 2_000_000, nil); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	r, err := l.ExecutePricedModelCall(ctx, id, "priced", "gpt-oss-120b", modelprice.Usage{InputTokens: 1000, OutputTokens: 1000},
+		func(context.Context) (ModelOutcome, modelprice.Usage, error) {
+			calls++
+			return ModelSucceeded, modelprice.Usage{InputTokens: 100, OutputTokens: 100}, nil
+		})
+	// 100 x $0.35/MTok + 100 x $0.75/MTok = $0.00011 = 110,000 nanos.
+	if err != nil || calls != 1 || r.ReservedNanos != 1_100_000 || r.ChargedNanos != 110_000 {
+		t.Fatalf("priced=%+v calls=%d err=%v", r, calls, err)
+	}
+	mustBalance(t, l, id, 1_890_000)
+	if _, err = l.ExecutePricedModelCall(ctx, id, "unpriced", "no-such-model", modelprice.Usage{OutputTokens: 1}, nil); err == nil {
+		t.Fatal("an unpriced model must be refused before reserving")
+	}
+}
+
+func TestExpiryOrderAndExpiredCredit(t *testing.T) {
+	l, id := testLedger(t)
+	ctx := context.Background()
+	past, soon, later := time.Now().Add(-time.Hour), time.Now().Add(time.Hour), time.Now().Add(48*time.Hour)
+	for _, g := range []struct {
+		key     string
+		nanos   int64
+		expires *time.Time
+	}{{"expired", 20, &past}, {"never", 50, nil}, {"later", 25, &later}, {"soon", 30, &soon}} {
+		if err := l.Grant(ctx, id, g.key, g.nanos, g.expires); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := l.Grant(ctx, id, "soon", 30, &soon); err != nil {
+		t.Fatalf("identical grant replay: %v", err)
+	}
+	if err := l.Grant(ctx, id, "soon", 31, &soon); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed grant replay: %v", err)
+	}
+	mustBalance(t, l, id, 105)
+	if _, err := l.Reserve(ctx, id, "call", 40); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Settle(ctx, id, "call", 40); err != nil {
+		t.Fatal(err)
+	}
+	left := map[string]int64{}
+	rows, err := l.DB.Query(ctx, `SELECT source_key, available_nanos FROM credit_grants WHERE account_id = $1`, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var k string
+		var n int64
+		if err = rows.Scan(&k, &n); err != nil {
+			t.Fatal(err)
+		}
+		left[k] = n
+	}
+	rows.Close()
+	if left["expired"] != 0 || left["soon"] != 0 || left["later"] != 15 || left["never"] != 50 {
+		t.Fatalf("spend order: %v", left)
+	}
+	var expired int64
+	if err = l.DB.QueryRow(ctx, `SELECT -sum(available_delta_nanos) FROM credit_events WHERE kind = 'expire'`).Scan(&expired); err != nil || expired != 20 {
+		t.Fatalf("expired=%d err=%v", expired, err)
+	}
+	mustBalance(t, l, id, 65)
+}
+
+func TestOverageBecomesDebtAndBlocksSpendUntilRepaid(t *testing.T) {
+	l, id := testLedger(t)
+	ctx := context.Background()
+	if err := l.Grant(ctx, id, "initial", 100, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Reserve(ctx, id, "expensive", 80); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Settle(ctx, id, "expensive", 125); err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, id, -25)
+	if _, err := l.Reserve(ctx, id, "blocked", 1); !errors.Is(err, ErrInsufficient) {
+		t.Fatalf("debt must block spend: %v", err)
+	}
+	if err := l.Grant(ctx, id, "top-up", 30, nil); err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, id, 5)
+	if _, err := l.Settle(ctx, id, "expensive", 125); err != nil {
+		t.Fatalf("settlement replay: %v", err)
+	}
+	mustBalance(t, l, id, 5)
+	if _, err := l.Reserve(ctx, id, "next", 5); err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, id, 0)
+}
+
+func TestAbandonedReservationIsChargedItsBound(t *testing.T) {
+	l, id := testLedger(t)
+	ctx := context.Background()
+	if err := l.Grant(ctx, id, "grant", 100, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Reserve(ctx, id, "crashed", 40); err != nil {
+		t.Fatal(err)
+	}
+	l.AbandonAfter = time.Nanosecond
+	time.Sleep(5 * time.Millisecond)
+	if _, err := l.Reserve(ctx, id, "next", 10); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	var charged int64
+	if err := l.DB.QueryRow(ctx, `SELECT status, charged_nanos FROM credit_reservations WHERE request_key = 'crashed'`).Scan(&status, &charged); err != nil || status != "settled" || charged != 40 {
+		t.Fatalf("crashed status=%s charged=%d err=%v", status, charged, err)
+	}
+	if r, err := l.Settle(ctx, id, "crashed", 12); err != nil || r.ChargedNanos != 40 {
+		t.Fatalf("a late settlement below the bound keeps the bound charge: %+v err=%v", r, err)
+	}
+	mustBalance(t, l, id, 50)
+	for range 2 {
+		if r, err := l.Settle(ctx, id, "crashed", 70); err != nil || r.ChargedNanos != 70 {
+			t.Fatalf("a late settlement above the bound=%+v err=%v", r, err)
+		}
+	}
+	mustBalance(t, l, id, 20)
+}
+
+func TestRefundWhileOwingRepaysDebt(t *testing.T) {
+	l, id := testLedger(t)
+	ctx := context.Background()
+	if err := l.Grant(ctx, id, "grant", 100, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"a", "b"} {
+		if _, err := l.Reserve(ctx, id, key, 50); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := l.Settle(ctx, id, "a", 80); err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, id, -30)
+	if _, err := l.Release(ctx, id, "b"); err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, id, 20)
+	if _, err := l.Reserve(ctx, id, "c", 20); err != nil {
+		t.Fatalf("repaid account must spend again: %v", err)
+	}
+}
+
+func TestGrantExpiryReplaysAtStoredPrecision(t *testing.T) {
+	l, id := testLedger(t)
+	expires := time.Now().Add(time.Hour).Truncate(time.Microsecond).Add(789 * time.Nanosecond)
+	for range 2 {
+		if err := l.Grant(context.Background(), id, "precise", 10, &expires); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustBalance(t, l, id, 10)
+}

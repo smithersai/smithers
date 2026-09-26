@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/internal/billingstore"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -44,11 +44,6 @@ const (
 	BillingMetricSandboxHours = "sandbox_hours"
 
 	unlimitedBillingQuantity int64 = 9_000_000_000_000
-
-	// billingMonthlyCreditGrantCents is the hosted "$10/month free credit
-	// pool" (docs/specs/product.md §5.12), granted once per calendar month per
-	// billing account through the credit ledger.
-	billingMonthlyCreditGrantCents int64 = 1000
 
 	billingDunningGracePeriod         = 7 * 24 * time.Hour
 	billingDunningNotificationCadence = "immediate failure notice, then one notice per Stripe payment_failed retry event"
@@ -108,6 +103,9 @@ type BillingEmailSender interface {
 }
 
 type BillingServiceConfig struct {
+	// MonthlyCreditGrantCents is the deployment's monthly platform credit per
+	// billing account. Zero grants nothing.
+	MonthlyCreditGrantCents  int64
 	BaseURL                  string
 	PortalReturnURL          string
 	CheckoutSuccessURL       string
@@ -172,8 +170,9 @@ type BillingOverview struct {
 	Account          *BillingAccountSummary      `json:"account,omitempty"`
 	Subscription     *BillingSubscriptionSummary `json:"subscription,omitempty"`
 	Entitlements     []BillingEntitlementSummary `json:"entitlements"`
-	// CreditBalanceCents is the account's current credit-ledger balance in
-	// integer cents (monthly grants plus Stripe audit adjustments).
+	// CreditBalanceNanos is the owner's spendable platform credit in USD
+	// nanos; negative is owed. CreditBalanceCents rounds it toward zero.
+	CreditBalanceNanos int64                 `json:"credit_balance_nanos"`
 	CreditBalanceCents int64                 `json:"credit_balance_cents"`
 	UsagePeriodStart   time.Time             `json:"usage_period_start"`
 	UsagePeriodEnd     time.Time             `json:"usage_period_end"`
@@ -213,6 +212,7 @@ type billingPlanDefinition struct {
 type BillingService struct {
 	queries       BillingBaseQuerier
 	stripe        StripeBillingClient
+	credits       BillingCreditLedger
 	emailSender   BillingEmailSender
 	config        BillingServiceConfig
 	priceCatalog  map[string]billingPlanDefinition
@@ -221,6 +221,20 @@ type BillingService struct {
 }
 
 type BillingServiceOption func(*BillingService)
+
+// BillingCreditLedger is the exact credit ledger (credits.Ledger). Without
+// one, accounts carry no platform credit and no grant is issued.
+type BillingCreditLedger interface {
+	EnsureAccount(ctx context.Context, ownerType string, ownerID int64) (int64, error)
+	Grant(ctx context.Context, accountID int64, key string, nanos int64, expiresAt *time.Time) error
+	OwnerBalance(ctx context.Context, ownerType string, ownerID int64) (int64, error)
+}
+
+func WithBillingCreditLedger(ledger BillingCreditLedger) BillingServiceOption {
+	return func(s *BillingService) {
+		s.credits = ledger
+	}
+}
 
 func WithBillingEmailSender(sender BillingEmailSender) BillingServiceOption {
 	return func(s *BillingService) {
@@ -1452,12 +1466,13 @@ func (s *BillingService) ownerOverview(ctx context.Context, owner billingOwnerRe
 			CreatedAt:           account.CreatedAt,
 			UpdatedAt:           account.UpdatedAt,
 		}
-		balance, err := s.queries.GetCreditBalance(ctx, account.ID)
-		if err == nil {
-			out.CreditBalanceCents = balance.BalanceCents
-		} else if !stdErrors.Is(err, pgx.ErrNoRows) {
-			return BillingOverview{}, pkgerrors.Internal("failed to load billing credit balance")
+	}
+	if s.credits != nil {
+		balance, err := s.credits.OwnerBalance(ctx, owner.OwnerType, owner.OwnerID)
+		if err != nil {
+			return BillingOverview{}, pkgerrors.Internal("failed to load credit balance").WithCause(err)
 		}
+		out.CreditBalanceNanos, out.CreditBalanceCents = balance, balance/credits.NanosPerCent
 	}
 	if subscription != nil {
 		out.Subscription = &BillingSubscriptionSummary{
@@ -1943,7 +1958,7 @@ func (s *BillingService) handleChargeRefunded(ctx context.Context, eventID strin
 		return err
 	}
 	reason := fmt.Sprintf("Stripe charge refunded: %s (%s)", strings.TrimSpace(payload.ID), formatMoneyCents(payload.AmountRefunded, payload.Currency))
-	return s.recordStripeCreditAudit(ctx, *account, eventID, 0, "refund", "stripe_charge", reason)
+	return s.recordStripeCreditAudit(ctx, *account, eventID, "refund", "stripe_charge", reason)
 }
 
 func (s *BillingService) handleChargeDisputeCreated(ctx context.Context, eventID string, payload stripeDisputePayload) error {
@@ -1967,7 +1982,7 @@ func (s *BillingService) handleChargeDisputeCreated(ctx context.Context, eventID
 		strings.TrimSpace(payload.Status),
 		formatMoneyCents(payload.Amount, payload.Currency),
 	)
-	return s.recordStripeCreditAudit(ctx, *account, eventID, 0, "adjustment", "stripe_dispute", reason)
+	return s.recordStripeCreditAudit(ctx, *account, eventID, "adjustment", "stripe_dispute", reason)
 }
 
 func (s *BillingService) handleEntitlementEvent(ctx context.Context, payload stripeEntitlementSummaryPayload) error {
@@ -2382,67 +2397,29 @@ func (s *BillingService) billingPortalURLForAccount(account db.BillingAccount) s
 	return s.portalReturnURL(owner)
 }
 
-// ensureMonthlyCreditGrant grants the monthly credit pool to the account once
-// per calendar month. Idempotent through the ledger idempotency key (backed by
-// uq_billing_credit_ledger_idempotency), so concurrent resolvers cannot
-// double-grant; the balance row's last_grant_at short-circuits the common case.
+// ensureMonthlyCreditGrant grants the monthly platform credit once per
+// calendar month per owner. The ledger key makes it idempotent across
+// concurrent resolvers and retries.
 func (s *BillingService) ensureMonthlyCreditGrant(ctx context.Context, account db.BillingAccount) error {
-	periodStart, _ := billingPeriodWindow(s.now())
-	balance, err := s.queries.GetCreditBalance(ctx, account.ID)
-	currentBalance := int64(0)
-	if err == nil {
-		if balance.LastGrantAt.Valid && !balance.LastGrantAt.Time.Before(periodStart) {
-			return nil
-		}
-		currentBalance = balance.BalanceCents
-	} else if !stdErrors.Is(err, pgx.ErrNoRows) {
-		return pkgerrors.Internal("failed to load billing credit balance")
-	}
-	idempotencyKey := "monthly_grant:" + periodStart.Format("2006-01")
-	if entry, err := s.queries.GetCreditLedgerByIdempotencyKey(ctx, db.GetCreditLedgerByIdempotencyKeyParams{
-		BillingAccountID: account.ID,
-		IdempotencyKey:   idempotencyKey,
-	}); err == nil {
-		// The ledger has this month's grant but last_grant_at is stale: the
-		// balance write after the ledger insert was lost (crash between the
-		// two statements). Repair the balance from the entry — otherwise the
-		// idempotency short-circuit above would silently drop the month's
-		// grant from the balance forever. Safe while grants are the only
-		// balance-moving writes (recordStripeCreditAudit passes amountCents 0).
-		if _, err := s.queries.UpsertCreditBalance(ctx, db.UpsertCreditBalanceParams{
-			BillingAccountID: account.ID,
-			BalanceCents:     entry.BalanceAfterCents,
-			LastGrantAt:      pgtype.Timestamptz{Time: entry.CreatedAt, Valid: true},
-		}); err != nil {
-			return pkgerrors.Internal("failed to repair billing credit balance").WithCause(err)
-		}
+	if s.credits == nil || s.config.MonthlyCreditGrantCents <= 0 {
 		return nil
-	} else if !stdErrors.Is(err, pgx.ErrNoRows) {
-		return pkgerrors.Internal("failed to load billing credit ledger")
 	}
-	nextBalance := currentBalance + billingMonthlyCreditGrantCents
-	if _, err := s.queries.InsertCreditLedgerEntry(ctx, db.InsertCreditLedgerEntryParams{
-		BillingAccountID:  account.ID,
-		AmountCents:       billingMonthlyCreditGrantCents,
-		BalanceAfterCents: nextBalance,
-		Reason:            "Monthly credit grant (" + periodStart.Format("January 2006") + ")",
-		Category:          "monthly_grant",
-		MetricKey:         "",
-		IdempotencyKey:    idempotencyKey,
-	}); err != nil {
+	periodStart, _ := billingPeriodWindow(s.now())
+	accountID, err := s.credits.EnsureAccount(ctx, account.OwnerType, account.OwnerID)
+	if err != nil {
+		return pkgerrors.Internal("failed to open credit account").WithCause(err)
+	}
+	err = s.credits.Grant(ctx, accountID, "monthly_grant:"+periodStart.Format("2006-01"), s.config.MonthlyCreditGrantCents*credits.NanosPerCent, nil)
+	if err != nil && !stdErrors.Is(err, credits.ErrConflict) {
+		// ErrConflict: this month was already granted at another amount.
 		return pkgerrors.Internal("failed to record monthly credit grant").WithCause(err)
-	}
-	if _, err := s.queries.UpsertCreditBalance(ctx, db.UpsertCreditBalanceParams{
-		BillingAccountID: account.ID,
-		BalanceCents:     nextBalance,
-		LastGrantAt:      pgtype.Timestamptz{Time: s.now(), Valid: true},
-	}); err != nil {
-		return pkgerrors.Internal("failed to update billing credit balance").WithCause(err)
 	}
 	return nil
 }
 
-func (s *BillingService) recordStripeCreditAudit(ctx context.Context, account db.BillingAccount, eventID string, amountCents int64, category string, metricKey string, reason string) error {
+// recordStripeCreditAudit appends one Stripe refund or dispute notice to the
+// billing history, once per Stripe event. It moves no credit.
+func (s *BillingService) recordStripeCreditAudit(ctx context.Context, account db.BillingAccount, eventID string, category string, metricKey string, reason string) error {
 	idempotencyKey := "stripe_event:" + strings.TrimSpace(eventID)
 	if idempotencyKey == "stripe_event:" {
 		return nil
@@ -2455,37 +2432,24 @@ func (s *BillingService) recordStripeCreditAudit(ctx context.Context, account db
 	} else if !stdErrors.Is(err, pgx.ErrNoRows) {
 		return pkgerrors.Internal("failed to load billing credit ledger")
 	}
-
-	balance, err := s.queries.GetCreditBalance(ctx, account.ID)
-	currentBalance := int64(0)
-	lastGrantAt := pgtype.Timestamptz{}
-	if err == nil {
-		currentBalance = balance.BalanceCents
-		lastGrantAt = balance.LastGrantAt
-	} else if !stdErrors.Is(err, pgx.ErrNoRows) {
-		return pkgerrors.Internal("failed to load billing credit balance")
+	var balanceCents int64
+	if s.credits != nil {
+		balance, err := s.credits.OwnerBalance(ctx, account.OwnerType, account.OwnerID)
+		if err != nil {
+			return pkgerrors.Internal("failed to load credit balance").WithCause(err)
+		}
+		balanceCents = balance / credits.NanosPerCent
 	}
-	nextBalance := currentBalance + amountCents
 	if _, err := s.queries.InsertCreditLedgerEntry(ctx, db.InsertCreditLedgerEntryParams{
 		BillingAccountID:  account.ID,
-		AmountCents:       amountCents,
-		BalanceAfterCents: nextBalance,
+		AmountCents:       0,
+		BalanceAfterCents: balanceCents,
 		Reason:            strings.TrimSpace(reason),
 		Category:          strings.TrimSpace(category),
 		MetricKey:         strings.TrimSpace(metricKey),
 		IdempotencyKey:    idempotencyKey,
 	}); err != nil {
 		return pkgerrors.Internal("failed to record billing credit ledger").WithCause(err)
-	}
-	if _, err := s.queries.UpsertCreditBalance(ctx, db.UpsertCreditBalanceParams{
-		BillingAccountID: account.ID,
-		BalanceCents:     nextBalance,
-		// Preserve the grant marker — the upsert overwrites last_grant_at, and
-		// clobbering it to NULL would make ensureMonthlyCreditGrant re-check
-		// the ledger on every resolution.
-		LastGrantAt: lastGrantAt,
-	}); err != nil {
-		return pkgerrors.Internal("failed to update billing credit balance").WithCause(err)
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/admission"
+	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/internal/billingstore"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
@@ -60,6 +61,9 @@ type Config struct {
 	BaseURL, PortalReturnURL, CheckoutSuccessURL, CheckoutCancelURL string
 	WebhookSecret                                                   string
 	EmailSender                                                     EmailSender
+	// MonthlyCreditGrantCents is the monthly platform credit per billing
+	// account, granted in the exact credit ledger. Zero grants nothing.
+	MonthlyCreditGrantCents int64
 }
 
 // New constructs API commerce over the same ledger, metering, and transactional
@@ -91,7 +95,8 @@ func New(pool *pgxpool.Pool, client Client, cfg Config) (Service, error) {
 		MaxMonthlyPriceID: p.MaxMonthly, MaxAnnualPriceID: p.MaxAnnual,
 		TeamMonthlyPriceID: p.TeamMonthly, TeamAnnualPriceID: p.TeamAnnual,
 		EnterpriseMonthlyPriceID: p.EnterpriseMonthly, EnterpriseAnnualPriceID: p.EnterpriseAnnual,
-	}, services.WithBillingEmailSender(cfg.EmailSender))
+		MonthlyCreditGrantCents: cfg.MonthlyCreditGrantCents,
+	}, services.WithBillingEmailSender(cfg.EmailSender), services.WithBillingCreditLedger(credits.Ledger{DB: pool}))
 	return &authority{BillingService: service, emailSender: cfg.EmailSender}, nil
 }
 

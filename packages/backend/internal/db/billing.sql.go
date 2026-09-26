@@ -203,29 +203,6 @@ func (q *Queries) GetBillingAccountByStripeCustomerID(ctx context.Context, strip
 	return i, err
 }
 
-const getCreditBalance = `-- name: GetCreditBalance :one
-
-
-SELECT billing_account_id, balance_cents, last_grant_at, updated_at
-FROM billing_credit_balances
-WHERE billing_account_id = $1
-`
-
-// ========================
-// Credit ledger & balances
-// ========================
-func (q *Queries) GetCreditBalance(ctx context.Context, billingAccountID int64) (BillingCreditBalance, error) {
-	row := q.db.QueryRow(ctx, getCreditBalance, billingAccountID)
-	var i BillingCreditBalance
-	err := row.Scan(
-		&i.BillingAccountID,
-		&i.BalanceCents,
-		&i.LastGrantAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const getCreditLedgerByIdempotencyKey = `-- name: GetCreditLedgerByIdempotencyKey :one
 SELECT id, billing_account_id, amount_cents, balance_after_cents, reason, category, metric_key, idempotency_key, created_at
 FROM billing_credit_ledger
@@ -439,6 +416,8 @@ func (q *Queries) IncrementUsageCounter(ctx context.Context, arg IncrementUsageC
 }
 
 const insertCreditLedgerEntry = `-- name: InsertCreditLedgerEntry :one
+
+
 INSERT INTO billing_credit_ledger (
     billing_account_id,
     amount_cents,
@@ -470,6 +449,9 @@ type InsertCreditLedgerEntryParams struct {
 	IdempotencyKey    string `json:"idempotency_key"`
 }
 
+// ========================
+// Credit audit history (balances live in credit_* tables)
+// ========================
 func (q *Queries) InsertCreditLedgerEntry(ctx context.Context, arg InsertCreditLedgerEntryParams) (BillingCreditLedger, error) {
 	row := q.db.QueryRow(ctx, insertCreditLedgerEntry,
 		arg.BillingAccountID,
@@ -1153,34 +1135,6 @@ func (q *Queries) UpsertBillingUsageCounter(ctx context.Context, arg UpsertBilli
 		&i.LastReportedMeterEventID,
 		&i.LastSyncedAt,
 		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const upsertCreditBalance = `-- name: UpsertCreditBalance :one
-INSERT INTO billing_credit_balances (billing_account_id, balance_cents, last_grant_at, updated_at)
-VALUES ($1, $2, $3, NOW())
-ON CONFLICT (billing_account_id) DO UPDATE
-SET balance_cents = EXCLUDED.balance_cents,
-    last_grant_at = EXCLUDED.last_grant_at,
-    updated_at = NOW()
-RETURNING billing_account_id, balance_cents, last_grant_at, updated_at
-`
-
-type UpsertCreditBalanceParams struct {
-	BillingAccountID int64              `json:"billing_account_id"`
-	BalanceCents     int64              `json:"balance_cents"`
-	LastGrantAt      pgtype.Timestamptz `json:"last_grant_at"`
-}
-
-func (q *Queries) UpsertCreditBalance(ctx context.Context, arg UpsertCreditBalanceParams) (BillingCreditBalance, error) {
-	row := q.db.QueryRow(ctx, upsertCreditBalance, arg.BillingAccountID, arg.BalanceCents, arg.LastGrantAt)
-	var i BillingCreditBalance
-	err := row.Scan(
-		&i.BillingAccountID,
-		&i.BalanceCents,
-		&i.LastGrantAt,
 		&i.UpdatedAt,
 	)
 	return i, err

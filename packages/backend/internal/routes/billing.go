@@ -47,18 +47,19 @@ func (h *BillingHandler) GetUserBalance(w http.ResponseWriter, r *http.Request) 
 		writeRouteError(w, r, svcErr)
 		return
 	}
+	const nanosPerUSD = 1_000_000_000
 	state := "empty"
-	if overview.CreditBalanceCents > 0 {
+	if overview.CreditBalanceNanos > 0 {
 		state = "ok"
-		if overview.CreditBalanceCents < 100 {
+		if overview.CreditBalanceNanos < nanosPerUSD {
 			state = "low"
 		}
 	}
 	errors.WriteJSON(w, http.StatusOK, map[string]any{
 		"state":              state,
-		"allowedToStartWork": overview.CreditBalanceCents > 0,
+		"allowedToStartWork": overview.CreditBalanceNanos > 0,
 		"balance": map[string]any{
-			"totalUsd":           strconv.FormatFloat(float64(overview.CreditBalanceCents)/100, 'f', 2, 64),
+			"totalUsd":           strconv.FormatFloat(float64(overview.CreditBalanceNanos)/nanosPerUSD, 'f', 2, 64),
 			"lifetimeChargedUsd": "0",
 			"chargeCount":        0,
 		},

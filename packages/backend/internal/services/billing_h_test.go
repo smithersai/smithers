@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/credits"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -27,9 +28,7 @@ type billingHQuerier struct {
 	orgLowerErr          error
 	repoErr              error
 	creditLedgerErr      error
-	creditBalanceErr     error
 	insertCreditErr      error
-	upsertCreditErr      error
 }
 
 func billingHNewQuerier() *billingHQuerier {
@@ -92,25 +91,11 @@ func (m *billingHQuerier) GetCreditLedgerByIdempotencyKey(ctx context.Context, a
 	return m.billingCovQuerier.GetCreditLedgerByIdempotencyKey(ctx, arg)
 }
 
-func (m *billingHQuerier) GetCreditBalance(ctx context.Context, billingAccountID int64) (db.BillingCreditBalance, error) {
-	if m.creditBalanceErr != nil {
-		return db.BillingCreditBalance{}, m.creditBalanceErr
-	}
-	return m.billingCovQuerier.GetCreditBalance(ctx, billingAccountID)
-}
-
 func (m *billingHQuerier) InsertCreditLedgerEntry(ctx context.Context, arg db.InsertCreditLedgerEntryParams) (db.BillingCreditLedger, error) {
 	if m.insertCreditErr != nil {
 		return db.BillingCreditLedger{}, m.insertCreditErr
 	}
 	return m.billingCovQuerier.InsertCreditLedgerEntry(ctx, arg)
-}
-
-func (m *billingHQuerier) UpsertCreditBalance(ctx context.Context, arg db.UpsertCreditBalanceParams) (db.BillingCreditBalance, error) {
-	if m.upsertCreditErr != nil {
-		return db.BillingCreditBalance{}, m.upsertCreditErr
-	}
-	return m.billingCovQuerier.UpsertCreditBalance(ctx, arg)
 }
 
 func billingHConfig() BillingServiceConfig {
@@ -676,38 +661,38 @@ func TestBilling_H_CreditAuditErrorBranches(t *testing.T) {
 	ctx := context.Background()
 	account := billingHAccount(BillingOwnerTypeUser, 42, "cus_credit_h")
 
-	require.NoError(t, billingHService(billingHNewQuerier(), nil).recordStripeCreditAudit(ctx, account, " ", 100, "grant", "metric", "blank id"))
+	require.NoError(t, billingHService(billingHNewQuerier(), nil).recordStripeCreditAudit(ctx, account, " ", "refund", "metric", "blank id"))
 
 	existingQueries := billingHNewQuerier()
 	existingSvc := billingHService(existingQueries, nil)
-	require.NoError(t, existingSvc.recordStripeCreditAudit(ctx, account, "evt_existing", 100, "grant", "metric", "first"))
-	require.NoError(t, existingSvc.recordStripeCreditAudit(ctx, account, "evt_existing", 100, "grant", "metric", "second"))
+	require.NoError(t, existingSvc.recordStripeCreditAudit(ctx, account, "evt_existing", "refund", "metric", "first"))
+	require.NoError(t, existingSvc.recordStripeCreditAudit(ctx, account, "evt_existing", "refund", "metric", "second"))
 	assert.Len(t, existingQueries.creditEntries, 1)
 
 	ledgerErrQueries := billingHNewQuerier()
 	ledgerErrQueries.creditLedgerErr = errors.New("ledger read failed")
-	err := billingHService(ledgerErrQueries, nil).recordStripeCreditAudit(ctx, account, "evt_ledger_err", 100, "grant", "metric", "reason")
+	err := billingHService(ledgerErrQueries, nil).recordStripeCreditAudit(ctx, account, "evt_ledger_err", "refund", "metric", "reason")
 	assert.Equal(t, 500, httpStatus(err))
 
 	balanceQueries := billingHNewQuerier()
-	balanceQueries.creditBalances[account.ID] = db.BillingCreditBalance{BillingAccountID: account.ID, BalanceCents: 250}
-	require.NoError(t, billingHService(balanceQueries, nil).recordStripeCreditAudit(ctx, account, "evt_balance_success", 50, "grant", "metric", "reason"))
+	ledger := newFakeCreditLedger()
+	creditAccount, err := ledger.EnsureAccount(ctx, account.OwnerType, account.OwnerID)
+	require.NoError(t, err)
+	require.NoError(t, ledger.Grant(ctx, creditAccount, "g", 250*credits.NanosPerCent+1, nil))
+	svc := billingHService(balanceQueries, nil)
+	WithBillingCreditLedger(ledger)(svc)
+	require.NoError(t, svc.recordStripeCreditAudit(ctx, account, "evt_balance_success", "refund", "metric", "reason"))
 	require.Len(t, balanceQueries.creditEntries, 1)
-	assert.Equal(t, int64(300), balanceQueries.creditEntries[0].BalanceAfterCents)
+	assert.Zero(t, balanceQueries.creditEntries[0].AmountCents)
+	assert.Equal(t, int64(250), balanceQueries.creditEntries[0].BalanceAfterCents)
 
-	balanceErrQueries := billingHNewQuerier()
-	balanceErrQueries.creditBalanceErr = errors.New("balance read failed")
-	err = billingHService(balanceErrQueries, nil).recordStripeCreditAudit(ctx, account, "evt_balance_err", 100, "grant", "metric", "reason")
+	ledger.err = errors.New("balance read failed")
+	err = svc.recordStripeCreditAudit(ctx, account, "evt_balance_err", "refund", "metric", "reason")
 	assert.Equal(t, 500, httpStatus(err))
 
 	insertErrQueries := billingHNewQuerier()
 	insertErrQueries.insertCreditErr = errors.New("insert failed")
-	err = billingHService(insertErrQueries, nil).recordStripeCreditAudit(ctx, account, "evt_insert_err", 100, "grant", "metric", "reason")
-	assert.Equal(t, 500, httpStatus(err))
-
-	upsertErrQueries := billingHNewQuerier()
-	upsertErrQueries.upsertCreditErr = errors.New("upsert failed")
-	err = billingHService(upsertErrQueries, nil).recordStripeCreditAudit(ctx, account, "evt_upsert_err", 100, "grant", "metric", "reason")
+	err = billingHService(insertErrQueries, nil).recordStripeCreditAudit(ctx, account, "evt_insert_err", "refund", "metric", "reason")
 	assert.Equal(t, 500, httpStatus(err))
 }
 
