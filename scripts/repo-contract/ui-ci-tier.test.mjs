@@ -35,10 +35,10 @@ describe("required PR selection", () => {
     assert.equal(ui.needs, undefined, "UI diagnostics must not wait behind the workspace graph")
     const targets = ui.steps.filter((step) => /(?:smthrs|smithers-build) (?:build|test) /.test(step.run ?? ""))
     assert.deepEqual(targets.map((step) => step.run), [
-      "pnpm exec smthrs build '//apps/app:check' --verbose",
-      "pnpm exec smthrs test '//apps/app:unitTests' --verbose",
-      "pnpm exec smthrs test '//apps/app:conformance' --verbose",
-      "pnpm exec smthrs test '//apps/app:browserE2e' --verbose"
+      "pnpm exec smthrs build '//apps/app:check' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//apps/app:unitTests' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//apps/app:conformance' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//apps/app:browserE2e' --known-red '.github/ci-known-red.json' --verbose"
     ])
     for (const step of targets) {
       assert.equal(step.if, undefined)

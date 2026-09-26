@@ -359,6 +359,13 @@ export const Attrs = Schema.Struct({
   output: Schema.NonEmptyString.pipe(
     Schema.withConstructorDefault(Effect.succeed(".github/workflows/ci.yml"))
   ),
+  /**
+   * Workspace-relative path of the known-red list every step passes as
+   * `--known-red`. A target the list names, with an owner and an expiry, is
+   * still run and reported but does not fail the step; any other red target
+   * does. Omitted, every red target fails its step.
+   */
+  knownRed: Schema.optional(Schema.NonEmptyString),
   mode: OutputMode
 })
 
@@ -652,8 +659,20 @@ export const stepCommand = (attrs: Attrs, step: TargetStep, nix?: CiToolchain.Ni
     ...PackageManager.exec(attrs.packageManager, ["smthrs", Verb.command(step.verb)]),
     shellArgument(step.pattern),
     ...(step.parallelism === undefined ? [] : ["--jobs", String(step.parallelism)]),
+    ...(attrs.knownRed === undefined ? [] : ["--known-red", shellArgument(attrs.knownRed)]),
     "--verbose"
   ].join(" ")
+
+/**
+ * Whether a string is a workspace-relative file path that renders as one
+ * single-quoted shell word: relative, with no `..` segment, and no quote,
+ * whitespace, or control character.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const relativeFilePath = (path: string): boolean =>
+  /^[A-Za-z0-9._/-]+$/.test(path) && path.split("/").every((part) => part !== "" && part !== "..")
 
 /**
  * The `nix develop <environment> --command` prefix every command of a job
@@ -1226,6 +1245,13 @@ const validateJobs = (attrs: Attrs): void => {
         )
       }
     }
+  }
+  if (attrs.knownRed !== undefined && !relativeFilePath(attrs.knownRed)) {
+    throw new Error(
+      `GithubCiGen: knownRed ${
+        JSON.stringify(attrs.knownRed)
+      } is not a workspace-relative file path; use letters, digits, ".", "_", "-", and "/" with no ".." segment`
+    )
   }
   const missingJobs = attrs.requiredJobs.filter((id) => !ids.has(id))
   if (missingJobs.length > 0) {

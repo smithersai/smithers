@@ -396,7 +396,7 @@ describe("the fault matrix is wired to a gate", () => {
     const ci = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8")
     const workflow = parseWorkflow(ci)
     const runs = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []).flatMap((step) => step.run ? [step.run] : [])
-    assert.equal(runs.filter((run) => /^pnpm exec smthrs test '\/\/packages\/\.\.\.:faults' --jobs 1(?: --verbose)?$/.test(run)).length, 1,
+    assert.equal(runs.filter((run) => /^pnpm exec smthrs test '\/\/packages\/\.\.\.:faults' --jobs 1(?: --known-red '\.github\/ci-known-red\.json')?(?: --verbose)?$/.test(run)).length, 1,
       "the generated workflow must run the fault matrix once, serially over every package that declares one")
   })
 

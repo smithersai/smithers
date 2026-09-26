@@ -288,11 +288,11 @@ describe("ci conformance", () => {
     assert.ok(steps.some((step) => step.uses === "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"))
     for (const command of [
       "pnpm install --frozen-lockfile --ignore-scripts",
-      "pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose",
-      "pnpm exec smthrs test '//scripts/...' --verbose",
-      "pnpm exec smthrs test '//scripts:webBundleContract' --verbose",
-      "pnpm exec smthrs test '//packages/...' --jobs 2 --verbose",
-      "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose",
+      "pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//scripts/...' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//scripts:webBundleContract' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --known-red '.github/ci-known-red.json' --verbose",
       "jj git init --colocate"
     ]) assert.ok(commands.includes(command), command)
     assert.doesNotMatch(JSON.stringify(ci), /\/\/(?:ci\/|e2e:)/)
@@ -334,7 +334,7 @@ describe("ci conformance", () => {
       .flatMap((step) => step.run === undefined || step.run.includes("\n") ? [] : [step.run])
     assert.ok(commands.length > 0)
     const derived = [
-      /^pnpm exec smthrs (?:build|test|lint|docs|review|ci) '\/\/[^']*'( --jobs \d+)? --verbose$/,
+      /^pnpm exec smthrs (?:build|test|lint|docs|review|ci) '\/\/[^']*'( --jobs \d+)?( --known-red '\.github\/ci-known-red\.json')? --verbose$/,
       /^pnpm install --frozen-lockfile --ignore-scripts$/,
       /^rustup toolchain install$/,
       /^jj git init --colocate$/

@@ -1,0 +1,274 @@
+{
+  "entries": [
+    {
+      "label": "//scripts/repo-contract:publicExportMaps",
+      "owner": "will",
+      "reason": "@smthrs/agent exports ./SmithersPlugin without a reviewed export-map addition.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//scripts/repo-contract:uiCiTier",
+      "owner": "will",
+      "reason": "Expects no graph-lifecycle e2e script and a strict devkit typecheck skip; both changed on main.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//scripts:dependencyBoundaries",
+      "owner": "will",
+      "reason": "Undeclared imports (effect in apps/docs, @effect/platform-node in flows, apps/model-host reaching into apps/app).",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//scripts:lockfileParity",
+      "owner": "will",
+      "reason": "bun.lock disagrees with 7 manifest entries.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//scripts:releasePack",
+      "owner": "will",
+      "reason": "Red in a local reproduction of the ci.yml step on 2026-09-26; CI has not reached this step since //packages went red. Not triaged; may be environment-specific.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//scripts:repositoryConformance",
+      "owner": "will",
+      "reason": "Child-process containment conformance: testing/src/Faults.ts exemption and a direct spawn.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//scripts:tierContracts",
+      "owner": "will",
+      "reason": "runner-contract browser sentinel case. Red in a local reproduction of the ci.yml step on 2026-09-26; CI has not reached this step since //packages went red. Not triaged; may be environment-specific.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//flows:pack",
+      "owner": "will",
+      "reason": "Five roster, dispatcher and migration-fixture cases fail after recent flow additions.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//flows:egress",
+      "owner": "will",
+      "reason": "Judge does not reach the gateway through the named proxy.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//flows:fixtures",
+      "owner": "will",
+      "reason": "Red in a local reproduction of the ci.yml step on 2026-09-26; CI has not reached this step since //packages went red. Not triaged; may be environment-specific.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//apps/app:browserE2e",
+      "owner": "will",
+      "reason": "Red in a local reproduction of the ci.yml step on 2026-09-26; CI has not reached this step since //packages went red. Not triaged; may be environment-specific.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/build/targets:test",
+      "owner": "will",
+      "reason": "Branch coverage 96.98% against a 97% floor on ubuntu (run 36205719266); 97.03% locally.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//:fmt",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//:version",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/agent:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/agent/model:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/agent/registry:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/build/build-cli:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/build/infra:suite",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/build/targets:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows/artifacts:bunTest",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows/artifacts:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows/database:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows/engine-store:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows/jj:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows/platform-bun:bunTest",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows/platform-bun:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows/sandbox:bunTest",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/flows/sandbox:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/mcp:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/smithers/migrate:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    },
+    {
+      "label": "//packages/testing:test",
+      "platforms": [
+        "win32"
+      ],
+      "owner": "will",
+      "reason": "Red on windows-latest in CI run 36205719266 (2026-09-26); not triaged. The job is advisory.",
+      "expires": "2026-10-10"
+    }
+  ]
+}

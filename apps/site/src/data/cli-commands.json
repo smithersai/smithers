@@ -71,6 +71,10 @@
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
             },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
+            },
             "base": {
               "default": "HEAD",
               "description": "Git base revision",
@@ -372,6 +376,10 @@
               "default": true,
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
+            },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
             }
           },
           "required": [
@@ -537,6 +545,10 @@
               "default": true,
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
+            },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
             }
           },
           "required": [
@@ -605,6 +617,10 @@
               "default": true,
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
+            },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
             }
           },
           "required": [
@@ -863,6 +879,10 @@
               "default": true,
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
+            },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
             },
             "write": {
               "default": false,
@@ -1941,6 +1961,10 @@
               "default": true,
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
+            },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
             },
             "fix": {
               "default": false,
@@ -3123,6 +3147,10 @@
               "default": true,
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
+            },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
             }
           },
           "required": [
@@ -3190,6 +3218,10 @@
               "default": true,
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
+            },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
             },
             "name": {
               "description": "Package name supplied to scaffold targets",
@@ -4188,6 +4220,10 @@
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
             },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
+            },
             "write": {
               "default": false,
               "description": "Apply Diff/Generate/CiGen targets instead of checking drift",
@@ -4321,6 +4357,10 @@
               "default": true,
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
+            },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
             }
           },
           "required": [
@@ -4780,6 +4820,10 @@
               "default": true,
               "description": "Consult the result cache before running; --no-cache bypasses reads",
               "type": "boolean"
+            },
+            "knownRed": {
+              "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+              "type": "string"
             },
             "debounceMs": {
               "default": 200,

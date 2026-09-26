@@ -25,15 +25,18 @@ export function targetInvocation(run) {
   const [, verb, pattern, tail] = match
   const options = tail.trim() === "" ? [] : tail.trim().split(/\s+/)
   let jobs
+  let knownRed
   let verbose = false
   for (let index = 0; index < options.length; index++) {
     const option = options[index]
     if (option === "--verbose" && !verbose) verbose = true
     else if (option === "--jobs" && jobs === undefined && /^[1-9]\d*$/.test(options[index + 1] ?? "")) {
       jobs = Number(options[++index])
+    } else if (option === "--known-red" && knownRed === undefined && /^'[^']+'$/.test(options[index + 1] ?? "")) {
+      knownRed = options[++index].slice(1, -1)
     } else throw new Error(`Unrecognized CI target option in: ${run}`)
   }
-  return { verb, pattern, jobs, verbose }
+  return knownRed === undefined ? { verb, pattern, jobs, verbose } : { verb, pattern, jobs, knownRed, verbose }
 }
 
 export function planned(verb, pattern, workspace = root) {

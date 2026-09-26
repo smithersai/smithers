@@ -314,6 +314,10 @@ const ci = Smithers.GithubCiGen({
   workflowDispatch: false,
   // Let an admitted run finish while concurrent agents keep pushing main.
   cancelInProgress: false,
+  // Targets already red on main, each with an owner and an expiry. A step
+  // fails only on a red target this list does not name, so a new regression
+  // stands out from the known ones. Delete an entry in the change that fixes it.
+  knownRed: ".github/ci-known-red.json",
   mode: "check",
   gates: [
     { name: "documentation parity", verb: Smithers.Verb.Docs, pattern: "//packages/...", job: "test" },

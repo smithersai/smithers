@@ -502,6 +502,11 @@ test("workflowGateSteps reads names and commands, quoted names included, and ski
   assert.deepEqual(parseGateCommand("pnpm exec smthrs build '//apps/app:check' --verbose"), { verb: "build", target: "//apps/app:check" })
   assert.deepEqual(parseGateCommand("pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"), { verb: "ci", target: "//packages/...", jobs: 2 })
   assert.equal(parseGateCommand("pnpm exec smthrs ci //packages/... --verbose"), undefined)
+  // The known-red list changes which red targets fail a step, not which run.
+  assert.deepEqual(
+    parseGateCommand("pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose"),
+    { verb: "ci", target: "//packages/...", jobs: 2 }
+  )
 })
 
 test("commandCovers matches exact targets, recursive selections and job bounds only", () => {

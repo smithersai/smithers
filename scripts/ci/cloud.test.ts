@@ -99,8 +99,8 @@ describe("Smithers Cloud CI", () => {
 
   test("covers all non-publishing Linux commands except canonical-host wasm rebuild", () => {
     const excluded = new Set([
-      "pnpm exec smthrs review '//...' --verbose",
-      "pnpm exec smthrs test '//crates/flows-jj:wasmReproducibility' --verbose"
+      "pnpm exec smthrs review '//...' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//crates/flows-jj:wasmReproducibility' --known-red '.github/ci-known-red.json' --verbose"
     ])
     const commands = Array.from(github.matchAll(/run: "(pnpm exec [^"]+)"/g), ([, command]) => command!)
     for (const command of new Set(commands)) {
@@ -381,7 +381,7 @@ describe("Smithers Cloud CI", () => {
       const result = run("script-lint")
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("BOOTSTRAP-js")
-      expect(result.stdout).toContain("RAN exec smthrs lint //scripts:lint --verbose")
+      expect(result.stdout).toContain("RAN exec smthrs lint //scripts:lint --known-red .github/ci-known-red.json --verbose")
       expect(result.stdout.trimEnd().endsWith("GATE-OK script-lint")).toBe(true)
       expect(result.stdout).not.toContain("::gate")
     })

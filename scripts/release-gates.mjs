@@ -218,12 +218,14 @@ export const releaseGateCommand = (gate) =>
 /**
  * The verb, target and `--jobs` bound of one workflow command, or undefined
  * when the line is not a `pnpm exec smthrs` gate in the workflow's spelling.
+ * A `--known-red` list is accepted and dropped: it changes which red targets
+ * fail the step, not which targets run. release.yml carries none.
  *
  * @param {string} command
  * @returns {{ verb: string; target: string; jobs?: number } | undefined}
  */
 export const parseGateCommand = (command) => {
-  const match = /^pnpm exec smthrs ([a-z]+) '([^']+)'(?: --jobs (\d+))? --verbose$/.exec(command)
+  const match = /^pnpm exec smthrs ([a-z]+) '([^']+)'(?: --jobs (\d+))?(?: --known-red '[^']+')? --verbose$/.exec(command)
   if (!match) return undefined
   const [, verb, target, jobs] = match
   return jobs === undefined ? { verb, target } : { verb, target, jobs: Number(jobs) }
@@ -452,7 +454,13 @@ const discoveredJobGates = (jobs, job) => {
     }
     const gateVariable = assignedValues.some((value) => shellCommands(value).some(({ tokens }) => isGateCandidate(tokens)))
     return commands.filter(({ tokens }) => isGateCandidate(tokens) || (gateVariable && hasIndirectExecutable(tokens)))
-      .map((command) => ({ name: step.name ?? "", ...command, valid: command.valid && !/[$`]/.test(command.command) }))
+      .map((command) => ({
+        name: step.name ?? "",
+        ...command,
+        command: command.command.replace(/ --known-red '[^']+'/, ""),
+        tokens: withoutKnownRed(command.tokens),
+        valid: command.valid && !/[$`]/.test(command.command)
+      }))
   })
 }
 
@@ -482,6 +490,18 @@ const matchesCommand = (step, command) => {
   if (!step.valid || !parseGateCommand(command)) return false
   const [canonical] = shellCommands(command)
   return canonical.tokens.length === step.tokens.length && canonical.tokens.every((token, i) => token === step.tokens[i])
+}
+
+/**
+ * A step's tokens without one `--known-red <path>` pair. The list decides
+ * which red targets fail the step, not which targets it runs, so it neither
+ * grants nor removes coverage of a gate; discovery reports the step without it.
+ *
+ * @param {readonly string[]} tokens
+ */
+const withoutKnownRed = (tokens) => {
+  const at = tokens.indexOf("--known-red")
+  return at < 0 || tokens[at + 1] === undefined ? tokens : [...tokens.slice(0, at), ...tokens.slice(at + 2)]
 }
 
 /**

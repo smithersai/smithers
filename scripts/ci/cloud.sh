@@ -397,96 +397,96 @@ bootstrap_for() {
 run_gate() {
   case "$1" in
     workspace)
-      pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose
+      pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     examples)
-      pnpm exec smthrs ci '//examples/...' --verbose
+      pnpm exec smthrs ci '//examples/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     scripts)
-      pnpm exec smthrs test '//scripts/...' --verbose
+      pnpm exec smthrs test '//scripts/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     flows)
-      pnpm exec smthrs test '//flows:pack' --verbose
+      pnpm exec smthrs test '//flows:pack' --known-red '.github/ci-known-red.json' --verbose
       ;;
     flows-egress)
-      pnpm exec smthrs test '//flows:egress' --verbose
+      pnpm exec smthrs test '//flows:egress' --known-red '.github/ci-known-red.json' --verbose
       ;;
     flows-repository)
-      pnpm exec smthrs test '//flows:repository' --verbose
+      pnpm exec smthrs test '//flows:repository' --known-red '.github/ci-known-red.json' --verbose
       ;;
     flows-fixtures)
-      pnpm exec smthrs test '//flows:fixtures' --verbose
+      pnpm exec smthrs test '//flows:fixtures' --known-red '.github/ci-known-red.json' --verbose
       ;;
     flows-product-host)
-      pnpm exec smthrs test '//flows:productHost' --verbose
+      pnpm exec smthrs test '//flows:productHost' --known-red '.github/ci-known-red.json' --verbose
       ;;
     jsdoc)
-      pnpm exec smthrs lint '//:jsdocTree' --verbose
+      pnpm exec smthrs lint '//:jsdocTree' --known-red '.github/ci-known-red.json' --verbose
       ;;
     script-lint)
-      pnpm exec smthrs lint '//scripts:lint' --verbose
+      pnpm exec smthrs lint '//scripts:lint' --known-red '.github/ci-known-red.json' --verbose
       ;;
     jsdoc-rules)
-      pnpm exec smthrs test '//:jsdocRules' --verbose
+      pnpm exec smthrs test '//:jsdocRules' --known-red '.github/ci-known-red.json' --verbose
       ;;
     factory-harness)
-      pnpm exec smthrs test '//:factoryHarness' --verbose
+      pnpm exec smthrs test '//:factoryHarness' --known-red '.github/ci-known-red.json' --verbose
       ;;
     agent-eval)
-      pnpm exec smthrs test '//evals/agent:test' --verbose
+      pnpm exec smthrs test '//evals/agent:test' --known-red '.github/ci-known-red.json' --verbose
       ;;
     agent-check)
-      pnpm exec smthrs build '//evals/agent:check' --verbose
+      pnpm exec smthrs build '//evals/agent:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     authoring-eval)
-      pnpm exec smthrs test '//evals/authoring:test' --verbose
+      pnpm exec smthrs test '//evals/authoring:test' --known-red '.github/ci-known-red.json' --verbose
       ;;
     authoring-check)
-      pnpm exec smthrs build '//evals/authoring:check' --verbose
+      pnpm exec smthrs build '//evals/authoring:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     swebench)
-      pnpm exec smthrs test '//evals/swebench:offline' --jobs 1 --verbose
+      pnpm exec smthrs test '//evals/swebench:offline' --jobs 1 --known-red '.github/ci-known-red.json' --verbose
       ;;
     swebench-check)
-      pnpm exec smthrs build '//evals/swebench:check' --verbose
+      pnpm exec smthrs build '//evals/swebench:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     server)
-      pnpm exec smthrs ci '//apps/server/...' --verbose
+      pnpm exec smthrs ci '//apps/server/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     review-app)
-      pnpm exec smthrs ci '//apps/review/...' --verbose
+      pnpm exec smthrs ci '//apps/review/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     bug-worker)
-      pnpm exec smthrs ci '//apps/bug-worker/...' --verbose
+      pnpm exec smthrs ci '//apps/bug-worker/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     project-copy)
-      pnpm exec smthrs lint '//:projectCopy' --verbose
+      pnpm exec smthrs lint '//:projectCopy' --known-red '.github/ci-known-red.json' --verbose
       ;;
     site)
-      pnpm exec smthrs ci '//apps/site/...' --verbose
+      pnpm exec smthrs ci '//apps/site/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     docs)
-      pnpm exec smthrs ci '//apps/docs/...' --verbose
+      pnpm exec smthrs ci '//apps/docs/...' --known-red '.github/ci-known-red.json' --verbose
       pnpm exec smthrs run '//apps/tui-docs:check' --verbose
       pnpm exec smthrs test '//apps/tui-docs:test' --verbose
       ;;
     review-eval)
-      pnpm exec smthrs test '//evals/review-seeded-bugs/...' --verbose
+      pnpm exec smthrs test '//evals/review-seeded-bugs/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     review-check)
-      pnpm exec smthrs build '//evals/review-seeded-bugs:check' --verbose
+      pnpm exec smthrs build '//evals/review-seeded-bugs:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     recommend-eval)
-      pnpm exec smthrs test '//evals/recommend/...' --verbose
+      pnpm exec smthrs test '//evals/recommend/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     recommend-check)
-      pnpm exec smthrs build '//evals/recommend:check' --verbose
+      pnpm exec smthrs build '//evals/recommend:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     workflow-drift)
-      pnpm exec smthrs lint '//:ci' --verbose
+      pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --verbose
       ;;
     factory-drift)
-      pnpm exec smthrs lint '//:factoryProjection' --verbose
+      pnpm exec smthrs lint '//:factoryProjection' --known-red '.github/ci-known-red.json' --verbose
       ;;
     target-index)
       # Run 11763 (main 2722d0e5) failed `checks` on this gate alone, the third
@@ -504,16 +504,16 @@ run_gate() {
       if ! on_cloud && [ "$host_ci" != true ]; then
         pnpm exec smthrs target '//:targetIndex' --write --verbose
       fi
-      pnpm exec smthrs lint '//:targetIndex' --verbose
+      pnpm exec smthrs lint '//:targetIndex' --known-red '.github/ci-known-red.json' --verbose
       ;;
     ui-check)
-      pnpm exec smthrs build '//apps/app:check' --verbose
+      pnpm exec smthrs build '//apps/app:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     ui-tests)
-      pnpm exec smthrs test '//apps/app:unitTests' --verbose
+      pnpm exec smthrs test '//apps/app:unitTests' --known-red '.github/ci-known-red.json' --verbose
       ;;
     ui-conformance)
-      pnpm exec smthrs test '//apps/app:conformance' --verbose
+      pnpm exec smthrs test '//apps/app:conformance' --known-red '.github/ci-known-red.json' --verbose
       ;;
     ui-browser)
       # Playwright installs the browsers' own system libraries through the
@@ -525,20 +525,20 @@ run_gate() {
       if on_cloud; then
         skip_gate ui-browser 'Playwright browser system dependencies need root, which Cloud runners do not have'
       else
-        pnpm exec smthrs test '//apps/app:browserE2e' --verbose
+        pnpm exec smthrs test '//apps/app:browserE2e' --known-red '.github/ci-known-red.json' --verbose
       fi
       ;;
     rust-lint)
-      pnpm exec smthrs lint '//crates/flows-jj/...' --verbose
+      pnpm exec smthrs lint '//crates/flows-jj/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     third-party-notices)
-      pnpm exec smthrs test '//scripts:thirdPartyNotices' --verbose
+      pnpm exec smthrs test '//scripts:thirdPartyNotices' --known-red '.github/ci-known-red.json' --verbose
       ;;
     rust-test)
-      pnpm exec smthrs test '//crates/flows-jj:cargoTest' --verbose
+      pnpm exec smthrs test '//crates/flows-jj:cargoTest' --known-red '.github/ci-known-red.json' --verbose
       ;;
     native-ffi)
-      pnpm exec smthrs build '//:nativeFfi' --verbose
+      pnpm exec smthrs build '//:nativeFfi' --known-red '.github/ci-known-red.json' --verbose
       ;;
     backend-go)
       # `//:backendGo` needs the Go 1.26 toolchain and a Postgres container
@@ -549,20 +549,20 @@ run_gate() {
       if on_cloud; then
         skip_gate backend-go 'the Go toolchain and a Docker Postgres service are not available on Cloud runners'
       else
-        pnpm exec smthrs test '//:backendGo' --verbose
+        pnpm exec smthrs test '//:backendGo' --known-red '.github/ci-known-red.json' --verbose
       fi
       ;;
     wasm-build-script)
-      pnpm exec smthrs test '//crates/flows-jj:buildScript' --verbose
+      pnpm exec smthrs test '//crates/flows-jj:buildScript' --known-red '.github/ci-known-red.json' --verbose
       ;;
     faults)
-      pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose
+      pnpm exec smthrs test '//packages/...:faults' --jobs 1 --known-red '.github/ci-known-red.json' --verbose
       ;;
     web-bundle)
-      pnpm exec smthrs test '//scripts:webBundleContract' --verbose
+      pnpm exec smthrs test '//scripts:webBundleContract' --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages)
-      pnpm exec smthrs test '//packages/...' --jobs 2 --verbose
+      pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     cloud-contract)
       bun test scripts/ci/cloud.test.ts

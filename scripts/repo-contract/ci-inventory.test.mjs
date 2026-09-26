@@ -22,8 +22,11 @@ test("CI command discovery retains diagnostic options and refuses unknown select
   assert.deepEqual(targetInvocation("pnpm exec smthrs build '//apps/app:check' --verbose"), {
     verb: "build", pattern: "//apps/app:check", jobs: undefined, verbose: true
   })
+  assert.deepEqual(targetInvocation("pnpm exec smthrs ci '//apps/...' --known-red '.github/ci-known-red.json' --verbose"), {
+    verb: "ci", pattern: "//apps/...", jobs: undefined, knownRed: ".github/ci-known-red.json", verbose: true
+  })
   assert.equal(targetInvocation("node scripts/generate-ci.mjs"), undefined)
-  for (const options of ["--include-exclusive", "--jobs", "--jobs 0", "--jobs 2 --jobs 3", "--plan"])
+  for (const options of ["--include-exclusive", "--jobs", "--jobs 0", "--jobs 2 --jobs 3", "--plan", "--known-red", "--known-red list.json"])
     assert.throws(() => targetInvocation(`pnpm exec smthrs test '//packages/...' ${options}`), /Unrecognized CI target/)
   assert.throws(() => targetInvocation("pnpm exec smthrs test //packages/..."), /Unrecognized CI target/)
 })

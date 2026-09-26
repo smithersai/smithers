@@ -454,6 +454,24 @@ describe("render", () => {
     }
   })
 
+  it("passes a declared known-red list to every target step, and none when undeclared", () => {
+    expect(golden).not.toContain("--known-red")
+    const rendered = render(attrsOf({ ...goldenAttrs, knownRed: ".github/ci-known-red.json" }))
+    const steps = parseWorkflow(rendered).jobs.flatMap((job) => job.steps.map((step) => step.run ?? ""))
+      .filter((command) => command.startsWith("pnpm exec smthrs"))
+    expect(steps.length).toBeGreaterThan(1)
+    for (const command of steps) {
+      expect(command).toMatch(/ --known-red '\.github\/ci-known-red\.json' --verbose$/)
+    }
+  })
+
+  it.each(["/etc/list.json", "../list.json", "ci/../list.json", "a list.json", "it's.json", "ci//list.json"])(
+    "refuses the known-red path %s",
+    (knownRed) => {
+      expect(() => render(attrsOf({ ...goldenAttrs, knownRed }))).toThrow(/not a workspace-relative file path/)
+    }
+  )
+
   it("runs the workspace-pinned CLI the install put in the tree, never a fetched one", () => {
     expect(render(attrsOf(goldenAttrs))).not.toContain("dlx")
   })

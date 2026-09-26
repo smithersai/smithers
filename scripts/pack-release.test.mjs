@@ -291,7 +291,10 @@ test("every gate in ci.yml also runs in release.yml", () => {
 
   const mirrored = ["test", "rust-ffi", "e2e-faults", "wasm-repro", "go-backend"]
   const isGate = (step) => graphCommands([step]).length > 0
+  // ci.yml passes the known-red list; the release does not, so every target a
+  // release mirrors must be green there, including those main tolerates.
   const expected = mirrored.flatMap((job) => jobSteps(ci, job)).filter(isGate)
+    .map((step) => step.replace(/ --known-red '[^']+'/g, ""))
   const actual = jobSteps(workflow("release.yml"), "publish").filter(isGate)
 
   // The gates the release adds on top of the mirrored jobs, pinned so an
@@ -318,6 +321,7 @@ test("every gate in ci.yml also runs in release.yml", () => {
   // ci.yml dropped, or one it gained all fail here, not only a missing one.
   assert.deepEqual(copied.map(command), expected.map(command))
   assert.deepEqual(copied, expected)
+  assert.doesNotMatch(workflow("release.yml"), /--known-red/)
 })
 
 test("release.yml's publish job names every step once", () => {

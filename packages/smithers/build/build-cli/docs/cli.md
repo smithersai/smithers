@@ -42,6 +42,7 @@ in the workspace declaration, then `.flows`. See
 | `--jobs`                 | `-j`  | integer 1+ | host parallelism | Maximum concurrent targets.                                       |
 | `--include-exclusive`    |       | boolean    | `false`          | Include exclusive targets in wildcard `ci` and `test` selections. |
 | `--cache` / `--no-cache` |       | boolean    | `true`           | Consult the cache before running. `--no-cache` still publishes.   |
+| `--known-red`            |       | path       | none             | JSON list of targets already red; only unlisted failures fail.    |
 
 Exclusive targets run alone after ready ordinary work drains, regardless of
 `--jobs`. Dependencies keep their ordering. Explicit labels, including
@@ -51,6 +52,33 @@ evaluates trusted declarations, reads the workspace, and may run tool probes
 or resolve and build declared environments. See
 [Planning requirements](./guides/inspect-a-workspace.md#see-what-a-run-would-do)
 for required tools and possible host and cache writes.
+
+### Known-red targets
+
+`--known-red <file>` names a JSON list of targets that already fail, each with
+an owner, a reason, and a last day. The command still runs and reports those
+targets. It exits nonzero only when a target outside the list fails, or when a
+listed target fails after its `expires` day. Paths resolve from `--workspace`.
+
+```json
+{
+  "entries": [
+    {
+      "label": "//packages/example:test",
+      "platforms": ["win32"],
+      "owner": "will",
+      "reason": "path separators in snapshot names",
+      "issue": "https://github.com/smithersai/smithers/issues/1",
+      "expires": "2026-10-09"
+    }
+  ]
+}
+```
+
+`platforms` is optional and matches Node's `process.platform`. Each finding
+prints one line to standard error: `known red`, `newly red`, `expired entry`,
+or `green again, remove from`. Delete an entry in the change that fixes its
+target.
 
 ## Global options
 

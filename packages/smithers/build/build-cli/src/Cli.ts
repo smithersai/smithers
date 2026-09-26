@@ -26,6 +26,7 @@ import * as Diagnostic from "./Diagnostic.ts"
 import * as Executor from "./Executor.ts"
 import * as GitHooks from "./GitHooks.ts"
 import * as GraphOutput from "./GraphOutput.ts"
+import * as KnownRed from "./KnownRed.ts"
 import * as Owners from "./Owners.ts"
 import * as PackageDiscovery from "./PackageDiscovery.ts"
 import * as PackageExec from "./PackageExec.ts"
@@ -55,7 +56,10 @@ const executionOptions = workspaceOption.extend({
   includeExclusive: z.boolean().default(false).describe(
     "Include exclusive targets in wildcard ci/test selections; explicit labels already include them"
   ),
-  cache: z.boolean().default(true).describe("Consult the result cache before running; --no-cache bypasses reads")
+  cache: z.boolean().default(true).describe("Consult the result cache before running; --no-cache bypasses reads"),
+  knownRed: z.string().optional().describe(
+    "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red"
+  )
 })
 
 /** The flags outward and agent targets take: the commit message override, the sweep, and payload inputs. */
@@ -735,7 +739,10 @@ const failedSummary = (outcome: Outcome): outcome is Executor.Summary => isSumma
 
 const failureMessage = (summary: Executor.Summary): string =>
   `${summary.counts.failed} of ${summary.results.length} targets failed` +
-  (summary.counts.skipped === 0 ? "" : ` (${summary.counts.skipped} skipped)`)
+  (summary.counts.skipped === 0 ? "" : ` (${summary.counts.skipped} skipped)`) +
+  ("knownRed" in summary
+    ? `; ${(summary as KnownRed.JudgedSummary).knownRed.newlyRed.length} not on the known-red list`
+    : "")
 
 /**
  * Turns an execution outcome into the command's return.
@@ -804,7 +811,18 @@ const executeCommand = async <A extends Outcome>(
   } finally {
     reporter.close()
   }
-  return settle(context, config, outcome)
+  const knownRed = (context.options as { readonly knownRed?: string | undefined } | undefined)?.knownRed
+  if (knownRed === undefined || !isSummary(outcome)) return settle(context, config, outcome)
+  let judged: KnownRed.JudgedSummary
+  try {
+    const list = await KnownRed.read(context.options?.workspace ?? process.cwd(), knownRed)
+    judged = KnownRed.judge(outcome, list, { platform: process.platform, today: KnownRed.today() })
+  } catch (cause) {
+    return context.error({ code, exitCode: 1, message: Diagnostic.describe(cause) })
+  }
+  const lines = KnownRed.describe(judged.knownRed)
+  if (lines.length > 0) terminalsOf(config).stderr.write(`${lines.join("\n")}\n`)
+  return settle(context, config, judged as unknown as A)
 }
 
 const optionalPattern = z.object({ pattern: z.string().default("//...").describe("Target label or recursive pattern") })

@@ -393,7 +393,7 @@ test("the dispatch inputs keep the rehearsal safe by default", () => {
 test("CI gates the server's checks and tests in the required test job", () => {
   const ci = parseWorkflow(readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8"))
   const server = ci.jobs.test.steps.find((entry) => entry.name === "Server typecheck and tests")
-  assert.equal(server?.run, "pnpm exec smthrs ci '//apps/server/...' --verbose")
+  assert.equal(server?.run, "pnpm exec smthrs ci '//apps/server/...' --known-red '.github/ci-known-red.json' --verbose")
   assert.equal(server?.if, undefined)
 })
 
@@ -403,7 +403,7 @@ test("ordinary PR CI gates executable examples before workspace checks", () => {
   const examples = steps.find((entry) => entry.name === "Examples")
   assert.equal(Object.hasOwn(ci.on, "pull_request"), true)
   assert.equal(ci.jobs.test["continue-on-error"], undefined)
-  assert.equal(examples?.run, "pnpm exec smthrs ci '//examples/...' --verbose")
+  assert.equal(examples?.run, "pnpm exec smthrs ci '//examples/...' --known-red '.github/ci-known-red.json' --verbose")
   assert.equal(examples?.if, undefined)
   assert.ok(steps.indexOf(examples) < steps.indexOf(steps.find((entry) => entry.name === "Workspace targets")))
 })
@@ -446,7 +446,10 @@ test("release rebuilds and byte-compares the committed wasm before packing", () 
   assert.deepEqual(install, ci.jobs["wasm-repro"].steps.find((entry) => entry.name === install.name))
   const mirrored = ci.jobs["wasm-repro"].steps.filter((entry) => /pnpm exec (?:smithers-build|smthrs) /.test(entry.run ?? ""))
   assert.equal(mirrored.length, 2, "the wasm mirror must cover both smthrs steps; an executable rename must not empty it")
-  for (const expected of mirrored) {
+  for (const ciStep of mirrored) {
+    // The release runs without ci.yml's known-red list: every target it
+    // mirrors must be green there.
+    const expected = { ...ciStep, run: ciStep.run.replace(/ --known-red '[^']+'/, "") }
     const actual = step(expected.name)
     assert.deepEqual(actual, expected)
     assert.ok(steps.indexOf(install) < steps.indexOf(actual))

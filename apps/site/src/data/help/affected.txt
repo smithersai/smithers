@@ -14,6 +14,7 @@ Options:
   --jobs <number>       Maximum concurrent targets; defaults to host parallelism. Exclusive targets run alone after ready ordinary work
   --include-exclusive   Include exclusive targets in wildcard ci/test selections; explicit labels already include them
   --cache               Consult the result cache before running; --no-cache bypasses reads (default: true)
+  --known-red <string>  JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red
   --base <string>       Git base revision (default: HEAD)
   --head <string>       Git head revision; defaults to the working tree including untracked files
   --files <array>       Explicit changed paths instead of Git discovery
