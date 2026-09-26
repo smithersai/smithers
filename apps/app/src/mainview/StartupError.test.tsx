@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client"
 import type { Root } from "react-dom/client"
 import { createStartupErrorElement, StartupErrorPanel, webBackendSwitch } from "./StartupError"
 
-import { WriterHeldByAnotherTabError, WriterMovedToAnotherTabError } from "./state/StorageRecoveryContract"
+import { StorageWriteFailedError, WriterHeldByAnotherTabError, WriterMovedToAnotherTabError } from "./state/StorageRecoveryContract"
 import { BootstrapFailure } from "./runtime/Runtime"
 import { PALETTES } from "./state/AppState"
 import { contrastRatio, rgbOf, variant, type Declarations, type Rgb } from "./styles/paletteTokens"
@@ -94,6 +94,7 @@ describe("the startup error panel", () => {
 })
 
 for (const [reason, heading, buttons] of [
+  [new StorageWriteFailedError(), "Changes could not be saved", ["Reload"]],
   [new WriterHeldByAnotherTabError(), "Smithers is open in another tab", ["Use Smithers here", "Reload"]],
   [new WriterMovedToAnotherTabError(), "Smithers moved to another tab", ["Use Smithers here"]]
 ] as const) {

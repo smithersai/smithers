@@ -309,7 +309,7 @@ describe("launch-law parity: every affordance is a command", () => {
       // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
       "../TranscriptMessage.tsx": 4,
       "../LocalAuthPanel.tsx": 3,
-      "../StartupError.tsx": 6, // Writer takeover/reload, plus bootstrap Retry, backend chooser and credential submission.
+      "../StartupError.tsx": 7, // Runtime Reload, writer takeover/reload, bootstrap Retry, backend chooser, and credential submission.
       "../StorageRecoveryButton.tsx": 1,
       "../FlowsSurface.tsx": 2,
       "../WorldSurface.tsx": 6,

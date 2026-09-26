@@ -56,3 +56,10 @@ export class WriterMovedToAnotherTabError extends Error {
 export type WriterOwnershipError = WriterHeldByAnotherTabError | WriterMovedToAnotherTabError
 export const isWriterOwnershipError = (error: unknown): error is WriterOwnershipError =>
   error instanceof WriterHeldByAnotherTabError || error instanceof WriterMovedToAnotherTabError
+
+/** The runtime writer stopped accepting changes; never carries private SQL or input. */
+export class StorageWriteFailedError extends Error {
+  override readonly name = "StorageWriteFailedError"
+  readonly kind = "write-failed" as const
+  constructor() { super("Changes could not be saved.") }
+}

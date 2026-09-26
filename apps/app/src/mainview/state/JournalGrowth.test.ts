@@ -113,6 +113,9 @@ const poll = async (store: AppStore, snapshots: ReadonlyArray<Snapshot>, afterCy
   } }
   const pump = createWorkflowPumpController(context, () => 2)
   base.onDispose(() => { pump.stopWorkflowPumps() })
+  // Match the AppController lifetime: a poisoned SQLite writer stops the
+  // observer instead of claiming it can persist a retry through that writer.
+  base.onDispose(store.onStorageFailure(() => { void base.dispose().catch(() => {}) }))
   contexts.push(base)
   await pump.pumpWorkflowRun(card.id)
   return { journalAfter, transcriptReads, approvalReads }
@@ -133,6 +136,8 @@ describe("normalized run polling has no idle SQLite growth", () => {
       scope, summary, transcript: [...first.transcript], journal: { mode: "full", events: [...first.events] }
     } }).isPersisted.promise
     const before = await fixture.store.eventHistory()
+    const failures: Error[] = []
+    fixture.store.onStorageFailure(error => { failures.push(error) })
     const pause = fixture.pauseNextWrite()
     const owner = fixture.store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
       scope, summary, transcript: [...second.transcript], journal: { mode: "full", events: [...second.events] }
@@ -151,11 +156,13 @@ describe("normalized run polling has no idle SQLite growth", () => {
     if (scenario.fail) pause.fail(new Error("held observation failed"))
     else pause.release()
     expect(await owner).toBe(!scenario.fail)
-    // A refused receipt is the pump's to retry, never a rejection into its unawaited caller.
+    // The observer shuts down without rejecting into its unawaited caller.
     expect(await watching).toBe(true)
-    if (scenario.fail) expect(fixture.store.collections.runtimeRuns.get(runtimeRunKey(scope))?.observer).toEqual({
-      state: "reconnecting", error: "This browser did not save the run's latest evidence. Retrying."
-    })
+    if (scenario.fail) {
+      expect(failures).toMatchObject([{ message: "Changes could not be saved." }])
+      expect(queried).toHaveLength(1)
+      expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toEqual([...first.events])
+    }
     if (!scenario.fail) {
       expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toEqual([...response.events])
       expect((await fixture.store.eventHistory()).head.sequence).toBe(before.head.sequence + 2)

@@ -776,7 +776,7 @@ export const createAppController = (
   const actors = createActorBindings(ctx.onDispose)
   const privacyActions = createPrivacyActions(ctx)
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
-  ctx.onDispose(store.onPrivacyFailure(() => { void ctx.dispose().catch(() => {}) }))
+  ctx.onDispose(store.onStorageFailure(() => { void ctx.dispose().catch(() => {}) }))
   ctx.onDispose(store.onMaintenanceFailure((error, streak) => ctx.failures.report("journal.compaction", error, String(streak))))
   if (store.onWriterLost !== undefined) ctx.onDispose(store.onWriterLost(() => {
     // Mark the controller closed synchronously, before React unmount refs or
@@ -1262,7 +1262,7 @@ export const createAppController = (
   }))
 
   const changeDraft = (draft: string): void => {
-    if (privacyActions.refuse("user") !== undefined) return
+    if (ctx.disposed || privacyActions.refuse("user") !== undefined) return
     store.dispatch({ type: "composer.changed", actor: "user", draft })
   }
 
@@ -1299,7 +1299,7 @@ export const createAppController = (
 
   /* The palette's session acts (palette spec §3): open, close, the actions panel, the recents ledger. */
   const openPalette = (prefix?: string): void => {
-    if (privacyActions.refuse("user") !== undefined) return
+    if (ctx.disposed || privacyActions.refuse("user") !== undefined) return
     if (prefix !== undefined && prefix !== "") store.dispatch({ type: "composer.changed", actor: "user", draft: prefix })
     if (store.session().paletteOpen !== true) store.dispatch({ type: "palette.toggled", actor: "user", open: true })
     store.dispatch({ type: "hint.dismissed", actor: "user", id: "chat" })
@@ -1312,18 +1312,18 @@ export const createAppController = (
   })
   const closePalette = (lastQuery?: string): void => {
     cancelDictation()
-    if (privacyActions.refuse("user") !== undefined) return
+    if (ctx.disposed || privacyActions.refuse("user") !== undefined) return
     if (store.session().paletteOpen !== true) return
     store.dispatch({ type: "palette.toggled", actor: "user", open: false, ...(lastQuery === undefined ? {} : { lastQuery }) })
   }
   const togglePaletteActions = (ref: string): void => {
-    if (privacyActions.refuse("user") !== undefined) return
+    if (ctx.disposed || privacyActions.refuse("user") !== undefined) return
     if (store.session().paletteOpen !== true) store.dispatch({ type: "palette.toggled", actor: "user", open: true })
     const current = store.session().paletteActionsRef ?? null
     store.dispatch({ type: "palette.actions.toggled", actor: "user", ref: current === ref ? null : ref })
   }
   const notePaletteItemOpened = (item: { readonly kind: string; readonly ref: string }): void => {
-    if (privacyActions.refuse("user") !== undefined) return
+    if (ctx.disposed || privacyActions.refuse("user") !== undefined) return
     store.dispatch({ type: "palette.item.opened", actor: "user", ref: item.ref, kind: item.kind, at: Date.now() })
   }
   const paletteRecent = (): { readonly value: string } => ({ value: JSON.stringify({ items: store.session().paletteRecents ?? [] }) })
@@ -1808,7 +1808,7 @@ export const createAppController = (
     promptDownload,
     dismissFirstRun: () => { store.dispatch({ type: "first-run.dismissed", actor: ctx.commandActor }) },
     dismissHint: (id: string) => {
-      if (privacyActions.refuse(ctx.commandActor) !== undefined) return
+      if (ctx.disposed || privacyActions.refuse(ctx.commandActor) !== undefined) return
       store.dispatch({ type: "hint.dismissed", actor: ctx.commandActor, id })
     },
     ...signup,

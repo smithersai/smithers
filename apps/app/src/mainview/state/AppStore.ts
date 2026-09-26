@@ -105,7 +105,7 @@ inConversation
 } from "./AppState"
 import { PALETTE_MIRROR_KEY,THEME_MIRROR_KEY,rememberAppearance } from "./Appearance"
 import { consumeWriterTakeover, reportWriterMoved } from "./WriterOwnership"
-import { reportStorageFailure } from "./StorageFailure"
+import { reportStorageFailure, type StoreFailure } from "./StorageFailure"
 import { isCurrentApprovalAnswer,type ApprovalAnswerInput } from "./ApprovalAnswerState"
 import { captureBrowserStorageRecovery,recoveryStorage } from "./BrowserStorageRecovery"
 import { CommandIntentSchema } from "./CommandIntent"
@@ -118,7 +118,7 @@ import { admitsPendingRecovery,pendingRecoveryScope,sameRecoveryScope,type Pendi
 import { RepositoryContextSchema } from "./RepositoryContext"
 import { NotificationReadReceiptSchema,RepositoryNotificationSchema } from "./RepositoryNotifications"
 import { RuntimeApprovalSchema,RuntimeRunSchema,type RuntimeApproval,type RuntimeRun } from "./RuntimeProjection"
-import { HeldBrowserStorageError } from "./StorageRecoveryContract"
+import { HeldBrowserStorageError, StorageWriteFailedError } from "./StorageRecoveryContract"
 import { WIKI_RECOVERY_STORAGE_KEY,clearWikiRecovery,readWikiRecovery,writeWikiRecovery } from "./WikiRecovery"
 import { createWorkspaceViews } from "./WorkspaceViews"
 import { createSavedSignInPrompts } from "./SavedSignInPrompts"
@@ -783,8 +783,8 @@ export interface AppStore {
   readonly privacyRetirementStatus: () => { readonly phase: "none" | PrivacyRetirement["phase"]; readonly remotePending: number }
   /** Safe to read even when a failed privacy retirement has closed saved-state reads. */
   readonly privacyWriteState: () => "ready" | "pending" | "failed"
-  /** Stop consumers synchronously before failed-retirement rollback can wake them. */
-  readonly onPrivacyFailure: (listener: () => void) => () => void
+  /** Stop consumers synchronously before a fatal storage failure rolls back live state. */
+  readonly onStorageFailure: (listener: (reason: StoreFailure) => void) => () => void
   /** Save a delete-only obligation before releasing an ephemeral side-turn token. */
   readonly queueTurnErasure: (runId: string, journal: { readonly legId: string; readonly token: string }) => boolean
   /** Report failed background compaction attempts with their consecutive failure count. */
@@ -992,7 +992,7 @@ export const createAppStore = async (
       : "backend" in persistence ? persistence : { backend: persistence, mode: persistence.kind, degraded: false }
     assertOwned()
     const store = await initializeAppStore(resolved, options, assertOwned)
-    if (writer !== undefined) store.onPrivacyFailure(() => reportStorageFailure(new PrivacyRetirementError()))
+    if (writer !== undefined) store.onStorageFailure(reportStorageFailure)
     stopLostStore = store.dispose
     assertOwned()
     resolved.recordSuccessfulOpen?.()
@@ -1272,14 +1272,18 @@ const initializeAppStore = async (
   const eventBytes = (event: AppEventRecord): number => new TextEncoder().encode(JSON.stringify(event)).byteLength
   let committedEventBytes = committedEvents.reduce((total, event) => total + eventBytes(event), 0)
   let generation = 0
-  let privacyRejected = false
-  const privacyFailureListeners = new Set<() => void>()
-  const rejectPrivacy = () => {
-    if (privacyRejected) return
-    privacyRejected = true
-    for (const listener of privacyFailureListeners) listener()
+  let rejectedStorage: StoreFailure | undefined
+  const storageFailureListeners = new Set<(reason: StoreFailure) => void>()
+  const rejectStorage = (reason: StoreFailure) => {
+    // An already-queued retirement may fail after the first ordinary write.
+    // Its privacy fence must still close reads and own the recovery reason.
+    if (rejectedStorage !== undefined && (!(reason instanceof PrivacyRetirementError) || rejectedStorage instanceof PrivacyRetirementError)) return
+    rejectedStorage = reason
+    for (const listener of storageFailureListeners) listener(reason)
   }
-  const assertReadable = (): void => { assertOwned(); if (privacyRejected) throw new PrivacyRetirementError() }
+  // A failed privacy retirement closes reads too. An ordinary failed write
+  // still leaves committed rows available for inspection and recovery.
+  const assertReadable = (): void => { assertOwned(); if (rejectedStorage instanceof PrivacyRetirementError) throw rejectedStorage }
   let scheduleAutoCompaction = (): void => {}
   let compactionTimer: ReturnType<typeof setTimeout> | undefined
   let compacting = false
@@ -1300,7 +1304,13 @@ const initializeAppStore = async (
       if (write.checkpoint !== undefined) committedCheckpoint = write.checkpoint
       if (write.retirement !== undefined) await finishRetirement(write.retirement)
     } catch (error) {
-      if (write.retirement !== undefined) rejectPrivacy()
+      if (write.retirement !== undefined) rejectStorage(new PrivacyRetirementError())
+      else if (resolvedBackend.kind === "opfs" && acceptedGeneration === generation) {
+        // SQLite retains its failed writer state. A notice written through
+        // that same journal would fail silently, so stop consumers and notify
+        // the host before rollback wakes them. Never replay the refused act.
+        rejectStorage(new StorageWriteFailedError())
+      }
       if (acceptedGeneration === generation) {
         generation += 1
         optimistic = committed
@@ -1419,7 +1429,7 @@ const initializeAppStore = async (
     return canonicalStoredJsonValue(metadata)
   }
   const stagePendingSignupInput: AppStore["stagePendingSignupInput"] = (field, value, intentId) => {
-    if (disposed || resetTransaction || recoveringInputs || privacyRejected || !intentId || typeof field !== "string" || typeof value !== "string" ||
+    if (disposed || resetTransaction || recoveringInputs || rejectedStorage !== undefined || !intentId || typeof field !== "string" || typeof value !== "string" ||
       (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending")) return undefined
     const signup = optimistic.snapshot.sessions.find(row => row.id === SESSION_ID)?.signup
     if (signup === undefined) return undefined
@@ -1435,7 +1445,7 @@ const initializeAppStore = async (
     return record === undefined ? undefined : { clear: () => clearEntityRecovery(draftRecoveryStorage, record) }
   }
   const stagePendingApprovalAnswer: AppStore["stagePendingApprovalAnswer"] = (input, intentId) => {
-    if (disposed || resetTransaction || recoveringInputs || privacyRejected || !intentId || typeof input.text !== "string") return undefined
+    if (disposed || resetTransaction || recoveringInputs || rejectedStorage !== undefined || !intentId || typeof input.text !== "string") return undefined
     const row = optimistic.snapshot.runtimeApprovals.find(row => row.id === input.id)
     if (!isCurrentApprovalAnswer(row, input)) return undefined
     const authority = recoveryAuthority(optimistic, "user", intentId)
@@ -1446,7 +1456,7 @@ const initializeAppStore = async (
     return record === undefined ? undefined : { clear: () => clearEntityRecovery(draftRecoveryStorage, record) }
   }
   const stagePendingCardInput: AppStore["stagePendingCardInput"] = (cardId, input, intentId, field) => {
-    if (disposed || resetTransaction || recoveringInputs || privacyRejected || !intentId ||
+    if (disposed || resetTransaction || recoveringInputs || rejectedStorage !== undefined || !intentId ||
       (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending")) return undefined
     const original = optimistic.snapshot.cards.find(row => row.id === cardId)
     if (original?.kind !== "flow-form" || original.status === "acted" || original.payload.submitting || original.payload.flow === "env.set") return undefined
@@ -1544,6 +1554,7 @@ const initializeAppStore = async (
   const dispatch = (transition: AppTransition): Transaction => {
     if (disposed) throw new Error("The app state owner is closed. Open the current store before dispatching.")
     assertReadable()
+    if (rejectedStorage !== undefined) throw rejectedStorage
     if (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending") throw new PrivacyRetirementError()
     if (resetTransaction !== undefined) return resetTransaction
     if (transition.type === "composer.changed" && pendingDraft?.transaction.state === "pending") {
@@ -1587,7 +1598,7 @@ const initializeAppStore = async (
             deriveTurnErasures(previous.snapshot.httpTurnLegs))
           if (resolved.mode === "memory") throw new PrivacyRetirementError()
           write = { ...write, retirement }
-        } catch (error) { rejectPrivacy(); throw error }
+        } catch (error) { rejectStorage(new PrivacyRetirementError()); throw error }
       }
     }
     const acceptedGeneration = generation
@@ -1952,11 +1963,11 @@ const initializeAppStore = async (
         : browserSqliteRecoveryReader(),
       ...(resolved.mode === "memory" ? { memory: recoveryStorage(persistedLocally) } : {})
     }),
-    privacyWriteState: () => privacyRejected ? "failed"
+    privacyWriteState: () => rejectedStorage instanceof PrivacyRetirementError ? "failed"
       : privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending" ? "pending" : "ready",
-    onPrivacyFailure: listener => {
-      privacyFailureListeners.add(listener)
-      return () => { privacyFailureListeners.delete(listener) }
+    onStorageFailure: listener => {
+      storageFailureListeners.add(listener)
+      return () => { storageFailureListeners.delete(listener) }
     },
     privacyRetirementStatus: () => {
       const intent = privacyRecord === undefined ? undefined : readPrivacyRetirement(privacyRecord)

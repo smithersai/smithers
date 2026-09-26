@@ -1,4 +1,4 @@
-import { isWriterOwnershipError, type WriterOwnershipError } from "./state/StorageRecoveryContract"
+import { isWriterOwnershipError, StorageWriteFailedError, type WriterOwnershipError } from "./state/StorageRecoveryContract"
 import { useSmithersHere } from "./state/WriterOwnership"
 import { useState, type CSSProperties } from "react"
 import { errorMessage } from "./state/ClientErrors"
@@ -63,10 +63,10 @@ export const startupErrorMessage = (reason: unknown, earlier?: unknown): string 
     ].join("\n")
 
 /** The panel React renders when a boot failure reaches the error boundary. */
-type StartupFailure = { readonly kind: "generic"; readonly message: string } | WriterOwnershipError | BootstrapFailure
+type StartupFailure = { readonly kind: "generic"; readonly message: string } | WriterOwnershipError | BootstrapFailure | StorageWriteFailedError
 
 const startupFailure = (reason: unknown): StartupFailure =>
-  isWriterOwnershipError(reason) || reason instanceof BootstrapFailure
+  isWriterOwnershipError(reason) || reason instanceof BootstrapFailure || reason instanceof StorageWriteFailedError
     ? reason : { kind: "generic", message: startupErrorMessage(reason) }
 
 /** Points this shell at another backend; resolves once the page is leaving for it. */
@@ -139,6 +139,11 @@ export function StartupErrorPanel({ message, reason = message, switchBackend = s
 }) {
   const failure = startupFailure(reason)
   switch (failure.kind) {
+    case "write-failed":
+      return <main style={PANEL_STYLE} role="alert">
+        <h1>Changes could not be saved</h1>
+        <button type="button" onClick={() => window.location.reload()}>Reload</button>
+      </main>
     case "unreachable":
     case "missing":
     case "server":
