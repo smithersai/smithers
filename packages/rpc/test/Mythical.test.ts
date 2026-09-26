@@ -3,6 +3,7 @@ import {
   isSettledItemState,
   MYTHICAL_ROUTES,
   MythicalEventSchema,
+  MythicalLaneSchema,
   MythicalLaneSubmissionSchema,
   mythicalRoute,
   MythicalStackSchema
@@ -77,7 +78,15 @@ const snapshot = {
   ],
   lanes: [
     { index: 0, workspaceId: "ws-0", state: "idle" },
-    { index: 1, workspaceId: "ws-1", itemId: "item-3", state: "busy" }
+    {
+      index: 1,
+      workspaceId: "ws-1",
+      itemId: "item-3",
+      state: "busy",
+      startedAt: "2026-09-25T11:53:00Z",
+      account: { provider: "claude", label: "work@example.com", count: 2 },
+      seat: "opus"
+    }
   ],
   limits: { maxParallel: 2 },
   updatedAt: "2026-09-25T12:00:00Z"
@@ -100,6 +109,14 @@ describe("the mythical stack contract", () => {
       limits: { maxParallel: 2 }
     })
     expect(absent.tip).toBeUndefined()
+  })
+
+  test("a lane's account decodes without its label for a reader, and never as an unknown provider", () => {
+    const lane = { index: 0, state: "busy", startedAt: "2026-09-25T11:53:00Z", account: { provider: "codex", count: 1 }, seat: "luna" }
+    expect(MythicalLaneSchema.parse(lane)).toEqual(lane)
+    expect(MythicalLaneSchema.safeParse({ ...lane, account: { provider: "gemini", count: 1 } }).success).toBe(false)
+    expect(MythicalLaneSchema.safeParse({ ...lane, account: { provider: "codex", count: 0 } }).success).toBe(false)
+    expect(MythicalLaneSchema.safeParse({ ...lane, startedAt: "a while ago" }).success).toBe(false)
   })
 
   test("an unknown item state is refused rather than rendered as something else", () => {

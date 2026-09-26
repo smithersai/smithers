@@ -86,3 +86,17 @@ export const dateLabel = (iso: string): string => iso.replace("T", " ").slice(0,
 
 /** The calendar day of a recorded stamp, on the same terms as `dateLabel`: `2026-08-11`. */
 export const dayLabel = (iso: string): string => iso.slice(0, 10)
+
+/*
+ * A running clock since an instant (`4:07`, `1:02:09`) — how long a Stack
+ * lane has worked on its item. An unreadable stamp renders nothing.
+ */
+export const elapsedLabel = (startedAt: string, now: number): string | undefined => {
+  const at = Date.parse(startedAt)
+  if (Number.isNaN(at)) return undefined
+  const total = Math.max(0, Math.floor((now - at) / 1000))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = String(total % 60).padStart(2, "0")
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`
+}

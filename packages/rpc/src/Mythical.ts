@@ -325,7 +325,37 @@ export const MythicalItemSchema = z.object({
 export type MythicalItem = z.infer<typeof MythicalItemSchema>
 
 /**
- * One lane: a workspace that works one item at a time.
+ * The pooled provider account that took a lane's latest model call. The
+ * pool rotates accounts per call, so `count` is how many accounts served the
+ * lane's current attempt. `label` (the account's email, else its name) is
+ * present only for the account's owner (for an organization's account, a
+ * repository admin). No credential is ever part of it.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const MythicalAccountSchema = z.object({
+  provider: z.enum(["claude", "codex"]),
+  label: z.string().optional(),
+  count: z.number().int().positive()
+})
+
+/**
+ * The decoded value accepted by {@link MythicalAccountSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type MythicalAccount = z.infer<typeof MythicalAccountSchema>
+
+/**
+ * One lane: a workspace that works one item at a time. A busy lane carries
+ * `startedAt`, when it launched its item's current attempt. Once the
+ * attempt's model calls went through the account pool, `account` is the
+ * account of the latest one and `seat` the seat most of them ran on (its
+ * alias, such as `luna`, else the model id). A retrying lane carries none of
+ * these until its next attempt starts. A lane that holds an item above
+ * `maxParallel` is still listed.
  *
  * @since 1.0.0
  * @category schemas
@@ -334,7 +364,10 @@ export const MythicalLaneSchema = z.object({
   index: z.number().int().nonnegative(),
   workspaceId: z.string().optional(),
   itemId: z.string().optional(),
-  state: z.enum(["provisioning", "idle", "busy"])
+  state: z.enum(["provisioning", "idle", "busy"]),
+  startedAt: z.string().datetime({ offset: true }).optional(),
+  account: MythicalAccountSchema.optional(),
+  seat: z.string().optional()
 })
 
 /**

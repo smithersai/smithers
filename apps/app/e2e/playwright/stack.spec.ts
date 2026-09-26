@@ -17,10 +17,16 @@ const item = (id: string, state: MythicalItem["state"], extra: Partial<MythicalI
   issue: { number: Number(id.slice(1)), title: `Issue ${id}`, url: `https://github.com/${REPO}/issues/${id.slice(1)}` },
   ...extra
 })
+let startedAt = new Date().toISOString()
 const snapshot = (generation: number, items: MythicalItem[]): MythicalStack => ({
   repository: REPO, state: "active", generation, mainBehind: false,
   changes: [{ changeId: "kbootstrapchange", commitId: "c1", title: "Initial import", kind: "bootstrap", state: "landed" }],
-  items, lanes: [{ index: 0, state: items.some(row => row.lane === 0) ? "busy" : "idle" }, { index: 1, state: "idle" }],
+  items, lanes: [
+    items.some(row => row.lane === 0)
+      ? { index: 0, state: "busy", startedAt, account: { provider: "claude", label: "work@example.com", count: 2 }, seat: "opus" }
+      : { index: 0, state: "idle" },
+    { index: 1, state: "idle" }
+  ],
   limits: { maxParallel: 2 }
 })
 
@@ -52,10 +58,18 @@ test("the Stack card follows lanes live, and a refused act is retried from the c
   await expect(card.getByTestId("stack-item-i7")).toContainText("queued")
   if (await page.getByTestId("composer-input").isVisible()) await page.getByTestId("composer-input").press("Escape")
 
+  startedAt = new Date(Date.now() - 65_000).toISOString()
   current = snapshot(2, [item("i7", "integrating", { lane: 0 })])
   await expect(card.getByTestId("stack-lane-0")).toContainText("#7 Issue i7", { timeout: 15_000 })
   await expect(card.getByTestId("stack-lane-0")).toContainText("rebasing")
   await expect(card.getByTestId("stack-lane-count")).toHaveText("1/2 lanes")
+  // The lane's clock runs from its start; its account and seat sit beside it.
+  const clock = card.getByTestId("stack-lane-0-elapsed")
+  await expect(clock).toHaveText(/^1:\d{2}$/)
+  const first = await clock.textContent()
+  await expect(clock).not.toHaveText(first ?? "", { timeout: 3_000 })
+  await expect(card.getByTestId("stack-lane-0-account")).toHaveText("work@example.com +1")
+  await expect(card.getByTestId("stack-lane-0-seat")).toHaveText("opus")
   const notice = page.locator(".toast-stack .toast", { hasText: "#7 Issue i7" })
   await expect(notice).toHaveAttribute("data-toast-status", "running")
   if (process.env.CAPTURE_DIR) await page.screenshot({ path: `${process.env.CAPTURE_DIR}/stack-card.png` })

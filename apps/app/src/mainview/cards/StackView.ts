@@ -3,7 +3,7 @@
  * snapshot: the counts row, the lanes, and the ordered stack rows. Pure, so
  * the card, the homepage block and their tests read the same projection.
  */
-import type { MythicalChange, MythicalItem, MythicalStack } from "@smthrs/rpc/Mythical"
+import type { MythicalAccount, MythicalChange, MythicalItem, MythicalLane, MythicalStack } from "@smthrs/rpc/Mythical"
 import { isSettledItemState } from "@smthrs/rpc/Mythical"
 
 /** Items a lane is working on: from launch until the pull request is open. */
@@ -104,16 +104,29 @@ export const stackRows = (stack: MythicalStack): ReadonlyArray<StackRow> => {
   return [...pending, ...changes]
 }
 
+export interface LaneRow {
+  readonly index: number
+  readonly workspaceId: string | undefined
+  readonly item: MythicalItem | undefined
+  /** The snapshot's lane, when it lists one: its start, account and seat. */
+  readonly lane: MythicalLane | undefined
+}
+
 /** The lanes with the item each is working on, including a lane above a lowered limit that still holds one. */
-export const laneRows = (stack: MythicalStack): ReadonlyArray<{ readonly index: number; readonly workspaceId: string | undefined; readonly item: MythicalItem | undefined }> => {
+export const laneRows = (stack: MythicalStack): ReadonlyArray<LaneRow> => {
   const byLane = new Map(laneItems(stack).map((item) => [item.lane!, item]))
   const indexes = [...new Set([...stack.lanes.map((lane) => lane.index), ...byLane.keys()])].sort((a, b) => a - b)
-  return indexes.map((index) => ({
-    index,
-    workspaceId: stack.lanes.find((lane) => lane.index === index)?.workspaceId,
-    item: byLane.get(index)
-  }))
+  return indexes.map((index) => {
+    const lane = stack.lanes.find((row) => row.index === index)
+    return { index, workspaceId: lane?.workspaceId, item: byLane.get(index), lane }
+  })
 }
+
+const PROVIDER_NAMES: Readonly<Record<MythicalAccount["provider"], string>> = { claude: "Claude", codex: "Codex" }
+
+/** The account a lane's latest call used, and how many more served it: `work@example.com +1`. */
+export const accountLabel = (account: MythicalAccount): string =>
+  `${account.label ?? PROVIDER_NAMES[account.provider]}${account.count > 1 ? ` +${account.count - 1}` : ""}`
 
 /** Whether an item is out of the lanes: settled, or its pull request is open. */
 export function settled(item: MythicalItem): boolean {

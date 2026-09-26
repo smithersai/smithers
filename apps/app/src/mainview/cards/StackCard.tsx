@@ -14,9 +14,9 @@ import { flowArgs } from "../flows/FlowArgs"
 import { flowAction } from "../flows/FlowAction"
 import type { Card } from "../state/AppState"
 import type { StackSnapshot } from "../state/seams/StackSeam"
-import { ageLabel } from "../Timestamps"
+import { elapsedLabel } from "../Timestamps"
 import type { CardFamily, RunCommand } from "./CardFamily"
-import { ACTIVE_ITEM_STATES, itemReason, itemStateLabel, itemTitle, laneRows, retryable, stackCounts, stackRows } from "./StackView"
+import { accountLabel, ACTIVE_ITEM_STATES, itemReason, itemStateLabel, itemTitle, laneRows, retryable, stackCounts, stackRows } from "./StackView"
 
 type StackCard = Extract<Card, { kind: "stack" }>
 type Failure = NonNullable<StackCard["payload"]["failure"]>
@@ -141,19 +141,30 @@ export const StackBody = ({ repo, snapshot, failure, bootstrapping, onRunCommand
           {...flowAction(onRunCommand, "stack.parallel", flowArgs("stack.parallel", { value: counts.maxParallel + 1, repo }))}>+</Button>
       </div>
       <ol className="stack-lanes" aria-label="Lanes" data-testid="stack-lanes">
-        {laneRows(stack).map(({ index, workspaceId, item }) => (
-          <li key={index} className="world-card-row" data-testid={`stack-lane-${index}`}>
-            <span className="world-card-path">{index + 1}</span>
-            {item === undefined ? <span className="world-card-path">idle</span> : (
-              <>
-                <Title stack={stack} item={item} />
-                <span className="stack-state" data-state={item.state}>{itemStateLabel(item)}</span>
-                <span className="world-card-path" data-testid={`stack-lane-${index}-updated`}>{ageLabel(item.updatedAt, now)}</span>
-              </>
-            )}
-            {workspaceId === undefined ? null : <span className="world-card-path">{workspaceId.slice(0, 8)}</span>}
-          </li>
-        ))}
+        {laneRows(stack).map(({ index, workspaceId, item, lane }) => {
+          const startedAt = lane?.startedAt
+          const elapsed = startedAt === undefined ? undefined : elapsedLabel(startedAt, now)
+          return (
+            <li key={index} className="world-card-row" data-testid={`stack-lane-${index}`}>
+              <span className="world-card-path">{index + 1}</span>
+              {item === undefined ? <span className="world-card-path">idle</span> : (
+                <>
+                  <Title stack={stack} item={item} />
+                  <span className="stack-state" data-state={item.state}>{itemStateLabel(item)}</span>
+                  {elapsed === undefined ? null : (
+                    <time className="world-card-path" dateTime={startedAt} data-testid={`stack-lane-${index}-elapsed`}>{elapsed}</time>
+                  )}
+                  {lane?.account === undefined ? null : (
+                    <span className="world-card-path" data-testid={`stack-lane-${index}-account`}
+                      data-provider={lane.account.provider}>{accountLabel(lane.account)}</span>
+                  )}
+                  {lane?.seat === undefined ? null : <span className="world-card-path" data-testid={`stack-lane-${index}-seat`}>{lane.seat}</span>}
+                </>
+              )}
+              {workspaceId === undefined ? null : <span className="world-card-path">{workspaceId.slice(0, 8)}</span>}
+            </li>
+          )
+        })}
       </ol>
       <ol className="stack-rows" aria-label="Stack" data-testid="stack-rows">
         {stackRows(stack).map((row) => row.kind === "item" ? (

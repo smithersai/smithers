@@ -3,7 +3,8 @@ import type { MythicalItem, MythicalStack } from "@smthrs/rpc/Mythical"
 import { renderToStaticMarkup } from "react-dom/server"
 import { StackBody } from "./StackCard"
 import type { StackBodyProps } from "./StackCard"
-import { itemStateLabel, laneRows, stackCounts, stackRows } from "./StackView"
+import { elapsedLabel } from "../Timestamps"
+import { accountLabel, itemStateLabel, laneRows, stackCounts, stackRows } from "./StackView"
 
 /*
  * The Stack card renders exactly what the snapshot states: counts, lanes
@@ -33,7 +34,11 @@ const STACK: MythicalStack = {
     item("i6", "skipped", { reason: "not actionable" }),
     item("i7", "landed")
   ],
-  lanes: [{ index: 0, state: "busy", itemId: "i1", workspaceId: "ws-000111222" }, { index: 1, state: "busy", itemId: "i2" }],
+  lanes: [
+    { index: 0, state: "busy", itemId: "i1", workspaceId: "ws-000111222", startedAt: "2026-09-25T09:52:53Z",
+      account: { provider: "claude", label: "work@example.com", count: 2 }, seat: "opus" },
+    { index: 1, state: "busy", itemId: "i2", startedAt: "2026-09-25T08:59:00Z", account: { provider: "codex", count: 1 }, seat: "luna" }
+  ],
   limits: { maxParallel: 2 }
 }
 
@@ -94,6 +99,32 @@ describe("the Stack card", () => {
     const lowered = { ...STACK, limits: { maxParallel: 1 }, lanes: [STACK.lanes[0]!] }
     expect(laneRows(lowered).map((row) => [row.index, row.item?.id])).toEqual([[0, "i1"], [1, "i2"]])
     expect(stackCounts(lowered).busy).toBe(2)
+  })
+
+  test("a busy lane shows how long it has run, the account and the seat, and nothing it was not told", () => {
+    const now = Date.parse("2026-09-25T10:00:00Z")
+    expect(elapsedLabel("2026-09-25T09:52:53Z", now)).toBe("7:07")
+    expect(elapsedLabel("2026-09-25T08:59:00Z", now)).toBe("1:01:00")
+    expect(elapsedLabel("not a time", now)).toBeUndefined()
+    expect(accountLabel({ provider: "claude", label: "work@example.com", count: 2 })).toBe("work@example.com +1")
+    expect(accountLabel({ provider: "codex", count: 1 })).toBe("Codex")
+
+    const html = render()
+    const lane0 = html.slice(html.indexOf("stack-lane-0"), html.indexOf("stack-lane-1"))
+    expect(lane0).toMatch(/<time[^>]*dateTime="2026-09-25T09:52:53Z"[^>]*data-testid="stack-lane-0-elapsed">\d+:\d{2}(:\d{2})?<\/time>/)
+    expect(lane0).toContain(">work@example.com +1<")
+    expect(lane0).toContain('data-testid="stack-lane-0-seat">opus<')
+    const lane1 = html.slice(html.indexOf("stack-lane-1"), html.indexOf("stack-rows"))
+    expect(lane1).toContain('data-provider="codex">Codex<')
+    expect(lane1).toContain(">luna<")
+
+    // A lane the snapshot says nothing more about shows no clock, account or seat.
+    const bare = { ...STACK, lanes: [{ index: 0, state: "busy" as const, itemId: "i1" }, { index: 1, state: "busy" as const, itemId: "i2" }] }
+    const plain = render({ snapshot: { stack: bare, error: null } })
+    expect(plain).not.toContain("-elapsed")
+    expect(plain).not.toContain("-account")
+    expect(plain).not.toContain("-seat")
+    expect(plain).not.toContain(" ago")
   })
 
   test("retry only where the API takes it, and admin doors carry typed args", () => {
