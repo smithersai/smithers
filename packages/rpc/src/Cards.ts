@@ -2642,11 +2642,11 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       error: z.string().optional()
     })
   }),
-  /* Built-in agents and the availability reported by their harnesses. */
+  /* Local agent roles or a repository's cloud session inventory. */
   z.object({
     ...cardBaseShape,
     kind: z.literal("agents"),
-    payload: z.object({
+    payload: z.union([z.object({
       /** False on the web host: no local harnesses, so nothing local is listed. */
       native: z.boolean(),
       agents: z.array(
@@ -2668,7 +2668,18 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       ),
       /** The last act's honest refusal, kept on the card. */
       error: z.string().optional()
-    })
+    }), z.object({
+      cloud: z.literal(true),
+      repo: z.string(),
+      sessions: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        status: z.string(),
+        messageCount: z.number().int().nonnegative(),
+        createdAt: z.string().nullable(),
+        workspaceId: z.string().nullable()
+      }))
+    })])
   }),
   /*
    * THE FORM LAW (apps/app/AGENTS.md;

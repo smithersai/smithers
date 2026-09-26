@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 import { flowAction } from "../flows/FlowAction"
 import { Button, Markdown } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
@@ -7,7 +8,23 @@ import { settledPill } from "./CardFamily"
 
 type AgentsCard = Extract<Card, { kind: "agents" }>
 
-export const AgentsCardBody = ({ card }: { readonly card: AgentsCard }) => {
+const CloudAgentsCardBody = ({ card, onRunCommand }: { readonly card: AgentsCard & { readonly payload: Extract<AgentsCard["payload"], { cloud: true }> }; readonly onRunCommand: RunCommand }) => (
+  <ul className="workflow-list" data-testid="agent-sessions-list">
+    {card.payload.sessions.map(session => (
+      <li key={session.id} className="workflow-list-row" data-session={session.id}>
+        <span className="workflow-list-text">
+          <strong>{session.title || session.id}</strong>
+          <span>{session.status}</span>
+        </span>
+        <Button variant="ghost" size="sm" {...flowAction(onRunCommand, "agent.session.view", flowArgs("agent.session.view", { sessionId: session.id, repo: card.payload.repo }))}>Open</Button>
+        {session.status === "active" ? <Button variant="ghost" size="sm" {...flowAction(onRunCommand, "agent.session.stop", flowArgs("agent.session.stop", { sessionId: session.id, repo: card.payload.repo }))}>Stop</Button> : null}
+      </li>
+    ))}
+  </ul>
+)
+
+export const AgentsCardBody = ({ card, onRunCommand }: { readonly card: AgentsCard; readonly onRunCommand: RunCommand }) => {
+  if ("cloud" in card.payload) return <CloudAgentsCardBody card={{ ...card, payload: card.payload }} onRunCommand={onRunCommand} />
   const { native, agents, error } = card.payload
   if (!native) return <p className="smithers-card-note">Agents run on the native app's harnesses.</p>
   return (
@@ -207,7 +224,7 @@ export const agentCardFamily: CardFamily<"agent" | "explain" | "agents"> = {
   },
   /* Agents as data: the listings settle when they render. */
   agents: {
-    render: (card) => <AgentsCardBody card={card} />,
+    render: (card, actions) => <AgentsCardBody card={card} onRunCommand={actions.onRunCommand} />,
     pill: settledPill
   },
 

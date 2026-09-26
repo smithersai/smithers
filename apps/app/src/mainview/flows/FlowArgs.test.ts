@@ -23,6 +23,12 @@ const roundTrip = <N extends FlowWithInput>(name: N, input: FlowInput[N], line: 
 }
 
 describe("flowArgs — one serialisation, and the grammar gives the values back", () => {
+  test("cloud session controls carry the session and its repository", () => {
+    for (const name of ["agent.session.view", "agent.session.stop"] as const) {
+      roundTrip(name, { sessionId: "session-1", repo: "will/other" }, "session-1 will/other", { sessionId: "session-1", repo: "will/other" })
+    }
+  })
+
   test("runs.trace.select preserves the source, node and optional recorded sequence", () => {
     for (const seq of [undefined, 0, 17]) {
       const input = { sourceCard: "flow-run-source", runId: "run-1", nodeId: "frame-2", ...(seq === undefined ? {} : { seq }) }

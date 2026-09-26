@@ -20,6 +20,7 @@ import type { SetupManualRequest } from "@smthrs/rpc/RepositorySetup"
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "agent.session.view": { readonly sessionId: string; readonly repo: string }
   readonly "agent.session.stop": { readonly sessionId: string; readonly repo: string }
   readonly "commits.read": { readonly ref: string; readonly repo: string }
   readonly "change.open": { readonly repo: string; readonly commits: ReadonlyArray<string> }
@@ -200,6 +201,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
 
   "change.split": payload => fileArgs(String(payload.changeId), ...(payload.paths as ReadonlyArray<string>)),
   "change.checks": payload => line(token(payload, "changeId"), token(payload, "seq")),
+  "agent.session.view": payload => line(token(payload, "sessionId"), token(payload, "repo")),
   "agent.session.stop": payload => line(token(payload, "sessionId"), token(payload, "repo")),
   "runs.seat": payload => line(token(payload, "runId"), token(payload, "seat")),
   "runs.tools": payload => line(token(payload, "runId"), token(payload, "toolNames")),

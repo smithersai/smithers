@@ -546,7 +546,7 @@ describe("the live store's authoritative event path", () => {
     for (const role of AGENT_ROLES) expect(restored.collections.agents.get(role.id)).toMatchObject(role)
     const agentsCard = restored.collections.cards.get("kept-agents")!
     expect(agentsCard.kind).toBe("agents")
-    if (agentsCard.kind !== "agents") throw new Error("Missing built-in roster")
+    if (agentsCard.kind !== "agents" || !("agents" in agentsCard.payload)) throw new Error("Missing built-in roster")
     expect(agentsCard.payload.agents).toHaveLength(1)
     expect(agentsCard.payload.agents[0]).toMatchObject({ id: AGENT_ROLES[0]!.id, label: AGENT_ROLES[0]!.label, model: AGENT_ROLES[0]!.model })
     expect(frame.snapshot?.cards.find(card => card.id === "kept-agents")).toMatchObject({ kind: "agents", payload: agentsCard.payload })

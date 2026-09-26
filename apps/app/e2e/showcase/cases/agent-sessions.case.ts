@@ -83,7 +83,7 @@ export default showcase({
     await expect(page.getByTestId("transcript")).toContainText("Tighten stack lane seats")
     await app.closeComposer()
     await app.beat(900)
-    await app.slash(`/agent.session.view ${OLDER} ${REPO}`)
+    await app.click(page.locator(`[data-session="${OLDER}"]`).getByRole("button", { name: "Open", exact: true }))
     const older = page.locator('[data-kind="agent"]').filter({ hasText: OLDER }).last()
     await expect(older).toContainText("completed")
     await app.closeComposer()

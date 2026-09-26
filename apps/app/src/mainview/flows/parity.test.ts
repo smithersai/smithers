@@ -434,8 +434,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/SecretsCard.tsx": 5,
       /* 6 = the Stack card's Backfill, fewer/more lanes, a row's Retry, a failure's Retry and Bootstrap. */
       "../cards/StackCard.tsx": 6,
-      /* 2 = the Agents card's New agent and the cloud session card's Stop (agent.session.stop); the role launch went with agent.role. */
-      "../cards/AgentCards.tsx": 2,
+      /* Local Open tab, cloud session Stop, and inventory Open/Stop. */
+      "../cards/AgentCards.tsx": 4,
       "../cards/AnonymousCeilingCard.tsx": 1,
       // THE FORM LAW (flow-forms.md): the generic form's Cancel (card.dismiss) and Submit (form.submit); fields commit on blur/change.
       "../cards/FlowFormCards.tsx": 2,

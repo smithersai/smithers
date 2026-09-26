@@ -236,6 +236,8 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       streams: new Map<string, AbortController>(),
       disposed: false,
       generation: 0,
+      listEpochs: new Map<string, number>(),
+      pendingLists: new Set<{ readonly repo: string; readonly updates: Map<string, Partial<AgentSessionRow> | null> }>(),
       subscriptions: [] as Array<{ unsubscribe(): void }>
     }
     let owner = identitySnapshot()
@@ -244,6 +246,8 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       if (next === owner) return
       owner = next
       state.generation += 1
+      state.listEpochs.clear()
+      state.pendingLists.clear()
       for (const controller of state.streams.values()) controller.abort()
       state.streams.clear()
     }
@@ -291,6 +295,24 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
 
   /* ---- the card ---- */
 
+  const listCardId = (repo: string): string => `agent-sessions-${repo}`
+  const nextListEpoch = (repo: string): number => {
+    const epoch = (shared.listEpochs.get(repo) ?? 0) + 1
+    shared.listEpochs.set(repo, epoch)
+    return epoch
+  }
+
+  /** Merge observations newer than a listing request, including successful deletion. */
+  const updateListedSession = async (repo: string, id: string, patch: Partial<AgentSessionRow> | null, actor: "user" | "smithers" | "system" = ctx.actor()): Promise<void> => {
+    for (const listing of shared.pendingLists) {
+      if (listing.repo === repo) listing.updates.set(id, patch === null ? null : { ...listing.updates.get(id), ...patch })
+    }
+    const card = ctx.store.collections.cards.get(listCardId(repo))
+    if (card?.kind !== "agents" || !("cloud" in card.payload)) return
+    const sessions = card.payload.sessions.flatMap(row => row.id !== id ? [row] : patch === null ? [] : [{ ...row, ...patch }])
+    await ctx.dispatch({ type: "card.upsert", actor, card: { ...card, payload: { ...card.payload, sessions } } }).isPersisted.promise
+  }
+
   /** The card as one upsert; the live window's facts come from the arguments, never invented. */
   const renderSession = async (
     session: { readonly id: string; readonly title: string; readonly status: string; readonly workspaceId: string | null },
@@ -323,7 +345,10 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
       payload
     }
-    await ctx.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise
+    await Promise.all([
+      ctx.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise,
+      updateListedSession(facts.repo, session.id, { title: session.title, status: session.status, workspaceId: session.workspaceId }, actor)
+    ])
   }
 
   /** The refusal rides the card too, so it stays visible beside the transcript. */
@@ -368,11 +393,14 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       const status = textOrNull(parsed.status)
       if (status === null) return
       const payload = existing.payload
-      await ctx.dispatch({
-        type: "card.upsert",
-        actor: "system",
-        card: { ...existing, payload: { ...payload, state: status } }
-      }).isPersisted.promise
+      await Promise.all([
+        ctx.dispatch({
+          type: "card.upsert",
+          actor: "system",
+          card: { ...existing, payload: { ...payload, state: status } }
+        }).isPersisted.promise,
+        updateListedSession(payload.repo, sessionId, { status }, "system")
+      ])
       /* The session is over: no message follows a terminal status, so the stream's work is done. */
       if (AGENT_SESSION_TERMINAL.has(status)) close()
     }
@@ -599,32 +627,36 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
-    const answer = await get(`${sessionsPath(repo)}?limit=100`, sessionsPath(repo))
+    const epoch = nextListEpoch(repo)
+    const pending = { repo, updates: new Map<string, Partial<AgentSessionRow> | null>() }
+    shared.pendingLists.add(pending)
+    const answer = await get(`${sessionsPath(repo)}?limit=100`, sessionsPath(repo)).finally(() => { shared.pendingLists.delete(pending) })
     if (!current()) return SIGN_OUT_REFUSAL
+    if (shared.listEpochs.get(repo) !== epoch) return readResult("Agent session list superseded by a newer update.")
     if ("error" in answer) return featureRefusal(answer, repo)
     if (!Array.isArray(answer.body)) return `Smithers Cloud answered agent sessions for ${repo} with an unreadable payload`
     const sessions = answer.body.flatMap((entry) => {
       const parsed = parseSession(entry)
-      return parsed === null ? [] : [parsed]
+      if (parsed === null) return []
+      const update = pending.updates.get(parsed.id)
+      return update === null ? [] : [{ ...parsed, ...update }]
     })
-    /*
-     * The workspace card cannot hold this list (it is workspace-scoped; the
-     * list is the repository's) and no list card's payload is this shape, so
-     * the listing answers where the other cardless list acts answer (the
-     * egress audit, the workspace inventory): the transcript, each row
-     * naming its doors.
-     */
+    const id = listCardId(repo)
+    const existing = ctx.store.collections.cards.get(id)
+    await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+      id, kind: "agents", title: `Agent sessions · ${repo}`, status: "active",
+      createdAt: existing?.createdAt ?? Date.now(), ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
+      payload: { cloud: true, repo, sessions }
+    } }).isPersisted.promise
+    if (!current()) return SIGN_OUT_REFUSAL
     const listing = sessions.length === 0
-      ? `No agent sessions on ${repo}. Start one with /agent.session.new ${repo} <provider> <task>.`
+      ? `No agent sessions on ${repo}.`
       : [
         `Agent sessions on ${repo}:`,
         ...sessions.map((session) =>
           `${session.title === "" ? "(untitled)" : session.title} · ${session.id} · ${session.status} · ${session.messageCount} message${session.messageCount === 1 ? "" : "s"}${session.createdAt === null ? "" : ` · ${session.createdAt}`}`
-        ),
-        `Open one with /agent.session.view <id> ${repo}; stop one with /agent.session.stop <id> ${repo}.`
+        )
       ].join("\n")
-    await ctx.dispatch({ type: "message.appended", actor: "system", text: listing }).isPersisted.promise
-    if (!current()) return SIGN_OUT_REFUSAL
     return readResult(listing)
   }
 
@@ -727,6 +759,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       return answer.error
     }
     detachStream(sessionId)
+    const updates: Array<Promise<unknown>> = [updateListedSession(repo, sessionId, null)]
     /*
      * The row is tombstoned upstream (services.AgentService.DeleteSession: an
      * active run is cancelled and finalized first). The card stays as the
@@ -737,7 +770,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const latest = ctx.store.collections.cards.get(cardIdOf(sessionId))
     if (latest?.kind === "agent" && "cloud" in latest.payload) {
       const payload = latest.payload
-      await ctx.dispatch({
+      updates.push(ctx.dispatch({
         type: "card.upsert",
         actor: ctx.actor(),
         card: {
@@ -747,9 +780,10 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
             state: AGENT_SESSION_TERMINAL.has(payload.state) ? payload.state : "cancelled"
           }
         }
-      }).isPersisted.promise
-      if (!current()) return SIGN_OUT_REFUSAL
+      }).isPersisted.promise)
     }
+    await Promise.all(updates)
+    if (!current()) return SIGN_OUT_REFUSAL
     return {
       value: priorState !== undefined && AGENT_SESSION_TERMINAL.has(priorState)
         ? `Agent session ${sessionId} was already ${priorState} — its record is deleted.`

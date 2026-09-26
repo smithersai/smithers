@@ -239,7 +239,7 @@ describe("agent.session.new", () => {
 })
 
 describe("agent.session.list", () => {
-  test("lists the repository's sessions as transcript rows, each naming its doors", async () => {
+  test("lists the repository's sessions in a durable embedded card", async () => {
     const { store, seam, urls } = await harness({
       [`GET api/repos/${REPO}/agent/sessions`]: json(200, [
         AGENT_SESSION_WIRE.session({ message_count: 3 }),
@@ -254,17 +254,102 @@ describe("agent.session.list", () => {
     expect(listing).toContain(`Fix the retry loop · ${SESSION_ID} · active · 3 messages`)
     expect(listing).toContain("(untitled) · 9a8b7c6d-0000-4e6e-9c2a-1c0a2b0e5f6a · completed · 1 message")
     expect(listing).not.toContain("broken")
-    expect(listing).toContain(`/agent.session.view <id> ${REPO}`)
-    expect(listing).toContain(`/agent.session.stop <id> ${REPO}`)
-    /* The listing landed in the transcript, where the cardless list acts answer. */
-    const texts = [...store.collections.messages.values()].map((message) => message.text)
-    expect(texts.some((text) => text.includes(`Agent sessions on ${REPO}:`))).toBe(true)
+    expect(listing).not.toContain("/agent.session.")
+    expect(store.collections.cards.get(`agent-sessions-${REPO}`)).toMatchObject({
+      kind: "agents", payload: { cloud: true, repo: REPO, sessions: [
+        { id: SESSION_ID, title: "Fix the retry loop", status: "active", messageCount: 3 },
+        { id: "9a8b7c6d-0000-4e6e-9c2a-1c0a2b0e5f6a", title: "", status: "completed", messageCount: 1 }
+      ] }
+    })
+    expect([...store.collections.messages.values()].some(message => message.text.includes("/agent.session."))).toBe(false)
   })
 
-  test("an empty list names the one next step", async () => {
-    const { seam } = await harness({ [`GET api/repos/${REPO}/agent/sessions`]: json(200, []) })
+  test("an empty list renders an empty card without slash instructions", async () => {
+    const { seam, store } = await harness({ [`GET api/repos/${REPO}/agent/sessions`]: json(200, []) })
     const result = await seam.listSessions(REPO)
-    expect(result).toEqual({ value: `No agent sessions on ${REPO}. Start one with /agent.session.new ${REPO} <provider> <task>.` })
+    expect(result).toEqual({ value: `No agent sessions on ${REPO}.` })
+    expect(store.collections.cards.get(`agent-sessions-${REPO}`)).toMatchObject({
+      kind: "agents", payload: { cloud: true, repo: REPO, sessions: [] }
+    })
+  })
+
+  test("a successful Stop removes its row and a held older listing cannot restore it", async () => {
+    let release!: (response: Response) => void
+    let held = false
+    const { store, seam } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions`]: () => held
+        ? new Promise<Response>(resolve => { release = resolve })
+        : json(200, [AGENT_SESSION_WIRE.session()]),
+      [`DELETE api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: new Response(null, { status: 204 })
+    })
+    await seam.listSessions(REPO)
+    held = true
+    const pending = seam.listSessions(REPO)
+    await until(() => release !== undefined)
+    await seam.stopSession(SESSION_ID, REPO)
+    release(json(200, [AGENT_SESSION_WIRE.session()]))
+    await pending
+    const card = store.collections.cards.get(`agent-sessions-${REPO}`)
+    expect(card).toMatchObject({ payload: { sessions: [] } })
+    expect(CardSchema.safeParse(card).success).toBe(true)
+  })
+
+  test("a failed Stop leaves the listed session available for retry", async () => {
+    const { store, seam } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions`]: json(200, [AGENT_SESSION_WIRE.session()]),
+      [`DELETE api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(503, { message: "retry later" })
+    })
+    await seam.listSessions(REPO)
+    expect(await seam.stopSession(SESSION_ID, REPO)).toBe("retry later")
+    expect(store.collections.cards.get(`agent-sessions-${REPO}`)).toMatchObject({ payload: { sessions: [{ id: SESSION_ID, status: "active" }] } })
+  })
+
+  test("opening a session and receiving a terminal stream updates its listed state", async () => {
+    const { store, seam, live } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions`]: json(200, [AGENT_SESSION_WIRE.session()]),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, AGENT_SESSION_WIRE.session()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, [])
+    })
+    await seam.listSessions(REPO)
+    await seam.viewSession(SESSION_ID, REPO)
+    live.push(sseFrame(AGENT_SESSION_WIRE.statusEvent("completed")))
+    await until(() => payloadOf(store)?.state === "completed")
+    expect(store.collections.cards.get(`agent-sessions-${REPO}`)).toMatchObject({ payload: { sessions: [{ id: SESSION_ID, status: "completed" }] } })
+  })
+
+  test("the first listing merges a newer terminal observation without losing its card", async () => {
+    const response = deferred<Response>()
+    const { store, seam, requests, live } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions`]: () => response.promise,
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, AGENT_SESSION_WIRE.session()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, [])
+    })
+    const pending = seam.listSessions(REPO)
+    await until(() => requests.length === 1)
+    await seam.viewSession(SESSION_ID, REPO)
+    live.push(sseFrame(AGENT_SESSION_WIRE.statusEvent("completed")))
+    await until(() => payloadOf(store)?.state === "completed")
+    response.resolve(json(200, [AGENT_SESSION_WIRE.session({ status: "active" })]))
+    await pending
+    expect(store.collections.cards.get(`agent-sessions-${REPO}`)).toMatchObject({ payload: { sessions: [{ id: SESSION_ID, status: "completed" }] } })
+  })
+
+  test("a listed inventory is scrubbed on sign-out and an older response cannot restore it", async () => {
+    const response = deferred<Response>()
+    let hold = false
+    const { store, seam, requests } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions`]: () => hold ? response.promise : json(200, [AGENT_SESSION_WIRE.session()])
+    })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    await seam.listSessions(REPO)
+    hold = true
+    const pending = seam.listSessions(REPO)
+    await until(() => requests.length === 2)
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+    expect(store.collections.cards.get(`agent-sessions-${REPO}`)).toBeUndefined()
+    response.resolve(json(200, [AGENT_SESSION_WIRE.session()]))
+    expect(await pending).toBe(SIGN_OUT_REFUSAL)
+    expect(store.collections.cards.get(`agent-sessions-${REPO}`)).toBeUndefined()
   })
 
   test("a 403 answers the feature-gate refusal", async () => {

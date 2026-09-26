@@ -1,7 +1,7 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
-import { createRoot } from "react-dom/client"
+import { createRoot, type Root } from "react-dom/client"
 import type { Card } from "../state/AppState"
 import { agentCardFamily, AgentsCardBody } from "./AgentCards"
 
@@ -13,8 +13,10 @@ import { agentCardFamily, AgentsCardBody } from "./AgentCards"
  */
 
 GlobalRegistrator.register()
+const roots: Root[] = []
 
 afterAll(async () => {
+  for (const root of roots) flushSync(() => root.unmount())
   for (let tick = 0; tick < 3; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0))
   await GlobalRegistrator.unregister()
 })
@@ -25,7 +27,7 @@ const base = { title: "Agents", status: "active" as const, createdAt: 0, ordinal
 
 const agentsCard = (payload: AgentsCard["payload"]): AgentsCard => ({ ...base, id: "agents", kind: "agents", payload })
 
-const orchestrator: AgentsCard["payload"]["agents"][number] = {
+const orchestrator: Extract<AgentsCard["payload"], { native: boolean }>["agents"][number] = {
   id: "orchestrator",
   label: "Orchestrator",
   purpose: "Plans and delegates.",
@@ -41,7 +43,9 @@ const mount = (node: React.ReactNode): HTMLElement => {
   const host = document.createElement("div")
   document.body.append(host)
   flushSync(() => {
-    createRoot(host).render(node)
+    const root = createRoot(host)
+    roots.push(root)
+    root.render(node)
   })
   return host
 }
@@ -59,13 +63,13 @@ const click = (host: HTMLElement, selector: string): void => {
 
 describe("the Agents card", () => {
   test("on the web host it lists nothing local and says where agents run", () => {
-    const host = mount(<AgentsCardBody card={agentsCard({ native: false, agents: [] })} />)
+    const host = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, agents: [] })} />)
     expect(host.textContent).toBe("Agents run on the native app's harnesses.")
     expect(host.querySelector("[data-flow]")).toBeNull()
   })
 
   test("the last act's refusal stays on the card", () => {
-    const host = mount(<AgentsCardBody card={agentsCard({ native: true, agents: [orchestrator], error: "The server answered 500" })} />)
+    const host = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: true, agents: [orchestrator], error: "The server answered 500" })} />)
     expect(host.querySelector("[role=alert]")?.textContent).toBe("The server answered 500")
   })
 })
@@ -166,5 +170,34 @@ describe("the agent card's cloud variant", () => {
     expect(pill("completed")).toBe("done")
     expect(pill("failed")).toBe("failed")
     expect(pill("cancelled")).toBe("stopped")
+  })
+})
+
+
+describe("cloud session inventory", () => {
+  test("Open carries the repository; only active sessions offer Stop", () => {
+    const record = recorder()
+    const host = mount(<AgentsCardBody onRunCommand={record.onRunCommand} card={agentsCard({
+      cloud: true, repo: "will/other", sessions: [
+        { id: "active-id", title: "Fix retries", status: "active", messageCount: 2, createdAt: null, workspaceId: null },
+        { id: "done-id", title: "", status: "completed", messageCount: 1, createdAt: null, workspaceId: null }
+      ]
+    })} />)
+    expect(host.textContent).not.toContain("/agent.session.")
+    expect(host.textContent).toContain("done-id")
+    expect(host.querySelectorAll('[data-flow="agent.session.stop"]')).toHaveLength(1)
+    click(host, '[data-session="active-id"] [data-flow="agent.session.view"]')
+    click(host, '[data-session="active-id"] [data-flow="agent.session.stop"]')
+    click(host, '[data-session="done-id"] [data-flow="agent.session.view"]')
+    expect(record.calls).toEqual([
+      ["agent.session.view", "active-id will/other"],
+      ["agent.session.stop", "active-id will/other"],
+      ["agent.session.view", "done-id will/other"]
+    ])
+  })
+  test("an empty cloud list adds no instructions or local-harness warning", () => {
+    const host = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ cloud: true, repo: "will/other", sessions: [] })} />)
+    expect(host.textContent).toBe("")
+    expect(host.querySelectorAll("button")).toHaveLength(0)
   })
 })
