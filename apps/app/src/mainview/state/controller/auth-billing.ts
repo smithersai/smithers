@@ -91,8 +91,8 @@ export const createAuthBillingController = (
   const resumeWorkflowRuns = (): void => ctx.resumeWorkflowRuns()
   const resumeDeferredCommand = (): void => ctx.resumeDeferredCommand()
   const settleFirstRunTarget = (): void => ctx.settleFirstRunTarget()
-  const mirrorSelectedCloud = async (session: ResolvedSession): Promise<void> => {
-    if (selectedIdentity === undefined || session.state === "unavailable") return
+  const mirrorSelectedCloud = async (session: ResolvedSession, current?: () => boolean): Promise<void> => {
+    if (ctx.disposed || current?.() === false || selectedIdentity === undefined || session.state === "unavailable") return
     await store.dispatch({
       type: "cloud.session.loaded",
       actor: "system",
@@ -101,7 +101,7 @@ export const createAuthBillingController = (
       expiresAt: null,
       scopes: session.state === "signed-in" ? session.scopes ?? null : null
     }).isPersisted.promise
-    if (!ctx.disposed) selectedIdentity.settled?.()
+    if (!ctx.disposed && current?.() !== false) selectedIdentity.settled?.()
   }
   /*
    * Session reads race: window focus, a sibling tab and a 401 each start one.
@@ -611,32 +611,49 @@ export const createAuthBillingController = (
     })
   }
 
-  /*
-   * Sign-out that does not sign out must SAY so. Returning void on a failed
-   * logout left the user looking at their own signed-in session with no hint
-   * that the act had failed — the silent-failure shape, on the one act whose
-   * whole point is that it took effect.
-   */
+  // Logout responses can clear cookies even on HTTP failure. An obsolete
+  // request cannot retire the new account itself; only a fresh session answer
+  // may establish that the browser's current credential was actually removed.
+  const reconcileLogout = async (): Promise<string | void> => {
+    if (ctx.disposed) return
+    try { await loadSession() }
+    catch {
+      if (!ctx.disposed) return "Sign-in status could not be saved. Reload to retry."
+    }
+  }
+
   const signOut = async (): Promise<string | void> => {
+    if (ctx.disposed) return
+    const current = admitAccount()
+    let response: Response
     try {
-      const response = await http(`${baseUrl}${AUTH_LOGOUT_PATH}`, { method: "POST" })
-      if (!response.ok) {
-        return await errorMessageOf(response, "Signing out didn't go through — you are still signed in.")
-      }
+      response = await http(`${baseUrl}${AUTH_LOGOUT_PATH}`, { method: "POST" })
     } catch {
-      return "Signing out didn't go through — the identity service didn't answer. You are still signed in."
+      const failure = await reconcileLogout()
+      return failure ?? (current() ? "Sign-out could not be confirmed." : undefined)
+    }
+    void response.body?.cancel().catch(() => {})
+    if (!current()) return reconcileLogout()
+    if (!response.ok) {
+      const failure = await reconcileLogout()
+      return failure ?? (current() ? "Sign-out could not be confirmed." : undefined)
     }
     // Every session read already out describes the account this act ends.
     probe += 1
     ctx.endAccount()
     fenceAccountTurn(null, true)
+    let retired = admitAccount()
     try {
-      await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+      const cleared = store.dispatch({ type: "identity.session.cleared", actor: "user" })
+      retired = admitAccount()
+      await cleared.isPersisted.promise
     } catch {
-      return "Signed out, but local privacy cleanup is incomplete. Reload to retry before opening saved state or preparing recovery."
+      if (retired()) return "Signed out, but local privacy cleanup is incomplete. Reload to retry before opening saved state or preparing recovery."
+      return
     }
-    await mirrorSelectedCloud({ state: "signed-out", login: null, allowlisted: false, admin: false })
-    ctx.identityChanged()
+    if (!retired()) return
+    await mirrorSelectedCloud({ state: "signed-out", login: null, allowlisted: false, admin: false }, retired)
+    if (retired()) ctx.identityChanged()
   }
 
   /*

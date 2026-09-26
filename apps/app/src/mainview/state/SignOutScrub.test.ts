@@ -194,12 +194,15 @@ describe("signing out leaves nothing of the account behind", () => {
     expect(store.collections.identitySessions.get("identity")?.state).toBe("unavailable")
   })
 
-  test("a sign-out the identity service refuses says so, and signs nothing out", async () => {
+  test("a refused sign-out with a freshly confirmed session says so and preserves the account", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(
       store,
       unavailableAgent,
-      backend({ "/api/auth/logout": () => json(403, { message: "forbidden" }) })
+      backend({
+        "/api/auth/logout": () => json(403, { message: "forbidden" }),
+        "/api/auth/session": () => json(200, { state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+      })
     )
     signedIn(store)
     seedAccountState(store)
