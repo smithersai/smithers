@@ -1,0 +1,293 @@
+/**
+ * The organization host: the three organization flows on the durable native
+ * engine, behind the standard control gateway.
+ *
+ * One composition, one implementation table. The flows' steps are the
+ * organization package's actions (roster pinning, composition, role tasks
+ * under `Authority.layer`, microVM workspaces, receipts), its gates, this
+ * directory's own steps, and Slack replies when a Slack app is configured.
+ * Role tasks resolve seats on the owner's subscriptions (or API keys when
+ * configured); microVMs are local
+ * Microsandbox machines, labelled with this installation and this process,
+ * and the machines a dead host process left behind are reaped at startup.
+ */
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as Agent from "@smthrs/agent/Agent"
+import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import * as Descriptor from "@smthrs/registry/Descriptor"
+import * as Executable from "@smthrs/registry/Executable"
+import * as Registry from "@smthrs/registry/Registry"
+import { Context, Effect, Layer, Option, Schema } from "effect"
+import { createHash } from "node:crypto"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { join } from "node:path"
+import * as SlackActions from "../../packages/smithers/agent/integrations/src/slack/Actions.ts"
+import * as SlackConnections from "../../packages/smithers/agent/integrations/src/slack/Connections.ts"
+import * as Actions from "../../packages/smithers/agent/organization/src/Actions.ts"
+import * as Authority from "../../packages/smithers/agent/organization/src/Authority.ts"
+import * as GatesLive from "../../packages/smithers/agent/organization/src/GatesLive.ts"
+import * as RoleHost from "../../packages/smithers/agent/organization/src/RoleHost.ts"
+import * as Workspace from "../../packages/smithers/agent/organization/src/Workspace.ts"
+import type * as MicrosandboxSandbox from "../../packages/smithers/flows/sandbox/src/MicrosandboxSandbox/index.ts"
+import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
+import * as SupervisorMemory from "../../packages/smithers/src/internal/SupervisorMemory.ts"
+import * as OrganizationActions from "./actions.ts"
+import deliver from "./deliver/flow.ts"
+import intake from "./intake/flow.ts"
+import type { Settings } from "./settings.ts"
+import * as Subscriptions from "./setup/subscriptions.ts"
+import status from "./status/flow.ts"
+
+/**
+ * The flows a client may start, by the name their paths give them.
+ * `organization/deliver` is registered but not listed: it runs only as the
+ * child of an intake, whose admission the host decided, so no client can
+ * hand it a policy, a branch, or a principal of its own.
+ */
+export const flows = [["intake", intake], ["status", status]] as const
+
+/** Every flow the host registers with its engine. */
+const registered = [intake, deliver, status] as const
+
+/** Everything the host was started with. */
+export interface Options {
+  readonly settings: Settings
+  /** The Microsandbox SDK module the workspaces boot machines with. */
+  readonly sdk: MicrosandboxSandbox.Sdk
+  /** This process's holder label; machines carrying another dead holder are reaped. */
+  readonly holder: string
+  /** Whether a Slack app is configured; its replies need the Slack actions. */
+  readonly slack: boolean
+  /** The process environment over `.env`: it carries the Slack tokens, so it is never logged. */
+  readonly environment: Readonly<Record<string, string | undefined>>
+}
+
+const sha = (value: string) => createHash("sha256").update(value).digest("hex")
+
+/**
+ * The repository the durable engine snapshots around each compensable step:
+ * an empty jj repository in the state directory, never the organization's
+ * wiki. No role acts on the host (a builder works in its microVM, whose own
+ * snapshot boundary compensates its edits), so those snapshots must not
+ * reach, or restore over, the wiki the receipts are written to. `serve`
+ * creates it.
+ */
+export const executionRoot = (settings: Pick<Settings, "stateDir">) => join(settings.stateDir, "execution")
+
+/** The host's catalog: one descriptor per organization flow, pinned under the state directory. */
+export const catalog = async (options: Pick<Options, "settings">) => {
+  const directory = join(options.settings.stateDir, "catalog")
+  await mkdir(directory, { recursive: true })
+  return Promise.all(flows.map(async ([name, declaration]) => {
+    const path = join(directory, `${name}.json`)
+    const source = JSON.stringify({ flow: `organization/${name}`, version: 1 })
+    try {
+      await writeFile(path, source, { flag: "wx", mode: 0o444 })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      if (await readFile(path, "utf8") !== source) throw new Error("Organization flow identity was modified; refusing to serve")
+    }
+    const descriptor = new Descriptor.FlowDescriptor({
+      name: `organization/${name}`,
+      description: declaration.description ?? "",
+      path,
+      body: new Descriptor.BodyRefModule({ path, contentDigest: sha(source) }),
+      input: new Descriptor.SchemaRefInline({
+        document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(declaration.payloadSchema)))
+      }),
+      output: new Descriptor.SchemaRefInline({
+        document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(declaration.successSchema)))
+      }),
+      model: Option.none(),
+      flows: [],
+      capabilities: Context.get(declaration.annotations, Flow.Capabilities),
+      effects: Schema.decodeUnknownSync(Descriptor.EffectDeclaration)(
+        Option.getOrThrow(Context.getOption(declaration.annotations, Flow.EffectEnvelope))
+      ),
+      placement: Option.none(),
+      // The declarations say `modelInvocable: false` so another host scanning
+      // this repository does not offer them; this host implements them.
+      modelInvocable: true,
+      frontmatter: {},
+      provenance: new Descriptor.Provenance({ source: "organization", root: directory })
+    })
+    return { descriptor, declaration }
+  }))
+}
+
+/** The role hosts' shared resources: a memory store in the state directory, the wiki, and the judge setting. */
+const resources = (platform: NativeControl.Platform, settings: Settings) =>
+  Layer.unwrap(Effect.gen(function*() {
+    const memory = yield* Layer.build(SupervisorMemory.layer({
+      environment: { SMITHERS_MEMORY_DB: join(settings.stateDir, "memory.db") },
+      database: platform.database,
+      crypto: platform.crypto
+    }))
+    const files = yield* Layer.build(NodeServices.layer)
+    return RoleHost.layerResources({
+      memory,
+      wiki: { root: settings.root, services: files },
+      // A role result is an answer, not a workspace claim, when no judge is configured.
+      ...(settings.organization.judge === "none" ? { claimCap: 0 } : {})
+    })
+  }))
+
+/** Runs `effect` with the completion brake that demands a workspace change disarmed. */
+const withoutUnmoved = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.flatMap(Effect.serviceOption(Agent.Agent), (agent) =>
+    Option.isNone(agent) ? effect : effect.pipe(Effect.provideService(Agent.Agent, {
+      ...agent.value,
+      run: (options: Agent.Options) => agent.value.run({ ...options, unmovedCap: 0 })
+    })))
+
+/**
+ * Role tasks with the unmoved brake disarmed. The brake measures the host's
+ * served root, where no role acts: a builder acts in its machine and every
+ * other role answers. The flow checks each result against its charter, and
+ * the diff and the checks are what judge a build.
+ */
+const roleTasks = Authority.layer(Actions.RoleTask.layer).pipe(
+  Layer.provide(Layer.unwrap(Effect.gen(function*() {
+    const runtime = yield* FlowRuntime.FlowRuntime
+    const table = yield* Action.Implementations
+    return Layer.mergeAll(
+      Layer.succeed(FlowRuntime.FlowRuntime)({
+        ...runtime,
+        register: (flow, handler) =>
+          runtime.register(
+            flow,
+            flow._tag === Authority.roleTaskTag
+              ? (payload, executionId) => withoutUnmoved(handler(payload, executionId))
+              : handler
+          )
+      }),
+      Layer.succeed(Action.Implementations)({
+        ...table,
+        add: (implementation, options) =>
+          table.add(
+            implementation.name === Authority.roleTaskTag
+              ? { ...implementation, action: (payload) => withoutUnmoved(implementation.action(payload)) }
+              : implementation,
+            options
+          )
+      })
+    )
+  })))
+)
+
+/** The organization's actions, gates, role tasks, and flows, registered over one implementation table. */
+const registrations = (platform: NativeControl.Platform, options: Options) => {
+  const { settings } = options
+  const organization = settings.organization
+  const machines = Workspace.microsandbox({
+    sdk: options.sdk,
+    image: organization.vm.image ?? "node:26-bookworm",
+    cpus: organization.vm.cpus,
+    memoryMib: organization.vm.memoryMib,
+    network: organization.vm.network === true,
+    owner: settings.installation,
+    holder: options.holder
+  })
+  const slack = options.slack
+    ? SlackActions.layer.pipe(
+      Layer.provide(SlackConnections.layerFromEnvironment({ containers: ["*"] }, options.environment))
+    )
+    : Layer.empty
+  return Layer.mergeAll(
+    Actions.layer({
+      repositories: settings.repositories,
+      wiki: { root: settings.root, generatedDir: organization.wiki.generatedDir }
+    }),
+    roleTasks,
+    GatesLive.layer({ review: Actions.reviewHandler() }),
+    OrganizationActions.layer({
+      root: settings.root,
+      assistant: organization.assistant,
+      repositories: settings.repositories,
+      gates: settings.policy,
+      checks: settings.checks,
+      owners: settings.owners,
+      maxRounds: settings.maxRounds,
+      generatedDir: organization.wiki.generatedDir,
+      statusFile: organization.wiki.statusFile
+    }),
+    slack,
+    ...registered.map((declaration) => Interpreter.layer(declaration as never))
+  ).pipe(
+    Layer.provideMerge(Layer.mergeAll(
+      Authority.layerRegistry(settings.snapshot),
+      resources(platform, settings),
+      Workspace.layer({ machines, maxConcurrentVMs: settings.maxConcurrentVMs }).pipe(
+        Layer.provide(NodeServices.layer)
+      )
+    )),
+    Layer.provide(NodeServices.layer)
+  )
+}
+
+/**
+ * The host layer: the native control plane and gateway over the state
+ * directory, with the organization flows registered. `seats` replaces the
+ * environment's seat resolver, for an offline composition.
+ */
+export const layer = (platform: NativeControl.Platform, options: Options, seats?: SeatResolver.Service) => {
+  const { settings } = options
+  // The engine's per-step jj snapshots go to the execution repository, so
+  // they never reach, or restore over, the wiki the receipts are written to.
+  const native = NativeControl.make(
+    { ...platform, jj: () => platform.jj(executionRoot(settings)) },
+    // Seats resolve on the owner's subscriptions unless the host was told to
+    // use API keys (`setup/subscriptions.ts`), from the host's own environment.
+    () =>
+      seats === undefined
+        ? Layer.effect(SeatResolver.SeatResolver)(
+          Effect.map(RequestExecutor.RequestExecutor, (executor) => Subscriptions.resolver(options.environment, executor))
+        )
+        : SeatResolver.layer(seats)
+  )
+  const judge = settings.organization.judge === "none"
+    ? Evaluator.layerUnavailable()
+    : Evaluator.layerFromEnvironment(options.environment, "smithers organization serve").pipe(
+      Layer.provide(platform.httpClient)
+    )
+  return Layer.unwrap(Effect.promise(() => catalog(options)).pipe(Effect.map((entries) => {
+    const registry = Registry.layerFromDescriptors(entries.map((entry) => entry.descriptor)).pipe(
+      Layer.provide(platform.host)
+    )
+    // Each module default-exports the flow it declares, so nothing is
+    // registered by name and nothing is loaded from disk.
+    const executableOptions: Executable.RefreshOptions = {
+      delegates: [],
+      refreshable: () => false,
+      load: (path) => {
+        const entry = entries.find((candidate) => candidate.descriptor.path === path)
+        return entry === undefined
+          ? Effect.fail(new Error("Unknown organization flow"))
+          : Effect.succeed({ default: entry.declaration })
+      }
+    }
+    const modules = Layer.unwrap(Executable.catalog(executableOptions).pipe(
+      Effect.provide(platform.host),
+      Effect.map((built) =>
+        Layer.mergeAll(
+          Executable.layerRefreshable(built, executableOptions),
+          ...built.executables.map((executable) => executable.layer)
+        )
+      )
+    )).pipe(
+      Layer.provideMerge(registrations(platform, options)),
+      Layer.provide(registry),
+      Layer.orDie
+    )
+    // The dynamically built catalog layer erases its requirement set; every
+    // service it names is one the registration phase provides.
+    return native.layerHost(
+      { root: settings.root, stateRoot: settings.stateDir, evaluator: judge },
+      modules as unknown as NativeControl.ModuleRegistration,
+      registry
+    )
+  })))
+}

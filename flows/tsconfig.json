@@ -32,6 +32,7 @@
     "librarian/**/*.ts",
     "librarian/tutorial2-background_flows-registration.ts",
     "coding/**/*.ts",
+    "organization/**/*.ts",
     "repository/**/*.ts"
   ]
 }

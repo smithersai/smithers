@@ -240,6 +240,31 @@ const productHost = Smithers.NodeTest({
   srcs: codingSources, deps: codingDependencies, cwd, timeout: "20m"
 })
 
+// The organization host end to end: a separate host process over its
+// loopback control RPC, the public example organization, a fixture repository,
+// the durable SQLite engine, scripted seats (no model is reached), and real
+// local microVMs, which is why the host needs a hypervisor; the suites name
+// their skip where none is present. The Slack suite drives the host's one
+// Slack app against the integrations package's Slack fixture server.
+const organizationPackages = ["packages/smithers/agent/organization"].map(cwd => Smithers.Filegroup({ cwd,
+  srcs: [Smithers.glob("src/**"), Smithers.glob("example/**"), Smithers.file("package.json"), Smithers.file("tsconfig.json")]
+}))
+const organizationFixture = Smithers.Filegroup({ cwd: "packages/smithers/agent/integrations",
+  srcs: [Smithers.file("test/SlackFixture.ts")] })
+const organizationHost = Smithers.NodeTest({
+  runtime: node,
+  runner: Smithers.testRunner([fixture("organization-host.test.mjs"), fixture("organization-host-slack.test.mjs")]),
+  srcs: codingSources, deps: [...codingDependencies, ...organizationPackages, organizationFixture], cwd, timeout: "20m"
+})
+// `init` and `doctor`, the organization's local setup commands; the probe
+// case boots one real microVM and names its skip where none can boot.
+const organizationSetup = Smithers.NodeTest({
+  runtime: node,
+  runner: Smithers.testRunner([Smithers.file("//flows/organization/setup/init.test.ts"),
+    Smithers.file("//flows/organization/setup/doctor.test.ts"), Smithers.file("//flows/organization/setup/probe.test.ts")]),
+  srcs: codingSources, deps: [...codingDependencies, ...organizationPackages], cwd, timeout: "20m"
+})
+
 export const Package = Smithers.Package({ targets: { coding, codingPolicy, codingRuntime, codingConfigBun,
-  codingNative, codingNativeBun, codingBundle, codingBundleBun, egress, fixtures, pack, check, productHost,
-  repository, suite, recording, provider, wiki } })
+  codingNative, codingNativeBun, codingBundle, codingBundleBun, egress, fixtures, organizationHost, organizationSetup,
+  pack, check, productHost, repository, suite, recording, provider, wiki } })

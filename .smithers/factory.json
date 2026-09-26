@@ -877,6 +877,45 @@
       "modelInvocable": false
     },
     {
+      "id": "organization/deliver",
+      "description": "Deliver one admitted owner request through the organization: the assistant routes it, a lead writes the contract, a builder changes the repository in a microVM workspace, the change is checked in a fresh microVM and judged by an independent checker, and an approved change lands on a branch with a receipt.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/deliver/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/intake",
+      "description": "Admit one owner request from Slack or the local CLI under the host's configuration, acknowledge it in its thread, and deliver it.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/intake/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "organization/status",
+      "description": "Rewrite the organization's status page from the delivery receipts under its generated directory.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/organization/status/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
       "id": "release",
       "description": "Prepare a Smithers release or validate, build, smoke-test and publish its exact npm tarballs with durable human approval.",
       "summary": null,
