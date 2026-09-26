@@ -140,6 +140,9 @@ export const answer: {
    * Answering them at no demand keeps a fixture's measured model-call counts
    * honest, since a bounce spends a frame that a fixed script would answer
    * with the same sentence.
+   *
+   * `sentence${i}` per sentence, when the brake reads a long claim one
+   * sentence at a time: the same `invented` reading, of that sentence alone.
    */
   readonly completion: Answerer
   /**
@@ -173,6 +176,13 @@ export const answer: {
 } = {
   completion: (request) =>
     decoded(CompletionClaim.Evidence, "completion", request).pipe(Effect.map((evidence) => {
+      const ids = Object.keys(request.questions)
+      if (every(ids, sentence)) {
+        return Object.fromEntries(ids.map((id) => {
+          const claim = CompletionClaim.sentenceOf(request.questions[id]!.instructions)
+          return [id, { probability: reportsUnrecordedWork({ ...evidence, claim }) ? 0.95 : 0.02 }]
+        }))
+      }
       const unrecorded = reportsUnrecordedWork(evidence)
       return {
         complete: { probability: unrecorded ? 0.05 : 0.95 },
@@ -241,8 +251,11 @@ export const answer: {
 const every = (ids: ReadonlyArray<string>, pattern: RegExp): boolean =>
   ids.length > 0 && ids.every((id) => pattern.test(id))
 
+const sentence = /^sentence\d+$/
+
 const isCompletion = (ids: ReadonlyArray<string>): boolean =>
-  ids.length === 3 && ["complete", "overclaims", "invented"].every((id) => ids.includes(id))
+  (ids.length === 3 && ["complete", "overclaims", "invented"].every((id) => ids.includes(id))) ||
+  every(ids, sentence)
 
 /**
  * The {@link answer} for a question-id set, or none for a set no classifier

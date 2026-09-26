@@ -97,7 +97,38 @@ const separator = /[^A-Za-z0-9_./@+-]+/
  * once per retained entry. The honest-elision notice may exceed this content
  * bound so it can say how many bytes are missing and where the whole input is.
  */
-const labelWidth = 320
+const labelWidth = 512
+
+/**
+ * An input as its label quotes it: canonical JSON, except that an object's
+ * longest string member comes last.
+ *
+ * The label is clipped to {@link labelWidth}, and a call routed into a task
+ * container carries its route beside its program. For a `script` the route
+ * already sorts first; for a `command` it sorts after the program and the clip
+ * can take the route. Two graded runs of 2026-09-26 listed their scripts as
+ * the route plus the first two hundred bytes of the program. So the short
+ * members, the route among them, come first in every input, and the longest
+ * string, which is the program in every such input, fills the rest of a wider
+ * label.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const label = (input: Schema.Json): string => {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return CanonicalJson.stringify(input)
+  const record = input as Readonly<Record<string, Schema.Json>>
+  let last: string | undefined
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value !== "string") continue
+    const current = last === undefined ? undefined : record[last]
+    if (typeof current !== "string" || value.length > current.length) last = key
+  }
+  if (last === undefined) return CanonicalJson.stringify(input)
+  const rest = CanonicalJson.stringify(Object.fromEntries(Object.entries(record).filter(([key]) => key !== last)))
+  const tail = `${JSON.stringify(last)}:${CanonicalJson.stringify(record[last]!)}`
+  return rest === "{}" ? `{${tail}}` : `${rest.slice(0, -1)},${tail}}`
+}
 
 /**
  * Whether a term names a target rather than a condition.
@@ -306,6 +337,19 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
     Schema.withDecodingDefaultKey(Effect.succeed(false))
   ),
   /**
+   * The newest bytes of what the call returned, as `CompletionClaim.receipt`
+   * clips them.
+   *
+   * Nothing in this module reads it. The claim brake lists every check the
+   * run ran, and a claim about what a check printed can only be read against
+   * what it printed. Defaults empty, so an entry journaled before the field
+   * decodes as a check that kept no result.
+   */
+  result: Schema.String.pipe(
+    Schema.withConstructorDefault(Effect.succeed("")),
+    Schema.withDecodingDefaultKey(Effect.succeed(""))
+  ),
+  /**
    * Whether {@link Check.digest} is the tree this check actually read.
    *
    * A check is stamped with its frame's closing digest, and a frame may both
@@ -361,6 +405,8 @@ export const check = (options: {
   readonly passing?: boolean | undefined
   /** Whether the frame that ran it left the workspace as it found it. */
   readonly stable?: boolean | undefined
+  /** The newest bytes of the call's result; see {@link Check.result}. */
+  readonly result?: string | undefined
 }): Check | undefined => {
   const collected = terms(options.input)
   if (collected.length > maxTerms) return undefined
@@ -371,12 +417,13 @@ export const check = (options: {
     conditions: conditions(options.input),
     digest: options.digest,
     label: elide.head(
-      CanonicalJson.stringify(options.input),
+      label(options.input),
       labelWidth,
       "the issuing cell in the run record has the whole input"
     ),
     failing: options.failing ?? false,
     passing: options.passing ?? false,
+    result: options.result ?? "",
     stable: options.stable ?? false
   })
 }

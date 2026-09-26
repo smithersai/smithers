@@ -4421,7 +4421,11 @@ describe("CellTurn unsupported claim", () => {
       task: "The task for this run:\n\nKeep the query string.",
       claim: "kept the query string; the suite is green",
       treeMoved: true,
-      checksRun: [{ command: "{\"command\":\"check src/a.py\",\"mode\":\"unhermetic\"}", outcome: "passed" }],
+      checksRun: [{
+        command: "{\"mode\":\"unhermetic\",\"command\":\"check src/a.py\"}",
+        outcome: "passed",
+        result: "{\"exitCode\":0,\"stdout\":\"4 passed\"}"
+      }],
       callsRun: [
         { flow: "edit", input: "a.py", ok: true, resultSummary: "null" },
         { flow: "bash", input: "src/a.py", ok: true, resultSummary: "exitCode=0 stdout=8b" }

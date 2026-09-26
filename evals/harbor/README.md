@@ -193,14 +193,16 @@ The 2026-09-22 smoke (oracle, this adapter, and the stock Codex CLI on
 `abs-module-cache-flags` through Pier) found two things a reader of
 `smithers-run.json` needs to know:
 
-- **The harness judges the host workspace, and the task lives in the
-  container.** `mutation-observed` hashes the host working directory, which
-  this adapter leaves empty, so every completion is bounced once as an unmoved
-  tree and the claim judge then sees "work this run never recorded". The run's
-  own status is therefore `failed` (`claim_unproven`) even when the container
-  holds the finished work and the verifier rewards it. Grade on the verifier's
-  reward, and read `run.status` as the harness's opinion of its own evidence.
-  The fix belongs in the harness (a container-scoped tree digest), not here.
+- **The claim brake refused true container claims.** The harness does see
+  container edits: a `bash` call into the container reports `mutated`, which
+  counts as a remote mutation, and Jev was sent `treeMoved: true`. What it
+  lacked was the checks' output, and it read long, specific claims as a whole.
+  The 2026-09-26 Luna smoke ended two of four runs `claim_unproven` at 0.91
+  and 0.87 with the work on the record. The brake now lists each check with the
+  tail of its output and reads a long claim one sentence at a time; replayed,
+  those claims read at most 0.71 and 0.73 and a fabricated sentence 0.94 and
+  0.92. Grade on the verifier's reward all the same, and read `run.status` as
+  the harness's opinion of its own evidence.
 - **Jev is mandatory.** The CLI refuses to run without `AI_GATEWAY_API_KEY`,
   and a gateway 503 on the final completion fails the run as
   `completion_unjudged` after the work is done. Export the key before a run;

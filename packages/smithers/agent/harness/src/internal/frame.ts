@@ -348,6 +348,7 @@ export const account = (options: {
         digest: checkpointed ? "" : workspaceDigest,
         failing: call.failing,
         passing: call.passing,
+        result: CompletionClaim.receipt(call.value),
         // Whether the tree stamped above is the tree this call read. Every
         // write the frame declared is a call with a position among these ones,
         // so the answer is positional: a check with no standing write after it
@@ -545,6 +546,8 @@ export interface CompletionJudgement {
    * reader reopens a decision from is needed most for the one that acted.
    */
   readonly decision: AgentEvent.DecisionSettled | undefined
+  /** The per-sentence decision, when the brake asked for one. */
+  readonly sentenceDecision?: AgentEvent.DecisionSettled | undefined
 }
 
 /** Nothing to say about this completion: it stands. */
@@ -663,7 +666,11 @@ const checksRun = (
   ledger
     .filter((entry) => entry.failing || entry.passing)
     .slice(-CompletionClaim.checksRunLimit)
-    .map((entry) => ({ command: entry.label, outcome: entry.failing ? "failed" as const : "passed" as const }))
+    .map((entry) => ({
+      command: entry.label,
+      outcome: entry.failing ? "failed" as const : "passed" as const,
+      result: entry.result
+    }))
 
 /**
  * The demands a completion's own measurements produce, in precedence order —
@@ -992,16 +999,37 @@ export const judgeCompletion = (
       acted: bounced || refused,
       decidedBy: "jev"
     })
-    if (found === undefined) return { observed: event, demand: undefined, unproven: undefined, decision }
+    // The per-sentence reading, journaled as its own decision because it is
+    // one: its own classifier, questions and answers. See
+    // `CompletionClaim.sentenceClassifier`.
+    const sentenceDecision = reading.sentences === undefined ? undefined : new AgentEvent.DecisionSettled({
+      eventType: eventType.decisionSettled,
+      scope: state.session,
+      frame: state.frame,
+      classifier: reading.sentences.classifier,
+      digest: reading.sentences.digest,
+      state: reading.sentences.state,
+      questions: reading.sentences.questions,
+      answers: reading.sentences.answers,
+      latencyMs: reading.sentences.latencyMs,
+      acted: bounced || refused,
+      decidedBy: "jev"
+    })
+    if (found === undefined) {
+      return { observed: event, demand: undefined, unproven: undefined, decision, sentenceDecision }
+    }
     if (bounced) {
-      return handBack({
-        event,
-        note: CompletionClaim.demand(),
-        // A bounce the brake would not refuse is worth restoring against an
-        // exhausted budget; one it would refuse is not. See `CompletionDemand`.
-        keeps: !CompletionClaim.unrecorded(found),
-        spent: { claimDemands: state.claimDemands + 1 }
-      }, decision)
+      return {
+        ...handBack({
+          event,
+          note: CompletionClaim.demand(),
+          // A bounce the brake would not refuse is worth restoring against an
+          // exhausted budget; one it would refuse is not. See `CompletionDemand`.
+          keeps: !CompletionClaim.unrecorded(found),
+          spent: { claimDemands: state.claimDemands + 1 }
+        }, decision),
+        sentenceDecision
+      }
     }
     // Out of bounces. A claim the brake only found thin stands here: it was
     // handed back once, the run answered, and refusing the answer as well is
@@ -1010,7 +1038,8 @@ export const judgeCompletion = (
       observed: event,
       demand: undefined,
       unproven: refused ? CompletionClaim.unproven(found, state.claimDemands > 0, claim) : undefined,
-      decision
+      decision,
+      sentenceDecision
     }
   })
 

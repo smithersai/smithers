@@ -532,7 +532,11 @@ describe("the claim brake", () => {
     // purpose, once with its result and once in the list, because the list is
     // what a claim about an earlier check is read against.
     expect(state["checksRun"]).toEqual([
-      { command: "{\"command\":\"pytest tests/admin_views\"}", outcome: "passed" }
+      {
+        command: "{\"command\":\"pytest tests/admin_views\"}",
+        outcome: "passed",
+        result: "{\"exitCode\":0,\"stdout\":\"148 passed\"}"
+      }
     ])
     expect(state["callsRun"]).toEqual([
       { flow: "bash", input: "{\"command\":\"grep -rn catch_all_view\"}", ok: true, resultSummary: "matches=2" },
@@ -746,8 +750,12 @@ describe("the claim brake", () => {
     })
 
     expect((jev.asked[0]?.state as Record<string, unknown>)["checksRun"]).toEqual([
-      { command: "{\"command\":\"node test.mjs\"}", outcome: "passed" },
-      { command: "{\"command\":\"git diff --stat\"}", outcome: "passed" }
+      { command: "{\"command\":\"node test.mjs\"}", outcome: "passed", result: "{\"exitCode\":0,\"stdout\":\"ok\"}" },
+      {
+        command: "{\"command\":\"git diff --stat\"}",
+        outcome: "passed",
+        result: "{\"exitCode\":0,\"stdout\":\" add.mjs | 2 +-\"}"
+      }
     ])
   })
 
@@ -759,6 +767,140 @@ describe("the claim brake", () => {
     })
 
     expect((jev.asked[0]?.state as Record<string, unknown>)["checksRun"]).toEqual([])
+  })
+})
+
+describe("a long claim, read one sentence at a time", () => {
+  // The two graded refusals of 2026-09-26, in miniature: every file edit and
+  // every check ran in the task's container, the claim quoted what the checks
+  // printed, and the whole claim read 0.91 on `invented` while its sentences
+  // read at most 0.74 over the same evidence. The lie below is the one the
+  // replay fabricated against the same journal, and it read 0.94.
+  const container = "c52e0438-54a9-42f5-943b-48bf60fce971"
+  const probe = call({
+    ordinal: 1,
+    signature: "python3 probe",
+    subject: "python3 probe",
+    input: {
+      args: [],
+      container,
+      cwd: "/app",
+      interpreter: "python3",
+      mode: "unhermetic",
+      script: "from app import recover_engine\nassert recover_engine({'segments': []})['replayed_entries'] == 0\n"
+    },
+    value: {
+      exitCode: 1,
+      stderr: "Traceback (most recent call last):\n  File \"<stdin>\", line 74\nAssertionError\n",
+      stdout: ""
+    },
+    failing: true,
+    passing: false
+  })
+  const truthful = "Repaired recovery.py. The broad suite failed at line 74."
+  const lie = `${truthful} I also added tests/test_wal.py, and pytest passed all 14 tests.`
+
+  /**
+   * A scripted Jev that reads the whole claim as invented and each sentence
+   * by the rule the gateway measured: a sentence reporting a result nothing
+   * recorded reads high, one the evidence records reads low.
+   */
+  const jev = () => {
+    const asked: Array<Evaluator.Request> = []
+    const layer = Evaluator.layerScripted((request) => {
+      asked.push(request)
+      if ("invented" in request.questions) {
+        return { complete: { probability: 0.13 }, overclaims: { probability: 0.92 }, invented: { probability: 0.91 } }
+      }
+      return Object.fromEntries(
+        Object.entries(request.questions).map(([id, question]) => [
+          id,
+          { probability: JSON.stringify(question).includes("14 tests") ? 0.94 : 0.2 }
+        ])
+      )
+    })
+    return { asked, layer }
+  }
+
+  it("lets a true claim the whole question misreads stand, and journals both readings", async () => {
+    const judge = jev()
+    const judged = await settled({
+      layer: judge.layer,
+      calls: [probe],
+      claim: truthful,
+      changes: { claimCap: 1, claimDemands: 1 }
+    })
+
+    expect(judge.asked).toHaveLength(2)
+    expect(Object.keys(judge.asked[1]!.questions)).toEqual(["sentence1", "sentence2"])
+    expect(judged.unproven).toBeUndefined()
+    expect(judged.observed).toMatchObject({ invented: 0.2, refused: false })
+    expect(judged.decision?.classifier).toBe("completion/claim")
+    expect(judged.sentenceDecision?.classifier).toBe("completion/claim-sentences")
+  })
+
+  it("still refuses the claim once one sentence reports a result nothing recorded", async () => {
+    const judge = jev()
+    const judged = await settled({
+      layer: judge.layer,
+      calls: [probe],
+      claim: lie,
+      changes: { claimCap: 1, claimDemands: 1 }
+    })
+
+    expect(judge.asked).toHaveLength(2)
+    expect(judged.unproven?.code).toBe("claim_unproven")
+    expect(judged.unproven?.message).toContain("invented 0.94")
+    expect(judged.observed).toMatchObject({ invented: 0.94, refused: true })
+  })
+
+  it("asks no sentence question of a claim the whole question already reads as recorded", async () => {
+    const whole = reading({ invented: 0.3 })
+    await settled({ layer: whole.layer, calls: [probe], claim: lie })
+
+    expect(whole.asked).toHaveLength(1)
+  })
+
+  it("fails the turn when the sentence reading cannot be had, rather than letting the claim stand", async () => {
+    let calls = 0
+    const layer = Evaluator.layerScripted(() => {
+      calls += 1
+      return calls === 1
+        ? { complete: { probability: 0.1 }, overclaims: { probability: 0.9 }, invented: { probability: 0.91 } }
+        : Effect.fail(new Evaluator.EvaluatorError({ code: "timeout", message: "deadline" }))
+    })
+    const failure = await unjudged({ layer, calls: [probe], claim: truthful })
+
+    expect(failure.code).toBe("completion_unjudged")
+  })
+
+  it("lists a container check by its route, its program and what it printed", async () => {
+    const whole = reading({})
+    await settled({ layer: whole.layer, calls: [probe] })
+
+    const [listed] = (whole.asked[0]?.state as { checksRun: ReadonlyArray<CompletionClaim.Ran> }).checksRun
+    expect(listed?.command).toContain(`"container":"${container}"`)
+    expect(listed?.command).toContain("\"script\":\"from app import recover_engine")
+    expect(listed?.outcome).toBe("failed")
+    expect(listed?.result).toContain("line 74")
+  })
+})
+
+describe("the sentences of a claim", () => {
+  it("splits at sentence ends and keeps every word", () => {
+    expect(CompletionClaim.sentences("Fixed a.py. Tests pass! Done?  ")).toEqual([
+      "Fixed a.py.",
+      "Tests pass!",
+      "Done?"
+    ])
+  })
+
+  it("asks about the tail of a very long claim as one part", () => {
+    const claim = Array.from({ length: 20 }, (_, index) => `Sentence ${index}.`).join(" ")
+    const parts = CompletionClaim.sentences(claim)
+
+    expect(parts).toHaveLength(CompletionClaim.sentenceLimit)
+    expect(parts.join(" ")).toBe(claim)
   })
 })
 
@@ -812,5 +954,18 @@ describe("the evidence the brake sends", () => {
 
   it("leaves an output inside the bound exactly as it was", () => {
     expect(CompletionClaim.newest("148 passed")).toBe("148 passed")
+  })
+
+  it("keeps the newest bytes of every stream in a listed check's result", () => {
+    const receipt = CompletionClaim.receipt({
+      exitCode: 1,
+      stderr: "warning".padEnd(2048, ".") + "anko_test.go:152",
+      stdout: "setup".padEnd(2048, ".") + "ok github.com/mattn/anko/vm"
+    })
+
+    expect(receipt).toContain("anko_test.go:152")
+    expect(receipt).toContain("ok github.com/mattn/anko/vm")
+    expect(receipt).not.toContain("warning")
+    expect(new TextEncoder().encode(receipt).length).toBeLessThanOrEqual(CompletionClaim.resultBytes + 128)
   })
 })

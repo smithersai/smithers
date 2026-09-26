@@ -26,6 +26,25 @@ describe("the explicit offline completion judge", () => {
     expect(CompletionClaim.find(recorded!)).toBeUndefined()
   })
 
+  it("reads a long claim sentence by sentence and still refuses the sentence nothing recorded", async () => {
+    const read = (claim: string) =>
+      Effect.runPromise(
+        CompletionClaim.read({
+          task: "Fix the bug",
+          claim,
+          treeMoved: true,
+          checksRun: [{ command: "node test.mjs", outcome: "passed" }]
+        }).pipe(Effect.provide(ScriptedJudge.layer))
+      )
+    const truthful = await read("Fixed add.mjs. Ran `node test.mjs` and it passed.")
+    const lie = await read("Fixed add.mjs. Ran `node test.mjs` and it passed. Ran `node lint.mjs` and it passed.")
+
+    expect(truthful?.sentences).toBeUndefined()
+    expect(CompletionClaim.unrecorded(truthful!)).toBe(false)
+    expect(lie?.sentences?.whole).toBe(0.95)
+    expect(CompletionClaim.unrecorded(lie!)).toBe(true)
+  })
+
   it.each([
     ["The tool failed and needs `fs:read:**` and `proc:spawn:**`.", [], undefined, false],
     ["I propose `node test.mjs` next.", [], undefined, false],

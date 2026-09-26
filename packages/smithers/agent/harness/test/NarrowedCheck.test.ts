@@ -60,25 +60,27 @@ describe("NarrowedCheck.check", () => {
     expect(recorded.flow).toBe("bash")
     expect(recorded.digest).toBe("tree-1")
     expect(recorded.terms).toContain("suite")
-    expect(recorded.label).toBe("{\"command\":\"check suite\",\"mode\":\"unhermetic\"}")
+    // The longest string last, so a clip takes the program's tail and never
+    // the route beside it.
+    expect(recorded.label).toBe("{\"mode\":\"unhermetic\",\"command\":\"check suite\"}")
   })
 
   it("elides a label that would not fit and says where to recover it", () => {
-    const recorded = ran("bash", command(`check ${"a".repeat(400)}`), "tree-1")
+    const recorded = ran("bash", command(`check ${"a".repeat(600)}`), "tree-1")
 
     expect(recorded.label).toContain("… [+")
     expect(recorded.label).toContain("the issuing cell in the run record has the whole input")
   })
 
   it("measures a multibyte label in UTF-8 bytes without splitting a character", () => {
-    const emoji = "😀".repeat(100)
-    const whole = `{"command":"check ${emoji}","mode":"unhermetic"}`
+    const emoji = "😀".repeat(150)
+    const whole = `{"mode":"unhermetic","command":"check ${emoji}"}`
     const recorded = ran("bash", command(`check ${emoji}`), "tree-1")
     const kept = recorded.label.slice(0, recorded.label.indexOf("… [+"))
     const missing = new TextEncoder().encode(whole).byteLength - new TextEncoder().encode(kept).byteLength
 
-    expect(whole.length).toBeLessThan(320)
-    expect(new TextEncoder().encode(whole).byteLength).toBeGreaterThan(320)
+    expect(whole.length).toBeLessThan(512)
+    expect(new TextEncoder().encode(whole).byteLength).toBeGreaterThan(512)
     expect(recorded.label).toContain(`… [+${missing}b,`)
     expect(new TextDecoder().decode(new TextEncoder().encode(recorded.label))).toBe(recorded.label)
   })
