@@ -26,8 +26,8 @@ func gitHubIssueEventJob(eventType, action string) db.GithubWebhookJob {
 			"action":"created",
 			"installation":{"id":777},
 			"repository":{"id":9001,"name":"demo","full_name":"Acme/demo","owner":{"login":"Acme"},"default_branch":"trunk"},
-			"issue":{"id":512,"number":24,"title":"Empty config crashes","body":"Steps: use []","state":"open","html_url":"https://github.com/Acme/demo/issues/24","user":{"id":922,"login":"contributor"},"labels":[{"name":"bug"}],"author_association":"NONE"},
-			"comment":{"id":2048,"body":"Here is the requested configuration: []","user":{"id":922,"login":"contributor"},"html_url":"https://github.com/Acme/demo/issues/24#issuecomment-2048"},
+			"issue":{"id":512,"number":24,"title":"Empty config crashes","body":"Steps: use []","state":"open","html_url":"https://github.com/Acme/demo/issues/24","user":{"id":922,"login":"contributor"},"labels":[{"name":"bug"}],"author_association":"COLLABORATOR"},
+			"comment":{"id":2048,"body":"Here is the requested configuration: []","user":{"id":922,"login":"contributor"},"html_url":"https://github.com/Acme/demo/issues/24#issuecomment-2048","author_association":"COLLABORATOR"},
 			"sender":{"id":922,"login":"contributor","type":"User"}
 		}`),
 	}
@@ -67,7 +67,7 @@ func TestGitHubIssueEventMapping_PreservesExternalIssueAndDeliveryIdentity(t *te
 			require.NoError(t, err)
 			var persisted map[string]interface{}
 			require.NoError(t, json.Unmarshal(encoded, &persisted))
-			assert.Equal(t, "NONE", persisted["issue"].(map[string]interface{})["author_association"])
+			assert.Equal(t, "COLLABORATOR", persisted["issue"].(map[string]interface{})["author_association"])
 			assert.Equal(t, "Here is the requested configuration: []", persisted["comment"].(map[string]interface{})["body"])
 			assert.Equal(t, "contributor", persisted["sender"].(map[string]interface{})["login"])
 
@@ -175,4 +175,83 @@ func TestGitHubIssueEventWorker_RetryRetainsIdentityAndAuthorReply(t *testing.T)
 	require.Len(t, dispatcher.calls, 2)
 	assert.Equal(t, dispatcher.calls[0].Event.Inputs, dispatcher.calls[1].Event.Inputs)
 	assert.Equal(t, []int64{job.ID}, queries.markDoneIDs)
+}
+
+// setGitHubIssueEventAssociations rewrites the fixture's issue and comment
+// author_association values.
+func setGitHubIssueEventAssociations(t *testing.T, job *db.GithubWebhookJob, issueAssociation, commentAssociation string) {
+	t.Helper()
+	var payload map[string]map[string]interface{}
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(job.Payload, &raw))
+	payload = map[string]map[string]interface{}{}
+	for _, key := range []string{"issue", "comment"} {
+		var object map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw[key], &object))
+		payload[key] = object
+	}
+	payload["issue"]["author_association"] = issueAssociation
+	payload["comment"]["author_association"] = commentAssociation
+	for key, object := range payload {
+		encoded, err := json.Marshal(object)
+		require.NoError(t, err)
+		raw[key] = encoded
+	}
+	encoded, err := json.Marshal(raw)
+	require.NoError(t, err)
+	job.Payload = encoded
+}
+
+// Issue text is an instruction channel into an agent that holds the
+// repository's credentials. Automatic work starts only when the event's author
+// is a repository OWNER, MEMBER or COLLABORATOR; a stranger's issue or comment
+// starts nothing (security-engineer lane, action 4).
+func TestGitHubIssueEventWorker_UntrustedAuthorsStartNothing(t *testing.T) {
+	t.Parallel()
+
+	untrusted := []string{"NONE", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR", "MANNEQUIN", ""}
+	for _, eventType := range []string{"issues", "issue_comment"} {
+		for _, association := range untrusted {
+			t.Run(eventType+"/"+association, func(t *testing.T) {
+				t.Parallel()
+				job := gitHubIssueEventJob(eventType, "opened")
+				if eventType == "issue_comment" {
+					job.Action = "created"
+					// A stranger's comment on a maintainer's issue is still untrusted text.
+					setGitHubIssueEventAssociations(t, &job, "OWNER", association)
+				} else {
+					setGitHubIssueEventAssociations(t, &job, association, "OWNER")
+				}
+				queries := pushJobQuerier(job)
+				queries.listWorkflowTriggersByRepositoryFn = func(context.Context, int64) ([]db.WorkflowTrigger, error) {
+					return []db.WorkflowTrigger{{WorkflowDefinitionID: 10, EventType: eventType, Enabled: true}}, nil
+				}
+				dispatcher := &mockGitHubWebhookEventRunDispatcher{}
+				require.NoError(t, NewGitHubWebhookEventWorker(queries, dispatcher).PollOnce(context.Background()))
+				assert.Empty(t, dispatcher.calls, "an untrusted author starts no automatic work")
+				assert.Equal(t, []int64{job.ID}, queries.markDoneIDs)
+			})
+		}
+	}
+
+	for _, association := range []string{"OWNER", "MEMBER", "COLLABORATOR"} {
+		for _, eventType := range []string{"issues", "issue_comment"} {
+			job := gitHubIssueEventJob(eventType, "opened")
+			setGitHubIssueEventAssociations(t, &job, association, association)
+			payload, err := parseGitHubWorkflowEventPayload(job.Payload)
+			require.NoError(t, err)
+			_, supported := mapGitHubWebhookJobToTriggerEvent(job, payload)
+			assert.True(t, supported, "%s %s dispatches", association, eventType)
+		}
+	}
+
+	// Labels, assignees and milestones can only be changed by someone with
+	// triage access, so that act is the maintainer's decision to start work on
+	// a stranger's issue.
+	job := gitHubIssueEventJob("issues", "labeled")
+	setGitHubIssueEventAssociations(t, &job, "NONE", "NONE")
+	payload, err := parseGitHubWorkflowEventPayload(job.Payload)
+	require.NoError(t, err)
+	_, supported := mapGitHubWebhookJobToTriggerEvent(job, payload)
+	assert.True(t, supported, "a maintainer's label on a stranger's issue dispatches")
 }

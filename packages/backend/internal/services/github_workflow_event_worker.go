@@ -447,6 +447,28 @@ func mapGitHubWebhookJobToTriggerEvent(job db.GithubWebhookJob, payload gitHubWo
 	}
 }
 
+// Issue and comment text is an instruction channel into an agent that holds
+// the repository's credentials, and no model-side screen is a security
+// boundary. Automatic work therefore starts only when the event's author is a
+// repository OWNER, MEMBER or COLLABORATOR (the gate the review Action uses).
+// NONE, CONTRIBUTOR, FIRST_TIMER, FIRST_TIME_CONTRIBUTOR, MANNEQUIN and a
+// missing value start nothing; a maintainer can still run the work by hand.
+func trustedGitHubAuthorAssociation(association string) bool {
+	switch strings.ToUpper(strings.TrimSpace(association)) {
+	case "OWNER", "MEMBER", "COLLABORATOR":
+		return true
+	}
+	return false
+}
+
+// GitHub lets only users with triage access or more change an issue's labels,
+// assignees or milestone. That act is a maintainer's decision to start work,
+// whoever wrote the issue.
+var gitHubTriageOnlyIssueActions = map[string]bool{
+	"labeled": true, "unlabeled": true, "assigned": true, "unassigned": true,
+	"milestoned": true, "demilestoned": true,
+}
+
 // GitHub issue data remains external input, including its actor IDs: none of
 // it grants a Plue identity or permission. The delivery ID stored by ingress
 // is derived from the HMAC-signed body, so retries retain the same identity
@@ -467,6 +489,7 @@ func gitHubIssueWorkflowInputs(job db.GithubWebhookJob, payload gitHubWorkflowEv
 		Labels []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
+		AuthorAssociation string `json:"author_association"`
 	}
 	if json.Unmarshal(payload.Issue, &issue) != nil || issue.ID <= 0 || issue.Number <= 0 || action == "" {
 		return nil, false
@@ -478,11 +501,17 @@ func gitHubIssueWorkflowInputs(job db.GithubWebhookJob, payload gitHubWorkflowEv
 	}
 	if strings.TrimSpace(strings.ToLower(job.EventType)) == "issue_comment" {
 		var comment struct {
-			ID int64 `json:"id"`
+			ID                int64  `json:"id"`
+			AuthorAssociation string `json:"author_association"`
 		}
 		if json.Unmarshal(payload.Comment, &comment) != nil || comment.ID <= 0 {
 			return nil, false
 		}
+		if !trustedGitHubAuthorAssociation(comment.AuthorAssociation) {
+			return nil, false
+		}
+	} else if !trustedGitHubAuthorAssociation(issue.AuthorAssociation) && !gitHubTriageOnlyIssueActions[action] {
+		return nil, false
 	}
 
 	labels := make([]string, 0, len(issue.Labels))
