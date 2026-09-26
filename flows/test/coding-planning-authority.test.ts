@@ -244,6 +244,9 @@ const fixture = async (t: TestContext, contributed = false) => {
   })).pipe(Layer.provideMerge(platform))
   const host = ManagedRuntime.make(layer)
   t.after(() => host.dispose())
+  // The guarded primitives fail closed without the native helper, which would
+  // make every refusal below pass for that reason instead of authority.
+  await host.runPromise(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.stat(target)))
   return {
     host,
     root,
