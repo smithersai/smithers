@@ -485,8 +485,8 @@ func TestBillingService_CreateUserCheckout_CreatesCustomerAndCheckout(t *testing
 	}
 
 	svc := NewBillingService(queries, client, BillingServiceConfig{
-		BaseURL:                "https://smithers.test",
-		PersonalMonthlyPriceID: "price_personal_monthly",
+		BaseURL:           "https://smithers.test",
+		ProMonthlyPriceID: "price_pro_monthly",
 	})
 
 	user := &db.User{
@@ -495,6 +495,7 @@ func TestBillingService_CreateUserCheckout_CreatesCustomerAndCheckout(t *testing
 		DisplayName: "Alice",
 		Email:       pgtype.Text{String: "alice@example.com", Valid: true},
 	}
+	// An empty plan is Pro, the sold user plan (plue 18fce33c3).
 	result, err := svc.CreateUserCheckout(context.Background(), user, "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "https://checkout.stripe.test/session", result.URL)
@@ -503,9 +504,9 @@ func TestBillingService_CreateUserCheckout_CreatesCustomerAndCheckout(t *testing
 	assert.Equal(t, "user", gotCustomer.Metadata["owner_type"])
 	assert.Equal(t, "42", gotCustomer.Metadata["owner_id"])
 	assert.Equal(t, "cus_test_123", gotCheckout.CustomerID)
-	assert.Equal(t, "price_personal_monthly", gotCheckout.PriceID)
+	assert.Equal(t, "price_pro_monthly", gotCheckout.PriceID)
 	assert.Equal(t, int64(1), gotCheckout.Quantity)
-	assert.Equal(t, "personal", gotCheckout.Metadata["plan_key"])
+	assert.Equal(t, "pro", gotCheckout.Metadata["plan_key"])
 	assert.Equal(t, "monthly", gotCheckout.Metadata["interval"])
 	// Checkout states the renewal terms beside the required Terms checkbox.
 	assert.Contains(t, gotCheckout.TermsOfServiceAcceptance, "renews automatically every month")
@@ -533,7 +534,7 @@ func TestBillingService_CreateUserCheckout_ExpiresMismatchedOpenSession(t *testi
 			Metadata: map[string]string{
 				"owner_type":        BillingOwnerTypeUser,
 				"owner_id":          "42",
-				"plan_key":          BillingPlanPro,
+				"plan_key":          BillingPlanPersonal,
 				"interval":          BillingIntervalMonthly,
 				"checkout_quantity": "1",
 			},
@@ -541,8 +542,8 @@ func TestBillingService_CreateUserCheckout_ExpiresMismatchedOpenSession(t *testi
 	}
 
 	svc := NewBillingService(queries, client, BillingServiceConfig{
-		BaseURL:                "https://smithers.test",
-		PersonalMonthlyPriceID: "price_personal_monthly",
+		BaseURL:           "https://smithers.test",
+		ProMonthlyPriceID: "price_pro_monthly",
 	})
 
 	user := &db.User{ID: 42, Username: "alice", Email: pgtype.Text{String: "alice@example.com", Valid: true}}
@@ -573,15 +574,15 @@ func TestBillingService_CreateUserCheckout_ReusesMatchingOpenSession(t *testing.
 			Metadata: map[string]string{
 				"owner_type":        BillingOwnerTypeUser,
 				"owner_id":          "42",
-				"plan_key":          BillingPlanPersonal,
+				"plan_key":          BillingPlanPro,
 				"interval":          BillingIntervalMonthly,
 				"checkout_quantity": "1",
 			},
 		},
 	}
 	svc := NewBillingService(queries, client, BillingServiceConfig{
-		BaseURL:                "https://smithers.test",
-		PersonalMonthlyPriceID: "price_personal_monthly",
+		BaseURL:           "https://smithers.test",
+		ProMonthlyPriceID: "price_pro_monthly",
 	})
 
 	result, err := svc.CreateUserCheckout(context.Background(), &db.User{ID: 42, Username: "alice"}, "", "")
@@ -610,8 +611,8 @@ func TestBillingService_CreateUserCheckout_CompletedSessionWaitsForProjection(t 
 		},
 	}
 	svc := NewBillingService(queries, client, BillingServiceConfig{
-		BaseURL:                "https://smithers.test",
-		PersonalMonthlyPriceID: "price_personal_monthly",
+		BaseURL:           "https://smithers.test",
+		ProMonthlyPriceID: "price_pro_monthly",
 	})
 
 	_, err := svc.CreateUserCheckout(context.Background(), &db.User{ID: 42, Username: "alice"}, "", "")
@@ -643,8 +644,8 @@ func TestBillingService_CreateUserCheckout_CompletedLapsedSessionStartsNextGener
 		},
 	}
 	svc := NewBillingService(queries, client, BillingServiceConfig{
-		BaseURL:                "https://smithers.test",
-		PersonalMonthlyPriceID: "price_personal_monthly",
+		BaseURL:           "https://smithers.test",
+		ProMonthlyPriceID: "price_pro_monthly",
 	})
 
 	result, err := svc.CreateUserCheckout(context.Background(), &db.User{ID: 42, Username: "alice"}, "", "")
@@ -692,8 +693,8 @@ func TestBillingService_CreateUserCheckout_RefusesWhenLiveSubscriptionPrecedesCa
 		},
 	}
 	svc := NewBillingService(queries, client, BillingServiceConfig{
-		BaseURL:                "https://smithers.test",
-		PersonalMonthlyPriceID: "price_personal_monthly",
+		BaseURL:           "https://smithers.test",
+		ProMonthlyPriceID: "price_pro_monthly",
 	})
 
 	_, err := svc.CreateUserCheckout(context.Background(), &db.User{ID: 42, Username: "alice"}, "", "")

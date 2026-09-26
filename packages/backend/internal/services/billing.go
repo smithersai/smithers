@@ -2375,7 +2375,8 @@ func (s *BillingService) checkoutPlan(ownerType, planKey, interval string) (bill
 	key := strings.TrimSpace(planKey)
 	if key == "" {
 		if ownerType == BillingOwnerTypeUser {
-			key = BillingPlanPersonal
+			// Pro is the sold user plan; Personal is hidden and unpriced.
+			key = BillingPlanPro
 		} else {
 			key = BillingPlanTeam
 		}
