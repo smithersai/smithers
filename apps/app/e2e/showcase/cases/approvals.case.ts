@@ -92,6 +92,9 @@ export default showcase({
     await app.click(deps.getByRole("button", { name: /deny/i }))
     await app.saw("approval.deny", () => expect.poll(() => decided.get("req-deps")).toBe("deny"))
     await expect(inbox).toContainText("Denied")
+    // Decided rows leave the count and keep their question (#1938).
+    await expect(inbox.getByTestId("approvals-inbox-count")).toHaveText("0 approvals pending")
+    await expect(inbox.locator(".sui-approval-question", { hasText: "Upgrade effect" })).toBeVisible()
     await app.beat(500)
 
     // The run parked on provider quota resumes; Stop all ends every live run.

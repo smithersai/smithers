@@ -79,9 +79,9 @@ export default showcase({
 
     await app.click(card.getByRole("tab", { name: "Files" }))
     await expect(card).toContainText("README.md")
-    await app.click(card.getByText("README.md", { exact: true }).first())
-    // The row wears data-flow="files.read" but WorkspaceCard retargets it to workspace.file; the workspace route answered.
-    await app.saw("workspace.file", () => expect(page.locator('[data-kind="file"]').last()).toContainText("the split flow is wired in", { timeout: 15_000 }))
+    const readme = card.locator('[data-flow="workspace.file"]').filter({ hasText: "README.md" }).first()
+    await app.click(readme)
+    await expect(page.locator('[data-kind="file"]').last()).toContainText("the split flow is wired in", { timeout: 15_000 })
     await app.show(card)
     await app.click(card.getByRole("tab", { name: "Services" }))
     await expect(card).toContainText("postgres")

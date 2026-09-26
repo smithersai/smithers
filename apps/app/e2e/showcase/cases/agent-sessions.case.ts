@@ -76,6 +76,7 @@ export default showcase({
 
     await app.click(card.getByTestId(`agent-session-stop-${ID}`))
     await expect(card.getByTestId("agent-session-header")).toContainText("cancelled", { timeout: 10_000 })
+    await expect(page.locator('.toast[data-toast-status="failed"]')).toHaveCount(0)
     await app.beat(900)
     if (await card.getAttribute("data-maximized") === "true") await app.click(card.getByRole("button", { name: "Restore" }))
 

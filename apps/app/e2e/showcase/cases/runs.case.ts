@@ -119,6 +119,9 @@ export default showcase({
     const toast = page.locator('.toast-stack .toast[data-toast-status="running"]').filter({ hasText: "review-pr" })
     await app.click(toast.getByRole("button", { name: "Stop" }))
     await expect(review.getByTestId(`run-outcome-${REVIEW}`)).toHaveAttribute("data-phase", "cancelled")
+    // A stop the human asked for settles as a stop, not a failure (#1863).
+    await expect(review).toContainText("Stopped")
+    await expect(page.locator('.toast[data-toast-status="failed"]')).toHaveCount(0)
     await app.show(review)
     await app.beat(1200)
   }
