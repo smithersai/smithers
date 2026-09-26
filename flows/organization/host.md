@@ -67,6 +67,17 @@ holding `workspace` is granted. Seats resolve from the environment
 (see [Model access](#model-access)). With `judge: none` role results are
 checked by the flow, not by a judge.
 
+## Wiki commits
+
+With `wiki.commit: true` on the organization page, the host commits what it
+wrote to the wiki's git repository every 30 seconds and when it stops:
+`wiki.generatedDir` (receipts, documents, meeting notes, bookings),
+`<rosterDir>/Specialists/` (hires) and `wiki.statusFile`. The commit is
+limited to those paths, so your own edits elsewhere stay as they are, staged
+or not. It skips hooks and signing, and never pushes. `backup` commits them
+first, so the manifest's wiki revision holds every receipt and hire the state
+cites.
+
 ## Flows
 
 - `organization/intake` — admits a request (a Slack author must be in

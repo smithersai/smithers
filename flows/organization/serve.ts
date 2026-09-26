@@ -8,7 +8,8 @@
  * the workspace machines of runs the engine database says are unfinished,
  * which those runs reattach when they resume; build the host; serve the
  * gateway behind the state directory's credential ({@link credentialOf}); and, when both Slack tokens are set, run the Slack intake beside
- * it. Runs a previous process parked (an approval gate, a model call cut
+ * it; with `wiki.commit`, commit what the host writes to the wiki
+ * (`wiki.ts`). Runs a previous process parked (an approval gate, a model call cut
  * short) resume from the engine database; Ctrl-C stops the process and leaves
  * them parked.
  */
@@ -35,6 +36,7 @@ import type { Settings } from "./settings.ts"
 import * as SetupMicrosandbox from "./setup/microsandbox.ts"
 import * as Subscriptions from "./setup/subscriptions.ts"
 import * as SlackIntake from "./slack.ts"
+import * as Wiki from "./wiki.ts"
 
 /** The host's own control plane as the {@link ControlPort} the Slack intake uses. */
 export const inProcess = (control: Control.Control["Service"]): ControlPort => {
@@ -197,6 +199,9 @@ export const start = async (options: StartOptions) => {
         environment,
         allowPlaintextSocket: options.allowPlaintextSocket
       }).pipe(Effect.catchCause((cause) => Effect.logError("organization Slack intake stopped", cause))))
+    }
+    if (settings.organization.wiki.commit) {
+      yield* Effect.forkScoped(Wiki.committer(settings.root, Wiki.hostPaths(settings.organization), log))
     }
     log(`organization host on http://${settings.host}:${settings.port} (state ${settings.stateDir}; Slack ${slack ? "on" : "off"})`)
     return yield* Serve.host(bind, settings.root)

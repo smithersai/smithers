@@ -38,6 +38,7 @@ import {
 import { dirname, join, relative } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { parseArgs } from "node:util"
+import * as Wiki from "../wiki.ts"
 import { absolute, type Command, type Io, nonEmpty, stateDirOf, withEnvFile } from "./settings.ts"
 
 /** The manifest's format version. */
@@ -100,9 +101,15 @@ export const holders = (files: ReadonlyArray<string>): Array<number> => {
 const databases = (stateDir: string) =>
   existsSync(stateDir) ? walk(stateDir).filter((path) => isDatabase(path) && lstatSync(join(stateDir, path)).isFile()).map((path) => join(stateDir, path)) : []
 
-/** The git revision of the wiki root and whether its tree has changes. */
+/**
+ * The git revision of the wiki root and whether its tree has changes. With
+ * `wiki.commit`, what the host wrote is committed first, so the revision
+ * holds every receipt and hire the backed-up state cites.
+ */
 const wikiOf = (root: string | undefined): Manifest["wiki"] => {
   if (root === undefined) return undefined
+  const paths = Wiki.committedPaths(root)
+  if (paths !== undefined) Wiki.commit(root, paths)
   const head = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" })
   if (head.status !== 0) return { root, revision: undefined, dirty: false }
   const status = spawnSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" })

@@ -268,7 +268,8 @@ const organizationSetup = Smithers.NodeTest({
     Smithers.file("//flows/organization/setup/doctor.test.ts"), Smithers.file("//flows/organization/setup/probe.test.ts"),
     Smithers.file("//flows/organization/setup/service.test.ts"), Smithers.file("//flows/organization/setup/backup.test.ts"),
     Smithers.file("//flows/organization/setup/hygiene.test.ts"), Smithers.file("//flows/organization/setup/subscriptions.test.ts"),
-    Smithers.file("//flows/organization/setup/environment-doctor.test.ts"), Smithers.file("//flows/organization/cli.test.ts")]),
+    Smithers.file("//flows/organization/setup/environment-doctor.test.ts"), Smithers.file("//flows/organization/cli.test.ts"),
+    Smithers.file("//flows/organization/wiki.test.ts")]),
   srcs: codingSources, deps: [...codingDependencies, ...organizationPackages], cwd, timeout: "20m"
 })
 
