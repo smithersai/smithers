@@ -15,10 +15,12 @@ import { AUTH_SCOPES_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { actorSharedState } from "../ActorBindings"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
+import { TOAST_SUPERSEDED } from "./failures"
 
 export interface AccountController {
   /** The `account.show` handler: the account card, or the sign-in step when no session is signed in. */
   readonly showAccount: () => Promise<string | { readonly value: string }>
+  readonly resumeAccount: () => void
 }
 
 export interface AccountControllerDeps {
@@ -43,82 +45,132 @@ interface ScopeRow {
   readonly plain: string
 }
 
+type AccountCard = Extract<Card, { kind: "account" }>
+type Answer = string | { readonly value: string }
+interface Flight {
+  readonly id: string
+  readonly epoch: number
+  readonly owner: string
+  admission: Promise<Answer>
+}
+const REQUESTED = { value: "Requested" } as const
+
 export const createAccountController = (ctx: ControllerContext, deps: AccountControllerDeps): AccountController => {
-  const reads = actorSharedState(ctx, "account.reads", () => ({ generation: 0 }))
+  const { store } = ctx
+  const reads = actorSharedState(ctx, "account.reads", () => ({ flight: undefined as Flight | undefined }))
+  const card = (): AccountCard | undefined => {
+    const row = store.collections.cards.get(ACCOUNT_CARD_ID)
+    return row?.kind === "account" ? row : undefined
+  }
   const superseded = () => ({ value: "Account request is no longer current." })
-  /*
-   * The scopes the identity worker states, as `{ scope, plain }` rows. A
-   * failed or malformed answer is an empty list, and the card then renders
-   * no scopes section: absence over a guessed scope list.
-   */
-  const readScopes = async (): Promise<ReadonlyArray<ScopeRow>> => {
+  const owns = (flight: Flight): boolean => !ctx.disposed && reads.flight === flight && flight.epoch === ctx.accountEpoch &&
+    ctx.accountOwner() === flight.owner && store.collections.identitySessions.get("identity")?.state === "signed-in"
+
+  const readScopes = async (): Promise<{ scopes: ScopeRow[] } | { error: string }> => {
     try {
       const response = await ctx.boundedFetch(`${ctx.baseUrl}${AUTH_SCOPES_PATH}`)
       if (!response.ok) {
         await response.body?.cancel()
-        return []
+        return { error: `Permissions could not be loaded (HTTP ${response.status}).` }
       }
-      const body = (await response.json()) as { scopes?: unknown }
-      if (!Array.isArray(body.scopes)) return []
-      return body.scopes.flatMap((row): Array<ScopeRow> => {
-        if (typeof row !== "object" || row === null) return []
-        const scope = "scope" in row && typeof row.scope === "string" ? row.scope.trim() : ""
-        const plain = "plain" in row && typeof row.plain === "string" ? row.plain.trim() : ""
-        return scope === "" || plain === "" ? [] : [{ scope, plain }]
-      })
-    } catch {
-      return []
-    }
+      const body: unknown = await response.json()
+      if (typeof body !== "object" || body === null || !("scopes" in body) || !Array.isArray(body.scopes)) return { error: "Invalid permission response." }
+      const scopes: ScopeRow[] = []
+      const seen = new Set<string>()
+      for (const row of body.scopes) {
+        if (typeof row !== "object" || row === null || typeof row.scope !== "string" || typeof row.plain !== "string" ||
+            row.scope.trim() === "" || row.plain.trim() === "" || seen.has(row.scope.trim())) return { error: "Invalid permission response." }
+        seen.add(row.scope.trim())
+        scopes.push({ scope: row.scope.trim(), plain: row.plain.trim() })
+      }
+      return { scopes }
+    } catch { return { error: "Permissions could not be loaded." } }
   }
 
-  const showAccount = async (): Promise<string | { readonly value: string }> => {
-    const mine = ++reads.generation
+  const launch = (flight: Flight): void => {
+    const currentRequest = () => owns(flight) && card()?.payload.refresh?.id === flight.id
+    void ctx.withToast("account.permissions", "Loading permissions…", "Permissions loaded", async () => {
+      if (!currentRequest()) return TOAST_SUPERSEDED
+      const answer = await readScopes()
+      if (!owns(flight)) return TOAST_SUPERSEDED
+      const current = card()
+      if (current?.payload.refresh?.id !== flight.id || current.payload.refresh.state !== "requested") return TOAST_SUPERSEDED
+      const failed = "error" in answer
+      await store.dispatch({ type: "card.upsert", actor: "system", card: { ...current, status: failed ? "error" : "active", payload: {
+        ...current.payload, scopes: failed ? [] : answer.scopes,
+        refresh: failed ? { id: flight.id, state: "failed", error: answer.error } : { id: flight.id, state: "complete" }
+      } } }).isPersisted.promise
+      if (!currentRequest()) return TOAST_SUPERSEDED
+      return failed ? answer.error : true
+    }, false, currentRequest, ACCOUNT_CARD_ID).then(outcome => {
+      if (!currentRequest()) {
+        if (reads.flight === flight) reads.flight = undefined
+        return
+      }
+      if (typeof outcome === "string") ctx.resolveToast("account.permissions", { status: "failed", detail: outcome, action: { flow: "account.show", label: "Retry" } })
+      reads.flight = undefined
+    }).catch(error => {
+      const current = currentRequest()
+      if (reads.flight === flight) reads.flight = undefined
+      if (current) ctx.failures.report("toast.work", error, "account.permissions")
+    })
+  }
+
+  const resumeAccount = (): void => {
+    if (ctx.disposed || deps.provider !== "github") return
+    const identity = store.collections.identitySessions.get("identity"), current = card()
+    if (identity?.state !== "signed-in" || identity.login === null || current?.payload.login !== identity.login ||
+        current.payload.provider !== deps.provider || current.payload.refresh?.state !== "requested") return
+    if (reads.flight && owns(reads.flight)) return
+    const flight: Flight = { id: current.payload.refresh.id, epoch: ctx.accountEpoch, owner: identity.login, admission: Promise.resolve(REQUESTED) }
+    reads.flight = flight
+    launch(flight)
+  }
+
+  const showAccount = async (): Promise<Answer> => {
     if (ctx.disposed) return superseded()
-    const { collections } = ctx.store
+    const { collections } = store
     const identity = collections.identitySessions.get("identity")
     if (identity === undefined || identity.state === "unknown") return IDENTITY_PENDING_TEXT
     if (identity.state !== "signed-in" || identity.login === null) {
-      // Signed out or no seam: auth.prompt's message states which, with the sign-in button when one exists.
       deps.promptSignIn(false, { name: "account.show" })
       return { value: SIGNED_OUT_VALUE }
     }
-    const epoch = ctx.accountEpoch
-    const actor = ctx.commandActor
-    const current = () => !ctx.disposed && mine === reads.generation && epoch === ctx.accountEpoch &&
-      ctx.accountOwner() === identity.login && collections.identitySessions.get("identity")?.state === "signed-in"
-    const scopes = deps.provider === "github" ? await readScopes() : []
-    if (!current()) return superseded()
+    const current = card()
+    if (reads.flight && owns(reads.flight) &&
+        (deps.provider !== "github" || current?.payload.refresh?.id === reads.flight.id)) return reads.flight.admission
+    if (deps.provider === "github" && current?.payload.provider === "github" && current.payload.login === identity.login && current.payload.refresh?.state === "requested") {
+      resumeAccount()
+      return REQUESTED
+    }
+    const flight: Flight = { id: crypto.randomUUID(), epoch: ctx.accountEpoch, owner: identity.login, admission: Promise.resolve(REQUESTED) }
+    // The shared flight owns admission too: neither another actor nor an identity
+    // re-probe may start the remote read before this card has actually been saved.
+    reads.flight = flight
     const boxes = [...collections.cloudWorkspaces.values()]
-      .map((workspace) => ({ id: workspace.id, repoId: workspace.repoId, name: workspace.name, status: workspace.status }))
+      .map(({ id, repoId, name, status }) => ({ id, repoId, name, status }))
       .sort((left, right) => left.repoId.localeCompare(right.repoId) || left.name.localeCompare(right.name))
-    const card: Card = {
-      id: ACCOUNT_CARD_ID,
-      kind: "account",
-      title: `Account · @${identity.login}`,
-      status: "active",
-      createdAt: Date.now(),
-      ordinal: deps.nextOrdinal(),
-      payload: {
-        login: identity.login,
-        provider: deps.provider,
-        scopes: [...scopes],
-        allowlisted: identity.allowlisted,
-        accessRequested: identity.accessRequested,
-        boxes
-      }
-    }
+    const next: AccountCard = { id: ACCOUNT_CARD_ID, kind: "account", title: `Account · @${identity.login}`, status: "active", createdAt: Date.now(), ordinal: deps.nextOrdinal(),
+      payload: { login: identity.login, provider: deps.provider, scopes: [], allowlisted: identity.allowlisted, accessRequested: identity.accessRequested, boxes,
+        ...(deps.provider === "github" ? { refresh: { id: flight.id, state: "requested" as const } } : {}) } }
     try {
-      await ctx.store.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise
-    } catch (error) {
-      if (!current()) return superseded()
-      throw error
-    }
-    if (!current()) return superseded()
-    const access = identity.allowlisted ? "allowed" : identity.accessRequested ? "requested" : "not yet allowed"
-    return {
-      value: `account: @${identity.login}; access ${access}; ${deps.provider === "github" ? `${scopes.length} GitHub App permission(s); GitHub OAuth scope read:user; ` : ""}${boxes.length} box(es) listed`
-    }
+      flight.admission = store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: next }).isPersisted.promise.then(() => {
+        if (!owns(flight) || (deps.provider === "github" && card()?.payload.refresh?.id !== flight.id)) {
+          if (reads.flight === flight) reads.flight = undefined
+          return superseded()
+        }
+        if (deps.provider === "github") { launch(flight); return REQUESTED }
+        reads.flight = undefined
+        return { value: `account: @${identity.login}; access ${identity.allowlisted ? "allowed" : identity.accessRequested ? "requested" : "not yet allowed"}; ${boxes.length} box(es) listed` }
+      }).catch(error => {
+        const current = owns(flight)
+        if (reads.flight === flight) reads.flight = undefined
+        if (!current) return superseded()
+        throw error
+      })
+      return await flight.admission
+    } catch (error) { if (reads.flight === flight) reads.flight = undefined; throw error }
   }
 
-  return { showAccount }
+  return { showAccount, resumeAccount }
 }

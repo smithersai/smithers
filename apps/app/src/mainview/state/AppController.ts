@@ -2042,7 +2042,7 @@ export const createAppController = (
     queueMicrotask(() => { if (!ctx.disposed) secretsSeam.resumeCodingProviders() })
     workflowController.resumeWorkflowRequests()
     // Catalog recovery writes a card; leave the identity projection before dispatching it.
-    queueMicrotask(() => { if (!ctx.disposed) { resumeModels(); resumeModelCalls() } })
+    queueMicrotask(() => { if (!ctx.disposed) { resumeModels(); resumeModelCalls(); account.resumeAccount() } })
     repositoryReadiness.resume()
     repositorySetup.resumeRepositorySetups()
     repoImportSeam.resume()

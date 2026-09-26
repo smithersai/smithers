@@ -22,7 +22,7 @@ export const accountFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
    */
   flow({
     name: "account.show",
-    summary: "Show the signed-in account: GitHub login and scopes, access, boxes, and sign out",
+    summary: "Show account",
     runtime: ["identity"],
     input: NoPayload,
     handler: () => actions.showAccount()

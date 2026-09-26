@@ -1494,6 +1494,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       login: "will",
       provider: "github",
       scopes: [{ scope: "repo", plain: "read and write your repositories" }],
+      refresh: { id: "account-read", state: "failed", error: "Permissions could not be loaded." },
       allowlisted: true,
       accessRequested: true,
       boxes: [{ id: "ws-1", repoId: "smithersai/smithers", name: "review", status: "running" }]

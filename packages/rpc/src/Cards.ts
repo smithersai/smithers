@@ -1843,6 +1843,12 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       provider: z.enum(["github", "local"]).optional(),
       /** GET /api/auth/scopes rows, one plain sentence per scope; empty when the seam did not answer, and the section is then absent. */
       scopes: z.array(z.object({ scope: z.string(), plain: z.string() })),
+      /** Permission reads survive reload; legacy cards have no pending request. */
+      refresh: z.discriminatedUnion("state", [
+        z.object({ id: z.string(), state: z.literal("requested") }),
+        z.object({ id: z.string(), state: z.literal("complete") }),
+        z.object({ id: z.string(), state: z.literal("failed"), error: z.string() })
+      ]).optional(),
       allowlisted: z.boolean(),
       accessRequested: z.boolean(),
       /** The cloudWorkspaces rows at render time: the person's boxes across every repository this app has listed. */

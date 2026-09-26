@@ -74,6 +74,10 @@ export const AccountCardBody = ({
         </table>
       </>
     )}
+    {card.payload.refresh?.state === "failed" && <div role="alert">
+      <p>{card.payload.refresh.error}</p>
+      <Button size="sm" variant="outline" {...flowAction(onRunCommand, "account.show")}>Retry</Button>
+    </div>}
     <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "auth.sign-out")}>
       Sign out
     </Button>
