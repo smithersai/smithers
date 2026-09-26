@@ -74,6 +74,7 @@ type Product interface {
 	GetLFSObjectByOID(ctx context.Context, arg db.GetLFSObjectByOIDParams) (db.LfsObject, error)
 	GetLFSUploadReservation(ctx context.Context, arg db.GetLFSUploadReservationParams) (db.LfsUploadReservation, error)
 	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
+	GetOrgCredentialOwnerID(ctx context.Context, organizationID int64) (int64, error)
 	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
 	GetRepoByOwnerAndLowerName(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error)
 	GetRepoOwnerSlugAndNameByID(ctx context.Context, repositoryID int64) (db.GetRepoOwnerSlugAndNameByIDRow, error)
@@ -153,6 +154,7 @@ type Product interface {
 	SetWorkspaceEnvironmentImage(ctx context.Context, arg db.SetWorkspaceEnvironmentImageParams) error
 	SetWorkspaceHeadPushTokenID(ctx context.Context, arg db.SetWorkspaceHeadPushTokenIDParams) error
 	SetWorkspaceIdleTimeout(ctx context.Context, arg db.SetWorkspaceIdleTimeoutParams) (db.Workspace, error)
+	SkipBlockedWorkflowTask(ctx context.Context, id int64) error
 	SoftDeleteWorkspace(ctx context.Context, id string) (db.Workspace, error)
 	StopWorkspaceRetainingRow(ctx context.Context, id string) (db.StopWorkspaceRetainingRowRow, error)
 	SuspendRunningWorkspace(ctx context.Context, id string) (db.Workspace, error)
@@ -161,6 +163,7 @@ type Product interface {
 	TouchWorkspaceActivity(ctx context.Context, id string) error
 	TouchWorkspaceLastAccessed(ctx context.Context, id string) error
 	TouchWorkspaceSessionActivity(ctx context.Context, id string) error
+	UnblockWorkflowTask(ctx context.Context, id int64) error
 	UpdateAgentSessionStartedAt(ctx context.Context, arg db.UpdateAgentSessionStartedAtParams) (db.AgentSession, error)
 	UpdateAgentSessionStatus(ctx context.Context, arg db.UpdateAgentSessionStatusParams) (db.AgentSession, error)
 	UpdateAgentSessionTerminalStatus(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusParams) (db.AgentSession, error)

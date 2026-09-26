@@ -18,6 +18,13 @@ type APIRequestObserver interface {
 	IncSandboxAPIErrors(endpoint, errorCode string)
 }
 
+// APIRequestObserverBinder is implemented by a deployment-built provider whose
+// API request telemetry belongs in the product metrics registry. The product
+// binds its observer once, before any product service uses the provider.
+type APIRequestObserverBinder interface {
+	BindAPIRequestObserver(APIRequestObserver)
+}
+
 type idempotencyContextKey struct{}
 type resourceLinkContextKey struct{}
 

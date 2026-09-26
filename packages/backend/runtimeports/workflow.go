@@ -6,6 +6,10 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
+// WorkflowRun is the canonical product run row returned by the claim-fenced
+// terminal writes of a deployment's sandbox scheduler store.
+type WorkflowRun = db.WorkflowRun
+
 type WorkflowRunQuerier interface {
 	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
 	GetUserByID(ctx context.Context, id int64) (db.User, error)

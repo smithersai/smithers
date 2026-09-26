@@ -618,6 +618,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	var orphanSandbox services.SandboxOrphanVMClient
 	provider := options.ComputeProvider
 	if provider != nil {
+		bindComputeProviderTelemetry(provider, smithersMetrics)
 		sandboxClient = provider
 		workflowSandboxClient = provider
 		repoGatewaySandbox = provider
