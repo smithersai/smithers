@@ -480,7 +480,7 @@ describe("the dispatcher table", () => {
       assert.ok(!/workflow/i.test(rule.description), `${rule.event} sentence never says workflow`);
     }
     assert.ok(projection.on.some((rule) => rule.event === "issue.opened"));
-    assert.deepEqual(projection.github, { mirror: "push", issues: "two-way", changes: "land" });
+    assert.deepEqual(projection.github, { mirror: "pull", issues: "two-way", changes: "send-upstream" });
     assert.equal(typeof projection.summary, "string");
   });
 });
