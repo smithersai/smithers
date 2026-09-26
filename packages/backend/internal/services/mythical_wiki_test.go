@@ -121,7 +121,7 @@ func wikiResult(commit, pool string, pages ...string) string {
 	}
 	encoded, _ := json.Marshal(map[string]any{"commitId": commit, "wikiRunId": "wiki-run", "artifactDigest": fmt.Sprintf("%064d", 1),
 		"receipt": map[string]any{"schemaVersion": 1, "sourceRevision": "sha256:x", "inputDigest": "x", "output": "/o", "pages": len(out), "verification": "verified"},
-		"pool": json.RawMessage(pool), "pages": out})
+		"pool":    json.RawMessage(pool), "pages": out})
 	return string(encoded)
 }
 
