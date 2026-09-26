@@ -416,6 +416,46 @@ describe("UnobservedCall", () => {
     ) expect(blind(probe + acting)).toBe(false)
   })
 
+  it("reads a completion as blind when it reads no result and a result was only printed", () => {
+    // The p4 qualification cell (abridged): it followed the search hits into
+    // reads, printed everything else, and completed with a verdict written
+    // before any of it came back.
+    expect(blind(`const listing = await ctx.call("ls", { path: "/workspace" });
+      const hits = await ctx.call("grep", { pattern: "planWeekly", root: "/workspace" });
+      console.log("root", listing, "hits", hits.ok === false ? hits.error : hits.matches.slice(0, 30));
+      const paths = [...new Set(hits.matches.map((x) => x.file))];
+      const reads = await Promise.all(paths.slice(0, 4).map((path) => ctx.call("read", { path })));
+      console.log(reads.map((x, i) => ({ path: paths[i], content: x.content })));
+      const status = await ctx.call("bash", { command: "git status --porcelain" });
+      console.log("STATUS", status);
+      ctx.done(JSON.stringify({ status: "blocked", summary: "VM flow results were not returned for inspection." }))`))
+      .toBe(true)
+    const probe =
+      `const hits = await ctx.call("grep", {});\nconst more = await ctx.call("read", { path: hits.matches[0].file });\n`
+    for (
+      const blindly of [
+        `console.log(more)\nctx.done("blocked")`,
+        `const text = more.content.trim(); console.log(text)\nctx.done("x")`,
+        `if (more.ok) console.log(more)\nctx.done("x")`
+      ]
+    ) expect(blind(probe + blindly)).toBe(true)
+    for (
+      const reading of [
+        `console.log(more)\nctx.done(more.content)`,
+        `console.log(more)\nif (more.ok) ctx.done("x")`,
+        `console.log(more)\nmore.ok ? ctx.done("a") : ctx.done("b")`,
+        `console.log(more)\nfor (const line of more.lines) ctx.done(line)`,
+        `console.log(more)\nswitch (more.kind) { case "file": ctx.done("x") }`,
+        `console.log(more)\nwhile (more.ok) { ctx.done("x"); break }`,
+        `console.log(more)\nmore.ok && ctx.done("x")`,
+        `console.log(more)\ntry { ctx.done("x") } catch { ctx.done("y") }`,
+        `console.log(more)\nconst finish = () => ctx.done("x"); finish()`,
+        `await ctx.call("edit", { text: more.content })\nctx.done("x")`,
+        `const [a, b] = [more, hits]; await ctx.call("edit", { a, b })\nctx.done("x")`
+      ]
+    ) expect(blind(probe + reading)).toBe(false)
+  })
+
   it("never calls a cell blind that kept no result, completed nowhere it can see, or does not parse", () => {
     expect(blind(`await ctx.call("edit", {}); ctx.done("Edited.")`)).toBe(false)
     expect(blind(`ctx.call("edit", {}); void ctx.call("edit", {}); void (await ctx.call("edit", {})); ctx.done("x")`))

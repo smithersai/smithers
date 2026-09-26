@@ -15,8 +15,10 @@
  * kept that call's result, and left it for the model alone: printed or
  * bound, and read by nothing in the program but `console.*` and guards that
  * only decide what `console.*` prints (`if (r.exitCode) console.log(r.stderr)`),
- * so the completion reads no result either. The next frame is shown the
- * results and asked to answer after reading them.
+ * so the completion reads no result either. It is also handed back when the
+ * program acted on some results but a completion that reads none — in its
+ * output or a guard around it — follows a result the program only printed.
+ * The next frame is shown the results and asked to answer after reading them.
  *
  * Three shapes are spared because nothing in them was written blind:
  *
@@ -216,6 +218,72 @@ const resultNames = (root: Node): ReadonlySet<string> => {
   return results
 }
 
+/** Whether an expression reads a name in `names`, calls aside. */
+const mentions = (node: Node, names: ReadonlySet<string>): boolean =>
+  node.type === "Identifier" ? names.has(node.name) : referencing(node).some((child) => mentions(child, names))
+
+/**
+ * Each name a call's result is bound to directly, with every name the
+ * program's own bindings copy it into.
+ */
+const resultsByCall = (root: Node): ReadonlyArray<ReadonlySet<string>> => {
+  const moves = flows(root)
+  return moves.filter(([, source]) => reads(source, new Set())).flatMap(([names]) =>
+    names.map((name) => {
+      const held = new Set([name])
+      for (let grew = true; grew;) {
+        grew = false
+        for (const [targets, source] of moves) {
+          if (targets.every((target) => held.has(target)) || !mentions(source, held)) continue
+          for (const target of targets) held.add(target)
+          grew = true
+        }
+      }
+      return held
+    })
+  )
+}
+
+/**
+ * Whether a completion depends on a result: its output reads one, or a guard
+ * around it (a condition, a loop over a result, a `catch`) does. A completion
+ * inside a function of the program's own is out of sight and counts as
+ * depending.
+ */
+const completionReads = (root: Node, results: ReadonlySet<string>): boolean => {
+  const visit = (node: Node, guarded: boolean): boolean => {
+    if (ctxCall(node, "done")) {
+      return guarded || (node as Syntax.CallExpression).arguments.some((argument) => reads(argument, results))
+    }
+    const parts = functionParts(node)
+    if (parts !== undefined) return parts.some((child) => visit(child, true))
+    let tests: ReadonlyArray<Node | null | undefined> = []
+    switch (node.type) {
+      case "IfStatement":
+      case "ConditionalExpression":
+      case "WhileStatement":
+      case "DoWhileStatement":
+        tests = [node.test]
+        break
+      case "LogicalExpression":
+        tests = [node.left]
+        break
+      case "SwitchStatement":
+        tests = [node.discriminant, ...node.cases.map((entry) => entry.test)]
+        break
+      case "ForOfStatement":
+      case "ForInStatement":
+        tests = [node.right]
+        break
+      case "CatchClause":
+        return visit(node.body, true)
+    }
+    const inner = guarded || tests.some((test) => test != null && reads(test, results))
+    return children(node).some((child) => visit(child, inner))
+  }
+  return visit(root, false)
+}
+
 /** The realm's calls that only move a value: their arguments are read where their result is. */
 const pure = new Map<string, ReadonlySet<string>>([
   ["Promise", new Set(["all", "allSettled", "any", "race", "resolve"])],
@@ -304,7 +372,9 @@ const memberName = (callee: Node): readonly [Node, string] | undefined =>
  * parse cannot see through — a function of the program's own, a callback, a
  * `.then`, an alias — is an act, because the program may complete from there.
  */
-const actsOn = (root: Node, results: ReadonlySet<string>): boolean => {
+const actsOn = (root: Node, results: ReadonlySet<string>, calls = true): boolean => {
+  // Without `calls`, only the names count: a call read inline is some other result.
+  const reading = (node: Node) => calls ? reads(node, results) : mentions(node, results)
   const visit = (node: Node, acting: boolean): boolean => {
     if (node.type === "Identifier") return acting && results.has(node.name)
     const parts = functionParts(node)
@@ -323,10 +393,10 @@ const actsOn = (root: Node, results: ReadonlySet<string>): boolean => {
       const member = memberName(callee)
       if (member !== undefined && member[0].type === "Identifier" && member[0].name === "console") return false
       if (ctxCall(node, "call")) {
-        return acting || node.arguments.some((argument) => visit(argument, true))
+        return (calls && acting) || node.arguments.some((argument) => visit(argument, true))
       }
       if (ctxCall(node, "done")) return node.arguments.some((argument) => visit(argument, true))
-      const reading = reads(callee, results)
+      const readsCallee = reading(callee)
       if (
         (callee.type === "Identifier" && pureFunctions.has(callee.name)) ||
         (member !== undefined && member[0].type === "Identifier" && pure.get(member[0].name)?.has(member[1]) === true)
@@ -335,11 +405,11 @@ const actsOn = (root: Node, results: ReadonlySet<string>): boolean => {
         // `all.push(seen)` writes `all`; `flows` follows `seen` into it.
         return node.arguments.some((argument) => visit(argument, false))
       }
-      if (member !== undefined && reading && !node.arguments.some(functionLike)) {
+      if (member !== undefined && readsCallee && !node.arguments.some(functionLike)) {
         // A method of the result itself, such as `seen.stdout.trim()`.
         return visit(callee, acting) || node.arguments.some((argument) => visit(argument, acting))
       }
-      return reading || node.arguments.some((argument) => reads(argument, results))
+      return readsCallee || node.arguments.some((argument) => reading(argument))
     }
     // A guard around printing alone reads its test for the model, not the
     // program; only as a statement of its own, since `ctx.done(r.ok || null)`
@@ -431,7 +501,12 @@ export const blind = (source: string): boolean => {
     return false
   }
   if (!keepsResult(program.program)) return false
-  return !actsOn(program.program, resultNames(program.program))
+  const results = resultNames(program.program)
+  if (!actsOn(program.program, results)) return true
+  // A program that acted on some results but completes from none of them
+  // wrote its answer blind to any result it only printed.
+  if (completionReads(program.program, results)) return false
+  return resultsByCall(program.program).some((held) => !actsOn(program.program, held, false))
 }
 
 /**
