@@ -474,14 +474,16 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     originCardId?: string
   ): Promise<CommandOutcome> => {
     invocation?.signal?.throwIfAborted()
+    const request = { name, actor: invoker === "agent" ? "smithers" as const : invoker,
+      source: named !== undefined ? "form" as const : invoker === "system" ? "automatic" as const : "command" as const, invocation, httpCall }
+    const early = lifecycle?.before?.(request, args, named)
+    if (early !== undefined) return early
     const declared = find(name)
     if (named !== undefined && declared !== undefined) {
       const fields = formFieldsFor(declared.input, declared.metadata.form)
       named = publicFormPayload(fields, named)
       if (fields.some(field => field.kind === "write-only")) args = assembleArgs(fields, declared.metadata.form, named)
     }
-    const request = { name, actor: invoker === "agent" ? "smithers" as const : invoker,
-      source: named !== undefined ? "form" as const : invoker === "system" ? "automatic" as const : "command" as const, invocation, httpCall }
     const gesture = inheritedGesture?.name === name ? inheritedGesture
       : invoker === "user" && find(name) !== undefined ? lifecycle?.reserveGesture?.(request, args, named) : undefined
     // A new human command is a return to the transcript. A stale maximized
@@ -797,6 +799,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     executeForAgent: (call) => executeAgentToolCall(registry, call),
     runForAgent: async (name, args, invocation, signal) => {
       const clean = canonicalCommandName(name)
+      const early = lifecycle?.before?.({ name: clean, actor: "smithers", source: "command", invocation }, args)
+      if (early !== undefined) return early
       const target = find(clean)
       if (target !== undefined && !modelInvocable(target)) {
         return { status: "failed", error: userOnlyError(clean, target.metadata.userOnlyReason) }
@@ -809,6 +813,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     submit: async ({ name, payload, actor, display, invocation, gesture, originCardId }) => {
       const clean = canonicalCommandName(name)
       if (actor === "user") return runAs("user", clean, display, new Set(), invocation, payload, undefined, gesture, originCardId)
+      const early = lifecycle?.before?.({ name: clean, actor: "smithers", source: "form", invocation }, display, payload)
+      if (early !== undefined) return early
       const target = find(clean)
       if (target !== undefined && !modelInvocable(target)) {
         return { status: "failed", error: userOnlyError(clean, target.metadata.userOnlyReason) }

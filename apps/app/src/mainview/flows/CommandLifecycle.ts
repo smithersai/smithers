@@ -36,6 +36,8 @@ export type CommandAcceptance =
 
 /** Durable command records contain metadata only; optional human input is a private pending draft. */
 export interface CommandLifecycle {
+  /** Infrastructure refusal before gestures, state reads, or durable admission. */
+  readonly before?: (request: CommandRequest, args?: string, named?: Record<string, unknown>) => CommandOutcome | undefined
   readonly reserveGesture?: (request: CommandRequest, args?: string, named?: Record<string, unknown>) => CommandGesture | undefined
   readonly accept: (request: CommandRequest, pendingFormInput?: PendingFormInput) => Promise<CommandAcceptance>
   readonly canExecute?: (receipt: CommandReceipt, request: CommandRequest) => boolean

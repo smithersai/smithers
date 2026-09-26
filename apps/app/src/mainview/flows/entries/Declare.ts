@@ -38,6 +38,7 @@ export type CommandActions =
     // The mounted guide reports host visibility independently of command admission.
     | "observeGuideVisibility"
     | "storageRecoveryState"
+    | "privacyNotices"
     | "nativeAgentAvailable"
     | "slashCommands"
     | "slashItems"

@@ -7,6 +7,7 @@ import type { CommandLifecycle, CommandRequest, PendingCommandInput } from "../.
 import { canonicalEventValue } from "../EventValue"
 import type { ControllerContext } from "./context"
 import { INPUT_MODES, type InputMode } from "../InputMode"
+import { createPrivacyActions } from "./privacyActions"
 
 const currentHttpCall = (ctx: ControllerContext, call: CommandRequest["httpCall"]): boolean => {
   if (call === undefined) return true
@@ -21,6 +22,7 @@ const currentHttpCall = (ctx: ControllerContext, call: CommandRequest["httpCall"
 /** Command facts contain metadata only. Pending human edits never execute a form submission. */
 export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?: (request: CommandRequest) => void,
   setInputMode?: (mode: InputMode) => Promise<void>): CommandLifecycle => ({
+  before: createPrivacyActions(ctx).before,
   reserveGesture: (request, args, named) => {
     if (ctx.disposed || request.actor !== "user") return undefined
     let name = request.name
@@ -56,6 +58,8 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
   },
   accept: async (request, pendingFormInput) => {
     if (ctx.disposed || request.invocation?.signal?.aborted) return { refusal: "The command's controller or turn is closed.", persistenceFailed: true }
+    const privacyRefusal = createPrivacyActions(ctx).refuse(request.actor)
+    if (privacyRefusal !== undefined) return { refusal: privacyRefusal, persistenceFailed: true, writeRefused: true }
     const lineage = request.invocation?.lineage
     const epoch = ctx.accountEpoch
     const owner = ctx.accountOwner() ?? null

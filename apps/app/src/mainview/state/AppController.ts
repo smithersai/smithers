@@ -48,6 +48,7 @@ import { createAppShellController } from "./controller/app"
 import { createAuthBillingController } from "./controller/auth-billing"
 import { createCloudWikiController } from "./controller/cloud-wiki"
 import { createCommandIntentLifecycle } from "./controller/commandIntents"
+import { createPrivacyActions, PRIVACY_WRITE_PENDING, PRIVACY_WRITE_FAILED } from "./controller/privacyActions"
 import { createConnectorController } from "./controller/connectors"
 import type { NetEntry } from "./controller/context"
 import { createControllerContext } from "./controller/context"
@@ -173,6 +174,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly signupRepo: SignupController["signupRepo"]
   readonly signupFinish: SignupController["signupFinish"]
   readonly commands: CommandRegistry
+  readonly privacyNotices: ReturnType<typeof createPrivacyActions>["notices"]
   /**
    * The active repository's declared flows (the `flows` rows of its
    * .smithers/factory.json, seams/RepositoryFlowsSeam.ts), from which the
@@ -772,6 +774,7 @@ export const createAppController = (
     ...services, features: { ...services.features, experimental }
   })
   const actors = createActorBindings(ctx.onDispose)
+  const privacyActions = createPrivacyActions(ctx)
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
   ctx.onDispose(store.onMaintenanceFailure((error, streak) => ctx.failures.report("journal.compaction", error, String(streak))))
   if (store.onWriterLost !== undefined) ctx.onDispose(store.onWriterLost(() => {
@@ -817,6 +820,9 @@ export const createAppController = (
   const { withToast, resolveToast, dismissToast, surfaceCommandFailure: surfaceFailure } = createFailureController(ctx)
   const surfaceCommandFailure: typeof surfaceFailure = (name, outcome, saidBefore) => {
     if (ctx.disposed) return
+    // Infrastructure refusals already have a notice outside the blocked store.
+    if (outcome.status === "failed" && (outcome.error === PRIVACY_WRITE_PENDING || outcome.error === PRIVACY_WRITE_FAILED)) return
+    if ((outcome.status === "failed" || outcome.status === "form") && privacyActions.refuse("system") !== undefined) return
     /*
      * A superseded act says nothing: storage recovery owns a store that has
      * stopped taking writes, and a notice for work that was thrown away is
@@ -1255,6 +1261,7 @@ export const createAppController = (
   }))
 
   const changeDraft = (draft: string): void => {
+    if (privacyActions.refuse("user") !== undefined) return
     store.dispatch({ type: "composer.changed", actor: "user", draft })
   }
 
@@ -1291,6 +1298,7 @@ export const createAppController = (
 
   /* The palette's session acts (palette spec §3): open, close, the actions panel, the recents ledger. */
   const openPalette = (prefix?: string): void => {
+    if (privacyActions.refuse("user") !== undefined) return
     if (prefix !== undefined && prefix !== "") store.dispatch({ type: "composer.changed", actor: "user", draft: prefix })
     if (store.session().paletteOpen !== true) store.dispatch({ type: "palette.toggled", actor: "user", open: true })
     store.dispatch({ type: "hint.dismissed", actor: "user", id: "chat" })
@@ -1303,15 +1311,18 @@ export const createAppController = (
   })
   const closePalette = (lastQuery?: string): void => {
     cancelDictation()
+    if (privacyActions.refuse("user") !== undefined) return
     if (store.session().paletteOpen !== true) return
     store.dispatch({ type: "palette.toggled", actor: "user", open: false, ...(lastQuery === undefined ? {} : { lastQuery }) })
   }
   const togglePaletteActions = (ref: string): void => {
+    if (privacyActions.refuse("user") !== undefined) return
     if (store.session().paletteOpen !== true) store.dispatch({ type: "palette.toggled", actor: "user", open: true })
     const current = store.session().paletteActionsRef ?? null
     store.dispatch({ type: "palette.actions.toggled", actor: "user", ref: current === ref ? null : ref })
   }
   const notePaletteItemOpened = (item: { readonly kind: string; readonly ref: string }): void => {
+    if (privacyActions.refuse("user") !== undefined) return
     store.dispatch({ type: "palette.item.opened", actor: "user", ref: item.ref, kind: item.kind, at: Date.now() })
   }
   const paletteRecent = (): { readonly value: string } => ({ value: JSON.stringify({ items: store.session().paletteRecents ?? [] }) })
@@ -1795,7 +1806,10 @@ export const createAppController = (
     openDownload,
     promptDownload,
     dismissFirstRun: () => { store.dispatch({ type: "first-run.dismissed", actor: ctx.commandActor }) },
-    dismissHint: (id: string) => { store.dispatch({ type: "hint.dismissed", actor: ctx.commandActor, id }) },
+    dismissHint: (id: string) => {
+      if (privacyActions.refuse(ctx.commandActor) !== undefined) return
+      store.dispatch({ type: "hint.dismissed", actor: ctx.commandActor, id })
+    },
     ...signup,
     introduce,
     showAccount: account.showAccount,
@@ -2072,6 +2086,8 @@ export const createAppController = (
   const dispose = ctx.dispose
 
   const submitCommand: AppController["submitCommand"] = async submission => {
+    const early = privacyActions.before({ name: submission.name, actor: submission.actor === "agent" ? "smithers" : submission.actor, source: "form" }, undefined, submission.payload)
+    if (early !== undefined) return early
     const saidBefore = latestOrdinal(store.collections)
     const outcome = await commands.submit(submission).catch(() => ({ status: "failed" as const, error: "Submission failed" }))
     if (!ctx.disposed) surfaceCommandFailure(submission.name, outcome, saidBefore)
@@ -2080,6 +2096,7 @@ export const createAppController = (
 
   const runCommand: AppController["runCommand"] = (name, args, originCardId) => {
     if (ctx.disposed) return false
+    if (privacyActions.before({ name, actor: "user", source: "command" }, args) !== undefined) return true
     if (commands.find(name) === undefined) return false
     /* Everything the door says from here on belongs to this press (controller/spokenLines.ts). */
     const saidBefore = latestOrdinal(store.collections)
@@ -2097,6 +2114,7 @@ export const createAppController = (
   return {
     ...sharedActions,
     store,
+    privacyNotices: privacyActions.notices,
     controlFocus,
     formFocus,
     storageRecoveryState,

@@ -779,6 +779,8 @@ export interface AppStore {
   readonly readRecovery: () => Promise<StorageRecoverySnapshot>
   /** Content-free diagnostics; delete capabilities never leave the storage owner. */
   readonly privacyRetirementStatus: () => { readonly phase: "none" | PrivacyRetirement["phase"]; readonly remotePending: number }
+  /** Safe to read even when a failed privacy retirement has closed saved-state reads. */
+  readonly privacyWriteState: () => "ready" | "pending" | "failed"
   /** Save a delete-only obligation before releasing an ephemeral side-turn token. */
   readonly queueTurnErasure: (runId: string, journal: { readonly legId: string; readonly token: string }) => boolean
   /** Report failed background compaction attempts with their consecutive failure count. */
@@ -1906,6 +1908,8 @@ const initializeAppStore = async (
         : browserSqliteRecoveryReader(),
       ...(resolved.mode === "memory" ? { memory: recoveryStorage(persistedLocally) } : {})
     }),
+    privacyWriteState: () => privacyRejected ? "failed"
+      : privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending" ? "pending" : "ready",
     privacyRetirementStatus: () => {
       const intent = privacyRecord === undefined ? undefined : readPrivacyRetirement(privacyRecord)
       const reset = privacyRecord === undefined ? [] : readResetErasures(privacyRecord)
