@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -1664,22 +1663,19 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		}
 	}
 
-	// Backfill github_app_installation_repositories from live installation state
-	// on boot. The table is otherwise written only by webhook events, so any
-	// installation created before webhook wiring never appears and
-	// GetGitHubAppStatus reports "not installed" for every repo. Non-blocking so a
+	// Reconcile github_app_installation_repositories from live installation
+	// state on boot and then hourly. The table is otherwise written only by
+	// webhook events, so pre-webhook installs and missed webhooks are repaired
+	// only here. One worker per tick wins the advisory lock. Non-blocking so a
 	// slow/failed GitHub round-trip never delays serving; no-ops cleanly when app
 	// credentials are unconfigured.
 	if options.topology.workers() {
 		launchWorker(func() {
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Error("github_app.reconcile.boot_panic", "panic", r, "stack", string(debug.Stack()))
-				}
-			}()
-			if err := repoConnectionService.ReconcileGitHubAppInstallations(workerCtx); err != nil {
-				slog.Error("github_app.reconcile.boot_failed", "error", err)
-			}
+			repoConnectionService.StartGitHubAppInstallationReconciler(
+				workerCtx,
+				services.NewPgGitHubAppReconcileLocker(pool),
+				services.GitHubAppInstallationReconcileInterval,
+			)
 		})
 	}
 

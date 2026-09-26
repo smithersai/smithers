@@ -751,8 +751,14 @@ type reconcileRepository struct {
 // repositories, upserts them (owner/repo lowercased), and prunes rows for
 // installations or repositories that no longer exist.
 //
+// An installation whose token mint or repository listing fails is skipped, not
+// fatal: its repository rows are left as they were, the remaining installations
+// are still reconciled, and the installation prune still runs. The call then
+// returns an error naming how many installations were skipped.
+//
 // It no-ops cleanly (logs, returns nil) when app credentials are unconfigured,
-// so it is safe to call unconditionally on boot and from the admin route.
+// so it is safe to call unconditionally from the periodic reconciler and the
+// admin route.
 func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Context) error {
 	if !githubAppCredentialsConfigured() {
 		slog.Info("github_app.reconcile.skipped", "reason", "github app credentials not configured")
@@ -776,7 +782,11 @@ func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Cont
 	}
 
 	seenInstallationIDs := make([]int64, 0, len(installations))
+	failedInstallations := 0
 	for _, installation := range installations {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if installation.ID <= 0 {
 			continue
 		}
@@ -795,16 +805,21 @@ func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Cont
 			return pkgerrors.Internal("failed to upsert github app installation").WithCause(err)
 		}
 
+		// A token or listing failure is scoped to one installation (a suspended
+		// install answers 403). Skip it and keep its last-known repository rows
+		// so one tenant cannot freeze mapping freshness for every other tenant.
 		token, err := s.createGitHubInstallationTokenForInstallationID(ctx, installation.ID)
 		if err != nil {
 			slog.Error("github_app.reconcile.token_failed", "installation_id", installation.ID, "error", err)
-			return err
+			failedInstallations++
+			continue
 		}
 
 		repos, err := s.listGitHubInstallationRepositories(ctx, token.Token)
 		if err != nil {
 			slog.Error("github_app.reconcile.repos_failed", "installation_id", installation.ID, "error", err)
-			return err
+			failedInstallations++
+			continue
 		}
 
 		seenRepoIDs := make([]int64, 0, len(repos))
@@ -849,6 +864,18 @@ func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Cont
 		seenInstallationIDs,
 	); err != nil {
 		return pkgerrors.Internal("failed to prune github app installations").WithCause(err)
+	}
+
+	if failedInstallations > 0 {
+		slog.Error("github_app.reconcile.partial",
+			"installations", len(seenInstallationIDs),
+			"failed_installations", failedInstallations,
+		)
+		return pkgerrors.Internal(fmt.Sprintf(
+			"github app reconcile skipped %d of %d installations",
+			failedInstallations,
+			len(seenInstallationIDs),
+		))
 	}
 
 	slog.Info("github_app.reconcile.ok", "installations", len(seenInstallationIDs))
