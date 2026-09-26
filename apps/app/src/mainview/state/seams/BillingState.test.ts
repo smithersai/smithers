@@ -88,3 +88,21 @@ test.each(["account", "dispose"] as const)("late plan and checkout answers canno
     expect([...store.collections.messages.values()].some(row => row.text.includes("old-account"))).toBe(false)
   } finally { hold.resolve(); await Promise.allSettled([plans, checkout]); await store.dispose?.() }
 })
+
+test.each([[undefined, "pro"], ["pro", "pro"]] as const)("checkout with plan %p asks the server for %p", async (plan, expected) => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+  const bodies: unknown[] = []
+  try {
+    await signIn(store, "ada")
+    const seam = createBillingSeam(context(store, async (path, init) => {
+      if (path.endsWith("/checkout")) {
+        bodies.push(JSON.parse(String(init?.body ?? "{}")))
+        return Response.json({ url: "https://checkout.stripe.com/c/ok" })
+      }
+      return reply(path)
+    }), true)
+    await seam.startCheckout(plan)
+    // An omitted plan must never fall to a server default: Pro is the sold plan.
+    expect(bodies).toEqual([{ plan: expected }])
+  } finally { await store.dispose?.() }
+})

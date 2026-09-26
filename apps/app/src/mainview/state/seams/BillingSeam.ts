@@ -150,7 +150,8 @@ export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: (
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(plan === undefined ? {} : { plan })
+        // Name the plan: an omitted key would fall to a server default.
+        body: JSON.stringify({ plan: plan ?? "pro" })
       },
       "Checkout",
       (url) => `Checkout is ready: ${url}`,

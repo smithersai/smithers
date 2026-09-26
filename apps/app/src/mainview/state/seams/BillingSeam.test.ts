@@ -98,15 +98,14 @@ describe("billing seam — the success path", () => {
     )
   })
 
-  test("billing.upgrade without a plan omits the field entirely", async () => {
+  test("billing.upgrade without a plan asks for Pro, never a server default", async () => {
     const calls: BillingCall[] = []
     const { controller } = await freshController(
       billingBackend({ "/api/billing/checkout": () => json(200, { url: "https://checkout.stripe.com/x" }) }, calls)
     )
     const outcome = await controller.commands.run("billing.upgrade")
     expect(outcome.status).toBe("executed")
-    expect(JSON.parse(calls[0]?.body ?? "")).toEqual({})
-    expect(Object.hasOwn(JSON.parse(calls[0]?.body ?? ""), "plan")).toBe(false)
+    expect(JSON.parse(calls[0]?.body ?? "")).toEqual({ plan: "pro" })
   })
 
   test("billing.portal: POSTs the portal route, transcript states the portal URL", async () => {
