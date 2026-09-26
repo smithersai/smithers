@@ -426,6 +426,17 @@
     },
     {
       "name": "@smthrs/agent",
+      "subpath": "./SeatRouter",
+      "development": "./src/SeatRouter.ts",
+      "published": {
+        "types": "./dist/esm/SeatRouter.d.ts",
+        "import": "./dist/esm/SeatRouter.js",
+        "require": "./dist/cjs/SeatRouter.js"
+      },
+      "reason": "Jev seat and system-variant routing added in #1929; the TUI host and the native equipment supply its Catalog. A declared seat always wins, and an unanswerable judge fails the run as SeatUnrouted instead of picking a default seat."
+    },
+    {
+      "name": "@smthrs/agent",
       "subpath": "./SmithersPlugin",
       "development": "./src/SmithersPlugin.ts",
       "published": {
@@ -445,6 +456,39 @@
         "require": "./dist/cjs/CompletionClaim.js"
       },
       "reason": "Shared completion evidence schema and classifier used by the offline scripted judge and native host completion gates."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./Judgement",
+      "development": "./src/Judgement.ts",
+      "published": {
+        "types": "./dist/esm/Judgement.d.ts",
+        "import": "./dist/esm/Judgement.js",
+        "require": "./dist/cjs/Judgement.js"
+      },
+      "reason": "The one metered, fail-closed Jev reader added in #1929; @smthrs/agent and the TUI host ask every supervisor, relevance, compaction, monitor and routing question through it. A host with no Evaluator fails the reading instead of guessing."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./Monitor",
+      "development": "./src/Monitor.ts",
+      "published": {
+        "types": "./dist/esm/Monitor.d.ts",
+        "import": "./dist/esm/Monitor.js",
+        "require": "./dist/cjs/Monitor.js"
+      },
+      "reason": "Declarative supervisor monitors added in #1929; @smthrs/agent composes them into the supervisor reading and gates delivery at the recorded steering drain against a durable ledger. Monitors are silent by default."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./Relevance",
+      "development": "./src/Relevance.ts",
+      "published": {
+        "types": "./dist/esm/Relevance.d.ts",
+        "import": "./dist/esm/Relevance.js",
+        "require": "./dist/cjs/Relevance.js"
+      },
+      "reason": "The Jev relevance gate added in #1929 for memory rows, catalog flows, skills and instruction-file chunks; @smthrs/agent applies it. An item is withheld only at P(unnecessary) >= 0.9, and an unjudged reading keeps everything."
     },
     {
       "name": "@smthrs/harness",

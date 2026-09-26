@@ -267,6 +267,7 @@
     "@smthrs/harness": "1.0.0-rc.1",
     "@smthrs/kernel": "1.0.0-rc.1",
     "@smthrs/memory": "1.0.0-rc.1",
+    "@smthrs/model": "1.0.0-rc.1",
     "@smthrs/plan": "1.0.0-rc.1",
     "@smthrs/registry": "1.0.0-rc.1",
     "@smthrs/sandbox": "1.0.0-rc.1",
@@ -297,7 +298,6 @@
     "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/engine-store": "1.0.0-rc.1",
     "@smthrs/flows": "1.0.0-rc.1",
-    "@smthrs/model": "1.0.0-rc.1",
     "microsandbox": "0.6.16"
   }
 }

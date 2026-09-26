@@ -3200,6 +3200,9 @@ importers:
       '@smthrs/memory':
         specifier: 1.0.0-rc.1
         version: link:../memory
+      '@smthrs/model':
+        specifier: 1.0.0-rc.1
+        version: link:../model
       '@smthrs/plan':
         specifier: 1.0.0-rc.1
         version: link:../../flows/plan
@@ -3234,9 +3237,6 @@ importers:
       '@smthrs/flows':
         specifier: 1.0.0-rc.1
         version: link:../../flows
-      '@smthrs/model':
-        specifier: 1.0.0-rc.1
-        version: link:../model
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
