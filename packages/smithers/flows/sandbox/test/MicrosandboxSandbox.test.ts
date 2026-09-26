@@ -72,6 +72,8 @@ interface Machine {
   workspace: string | undefined
   labels: Record<string, string>
   status: "running" | "stopped" | "crashed"
+  /** The guest stopped answering while the machine is still recorded as running, until it is stopped or started. */
+  wedged?: boolean
   readonly live: Set<LiveExec>
 }
 
@@ -131,6 +133,9 @@ interface Controls {
   readonly configJson?: ((name: string) => string | undefined) | undefined
   readonly snapshotFailure?: ((name: string) => unknown) | undefined
   readonly snapshotReadFailure?: (() => unknown) | undefined
+  readonly startFailure?: (() => unknown) | undefined
+  readonly connectFailure?: (() => unknown) | undefined
+  readonly stopFailure?: (() => unknown) | undefined
 }
 
 /** Every guest filesystem failure arrives as the SDK's one fs error kind. */
@@ -147,6 +152,13 @@ const fsFailure = (cause: unknown): Error => {
 }
 
 const coded = (code: string, message: string): Error => Object.assign(new Error(message), { code })
+
+/** What the vendor says when a machine's guest agent is gone. */
+const agentGone = (name: string): Error =>
+  coded(
+    "custom",
+    `GenericFailure [AgentClient] agent client error: connect /run/agent/${name}.sock: Connection refused (os error 61)`
+  )
 
 /**
  * One command's event stream: buffered until received, closed by `null`.
@@ -310,15 +322,21 @@ const fakeSdk = (controls: Controls = {}) => {
     remove(machine)
   }
 
+  const answering = (machine: Machine): void => {
+    if (machine.wedged === true) throw agentGone(machine.name)
+  }
+
   const sandboxFor = (machine: Machine): VendorSandbox => ({
     name: machine.name,
     backendKind: machine.backendKind,
     fs: () => ({
       write: async (path, data) => {
+        answering(machine)
         const bytes = typeof data === "string" ? encoder.encode(data) : new Uint8Array(data)
         realFs(() => writeFileSync(hostPath(machine, path), bytes))
       },
       read: async (path) => {
+        answering(machine)
         if (controls.readFailure !== undefined) throw controls.readFailure()
         return realFs(() => new Uint8Array(readFileSync(hostPath(machine, path))))
       },
@@ -327,6 +345,7 @@ const fakeSdk = (controls: Controls = {}) => {
         return realFs(() => readFileSync(hostPath(machine, path), "utf8"))
       },
       mkdir: async (path) => {
+        answering(machine)
         recorded.mkdirs.push(path)
         // The provider's first mkdir prepares its workspace; the test root
         // itself is shared by every machine and never belongs to one.
@@ -335,6 +354,7 @@ const fakeSdk = (controls: Controls = {}) => {
       }
     }),
     execStreamWith: async (shell, configure) => {
+      answering(machine)
       if (machine.status !== "running") {
         throw coded("sandboxNotRunning", `[SandboxNotRunning] microVM ${machine.name} is ${machine.status}`)
       }
@@ -374,16 +394,22 @@ const fakeSdk = (controls: Controls = {}) => {
     configJson: controls.configJson?.(machine.name) ?? JSON.stringify({ name: machine.name, labels: machine.labels }),
     connect: async () => {
       if (machine.status !== "running") throw new Error(`microVM ${machine.name} is stopped`)
+      const refused = controls.connectFailure?.()
+      if (refused !== undefined) throw refused
       recorded.connects.push(machine.name)
       return sandboxFor(machine)
     },
     start: async () => {
+      if (controls.startFailure !== undefined) throw controls.startFailure()
       machine.status = "running"
+      machine.wedged = false
       recorded.starts.push({ name: machine.name, detached: false })
       return sandboxFor(machine)
     },
     startDetached: async () => {
+      if (controls.startFailure !== undefined) throw controls.startFailure()
       machine.status = "running"
+      machine.wedged = false
       recorded.starts.push({ name: machine.name, detached: true })
       return sandboxFor(machine)
     },
@@ -401,7 +427,9 @@ const fakeSdk = (controls: Controls = {}) => {
     },
     stop: async () => {
       recorded.stops.push(machine.name)
+      if (controls.stopFailure !== undefined) throw controls.stopFailure()
       machine.status = "stopped"
+      machine.wedged = false
     },
     snapshot: async (name) => {
       const failed = controls.snapshotFailure?.(name)
@@ -509,7 +537,8 @@ const fakeSdk = (controls: Controls = {}) => {
           },
           create: async () => {
             recorded.builds.push({ name, settings: { ...settings } })
-            if (controls.createFailure !== undefined) throw controls.createFailure()
+            const refused = controls.createFailure?.()
+            if (refused !== undefined) throw refused
             if (machines.has(name)) throw coded("sandboxAlreadyExists", `sandbox ${name} already exists`)
             const machine: Machine = {
               name,
@@ -582,6 +611,10 @@ const fakeSdk = (controls: Controls = {}) => {
       const machine = machineAt(name)
       machine.status = "crashed"
       for (const live of [...machine.live]) live.lose()
+    },
+    /** The guest stops answering, the machine still recorded as running. */
+    wedge: (name: string): void => {
+      machineAt(name).wedged = true
     },
     /** A machine some earlier process created and labelled. */
     plant: (name: string, labels: Record<string, string>, status: Machine["status"] = "running"): void => {
@@ -1521,6 +1554,141 @@ describe("MicrosandboxSandbox", () => {
       yield* inSession(detached, "detached", (session) => session.ping!)
       expect(detachedFake.recorded.starts).toEqual([{ name: detachedName, detached: true }])
     }))
+
+  it.live("opens again after a transient vendor failure, and gives up on a lasting one", () =>
+    Effect.gen(function*() {
+      let refusals = 2
+      const flaky = fakeSdk({
+        createFailure: () =>
+          refusals-- > 0 ? coded("runtime", "the microVM did not respond within 10000 ms") : undefined
+      })
+      const name = yield* inSession(
+        MicrosandboxSandbox.make({ sdk: flaky.sdk }),
+        "flaky-open",
+        (session) => Effect.as(session.ping!, session.remoteId)
+      )
+      expect(flaky.recorded.builds).toHaveLength(3)
+      expect(flaky.machines.has(name)).toBe(false)
+
+      const down = fakeSdk({ createFailure: () => agentGone("down") })
+      const refused = yield* Effect.flip(inSession(MicrosandboxSandbox.make({ sdk: down.sdk }), "down", Effect.succeed))
+      expect(refused.message).toContain("could not be opened")
+      expect(down.recorded.builds).toHaveLength(3)
+    }), 30_000)
+
+  it.live("restarts a sticky machine whose guest stopped answering, on its own disk", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, persistence: "sticky" })
+      const bytes = new Uint8Array([1, 2, 3])
+      const name = yield* inSession(provider, "wedged", (session) =>
+        Effect.as(session.writeFile("/workspace/kept.bin", bytes), session.remoteId))
+
+      // Reattached with the guest gone: the machine is stopped and started
+      // again, and the workspace is still there.
+      fake.wedge(name)
+      const kept = yield* inSession(provider, "wedged", (session) =>
+        session.readFile("/workspace/kept.bin"))
+      expect(Array.from(kept)).toEqual([1, 2, 3])
+      expect(fake.recorded.stops).toEqual([name])
+      expect(fake.recorded.starts).toEqual([{ name, detached: true }])
+
+      // Mid-session: a command whose start the gone guest refused runs once
+      // the machine is back, and so do file operations.
+      const ran = yield* inSession(provider, "wedged", (session) =>
+        Effect.gen(function*() {
+          fake.wedge(name)
+          const [stdout, , code] = yield* output(yield* session.spawn("printf revived", {}))
+          fake.wedge(name)
+          yield* session.writeFile("/workspace/nested/after.txt", encoder.encode("after"))
+          fake.wedge(name)
+          const read = yield* session.readFile("/workspace/nested/after.txt")
+          return [stdout, code, new TextDecoder().decode(read)] as const
+        }).pipe(Effect.scoped))
+      expect(ran).toEqual(["revived", 0, "after"])
+      expect(fake.recorded.starts).toHaveLength(4)
+
+      // Two commands that find the guest gone at once bring it back once.
+      const both = yield* inSession(provider, "wedged", (session) =>
+        Effect.gen(function*() {
+          fake.wedge(name)
+          return yield* Effect.all(
+            ["printf one", "printf two"].map((command) =>
+              Effect.flatMap(session.spawn(command, {}), output).pipe(Effect.map(([stdout]) =>
+                stdout
+              ))
+            ),
+            { concurrency: "unbounded" }
+          )
+        }).pipe(Effect.scoped))
+      expect(both).toEqual(["one", "two"])
+      expect(fake.recorded.starts).toHaveLength(5)
+      expect(fake.recorded.destroys).toEqual([])
+    }), 30_000)
+
+  it.live("reconnects without a restart when the guest answers a fresh connection", () =>
+    Effect.gen(function*() {
+      let blips = 1
+      const fake = fakeSdk({
+        execFailure: (line) => line.includes("blip") && blips-- > 0 ? agentGone("blip") : undefined
+      })
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, persistence: "sticky" })
+      const [stdout] = yield* inSession(provider, "blip", (session) =>
+        Effect.flatMap(session.spawn("printf blip", {}), output).pipe(Effect.scoped))
+      expect(stdout).toBe("blip")
+      expect(fake.recorded.stops).toEqual([])
+      expect(fake.recorded.starts).toEqual([])
+    }), 30_000)
+
+  it.live(
+    "does not restart an ephemeral machine, and names a machine it could not bring back",
+    () =>
+      Effect.gen(function*() {
+        const fake = fakeSdk()
+        const lost = yield* Effect.flip(
+          inSession(MicrosandboxSandbox.make({ sdk: fake.sdk }), "ephemeral-gone", (session) =>
+            Effect.gen(function*() {
+              fake.wedge(session.remoteId)
+              return yield* session.spawn("true", {})
+            }).pipe(Effect.scoped))
+        )
+        expect(lost.message).toContain("could not run in")
+        expect(fake.recorded.starts).toEqual([])
+
+        const dead = fakeSdk({
+          startFailure: () => new Error("no hypervisor"),
+          stopFailure: () => new Error("not running")
+        })
+        const provider = MicrosandboxSandbox.make({ sdk: dead.sdk, persistence: "sticky" })
+        const name = yield* inSession(provider, "dead", (session) => Effect.succeed(session.remoteId))
+        dead.wedge(name)
+        const refused = yield* Effect.flip(inSession(provider, "dead", Effect.succeed))
+        expect(refused.message).toContain(`the microVM ${name} stopped answering and could not be restarted`)
+        expect(refused.cause).toEqual(new Error("no hypervisor"))
+
+        // A crashed machine starts again attached when the session is not detached.
+        const attached = fakeSdk()
+        const inline = MicrosandboxSandbox.make({ sdk: attached.sdk, persistence: "sticky", detached: false })
+        const [stdout] = yield* inSession(inline, "crashed", (session) =>
+          Effect.gen(function*() {
+            attached.loseGuest(session.remoteId)
+            return yield* output(yield* session.spawn("printf back", {}))
+          }).pipe(Effect.scoped))
+        expect(stdout).toBe("back")
+        expect(attached.recorded.starts).toEqual([{ name: attached.recorded.builds[0]!.name, detached: false }])
+
+        // A guest that answers a fresh connection with a refusal is not restarted over it.
+        let denials = 0
+        const denied = fakeSdk({ connectFailure: () => denials++ === 0 ? undefined : new Error("permission denied") })
+        const guarded = MicrosandboxSandbox.make({ sdk: denied.sdk, persistence: "sticky" })
+        const machine = yield* inSession(guarded, "denied", (session) => Effect.succeed(session.remoteId))
+        denied.wedge(machine)
+        const kept = yield* Effect.flip(inSession(guarded, "denied", Effect.succeed))
+        expect(kept.cause).toEqual(new Error("permission denied"))
+        expect(denied.recorded.stops).toEqual([])
+      }),
+    30_000
+  )
 
   it.effect("refuses to reattach a machine whose ownership labels it cannot record", () =>
     Effect.gen(function*() {
