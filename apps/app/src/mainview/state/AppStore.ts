@@ -105,6 +105,7 @@ inConversation
 } from "./AppState"
 import { PALETTE_MIRROR_KEY,THEME_MIRROR_KEY,rememberAppearance } from "./Appearance"
 import { consumeWriterTakeover, reportWriterMoved } from "./WriterOwnership"
+import { reportStorageFailure } from "./StorageFailure"
 import { isCurrentApprovalAnswer,type ApprovalAnswerInput } from "./ApprovalAnswerState"
 import { captureBrowserStorageRecovery,recoveryStorage } from "./BrowserStorageRecovery"
 import { CommandIntentSchema } from "./CommandIntent"
@@ -781,6 +782,8 @@ export interface AppStore {
   readonly privacyRetirementStatus: () => { readonly phase: "none" | PrivacyRetirement["phase"]; readonly remotePending: number }
   /** Safe to read even when a failed privacy retirement has closed saved-state reads. */
   readonly privacyWriteState: () => "ready" | "pending" | "failed"
+  /** Stop consumers synchronously before failed-retirement rollback can wake them. */
+  readonly onPrivacyFailure: (listener: () => void) => () => void
   /** Save a delete-only obligation before releasing an ephemeral side-turn token. */
   readonly queueTurnErasure: (runId: string, journal: { readonly legId: string; readonly token: string }) => boolean
   /** Report failed background compaction attempts with their consecutive failure count. */
@@ -988,6 +991,7 @@ export const createAppStore = async (
       : "backend" in persistence ? persistence : { backend: persistence, mode: persistence.kind, degraded: false }
     assertOwned()
     const store = await initializeAppStore(resolved, options, assertOwned)
+    if (writer !== undefined) store.onPrivacyFailure(() => reportStorageFailure(new PrivacyRetirementError()))
     stopLostStore = store.dispose
     assertOwned()
     resolved.recordSuccessfulOpen?.()
@@ -1268,6 +1272,12 @@ const initializeAppStore = async (
   let committedEventBytes = committedEvents.reduce((total, event) => total + eventBytes(event), 0)
   let generation = 0
   let privacyRejected = false
+  const privacyFailureListeners = new Set<() => void>()
+  const rejectPrivacy = () => {
+    if (privacyRejected) return
+    privacyRejected = true
+    for (const listener of privacyFailureListeners) listener()
+  }
   const assertReadable = (): void => { assertOwned(); if (privacyRejected) throw new PrivacyRetirementError() }
   let scheduleAutoCompaction = (): void => {}
   let compactionTimer: ReturnType<typeof setTimeout> | undefined
@@ -1289,7 +1299,7 @@ const initializeAppStore = async (
       if (write.checkpoint !== undefined) committedCheckpoint = write.checkpoint
       if (write.retirement !== undefined) await finishRetirement(write.retirement)
     } catch (error) {
-      if (write.retirement !== undefined) privacyRejected = true
+      if (write.retirement !== undefined) rejectPrivacy()
       if (acceptedGeneration === generation) {
         generation += 1
         optimistic = committed
@@ -1549,7 +1559,7 @@ const initializeAppStore = async (
             deriveTurnErasures(previous.snapshot.httpTurnLegs))
           if (resolved.mode === "memory") throw new PrivacyRetirementError()
           write = { ...write, retirement }
-        } catch (error) { privacyRejected = true; throw error }
+        } catch (error) { rejectPrivacy(); throw error }
       }
     }
     const acceptedGeneration = generation
@@ -1910,6 +1920,10 @@ const initializeAppStore = async (
     }),
     privacyWriteState: () => privacyRejected ? "failed"
       : privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending" ? "pending" : "ready",
+    onPrivacyFailure: listener => {
+      privacyFailureListeners.add(listener)
+      return () => { privacyFailureListeners.delete(listener) }
+    },
     privacyRetirementStatus: () => {
       const intent = privacyRecord === undefined ? undefined : readPrivacyRetirement(privacyRecord)
       const reset = privacyRecord === undefined ? [] : readResetErasures(privacyRecord)

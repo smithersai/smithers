@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test"
 import { createAppStore } from "./AppStore"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { silentAgent } from "./TestFixtures"
 import { PERSISTENCE_BACKEND_STORAGE_KEY } from "../chain/SchemaVersion"
 import { readPrivacyRetirement, type PrivacyStorage } from "../chain/PrivacyRetirement"
 
+const createAppController = scopedControllers()
 const fixture = async (fails = false) => {
   const bytes = new Map<string, string>()
   const storage: PrivacyStorage = {
@@ -104,7 +105,7 @@ for (const door of ["button", "submission", "agent", "native", "agent form", "ch
   })
 }
 
-test("a failed real cleanup refuses through the independent notice even after saved reads close", async () => {
+test("a failed real cleanup stops the controller before saved reads close and reload retries it", async () => {
   const t = await fixture(true)
   try {
     t.release.resolve()
@@ -113,10 +114,8 @@ test("a failed real cleanup refuses through the independent notice even after sa
     expect(() => t.controller.runCommand("account.show")).not.toThrow()
     expect(() => t.controller.changeDraft("private rejected input")).not.toThrow()
     expect(await t.controller.commands.runForAgent("account.show")).toMatchObject({ status: "failed", error: "Account cleanup failed. Reload to retry." })
-    expect(t.controller.privacyNotices.get("toast-privacy-write")?.detail).toBe("Account cleanup failed. Reload to retry.")
-    expect(JSON.stringify([...t.controller.privacyNotices.values()])).not.toContain("PRIVATE CLEANUP ERROR")
-    expect(await t.controller.submitCommand({ name: "toast.dismiss", actor: "user", payload: { toastId: "toast-privacy-write" } })).toMatchObject({ status: "executed" })
-    expect(t.controller.privacyNotices.size).toBe(0)
+    expect(t.controller.runCommand("account.show")).toBe(false)
+    expect(await t.controller.submitCommand({ name: "toast.dismiss", actor: "user", payload: { toastId: "toast-privacy-write" } })).toMatchObject({ status: "failed" })
     await t.dispose()
     const restored = await createAppStore({ backend: { kind: "localStorage", storage: t.storage }, mode: "localStorage", degraded: false,
       privacy: { record: t.storage, eraseInactiveDatabase: async () => {} } }, { seedWiki: false })

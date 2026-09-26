@@ -33,7 +33,7 @@ export const createPromptQueueController = (ctx: ControllerContext, send: TurnCo
       if (!disposed && !ctx.disposed) await pause(true, "system").catch(() => {})
     } finally {
       draining = false
-      if (!failed && !ctx.activeTurn && !store.session().promptQueuePaused && current().length > 0) schedule()
+      if (!disposed && !ctx.disposed && !failed && !ctx.activeTurn && !store.session().promptQueuePaused && current().length > 0) schedule()
     }
   }
   const schedule = () => {

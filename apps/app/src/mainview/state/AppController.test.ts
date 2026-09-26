@@ -159,6 +159,7 @@ describe("the controller's command surface", () => {
       "controlFocus",
       "formFocus",
       "storageRecoveryState",
+      "privacyNotices",
       "downloadUrl",
       "features",
       "nativeAgentAvailable",

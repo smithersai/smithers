@@ -1,5 +1,5 @@
 import { StartupErrorPanel } from "./StartupError"
-import { subscribeWriterOwnership, writerOwnershipFailure } from "./state/WriterOwnership"
+import { subscribeStorageFailure, storageFailure } from "./state/StorageFailure"
 import { ViewSkeleton } from "./ViewSkeleton"
 import { lazy, StrictMode, Suspense, useSyncExternalStore } from "react"
 import { prepareControllerBoot, ControllerProvider } from "./ControllerProvider"
@@ -35,8 +35,8 @@ export function AppRoot({
   readonly watchdog: Pick<StartupWatchdog, "markMounted" | "handleRenderFailure">
 }) {
   const View = preparedViews?.default ?? RepoApp
-  const moved = useSyncExternalStore(subscribeWriterOwnership, writerOwnershipFailure, writerOwnershipFailure)
-  if (moved !== undefined) return <StartupErrorPanel reason={moved} />
+  const failure = useSyncExternalStore(subscribeStorageFailure, storageFailure, storageFailure)
+  if (failure !== undefined) return <StartupErrorPanel reason={failure} />
   const boot = prepareControllerBoot({})
   return (
     <StrictMode>

@@ -24,8 +24,8 @@ export const createPrivacyActions = (ctx: ControllerContext) => actorSharedState
   ctx.onDispose(() => notices.cleanup())
   const clear = () => { if (notices.has(id)) notices.delete(id) }
   const refuse = (actor: "user" | "smithers" | "system"): string | undefined => {
-    if (ctx.disposed) return undefined
     const state = ctx.store.privacyWriteState()
+    if (ctx.disposed) return state === "failed" ? PRIVACY_WRITE_FAILED : undefined
     if (state === "ready") { clear(); return undefined }
     const detail = state === "failed" ? PRIVACY_WRITE_FAILED : PRIVACY_WRITE_PENDING
     const notice = { id, key: "privacy-write", title: "Not saved", detail, status: "failed" as const,
@@ -37,7 +37,7 @@ export const createPrivacyActions = (ctx: ControllerContext) => actorSharedState
   const before: NonNullable<CommandLifecycle["before"]> = (request, args, named) => {
     // Dismissing this local notice must remain possible while durable command
     // admission is blocked. It has no application effect or private payload.
-    if (request.actor === "user" && request.name === "toast.dismiss" && (named?.toastId ?? args?.trim()) === id) {
+    if (!ctx.disposed && request.actor === "user" && request.name === "toast.dismiss" && (named?.toastId ?? args?.trim()) === id) {
       clear()
       return { status: "executed" }
     }

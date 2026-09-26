@@ -1,4 +1,5 @@
 import { WriterMovedToAnotherTabError } from "./StorageRecoveryContract"
+import { reportStorageFailure } from "./StorageFailure"
 
 const TAKEOVER_KEY = "smithers.writer-takeover"
 
@@ -21,15 +22,6 @@ export const consumeWriterTakeover = (): boolean => {
   return requested
 }
 
-// Ephemeral ownership of this document, not persisted application state.
-let failure: WriterMovedToAnotherTabError | undefined
-const listeners = new Set<() => void>()
-export const writerOwnershipFailure = () => failure
-export const subscribeWriterOwnership = (listener: () => void) => {
-  listeners.add(listener)
-  return () => { listeners.delete(listener) }
-}
 export const reportWriterMoved = (): void => {
-  failure ??= new WriterMovedToAnotherTabError()
-  for (const listener of listeners) listener()
+  reportStorageFailure(new WriterMovedToAnotherTabError())
 }

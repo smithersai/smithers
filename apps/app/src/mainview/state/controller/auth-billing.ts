@@ -1160,9 +1160,13 @@ export const createAuthBillingController = (
     if (typeof document === "undefined" || typeof window === "undefined") return
     let reading = false
     const reread = (): void => {
-      if (reading || document.visibilityState === "hidden") return
+      if (ctx.disposed || reading || document.visibilityState === "hidden") return
       reading = true
-      void loadSession().finally(() => {
+      void loadSession().catch(error => {
+        // Failed privacy retirement closes the controller and has its own
+        // host recovery surface. Never leak its raw storage error globally.
+        if (!ctx.disposed && store.privacyWriteState() !== "failed") ctx.failures.report("command.boundary", error, "identity.refresh")
+      }).finally(() => {
         reading = false
       })
     }
@@ -1178,7 +1182,7 @@ export const createAuthBillingController = (
     channel.onmessage = () => {
       // A sibling's identity changed: re-read the seam rather than trust
       // the message — the cookie is the authority, not the announcement.
-      void loadSession()
+      reread()
     }
     ctx.onDispose(() => {
       channel.onmessage = null

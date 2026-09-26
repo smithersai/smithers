@@ -776,6 +776,7 @@ export const createAppController = (
   const actors = createActorBindings(ctx.onDispose)
   const privacyActions = createPrivacyActions(ctx)
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
+  ctx.onDispose(store.onPrivacyFailure(() => { void ctx.dispose().catch(() => {}) }))
   ctx.onDispose(store.onMaintenanceFailure((error, streak) => ctx.failures.report("journal.compaction", error, String(streak))))
   if (store.onWriterLost !== undefined) ctx.onDispose(store.onWriterLost(() => {
     // Mark the controller closed synchronously, before React unmount refs or
