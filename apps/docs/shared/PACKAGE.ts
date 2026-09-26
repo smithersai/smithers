@@ -39,9 +39,9 @@ const sources = Smithers.Filegroup({
   cwd
 })
 
-/** The generator emits the declared edges and the content sync round-trips against fixtures under a temp dir; the Alchemy factory derives every manifest site's identity from its slug. */
+/** The generator emits the declared edges and the content sync round-trips against fixtures under a temp dir; the Alchemy factory derives every manifest site's identity from its slug; the llms check rejects Electrobun boilerplate. */
 const tests = Smithers.Shell.Test({
-  shell: "node --test --test-concurrency=1 apps/docs/shared/gen-sites.test.mjs apps/docs/shared/sync-content.test.mjs apps/docs/shared/alchemy-site.test.mjs",
+  shell: "node --test --test-concurrency=1 apps/docs/shared/gen-sites.test.mjs apps/docs/shared/sync-content.test.mjs apps/docs/shared/alchemy-site.test.mjs apps/docs/shared/check-llms.test.mjs",
   data: [
     Smithers.file("gen-sites.mjs"),
     Smithers.file("gen-sites.test.mjs"),
@@ -49,6 +49,8 @@ const tests = Smithers.Shell.Test({
     Smithers.file("sync-content.test.mjs"),
     Smithers.file("alchemy-site.mjs"),
     Smithers.file("alchemy-site.test.mjs"),
+    Smithers.file("check-llms.mjs"),
+    Smithers.file("check-llms.test.mjs"),
     Smithers.file("manifest.mjs"),
     Smithers.file("starlight.css"),
     Smithers.glob("assets/**/*")

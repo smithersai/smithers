@@ -6009,6 +6009,14 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/shared/check-llms.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/check-llms.test.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/shared/manifest.mjs"
       },
       {
