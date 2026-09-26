@@ -258,10 +258,19 @@ describe("workspace steps", () => {
     expect(prepared.commit).toBe(commit)
     const diff = value(await execute(Collect, { workspace: prepared }, snapshot, options))
     expect(diff).toMatchObject({ patch: "", files: [] })
-    const checks = value(
+    // No check passes on nothing: an empty change fails the `change` check
+    // without booting a machine.
+    const unchecked = value(
       await execute(Check, { repository: "example/demo", commit, patch: diff.patch }, snapshot, options)
     )
+    expect(unchecked).toEqual(Actions.unchanged(commit))
+    expect(unchecked.passed).toBe(false)
+    expect(unchecked.receipts).toMatchObject([{ name: "change", exitCode: 1 }])
+    const patch = git(repo, "diff", "--binary", commit, "--", "README.md") +
+      "diff --git a/NOTES.md b/NOTES.md\nnew file mode 100644\n--- /dev/null\n+++ b/NOTES.md\n@@ -0,0 +1 @@\n+notes\n"
+    const checks = value(await execute(Check, { repository: "example/demo", commit, patch }, snapshot, options))
     expect(checks.passed).toBe(true)
+    expect(checks.receipts.map((receipt: Workspace.CheckReceipt) => receipt.name)).toEqual(["readme"])
     const applied = value(
       await execute(Apply, { repository: "example/demo", parent: commit, patch: diff.patch }, snapshot, {
         ...options,

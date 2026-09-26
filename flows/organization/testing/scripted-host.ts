@@ -49,6 +49,11 @@
  * observed" in the same reply, as real seats do; its next turn approves with
  * `Read after the refusal: <line>` only if the probe's output reached it.
  *
+ * With `SMITHERS_ORGANIZATION_SCRIPTED_NO_CHANGE=<n>` the builder answers
+ * `done` without editing on its first `n` asks of a round's build (1: the
+ * first ask only; 2: the host's ask again too), as a model that reports work
+ * it never did.
+ *
  * `SMITHERS_ORGANIZATION_SCRIPTED_EXTRA`, the same shape, makes a principal
  * the script does not serve decline with an undeclared field on its first
  * `asks` answers.
@@ -252,6 +257,8 @@ const cellFor = (system: string, turn: number, observed = ""): string | undefine
       const result = done(filled(system, `README.md now ends with the line '${scriptedLine}'.`), "Added the line to README.md.")
       // A correction only restates the answer: the edit is already in the workspace.
       if (ask > 1) return answering(result)
+      const asked = /^# Task \S+\/again$/m.test(system) ? 2 : 1
+      if (asked <= noChange) return answering(result)
       return `await ctx.call("edit", ${JSON.stringify({ path: "/workspace/README.md", oldString: "# Demo\n", newString: `# Demo\n${scriptedLine}\n` })});
 ctx.done(${JSON.stringify(JSON.stringify(result))})`
     }
@@ -318,6 +325,7 @@ const firstCall = reading !== undefined
   : undefined
 const showsCheckout = process.env.SMITHERS_ORGANIZATION_SCRIPTED_CHECK_SHOWS === "1"
 const probesThenAnswers = process.env.SMITHERS_ORGANIZATION_SCRIPTED_CHECK_PROBES === "1"
+const noChange = Number(process.env.SMITHERS_ORGANIZATION_SCRIPTED_NO_CHANGE ?? "0")
 
 let cells = 0
 const model = Model.make({

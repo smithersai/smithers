@@ -98,7 +98,9 @@ cites.
   workspace → the diff is collected → checks run in a fresh microVM → the
   checker decides, for at most `--max-rounds` rounds → the change lands on
   `organization/<key>-<hash>` (never the checked-out branch, never pushed) →
-  receipt → thread reply. A role whose result breaks its charter is
+  receipt → thread reply. A builder whose turn leaves no change is asked
+  once more; a second empty diff blocks the delivery (`no change`, a failing
+  `change` check) and nothing is checked or lands. A role whose result breaks its charter is
   asked again once with the violations; a second break stops the delivery,
   and the receipt names each violation. Every principal a role names is re-resolved against
   the pinned roster, so an inactive one is refused. A request whose output is

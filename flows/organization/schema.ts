@@ -116,6 +116,16 @@ export const CorrectTask = Action.make("organization/correct-task", {
   success: Stage
 })
 
+/**
+ * The same task asked once more under an id of its own, with `reason` joining
+ * its context: a builder whose turn left no change is asked again once.
+ */
+export const AgainTask = Action.make("organization/again-task", {
+  implementationVersion: "again-task/v1",
+  payload: { stage: Stage, reason: Schema.String },
+  success: Stage
+})
+
 /** The assistant's routing task for a request. */
 export const RouteTask = Action.make("organization/route-task", {
   implementationVersion: "route-task/v2",

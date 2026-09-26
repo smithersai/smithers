@@ -181,14 +181,48 @@ export const CollectDiff = Action.make("organization/collect-diff", {
 })
 
 /**
- * Runs checks against a patch in a fresh machine. Nondeterministic: the
+ * The name of the check receipt an empty change fails with.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const changeCheck = "change"
+
+/**
+ * What an empty change is, as a check result: one failing `change` receipt.
+ * No check passes on nothing, so an empty change never counts as checked.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const unchanged = (commit: string): Workspace.Checks => {
+  const reason = "no change: the collected diff is empty"
+  return {
+    commit,
+    patchDigest: sha256Hex(""),
+    passed: false,
+    receipts: [{
+      name: changeCheck,
+      argv: ["git", "diff", "--cached"],
+      exitCode: 1,
+      timedOut: false,
+      stdout: { text: "", bytes: 0, truncated: false },
+      stderr: { text: reason, bytes: reason.length, truncated: false },
+      durationMs: 0
+    }]
+  }
+}
+
+/**
+ * Runs checks against a change in a fresh machine. An empty change boots no
+ * machine and fails with {@link unchanged}'s receipt. Nondeterministic: the
  * recorded receipts are what a replay sees.
  *
  * @category actions
  * @since 1.0.0
  */
 export const RunChecks = Action.make("organization/run-checks", {
-  implementationVersion: "run-checks/v1",
+  implementationVersion: "run-checks/v2",
   payload: {
     repository: Repository,
     commit: Workspace.CommitId,
@@ -398,6 +432,7 @@ export const layer = (options: Options) => {
         Effect.gen(function*() {
           const workspace = yield* Workspace.Workspace
           const repoPath = yield* repositoryPath(payload.repository)
+          if (payload.patch === "") return unchanged(payload.commit)
           return yield* workspace.runChecks({
             key: `${yield* executionId}/${payload.repository}/checks`,
             repoPath,
@@ -406,7 +441,7 @@ export const layer = (options: Options) => {
             checks: payload.checks
           })
         }),
-      { implementationVersion: "run-checks/v1" }
+      { implementationVersion: "run-checks/v2" }
     ),
     DisposeWorkspace.toLayer(
       (payload) => Effect.flatMap(Workspace.Workspace, (workspace) => workspace.dispose(payload.workspace)),

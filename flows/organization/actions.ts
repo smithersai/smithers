@@ -18,6 +18,7 @@ import type * as Prompt from "../../packages/smithers/agent/organization/src/Pro
 import * as Workspace from "../../packages/smithers/agent/organization/src/Workspace.ts"
 import {
   Admit,
+  AgainTask,
   type Answer,
   Assign,
   type Assignment,
@@ -540,6 +541,15 @@ export const layer = (options: Options) =>
           }
         ]
       }))), { implementationVersion: "correct-task/v1" }),
+    AgainTask.toLayer(({ reason, stage }) =>
+      Clock.currentTimeMillis.pipe(Effect.map((at): Stage => ({
+        ...stage,
+        task: { ...stage.task, id: `${stage.task.id}/again` },
+        context: [
+          ...stage.context,
+          { source: { provider: "organization", id: `again/${stage.task.id}` }, provenance: { retrievedAtMs: at }, text: reason }
+        ]
+      }))), { implementationVersion: "again-task/v1" }),
     ReadAsk.toLayer(({ answer, key }) => Effect.sync(() => readAsk(key, answer)), { implementationVersion: "read-ask/v1" }),
     DisposeWorkspaces.toLayer(({ workspaces }) =>
       Effect.flatMap(Workspace.Workspace, (service) =>

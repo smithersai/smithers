@@ -31,6 +31,7 @@ import type * as Profile from "../../../packages/smithers/agent/organization/src
 import type * as Workspace from "../../../packages/smithers/agent/organization/src/Workspace.ts"
 import {
   Admission,
+  AgainTask,
   Answer,
   Assign,
   type Assignment,
@@ -58,7 +59,20 @@ import Hire from "../hire/flow.ts"
 import MeetingsBook from "../meetings-book/flow.ts"
 import { slackConnection } from "../slack-connection.ts"
 
-const implementationVersion = "organization/deliver/v7"
+const implementationVersion = "organization/deliver/v8"
+
+/** Why a builder whose turn left no change is asked again. */
+const noChangeAgain =
+  "Your turn left no change in the workspace: the collected diff is empty. Make the change the criteria require, read the output of your commands, then answer. If the change cannot be made, answer blocked with the reason."
+
+/** The check an empty change fails, as a report shows it. */
+const noChangeCheck = {
+  name: Actions.changeCheck,
+  exitCode: 1,
+  timedOut: false,
+  durationMs: 0,
+  tail: "no change: the collected diff is empty"
+}
 
 /** The boundary the builder's task crosses. */
 export const taskGate: Gates.At = { boundary: "task", target: "organization/deliver" }
@@ -161,15 +175,53 @@ const round = (
     checker: assignment.checker
   }
   const disposeAll = (all: Machines) => DisposeWorkspaces.call({ workspaces: all as never })
+  const workspace = { key: prepared.key, repository: admission.repository, commit: prepared.commit }
+  // The diff is read only after the builder's turn has finished: a step
+  // that does not consume a reference may otherwise start beside it.
+  const collected = (build: Planned.Planned<Answer>) =>
+    Node.andThen(Node.succeed(build), Actions.CollectDiff.call({ workspace: prepared }))
+  // A turn that left no change is asked once more; a second empty change
+  // blocks the delivery, and nothing is checked or landed.
   return BuildTask.call({ request, assignment, workdir: prepared.workdir, round: n, findings }).pipe(
     Node.bindPlanned(Node.capture({ implementationVersion }, (stage) =>
-      turn(revision, stage, { key: prepared.key, repository: admission.repository, commit: prepared.commit }))),
-    // The diff is read only after the builder's turn has finished: a step
-    // that does not consume a reference may otherwise start beside it.
-    Node.bindPlanned(Node.capture({ implementationVersion }, (build) =>
-      Node.andThen(Node.succeed(build), Actions.CollectDiff.call({ workspace: prepared })).pipe(
-        Node.bindPlanned(Node.capture({ implementationVersion }, (diff) =>
-          Actions.RunChecks.call({
+      turn(revision, stage, workspace).pipe(
+        Node.bindPlanned(Node.capture({ implementationVersion }, (build) =>
+          collected(build).pipe(
+            Node.branch({
+              if: Node.capture({ implementationVersion }, (diff) => diff.patch === ""),
+              then: () =>
+                AgainTask.call({ stage, reason: noChangeAgain }).pipe(
+                  Node.bindPlanned(Node.capture({ implementationVersion }, (again) => turn(revision, again, workspace))),
+                  Node.bindPlanned(Node.capture({ implementationVersion }, (rebuilt) =>
+                    collected(rebuilt).pipe(
+                      Node.branch({
+                        if: Node.capture({ implementationVersion }, (diff) => diff.patch === ""),
+                        then: () =>
+                          disposeAll(machines).pipe(
+                            Node.andThen(Node.succeed(rebuilt)),
+                            Node.map(Node.capture({ implementationVersion }, (answer) =>
+                              `no change: ${answer.principal} left no change in the workspace (${answer.result.status}: ${answer.result.summary})`)),
+                            Node.bindPlanned(Node.capture({ implementationVersion }, (summary) =>
+                              report(payload, {
+                                status: "blocked",
+                                summary,
+                                principals,
+                                rounds: n,
+                                checks: [noChangeCheck]
+                              })))
+                          ),
+                        else: (diff) => judged(rebuilt, diff)
+                      })
+                    )))
+                ),
+              else: (diff) => judged(build, diff)
+            })
+          )))
+      )))
+  ) as Node.Node<Report, Failure, any>
+
+  function judged(build: Planned.Planned<Answer>, diff: Planned.Planned<Workspace.Diff>): Node.Node<Report, Failure, any> {
+    return Actions.RunChecks.call({
             repository: admission.repository,
             commit: prepared.commit,
             patch: diff.patch,
@@ -273,9 +325,8 @@ const round = (
                   )
                 }))
               )))
-          )))
-      )))
-  ) as Node.Node<Report, Failure, any>
+          ) as Node.Node<Report, Failure, any>
+  }
 }
 
 /** Routing, the contract, the gated build, and every early ending, as one report. */

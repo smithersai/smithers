@@ -17,6 +17,9 @@
  * - Every role leaving a charter field out of its first answer is asked
  *   again once with the violation, and the corrected run lands; a role that
  *   leaves it out twice blocks the delivery, and the receipt names the field.
+ * - A builder whose turn leaves no change is asked again once and the run
+ *   lands the change it then makes; one that leaves none twice blocks the
+ *   delivery with a failing `change` check, and nothing is checked or lands.
  * - A provider refusing every model call (no credits) fails the run, and its
  *   cause reaches the receipt and `submit --wait`'s output.
  * - A contract naming a retired builder is refused at dispatch: the run fails
@@ -237,6 +240,35 @@ describe("the organization host", { skip: missing === undefined ? false : `skipp
     assert.match(handle.output(), /^\S+ failed: blocked: .*\(assistant broke its charter: missing field reply\)$/m)
     assert.doesNotMatch(handle.output(), /An agent run failed|^\s+at /m)
     assert.equal(branches(repo).filter((name) => name.includes("e2e-charter")).length, 0)
+    await handle.stop()
+  })
+
+  it("asks a builder that left no change again once, and lands the change it then makes", { timeout: 300_000 }, async () => {
+    const root = organization()
+    const handle = await host(root, repo, { SMITHERS_ORGANIZATION_SCRIPTED_NO_CHANGE: "1" })
+    await handle.start()
+    const runId = /^started (\S+)$/.exec(run(handle, "submit", "Add a line to README.md", "--key", "e2e-again"))?.[1]
+    assert.ok(runId)
+    assert.equal((await settled(handle, runId)).status, "completed", handle.output())
+    const report = receipt(root, "cli:e2e-again").report
+    assert.equal(report.status, "landed", JSON.stringify(report))
+    assert.equal(report.rounds, 1)
+    assert.equal(git(repo, "show", `${report.applied.branch}:README.md`), `# Demo\n${line}`)
+    await handle.stop()
+  })
+
+  it("blocks a builder that left no change twice with a failing change check, and lands nothing", { timeout: 300_000 }, async () => {
+    const root = organization()
+    const handle = await host(root, repo, { SMITHERS_ORGANIZATION_SCRIPTED_NO_CHANGE: "2" })
+    await handle.start()
+    const waited = invoke(handle, "submit", "Add a line to README.md", "--key", "e2e-no-change", "--wait", "--root", root)
+    assert.equal(waited.status, 1, `${waited.stdout}${waited.stderr}`)
+    const report = receipt(root, "cli:e2e-no-change").report
+    assert.equal(report.status, "blocked", JSON.stringify(report))
+    assert.match(report.summary, /^no change: builder left no change in the workspace \(done: /)
+    assert.deepEqual(report.checks.map((check) => [check.name, check.exitCode]), [["change", 1]])
+    assert.equal(report.applied, undefined)
+    assert.equal(branches(repo).filter((name) => name.includes("e2e-no-change")).length, 0)
     await handle.stop()
   })
 
