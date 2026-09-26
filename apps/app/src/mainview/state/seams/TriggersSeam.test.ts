@@ -1518,6 +1518,7 @@ describe("triggers seam: listing and pausing a schedule", () => {
     )
     const outcome = await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
     expect(typeof outcome).toBe("object")
+    await waitFor(() => seen.some(path => path.startsWith(REGISTRATIONS)))
     expect(paused).toEqual([{ repo: "will/flows", slug: "nightly" }])
     expect(seen.filter((path) => path.startsWith(REGISTRATIONS))).toHaveLength(1)
 
@@ -1526,12 +1527,14 @@ describe("triggers seam: listing and pausing a schedule", () => {
       { signedIn: true }
     )
     const answer = await refused.controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
-    expect(String(answer)).toContain("unknown repository job")
+    expect(answer).toEqual({ value: "Pause requested for nightly on will/flows." })
+    await waitFor(() => triggerCard(refused.store).payload.pauseRequests?.[0]?.phase === "failed")
+    expect(triggerCard(refused.store).payload.pauseRequests?.[0]?.error).toContain("unknown repository job")
   })
 
   test("a pause that stopped nothing says so instead of saying paused", async () => {
     const seen: Array<string> = []
-    const { controller } = await ready(
+    const { store, controller } = await ready(
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
         [PAUSE]: json(200, { status: "ok", paused: 0 })
@@ -1539,7 +1542,9 @@ describe("triggers seam: listing and pausing a schedule", () => {
       { signedIn: true }
     )
     const outcome = await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "no-such-schedule" })
-    expect(outcome).toBe('No schedule "no-such-schedule" is registered on will/flows.')
+    expect(outcome).toEqual({ value: "Pause requested for no-such-schedule on will/flows." })
+    await waitFor(() => triggerCard(store).payload.pauseRequests?.[0]?.phase === "failed")
+    expect(triggerCard(store).payload.pauseRequests?.[0]?.error).toBe('No schedule "no-such-schedule" is registered on will/flows.')
     expect(seen.filter((path) => path.startsWith(REGISTRATIONS))).toEqual([])
   })
 
@@ -1593,6 +1598,148 @@ describe("triggers seam: listing and pausing a schedule", () => {
     /* The door's own mark, which is what the form card yields to. */
     expect(said.map((message) => message.spoken)).toEqual([true])
     expect(card?.kind === "flow-form" ? card.payload.error : "no card").toBeUndefined()
+  })
+
+  test("Pause acknowledges a persisted request, deduplicates, and settles before its listing refresh", async () => {
+    const pause = Promise.withResolvers<Response>()
+    const listing = Promise.withResolvers<Response>()
+    let writes = 0
+    let reads = 0
+    const { store, controller } = await ready({ ...watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: () => { reads += 1; return reads === 1 ? json(200, ROWS) : listing.promise },
+      [PAUSE]: () => { writes += 1; return pause.promise }
+    })), toastDebounceMs: 300 }, { signedIn: true })
+    try {
+      await controller.listTriggers("will/flows")
+      const command = controller.commands.run("triggers.pause", flowArgs("triggers.pause", { slug: "nightly", repo: "will/flows" }))
+      expect((await Promise.race([command, new Promise(resolve => setTimeout(() => resolve("blocked"), 100))]))).toMatchObject({ status: "executed" })
+      await waitFor(() => writes === 1)
+      expect(triggerCard(store).payload.pauseRequests?.[0]?.phase).toBe("sending")
+      await controller.commands.run("triggers.pause", flowArgs("triggers.pause", { slug: "nightly", repo: "will/flows" }))
+      expect(writes).toBe(1)
+      await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.title === "Pausing nightly"))
+      const toast = [...store.collections.toasts.values()].find(toast => toast.title === "Pausing nightly")!
+      expect(toast.status).toBe("running")
+      pause.resolve(json(200, { status: "ok", paused: 1 }))
+      await waitFor(() => store.collections.toasts.get(toast.id)?.status === "ok")
+      expect(triggerCard(store).payload.triggers.find(row => row.slug === "nightly")?.enabled).toBe(false)
+      expect(reads).toBe(2)
+    } finally {
+      pause.resolve(json(200, { status: "ok", paused: 1 }))
+      listing.resolve(json(200, { ...ROWS, rows: ROWS.rows.map(row => ({ ...row, enabled: false })) }))
+      await controller.dispose()
+    }
+  })
+
+  test.each([false, true])("reload observes interrupted Pause without replaying it (enabled=%s)", async enabled => {
+    const storage = memoryStorage()
+    const held = Promise.withResolvers<Response>()
+    let writes = 0
+    const first = await ready(watched(backend({ [PAUSE]: () => { writes += 1; return held.promise } })), {
+      signedIn: true, store: await createAppStore({ kind: "localStorage", storage })
+    })
+    await first.controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
+    await waitFor(() => writes === 1)
+    const id = triggerCard(first.store).payload.pauseRequests![0]!.id
+    await first.controller.dispose()
+    await first.store.dispose?.()
+    const resumed = await ready(watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: json(200, { ...ROWS, rows: ROWS.rows.map(row => ({ ...row, enabled })) }),
+      [PAUSE]: () => { writes += 1; return json(200, { status: "ok", paused: 1 }) }
+    })), { signedIn: true, store: await createAppStore({ kind: "localStorage", storage }) })
+    try {
+      await waitFor(() => triggerCard(resumed.store).payload.pauseRequests?.[0]?.phase === (enabled ? "failed" : "completed"))
+      expect(triggerCard(resumed.store).payload.pauseRequests?.[0]?.id).toBe(id)
+      expect(writes).toBe(1)
+      if (enabled) {
+        await resumed.controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
+        await waitFor(() => writes === 2)
+        await waitFor(() => triggerCard(resumed.store).payload.pauseRequests?.[0]?.phase === "completed")
+      }
+    } finally { held.resolve(json(200, { status: "ok", paused: 1 })); await resumed.controller.dispose() }
+  })
+
+  test.each([undefined, -1, 0.5])("Pause requires an actual receipt (count=%s)", async paused => {
+    const { store, controller } = await ready(watched(backend({ [PAUSE]: json(200, { status: "ok", paused }) })), { signedIn: true })
+    await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
+    await waitFor(() => triggerCard(store).payload.pauseRequests?.[0]?.phase === "failed")
+    expect(triggerCard(store).payload.pauseRequests?.[0]?.error).toBe("Smithers Cloud did not confirm Pause.")
+    await controller.dispose()
+  })
+
+  test("a late Pause receipt cannot restore an account's card after sign-out", async () => {
+    const held = Promise.withResolvers<Response>()
+    let sent = false
+    const { store, controller } = await ready(watched(backend({ [PAUSE]: () => { sent = true; return held.promise } })), { signedIn: true })
+    await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
+    await waitFor(() => sent)
+    await signedOut(store)
+    held.resolve(json(200, { status: "ok", paused: 1 }))
+    await settled()
+    expect([...store.collections.cards.values()].some(card => card.kind === "trigger-list" && card.payload.pauseRequests?.some(row => row.phase === "completed"))).toBe(false)
+    expect([...store.collections.toasts.values()].some(toast => toast.title === "Paused nightly")).toBe(false)
+    await controller.dispose()
+  })
+
+  test("Pause still records its HTTP receipt after the workspace signs out", async () => {
+    const held = Promise.withResolvers<Response>()
+    let sent = false
+    const { store, controller } = await ready(watched(backend({ [PAUSE]: () => { sent = true; return held.promise } })), { signedIn: true })
+    await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "will", expiresAt: null, scopes: null }).isPersisted.promise
+    await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
+    await waitFor(() => sent)
+    await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-out", username: null, expiresAt: null, scopes: null }).isPersisted.promise
+    held.resolve(json(200, { status: "ok", paused: 1 }))
+    await waitFor(() => triggerCard(store).payload.pauseRequests?.[0]?.phase === "completed")
+    await controller.dispose()
+  })
+
+  test.each(["requested", "sending", "completed"])("a failed %s commit cannot claim a saved Pause", async phase => {
+    const original = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    let rejected = false
+    let writes = 0
+    const store: AppStore = { ...original, dispatch: transition => {
+      if (!rejected && transition.type === "card.upsert" && transition.card.kind === "trigger-list"
+        && transition.card.payload.pauseRequests?.some(request => request.phase === phase)) {
+        rejected = true
+        return { isPersisted: { promise: Promise.reject(new Error("disk full")) } } as ReturnType<AppStore["dispatch"]>
+      }
+      return original.dispatch(transition)
+    } }
+    const { controller } = await ready(watched(backend({ [PAUSE]: () => { writes += 1; return json(200, { status: "ok", paused: 1 }) } })), { signedIn: true, store })
+    const answer = await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
+    if (phase === "requested") expect(answer).toBe("Could not save Pause. Retry.")
+    else await waitFor(() => triggerCard(store).payload.pauseRequests?.[0]?.phase === "failed")
+    expect(writes).toBe(phase === "completed" ? 1 : 0)
+    await waitFor(() => [...store.collections.messages.values()].some(message => message.text === "Could not save Pause. Retry."))
+    await controller.dispose()
+  })
+
+  test("a listing started before Pause cannot restore its enabled row", async () => {
+    const stale = Promise.withResolvers<Response>()
+    const refresh = Promise.withResolvers<Response>()
+    let reads = 0
+    const { store, controller } = await ready(watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: () => { reads += 1; return reads === 1 ? json(200, ROWS) : reads === 2 ? stale.promise : refresh.promise },
+      [PAUSE]: json(200, { status: "ok", paused: 1 })
+    })), { signedIn: true })
+    try {
+      await controller.listTriggers("will/flows")
+      const oldRead = controller.listTriggers("will/flows")
+      await waitFor(() => reads === 2)
+      await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
+      await waitFor(() => triggerCard(store).payload.pauseRequests?.[0]?.phase === "completed")
+      stale.resolve(json(200, ROWS))
+      await oldRead
+      expect(triggerCard(store).payload.triggers.find(row => row.slug === "nightly")?.enabled).toBe(false)
+    } finally {
+      stale.resolve(json(200, ROWS))
+      refresh.resolve(json(200, { ...ROWS, rows: ROWS.rows.map(row => ({ ...row, enabled: false })) }))
+      await controller.dispose()
+    }
   })
 
   test("the pause door is the agent's to ask for and the human's to confirm", async () => {

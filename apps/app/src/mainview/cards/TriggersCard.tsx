@@ -125,6 +125,15 @@ export const TriggerListCardBody = ({
             ))}
           </ul>
         )}
+      {(card.payload.pauseRequests ?? []).filter(request => request.phase === "failed").map(request => (
+        <div key={request.id} className="workflow-list-row">
+          <span role="status">{request.error}</span>
+          <Button variant="ghost" size="sm"
+            {...flowAction(onRunCommand, "triggers.pause", flowArgs("triggers.pause", { repo, slug: request.slug }))}>
+            Retry
+          </Button>
+        </div>
+      ))}
       <Button
         variant="ghost"
         size="sm"

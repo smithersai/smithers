@@ -25,12 +25,14 @@ import { BudgetTokensSchema, SetupDraftSchema } from "@smthrs/rpc/RepositorySetu
 import { Schema, SchemaRepresentation } from "effect"
 import type { JsonSchema } from "effect"
 import type { Card } from "../AppState"
-import { TOAST_CANCELLED, type FailureController } from "../controller/failures"
+import { TOAST_SUPERSEDED, TOAST_CANCELLED, type FailureController } from "../controller/failures"
 import { resolveTargetRepo } from "../RepoContext"
 import { repositoryJobWorkspace } from "../RepositoryJobs"
 import { runtimeRunKey } from "../RuntimeProjection"
 import type { RuntimeScope } from "../RuntimeProjection"
-import { errorMessage, unreachableSentence } from "./SeamContext"
+import { actorSharedState } from "../ActorBindings"
+import { accountOwnerOf } from "../AccountOwner"
+import { captureCloudOwner, errorMessage, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
 type TriggerListCard = Extract<Card, { kind: "trigger-list" }>
@@ -182,6 +184,8 @@ export interface TriggerWrite {
 }
 
 export interface TriggersSeam {
+  /** Reconnect persisted Pause requests for the current account. */
+  readonly resumePauses: () => void
   /** The dispatcher card (triggers.list): declared rows for every visitor, live rows when a box answered. */
   readonly listTriggers: (repo?: string) => Promise<string | void | { readonly value: string }>
   /** The trigger write door: register, approve, run, pause (triggers.register / .approve / .run / .pause). */
@@ -768,11 +772,95 @@ const summarize = (repo: string, declared: ReadonlyArray<FactoryRule>, live: Liv
 export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): TriggersSeam => {
   /** The attempts this session has in flight, by requestId: a second press joins one rather than starting another. */
   const attempts = new Map<string, Promise<unknown>>()
+  const pauses = actorSharedState(ctx, "trigger-pauses", () => ({ running: new Set<string>(), versions: new Map<string, number>() }))
+  type Pause = NonNullable<TriggerListCard["payload"]["pauseRequests"]>[number]
+  const owner = () => {
+    const identity = ctx.store.collections.identitySessions.get("identity")
+    return identity?.state === "signed-in" && identity.allowlisted ? accountOwnerOf(identity) : undefined
+  }
+  // Pause uses the account HTTP route even when the workspace is offline.
+  const capturePauseOwner = () => {
+    const identity = ctx.store.collections.identitySessions.get("identity")
+    const revision = identity?.ownerRevision ?? identity?.revision
+    return () => ctx.isDisposed?.() !== true
+      && (ctx.store.collections.identitySessions.get("identity")?.ownerRevision
+        ?? ctx.store.collections.identitySessions.get("identity")?.revision) === revision
+  }
+  const pauseCard = (repo: string): TriggerListCard | undefined => {
+    const card = ctx.store.collections.cards.get(`trigger-list-${repo}`)
+    return card?.kind === "trigger-list" ? card : undefined
+  }
+  const savePause = (repo: string, request: Pause, actor: "user" | "smithers" | "system" = "system") => {
+    const previous = pauseCard(repo)
+    const card: TriggerListCard = previous ?? {
+      id: `trigger-list-${repo}`, kind: "trigger-list", title: `Dispatcher · ${repo}`,
+      status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { repo, triggers: [] }
+    }
+    return ctx.dispatch({ type: "card.upsert", actor, card: { ...card, payload: {
+      ...card.payload,
+      triggers: request.phase === "completed" ? card.payload.triggers.map(row => row.slug === request.slug
+        ? { ...row, enabled: false, nextFireAt: undefined, nextFiresAt: undefined } : row) : card.payload.triggers,
+      pauseRequests: [...(card.payload.pauseRequests ?? []).filter(row => row.slug !== request.slug || row.owner !== request.owner), request]
+    } } }).isPersisted.promise
+  }
+
+  const pumpPause = (repo: string, request: Pause) => {
+    if (pauses.running.has(request.id)) return
+    pauses.running.add(request.id)
+    const sameOwner = capturePauseOwner()
+    const current = () => sameOwner() && owner() === request.owner
+      && pauseCard(repo)?.payload.pauseRequests?.some(row => row.id === request.id) === true
+    void runtime.withToast(`trigger-pause:${request.id}`, `Pausing ${request.slug}`, `Paused ${request.slug}`, async () => {
+      if (!current()) return TOAST_SUPERSEDED
+      try {
+        let failure: string | undefined
+        if (request.phase === "sending") {
+          // A lost response is ambiguous. Replaying a state setter could pause a later Resume.
+          const live = await readTriggerRegistrations(ctx, repo)
+          if (!live.triggers.some(row => row.slug === request.slug && !row.enabled)) {
+            failure = `Could not confirm Pause for ${request.slug}. Retry to pause it.`
+          }
+        } else {
+          await savePause(repo, { ...request, phase: "sending" })
+          if (!current()) return TOAST_SUPERSEDED
+          const result = await workerCall(ctx, TRIGGER_PAUSE_PATH, { repo, slug: request.slug })
+          failure = !result.ok ? result.message
+            : result.value.paused === 0 ? `No schedule "${request.slug}" is registered on ${repo}.`
+            : typeof result.value.paused !== "number" || !Number.isSafeInteger(result.value.paused) || result.value.paused < 1
+            ? "Smithers Cloud did not confirm Pause." : undefined
+        }
+        if (!current()) return TOAST_SUPERSEDED
+        pauses.versions.set(repo, (pauses.versions.get(repo) ?? 0) + 1)
+        await savePause(repo, { ...request, phase: failure ? "failed" : "completed", ...(failure ? { error: failure } : {}) })
+        if (!current()) return TOAST_SUPERSEDED
+        if (failure) return refusePause(failure)
+        // The receipt settles Pause. A slow listing cannot hold its toast or Chat open.
+        void listTriggers(repo).catch(() => {})
+      } catch {
+        if (!current()) return TOAST_SUPERSEDED
+        const error = "Could not save Pause. Retry."
+        await savePause(repo, { ...request, phase: "failed", error }).catch(() => {})
+        return current() ? refusePause(error) : TOAST_SUPERSEDED
+      }
+    }, false, current, `trigger-list-${repo}`).finally(() => pauses.running.delete(request.id))
+  }
+
+  const resumePauses = () => {
+    if (ctx.isDisposed?.() || !owner()) return
+    for (const card of ctx.store.collections.cards.values()) {
+      if (card.kind !== "trigger-list") continue
+      for (const request of card.payload.pauseRequests ?? []) {
+        if (request.owner === owner() && (request.phase === "requested" || request.phase === "sending")) pumpPause(card.payload.repo, request)
+      }
+    }
+  }
 
   const listTriggers = async (repoArg?: string): Promise<string | void | { readonly value: string }> => {
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
+    const current = captureCloudOwner(ctx, false)
+    const version = pauses.versions.get(repo)
     const identity = ctx.store.collections.identitySessions.get("identity")
     const signedIn = identity?.state === "signed-in" && identity.allowlisted
     const [declared, box, registered] = await Promise.all([
@@ -803,6 +891,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       triggers: [...ledgers, ...registered.triggers],
       webhooks: box.webhooks
     }
+    if (!current() || version !== pauses.versions.get(repo)) return
     const cardId = `trigger-list-${repo}`
     const existing = ctx.store.collections.cards.get(cardId)
     const card: Card = {
@@ -815,6 +904,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       payload: {
         repo,
         declared: [...declared],
+        ...(existing?.kind === "trigger-list" && existing.payload.pauseRequests ? { pauseRequests: existing.payload.pauseRequests } : {}),
         live: live.live,
         triggers: [...live.triggers],
         webhooks: [...live.webhooks]
@@ -1168,18 +1258,25 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     return message
   }
 
-  /** Stop a schedule the human enabled, then re-read the listing so the card states it. */
-  const pauseTrigger = async (request: TriggerWrite, repo: string): Promise<string | void | { readonly value: string }> => {
+  /** Persist the intent before any network work; repeat input joins the pending request. */
+  const pauseTrigger = async (request: TriggerWrite, repo: string): Promise<string | { readonly value: string }> => {
     const slug = request.slug ?? ""
     if (!SLUG.test(slug)) return "A schedule name is lower-case letters, digits and dashes, up to 64 characters."
-    const paused = await workerCall(ctx, TRIGGER_PAUSE_PATH, { repo, slug })
-    if (!paused.ok) return refusePause(paused.message)
-    /* Smithers Cloud counts the registrations it stopped; a name it does not hold stops none, and that is not a pause. */
-    if (typeof paused.value.paused === "number" && paused.value.paused < 1) {
-      return refusePause(`No schedule "${slug}" is registered on ${repo}.`)
+    const login = owner()
+    if (!login) return "Sign in to pause a schedule."
+    const pending = pauseCard(repo)?.payload.pauseRequests?.find(row => row.owner === login && row.slug === slug
+      && (row.phase === "requested" || row.phase === "sending"))
+    if (pending) {
+      try { await ctx.store.settled?.() }
+      catch { return refusePause("Could not save Pause. Retry.") }
+      return { value: `Pause requested for ${slug} on ${repo}.` }
     }
-    await listTriggers(repo)
-    return { value: `Paused ${slug} on ${repo}.` }
+    const entry: Pause = { id: crypto.randomUUID(), slug, owner: login, phase: "requested" }
+    const current = capturePauseOwner()
+    try { await savePause(repo, entry, ctx.actor()) }
+    catch { return refusePause("Could not save Pause. Retry.") }
+    if (current()) pumpPause(repo, entry)
+    return { value: `Pause requested for ${slug} on ${repo}.` }
   }
 
   /*
@@ -1200,5 +1297,5 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     return prepareTrigger(request, target.repo)
   }
 
-  return { listTriggers, registerTrigger }
+  return { listTriggers, registerTrigger, resumePauses }
 }

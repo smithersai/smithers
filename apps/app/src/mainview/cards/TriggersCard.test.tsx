@@ -288,3 +288,15 @@ test("a paused named schedule offers Resume with its repository and slug", () =>
   expect(host.querySelector("[data-testid='trigger-pause-nightly']")).toBeNull()
   expect(host.querySelector("[data-testid='trigger-run-nightly']") === null).toBe(true)
 })
+
+test("a failed Pause remains visible and retries the same repository and schedule", () => {
+  const raised: Array<[string, string | undefined]> = []
+  const host = render(triggerCard({ pauseRequests: [{
+    id: "pause-1", slug: "missing", owner: "will", phase: "failed", error: "Could not confirm Pause."
+  }] }), (name, args) => { raised.push([name, args]) })
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("Could not confirm Pause.")
+  const retry = [...host.querySelectorAll("button")].find(button => button.textContent === "Retry")!
+  expect(retry.tagName).toBe("BUTTON")
+  retry.click()
+  expect(raised.map(([name, args]) => [name, JSON.parse(args!)])).toEqual([["triggers.pause", { slug: "missing", repo: REPO }]])
+})

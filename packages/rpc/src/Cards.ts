@@ -1297,6 +1297,12 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     kind: z.literal("trigger-list"),
     payload: z.object({
       repo: z.string(),
+      /** Durable HTTP pause requests; reconnect by observing before offering an explicit retry. */
+      pauseRequests: z.array(z.object({
+        id: z.string(), slug: z.string(), owner: z.string(),
+        phase: z.enum(["requested", "sending", "completed", "failed"]),
+        error: z.string().optional()
+      })).optional(),
       /** Optional for cards persisted before the declaration joined the listing. */
       declared: z.array(FactoryRuleSchema).optional(),
       /** True only when a box answered the live listing on this show. Optional for older cards. */

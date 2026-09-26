@@ -508,7 +508,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * registered schedule's Run now and Pause, the button doors of
        * triggers.run and triggers.pause.
        */
-      "../cards/TriggersCard.tsx": 3,
+      "../cards/TriggersCard.tsx": 4,
       /* Librarian L5: the rail card's Open and note rows (wiki.open) and the graph card's Refresh (wiki.graph). */
       "../cards/WikiCards.tsx": 3,
       /*

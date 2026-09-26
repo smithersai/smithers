@@ -27,6 +27,8 @@ export default showcase({
   flows: ["flows", "flow.plan", "flow.plan.select", "flow.run", "flow.create", "triggers.list", "triggers.run", "triggers.pause", "triggers.resume"],
   run: async ({ page, app, backend }) => {
     let paused = false
+    const pauseReceipt = Promise.withResolvers<void>()
+    let pauseCalls = 0
     let planned = FLOW
     let resuming = false
     let resumed = false
@@ -37,7 +39,12 @@ export default showcase({
     await backend.json("/api/workflow/trigger-registrations", () => ({ status: "ok", rows: [
       { registrationId: "reg-nightly", slug: "nightly-review", flowId: FLOW, schedule: "0 3 * * *", enabled: !paused, ...(paused ? {} : { nextFireAt: "2026-09-26T03:00:00Z" }) }
     ] }))
-    await backend.route(url => url.pathname === "/api/workflow/trigger-pause", route => { paused = true; return route.fulfill({ json: { status: "ok", paused: 1 } }) })
+    await backend.route(url => url.pathname === "/api/workflow/trigger-pause", async route => {
+      pauseCalls += 1
+      await pauseReceipt.promise
+      paused = true
+      return route.fulfill({ json: { status: "ok", paused: 1 } })
+    })
     await backend.route(url => url.pathname === "/api/workflow/rpc", route => {
       const call = route.request().postDataJSON() as { procedure: string; payload: { flowId?: string; input?: { operation?: string }; selector?: { _tag?: string; runId?: string } } }
       const ok = (payload: unknown) => route.fulfill({ json: { ok: true, payload } })
@@ -147,6 +154,17 @@ export default showcase({
     await app.show(dispatcher)
     await dispatcher.getByTestId("trigger-pause-nightly-review").focus()
     await page.keyboard.press("Enter")
+    try {
+      await expect.poll(() => pauseCalls).toBe(1)
+      await page.keyboard.press("Enter")
+      await page.keyboard.press("ControlOrMeta+k")
+      await page.getByTestId("composer-input").fill("Chat while Pause is pending")
+      await expect(page.getByTestId("composer-input")).toHaveValue("Chat while Pause is pending")
+      await page.keyboard.press("Escape")
+      await expect(page.locator('.toast[data-toast-status="running"]').filter({ hasText: "Pausing nightly-review" })).toHaveCount(1)
+      expect(pauseCalls).toBe(1)
+      await dispatcher.getByTestId("trigger-pause-nightly-review").focus()
+    } finally { pauseReceipt.resolve() }
     await expect(dispatcher.getByTestId("trigger-state-reg-nightly")).toContainText("disabled", { timeout: 10_000 })
     await app.show(dispatcher)
     await expect(dispatcher.getByTestId("trigger-run-nightly-review")).toHaveCount(0)
