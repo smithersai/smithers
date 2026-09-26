@@ -44,7 +44,8 @@ for (const mode of modes) test(`vibe landing: ${mode}`, { timeout: 60_000 }, asy
   let observations = 0
   const fake: Landing["Service"] = {
     binding: { repositoryId: 42, workspaceId: "11111111-1111-4111-a111-111111111111" },
-    readMain: Effect.sync(() => { calls.push("main"); return main }),
+    readMain: Effect.die("a coding run pins its base"),
+    pinMain: Effect.sync(() => { calls.push("main"); return main }),
     readDelivery: Effect.sync(() => { calls.push("delivery"); return pullModes.includes(mode) ? "pull-request" as const : "append" as const }),
     openPull: (identity, commitId, runId) => Effect.suspend(() => { calls.push(`pull:${identity.number}:${commitId}`)
       assert.ok(runId)
@@ -110,7 +111,7 @@ test("vibe landing: a repository with an active mythical stack hands the result 
   const unused = () => Effect.die("a stack repository neither appends nor opens its own pull request")
   const fake: Landing["Service"] = {
     binding: { repositoryId: 42, workspaceId: "11111111-1111-4111-a111-111111111111" },
-    readMain: unused(), readDelivery: unused(), openPull: unused, prepare: unused, create: unused, queue: unused, observe: unused,
+    readMain: unused(), pinMain: unused(), readDelivery: unused(), openPull: unused, prepare: unused, create: unused, queue: unused, observe: unused,
     readStack: Effect.sync(() => { calls.push("stack"); return true }),
     submitLane: submission => Effect.sync(() => {
       calls.push(`submit:${submission.base}:${submission.source}`)

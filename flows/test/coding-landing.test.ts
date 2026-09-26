@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { createServer } from "node:http"
-import { Effect, Exit, ManagedRuntime, Redacted } from "effect"
+import { Effect, Exit, Fiber, ManagedRuntime, Redacted } from "effect"
+import { TestClock } from "effect/testing"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { make, type Options } from "../coding/landing.ts"
 import type { AppendObservation, AppendPreparation, QueuedAppend } from "../coding/landing-schema.ts"
@@ -36,6 +37,8 @@ const configured = async (handle: (request: HttpClientRequest.HttpClientRequest,
   return { service, calls }
 }
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } })
+const absent = () => json({ code: "not_found", fault: "user", message: "file not found" }, 404)
+const isFactory = (request: HttpClientRequest.HttpClientRequest) => request.url.endsWith("/contents/.smithers/factory.json")
 
 test("landing client uses native prepare, replay-safe creation, exact queue and immutable result", async () => {
   const { service, calls } = await configured((request, call) => {
@@ -189,6 +192,67 @@ for (const [mode, reply, expected] of [
 test("delivery refuses an unreadable declared policy", async () => {
   const { service } = await configured(() => json({ encoding: "base64", content: Buffer.from("{").toString("base64") }))
   await assert.rejects(Effect.runPromise(service.readDelivery), /not valid JSON/)
+})
+// A `mirror: "pull"` repository pins its base only from a fresh GitHub main pull.
+const oldMain = "1".repeat(40), newMain = "2".repeat(40)
+const pullStatus = (fields: object) => ({ state: "synced", github_repository: "acme/app", branch: "main", policy: "pull",
+  policy_commit: oldMain, github_head: oldMain, smithers_head: oldMain, pending: false, fresh: true, attempts: 0, last_error: "",
+  next_attempt_at: null, last_checked_at: "2026-09-26T10:00:00Z", last_synced_at: "2026-09-26T10:00:00Z", ...fields })
+const pullRepository = (statuses: Array<object>, main: string) => configured(request => {
+  if (isFactory(request)) return factory({ github: { mirror: "pull", changes: "send-upstream" } })
+  if (request.url.endsWith("/github/main-pull")) return request.method === "POST" ? json(pullStatus(statuses.shift()!), 202)
+    : json(pullStatus(statuses.shift() ?? {}))
+  return json({ items: [{ name: "main", target_change_id: "native", target_commit_id: main, is_tracking_remote: false }], next_cursor: "" })
+})
+/** Runs the wait on a test clock, advancing it until the fiber settles. */
+const pinned = (effect: Effect.Effect<string, unknown>) => Effect.runPromise(Effect.gen(function*() {
+  const fiber = yield* Effect.forkChild(effect)
+  for (let step = 0; step < 400 && fiber.pollUnsafe() === undefined; step++) yield* TestClock.adjust("1 second")
+  return yield* Fiber.join(fiber)
+}).pipe(Effect.provide(TestClock.layer())))
+const routes = (calls: ReadonlyArray<HttpClientRequest.HttpClientRequest>) =>
+  calls.map(call => `${call.method} ${call.url.replace(`${options.apiBaseUrl}/repos/owner/repo`, "")}`)
+
+test("a pull repository requests a GitHub main pull and pins the main it observed after a missed webhook", async () => {
+  // The last observation (before the missed push) is still fresh at the old main;
+  // only the requested pull's settled observation may pin the base.
+  const { service, calls } = await pullRepository([{ pending: true },
+    { state: "running", pending: true }, { smithers_head: newMain, github_head: newMain, last_checked_at: "2026-09-26T10:05:00Z" }], newMain)
+  assert.equal(await pinned(service.pinMain), newMain)
+  assert.deepEqual(routes(calls), ["GET /contents/.smithers/factory.json", "POST /github/main-pull", "GET /github/main-pull",
+    "GET /github/main-pull", "GET /bookmarks"])
+})
+test("a pull repository refuses its base with the requested pull's failure", async () => {
+  const earlier = { state: "failed", pending: true, fresh: false, last_error: "earlier failure", last_checked_at: "2026-09-26T09:00:00Z" }
+  const { service, calls } = await pullRepository([earlier, earlier, { ...earlier, state: "running" },
+    { ...earlier, last_error: "fetch GitHub main: authentication failed", last_checked_at: "2026-09-26T10:05:00Z" }], newMain)
+  await assert.rejects(pinned(service.pinMain), /GitHub main pull did not observe a fresh main \(failed: fetch GitHub main: authentication failed\)/)
+  assert.ok(!routes(calls).includes("GET /bookmarks"), "no base is pinned from a failed pull")
+})
+test("a pull repository refuses a settled pull that is not fresh", async () => {
+  const { service } = await pullRepository([{ pending: true }, { state: "skipped", policy: "push", fresh: false }], newMain)
+  await assert.rejects(pinned(service.pinMain), /did not observe a fresh main \(skipped\)/)
+})
+test("a pull repository refuses a main that moved after the pull observed it", async () => {
+  const { service } = await pullRepository([{ pending: true }, { smithers_head: newMain, github_head: newMain }], "3".repeat(40))
+  await assert.rejects(pinned(service.pinMain), /Main moved after the GitHub main pull observed it/)
+})
+for (const [mode, reply] of [["absent", absent], ["push", () => factory({ github: { mirror: "push", changes: "land" } })]] as const) {
+  test(`a ${mode} mirror policy pins main without a GitHub main pull`, async () => {
+    const { service, calls } = await configured(request => isFactory(request) ? reply()
+      : json({ items: [{ name: "main", target_change_id: "native", target_commit_id: oldMain, is_tracking_remote: false }], next_cursor: "" }))
+    assert.equal(await Effect.runPromise(service.pinMain), oldMain)
+    assert.deepEqual(routes(calls), ["GET /contents/.smithers/factory.json", "GET /bookmarks"])
+  })
+}
+test("readMain is a cheap recheck that never requests a GitHub main pull", async () => {
+  const { service, calls } = await pullRepository([], newMain)
+  assert.equal(await Effect.runPromise(service.readMain), newMain)
+  assert.deepEqual(routes(calls), ["GET /bookmarks"])
+})
+test("a pull repository refuses a pull that stays pending", async () => {
+  const { service } = await pullRepository(Array.from({ length: 200 }, () => ({ state: "running", pending: true })), newMain)
+  await assert.rejects(pinned(service.pinMain), /GitHub main pull is still pending/)
 })
 const tip = preparation.source_commit_id
 const pull = { landing_number: 7, repository: "acme/app", number: 41, url: "https://github.com/acme/app/pull/41", state: "open",

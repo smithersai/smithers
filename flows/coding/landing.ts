@@ -16,7 +16,10 @@ export interface Options {
 }
 export class Landing extends Context.Service<Landing, {
   readonly binding: Pick<Options, "repositoryId" | "workspaceId">
+  /** Current main, a cheap read for rechecks. */
   readonly readMain: Effect.Effect<string, CodingError>
+  /** The base a coding run pins; a `mirror: "pull"` repository first observes GitHub's main fresh. */
+  readonly pinMain: Effect.Effect<string, CodingError>
   readonly prepare: (input: AppendPreparationInput) => Effect.Effect<AppendPreparation, CodingError>
   readonly create: (requestId: string, preparation: AppendPreparation, description: string) => Effect.Effect<LandingIdentity, CodingError>
   readonly queue: (identity: LandingIdentity, preparation: AppendPreparation, request: AppendRequest) => Effect.Effect<QueuedAppend, CodingError>
@@ -43,8 +46,14 @@ const LandingResponse = Schema.Struct({ request_id: SourcePublication.fields.req
 const QueueResponse = Schema.Struct({ ...LandingResponse.fields, task_id: boundedId })
 const Contents = Schema.Struct({ content: Schema.String, encoding: Schema.Literal("base64") })
 const Missing = Schema.Struct({ code: Schema.Literal("not_found") })
-/** Only the projected policy field is read; the rest of the projection is not this adapter's contract. */
-const DeclaredPolicy = Schema.Struct({ github: Schema.optionalKey(Schema.Struct({ changes: Schema.String })) })
+/** Only the projected policy fields are read; the rest of the projection is not this adapter's contract. */
+const DeclaredPolicy = Schema.Struct({ github: Schema.optionalKey(Schema.Struct({
+  changes: Schema.optionalKey(Schema.String), mirror: Schema.optionalKey(Schema.String) })) })
+/** The GitHub main pull receipt (`/github/main-pull`); only the fields a base pin needs. */
+const MainPull = Schema.Struct({ state: Schema.String, smithers_head: Schema.String, pending: Schema.Boolean, fresh: Schema.Boolean,
+  last_error: Schema.String, last_checked_at: Schema.NullOr(Schema.String) })
+const mainPullIntervalMs = 2_000
+const mainPullAttempts = 150
 const errorCode = /^[a-z][a-z0-9_]{0,63}$/
 const same = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
   left.length === right.length && left.every((value, index) => value === right[index])
@@ -129,13 +138,40 @@ export const make = (options: Options) => Effect.gen(function*() {
     }
     return yield* invalid("Bookmark traversal exceeded its bounded page count")
   })
-  const readDelivery = send(HttpClientRequest.get(`${base}/contents/.smithers/factory.json`).pipe(HttpClientRequest.setUrlParams({ ref: "main" })),
-    [200, 404], Schema.Union([Contents, Missing])).pipe(Effect.flatMap(reply => "code" in reply ? Effect.succeed<Delivery>("append")
+  const readPolicy = send(HttpClientRequest.get(`${base}/contents/.smithers/factory.json`).pipe(HttpClientRequest.setUrlParams({ ref: "main" })),
+    [200, 404], Schema.Union([Contents, Missing])).pipe(Effect.flatMap(reply => "code" in reply ? Effect.succeed(undefined)
       : Effect.try({ try: () => new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(reply.content.replace(/\s/g, "")), c => c.charCodeAt(0))),
         catch: () => invalid("The declared factory projection on main is not valid UTF-8") }).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(DeclaredPolicy))),
         Effect.mapError(error => error instanceof CodingError ? error : invalid("The declared factory projection on main is not valid JSON")),
-        Effect.map((policy): Delivery => policy.github?.changes === "send-upstream" ? "pull-request" : "append"))))
+        Effect.map(policy => policy.github))))
+  const readDelivery = Effect.map(readPolicy, (github): Delivery => github?.changes === "send-upstream" ? "pull-request" : "append")
+  // GitHub is the only writer of main in a `mirror: "pull"` repository, so a
+  // base is pinned only from an observation made after this request: request
+  // a pull, wait for it to settle, and refuse unless main equals GitHub's tip.
+  const mainPull = `${base}/github/main-pull`
+  const awaitFreshMain = Effect.gen(function*() {
+    const requested = yield* send(HttpClientRequest.post(mainPull), [202], MainPull)
+    for (let attempt = 0; attempt < mainPullAttempts; attempt++) {
+      yield* Effect.sleep(mainPullIntervalMs)
+      const status = yield* send(HttpClientRequest.get(mainPull), [200], MainPull)
+      // A failure finished after the request is refused: it may be a claim that
+  // was already running, which is still evidence main is not fresh now. A
+  // failure keeps pending (and backing off) until a pull succeeds.
+      const failed = status.state === "failed" && status.last_checked_at !== null && status.last_checked_at !== requested.last_checked_at
+      if (failed || !status.pending) {
+        if (status.fresh && Schema.is(Resolved.fields.commitId)(status.smithers_head)) return status.smithers_head
+        return yield* unavailable(`GitHub main pull did not observe a fresh main (${status.state}${status.last_error ? `: ${status.last_error.slice(0, 500)}` : ""}); retry once it is fresh`)
+      }
+    }
+    return yield* unavailable("GitHub main pull is still pending; retry once it is fresh")
+  })
+  const pinMain = Effect.gen(function*() {
+    if ((yield* readPolicy)?.mirror !== "pull") return yield* readMain
+    const observed = yield* awaitFreshMain, main = yield* readMain
+    if (main !== observed) return yield* new CodingError({ code: "stale_revision", message: "Main moved after the GitHub main pull observed it; retry the base pin" })
+    return main
+  })
   // Only a repository without a stack delivers the ordinary way; a frozen or
   // rebuilding stack makes the delivery wait (a retryable refusal).
   const readStack = send(HttpClientRequest.get(`${base}/mythical`), [200, 404], Schema.Union([StackState, Missing])).pipe(
@@ -147,7 +183,7 @@ export const make = (options: Options) => Effect.gen(function*() {
     Effect.flatMap(body => send(json(HttpClientRequest.put(`${base}/mythical/lanes`), body), [200, 202], LaneReceipt)),
     Effect.flatMap(receipt => receipt.source === submission.source ? Effect.succeed(receipt)
       : Effect.fail(invalid("The stack service acknowledged another source"))))
-  return Landing.of({ binding: { repositoryId: options.repositoryId, workspaceId: options.workspaceId }, readMain, readDelivery, readStack, submitLane,
+  return Landing.of({ binding: { repositoryId: options.repositoryId, workspaceId: options.workspaceId }, readMain, pinMain, readDelivery, readStack, submitLane,
     openPull: (identity, commitId, runId) => Effect.gen(function*() {
       if (!Schema.is(Resolved.fields.commitId)(commitId) || !runId || runId.length > 1024 || /[\r\n`]/.test(runId)) {
         return yield* invalid("A pull request requires the exact landing tip and this run's identity")

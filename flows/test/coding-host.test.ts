@@ -16,7 +16,7 @@ import { loadProject } from "../coding/project-config.ts"
 /** Configuration never calls the adapter; every method refuses if a layer is built. */
 const refused = Effect.die("host configuration must not reach the landing adapter")
 const landing = Layer.succeed(Landing, { binding: { repositoryId: 1, workspaceId: "22222222-2222-4222-8222-222222222222" },
-  readMain: refused, prepare: () => refused, create: () => refused, queue: () => refused, observe: () => refused,
+  readMain: refused, pinMain: refused, prepare: () => refused, create: () => refused, queue: () => refused, observe: () => refused,
   readDelivery: refused, openPull: () => refused })
 
 test("the repository default and a landing binding select the coding routes", async () => {

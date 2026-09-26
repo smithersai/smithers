@@ -115,7 +115,7 @@ export const landingLayers = Layer.mergeAll(
         cleanup.head.treeId !== cleanup.admission.validatedHead.treeId || atomsOf(cleanup).at(-1)?.commitId !== cleanup.head.commitId) {
       return yield* invalid("Append requires the cleaned, revalidated native tip")
     }
-    const main = yield* landing.readMain
+    const main = yield* landing.pinMain
     const preparation = yield* landing.prepare({ target_bookmark: "main", expected_commit_id: main,
       source_commit_id: cleanup.head.commitId, source_base_commit_id: main })
     // Plue computes the complete suffix after the shared immutable prefix. This
