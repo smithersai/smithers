@@ -31,6 +31,7 @@ type Product interface {
 	CloseOrphanedSandboxUsageIntervals(ctx context.Context) error
 	CloseSandboxUsageInterval(ctx context.Context, arg db.CloseSandboxUsageIntervalParams) error
 	ConfirmWorkflowArtifactUpload(ctx context.Context, arg db.ConfirmWorkflowArtifactUploadParams) (db.WorkflowArtifact, error)
+	CompletePendingWorkspaceSessions(ctx context.Context, workspaceID string) ([]string, error)
 	CountActiveSessionsForWorkspace(ctx context.Context, workspaceID string) (int64, error)
 	CountActiveWorkspacesByUser(ctx context.Context, userID int64) (int64, error)
 	CountLFSObjects(ctx context.Context, repositoryID int64) (int64, error)
@@ -125,6 +126,7 @@ type Product interface {
 	ListWorkflowCachesForClear(ctx context.Context, arg db.ListWorkflowCachesForClearParams) ([]db.WorkflowCach, error)
 	ListWorkflowDefinitionsByRepo(ctx context.Context, arg db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error)
 	ListWorkflowStepsByRunID(ctx context.Context, runID int64) ([]db.WorkflowStep, error)
+	ListWorkspaceProvisioningRecovery(ctx context.Context) ([]db.ListWorkspaceProvisioningRecoveryRow, error)
 	ListWorkspaceSessionsByRepo(ctx context.Context, arg db.ListWorkspaceSessionsByRepoParams) ([]db.WorkspaceSession, error)
 	ListWorkspaceSnapshotsByRepo(ctx context.Context, arg db.ListWorkspaceSnapshotsByRepoParams) ([]db.WorkspaceSnapshot, error)
 	ListWorkspacesByRepo(ctx context.Context, arg db.ListWorkspacesByRepoParams) ([]db.Workspace, error)

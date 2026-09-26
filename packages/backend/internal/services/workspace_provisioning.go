@@ -1155,6 +1155,9 @@ func (s *WorkspaceService) enforceWorkspaceQuota(ctx context.Context, userID int
 }
 
 func (s *WorkspaceService) failStalePendingWorkspacesForRepoUser(ctx context.Context, repositoryID, userID int64) error {
+	if s.durableProvisioning() {
+		return s.ReconcileWorkspaceProvisioning(ctx)
+	}
 	total, err := s.q.CountWorkspacesByRepo(ctx, db.CountWorkspacesByRepoParams{
 		RepositoryID: repositoryID,
 		UserID:       userID,
@@ -1407,11 +1410,15 @@ func (s *WorkspaceService) registerNewWorkspaceVM(ctx context.Context, workspace
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return db.Workspace{}, false, err
 		}
-		s.deleteOrphanedWorkspaceVM(ctx, vmID)
 		winner, loadErr := s.q.GetWorkspace(ctx, workspace.ID)
 		if loadErr != nil {
+			// An unknown registration outcome cannot justify deleting the VM.
 			return db.Workspace{}, true, loadErr
 		}
+		if winner.VmID == vmID {
+			return winner, true, nil
+		}
+		s.deleteOrphanedWorkspaceVM(ctx, vmID)
 		if strings.TrimSpace(winner.VmID) != "" {
 			return winner, true, nil
 		}
@@ -1475,7 +1482,17 @@ func (s *WorkspaceService) markWorkspaceProvisionFailed(ctx context.Context, wor
 	}
 }
 
-func (s *WorkspaceService) createWorkspaceVM(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) (out db.Workspace, retErr error) {
+func (s *WorkspaceService) createWorkspaceVM(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) (db.Workspace, error) {
+	return s.provisionWorkspaceVM(ctx, workspace, input, false)
+}
+
+// provisionWorkspaceVM creates, or with reuse resumes, a workspace VM. Reuse
+// keeps a registered vm_id so a restarted provisioner finishes the guest it
+// already allocated instead of allocating a second one.
+func (s *WorkspaceService) provisionWorkspaceVM(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput, reuse bool) (out db.Workspace, retErr error) {
+	if !reuse {
+		workspace.VmID = ""
+	}
 	s = s.withWorkspaceIdleTimeout(workspace)
 	defer func() { s.observeWorkspaceLifecycle("start", retErr) }()
 	// Fast path: a NEW derived (branch) workspace forks the repo's already-warm
@@ -1485,15 +1502,17 @@ func (s *WorkspaceService) createWorkspaceVM(ctx context.Context, workspace db.W
 	// at ~5s (fork ~3.6s + jj switch ~1.3s) vs. the ~200s cold clone. Any
 	// decline or failure falls through to the cold create+clone path below, so
 	// the fork can never make provisioning worse than before.
-	if forked, ok := s.tryForkDerivedFromPrimary(ctx, workspace, input); ok {
-		return forked, nil
+	if workspace.VmID == "" {
+		if forked, ok := s.tryForkDerivedFromPrimary(ctx, workspace, input); ok {
+			return forked, nil
+		}
 	}
 
 	var (
 		cloneURL       string
 		tempCloneToken temporaryRepoCloneToken
 	)
-	if strings.TrimSpace(input.RepoOwner) != "" && strings.TrimSpace(input.RepoName) != "" {
+	if !workspace.SourceSnapshotID.Valid && strings.TrimSpace(input.RepoOwner) != "" && strings.TrimSpace(input.RepoName) != "" {
 		issued, err := issueTemporaryRepoCloneToken(ctx, s.q, input.UserID, "sandbox-workspace-clone")
 		if err != nil {
 			s.markWorkspaceProvisionFailed(ctx, workspace, err)
@@ -1516,7 +1535,10 @@ func (s *WorkspaceService) createWorkspaceVM(ctx context.Context, workspace db.W
 		s.markWorkspaceProvisionFailed(ctx, workspace, err)
 		return workspace, err
 	}
-	vm, err := s.createFreshWorkspaceVM(ctx, workspace.RepositoryID, workspace.ID, workspace.ProvisioningGeneration, workspace.Kind, binding)
+	vm := sandbox.CreateResult{ID: workspace.VmID}
+	if vm.ID == "" {
+		vm, err = s.createFreshWorkspaceVM(ctx, workspace.RepositoryID, workspace.ID, workspace.ProvisioningGeneration, workspace.Kind, binding)
+	}
 	duration := time.Since(startedAt)
 	if s.sandboxMetrics != nil {
 		status := "success"
@@ -1534,7 +1556,10 @@ func (s *WorkspaceService) createWorkspaceVM(ctx context.Context, workspace db.W
 
 	// Persist the sandbox id before the in-sandbox clone runs. A clone failure
 	// must leave an attributable row so cleanup can find the allocation.
-	registered, wonElsewhere, err := s.registerNewWorkspaceVM(ctx, workspace, vm.ID, "starting")
+	registered, wonElsewhere := workspace, false
+	if workspace.VmID == "" {
+		registered, wonElsewhere, err = s.registerNewWorkspaceVM(ctx, workspace, vm.ID, "starting")
+	}
 	if err != nil {
 		if !wonElsewhere {
 			s.deleteOrphanedWorkspaceVM(ctx, vm.ID)
@@ -1608,13 +1633,27 @@ func (s *WorkspaceService) recoverAsyncProvision(ctx context.Context, workspace 
 
 func (s *WorkspaceService) provisionWorkspaceAsync(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) {
 	if s.runtime == nil && workspace.Status == "running" && strings.TrimSpace(workspace.VmID) != "" {
+		s.completeRecoveredSessions(ctx, workspace.ID)
 		return
 	}
+	if s.provisionTasks != nil {
+		if _, loaded := s.provisionTasks.active.LoadOrStore(workspace.ID, true); loaded {
+			return
+		}
+	}
+	done := s.trackProvision()
 	go func() {
+		defer done()
+		if s.provisionTasks != nil {
+			defer s.provisionTasks.active.Delete(workspace.ID)
+		}
 		defer s.recoverAsyncProvision(ctx, workspace, "async")
 		provisionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceProvisionTimeout)
 		defer cancel()
 		if _, err := s.ensureWorkspaceRunning(provisionCtx, workspace, input); err != nil {
+			if errors.Is(err, errWorkspaceProvisionInProgress) {
+				return
+			}
 			slog.Error("async workspace provisioning failed", "workspace_id", workspace.ID, "error", err)
 			// A full pool is not a provisioning failure when the box already
 			// HAS a VM: that guest is intact and suspended, and it comes back
@@ -1634,20 +1673,27 @@ func (s *WorkspaceService) provisionWorkspaceAsync(ctx context.Context, workspac
 			// context.WithoutCancel timeout, so the provisionCtx expiring cannot
 			// swallow the write.
 			s.markWorkspaceProvisionFailed(provisionCtx, workspace, err)
+		} else {
+			s.completeRecoveredSessions(provisionCtx, workspace.ID)
 		}
 	}()
 }
 
 func (s *WorkspaceService) provisionSnapshotWorkspaceAsync(ctx context.Context, workspace db.Workspace, snapshot db.WorkspaceSnapshot) {
+	done := s.trackProvision()
 	go func() {
+		defer done()
 		defer s.recoverAsyncProvision(ctx, workspace, "async-snapshot")
 		provisionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceProvisionTimeout)
 		defer cancel()
-		var err error
-		if s.runtime != nil {
-			_, err = s.restoreRuntimeWorkspaceSnapshot(provisionCtx, workspace, snapshot, workspace.UserID)
-		} else {
-			_, err = s.createWorkspaceVMFromSnapshot(provisionCtx, workspace, snapshot)
+		_, err := s.withWorkspaceProvisionLock(provisionCtx, workspace, func(current db.Workspace) (db.Workspace, error) {
+			if s.runtime != nil {
+				return s.restoreRuntimeWorkspaceSnapshot(provisionCtx, current, snapshot, current.UserID)
+			}
+			return s.createWorkspaceVMFromSnapshot(provisionCtx, current, snapshot)
+		})
+		if errors.Is(err, errWorkspaceProvisionInProgress) {
+			return
 		}
 		if err != nil {
 			slog.Error("async snapshot workspace provisioning failed", "workspace_id", workspace.ID, "snapshot_id", snapshot.ID, "error", err)
@@ -1823,7 +1869,7 @@ func (s *WorkspaceService) cloneWorkspaceRepository(ctx context.Context, vmID, c
 	execCtx, cancel := context.WithTimeout(ctx, workspaceCloneTimeout)
 	defer cancel()
 	resp, err := cloneClient.Execute(execCtx, vmID, sandbox.ExecRequest{
-		Command:   buildWorkspaceCloneCommand(cloneURL, token, sourceBookmark, depth),
+		Command:   workspaceCloneOnce(buildWorkspaceCloneCommand(cloneURL, token, sourceBookmark, depth), workspaceCloneMarker),
 		TimeoutMS: &timeoutMS,
 	})
 	if err != nil {

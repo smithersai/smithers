@@ -302,6 +302,11 @@ func (s *WorkspaceService) CleanupIdleWorkspaces(ctx context.Context) error {
 // while still counting toward the per-user active-workspace quota, so a few
 // crashes could drive a user into quota_exceeded with no recovery path.
 func (s *WorkspaceService) CleanupStalePendingWorkspaces(ctx context.Context) error {
+	// With durable provisioning ownership, row age is not evidence of failure:
+	// re-drive the row instead of failing it.
+	if s.durableProvisioning() {
+		return s.ReconcileWorkspaceProvisioning(ctx)
+	}
 	if s.q == nil {
 		return nil
 	}
@@ -422,12 +427,43 @@ func (s *WorkspaceService) ensureExistingWorkspaceRunning(ctx context.Context, w
 }
 
 func (s *WorkspaceService) ensureWorkspaceRunning(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) (db.Workspace, error) {
+	return s.withWorkspaceProvisionLock(ctx, workspace, func(current db.Workspace) (db.Workspace, error) {
+		return s.ensureWorkspaceRunningOwned(ctx, current, input)
+	})
+}
+
+func (s *WorkspaceService) ensureWorkspaceRunningOwned(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) (db.Workspace, error) {
+	durable := s.durableProvisioning()
+	provisioning := workspace.Status == "starting" || workspace.Status == "pending"
 	if s.runtime != nil {
 		requesterID := input.UserID
 		if requesterID == 0 {
 			requesterID = workspace.UserID
 		}
+		// Runtime creates replay by workspace ID; a snapshot row replays its restore.
+		if durable && provisioning && workspace.SourceSnapshotID.Valid {
+			snapshot, err := s.q.GetWorkspaceSnapshot(ctx, UUIDString(workspace.SourceSnapshotID))
+			if err != nil {
+				return workspace, err
+			}
+			return s.restoreRuntimeWorkspaceSnapshot(ctx, workspace, snapshot, requesterID)
+		}
 		return s.ensureRuntimeWorkspaceRunning(ctx, workspace, requesterID)
+	}
+	if durable && provisioning {
+		var err error
+		workspace, err = s.recoverUnregisteredWorkspaceVM(ctx, workspace)
+		if err != nil {
+			return workspace, err
+		}
+		if workspace.SourceSnapshotID.Valid && strings.TrimSpace(workspace.VmID) == "" {
+			snapshot, err := s.q.GetWorkspaceSnapshot(ctx, UUIDString(workspace.SourceSnapshotID))
+			if err != nil {
+				return workspace, err
+			}
+			return s.createWorkspaceVMFromSnapshot(ctx, workspace, snapshot)
+		}
+		return s.provisionWorkspaceVM(ctx, workspace, input, true)
 	}
 	if strings.TrimSpace(workspace.VmID) == "" {
 		return s.createWorkspaceVM(ctx, workspace, input)

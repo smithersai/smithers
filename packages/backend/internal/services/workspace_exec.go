@@ -102,7 +102,9 @@ func (s *WorkspaceService) CreateSession(ctx context.Context, input CreateWorksp
 	}
 	done := make(chan provisionOutcome, 1)
 	provisionStartedAt := time.Now()
+	provisionDone := s.trackProvision()
 	go func() {
+		defer provisionDone()
 		defer cancelProvision()
 		recorded := false
 		recordProvision := func(status string) {
@@ -176,6 +178,10 @@ func (s *WorkspaceService) finishWorkspaceSessionProvisioning(ctx context.Contex
 	}()
 
 	workspace, err := s.ensureWorkspaceRunning(ctx, workspace, input)
+	if errors.Is(err, errWorkspaceProvisionInProgress) {
+		// The owner (or the provisioning reconciler) completes the session.
+		return toWorkspaceSessionResponse(session), nil
+	}
 	if err != nil {
 		return WorkspaceSessionResponse{}, err
 	}

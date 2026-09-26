@@ -154,7 +154,9 @@ func (s *WorkspaceService) CreateAgentWorkspace(ctx context.Context, input Creat
 			RepoName: input.RepoName, SourceBookmark: bookmark,
 		})
 		if err != nil {
-			s.markWorkspaceProvisionFailed(ctx, workspace, err)
+			if !errors.Is(err, errWorkspaceProvisionInProgress) {
+				s.markWorkspaceProvisionFailed(ctx, workspace, err)
+			}
 			return AgentWorkspaceResult{}, err
 		}
 		if err := linkSession(); err != nil {

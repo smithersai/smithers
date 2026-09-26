@@ -1594,6 +1594,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		wikiHistoryWorker = startJoinedBackgroundWorker(func() { services.RunWikiHistory(workerCtx, pool, repoHostClient) })
 	}
 	if options.topology.workers() {
+		// Re-drive workspaces and sessions a stopped process left pending.
+		// Per-workspace advisory locks make every worker replica safe to run it.
+		launchWorker(func() { workspaceService.RunProvisioningReconciler(workerCtx) })
 		launchWorker(func() { landingWorker.Start(workerCtx) })
 		launchWorker(func() {
 			services.RunRuntimeMetricsCollector(workerCtx, queries, smithersMetrics, services.RuntimeMetricsInterval)
@@ -1783,6 +1786,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			webhookDeliveryCleaner.Stop()
 			workspaceCleaner.Stop()
 		}
+		// Detached provisioning goroutines outlive the HTTP drain; join them
+		// before run closes the shared pool.
+		provisionDrainCtx, cancelProvisionDrain := context.WithTimeout(context.Background(), services.WorkspaceProvisioningDrainTimeout)
+		if err := workspaceService.WaitForProvisioning(provisionDrainCtx); err != nil {
+			slog.Error("workspace provisioning drain failed", "error", err)
+		}
+		cancelProvisionDrain()
 		if goldenSnapshotService != nil {
 			goldenSnapshotService.Stop()
 		}

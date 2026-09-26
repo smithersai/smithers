@@ -542,6 +542,7 @@ type WorkspaceQuerier interface {
 // lifecycle reconciliation around either a shared runtime or the legacy
 // sandbox transport during migration.
 type WorkspaceService struct {
+	provisionTasks               *workspaceProvisionTasks
 	launchSessionCleanup         func(string, func())
 	billing                      BillingPolicy
 	sourceReader                 WorkspaceSourceReader
@@ -778,6 +779,7 @@ func WithWorkspaceDesktopObserveText(enabled bool) WorkspaceServiceOption {
 // NewWorkspaceService returns a new WorkspaceService.
 func NewWorkspaceService(q WorkspaceQuerier, opts ...WorkspaceServiceOption) *WorkspaceService {
 	svc := &WorkspaceService{
+		provisionTasks:               newWorkspaceProvisionTasks(),
 		launchSessionCleanup:         SafeGo,
 		q:                            q,
 		sshHost:                      defaultWorkspaceSSHHost,
