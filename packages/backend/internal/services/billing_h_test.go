@@ -528,7 +528,8 @@ func TestBilling_H_WebhookHandlerErrorBranches(t *testing.T) {
 		Subscription: "sub_h",
 		Metadata:     map[string]string{"owner_type": BillingOwnerTypeUser, "owner_id": "42"},
 	})
-	require.NoError(t, err)
+	// A failed fetch fails the webhook so Stripe redelivers it.
+	assert.Equal(t, 500, httpStatus(err))
 
 	subscriptionLookupErrQueries := billingHNewQuerier()
 	subscriptionLookupErrQueries.getBillingAccountByStripeCustomerFn = func(context.Context, string) (db.BillingAccount, error) {

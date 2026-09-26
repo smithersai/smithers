@@ -103,8 +103,9 @@ type BillingEmailSender interface {
 }
 
 type BillingServiceConfig struct {
-	// MonthlyCreditGrantCents is the deployment's monthly platform credit per
-	// billing account. Zero grants nothing.
+	// MonthlyCreditGrantCents is the platform credit one paid subscription
+	// invoice buys, capped at the invoice's amount paid and spendable until the
+	// end of the period it pays for. Zero grants nothing.
 	MonthlyCreditGrantCents  int64
 	BaseURL                  string
 	PortalReturnURL          string
@@ -228,6 +229,7 @@ type BillingCreditLedger interface {
 	EnsureAccount(ctx context.Context, ownerType string, ownerID int64) (int64, error)
 	Grant(ctx context.Context, accountID int64, key string, nanos int64, expiresAt *time.Time) error
 	OwnerBalance(ctx context.Context, ownerType string, ownerID int64) (int64, error)
+	Forfeit(ctx context.Context, ownerType string, ownerID int64, prefix string) (int64, error)
 }
 
 func WithBillingCreditLedger(ledger BillingCreditLedger) BillingServiceOption {
@@ -772,6 +774,12 @@ func (s *BillingService) handleStripeEvent(ctx context.Context, eventID string, 
 			return pkgerrors.BadRequest("invalid customer.subscription.trial_will_end payload")
 		}
 		return s.handleSubscriptionTrialWillEnd(ctx, subscription, raw)
+	case "invoice.paid":
+		var invoice stripeInvoicePaidPayload
+		if err := json.Unmarshal(raw, &invoice); err != nil {
+			return pkgerrors.BadRequest("invalid invoice.paid payload")
+		}
+		return s.handleInvoicePaid(ctx, invoice)
 	case "invoice.payment_failed":
 		var invoice stripeInvoicePaymentFailedPayload
 		if err := json.Unmarshal(raw, &invoice); err != nil {
@@ -1502,12 +1510,6 @@ func (s *BillingService) resolveLocalState(ctx context.Context, owner billingOwn
 
 	var subscription *db.BillingSubscription
 	if account != nil {
-		// Best-effort: a transient grant failure must not fail plan/usage
-		// resolution, which gates repo, workflow, and agent actions. The grant
-		// is idempotent per calendar month, so the next resolution retries it.
-		if err := s.ensureMonthlyCreditGrant(ctx, *account); err != nil {
-			slog.Warn("failed to ensure monthly billing credit grant", "billing_account_id", account.ID, "error", err)
-		}
 		row, err := s.queries.GetLatestLiveBillingSubscriptionByAccount(ctx, account.ID)
 		if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
 			return billingPlanDefinition{}, nil, nil, nil, pkgerrors.Internal("failed to load billing subscription").WithCause(err)
@@ -1515,6 +1517,14 @@ func (s *BillingService) resolveLocalState(ctx context.Context, owner billingOwn
 		if err == nil {
 			subscription = &row
 			plan = s.planForSubscription(owner.OwnerType, &row)
+		}
+		// Best-effort: a transient failure must not fail plan/usage
+		// resolution, which gates repo, workflow, and agent actions. The
+		// forfeiture is idempotent, so the next resolution retries it.
+		if !planCreditSpendable(subscription) {
+			if err := s.forfeitPlanCredit(ctx, *account, "subscription not active"); err != nil {
+				slog.Warn("failed to forfeit lapsed plan credit", "billing_account_id", account.ID, "error", err)
+			}
 		}
 	}
 
@@ -1807,7 +1817,10 @@ func (s *BillingService) handleCheckoutSessionCompleted(ctx context.Context, ses
 	owner, ok := ownerFromMetadata(session.Metadata)
 	if !ok {
 		account, err := s.findBillingAccountByCustomerID(ctx, session.Customer)
-		if err != nil || account == nil {
+		if err != nil {
+			return err
+		}
+		if account == nil {
 			return nil
 		}
 		owner = billingOwnerRef{
@@ -1821,10 +1834,13 @@ func (s *BillingService) handleCheckoutSessionCompleted(ctx context.Context, ses
 		return err
 	}
 	if s.stripe != nil && strings.TrimSpace(session.Subscription) != "" {
+		// A failed fetch fails the webhook so Stripe redelivers it; the
+		// transaction rolls the event claim back.
 		snapshot, err := s.stripe.GetSubscription(ctx, session.Subscription)
-		if err == nil {
-			return s.upsertSubscriptionSnapshot(ctx, account, snapshot)
+		if err != nil {
+			return pkgerrors.Internal("failed to load stripe subscription after checkout").WithCause(err)
 		}
+		return s.upsertSubscriptionSnapshot(ctx, account, snapshot)
 	}
 	return nil
 }
@@ -1958,6 +1974,9 @@ func (s *BillingService) handleChargeRefunded(ctx context.Context, eventID strin
 		return err
 	}
 	reason := fmt.Sprintf("Stripe charge refunded: %s (%s)", strings.TrimSpace(payload.ID), formatMoneyCents(payload.AmountRefunded, payload.Currency))
+	if err := s.forfeitPlanCredit(ctx, *account, reason); err != nil {
+		return err
+	}
 	return s.recordStripeCreditAudit(ctx, *account, eventID, "refund", "stripe_charge", reason)
 }
 
@@ -1982,6 +2001,9 @@ func (s *BillingService) handleChargeDisputeCreated(ctx context.Context, eventID
 		strings.TrimSpace(payload.Status),
 		formatMoneyCents(payload.Amount, payload.Currency),
 	)
+	if err := s.forfeitPlanCredit(ctx, *account, reason); err != nil {
+		return err
+	}
 	return s.recordStripeCreditAudit(ctx, *account, eventID, "adjustment", "stripe_dispute", reason)
 }
 
@@ -2104,7 +2126,7 @@ func (s *BillingService) upsertSubscriptionSnapshot(ctx context.Context, account
 	if err != nil {
 		return pkgerrors.Internal("failed to persist billing subscription").WithCause(err)
 	}
-	return nil
+	return s.forfeitLapsedPlanCredit(ctx, account)
 }
 
 func (s *BillingService) ensureBillingAccount(ctx context.Context, owner billingOwnerRef, customerName, customerEmail string) (db.BillingAccount, error) {
@@ -2395,26 +2417,6 @@ func (s *BillingService) billingPortalURLForAccount(account db.BillingAccount) s
 		OwnerName: account.StripeCustomerName,
 	}
 	return s.portalReturnURL(owner)
-}
-
-// ensureMonthlyCreditGrant grants the monthly platform credit once per
-// calendar month per owner. The ledger key makes it idempotent across
-// concurrent resolvers and retries.
-func (s *BillingService) ensureMonthlyCreditGrant(ctx context.Context, account db.BillingAccount) error {
-	if s.credits == nil || s.config.MonthlyCreditGrantCents <= 0 {
-		return nil
-	}
-	periodStart, _ := billingPeriodWindow(s.now())
-	accountID, err := s.credits.EnsureAccount(ctx, account.OwnerType, account.OwnerID)
-	if err != nil {
-		return pkgerrors.Internal("failed to open credit account").WithCause(err)
-	}
-	err = s.credits.Grant(ctx, accountID, "monthly_grant:"+periodStart.Format("2006-01"), s.config.MonthlyCreditGrantCents*credits.NanosPerCent, nil)
-	if err != nil && !stdErrors.Is(err, credits.ErrConflict) {
-		// ErrConflict: this month was already granted at another amount.
-		return pkgerrors.Internal("failed to record monthly credit grant").WithCause(err)
-	}
-	return nil
 }
 
 // recordStripeCreditAudit appends one Stripe refund or dispute notice to the

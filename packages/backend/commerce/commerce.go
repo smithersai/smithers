@@ -31,6 +31,10 @@ type Overview = services.BillingOverview
 type Session = services.BillingSessionResult
 type Capabilities = services.BillingCapabilities
 
+// WebhookEvents is every payment event HandleStripeWebhook handles. The
+// deployment's webhook endpoint must subscribe to exactly these.
+var WebhookEvents = services.StripeWebhookEvents
+
 // Routes is the complete existing HTTP billing contract. Optional commerce
 // absence must be represented by nil, never a nonfunctional route authority.
 type Routes interface {
@@ -64,12 +68,14 @@ type Config struct {
 	BaseURL, PortalReturnURL, CheckoutSuccessURL, CheckoutCancelURL string
 	WebhookSecret                                                   string
 	EmailSender                                                     EmailSender
-	// MonthlyCreditGrantCents is the monthly platform credit per billing
-	// account, granted in the exact credit ledger. Zero grants nothing.
-	MonthlyCreditGrantCents int64
-	// SignupCreditGrantCents is the one-time platform credit granted when an
-	// owner's credit account is created (credits.Ledger.SignupGrantNanos).
+	// MonthlyCreditGrantCents is the platform credit one paid subscription
+	// invoice (invoice.paid) grants in the exact credit ledger, capped at the
+	// invoice's amount paid and expiring at the end of the period it pays for.
 	// Zero grants nothing.
+	MonthlyCreditGrantCents int64
+	// SignupCreditGrantCents is the one-time platform credit granted when a
+	// user's credit account is created, once per login identity
+	// (credits.Ledger.SignupGrantNanos). Zero grants nothing.
 	SignupCreditGrantCents int64
 }
 

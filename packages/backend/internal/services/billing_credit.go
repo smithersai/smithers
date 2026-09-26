@@ -1,0 +1,224 @@
+package services
+
+import (
+	"context"
+	stdErrors "errors"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/smithersai/smithers/packages/backend/credits"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+// Plan credit rules (smithersai/plue#528, ported from plue 4053bc1c4):
+//
+//   - A paid subscription invoice (invoice.paid) grants MonthlyCreditGrantCents
+//     once per invoice id, capped at the invoice's amount paid. A $0 invoice
+//     (trial, full discount) grants nothing.
+//   - The grant expires at the end of the period the invoice pays for. There
+//     is no rollover. The ledger spends the soonest-expiring credit first, so
+//     plan credit goes before the signup grant.
+//   - Unspent plan credit is forfeited when the account has no active or
+//     trialing subscription, and on a refund or dispute.
+//
+// Calendar-month grants (monthly_grant:YYYY-MM) issued before this rule are
+// left as they are.
+
+// planCreditKeyPrefix names every plan-credit grant: "invoice:<invoice id>".
+const planCreditKeyPrefix = "invoice:"
+
+// StripeWebhookEvents is every event the billing webhook handles. The
+// deployment's Stripe endpoint must subscribe to exactly these.
+var StripeWebhookEvents = []string{
+	"checkout.session.completed",
+	"customer.subscription.created",
+	"customer.subscription.updated",
+	"customer.subscription.deleted",
+	"customer.subscription.trial_will_end",
+	"invoice.paid",
+	"invoice.payment_failed",
+	"customer.updated",
+	"charge.refunded",
+	"charge.dispute.created",
+	"entitlements.active_entitlement_summary.updated",
+}
+
+// planCreditSpendable reports whether plan credit may be spent: the
+// subscription is active or trialing. past_due keeps sandbox access through
+// the dunning grace period, but not the credit a paid invoice bought.
+func planCreditSpendable(subscription *db.BillingSubscription) bool {
+	if subscription == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(subscription.Status)) {
+	case "active", "trialing":
+		return true
+	default:
+		return false
+	}
+}
+
+// forfeitPlanCredit removes the account's unspent plan credit from its balance.
+func (s *BillingService) forfeitPlanCredit(ctx context.Context, account db.BillingAccount, reason string) error {
+	if s.credits == nil {
+		return nil
+	}
+	taken, err := s.credits.Forfeit(ctx, account.OwnerType, account.OwnerID, planCreditKeyPrefix)
+	if err != nil {
+		return pkgerrors.Internal("failed to forfeit plan credit").WithCause(err)
+	}
+	if taken > 0 {
+		slog.Info("plan credit forfeited", "billing_account_id", account.ID, "nanos", taken, "reason", reason)
+	}
+	return nil
+}
+
+// forfeitLapsedPlanCredit forfeits the plan credit of an account whose latest
+// live subscription can no longer spend it.
+func (s *BillingService) forfeitLapsedPlanCredit(ctx context.Context, account db.BillingAccount) error {
+	if s.credits == nil {
+		return nil
+	}
+	row, err := s.queries.GetLatestLiveBillingSubscriptionByAccount(ctx, account.ID)
+	if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
+		return pkgerrors.Internal("failed to load billing subscription").WithCause(err)
+	}
+	if err == nil && planCreditSpendable(&row) {
+		return nil
+	}
+	return s.forfeitPlanCredit(ctx, account, "subscription not active")
+}
+
+// stripeInvoicePaidPayload is the part of an invoice.paid event the grant
+// needs. Since API version 2025-03-31 (Basil) the subscription id lives under
+// parent.subscription_details; older payloads carry it at the top level.
+type stripeInvoicePaidPayload struct {
+	ID           string `json:"id"`
+	Customer     string `json:"customer"`
+	AmountPaid   int64  `json:"amount_paid"`
+	Currency     string `json:"currency"`
+	Subscription string `json:"subscription"`
+	Parent       struct {
+		SubscriptionDetails struct {
+			Subscription string `json:"subscription"`
+		} `json:"subscription_details"`
+	} `json:"parent"`
+	Lines struct {
+		Data []struct {
+			Period struct {
+				Start int64 `json:"start"`
+				End   int64 `json:"end"`
+			} `json:"period"`
+		} `json:"data"`
+	} `json:"lines"`
+}
+
+func (p stripeInvoicePaidPayload) subscriptionID() string {
+	if id := strings.TrimSpace(p.Parent.SubscriptionDetails.Subscription); id != "" {
+		return id
+	}
+	return strings.TrimSpace(p.Subscription)
+}
+
+// periodEnd is the end of the span the invoice's lines pay for.
+func (p stripeInvoicePaidPayload) periodEnd() time.Time {
+	var end time.Time
+	for _, line := range p.Lines.Data {
+		if t := unixToTime(line.Period.End); t.After(end) {
+			end = t
+		}
+	}
+	return end
+}
+
+// handleInvoicePaid grants the plan credit a paid subscription invoice buys.
+// A failure returns an error so Stripe redelivers; the grant is idempotent
+// per invoice id.
+func (s *BillingService) handleInvoicePaid(ctx context.Context, invoice stripeInvoicePaidPayload) error {
+	subscriptionID := invoice.subscriptionID()
+	invoiceID := strings.TrimSpace(invoice.ID)
+	if subscriptionID == "" || invoiceID == "" || invoice.AmountPaid <= 0 {
+		return nil // a one-off invoice, or a $0 invoice that bought no credit
+	}
+	account, err := s.findBillingAccountByCustomerID(ctx, invoice.Customer)
+	if err != nil {
+		return err
+	}
+	if s.stripe != nil {
+		// invoice.paid can arrive before the subscription events; project the
+		// authoritative subscription first so its plan and status are known.
+		snapshot, err := s.stripe.GetSubscription(ctx, subscriptionID)
+		if err != nil {
+			return pkgerrors.Internal("failed to load stripe subscription for paid invoice").WithCause(err)
+		}
+		if account == nil {
+			owner, ok := ownerFromMetadata(snapshot.Metadata)
+			if !ok {
+				return nil
+			}
+			row, err := s.upsertBillingAccount(ctx, owner, invoice.Customer, "", "")
+			if err != nil {
+				return err
+			}
+			account = &row
+		}
+		if err := s.upsertSubscriptionSnapshot(ctx, *account, snapshot); err != nil {
+			return err
+		}
+	}
+	if account == nil {
+		return nil
+	}
+	rows, err := s.queries.ListBillingSubscriptionsByAccount(ctx, account.ID)
+	if err != nil {
+		return pkgerrors.Internal("failed to load billing subscriptions").WithCause(err)
+	}
+	var subscription *db.BillingSubscription
+	for i := range rows {
+		if rows[i].StripeSubscriptionID == subscriptionID {
+			subscription = &rows[i]
+			break
+		}
+	}
+	if subscription == nil {
+		// Not projected yet; fail so Stripe retries after the subscription event.
+		return pkgerrors.Internal("paid invoice " + invoiceID + " references unknown subscription " + subscriptionID)
+	}
+	return s.grantInvoiceCredit(ctx, *account, subscription, invoice)
+}
+
+// grantInvoiceCredit grants the plan credit one paid invoice bought.
+func (s *BillingService) grantInvoiceCredit(ctx context.Context, account db.BillingAccount, subscription *db.BillingSubscription, invoice stripeInvoicePaidPayload) error {
+	if s.credits == nil || s.config.MonthlyCreditGrantCents <= 0 || !planCreditSpendable(subscription) {
+		return nil
+	}
+	if s.planForSubscription(account.OwnerType, subscription).Key == BillingPlanFree {
+		return nil
+	}
+	cents := min(s.config.MonthlyCreditGrantCents, invoice.AmountPaid)
+	periodEnd := invoice.periodEnd()
+	if periodEnd.IsZero() && subscription.CurrentPeriodEnd.Valid {
+		periodEnd = subscription.CurrentPeriodEnd.Time
+	}
+	if periodEnd.IsZero() {
+		return pkgerrors.Internal("paid invoice " + invoice.ID + " has no service period")
+	}
+	if !periodEnd.After(s.now()) {
+		slog.Warn("paid invoice period already ended; no plan credit granted", "invoice_id", invoice.ID, "period_end", periodEnd)
+		return nil
+	}
+	accountID, err := s.credits.EnsureAccount(ctx, account.OwnerType, account.OwnerID)
+	if err != nil {
+		return pkgerrors.Internal("failed to open credit account").WithCause(err)
+	}
+	err = s.credits.Grant(ctx, accountID, planCreditKeyPrefix+strings.TrimSpace(invoice.ID), cents*credits.NanosPerCent, &periodEnd)
+	if err != nil && !stdErrors.Is(err, credits.ErrConflict) {
+		// ErrConflict: this invoice was granted before (and since forfeited).
+		return pkgerrors.Internal("failed to record plan credit grant").WithCause(err)
+	}
+	return nil
+}

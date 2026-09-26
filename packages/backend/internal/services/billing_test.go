@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1506,6 +1507,23 @@ func (f *fakeCreditLedger) Grant(_ context.Context, accountID int64, key string,
 	return nil
 }
 
+func (f *fakeCreditLedger) Forfeit(_ context.Context, ownerType string, ownerID int64, prefix string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return 0, f.err
+	}
+	var taken int64
+	grants := f.grants[f.accounts[fmt.Sprintf("%s:%d", ownerType, ownerID)]]
+	for key, n := range grants {
+		if strings.HasPrefix(key, prefix) {
+			taken += n
+			delete(grants, key)
+		}
+	}
+	return taken, nil
+}
+
 func (f *fakeCreditLedger) OwnerBalance(_ context.Context, ownerType string, ownerID int64) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1519,70 +1537,50 @@ func (f *fakeCreditLedger) OwnerBalance(_ context.Context, ownerType string, own
 	return total, nil
 }
 
-func TestBillingService_MonthlyCreditGrant_GrantsOncePerMonth(t *testing.T) {
-	t.Parallel()
-
-	const userID int64 = 42
-	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-
+// Reading a balance grants no plan credit: only a paid invoice does.
+func TestBillingService_BalanceReadGrantsNoPlanCredit(t *testing.T) {
 	queries := newBillingQuerierMock()
-	queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, userID)] = db.BillingAccount{
-		ID:        1,
-		OwnerType: BillingOwnerTypeUser,
-		OwnerID:   userID,
+	queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, 42)] = db.BillingAccount{ID: 1, OwnerType: BillingOwnerTypeUser, OwnerID: 42}
+	queries.getLatestSubscriptionFn = func(context.Context, int64) (db.BillingSubscription, error) {
+		return db.BillingSubscription{BillingAccountID: 1, Status: "active", PlanKey: BillingPlanPro}, nil
 	}
 	ledger := newFakeCreditLedger()
 	svc := NewBillingService(queries, nil, BillingServiceConfig{MonthlyCreditGrantCents: testBillingMonthlyCreditGrantCents}, WithBillingCreditLedger(ledger))
-	svc.now = func() time.Time { return now }
-
-	user := &db.User{ID: userID, Username: "alice"}
-	overview, err := svc.GetUserOverview(context.Background(), user)
+	overview, err := svc.GetUserOverview(context.Background(), &db.User{ID: 42, Username: "alice"})
 	require.NoError(t, err)
-	assert.Equal(t, testBillingMonthlyCreditGrantCents, overview.CreditBalanceCents)
-	assert.Equal(t, testBillingMonthlyCreditGrantCents*credits.NanosPerCent, overview.CreditBalanceNanos)
-	assert.Equal(t, map[string]int64{"monthly_grant:2026-07": testBillingMonthlyCreditGrantCents * credits.NanosPerCent}, ledger.grants[1])
-
-	// Same month: no duplicate grant.
-	overview, err = svc.GetUserOverview(context.Background(), user)
-	require.NoError(t, err)
-	assert.Equal(t, testBillingMonthlyCreditGrantCents, overview.CreditBalanceCents)
-	assert.Len(t, ledger.grants[1], 1)
-
-	// Next month: a fresh grant accrues on top of the balance.
-	now = time.Date(2026, 8, 2, 9, 0, 0, 0, time.UTC)
-	overview, err = svc.GetUserOverview(context.Background(), user)
-	require.NoError(t, err)
-	assert.Equal(t, 2*testBillingMonthlyCreditGrantCents, overview.CreditBalanceCents)
-	assert.Contains(t, ledger.grants[1], "monthly_grant:2026-08")
-	assert.Empty(t, queries.creditEntries, "grants live in the exact ledger, not the audit history")
-}
-
-func TestBillingService_MonthlyCreditGrantCarriedAtAnotherAmountIsNotRegranted(t *testing.T) {
-	queries := newBillingQuerierMock()
-	queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, 42)] = db.BillingAccount{ID: 1, OwnerType: BillingOwnerTypeUser, OwnerID: 42}
-	ledger := newFakeCreditLedger()
-	id, err := ledger.EnsureAccount(context.Background(), BillingOwnerTypeUser, 42)
-	require.NoError(t, err)
-	require.NoError(t, ledger.Grant(context.Background(), id, "monthly_grant:2026-07", 500*credits.NanosPerCent, nil))
-	svc := NewBillingService(queries, nil, BillingServiceConfig{MonthlyCreditGrantCents: testBillingMonthlyCreditGrantCents}, WithBillingCreditLedger(ledger))
-	svc.now = func() time.Time { return time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC) }
-	require.NoError(t, svc.ensureMonthlyCreditGrant(context.Background(), queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, 42)]))
-	assert.Equal(t, map[string]int64{"monthly_grant:2026-07": 500 * credits.NanosPerCent}, ledger.grants[id])
-}
-
-func TestBillingService_MonthlyCreditGrantRequiresLedgerAndDeploymentConfig(t *testing.T) {
-	queries := newBillingQuerierMock()
-	queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, 42)] = db.BillingAccount{ID: 1, OwnerType: BillingOwnerTypeUser, OwnerID: 42}
-	ledger := newFakeCreditLedger()
-	for _, svc := range []*BillingService{
-		NewBillingService(queries, nil, BillingServiceConfig{}, WithBillingCreditLedger(ledger)),
-		NewBillingService(queries, nil, BillingServiceConfig{MonthlyCreditGrantCents: testBillingMonthlyCreditGrantCents}),
-	} {
-		overview, err := svc.GetUserOverview(context.Background(), &db.User{ID: 42, Username: "alice"})
-		require.NoError(t, err)
-		assert.Zero(t, overview.CreditBalanceCents)
-	}
+	assert.Zero(t, overview.CreditBalanceNanos)
 	assert.Empty(t, ledger.accounts)
+}
+
+// Plan credit leaves the balance once no active or trialing subscription
+// can spend it; the signup grant stays.
+func TestBillingService_LapsedSubscriptionForfeitsPlanCredit(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		status string
+		kept   bool
+	}{{"active", true}, {"trialing", true}, {"past_due", false}, {"", false}} {
+		queries := newBillingQuerierMock()
+		queries.accountsByOwner[queries.ownerKey(BillingOwnerTypeUser, 42)] = db.BillingAccount{ID: 1, OwnerType: BillingOwnerTypeUser, OwnerID: 42}
+		if tc.status != "" {
+			queries.getLatestSubscriptionFn = func(context.Context, int64) (db.BillingSubscription, error) {
+				return db.BillingSubscription{BillingAccountID: 1, Status: tc.status, PlanKey: BillingPlanPro, PastDueSince: pgtype.Timestamptz{Time: time.Now(), Valid: true}}, nil
+			}
+		}
+		ledger := newFakeCreditLedger()
+		id, err := ledger.EnsureAccount(ctx, BillingOwnerTypeUser, 42)
+		require.NoError(t, err)
+		require.NoError(t, ledger.Grant(ctx, id, "invoice:in_1", 5000*credits.NanosPerCent, nil))
+		require.NoError(t, ledger.Grant(ctx, id, credits.SignupGrantKey, 1000*credits.NanosPerCent, nil))
+		svc := NewBillingService(queries, nil, BillingServiceConfig{MonthlyCreditGrantCents: 5000}, WithBillingCreditLedger(ledger))
+		overview, err := svc.GetUserOverview(ctx, &db.User{ID: 42, Username: "alice"})
+		require.NoError(t, err)
+		want := int64(1000)
+		if tc.kept {
+			want = 6000
+		}
+		assert.Equal(t, want, overview.CreditBalanceCents, tc.status)
+	}
 }
 
 func TestBillingService_CreditBalanceFailureFailsOverview(t *testing.T) {
@@ -1592,18 +1590,6 @@ func TestBillingService_CreditBalanceFailureFailsOverview(t *testing.T) {
 	svc := NewBillingService(queries, nil, BillingServiceConfig{}, WithBillingCreditLedger(ledger))
 	_, err := svc.GetUserOverview(context.Background(), &db.User{ID: 42, Username: "alice"})
 	assert.Equal(t, 500, httpStatus(err))
-}
-
-func TestBillingService_MonthlyCreditGrant_SkipsWhenNoAccount(t *testing.T) {
-	t.Parallel()
-
-	queries := newBillingQuerierMock()
-	ledger := newFakeCreditLedger()
-	svc := NewBillingService(queries, nil, BillingServiceConfig{MonthlyCreditGrantCents: testBillingMonthlyCreditGrantCents}, WithBillingCreditLedger(ledger))
-	overview, err := svc.GetUserOverview(context.Background(), &db.User{ID: 5, Username: "bob"})
-	require.NoError(t, err)
-	assert.Zero(t, overview.CreditBalanceCents)
-	assert.Empty(t, ledger.accounts)
 }
 
 func (m *billingQuerierMock) CountActiveSandboxesForUser(ctx context.Context, userID int64) (int, error) {
@@ -1629,4 +1615,14 @@ func (m *billingQuerierMock) SumSandboxAwakeSecondsForUserSince(ctx context.Cont
 		return m.sumSandboxSecondsFn(ctx, userID, since)
 	}
 	return 0, nil
+}
+
+// Every event the deployment's Stripe endpoint subscribes to has a handler.
+func TestStripeWebhookEventsAreHandled(t *testing.T) {
+	svc := NewBillingService(newBillingQuerierMock(), nil, BillingServiceConfig{})
+	for _, event := range StripeWebhookEvents {
+		err := svc.handleStripeEvent(context.Background(), "evt_1", event, json.RawMessage(`"not an object"`))
+		assert.Equal(t, 400, httpStatus(err), event)
+	}
+	assert.NoError(t, svc.handleStripeEvent(context.Background(), "evt_1", "invoice.created", json.RawMessage(`"x"`)))
 }

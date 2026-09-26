@@ -1,0 +1,93 @@
+package commerce_test
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/admission"
+	"github.com/smithersai/smithers/packages/backend/commerce"
+	"github.com/smithersai/smithers/packages/backend/credits"
+)
+
+type subscriptionTransport struct {
+	commerce.Client
+	owner  int64
+	status string
+	end    time.Time
+}
+
+func (p *subscriptionTransport) GetSubscription(context.Context, string) (commerce.SubscriptionSnapshot, error) {
+	return commerce.SubscriptionSnapshot{ID: "sub_plan", CustomerID: "cus_plan", PriceID: "price_pro", Interval: "monthly", Status: p.status,
+		Quantity: 1, CurrentPeriodEnd: p.end, RawPayload: []byte(`{}`),
+		Metadata: map[string]string{"owner_type": "user", "owner_id": fmt.Sprint(p.owner)}}, nil
+}
+
+// Plan credit follows paid invoices, never a balance read: once per invoice,
+// capped at the amount paid, forfeited on refund and on cancellation
+// (smithersai/plue#528, plue 4053bc1c4).
+func TestPlanCreditFollowsPaidInvoices(t *testing.T) {
+	pool := database(t)
+	ctx := context.Background()
+	owner := user(t, pool)
+	end := time.Now().Add(30 * 24 * time.Hour).Truncate(time.Second)
+	transport := &subscriptionTransport{owner: owner, status: "active", end: end}
+	const secret = "test-only-plan-credit-secret"
+	api, err := commerce.New(pool, transport, commerce.Config{Usage: admission.ProductUsage, Prices: admission.Prices{ProMonthly: "price_pro"},
+		WebhookSecret: secret, MonthlyCreditGrantCents: 5000, SignupCreditGrantCents: 1000})
+	require.NoError(t, err)
+	deliver := func(event, kind, object string) {
+		payload := []byte(fmt.Sprintf(`{"id":%q,"type":%q,"data":{"object":%s}}`, event, kind, object))
+		now := time.Now().Unix()
+		mac := hmac.New(sha256.New, []byte(secret))
+		fmt.Fprintf(mac, "%d.%s", now, payload)
+		require.NoError(t, api.HandleStripeWebhook(ctx, payload, fmt.Sprintf("t=%d,v1=%x", now, mac.Sum(nil))))
+	}
+	invoice := func(event, id string, paid int64, periodEnd time.Time) {
+		deliver(event, "invoice.paid", fmt.Sprintf(`{"id":%q,"customer":"cus_plan","amount_paid":%d,"currency":"usd",
+			"parent":{"subscription_details":{"subscription":"sub_plan"}},"lines":{"data":[{"period":{"start":%d,"end":%d}}]}}`,
+			id, paid, time.Now().Unix(), periodEnd.Unix()))
+	}
+	ledger := api.CreditLedger()
+	balance := func() int64 {
+		n, err := ledger.OwnerBalance(ctx, "user", owner)
+		require.NoError(t, err)
+		return n / credits.NanosPerCent
+	}
+
+	// The first paid invoice projects the subscription, opens the account
+	// with its signup grant, and adds the plan credit until the period ends.
+	invoice("evt_in1", "in_1", 5000, end)
+	require.Equal(t, int64(6000), balance())
+	var expires time.Time
+	require.NoError(t, pool.QueryRow(ctx, `SELECT expires_at FROM credit_grants WHERE source_key = 'invoice:in_1'`).Scan(&expires))
+	require.True(t, expires.Equal(end), "plan credit expires at the invoice's period end")
+
+	// Redelivery, a $0 invoice, a read, and an ended period grant nothing.
+	invoice("evt_in1_again", "in_1", 5000, end)
+	invoice("evt_trial", "in_0", 0, end)
+	invoice("evt_old", "in_old", 5000, time.Now().Add(-time.Hour))
+	_, err = api.GetUserOverview(ctx, &commerce.User{ID: owner})
+	require.NoError(t, err)
+	require.Equal(t, int64(6000), balance())
+
+	// A discounted invoice is capped at what it collected.
+	invoice("evt_in2", "in_2", 1200, end)
+	require.Equal(t, int64(7200), balance())
+
+	// A refund forfeits the unspent plan credit; the signup grant stays.
+	deliver("evt_refund", "charge.refunded", `{"id":"ch_1","customer":"cus_plan","amount_refunded":5000,"currency":"usd"}`)
+	require.Equal(t, int64(1000), balance())
+
+	// Cancellation forfeits the next invoice's credit too.
+	invoice("evt_in3", "in_3", 5000, end)
+	require.Equal(t, int64(6000), balance())
+	transport.status = "canceled"
+	deliver("evt_canceled", "customer.subscription.updated", `{"id":"sub_plan","customer":"cus_plan"}`)
+	require.Equal(t, int64(1000), balance())
+}

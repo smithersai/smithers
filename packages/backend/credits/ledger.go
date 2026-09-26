@@ -44,9 +44,10 @@ type Ledger struct {
 	// charged for a call whose settlement was lost. Zero means DefaultAbandonAfter.
 	AbandonAfter time.Duration
 	// SignupGrantNanos is the deployment's one-time signup credit. EnsureAccount
-	// grants it under SignupGrantKey in the transaction that creates an owner's
-	// account, so it is never granted twice and never reaches an account that
-	// already existed or was imported. Zero grants nothing.
+	// grants it under SignupGrantKey in the transaction that creates a user's
+	// account, once per login identity (the user id and each linked OAuth
+	// login), so it is never granted twice and never reaches an organization
+	// or an account that already existed or was imported. Zero grants nothing.
 	SignupGrantNanos int64
 }
 
@@ -81,8 +82,9 @@ func validOwner(ownerType string, ownerID int64) bool {
 	return (ownerType == "user" || ownerType == "org") && ownerID > 0
 }
 
-// EnsureAccount returns the owner's credit account, creating it once with the
-// signup grant.
+// EnsureAccount returns the owner's credit account, creating it once. A new
+// user account receives the signup grant unless one of its login identities
+// has received it before; an organization never does.
 func (l Ledger) EnsureAccount(ctx context.Context, ownerType string, ownerID int64) (int64, error) {
 	if !validOwner(ownerType, ownerID) {
 		return 0, errors.New("credits: owner type user or org and a positive owner id required")
@@ -94,7 +96,11 @@ func (l Ledger) EnsureAccount(ctx context.Context, ownerType string, ownerID int
 	err := l.transaction(ctx, func(tx pgx.Tx) error {
 		var created bool
 		var e error
-		if id, created, e = ensureAccount(ctx, tx, ownerType, ownerID); e != nil || !created || l.SignupGrantNanos == 0 {
+		if id, created, e = ensureAccount(ctx, tx, ownerType, ownerID); e != nil || !created || l.SignupGrantNanos == 0 || ownerType != "user" {
+			return e
+		}
+		due, e := claimSignupIdentities(ctx, tx, id, ownerID)
+		if e != nil || !due {
 			return e
 		}
 		a, e := lockAccount(ctx, tx, id)
@@ -117,6 +123,27 @@ func ensureAccount(ctx context.Context, tx pgx.Tx, ownerType string, ownerID int
 		return id, false, err
 	}
 	return id, err == nil, err
+}
+
+// claimSignupIdentities records every login identity of a new user account
+// and reports whether the signup grant is due: only when none of them has
+// received it before.
+func claimSignupIdentities(ctx context.Context, tx pgx.Tx, accountID, userID int64) (bool, error) {
+	var due bool
+	err := tx.QueryRow(ctx, `WITH wanted AS (
+			SELECT 'user:' || $2::bigint AS identity
+			UNION
+			SELECT lower(btrim(provider)) || ':' || btrim(provider_user_id) FROM oauth_accounts
+			WHERE user_id = $2 AND btrim(provider) <> '' AND btrim(provider_user_id) <> ''
+		), inserted AS (
+			INSERT INTO credit_signup_identities (identity, account_id)
+			SELECT identity, $1 FROM wanted
+			WHERE NOT EXISTS (SELECT 1 FROM credit_signup_identities g WHERE g.identity IN (SELECT identity FROM wanted))
+			ON CONFLICT (identity) DO NOTHING
+			RETURNING 1
+		)
+		SELECT (SELECT count(*) FROM inserted) = (SELECT count(*) FROM wanted)`, accountID, userID).Scan(&due)
+	return due, err
 }
 
 type lockedAccount struct {
@@ -158,6 +185,45 @@ func (l Ledger) Grant(ctx context.Context, accountID int64, key string, nanos in
 		}
 		return repayDebt(ctx, tx, a.id)
 	})
+}
+
+// Forfeit ends every live grant of the owner's account whose source key
+// starts with prefix: its unspent credit leaves the balance now, and credit a
+// held reservation returns to it later expires with it. It returns the nanos
+// taken. An owner without an account has nothing to forfeit.
+func (l Ledger) Forfeit(ctx context.Context, ownerType string, ownerID int64, prefix string) (int64, error) {
+	if prefix == "" {
+		return 0, errors.New("credits: forfeit prefix required")
+	}
+	if l.DB == nil {
+		return 0, errors.New("credits: PostgreSQL pool required")
+	}
+	var accountID int64
+	err := l.DB.QueryRow(ctx, `SELECT a.id FROM credit_accounts a WHERE a.owner_type = $1 AND a.owner_id = $2
+		AND EXISTS (SELECT 1 FROM credit_grants g WHERE g.account_id = a.id AND starts_with(g.source_key, $3)
+			AND (g.expires_at IS NULL OR g.expires_at > now()))`, ownerType, ownerID, prefix).Scan(&accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var taken int64
+	err = l.transaction(ctx, func(tx pgx.Tx) error {
+		a, err := lockAccount(ctx, tx, accountID)
+		if err != nil {
+			return err
+		}
+		if err = tx.QueryRow(ctx, `WITH ended AS (
+				UPDATE credit_grants SET expires_at = $3
+				WHERE account_id = $1 AND starts_with(source_key, $2) AND (expires_at IS NULL OR expires_at > $3)
+				RETURNING available_nanos
+			) SELECT COALESCE(sum(available_nanos), 0)::bigint FROM ended`, accountID, prefix, a.now).Scan(&taken); err != nil {
+			return err
+		}
+		return expire(ctx, tx, accountID)
+	})
+	return taken, err
 }
 
 // insertGrant inserts a grant or proves an identical one exists.

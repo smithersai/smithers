@@ -18,7 +18,7 @@ You must be at least 18. Keep your sign-in secure; you are responsible for what 
 | Plan | Price | Model credit |
 | --- | --- | --- |
 | Free | $0 | $10 once, at signup |
-| Pro | $50 per month | $50 each calendar month |
+| Pro | $50 per month | $50 each paid month |
 
 - **Pro renews automatically every month** at the price shown at checkout until you cancel. Stripe charges the card you give at checkout.
 - **Cancel anytime** in the billing portal (`/billing.portal` in the app). Cancellation stops the next renewal; Pro stays active until the end of the month you paid for.

@@ -486,7 +486,7 @@ func TestSignupGrantOnlyWhenEnsureAccountCreates(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			id, err := l.EnsureAccount(ctx, "org", 2)
+			id, err := l.EnsureAccount(ctx, "user", 2)
 			if err != nil {
 				failures.Add(1)
 			}
@@ -512,7 +512,7 @@ func TestSignupGrantOnlyWhenEnsureAccountCreates(t *testing.T) {
 	if err := l.Grant(ctx, ids[0], "other", 1, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.EnsureAccount(ctx, "org", 2); err != nil {
+	if _, err := l.EnsureAccount(ctx, "user", 2); err != nil {
 		t.Fatal(err)
 	}
 	mustBalance(t, l, ids[0], signup+1)
@@ -520,4 +520,96 @@ func TestSignupGrantOnlyWhenEnsureAccountCreates(t *testing.T) {
 	if _, err := (Ledger{DB: l.DB, SignupGrantNanos: -1}).EnsureAccount(ctx, "user", 3); err == nil {
 		t.Fatal("a negative signup grant was accepted")
 	}
+}
+
+// The signup grant is once per login identity and never for an organization
+// (smithersai/plue#528, plue 4053bc1c4).
+func TestSignupGrantOncePerLoginIdentityAndNeverForOrganizations(t *testing.T) {
+	ctx := context.Background()
+	const signup = 1000 * NanosPerCent
+	l := Ledger{DB: testPool(t), SignupGrantNanos: signup}
+	org, err := l.EnsureAccount(ctx, "org", 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, org, 0)
+
+	user := func(name string) int64 {
+		var id int64
+		if err := l.DB.QueryRow(ctx, `INSERT INTO users (username, lower_username, display_name) VALUES ($1, $1, $1) RETURNING id`, name).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	login := func(userID int64, provider, providerUserID string) {
+		if _, err := l.DB.Exec(ctx, `INSERT INTO oauth_accounts (user_id, provider, provider_user_id) VALUES ($1, $2, $3)`, userID, provider, providerUserID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := user("first")
+	login(first, "GitHub", "gh-1")
+	id, err := l.EnsureAccount(ctx, "user", first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, id, signup)
+
+	// The same GitHub login, re-registered as a new user, gets nothing.
+	if _, err = l.DB.Exec(ctx, `DELETE FROM oauth_accounts WHERE user_id = $1`, first); err != nil {
+		t.Fatal(err)
+	}
+	again := user("again")
+	login(again, "github", "gh-1")
+	login(again, "google", "g-2")
+	id, err = l.EnsureAccount(ctx, "user", again)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, id, 0)
+
+	fresh := user("fresh")
+	login(fresh, "github", "gh-3")
+	id, err = l.EnsureAccount(ctx, "user", fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, id, signup)
+}
+
+// Forfeit ends matching live grants now, including credit a held
+// reservation returns later, and leaves other grants spendable.
+func TestForfeitEndsMatchingGrants(t *testing.T) {
+	ctx := context.Background()
+	l, id := testLedger(t)
+	later := time.Now().Add(time.Hour)
+	if err := l.Grant(ctx, id, "invoice:in_1", 100, &later); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Grant(ctx, id, "gift", 50, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := l.Forfeit(ctx, "user", 404, "invoice:"); err != nil || n != 0 {
+		t.Fatalf("an owner without an account forfeited %d err=%v", n, err)
+	}
+	// The plan grant expires first, so the reservation holds it.
+	if _, err := l.Reserve(ctx, id, "call", 60); err != nil {
+		t.Fatal(err)
+	}
+	taken, err := l.Forfeit(ctx, "user", 1, "invoice:")
+	if err != nil || taken != 40 {
+		t.Fatalf("taken=%d err=%v", taken, err)
+	}
+	mustBalance(t, l, id, 50)
+	if _, err = l.Settle(ctx, id, "call", 10); err != nil {
+		t.Fatal(err)
+	}
+	mustBalance(t, l, id, 50)
+	if taken, err = l.Forfeit(ctx, "user", 1, "invoice:"); err != nil || taken != 0 {
+		t.Fatalf("second forfeit taken=%d err=%v", taken, err)
+	}
+	// Replaying the forfeited grant does not restore it.
+	if err = l.Grant(ctx, id, "invoice:in_1", 100, &later); !errors.Is(err, ErrConflict) {
+		t.Fatalf("replay err=%v", err)
+	}
+	mustBalance(t, l, id, 50)
 }

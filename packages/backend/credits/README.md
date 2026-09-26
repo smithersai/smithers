@@ -16,8 +16,13 @@ former integer-cent balances into it.
   charged its bound when the account next reserves.
 - `Ledger.SignupGrantNanos` is the deployment's one-time signup credit.
   `EnsureAccount` grants it under `signup_grant` in the transaction that
-  creates an owner's account; an existing or imported account never receives
-  it. Every ledger that can create a payer's account (commerce via
+  creates a user's account, once per login identity (`user:<id>` and each
+  linked OAuth login, recorded in `credit_signup_identities`). An
+  organization, an existing account or an imported account never receives
+  it.
+- Plan credit is one grant per paid invoice (`invoice:<id>`), expiring at the
+  end of the period the invoice pays for. `Ledger.Forfeit` ends an owner's
+  live grants by key prefix on a refund, a dispute or a lapsed subscription. Every ledger that can create a payer's account (commerce via
   `commerce.Config.SignupCreditGrantCents`, and any model proxy resolving the
   payer) must carry the same amount.
 - A self-hosted operator funds platform-model calls with
