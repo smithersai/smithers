@@ -235,31 +235,29 @@ fn digest_with_hook(
 fn birthtime_at(dir: &File, name: &OsStr, stat: &libc::stat) -> io::Result<Option<f64>> {
     #[cfg(target_os = "linux")]
     {
-        let name = cstring(name)?;
-        let mut extended: libc::statx = unsafe { std::mem::zeroed() };
+        use rustix::fs::{statx, AtFlags, StatxFlags};
         // Keep lookup relative to the pinned directory and never follow a link.
-        // Linux's legacy stat does not contain creation time, even when the
-        // filesystem exposes it through statx.
-        if unsafe {
-            libc::statx(
-                dir.as_raw_fd(),
-                name.as_ptr(),
-                libc::AT_SYMLINK_NOFOLLOW | libc::AT_NO_AUTOMOUNT,
-                libc::STATX_INO | libc::STATX_BTIME,
-                &mut extended,
-            )
-        } < 0
-        {
-            let failure = io::Error::last_os_error();
-            return match failure.raw_os_error() {
-                Some(libc::ENOSYS | libc::EOPNOTSUPP | libc::EINVAL) => Ok(None),
-                _ => Err(failure),
-            };
-        }
-        if extended.stx_mask & libc::STATX_BTIME == 0 {
+        // rustix supplies the Linux syscall on both glibc and musl; libc's
+        // statx bindings are not available on every supported libc.
+        let extended = match statx(
+            dir,
+            name,
+            AtFlags::SYMLINK_NOFOLLOW | AtFlags::NO_AUTOMOUNT,
+            StatxFlags::INO | StatxFlags::BTIME,
+        ) {
+            Ok(value) => value,
+            Err(failure) => {
+                let failure = io::Error::from(failure);
+                return match failure.raw_os_error() {
+                    Some(libc::ENOSYS | libc::EOPNOTSUPP | libc::EINVAL) => Ok(None),
+                    _ => Err(failure),
+                };
+            }
+        };
+        if extended.stx_mask & StatxFlags::BTIME.bits() == 0 {
             return Ok(None);
         }
-        if extended.stx_mask & libc::STATX_INO == 0
+        if extended.stx_mask & StatxFlags::INO.bits() == 0
             || extended.stx_ino != stat.st_ino
             || libc::makedev(extended.stx_dev_major, extended.stx_dev_minor) != stat.st_dev
         {
@@ -885,6 +883,37 @@ mod tests {
         let pinned = super::root(root.to_str().unwrap()).unwrap();
         json!({"operation":operation,"boundaryRoot":root,"logicalRoot":root,
             "rootIdentity":identity(&pinned).unwrap(),"path":path})
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn birthtime_preserves_identity_checks_across_libcs() {
+        let temp = tempdir().unwrap();
+        let file = temp.path().join("created.txt");
+        fs::write(&file, "original").unwrap();
+        let dir = super::root(temp.path().to_str().unwrap()).unwrap();
+        let opened = File::open(&file).unwrap();
+        let original = fstat(&opened).unwrap();
+        let observed = birthtime_at(&dir, OsStr::new("created.txt"), &original).unwrap();
+        if let Some(birthtime) = observed {
+            assert!(birthtime > 0.0);
+            if let Ok(created) = opened.metadata().unwrap().created() {
+                let expected = created
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs_f64()
+                    * 1000.0;
+                assert!((birthtime - expected).abs() < 0.001);
+            }
+            fs::rename(&file, temp.path().join("original.txt")).unwrap();
+            fs::write(&file, "replacement").unwrap();
+            assert_eq!(
+                birthtime_at(&dir, OsStr::new("created.txt"), &original)
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(libc::EBUSY)
+            );
+        }
     }
 
     #[test]
