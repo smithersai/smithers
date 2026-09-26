@@ -113,11 +113,15 @@ export const admittedEntry = (flow: string) => Effect.gen(function*() {
   }
   if (descriptor.body.contentDigest === undefined) return yield* invalid(`"${flow}" has unmeasured source bytes and has no executable identity.`)
   if (Option.isNone(descriptor.model)) return yield* invalid(`Add a model to "${flow}" to schedule it.`)
-  const seat = descriptor.model.value
+  const model = descriptor.model.value
   // The resolve `AgentSession.launch` makes, moved to registration so a
   // missing provider is read before the schedule exists instead of at fire.
-  yield* (yield* SeatResolver.SeatResolver).resolve(seat).pipe(
-    Effect.mapError(() => invalid(`Connect ${seat.split(":")[0]} to schedule "${flow}".`)))
+  // Every seat of an ordered fallback list must resolve, since any may run.
+  const resolver = yield* SeatResolver.SeatResolver
+  for (const seat of typeof model === "string" ? [model] : model) {
+    yield* resolver.resolve(seat).pipe(
+      Effect.mapError(() => invalid(`Connect ${seat.split(":")[0]} to schedule "${flow}".`)))
+  }
   return descriptor
 })
 
