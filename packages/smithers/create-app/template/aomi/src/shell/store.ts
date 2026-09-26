@@ -44,17 +44,10 @@ export interface AppState {
   readonly search: string
   /** The Recent column, newest first, as `GET /api/session` returned it. */
   readonly sessions: ReadonlyArray<client.SessionSummary>
-  /**
-   * Whether `sessions` has been read from the Worker yet. "api" once a read
-   * succeeded, including a read that returned nothing; "mock" while no read has
-   * succeeded, which is the state a page shows before its first refresh and
-   * after a failed one.
-   *
-   * TODO(shell): the value is no longer a data source, so the field wants the
-   * name `sessionsLoaded` and the "Sample data" note in `app/build/page.tsx` wants copy
-   * that says the column is empty rather than "Sample data".
-   */
-  readonly sessionsSource: "mock" | "api"
+  /** Whether a `GET /api/session` read has succeeded, even one that returned nothing. */
+  readonly sessionsLoaded: boolean
+  /** Whether the latest `GET /api/session` read failed. */
+  readonly sessionsFailed: boolean
   readonly sessionId: string
   readonly draft: string
   readonly entries: ReadonlyArray<TranscriptEntry>
@@ -88,7 +81,8 @@ let state: AppState = {
   sidebarCollapsed: false,
   search: "",
   sessions: [],
-  sessionsSource: "mock",
+  sessionsLoaded: false,
+  sessionsFailed: false,
   sessionId: newId("ses"),
   draft: "",
   entries: [],
@@ -274,9 +268,9 @@ export const actions = {
    */
   refreshSessions: async (): Promise<void> => {
     try {
-      set({ sessions: await client.listSessions(), sessionsSource: "api" })
+      set({ sessions: await client.listSessions(), sessionsLoaded: true, sessionsFailed: false })
     } catch {
-      set({ sessionsSource: "mock" })
+      set({ sessionsFailed: true })
     }
   },
 

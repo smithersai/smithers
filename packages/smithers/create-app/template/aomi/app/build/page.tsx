@@ -60,7 +60,8 @@ const SPEAKER = { user: "You", assistant: "Aomi", system: "System" } as const
 function RecentColumn() {
   const sessions = useSessions()
   const sessionId = useField("sessionId")
-  const sessionsSource = useField("sessionsSource")
+  const sessionsLoaded = useField("sessionsLoaded")
+  const sessionsFailed = useField("sessionsFailed")
   return (
     <section className="aomi-recent" aria-label="Recent">
       {/* A plain row, like the Aomi rail: label on the left, "New" as a text
@@ -76,7 +77,7 @@ function RecentColumn() {
         </Button>
       </div>
       {sessions.length === 0 ? (
-        <EmptyState title="No runs yet" description="Describe an agent to start one." />
+        sessionsLoaded && !sessionsFailed ? <EmptyState title="No runs yet" /> : null
       ) : (
         <ul className="aomi-recent-list">
           {sessions.map((session) => (
@@ -101,7 +102,7 @@ function RecentColumn() {
           ))}
         </ul>
       )}
-      {sessionsSource === "mock" ? <p className="aomi-note">Sample data. The Worker has no runs yet.</p> : null}
+      {sessionsFailed ? <p className="aomi-note">Couldn't load runs.</p> : null}
     </section>
   )
 }
