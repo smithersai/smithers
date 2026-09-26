@@ -145,3 +145,45 @@ test('Vim roves into Chat in normal mode, inserts explicitly, and leaves on j or
   await expect(input).toBeFocused()
   await expect(input).toHaveAttribute('data-vim-mode', 'normal')
 })
+
+test('selecting Vim enables keyboard navigation while SQLite commit is held', async ({ page }) => {
+  await page.addInitScript(() => {
+    const nativePost = Worker.prototype.postMessage
+    const held: Array<() => void> = []
+    const probe = { armed: false, commits: 0, release: () => {
+      probe.armed = false
+      for (const send of held.splice(0)) send()
+    } }
+    ;(window as any).modeCommitProbe = probe
+    Worker.prototype.postMessage = function(message: unknown, options?: StructuredSerializeOptions | Transferable[]) {
+      const send = () => Reflect.apply(nativePost, this, [message, options])
+      if (probe.armed && typeof message === 'object' && message !== null && 'sql' in message &&
+        typeof message.sql === 'string' && /^\s*COMMIT\b/i.test(message.sql)) {
+        probe.commits++
+        held.push(send)
+      } else send()
+    }
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Mode: Normal', exact: true }).click()
+  await page.evaluate(() => { (window as any).modeCommitProbe.armed = true })
+  try {
+    await page.getByRole('menuitemradio', { name: 'Vim', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => (window as any).modeCommitProbe.commits)).toBeGreaterThan(0)
+    await page.keyboard.press('Meta+k')
+    const input = page.getByTestId('composer-input')
+    const queue = page.getByRole('button', { name: 'Queue', exact: true })
+    await input.fill('draft while saving')
+    await input.press('Tab')
+    await expect(queue).toBeFocused()
+    await page.keyboard.press('k')
+    await expect(input).toBeFocused()
+    await expect(input).toHaveAttribute('data-vim-mode', 'normal')
+    await expect(page.getByRole('button', { name: 'Mode: Vim', exact: true })).toBeVisible()
+    await page.keyboard.press('j')
+    await expect(queue).toBeFocused()
+    await expect(input).toHaveValue('draft while saving')
+  } finally {
+    await page.evaluate(() => (window as any).modeCommitProbe.release())
+  }
+})

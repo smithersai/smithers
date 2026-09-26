@@ -6,6 +6,7 @@ import { digest } from "@smthrs/core/Digest"
 import type { CommandLifecycle, CommandRequest, PendingCommandInput } from "../../flows/CommandLifecycle"
 import { canonicalEventValue } from "../EventValue"
 import type { ControllerContext } from "./context"
+import { INPUT_MODES, type InputMode } from "../InputMode"
 
 const currentHttpCall = (ctx: ControllerContext, call: CommandRequest["httpCall"]): boolean => {
   if (call === undefined) return true
@@ -18,7 +19,8 @@ const currentHttpCall = (ctx: ControllerContext, call: CommandRequest["httpCall"
 }
 
 /** Command facts contain metadata only. Pending human edits never execute a form submission. */
-export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?: (request: CommandRequest) => void): CommandLifecycle => ({
+export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?: (request: CommandRequest) => void,
+  setInputMode?: (mode: InputMode) => Promise<void>): CommandLifecycle => ({
   reserveGesture: (request, args, named) => {
     if (ctx.disposed || request.actor !== "user") return undefined
     let name = request.name
@@ -38,6 +40,17 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
       // its receipt, and a dismissal while saving cancels that pending open.
       if (ctx.store.session().paletteOpen !== true) ctx.store.dispatch({ type: "palette.toggled", actor: "user", open: true })
       return { name, chatInputCurrent: () => ctx.store.session().paletteOpen === true, release: () => {} }
+    }
+    if (request.name === "input.mode" && setInputMode !== undefined) {
+      const mode = named === undefined ? args?.trim() : named.mode
+      if (typeof mode === "string" && INPUT_MODES.includes(mode as InputMode)) {
+        // Local keyboard preferences must precede the next key, just like
+        // opening Chat. No microphone starts here. The binding consumes this
+        // receipt so a delayed command cannot replay an older selection.
+        const inputModeChanged = setInputMode(mode as InputMode)
+        void inputModeChanged.catch(() => {})
+        return { name, inputModeChanged, release: () => {} }
+      }
     }
     return reserveBrowserCommandGesture(name)
   },

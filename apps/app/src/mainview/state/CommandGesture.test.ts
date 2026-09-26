@@ -45,6 +45,85 @@ const popupFixture = () => {
   return { popup, opened }
 }
 
+test("input mode changes during the gesture while its command receipt is pending", async () => {
+  const { controller, held } = await fixture()
+  const pending = controller.commands.run("input.mode", "vim")
+  const beforeReceipt = controller.store.session().inputMode
+  controller.store.dispatch({ type: "composer.changed", actor: "user", draft: "still typing" })
+  held.resolve()
+  expect((await pending).status).toBe("executed")
+  expect(beforeReceipt).toBe("vim")
+  expect(controller.store.session().draft).toBe("still typing")
+})
+
+test("queued mode receipts never replay an older preference over the latest gesture", async () => {
+  const { controller, held } = await fixture()
+  const vim = controller.commands.run("input.mode", "vim")
+  const normal = controller.commands.submit({ name: "input.mode", actor: "user", payload: { mode: "normal" } })
+  const observed: string[] = []
+  const subscription = controller.store.collections.sessions.subscribeChanges(changes => {
+    for (const change of changes) observed.push(change.value.inputMode ?? "normal")
+  })
+  try {
+    expect(controller.store.session().inputMode).toBe("normal")
+    held.resolve()
+    expect((await vim).status).toBe("executed")
+    expect((await normal).status).toBe("executed")
+    expect(observed).not.toContain("vim")
+    expect(controller.store.session().inputMode).toBe("normal")
+  } finally { held.resolve(); subscription.unsubscribe() }
+})
+
+test("input-mode selection never starts dictation before or after command acceptance", async () => {
+  let starts = 0
+  replaceGlobal("SpeechRecognition", class { start() { starts++ } abort() {} })
+  const { controller, held } = await fixture()
+  const pending = controller.commands.run("input.mode", "dictation")
+  const beforeReceipt = controller.store.session().inputMode
+  expect(starts).toBe(0)
+  held.resolve()
+  expect((await pending).status).toBe("executed")
+  expect(beforeReceipt).toBe("dictation")
+  expect(starts).toBe(0)
+  expect(controller.store.session().paletteOpen).not.toBe(true)
+})
+
+test("invalid mode input cannot prepare a preference during command acceptance", async () => {
+  const { controller, held } = await fixture()
+  const pending = controller.commands.run("input.mode", "vim --unknown")
+  expect(controller.store.session().inputMode).toBe("normal")
+  held.resolve()
+  expect((await pending).status).toBe("failed")
+  expect(controller.store.session().inputMode).toBe("normal")
+})
+
+test("an agent mode change still waits for command acceptance", async () => {
+  const { controller, held } = await fixture()
+  const pending = controller.commands.runForAgent("input.mode", "vim")
+  expect(controller.store.session().inputMode).toBe("normal")
+  held.resolve()
+  expect((await pending).status).toBe("executed")
+  expect(controller.store.session().inputMode).toBe("vim")
+})
+
+test("failed preference storage rolls back the local mode and reports failure", async () => {
+  const storage = memoryStorage()
+  let reject = false
+  const store = await createAppStore({ kind: "localStorage", storage: { ...storage,
+    setItem: (key, value) => { if (reject) throw new Error("disk full"); storage.setItem(key, value) }
+  } }, { seedWiki: false })
+  const controller = createAppController(store, silentAgent)
+  controllers.push(controller)
+  await store.settled?.()
+  reject = true
+  try {
+    const pending = controller.commands.run("input.mode", "vim")
+    expect(store.session().inputMode).toBe("vim")
+    expect(await pending).toMatchObject({ status: "failed", persistenceFailed: true })
+    expect(store.session().inputMode).toBe("normal")
+  } finally { reject = false }
+})
+
 for (const outcome of ["accepted", "rejected", "dismissed"] as const) test(`Chat accepts typing before its receipt; ${outcome} controls later microphone capture`, async () => {
   let starts = 0
   replaceGlobal("SpeechRecognition", class {

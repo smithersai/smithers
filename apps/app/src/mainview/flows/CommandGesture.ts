@@ -1,11 +1,13 @@
 import { Context } from "effect"
 
-/** A harmless browser reservation acquired in the original gesture and consumed only after an intent receipt. */
+/** Local input preparation or a browser reservation from the original human gesture. */
 export interface CommandGesture {
   readonly name: string
   readonly openExternal?: (url: string) => Promise<boolean>
   readonly copyText?: (text: string) => Promise<void>
   readonly chatInputCurrent?: () => boolean
+  /** The local preference already changed; the binding awaits its save without replaying it. */
+  readonly inputModeChanged?: Promise<void>
   readonly hasWriteOnly?: (field: string) => boolean
   readonly takeWriteOnly?: (field: string) => string | undefined
   readonly release: () => void
