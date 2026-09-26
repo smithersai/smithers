@@ -140,16 +140,17 @@ describe("a file opens in a panel with a cap it scrolls inside (ask 6)", () => {
   })
 })
 
-describe("a maximized card takes the full width (ask 7, sidebar removed)", () => {
+describe("a maximized card uses the space beside persistent chrome", () => {
   test("no chrome width variable survives the sidebar's removal", () => {
     expect(chat).not.toContain("--chrome-bar-width")
     expect(chrome).not.toContain("--chrome-bar-width")
     expect(cards).not.toContain("--chrome-bar-width")
   })
 
-  test("the card and its one backdrop start at the left edge", () => {
+  test("the card clears the header and rail while the backdrop fills the viewport", () => {
     const card = /\.smithers-card\[data-maximized="true"\]\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
-    expect(card).toContain("inset: 1.5rem 1.5rem 8.5rem;")
+    expect(card).toContain("inset: calc(var(--session-strip, 0px) + 1.5rem) 1.5rem 8.5rem;")
+    expect(card).toContain("inset-inline-start: calc(var(--chrome-rail-space, 0px) + 1.5rem);")
     expect(card).not.toMatch(/left:/)
     const backdrop = /\.card-maximize-backdrop\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
     expect(backdrop).toContain("inset: 0;")
