@@ -23,6 +23,7 @@ import type { SearchArgs } from "../../flows/entries/search"
 import { actionsFor, itemsValue, parseQuery, prefixRow, PREFIXES, rankItems } from "../../flows/SearchQuery"
 import type { PaletteMode, ParsedQuery, PrefixRow, ResultGroup, SearchFact } from "../../flows/SearchQuery"
 import type { CommandState, FlowEntry } from "../../flows/registry"
+import type { CommandRegistry } from "../../flows/Commands"
 import { recommendedNames, unmetRequirements } from "../../flows/registry"
 import type { Card, WorkingCopy } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
@@ -40,6 +41,7 @@ import { readFactoryProjection } from "./TriggersSeam"
 export interface SearchRegistry {
   readonly entries: () => ReadonlyArray<FlowEntry>
   readonly state: () => CommandState
+  readonly explainAbsent: CommandRegistry["explainAbsent"]
 }
 
 export interface SearchSeamDeps {
@@ -397,7 +399,13 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
         help: PREFIXES.map((row) => ({ ...row, available: !(row.signedIn && snapshot.signedOut) }))
       }
     }
-    if (parsed.mode === "flows") return { parsed, groups: [], flow }
+    if (parsed.mode === "flows") {
+      // Resolve an exact command name through the same authority as execution.
+      // Keep unavailable commands out of the rows, including when arguments follow.
+      const name = parsed.query.split(/\s+/, 1)[0] ?? ""
+      const refusal = deps.registry().explainAbsent(name)?.reason
+      return { parsed, groups: [], flow, ...(refusal === undefined ? {} : { refusal }) }
+    }
     if (snapshot.signedOut && HIDDEN_SIGNED_OUT.has(parsed.mode)) return { parsed, groups: [], flow }
     const items = parsed.mode === "line" ? lineItems(parsed) : itemsOf(parsed.mode, parsed)
     if (typeof items === "string") return { parsed, groups: [], flow, refusal: items }
