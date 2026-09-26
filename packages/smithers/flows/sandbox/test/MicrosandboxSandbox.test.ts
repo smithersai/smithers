@@ -115,6 +115,8 @@ interface Controls {
   readonly startGate?: ((line: string) => Promise<void> | undefined) | undefined
   /** Delays the `started` event of a matching command line. */
   readonly startedDelayMs?: ((line: string) => number | undefined) | undefined
+  /** Delays the `exited` event of a matching command line after its process closes. */
+  readonly exitedDelayMs?: ((line: string) => number | undefined) | undefined
   /** Ends a matching command's stream right after it starts, without an exit event. */
   readonly loseOn?: ((line: string) => boolean) | undefined
   /** Rejects the handle's `kill` for a matching command line, which then keeps running. */
@@ -253,10 +255,15 @@ const fakeSdk = (controls: Controls = {}) => {
     else setTimeout(started, delay)
     child.stdout!.on("data", (data: Buffer) => events.push({ kind: "stdout", data: new Uint8Array(data) }))
     child.stderr!.on("data", (data: Buffer) => events.push({ kind: "stderr", data: new Uint8Array(data) }))
+    const exitedDelay = controls.exitedDelayMs?.(line)
     child.on("close", (code) => {
-      machine.live.delete(live)
-      events.push({ kind: "exited", code: code ?? -1 })
-      events.push(null)
+      const exited = () => {
+        machine.live.delete(live)
+        events.push({ kind: "exited", code: code ?? -1 })
+        events.push(null)
+      }
+      if (exitedDelay === undefined) exited()
+      else setTimeout(exited, exitedDelay)
     })
     if (controls.loseOn?.(line) === true) live.lose()
     const recvFailure = controls.recvFailure?.(line)
@@ -1018,6 +1025,22 @@ describe("MicrosandboxSandbox", () => {
           yield* session.kill!(running, "SIGTERM")
           expect(yield* running.exitCode).not.toBe(0)
           expect(fake.recorded.signals.map(({ signal }) => signal)).toEqual([15])
+        })))
+    }), 30_000)
+
+  it.live("skips the group signal when the tree walk already ended the command", () =>
+    Effect.gen(function*() {
+      // The walk's own exit is reported late, so the command it killed has
+      // always ended by the time the walk returns.
+      const fake = fakeSdk({ exitedDelayMs: (line) => line.includes("sleep 30") ? undefined : 300 })
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "walked-kill-ws") })
+      yield* inSession(provider, "walked-kill", (session) =>
+        Effect.scoped(Effect.gen(function*() {
+          const running = yield* session.spawn("sleep 30", {})
+          yield* elapsed(200)
+          yield* session.kill!(running, "SIGTERM")
+          expect(yield* running.exitCode).not.toBe(0)
+          expect(fake.recorded.signals).toEqual([])
         })))
     }), 30_000)
 
