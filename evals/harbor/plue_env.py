@@ -852,7 +852,7 @@ class _PlueOps:
             return
         for row in rows:
             if row.get("name") == name and row.get("id"):
-                await self._run("workspace", "delete", row["id"], "--repo", self._repo(), "--format", "json",
+                await self._run("workspace", "delete", row["id"], "--yes", "--repo", self._repo(), "--format", "json",
                                 timeout=300, check=False)
 
     async def _plue_stop(self) -> None:
@@ -865,7 +865,7 @@ class _PlueOps:
             last: PlueError | None = None
             for attempt in range(_DELETE_ATTEMPTS if workspace else 0):
                 try:
-                    await self._run("workspace", "delete", workspace, "--repo", self._repo(),
+                    await self._run("workspace", "delete", workspace, "--yes", "--repo", self._repo(),
                                     "--format", "json", timeout=300)
                     last = None
                     break

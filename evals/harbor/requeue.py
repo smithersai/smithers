@@ -76,7 +76,7 @@ def reap(trials: list[str]) -> list[str]:
     for row in rows:
         name, ident = str(row.get("name") or ""), row.get("id")
         if ident and name.startswith(prefixes):
-            subprocess.run([cli, "workspace", "delete", ident, "--repo", repo, "--format", "json"],
+            subprocess.run([cli, "workspace", "delete", ident, "--yes", "--repo", repo, "--format", "json"],
                            capture_output=True, text=True, timeout=300)
             deleted.append(name)
     return deleted
@@ -101,7 +101,7 @@ def reap_dead() -> list[str]:
         name, ident, status = str(row.get("name") or ""), row.get("id"), row.get("status")
         trial_named = name.endswith("-env") or re.search(r"-verifier-[a-z0-9-]+$", name) is not None
         if ident and trial_named and status in ("failed", "suspended"):
-            subprocess.run([cli, "workspace", "delete", ident, "--repo", repo, "--format", "json"],
+            subprocess.run([cli, "workspace", "delete", ident, "--yes", "--repo", repo, "--format", "json"],
                            capture_output=True, text=True, timeout=300)
             deleted.append(name)
     return deleted

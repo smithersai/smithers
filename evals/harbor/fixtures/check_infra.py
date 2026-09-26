@@ -169,7 +169,8 @@ def check_transport_and_containment() -> None:
                        "  *dropped*) printf '%s' '{\"data\":{\"stdout\":\"half\",\"stderr\":\"\",\"exit_code\":255}}'; printf 'Connection to ssh.jjhub.tech closed by remote host.\\r\\n' >&2; exit 255;;\n"
                        "  *own255*) printf '%s' '{\"data\":{\"stdout\":\"\",\"stderr\":\"fatal: bad object\\n\",\"exit_code\":255}}'; exit 255;;\n"
                        "  *notjson*) printf 'not json {'; exit 0;;\n"
-                       "  *delete*) printf '%s' '{\"error\":{\"code\":\"UNKNOWN\",\"message\":\"502 bad gateway\"}}'; exit 1;;\n"
+                       "  *delete*--yes*) printf '%s' '{\"error\":{\"code\":\"UNKNOWN\",\"message\":\"502 bad gateway\"}}'; exit 1;;\n"
+                       "  *delete*) printf '%s' '{\"error\":{\"code\":\"UNKNOWN\",\"message\":\"requires --yes when stdin is not a TTY\"}}'; exit 1;;\n"
                        "  *) printf '%s' '{\"data\":{\"stdout\":\"ok\",\"stderr\":\"\",\"exit_code\":0}}';;\n"
                        "esac\n")
         cli.chmod(0o755)
@@ -213,6 +214,7 @@ def check_transport_and_containment() -> None:
             plue_env._DELETE_BACKOFF_SEC = 0
             asyncio.run(ops._plue_stop())
             assert "ws-leak" in leaks.read_text()
+            assert "502 bad gateway" in leaks.read_text(), "delete passes --yes: the CLI refuses it off a TTY"
             assert not json.loads(ledger_path.read_text())["holders"], "the slot is released"
             assert ops._workspace_id == ""
         finally:
@@ -676,6 +678,7 @@ def check_janitor() -> None:
                 os.environ.pop(name, None)
         deletes = [l for l in calls.read_text().splitlines() if "delete" in l]
         assert len(deletes) == 2 and all(" c " not in l and " d " not in l for l in deletes), deletes
+        assert all(" --yes " in l for l in deletes), "the CLI refuses a delete without --yes off a TTY"
 
 
 def check_requeue_and_health() -> None:
