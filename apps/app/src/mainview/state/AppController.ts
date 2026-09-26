@@ -893,7 +893,12 @@ export const createAppController = (
       } }).isPersisted.promise
     }
   }))
-  const billingSeam = actors.pair(seamCtx, context => createBillingSeam(context, services.bootstrap?.capabilities.includes("billing.checkout") ?? true, () => ctx.disposed))
+  const billingSeam = actors.pair(seamCtx, context => createBillingSeam(context, {
+    overview: services.bootstrap?.capabilities.includes("billing.overview") ?? true,
+    plans: services.bootstrap?.capabilities.includes("billing.plans") ?? true,
+    checkout: services.bootstrap?.capabilities.includes("billing.checkout") ?? true,
+    portal: services.bootstrap?.capabilities.includes("billing.portal") ?? true
+  }, () => ctx.disposed))
   const repositoryUpdate = actors.pair(seamCtx, context => createRepositoryUpdate(context, () => ctx.disposed))
   const notificationsSeam = actors.pair(seamCtx, (context) => createNotificationsSeam(context))
   const environmentSeam = actors.pair(seamCtx, (context) => createEnvironmentSeam(context))

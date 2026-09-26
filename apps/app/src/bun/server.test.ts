@@ -276,7 +276,9 @@ describe("the local origin", () => {
       const headers = { [LOCAL_SESSION_HEADER]: proxied.sessionToken, origin: proxied.origin, cookie: "smithers_identity=sealed" }
       const bootstrap = await (await fetch(`${proxied.origin}/api/bootstrap`, { headers })).json() as { capabilities: string[] }
       expect(bootstrap.capabilities).toContain("billing.balance")
-      for (const path of ["/api/user", "/api/repos/smithersai/smithers/issues?state=open", "/api/user/github-repos/smithersai/smithers/issues", "/api/billing/balance", "/api/notifications/unread", "/api/workflow/provision"]) {
+      expect(bootstrap.capabilities).toContain("billing.overview")
+      expect(bootstrap.capabilities).toContain("billing.plans")
+      for (const path of ["/api/user", "/api/repos/smithersai/smithers/issues?state=open", "/api/user/github-repos/smithersai/smithers/issues", "/api/billing/balance", "/api/billing", "/api/billing/plans", "/api/notifications/unread", "/api/workflow/provision"]) {
         const response = await fetch(`${proxied.origin}${path}`, { headers })
         expect(response.status).toBe(200)
       }
@@ -285,6 +287,8 @@ describe("the local origin", () => {
         "/api/repos/smithersai/smithers/issues",
         "/api/user/github-repos/smithersai/smithers/issues",
         "/api/billing/balance",
+        "/api/billing",
+        "/api/billing/plans",
         "/api/notifications/unread",
         "/api/workflow/provision",
       ])
@@ -296,7 +300,9 @@ describe("the local origin", () => {
       for (const path of ["/api/linear", "/api/integrations/linear", "/api/auth/linear", "/api/repos/a/b/issues/1/linear-link", "/api/cloud/api/linear", "/api/cloud/api/auth/linear", "/api/cloud/api/repos/a/b/issues/1/linear-link"]) {
         expect((await fetch(`${proxied.origin}${path}`, { headers })).status).toBe(404)
       }
-      expect(seen).toHaveLength(6)
+      expect((await fetch(`${proxied.origin}/api/billing`, { method: "POST", headers })).status).toBe(404)
+      expect((await fetch(`${proxied.origin}/api/billing-other`, { headers })).status).toBe(404)
+      expect(seen).toHaveLength(8)
     } finally {
       await proxied.stop()
       upstream.stop(true)

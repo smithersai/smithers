@@ -155,9 +155,9 @@ const localBootstrap = (capabilities: ReadonlyArray<RuntimeCapability>): AppBoot
 })
 
 /** The Worker with every supported capability, including the W4 terminal relay. */
-const WEB = cloudBootstrap(cloudCapabilities({ identity: true, cloud: true, agent: true, balance: true, checkout: true, terminal: true, browser: true }))
+const WEB = cloudBootstrap(cloudCapabilities({ identity: true, cloud: true, agent: true, balance: true, overview: true, plans: true, portal: true, checkout: true, terminal: true, browser: true }))
 /** The Bun server with a cloud upstream, the agent, identity and manual paths. */
-const NATIVE = localBootstrap(localCapabilities({ agent: true, identity: true, cloud: true, balance: true, browser: true }))
+const NATIVE = localBootstrap(localCapabilities({ agent: true, identity: true, cloud: true, balance: true, overview: true, plans: true, browser: true }))
 
 /** Every command state the recommendation rule distinguishes. */
 const STATES: ReadonlyArray<CommandState> = (["chat", "world", "connectors", "flows"] as const).flatMap((surface) =>
@@ -310,6 +310,17 @@ describe("host parity — the web and native catalogs against the servers' own c
     for (const balance of [false, true]) for (const checkout of [false, true]) {
       const controller = await controllerFor(localBootstrap(["identity", ...(balance ? ["billing.balance" as const] : []), ...(checkout ? ["billing.checkout" as const] : [])]))
       expect(controller.commands.find("billing.balance") !== undefined).toBe(balance)
+    }
+  })
+  test("plan, purchase and portal commands follow independent routes", async () => {
+    for (const plans of [false, true]) for (const checkout of [false, true]) for (const portal of [false, true]) {
+      const controller = await controllerFor(localBootstrap(["identity",
+        ...(plans ? ["billing.plans" as const] : []),
+        ...(checkout ? ["billing.checkout" as const] : []),
+        ...(portal ? ["billing.portal" as const] : [])]))
+      expect(controller.commands.find("billing.plans") !== undefined).toBe(plans)
+      expect(controller.commands.find("billing.upgrade") !== undefined).toBe(checkout)
+      expect(controller.commands.find("billing.portal") !== undefined).toBe(portal)
     }
   })
   const registries = (async () => ({

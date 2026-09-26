@@ -32,6 +32,7 @@ export interface ServerEnvVars {
   readonly BILLING_PRODUCT_SERVICE_TOKEN?: string
   readonly BILLING_ADMIN_TOKEN?: string
   readonly BILLING_CHECKOUT_ENABLED?: string
+  readonly BILLING_PORTAL_ENABLED?: string
   readonly SMITHERS_CLOUD_API_BASE_URL?: string
   readonly PLUE_WORKER_EXCHANGE_TOKEN?: string
   readonly ANONYMOUS_TURN_SALT?: string
@@ -68,6 +69,7 @@ export interface ServerConfigShape {
   readonly billingProductServiceToken: Redacted.Redacted<string> | undefined
   readonly billingAdminToken: Redacted.Redacted<string> | undefined
   readonly billingCheckoutEnabled: boolean
+  readonly billingPortalEnabled: boolean
   readonly cloudApiBaseUrl: string
   readonly plueWorkerExchangeToken: Redacted.Redacted<string> | undefined
   readonly anonymousTurnSalt: Redacted.Redacted<string> | undefined
@@ -126,6 +128,7 @@ export const configFrom = (env: ServerEnvVars): ServerConfigShape => ({
   billingProductServiceToken: secret(env.BILLING_PRODUCT_SERVICE_TOKEN),
   billingAdminToken: secret(env.BILLING_ADMIN_TOKEN),
   billingCheckoutEnabled: text(env.BILLING_CHECKOUT_ENABLED) === "1",
+  billingPortalEnabled: text(env.BILLING_PORTAL_ENABLED) === "1",
   cloudApiBaseUrl: text(env.SMITHERS_CLOUD_API_BASE_URL) ?? DEFAULT_CLOUD_API_BASE_URL,
   plueWorkerExchangeToken: secret(env.PLUE_WORKER_EXCHANGE_TOKEN),
   anonymousTurnSalt: exactSecret(env.ANONYMOUS_TURN_SALT),

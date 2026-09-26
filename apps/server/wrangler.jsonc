@@ -106,14 +106,14 @@
 		// touching its config, which wave 7 is not authorized to do.
 		"SMITHERS_CHAT_URL": "https://smithers-cloud-chat-canary.willcory10.workers.dev/chat",
 		"SMITHERS_CHAT_ORIGIN": "https://canary.smithers.sh"
-		// Optional knobs, both unset on canary (the defaults are the alpha's):
+		// Optional knobs (the defaults are the alpha's):
 		//   UPSTREAM_TIMEOUT_MS        — how long any one upstream gets to answer, in ms
 		//                                (default 20000). Bounds the wait for HEADERS only, so a
 		//                                streaming answer is never cut off. Raise it behind a slow
 		//                                sibling rather than letting a route hang.
-		//   BILLING_CHECKOUT_ENABLED   — "1" opens POST /api/billing/checkout and /portal. Unset is
-		//                                the closed-alpha state: every balance is comped, so both
-		//                                answer an honest refusal instead of reaching Stripe.
+		//   BILLING_PORTAL_ENABLED     — "1" opens POST /api/billing/portal independently of checkout.
+		//   BILLING_CHECKOUT_ENABLED   — "1" opens POST /api/billing/checkout. Unset is
+		//                                the closed-alpha state; this route refuses without contacting Stripe.
 		// Backend seams. These are Cloudflare secrets (`wrangler secret put`), not
 		// vars, and an unset one makes its route answer an honest 501:
 		//   SMITHERS_CHAT_AUTH_TOKEN — the deployment bearer the chat upstream authenticates turns with

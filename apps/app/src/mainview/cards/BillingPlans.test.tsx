@@ -87,10 +87,11 @@ test("an out-of-credit refusal with no named plan offers Upgrade to Pro", () => 
   expect(pro.host.querySelector<HTMLButtonElement>('[role="alert"] button')?.disabled).toBe(true)
   pro.close()
 })
-test("closed checkout explains availability and disables upgrade buttons", () => {
+test("read-only plans omit purchase controls and checkout prose", () => {
   const { host, calls, close } = render(fixture(false))
-  expect(host.textContent).toContain("Checkout is not open yet.")
-  for (const button of host.querySelectorAll<HTMLButtonElement>("button")) { expect(button.disabled).toBe(true); button.click() }
+  expect(host.textContent).not.toContain("Checkout is not open yet.")
+  expect(host.querySelectorAll("button")).toHaveLength(0)
+  expect(host.textContent).toContain("Pro $19.50 per month")
   expect(calls).toEqual([])
   close()
 })
@@ -114,7 +115,7 @@ test("billing read loads both endpoints and dispatches the account and embedded 
       plan_key: "free", concurrent_sandboxes: 1, concurrent_in_use: 1, idle_timeout_secs: 1800,
       hours_per_day: 4, seconds_used_today: 5400, day_resets_at: "2026-09-16T00:00:00Z"
     } }) }
-  }, false)
+  }, { overview: true, plans: true, checkout: false, portal: false })
   expect(await seam.showBillingPlans()).toMatchObject({ value: expect.stringContaining("Credit: $10.00.") })
   expect(paths).toEqual(["/api/billing", "/api/billing/plans"])
   expect(store.collections.billingAccounts.get("billing")).toMatchObject({ planKey: "free", creditBalanceCents: 1000, creditResetsAt: "2026-10-01T00:00:00Z", sandbox: { secondsUsedToday: 5400 } })

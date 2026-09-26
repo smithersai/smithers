@@ -42,9 +42,8 @@ export const BillingPlansCardBody = ({ card, onRunCommand, creditBalanceCents = 
   return <div className="world-card-list">
     {refusal === null ? null : <div role="alert">
       <p>{refusalLead(refusal)}</p><p>{refusal.message}</p>
-      <UpgradeDoor refusal={refusal} onRunCommand={onRunCommand} disabled={!checkout || upgradePlanKey(refusal) === planKey || plans.find(plan => plan.key === upgradePlanKey(refusal))?.checkout_available === false} />
+      {checkout ? <UpgradeDoor refusal={refusal} onRunCommand={onRunCommand} disabled={ upgradePlanKey(refusal) === planKey || plans.find(plan => plan.key === upgradePlanKey(refusal))?.checkout_available === false} /> : null}
     </div>}
-    {!checkout ? <p>Checkout is not open yet.</p> : null}
     {creditBalanceCents === null ? null : <p data-testid="billing-credit-line">
       Credit left: <strong data-testid="billing-credit">{creditDollars(creditBalanceCents)}</strong>
       {included > 0 ? <> · Included: <span data-testid="billing-credit-included">{creditDollars(included)}</span> per month</> : null}
@@ -62,12 +61,12 @@ export const BillingPlansCardBody = ({ card, onRunCommand, creditBalanceCents = 
         <tr><th scope="row">Running sandboxes</th>{columns.map(plan => <td key={plan.key}>{quantity(plan.limits.concurrent_sandboxes)}</td>)}</tr>
         <tr><th scope="row">Idle sleep</th>{columns.map(plan => <td key={plan.key}>{idle(plan.limits.idle_timeout_secs)}</td>)}</tr>
         <tr><th scope="row">Sandbox-hours per day</th>{columns.map(plan => <td key={plan.key}>{quantity(plan.limits.hours_per_day)}</td>)}</tr>
-        <tr><th scope="row">Upgrade</th>{columns.map(plan => <td key={plan.key}>{plan.key === "free" || plan.key === "max" ? null :
+        {checkout ? <tr><th scope="row">Upgrade</th>{columns.map(plan => <td key={plan.key}>{plan.key === "free" || plan.key === "max" ? null :
           <Button size="sm" disabled={!checkout || !plan.checkout_available || plan.key === planKey}
             {...flowAction(onRunCommand, "billing.upgrade", flowArgs("billing.upgrade", { plan: plan.key }))}>
             Upgrade to {plan.display_name}
           </Button>}
-        </td>)}</tr>
+        </td>)}</tr> : null}
       </tbody>
     </table></div>}
     {sandbox === null ? null : <p>

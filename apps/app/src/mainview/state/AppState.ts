@@ -1554,7 +1554,7 @@ export type AppTransition =
     lifetimeChargedUsd: string
     chargeCount: number
   }
-  | { type: "billing.plans.loaded"; actor: Actor; planKey: string; sandbox: NonNullable<BillingAccount["sandbox"]>; plans: BillingAccount["plans"]; creditBalanceCents?: number | null; creditResetsAt?: string | null }
+  | { type: "billing.plans.loaded"; actor: Actor; planKey: string; sandbox: BillingAccount["sandbox"]; plans: BillingAccount["plans"]; creditBalanceCents?: number | null; creditResetsAt?: string | null }
   | { type: "billing.unavailable"; actor: "system" }
   | {
     /* The 300ms toast law: slow background work states what is running. */

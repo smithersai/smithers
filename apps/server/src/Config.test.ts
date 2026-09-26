@@ -14,6 +14,7 @@ describe("ServerConfig from the binding bag", () => {
     expect(config.identityUpstreamUrl).toBeUndefined()
     expect(config.cerebrasApiKey).toBeUndefined()
     expect(config.billingCheckoutEnabled).toBe(false)
+    expect(config.billingPortalEnabled).toBe(false)
   })
 
   test("blank and whitespace values read as unset, like an empty `secret put`", () => {
@@ -60,4 +61,12 @@ describe("ServerConfig from the binding bag", () => {
     expect(Redacted.value(configFrom({ ANONYMOUS_TURN_SALT: " salt \n" }).anonymousTurnSalt!)).toBe(" salt \n")
     expect(configFrom({ ANONYMOUS_TURN_SALT: "" }).anonymousTurnSalt).toBeUndefined()
   })
+})
+
+test("billing portal opt-in is independent from checkout", () => {
+  for (const portal of ["1", "0", undefined]) for (const checkout of ["1", "0", undefined]) {
+    const config = configFrom({ BILLING_PORTAL_ENABLED: portal, BILLING_CHECKOUT_ENABLED: checkout })
+    expect(config.billingPortalEnabled).toBe(portal === "1")
+    expect(config.billingCheckoutEnabled).toBe(checkout === "1")
+  }
 })

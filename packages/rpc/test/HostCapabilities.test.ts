@@ -114,3 +114,16 @@ describe("localCapabilities (the Bun server, host local)", () => {
     }
   })
 })
+
+test("overview, plans and portal are independent from checkout", () => {
+  for (const overview of booleans) for (const plans of booleans) for (const portal of booleans) for (const checkout of booleans) {
+    const cloud = cloudCapabilities({ identity: true, cloud: true, agent: true, terminal: false, overview, plans, portal, checkout })
+    const local = localCapabilities({ identity: true, cloud: true, agent: true, overview, plans, portal })
+    for (const emitted of [cloud, local]) {
+      expect(emitted.includes("billing.overview")).toBe(overview)
+      expect(emitted.includes("billing.plans")).toBe(plans)
+      expect(emitted.includes("billing.portal")).toBe(portal)
+    }
+    expect(cloud.includes("billing.checkout")).toBe(checkout)
+  }
+})

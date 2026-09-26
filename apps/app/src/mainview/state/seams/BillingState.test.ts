@@ -75,7 +75,7 @@ test.each(["account", "dispose"] as const)("late plan and checkout answers canno
   const seam = createBillingSeam(context(store, async path => {
     await hold.promise
     return path.endsWith("/checkout") ? Response.json({ url: "https://checkout.stripe.com/old-account" }) : reply(path)
-  }), true, () => disposed)
+  }), { overview: true, plans: true, checkout: true, portal: true }, () => disposed)
   const plans = seam.showBillingPlans(), checkout = seam.startCheckout("pro")
   try {
     if (change === "account") await signIn(store, "second-account")
@@ -100,7 +100,7 @@ test.each([[undefined, "pro"], ["pro", "pro"]] as const)("checkout with plan %p 
         return Response.json({ url: "https://checkout.stripe.com/c/ok" })
       }
       return reply(path)
-    }), true)
+    }))
     await seam.startCheckout(plan)
     // An omitted plan must never fall to a server default: Pro is the sold plan.
     expect(bodies).toEqual([{ plan: expected }])

@@ -72,7 +72,7 @@ Retained names:
 - `GITHUB_TOKEN`
 
 Retained knobs: `MODEL_VAULT_KEY`, `SMITHERS_BUILD_SHA`, `UPSTREAM_TIMEOUT_MS`,
-`BILLING_CHECKOUT_ENABLED`, `CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`.
+`BILLING_CHECKOUT_ENABLED`, `BILLING_PORTAL_ENABLED`, `CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`.
 The site SHA is read from its built `/__build.json`; API bootstrap's SHA belongs
 to the shared backend and is never synthesized from that asset stamp.
 

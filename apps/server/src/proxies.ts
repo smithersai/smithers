@@ -70,20 +70,6 @@ export const PLATFORM_PROXY_RULES: ReadonlyArray<{
   { exact: "/api/billing/portal", methods: ["POST"] }
 ]
 
-/*
- * The closed alpha exposes no top-up, checkout, or card-collection flow: every
- * account's balance is comped. Both Stripe routes stayed live anyway, so
- * `/billing.upgrade` on an MVP account fired a real POST and came back the
- * platform's `stripe billing is not configured` (repro
- * apps/app/canary-repros/money/17.4). A configuration string is not an answer to
- * "upgrade my plan", and a live checkout call is not something an MVP account
- * should be able to make at all.
- *
- * Set BILLING_CHECKOUT_ENABLED=1 on the deployment where paid plans ship; the
- * routes then forward exactly as before.
- */
-const CHECKOUT_PATHS: ReadonlyArray<string> = ["/api/billing/checkout", "/api/billing/portal"]
-
 const PLATFORM_PROXY_MAX_BODY = 256 * 1024
 // Plue accepts a 1 MiB binary Yjs update in a base64 JSON envelope (2 MiB cap).
 // Keep the larger allowance on this exact mutation, including /api/cloud's
@@ -171,10 +157,12 @@ export const handlePlatformProxy = (
     const gate = yield* requireTurnSession(request)
     if (publicRead && isVisitorRefusal(gate)) return withIsolationHeaders(yield* publicAnswer(url))
     if (gate instanceof Response) return gate
-    if (CHECKOUT_PATHS.includes(url.pathname) && !config.billingCheckoutEnabled) {
+    // Closing sales must not lock existing customers out of their portal.
+    if ((url.pathname === "/api/billing/checkout" && !config.billingCheckoutEnabled) ||
+        (url.pathname === "/api/billing/portal" && !config.billingPortalEnabled)) {
       return refuse(
         "feature_unavailable_here",
-        "There is nothing to buy during the closed alpha: your balance is comped, so there is no checkout and no billing portal. You'll be told before that changes."
+        url.pathname === "/api/billing/portal" ? "The billing portal is unavailable on this host." : "Checkout is unavailable on this host."
       )
     }
     const token = yield* fetchCloudToken(gate.login)

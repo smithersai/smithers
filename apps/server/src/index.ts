@@ -294,7 +294,10 @@ const handleBootstrap = (request: Request): Effect.Effect<Response, never, Serve
         balance: config.billingUpstreamUrl !== undefined && (identity
           ? config.billingProductServiceToken !== undefined
           : config.billingAuthToken !== undefined),
-        checkout: config.billingCheckoutEnabled,
+        overview: identity && bindings.cloudApi,
+        plans: identity && bindings.cloudApi,
+        checkout: identity && bindings.cloudApi && config.billingCheckoutEnabled,
+        portal: identity && bindings.cloudApi && config.billingPortalEnabled,
         terminal: true,
         recommend: config.aiGatewayApiKey !== undefined,
         browser: Option.isSome(egress)

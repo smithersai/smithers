@@ -39,6 +39,9 @@ type bootstrapFeatures struct {
 	workspace        bool
 	terminal         bool
 	billingBalance   bool
+	billingOverview  bool
+	billingPlans     bool
+	billingPortal    bool
 	billingCheckout  bool
 	workspaceRuntime bool
 	isolatedSandbox  bool
@@ -79,6 +82,15 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 	}
 	if features.billingBalance {
 		result.Capabilities = append(result.Capabilities, "billing.balance")
+	}
+	if features.billingOverview {
+		result.Capabilities = append(result.Capabilities, "billing.overview")
+	}
+	if features.billingPlans {
+		result.Capabilities = append(result.Capabilities, "billing.plans")
+	}
+	if features.billingPortal {
+		result.Capabilities = append(result.Capabilities, "billing.portal")
 	}
 	if features.billingCheckout {
 		result.Capabilities = append(result.Capabilities, "billing.checkout")

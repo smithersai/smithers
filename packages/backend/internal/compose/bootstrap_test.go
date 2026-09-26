@@ -100,3 +100,19 @@ func TestAppBootstrapRoute(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/unknown", nil))
 	require.Equal(t, http.StatusNotFound, response.Code)
 }
+
+func TestAppBootstrapBillingDoorsAreIndependent(t *testing.T) {
+	for _, overview := range []bool{false, true} {
+		for _, plans := range []bool{false, true} {
+			for _, checkout := range []bool{false, true} {
+				for _, portal := range []bool{false, true} {
+					boot := newAppBootstrap(bootstrapFeatures{identity: true, billingOverview: overview, billingPlans: plans, billingCheckout: checkout, billingPortal: portal})
+					require.Equal(t, overview, slices.Contains(boot.Capabilities, "billing.overview"))
+					require.Equal(t, plans, slices.Contains(boot.Capabilities, "billing.plans"))
+					require.Equal(t, checkout, slices.Contains(boot.Capabilities, "billing.checkout"))
+					require.Equal(t, portal, slices.Contains(boot.Capabilities, "billing.portal"))
+				}
+			}
+		}
+	}
+}

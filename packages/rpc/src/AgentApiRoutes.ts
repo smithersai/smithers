@@ -423,6 +423,10 @@ export const MODEL_CREDENTIAL_RECEIPT_PATH = "/api/model/credential/receipt"
  */
 export const SHARED_BACKEND_CLIENT_ROUTES = [
   { method: "GET", path: BILLING_BALANCE_PATH, capability: "billing.balance" },
+  { method: "GET", path: BILLING_OVERVIEW_PATH, capability: "billing.overview" },
+  { method: "GET", path: BILLING_PLANS_PATH, capability: "billing.plans" },
+  { method: "POST", path: "/api/billing/checkout", capability: "billing.checkout" },
+  { method: "POST", path: "/api/billing/portal", capability: "billing.portal" },
   { method: "GET", path: PUBLIC_REPOS_PATH },
   { method: "POST", path: RECOMMEND_PATH, capability: "recommend" },
   { method: "POST", path: RECOMMEND_OUTCOME_PATH, capability: "recommend" },

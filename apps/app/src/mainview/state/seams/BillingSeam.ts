@@ -98,33 +98,45 @@ export const renderCreditExhausted = (store: AppStore, refusal: Refusal, checkou
   renderPlanLimit(store, refusal.upgrade_plan_key == null ? { ...refusal, upgrade_plan_key: "pro" } : refusal, checkout, actor,
     { id: "billing-credit-exhausted", title: "Out of model credit" })
 
-export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: () => boolean = () => false): BillingSeam => {
+export interface BillingCapabilities {
+  readonly overview: boolean
+  readonly plans: boolean
+  readonly checkout: boolean
+  readonly portal: boolean
+}
+
+export const createBillingSeam = (ctx: SeamContext,
+  capabilities: BillingCapabilities = { overview: true, plans: true, checkout: true, portal: true },
+  disposed: () => boolean = () => false): BillingSeam => {
+  const { checkout } = capabilities
   const currentAccount = () => {
     const identity = ctx.store.collections.identitySessions.get("identity")
     return () => !disposed() && ctx.store.collections.identitySessions.get("identity") === identity
   }
   return {
   showBillingPlans: async () => {
+    if (!capabilities.plans) return "Plans are unavailable on this host."
     const current = currentAccount()
     try {
       const [overviewResponse, plansResponse] = await Promise.all([
-        ctx.http(`${ctx.baseUrl}${BILLING_OVERVIEW_PATH}`), ctx.http(`${ctx.baseUrl}${BILLING_PLANS_PATH}`)
+        capabilities.overview ? ctx.http(`${ctx.baseUrl}${BILLING_OVERVIEW_PATH}`) : Promise.resolve(null), ctx.http(`${ctx.baseUrl}${BILLING_PLANS_PATH}`)
       ])
-      if (!overviewResponse.ok || !plansResponse.ok) return "Your plans couldn't be refreshed right now."
-      const overview = OverviewSchema.safeParse(await overviewResponse.json())
+      if ((overviewResponse !== null && !overviewResponse.ok) || !plansResponse.ok) return "Your plans couldn't be refreshed right now."
+      const overview = overviewResponse === null ? null : OverviewSchema.safeParse(await overviewResponse.json())
       const catalog = BillingPlansResponseSchema.safeParse(await plansResponse.json())
       if (!current()) return { value: "The account changed while plans were loading." }
-      if (!overview.success || !catalog.success) return "Your plans couldn't be refreshed right now."
-      const wire = overview.data.sandbox
-      const sandbox = {
+      if ((overview !== null && !overview.success) || !catalog.success) return "Your plans couldn't be refreshed right now."
+      const details = overview?.success ? overview.data : null
+      const wire = details?.sandbox
+      const sandbox = wire === undefined ? null : {
         concurrentSandboxes: wire.concurrent_sandboxes, concurrentInUse: wire.concurrent_in_use,
         idleTimeoutSecs: wire.idle_timeout_secs, hoursPerDay: wire.hours_per_day,
         secondsUsedToday: wire.seconds_used_today, dayResetsAt: wire.day_resets_at
       }
-      const planKey = wire.plan_key
+      const planKey = wire?.plan_key ?? catalog.data.current_plan_key
       const plans = catalog.data.plans
-      const creditBalanceCents = overview.data.credit_balance_cents ?? null
-      const creditResetsAt = overview.data.usage_period_end ?? null
+      const creditBalanceCents = details?.credit_balance_cents ?? null
+      const creditResetsAt = details?.usage_period_end ?? null
       await ctx.dispatch({ type: "billing.plans.loaded", actor: ctx.actor(), planKey, sandbox, plans, creditBalanceCents, creditResetsAt }).isPersisted.promise
       if (!current()) return "The account changed while plans were loading."
       await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
@@ -132,7 +144,7 @@ export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: (
         createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { planKey, sandbox, plans, checkout }
       } }).isPersisted.promise
       if (!current()) return "The account changed while plans were loading."
-      return readResult(`Current plan: ${planKey}.${creditBalanceCents === null ? "" : ` Credit: ${creditDollars(creditBalanceCents)}.`} Running sandboxes: ${sandbox.concurrentInUse} / ${sandbox.concurrentSandboxes}. Sandbox-hours today: ${sandbox.secondsUsedToday / 3600} / ${sandbox.hoursPerDay === -1 ? "unlimited" : sandbox.hoursPerDay}. Resets at ${sandbox.dayResetsAt}. Plans: ${plans.map(plan => `${plan.display_name} $${plan.price_cents / 100}`).join(", ")}.${checkout ? "" : " Checkout is not open yet."}`)
+      return readResult(`Current plan: ${planKey}.${creditBalanceCents === null ? "" : ` Credit: ${creditDollars(creditBalanceCents)}.`}${sandbox === null ? "" : ` Running sandboxes: ${sandbox.concurrentInUse} / ${sandbox.concurrentSandboxes}. Sandbox-hours today: ${sandbox.secondsUsedToday / 3600} / ${sandbox.hoursPerDay === -1 ? "unlimited" : sandbox.hoursPerDay}. Resets at ${sandbox.dayResetsAt}.`} Plans: ${plans.map(plan => `${plan.display_name} $${plan.price_cents / 100}`).join(", ")}.${checkout ? "" : " Checkout is not open yet."}`)
     } catch {
       return "Your plans couldn't be refreshed and saved right now."
     }
@@ -159,9 +171,7 @@ export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: (
     )
   },
   openBillingPortal: () => {
-    if (!checkout) {
-      return ctx.dispatch({ type: "message.appended", actor: ctx.actor(), text: "Checkout is not open yet." }).isPersisted.promise.then(() => undefined)
-    }
+    if (!capabilities.portal) return Promise.resolve("The billing portal is unavailable on this host.")
     return openSession(
       ctx,
       "/api/billing/portal",

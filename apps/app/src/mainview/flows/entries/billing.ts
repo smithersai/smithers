@@ -23,16 +23,16 @@ export const billingBalanceFlows = (actions: CommandActions): ReadonlyArray<Flow
   })
 ]
 
-/** Plan reads and human checkout doors for every signed-in account. */
+/** Plan reads and human billing doors only where their routes exist. */
 export const billingPlanFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
-    name: "billing.plans", summary: "Show plans and sandbox usage", runtime: ["identity"],
+    name: "billing.plans", summary: "Show plans and sandbox usage", runtime: ["identity", "billing.plans"],
     requires: ["signed-in"], input: NoPayload, handler: () => actions.showBillingPlans()
   }),
   flow({
     name: "billing.upgrade",
     summary: "Upgrade your plan (opens Stripe checkout)",
-    runtime: ["identity"],
+    runtime: ["identity", "billing.checkout"],
     userOnly: true,
     userOnlyReason: "external checkout with real money; the human clicks",
     args: "[plan]",
@@ -43,7 +43,7 @@ export const billingPlanFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
   flow({
     name: "billing.portal",
     summary: "Manage billing (opens the Stripe portal)",
-    runtime: ["identity"],
+    runtime: ["identity", "billing.portal"],
     userOnly: true,
     userOnlyReason: "the external billing portal; the human clicks",
     requires: ["signed-in"],

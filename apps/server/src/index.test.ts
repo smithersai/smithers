@@ -271,7 +271,7 @@ describe("smithers mvp worker", () => {
       host: "cloud",
       version: "1.0.0",
       buildSha: "build-abc",
-      capabilities: ["agent", "identity", "cloud", "billing.checkout", "cloud.terminal"],
+      capabilities: ["agent", "identity", "cloud", "billing.overview", "billing.plans", "billing.checkout", "cloud.terminal"],
       authFlow: "native-handoff",
       sandbox: null
     })
@@ -3229,12 +3229,35 @@ describe("the browser tool route (§2d)", () => {
         const response = await worker.fetch(new Request(`https://mvp.test${path}`, { method: "POST", headers: SESSION }), env)
         expect(`${path} → ${response.status}`).toBe(`${path} → 501`)
         const body = (await response.json()) as { message: string }
-        expect(body.message).toContain("nothing to buy")
+        expect(body.message).toContain("unavailable on this host")
         expect(body.message).not.toContain("stripe")
       }
       expect(seen.some((url) => url.includes("cloud.test"))).toBe(false)
     } finally {
       globalThis.fetch = original
+    }
+  })
+
+  test("portal and checkout are independently advertised and forwarded", async () => {
+    for (const portal of [false, true]) for (const checkout of [false, true]) {
+      const env: WorkerEnv = { ...assetsEnv(), IDENTITY_UPSTREAM_URL: "https://identity.test", IDENTITY_SERVICE_TOKEN: "svc",
+        SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test", BILLING_CHECKOUT_ENABLED: checkout ? "1" : "0", BILLING_PORTAL_ENABLED: portal ? "1" : "0" }
+      const forwarded: string[] = []
+      await withMockedFetch(request => {
+        if (request.url.includes("/api/identity/validate")) return Response.json({ login: "will", allowlisted: true, admin: false, scopes: [] })
+        if (request.url.includes("/api/identity/cloud-token")) return Response.json({ found: true, token: "cloud-token" })
+        forwarded.push(new URL(request.url).pathname)
+        return Response.json({ url: "https://billing.example/session" })
+      }, async () => {
+        const bootstrap = AppBootstrapSchema.parse(await (await worker.fetch(new Request("https://mvp.test/api/bootstrap"), env)).json())
+        expect(bootstrap.capabilities.includes("billing.checkout")).toBe(checkout)
+        expect(bootstrap.capabilities.includes("billing.portal")).toBe(portal)
+        for (const [path, enabled] of [["/api/billing/checkout", checkout], ["/api/billing/portal", portal]] as const) {
+          const response = await worker.fetch(new Request(`https://mvp.test${path}`, { method: "POST", headers: SESSION }), env)
+          expect(response.status).toBe(enabled ? 200 : 501)
+        }
+      })
+      expect(forwarded).toEqual([...(checkout ? ["/api/billing/checkout"] : []), ...(portal ? ["/api/billing/portal"] : [])])
     }
   })
 
@@ -3757,7 +3780,7 @@ describe("the /api/cloud bridge", () => {
             const response = await worker.fetch(new Request("https://mvp.test/api/bootstrap"), env)
             const body = AppBootstrapSchema.parse(await response.json())
             expect(body.capabilities).toEqual(
-              cloudCapabilities({ identity, cloud, agent, checkout: checkout === "1", terminal: true })
+              cloudCapabilities({ identity, cloud, agent, overview: identity && cloud, plans: identity && cloud, checkout: identity && cloud && checkout === "1", terminal: true })
             )
             expect(body.capabilities).toContain("cloud.terminal")
             expect(body.capabilities).not.toContain("cloud.pat")
