@@ -1,9 +1,10 @@
 /**
- * Finds the native filesystem helper shipped with this package or built in a
+ * Finds the native filesystem helper embedded in a host, shipped with this package, or built in a
  * source checkout, without accepting an executable from the workspace.
  * @since 1.0.0
  */
-import { chmodSync, constants, copyFileSync, existsSync, mkdtempSync, rmSync, statSync } from "node:fs"
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -25,14 +26,42 @@ export const resolvePackageRoot = (directory: string): string => {
 }
 
 /**
+ * Finds the installed package even when a host bundles this adapter elsewhere.
+ * @private
+ * @since 1.0.0
+ */
+export const installedPackageRoot = (modulePath: string, fallback: string): string => {
+  try {
+    return dirname(createRequire(modulePath).resolve("@smthrs/platform-node/package.json"))
+  } catch {
+    // A compiled executable has no installed package; its bootstrap supplies
+    // the embedded helper. Source-only fixtures retain the directory fallback.
+    return fallback
+  }
+}
+
+/**
  * Package containing the currently loaded helper adapter.
  * @private
  * @since 1.0.0
  */
-export const packageRoot = resolvePackageRoot(moduleDirectory)
+export const packageRoot = installedPackageRoot(
+  join(moduleDirectory, "resolver.cjs"),
+  resolvePackageRoot(moduleDirectory)
+)
 
 const staged = new Map<string, string>()
 const helperName = process.platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"
+let embeddedHelper: string | undefined
+
+/**
+ * Supplies the build's native asset without touching disk during --help.
+ * @private
+ * @since 1.0.0
+ */
+export const registerEmbeddedHelper = (source: string): void => {
+  embeddedHelper = source
+}
 
 /**
  * Pin an install inside the workspace before any flow can modify its bytes.
@@ -51,7 +80,9 @@ export const outsideWorkspace = (
     const destination = join(directory, helperName)
     try {
       chmodSync(directory, 0o700)
-      copyFileSync(source, destination, constants.COPYFILE_EXCL)
+      // readFile also supports assets embedded in a Bun executable; copyfile
+      // delegates to the OS, which cannot open its virtual /$bunfs path.
+      writeFileSync(destination, readFileSync(source), { flag: "wx", mode: 0o500 })
       chmodSync(destination, 0o500)
       const executable = usableExecutable(destination, boundaryRoot)
       staged.set(source, executable)
@@ -78,7 +109,7 @@ const packagedHelper = (root: string): string => join(root, "bin", `${process.pl
  * @since 1.0.0
  */
 export const stagePackaged = (root: string): void => {
-  const candidate = packagedHelper(root)
+  const candidate = embeddedHelper ?? packagedHelper(root)
   try {
     if (existsSync(candidate) && statSync(candidate).isFile()) outsideWorkspace(candidate, undefined)
   } catch {
@@ -96,6 +127,7 @@ export const resolveDefaultExecutable = (
   boundaryRoot: string | undefined,
   fallback = "/usr/local/bin/smithers-jj-export"
 ): string => {
+  if (embeddedHelper !== undefined) return outsideWorkspace(embeddedHelper, boundaryRoot)
   const candidates = [packagedHelper(root)]
   const checkout = resolve(root, "../../../..")
   if (existsSync(join(checkout, "pnpm-workspace.yaml"))) {

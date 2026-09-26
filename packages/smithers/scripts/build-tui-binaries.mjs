@@ -23,6 +23,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { compiledEffectRuntime } from "./compiled-effect-runtime.mjs"
+import { nativeHelper, nativeHelperBootstrap } from "./tui-native-helper.mjs"
 
 if (typeof Bun === "undefined") {
   console.error("build-tui-binaries.mjs compiles with Bun: run `bun scripts/build-tui-binaries.mjs`.")
@@ -66,6 +68,10 @@ if (selected.length === 0) {
 
 const workerName = "opentui-tree-sitter-worker.js"
 const worker = await Bun.file(fromApp.resolve("@opentui/core/parser.worker")).text()
+const entryName = "smithers-tui.ts"
+const runtime = compiledEffectRuntime(fromApp)
+// Refuse an incomplete cross-build before replacing any existing artifacts.
+const helpers = new Map(selected.map((target) => [target, nativeHelper(target, packageRoot)]))
 const out = resolve(packageRoot, "out/tui-binaries")
 rmSync(out, { recursive: true, force: true })
 
@@ -75,9 +81,13 @@ for (const target of selected) {
   const outfile = join(directory, "bin", "smithers-tui")
   mkdirSync(dirname(outfile), { recursive: true })
   console.log(`building ${name}`)
+  const helper = helpers.get(target)
   const result = await Bun.build({
-    entrypoints: [join(app, "src/main.tsx"), workerName],
-    files: { [workerName]: worker },
+    entrypoints: [entryName, workerName],
+    files: {
+      [entryName]: `${runtime}\n${nativeHelperBootstrap(helper, packageRoot)}\nawait import(${JSON.stringify(join(app, "src/main.tsx"))});`,
+      [workerName]: worker
+    },
     tsconfig: join(app, "tsconfig.json"),
     format: "esm",
     minify: true,
@@ -87,7 +97,9 @@ for (const target of selected) {
       autoloadBunfig: false,
       autoloadDotenv: false,
       autoloadTsconfig: false,
-      autoloadPackageJson: false
+      // Runtime project imports need package export maps, even though the host
+      // itself is bundled. The generated bridge keeps Effect a single instance.
+      autoloadPackageJson: true
     },
     define: {
       OTUI_TREE_SITTER_WORKER_PATH: JSON.stringify(`/$bunfs/root/${workerName}`),

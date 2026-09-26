@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import { basename, dirname, join, sep } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
+  installedPackageRoot,
   outsideWorkspace,
   resolveDefaultExecutable,
   resolvePackageRoot,
@@ -29,6 +30,32 @@ afterEach(async () => {
 })
 
 describe("default atomic helper resolution", () => {
+  it("resolves the installed platform package from a relocated host bundle", async () => {
+    const { root } = await fixture()
+    const installed = join(root, "node_modules/@smthrs/platform-node")
+    await mkdir(installed, { recursive: true })
+    await writeFile(
+      join(installed, "package.json"),
+      JSON.stringify({ name: "@smthrs/platform-node", exports: { "./package.json": "./package.json" } })
+    )
+    expect(installedPackageRoot(join(root, "dist/tui/main.js"), "fallback")).toBe(installed)
+    expect(installedPackageRoot("unresolvable-module", "fallback")).toBe("fallback")
+  })
+
+  it("pins a registered embedded asset through the same private staging path", async () => {
+    vi.resetModules()
+    const embedded = await import("../src/internal/AtomicFileSystemExecutable.ts")
+    const { root } = await fixture()
+    const asset = join(root, "embedded-helper")
+    await helper(asset)
+    embedded.registerEmbeddedHelper(asset)
+    embedded.stagePackaged(join(root, "missing-package"))
+    await writeFile(asset, "changed after host construction")
+    const executable = embedded.resolveDefaultExecutable(join(root, "missing-package"), root)
+    expect(executable.startsWith(`${root}${sep}`)).toBe(false)
+    expect(await readFile(executable, "utf8")).toBe("#!/bin/sh\nexit 0\n")
+  })
+
   it.each(["src/internal", "dist/esm/internal", "dist/cjs/internal"])(
     "finds the package root from %s",
     async (directory) => {

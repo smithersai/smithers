@@ -25,10 +25,10 @@ afterEach(() => {
   for (const root of staged.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-const print = (environment: Record<string, string>) => {
+const print = (environment: Record<string, string>, args: ReadonlyArray<string> = []) => {
   const root = mkdtempSync(join(tmpdir(), "smithers-tui-e2e-"))
   staged.push(root)
-  return spawnSync(process.execPath, [bin, "tui", root, "-p", "Reply with the single word pong"], {
+  return spawnSync(process.execPath, [bin, "tui", root, "-p", "Reply with the single word pong", ...args], {
     encoding: "utf8",
     timeout: 120_000,
     env: {
@@ -43,7 +43,7 @@ const print = (environment: Record<string, string>) => {
 describe("smthrs tui -p on each runtime", () => {
   it.skipIf(!nodeHasFfi)("answers under Node >= 26.4 without Bun", () => {
     const path = (process.env["PATH"] ?? "").split(delimiter).filter((entry) => !/\.bun\b/.test(entry))
-    const result = print({ PATH: path.join(delimiter) })
+    const result = print({ PATH: path.join(delimiter) }, ["--approve", "deny"])
     expect(result.stderr).toBe("")
     expect(result.stdout.trim()).toBe("pong")
     expect(result.status).toBe(0)
@@ -53,5 +53,21 @@ describe("smthrs tui -p on each runtime", () => {
     const result = print({ PATH: process.env["PATH"] ?? "", SMITHERS_BUN: bun! })
     expect(result.stdout.trim()).toBe("pong")
     expect(result.status).toBe(0)
+  }, 150_000)
+
+  it.skipIf(bun === undefined)("forwards approval modes and retains the TUI's headless refusal", () => {
+    const environment = { PATH: process.env["PATH"] ?? "", SMITHERS_BUN: bun! }
+    const denied = print(environment, ["--approve", "deny"])
+    expect(denied.status, denied.stderr).toBe(0)
+    expect(denied.stdout.trim()).toBe("pong")
+    const ask = print(environment, ["--approve", "ask"])
+    expect(ask.status).toBe(1)
+    expect(ask.stderr).toContain("--approve ask needs the interactive TUI")
+    expect(ask.stdout).toBe("")
+    const configured = print({ ...environment, SMITHERS_TUI_APPROVE: "ask" })
+    expect(configured.status).toBe(1)
+    expect(configured.stderr).toContain("SMITHERS_TUI_APPROVE=ask needs the interactive TUI")
+    const invalid = print(environment, ["--approve", "sometimes"])
+    expect(invalid.status).not.toBe(0)
   }, 150_000)
 })
