@@ -31,9 +31,11 @@ import (
 // branch and pull request, so no request pushes twice or opens a duplicate.
 const landingGitHubPullTimeout = 5 * time.Minute
 
+const landingGitHubPullBranchPrefix = "smithers/landing-"
+
 // LandingGitHubPullBranch is the GitHub head branch of one landing's pull request.
 func LandingGitHubPullBranch(number int64) string {
-	return "smithers/landing-" + strconv.FormatInt(number, 10)
+	return landingGitHubPullBranchPrefix + strconv.FormatInt(number, 10)
 }
 
 // LandingGitHubPullInput names the exact landing tip the caller verified.
@@ -79,7 +81,9 @@ type landingGitHubPullRequest struct {
 	HTMLURL  string  `json:"html_url"`
 	State    string  `json:"state"`
 	MergedAt *string `json:"merged_at"`
-	Head     struct {
+	// MergeCommitSHA is GitHub's merge commit once MergedAt is set.
+	MergeCommitSHA *string `json:"merge_commit_sha"`
+	Head           struct {
 		Ref  string `json:"ref"`
 		SHA  string `json:"sha"`
 		Repo *struct {

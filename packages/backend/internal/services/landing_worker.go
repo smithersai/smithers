@@ -836,13 +836,20 @@ func (w *LandingWorker) handleFailure(ctx context.Context, task db.LandingTask, 
 
 // dispatchLandedEvent fires the "landed" webhook event after a successful merge.
 func (w *LandingWorker) dispatchLandedEvent(ctx context.Context, repo db.Repository, lr db.LandingRequest, changeIDs []string) {
-	if w.dispatcher == nil {
+	dispatchLandingLandedEvent(ctx, w.dispatcher, w.queries, w.logger, repo, lr, changeIDs)
+}
+
+// dispatchLandingLandedEvent fires the "landed" webhook after a landing merged.
+func dispatchLandingLandedEvent(ctx context.Context, dispatcher webhooks.Dispatcher, users interface {
+	GetUserByID(ctx context.Context, id int64) (db.User, error)
+}, logger *slog.Logger, repo db.Repository, lr db.LandingRequest, changeIDs []string) {
+	if dispatcher == nil {
 		return
 	}
 
-	author, err := w.queries.GetUserByID(ctx, lr.AuthorID)
+	author, err := users.GetUserByID(ctx, lr.AuthorID)
 	if err != nil {
-		w.logger.Error("failed to load author for landed webhook",
+		logger.Error("failed to load author for landed webhook",
 			"landing_request_id", lr.ID,
 			"error", err,
 		)
@@ -871,8 +878,8 @@ func (w *LandingWorker) dispatchLandedEvent(ctx context.Context, repo db.Reposit
 		Sender: webhooks.UserPayload{ID: author.ID, Login: author.Username},
 	}
 
-	if err := w.dispatcher.DispatchEvent(ctx, repo.ID, webhooks.EventTypeLandingRequest, payload); err != nil {
-		w.logger.Error("failed to dispatch landed webhook",
+	if err := dispatcher.DispatchEvent(ctx, repo.ID, webhooks.EventTypeLandingRequest, payload); err != nil {
+		logger.Error("failed to dispatch landed webhook",
 			"landing_request_id", lr.ID,
 			"error", err,
 		)

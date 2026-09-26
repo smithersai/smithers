@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,16 +42,17 @@ const (
 	gitHubMainPullDiscoverLimit  = int32(50)
 	// The lease outlives the run deadline, which cancels every subprocess and
 	// the in-process push, so a stale owner cannot write after a takeover.
-	gitHubMainPullLease        = 15 * time.Minute
-	gitHubMainPullTimeout      = 10 * time.Minute
-	gitHubMainPullLeaseMargin  = time.Minute
-	gitHubMainPullMinimumRun   = time.Minute
-	gitHubMainPullClaimLimit   = int32(4)
-	gitHubMainPullBaseBackoff  = 30 * time.Second
-	gitHubMainPullMaxBackoff   = 30 * time.Minute
-	gitHubMainPullFactoryPath  = ".smithers/factory.json"
-	gitHubMainPullFactoryLimit = 4 << 20
-	defaultGitHubRawBaseURL    = "https://raw.githubusercontent.com"
+	gitHubMainPullLease         = 15 * time.Minute
+	gitHubMainPullTimeout       = 10 * time.Minute
+	gitHubMainPullLeaseMargin   = time.Minute
+	gitHubMainPullMinimumRun    = time.Minute
+	gitHubMainPullClaimLimit    = int32(4)
+	gitHubMainPullSyncedTimeout = 2 * time.Minute
+	gitHubMainPullBaseBackoff   = 30 * time.Second
+	gitHubMainPullMaxBackoff    = 30 * time.Minute
+	gitHubMainPullFactoryPath   = ".smithers/factory.json"
+	gitHubMainPullFactoryLimit  = 4 << 20
+	defaultGitHubRawBaseURL     = "https://raw.githubusercontent.com"
 )
 
 // GitHubMainPullStore is the durable state and repository lookup the pull uses.
@@ -111,6 +113,16 @@ type GitHubMainPullService struct {
 	// mainMoved hears every pull that moved Smithers main (the mythical
 	// stack folds it).
 	mainMoved func(ctx context.Context, repositoryID int64)
+	// synced hears every pull that observed main equal to GitHub (open
+	// landings whose pull requests merged are reconciled).
+	synced func(ctx context.Context, repositoryID int64, githubRepository, branch string)
+	// syncing holds the repositories whose synced listener is running.
+	syncing sync.Map
+}
+
+// SetSynced registers the listener for every synced pull.
+func (s *GitHubMainPullService) SetSynced(listener func(ctx context.Context, repositoryID int64, githubRepository, branch string)) {
+	s.synced = listener
 }
 
 // SetMainMoved registers the listener for pulls that moved main.
@@ -338,6 +350,9 @@ func (s *GitHubMainPullService) runClaimed(parent context.Context, row db.Github
 	case s.mainMoved != nil && outcome.state == gitHubMainPullStateSynced && outcome.smithersHead != "" && outcome.smithersHead != row.SmithersHead:
 		s.mainMoved(finishCtx, row.RepositoryID)
 	}
+	if err == nil && written > 0 && outcome.state == gitHubMainPullStateSynced {
+		s.notifySynced(parent, row.RepositoryID, outcome.githubRepository, outcome.branch)
+	}
 	attrs := []any{"repository_id", row.RepositoryID, "github", outcome.githubRepository, "state", outcome.state,
 		"policy", outcome.policy, "github_head", outcome.githubHead, "smithers_head", outcome.smithersHead}
 	if outcome.state == gitHubMainPullStateFailed {
@@ -345,6 +360,24 @@ func (s *GitHubMainPullService) runClaimed(parent context.Context, row db.Github
 	} else {
 		s.logger.Info("github.main_pull."+outcome.state, attrs...)
 	}
+}
+
+// notifySynced runs the synced listener beside the pull worker, so it never
+// delays another repository's pull. A repository whose listener is still
+// running is skipped; its next synced pull runs it again.
+func (s *GitHubMainPullService) notifySynced(parent context.Context, repositoryID int64, githubRepository, branch string) {
+	if s.synced == nil {
+		return
+	}
+	if _, running := s.syncing.LoadOrStore(repositoryID, struct{}{}); running {
+		return
+	}
+	go func() {
+		defer s.syncing.Delete(repositoryID)
+		ctx, cancel := context.WithTimeout(parent, gitHubMainPullSyncedTimeout)
+		defer cancel()
+		s.synced(ctx, repositoryID, githubRepository, branch)
+	}()
 }
 
 func gitHubMainPullBackoff(attempts int32) time.Duration {
@@ -373,7 +406,7 @@ func (s *GitHubMainPullService) pull(ctx context.Context, row db.GithubMainPull)
 	if err != nil {
 		return fail("load repository: " + err.Error())
 	}
-	owner, err := s.repositoryOwner(ctx, repository)
+	owner, err := repositoryOwnerName(ctx, s.store, repository)
 	if err != nil {
 		return fail(err.Error())
 	}
@@ -512,16 +545,20 @@ func (s *GitHubMainPullService) pull(ctx context.Context, row db.GithubMainPull)
 	return out
 }
 
-func (s *GitHubMainPullService) repositoryOwner(ctx context.Context, repository db.Repository) (string, error) {
+// repositoryOwnerName is the owner segment of a repository's Smithers path.
+func repositoryOwnerName(ctx context.Context, store interface {
+	GetUserByID(ctx context.Context, id int64) (db.User, error)
+	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
+}, repository db.Repository) (string, error) {
 	switch {
 	case repository.UserID.Valid:
-		user, err := s.store.GetUserByID(ctx, repository.UserID.Int64)
+		user, err := store.GetUserByID(ctx, repository.UserID.Int64)
 		if err != nil {
 			return "", fmt.Errorf("load repository owner: %w", err)
 		}
 		return user.Username, nil
 	case repository.OrgID.Valid:
-		org, err := s.store.GetOrgByID(ctx, repository.OrgID.Int64)
+		org, err := store.GetOrgByID(ctx, repository.OrgID.Int64)
 		if err != nil {
 			return "", fmt.Errorf("load repository owner: %w", err)
 		}

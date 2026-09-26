@@ -192,6 +192,15 @@ type LandingRequestResponse struct {
 	BlockedBy      map[string][]LandingBlock      `json:"blocked_by"`
 	CreatedAt      time.Time                      `json:"created_at"`
 	UpdatedAt      time.Time                      `json:"updated_at"`
+	// GitHubMerge is the receipt of a landing merged by its GitHub pull request.
+	GitHubMerge *LandingGitHubMergeReceipt `json:"github_merge,omitempty"`
+}
+
+type LandingGitHubMergeReceipt struct {
+	Repository  string `json:"repository"`
+	PullNumber  int64  `json:"pull_number"`
+	HeadSHA     string `json:"head_sha"`
+	MergeCommit string `json:"merge_commit"`
 }
 
 type LandingConflict struct {
@@ -3165,7 +3174,31 @@ func (s *LandingService) mapLandingRecord(ctx context.Context, repository db.Rep
 	if err := s.populateLandingReviewRequests(ctx, row.ID, &response); err != nil {
 		return LandingRequestResponse{}, err
 	}
+	if err := s.populateLandingGitHubMerge(ctx, row, &response); err != nil {
+		return LandingRequestResponse{}, err
+	}
 	return s.populateAutoLandMetadata(ctx, row, response)
+}
+
+type landingGitHubMergeQuerier interface {
+	GetLandingGitHubMerge(ctx context.Context, landingRequestID int64) (db.LandingGitHubMerge, error)
+}
+
+func (s *LandingService) populateLandingGitHubMerge(ctx context.Context, row db.LandingRequest, response *LandingRequestResponse) error {
+	q, ok := s.queries.(landingGitHubMergeQuerier)
+	if !ok || row.State != landingStateMerged {
+		return nil
+	}
+	merge, err := q.GetLandingGitHubMerge(ctx, row.ID)
+	if stdErrors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return pkgerrors.Internal("failed to load landing GitHub merge").WithCause(err)
+	}
+	response.GitHubMerge = &LandingGitHubMergeReceipt{Repository: merge.GithubRepository, PullNumber: merge.PullNumber,
+		HeadSHA: merge.HeadSha, MergeCommit: merge.MergeCommit}
+	return nil
 }
 
 type landingTurnIdentityQuerier interface {

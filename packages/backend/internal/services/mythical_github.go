@@ -180,8 +180,7 @@ func (g *mythicalGitHubAPI) OpenIssues(ctx context.Context, gh mythicalGitHubRep
 
 type mythicalGitHubPull struct {
 	landingGitHubPullRequest
-	MergeCommitSHA *string `json:"merge_commit_sha"`
-	MergeableState string  `json:"mergeable_state"`
+	MergeableState string `json:"mergeable_state"`
 }
 
 func (p mythicalGitHubPull) pull() mythicalPull {
