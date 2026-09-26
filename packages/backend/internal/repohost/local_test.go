@@ -105,3 +105,19 @@ func TestLocalTransportWriteDeadline(t *testing.T) {
 		t.Fatal("write deadline did not stop blocked write")
 	}
 }
+
+func TestInProcessIdentifiesOnlyEmbeddedClients(t *testing.T) {
+	if !NewLocalClient(http.NotFoundHandler(), "token").InProcess() {
+		t.Fatal("local client must report in-process")
+	}
+	if !NewLocalClientWithStagingEndpoint(http.NotFoundHandler(), "token", "http://127.0.0.1:1").InProcess() {
+		t.Fatal("local staging client must report in-process")
+	}
+	if NewClient(&StaticStorageSetResolver{URL: "http://repo-host:8080"}, "token").InProcess() {
+		t.Fatal("remote client must not report in-process")
+	}
+	var missing *Client
+	if missing.InProcess() {
+		t.Fatal("nil client must not report in-process")
+	}
+}

@@ -149,6 +149,7 @@ var allEnvKeys = []string{
 	"SMITHERS_TRACE_SAMPLE_RATE",
 	"SMITHERS_OTEL_EXPORTER",
 	"SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT",
+	"SMITHERS_METRICS_ADDR",
 	// Email
 	"SMITHERS_EMAIL_SMTP_HOST",
 	"SMITHERS_EMAIL_SMTP_PORT",
@@ -1321,6 +1322,12 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 			envKey: "SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT", envValue: "http://collector:4318",
 			check: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, "http://collector:4318", cfg.Observability.OTLPEndpoint)
+			},
+		},
+		{
+			envKey: "SMITHERS_METRICS_ADDR", envValue: ":9091",
+			check: func(t *testing.T, cfg *Config) {
+				assert.Equal(t, ":9091", cfg.Observability.MetricsAddr)
 			},
 		},
 		{

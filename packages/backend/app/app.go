@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/smithersai/smithers/packages/backend/admission"
@@ -84,6 +85,13 @@ type Config struct {
 	Recommender         ports.Recommender
 	RecommendationLog   ports.RecommendationLog
 	ModelStreamHost     ports.ModelStreamHost
+	// MetricsCollectors are deployment-owned Prometheus collectors exported
+	// with the product metrics, so private workers need no second registry or
+	// the global default registerer. They appear wherever this process serves
+	// /metrics: on the product router, or, for DutiesWorkers, on the listener
+	// at SMITHERS_METRICS_ADDR. Both require the SMITHERS_METRICS_TOKEN bearer
+	// token. A collector that conflicts with a product metric fails startup.
+	MetricsCollectors []prometheus.Collector
 }
 
 // Duties is one process's share of the product composition.
@@ -196,6 +204,7 @@ func (cfg Config) options() compose.Options {
 		Recommender:            cfg.Recommender,
 		RecommendationLog:      cfg.RecommendationLog,
 		ModelStreamHost:        cfg.ModelStreamHost,
+		MetricsCollectors:      append([]prometheus.Collector(nil), cfg.MetricsCollectors...),
 	}
 }
 

@@ -258,8 +258,7 @@ func buildRouter(
 	// binding; the Cloudflare status worker must send it as `Authorization: Bearer <token>`).
 	// RequireSharedBearerToken fails safe (401) when the token is unset.
 	if smithersMetrics != nil {
-		metricsToken := strings.TrimSpace(os.Getenv("SMITHERS_METRICS_TOKEN"))
-		r.With(middleware.RequireSharedBearerToken(metricsToken)).Get("/metrics", smithersMetrics.Handler().ServeHTTP)
+		r.Get("/metrics", protectedMetricsHandler(smithersMetrics).ServeHTTP)
 	}
 
 	r.Route("/internal", func(r chi.Router) {

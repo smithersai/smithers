@@ -369,6 +369,17 @@ func (m *SmithersMetrics) MustRegister(collectors ...prometheus.Collector) {
 	m.registry.MustRegister(collectors...)
 }
 
+// Register adds deployment-owned collectors to the isolated Smithers registry
+// and reports a conflicting or invalid collector instead of panicking.
+func (m *SmithersMetrics) Register(collectors ...prometheus.Collector) error {
+	for _, collector := range collectors {
+		if err := m.registry.Register(collector); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ObserveCanaryWebhookReceipt records a validated canary webhook delivery.
 func (m *SmithersMetrics) ObserveCanaryWebhookReceipt(receivedAt time.Time) {
 	if m == nil || m.CanaryWebhookLastReceivedTimestampSeconds == nil {

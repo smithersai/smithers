@@ -221,6 +221,13 @@ type ObservabilityConfig struct {
 	// OTLPEndpoint is the OTLP/HTTP trace collector endpoint used when
 	// OTelExporter is "otlp". Env: SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT
 	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
+
+	// MetricsAddr is the listen address of the Prometheus /metrics endpoint in
+	// a workers-only process, which serves no product router. It requires the
+	// same SMITHERS_METRICS_TOKEN bearer token as the router's /metrics. Empty
+	// exports no worker metrics; processes that serve HTTP reject it.
+	// Env: SMITHERS_METRICS_ADDR
+	MetricsAddr string `mapstructure:"metrics_addr"`
 }
 
 type ServerConfig struct {
@@ -576,6 +583,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("observability.trace_sample_rate", 0.01)
 	v.SetDefault("observability.otel_exporter", "none")
 	v.SetDefault("observability.otlp_endpoint", "")
+	v.SetDefault("observability.metrics_addr", "")
 	v.SetDefault("email.smtp_host", "")
 	v.SetDefault("email.smtp_port", 587)
 	v.SetDefault("email.smtp_user", "")
@@ -732,6 +740,7 @@ func Load(configFile string) (*Config, error) {
 		{"observability.trace_sample_rate", "SMITHERS_TRACE_SAMPLE_RATE"},
 		{"observability.otel_exporter", "SMITHERS_OTEL_EXPORTER"},
 		{"observability.otlp_endpoint", "SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT"},
+		{"observability.metrics_addr", "SMITHERS_METRICS_ADDR"},
 		{"email.smtp_host", "SMITHERS_EMAIL_SMTP_HOST"},
 		{"email.smtp_port", "SMITHERS_EMAIL_SMTP_PORT"},
 		{"email.smtp_user", "SMITHERS_EMAIL_SMTP_USER"},

@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-chi/cors"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/smithersai/smithers/packages/backend/admission"
@@ -122,6 +123,9 @@ type Options struct {
 	Recommender            ports.Recommender
 	RecommendationLog      ports.RecommendationLog
 	ModelStreamHost        ports.ModelStreamHost
+	// MetricsCollectors are deployment collectors exported with the product
+	// registry on this process's /metrics endpoint.
+	MetricsCollectors []prometheus.Collector
 }
 
 // Duties splits one product composition across processes. A deployment
@@ -205,8 +209,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if options.Commerce != nil && !options.topology.servesHTTP() {
 		return errors.New("worker duties do not accept commerce authority")
 	}
+	cfg.Observability.MetricsAddr = strings.TrimSpace(cfg.Observability.MetricsAddr)
+	if cfg.Observability.MetricsAddr != "" && options.topology.servesHTTP() {
+		return errors.New("observability.metrics_addr applies only to worker duties; HTTP processes serve /metrics on the product router")
+	}
 	if err := config.ValidateServerStartupWithDependencies(cfg, config.StartupDependencies{
-		InProcessRepository: !options.topology.hosted() && options.Repository != nil,
+		InProcessRepository: options.Repository != nil && options.Repository.InProcess(),
 		WorkspaceRuntime:    options.Workspace != nil,
 		ComputeProvider:     options.ComputeProvider != nil,
 		MeteredAdmission:    options.Admission != nil,
@@ -238,6 +246,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	logStartupConfig(cfg)
 
 	smithersMetrics := routes.NewSmithersMetrics()
+	if err := smithersMetrics.Register(options.MetricsCollectors...); err != nil {
+		return fmt.Errorf("register deployment metrics: %w", err)
+	}
 
 	// Initialize OpenTelemetry
 	var tp *trace.TracerProvider
@@ -1451,10 +1462,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		workspaceRuntime: options.Workspace != nil,
 		isolatedSandbox:  provider != nil || (options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed),
 	}), apiCORSOptions(cfg))
-	if !options.topology.hosted() {
-		if options.Repository != nil {
-			r = withLocalReadiness(r, pool, options.Repository)
-		}
+	// An in-process repository has no network health endpoint; a remote
+	// client, whatever the identity mode, is probed at repo_host.url by the router.
+	if options.Repository != nil && options.Repository.InProcess() {
+		r = withLocalReadiness(r, pool, options.Repository)
 	}
 	r = mountBlobTransferHandler(r, transferStore, cfg)
 	r = withCriticalWorkerReadiness(r, flowWorker)
@@ -1478,6 +1489,16 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 				ReadHeaderTimeout: srv.ReadHeaderTimeout, WriteTimeout: srv.WriteTimeout,
 				IdleTimeout: srv.IdleTimeout, ShutdownTimeout: shutdownTimeout},
 		})
+	}
+
+	var workerMetrics *workerMetricsServer
+	if cfg.Observability.MetricsAddr != "" {
+		workerMetrics, err = startWorkerMetricsServer(cfg.Observability.MetricsAddr, smithersMetrics)
+		if err != nil {
+			return err
+		}
+		// Shutdown drains it on the normal path; this covers startup failures.
+		defer workerMetrics.Close()
 	}
 
 	// Start landing worker in a background goroutine.
@@ -1623,6 +1644,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		case fatalWorkerErr = <-flowWorkerFailure:
 		case fatalWorkerErr = <-chatWorkerFailure:
 		case fatalWorkerErr = <-chatCallbackFailure:
+		case fatalWorkerErr = <-workerMetrics.Failed():
 		}
 		if !options.externalHTTP && options.topology.servesHTTP() {
 			signal.Stop(sigCh)
@@ -1707,6 +1729,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		if goldenSnapshotService != nil {
 			goldenSnapshotService.Stop()
 		}
+		// Keep exporting until the workers have stopped.
+		metricsStopCtx, stopMetrics := context.WithTimeout(context.Background(), shutdownTimeout)
+		shutdownErr = errors.Join(shutdownErr, workerMetrics.Shutdown(metricsStopCtx))
+		stopMetrics()
 		// Release the LISTEN connection before run closes the shared pool.
 		stopRevocationBus()
 

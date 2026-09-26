@@ -19,8 +19,14 @@ import (
 func NewLocalClient(handler http.Handler, authToken string, metrics ...RepoHostOperationDurationObserver) *Client {
 	client := NewClient(&StaticStorageSetResolver{URL: "http://repository.local"}, authToken, metrics...)
 	client.httpClient = &http.Client{Transport: &handlerTransport{handler: handler}}
+	client.inProcess = true
 	return client
 }
+
+// InProcess reports whether the client calls an embedded repository handler
+// rather than a repo-host service over the network. Only an in-process client
+// replaces the repo_host.url requirement and the network readiness probe.
+func (c *Client) InProcess() bool { return c != nil && c.inProcess }
 
 // NewLocalClientWithStagingEndpoint keeps control requests in process while
 // giving Git subprocesses a reachable, token-scoped staging URL.

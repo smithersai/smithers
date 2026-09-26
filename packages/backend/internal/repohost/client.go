@@ -72,6 +72,7 @@ type Client struct {
 	readTimeout         time.Duration
 	metrics             RepoHostOperationDurationObserver
 	localStagingBaseURL string
+	inProcess           bool
 }
 
 const defaultReadTimeout = 30 * time.Second
