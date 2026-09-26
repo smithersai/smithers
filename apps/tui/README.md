@@ -2,6 +2,8 @@
 
 A minimal terminal coding agent over the Smithers cell harness.
 
+[User guide](docs/README.md) · [Executable Astro documentation](../tui-docs/README.md)
+
 The agent has no tools. Each model turn writes a JavaScript cell that calls
 flows through `ctx.call`. The TUI streams each cell as it is written, then its
 flow calls, printed output, and result. Keys and commands follow

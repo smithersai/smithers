@@ -467,6 +467,8 @@ run_gate() {
       ;;
     docs)
       pnpm exec smthrs ci '//apps/docs/...' --verbose
+      pnpm exec smthrs run '//apps/tui-docs:check' --verbose
+      pnpm exec smthrs test '//apps/tui-docs:test' --verbose
       ;;
     review-eval)
       pnpm exec smthrs test '//evals/review-seeded-bugs/...' --verbose

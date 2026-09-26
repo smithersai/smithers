@@ -75,7 +75,14 @@ describe("Smithers Cloud CI", () => {
         const repair = name === "target-index" ? "pnpm exec smthrs target '//:targetIndex' --write --verbose" : undefined
         const all = Array.from(body.matchAll(/^ {6,8}(pnpm exec .+)$/gm), ([, command]) => command!)
         if (repair) expect(all).toContain(repair)
-        const commands = all.filter(command => command !== repair)
+        // Dedicated TUI docs add Cloud-only checks; the existing GitHub docs
+        // fleet command stays pinned without creating another Actions lane.
+        const cloudOnly = name === "docs" ? [
+          "pnpm exec smthrs run '//apps/tui-docs:check' --verbose",
+          "pnpm exec smthrs test '//apps/tui-docs:test' --verbose"
+        ] : []
+        for (const command of cloudOnly) expect(all).toContain(command)
+        const commands = all.filter(command => command !== repair && !cloudOnly.includes(command))
         expect(commands.length).toBe(1)
         expect(github).toContain(`run: "${commands[0]}"`)
       }

@@ -1,0 +1,14 @@
+---
+import { getEntry, render } from 'astro:content'
+import Docs from '../layouts/Docs.astro'
+import Playground from '../components/Playground.astro'
+const page = (await getEntry('docs', 'readme'))!
+const { Content, headings } = await render(page)
+---
+<Docs {...page.data} headings={headings}><Content/><template id="playground-template"><Playground/></template></Docs>
+<script>
+const template = document.querySelector<HTMLTemplateElement>('#playground-template')!
+document.querySelector('playground')?.replaceWith(template.content)
+import { mount } from '../playground/ui'
+mount()
+</script>

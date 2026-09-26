@@ -133,6 +133,11 @@ export const pages: readonly PageSpec[] = [
   ]),
   page({ id: "coding-experience", title: "Stack and debugger interaction study", purpose: "Apply concrete prior-art interactions while labeling recommendations separately from current UI behavior.", kind: "intent", document: "factory/wiki/pages/coding-experience.md", related: ["coding-direction", "coding-ui", "product-ui", "native-engine-evidence"] }, [
     ["apps/app/docs/workbench-lanes/coding-plans.md", [1, 137]], "apps/app/docs/workbench-lanes/native-engine-evidence.md", "factory/wiki/pages/coding-direction.md"
+  ]),
+  page({ id: "tui-docs", title: "Executable terminal documentation", purpose: "Build the terminal recordings and verify browser checkpoint recovery and sponsored model boundaries.", kind: "current", document: "apps/tui-docs/README.md", related: ["agent", "runtime", "build-graph"] }, [
+    "apps/tui-docs/PACKAGE.ts", "apps/tui-docs/scripts/targets.ts", "apps/tui-docs/scripts/inputs.mjs", "apps/tui-docs/scripts/record.mjs",
+    "apps/tui-docs/src/playground/store.ts", "apps/tui-docs/src/playground/agent.ts", "apps/tui-docs/src/playground/provider.ts",
+    "apps/tui-docs/server/sponsor.mjs", "apps/tui-docs/test/playground.test.ts", "apps/tui-docs/scripts/browser-test.mjs"
   ])
 ]
 export const sourceFiles = [...new Set(pages.flatMap((page) => [page.document, ...page.inputs]))].sort()
