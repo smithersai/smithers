@@ -29,7 +29,8 @@ RUN CARGO_BUILD_JOBS=2 cargo build --locked --release --package smithers-ffi \
   && rm -rf target
 
 # Git is built from an authenticated HTTPS source archive whose bytes and
-# version are fixed here. Runtime startup never downloads a tool.
+# version are fixed here; a second kernel.org origin covers a mirror outage,
+# and the digest check below decides either way. Runtime startup never downloads a tool.
 FROM debian:bookworm-slim AS git-cli
 ARG GIT_VERSION=2.50.1
 ARG GIT_SHA256=7e3e6c36decbd8f1eedd14d42db6674be03671c2204864befa2a41756c5c8fc4
@@ -37,9 +38,11 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     build-essential ca-certificates curl libcurl4-openssl-dev libexpat1-dev \
     libpcre2-dev libssl-dev xz-utils zlib1g-dev \
-  && curl --fail --location --proto '=https' --tlsv1.2 \
-    "https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_VERSION}.tar.xz" \
-    --output /tmp/git.tar.xz \
+  && for origin in mirrors.edge.kernel.org cdn.kernel.org; do \
+    curl --fail --location --proto '=https' --tlsv1.2 --connect-timeout 30 --retry 3 --retry-all-errors \
+      "https://${origin}/pub/software/scm/git/git-${GIT_VERSION}.tar.xz" \
+      --output /tmp/git.tar.xz && break; \
+  done \
   && echo "${GIT_SHA256}  /tmp/git.tar.xz" | sha256sum -c - \
   && mkdir /tmp/git-src \
   && tar --extract --xz --file /tmp/git.tar.xz --directory /tmp/git-src --strip-components=1 \
