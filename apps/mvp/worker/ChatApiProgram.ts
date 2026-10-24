@@ -44,6 +44,8 @@ import * as RepoConfig from "./RepoConfig.ts"
 import * as DomainsApi from "./domains/Api.ts"
 import * as DomainsConfig from "./domains/Config.ts"
 import { DomainProvider } from "./domains/Provider.ts"
+import * as PersonalApi from "./personal/Api.ts"
+import { PersonalModels } from "./personal/Models.ts"
 import * as SecretsApi from "./secrets/Api.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
@@ -105,12 +107,18 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     yield* SecretsInfra.bind
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(ChatDatabase)
     const database = Database.layer(hyperdrive.connectionString)
+    // Repository secrets (docs/features/secrets.md): write-only values sealed under SECRETS_KEY, off without it. A
+    // person's own model's key is sealed under it too (docs/features/personal-model.md).
+    const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
+    const personalModels = PersonalModels.layer(database).pipe(Layer.provide(Layer.succeed(SecretKeys, secretKeys)))
     const chat = yield* Chat.make(database, {
       // Generated views render in the realm on the QuickJS build the bundle compiled (worker/ViewRealm.ts).
       realm: ViewRealm.load,
       ...(options.localHttp === undefined ? {} : { localHttp: options.localHttp }),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
     })
+    // A person's own model (docs/features/personal-model.md): saving, removing and testing it, and its shape.
+    const personalApi = yield* PersonalApi.make(database)
     const signIn = yield* SignIn.make(database, options).pipe(Effect.provide(FetchHttpClient.layer))
     // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, and reads at a commit,
     // cached in this Worker's Cache API.
@@ -119,8 +127,6 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // The branch workspace (docs/features/branch-workspace.md): tracking a branch, its terminals, and the branches'
     // machines, `SandboxObject`s ChatApi hosts (worker/BranchSandboxes.ts).
     const branchApi = yield* BranchApi.make(database).pipe(Effect.provide(FetchHttpClient.layer))
-    // Repository secrets (docs/features/secrets.md): write-only values sealed under SECRETS_KEY, off without it.
-    const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
     const secretsApi = yield* SecretsApi.make(yield* GitHubConfig.repository)
     // Custom domains (docs/features/domains.md): a Maintainer's, through the deployment's provider; off without one.
     const domainsApi = yield* DomainsApi.make(yield* GitHubConfig.repository, database)
@@ -273,6 +279,15 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
             Effect.provide(signedIn),
           )
         }
+        if (PersonalApi.handles(path)) {
+          return yield* personalApi.fetch.pipe(
+            Effect.provideService(Flows.FlowStarter, starter),
+            Effect.provideService(SecretKeys, secretKeys),
+            Effect.provide(personalModels),
+            Effect.provide(signedIn),
+            Effect.provide(FetchHttpClient.layer),
+          )
+        }
         if (DomainsApi.handles(path)) {
           return yield* domainsApi.fetch.pipe(
             Effect.provideService(Flows.FlowStarter, starter),
@@ -311,6 +326,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         // only, and their answers kept in this Worker's Cache API (worker/WebPreview.ts).
         return yield* chat.fetch.pipe(
           Effect.provideService(Flows.FlowStarter, starter),
+          // The model endpoint answers a person who saved a model of their own with it.
+          Effect.provide(personalModels),
           Effect.provide(signedIn),
           Effect.provide(docsSource),
           Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),

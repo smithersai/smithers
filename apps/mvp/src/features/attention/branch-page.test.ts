@@ -12,6 +12,7 @@ import { Branch } from "../branch/branch"
 import { Chat } from "../chat/chat"
 import { CodeIntel } from "../code-intel/codeIntel"
 import { Commands } from "../commands/commands"
+import { PersonalModel } from "../personal-model/personalModel"
 import { Repo } from "../repo/repo"
 import { Spend } from "../spend/spend"
 import { Status } from "../status/status"
@@ -49,7 +50,8 @@ test("a branch page renders its shared inline toast stack below the header", asy
     })
     await router.load()
     expect(router.state.matches.map((match) => match.routeId)).toContain(route.id)
-    const html = branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, todos })(router)
+    const personalModel = await runtime.runPromise(Effect.service(PersonalModel))
+    const html = branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos })(router)
     expect(html).toContain('class="branch-screen"')
     expect(html).toContain('data-placement="inline"')
     expect(html).toContain(`data-subject="${subject}"`)

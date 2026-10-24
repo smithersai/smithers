@@ -32,6 +32,7 @@ import { SECRETS_TELEMETRY } from "./features/secrets/contract"
 import { SPEND_TELEMETRY } from "./features/spend/contract"
 import { PLUGINS_TELEMETRY } from "./plugins/contract"
 import { DOMAINS_TELEMETRY } from "./features/domains/contract"
+import { PERSONAL_MODEL_TELEMETRY } from "./features/personal-model/contract"
 import { STATUS_TELEMETRY } from "./features/status/contract"
 import { TERMINAL_TELEMETRY } from "./features/terminal/contract"
 import { PRESENCE_TELEMETRY } from "./features/presence/contract"
@@ -159,6 +160,7 @@ const features: ReadonlyArray<Telemetry> = [
   SPEND_TELEMETRY,
   PLUGINS_TELEMETRY,
   DOMAINS_TELEMETRY,
+  PERSONAL_MODEL_TELEMETRY,
   HOME_TELEMETRY,
   DOCS_TELEMETRY,
   ATTENTION_TELEMETRY,

@@ -134,6 +134,8 @@ describe("the parity law", () => {
       "todo/inspect",
       "todo/Retry",
       "watch/set",
+      "model/test",
+      "model/remove",
       "sandbox/run",
       "sandbox/read",
       "sandbox/write",
@@ -148,7 +150,7 @@ describe("names and placement", () => {
   test("each entry is registered under its own flow's tag, in a namespace only the app claims", () => {
     for (const name of names) {
       expect(registry[name].flow._tag).toBe(name)
-      expect(name).toMatch(/^(app|auth|chat|repo|ui|view|flow|run|branch|conversation|terminal|issue|triage|todo|watch|notification|alert|domain|sandbox|timeline|file)\//)
+      expect(name).toMatch(/^(app|auth|chat|repo|ui|view|flow|run|branch|conversation|terminal|issue|triage|todo|watch|notification|alert|domain|model|sandbox|timeline|file)\//)
     }
   })
 
@@ -247,6 +249,8 @@ describe("names and placement", () => {
       "alert/channel",
       "domain/add",
       "domain/remove",
+      "model/test",
+      "model/remove",
       "sandbox/run",
       "sandbox/read",
       "sandbox/write",
@@ -290,9 +294,9 @@ describe("side effects (the registry's `changes`)", () => {
     for (const name of READS) expect(agentFlows).toContain(name)
   })
 
-  test("only a flow that says what it changes asks the person first, and saving or deleting your flow does", () => {
+  test("only a flow that says what it changes asks the person first: saving or deleting your flow, removing your model", () => {
     const asking = names.filter((name) => entryOf(name).confirm !== undefined)
-    expect(asking).toEqual(["flow/save", "flow/delete", "flow/draft/delete"])
+    expect(asking).toEqual(["flow/save", "flow/delete", "flow/draft/delete", "model/remove"])
     for (const name of asking) expect([name, entryOf(name).changes !== undefined]).toEqual([name, true])
   })
 
@@ -315,6 +319,15 @@ describe("side effects (the registry's `changes`)", () => {
 })
 
 describe("the agent's catalog", () => {
+  test("tests and removes the person's own model, asking before a remove, and never saves one (decision 0096)", () => {
+    // Saving takes the key, which never enters a model's context, a journal or the device: it is no flow at all.
+    expect(names.filter((name) => name.startsWith("model/"))).toEqual(["model/test", "model/remove"])
+    expect(agentFlows.filter((name) => name.startsWith("model/"))).toEqual(["model/test", "model/remove"])
+    for (const name of ["model/test", "model/remove"] as const) expect(entryOf(name).minimum).toBe("member")
+    expect(catalogDescription("model/test")).toContain("Side effect: makes one tiny call with the person's own model")
+    expect(catalogDescription("model/remove")).toContain('Approval: this call asks the person "Remove your model?"')
+  })
+
   test("names each cell call's child execution by the call's replay-stable identity", () => {
     expect(childExecutionId({ session: "answer-1/chat/Respond@abc:1", frame: 2, ordinal: 0 } as never)).toBe(
       "answer-1/chat/Respond@abc:1/call/2.0",

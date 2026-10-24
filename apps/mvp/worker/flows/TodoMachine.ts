@@ -49,3 +49,17 @@ export const ofExecution = (executionId: string) =>
     if (row === undefined || row.branch === null) return Option.none<TodoMachine>()
     return Option.some(machineOf({ attemptId, repoId: row.repoId, branch: row.branch, ownerId: row.ownerId }))
   })
+
+/**
+ * The person a `todo` run's execution is for: who committed its TODO, so their own model answers its agent
+ * (docs/features/personal-model.md#todo-runs). `None` for any other run. Reads only.
+ */
+export const ownerOf = (executionId: string) =>
+  Effect.gen(function* () {
+    const attemptId = executionId.slice("todo:".length)
+    if (todoExecutionId(attemptId) !== executionId || !UUID.test(attemptId)) return Option.none<string>()
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly ownerId: string }>`
+      SELECT t.created_by AS "ownerId" FROM todo_attempts a JOIN todos t ON t.id = a.todo_id WHERE a.id = ${attemptId}::uuid`
+    return Option.fromNullishOr(row?.ownerId)
+  })

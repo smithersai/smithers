@@ -31,6 +31,7 @@ import * as TodoAgent from "../worker/flows/TodoAgent.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../worker/github/test/fixtures.ts"
 import { scriptedGitHub } from "../worker/github/test/scriptedGitHub.ts"
 import * as ModelEndpoint from "../worker/ModelEndpoint.ts"
+import { PersonalModels } from "../worker/personal/Models.ts"
 import * as Stack from "../worker/stack/Stack.ts"
 import * as Box from "../worker/test/box.ts"
 import { runFlow } from "../worker/test/flowHost.ts"
@@ -161,6 +162,7 @@ const trial = async (real: HostModel["Service"], installed: boolean): Promise<Tr
   const seat = await Effect.runPromise(
     ModelEndpoint.local(database).pipe(
       Effect.provideService(HostModel, HostModel.of({ ...real, model })),
+      Effect.provide(PersonalModels.none),
       Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
     ),
   )

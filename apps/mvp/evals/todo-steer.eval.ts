@@ -26,6 +26,7 @@ import * as SandboxCommand from "../worker/flows/SandboxCommand.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../worker/github/test/fixtures.ts"
 import { scriptedGitHub } from "../worker/github/test/scriptedGitHub.ts"
 import * as ModelEndpoint from "../worker/ModelEndpoint.ts"
+import { PersonalModels } from "../worker/personal/Models.ts"
 import * as Stack from "../worker/stack/Stack.ts"
 import { runFlow } from "../worker/test/flowHost.ts"
 import { testFile } from "../worker/test/harness.ts"
@@ -103,6 +104,7 @@ const trial = async (real: HostModel["Service"]): Promise<Trial> => {
   const seat = await Effect.runPromise(
     ModelEndpoint.local(database).pipe(
       Effect.provideService(HostModel, HostModel.of({ ...real, model })),
+      Effect.provide(PersonalModels.none),
       Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
     ),
   )

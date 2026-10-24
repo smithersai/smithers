@@ -141,6 +141,9 @@ export default defineConfig({
         // Repository secrets: the write routes, the flows, the shape and the sandbox egress (docs/features/secrets.md).
         "worker/secrets/*.ts",
         "db/migrations/0021_secrets.ts",
+        // A person's own model: the routes, the flows, the shape, opening it and its ledger (docs/features/personal-model.md).
+        "worker/personal/*.ts",
+        "db/migrations/0056_personal_models.ts",
         // Custom domains: the provider adapters, the flows, the routes and the shape (docs/features/domains.md).
         "worker/domains/*.ts",
         "db/migrations/0046_domains.ts",

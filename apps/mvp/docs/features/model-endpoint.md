@@ -1,6 +1,6 @@
 # The metered model endpoint
 
-Every model call the browser's agent makes goes through one server endpoint, `POST /api/model/<role>` on ChatApi. The endpoint holds the provider key, refuses callers who may not ask Smithers, picks the role's model, reserves each call's worst case against the deployment's budget and settles it to what the call spent. Decisions: [0011](../decisions/0011-the-agent-runs-in-the-browser.md) §3, [0004](../decisions/0004-agent-ui-codemode-and-rendering.md) question 2, [0008](../decisions/0008-auth.md) §11.
+Every model call the browser's agent makes goes through one server endpoint, `POST /api/model/<role>` on ChatApi. The endpoint holds the provider key, refuses callers who may not ask Smithers, picks the role's model, reserves each call's worst case against the deployment's budget and settles it to what the call spent. A person who saved a model of their own is answered by it instead, with their key, outside the budget ([Your model](personal-model.md#answering)). Decisions: [0011](../decisions/0011-the-agent-runs-in-the-browser.md) §3, [0004](../decisions/0004-agent-ui-codemode-and-rendering.md) question 2, [0008](../decisions/0008-auth.md) §11, [0096](../decisions/0096-personal-models.md).
 
 ## How it works
 
@@ -11,6 +11,8 @@ browser agent (a durable ModelStep) ── ModelProxy.layerClient ── POST /a
                                 └ Guest, no role ──▶ 403 authentication
               bound the request ─ bad ──▶ 400 invalid_request      (over MODEL_MAX_REQUEST_BYTES: 413, before prepare)
                 (caps: maxTokens a whole number above 0, thinkingBudget one of at least 0)
+              personal_models[person] ─ row ──▶ their model, their ledger, no budget   (personal-model.md)
+                                      └ can't be used ──▶ 409 no_route   (never the deployment's model)
               model_roles[role] ─ row ──▶ HostModel.make(row) ─ unusable ──▶ 409 no_route
                                 └ none ─▶ HostModel (CHAT_MODEL); summary: SUMMARY_MODEL, else 409 no_route
               reserve bytes + caps, one statement:
@@ -100,8 +102,8 @@ Every refusal is a JSON body `{ code, message, requestId }` with a `ModelError` 
 | `405` | `invalid_request` | not a `POST` |
 | `413` | `invalid_request` | the body is over `MODEL_MAX_REQUEST_BYTES` |
 | `429` | `quota_exceeded` | today's budget is spent |
-| `409` | `no_route` | the role's setting can't be used here, or the summary role has no model |
-| `503` | `provider_internal` | Postgres couldn't be read |
+| `409` | `no_route` | the role's setting can't be used here, the summary role has no model, or the person's own model can't be used here |
+| `503` | `provider_internal` | Postgres couldn't be read, or a person's own call couldn't be written to their ledger |
 
 ## Postgres
 

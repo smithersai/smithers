@@ -14,6 +14,8 @@ import { githubHarness } from "./github/test/harness.ts"
 import { domainRoute, domainsRoute } from "../src/features/domains/contract.ts"
 import { domainsHarness, switchable } from "./domains/test/harness.ts"
 import { REPO, secretsHarness } from "./secrets/test/harness.ts"
+import { PERSONAL_MODEL_ROUTE } from "../src/features/personal-model/contract.ts"
+import { personalHarness, SAVE } from "./personal/test/harness.ts"
 import { stackHarness } from "./stack/test/stack.ts"
 import { branchHarness } from "./test/branch.ts"
 import { harness, testFile } from "./test/harness.ts"
@@ -130,6 +132,15 @@ const protectedActs: { readonly [A in keyof typeof PROTECTED_ACTS]: Case } = {
     return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
   },
   "pr/merge": gitWrite({ op: "pr/merge", number: 1, headSha: "a".repeat(40), baseSha: "b".repeat(40) }),
+  model: async (actor, act) => {
+    const h = await personalHarness(runtime, { start: () => Effect.die(new Error("never started")) }, { actor })
+    const { status } = await h.fetch(PERSONAL_MODEL_ROUTE, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(SAVE),
+    })
+    return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
+  },
 }
 
 describe("person-only acts refuse anyone acting for the person", () => {

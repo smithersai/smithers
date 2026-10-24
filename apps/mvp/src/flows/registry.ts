@@ -43,6 +43,7 @@ import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
+import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { AskWithForm, RenderView, SetViewState } from "../features/views/flows"
@@ -343,6 +344,19 @@ export const registry = {
   "domain/remove": {
     flow: DomainRemove,
     userOnlyReason: "Removing a domain takes the app off it; only a Maintainer does, never the agent.",
+  },
+  // A person's own model (decision 0096, docs/features/personal-model.md#the-flows): Test and Remove in Settings, and
+  // the agent alike (ruling FLOW-3). Saving is no flow: its key never enters a model's context, a journal or the device.
+  "model/test": {
+    flow: ModelTest,
+    minimum: "member",
+    changes: "makes one tiny call with the person's own model, which spends a few of their tokens",
+  },
+  "model/remove": {
+    flow: ModelRemove,
+    minimum: "member",
+    changes: "removes the person's own model, so the deployment's model answers them",
+    confirm: "Remove your model?",
   },
   // The sandbox tools (decision 0005 §5, docs/features/sandbox-tools.md): what the agent's hands are on a branch's
   // machine, and a person's slash commands alike. Each runs as the person who asked, who must be able to edit the

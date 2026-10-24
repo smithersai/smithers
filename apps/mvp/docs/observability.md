@@ -229,7 +229,7 @@ Metrics (`worker/ChatMetrics.ts`):
 
 ### Model endpoint
 
-`POST /api/model/<role>` ([model-endpoint.md](features/model-endpoint.md)) records through `ModelProxy.serve` (`@smthrs/model`), which ChatApi mounts with the attribute `role` and `onEnd` metering (`worker/ModelEndpoint.ts`). None of its records carries a prompt, an answer, provider error text, a key or an actor id.
+`POST /api/model/<role>` ([model-endpoint.md](features/model-endpoint.md)) records through `ModelProxy.serve` (`@smthrs/model`), which ChatApi mounts with the attribute `role` and `onEnd` metering (`worker/ModelEndpoint.ts`). None of its records carries a prompt, an answer, provider error text, a key or an actor id. A call a person's own model answers is metered in their ledger instead ([Your model](#your-model)).
 
 | Message | When | Level | Fields |
 |---|---|---|---|
@@ -633,6 +633,24 @@ An Admin's writes of repository secrets, their shape, and a box's requests throu
 | `smithers_web_secret_writes` | counter | browser, the Secrets page | `op`, `outcome` |
 
 The egress turns its HTTP client's own span off, so no request header reaches a trace. `secret_events` keeps each decision in Postgres for the audit.
+
+### Your model
+
+A person's own model: its routes, its shape, the `model/*` flows' steps, and the calls it answers ([personal-model.md](features/personal-model.md#observability)). No record carries a key, a ciphertext, a base URL, a model id or a prompt; no metric label carries a person.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `personal_model.request` | log, span | ChatApi | `op` (`put`, `delete`, `test`), `outcome` (`putting`, `deleting`, `ok`, `failed`, or the refusal), `code`, `protocol`, `failure` (a test's code), `providerStatus`, `status`, `durationMs`, `errorCode` |
+| `smithers_personal_model_requests` | counter | ChatApi | `op`, `outcome` |
+| `personal_model.shape` | log, span | ChatApi | `status`, `live`, `durationMs`, `bytes`, `outcome` |
+| `smithers_personal_model_shape_requests` | counter | ChatApi | `status`, `live` |
+| `personal_model.write` | log, span | the `FlowExecution` Durable Object | `op`, `change` (`set`, `replace`, `deleted`, `missing`, `repeat`), `outcome`, `errorCode` |
+| `smithers_personal_model_writes` | counter | the `FlowExecution` Durable Object | `op`, `change` |
+| `personal_model.call` | log | ChatApi, the `FlowExecution` Durable Object | a call the person's model didn't finish: `role`, `invocationId`, `outcome` (`failed`, `interrupted`), `errorCode`, `httpStatus` (the provider's); a warning for a refused key |
+| `smithers_personal_model_calls` | counter | ChatApi, the `FlowExecution` Durable Object | `role` (a model role, or `test`), `outcome` |
+| `smithers_personal_model_tokens` | counter | ChatApi, the `FlowExecution` Durable Object | `role`, `type` (`input`, `output`) |
+| `personal_model.usage`, `smithers_personal_model_usage_errors` | log, counter | ChatApi, the `FlowExecution` Durable Object | a ledger write Postgres refused: `op` (`begin`, `end`), `invocationId`, `errorCode` |
+| `model.endpoint` | log | ChatApi | `own_unusable:<reason>` for a saved model that can't be used here |
 
 ### Custom domains
 

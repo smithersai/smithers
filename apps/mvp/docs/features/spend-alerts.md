@@ -33,7 +33,7 @@ The alert is a durable record. Decision 0009's feed can route each row to Admins
 
 ## Channels
 
-An Admin sets where alerts go outside the app at **Settings** (`/app/settings`, the header's Settings link, which only an Admin sees): email addresses, and one Telegram chat. A channel is on once it has a destination; clearing the field turns it off. The setting is the deployment's, not a person's.
+An Admin sets where alerts go outside the app at **Settings** (`/app/settings`, the header's Settings link; a Member sees the page too, for their own model, but not this section): email addresses, and one Telegram chat. A channel is on once it has a destination; clearing the field turns it off. The setting is the deployment's, not a person's.
 
 ```
 Settings ── Save ──▶ alert/channel { channel, destinations }      (the tab's engine; retried an hour while offline)

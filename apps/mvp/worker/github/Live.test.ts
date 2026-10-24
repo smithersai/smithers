@@ -15,6 +15,7 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { beforeEach, describe, expect, test } from "vitest"
 import { ACCEPTED_LABEL, NOT_ACCEPTED_LABEL, triageRunExecutionId } from "../../src/features/issues/contract.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
+import { PersonalModels } from "../personal/Models.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.ts"
@@ -194,6 +195,7 @@ describe.skipIf(triageMissing.length > 0 || refused)("the real GitHub, triage", 
     const base = await live()
     const local = await Effect.runPromise(
       ModelEndpoint.local(base.database).pipe(
+        Effect.provide(PersonalModels.none),
         Effect.provide(
           HostModel.layerConfig("CHAT_MODEL", {
             protocol: "openai-chat",

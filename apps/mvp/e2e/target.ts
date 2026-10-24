@@ -230,6 +230,10 @@ const needs = {
       run.target === "deployment" || set(run, MODEL_KEY) || dotEnvSets(run.env.E2E_DOT_ENV ?? DOT_ENV, MODEL_KEY),
     reason: "it waits for the real model's answers: a deployment, or a local dev server with CEREBRAS_API_KEY set in its environment or apps/mvp/.env (the Mac mini's dev server has no model)",
   },
+  personalModelKey: {
+    met: (run) => set(run, "E2E_PERSONAL_MODEL_KEY") || set(run, "OPENAI_API_KEY"),
+    reason: "it saves a real provider's key as the person's own model: set E2E_PERSONAL_MODEL_KEY, or OPENAI_API_KEY through the vault's environment wrapper (with E2E_PERSONAL_MODEL_BASE_URL and E2E_PERSONAL_MODEL for a provider other than OpenAI)",
+  },
   factoryRepository: {
     met: (run) => run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!),
     reason: "it runs TODOs to pull requests: run against a live instance whose GITHUB_REPOSITORY is a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",

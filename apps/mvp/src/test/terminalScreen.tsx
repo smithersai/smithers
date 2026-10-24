@@ -11,6 +11,8 @@ import type { StatusView } from "../features/status/status"
 import type { CommandsView } from "../features/commands/commands"
 import type { ThemeView } from "../features/theme/theme"
 import type { SpendView } from "../features/spend/spend"
+import type { PersonalModelView } from "../features/personal-model/personalModel"
+import { PersonalModelProvider } from "../features/personal-model/components/PersonalModelContext"
 import { ChatProvider } from "../AppContext"
 import { AttentionProvider } from "../features/attention/components/AttentionContext"
 import { AuthProvider } from "../features/auth/components/AuthContext"
@@ -35,6 +37,7 @@ export const renderTerminalScreen = (
     readonly status: StatusView
     readonly commands: CommandsView
     readonly spend: SpendView
+    readonly personalModel: PersonalModelView
   },
   theme: ThemeView,
 ): string => {
@@ -44,6 +47,7 @@ export const renderTerminalScreen = (
         <AuthProvider value={views.auth}>
           <AttentionProvider value={views.attention}>
             <SpendProvider value={views.spend}>
+              <PersonalModelProvider value={views.personalModel}>
               <StatusProvider value={views.status}>
                 <CommandsProvider value={views.commands}>
                   <RepoProvider value={context.repo}>
@@ -59,6 +63,7 @@ export const renderTerminalScreen = (
                   </RepoProvider>
                 </CommandsProvider>
               </StatusProvider>
+              </PersonalModelProvider>
             </SpendProvider>
           </AttentionProvider>
         </AuthProvider>

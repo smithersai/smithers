@@ -19,6 +19,7 @@ import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as ModelSpend from "./ModelSpend.ts"
 import * as ModelRoles from "./ModelRoles.ts"
 import * as ModelUsage from "./ModelUsage.ts"
+import { PersonalModels } from "./personal/Models.ts"
 import * as SetModel from "./SetModel.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 import { Summarize, SummaryFailed } from "../src/features/timeline/flow.ts"
@@ -1158,6 +1159,7 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
     const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
     const local = await Effect.runPromise(
       ModelEndpoint.local(database, { alerts: true }).pipe(
+        Effect.provide(PersonalModels.none),
         Effect.provideService(HostModel, HostModel.of({ modelId: "default-model", model, route: { prepare: () => Effect.die("unused") } })),
         Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
       ),
@@ -1315,6 +1317,7 @@ describe("timeline summary role", () => {
     const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
     const local = await Effect.runPromise(
       ModelEndpoint.local(database, { alerts: true }).pipe(
+        Effect.provide(PersonalModels.none),
         // The agent's model, which the summary role must never reach.
         Effect.provideService(HostModel, HostModel.of({
           modelId: "agent-model",

@@ -29,6 +29,7 @@ import { CodeIntel } from "./features/code-intel/codeIntel"
 import { Files } from "./features/files/files"
 import { Docs } from "./features/docs/docs"
 import { Domains } from "./features/domains/domains"
+import { PersonalModel } from "./features/personal-model/personalModel"
 import { Pulls } from "./features/pulls/pulls"
 import { StoragePersistence } from "@smthrs/platform-browser"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
@@ -113,6 +114,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(Secrets),
       Effect.service(Docs),
       Effect.service(Domains),
+      Effect.service(PersonalModel),
     ]),
   )
   expect(views[0]).toHaveLength(layers.length)

@@ -70,6 +70,16 @@ import type { CuratedFile } from "../../worker/home/Curated.ts"
 import * as RemoteRuns from "../../worker/RemoteRuns.ts"
 import * as RepoApi from "../../worker/RepoApi.ts"
 import * as RunCredentials from "../../worker/RunCredentials.ts"
+import * as PersonalApi from "../../worker/personal/Api.ts"
+import * as ModelFlows from "../../worker/personal/ModelFlows.ts"
+import { PersonalModels } from "../../worker/personal/Models.ts"
+import {
+  ANTHROPIC_ORIGIN,
+  OPENAI_ORIGIN,
+  type Reply as ProviderReply,
+  scriptedProvider,
+  type Seen as ProviderSeen,
+} from "../../worker/personal/test/provider.ts"
 import * as SecretsApi from "../../worker/secrets/Api.ts"
 import { SecretKeys } from "../../worker/secrets/Keys.ts"
 import * as SecretFlows from "../../worker/secrets/SecretFlows.ts"
@@ -111,6 +121,8 @@ import type { PullsClient } from "../features/pulls/api"
 import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE } from "../features/pulls/contract"
 import { todoExecutionId } from "../features/pulls/contract"
 import type { SecretsClient } from "../features/secrets/api"
+import type { PersonalModelClient } from "../features/personal-model/api"
+import { PERSONAL_MODELS_TABLE } from "../features/personal-model/contract"
 import { SECRETS_TABLE } from "../features/secrets/contract"
 import { REPOS_ROUTE, repoId, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
 import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
@@ -193,6 +205,12 @@ export interface ChatApiOptions {
    * `https:` page is unreachable, so no test reaches the internet. None unless set.
    */
   readonly pages?: Readonly<Record<string, Page>>
+  /**
+   * What a person's own model's provider answers each call (worker/personal/test/provider.ts): the OpenAI-compatible
+   * one at `OPENAI_ORIGIN` and the Anthropic-compatible one at `ANTHROPIC_ORIGIN`, scripted at the network. `ok` unless
+   * set; a function sees how many calls came before, and is read at each call.
+   */
+  readonly provider?: ProviderReply | ((index: number) => ProviderReply)
 }
 
 /** The header a test device's requests name their person with (`ChatApiOptions.people`). */
@@ -243,7 +261,8 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   PULLS_TABLE,
   PULL_COMMITS_TABLE,
   REVIEWS_TABLE,
-  SECRETS_TABLE
+  SECRETS_TABLE,
+  PERSONAL_MODELS_TABLE
 ])
 
 /** SECRETS_KEY in a test ChatApi: secrets are on. */
@@ -305,6 +324,8 @@ export class TestChatApi extends Context.Service<
     readonly telemetry: Array<{ readonly path: string; readonly body: string }>
     /** Every span ChatApi recorded. */
     readonly spans: Array<Tracer.NativeSpan>
+    /** Every call a person's own model's scripted provider got (`ChatApiOptions.provider`), in order. */
+    readonly providerCalls: ReadonlyArray<ProviderSeen>
     /** The page reload the app asks for: it counts, and reloads nothing. */
     readonly reload: () => void
     readonly reloads: () => number
@@ -550,6 +571,8 @@ export class TestChatApi extends Context.Service<
           if (upstream.hostname.endsWith(".code.storage")) return branchForge.fetch(input, init)
           // The `dns` domain provider's resolver: it knows no record, so every domain stays pending.
           if (upstream.hostname === "cloudflare-dns.com") return emptyResolver(input, init)
+          // A person's own model's provider.
+          if (upstream.origin === OPENAI_ORIGIN || upstream.origin === ANTHROPIC_ORIGIN) return provider.fetch(input, init)
           if (upstream.protocol === "https:") return outside(input, init)
           const table = upstream.searchParams.get("table")
           if (table !== null && SCHEMA_TABLES.has(table)) upstream.searchParams.set("table", `${schema}.${table}`)
@@ -662,6 +685,30 @@ export class TestChatApi extends Context.Service<
             }),
         })
 
+        // A person's own model (worker/personal/Api.ts), on under TEST_SECRETS_KEY: `model/Put` and `model/Delete` run for
+        // real on a Node host's engine of their own, built on first use, so a write's row is in Postgres when its request
+        // answers, and Electric brings it to the device. The model endpoint opens a person's saved model per request
+        // through the same `PersonalModels`; its provider is the scripted one at the network (`options.provider`).
+        const personalApi = yield* PersonalApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        const personalModels = PersonalModels.layer(database).pipe(Layer.provide(SecretKeys.layer(TEST_SECRETS_KEY)))
+        const modelEngine = yield* Effect.cached(
+          buildEngine(ModelFlows.registration(database), { maxConnections: 2 }).pipe(Scope.provide(layerScope), Effect.orDie),
+        )
+        const modelStarter = Flows.FlowStarter.of({
+          start: (flow, { executionId, payload }) =>
+            Effect.gen(function* () {
+              const { context } = yield* modelEngine
+              const flows = Context.get(context, FlowRuntime.FlowRuntime)
+              yield* Effect.ignore(
+                (flows.execute(flow as never, { executionId, payload: payload as never }) as Effect.Effect<unknown, unknown>)
+                  .pipe(Effect.provide(context)),
+              )
+            }),
+        })
+        const provider = scriptedProvider(options.provider ?? { text: "ok" }, () => {
+          throw new Error("the scripted provider answers its own origins only")
+        })
+
         // ChatApi acknowledges an ask only once its answer's expiry started, so the chat routes' host takes every start,
         // as a Durable Object would, and runs none: no answer here lives 25 minutes.
         const expiries = Flows.FlowStarter.of({ start: () => Effect.void })
@@ -719,6 +766,13 @@ export class TestChatApi extends Context.Service<
               Effect.provide(SecretKeys.layer(TEST_SECRETS_KEY)),
             )
           }
+          if (PersonalApi.handles(path)) {
+            return personalApi.fetch.pipe(
+              Effect.provideService(Flows.FlowStarter, modelStarter),
+              Effect.provide(SecretKeys.layer(TEST_SECRETS_KEY)),
+              Effect.provide(personalModels),
+            )
+          }
           if (RemoteRuns.handles(path)) return remoteRuns.fetch
           if (HomeApi.handles(path)) return home.fetch
           if (DocsApi.handles(path)) return docs.fetch.pipe(Effect.provide(docsSource))
@@ -726,6 +780,7 @@ export class TestChatApi extends Context.Service<
             ? Effect.provideContext(repos.fetch, repoCache)
             : chat.fetch.pipe(
               Effect.provideService(Flows.FlowStarter, expiries),
+              Effect.provide(personalModels),
               Effect.provide(docsSource),
               Effect.provideService(ImmutableCache.ImmutableCache, webCache),
               Effect.provide(credentials)
@@ -892,6 +947,7 @@ export class TestChatApi extends Context.Service<
           ),
           telemetry,
           spans,
+          providerCalls: provider.seen,
           reload: () => {
             reloads += 1
           },
@@ -1357,11 +1413,12 @@ export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">
   readonly reopenRoute?: () => void
   /**
    * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient`, `TextsClient`,
-   * `PullsClient`, `SecretsClient` or a ShapeSource reference (test.faults-by-injection).
+   * `PullsClient`, `SecretsClient`, `PersonalModelClient` or a ShapeSource reference (test.faults-by-injection).
    */
   readonly replace?:
     | Layer.Layer<IssuesClient, never, HttpClient.HttpClient>
     | Layer.Layer<SecretsClient, never, HttpClient.HttpClient>
+    | Layer.Layer<PersonalModelClient, never, HttpClient.HttpClient>
     | Layer.Layer<PullsClient, never, HttpClient.HttpClient>
     | Layer.Layer<StackClient, never, HttpClient.HttpClient>
     | Layer.Layer<TextsClient, never, HttpClient.HttpClient>

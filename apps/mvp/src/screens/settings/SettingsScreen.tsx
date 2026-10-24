@@ -1,11 +1,14 @@
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
+import { PersonalModelSettings } from "../../features/personal-model/components/PersonalModelSettings"
+import { showsSection } from "../../features/personal-model/view"
 import { AlertSettings } from "../../features/spend/components/AlertSettings"
 import "./settings-screen.css"
 
-// /app/settings: the deployment's settings, for an Admin (docs/features/spend-alerts.md#channels). Its one section so
-// far is where spend alerts go outside the app. Anyone else sees the page's header alone.
+// /app/settings: a signed-in Member's or above's own model (docs/features/personal-model.md#the-settings-section), and
+// for an Admin, where spend alerts go outside the app (docs/features/spend-alerts.md#channels). Anyone else sees the
+// page's header alone.
 export function SettingsScreen() {
   const { queries } = useAuth()
   const { data: session } = useLiveQuery(queries.session)
@@ -16,6 +19,7 @@ export function SettingsScreen() {
         <Link to="/app">Back to chat</Link>
         <h1>Settings</h1>
       </header>
+      {showsSection(session) ? <PersonalModelSettings /> : null}
       {admin ? <AlertSettings /> : null}
     </main>
   )

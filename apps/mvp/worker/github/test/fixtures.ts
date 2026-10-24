@@ -14,6 +14,7 @@ import type { testFile } from "../../test/harness.ts"
 import { SECRET } from "../../test/signIn.ts"
 import type * as Apply from "../Apply.ts"
 import * as ModelEndpoint from "../../ModelEndpoint.ts"
+import { PersonalModels } from "../../personal/Models.ts"
 import type { Repository } from "../Config.ts"
 import type * as RepoRoles from "../RepoRoles.ts"
 import * as Store from "../Store.ts"
@@ -189,6 +190,7 @@ export const judgeSeat = async (
   })
   const local = await Effect.runPromise(
     ModelEndpoint.local(options.database ?? (await database(runtime))).pipe(
+      Effect.provide(PersonalModels.none),
       Effect.provideService(
         HostModel,
         HostModel.of({ modelId: "judge-model", model, route: { prepare: () => Effect.die(new Error("unused")) } }),

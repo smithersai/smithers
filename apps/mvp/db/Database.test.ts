@@ -993,3 +993,64 @@ describe("0055_branch_ref_namespace", () => {
     }))
 })
 
+
+describe("0056_personal_models", () => {
+  test("adds the people's own models, their audit and their ledger, and holds a row to its rules", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0055"))
+      expect((await on(through("0056"))).map(([id, name]) => `${id}_${name}`)).toEqual(["56_personal_models"])
+      const save = (overrides: Record<string, unknown> = {}) => {
+        const row = {
+          person: "p",
+          protocol: "openai-chat",
+          baseUrl: "https://api.example.com",
+          modelId: "m",
+          last4: "abcd",
+          status: null as number | null,
+          failedAt: null as string | null,
+          ...overrides,
+        }
+        return on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO personal_models (person_id, protocol, base_url, model_id, ciphertext, nonce, key_version, key_last4,
+            failure_status, failed_at)
+          VALUES (${row.person}, ${row.protocol}, ${row.baseUrl}, ${row.modelId}, 'c', 'n', 1, ${row.last4},
+            ${row.status}, ${row.failedAt}::timestamptz)`).pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      }
+      expect(await save()).toBe("taken")
+      expect(await save()).toBe("refused")
+      expect(await save({ person: "q", protocol: "anthropic-messages", status: 401, failedAt: "2026-10-24T00:00:00Z" })).toBe("taken")
+      for (
+        const refused of [
+          { protocol: "openai-responses" },
+          { baseUrl: "http://api.example.com" },
+          { modelId: "" },
+          { modelId: "m".repeat(82) },
+          { last4: "abcde" },
+          { status: 401 },
+          { failedAt: "2026-10-24T00:00:00Z" },
+          { status: 200, failedAt: "2026-10-24T00:00:00Z" },
+        ]
+      ) {
+        expect(await save({ person: crypto.randomUUID(), ...refused }), JSON.stringify(refused)).toBe("refused")
+      }
+      const event = (action: string, key: string) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO personal_model_events (person_id, action, invocation_key) VALUES ('p', ${action}, ${key})`)
+          .pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      expect(await event("set", "k1")).toBe("taken")
+      expect(await event("delete", "k1")).toBe("refused")
+      expect(await event("use", "k2")).toBe("refused")
+      const ledger = (outcome: string | null, tokens = 0) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO personal_model_usage (invocation_id, request_id, person_id, role, model_id, input_tokens, outcome)
+          VALUES (${crypto.randomUUID()}, 'r', 'p', 'agent', 'm', ${tokens}, ${outcome})`)
+          .pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      expect(await ledger(null)).toBe("taken")
+      expect(await ledger("success", 5)).toBe("taken")
+      expect(await ledger("unknown")).toBe("refused")
+      expect(await ledger(null, -1)).toBe("refused")
+      expect(await on(through("0056"))).toEqual([])
+    }))
+})

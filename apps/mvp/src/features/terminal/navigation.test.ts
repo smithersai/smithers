@@ -30,6 +30,7 @@ import { RepoStore } from "../repo/store"
 import { Runs } from "../runs/runs"
 import { Secrets } from "../secrets/secrets"
 import { Spend } from "../spend/spend"
+import { PersonalModel } from "../personal-model/personalModel"
 import { Status } from "../status/status"
 import { Theme } from "../theme/theme"
 import { Todos } from "../todos/todos"
@@ -62,7 +63,7 @@ test.each(["empty", "mine", "watching"] as const)(
     const views = await runtime.runPromise(Effect.gen(function* () {
       return {
         chat: yield* Chat, auth: yield* Auth, attention: yield* Attention, status: yield* Status, commands: yield* Commands,
-        spend: yield* Spend,
+        spend: yield* Spend, personalModel: yield* PersonalModel,
       }
     }))
     const api = await runtime.runPromise(Effect.service(TestChatApi))

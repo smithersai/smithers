@@ -27,6 +27,9 @@ import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubHost from "./github/Host.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
+import { PersonalModels } from "./personal/Models.ts"
+import { SecretKeys } from "./secrets/Keys.ts"
+import * as TodoMachine from "./flows/TodoMachine.ts"
 import * as Placement from "./Placement.ts"
 import * as RepoRuns from "./RepoRuns.ts"
 import * as RepoConfig from "./RepoConfig.ts"
@@ -158,10 +161,16 @@ const object = <E, R>(
       const github = yield* GitHubHost.ready(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
       // Each admitted call of a server seat starts its window's spend alert, as the endpoint's calls do: `spendAlerts`,
       // which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default (docs/features/spend-alerts.md).
+      // A person's own model answers their `todo` runs, its key opened under SECRETS_KEY for each call
+      // (docs/features/personal-model.md#todo-runs).
       const seats = yield* ModelEndpoint.local(
         appDatabase,
         options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts },
-      ).pipe(Effect.orDie)
+      ).pipe(
+        Effect.provide(PersonalModels.layer(appDatabase).pipe(Layer.provide(SecretKeys.layerConfig))),
+        Effect.orDie,
+      )
+      const todoOwner = (executionId: string) => TodoMachine.ownerOf(executionId).pipe(Effect.provide(appDatabase))
       // `ops/SpendAlert` sends by email and Telegram through the deployment's providers, from its secrets
       // (docs/features/spend-alerts.md#channels).
       const alertChannels = yield* AlertChannels.channelsConfig(options).pipe(Effect.orDie)
@@ -223,9 +232,10 @@ const object = <E, R>(
             ),
           )
         }
-        // `secret/Put` and `secret/Delete` write an Admin's sealed secrets (docs/features/secrets.md#writing). The
+        // `secret/Put` and `secret/Delete` write an Admin's sealed secrets (docs/features/secrets.md#writing), and
+        // `model/Put` and `model/Delete` a person's own model (docs/features/personal-model.md#saving). The
         // Sandbox tools, custom domains, and CI jobs share the remote host.
-        const base = ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withSecrets(
+        const base = ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withPersonalModels(ExecutionHost.withSecrets(
           ExecutionHost.withSandboxTools(
             ExecutionHost.withTerminals(
               Option.isSome(signIn)
@@ -239,7 +249,7 @@ const object = <E, R>(
             idleMs,
           ),
           appDatabase,
-        ), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(sandboxObjects, keep))
+        ), appDatabase), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(sandboxObjects, keep))
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review judge with the `judge` role, admitted and metered as the endpoint's calls are.
@@ -308,7 +318,7 @@ const object = <E, R>(
                 // The `todo` run's agent writes with the `coding` role, admitted and metered as the endpoint's calls are.
                 Layer.unwrap(Effect.map(flowStarter, (started) =>
                   TodoAgent.registration(
-                    seats("coding", started),
+                    seats("coding", started, todoOwner),
                     appDatabase,
                     AgentSandbox.layer,
                     commandSeconds,

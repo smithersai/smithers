@@ -87,6 +87,9 @@ import { Plugins } from "./plugins/plugins"
 import { PluginsUi, type PluginsView } from "./plugins/ui"
 import { SpendStore } from "./features/spend/store"
 import { Domains, type DomainsView } from "./features/domains/domains"
+import { PersonalModelClient } from "./features/personal-model/api"
+import { PersonalModel, type PersonalModelView } from "./features/personal-model/personalModel"
+import { PersonalModelStore } from "./features/personal-model/store"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
 import { Theme, type ThemeView } from "./features/theme/theme"
 import { ViewsStore } from "./features/views/store"
@@ -248,6 +251,13 @@ export const appLayer = <S = never>(
       origin,
       ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),
     }))),
+    // A person's own model (docs/features/personal-model.md): their row, synced once they are signed in, and their own
+    // Save straight to ChatApi (`PersonalModelClient`, below), never through the outbox, which would keep the key on
+    // the device. Test and Remove are flows.
+    PersonalModel.layer.pipe(Layer.provideMerge(PersonalModelStore.layer({
+      origin,
+      ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),
+    }))),
     tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // TODOs and the stack (decision 0016): the stack pages, the drafts, and this tab's answers to the TODO steps it
     // started.
@@ -327,13 +337,14 @@ export const appLayer = <S = never>(
     Layer.provideMerge(tabAnswers),
     Layer.provideMerge(ThemeStore.layer(host.theme)),
     Layer.provideMerge(services),
-    // Below `services`, so a test's services may give a faulty `IssuesClient`, `StackClient`, `PullsClient` or
-    // `SecretsClient` in its place.
+    // Below `services`, so a test's services may give a faulty `IssuesClient`, `StackClient`, `PullsClient`,
+    // `SecretsClient` or `PersonalModelClient` in its place.
     Layer.provideMerge(
       Layer.mergeAll(
         IssuesClient.layer({ origin, within: REQUEST_WITHIN }),
         PullsClient.layer({ origin, within: REQUEST_WITHIN }),
         SecretsClient.layer({ origin, within: REQUEST_WITHIN }),
+        PersonalModelClient.layer({ origin, within: REQUEST_WITHIN }),
         StackClient.layer({ origin, within: REQUEST_WITHIN }),
         TextsClient.layer({ origin, within: REQUEST_WITHIN }),
         RepoClient.layer({ origin, within: REQUEST_WITHIN }),
@@ -449,6 +460,7 @@ export interface BootOptions {
     secrets: SecretsLayer,
     docs: DocsView,
     domains: DomainsView,
+    personalModel: PersonalModelView,
   ) => void
 }
 
@@ -484,6 +496,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const secrets = yield* Secrets
     const docs = yield* Docs
     const domains = yield* Domains
+    const personalModel = yield* PersonalModel
     const store = yield* ChatStore
     yield* bindSessionConnectivity(options.target)
     yield* Effect.sync(() =>
@@ -512,6 +525,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         secrets,
         docs,
         domains,
+        personalModel,
       )
     )
     yield* chatShortcuts(options.target)

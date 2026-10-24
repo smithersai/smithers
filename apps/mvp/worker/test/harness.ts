@@ -34,6 +34,8 @@ import * as Chat from "../Chat.ts"
 import * as DocsApi from "../docs/Api.ts"
 import * as DocsSource from "../docs/Source.ts"
 import * as Flows from "../Flows.ts"
+import { PersonalModels } from "../personal/Models.ts"
+import { SecretKeys } from "../secrets/Keys.ts"
 import type { CuratedFile } from "../home/Curated.ts"
 
 /**
@@ -96,7 +98,12 @@ interface HarnessOptions {
   readonly spendAlerts?: boolean
   /** The curated homes a `docs` view's repository may name its docs in: the real ones unless set. */
   readonly homes?: ReadonlyArray<CuratedFile>
+  /** People's own models in place of the real ones over the file's schema, under `PERSONAL_KEYS`. */
+  readonly personalModels?: Layer.Layer<PersonalModels>
 }
+
+/** SECRETS_KEY for the people's own models in a harness. */
+export const PERSONAL_KEYS = Redacted.make("fedcba9876543210".repeat(4))
 
 /** ChatApi's routes on the file's schema and a scripted model, recording every log line, span and metric. */
 /** One presentation realm for every harness in a test file: QuickJS compiles once. */
@@ -195,6 +202,8 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
         ),
         // Sessions that bring no run credentials of their own, such as a faulty test's, get credentials for nobody.
         Effect.provide(credentialsFor([])),
+        // People's own models, their keys under PERSONAL_KEYS: the real ones, read from the file's schema, unless set.
+        Effect.provide(options.personalModels ?? PersonalModels.layer(database).pipe(Layer.provide(SecretKeys.layer(PERSONAL_KEYS)))),
         Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         Effect.provideService(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch),
       ),

@@ -23,6 +23,7 @@ import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import * as DomainFlows from "./domains/DomainFlows.ts"
 import type { DomainProvider } from "./domains/Provider.ts"
 import * as SecretFlows from "./secrets/SecretFlows.ts"
+import * as ModelFlows from "./personal/ModelFlows.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
 import type { Machines } from "./branch/Machines.ts"
@@ -230,6 +231,18 @@ export const withSecrets = <ROut, E, R, DE, DR>(
 ) => ({
   flows: [...flows.flows, SecretFlows.Put, SecretFlows.Delete],
   registration: Layer.merge(flows.registration, SecretFlows.registration(database)),
+})
+
+/**
+ * `flows`, plus `model/Put` and `model/Delete` over the app's tables: a person's own model, its key sealed before it
+ * reaches either (docs/features/personal-model.md#saving).
+ */
+export const withPersonalModels = <ROut, E, R, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+) => ({
+  flows: [...flows.flows, ModelFlows.Put, ModelFlows.Delete],
+  registration: Layer.merge(flows.registration, ModelFlows.registration(database)),
 })
 
 /**

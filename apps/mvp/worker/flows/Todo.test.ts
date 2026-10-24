@@ -31,6 +31,7 @@ import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Apply from "../github/Apply.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
+import { PersonalModels } from "../personal/Models.ts"
 import * as Stack from "../stack/Stack.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import * as Box from "../test/box.ts"
@@ -123,6 +124,7 @@ const WRITES_README = [
 const agentSeat = async (model: Model.Model) => {
   const local = await Effect.runPromise(
     ModelEndpoint.local(await database()).pipe(
+      Effect.provide(PersonalModels.none),
       Effect.provideService(
         HostModel,
         HostModel.of({ modelId: "agent-model", model, route: { prepare: () => Effect.die(new Error("unused")) } }),
@@ -757,6 +759,16 @@ describe("the run's steps", () => {
     expect(await of("chat:123")).toBeUndefined()
     expect(await of("todo:not-a-uuid")).toBeUndefined()
     expect(await of(todoExecutionId(crypto.randomUUID()))).toBeUndefined()
+  })
+
+  test("the owner of a run's execution: its TODO's committer, before its branch is made too; none for any other run", async () => {
+    const start = (await commit("Owner", "Anything."))!
+    const owner = (executionId: string) =>
+      runtime.runPromise(TodoMachine.ownerOf(executionId).pipe(Effect.map(Option.getOrUndefined)))
+    expect(await owner(todoExecutionId(start.attemptId))).toBe(maya.id)
+    expect(await owner("chat:123")).toBeUndefined()
+    expect(await owner("todo:not-a-uuid")).toBeUndefined()
+    expect(await owner(todoExecutionId(crypto.randomUUID()))).toBeUndefined()
   })
 })
 

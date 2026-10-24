@@ -1,5 +1,5 @@
 {
-  "epoch": 80,
+  "epoch": 82,
   "stores": {
     "message-pin-pending": {
       "kind": "local",
@@ -94,6 +94,12 @@
       "kind": "local",
       "versions": {
         "1": "0f9d97976b794f85"
+      }
+    },
+    "personal-model-hidden": {
+      "kind": "local",
+      "versions": {
+        "1": "fd83612f01f28b0f"
       }
     },
     "todo-drafts": {
@@ -294,6 +300,12 @@
       "kind": "synced",
       "versions": {
         "1": "aad5709b2c9c7bd6"
+      }
+    },
+    "personal-model": {
+      "kind": "synced",
+      "versions": {
+        "1": "75531a80d8222141"
       }
     },
     "repo-runs": {

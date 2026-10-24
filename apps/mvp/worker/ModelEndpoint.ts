@@ -1,4 +1,5 @@
 import type { FlowEngineLike } from "@smthrs/agent"
+import { FlowRuntime } from "@smthrs/flow"
 import { Model, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { HostModel, HostModelUnusable } from "@smthrs/model-host"
 import { Cause, Config, Duration, Effect, Exit, type Layer, Metric, Option, Schema, Stream } from "effect"
@@ -10,12 +11,16 @@ import { FlowStarter } from "./Flows.ts"
 import * as ModelRoles from "./ModelRoles.ts"
 import * as ModelSpend from "./ModelSpend.ts"
 import * as ModelUsage from "./ModelUsage.ts"
+import { PersonalModels, PersonalModelUnusable } from "./personal/Models.ts"
+import * as PersonalUsage from "./personal/Usage.ts"
 
 // The metered model endpoint (docs/features/model-endpoint.md): every model call the browser's agent makes is one
 // `POST /api/model/<role>`, served by `ModelProxy.serve` from @smthrs/model. Before the model runs it refuses a
 // signed-out request and one from a person who may not ask (a Guest, or no role), bounds the request, picks the role's
 // model and reserves the call's worst case against the deployment's daily budget; after, it settles the reservation to
-// what the call spent. The key never leaves the Worker, and refusals carry codes, never provider text.
+// what the call spent. A person who saved a model of their own (docs/features/personal-model.md) is answered by it
+// instead, with their key, outside the budget, and their call is kept in their own ledger. The key never leaves the
+// Worker, and refusals carry codes, never provider text.
 
 /** The deployment's token budget per UTC day, input and output together, when `MODEL_DAILY_TOKEN_BUDGET` is unset. */
 export const DAILY_TOKEN_BUDGET = 1_000_000
@@ -64,14 +69,18 @@ const unavailable = refuse(503, "provider_internal", "Smithers can't reach its d
 // model step seals as its answer. A 503 was a capacity refusal to the step, which the engine retried six times.
 const noRoute = refuse(409, "no_route", "This model isn't available.")
 
+// A person's own model that can't answer here is theirs to save again; it never falls back to the deployment's model.
+const ownUnusable = refuse(409, "no_route", "Your model can't be used. Save it again in Settings.")
+
 const INVALID_CAPS = "Send maxTokens as a whole number above 0 and thinkingBudget as a whole number of at least 0."
 
 /**
  * Reads `MODEL_DAILY_TOKEN_BUDGET`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_MAX_MESSAGES`, `MODEL_MAX_REQUEST_BYTES`,
- * `MODEL_RESERVATION_EXPIRY`, `SUMMARY_MODEL` and the deployment's default model (`HostModel`) at build time,
- * and returns what admits and meters one call on a role: `admit` bounds the request, picks the role's model and reserves
- * the call's worst case; `meter` settles it. The endpoint (`make`) and a server flow's own calls (`local`) share them,
- * so every call spends one budget.
+ * `MODEL_RESERVATION_EXPIRY`, `SUMMARY_MODEL` and the deployment's default model (`HostModel`) at build time, and
+ * returns what admits and meters one call on a role: `admit` bounds the request,
+ * picks the person's own model or the role's and, for the role's, reserves the call's worst case; `meter` settles a
+ * reservation, and `meterOwn` a person's own call. The endpoint (`make`) and a server flow's own calls (`local`) share
+ * them, so every call the deployment pays for spends one budget.
  * `database` opens a Postgres client for each read and write.
  */
 const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
@@ -99,11 +108,17 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       Effect.logError("model.endpoint").pipe(Effect.annotateLogs({ role, errorCode }))
 
     /**
-     * What the caller may choose (the conversation, its tools and parameters within bounds) and the role's model, once
-     * the call's worst case is reserved: its body's bytes, each counted as a prompt token, plus its output and thinking
-     * caps. The reservation is the last step, so no refusal after it leaves one behind.
+     * What the caller may choose (the conversation, its tools and parameters within bounds) and the model that answers:
+     * the person's own when `personId` saved one (`PersonalModels`), with its call's ledger row written, else the role's,
+     * once the call's worst case is reserved against the deployment's budget: its body's bytes, each counted as a
+     * prompt token, plus its output and thinking caps. The reservation or the ledger row is the last step, so no refusal
+     * after it leaves one behind. `own` is the person's call, when their model answers it.
      */
-    const admit = (role: ModelRole) => (request: ModelRequest.ModelRequest, admission: ModelProxy.Admission) =>
+    const admit = (role: ModelRole, personId?: string) =>
+    (
+      request: ModelRequest.ModelRequest,
+      admission: ModelProxy.Admission,
+    ): Effect.Effect<Admitted, ModelProxy.Refusal, R | PersonalModels> =>
       Effect.gen(function* () {
         if ((request.serverTools?.length ?? 0) > 0) {
           return yield* refuse(400, "invalid_request", "Send no provider-run tools.")
@@ -121,6 +136,46 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         ) {
           return yield* refuse(400, "invalid_request", INVALID_CAPS)
         }
+        const maxTokens = Math.min(askedTokens ?? maxOutputTokens, maxOutputTokens)
+        const thinkingBudget = askedThinking === undefined ? undefined : Math.min(askedThinking, maxOutputTokens)
+        const params = ModelRequest.GenerationParams.make({
+          ...request.params,
+          maxTokens,
+          ...(thinkingBudget === undefined ? {} : { thinkingBudget }),
+        })
+        const opened = personId === undefined ? Option.none() : yield* (yield* PersonalModels).open(personId).pipe(
+          Effect.tapError((error) =>
+            logFailure(role, error instanceof PersonalModelUnusable ? `own_unusable:${error.reason}` : error.errorCode)
+          ),
+          Effect.mapError((error) => error instanceof PersonalModelUnusable ? ownUnusable : unavailable),
+        )
+        if (Option.isSome(opened)) {
+          const own: PersonalUsage.Call = {
+            invocationId: admission.invocationId,
+            requestId: admission.requestId,
+            personId: personId!,
+            role,
+            modelId: opened.value.modelId,
+            host: opened.value.host,
+          }
+          yield* PersonalUsage.begin(own).pipe(
+            Effect.provide(database),
+            Effect.tapError((error) =>
+              Effect.andThen(
+                Metric.update(Metric.withAttributes(PersonalUsage.errors, { op: "begin" }), 1),
+                logFailure(role, codeOf(error)),
+              )
+            ),
+            Effect.mapError(() => unavailable),
+          )
+          return {
+            own,
+            prepared: {
+              model: opened.value.model,
+              request: ModelRequest.ModelRequest.make({ ...request, modelId: opened.value.modelId, params }),
+            },
+          } satisfies Admitted
+        }
         const resolved = yield* ModelRoles.resolve(role, summary).pipe(
           Effect.provide(database),
           Effect.provideService(HostModel, fallback),
@@ -129,13 +184,6 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           ),
           Effect.mapError((error) => error instanceof HostModelUnusable ? noRoute : unavailable),
         )
-        const maxTokens = Math.min(askedTokens ?? maxOutputTokens, maxOutputTokens)
-        const thinkingBudget = askedThinking === undefined ? undefined : Math.min(askedThinking, maxOutputTokens)
-        const params = ModelRequest.GenerationParams.make({
-          ...request.params,
-          maxTokens,
-          ...(thinkingBudget === undefined ? {} : { thinkingBudget }),
-        })
         const reserved = yield* ModelUsage.reserve({
           invocationId: admission.invocationId,
           requestId: admission.requestId,
@@ -149,9 +197,11 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         )
         if (!reserved) return yield* refuse(429, "quota_exceeded", "Today's model budget is spent.")
         return {
-          model: resolved.model,
-          request: ModelRequest.ModelRequest.make({ ...request, modelId: resolved.modelId, params }),
-        } satisfies ModelProxy.Prepared
+          prepared: {
+            model: resolved.model,
+            request: ModelRequest.ModelRequest.make({ ...request, modelId: resolved.modelId, params }),
+          },
+        } satisfies Admitted
       })
 
     /**
@@ -205,8 +255,17 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       )
     }
 
-    return { admit, meter, maxBodyBytes, logFailure, budget }
+    /** Settles a person's own call (`PersonalUsage.end`): never the deployment's budget, ledger or spend. */
+    const meterOwn = (own: PersonalUsage.Call) => (end: ModelProxy.End) => PersonalUsage.end(own, end, database)
+
+    return { admit, meter, meterOwn, maxBodyBytes, logFailure, budget }
   })
+
+/** An admitted call: what the model is asked, and the person's own call when their model answers it. */
+interface Admitted {
+  readonly prepared: ModelProxy.Prepared
+  readonly own?: PersonalUsage.Call
+}
 
 /**
  * The model endpoint's handler for one role, `POST /api/model/<role>`: it refuses a signed-out request and one from a
@@ -219,12 +278,15 @@ export const make = <E, R>(
   options: { readonly alerts?: boolean } = {},
 ) =>
   Effect.gen(function* () {
-    const { admit, meter, maxBodyBytes, logFailure, budget } = yield* metering(database)
+    const { admit, meter, meterOwn, maxBodyBytes, logFailure, budget } = yield* metering(database)
     const alert = yield* ModelSpend.alerter(
       yield* ModelSpend.settings(options.alerts === undefined ? {} : { on: options.alerts }),
       budget,
     )
-    /** Who may ask (`repo:ask`, decision 0007), then the call's admission. */
+    /**
+     * Who may ask (`repo:ask`, decision 0007), then the call's admission, answered by the person's own model when they
+     * saved one. Only a call the deployment pays for starts a spend alert.
+     */
     const prepare = (role: ModelRole) => (request: ModelRequest.ModelRequest, admission: ModelProxy.Admission) =>
       Effect.gen(function* () {
         const sessions = yield* Sessions
@@ -240,12 +302,29 @@ export const make = <E, R>(
         if (!canAsk(actor.value)) {
           return yield* refuse(403, "authentication", "Asking Smithers needs the Member role.")
         }
-        return yield* admit(role)(request, admission).pipe(Effect.tap(() => alert))
+        const admitted = yield* admit(role, actor.value.subject.id)(request, admission)
+        if (admitted.own === undefined) yield* alert
+        return admitted
       })
 
-    /** `POST /api/model/<role>`: one served model call. */
+    /**
+     * `POST /api/model/<role>`: one served model call, settled where it was admitted: a person's own call in their
+     * ledger, any other against the deployment's budget.
+     */
     return (role: ModelRole) =>
-      ModelProxy.serve({ prepare: prepare(role), maxBodyBytes, attributes: { role }, onEnd: meter(role) })
+      Effect.suspend(() => {
+        let own: PersonalUsage.Call | undefined
+        return ModelProxy.serve({
+          prepare: (request, admission) =>
+            Effect.map(prepare(role)(request, admission), (admitted) => {
+              own = admitted.own
+              return admitted.prepared
+            }),
+          maxBodyBytes,
+          attributes: { role },
+          onEnd: (end) => own === undefined ? meter(role)(end) : meterOwn(own)(end),
+        })
+      })
   })
 
 /** A model a server flow calls with, and the route its durable step keys on (`ModelStep.model` from `@smthrs/agent`). */
@@ -269,22 +348,27 @@ const refusedCall = (refusal: ModelProxy.Refusal) =>
  * Given `starter`, where the host starts a flow, each admitted call also starts its window's spend alert, as the
  * endpoint's calls do (`ModelSpend.alerter`, docs/features/spend-alerts.md): a window whose only spend is a `todo` run's
  * agent or triage's judge alerts too. `alerts` is `MODEL_SPEND_ALERTS`' default, on unless set, as `make`'s is.
+ *
+ * Given `owner`, a call made inside a run (`FlowRuntime.FlowInstance`) whose owner saved a model of their own is
+ * answered by that model and kept in their ledger, as their endpoint calls are (docs/features/personal-model.md): a
+ * `todo` run works on its committer's key while every device is off. Its refusal fails at once, never falling back.
  */
 export const local = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   options: { readonly alerts?: boolean } = {},
 ) =>
   Effect.gen(function* () {
-    const { admit, meter, maxBodyBytes, budget } = yield* metering(database)
+    const { admit, meter, meterOwn, maxBodyBytes, budget } = yield* metering(database)
     const alert = yield* ModelSpend.alerter(
       yield* ModelSpend.settings(options.alerts === undefined ? {} : { on: options.alerts }),
       budget,
     )
-    // What the database layer needs, captured here, so a model call needs nothing of its caller.
-    const context = yield* Effect.context<R>()
-    return (role: ModelRole, starter?: FlowStarter["Service"]): Seat => {
+    // What the database layer needs, and the people's own models, captured here, so a model call needs nothing of its
+    // caller.
+    const context = yield* Effect.context<R | PersonalModels>()
+    return (role: ModelRole, starter?: FlowStarter["Service"], owner?: Owner<R>): Seat => {
       const prepare = ModelProxy.prepare({ url: `${MODEL_ROUTE}/${role}` })
-      const call = (request: ModelRequest.ModelRequest) =>
+      const call = (request: ModelRequest.ModelRequest, executionId: string | undefined) =>
         Effect.gen(function* () {
           // The endpoint's id for a call is its own, never the caller's; so is this one.
           const invocationId = crypto.randomUUID()
@@ -292,9 +376,20 @@ export const local = <E, R>(
           if (encoded.body.byteLength > maxBodyBytes) {
             return yield* new ModelError.ModelError({ code: "invalid_request", message: "The request is too large.", httpStatus: 413 })
           }
+          // The person whose run this is, when `owner` names one: their own model answers it, as it answers their chat.
+          const personId = owner === undefined || executionId === undefined
+            ? Option.none<string>()
+            : yield* owner(executionId).pipe(
+              Effect.mapError(() =>
+                new ModelError.ModelError({ code: "provider_internal", message: "Smithers can't reach its database." })
+              ),
+            )
           const admission = { requestId: invocationId, invocationId, requestBytes: encoded.body.byteLength }
-          const prepared = yield* admit(role)(request, admission).pipe(Effect.mapError(refusedCall))
-          if (starter !== undefined) yield* alert.pipe(Effect.provideService(FlowStarter, starter))
+          const admitted = yield* admit(role, Option.getOrUndefined(personId))(request, admission).pipe(
+            Effect.mapError(refusedCall),
+          )
+          const { prepared, own } = admitted
+          if (own === undefined && starter !== undefined) yield* alert.pipe(Effect.provideService(FlowStarter, starter))
           // What the model reported, merged as `ModelEvent.settledMessage` merges it: a `retry` event starts it over.
           let usage: ModelEvent.Usage = {}
           // Whether the model sent any output, which tells a refusal (that spent nothing) from a failure that may have.
@@ -306,8 +401,8 @@ export const local = <E, R>(
                 produced ||= ModelProxy.producesOutput(event)
               })
             ),
-            Stream.onExit((exit) =>
-              meter(role)({
+            Stream.onExit((exit) => {
+              const end: ModelProxy.End = {
                 requestId: invocationId,
                 invocationId,
                 modelId: prepared.request.modelId,
@@ -318,13 +413,31 @@ export const local = <E, R>(
                   : Cause.hasInterruptsOnly(exit.cause)
                   ? { outcome: "interrupted" as const }
                   : { outcome: "failed" as const, ...ModelProxy.failureOf(exit.cause) }),
-              })
-            ),
+              }
+              return own === undefined ? meter(role)(end) : meterOwn(own)(end)
+            }),
           )
         }).pipe(Effect.provideContext(context))
       return {
-        model: Model.make({ stream: (request) => Stream.unwrap(call(request)).pipe(Stream.provideContext(context)) }),
+        model: Model.make({
+          // The run calling, read before the captured context replaces the caller's: its owner's model answers it.
+          stream: (request) =>
+            Stream.unwrap(
+              Effect.map(
+                Effect.serviceOption(FlowRuntime.FlowInstance),
+                (instance) =>
+                  Stream.unwrap(call(request, Option.getOrUndefined(Option.map(instance, (run) => run.executionId))))
+                    .pipe(Stream.provideContext(context)),
+              ),
+            ),
+        }),
         route: { prepare },
       }
     }
   })
+
+/**
+ * The person a server flow's run is for, by its execution id: a `todo` run's is the person who committed the TODO
+ * (`TodoMachine.ownerOf`). None for a run that is nobody's, such as triage, which the deployment pays for.
+ */
+export type Owner<R = never> = (executionId: string) => Effect.Effect<Option.Option<string>, unknown, R>

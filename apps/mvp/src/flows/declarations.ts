@@ -42,6 +42,7 @@ import { Ack, WatchSet } from "../features/attention/flows"
 import { ConversationArchive, ConversationNew } from "../features/conversations/flows"
 import { AlertChannelSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
+import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { AskWithForm, RenderView, SetViewState } from "../features/views/flows"
@@ -127,6 +128,8 @@ export const declarations = {
   "alert/channel": AlertChannelSet,
   "domain/add": DomainAdd,
   "domain/remove": DomainRemove,
+  "model/test": ModelTest,
+  "model/remove": ModelRemove,
   "sandbox/run": SandboxRun,
   "sandbox/read": SandboxRead,
   "sandbox/write": SandboxWrite,

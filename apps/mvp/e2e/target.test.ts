@@ -125,6 +125,7 @@ describe("needs", () => {
       "githubSignIn",
       "syncedRepository",
       "liveModel",
+      "personalModelKey",
       "factoryRepository",
       "githubScratch",
       "secondRepository",
@@ -203,6 +204,15 @@ describe("needs", () => {
     expect(NEEDS.alertProviders.met({ ...local, env: providers })).toBe(true)
     expect(NEEDS.alertProviders.met({ ...local, env: { ...providers, ALERT_EMAIL_API_URL: "http://localhost:8" } })).toBe(false)
     expect(NEEDS.alertProviders.met({ ...local, env: { ...providers, MODEL_SPEND_ALERTS: "false" } })).toBe(false)
+  })
+
+  it("for a person's own model, are met by a key for it in the environment, wherever the run is", () => {
+    for (const run of [local, deployedAs("member")]) {
+      expect(NEEDS.personalModelKey.met(run)).toBe(false)
+      expect(NEEDS.personalModelKey.met({ ...run, env: { E2E_PERSONAL_MODEL_KEY: "k" } })).toBe(true)
+      expect(NEEDS.personalModelKey.met({ ...run, env: { OPENAI_API_KEY: "k" } })).toBe(true)
+      expect(NEEDS.personalModelKey.met({ ...run, env: { OPENAI_API_KEY: "" } })).toBe(false)
+    }
   })
 
   it("for the live model, are met by a deployment, or locally by the model key in the environment or the dev server's .env", () => {

@@ -22,6 +22,7 @@ import { Home } from "../../features/home/home"
 import { Issues } from "../../features/issues/issues"
 import { Docs } from "../../features/docs/docs"
 import { Pulls } from "../../features/pulls/pulls"
+import { PersonalModel } from "../../features/personal-model/personalModel"
 import { Repo } from "../../features/repo/repo"
 import { Runs } from "../../features/runs/runs"
 import { Spend } from "../../features/spend/spend"
@@ -100,7 +101,10 @@ const open = async (reopenRoute?: () => void) => {
     /** The browser's `offline` and `online` events, as chat's connectivity binding runs them. */
     offline: () => runtime.runPromise(wentOffline),
     online: () => runtime.runPromise(retry("online")),
-    render: branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, todos }),
+    render: branchRenderer({
+      files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal,
+      attention, spend, personalModel: await runtime.runPromise(Effect.service(PersonalModel)), todos,
+    }),
   }
 }
 

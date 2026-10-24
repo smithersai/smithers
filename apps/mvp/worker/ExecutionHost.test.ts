@@ -37,6 +37,7 @@ import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import * as DomainFlows from "./domains/DomainFlows.ts"
 import { DomainProvider } from "./domains/Provider.ts"
 import * as SecretFlows from "./secrets/SecretFlows.ts"
+import * as ModelFlows from "./personal/ModelFlows.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
 import { openExecutionId } from "../src/features/terminal/contract.ts"
 import { cookie, SECRET, signInHarness } from "./test/signIn.ts"
@@ -782,13 +783,16 @@ describe("ExecutionHost over the compose Postgres", () => {
     expect(await repositoryRow(app, "github/octocat/spoon-knife")).toMatchObject({ status: "ready" })
   })
 
-  test("the deployed flows add the sandbox tools', the secrets' and the domains' flows, as worker/Executions.ts composes them", async () => {
+  test("the deployed flows add the sandbox tools', the secrets', the personal models' and the domains' flows, as worker/Executions.ts composes them", async () => {
     const database = (await app.runPromise(Effect.service(TestDatabase.Scratch))).database
     // Never built: only the registration's composition is read.
     const machines = Layer.effect(Machines, Effect.die(new Error("no machine in this test")))
     const flows = ExecutionHost.withDomains(
-      ExecutionHost.withSecrets(
-        ExecutionHost.withSandboxTools(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, machines),
+      ExecutionHost.withPersonalModels(
+        ExecutionHost.withSecrets(
+          ExecutionHost.withSandboxTools(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, machines),
+          database,
+        ),
         database,
       ),
       database,
@@ -804,6 +808,8 @@ describe("ExecutionHost over the compose Postgres", () => {
       ...SandboxCommand.Command.flows,
       SecretFlows.Put,
       SecretFlows.Delete,
+      ModelFlows.Put,
+      ModelFlows.Delete,
       DomainFlows.Verify,
       DomainFlows.Remove,
     ])

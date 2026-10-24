@@ -20,6 +20,7 @@ import {
   WriteRow,
 } from "../features/issues/schema"
 import { CheckRow, PullCommitRow, PullRow, ReviewRow } from "../features/pulls/schema"
+import { Hidden as PersonalModelHidden, PersonalModelRow } from "../features/personal-model/schema"
 import { Repository } from "../features/repo/schema"
 import { SecretRow } from "../features/secrets/schema"
 import { AlertChannel, AlertDelivery, Seen, SpendAlert } from "../features/spend/schema"
@@ -123,6 +124,13 @@ export const ConversationPendingStore = Migrations.local({
 /** The spend alerts this device has seen, by kind. */
 export const SpendSeenStore = Migrations.local({ id: "spend-seen", versions: [Seen], getKey: (row) => row.kind })
 
+/** The failure of the person's own model whose toast this device hid (src/features/personal-model/store.ts). */
+export const PersonalModelHiddenStore = Migrations.local({
+  id: "personal-model-hidden",
+  versions: [PersonalModelHidden],
+  getKey: (row) => row.id,
+})
+
 /** TODO drafts. */
 export const TodoDraftsStore = Migrations.local({ id: "todo-drafts", versions: [TodoDraft], getKey: (row) => row.id })
 
@@ -191,6 +199,8 @@ const synced = [
   Migrations.synced({ id: "pull-checks", version: 1, schema: CheckRow }),
   // A repository's secret names and bindings, one collection per repository; never a value.
   Migrations.synced({ id: "secrets", version: 1, schema: SecretRow, family: true }),
+  // The person's own model: where it answers and its key's last characters; never the key.
+  Migrations.synced({ id: "personal-model", version: 1, schema: PersonalModelRow }),
   Migrations.synced({ id: "repo-runs", version: 1, schema: RepoRunRow }),
 ]
 
@@ -245,6 +255,7 @@ export const deviceRegistry = Migrations.registry({
     AttentionPendingStore,
     ConversationPendingStore,
     SpendSeenStore,
+    PersonalModelHiddenStore,
     TodoDraftsStore,
     FlowFormStore,
     FlowAnswersStore,
