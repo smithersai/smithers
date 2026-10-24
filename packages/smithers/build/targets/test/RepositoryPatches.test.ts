@@ -1,13 +1,6 @@
 /**
- * The repository patches no dependency (Will, 2026-10-16: "get rid of
- * patches"). A dependency that misbehaves in our environment is fixed in the
- * environment or upstream, never forked in `patches/`: the dprint patch that
- * worked around a NixOS guest without its ELF loader (#3007) is gone, and the
- * guest's loader is declared in `.smithers/environment.nix` (#4093).
- *
- * The root install still keys on every patch file the workspace definition
- * names, so a reintroduced patch would re-key it; it never needs a hand-kept
- * list (#3089).
+ * Temporary upstream fixes are declared in the workspace manifest. Install inputs
+ * follow that declaration, so every patch changes the install key automatically.
  */
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
@@ -19,15 +12,20 @@ const repositoryRoot = NodePath.resolve(NodePath.dirname(fileURLToPath(import.me
 const read = (path: string) => Fs.readFile(NodePath.join(repositoryRoot, path), "utf8")
 
 describe("the repository's dependency patches", () => {
-  it("are none: neither package manager applies one", async () => {
-    expect(await read("pnpm-workspace.yaml")).not.toMatch(/^patchedDependencies:/m)
-    expect(JSON.parse(await read("package.json"))).not.toHaveProperty("patchedDependencies")
-    expect(await read("pnpm-lock.yaml")).not.toMatch(/^patchedDependencies:/m)
-    expect(await read("bun.lock")).not.toContain(`"patchedDependencies"`)
-    await expect(Fs.stat(NodePath.join(repositoryRoot, "patches"))).rejects.toMatchObject({ code: "ENOENT" })
-
+  it("declares the upstream fixes and includes every patch in install inputs", async () => {
+    const manifest = await read("pnpm-workspace.yaml")
+    const patches = [
+      "patches/vibelang-unplugin@0.0.3.patch",
+      "patches/@vitest__coverage-v8@5.0.0.patch"
+    ]
     const inputs = await Input.expandPnpmWorkspace(repositoryRoot, "", Input.pnpmWorkspace("//pnpm-workspace.yaml"))
-    expect(inputs.filter((input) => input.endsWith(".patch"))).toEqual([])
+    for (const patch of patches) {
+      expect(manifest).toContain(patch)
+      expect(await read(patch)).toContain("diff --git")
+      expect(inputs).toContain(patch)
+    }
+    expect(JSON.parse(await read("package.json"))).not.toHaveProperty("patchedDependencies")
+    expect(await read("pnpm-lock.yaml")).toMatch(/^patchedDependencies:/m)
   })
 
   it("would come from the workspace definition the root install declares, not a hand-kept list", async () => {

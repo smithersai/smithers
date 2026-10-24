@@ -1,0 +1,17 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -43,8 +43,11 @@
+ 		const result = [];
+ 		// Reduce amount of data sent over rpc by doing some early result filtering
+ 		for (const entry of coverage.result) {
+-			if (filterResult(entry)) {
+-				entry.startOffset = options?.moduleExecutionInfo?.get(normalize(fileURLToPath(entry.url)))?.startOffset || 0;
++			if (filterResult(entry) && !new URL(entry.url).searchParams.has("tsx-namespace")) {
++				// Native loaders do not run Vite's transform; its offsets and map cannot describe their code.
++				const execution = options?.moduleExecutionInfo?.get(normalize(fileURLToPath(entry.url)));
++				if (!execution) continue;
++				entry.startOffset = execution.startOffset || 0;
+ 				result.push(entry);
+ 			}
+ 		}

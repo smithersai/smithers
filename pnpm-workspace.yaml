@@ -62,7 +62,10 @@ overrides:
 # vibelang-unplugin 0.0.3: deferred.d.ts imports index.d.ts, which pulls unplugin and Bun types into every program that
 # type-checks a Worker importing vibelang-unplugin/deferred. Fixed upstream in VibeLang (vibe/fix-deferred-types);
 # delete this patch when the release that carries it is installed.
+# @vitest/coverage-v8 5.0.0 remaps native-loader hits against code Vite did not run.
+# Remove when an upstream Vitest release fixes coverage of natively loaded copies.
 patchedDependencies:
+  "@vitest/coverage-v8@5.0.0": patches/@vitest__coverage-v8@5.0.0.patch
   vibelang-unplugin@0.0.3: patches/vibelang-unplugin@0.0.3.patch
   # alchemy 2.0.0-beta.83: WorkerProvider.diff bundles a Worker from the props Diff.stripEffects returns, which turns
   # its build.input.plugins into undefined, so `alchemy plan` bundled every Worker without its build plugins and

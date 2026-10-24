@@ -20,6 +20,7 @@ overrides:
 pnpmfileChecksum: sha256-WT4I+tYhRao6cP63D8ZRgAv3w9Cn2XcR/8xhNAyhVro=
 
 patchedDependencies:
+  '@vitest/coverage-v8@5.0.0': 5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb
   alchemy@2.0.0-beta.83: 96ea16950c60ebcb2c93d8d723044bf8d04f03cce318dded04bf032e4fb9ea62
   vibelang-unplugin@0.0.3: 9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16
 
@@ -900,7 +901,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -982,7 +983,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -1054,7 +1055,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -1118,7 +1119,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -1176,7 +1177,7 @@ importers:
         version: link:../smithers/flows/plan
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       fast-check:
         specifier: 4.9.0
         version: 4.9.0
@@ -1433,7 +1434,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -1572,7 +1573,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -1657,7 +1658,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -1721,7 +1722,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -1809,7 +1810,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -1921,7 +1922,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -1979,7 +1980,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2116,7 +2117,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2198,7 +2199,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2280,7 +2281,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2365,7 +2366,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2429,7 +2430,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2529,7 +2530,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2672,7 +2673,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2760,7 +2761,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2827,7 +2828,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -2897,7 +2898,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3033,7 +3034,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3097,7 +3098,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       alchemy:
         specifier: 2.0.0-beta.82
         version: 2.0.0-beta.82(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.0))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.5)(hono@4.11.4)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.22.0)
@@ -3170,7 +3171,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3279,7 +3280,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3433,7 +3434,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3500,7 +3501,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3624,7 +3625,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3709,7 +3710,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3772,7 +3773,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3847,7 +3848,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -3932,7 +3933,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4053,7 +4054,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4138,7 +4139,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4205,7 +4206,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4275,7 +4276,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4357,7 +4358,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4430,7 +4431,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4527,7 +4528,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4597,7 +4598,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4670,7 +4671,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4746,7 +4747,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4873,7 +4874,7 @@ importers:
         version: 8.18.2
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -4985,7 +4986,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5088,7 +5089,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5221,7 +5222,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5294,7 +5295,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5382,7 +5383,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5442,7 +5443,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5509,7 +5510,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5588,7 +5589,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5691,7 +5692,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5809,7 +5810,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5912,7 +5913,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -5997,7 +5998,7 @@ importers:
         version: 6.0.2
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -6104,7 +6105,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -6420,7 +6421,7 @@ importers:
         version: 19.2.7(@types/react@19.2.18)
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -6493,7 +6494,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -6587,7 +6588,7 @@ importers:
         version: 26.4.1
       '@vitest/coverage-v8':
         specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
+        version: 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       dprint:
         specifier: 0.57.1
         version: 0.57.1
@@ -21184,7 +21185,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
-  '@vitest/coverage-v8@5.0.0(vitest@5.0.0)':
+  '@vitest/coverage-v8@5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
       '@vitest/istanbul-lib-coverage': 1.0.1
@@ -26614,7 +26615,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/node': 26.4.1
-      '@vitest/coverage-v8': 5.0.0(vitest@5.0.0)
+      '@vitest/coverage-v8': 5.0.0(patch_hash=5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb)(vitest@5.0.0)
       happy-dom: 20.13.2
     transitivePeerDependencies:
       - msw
