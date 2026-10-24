@@ -2,6 +2,7 @@
 import { readFile as readFileAsync } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { workerBuild } from "../../../infra/WorkerBuild.ts"
 
 const MVP = fileURLToPath(new URL("../../..", import.meta.url))
 const ENTRY = join(MVP, "worker/ChatApi.ts")
@@ -60,7 +61,8 @@ export const bundle = async (): Promise<ReadonlyArray<Output>> => {
     input: ENTRY,
     cwd: MVP,
     external: ["lightningcss", "fsevents"],
-    plugins: cloudflare({ compatibilityDate: COMPATIBILITY.date, compatibilityFlags: COMPATIBILITY.flags }) as never,
+    // Alchemy's Bundle.build puts the Worker's own build plugins (infra/WorkerBuild.ts) before its Cloudflare ones.
+    plugins: [workerBuild.input.plugins, cloudflare({ compatibilityDate: COMPATIBILITY.date, compatibilityFlags: COMPATIBILITY.flags })] as never,
     checks: { unresolvedImport: false, ineffectiveDynamicImport: false },
   })
   const { output } = await build.generate({ format: "esm", entryFileNames: "ChatApi.js", strictExecutionOrder: true })

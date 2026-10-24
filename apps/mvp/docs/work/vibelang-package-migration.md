@@ -2,8 +2,8 @@
 title: Migrate Smithers Effect code to VibeLang, one package at a time
 status: in-progress
 area: sdk
-owner: VibeLang migration lead (Claude session 7cd66504)
-updated: 2026-10-21 17:34 PDT
+owner: VibeLang migration lead (Claude session 058a5269)
+updated: 2026-10-23 20:40 PDT
 links: [../rulings.md, vibelang-0-0-2-publish.md, second-build-machine.md]
 ---
 
@@ -24,6 +24,8 @@ links: [../rulings.md, vibelang-0-0-2-publish.md, second-build-machine.md]
 **Done when:** every package's Effect code is `.vibe`. Each package's API is unchanged, and `smthrs build`, `test` and `lint` pass everything that passes on the base. The pain points are fixed or listed with Will's decisions.
 
 **Current state:** 2 of about 60 packages migrated (`fs`, `errors`); tooling landed.
+
+**Temporary bridge, remove with the next VibeLang release:** `patches/vibelang-unplugin@0.0.3.patch` (registered under `patchedDependencies` in `pnpm-workspace.yaml`). vibelang-unplugin 0.0.3's `deferred.d.ts` and `esbuild.d.ts` reach `unplugin`'s declarations, which import `bun`, so any program that type-checks a Worker importing `infra/WorkerBuild.ts` or `vibelang-unplugin/esbuild` got Bun's globals and 30 TS2741 errors in apps/mvp's worker program. The patch makes both declarations import nothing generic, the same change as VibeLang's `vibe/fix-deferred-types`. When Smithers installs the VibeLang release that carries that fix (0.0.4 or later), delete the patch and its `patchedDependencies` entry in the same change that bumps the version.
 
 ## Earlier tracker history (retained)
 

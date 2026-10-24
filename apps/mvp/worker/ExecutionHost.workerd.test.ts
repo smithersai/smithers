@@ -8,6 +8,7 @@ import { SqlClient } from "effect/sql"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
@@ -27,6 +28,8 @@ const bundle = async () => {
     conditions: ["workerd", "worker", "browser"],
     external: ["node:*", "cloudflare:*"],
     logLevel: "silent",
+    // Workspace packages export their source, which can hold `.vibe` modules.
+    plugins: [vibelang()],
   })
   return result.outputFiles[0]!.text
 }

@@ -3,6 +3,7 @@ import { Miniflare } from "miniflare"
 import { mkdtemp, readFile, rm, copyFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import vibelang from "vibelang-unplugin/esbuild"
 import { afterAll, beforeAll, expect, test } from "vitest"
 
 let worker: Miniflare
@@ -12,7 +13,8 @@ beforeAll(async () => {
   await copyFile("index.html", join(directory, "index.html"))
   await copyFile("public/icon-192.png", join(directory, "icon-192.png"))
   await copyFile("public/social-card.png", join(directory, "social-card.png"))
-  const bundle = await build({ entryPoints: ["worker/index.ts"], bundle: true, write: false, format: "esm" })
+  // Workspace packages export their source, which can hold `.vibe` modules.
+  const bundle = await build({ entryPoints: ["worker/index.ts"], bundle: true, write: false, format: "esm", plugins: [vibelang()] })
   worker = new Miniflare({
     workers: [{ config: {
       name: "site",
