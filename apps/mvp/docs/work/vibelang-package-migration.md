@@ -3,7 +3,7 @@ title: Migrate Smithers Effect code to VibeLang, one package at a time
 status: in-progress
 area: sdk
 owner: VibeLang migration lead (Claude session 058a5269)
-updated: 2026-10-23 20:40 PDT
+updated: 2026-10-24 11:00 PDT
 links: [../rulings.md, vibelang-0-0-2-publish.md, second-build-machine.md]
 ---
 
@@ -26,6 +26,10 @@ links: [../rulings.md, vibelang-0-0-2-publish.md, second-build-machine.md]
 **Current state:** 2 of about 60 packages migrated (`fs`, `errors`); tooling landed.
 
 **Temporary bridge, remove with the next VibeLang release:** `patches/vibelang-unplugin@0.0.3.patch` (registered under `patchedDependencies` in `pnpm-workspace.yaml`). vibelang-unplugin 0.0.3's `deferred.d.ts` and `esbuild.d.ts` reach `unplugin`'s declarations, which import `bun`, so any program that type-checks a Worker importing `infra/WorkerBuild.ts` or `vibelang-unplugin/esbuild` got Bun's globals and 30 TS2741 errors in apps/mvp's worker program. The patch makes both declarations import nothing generic, the same change as VibeLang's `vibe/fix-deferred-types`. When Smithers installs the VibeLang release that carries that fix (0.0.4 or later), delete the patch and its `patchedDependencies` entry in the same change that bumps the version.
+
+**Temporary bridge, remove with the Alchemy release that fixes it:** `patches/alchemy@2.0.0-beta.83.patch`. On 2026-10-24 the production deploy of `f54dacc1` failed at `alchemy plan`: ChatApi and ElectricGateway pass `build: workerBuild` (vibelang-unplugin's deferred plugin), but `WorkerProvider.diff` bundles each Worker from `Diff.stripEffects(desired)`, which turns every function and non-plain object in the props into `undefined`. The build plugins never ran at plan time, so `@smthrs/errors`' `.vibe` source failed to parse. The patch hands `hasChanged` the Worker's own `build` options. `apps/mvp/infra/WorkerBundles.test.ts` bundles each Worker through Alchemy's own `WorkerBundle` and holds an expected failure that starts passing when Alchemy fixes `stripEffects`; then delete the patch.
+
+**Draft upstream report for Alchemy (not filed; filing waits on Will):** "`build.input.plugins` is dropped at plan time. In 2.0.0-beta.83, `WorkerProvider.diff` computes `news = stripEffects(desired)` and passes `news` to `hasChanged`, which bundles the Worker. `stripEffects` (`lib/Diff.js`) maps functions and non-plain objects to `undefined`, so a rolldown plugin given through `build.input.plugins` reaches rolldown with its hooks removed (a plugin object literal keeps its keys with `undefined` values; a class instance becomes `undefined`). Any Worker whose sources need a plugin then fails `alchemy plan` while `alchemy deploy`'s apply path, which uses the real props, would succeed. Reproduction: a Worker with `build: { input: { plugins: [{ name: 'x', transform: (code) => code.replace('__X__', '1') }] } }` whose main contains `__X__`; `alchemy plan` against an existing stage bundles it untransformed. Suggested fix: pass `desired.build` (or `desired`) to `hasChanged`'s bundling, and keep `stripEffects` for the resolution check and comparisons."
 
 ## Earlier tracker history (retained)
 

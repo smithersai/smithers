@@ -80,21 +80,24 @@ class ElectricObject extends Cloudflare.DurableObject<ElectricObject>()(
   }),
 ) {}
 
+/** ElectricGateway's Worker settings; infra/WorkerBundles.test.ts bundles the Worker from them. */
+export const props = {
+  main: "infra/ElectricGateway.ts",
+  // Alchemy's Neon module, which the container's declaration names, imports node:crypto.
+  compatibility: { date: "2026-10-01", flags: ["nodejs_compat"] },
+  // Only the stable workers.dev URL, which ChatApi calls; no per-version preview URLs.
+  workersDev: { enabled: true, previewsEnabled: false },
+  build: workerBuild,
+  observability: {
+    enabled: true,
+    logs: { enabled: true, invocationLogs: true, persist: true },
+    traces: { enabled: true, persist: true },
+  },
+}
+
 export default class ElectricGateway extends Cloudflare.Worker<ElectricGateway>()(
   "ElectricGateway",
-  {
-    main: "infra/ElectricGateway.ts",
-    // Alchemy's Neon module, which the container's declaration names, imports node:crypto.
-    compatibility: { date: "2026-10-01", flags: ["nodejs_compat"] },
-    // Only the stable workers.dev URL, which ChatApi calls; no per-version preview URLs.
-    workersDev: { enabled: true, previewsEnabled: false },
-    build: workerBuild,
-    observability: {
-      enabled: true,
-      logs: { enabled: true, invocationLogs: true, persist: true },
-      traces: { enabled: true, persist: true },
-    },
-  },
+  props,
   Effect.gen(function* () {
     // Binds Postgres' direct URL as a secret while Alchemy plans the gateway; at runtime the binding is there.
     const databaseUrl = yield* Effect.serviceOption(DatabaseUrl)

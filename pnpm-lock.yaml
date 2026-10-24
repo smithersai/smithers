@@ -20,6 +20,7 @@ overrides:
 pnpmfileChecksum: sha256-WT4I+tYhRao6cP63D8ZRgAv3w9Cn2XcR/8xhNAyhVro=
 
 patchedDependencies:
+  alchemy@2.0.0-beta.83: 96ea16950c60ebcb2c93d8d723044bf8d04f03cce318dded04bf032e4fb9ea62
   vibelang-unplugin@0.0.3: 9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16
 
 importers:
@@ -582,7 +583,7 @@ importers:
         version: 6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       alchemy:
         specifier: 2.0.0-beta.83
-        version: 2.0.0-beta.83(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.0))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.5)(hono@4.11.4)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.22.0)
+        version: 2.0.0-beta.83(patch_hash=96ea16950c60ebcb2c93d8d723044bf8d04f03cce318dded04bf032e4fb9ea62)(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.0))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.5)(hono@4.11.4)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.22.0)
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -21423,7 +21424,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  alchemy@2.0.0-beta.83(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.0))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.5)(hono@4.11.4)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.22.0):
+  alchemy@2.0.0-beta.83(patch_hash=96ea16950c60ebcb2c93d8d723044bf8d04f03cce318dded04bf032e4fb9ea62)(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.0))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.5)(hono@4.11.4)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.22.0):
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.83(@distilled.cloud/cloudflare@1.0.0-rc.15(effect@4.0.5))(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.0.5)(rolldown@1.2.5)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@alchemy.run/floci': 2.0.0-beta.83(effect@4.0.5)

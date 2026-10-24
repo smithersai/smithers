@@ -1,0 +1,14 @@
+diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/WorkerProvider.js
+--- a/lib/Cloudflare/Workers/WorkerProvider.js
++++ b/lib/Cloudflare/Workers/WorkerProvider.js
+@@ -3672,7 +3672,9 @@
+                 domainsChanged ||
+                 routesChanged ||
+                 cronsChanged ||
+-                (yield* hasChanged(id, fqn, news, output, Array.isArray(newBindings)
++                // smithers patch: bundle with the Worker's own build options; stripEffects above turns build
++                // plugins (functions, class instances) into undefined, so they never ran at plan time.
++                (yield* hasChanged(id, fqn, { ...news, build: desired.build }, output, Array.isArray(newBindings)
+                     ? newBindings
+                     : undefined, accountId))) {
+                 // The immutable script ID is always stable across an update —
