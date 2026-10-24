@@ -3,8 +3,8 @@
 // round, the person's answers, saving a ready draft, writing code, reading a revision, deleting, and the shapes that
 // sync only the person's own rows.
 import { digestSync } from "@smthrs/crypto"
-import { Effect, Layer, Stream } from "effect"
-import { SqlClient } from "effect/sql"
+import { Deferred, Effect, Layer, Stream } from "effect"
+import { SqlClient, Statement } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { MAX_SOURCE_BYTES } from "../src/features/flows-ui/contract.ts"
@@ -247,16 +247,66 @@ describe("deleting a draft", () => {
     expect(await draftRow(draftId)).toMatchObject({ status: "saved" })
   })
 
-  test("two deletes at once: one deletes it, the other finds it gone", async () => {
+  test.each(["read", "update"] as const)("a delete paused before its %s finds the other delete committed", async (step) => {
     const h = await open()
     const draftId = crypto.randomUUID()
     expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
-    const answers = await Promise.all([1, 2].map(() => send(h, "POST", `/api/flow-drafts/${draftId}/delete`).then(json)))
-    expect(answers.map(([status]) => status).sort()).toEqual([200, 404])
+    const reached = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    const scratch = await runtime.runPromise(TestDatabase.Scratch)
+    let pauses = 0
+    const loser = await harness(runtime, () => Stream.empty, {
+      actor: member,
+      database: Layer.merge(scratch.database, Layer.succeed(Statement.CurrentTransformer, (statement) =>
+        Effect.gen(function* () {
+          const [query, params] = statement.compile()
+          const target = step === "read" ? /^\s*SELECT actor_id/ : /^\s*UPDATE flow_drafts SET deleted_at/
+          if (target.test(query) && params.includes(draftId) && pauses === 0) {
+            pauses++
+            yield* Deferred.succeed(reached, undefined)
+            yield* Deferred.await(release)
+          }
+          return statement
+        }))),
+    })
+    // Before read: the loser sees the tombstone immediately. Before update: it has read the live draft,
+    // so its conditional UPDATE returns no rows and it must reread the winner's tombstone.
+    const pending = send(loser, "POST", `/api/flow-drafts/${draftId}/delete`).then(json)
+    try {
+      await Promise.race([
+        runtime.runPromise(Deferred.await(reached)),
+        pending.then((answer) => {
+          throw new Error(`delete completed before its ${step} gate: ${JSON.stringify(answer)}`)
+        }),
+      ])
+      expect(await json(await send(h, "POST", `/api/flow-drafts/${draftId}/delete`)))
+        .toEqual([200, { txid: expect.any(Number) }])
+      expect(await json(await send(h, "GET", `/api/flow-drafts/${draftId}`))).toEqual([404, { code: "not_found" }])
+    } finally {
+      await runtime.runPromise(Deferred.succeed(release, undefined))
+      await pending
+    }
+    expect(await pending).toEqual([404, { code: "not_found" }])
+    expect(pauses).toBe(1)
+    expect(loser.only("flow.route")).toMatchObject({ annotations: { route: "draft_delete", status: 404, draftId } })
+    expect(loser.count(PersonalFlows.requests, { route: "draft_delete", status: "404" })).toBe(1)
   })
 })
 
 describe("answers", () => {
+  test("an agent cannot answer the person's draft questions; the draft stays unchanged", async () => {
+    const h = await open()
+    const draftId = crypto.randomUUID()
+    expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
+    const before = await draftRow(draftId)
+    const agent = await open({ ...member, act: { kind: "agent", id: crypto.randomUUID() } })
+    expect(await json(await send(agent, "POST", `/api/flow-drafts/${draftId}/answers`, {
+      round: 0,
+      answers: [{ id: "q1", value: "v2*" }],
+    }))).toEqual([403, { code: "person_only" }])
+    expect(await draftRow(draftId)).toEqual(before)
+  })
+
   test("the author's answers land on the round's questions by id; the same answers again write nothing", async () => {
     const h = await open()
     const draftId = crypto.randomUUID()
