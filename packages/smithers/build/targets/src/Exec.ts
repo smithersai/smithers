@@ -23,6 +23,7 @@ import * as Config from "./Config.ts"
 import * as ExecSandbox from "./ExecSandbox.ts"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
+import { Process } from "./internal/Process.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Secret from "./Secret.ts"
 import * as SecretProxy from "./SecretProxy.ts"
@@ -1120,7 +1121,8 @@ const spawnTool = (
         try: () => spawnShape(payload.argv, { env }),
         catch: (cause) => failure(failureMessage(cause), "spawn_failed")
       })
-      const handle = yield* ScopedProcess.spawn({
+      const processService = (yield* Process) ?? ScopedProcess
+      const handle = yield* processService.spawn({
         command: shape.file,
         args: shape.args,
         cwd,
@@ -1167,7 +1169,7 @@ const spawnTool = (
           )
         )
       const [status] = yield* Effect.all([
-        ScopedProcess.status(handle).pipe(
+        processService.status(handle).pipe(
           Effect.mapError((cause) => failure(failureMessage(cause.cause ?? cause), "stream_failed"))
         ),
         consume(handle.stdout, stdout, "stdout", onStdout),

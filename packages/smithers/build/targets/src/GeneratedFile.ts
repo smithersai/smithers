@@ -22,6 +22,7 @@ import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as NodeUtil from "node:util/types"
 import * as Input from "./Input.ts"
+import { PublicationFileSystem } from "./internal/PublicationFileSystem.ts"
 import * as SafeFs from "./SafeFs.ts"
 
 /**
@@ -258,163 +259,173 @@ interface ParentDirectory {
 }
 
 /** Resolves each parent component without ever accepting a directory link. */
-const prepareParent = async (
-  root: string,
-  relative: string,
-  create: boolean,
-  signal: AbortSignal
-): Promise<ParentDirectory | undefined> => {
-  let current = root
-  let currentStats = await Fs.lstat(current, { bigint: true })
-  if (!currentStats.isDirectory() || currentStats.isSymbolicLink()) {
-    throw new Error(`workspace root is not a real directory: ${root}`)
+const publication = (io: typeof Fs) => {
+  const prepareParent = async (
+    root: string,
+    relative: string,
+    create: boolean,
+    signal: AbortSignal
+  ): Promise<ParentDirectory | undefined> => {
+    let current = root
+    let currentStats = await io.lstat(current, { bigint: true })
+    if (!currentStats.isDirectory() || currentStats.isSymbolicLink()) {
+      throw new Error(`workspace root is not a real directory: ${root}`)
+    }
+    const parent = NodePath.dirname(relative).split(NodePath.sep).join("/")
+    const segments = parent === "." ? [] : parent.split("/")
+    for (const segment of segments) {
+      signal.throwIfAborted()
+      const candidate = NodePath.join(current, segment)
+      let stats: NodeFs.BigIntStats
+      try {
+        stats = await io.lstat(candidate, { bigint: true })
+      } catch (cause) {
+        if (SafeFs.errorCode(cause) !== "ENOENT") throw cause
+        if (!create) return undefined
+        let created = false
+        try {
+          await io.mkdir(candidate)
+          created = true
+        } catch (mkdirCause) {
+          if (SafeFs.errorCode(mkdirCause) !== "EEXIST") throw mkdirCause
+        }
+        if (created) await SafeFs.syncDirectory(current)
+        stats = await io.lstat(candidate, { bigint: true })
+      }
+      if (stats.isSymbolicLink()) throw new Error(`generated output parent is a symbolic link: ${candidate}`)
+      if (!stats.isDirectory()) throw new Error(`generated output parent is not a directory: ${candidate}`)
+      const real = await io.realpath(candidate)
+      if (!SafeFs.inside(root, real)) throw new Error(`generated output parent leaves the workspace: ${candidate}`)
+      const resolvedStats = await io.lstat(real, { bigint: true })
+      if (!resolvedStats.isDirectory() || identity(resolvedStats) !== identity(stats)) {
+        throw new Error(`generated output parent changed while it was being resolved: ${candidate}`)
+      }
+      current = real
+      currentStats = resolvedStats
+    }
+    return { path: current, stats: currentStats }
   }
-  const parent = NodePath.dirname(relative).split(NodePath.sep).join("/")
-  const segments = parent === "." ? [] : parent.split("/")
-  for (const segment of segments) {
+
+  /** Rechecks the directory object held across temp-file publication. */
+  const checkParent = async (root: string, expected: ParentDirectory, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted()
-    const candidate = NodePath.join(current, segment)
-    let stats: NodeFs.BigIntStats
+    const real = await io.realpath(expected.path)
+    const stats = await io.lstat(real, { bigint: true })
+    if (
+      !SafeFs.inside(root, real) ||
+      real !== expected.path ||
+      !stats.isDirectory() ||
+      stats.isSymbolicLink() ||
+      identity(stats) !== identity(expected.stats)
+    ) {
+      throw new Error(`generated output parent changed while the file was being published: ${expected.path}`)
+    }
+  }
+
+  const openTemp = async (
+    directory: string,
+    base: string,
+    mode: number,
+    signal: AbortSignal
+  ): Promise<{ readonly handle: Fs.FileHandle; readonly path: string }> => {
+    const flags = NodeFs.constants.O_WRONLY |
+      NodeFs.constants.O_CREAT |
+      NodeFs.constants.O_EXCL |
+      (NodeFs.constants.O_NOFOLLOW ?? 0)
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      signal.throwIfAborted()
+      const path = NodePath.join(directory, `.${base}.${process.pid.toString(36)}.${randomUUID()}.tmp`)
+      try {
+        return { handle: await io.open(path, flags, mode), path }
+      } catch (cause) {
+        if (SafeFs.errorCode(cause) !== "EEXIST") throw cause
+      }
+    }
+    throw new Error(`could not create a unique generated-file temporary in ${directory}`)
+  }
+
+  const writeFile = async (
+    workspaceRoot: string,
+    payload: FilePayload,
+    signal: AbortSignal
+  ): Promise<void> => {
+    const validated = validatePayload(payload)
+    const root = await SafeFs.canonicalRoot(workspaceRoot)
+    const parent = await prepareParent(root, validated.path, true, signal)
+    if (parent === undefined) throw new Error("generated output parent could not be created")
+    const absolute = NodePath.join(parent.path, NodePath.basename(validated.path))
+    let existing: NodeFs.BigIntStats | undefined
     try {
-      stats = await Fs.lstat(candidate, { bigint: true })
+      existing = await io.lstat(absolute, { bigint: true })
     } catch (cause) {
       if (SafeFs.errorCode(cause) !== "ENOENT") throw cause
-      if (!create) return undefined
-      let created = false
-      try {
-        await Fs.mkdir(candidate)
-        created = true
-      } catch (mkdirCause) {
-        if (SafeFs.errorCode(mkdirCause) !== "EEXIST") throw mkdirCause
+    }
+    if (existing?.isSymbolicLink()) throw new Error(`generated output is a symbolic link: ${validated.path}`)
+    if (existing !== undefined && !existing.isFile()) {
+      throw new Error(`generated output is not a regular file: ${validated.path}`)
+    }
+    const mode = existing === undefined ? 0o666 : Number(existing.mode & 0o7777n)
+    const temp = await openTemp(parent.path, NodePath.basename(absolute), mode, signal)
+    let consumed = false
+    let primary: unknown
+    // Rejection values may themselves be undefined. Track failure separately.
+    let failed = false
+    try {
+      const opened = await temp.handle.stat({ bigint: true })
+      const named = await io.lstat(temp.path, { bigint: true })
+      const real = await io.realpath(temp.path)
+      if (
+        !opened.isFile() ||
+        opened.nlink !== 1n ||
+        identity(opened) !== identity(named) ||
+        !SafeFs.inside(root, real)
+      ) {
+        throw new Error("generated-file temporary did not remain a private workspace file")
       }
-      if (created) await SafeFs.syncDirectory(current)
-      stats = await Fs.lstat(candidate, { bigint: true })
-    }
-    if (stats.isSymbolicLink()) throw new Error(`generated output parent is a symbolic link: ${candidate}`)
-    if (!stats.isDirectory()) throw new Error(`generated output parent is not a directory: ${candidate}`)
-    const real = await Fs.realpath(candidate)
-    if (!SafeFs.inside(root, real)) throw new Error(`generated output parent leaves the workspace: ${candidate}`)
-    const resolvedStats = await Fs.lstat(real, { bigint: true })
-    if (!resolvedStats.isDirectory() || identity(resolvedStats) !== identity(stats)) {
-      throw new Error(`generated output parent changed while it was being resolved: ${candidate}`)
-    }
-    current = real
-    currentStats = resolvedStats
-  }
-  return { path: current, stats: currentStats }
-}
-
-/** Rechecks the directory object held across temp-file publication. */
-const checkParent = async (root: string, expected: ParentDirectory, signal: AbortSignal): Promise<void> => {
-  signal.throwIfAborted()
-  const real = await Fs.realpath(expected.path)
-  const stats = await Fs.lstat(real, { bigint: true })
-  if (
-    !SafeFs.inside(root, real) ||
-    real !== expected.path ||
-    !stats.isDirectory() ||
-    stats.isSymbolicLink() ||
-    identity(stats) !== identity(expected.stats)
-  ) {
-    throw new Error(`generated output parent changed while the file was being published: ${expected.path}`)
-  }
-}
-
-const openTemp = async (
-  directory: string,
-  base: string,
-  mode: number,
-  signal: AbortSignal
-): Promise<{ readonly handle: Fs.FileHandle; readonly path: string }> => {
-  const flags = NodeFs.constants.O_WRONLY |
-    NodeFs.constants.O_CREAT |
-    NodeFs.constants.O_EXCL |
-    (NodeFs.constants.O_NOFOLLOW ?? 0)
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    signal.throwIfAborted()
-    const path = NodePath.join(directory, `.${base}.${process.pid.toString(36)}.${randomUUID()}.tmp`)
-    try {
-      return { handle: await Fs.open(path, flags, mode), path }
-    } catch (cause) {
-      if (SafeFs.errorCode(cause) !== "EEXIST") throw cause
-    }
-  }
-  throw new Error(`could not create a unique generated-file temporary in ${directory}`)
-}
-
-const writeFile = async (
-  workspaceRoot: string,
-  payload: FilePayload,
-  signal: AbortSignal
-): Promise<void> => {
-  const validated = validatePayload(payload)
-  const root = await SafeFs.canonicalRoot(workspaceRoot)
-  const parent = await prepareParent(root, validated.path, true, signal)
-  if (parent === undefined) throw new Error("generated output parent could not be created")
-  const absolute = NodePath.join(parent.path, NodePath.basename(validated.path))
-  let existing: NodeFs.BigIntStats | undefined
-  try {
-    existing = await Fs.lstat(absolute, { bigint: true })
-  } catch (cause) {
-    if (SafeFs.errorCode(cause) !== "ENOENT") throw cause
-  }
-  if (existing?.isSymbolicLink()) throw new Error(`generated output is a symbolic link: ${validated.path}`)
-  if (existing !== undefined && !existing.isFile()) {
-    throw new Error(`generated output is not a regular file: ${validated.path}`)
-  }
-  const mode = existing === undefined ? 0o666 : Number(existing.mode & 0o7777n)
-  const temp = await openTemp(parent.path, NodePath.basename(absolute), mode, signal)
-  let consumed = false
-  let primary: unknown
-  try {
-    const opened = await temp.handle.stat({ bigint: true })
-    const named = await Fs.lstat(temp.path, { bigint: true })
-    const real = await Fs.realpath(temp.path)
-    if (
-      !opened.isFile() ||
-      opened.nlink !== 1n ||
-      identity(opened) !== identity(named) ||
-      !SafeFs.inside(root, real)
-    ) {
-      throw new Error("generated-file temporary did not remain a private workspace file")
-    }
-    signal.throwIfAborted()
-    await temp.handle.writeFile(payload.contents, "utf8")
-    if (existing !== undefined) await temp.handle.chmod(mode)
-    const written = await temp.handle.stat({ bigint: true })
-    if (!written.isFile() || written.nlink !== 1n || written.size !== BigInt(validated.bytes)) {
-      throw new Error("generated-file temporary did not contain the complete output")
-    }
-    await temp.handle.sync()
-  } catch (cause) {
-    primary = cause
-  }
-  try {
-    await temp.handle.close()
-  } catch (cause) {
-    primary = primary === undefined ? cause : combinedFailure(primary, cause, "temporary file close also failed")
-  }
-  if (primary === undefined) {
-    try {
-      await checkParent(root, parent, signal)
-      await Fs.rename(temp.path, absolute)
-      consumed = true
-      await SafeFs.syncDirectory(parent.path)
+      signal.throwIfAborted()
+      await temp.handle.writeFile(payload.contents, "utf8")
+      if (existing !== undefined) await temp.handle.chmod(mode)
+      const written = await temp.handle.stat({ bigint: true })
+      if (!written.isFile() || written.nlink !== 1n || written.size !== BigInt(validated.bytes)) {
+        throw new Error("generated-file temporary did not contain the complete output")
+      }
+      await temp.handle.sync()
     } catch (cause) {
       primary = cause
+      failed = true
     }
-  }
-  if (!consumed) {
     try {
-      await Fs.rm(temp.path, { force: true })
+      await temp.handle.close()
     } catch (cause) {
-      primary = primary === undefined
-        ? cause
-        : combinedFailure(primary, cause, "temporary file cleanup also failed")
+      primary = failed ? combinedFailure(primary, cause, "temporary file close also failed") : cause
+      failed = true
     }
+    if (!failed) {
+      try {
+        await checkParent(root, parent, signal)
+        await io.rename(temp.path, absolute)
+        consumed = true
+        await SafeFs.syncDirectory(parent.path)
+      } catch (cause) {
+        primary = cause
+        failed = true
+      }
+    }
+    if (!consumed) {
+      try {
+        await io.rm(temp.path, { force: true })
+      } catch (cause) {
+        primary = failed ? combinedFailure(primary, cause, "temporary file cleanup also failed") : cause
+        failed = true
+      }
+    }
+    if (failed) throw primary
   }
-  if (primary !== undefined) throw primary
+
+  return { prepareParent, checkParent, writeFile }
 }
+
+const { prepareParent, checkParent } = publication(Fs)
 
 /**
  * Writes contents to a sibling temp file, then renames it into place.
@@ -429,10 +440,11 @@ export const writeGeneratedFile = (
   workspaceRoot: string,
   payload: FilePayload
 ): Effect.Effect<void, WriteFileError> =>
-  Effect.tryPromise({
-    try: (signal) => writeFile(workspaceRoot, payload, signal),
-    catch: (cause) => new WriteFileError({ path: payload.path, message: failureMessage(cause) })
-  })
+  Effect.flatMap(PublicationFileSystem, (io) =>
+    Effect.tryPromise({
+      try: (signal) => publication(io ?? Fs).writeFile(workspaceRoot, payload, signal),
+      catch: (cause) => new WriteFileError({ path: payload.path, message: failureMessage(cause) })
+    }))
 
 /**
  * Publishes a generated symlink without traversing symlinked parent directories.

@@ -27,6 +27,7 @@ import * as NodePath from "node:path"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
 import * as PrivateStore from "./internal/PrivateStore.ts"
+import { Process } from "./internal/Process.ts"
 import * as ReviewBatches from "./internal/ReviewBatches.ts"
 import { maximumResponseTokens, reviewModel, seatReviewModel } from "./internal/ReviewModel.ts"
 import { Engine } from "./ModelEngine.ts"
@@ -1361,7 +1362,8 @@ const spawnText = (
       try: () => nodeModule(executable),
       catch: (cause) => cause as NodeJS.ErrnoException
     })
-    const child = yield* ScopedProcess.spawn({
+    const processService = (yield* Process) ?? ScopedProcess
+    const child = yield* processService.spawn({
       command: script ? process.execPath : executable,
       args: script ? [executable, ...args] : args,
       cwd: options.engine === undefined ? cwd : home,
@@ -1374,7 +1376,7 @@ const spawnText = (
     const stdout = byteCapture(options.stdoutBytes)
     const stderr = tailCapture(maximumStderrBytes)
     const [status] = yield* Effect.all([
-      ScopedProcess.status(child).pipe(Effect.mapError(subprocessError)),
+      processService.status(child).pipe(Effect.mapError(subprocessError)),
       child.stdout.pipe(
         Stream.mapError((error) => spawnError(`stdout could not be read: ${subprocessError(error).message}`, "EIO")),
         Stream.runForEach((chunk) =>

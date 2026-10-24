@@ -26,6 +26,7 @@ import * as Exec from "./Exec.ts"
 import * as Filegroup from "./Filegroup.ts"
 import * as GeneratedFile from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
+import { PublicationFileSystem } from "./internal/PublicationFileSystem.ts"
 import * as Reference from "./Reference.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Shell from "./Shell.ts"
@@ -340,458 +341,527 @@ const absent: OutputState = { kind: "absent", bytes: undefined, mode: undefined 
  * final file is opened with `O_NOFOLLOW`, so a link swapped in after `lstat`
  * fails instead of exposing its target. Only ENOENT means absent.
  */
-const checkedOutputPath = async (
-  root: string,
-  path: string,
-  signal: AbortSignal | undefined
-): Promise<string | undefined> => {
-  const absolute = NodePath.resolve(root, path)
-  if (!SafeFs.inside(root, absolute)) throw new Error(`declared output escapes the workspace: ${path}`)
-  const rootStats = await Fs.lstat(root)
-  if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) {
-    throw new Error(`canonical workspace root was replaced while outputs were checked: ${root}`)
+const generatorOperations = (io: typeof Fs) => {
+  const checkedOutputPath = async (
+    root: string,
+    path: string,
+    signal: AbortSignal | undefined
+  ): Promise<string | undefined> => {
+    const absolute = NodePath.resolve(root, path)
+    if (!SafeFs.inside(root, absolute)) throw new Error(`declared output escapes the workspace: ${path}`)
+    const rootStats = await io.lstat(root)
+    if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) {
+      throw new Error(`canonical workspace root was replaced while outputs were checked: ${root}`)
+    }
+    const relative = NodePath.relative(root, absolute)
+    const segments = relative === "" ? [] : relative.split(NodePath.sep)
+    let parent = root
+    for (const segment of segments.slice(0, -1)) {
+      signal?.throwIfAborted()
+      parent = NodePath.join(parent, segment)
+      let stats
+      try {
+        stats = await io.lstat(parent)
+      } catch (cause) {
+        if (SafeFs.errorCode(cause) === "ENOENT") return undefined
+        throw cause
+      }
+      const ancestor = NodePath.relative(root, parent).split(NodePath.sep).join("/")
+      if (stats.isSymbolicLink()) {
+        throw new Error(`declared output ${path} has a symbolic link ancestor: ${ancestor}`)
+      }
+      if (!stats.isDirectory()) {
+        throw new Error(`declared output ${path} has a non-directory ancestor: ${ancestor}`)
+      }
+    }
+    return absolute
   }
-  const relative = NodePath.relative(root, absolute)
-  const segments = relative === "" ? [] : relative.split(NodePath.sep)
-  let parent = root
-  for (const segment of segments.slice(0, -1)) {
+
+  const readOutput = async (
+    root: string,
+    path: string,
+    signal: AbortSignal | undefined,
+    options: {
+      readonly metadataOnly?: boolean
+      readonly backup?: string
+      readonly budget?: SnapshotBudget
+      readonly preview?: boolean
+    } = {}
+  ): Promise<OutputState> => {
     signal?.throwIfAborted()
-    parent = NodePath.join(parent, segment)
+    const absolute = await checkedOutputPath(root, path, signal)
+    if (absolute === undefined) return absent
     let stats
     try {
-      stats = await Fs.lstat(parent)
+      stats = await io.lstat(absolute)
     } catch (cause) {
-      if (SafeFs.errorCode(cause) === "ENOENT") return undefined
+      if (SafeFs.errorCode(cause) === "ENOENT") return absent
       throw cause
     }
-    const ancestor = NodePath.relative(root, parent).split(NodePath.sep).join("/")
     if (stats.isSymbolicLink()) {
-      throw new Error(`declared output ${path} has a symbolic link ancestor: ${ancestor}`)
+      return { kind: "symlink", bytes: Buffer.from(await io.readlink(absolute), "utf8"), mode: undefined }
     }
-    if (!stats.isDirectory()) {
-      throw new Error(`declared output ${path} has a non-directory ancestor: ${ancestor}`)
-    }
-  }
-  return absolute
-}
-
-const readOutput = async (
-  root: string,
-  path: string,
-  signal: AbortSignal | undefined,
-  options: {
-    readonly metadataOnly?: boolean
-    readonly backup?: string
-    readonly budget?: SnapshotBudget
-    readonly preview?: boolean
-  } = {}
-): Promise<OutputState> => {
-  signal?.throwIfAborted()
-  const absolute = await checkedOutputPath(root, path, signal)
-  if (absolute === undefined) return absent
-  let stats
-  try {
-    stats = await Fs.lstat(absolute)
-  } catch (cause) {
-    if (SafeFs.errorCode(cause) === "ENOENT") return absent
-    throw cause
-  }
-  if (stats.isSymbolicLink()) {
-    return { kind: "symlink", bytes: Buffer.from(await Fs.readlink(absolute), "utf8"), mode: undefined }
-  }
-  if (stats.isDirectory()) return { kind: "directory", bytes: undefined, mode: stats.mode & 0o7777 }
-  if (!stats.isFile()) return { kind: "other", bytes: undefined, mode: stats.mode & 0o7777 }
-  if (options.metadataOnly) return { kind: "file", bytes: undefined, mode: stats.mode & 0o7777 }
-  const handle = await Fs.open(
-    absolute,
-    NodeFsConstants.O_RDONLY | NodeFsConstants.O_NOFOLLOW | NodeFsConstants.O_NONBLOCK
-  )
-  let destination: Fs.FileHandle | undefined
-  try {
-    const opened = await handle.stat()
-    if (!opened.isFile()) throw new Error(`declared output changed while it was being read: ${path}`)
-    const fileLimit = options.budget?.fileBytes ?? maximumSnapshotFileBytes
-    if (opened.size > fileLimit) throw new Error(`declared output exceeds its file byte limit of ${fileLimit}: ${path}`)
-    if (options.backup !== undefined) {
-      const target = NodePath.join(options.backup, "files", path)
-      await Fs.mkdir(NodePath.dirname(target), { recursive: true })
-      destination = await Fs.open(
-        target,
-        NodeFsConstants.O_WRONLY | NodeFsConstants.O_CREAT | NodeFsConstants.O_EXCL,
-        0o600
-      )
-    }
-    const hash = createHash("sha256")
-    const buffer = Buffer.alloc(outputChunkBytes)
-    const preview = options.preview && opened.size <= outputChunkBytes ? Buffer.alloc(opened.size) : undefined
-    let total = 0
-    while (true) {
-      signal?.throwIfAborted()
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null)
-      if (bytesRead === 0) break
-      const chunk = buffer.subarray(0, bytesRead)
-      if (preview !== undefined && total < preview.length) {
-        preview.set(chunk.subarray(0, preview.length - total), total)
+    if (stats.isDirectory()) return { kind: "directory", bytes: undefined, mode: stats.mode & 0o7777 }
+    if (!stats.isFile()) return { kind: "other", bytes: undefined, mode: stats.mode & 0o7777 }
+    if (options.metadataOnly) return { kind: "file", bytes: undefined, mode: stats.mode & 0o7777 }
+    const handle = await io.open(
+      absolute,
+      NodeFsConstants.O_RDONLY | NodeFsConstants.O_NOFOLLOW | NodeFsConstants.O_NONBLOCK
+    )
+    let destination: Fs.FileHandle | undefined
+    try {
+      const opened = await handle.stat()
+      if (!opened.isFile()) throw new Error(`declared output changed while it was being read: ${path}`)
+      const fileLimit = options.budget?.fileBytes ?? maximumSnapshotFileBytes
+      if (opened.size > fileLimit) {
+        throw new Error(`declared output exceeds its file byte limit of ${fileLimit}: ${path}`)
       }
-      total += bytesRead
-      if (total > fileLimit) throw new Error(`declared output exceeds its file byte limit of ${fileLimit}: ${path}`)
-      if (options.budget !== undefined) {
-        options.budget.bytes += bytesRead
-        if (options.budget.bytes > options.budget.totalBytes) {
-          throw new Error(`declared output snapshot exceeds its aggregate byte limit of ${options.budget.totalBytes}`)
+      if (options.backup !== undefined) {
+        const target = NodePath.join(options.backup, "files", path)
+        await io.mkdir(NodePath.dirname(target), { recursive: true })
+        destination = await io.open(
+          target,
+          NodeFsConstants.O_WRONLY | NodeFsConstants.O_CREAT | NodeFsConstants.O_EXCL,
+          0o600
+        )
+      }
+      const hash = createHash("sha256")
+      const buffer = Buffer.alloc(outputChunkBytes)
+      const preview = options.preview && opened.size <= outputChunkBytes ? Buffer.alloc(opened.size) : undefined
+      let total = 0
+      while (true) {
+        signal?.throwIfAborted()
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, null)
+        if (bytesRead === 0) break
+        const chunk = buffer.subarray(0, bytesRead)
+        if (preview !== undefined && total < preview.length) {
+          preview.set(chunk.subarray(0, preview.length - total), total)
+        }
+        total += bytesRead
+        if (total > fileLimit) throw new Error(`declared output exceeds its file byte limit of ${fileLimit}: ${path}`)
+        if (options.budget !== undefined) {
+          options.budget.bytes += bytesRead
+          if (options.budget.bytes > options.budget.totalBytes) {
+            throw new Error(`declared output snapshot exceeds its aggregate byte limit of ${options.budget.totalBytes}`)
+          }
+        }
+        hash.update(chunk)
+        await destination?.writeFile(chunk)
+      }
+      const after = await handle.stat()
+      if (
+        total !== opened.size || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs ||
+        after.ctimeMs !== opened.ctimeMs
+      ) {
+        throw new Error(`declared output changed while it was being read: ${path}`)
+      }
+      return { kind: "file", bytes: preview, digest: hash.digest("hex"), mode: opened.mode & 0o7777 }
+    } finally {
+      try {
+        await destination?.close()
+      } finally {
+        await handle.close()
+      }
+    }
+  }
+
+  interface OutputWalk {
+    readonly paths: Set<string>
+    readonly visited: Set<string>
+    directories: number
+    entries: number
+    files: number
+  }
+
+  type OutputWalkLimit = "directories" | "entries" | "files"
+
+  const withinOutputLimit = (key: OutputWalkLimit, value: number): void => {
+    const limit = Input.defaultScanLimits[key]
+    if (value > limit) throw new Error(`declared output scan exceeds its ${key} limit of ${limit}`)
+  }
+
+  const walkOutputDirectory = async (
+    root: string,
+    path: string,
+    walk: OutputWalk,
+    signal: AbortSignal | undefined
+  ): Promise<void> => {
+    if (walk.visited.has(path)) return
+    signal?.throwIfAborted()
+    const depth = path === "." ? 0 : path.split("/").length
+    if (depth > Input.defaultScanLimits.depth) {
+      throw new Error(`declared output scan exceeds its depth limit of ${Input.defaultScanLimits.depth}`)
+    }
+    const absolute = await checkedOutputPath(root, path, signal)
+    if (absolute === undefined) {
+      throw new Error(`declared output directory disappeared while it was being read: ${path}`)
+    }
+    const directory = await SafeFs.resolveDirectory(absolute, {
+      root,
+      signal,
+      what: "declared output directory"
+    })
+    if (directory === undefined) {
+      throw new Error(`declared output directory was replaced while it was being read: ${path}`)
+    }
+    walk.visited.add(path)
+    walk.directories += 1
+    withinOutputLimit("directories", walk.directories)
+    const remaining = Input.defaultScanLimits.entries - walk.entries
+    const children = await SafeFs.listDirectory(absolute, directory, {
+      root,
+      signal,
+      what: "declared output directory",
+      directoryEntries: Math.min(SafeFs.maximumDirectoryEntries, remaining)
+    })
+    walk.entries += children.length
+    withinOutputLimit("entries", walk.entries)
+    for (const child of [...children].sort((left, right) => left.name.localeCompare(right.name))) {
+      signal?.throwIfAborted()
+      const childPath = path === "." ? child.name : `${path}/${child.name}`
+      walk.paths.add(childPath)
+      if (child.isDirectory()) {
+        await walkOutputDirectory(root, childPath, walk, signal)
+      } else {
+        walk.files += 1
+        withinOutputLimit("files", walk.files)
+      }
+    }
+  }
+
+  /**
+   * Expands the declared `changes` patterns against the real tree.
+   *
+   * The expansion is not package scoped. `changes` is a write set, not an input
+   * glob: a root declaration that names `packages/smithers/generated.ts` owns that
+   * path even though `packages/smithers/PACKAGE.ts` makes the directory its own
+   * package. Scoping it would expand to nothing, so the check would snapshot
+   * nothing, compare nothing, and leave the generator's rewrite in the tree
+   * while reporting success.
+   */
+  const outputPaths = async (
+    root: string,
+    changes: ReadonlyArray<string>,
+    signal: AbortSignal | undefined
+  ): Promise<ReadonlyArray<string>> => {
+    const paths = new Set<string>()
+    const walk: OutputWalk = { paths, visited: new Set(), directories: 0, entries: 0, files: 0 }
+    for (const pattern of changes) {
+      signal?.throwIfAborted()
+      const expanded = await Input.expandGlob(root, "", pattern, { packageScoped: false, signal })
+      for (const path of expanded) paths.add(path)
+      const declared = Input.resolvePath("", pattern)
+      paths.add(declared)
+      if ((await readOutput(root, declared, signal, { metadataOnly: true })).kind === "directory") {
+        await walkOutputDirectory(root, declared, walk, signal)
+      }
+    }
+    return [...paths].sort()
+  }
+
+  const snapshotOutputs = async (
+    workspaceRoot: string,
+    changes: ReadonlyArray<string>,
+    signal: AbortSignal | undefined,
+    limits: SnapshotLimits = {}
+  ): Promise<OutputTreeSnapshot> => {
+    const budget = snapshotBudget(limits)
+    const root = await SafeFs.canonicalRoot(workspaceRoot)
+    const backup = await io.mkdtemp(NodePath.join(await io.realpath(Os.tmpdir()), "smithers-generator-backup-"))
+    try {
+      if (SafeFs.inside(root, backup)) throw new Error(`generator backup must be outside the workspace: ${backup}`)
+      const paths = await outputPaths(root, changes, signal)
+      const entries = new Array<OutputSnapshot>(paths.length)
+      let cursor = 0
+      let failure: unknown
+      const worker = async (): Promise<void> => {
+        while (failure === undefined) {
+          const index = cursor++
+          if (index >= paths.length) return
+          const path = paths[index]!
+          try {
+            entries[index] = { path, ...await readOutput(root, path, signal, { backup, budget }) }
+            if (entries[index].kind === "other") throw new Error(`declared output is not recoverable: ${path}`)
+          } catch (cause) {
+            failure = cause
+          }
         }
       }
-      hash.update(chunk)
-      await destination?.writeFile(chunk)
+      // Drain every active copy before cleanup, including when one worker fails.
+      await Promise.all(Array.from({ length: Math.min(snapshotConcurrency, paths.length) }, worker))
+      if (failure !== undefined) throw failure
+      await io.writeFile(
+        NodePath.join(backup, "manifest.json"),
+        JSON.stringify({
+          root,
+          entries: entries.map(({ bytes, ...entry }) => ({ ...entry, link: bytes?.toString("utf8") }))
+        }),
+        { mode: 0o600 }
+      )
+      return { root, entries, backup, restoreAttempted: false, restored: false }
+    } catch (cause) {
+      await io.rm(backup, { recursive: true, force: true })
+      throw cause
     }
-    const after = await handle.stat()
-    if (
-      total !== opened.size || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs ||
-      after.ctimeMs !== opened.ctimeMs
-    ) {
-      throw new Error(`declared output changed while it was being read: ${path}`)
+  }
+
+  const unchanged = (previous: OutputState, current: OutputState): boolean => {
+    if (previous.kind !== current.kind || previous.mode !== current.mode || previous.digest !== current.digest) {
+      return false
     }
-    return { kind: "file", bytes: preview, digest: hash.digest("hex"), mode: opened.mode & 0o7777 }
-  } finally {
+    if (previous.bytes === undefined) return current.bytes === undefined
+    return current.bytes !== undefined && equalBytes(previous.bytes, current.bytes)
+  }
+
+  /**
+   * Puts one declared output back exactly as it was.
+   *
+   * Removal unlinks a final symlink instead of following it. Replacement files
+   * use `O_NOFOLLOW`, so a link recreated between removal and open fails loudly.
+   * Directories use a temporary owner-writable mode until their children return;
+   * the restore applies recorded directory modes only after the whole tree exists.
+   */
+  const sameContents = (previous: OutputState, current: OutputState): boolean => {
+    if (previous.kind !== current.kind || previous.digest !== current.digest) return false
+    if (previous.bytes === undefined) return current.bytes === undefined
+    return current.bytes !== undefined && equalBytes(previous.bytes, current.bytes)
+  }
+
+  const needsReplacement = (previous: OutputState, current: OutputState): boolean =>
+    previous.kind !== current.kind || !sameContents(previous, current)
+
+  const removeOutput = async (
+    root: string,
+    path: string,
+    signal: AbortSignal | undefined
+  ): Promise<void> => {
+    signal?.throwIfAborted()
+    const absolute = await checkedOutputPath(root, path, signal)
+    if (absolute === undefined) return
+    if (absolute === root) throw new Error("the workspace root cannot be replaced as a declared output")
+    await io.rm(absolute, { force: true, recursive: true })
+  }
+
+  const restoreMode = async (
+    root: string,
+    path: string,
+    previous: OutputState,
+    signal: AbortSignal | undefined
+  ): Promise<void> => {
+    if (previous.mode === undefined || (previous.kind !== "directory" && previous.kind !== "file")) return
+    signal?.throwIfAborted()
+    const absolute = await checkedOutputPath(root, path, signal)
+    if (absolute === undefined) throw new Error(`declared output parent is missing during restore: ${path}`)
+    const handle = await io.open(
+      absolute,
+      NodeFsConstants.O_RDONLY | NodeFsConstants.O_NOFOLLOW | NodeFsConstants.O_NONBLOCK
+    )
     try {
-      await destination?.close()
+      const stats = await handle.stat()
+      if (
+        (previous.kind === "directory" && !stats.isDirectory()) ||
+        (previous.kind === "file" && !stats.isFile())
+      ) throw new Error(`declared output changed while its mode was being restored: ${path}`)
+      if ((stats.mode & 0o7777) !== previous.mode) await handle.chmod(previous.mode)
     } finally {
       await handle.close()
     }
   }
-}
 
-interface OutputWalk {
-  readonly paths: Set<string>
-  readonly visited: Set<string>
-  directories: number
-  entries: number
-  files: number
-}
-
-type OutputWalkLimit = "directories" | "entries" | "files"
-
-const withinOutputLimit = (key: OutputWalkLimit, value: number): void => {
-  const limit = Input.defaultScanLimits[key]
-  if (value > limit) throw new Error(`declared output scan exceeds its ${key} limit of ${limit}`)
-}
-
-const walkOutputDirectory = async (
-  root: string,
-  path: string,
-  walk: OutputWalk,
-  signal: AbortSignal | undefined
-): Promise<void> => {
-  if (walk.visited.has(path)) return
-  signal?.throwIfAborted()
-  const depth = path === "." ? 0 : path.split("/").length
-  if (depth > Input.defaultScanLimits.depth) {
-    throw new Error(`declared output scan exceeds its depth limit of ${Input.defaultScanLimits.depth}`)
-  }
-  const absolute = await checkedOutputPath(root, path, signal)
-  if (absolute === undefined) throw new Error(`declared output directory disappeared while it was being read: ${path}`)
-  const directory = await SafeFs.resolveDirectory(absolute, {
-    root,
-    signal,
-    what: "declared output directory"
-  })
-  if (directory === undefined) {
-    throw new Error(`declared output directory was replaced while it was being read: ${path}`)
-  }
-  walk.visited.add(path)
-  walk.directories += 1
-  withinOutputLimit("directories", walk.directories)
-  const remaining = Input.defaultScanLimits.entries - walk.entries
-  const children = await SafeFs.listDirectory(absolute, directory, {
-    root,
-    signal,
-    what: "declared output directory",
-    directoryEntries: Math.min(SafeFs.maximumDirectoryEntries, remaining)
-  })
-  walk.entries += children.length
-  withinOutputLimit("entries", walk.entries)
-  for (const child of [...children].sort((left, right) => left.name.localeCompare(right.name))) {
+  const restoreOutput = async (
+    root: string,
+    path: string,
+    previous: OutputState,
+    replace: boolean,
+    backup: string,
+    signal: AbortSignal | undefined
+  ): Promise<void> => {
+    if (previous.kind === "absent" || previous.kind === "other") return
+    if (!replace) {
+      if (previous.kind === "file") await restoreMode(root, path, previous, signal)
+      return
+    }
     signal?.throwIfAborted()
-    const childPath = path === "." ? child.name : `${path}/${child.name}`
-    walk.paths.add(childPath)
-    if (child.isDirectory()) {
-      await walkOutputDirectory(root, childPath, walk, signal)
-    } else {
-      walk.files += 1
-      withinOutputLimit("files", walk.files)
+    const absolute = await checkedOutputPath(root, path, signal)
+    if (absolute === undefined) throw new Error(`declared output parent is missing during restore: ${path}`)
+    if (previous.kind === "directory") {
+      await io.mkdir(absolute, { mode: (previous.mode ?? 0o755) | 0o700 })
+      return
     }
-  }
-}
-
-/**
- * Expands the declared `changes` patterns against the real tree.
- *
- * The expansion is not package scoped. `changes` is a write set, not an input
- * glob: a root declaration that names `packages/smithers/generated.ts` owns that
- * path even though `packages/smithers/PACKAGE.ts` makes the directory its own
- * package. Scoping it would expand to nothing, so the check would snapshot
- * nothing, compare nothing, and leave the generator's rewrite in the tree
- * while reporting success.
- */
-const outputPaths = async (
-  root: string,
-  changes: ReadonlyArray<string>,
-  signal: AbortSignal | undefined
-): Promise<ReadonlyArray<string>> => {
-  const paths = new Set<string>()
-  const walk: OutputWalk = { paths, visited: new Set(), directories: 0, entries: 0, files: 0 }
-  for (const pattern of changes) {
-    signal?.throwIfAborted()
-    const expanded = await Input.expandGlob(root, "", pattern, { packageScoped: false, signal })
-    for (const path of expanded) paths.add(path)
-    const declared = Input.resolvePath("", pattern)
-    paths.add(declared)
-    if ((await readOutput(root, declared, signal, { metadataOnly: true })).kind === "directory") {
-      await walkOutputDirectory(root, declared, walk, signal)
+    if (previous.kind === "symlink") {
+      await io.symlink(previous.bytes === undefined ? "" : decodeUtf8(previous.bytes), absolute)
+      return
     }
-  }
-  return [...paths].sort()
-}
-
-const snapshotOutputs = async (
-  workspaceRoot: string,
-  changes: ReadonlyArray<string>,
-  signal: AbortSignal | undefined,
-  limits: SnapshotLimits = {}
-): Promise<OutputTreeSnapshot> => {
-  const budget = snapshotBudget(limits)
-  const root = await SafeFs.canonicalRoot(workspaceRoot)
-  const backup = await Fs.mkdtemp(NodePath.join(await Fs.realpath(Os.tmpdir()), "smithers-generator-backup-"))
-  try {
-    if (SafeFs.inside(root, backup)) throw new Error(`generator backup must be outside the workspace: ${backup}`)
-    const paths = await outputPaths(root, changes, signal)
-    const entries = new Array<OutputSnapshot>(paths.length)
-    let cursor = 0
-    let failure: unknown
-    const worker = async (): Promise<void> => {
-      while (failure === undefined) {
-        const index = cursor++
-        if (index >= paths.length) return
-        const path = paths[index]!
-        try {
-          entries[index] = { path, ...await readOutput(root, path, signal, { backup, budget }) }
-          if (entries[index].kind === "other") throw new Error(`declared output is not recoverable: ${path}`)
-        } catch (cause) {
-          failure = cause
-        }
-      }
-    }
-    // Drain every active copy before cleanup, including when one worker fails.
-    await Promise.all(Array.from({ length: Math.min(snapshotConcurrency, paths.length) }, worker))
-    if (failure !== undefined) throw failure
-    await Fs.writeFile(
-      NodePath.join(backup, "manifest.json"),
-      JSON.stringify({
-        root,
-        entries: entries.map(({ bytes, ...entry }) => ({ ...entry, link: bytes?.toString("utf8") }))
-      }),
-      { mode: 0o600 }
-    )
-    return { root, entries, backup, restoreAttempted: false, restored: false }
-  } catch (cause) {
-    await Fs.rm(backup, { recursive: true, force: true })
-    throw cause
-  }
-}
-
-const unchanged = (previous: OutputState, current: OutputState): boolean => {
-  if (previous.kind !== current.kind || previous.mode !== current.mode || previous.digest !== current.digest) {
-    return false
-  }
-  if (previous.bytes === undefined) return current.bytes === undefined
-  return current.bytes !== undefined && equalBytes(previous.bytes, current.bytes)
-}
-
-/**
- * Puts one declared output back exactly as it was.
- *
- * Removal unlinks a final symlink instead of following it. Replacement files
- * use `O_NOFOLLOW`, so a link recreated between removal and open fails loudly.
- * Directories use a temporary owner-writable mode until their children return;
- * the restore applies recorded directory modes only after the whole tree exists.
- */
-const sameContents = (previous: OutputState, current: OutputState): boolean => {
-  if (previous.kind !== current.kind || previous.digest !== current.digest) return false
-  if (previous.bytes === undefined) return current.bytes === undefined
-  return current.bytes !== undefined && equalBytes(previous.bytes, current.bytes)
-}
-
-const needsReplacement = (previous: OutputState, current: OutputState): boolean =>
-  previous.kind !== current.kind || !sameContents(previous, current)
-
-const removeOutput = async (
-  root: string,
-  path: string,
-  signal: AbortSignal | undefined
-): Promise<void> => {
-  signal?.throwIfAborted()
-  const absolute = await checkedOutputPath(root, path, signal)
-  if (absolute === undefined) return
-  if (absolute === root) throw new Error("the workspace root cannot be replaced as a declared output")
-  await Fs.rm(absolute, { force: true, recursive: true })
-}
-
-const restoreMode = async (
-  root: string,
-  path: string,
-  previous: OutputState,
-  signal: AbortSignal | undefined
-): Promise<void> => {
-  if (previous.mode === undefined || (previous.kind !== "directory" && previous.kind !== "file")) return
-  signal?.throwIfAborted()
-  const absolute = await checkedOutputPath(root, path, signal)
-  if (absolute === undefined) throw new Error(`declared output parent is missing during restore: ${path}`)
-  const handle = await Fs.open(
-    absolute,
-    NodeFsConstants.O_RDONLY | NodeFsConstants.O_NOFOLLOW | NodeFsConstants.O_NONBLOCK
-  )
-  try {
-    const stats = await handle.stat()
-    if (
-      (previous.kind === "directory" && !stats.isDirectory()) ||
-      (previous.kind === "file" && !stats.isFile())
-    ) throw new Error(`declared output changed while its mode was being restored: ${path}`)
-    if ((stats.mode & 0o7777) !== previous.mode) await handle.chmod(previous.mode)
-  } finally {
-    await handle.close()
-  }
-}
-
-const restoreOutput = async (
-  root: string,
-  path: string,
-  previous: OutputState,
-  replace: boolean,
-  backup: string,
-  signal: AbortSignal | undefined
-): Promise<void> => {
-  if (previous.kind === "absent" || previous.kind === "other") return
-  if (!replace) {
-    if (previous.kind === "file") await restoreMode(root, path, previous, signal)
-    return
-  }
-  signal?.throwIfAborted()
-  const absolute = await checkedOutputPath(root, path, signal)
-  if (absolute === undefined) throw new Error(`declared output parent is missing during restore: ${path}`)
-  if (previous.kind === "directory") {
-    await Fs.mkdir(absolute, { mode: (previous.mode ?? 0o755) | 0o700 })
-    return
-  }
-  if (previous.kind === "symlink") {
-    await Fs.symlink(previous.bytes === undefined ? "" : decodeUtf8(previous.bytes), absolute)
-    return
-  }
-  const handle = await Fs.open(
-    absolute,
-    NodeFsConstants.O_WRONLY | NodeFsConstants.O_CREAT | NodeFsConstants.O_EXCL | NodeFsConstants.O_NOFOLLOW,
-    previous.mode ?? 0o644
-  )
-  try {
-    const source = await Fs.open(
-      NodePath.join(backup, "files", path),
-      NodeFsConstants.O_RDONLY | NodeFsConstants.O_NOFOLLOW
+    const handle = await io.open(
+      absolute,
+      NodeFsConstants.O_WRONLY | NodeFsConstants.O_CREAT | NodeFsConstants.O_EXCL | NodeFsConstants.O_NOFOLLOW,
+      previous.mode ?? 0o644
     )
     try {
-      const buffer = Buffer.alloc(outputChunkBytes)
-      while (true) {
-        signal?.throwIfAborted()
-        const { bytesRead } = await source.read(buffer, 0, buffer.length, null)
-        if (bytesRead === 0) break
-        await handle.writeFile(buffer.subarray(0, bytesRead))
+      const source = await io.open(
+        NodePath.join(backup, "files", path),
+        NodeFsConstants.O_RDONLY | NodeFsConstants.O_NOFOLLOW
+      )
+      try {
+        const buffer = Buffer.alloc(outputChunkBytes)
+        while (true) {
+          signal?.throwIfAborted()
+          const { bytesRead } = await source.read(buffer, 0, buffer.length, null)
+          if (bytesRead === 0) break
+          await handle.writeFile(buffer.subarray(0, bytesRead))
+        }
+      } finally {
+        await source.close()
       }
+      if (previous.mode !== undefined) await handle.chmod(previous.mode)
     } finally {
-      await source.close()
+      await handle.close()
     }
-    if (previous.mode !== undefined) await handle.chmod(previous.mode)
-  } finally {
-    await handle.close()
   }
-}
 
-const byDepthThenPath = (left: { readonly path: string }, right: { readonly path: string }): number => {
-  const leftDepth = left.path === "." ? 0 : left.path.split("/").length
-  const rightDepth = right.path === "." ? 0 : right.path.split("/").length
-  return leftDepth - rightDepth || left.path.localeCompare(right.path)
-}
+  const byDepthThenPath = (left: { readonly path: string }, right: { readonly path: string }): number => {
+    const leftDepth = left.path === "." ? 0 : left.path.split("/").length
+    const rightDepth = right.path === "." ? 0 : right.path.split("/").length
+    return leftDepth - rightDepth || left.path.localeCompare(right.path)
+  }
 
-/**
- * Restores every declared output and reports the first one the generator
- * rewrote.
- */
-const restoreOutputs = async (
-  before: OutputTreeSnapshot,
-  changes: ReadonlyArray<string>,
-  signal: AbortSignal | undefined
-): Promise<GeneratedFile.DriftError | undefined> => {
-  const repaired = new Map<string, OutputState>()
-  // Only snapshotted directories are ours to repair. Undeclared ancestors
-  // still fail the no-follow check and leave the recovery tree intact.
-  for (const entry of before.entries.filter((entry) => entry.kind === "directory").sort(byDepthThenPath)) {
-    const current = await readOutput(before.root, entry.path, signal, { metadataOnly: true })
-    if (current.kind !== "directory") {
-      repaired.set(entry.path, current)
-      await removeOutput(before.root, entry.path, signal)
-      await restoreOutput(before.root, entry.path, entry, true, before.backup, signal)
+  /**
+   * Restores every declared output and reports the first one the generator
+   * rewrote.
+   */
+  const restoreOutputs = async (
+    before: OutputTreeSnapshot,
+    changes: ReadonlyArray<string>,
+    signal: AbortSignal | undefined
+  ): Promise<GeneratedFile.DriftError | undefined> => {
+    const repaired = new Map<string, OutputState>()
+    // Only snapshotted directories are ours to repair. Undeclared ancestors
+    // still fail the no-follow check and leave the recovery tree intact.
+    for (const entry of before.entries.filter((entry) => entry.kind === "directory").sort(byDepthThenPath)) {
+      const current = await readOutput(before.root, entry.path, signal, { metadataOnly: true })
+      if (current.kind !== "directory") {
+        repaired.set(entry.path, current)
+        await removeOutput(before.root, entry.path, signal)
+        await restoreOutput(before.root, entry.path, entry, true, before.backup, signal)
+      }
     }
-  }
-  const previousByPath = new Map(before.entries.map((entry) => [entry.path, entry]))
-  const paths = new Set(previousByPath.keys())
-  for (const path of await outputPaths(before.root, changes, signal)) paths.add(path)
-  const currentByPath = new Map<string, OutputState>()
-  for (const path of [...paths].sort()) {
-    currentByPath.set(path, await readOutput(before.root, path, signal))
-  }
-  const changed = [...paths]
-    .map((path) => ({
-      path,
-      previous: previousByPath.get(path) ?? absent,
-      current: repaired.get(path) ?? currentByPath.get(path) ?? absent
-    }))
-    .filter((entry) => !unchanged(entry.previous, entry.current))
-  const first = [...changed].sort((left, right) => left.path.localeCompare(right.path))[0]
-  if (first === undefined) return undefined
-  const message = driftMessage(
-    first.path,
-    first.previous.kind === "file" && first.current.kind === "file"
-      ? await readOutput(NodePath.join(before.backup, "files"), first.path, signal, { preview: true })
-      : first.previous,
-    first.previous.kind === "file" && first.current.kind === "file"
-      ? await readOutput(before.root, first.path, signal, { preview: true })
-      : first.current
-  )
-  for (const entry of [...changed].sort((left, right) => -byDepthThenPath(left, right))) {
-    if (!repaired.has(entry.path) && needsReplacement(entry.previous, entry.current)) {
-      await removeOutput(before.root, entry.path, signal)
+    const previousByPath = new Map(before.entries.map((entry) => [entry.path, entry]))
+    const paths = new Set(previousByPath.keys())
+    for (const path of await outputPaths(before.root, changes, signal)) paths.add(path)
+    const currentByPath = new Map<string, OutputState>()
+    for (const path of [...paths].sort()) {
+      currentByPath.set(path, await readOutput(before.root, path, signal))
     }
+    const changed = [...paths]
+      .map((path) => ({
+        path,
+        previous: previousByPath.get(path) ?? absent,
+        current: repaired.get(path) ?? currentByPath.get(path) ?? absent
+      }))
+      .filter((entry) => !unchanged(entry.previous, entry.current))
+    const first = [...changed].sort((left, right) => left.path.localeCompare(right.path))[0]
+    if (first === undefined) return undefined
+    const message = driftMessage(
+      first.path,
+      first.previous.kind === "file" && first.current.kind === "file"
+        ? await readOutput(NodePath.join(before.backup, "files"), first.path, signal, { preview: true })
+        : first.previous,
+      first.previous.kind === "file" && first.current.kind === "file"
+        ? await readOutput(before.root, first.path, signal, { preview: true })
+        : first.current
+    )
+    for (const entry of [...changed].sort((left, right) => -byDepthThenPath(left, right))) {
+      if (!repaired.has(entry.path) && needsReplacement(entry.previous, entry.current)) {
+        await removeOutput(before.root, entry.path, signal)
+      }
+    }
+    for (const entry of [...changed].sort(byDepthThenPath)) {
+      await restoreOutput(
+        before.root,
+        entry.path,
+        entry.previous,
+        !repaired.has(entry.path) && needsReplacement(entry.previous, entry.current),
+        before.backup,
+        signal
+      )
+    }
+    for (
+      const entry of [...changed]
+        .filter((candidate) => candidate.previous.kind === "directory")
+        .sort((left, right) => -byDepthThenPath(left, right))
+    ) {
+      await restoreMode(before.root, entry.path, entry.previous, signal)
+    }
+    const drift = GeneratedFile.driftError(
+      first.path,
+      message,
+      first.previous.kind === "absent" ? "missing" : "drifted"
+    )
+    return drift
   }
-  for (const entry of [...changed].sort(byDepthThenPath)) {
-    await restoreOutput(
-      before.root,
-      entry.path,
-      entry.previous,
-      !repaired.has(entry.path) && needsReplacement(entry.previous, entry.current),
-      before.backup,
-      signal
+
+  const checkGenerator = (
+    options: {
+      readonly workspaceRoot: string
+      readonly snapshotLimits?: SnapshotLimits | undefined
+      readonly cacheDirectory?: string | undefined
+      readonly sensitiveEnv?: ReadonlyArray<string> | undefined
+      readonly environment?: Exec.ToolEnvironment | undefined
+    },
+    payload: GenerateCheckPayload
+  ): Effect.Effect<void, Exec.ExecError | GeneratedFile.DriftError> => {
+    const failed = (path: string) => (cause: unknown): GeneratedFile.DriftError =>
+      GeneratedFile.driftError(path, GeneratedFile.failureMessage(cause), "unreadable")
+    const declared = payload.changes[0] ?? "generated output"
+    const recoveryFailure = (before: OutputTreeSnapshot) => (cause: unknown): GeneratedFile.DriftError =>
+      failed(declared)(
+        new Error(`${GeneratedFile.failureMessage(cause)}; generator backup retained at ${before.backup}`)
+      )
+    const restore = (before: OutputTreeSnapshot) =>
+      Effect.uninterruptible(Effect.tryPromise({
+        try: async (signal) => {
+          before.restoreAttempted = true
+          const drift = await restoreOutputs(before, payload.changes, signal)
+          before.restored = true
+          return drift
+        },
+        catch: recoveryFailure(before)
+      }))
+    return Effect.acquireUseRelease(
+      Effect.tryPromise({
+        try: (signal) => snapshotOutputs(options.workspaceRoot, payload.changes, signal, options.snapshotLimits),
+        catch: failed(declared)
+      }),
+      (before) =>
+        Effect.flatMap(
+          Effect.exit(Exec.run(options, payload.run)),
+          (ran) =>
+            Effect.flatMap(
+              restore(before),
+              (drift): Effect.Effect<void, Exec.ExecError | GeneratedFile.DriftError> =>
+                Exit.isFailure(ran)
+                  ? Effect.failCause(ran.cause)
+                  : drift === undefined
+                  ? Effect.void
+                  : Effect.fail(drift)
+            )
+        ),
+      // An interrupted generator also returns its borrowed outputs. Failed
+      // restoration keeps the only recoverable copy and names it in the error.
+      (before) =>
+        Effect.andThen(
+          before.restoreAttempted ? Effect.void : Effect.orDie(restore(before)),
+          Effect.orDie(Effect.tryPromise({
+            try: async () => {
+              if (before.restored) await io.rm(before.backup, { recursive: true, force: true })
+            },
+            catch: recoveryFailure(before)
+          }))
+        )
     )
   }
-  for (
-    const entry of [...changed]
-      .filter((candidate) => candidate.previous.kind === "directory")
-      .sort((left, right) => -byDepthThenPath(left, right))
-  ) {
-    await restoreMode(before.root, entry.path, entry.previous, signal)
-  }
-  const drift = GeneratedFile.driftError(
-    first.path,
-    message,
-    first.previous.kind === "absent" ? "missing" : "drifted"
-  )
-  return drift
+
+  return { checkGenerator }
 }
 
 /**
@@ -821,55 +891,8 @@ export const checkGenerator = (
     readonly environment?: Exec.ToolEnvironment | undefined
   },
   payload: GenerateCheckPayload
-): Effect.Effect<void, Exec.ExecError | GeneratedFile.DriftError> => {
-  const failed = (path: string) => (cause: unknown): GeneratedFile.DriftError =>
-    GeneratedFile.driftError(path, GeneratedFile.failureMessage(cause), "unreadable")
-  const declared = payload.changes[0] ?? "generated output"
-  const recoveryFailure = (before: OutputTreeSnapshot) => (cause: unknown): GeneratedFile.DriftError =>
-    failed(declared)(new Error(`${GeneratedFile.failureMessage(cause)}; generator backup retained at ${before.backup}`))
-  const restore = (before: OutputTreeSnapshot) =>
-    Effect.uninterruptible(Effect.tryPromise({
-      try: async (signal) => {
-        before.restoreAttempted = true
-        const drift = await restoreOutputs(before, payload.changes, signal)
-        before.restored = true
-        return drift
-      },
-      catch: recoveryFailure(before)
-    }))
-  return Effect.acquireUseRelease(
-    Effect.tryPromise({
-      try: (signal) => snapshotOutputs(options.workspaceRoot, payload.changes, signal, options.snapshotLimits),
-      catch: failed(declared)
-    }),
-    (before) =>
-      Effect.flatMap(
-        Effect.exit(Exec.run(options, payload.run)),
-        (ran) =>
-          Effect.flatMap(
-            restore(before),
-            (drift): Effect.Effect<void, Exec.ExecError | GeneratedFile.DriftError> =>
-              Exit.isFailure(ran)
-                ? Effect.failCause(ran.cause)
-                : drift === undefined
-                ? Effect.void
-                : Effect.fail(drift)
-          )
-      ),
-    // An interrupted generator also returns its borrowed outputs. Failed
-    // restoration keeps the only recoverable copy and names it in the error.
-    (before) =>
-      Effect.andThen(
-        before.restoreAttempted ? Effect.void : Effect.orDie(restore(before)),
-        Effect.orDie(Effect.tryPromise({
-          try: async () => {
-            if (before.restored) await Fs.rm(before.backup, { recursive: true, force: true })
-          },
-          catch: recoveryFailure(before)
-        }))
-      )
-  )
-}
+): Effect.Effect<void, Exec.ExecError | GeneratedFile.DriftError> =>
+  Effect.flatMap(PublicationFileSystem, (io) => generatorOperations(io ?? Fs).checkGenerator(options, payload))
 
 /**
  * Implements {@link GenerateCheck} by running the generator against the real
