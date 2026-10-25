@@ -165,8 +165,8 @@ export const PinPendingStore = Migrations.local({ id: "message-pin-pending", ver
 
 // --- Synced: the server's rows, kept on the device ---
 
-/** The conversation's messages, one collection per conversation. Version 3: an answer's steps (`parts`). */
-export const MessagesStore = Migrations.synced({ id: "chat-messages", version: 3, schema: Message, family: true })
+/** The conversation's messages, one collection per conversation. Version 4: terminal model quota refusals. */
+export const MessagesStore = Migrations.synced({ id: "chat-messages", version: 4, schema: Message, family: true })
 
 /** The conversation's views. Version 2: a page's title, description and icon. Version 3: docs pages. Version 4: forms and generated views. */
 export const ViewsStore = Migrations.synced({ id: "views", version: 4, schema: View, family: true })

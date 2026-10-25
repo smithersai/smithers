@@ -1,7 +1,7 @@
 // The `queue` scripted agent (./scriptedAgent.ts), turn by turn: what it asks for the person's message, and how it
 // finishes once its cell printed what it heard. The end-to-end tests run it in the browser's engine worker.
 import { ModelRequest } from "@smthrs/model"
-import { Effect, Stream } from "effect"
+import { Cause, Effect, Exit, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { scriptedModel } from "./scriptedAgent"
 
@@ -52,4 +52,9 @@ describe("the queue script", () => {
     )
     expect(await turnOf("Deploy alpha", { answered: false })).toContain(`ctx.done("No answer, so nothing deployed.")`)
   })
+})
+
+test("the quota script injects a terminal credit refusal", async () => {
+  const exit = await Effect.runPromiseExit(Stream.runCollect(scriptedModel("quota-refused")!.stream(request("hi"))))
+  expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code: "out_of_credit", httpStatus: 402 })
 })

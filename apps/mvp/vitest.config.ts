@@ -60,6 +60,8 @@ export default defineConfig({
         "worker/Actor.ts",
         "worker/ErrorCode.ts",
         "worker/ModelEndpoint.ts",
+        "worker/ModelRefusal.ts",
+        "db/migrations/0059_model_quota_failure.ts",
         "worker/ModelRoles.ts",
         "worker/ModelUsage.ts",
         "worker/SetModel.ts",

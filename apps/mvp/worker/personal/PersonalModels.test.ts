@@ -1,3 +1,4 @@
+import { final, finalFailure } from "../ModelRefusal.ts"
 // A person's own model end to end in the Worker (docs/features/personal-model.md): saving, removing and testing it
 // through the real routes, with `model/Put` and `model/Delete` on the Node host's engine; the shape of the person's own
 // row; and the model endpoint answering the person's calls with it. Postgres and Electric are the compose ones; the
@@ -25,7 +26,7 @@ import { SecretKeys } from "../secrets/Keys.ts"
 import { eventually, harness, PERSONAL_KEYS, recorded, testFile } from "../test/harness.ts"
 import * as PersonalApi from "./Api.ts"
 import * as ModelFlows from "./ModelFlows.ts"
-import { final, finalFailure, PersonalModels, PersonalModelsUnavailable, PersonalModelUnusable } from "./Models.ts"
+import { PersonalModels, PersonalModelsUnavailable, PersonalModelUnusable } from "./Models.ts"
 import * as Store from "./Store.ts"
 import * as PersonalUsage from "./Usage.ts"
 import {

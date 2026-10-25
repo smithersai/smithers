@@ -440,6 +440,67 @@ describe("roles", () => {
     expect(result).toEqual([{ model: "second", changes: 2 }])
   })
 
+  test("a model permission failure is not counted as a quota refusal", async () => {
+    const denied = { _tag: "PermissionDenied" } as unknown as Model.ModelFailure
+    const h = await harness(runtime, () => Stream.fail(denied), { actor: member })
+    const response = await call(h, ask("hi"))
+    expect(response.lines.at(-1)).toMatchObject({ type: "error" })
+    expect(h.line("model.quota.refused")).toHaveLength(0)
+  })
+
+  test("a credit refusal without an HTTP status still terminates and records safe telemetry", async () => {
+    const h = await harness(runtime, () => Stream.fail(new ModelError.ModelError({
+      code: "out_of_credit", message: "private balance detail", retryAfterMillis: 60_000,
+    })), { actor: member })
+    const response = await call(h, ask("private question"))
+    expect(response.lines.at(-1)).toMatchObject({ type: "error", code: "out_of_credit" })
+    expect(response.lines.at(-1).retryAfterMillis).toBeUndefined()
+    expect(h.only("model.quota.refused").annotations).toMatchObject({ role: "agent", errorCode: "out_of_credit", httpStatus: 0 })
+    expect(h.span("model.quota.refused")[0]!.attributes.get("httpStatus")).toBe(0)
+    expect(h.count(ModelEndpoint.quotaRefusals, { role: "agent", errorCode: "out_of_credit" })).toBe(1)
+    // Without the provider's status its usage remains unknown, so metering stays conservative.
+    expect(h.count(ModelEndpoint.usageWrites, { outcome: "kept" })).toBe(1)
+    expect(recorded(h)).not.toContain("private balance detail")
+    expect(recorded(h)).not.toContain("private question")
+  })
+
+  test.each([
+    { code: "quota_exceeded" as const, httpStatus: 429 },
+    { code: "out_of_credit" as const, httpStatus: 429 },
+    { code: "provider_internal" as const, httpStatus: 402 },
+    { code: "rate_limited" as const, httpStatus: 429 },
+  ])("deployment refusal $code ($httpStatus) preserves only recoverable retry hints and records no content", async ({ code, httpStatus }) => {
+    const h = await harness(runtime, () => Stream.fail(new ModelError.ModelError({
+      code, httpStatus, message: "private provider detail", retryAfterMillis: 60_000,
+      resetAtEpochMillis: 123456789, quotaScope: "model",
+    })), { actor: member })
+    const response = await call(h, ask("private question"))
+    const failure = response.lines.at(-1)
+    expect(failure).toMatchObject({ type: "error", code: httpStatus === 402 ? "out_of_credit" : code })
+    if (code === "rate_limited") {
+      expect(failure).toMatchObject({ retryAfterMillis: 60_000 })
+    } else {
+      expect(failure.retryAfterMillis).toBeUndefined()
+      expect(failure.resetAtEpochMillis).toBeUndefined()
+      expect(failure.quotaScope).toBeUndefined()
+    }
+    expect(h.only("model.proxy.serve").annotations).toMatchObject({ outcome: "failed", errorCode: httpStatus === 402 ? "out_of_credit" : code })
+    expect(h.count(ModelEndpoint.usageWrites, { outcome: "refused" })).toBe(1)
+    expect(h.count(ModelProxy.requests, { role: "agent", side: "server", outcome: "failed", status: "200" })).toBe(1)
+    expect(h.span("model.proxy.serve")[0]!.attributes.get("error.type")).toBe(httpStatus === 402 ? "out_of_credit" : code)
+    expect(h.only("model.usage").annotations).toMatchObject({ outcome: "refused", errorCode: httpStatus === 402 ? "out_of_credit" : code })
+    if (code === "rate_limited") {
+      expect(h.line("model.quota.refused")).toHaveLength(0)
+    } else {
+      const errorCode = httpStatus === 402 ? "out_of_credit" : code
+      expect(h.only("model.quota.refused").annotations).toMatchObject({ role: "agent", errorCode, httpStatus })
+      expect(h.span("model.quota.refused")[0]!.attributes.get("errorCode")).toBe(errorCode)
+      expect(h.count(ModelEndpoint.quotaRefusals, { role: "agent", errorCode })).toBe(1)
+    }
+    expect(recorded(h)).not.toContain("private provider detail")
+    expect(recorded(h)).not.toContain("private question")
+  })
+
   test("a role with no setting uses the deployment's default model", async () => {
     const h = await harness(runtime, answering, { actor: member, modelId: "default-model" })
 

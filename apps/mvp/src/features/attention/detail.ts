@@ -14,6 +14,7 @@ export const MAX_NOTE_LENGTH = 400
 
 /** Why an answer failed, in a word or two (chat's `failure`). */
 export const FAILURE_WORDS: Readonly<Record<NonNullable<Message["failure"]>, string>> = {
+  quota: "Model credit or quota used up",
   rate_limited: "Rate limited",
   model_error: "Model error",
   empty: "No answer",

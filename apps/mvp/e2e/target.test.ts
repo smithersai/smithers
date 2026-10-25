@@ -89,6 +89,12 @@ describe("the target", () => {
 })
 
 describe("needs", () => {
+  it("quota-refusal needs an explicitly refusing provider", () => {
+    expect(NEEDS.modelQuotaRefusal.met(local)).toBe(false)
+    expect(NEEDS.modelQuotaRefusal.met({ ...local, env: { E2E_MODEL_QUOTA_REFUSED: "1" } })).toBe(true)
+    expect(NEEDS.modelQuotaRefusal.met({ ...local, env: { E2E_MODEL_QUOTA_REFUSED: "0" } })).toBe(false)
+  })
+
   it("uses a declared writable scratch stack in a deployment, and Spoon-Knife locally", () => {
     expect(NEEDS.writableStack.met(local)).toBe(true)
     expect(stackRepository(local)).toBe("octocat/Spoon-Knife")
@@ -124,6 +130,7 @@ describe("needs", () => {
       "oldBuild",
       "githubSignIn",
       "syncedRepository",
+      "modelQuotaRefusal",
       "liveModel",
       "personalModelKey",
       "hostedModelOff",

@@ -1114,3 +1114,28 @@ describe("0058_hosted_model", () => {
       expect(await on(through("0058"))).toEqual([])
     }))
 })
+
+describe("0059_model_quota_failure", () => {
+  test("keeps existing failures and accepts terminal quota failures, refusing unknown reasons", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0058"))
+      const id = crypto.randomUUID()
+      const questionId = crypto.randomUUID()
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO messages (id, role, text, status, conversation_id)
+        SELECT ${questionId}, 'user', 'hi', 'done', id FROM conversations LIMIT 1`))
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO messages (id, role, text, status, failure, question_id, conversation_id)
+        SELECT ${id}, 'assistant', '', 'failed', 'model_error', ${questionId}, conversation_id FROM messages WHERE id = ${questionId}`))
+      expect((await on(through("0059"))).map(([id, name]) => `${id}_${name}`)).toEqual(["59_model_quota_failure"])
+      const set = (failure: string) => on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        UPDATE messages SET failure = ${failure} WHERE id = ${id} RETURNING failure`).pipe(Effect.result))
+      for (const reason of ["quota", "rate_limited", "model_error", "empty", "abandoned", "unfinished"]) {
+        expect((await set(reason))._tag).toBe("Success")
+      }
+      expect((await set("unknown"))._tag).toBe("Failure")
+      expect(await on(through("0059"))).toEqual([])
+    }))
+})

@@ -1,3 +1,4 @@
+import { finalFailure } from "./ModelRefusal.ts"
 import type { FlowEngineLike } from "@smthrs/agent"
 import { FlowRuntime } from "@smthrs/flow"
 import { Model, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
@@ -23,6 +24,20 @@ import * as PersonalUsage from "./personal/Usage.ts"
 // model only while hosted inference is on (`HostedModel`, decision 0099): it reserves the call's worst case against
 // the deployment's daily budget and settles the reservation to what the call spent. Off, the call is refused, never
 // answered on the deployment's model. The key never leaves the Worker, and refusals carry codes, never provider text.
+
+/** Terminal model quota and credit refusals, with no provider text or credentials. */
+export const quotaRefusals = Metric.counter("smithers_model_quota_refusals", { incremental: true })
+
+const recordRefusal = (role: ModelRole, error: Model.ModelFailure) => {
+  if (!(error instanceof ModelError.ModelError) || (error.code !== "quota_exceeded" && error.code !== "out_of_credit")) {
+    return Effect.void
+  }
+  const attributes = { role, errorCode: error.code, httpStatus: error.httpStatus ?? 0 }
+  return Effect.andThen(
+    Metric.update(Metric.withAttributes(quotaRefusals, { role, errorCode: error.code }), 1),
+    Effect.logWarning("model.quota.refused").pipe(Effect.annotateLogs(attributes)),
+  ).pipe(Effect.withSpan("model.quota.refused", { attributes }))
+}
 
 /** The deployment's token budget per UTC day, input and output together, when `MODEL_DAILY_TOKEN_BUDGET` is unset. */
 export const DAILY_TOKEN_BUDGET = 1_000_000
@@ -215,7 +230,13 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
         if (!reserved) return yield* refuse(429, "quota_exceeded", "Today's model budget is spent.")
         return {
           prepared: {
-            model: resolved.model,
+            model: Model.Model.of({
+              ...resolved.model,
+              stream: (request) => resolved.model.stream(request).pipe(
+                Stream.mapError(finalFailure),
+                Stream.tapError((error) => recordRefusal(role, error)),
+              ),
+            }),
             request: ModelRequest.ModelRequest.make({
               ...request,
               modelId: resolved.modelId,

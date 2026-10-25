@@ -1,8 +1,8 @@
 import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
-import { Interpreter, type RetryPolicy } from "@smthrs/flow"
-import { Classifier, Evaluator, type Model, ModelProxy } from "@smthrs/model"
+import { Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Classifier, Evaluator, type Model, ModelError, ModelProxy } from "@smthrs/model"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
-import { MODEL_ROUTE } from "../model/contract"
+import { MODEL_ROUTE, quotaRefused } from "../model/contract"
 import { type JevFlow, JUDGE_ROLE, SURE_LABEL, SURE_YES_NO, UNSURE, type VerdictCode } from "./contract"
 import {
   Classify,
@@ -23,6 +23,16 @@ import { recordJudgment, withJudgeSpan } from "./metrics"
 // judgment is one sealed model step of the run, keyed by what the endpoint is sent, and a resumed run reads it back.
 // The endpoint holds the key, picks the role's model and meters the call; the device never calls a provider.
 
+/** Keep durable model retries, excluding exhausted quota and credit. */
+export const MODEL_RETRY = RetryPolicy.make({
+  ...ModelStep.defaultRetryPolicy,
+  retryable: [
+    ...ModelError.ModelErrorCode.literals.filter((code) => !quotaRefused(code)).map((code) => ({ tag: "flows/model/ModelError", code })),
+    { tag: "/harness/HarnessError" },
+    { tag: "@smthrs/capability/GrantStoreError" },
+  ],
+})
+
 /** The judge's seat: the model endpoint's `judge` role, read with `ModelProxy`'s client and keyed with its `prepare`. */
 export class JudgeSeat extends Context.Service<
   JudgeSeat,
@@ -39,7 +49,7 @@ export class JudgeSeat extends Context.Service<
       JudgeSeat,
       Effect.gen(function* () {
         const url = `${origin}${MODEL_ROUTE}/${JUDGE_ROLE}`
-        return { model: yield* ModelProxy.makeClient({ url }), route: { prepare: ModelProxy.prepare({ url }) } }
+        return { model: yield* ModelProxy.makeClient({ url }), route: { prepare: ModelProxy.prepare({ url }) }, retryPolicy: MODEL_RETRY }
       }),
     )
 }

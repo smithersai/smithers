@@ -1,3 +1,4 @@
+import { Opening } from "@smthrs/memory"
 // `chat/Answer` on the Node host (src/test/agent.ts): the browser's agent flow, its model calls through ChatApi's real
 // model endpoint and its writes through the real answer routes, on the compose Postgres (`pnpm db:up`). The model is
 // the only scripted seam. The same registration runs in the browser's engine worker (src/flows/engine.worker.ts), so
@@ -5,7 +6,7 @@
 import { SeatResolver } from "@smthrs/agent"
 import { Sandbox } from "@smthrs/harness"
 import { ModelError, ModelRequest } from "@smthrs/model"
-import { Cause, Deferred, Effect, Exit, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
@@ -493,6 +494,96 @@ describe("chat/Answer", () => {
       expect(model.seen[1]).not.toContain("NotApproved")
       expect(model.seen[1]).toContain("Flow flow/save failed")
     })
+  })
+
+  test("a plain 429 backs off durably and answers with the same request", async () => {
+    const requests: Array<ModelRequest.ModelRequest> = []
+    const reply = answering(`ctx.done("Recovered after a rate limit.")`)
+    const agent = await openAgent(runtime, (request) => {
+      requests.push(request)
+      return requests.length === 1
+        ? Stream.fail(new ModelError.ModelError({ code: "rate_limited", httpStatus: 429, message: "wait", retryAfterMillis: 1 }))
+        : reply.script()
+    })
+    const engine = await agent.engine()
+    engines.push(engine)
+    const answerId = await agent.ask("Wait for a rate window")
+    expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "done" }))
+    expect(requests).toHaveLength(2)
+    expect(requests[1]).toEqual(requests[0])
+    expect(await row(runtime, answerId)).toMatchObject({ status: "done", text: "Recovered after a rate limit." })
+    expect(agent.h.line("model.quota.refused")).toHaveLength(0)
+  })
+
+  test.each([
+    { code: "quota_exceeded" as const, httpStatus: 429 },
+    { code: "out_of_credit" as const, httpStatus: 429 },
+    { code: "provider_internal" as const, httpStatus: 402 },
+  ])("a deployment refusal $code ($httpStatus) fails the answer on its first call", async ({ code, httpStatus }) => {
+    let calls = 0
+    const agent = await openAgent(runtime, () => {
+      calls++
+      return Stream.fail(new ModelError.ModelError({
+        code, httpStatus, message: "private provider detail", retryAfterMillis: 60_000,
+        resetAtEpochMillis: Date.now() + 60_000, quotaScope: "model",
+      }))
+    })
+    const engine = await agent.engine()
+    engines.push(engine)
+    const answerId = await agent.ask("A question refused for credit")
+    expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "failed" }))
+    expect(calls).toBe(1)
+    expect(await row(runtime, answerId)).toMatchObject({ status: "failed", failure: "quota", text: "" })
+  })
+
+  test("a sealed quota refusal keeps its reason after a crash during settlement, with no new model call", async () => {
+    const reached = Effect.runSync(Deferred.make<void>())
+    let calls = 0
+    const agent = await openAgent(runtime, () => {
+      calls++
+      return Stream.fail(new ModelError.ModelError({ code: "quota_exceeded", httpStatus: 429, message: "private balance" }))
+    })
+    // Fault only the first incarnation's injected HTTP service. The durable
+    // settlement stays pending; the next incarnation uses the real routes.
+    const first = await agent.engine(undefined, { fetch: async (input, init) => {
+      const request = new Request(input, init)
+      if (request.method === "POST" && new URL(request.url).pathname.startsWith("/api/answers/") &&
+        (await request.clone().json() as { status?: string }).status === "failed") {
+        Effect.runSync(Deferred.succeed(reached, undefined))
+        return new Response("{}", { status: 503 })
+      }
+      return agent.fetch(request)
+    } })
+    engines.push(first)
+    const answerId = await agent.ask("Resume the refused answer")
+    const running = agent.start(first, answerId)
+    await Effect.runPromise(Deferred.await(reached))
+    await first.crash()
+    await running.stop()
+    const second = await agent.engine(first.schema)
+    engines.push(second)
+    expect(await agent.resume(second, answerId)).toEqual(Exit.succeed({ status: "failed" }))
+    expect(await row(runtime, answerId)).toMatchObject({ status: "failed", failure: "quota", text: "" })
+    expect(calls).toBe(1)
+  })
+
+  test.each([
+    { code: "provider_internal" as const, httpStatus: 402 },
+    { code: "quota_exceeded" as const, httpStatus: 429 },
+  ])("a deployment $code refusal during memory selection settles with the quota reason", async ({ code, httpStatus }) => {
+    let calls = 0
+    const agent = await openAgent(runtime, () => {
+      calls++
+      return Stream.fail(new ModelError.ModelError({ code, httpStatus, message: "private balance", retryAfterMillis: 60_000 }))
+    })
+    const engine = await agent.engine(undefined, { memorySources: Layer.succeed(Opening.Sources, {
+      recall: () => Effect.succeed([{ kind: "memory" as const, bank: "agent-chat", key: "launch", text: "A remembered fact" }]),
+    }) })
+    engines.push(engine)
+    const answerId = await agent.ask("Recall a fact")
+    expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "failed" }))
+    expect(await row(runtime, answerId)).toMatchObject({ status: "failed", failure: "quota" })
+    expect(calls).toBe(1)
   })
 
   test("a model that refuses settles the answer failed, model_error", async () => {

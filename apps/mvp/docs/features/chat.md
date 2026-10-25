@@ -82,7 +82,7 @@ type  ─▶ setDraft ─▶ composer row (memory) + drafts row (SQLite on OPFS)
 | `text` | `text`, default `''` | |
 | `status` | `text` | `done`, `streaming` or `failed` |
 | `question_id` | `uuid` | an answer's question; null for a question |
-| `failure` | `text` | when failed: `rate_limited`, `model_error`, `empty`, `unfinished` or `abandoned` (see below) |
+| `failure` | `text` | when failed: `quota`, `rate_limited`, `model_error`, `empty`, `unfinished` or `abandoned` (see below) |
 | `model_id`, `stop_reason` | `text` | set when an answer settles; `stop_reason` when the model gave one |
 | `input_tokens`, `output_tokens` | `integer` | set when an answer settles, when the model reported them |
 | `parts` | `jsonb`, default `[]` | an answer's steps, as the agent shows them ([agent.md](agent.md#streaming)); `[]` for a question |
@@ -94,7 +94,8 @@ Failures:
 
 | `failure` | When |
 |---|---|
-| `rate_limited` | the model answered 429 |
+| `quota` | the model refused for credit or quota, including HTTP 402, or the deployment's daily model budget was spent; shows “Couldn't answer. Model credit or quota is used up.” with Retry |
+| `rate_limited` | the model answered a plain 429 and durable backoff ended |
 | `model_error` | any other model failure |
 | `empty` | the model finished with no text |
 | `unfinished` | the agent ran out of frames, or the queue before the answer didn't move for the turn wait (10 minutes) while it waited its turn |

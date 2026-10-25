@@ -1,6 +1,6 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { Effect } from "effect"
-import { COULDNT_ANSWER } from "./contract"
+import { COULDNT_ANSWER, MODEL_QUOTA_SPENT } from "./contract"
 import type { View } from "../views/schema"
 import type { Asking, Composer, Connection, History, Message, Place, Unsent } from "./schema"
 
@@ -37,7 +37,8 @@ export const conversationQuery = (
           id: synced.id,
           questionId: Query.coalesce(synced.questionId, ""),
           role: synced.role,
-          text: Query.caseWhen(Query.eq(synced.status, "failed"), COULDNT_ANSWER, synced.text),
+          text: Query.caseWhen(Query.eq(synced.status, "failed"),
+            Query.caseWhen(Query.eq(synced.failure, "quota"), MODEL_QUOTA_SPENT, COULDNT_ANSWER), synced.text),
           status: synced.status,
           sendAgain: false,
           local: 0,

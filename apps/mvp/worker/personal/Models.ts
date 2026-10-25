@@ -1,4 +1,5 @@
-import { type Model, ModelError } from "@smthrs/model"
+import { finalFailure } from "../ModelRefusal.ts"
+import type { Model } from "@smthrs/model"
 import { toModel } from "@smthrs/model-host"
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
@@ -40,25 +41,6 @@ export class PersonalModelsUnavailable extends Schema.TaggedError<PersonalModels
   "@smthrs/mvp/personal/PersonalModelsUnavailable",
   { errorCode: Schema.String },
 ) {}
-
-/**
- * A refusal of the person's own key as final: its retry hints dropped, so no step waits out a key that was refused or
- * ran out (`isTerminalRefusal` in `@smthrs/model`). A plain rate limit keeps its hints: it passes.
- */
-export const final = (error: ModelError.ModelError): ModelError.ModelError =>
-  error.code === "quota_exceeded" || error.code === "out_of_credit"
-    ? new ModelError.ModelError({
-      code: error.code,
-      message: error.message,
-      ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus }),
-      ...(error.providerCode === undefined ? {} : { providerCode: error.providerCode }),
-      ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
-    })
-    : error
-
-/** A failed call of a person's own model, its key's refusal made final ({@link final}); any other failure unchanged. */
-export const finalFailure = (error: Model.ModelFailure): Model.ModelFailure =>
-  error instanceof ModelError.ModelError ? final(error) : error
 
 /** Each person's own model, by their subject id. Tests of a call that fails provide a faulty one. */
 export class PersonalModels extends Context.Service<

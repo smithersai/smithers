@@ -21,7 +21,7 @@ import type { AnswerWrite } from "./schema"
 // - the `agent` seat: the server's model endpoint, read with `ModelProxy`'s client and keyed with its `prepare`, so
 //   each model call is a sealed `ModelStep` and the key never reaches the device (decision 0011 §3);
 // - the catalog: the app's own flows (src/flows/catalog.ts), and nothing else; no file system, no shell;
-// - the policies: quota refusals park the step; the server holds the budget, so the device's is unbounded; no judge;
+// - the policies: plain rate limits park durably; exhausted credit or quota ends the answer; the device budget is unbounded;
 // - the sink: the agent's events become the answer's parts (progress.ts);
 // - the turn wait: how long a run waits for its turn, while the queue before it doesn't move, before it settles its
 //   answer `unfinished` (`ANSWER_TURN_WAIT` unless set).
@@ -130,7 +130,7 @@ export const settlement = (
         : { inputTokens: Math.round(progress.inputTokens), outputTokens: Math.round(progress.outputTokens) }),
     }
   }
-  return { status: "failed", failure: text === null ? failureOf(progress) : "empty", ...shown }
+  return { status: "failed", failure: text === null ? ending.failure ?? failureOf(progress) : "empty", ...shown }
 }
 
 /** One settlement attempt; the durable action owns retries. */

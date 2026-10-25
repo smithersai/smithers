@@ -1,9 +1,10 @@
+import { quotaRefused } from "../model/contract"
 import { Interpreter } from "@smthrs/flow"
 import { ModelStep } from "@smthrs/agent"
 import { Relevance } from "@smthrs/harness"
 import { Flows, MemoryError, MemoryStore, Opening, Recall, RecallKeyword } from "@smthrs/memory"
-import { Evaluator } from "@smthrs/model"
-import { Clock, Config, Effect, Layer, Metric } from "effect"
+import { Evaluator, ModelError } from "@smthrs/model"
+import { Clock, Config, Effect, Layer, Metric, Stream } from "effect"
 import { FlowsClient } from "../flows-ui/api"
 import { JudgeSeat } from "../jev/steps"
 import { OpeningFailed, OpeningRefused, prompt } from "./flows"
@@ -39,9 +40,15 @@ export const prepare = (turn: Turn & { readonly candidates: ReadonlyArray<Openin
     judge: (items) => Effect.gen(function*() {
       const seat = yield* JudgeSeat
       const model = yield* ModelStep.model({ name: "chat/Opening/model", ...seat })
+      let quota = false
+      const observed = { ...model, stream: (request: Parameters<typeof model.stream>[0]) => model.stream(request).pipe(
+        Stream.tapError((error) => Effect.sync(() => {
+          quota = error instanceof ModelError.ModelError && quotaRefused(error.code, error.httpStatus)
+        })),
+      ) }
       const reading = yield* Relevance.judge({ task: Opening.boundedQuery(prompt(turn)) }, items.map((item) => ({
         kind: item.kind, id: item.key, text: item.text,
-      }))).pipe(Effect.provide(Evaluator.layerFromSeat({ modelId: "judge", model })), Effect.mapError(() => new OpeningFailed()))
+      }))).pipe(Effect.provide(Evaluator.layerFromSeat({ modelId: "judge", model: observed })), Effect.mapError(() => new OpeningFailed(quota ? { quota: true } : {})))
       return reading.verdicts.map((verdict, index) => ({
         index, unnecessary: verdict.p, withheld: verdict.withheld,
       }))

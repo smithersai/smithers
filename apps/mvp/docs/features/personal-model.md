@@ -85,7 +85,7 @@ the base URL's origin, and built by `@smthrs/model-host`'s `toModel`, whose tran
   `out_of_credit`), fails the call and sets the person's `failure_status` and `failed_at`; a later successful call, a
   passing test or a new save clears them. Only a call made with the row's current key marks it, so a slow call on a key
   the person has since replaced says nothing of the new one. A plain rate limit marks nothing. Quota and credit refusals
-  (`quota_exceeded`, `out_of_credit`) lose their retry hints (`final` in `worker/personal/Models.ts`), so the browser's
+  (HTTP 402, `quota_exceeded`, `out_of_credit`) lose their retry hints (`final` in `worker/ModelRefusal.ts`), so the browser's
   model step and a `todo` run fail at once instead of parking; the model package's request executor never retries
   them. A plain rate limit (429 without a quota code) keeps its hints and is waited out as before.
 

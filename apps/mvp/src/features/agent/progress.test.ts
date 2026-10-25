@@ -100,10 +100,12 @@ describe("fold", () => {
 
     expect([spent.inputTokens, spent.outputTokens]).toEqual([15, 3])
     expect(fold(empty, event({ _tag: "model-failed", code: "rate_limited" })).modelFailure).toBe("rate_limited")
-    expect(fold(empty, event({ _tag: "model-failed", code: "quota_exceeded" })).modelFailure).toBe("rate_limited")
+    expect(fold(empty, event({ _tag: "model-failed", code: "quota_exceeded" })).modelFailure).toBe("quota")
     expect(fold(empty, event({ _tag: "model-failed", code: "provider_internal", httpStatus: 429 })).modelFailure).toBe(
       "rate_limited",
     )
+    expect(fold(empty, event({ _tag: "model-failed", code: "out_of_credit", httpStatus: 429 })).modelFailure).toBe("quota")
+    expect(fold(empty, event({ _tag: "model-failed", code: "provider_internal", httpStatus: 402 })).modelFailure).toBe("quota")
     expect(fold(empty, event({ _tag: "model-failed", code: "content_policy" })).modelFailure).toBe("model_error")
     expect(fold(empty, event({ _tag: "cell-produced" }))).toBe(empty)
   })

@@ -19,7 +19,7 @@ export const Message = Schema.Struct({
   text: Schema.String,
   status: Schema.Literals(["done", "streaming", "failed"]),
   questionId: Schema.NullOr(Schema.String),
-  failure: Schema.NullOr(Schema.Literals(["rate_limited", "model_error", "empty", "abandoned", "unfinished"])),
+  failure: Schema.NullOr(Schema.Literals(["quota", "rate_limited", "model_error", "empty", "abandoned", "unfinished"])),
   modelId: Schema.NullOr(Schema.String),
   stopReason: Schema.NullOr(Schema.String),
   inputTokens: Schema.NullOr(Schema.Number),

@@ -27,3 +27,7 @@ export const AGENT_LIVE_SECONDS = 30
 /** `ANSWER_TURN_LIVE_SECONDS`: an integer of at least five seconds (the engine pulses each second), {@link AGENT_LIVE_SECONDS} when unset. */
 export const agentLiveSeconds = Config.schema(Schema.Int.check(Schema.isGreaterThanOrEqualTo(5)), "ANSWER_TURN_LIVE_SECONDS")
   .pipe(Config.withDefault(AGENT_LIVE_SECONDS))
+
+/** A quota or credit refusal needs intervention; a plain rate limit can recover with backoff. */
+export const quotaRefused = (code: string, httpStatus?: number): boolean =>
+  httpStatus === 402 || code === "quota_exceeded" || code === "out_of_credit"

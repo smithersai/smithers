@@ -1,3 +1,4 @@
+import { ModelError } from "@smthrs/model"
 import { outboxPrincipal } from "../../device/identity"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { Outbox } from "@smthrs/effect-tanstack-db"
@@ -29,7 +30,7 @@ import { EngineFaults, type QuestionFault, QuestionFaults } from "../../test/fau
 import { Chat } from "./chat"
 import { DEVICE_ADOPTED_EVENT } from "../auth/contract"
 import { bindConnectivity } from "./connectivity"
-import { COULDNT_ANSWER, MAX_QUESTION_LENGTH } from "./contract"
+import { COULDNT_ANSWER, MODEL_QUOTA_SPENT, MAX_QUESTION_LENGTH } from "./contract"
 import {
   askFailures,
   composerOpens,
@@ -181,6 +182,23 @@ describe("asking", () => {
       { id: answerId, text: "" },
     ])
     expect(tab.queued()).toBe(0)
+  })
+
+  test("a quota refusal reads Couldn't answer with its reason and Retry asks again", async () => {
+    const tab = await openChat()
+    const { answerId } = asked(tab.actions.ask("quota question"))
+    const reply = await tab.onApi(tab.api.answerTo("quota question"))
+    reply.fail(new ModelError.ModelError({
+      code: "quota_exceeded", httpStatus: 429, message: "private provider detail",
+      retryAfterMillis: 60_000, quotaScope: "model",
+    }))
+    await until(() => expect(tab.shown()).toEqual(["user done quota question", `assistant failed ${MODEL_QUOTA_SPENT}`]), agentWithin)
+    expect(tab.api.modelRequests("quota question")).toBe(1)
+    tab.actions.retryAnswer(answerId)
+    const retried = await tab.onApi(tab.api.answerTo("quota question", 1))
+    retried.say("Recovered")
+    retried.done()
+    await until(() => expect(tab.shown().at(-1)).toBe("assistant done Recovered"), agentWithin)
   })
 
   test("an answer that fails reads Couldn't answer, and Retry asks its question again under new ids", async () => {

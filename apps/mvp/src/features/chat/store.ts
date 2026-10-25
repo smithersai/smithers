@@ -301,7 +301,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     getKey: (row) => row.id,
     syncMode: "eager",
     // 2: `attempts` is gone (server answering went with it) and an answer can fail `unfinished`.
-    persist: { schemaVersion: 3 },
+    persist: { schemaVersion: 4 },
     shape: {
       url: config.shapeUrl,
       columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -440,7 +440,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         schema: Message,
         getKey: (row) => row.id,
         syncMode: "eager",
-        persist: { schemaVersion: 3 },
+        persist: { schemaVersion: 4 },
         shape: {
           url: `${config.shapeUrl}?conversation=${encodeURIComponent(conversationId)}`,
           columnMapper: ElectricCollection.snakeCamelMapper(),

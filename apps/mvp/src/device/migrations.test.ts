@@ -17,6 +17,7 @@ import {
 import { RepositoryV3 } from "./repo-history"
 import { RunV1 } from "./runs-history"
 import { ViewV2 } from "./views-history"
+import { MessageV3 } from "./messages-history"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
@@ -94,7 +95,9 @@ test("the c6940ac53e5a fixture uses that deployed build's recorded schemas and v
   for (const [id, collection] of Object.entries(currentDeployed.collections)) {
     const store = deviceRegistry.stores.find((entry) => entry.id === id.split(":")[0])
     if (store === undefined) throw new Error(`Missing fixture store ${id}`)
-    const schema = id === "repo-repositories" && collection.version === 3
+    const schema = id.split(":")[0] === "chat-messages" && collection.version === 3
+      ? MessageV3
+      : id === "repo-repositories" && collection.version === 3
       ? RepositoryV3
       : id === "runs" && collection.version === 1
       ? RunV1
@@ -128,8 +131,8 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
     expect(outcomes).toEqual({
       "auth-confirmed": "migrated 1→2 migrated 1 kept 0",
       "chat-drafts": "current 1→1 migrated 0 kept 0",
-      "chat-messages": legacy ? "resync 2→3 migrated 0 kept 0" : "current 3→3 migrated 0 kept 0",
-      [branch]: legacy ? "resync 2→3 migrated 0 kept 0" : "current 3→3 migrated 0 kept 0",
+      "chat-messages": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
+      [branch]: legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
       "chat-unsent": "migrated 1→2 migrated 1 kept 0",
       flows: legacy ? "resync 1→2 migrated 0 kept 0" : "current 2→2 migrated 0 kept 0",
       "issue-drafts": "current 1→1 migrated 0 kept 0",
@@ -172,8 +175,8 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
     const { path } = await deviceFrom(fixture)
     await prepare(path, deviceRegistry)
     const server: ReadonlyArray<typeof Message.Type> = [
-      // Unchanged stores retain the cached user row; the complete server
-      // snapshot includes it. The older schema still proves a fresh resync.
+      // The complete server snapshot includes the earlier question when present.
+      // Both deployed schema versions are replaced by a fresh sync.
       ...(fixture.build === "7b96f878" ? [] : [rowsOf(fixture, "chat-messages")[0] as unknown as typeof Message.Type]),
       {
         ...(rowsOf(fixture, "chat-messages")[1] as unknown as typeof Message.Type),

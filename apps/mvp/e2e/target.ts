@@ -225,6 +225,10 @@ const needs = {
     reason: "it needs existing synced issues and pull requests: set E2E_SYNCED_REPOSITORY to the deployment's synced public owner/name; an empty or unfinished sync fails the fixture check",
     blocked: true,
   },
+  modelQuotaRefusal: {
+    met: (run) => run.env.E2E_MODEL_QUOTA_REFUSED === "1",
+    reason: "it needs a real deployment model refusing for quota or credit: set E2E_MODEL_QUOTA_REFUSED=1 only while that provider is refusing",
+  },
   liveModel: {
     met: (run) =>
       run.target === "deployment" || set(run, MODEL_KEY) || dotEnvSets(run.env.E2E_DOT_ENV ?? DOT_ENV, MODEL_KEY),

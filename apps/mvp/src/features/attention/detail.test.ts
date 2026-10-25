@@ -85,7 +85,7 @@ describe("detailOf", () => {
 
   test("failed: why, in a word, and Retry only for the person's own run in the conversation the tab shows", () => {
     const failed = entry({ state: "failed", settled: true })
-    for (const failure of ["rate_limited", "model_error", "empty", "abandoned", "unfinished"] as const) {
+    for (const failure of ["quota", "rate_limited", "model_error", "empty", "abandoned", "unfinished"] as const) {
       expect(of({ entry: failed, message: message({ status: "failed", failure }) })).toMatchObject({
         note: FAILURE_WORDS[failure],
         retry: true,

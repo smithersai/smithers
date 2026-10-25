@@ -27,6 +27,9 @@ export const PAGE_SIZE = 50
 /** What an answer reads when Smithers couldn't answer, beside Retry. */
 export const COULDNT_ANSWER = "Couldn't answer"
 
+/** Safe copy for a model balance or quota refusal; never provider text. */
+export const MODEL_QUOTA_SPENT = "Couldn't answer. Model credit or quota is used up."
+
 /** The connection pill while the device is offline or can't reach Smithers; ` · <n>` follows with questions queued. */
 export const OFFLINE = "Offline"
 

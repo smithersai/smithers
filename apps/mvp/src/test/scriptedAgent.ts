@@ -1,4 +1,4 @@
-import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
+import { Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { Effect, Stream } from "effect"
 import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "../features/views/renderer"
 
@@ -266,6 +266,10 @@ export const scriptedRenderer = Model.make({
 
 /** The scripted model named `name`, or `undefined` for a name no script has. */
 export const scriptedModel = (name: string): Model.Model | undefined => {
+  // A terminal provider refusal, already normalized by the model endpoint.
+  if (name === "quota-refused") return Model.make({ stream: () => Stream.fail(
+    new ModelError.ModelError({ code: "out_of_credit", httpStatus: 402, message: "scripted credit refusal" }),
+  ) })
   if (name === "pin-message") return Model.make({ stream: () => turn(`ctx.done(${JSON.stringify(
     "GARDEN\n\n" + Array.from({ length: 35 }, (_, i) => `${i + 1}. The garden has room for trees, flowers, a winding path, and a quiet place to sit.`).join("\n\n"),
   )})`) })

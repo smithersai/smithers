@@ -25,10 +25,10 @@ export const Part = Schema.Struct({
 export type Part = typeof Part.Type
 
 /**
- * Why an answer failed: the model was rate limited (`rate_limited`) or broke (`model_error`), answered nothing
+ * Why an answer failed: model credit or quota was spent (`quota`), the model was rate limited (`rate_limited`) or broke (`model_error`), answered nothing
  * (`empty`), or the agent ran out of frames before it answered (`unfinished`).
  */
-export const AnswerFailure = Schema.Literals(["rate_limited", "model_error", "empty", "unfinished"])
+export const AnswerFailure = Schema.Literals(["quota", "rate_limited", "model_error", "empty", "unfinished"])
 export type AnswerFailure = typeof AnswerFailure.Type
 
 /**

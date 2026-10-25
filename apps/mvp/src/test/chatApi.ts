@@ -166,7 +166,7 @@ export interface Reply {
   /** Closes the literal and the cell, reports usage and stops. */
   readonly done: () => void
   /** Ends the stream with a model error the agent doesn't retry: the answer settles failed, `model_error`. */
-  readonly fail: () => void
+  readonly fail: (error?: ModelError.ModelError) => void
   /** Answers with one whole cell of `source`, such as a flow call, then reports usage and stops. */
   readonly cell: (source: string) => void
 }
@@ -899,10 +899,10 @@ export class TestChatApi extends Context.Service<
                   Queue.endUnsafe(events)
                 },
                 // A refusal, which the agent's model step doesn't retry.
-                fail: () =>
+                fail: (error = new ModelError.ModelError({ code: "content_policy", message: "scripted failure" })) =>
                   void Queue.failCauseUnsafe(
                     events,
-                    Cause.fail(new ModelError.ModelError({ code: "content_policy", message: "scripted failure" }))
+                    Cause.fail(error)
                   )
               }
             })

@@ -1,3 +1,4 @@
+import { quotaRefused } from "../model/contract"
 import { type AgentEvent, DoneText } from "@smthrs/harness"
 import { Context, Effect, Layer, Metric, Option, Queue, Stream } from "effect"
 import { AnswerApi } from "./answers"
@@ -28,8 +29,8 @@ export interface Progress {
   readonly parts: ReadonlyArray<Part>
   readonly inputTokens: number
   readonly outputTokens: number
-  /** Whether a model call ended rate limited, or ended in another error. */
-  readonly modelFailure: "rate_limited" | "model_error" | undefined
+  /** Whether model credit or quota was spent, the call was rate limited, or another error ended it. */
+  readonly modelFailure: "quota" | "rate_limited" | "model_error" | undefined
 }
 
 /** An answer the agent hasn't shown anything for. */
@@ -61,7 +62,7 @@ const DONE_ALONE =
 
 /** A rate-limit code or status on a failed model call. */
 const rateLimited = (code: string, httpStatus: number | undefined) =>
-  code === "rate_limited" || code === "quota_exceeded" || httpStatus === 429
+  code === "rate_limited" || httpStatus === 429
 
 /** Folds one agent event into an answer's progress. Events that show nothing leave it as it was. */
 export const fold = (progress: Progress, event: AgentEvent.AgentEvent): Progress => {
@@ -110,7 +111,9 @@ export const fold = (progress: Progress, event: AgentEvent.AgentEvent): Progress
         outputTokens: progress.outputTokens + (event.usage.outputTokens ?? 0),
       }
     case "model-failed":
-      return { ...progress, modelFailure: rateLimited(event.code, event.httpStatus) ? "rate_limited" : "model_error" }
+      return { ...progress, modelFailure: quotaRefused(event.code, event.httpStatus)
+        ? "quota"
+        : rateLimited(event.code, event.httpStatus) ? "rate_limited" : "model_error" }
     default:
       return progress
   }

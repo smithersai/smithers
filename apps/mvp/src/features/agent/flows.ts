@@ -87,7 +87,7 @@ export const PreparedTurn = Schema.Struct({
   question: Schema.String, history: Schema.Array(Exchange), opening: Schema.Array(OpeningRow),
   memoryDebug: Schema.Struct({ recalled: Schema.Int, inserted: Schema.Int, filtered: Schema.Int, skillsInserted: Schema.Int }),
 })
-export class OpeningFailed extends Schema.TaggedError<OpeningFailed>()("@smthrs/mvp/memory/OpeningFailed", {}) {}
+export class OpeningFailed extends Schema.TaggedError<OpeningFailed>()("@smthrs/mvp/memory/OpeningFailed", { quota: Schema.optional(Schema.Boolean) }) {}
 export class OpeningRefused extends Schema.TaggedError<OpeningRefused>()("@smthrs/mvp/memory/OpeningRefused", {}) {}
 export const OPENING_RETRY = RetryPolicy.make({
   initialMs: 250, factor: 2, maxMs: 4000, maxAttempts: 3,
@@ -120,7 +120,7 @@ export const Respond = AgentAction.make("chat/Respond", {
  * How the run ended, for `chat/Settle`: the agent's text, or `null` when it didn't answer; and whether the turn wait
  * ran out first, which settles the answer `unfinished`.
  */
-export const Ending = Schema.Struct({ text: Schema.NullOr(Schema.String), timedOut: Schema.Boolean })
+export const Ending = Schema.Struct({ text: Schema.NullOr(Schema.String), timedOut: Schema.Boolean, failure: Schema.optional(Schema.Literal("quota")) })
 export type Ending = typeof Ending.Type
 
 /** Settles the answer as the run ended. The answer's parts come from the run. */
@@ -165,6 +165,18 @@ export const Answer = Flow.make(AnswerReference._tag, {
             Node.bindPlanned(Node.capture({ opening: Prepare.name }, (recalled) => Prepare.call(recalled))),
             Node.bindPlanned(Node.capture({ respond: Respond.name }, (prepared) => Respond.call(prepared))),
             Node.map(Node.capture({ timedOut: false }, (text: string): Ending => ({ text, timedOut: false }))),
+            // Preserve a quota refusal in the sealed ending, including after the tab loses its progress.
+            Node.catch({
+              error: Schema.Union([
+                Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/memory/OpeningFailed"), quota: Schema.Literal(true) }),
+                Schema.Struct({
+                  _tag: Schema.Literal("/harness/HarnessError"),
+                  code: Schema.Literal("model_failed"),
+                  cause: Schema.Struct({ _tag: Schema.Literal("flows/model/ModelError"), code: Schema.Literals(["quota_exceeded", "out_of_credit"]) }),
+                }),
+              ]),
+              onFailure: Node.capture({ failure: "quota" }, () => Node.succeed<Ending>({ text: null, timedOut: false, failure: "quota" })),
+            }),
             // The agent failed: the settle reads why from the run's progress.
             Node.catch({
               onFailure: Node.capture({ text: null }, () => Node.succeed<Ending>({ text: null, timedOut: false })),
