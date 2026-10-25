@@ -334,6 +334,10 @@ export const KNOWN_BROKEN: Readonly<Record<string, Broken>> = {
     when: (run) => (run.env.GITHUB_REPOSITORY ?? run.env.E2E_SYNCED_REPOSITORY ?? "smithersai/smithers").toLowerCase() !== "smithersai/vibelang",
     reason: "since ac88ac3757 the home counts roles only on GITHUB_REPOSITORY; VibeLang contributor and maintainer views fail on other deployments until per-repository home roles land",
   },
+  staleMirror: {
+    in: ["deployment"],
+    reason: "production's Code Storage mirror of smithersai/vibelang lags GitHub, so the pinned grammar commit 3ad97368 answers 404 until mirrors follow GitHub's new commits",
+  },
 }
 
 export type BrokenName = string

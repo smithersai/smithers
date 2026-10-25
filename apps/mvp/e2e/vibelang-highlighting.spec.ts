@@ -1,7 +1,9 @@
 import { expect, step, test } from "./fixtures"
-import { requires } from "./target"
+import { broken, requires } from "./target"
 
 requires("codeStorage", "member")
+// Production's mirror of smithersai/vibelang doesn't yet hold the pinned commit (KNOWN_BROKEN.staleMirror).
+broken("staleMirror")
 
 // Read-only, pinned public VibeLang examples through the real repository view.
 const revision = "3ad97368713b9a1fab1fa408388a017687aa7431"
