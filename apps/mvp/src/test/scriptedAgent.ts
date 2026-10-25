@@ -256,9 +256,12 @@ const questionOf = (request: ModelRequest.ModelRequest) => {
   return all.lastIndexOf("now asks: ") < 0 ? all : all.slice(all.lastIndexOf("now asks: "))
 }
 
-/** The repository a question names, `owner/name`: the first such word in it. */
+/**
+ * The repository a question names, `owner/name`: the last such word, since the question ends the prompt, after the
+ * system text, whose flow names (`app/…`, `ui/…`) read the same way.
+ */
 export const repositoryNamed = (question: string): string | undefined =>
-  /(?:^|\s)([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+?)(?=[\s,.?!]*(?:\s|$))/.exec(question)?.[1]
+  [...question.matchAll(/(?:^|\s)([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+?)(?=[\s,.?!]*(?:\s|$))/g)].at(-1)?.[1]
 
 /**
  * `show-repo` and `show-issues` (e2e/repo-in-chat.spec.ts): asked about a repository, the agent shows it in the chat

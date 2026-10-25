@@ -68,5 +68,8 @@ describe("the show-repo and show-issues scripts", () => {
     expect(await turnOf("Show me something", undefined, "show-repo")).toContain(`{"repo":"octocat/Spoon-Knife"}`)
     expect(repositoryNamed("open src/features/repo please")).toBeUndefined()
     expect(repositoryNamed("nothing here")).toBeUndefined()
+    // With no conversation before it, the question follows the system text, whose flow names read alike.
+    expect(await turnOf("Call app/navigate or ui/form as needed.\nShow me the issues of smithersai/smithers, maple", undefined, "show-issues"))
+      .toContain(`ctx.call("ui/issues", {"repo":"smithersai/smithers"})`)
   })
 })
