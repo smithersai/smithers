@@ -32,6 +32,10 @@ function stripVarFallbacks(css: string): string {
 }
 
 describe("css contract", () => {
+  test("fields keep one shrinkable column and hide Radix serialization selects", () => {
+    expect(smithersUiCss).toContain(".sui-field { min-width:0; display:grid; grid-template-columns:minmax(0, 1fr); gap:6px; }");
+    expect(smithersUiCss).toContain('.sui-field select[aria-hidden="true"] { display:none; }');
+  });
   test("never emits a :root token block", () => {
     expect(smithersUiCss.includes(":root")).toBe(false);
   });

@@ -142,10 +142,10 @@ test("long command: a ten-minute command on the branch's machine runs once, and 
     await ask(
       a.page,
       `Use the sandbox run tool exactly once, with timeoutSeconds 600, to run this command: ` +
-        `sleep ${LONG_SECONDS}; echo ran >> ${log}; echo done-$((2+3)). ` +
+        `sleep ${LONG_SECONDS}; echo ran >> ${log}; echo done-$((2+3))-${word}. ` +
         `Then read ${log} with the read tool and reply with its line count and what the command printed, verbatim.`,
     )
-    await expect(messageIn(conversation, /done-5/).first()).toBeVisible({ timeout: (LONG_SECONDS + 600) * 1000 })
+    await expect(messageIn(conversation, `done-5-${word}`).first()).toBeVisible({ timeout: (LONG_SECONDS + 600) * 1000 })
   }
   // One call ran the command, however many times its tab's engine asked for it: one call id.
   const runs = tools.filter((call) => call.tool === "run")

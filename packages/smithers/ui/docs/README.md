@@ -125,3 +125,5 @@ and Paper light/dark, rather than restating them.
   subpaths, with signatures.
 - [Failure codes and limits](./reference/contracts.md) and
   [troubleshooting](./troubleshooting.md).
+
+Field uses one shrinkable column; Radix Select’s hidden serialization control does not participate in its visible layout.

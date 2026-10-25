@@ -9,20 +9,20 @@ import { requires, scratchRepository, scriptedAgent, stackRepository } from "./t
 // unique to the run, and drops it, so the shared stack doesn't fill. The stack is drawn as GitHub's issue list (Open and
 // Closed tabs, Drop in a row's menu) and one TODO as GitHub's issue page (Drop in its side column).
 
-/** The repository whose stack the tests use: any repository's name has a stack; this one is public. */
+/** Public read and local scripted-agent fixture. */
 const REPO = "octocat/Spoon-Knife"
 
 /** The stack page's row of the TODO whose title has `word`. */
-const row = (tab: Tab, word: string) =>
-  tab.page.getByRole("region", { name: `${REPO} stack` }).locator("[data-slot=issues-row]", { hasText: word })
+const row = (tab: Tab, word: string, repository = REPO) =>
+  tab.page.getByRole("region", { name: `${repository} stack` }).locator("[data-slot=issues-row]", { hasText: word })
 
 /** The page of the TODO titled `title`. */
 const todoPage = (tab: Tab, title: string) => tab.page.getByRole("article", { name: new RegExp(title) })
 
 /** Opens the stack page on `tab`. */
-const openStack = async (tab: Tab, path = `/${REPO}/stack`) => {
+const openStack = async (tab: Tab, path = `/${REPO}/stack`, repository = REPO) => {
   await tab.page.goto(path)
-  await expect(tab.page.getByRole("region", { name: `${REPO} stack` }), `${tab.name}: the stack opens`).toBeVisible({
+  await expect(tab.page.getByRole("region", { name: `${repository} stack` }), `${tab.name}: the stack opens`).toBeVisible({
     timeout: 60_000,
   })
 }
@@ -96,6 +96,7 @@ test("todo-new-keyboard: New TODO on the stack page, typed and committed with th
   const repo = stackRepository()
   const keyboardRow = (tab: Tab, word: string) => tab.page.getByRole("region", { name: `${repo} stack` }).locator("[data-slot=issues-row]", { hasText: word })
   test.setTimeout(240_000)
+  const repository = stackRepository()
   const word = devices.word
   const [ann] = await devices.open("Ann")
   await ann.page.goto(`/${repo}/stack`)

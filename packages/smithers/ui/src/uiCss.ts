@@ -179,7 +179,9 @@ export const formCss = `
 .sui-textarea:disabled { cursor:not-allowed; opacity:.45; }
 .sui-textarea[data-code] { font-family:${t.fontMono}; font-size:12px; line-height:20px; white-space:pre; overflow:auto; tab-size:2; }
 .sui-label { color:${t.mutedForeground}; font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.05em; }
-.sui-field { min-width:0; display:grid; gap:6px; }
+.sui-field { min-width:0; display:grid; grid-template-columns:minmax(0, 1fr); gap:6px; }
+/* Radix form serialization controls must not inherit native select tap-target styles. */
+.sui-field select[aria-hidden="true"] { display:none; }
 `;
 
 /* -------------------------------------------------------------------------- */
