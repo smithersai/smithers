@@ -645,41 +645,54 @@ describe("EngineChildren.spawn", () => {
     })))
 
   it("does not start abandoned work when a dependency recovers after timeout", () =>
-    run(Effect.gen(function*() {
-      const runtime = yield* engine("children-recovering")
-      const dependency = yield* Deferred.make<void>()
-      let executions = 0
-      let cleaned = 0
-      const recovering: FlowRuntime.FlowRuntime["Service"] = {
-        ...runtime,
-        execute: (flow, options) =>
-          Deferred.await(dependency).pipe(
-            Effect.andThen(Effect.sync(() => {
-              executions++
-            })),
-            Effect.andThen(runtime.execute(flow, options)),
-            Effect.ensuring(Effect.sync(() => {
-              cleaned++
-            }))
-          )
-      }
-      const port = yield* children({ startTimeout: "20 millis" }).pipe(
-        Effect.provideService(FlowRuntime.FlowRuntime, recovering)
-      )
-      yield* registerChildren(runtime)
-      yield* runtime.register(Parent, () =>
-        Effect.gen(function*() {
-          const first = yield* Effect.exit(port.spawn({ flow: Worker._tag, label: "retry" }))
-          expect(childErrorOf(first)?.code).toBe("failed")
-          expect(cleaned).toBe(1)
-          yield* Deferred.succeed(dependency, undefined)
-          const second = yield* port.spawn({ flow: Worker._tag, label: "retry" })
-          return (yield* port.await(second)).output
-        }).pipe(Effect.orDie))
-      expect(yield* runtime.execute(Parent, { executionId: "recovering-parent", payload: {} }))
-        .toBe("worker finished")
-      expect(executions).toBe(1)
-    })))
+    run(
+      Effect.gen(function*() {
+        const runtime = yield* engine("children-recovering")
+        const dependency = yield* Deferred.make<void>()
+        const entered = yield* Deferred.make<void>()
+        let executions = 0
+        let cleaned = 0
+        const recovering: FlowRuntime.FlowRuntime["Service"] = {
+          ...runtime,
+          execute: (flow, options) =>
+            Deferred.succeed(entered, undefined).pipe(
+              Effect.andThen(Deferred.await(dependency)),
+              Effect.andThen(Effect.sync(() => {
+                executions++
+              })),
+              Effect.andThen(runtime.execute(flow, options)),
+              Effect.ensuring(Effect.sync(() => {
+                cleaned++
+              }))
+            )
+        }
+        // Zero-delay polling yields to admission without requiring clock advances
+        // that would also consume the healthy retry's startup budget.
+        const port = yield* children({ startTimeout: "20 millis", pollInterval: 0 }).pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, recovering)
+        )
+        yield* registerChildren(runtime)
+        yield* runtime.register(Parent, () =>
+          Effect.gen(function*() {
+            // Advance only after startup is blocked on the failed dependency.
+            // Keep virtual time fixed during the healthy retry: its admission
+            // must not race the same 20 ms budget on a loaded host.
+            const spawning = yield* Effect.forkChild(port.spawn({ flow: Worker._tag, label: "retry" }))
+            yield* Deferred.await(entered)
+            yield* TestClock.adjust("20 millis")
+            const first = yield* Fiber.await(spawning)
+            expect(childErrorOf(first)?.code).toBe("failed")
+            expect(cleaned).toBe(1)
+            expect(executions).toBe(0)
+            yield* Deferred.succeed(dependency, undefined)
+            const second = yield* port.spawn({ flow: Worker._tag, label: "retry" })
+            return (yield* port.await(second)).output
+          }).pipe(Effect.orDie))
+        expect(yield* runtime.execute(Parent, { executionId: "recovering-parent", payload: {} }))
+          .toBe("worker finished")
+        expect(executions).toBe(1)
+      }).pipe(Effect.provide(TestClock.layer()))
+    ))
 
   it.each(["store failure", "interruption"] as const)(
     "cleans up startup on %s",
