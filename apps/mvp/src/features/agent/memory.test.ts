@@ -4,6 +4,7 @@ import { Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Flows, MemoryError, MemoryStore, Opening, RecallKeyword } from "@smthrs/memory"
 import { NodeHost } from "@smthrs/platform-node"
+import { ModelError } from "@smthrs/model"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, Metric, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -165,6 +166,30 @@ test.each(["judged", "unavailable"] as const)("a nonempty opening is %s through 
       opening: [{ bank: MEMORY_BANK, key: "launch", text: "launch mascot is cobalt", origin: "recall" }],
     }))
   }
+})
+
+test("an opening whose judge is refused for credit asks the model endpoint once, not six times", async () => {
+  // smithers.sh, 2026-10-25: each question's opening judge asked a provider answering 402 six times.
+  let calls = 0
+  const agent = await openAgent(runtime, () => {
+    calls++
+    return Stream.fail(new ModelError.ModelError({ code: "quota_exceeded", httpStatus: 402, message: "payment required" }))
+  })
+  const flow = Flow.make("memory/TestOpening-refused", {
+    payload: {}, success: PreparedTurn, error: OpeningFailed,
+    body: Node.capture({ prepare: Prepare.name, turn }, () => Prepare.call({ ...turn, candidates: [
+      { kind: "memory" as const, bank: MEMORY_BANK, key: "launch", text: "launch mascot is cobalt" },
+    ] })),
+  })
+  const judge = Layer.effect(JudgeSeat, Effect.map(JudgeSeat, (seat) => ({
+    ...seat,
+    retryPolicy: RetryPolicy.make({ ...ModelStep.defaultRetryPolicy, initialMs: 1, maxMs: 1 }),
+  }))).pipe(Layer.provide(JudgeSeat.layer(ORIGIN)))
+  const result = await runFlow(flow, {}, Interpreter.layerWithImplementations(flow, Prepare.toLayer(prepare)).pipe(
+    Layer.provide(judge), Layer.provide(http(agent.fetch)),
+  ))
+  expect(Exit.isFailure(result.exit) && Cause.squash(result.exit.cause)).toBeInstanceOf(OpeningFailed)
+  expect(calls).toBe(1)
 })
 
 test("a host with an injected failing memory source closes the answer before calling a model", async () => {

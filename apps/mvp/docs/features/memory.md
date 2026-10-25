@@ -12,7 +12,10 @@ Implementation and executed validation receipts are recorded below as the port p
 `chat/Respond`. The host composes the catalog's `@smthrs/memory` entry
 (`Opening`, `MemoryStore`, `RecallKeyword`) with the existing Jev
 `Relevance.judge`. Jev runs as `chat/Opening/model`, a sealed `ModelStep`
-through `/api/model/judge`. The SQL store and serialized writer come from the
+through `/api/model/judge`, one call per question that recalls anything. A
+refusal no wait clears (a provider's 402 for credit, or a quota with no reset)
+is the step's answer on its first attempt; on smithers.sh on 2026-10-25 each
+question asked such a provider six times. The SQL store and serialized writer come from the
 engine host, including SQLite in OPFS in the browser. The default authorized
 bank is `agent-chat`; this is device-local memory, not a cross-device sync feature.
 

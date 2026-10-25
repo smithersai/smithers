@@ -1,7 +1,8 @@
 import { FlowRegistry } from "../../flows/registry"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
-import { Action } from "@smthrs/flow"
-import { Model, type ModelEvent } from "@smthrs/model"
+import { ModelStep } from "@smthrs/agent"
+import { Action, RetryPolicy } from "@smthrs/flow"
+import { Model, ModelError, type ModelEvent } from "@smthrs/model"
 import { Context, Deferred, Effect, Exit, Fiber, Layer, Metric, Scope, Semaphore, Stream } from "effect"
 import { expect, test, vi } from "vitest"
 import { build } from "../../../worker/test/flowHost"
@@ -11,7 +12,7 @@ import { deviceRegistry } from "../../device/registry"
 import { deviceFrom, type Fixture, persistenceOn, prepare } from "../../test/deviceFixture"
 import { Summarize } from "./flow"
 import { registration, SummarySeat } from "./steps"
-import { followSummaries, makeLane, makeSummaries, revisionOf, summaryQuery, summaryRemovals } from "./store"
+import { followSummaries, makeLane, makeSummaries, revisionOf, summaryQuery, summaryRemovals, summaryStops } from "./store"
 
 const row = (id: string, text: string): Message => ({
   id, text, role: "user", status: "done", questionId: null, failure: null, modelId: null, stopReason: null,
@@ -84,18 +85,55 @@ test.each(["failed", "unavailable", "changed", "deleted"] as const)("does not pu
   } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
 })
 
-test("stops once the summary role answers it has no model: no later entry is dispatched", async () => {
+test("an idle page whose summary model refuses for credit makes at most two model calls", async () => {
+  // smithers.sh, 2026-10-25: one idle chat page made 63 summary calls in 3 minutes, every one refused 402, because
+  // each entry's step asked six times and the lane went on to the next entry.
+  const scope = Effect.runSync(Scope.make())
+  let calls = 0
+  const model = Model.make({ stream: () => {
+    calls++
+    return Stream.fail(new ModelError.ModelError({ code: "quota_exceeded", httpStatus: 402, message: "payment required" }))
+  } })
+  // Production's attempts, with test timings: every one of the six still runs on the real durable engine.
+  const seat = Layer.effect(SummarySeat, Effect.map(SummarySeat, service => ({
+    ...service, retryPolicy: RetryPolicy.make({ ...ModelStep.defaultRetryPolicy, initialMs: 1, maxMs: 1 }),
+  }))).pipe(Layer.provide(SummarySeat.layer("https://summary.test", model)))
+  try {
+    const registry: Metric.MetricRegistry = new Map()
+    const { context: engine } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+      Layer.provide(seat), Layer.provideMerge(Action.layerImplementations),
+    ))))
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Layer.mergeAll(
+      Persistence.memory,
+      FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer)).pipe(Layer.provide(ClientEngine.layerRuntime([Summarize])), Layer.provide(Layer.succeedContext(engine))),
+    ))))
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context).pipe(Effect.provideService(Metric.MetricRegistry, registry))) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: "refusing-model", schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    const ids = Array.from({ length: 10 }, (_, n) => `m${n}`)
+    await run(messages.insert(ids.map(id => row(id, `Inspect ${id}`))))
+    await run(Effect.forkIn(followSummaries(messages, messages, summaries, Context.get(context, FlowDispatch), await run(makeLane)), scope, { startImmediately: true }))
+    await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(1))
+    // Long enough for every entry's six attempts at these timings, had the lane gone on.
+    await run(Effect.sleep("500 millis"))
+    expect(calls).toBeLessThanOrEqual(2)
+    expect((await run(Metric.value(summaryStops))).count).toBe(1)
+    for (const id of ids) expect((await run(summaries.get(id)))._tag).toBe("None")
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+})
+
+test.each(["unconfigured", "unavailable"] as const)("stops once a summary fails %s: no later entry is dispatched", async code => {
   const scope = Effect.runSync(Scope.make())
   try {
     const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Persistence.memory)))
     const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
-    const messages = await run(Collection.local<Message, Collection.Key>({ id: "unconfigured", schema: Message, getKey: message => message.id }))
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: `stopped-${code}`, schema: Message, getKey: message => message.id }))
     const summaries = await run(makeSummaries)
     const dispatched: Array<string> = []
     const dispatch = {
       dispatch: (_name: string, payload: { readonly id: string }) => Effect.sync(() => {
         dispatched.push(payload.id)
-        return { _tag: "Failed", error: { _tag: "timeline/SummaryFailed", code: "unconfigured" } }
+        return { _tag: "Failed", error: { _tag: "timeline/SummaryFailed", code } }
       }),
     } as unknown as FlowDispatch["Service"]
     await run(messages.insert([row("a", "Inspect retries"), row("b", "Inspect failures")]))
@@ -107,6 +145,39 @@ test("stops once the summary role answers it has no model: no later entry is dis
     await run(messages.insert(row("c", "Inspect deploys")))
     expect(dispatched).toEqual(["a"])
     expect((await run(summaries.get("a")))._tag).toBe("None")
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+})
+
+test("a lane records its stop once, whichever summary stops it first", async () => {
+  const registry: Metric.MetricRegistry = new Map()
+  const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect.pipe(Effect.provideService(Metric.MetricRegistry, registry)))
+  const lane = await run(makeLane)
+  await run(lane.stop("unavailable"))
+  await run(lane.stop("unconfigured"))
+  expect(await run(Deferred.isDone(lane.stopped))).toBe(true)
+  expect((await run(Metric.value(summaryStops))).count).toBe(1)
+})
+
+test.each(["invalid", "refused"] as const)("a summary that fails %s belongs to its entry, so later entries still run", async code => {
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Persistence.memory)))
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: `continues-${code}`, schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    const dispatched: Array<string> = []
+    const dispatch = {
+      dispatch: (_name: string, payload: { readonly id: string }) => Effect.sync(() => {
+        dispatched.push(payload.id)
+        return { _tag: "Failed", error: { _tag: "timeline/SummaryFailed", code } }
+      }),
+    } as unknown as FlowDispatch["Service"]
+    await run(messages.insert(["a", "b", "c"].map(id => row(id, `Inspect ${id}`))))
+    // One turn, so each entry runs after the one before it failed.
+    const lane = { ...(await run(makeLane)), permits: Semaphore.makeUnsafe(1) }
+    await run(Effect.forkIn(followSummaries(shownWindow(["a", "b", "c"]), messages, summaries, dispatch, lane), scope, { startImmediately: true }))
+    await vi.waitFor(() => expect(dispatched).toEqual(["a", "b", "c"]))
+    expect(await run(Deferred.isDone(lane.stopped))).toBe(false)
   } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
 })
 

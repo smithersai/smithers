@@ -10,6 +10,8 @@ export const Summary = Schema.Struct({ id: Schema.String, revision: Schema.Strin
 export type Summary = typeof Summary.Type
 export const summaryQuery = (rows: Collection.Collection<Summary, string>) => LiveQuery.make(q => q.from({ summary: rows.tanstack }))
 export const summaryRemovals = Metric.counter("smithers_timeline_summary_removals")
+/** Lanes stopped by a failure every later summary would repeat ({@link STOPPING_FAILURES}). */
+export const summaryStops = Metric.counter("smithers_timeline_summary_stops")
 export const makeSummaries = Effect.gen(function* () {
   return yield* Collection.persisted({ id: "timeline-summaries", schema: Summary, getKey: row => row.id, schemaVersion: 1 })
 })
@@ -18,18 +20,39 @@ export const makeSummaries = Effect.gen(function* () {
 export const SUMMARIES_AT_ONCE = 2
 
 /**
+ * Why a summary failed in a way every later entry would fail too, so the tab starts no more until the app opens again:
+ * the role has no model (`unconfigured`), or the model couldn't answer after the durable step's own retries
+ * (`unavailable`: an outage, a refused key, or credit or quota that ran out). A rejected output (`invalid`) or a
+ * policy refusal (`refused`) belongs to one entry, so later entries still run.
+ */
+export const STOPPING_FAILURES: ReadonlyArray<string> = ["unconfigured", "unavailable"]
+
+/**
  * What every conversation the tab follows shares: the summaries' turns on the engine, the entries waiting for or
- * holding one, and whether the summary role answered that it has no model, which stops them all.
+ * holding one, and whether a summary failed in a way that stops them all ({@link STOPPING_FAILURES}).
  */
 export interface Lane {
   readonly permits: Semaphore.Semaphore
   readonly pending: Set<string>
   readonly stopped: Deferred.Deferred<void>
+  /**
+   * Stops every follower on the lane for the failure `code` ({@link STOPPING_FAILURES}), recorded once however many
+   * summaries fail that way: `timeline.summary.stopped` and {@link summaryStops}. Uninterruptible: stopping ends the
+   * window's stream, whose scope holds the fiber that stops it.
+   */
+  readonly stop: (code: string) => Effect.Effect<void>
 }
 
 /** A tab's lane: made once, shared by its home and branch conversations. */
 export const makeLane: Effect.Effect<Lane> = Effect.gen(function* () {
-  return { permits: yield* Semaphore.make(SUMMARIES_AT_ONCE), pending: new Set<string>(), stopped: yield* Deferred.make<void>() }
+  const stopped = yield* Deferred.make<void>()
+  const stop = (code: string) =>
+    Effect.uninterruptible(Effect.gen(function* () {
+      if (!(yield* Deferred.succeed(stopped, undefined))) return
+      yield* Effect.logWarning("timeline.summary.stopped").pipe(Effect.annotateLogs({ code }))
+      yield* Metric.update(summaryStops, 1)
+    }))
+  return { permits: yield* Semaphore.make(SUMMARIES_AT_ONCE), pending: new Set<string>(), stopped, stop }
 })
 
 /** A row of the conversation's window, as far as a summary reads it: chat's `latest` query gives these. */
@@ -53,9 +76,10 @@ export interface Window {
  * model calls. A result is kept only while `messages` still holds that entry unchanged. At most `SUMMARIES_AT_ONCE`
  * run at once across every conversation sharing `lane`, and an entry waiting for or holding a turn isn't queued again:
  * a window of fifty entries used to start fifty runs at once, which the engine woke all together after a reload, and
- * the branch's own flows waited behind them for 20 s (docs/features/timeline.md). Once the summary role answers that it
- * has no model (`unconfigured`), no entry can have a summary, so every follower on the lane stops until the app opens
- * again.
+ * the branch's own flows waited behind them for 20 s (docs/features/timeline.md). Once a summary fails in a way every
+ * later one would ({@link STOPPING_FAILURES}), every follower on the lane stops until the app opens again: on
+ * smithers.sh on 2026-10-25, a provider refusing for credit was asked for every entry the window showed, 1,206 refused
+ * calls in 50 minutes.
  */
 export const followSummaries = (
   window: Window,
@@ -86,9 +110,10 @@ export const followSummaries = (
     const role = row.role as "user" | "assistant"
     const result = yield* dispatch.dispatch("timeline/summarize", { id: row.id, revision, role, text: row.text.slice(0, 8000) }, { door: "sync", executionId: `timeline-${revision}` })
     if (result._tag !== "Done") {
-      if (result.error.code !== "unconfigured") return
-      yield* Effect.logWarning("timeline.summary.unconfigured")
-      yield* Deferred.succeed(stopped, undefined)
+      if (!STOPPING_FAILURES.includes(result.error.code)) return
+      if (result.error.code === "unconfigured") yield* Effect.logWarning("timeline.summary.unconfigured")
+      // Once per lane: the first failure stops it; a turn that was already running may fail the same way after.
+      yield* lane.stop(result.error.code)
       return
     }
     const current = yield* messages.get(row.id)

@@ -316,6 +316,14 @@ export interface RecordOptions {
    * as the step's value instead of failing for the engine to retry.
    */
   readonly final: boolean
+  /**
+   * Seal a capacity refusal that no wait can clear (`isTerminalRefusal` in
+   * `@smthrs/model`: an HTTP 402, or a quota with no reset and no account
+   * scope it could wait on) as the step's value, so a caller with no quota
+   * controller of its own doesn't ask again. Off when absent: every capacity
+   * refusal fails the attempt unsealed for the controller.
+   */
+  readonly sealTerminal?: boolean | undefined
 }
 
 /**
@@ -328,8 +336,9 @@ export interface RecordOptions {
  * honoring any `retryAfterMillis` the provider named, and the attempt count
  * survives a restart. A route's `RequestExecutor` repeats nothing either: one
  * attempt is one request. On the `final` attempt a transport failure is sealed
- * as the step's value. A capacity refusal always fails unsealed for the
- * controller. Every other answer, an error included, is sealed.
+ * as the step's value. A capacity refusal fails unsealed for the controller,
+ * unless `sealTerminal` is set and no wait can clear it. Every other answer, an
+ * error included, is sealed.
  *
  * The overrun and the stall are re-issued here rather than by the engine
  * because they are not transient refusals: each already cost a whole budget or
@@ -509,7 +518,8 @@ export const recordModelStep = (
       Effect.catchIf(
         (error): error is ModelError.ModelError => error instanceof ModelError.ModelError,
         (error) =>
-          isCapacityRefusal(error) || (!options.final && error.code === "transport" && !stalls.has(error))
+          (isCapacityRefusal(error) && !(options.sealTerminal === true && ModelError.isTerminalRefusal(error))) ||
+            (!options.final && error.code === "transport" && !stalls.has(error))
             ? Effect.fail(error)
             : Effect.succeed({ ...ladder, events: [...reissues, ...accountReissued([])], error })
       )
@@ -519,9 +529,11 @@ export const recordModelStep = (
 /**
  * Failures that describe provider capacity rather than the request.
  *
- * This is the recorder's unconditional floor. Classifier policy may decide
- * whether the caller parks and retries one of these failures, but no classifier
- * can turn one into a durable sealed value. `provider_internal` is the model
+ * This is the recorder's floor. Classifier policy may decide whether the
+ * caller parks and retries one of these failures, but no classifier can turn
+ * one into a durable sealed value. The one exception is a caller that has no
+ * controller to park it (`sealTerminal`): it seals a refusal no wait can clear,
+ * which its engine would otherwise ask again for nothing. `provider_internal` is the model
  * vocabulary used for provider overload (including Anthropic 529); the status
  * checks cover transports that retained the wire status under another code.
  */
@@ -727,6 +739,8 @@ export interface Dispatch {
    * the last failure fails the step. Needs a policy that bounds `maxAttempts`.
    */
   readonly sealExhausted?: boolean | undefined
+  /** Seal a terminal capacity refusal as the step's value (see {@link RecordOptions.sealTerminal}); off when absent. */
+  readonly sealTerminal?: boolean | undefined
   /** The overrun budget of one provider attempt; absent or zero disarms it. */
   readonly callTimeoutMs?: number | undefined
   /** The correction ordinal stamped onto the record. */
@@ -845,7 +859,8 @@ export const dispatch = (
           },
           onEvent: options.onEvent,
           reissue: options.reissue === true,
-          final: last !== undefined && attempt >= last
+          final: last !== undefined && attempt >= last,
+          sealTerminal: options.sealTerminal === true
         }).pipe(
           Effect.flatMap(options.settle ?? Effect.succeed),
           // A sealed value is accounted by the caller, on replay too. This

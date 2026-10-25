@@ -4,12 +4,14 @@ export const TIMELINE_TELEMETRY = {
   records: [
     "timeline.summary",
     "timeline.summary.unconfigured",
+    "timeline.summary.stopped",
     "timeline.summary.unavailable",
     "timeline.summary.defect",
     "timeline.summary.deleted",
     "timeline.summary.delete",
     "smithers_timeline_summary_calls",
     "smithers_timeline_summary_removals",
+    "smithers_timeline_summary_stops",
   ],
-  fields: ["outcome", "replayed", "role"],
+  fields: ["outcome", "replayed", "role", "code"],
 } as const

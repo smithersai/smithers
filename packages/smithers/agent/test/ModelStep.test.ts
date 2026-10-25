@@ -314,6 +314,33 @@ describe("ModelStep's one engine attempt", () => {
     expect(sealed.exit).toMatchObject({ _tag: "Success", value: { events: [], error: { code: "transport" } } })
   })
 
+  it("seals a refusal no wait can clear only for a caller that asks, and never a quota that names its reset", async () => {
+    const attemptWith = (error: ModelError.ModelError, sealTerminal: boolean) => {
+      const model = scripted(() => Stream.fail(error))
+      return Effect.runPromiseExit(
+        InternalModelStep.recordModelStep(model.model, ask(["capital of France"]), {
+          reissue: false,
+          final: false,
+          sealTerminal
+        })
+      )
+    }
+    const payment = new ModelError.ModelError({ code: "quota_exceeded", httpStatus: 402, message: "Payment required" })
+    expect(await attemptWith(payment, true)).toMatchObject({
+      _tag: "Success",
+      value: { events: [], error: { code: "quota_exceeded", httpStatus: 402 } }
+    })
+    // The agent loop's controller parks on refusals, so its steps leave every one unsealed.
+    expect(Exit.isFailure(await attemptWith(payment, false))).toBe(true)
+    const resets = new ModelError.ModelError({
+      code: "quota_exceeded",
+      httpStatus: 429,
+      retryAfterMillis: 1_000,
+      message: "Tokens per minute"
+    })
+    expect(Exit.isFailure(await attemptWith(resets, true))).toBe(true)
+  })
+
   it("fails a capacity refusal unsealed on the last attempt too", async () => {
     const overloaded = new ModelError.ModelError({ code: "provider_internal", httpStatus: 529, message: "Overloaded" })
     const last = await attempt(Stream.fail(overloaded), true)
@@ -540,6 +567,52 @@ withPostgres("ModelStep on the durable engine", () => {
     expect(live![0]).toMatchObject({ type: "retry", attempt: 2, code: "rate_limited", httpStatus: 429 })
     expect(live!.slice(1).map((event) => event.type)).toEqual(reply("Paris").map((event) => event.type))
     expect(replayed!.map((event) => event.type)).toEqual(reply("Paris").map((event) => event.type))
+  })
+
+  it("asks once for a payment refusal, which no wait clears, and replays it without asking again", async () => {
+    const model = scripted(() =>
+      Stream.fail(new ModelError.ModelError({ code: "quota_exceeded", httpStatus: 402, message: "Payment required" }))
+    )
+    const sixTimes = RetryPolicy.make({ ...ModelStep.defaultRetryPolicy, initialMs: 1, maxMs: 1 })
+    const park = parkOnce()
+    const handler: Handler = ({ prompt }) =>
+      Effect.gen(function*() {
+        const result = yield* ModelStep.run({
+          name: step,
+          request: ask([prompt]),
+          ...through(model.model),
+          retryPolicy: sixTimes
+        })
+        yield* park
+        return { code: result.error?.code ?? null, status: result.error?.httpStatus ?? null, replayed: result.replayed }
+      })
+    const value = await Effect.runPromise(host(scratch(), handler, parkThenResume("payment", "capital of France")))
+    expect(value).toEqual({ code: "quota_exceeded", status: 402, replayed: true })
+    // Six attempts before this: one per default retry, all refused the same way.
+    expect(model.calls).toHaveLength(1)
+  })
+
+  it("still waits out a quota that names when it resets", async () => {
+    const model = scripted((call) =>
+      call === 1
+        ? Stream.fail(
+          new ModelError.ModelError({
+            code: "quota_exceeded",
+            httpStatus: 429,
+            retryAfterMillis: 1,
+            message: "Tokens per minute"
+          })
+        )
+        : Stream.fromIterable(reply("Paris"))
+    )
+    const handler: Handler = ({ prompt }) =>
+      Effect.map(
+        ModelStep.run({ name: step, request: ask([prompt]), ...through(model.model), retryPolicy: quickly }),
+        (result) => ({ text: textOf(result.events), code: result.error?.code ?? null })
+      )
+    expect(await Effect.runPromise(host(scratch(), handler, execute("quota-resets", "capital of France"))))
+      .toEqual({ text: "Paris", code: null })
+    expect(model.calls).toHaveLength(2)
   })
 
   it("fails with the rate limit once the retry policy gives up", async () => {

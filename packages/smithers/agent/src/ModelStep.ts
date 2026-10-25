@@ -19,7 +19,10 @@
  *   a settlement, `transport`, `provider_internal`, `rate_limited`,
  *   `quota_exceeded`, or HTTP 429, 503, 504 or 529) fails the attempt without
  *   sealing it, and the policy waits the provider's `Retry-After` when it named
- *   one. Every other provider error is sealed as a typed value in
+ *   one. A refusal no wait can clear (`ModelError.isTerminalRefusal`: an HTTP
+ *   402, or a quota that names no reset and no model scope) is sealed on its
+ *   first attempt: asking again would spend five more calls on the same
+ *   refusal. Every other provider error is sealed as a typed value in
  *   {@link Result.error}.
  * - **Liveness.** Each attempt, each streamed event and each chunk of bytes
  *   the provider sends, a keep-alive included, is a heartbeat. An attempt
@@ -236,6 +239,8 @@ export const run = (
       retryPolicy: options.retryPolicy ?? defaultRetryPolicy,
       heartbeatTimeoutMs: heartbeatTimeoutMs === 0 ? undefined : heartbeatTimeoutMs,
       callTimeoutMs: options.callTimeoutMs ?? callTimeoutMsFor(effort),
+      // No quota controller parks this step, so a refusal no wait clears is its answer.
+      sealTerminal: true,
       onEvent: options.onEvent
     })
     if (replayed && options.onEvent !== undefined) {
