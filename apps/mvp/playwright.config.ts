@@ -1,5 +1,14 @@
 import { defineConfig, type PlaywrightTestConfig } from "@playwright/test"
+// Workspace packages export their source, which can hold `.vibe` modules (an e2e spec that imports
+// @smthrs/integrations reaches @smthrs/errors'). Playwright's own transform leaves them to VibeLang's loader (`build`
+// below): this process registers it here, and every worker inherits it through NODE_OPTIONS.
+import "vibelang/register"
 import { baseURL, onThisMachine, sessionFiles, target } from "./e2e/target"
+
+const VIBELANG_LOADER = "--import=vibelang/register"
+if (!(process.env.NODE_OPTIONS ?? "").includes(VIBELANG_LOADER)) {
+  process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ""} ${VIBELANG_LOADER}`.trim()
+}
 
 // Real browsers against the real app, Worker, Durable Object and model: no mocks. The target is local by default:
 // Playwright starts `alchemy dev` (which needs the chat model's credential, CEREBRAS_API_KEY by default, in the
@@ -40,6 +49,8 @@ const deployment = (): PlaywrightTestConfig => {
 
 export default defineConfig({
   testDir: "e2e",
+  // `.vibe` modules go to VibeLang's loader, not Playwright's TypeScript transform.
+  build: { external: ["**/*.vibe"] },
   // Only specs: e2e/*.test.ts are the e2e scripts' unit tests, which vitest runs.
   testMatch: "**/*.spec.ts",
   timeout: 90_000,
