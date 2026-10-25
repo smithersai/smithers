@@ -95,13 +95,24 @@ const withoutLiterals = (source: string): string => {
  *
  * The guard reads this file like any other, because `withoutLiterals` already
  * drops the template literal the example lives in. What stays pinned is the
- * count below: editing the worked example moves this number, which is the same
- * deliberateness the contract's own digest and token ceiling ask for.
+ * exact text below: editing the worked example requires updating that list,
+ * with the same deliberateness the contract's own digest and token ceiling ask for.
  */
 const TEACHING = "smithers/agent/harness/src/internal/cellPrompt.ts"
 
-/** How many `console.*` lines the teaching text is expected to spell. */
-const TEACHING_LINES = 3
+/**
+ * Sandbox output is model-visible cell data, not host telemetry (OBS-1/OBS-5).
+ * df649523 added explicit failure branches to the editing example. Pin their
+ * exact text: adding a host call still fails the executable-source guard.
+ */
+const TEACHING_LINES = [
+  "console.log(found.ok === false ? found.error.message : hit === undefined ? \"No matches\" : region.ok === false ? region.error.message : region.content)",
+  "  if (applied.ok === false) console.log(applied.error.message)",
+  "    if (before.ok === false) console.log(before.error.message)",
+  "    else if (after.ok === false) console.log(after.error.message)",
+  "      console.log(applied.hunk, before.exitCode, after.exitCode, after.stdout)",
+  "console.log(found.ok === false ? found.error.message : judged.ok === false ? judged.error.message : { count: files.length, kept, uncertain })"
+]
 
 /**
  * The one file the guard still skips whole.
@@ -190,7 +201,7 @@ describe("console guard", () => {
   it("holds the teaching file to the console lines its worked example spells", () => {
     const source = readFileSync(join(PACKAGES_DIR, TEACHING), "utf8")
     const matched = source.split("\n").filter((line) => CONSOLE_CALL.test(line))
-    expect(matched).toHaveLength(TEACHING_LINES)
+    expect(matched).toEqual(TEACHING_LINES)
   })
 
   it("holds the sandbox documentation to its one cell-console example", () => {
