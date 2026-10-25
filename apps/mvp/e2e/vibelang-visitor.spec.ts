@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { expect, step, test } from "./fixtures"
-import { requires, target } from "./target"
+import { meets, requires, target } from "./target"
 import { as, homeOf, landing, openHome, readCode, readDocs, REPO, tabsOf, viewsOf } from "./vibelang"
 
 // The visitor's journey on the VibeLang repository (rulings SCOPE-12, SCOPE-13): someone signed out opens
@@ -122,9 +122,10 @@ test.describe("VibeLang's files on Smithers", () => {
 })
 
 for (const who of ["visitor", "contributor"] as const) {
-  test(`repository pages: ${who} sees navigation and honest GitHub destinations`, async ({ page }) => {
+  test(`repository pages: ${who} sees navigation, VibeLang's synced lists and no deployment-only links`, async ({ page }) => {
     if (who === "contributor") requires("member")
     test.setTimeout(180_000)
+    const synced = !meets("noGitHubApp")
     await as(page, who)
     for (const path of ["issues", "pulls", "stack", "issues/new", "settings/secrets", "actions", "tree/main"]) {
       await step(`Open ${path}`, async () => {
@@ -134,14 +135,27 @@ for (const who of ["visitor", "contributor"] as const) {
         await expect(tabsOf(page).getByRole("link")).toHaveText(["Home", "Code", "Docs"], { timeout: 60_000 })
         await expect(header.getByRole("link", { name: "Secrets", exact: true })).toHaveCount(0)
         await expect(header.getByRole("link", { name: "Settings", exact: true })).toHaveCount(0)
+        // VibeLang has the Smithers App, so a deployment syncs its issues and pull requests (decision 0079 slice 1b): its
+        // own lists, never the frame that sends people to GitHub's. A dev server without the App syncs no repository
+        // but its own: there they send people to GitHub's.
         if (path === "issues" || path === "pulls") {
           const text = path === "issues" ? "Issues for this repository are on GitHub." : "Pull requests for this repository are on GitHub."
-          await expect(page.getByRole("link", { name: text, exact: true })).toHaveAttribute("href", `https://github.com/smithersai/vibelang/${path}`)
-          await expect(page.getByRole("navigation", { name: "Commitment" })).toHaveCount(0)
+          const toGitHub = page.getByRole("link", { name: text, exact: true })
+          if (!synced) await expect(toGitHub).toHaveAttribute("href", `https://github.com/smithersai/vibelang/${path}`)
+          else {
+            await expect(page.getByRole("main", { name: path === "issues" ? "Issues" : "Pull requests" })).toBeVisible()
+            await expect(toGitHub).toHaveCount(0)
+          }
         }
-        if (path === "issues/new") {
+        if (path === "issues/new" && !synced) {
           await expect(page.getByRole("link", { name: "Open an issue on GitHub", exact: true })).toHaveAttribute("href", "https://github.com/smithersai/vibelang/issues/new")
           await expect(page.getByRole("button", { name: "Create issue", exact: true })).toHaveCount(0)
+        }
+        if (path === "issues/new" && synced) {
+          await expect(page.getByRole("link", { name: "Open an issue on GitHub" })).toHaveCount(0)
+          // Anyone signed in may open one (a Guest and up); a visitor is asked to sign in.
+          if (who === "contributor") await expect(page.getByRole("button", { name: "Create issue", exact: true })).toBeVisible({ timeout: 30_000 })
+          else await expect(page.getByRole("link", { name: "Sign in with GitHub" }).or(page.getByRole("button", { name: "Sign in with GitHub" })).first()).toBeVisible({ timeout: 30_000 })
         }
         if (path === "stack") await expect(page.getByText("Members can make TODOs.", { exact: true })).toBeVisible()
         // The refusal is the page's empty state, whose title is text, as the stack's is.

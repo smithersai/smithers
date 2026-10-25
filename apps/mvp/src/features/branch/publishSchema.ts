@@ -21,6 +21,13 @@ export const PublicationRow = Schema.Struct({
 })
 export type PublicationRow = typeof PublicationRow.Type
 
+/** The title of a published branch's pull request, from its repository's issues once the device has its row. */
+export const PullTitle = Schema.Struct({
+  branchId: Schema.String,
+  title: Schema.String,
+})
+export type PullTitle = typeof PullTitle.Type
+
 /**
  * Why this tab's press of Publish or Update branch didn't start a write: `branch/publish`'s or `branch/update`'s
  * refusal (`exists`: a Publish is on its way or the branch is published), or `unavailable` when the flow couldn't run

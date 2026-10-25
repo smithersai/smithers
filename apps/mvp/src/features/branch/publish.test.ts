@@ -217,6 +217,13 @@ describe("Publish", () => {
     await until(() => expect(reads(tab.bar())).toEqual(["#7", "Update branch", "form: feature/one", "Compare"]))
     await tab.sql(Store.upsertIssue(REPO_ID, pullIssue("Add a line"), Date.now()))
     await until(() => expect(reads(tab.bar())).toEqual(["#7", "Update branch", "form: Add a line", "Compare"]))
+    // The title is its repository's issues' (decision 0079 slice 1b), opened by the publication though no issues page
+    // was: renamed on GitHub, the form follows.
+    await tab.sql(Store.upsertIssue(REPO_ID, pullIssue("Add two lines"), Date.now()))
+    await until(() => expect(reads(tab.bar())).toEqual(["#7", "Update branch", "form: Add two lines", "Compare"]))
+    // Deleted on GitHub, the pull request's title is forgotten: the form falls back to the branch's name.
+    await tab.sql(Store.tombstoneIssue(REPO_ID, 7, Date.now()))
+    await until(() => expect(reads(tab.bar())).toEqual(["#7", "Update branch", "form: feature/one", "Compare"]))
     await tab.actions.closeForm()
   }, WITHIN)
 

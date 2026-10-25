@@ -29,8 +29,9 @@ export function HomePage({ tree }: { readonly tree: ReactNode }) {
   const navigate = useNavigate()
   const { data } = useLiveQuery(queries.home)
   const { data: files } = useLiveQuery(queries.files)
-  const { data: items } = useLiveQuery(queries.items)
-  const { data: syncs } = useLiveQuery(queries.syncs)
+  // The issues `open` opened for an `issues` block: a new collection once they open, which the hook follows.
+  const { data: items } = useLiveQuery(queries.items(data?.current.issues ?? ""))
+  const { data: syncs } = useLiveQuery(queries.syncs(data?.current.issues ?? ""))
   const { data: runs } = useLiveQuery(queries.runs)
   const { data: mine } = useLiveQuery(flows.queries.flows)
   // The stack `open` opened for a `stack` block: a new collection once it opens, which the hook follows.

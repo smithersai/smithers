@@ -248,7 +248,8 @@ export const retryAbout = (owner: string, name: string) =>
 /**
  * Asks ChatApi who the person is on `owner/name` (decision 0079): their role there and whether it is the deployment's
  * own repository, kept in this tab's `roles` row for the repository, which the header's links and each page's buttons
- * read. A refused answer keeps the row this tab had: nothing role-gated shows on a repository ChatApi never answered.
+ * read, and whether the deployment syncs its issues and pull requests (decision 0079 slice 1b). A refused answer keeps
+ * the row this tab had: nothing role-gated shows on a repository ChatApi never answered.
  * One log line and span `repo.role` and one count, with the outcome, the role and whether it is the deployment's own.
  */
 export const role = (owner: string, name: string) =>
@@ -265,8 +266,8 @@ export const role = (owner: string, name: string) =>
         Effect.annotateLogs({ outcome: "refused", status: result.failure.status ?? 0, durationMs }),
       )
     }
-    const { role: held, own, readable } = result.success
-    yield* put(store.roles, id, { id, role: held, own, readable })
+    const { role: held, own, readable, synced } = result.success
+    yield* put(store.roles, id, { id, role: held, own, readable, synced })
     yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "answered", role: held ?? "none" }), 1)
     yield* Effect.logInfo("repo.role").pipe(
       Effect.annotateLogs({ outcome: "answered", role: held ?? "none", own, durationMs }),

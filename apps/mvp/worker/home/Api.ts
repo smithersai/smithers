@@ -76,6 +76,8 @@ export interface Options<R> {
   /** The person's role on the routed repository (decision 0079); `R` is what its database's layer needs. */
   readonly roles: RepoRoles.RepoRoles<R>
   readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean, never, R | Sessions>
+  /** Whether the deployment syncs the repository's issues and pull requests (decision 0079 slice 1b), for anyone. */
+  readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean, never, R>
   /** The curated homes: worker/home/curated/ unless a test gives its own. */
   readonly files?: ReadonlyArray<Curated.CuratedFile>
 }
@@ -88,7 +90,7 @@ interface Decided {
 }
 
 /** The routes. They read who is asking from `Sessions`. */
-export const make = <R>({ roles, files = Curated.files, mayRead }: Options<R>) => {
+export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Options<R>) => {
   /**
    * The person's role on `target`: none signed out, or where the deployment can't act; a role GitHub or Postgres can't
    * say now is the refusal, never a guess.
@@ -224,6 +226,7 @@ export const make = <R>({ roles, files = Curated.files, mayRead }: Options<R>) =
     const own = repositoryOf(`${target.owner}/${target.name}`).id === roles.repository.id
     const answer: RepoRoleAnswer = { role: decided.success.role, own,
       ...(mayRead === undefined ? {} : { readable: yield* mayRead(repositoryOf(`${target.owner}/${target.name}`)) }),
+      ...(maySync === undefined ? {} : { synced: yield* maySync(repositoryOf(`${target.owner}/${target.name}`)) }),
     }
     return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), { outcome: "answered", own, ...decided.success })
   }).pipe(Effect.withSpan("repo.role"))

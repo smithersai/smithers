@@ -12,7 +12,7 @@ test("standalone homes have empty issues, sync, runs, stack and access blocks", 
   const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provide(Persistence.memory)))
   try {
     const store = await runtime.runPromise(Effect.service(HomeStore))
-    expect(await runtime.runPromise(Effect.all([store.items, store.syncs, store.runs, store.noTodos, store.noAccess].map((query) => query.toArray)))).toEqual([[], [], [], [], []])
+    expect(await runtime.runPromise(Effect.all([store.noItems, store.noSyncs, store.runs, store.noTodos, store.noAccess].map((query) => query.toArray)))).toEqual([[], [], [], [], []])
     expect((await runtime.runPromise(store.current.toArray))[0]?.owner).toBe("")
     await runtime.runPromise(store.homes.insert({ key: "repo@sha", state: "absent", sections: [], contributors: "role", skipped: 0, reason: null }))
     await runtime.runPromise(store.curated.insert({ key: "repo", state: "absent", defaultBranch: "main", sections: [] }))

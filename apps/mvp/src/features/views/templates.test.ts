@@ -13,6 +13,8 @@ import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
+import { IssuesStore } from "../issues/store"
+import { repoId } from "../repo/contract"
 import { Repo } from "../repo/repo"
 import { CHAT_PATH, minimize, minimized, sameTarget } from "./minimize"
 import { issuesOf, repoOf } from "./rows"
@@ -28,7 +30,7 @@ const until = (assertion: () => void | Promise<void>, timeout = 40_000) => vi.wa
 
 const WITHIN = 90_000
 
-type App = ManagedRuntime.ManagedRuntime<Commands | Chat | ChatStore | Views | Repo | AuthStore, unknown>
+type App = ManagedRuntime.ManagedRuntime<Commands | Chat | ChatStore | Views | Repo | AuthStore | IssuesStore, unknown>
 
 /** The app as `actor` (a Member unless `null`), signed in as sign-in's `load` sets it, its queries started as React does. */
 const open = async (actor: Actor | null = member, options: TabOptions = {}) => {
@@ -87,8 +89,11 @@ describe("/repo and /issues", () => {
         { template: "issues", props: { repo: "octocat/Spoon-Knife" } },
       ])
     )
-    // An issues view needs no load of its own: the embeds hold only the repository's view.
+    // An issues view needs no load of its own: the embeds hold only the repository's view. It opens the repository's
+    // issues, whose shapes then sync (decision 0079 slice 1b).
     expect(tab.repo.queries.embeds.toArray.map((row) => row.embed.key)).toEqual([viewId])
+    const issues = await tab.runtime.runPromise(Effect.service(IssuesStore))
+    await until(() => expect(issues.opened(repoId("octocat", "Spoon-Knife"))?.id).toBe(repoId("octocat", "Spoon-Knife")))
   }, WITHIN)
 })
 

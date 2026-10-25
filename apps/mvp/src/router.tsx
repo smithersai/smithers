@@ -433,7 +433,7 @@ const issuesRoute = createRoute({
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params,
       load,
-      () => Promise.all([context.issues.actions.warm(), context.todos.actions.warm(params.owner, params.repo)]),
+      () => Promise.all([context.issues.actions.warm(params.owner, params.repo), context.todos.actions.warm(params.owner, params.repo)]),
       () =>
         Promise.all([
           context.issues.actions.open(params.owner, params.repo),
@@ -448,7 +448,7 @@ const newIssueRoute = createRoute({
   path: "/$owner/$repo/issues/new",
   component: NewIssueScreen,
   beforeLoad: ({ context, params, ...load }) =>
-    enterRepository(context, params, load, () => context.issues.actions.warm(), () => context.issues.actions.open(params.owner, params.repo)),
+    enterRepository(context, params, load, () => context.issues.actions.warm(params.owner, params.repo), () => context.issues.actions.open(params.owner, params.repo)),
 })
 
 /** `/$owner/$repo/issues/$number`: one issue, and the TODOs made from it; any other `$number` matches no route. */
@@ -468,7 +468,7 @@ const issueRoute = createRoute({
       context,
       params,
       load,
-      () => Promise.all([context.issues.actions.warm(), context.todos.actions.warm(params.owner, params.repo)]),
+      () => Promise.all([context.issues.actions.warm(params.owner, params.repo), context.todos.actions.warm(params.owner, params.repo)]),
       () =>
         Promise.all([
           context.issues.actions.open(params.owner, params.repo, params.number),
@@ -502,7 +502,7 @@ const pullsRoute = createRoute({
   path: "/$owner/$repo/pulls",
   component: PullsScreen,
   beforeLoad: ({ context, params, ...load }) =>
-    enterRepository(context, params, load, () => context.pulls.actions.warm(), () => context.pulls.actions.open(params.owner, params.repo)),
+    enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo)),
 })
 
 /** A pull request's number in its path, as an issue's is; any other matches no route. */
@@ -524,7 +524,7 @@ const pullRoute = createRoute({
   component: () => <PullScreen tab="conversation" />,
   params: pullParams,
   beforeLoad: ({ context, params, ...load }) =>
-    enterRepo(context, params, load, () => context.pulls.actions.warm(), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
+    enterRepo(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
 })
 
 /** `/$owner/$repo/pull/$number/$tab`: its commits, its checks (the Smithers runs on its head), or its files. */
@@ -553,7 +553,7 @@ const pullTabRoute = createRoute({
       context,
       params,
       load,
-      () => context.pulls.actions.warm(),
+      () => context.pulls.actions.warm(params.owner, params.repo),
       () => context.pulls.actions.open(params.owner, params.repo, params.number, params.tab),
     ),
 })

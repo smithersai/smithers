@@ -6,6 +6,7 @@ import { aboutOf, isReady, put, ready, shownRepository } from "../repo/actions"
 import { RepoClient } from "../repo/api"
 import { isRepository, repoId } from "../repo/contract"
 import { RepoStore } from "../repo/store"
+import { IssuesStore } from "../issues/store"
 import { TodosStore } from "../todos/store"
 import { HomeClient } from "./api"
 import { codeHref, HOME_FILE, NEW_BRANCH } from "./contract"
@@ -75,20 +76,27 @@ const ensureFile = (repository: { readonly owner: string; readonly name: string 
 
 /**
  * Syncs the rows of the live blocks this person may see on the shown home: a `stack` block in a section their
- * audience may see opens the repository's stack. Run after each part of the home arrives, so the last one sees it all.
+ * audience may see opens the repository's stack, and an `issues` block its issues (decision 0079 slice 1b). Run after
+ * each part of the home arrives, so the last one sees it all.
  */
 const syncLive = (id: string) =>
   Effect.gen(function* () {
     const store = yield* HomeStore
     const todos = yield* Effect.serviceOption(TodosStore)
-    if (Option.isNone(todos)) return
+    const issues = yield* Effect.serviceOption(IssuesStore)
     const current = Option.getOrThrow(yield* store.current.get(CURRENT))
     // What the page shows decides what it reads: the same rows, through the same `homePageOf`.
     const declared = Option.getOrUndefined(yield* store.homes.get(current.key ?? ""))
     const curated = Option.getOrUndefined(yield* store.curated.get(id))
-    if (!liveKindsOf(homePageOf(current, declared, curated)).has("stack")) return
-    yield* todos.value.stackOf(id)
-    yield* setCurrent({ stack: id })
+    const kinds = liveKindsOf(homePageOf(current, declared, curated))
+    if (Option.isSome(todos) && kinds.has("stack")) {
+      yield* todos.value.stackOf(id)
+      yield* setCurrent({ stack: id })
+    }
+    if (Option.isSome(issues) && kinds.has("issues")) {
+      yield* issues.value.forRepo(id)
+      yield* setCurrent({ issues: id })
+    }
   })
 
 /**
@@ -245,6 +253,7 @@ export const open = (owner: string, name: string) =>
         answering: false,
         previewing: false,
         stack: null,
+        issues: null,
         failure: null,
         running: [],
       })
@@ -265,7 +274,7 @@ export const open = (owner: string, name: string) =>
       name,
       repoId: id,
       answering: true,
-      ...(same ? {} : { ...head, previewing: head.key === null, docs: null, curatedDocs: null, audience: null, viewing: null, stack: null, failure: null, running: [] }),
+      ...(same ? {} : { ...head, previewing: head.key === null, docs: null, curatedDocs: null, audience: null, viewing: null, stack: null, issues: null, failure: null, running: [] }),
     })
     const part = <R>(load: Effect.Effect<void, never, R>) => Effect.andThen(load, syncLive(id))
     yield* FiberHandle.run(

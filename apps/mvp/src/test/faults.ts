@@ -1,4 +1,5 @@
 import { ShapeSource } from "@smthrs/effect-electric"
+import type { Persistence } from "@smthrs/effect-tanstack-db"
 import { Interpreter } from "@smthrs/flow"
 import { Context, Effect, Exit, Latch, Layer, Ref } from "effect"
 import { AuthClient } from "../features/auth/api"
@@ -8,6 +9,25 @@ import { ClientEngine, DispatchFailed } from "../flows/dispatch"
 import { faultyAuth } from "./authFaults"
 
 export { AuthFaults } from "./authFaults"
+
+/**
+ * `real` persistence whose metadata is unreadable for the one read after `failNext()`, then readable again: a device whose
+ * storage failed once and recovered, so a store's collections that couldn't open open on the next try.
+ */
+export const persistenceFailingOnce = (real: Persistence.Service) => {
+  let fail = false
+  const service: Persistence.Service = {
+    persistence: real.persistence,
+    get registry() {
+      if (fail) {
+        fail = false
+        throw new Error("persistence metadata unavailable")
+      }
+      return real.registry
+    },
+  }
+  return { service, failNext: () => void (fail = true) }
+}
 
 // The test implementations of the services the browser reaches the world through (docs/rules.md,
 // test.faults-by-injection): ChatApi's client, sign-in's client (src/test/authFaults.ts), Electric's shape source and

@@ -57,6 +57,8 @@ interface RouteOptions {
   readonly database?: typeof unreachable
   /** Local development without the App: the session's role holds everywhere (worker/DevChatApi.ts). */
   readonly local?: boolean
+  /** Which repositories the deployment syncs (worker/github/Api.ts `maySync`); unset, the answer doesn't say. */
+  readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean>
 }
 
 /**
@@ -83,7 +85,11 @@ const route = async (options: RouteOptions = {}) => {
     ...(options.local === undefined ? {} : { local: options.local }),
   }))
   const handler = HttpEffect.toWebHandler(
-    make({ roles, ...(options.files === undefined ? {} : { files: options.files }) }).fetch.pipe(
+    make({
+      roles,
+      ...(options.files === undefined ? {} : { files: options.files }),
+      ...(options.maySync === undefined ? {} : { maySync: options.maySync }),
+    }).fetch.pipe(
       Effect.provide(options.sessions ?? Actor.signedOut),
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))])),
@@ -424,6 +430,17 @@ describe("GET /api/repos/<owner>/<name>/role (decision 0079)", () => {
     expect([response.status, response.headers.get("retry-after"), await response.json()]).toEqual([503, "5", { code: "unavailable" }])
     expect(down.logs.find((log) => log.message === "repo.role")).toMatchObject({ level: "WARN", annotations: { outcome: "unavailable" } })
     expect(down.roleCount({ outcome: "unavailable", role: "none" })).toBe(1)
+  })
+
+  test("the answer says whether the deployment syncs the repository's issues and pull requests (decision 0079 slice 1b)", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "read")
+    // The GitHub routes' rule, given: every repository but acme/widgets.
+    const maySync = (target: ReturnType<typeof repositoryOf>) => Effect.succeed(target.id !== "github/acme/widgets")
+    const r = await route({ sessions: signedIn(person("member")), github, maySync })
+    expect(await roleOf(await r.get(ROLE_EFFECT))).toEqual([200, { role: "member", own: true, synced: true }])
+    expect(await roleOf(await r.get(ROLE_WIDGETS))).toEqual([200, { role: "guest", own: false, synced: false }])
+    expect(await roleOf(await (await route({ maySync })).get(ROLE_WIDGETS))).toEqual([200, { role: null, own: false, synced: false }])
   })
 
   test("only GET", async () => {

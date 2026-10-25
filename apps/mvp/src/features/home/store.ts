@@ -1,7 +1,6 @@
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, FiberHandle, Layer, Option, Semaphore, type Schema } from "effect"
 import { CuratedHomesStore, HomesStore } from "../../device/registry"
-import { IssuesStore } from "../issues/store"
 import { Item, SyncRow, syncKey } from "../issues/schema"
 import { Run } from "../status/schema"
 import { StatusStore } from "../status/store"
@@ -65,13 +64,13 @@ const make = Effect.gen(function* () {
     getKey: rowId,
     initialData: [emptyCurrent],
   })
-  // The live blocks' rows, from the stores that sync them: the synced repository's issues and pull requests and its
-  // sync, and this person's runs. A `stack` block's rows are the TODOs store's own (`TodosStore.opened`).
-  const issues = yield* Effect.serviceOption(IssuesStore)
+  // The live blocks' rows, from the stores that sync them: this person's runs. A `stack` block's rows are the TODOs
+  // store's own (`TodosStore.opened`), and an `issues` block's the issues store's (`IssuesStore.opened`).
   const status = yield* Effect.serviceOption(StatusStore)
-  const items = yield* liveRows(issues, (store) => store.items, { id: "home-no-items", schema: Item, getKey: rowId })
-  const syncs = yield* liveRows(issues, (store) => store.sync, { id: "home-no-syncs", schema: SyncRow, getKey: syncKey })
   const runs = yield* liveRows(status, (store) => store.runs, { id: "home-no-runs", schema: Run, getKey: rowId })
+  // What an `issues` block reads on a tab with no issues store: no issues, and no sync.
+  const noItems = yield* rowsOf(yield* Collection.local<Item, string>({ id: "home-no-items", schema: Item, getKey: rowId }))
+  const noSyncs = yield* rowsOf(yield* Collection.local<SyncRow, string>({ id: "home-no-syncs", schema: SyncRow, getKey: syncKey }))
   // What a `stack` block reads on a tab with no TODOs store: no TODOs, and no word on access.
   const noTodos = yield* rowsOf(yield* Collection.local<Todo, string>({ id: "home-no-todos", schema: Todo, getKey: rowId }))
   const noAccess = yield* rowsOf(
@@ -84,8 +83,8 @@ const make = Effect.gen(function* () {
     /** Tokens keep action completions scoped to the page that started them. */
     actions: new Map<string, symbol>(),
     curated,
-    items,
-    syncs,
+    noItems,
+    noSyncs,
     runs,
     noTodos,
     noAccess,
@@ -104,7 +103,8 @@ const make = Effect.gen(function* () {
  * The home's state for one tab:
  * - `homes`: each home this device read, by repository and commit; kept on the device.
  * - `curated`: the curated home ChatApi last answered for each repository; kept on the device.
- * - `items`, `syncs`, `runs`: the live blocks' rows, from the issues' and agent status's stores when the tab has them.
+ * - `runs`: a live block's rows, from the agent status's store when the tab has it; `noItems`, `noSyncs`: what an
+ *   `issues` block reads on a tab without the issues' store.
  * - `files`: the files the Markdown blocks read, by home and path.
  * - `current`: whose home the routed page shows, one row.
  * - the live queries frontends read, `loader` and `scope`.

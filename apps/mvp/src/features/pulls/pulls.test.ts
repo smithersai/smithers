@@ -7,8 +7,10 @@ import { role as readRepositoryRole } from "../repo/actions"
 // route reads the scripted GitHub as the App. Unhappy paths give the tab a faulty `PullsClient`, the real one behind
 // switches (test.faults-by-injection).
 import { ShapeSource } from "@smthrs/effect-electric"
+import { Persistence } from "@smthrs/effect-tanstack-db"
 import { GitHub } from "@smthrs/integrations"
-import { Effect, Layer, type ManagedRuntime, Metric } from "effect"
+import { Context, Effect, Exit, Layer, type ManagedRuntime, Metric } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
@@ -25,8 +27,11 @@ import { repoId } from "../repo/contract"
 import { mergePresses } from "./actions"
 import { PullsClient, PullsRequestFailed } from "./api"
 import { mergeExecutionId, PULLS_SHAPE_ROUTE } from "./contract"
+import { persistenceFailingOnce } from "../../test/faults"
+import { startedOnRead } from "../../test/liveQueries"
 import { Pulls } from "./pulls"
 import { pullShapeTransitions } from "./shapeSync"
+import { PullsStore } from "./store"
 import { listPageOf, pullAccessOf } from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -82,14 +87,16 @@ const faultyClient = () => {
 
 type App = ManagedRuntime.ManagedRuntime<Pulls | Issues | TestChatApi, unknown>
 
+/** A feature's facade with its queries started as React starts them, on read. */
+const started = <F extends { readonly queries: object }>(facade: F): F => ({ ...facade, queries: startedOnRead(facade.queries) })
+
 /** The app on a fresh ChatApi as `actor` (Sam, a Maintainer, unless set), with the pulls queries started as React does. */
 const open = async (options: TabOptions = {}, actor: Actor | null = sam) => {
   const runtime: App = openTestApp(options, { actor })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
-  const pulls = await runtime.runPromise(Effect.service(Pulls))
-  const issues = await runtime.runPromise(Effect.service(Issues))
-  for (const query of Object.values(pulls.queries)) query.startSyncImmediate()
+  const pulls = started(await runtime.runPromise(Effect.service(Pulls)))
+  const issues = started(await runtime.runPromise(Effect.service(Issues)))
   return {
     api,
     actions: pulls.actions,
@@ -226,13 +233,10 @@ describe("the list and a pull request's page", () => {
       const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam })
       runtimes.push(runtime)
       const api = await runtime.runPromise(Effect.service(TestChatApi))
-      const pulls = await runtime.runPromise(Effect.service(Pulls))
-      const issues = await runtime.runPromise(Effect.service(Issues))
-      for (const query of Object.values(pulls.queries)) query.startSyncImmediate()
-      issues.queries.access.startSyncImmediate()
-      issues.queries.synced.startSyncImmediate()
+      const pulls = started(await runtime.runPromise(Effect.service(Pulls)))
+      const issues = started(await runtime.runPromise(Effect.service(Issues)))
       await server(api).pull(pullOf(2), "Recovered pull")
-      pulls.actions.open(OWNER, NAME, 2)
+      await pulls.actions.open(OWNER, NAME, 2)
       const view = () => pulls.queries.view.toArray[0]
       const currentPage = () => pageOf(pulls.queries.pull.toArray[0], issues.queries.synced.toArray[0],
         pulls.queries.pull.isReady() && view()?.installed === true, issues.queries.synced.isReady(),
@@ -267,12 +271,9 @@ describe("the list and a pull request's page", () => {
     } })
     const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam })
     runtimes.push(runtime)
-    const pulls = await runtime.runPromise(Effect.service(Pulls))
-    const issues = await runtime.runPromise(Effect.service(Issues))
-    for (const query of Object.values(pulls.queries)) query.startSyncImmediate()
-    issues.queries.access.startSyncImmediate()
-    issues.queries.synced.startSyncImmediate()
-    pulls.actions.open(OWNER, NAME, 404)
+    const pulls = started(await runtime.runPromise(Effect.service(Pulls)))
+    const issues = started(await runtime.runPromise(Effect.service(Issues)))
+    await pulls.actions.open(OWNER, NAME, 404)
     await until(() => expect(pulls.queries.view.toArray[0]).toMatchObject({ pullStatus: "unavailable", installed: false }), 5_000)
     await until(() => expect(issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
     const access = pullAccessOf(issues.queries.access.toArray[0], pulls.queries.view.toArray[0])
@@ -295,7 +296,7 @@ describe("the list and a pull request's page", () => {
     const tab = await open()
     tab.issues.queries.access.startSyncImmediate()
     tab.issues.queries.synced.startSyncImmediate()
-    tab.actions.open(OWNER, NAME, 404)
+    await tab.actions.open(OWNER, NAME, 404)
     await until(() => expect(tab.view()).toMatchObject({ installed: true }))
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
     await until(() => expect(tab.queries.pull.isReady()).toBe(true))
@@ -331,10 +332,9 @@ describe("the list and a pull request's page", () => {
       return response
     } }, { answers: false })
     runtimes.push(fresh)
-    const pulls = await fresh.runPromise(Effect.service(Pulls))
-    pulls.queries.list.startSyncImmediate()
+    const pulls = started(await fresh.runPromise(Effect.service(Pulls)))
     await fresh.runPromise(readRepositoryRole(OWNER, NAME))
-    pulls.actions.open(OWNER, NAME)
+    await pulls.actions.open(OWNER, NAME)
     await until(() => expect(pulls.queries.list.toArray.map((row) => row.number)).toEqual([3845, 3844, 3843, 3842, 3841]))
     expect(itemChunks).toBeGreaterThan(1)
     expect(itemsComplete).toBe(true)
@@ -347,14 +347,14 @@ describe("the list and a pull request's page", () => {
   test("a direct pull-list visit uses that repository's completed sync, including an empty list", async () => {
     const tab = await open()
     await Effect.runPromise(tab.api.github.run(Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: true, failure: null })))
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     tab.issues.queries.synced.startSyncImmediate()
     await until(() => expect(tab.issues.queries.synced.toArray[0]).toMatchObject({ syncedAt: expect.any(String) }))
     await until(() => expect(tab.queries.list.isReady()).toBe(true))
     expect(listPageOf(tab.queries.list.toArray, { owner: OWNER, name: NAME },
       tab.issues.queries.synced.toArray[0], undefined, tab.queries.list.isReady()))
       .toMatchObject({ loading: false, unknown: false, pulls: [] })
-    tab.actions.open("other", "repository")
+    await tab.actions.open("other", "repository")
     await until(() => expect(tab.issues.queries.synced.toArray).toEqual([]))
     await until(() => expect(tab.queries.list.toArray).toEqual([]))
     expect(listPageOf(tab.queries.list.toArray, { owner: "other", name: "repository" },
@@ -372,8 +372,8 @@ describe("the list and a pull request's page", () => {
     await github.issue(4, "Not read yet")
     await Effect.runPromise(tab.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`UPDATE items SET kind = 'pull' WHERE id = ${itemId(REPO_ID, 4)}`)))
-    tab.actions.warm()
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.warm(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     await until(() =>
       expect(tab.queries.list.toArray.map(({ number, title, draft, merged, headRef }) => ({ number, title, draft, merged, headRef })))
         .toEqual([
@@ -397,7 +397,7 @@ describe("the list and a pull request's page", () => {
     await github.check("checks/readme", SHA_HEAD, "done")
     await github.check("checks/review", SHA_HEAD, "working")
     await github.check("checks/readme", SHA_OLD, "failed")
-    tab.actions.open(OWNER, NAME, 2)
+    await tab.actions.open(OWNER, NAME, 2)
     await until(() =>
       expect(tab.pull()).toMatchObject({
         number: 2,
@@ -440,9 +440,9 @@ describe("the list and a pull request's page", () => {
         .toEqual([{ flow: "checks/readme", status: "done" }, { flow: "checks/review", status: "working" }])
     )
     // Another tab of the same pull request reads the same; another pull request's page reads its own.
-    tab.actions.open(OWNER, NAME, 2, "checks")
+    await tab.actions.open(OWNER, NAME, 2, "checks")
     expect(tab.view()).toMatchObject({ number: 2, tab: "checks" })
-    tab.actions.open(OWNER, NAME, 9)
+    await tab.actions.open(OWNER, NAME, 9)
     await until(() => expect(tab.pull()).toBeUndefined())
   }, WITHIN)
 })
@@ -454,7 +454,7 @@ describe("the Files tab", () => {
     const base = scripted.refs.get("main")!
     const head = scripted.push("smithers/t2", { "README.md": "# Widgets\n\nA line\n" })
     await server(tab.api).pull(pullOf(2, { base, head }))
-    tab.actions.open(OWNER, NAME, 2, "files")
+    await tab.actions.open(OWNER, NAME, 2, "files")
     await until(() =>
       expect(tab.queries.files.toArray.map(({ id, status, files, truncated }) => ({ id, status, files, truncated }))).toEqual([{
         id: `${base}...${head}`,
@@ -510,7 +510,7 @@ describe("Merge", () => {
   test("a Maintainer's press sends pr/merge at the head and base shown, once at a time, and the page follows its write", async () => {
     const tab = await open()
     await server(tab.api).pull(pullOf(2))
-    tab.actions.open(OWNER, NAME, 2)
+    await tab.actions.open(OWNER, NAME, 2)
     await until(() => expect(tab.pull()?.headSha).toBe(SHA_HEAD))
     expect(tab.actions.merge(SHA_HEAD, SHA_BASE, 2)).toBe(true)
     // A second press while the first is on its way sends nothing.
@@ -526,28 +526,28 @@ describe("Merge", () => {
     await server(tab.api).settle(writeId, { status: "refused", failure: "head_moved" })
     await until(() => expect(tab.view()).toMatchObject({ mergeStatus: "refused", mergeFailure: "head_moved" }))
     // Another tab of the same pull request keeps it; another pull request starts clean.
-    tab.actions.open(OWNER, NAME, 2, "commits")
+    await tab.actions.open(OWNER, NAME, 2, "commits")
     expect(tab.view()?.mergeWriteId).toBe(writeId)
-    tab.actions.open(OWNER, NAME, 3)
+    await tab.actions.open(OWNER, NAME, 3)
     expect(tab.view()).toMatchObject({ mergeWriteId: null, mergeRefused: null, merging: false })
   }, WITHIN)
 
   test("refused by the route: a Member is not allowed, a person signed out signs in, and an unreachable ChatApi couldn't", async () => {
     const member = await open({}, person("member"))
-    member.actions.open(OWNER, NAME, 2)
+    await member.actions.open(OWNER, NAME, 2)
     member.actions.merge(SHA_HEAD, SHA_BASE, 2)
     await until(() => expect(member.view()).toMatchObject({ merging: false, mergeRefused: "forbidden" }))
     expect(member.count({ outcome: "403" })).toBe(1)
 
     const signedOut = await open({}, null)
-    signedOut.actions.open(OWNER, NAME, 2)
+    await signedOut.actions.open(OWNER, NAME, 2)
     signedOut.actions.merge(SHA_HEAD, SHA_BASE, 2)
     await until(() => expect(signedOut.view()).toMatchObject({ merging: false, mergeRefused: "sign_in" }))
 
     const client = faultyClient()
     const offline = await open({ replace: client.layer })
     client.state.merge.push("network")
-    offline.actions.open(OWNER, NAME, 2)
+    await offline.actions.open(OWNER, NAME, 2)
     offline.actions.merge(SHA_HEAD, SHA_BASE, 2)
     await until(() => expect(offline.view()).toMatchObject({ merging: false, mergeRefused: "unavailable" }))
     expect(offline.count({ outcome: "unreachable" })).toBe(1)
@@ -565,3 +565,52 @@ describe("Merge", () => {
     )
   }, WITHIN)
 })
+
+test("a repository whose pull requests failed to open opens again once persistence recovers", async () => {
+  const runtime = openTestApp()
+  runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    // A device whose persistence metadata becomes temporarily unreadable, then recovers.
+    const faulty = persistenceFailingOnce(yield* Persistence.Persistence)
+    const built = yield* Layer.build(PullsStore.layer({ origin: api.origin }).pipe(
+      Layer.provide(Layer.succeed(Persistence.Persistence, faulty.service)),
+    ))
+    const store = Context.get(built, PullsStore)
+    faulty.failNext()
+    expect(Exit.isFailure(yield* Effect.exit(store.forRepo(REPO_ID)))).toBe(true)
+    // The failure isn't kept: the next open opens, once.
+    const reopened = yield* store.forRepo(REPO_ID)
+    expect(yield* store.forRepo(REPO_ID)).toBe(reopened)
+  })))
+}, WITHIN)
+
+test("another repository's pull requests answering never move the routed page's access", async () => {
+  // Another repository's pulls shape refuses; the routed one's answers.
+  const source = ShapeSource.ShapeSource.of({
+    request: (url, init) => {
+      const asked = new URL(url)
+      return asked.pathname === PULLS_SHAPE_ROUTE && asked.searchParams.get("repo") === "someone/else"
+        ? Effect.succeed(new Response(null, { status: 403 }))
+        : ShapeSource.fetchSource.request(url, init)
+    },
+  })
+  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam })
+  runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    const store = Context.get(yield* Layer.build(PullsStore.layer({ origin: api.origin }).pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, api.fetch)),
+    )), PullsStore)
+    const pullStatus = () => store.view.tanstack.toArray[0]?.pullStatus
+    yield* store.forRepo(REPO_ID)
+    yield* store.route(REPO_ID)
+    yield* Effect.promise(() => until(() => expect(pullStatus()).toBe("allowed")))
+    // Another repository's pull requests, opened without routing them (a link's warm), are refused.
+    const other = yield* store.forRepo(repoId("someone", "else"))
+    yield* Effect.promise(() =>
+      until(async () => expect(await Effect.runPromise(other.status)).toMatchObject({ pullStatus: "forbidden" }))
+    )
+    expect(pullStatus()).toBe("allowed")
+  })))
+}, WITHIN)

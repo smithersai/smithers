@@ -243,6 +243,8 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
 
   return {
     fetch,
+    /** Whether the deployment syncs a repository's issues and pull requests, as the role route answers it. */
+    maySync: (target: Repository) => runtime.runPromise(routes.maySync(target)),
     github,
     starts,
     logs,

@@ -1,4 +1,3 @@
-import { ownRepository } from "../../features/auth/viewer"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
@@ -9,7 +8,7 @@ import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
 import { issuesPath } from "../../features/issues/contract"
-import { draftOf, mayWrite } from "../../features/issues/view"
+import { draftOf, mayWrite, syncsHere } from "../../features/issues/view"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
@@ -21,11 +20,14 @@ export function NewIssueScreen() {
   const { queries, actions } = useIssues()
   const auth = useAuth()
   const { data: view } = useLiveQuery(queries.view)
+  const { data: access } = useLiveQuery(queries.access)
+  const { data: unsynced } = useLiveQuery(queries.unsynced)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
   const answer = useRepoAnswer(owner, repo)
   const navigate = useNavigate()
-  if (!ownRepository(answer)) {
+  // Where this deployment doesn't sync the repository's issues, it can't show a new one arriving: GitHub opens it.
+  if (!syncsHere(access, unsynced)) {
     const list = githubList(owner, repo, "issues")
     return <main className="issues-screen" aria-label="New issue"><RepoHeader /><HomeTabs /><p><a href={list.href + "/new"}>{"Open an issue on GitHub"}</a></p></main>
   }

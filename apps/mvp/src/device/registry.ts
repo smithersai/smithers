@@ -176,11 +176,11 @@ const synced = [
   // Version 2: an approval's answer may carry a note (`Decision`).
   Migrations.synced({ id: "runs", version: 2, schema: Run }),
   Migrations.synced({ id: "repo-repositories", version: 4, schema: Repository }),
-  Migrations.synced({ id: "issue-items", version: 3, schema: Item }),
-  Migrations.synced({ id: "issue-comments", version: 1, schema: Comment }),
-  Migrations.synced({ id: "issue-sync", version: 1, schema: SyncRow }),
+  Migrations.synced({ id: "issue-items", version: 3, schema: Item, family: true }),
+  Migrations.synced({ id: "issue-comments", version: 1, schema: Comment, family: true }),
+  Migrations.synced({ id: "issue-sync", version: 1, schema: SyncRow, family: true }),
   Migrations.synced({ id: "issue-writes", version: 2, schema: WriteRow }),
-  Migrations.synced({ id: "issue-triage-settings", version: 1, schema: TriageSettings }),
+  Migrations.synced({ id: "issue-triage-settings", version: 1, schema: TriageSettings, family: true }),
   Migrations.synced({ id: "flows", version: 2, schema: FlowRow }),
   Migrations.synced({ id: "flow-drafts", version: 1, schema: FlowDraft }),
   // Version 2: the kind `spend`, a sandbox spend alert in an Admin's bell (docs/features/sandbox-budgets.md); version 3:
@@ -196,10 +196,10 @@ const synced = [
   Migrations.synced({ id: "todos", version: 4, schema: Todo, family: true }),
   Migrations.synced({ id: "todo-requests", version: 1, schema: TodoRequest, family: true }),
   Migrations.synced({ id: "text-updates", version: 1, schema: TextUpdate, family: true }),
-  Migrations.synced({ id: "pull-rows", version: 1, schema: PullRow }),
-  Migrations.synced({ id: "pull-commits", version: 1, schema: PullCommitRow }),
-  Migrations.synced({ id: "pull-reviews", version: 1, schema: ReviewRow }),
-  Migrations.synced({ id: "pull-checks", version: 1, schema: CheckRow }),
+  Migrations.synced({ id: "pull-rows", version: 1, schema: PullRow, family: true }),
+  Migrations.synced({ id: "pull-commits", version: 1, schema: PullCommitRow, family: true }),
+  Migrations.synced({ id: "pull-reviews", version: 1, schema: ReviewRow, family: true }),
+  Migrations.synced({ id: "pull-checks", version: 1, schema: CheckRow, family: true }),
   // A repository's secret names and bindings, one collection per repository; never a value.
   Migrations.synced({ id: "secrets", version: 1, schema: SecretRow, family: true }),
   // The person's own keys, one row per protocol: where each answers, its tiers' models and its last characters; never a key.

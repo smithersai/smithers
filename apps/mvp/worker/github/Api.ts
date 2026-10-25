@@ -925,5 +925,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       return HttpServerResponse.empty({ status: 404 })
     })
 
-    return { fetch, mayRead: (target: Repository) => Effect.map(readRefusal(target), Option.isNone) }
+    /**
+     * Whether the deployment syncs repository `target`'s issues and pull requests, as its shapes' `404` says, for anyone
+     * (decision 0079 slice 1b): its own; another the allowed list keeps, where an About read didn't find the App absent.
+     * Postgres not answering leaves it synced: the shapes then answer for themselves.
+     */
+    const maySync = (target: Repository) =>
+      target.id === repository.id
+        ? Effect.succeed(true)
+        : !mayAct(target.id)
+        ? Effect.succeed(false)
+        : Store.appAbsent(target.id).pipe(Effect.provide(database), Effect.map((absent) => !absent), Effect.orElseSucceed(() => true))
+
+    return { fetch, mayRead: (target: Repository) => Effect.map(readRefusal(target), Option.isNone), maySync }
   })

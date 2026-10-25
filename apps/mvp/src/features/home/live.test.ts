@@ -58,7 +58,7 @@ const open = async (actor: Actor | null, forge: "github" | "code-storage" = "git
   const repo = await runtime.runPromise(Effect.service(Repo))
   repo.actions.role(OWNER, NAME)
   const { queries } = home
-  for (const query of [queries.home, queries.files, queries.items, queries.syncs, queries.runs, queries.stackAccess]) {
+  for (const query of [queries.home, queries.files, queries.runs, queries.stackAccess]) {
     query.startSyncImmediate()
   }
   const state = () => queries.home.toArray[0]!
@@ -115,9 +115,15 @@ describe("a curated home in the app", () => {
         sql`INSERT INTO github_sync (repo_id, stream, synced_at, complete) VALUES (${REPO_ID}, 'issues', now(), true)
             ON CONFLICT (repo_id, stream) DO UPDATE SET complete = true, synced_at = now()`,
       ))))
+    // The home opens the repository's issues for its `issues` block, as the page reads them.
+    await until(() => expect(tab.state().current.issues).toBe(REPO_ID))
+    const itemsQuery = tab.home.queries.items(REPO_ID)
+    const syncsQuery = tab.home.queries.syncs(REPO_ID)
+    itemsQuery.startSyncImmediate()
+    syncsQuery.startSyncImmediate()
     await until(() => {
-      const items = tab.home.queries.items.toArray
-      const synced = tab.home.queries.syncs.toArray.some((row) => row.repoId === REPO_ID && row.complete)
+      const items = itemsQuery.toArray
+      const synced = syncsQuery.toArray.some((row) => row.repoId === REPO_ID && row.complete)
       expect(issuesOf(items, OWNER, NAME, REPO_ID, synced)).toMatchObject({
         proposed: 1,
         triage: { total: 1, entries: [{ label: "#7", title: "Proposed from the home test" }] },

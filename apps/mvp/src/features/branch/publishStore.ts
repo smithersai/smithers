@@ -1,18 +1,18 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, FiberHandle, Layer, Scope, Semaphore } from "effect"
-import type { Item, WriteRow } from "../issues/schema"
+import type { WriteRow } from "../issues/schema"
 import { IssuesStore } from "../issues/store"
 import { FilesRow } from "../pulls/schema"
 import { PUBLICATIONS_SHAPE_ROUTE } from "./contract"
-import { PublicationRow, PublishPress } from "./publishSchema"
+import { PublicationRow, PublishPress, PullTitle } from "./publishSchema"
 import type { Current } from "./schema"
 import { BranchStore } from "./store"
 
 // Publish and Update branch on this tab (docs/features/branch-publish.md#the-branch-page): the shown branch's
 // publication, synced from Postgres by Electric while its page shows it and mirrored into `shown`; this tab's presses;
-// the comparisons its Compare read; and, from the issues' store, the person's own Publish and Update writes and the
-// pull request's title.
+// the comparisons its Compare read; the pull request's title, from its repository's issues; and, from the issues' store,
+// the person's own Publish and Update writes.
 
 /** Where publications sync from: ChatApi's origin, the site's own. */
 export interface PublishConfig {
@@ -46,18 +46,12 @@ export const publicationQuery = (current: Branches, shown: Collection.Collection
   )
 
 /** The title of the shown branch's pull request, once the device has its row. */
-export const pullTitleQuery = (
-  current: Branches,
-  shown: Collection.Collection<PublicationRow, string>,
-  items: ElectricCollection.ElectricCollection<Item>,
-) =>
+export const pullTitleQuery = (current: Branches, titles: Collection.Collection<PullTitle, string>) =>
   LiveQuery.make((q) =>
     q
       .from({ current: current.tanstack })
-      .innerJoin({ publication: shown.tanstack }, ({ current, publication }) => Query.eq(current.branchId, publication.branchId))
-      .innerJoin({ item: items.tanstack }, ({ publication, item }) => Query.eq(publication.repoId, item.repoId))
-      .where(({ publication, item }) => Query.and(Query.eq(item.number, publication.prNumber), Query.eq(item.kind, "pull")))
-      .select(({ item }) => ({ title: item.title }))
+      .innerJoin({ pull: titles.tanstack }, ({ current, pull }) => Query.eq(current.branchId, pull.branchId))
+      .select(({ pull }) => ({ title: pull.title }))
       .findOne()
   )
 
@@ -114,6 +108,8 @@ export class PublishStore extends Context.Service<
     /** The shown branch's publication, as the page renders it. */
     readonly shown: Collection.Collection<PublicationRow, string>
     readonly presses: Collection.Collection<PublishPress, string>
+    /** The shown branch's pull request's title, by branch, as its repository's issues have it. */
+    readonly titles: Collection.Collection<PullTitle, string>
     readonly comparisons: Collection.Collection<FilesRow, string>
     readonly publication: QueryOf<typeof publicationQuery>
     readonly pullTitle: QueryOf<typeof pullTitleQuery>
@@ -132,7 +128,7 @@ export class PublishStore extends Context.Service<
       Effect.gen(function* () {
         const scope = yield* Effect.scope
         const { current } = yield* BranchStore
-        const { items, writes } = yield* IssuesStore
+        const { writes } = yield* IssuesStore
         const shown = yield* Collection.local<PublicationRow, string>({
           id: "branch-publication",
           schema: PublicationRow,
@@ -141,6 +137,11 @@ export class PublishStore extends Context.Service<
         const presses = yield* Collection.local<PublishPress, string>({
           id: "branch-publish",
           schema: PublishPress,
+          getKey: (row) => row.branchId,
+        })
+        const titles = yield* Collection.local<PullTitle, string>({
+          id: "branch-pull-title",
+          schema: PullTitle,
           getKey: (row) => row.branchId,
         })
         const comparisons = yield* Collection.local<FilesRow, string>({
@@ -176,9 +177,10 @@ export class PublishStore extends Context.Service<
           publications,
           shown,
           presses,
+          titles,
           comparisons,
           publication: yield* publicationQuery(current, shown),
-          pullTitle: yield* pullTitleQuery(current, shown, items),
+          pullTitle: yield* pullTitleQuery(current, titles),
           press: yield* pressQuery(current, presses),
           writes: yield* writesQuery(current, writes),
           comparisonList: yield* comparisonsQuery(comparisons),

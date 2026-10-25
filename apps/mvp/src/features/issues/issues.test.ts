@@ -8,16 +8,18 @@ import { role as readRepositoryRole } from "../repo/actions"
 // GitHub's flows would (the write's settlement and GitHub's row), through the server's own store
 // (worker/github/Store.ts). Only the model is scripted. Unhappy paths give the tab a faulty `IssuesClient`, the real one
 // behind switches (test.faults-by-injection), or a host capability that fails (an outbox storage that refuses).
-import { ShapeSource } from "@smthrs/effect-electric"
-import { Outbox } from "@smthrs/effect-tanstack-db"
+import { type ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
+import { Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { GitHub } from "@smthrs/integrations"
-import { Effect, Layer, type ManagedRuntime, Metric, Stream } from "effect"
+import { Context, Effect, Exit, Layer, type ManagedRuntime, Metric, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import * as Store from "../../../worker/github/Store.ts"
 import * as TriageStore from "../../../worker/github/TriageStore.ts"
 import { CHATAPI_ORIGIN, failingWorker, nodeDevice, openFaultyApp, openTab, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { persistenceFailingOnce } from "../../test/faults"
+import { startedOnRead } from "../../test/liveQueries"
 import { read } from "../../test/otlp"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
@@ -51,8 +53,10 @@ import {
   pageOf,
   triageControlOf,
   type TriagePendingRow,
+  syncsHere,
   triageSwitchOf,
 } from "./view"
+import type { Item } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -110,12 +114,14 @@ const faultyClient = () => {
 
 type App = ManagedRuntime.ManagedRuntime<Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | RepoStore | RepoClient, unknown>
 
-/** A tab on `runtime`, with the issues layer's queries started as React starts them. */
+/** A tab on `runtime`, with the issues layer's queries started as React starts them, on read. */
 const tabOf = async (runtime: App) => {
-  const issues = await runtime.runPromise(Effect.service(Issues))
+  const facade = await runtime.runPromise(Effect.service(Issues))
+  const issues = { ...facade, queries: startedOnRead(facade.queries) }
   const store = await runtime.runPromise(Effect.service(IssuesStore))
   const chat = await runtime.runPromise(Effect.service(ChatStore))
-  for (const query of Object.values(issues.queries)) query.startSyncImmediate()
+  // A repository's own queries (`newestFirstOf`, ...) start where a test reads them.
+  for (const query of Object.values(issues.queries)) if (typeof query !== "function") query.startSyncImmediate()
   return {
     runtime,
     issues,
@@ -232,6 +238,9 @@ const server = (api: TestChatApi["Service"]) => ({
     ),
   synced: () =>
     Effect.runPromise(api.github.run(Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: true, failure: null }))),
+  /** Reconcile found the App not installed on the repository (decision 0079 slice 1b). */
+  notInstalled: () =>
+    Effect.runPromise(api.github.run(Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: false, failure: "app_not_installed" }))),
   /** A Maintainer enabled triage on the repository: the settings the shape serves. */
   triageOn: () =>
     Effect.runPromise(
@@ -279,8 +288,8 @@ describe("a new issue", () => {
   test("shows Requested at once as #–; ChatApi takes it as the person's; GitHub's row replaces it on every device", async () => {
     const tab = await open()
     const other = await another(tab.api)
-    tab.actions.open(OWNER, NAME)
-    other.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
+    await other.actions.open(OWNER, NAME)
     tab.actions.setNewTitle(OWNER, NAME, "  Fix the crash  ")
     tab.actions.setNewBody(OWNER, NAME, "It crashes on an empty body.")
     expect(tab.view()).toMatchObject({ title: "  Fix the crash  ", body: "It crashes on an empty body.", submitting: false })
@@ -327,9 +336,11 @@ describe("a new issue", () => {
     }
     // The follower dropped the requested write: GitHub's row shows in its place.
     await until(() => expect(tab.store.requested.tanstack.size).toBe(0))
-    // A conversation's issues view lists GitHub's rows of every repository the device synced, by repository.
-    expect(tab.issues.queries.allIssues.toArray.map((row) => [row.repoId, row.number, row.title, row.local]))
-      .toEqual([[REPO_ID, 12, "Fix the crash", 0]])
+    // A conversation's issues view of the repository lists its GitHub rows.
+    const newest = tab.issues.queries.newestFirstOf(REPO_ID)
+    newest.startSyncImmediate()
+    await until(() => expect(newest.toArray.map((row) => [row.repoId, row.number, row.title, row.local]))
+      .toEqual([[REPO_ID, 12, "Fix the crash", 0]]))
   }, WITHIN)
 
   test("only the tab that pressed queues its write; a tab that hears the step's call but didn't start it leaves it", async () => {
@@ -338,8 +349,8 @@ describe("a new issue", () => {
     const tab = await another(opened.api, { host: device })
     // A tab on the same engine channel whose engine never leads: it hears every call, and started none.
     const listener = await another(opened.api, { host: nodeDevice({ engineName: device.engineName! }) })
-    tab.actions.open(OWNER, NAME)
-    listener.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
+    await listener.actions.open(OWNER, NAME)
     tab.actions.setNewTitle(OWNER, NAME, "From one tab")
     tab.actions.create(OWNER, NAME)
     const writeId = await pendingIssue(tab)
@@ -350,7 +361,7 @@ describe("a new issue", () => {
 
   test("a press with no title, or a title over the limit, runs nothing", async () => {
     const tab = await open()
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     expect(tab.actions.create(OWNER, NAME)).toBe(false)
     tab.actions.setNewTitle(OWNER, NAME, "   ")
     expect(tab.actions.create(OWNER, NAME)).toBe(false)
@@ -364,7 +375,7 @@ describe("a comment", () => {
   test("shows Requested on the issue's page, then GitHub's comment in its place", async () => {
     const tab = await open()
     await server(tab.api).seed(7, "Crash on start")
-    tab.actions.open(OWNER, NAME, 7)
+    await tab.actions.open(OWNER, NAME, 7)
     await until(() => expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 7, title: "Crash on start" }))
     expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0], true, true)).toBe("shown")
     expect(tab.actions.comment(OWNER, NAME, 7)).toBe(false)
@@ -408,7 +419,7 @@ describe("loading", () => {
     const tab = await tabOf(runtime)
     const api = await runtime.runPromise(Effect.service(TestChatApi))
     await server(api).seed(31, "Cached issue")
-    tab.actions.open(OWNER, NAME, 31)
+    await tab.actions.open(OWNER, NAME, 31)
     await until(() => {
       expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 31, title: "Cached issue" })
       expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true })
@@ -420,17 +431,17 @@ describe("loading", () => {
     await runtime.runPromise(faults.refuse(503))
     // Wake the in-flight live poll; the next request receives the injected failure.
     await server(api).seed(32, "Wake poll")
-    await runtime.runPromise(tab.store.items.reconnect)
+    await runtime.runPromise(tab.store.routed().reconnect)
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: true }), 15_000)
     expect(currentPage()).toBe("shown")
     await runtime.runPromise(faults.refuse(403))
-    await runtime.runPromise(tab.store.items.reconnect)
+    await runtime.runPromise(tab.store.routed().reconnect)
     await runtime.runPromise(Effect.flatMap(AuthStore, (auth) => auth.session.update(SESSION, (row) => { row.role = null })))
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false }), 5_000)
     expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 31 })
     expect(currentPage()).toBe("missing")
     await runtime.runPromise(faults.refuse(503))
-    await runtime.runPromise(tab.store.items.reconnect)
+    await runtime.runPromise(tab.store.routed().reconnect)
     await until(() => expect(tab.issues.queries.access.toArray[0]?.status).toBe("forbidden"))
     expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false })
     expect(currentPage()).toBe("missing")
@@ -440,22 +451,31 @@ describe("loading", () => {
     const runtime = openFaultyApp({}, (faults) => faults.refuse(403))
     runtimes.push(runtime)
     const tab = await tabOf(runtime)
-    tab.actions.open(OWNER, NAME, 3)
+    await tab.actions.open(OWNER, NAME, 3)
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false }), 5_000)
     const faults = await runtime.runPromise(Effect.service(ShapeSource.Faults))
     await runtime.runPromise(faults.refuse(503))
-    await runtime.runPromise(tab.store.items.reconnect)
+    await runtime.runPromise(tab.store.routed().reconnect)
     await until(() => expect(tab.count(shapeTransitions, { phase: "failed" })).toBeGreaterThan(0), 5_000)
     expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false })
     expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
       tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])).toBe("unknown")
   }, WITHIN)
 
+  test("a 404 after the role answered says the deployment doesn't sync the repository, never who may read it", async () => {
+    // An About read found the App absent after this tab's role answer: the shape answers 404 (decision 0079 slice 1b).
+    const runtime = openFaultyApp({}, (faults) => faults.refuse(404))
+    runtimes.push(runtime)
+    const tab = await tabOf(runtime)
+    await tab.actions.open(OWNER, NAME)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "elsewhere", installed: false }), 5_000)
+  }, WITHIN)
+
   test("a failed items shape settles a direct issue before device hydration or the next retry", async () => {
     const runtime = openFaultyApp({}, (faults) => faults.refuse(503))
     runtimes.push(runtime)
     const tab = await tabOf(runtime)
-    tab.actions.open(OWNER, NAME, 3)
+    await tab.actions.open(OWNER, NAME, 3)
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false }), 5_000)
     expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
       tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])).toBe("unknown")
@@ -470,7 +490,7 @@ describe("loading", () => {
     const api = await runtime.runPromise(Effect.service(TestChatApi))
     const tab = await tabOf(runtime)
     await server(api).seed(33, "Recovered issue")
-    tab.actions.open(OWNER, NAME, 33)
+    await tab.actions.open(OWNER, NAME, 33)
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false }), 5_000)
     const page = () => pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
       tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])
@@ -490,31 +510,36 @@ describe("loading", () => {
 
   test("a late issues visit recognizes a batch installed before the live poll began", async () => {
     const tab = await open()
+    // A link's warm opens the repository's issues, whose items shape installs its first batch.
+    await tab.actions.warm(OWNER, NAME)
     await until(() => expect(tab.count(shapeTransitions, { phase: "ready" })).toBeGreaterThan(0))
-    await tab.runtime.runPromise(tab.store.items.sync.pipe(
+    await tab.runtime.runPromise(Effect.flatMap(tab.store.forRepo(REPO_ID), (repo) => (repo.items as ElectricCollection.ElectricCollection<Item>).sync.pipe(
       Stream.filter((event) => event._tag === "Sent"),
       Stream.runHead,
       Effect.timeout("10 seconds"),
-    ))
-    tab.actions.open(OWNER, NAME, 3)
+    )))
+    await tab.actions.open(OWNER, NAME, 3)
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }), 2_000)
   }, WITHIN)
 
   test("a list is unknown before the repository's first complete sync, never falsely empty; then empty is empty", async () => {
     const tab = await open()
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     expect(tab.list()).toEqual({ issues: [], unknown: true, notSent: [] })
-    tab.actions.open(OWNER, NAME, 3)
+    await tab.actions.open(OWNER, NAME, 3)
     expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0], false, false)).toBe("loading")
 
-    expect(tab.issues.queries.syncedRepositories.toArray).toEqual([])
+    // Its sync rows whose walk completed: what its issues view in a conversation reads.
+    const walked = tab.issues.queries.walkedOf(REPO_ID)
+    walked.startSyncImmediate()
+    expect(walked.toArray).toEqual([])
 
     await server(tab.api).synced()
 
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     await until(() => expect(tab.list()).toEqual({ issues: [], unknown: false, notSent: [] }))
-    expect(tab.issues.queries.syncedRepositories.toArray.map((row) => row.repoId)).toEqual([REPO_ID])
-    tab.actions.open(OWNER, NAME, 3)
+    expect(walked.toArray.map((row) => row.repoId)).toEqual([REPO_ID])
+    await tab.actions.open(OWNER, NAME, 3)
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
     await until(() =>
       expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0], true, true, tab.issues.queries.access.toArray[0])).toBe("missing")
@@ -525,29 +550,78 @@ describe("loading", () => {
 describe("a link's warm", () => {
   test("starts the issues' sync without moving the page shown; the page then opens on what synced", async () => {
     const tab = await open()
-    tab.actions.warm()
+    await tab.actions.warm(OWNER, NAME)
     expect(tab.view()?.owner ?? "").toBe("")
     await server(tab.api).synced()
-    await until(() => expect(tab.issues.queries.access.toArray[0]?.status).not.toBe("unknown"))
-    tab.actions.open(OWNER, NAME)
+    // The warmed repository's own access: the routed one is still nobody's.
+    const access = tab.issues.queries.accessOf(REPO_ID)
+    access.startSyncImmediate()
+    await until(() => expect(access.toArray[0]?.status).not.toBe("unknown"))
+    expect(tab.issues.queries.access.toArray[0]?.status).toBe("unknown")
+    await tab.actions.open(OWNER, NAME)
     await until(() => expect(tab.list()).toEqual({ issues: [], unknown: false, notSent: [] }))
+  }, WITHIN)
+
+  test("where Reconcile found the App not installed, the repository's sync says so, and its lists go to GitHub", async () => {
+    const tab = await open()
+    await tab.actions.open(OWNER, NAME)
+    await server(tab.api).notInstalled()
+    const unsynced = tab.issues.queries.unsyncedOf(REPO_ID)
+    unsynced.startSyncImmediate()
+    await until(() => expect(unsynced.toArray).toMatchObject([{ failure: "app_not_installed" }]))
+    // The routed page reads the same row.
+    await until(() => expect(tab.issues.queries.unsynced.toArray).toMatchObject([{ failure: "app_not_installed" }]))
+    expect(syncsHere(tab.issues.queries.access.toArray[0], tab.issues.queries.unsynced.toArray[0])).toBe(false)
+  }, WITHIN)
+
+  test("a repository nobody opened reads as none: no rows, no walk, access unknown", async () => {
+    const tab = await open()
+    const id = repoId("nobody", "opened")
+    const rows = tab.issues.queries.newestFirstOf(id)
+    const walked = tab.issues.queries.walkedOf(id)
+    const access = tab.issues.queries.accessOf(id)
+    const unsynced = tab.issues.queries.unsyncedOf(id)
+    for (const query of [rows, walked, access, unsynced, tab.issues.queries.opened]) query.startSyncImmediate()
+    await until(() => expect(access.toArray).toMatchObject([{ status: "unknown" }]))
+    expect([rows.toArray, walked.toArray, unsynced.toArray]).toEqual([[], [], []])
+    expect(tab.issues.queries.opened.toArray.map((row) => row.id)).not.toContain(id)
+  }, WITHIN)
+
+  test("a repository whose issues failed to open opens again once persistence recovers", async () => {
+    const runtime = openTestApp()
+    runtimes.push(runtime)
+    const api = await runtime.runPromise(Effect.service(TestChatApi))
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      // A device whose persistence metadata becomes temporarily unreadable, then recovers.
+      const faulty = persistenceFailingOnce(yield* Persistence.Persistence)
+      const built = yield* Layer.build(IssuesStore.layer({ origin: api.origin }).pipe(
+        Layer.provide(Layer.succeed(Persistence.Persistence, faulty.service)),
+      ))
+      const store = Context.get(built, IssuesStore)
+      faulty.failNext()
+      expect(Exit.isFailure(yield* Effect.exit(store.forRepo(REPO_ID)))).toBe(true)
+      expect(store.opened(REPO_ID)).toBeUndefined()
+      const reopened = yield* store.forRepo(REPO_ID)
+      expect(store.opened(REPO_ID)).toBe(reopened)
+      expect(yield* store.forRepo(REPO_ID)).toBe(reopened)
+    })))
   }, WITHIN)
 })
 
 describe("who reads a repository's issues", () => {
   test("a visitor only once GitHub said the repository is public; a person with no role gets Not found", async () => {
     const visitor = await open({}, null)
-    visitor.actions.open(OWNER, NAME)
+    await visitor.actions.open(OWNER, NAME)
     const access = (tab: Awaited<ReturnType<typeof tabOf>>) => tab.issues.queries.access.toArray[0]
     // GitHub hasn't said: the shape is refused, and the page asks to sign in instead of loading forever.
     await until(() => expect(access(visitor)).toMatchObject({ status: "sign_in" }))
     const refused = listProps([], undefined, access(visitor))
     expect(refused).toMatchObject({ refused: "sign_in", unknown: false })
-    visitor.actions.open(OWNER, NAME, 1)
+    await visitor.actions.open(OWNER, NAME, 1)
     expect(pageOf(undefined, undefined, false, false, access(visitor))).toBe("sign_in")
 
     const outsider = await open({}, { ...maya, role: null })
-    outsider.actions.open(OWNER, NAME)
+    await outsider.actions.open(OWNER, NAME)
     await until(() => expect(access(outsider)).toMatchObject({ status: "forbidden" }))
     expect(pageOf(undefined, undefined, false, false, access(outsider))).toBe("missing")
 
@@ -556,7 +630,7 @@ describe("who reads a repository's issues", () => {
     await server(visitor.api).seed(4, "Public issue")
     const later = await another(visitor.api)
     await later.runtime.runPromise(readRepositoryRole(OWNER, NAME))
-    later.actions.open(OWNER, NAME)
+    await later.actions.open(OWNER, NAME)
     await until(() => expect(access(later)).toMatchObject({ status: "allowed" }))
     await until(() => expect(later.list().issues.map(({ title }) => title)).toEqual(["Public issue"]))
   }, WITHIN)
@@ -565,7 +639,7 @@ describe("who reads a repository's issues", () => {
 describe("refused writes stay Not sent, with Edit and Discard", () => {
   test("ChatApi refuses a person with no role on the repository (403): Edit puts the issue back in the form", async () => {
     const tab = await open({}, { ...maya, role: null })
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     tab.actions.setNewTitle(OWNER, NAME, "Please fix")
     tab.actions.setNewBody(OWNER, NAME, "Details")
     tab.actions.create(OWNER, NAME)
@@ -589,7 +663,7 @@ describe("refused writes stay Not sent, with Edit and Discard", () => {
     const client = faultyClient()
     const tab = await open({ replace: client.layer })
     await server(tab.api).seed(4, "Flaky test")
-    tab.actions.open(OWNER, NAME, 4)
+    await tab.actions.open(OWNER, NAME, 4)
     client.next(409, 413)
     tab.actions.setCommentDraft(OWNER, NAME, 4, "First")
     tab.actions.comment(OWNER, NAME, 4)
@@ -616,7 +690,7 @@ describe("refused writes stay Not sent, with Edit and Discard", () => {
   test("a write GitHub's flow settled refused or failed turns Not sent with its failure", async () => {
     const tab = await open()
     await server(tab.api).seed(5, "Docs")
-    tab.actions.open(OWNER, NAME, 5)
+    await tab.actions.open(OWNER, NAME, 5)
     tab.actions.setCommentDraft(OWNER, NAME, 5, "One")
     tab.actions.comment(OWNER, NAME, 5)
     await until(() => expect(tab.store.requested.tanstack.size).toBe(1))
@@ -642,7 +716,7 @@ describe("sending", () => {
   test("offline, the issue waits in the outbox as Requested; back online, it is sent once", async () => {
     const client = faultyClient()
     const tab = await open({ replace: client.layer })
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     client.state.down = true
     tab.actions.setNewTitle(OWNER, NAME, "Offline issue")
     tab.actions.create(OWNER, NAME)
@@ -677,7 +751,7 @@ describe("sending", () => {
   test("an answer lost on the way back: the outbox sends it again, and ChatApi answers that it has it", async () => {
     const client = faultyClient()
     const tab = await open({ replace: client.layer })
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     client.next("drop")
     tab.actions.setNewTitle(OWNER, NAME, "Dropped answer")
     tab.actions.create(OWNER, NAME)
@@ -702,7 +776,7 @@ describe("sending", () => {
       set: () => Promise.reject(new Error("quota")),
     }
     const tab = await another(opened.api, { host: { ...device, outbox: { ...device.outbox, storage } } })
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     tab.actions.setNewTitle(OWNER, NAME, "Not stored")
     tab.actions.create(OWNER, NAME)
     await until(() => expect(tab.view()?.submitting).toBe(false), 75_000)
@@ -713,7 +787,7 @@ describe("sending", () => {
   test("a tab with no engine: the flow never runs, and the draft stays", async () => {
     const opened = await open({ answers: false })
     const tab = await another(opened.api, { host: nodeDevice({ engineWorker: failingWorker }) })
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     tab.actions.setNewTitle(OWNER, NAME, "No engine")
     tab.actions.create(OWNER, NAME)
     await until(() => expect(tab.view()?.submitting).toBe(false))
@@ -724,7 +798,7 @@ describe("sending", () => {
 describe("doors", () => {
   test("the agent's call opens the issue as the App, for the person; its door is the agent's", async () => {
     const tab = await open()
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     const chat = await tab.runtime.runPromise(Effect.service(Chat))
     const asked = chat.actions.ask("Open an issue about the crash")
     if (!asked.asked) throw new Error("not asked")
@@ -746,7 +820,7 @@ describe("doors", () => {
   test("/issue owner/repo <title> opens one with that title, and /comment owner/repo <n> <text> comments", async () => {
     const tab = await open()
     await server(tab.api).seed(9, "Slow build")
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     await signIn(tab.runtime, maya)
     const commands = await tab.runtime.runPromise(Effect.service(Commands))
     const send = (line: string) => {
@@ -763,7 +837,7 @@ describe("doors", () => {
     )
     send(`/comment ${TEST_REPOSITORY} 9 Looks good to me`)
     await until(async () => expect(await server(tab.api).writes()).toHaveLength(2))
-    tab.actions.open(OWNER, NAME, 9)
+    await tab.actions.open(OWNER, NAME, 9)
     await until(() => expect(tab.comments()).toEqual([expect.objectContaining({ body: "Looks good to me" })]))
   }, WITHIN)
 })
@@ -783,8 +857,8 @@ describe("triage", () => {
     const other = await another(tab.api)
     await server(tab.api).seed(3, "Flaky test")
     await server(tab.api).triageOn()
-    tab.actions.open(OWNER, NAME, 3)
-    other.actions.open(OWNER, NAME, 3)
+    await tab.actions.open(OWNER, NAME, 3)
+    await other.actions.open(OWNER, NAME, 3)
     await until(() => expect(control(tab)).toMatchObject({ shown: true, state: "proposed", runAgain: true, pending: undefined }))
 
     tab.actions.triage(OWNER, NAME, 3, "accept")
@@ -810,7 +884,7 @@ describe("triage", () => {
   test("Run triage again starts the flow's run under its write; Not accepted carries no reason from a button", async () => {
     const tab = await open()
     await server(tab.api).seed(4, "Spammy")
-    tab.actions.open(OWNER, NAME, 4)
+    await tab.actions.open(OWNER, NAME, 4)
     tab.actions.runTriageAgain(OWNER, NAME, 4)
     await until(() => expect(pending(tab)).toHaveLength(1))
     const runId = pending(tab)[0]!.id
@@ -838,7 +912,7 @@ describe("triage", () => {
     await Effect.runPromise(
       tab.api.github.run(Store.upsertIssue(REPO_ID, issue(6, "Rejected", "Body", "ben", [NOT_ACCEPTED_LABEL]), Date.now())),
     )
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     const triage = () => tab.issues.queries.triage.toArray[0] as { readonly paused: boolean } | undefined
     const chips = () =>
       listProps(tab.issues.queries.list.toArray as ReadonlyArray<ListRow>, {}, undefined, triage() !== undefined && !triage()!.paused)
@@ -854,7 +928,7 @@ describe("triage", () => {
     const sam: Actor = { ...maya, role: "maintainer", login: "sam" }
     const tab = await open({}, sam)
     await Effect.runPromise(tab.api.github.run(Store.upsertIssue(REPO_ID, issue(9, "Discuss", "Body", "ben", [ACCEPTED_LABEL]), Date.now())))
-    tab.actions.open(OWNER, NAME, 9)
+    await tab.actions.open(OWNER, NAME, 9)
     tab.actions.setCommitment(OWNER, NAME, 9, "next")
     await until(() => expect(pending(tab)).toHaveLength(1))
     const writeId = pending(tab)[0]!.id
@@ -876,7 +950,7 @@ describe("triage", () => {
   test("a Maintainer's Enable and Pause go to the outbox; a Member's are refused and stay Not sent", async () => {
     const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
     const tab = await open({}, sam)
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     tab.actions.enableTriage(OWNER, NAME)
     await until(() => expect(triageSwitchOf(undefined, pending(tab))).toEqual({ action: "enable", disabled: true }))
     const enableId = pending(tab)[0]!.id
@@ -890,7 +964,7 @@ describe("triage", () => {
     await until(() => expect(pending(tab).map((row) => row.op)).toContain("triage/pause"))
 
     const member = await open()
-    member.actions.open(OWNER, NAME)
+    await member.actions.open(OWNER, NAME)
     member.actions.enableTriage(OWNER, NAME)
     await until(() => expect(pending(member)).toEqual([expect.objectContaining({ op: "triage/enable", pending: "not_sent" })]))
     expect(member.store.requested.tanstack.toArray[0]).toMatchObject({ status: "not_sent", reason: "forbidden" })
@@ -899,7 +973,7 @@ describe("triage", () => {
   test("/triage owner/repo <n> reject <reason> posts the reason as the person's; /triage.run runs it again", async () => {
     const tab = await open()
     await server(tab.api).seed(7, "Old bug")
-    tab.actions.open(OWNER, NAME, 7)
+    await tab.actions.open(OWNER, NAME, 7)
     await signIn(tab.runtime, maya)
     const commands = await tab.runtime.runPromise(Effect.service(Commands))
     const send = (line: string) => {
@@ -921,7 +995,7 @@ describe("triage", () => {
   test("/triage.enable owner/repo <tokens> sets the flow's daily budget", async () => {
     const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
     const tab = await open({}, sam)
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     await signIn(tab.runtime, sam)
     const commands = await tab.runtime.runPromise(Effect.service(Commands))
     commands.actions.type(`/triage.enable ${TEST_REPOSITORY} 5000`)
@@ -944,7 +1018,7 @@ describe("records", () => {
     const tab = await open()
     await signIn(tab.runtime, maya)
     await server(tab.api).seed(2, "Seeded", null)
-    tab.actions.open(OWNER, NAME)
+    await tab.actions.open(OWNER, NAME)
     tab.actions.setNewTitle(OWNER, NAME, `Title ${secret}`)
     tab.actions.setNewBody(OWNER, NAME, `Body ${secret}`)
     tab.actions.create(OWNER, NAME)

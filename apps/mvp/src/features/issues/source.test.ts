@@ -16,15 +16,41 @@ afterEach(async () => { for (const runtime of runtimes.splice(0)) await runtime.
 const session = (status: Session["status"], role: Session["role"] = null): Session => ({
   id: SESSION, status, role, login: null, available: true, signingOut: false, restored: true,
 })
-test("authority is device state, including explicit public access only on the deployment repository", () => {
+test("authority is device state: the named repository's role row, the session's role only on the deployment's own", () => {
+  const own = { id: "own", own: true, role: null } as const
   for (const status of ["loading", "unreachable", "signed_out", "signed_in"] as const) {
-    expect(repositoryAccess(session(status), [])).toBe(status === "signed_out" ? "sign_in" : status === "signed_in" ? "forbidden" : "unknown")
+    expect(repositoryAccess(session(status), [own], "own")).toBe(status === "signed_out" ? "sign_in" : status === "signed_in" ? "forbidden" : "unknown")
   }
-  for (const role of ["guest", "member", "maintainer", "admin"] as const) expect(repositoryAccess(session("signed_in", role), [])).toBe("allowed")
-  expect(repositoryAccess(session("signed_out"), [{ id: "other", own: false, role: null, readable: true }])).toBe("sign_in")
-  expect(repositoryAccess(session("signed_out"), [{ id: "own", own: true, role: "admin", readable: true }])).toBe("sign_in")
-  expect(repositoryAccess(session("signed_out"), [{ id: "own", own: true, role: null }])).toBe("sign_in")
-  expect(repositoryAccess(session("signed_out"), [{ id: "own", own: true, role: null, readable: true }])).toBe("allowed")
+  for (const role of ["guest", "member", "maintainer", "admin"] as const) expect(repositoryAccess(session("signed_in", role), [own], "own")).toBe("allowed")
+  // No answer for the repository yet: nothing is requested, whatever the session.
+  expect(repositoryAccess(session("signed_in", "admin"), [own], "other")).toBe("unknown")
+  expect(repositoryAccess(session("signed_out"), [], "own")).toBe("unknown")
+  // A public-read receipt names its repository, and counts only on an answer with no role.
+  expect(repositoryAccess(session("signed_out"), [{ id: "other", own: false, role: null, readable: true }], "other")).toBe("allowed")
+  expect(repositoryAccess(session("signed_out"), [{ id: "other", own: false, role: null, readable: true }], "own")).toBe("unknown")
+  expect(repositoryAccess(session("signed_out"), [{ id: "own", own: true, role: "admin", readable: true }], "own")).toBe("sign_in")
+  expect(repositoryAccess(session("signed_out"), [{ id: "own", own: true, role: null }], "own")).toBe("sign_in")
+  expect(repositoryAccess(session("signed_out"), [{ id: "own", own: true, role: null, readable: true }], "own")).toBe("allowed")
+})
+
+test("a Member of the deployment's own repository reads another only as its own answer says (decision 0079)", () => {
+  const member = session("signed_in", "member")
+  const own = { id: "github/smithersai/smithers", own: true, role: "member" } as const
+  const vibelang = "github/smithersai/vibelang"
+  expect(repositoryAccess(member, [own], own.id)).toBe("allowed")
+  // GitHub's read there is a Guest: a reader, not the Member the session says.
+  expect(repositoryAccess(member, [own, { id: vibelang, own: false, role: "guest" }], vibelang)).toBe("allowed")
+  // No role there, or no answer yet: never the session's Member.
+  expect(repositoryAccess(member, [own, { id: vibelang, own: false, role: null }], vibelang)).toBe("forbidden")
+  expect(repositoryAccess(member, [own], vibelang)).toBe("unknown")
+})
+
+test("a repository the deployment doesn't sync is elsewhere for anyone, whatever their role there", () => {
+  const left = { id: "github/acme/left-out", own: false, synced: false } as const
+  for (const who of [session("signed_out"), session("signed_in", "admin"), session("loading")]) {
+    for (const role of [null, "admin"] as const) expect(repositoryAccess(who, [{ ...left, role }], left.id)).toBe("elsewhere")
+  }
+  expect(repositoryAccess(session("signed_in"), [{ ...left, role: "guest", synced: true }], left.id)).toBe("allowed")
 })
 
 // A real app and stores, with a recording Effect source that delegates every authorized request to the real server.
@@ -40,25 +66,28 @@ for (const [name, paths] of [
       Effect.suspend(() => { requests.push(new URL(url).pathname); return ShapeSource.fetchSource.request(url, init) }) }
     const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor })
     runtimes.push(runtime)
-    await runtime.runPromise(Effect.service(Pulls))
     const api = await runtime.runPromise(Effect.service(TestChatApi))
-    const issues = await runtime.runPromise(Effect.service(IssuesStore))
-    const state = () => Option.getOrThrow(runtime.runSync(issues.access.get("access"))).status
+    const [owner, repository] = TEST_REPOSITORY.split("/") as [string, string]
+    const id = repoId(owner, repository)
+    const repo = await runtime.runPromise(Effect.flatMap(IssuesStore, (store) => store.forRepo(id)))
+    await (await runtime.runPromise(Effect.service(Pulls))).actions.warm(owner, repository)
+    const state = () => Option.getOrThrow(runtime.runSync(repo.access.get("access"))).status
+    await runtime.runPromise(readRole(owner, repository))
     await vi.waitFor(() => expect(state()).toBe(actor === null ? "sign_in" : "forbidden"), { timeout: 30_000 })
     await runtime.runPromise(Effect.sleep("100 millis"))
     expect(requests.filter((path) => paths.some((name) => path === `/api/shapes/${name}`))).toEqual([])
-    const [owner, repository] = TEST_REPOSITORY.split("/") as [string, string]
-    await Effect.runPromise(api.github.run(GitHubStore.recordRepository(repoId(owner, repository), { githubId: 1, private: false })))
+    await Effect.runPromise(api.github.run(GitHubStore.recordRepository(id, { githubId: 1, private: false })))
     await runtime.runPromise(readRole(owner, repository))
     await vi.waitFor(() => expect(paths.every((name) => requests.includes(`/api/shapes/${name}`))).toBe(true), { timeout: 15_000 })
   }, 90_000)
 }
 }
 
-test("transport events cannot grant or revoke authority; failures and recovery change only availability", () => {
-  for (const current of ["unknown", "allowed", "unavailable", "sign_in", "forbidden"] as const) {
-    for (const transport of ["allowed", "unavailable"] as const) {
-      expect(syncStatusAfter(current, transport)).toBe(current === "allowed" || current === "unavailable" ? transport : current)
+test("transport events cannot grant or revoke authority; failures, recovery and a 404 change only availability", () => {
+  for (const current of ["unknown", "allowed", "unavailable", "sign_in", "forbidden", "elsewhere"] as const) {
+    for (const transport of ["allowed", "unavailable", "elsewhere"] as const) {
+      const granted = current === "allowed" || current === "unavailable" || current === "elsewhere"
+      expect(syncStatusAfter(current, transport)).toBe(granted ? transport : current)
     }
   }
 })

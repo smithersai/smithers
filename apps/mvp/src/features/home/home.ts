@@ -3,6 +3,7 @@ import { Context, Effect, Layer, Option } from "effect"
 import { runners } from "../../boundary"
 import type { RepoClient } from "../repo/api"
 import type { RepoStore } from "../repo/store"
+import { IssuesStore, type RepoIssues } from "../issues/store"
 import { TodosStore } from "../todos/store"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { open, runAction, view, warm, watch } from "./actions"
@@ -22,9 +23,12 @@ export interface HomeQueries {
   readonly home: Store["homeState"]["tanstack"]
   /** The files its Markdown blocks read. */
   readonly files: Store["fileState"]["tanstack"]
-  /** The live blocks' rows: the synced issues and pull requests, their sync, and this person's runs. */
-  readonly items: Store["items"]["tanstack"]
-  readonly syncs: Store["syncs"]["tanstack"]
+  /**
+   * The live blocks' rows: a repository's issues and pull requests and their sync once `open` opened them for an
+   * `issues` block (none before, nor without the issues' store), and this person's runs.
+   */
+  readonly items: (repoId: string) => RepoIssues["itemRows"]["tanstack"] | Store["noItems"]["tanstack"]
+  readonly syncs: (repoId: string) => RepoIssues["syncRows"]["tanstack"] | Store["noSyncs"]["tanstack"]
   readonly runs: Store["runs"]["tanstack"]
   /** A repository's TODOs once `open` opened its stack for a `stack` block; no rows before, nor without the TODOs. */
   readonly stack: (repoId: string) => Stacks["empty"]["todos"]["tanstack"] | Store["noTodos"]["tanstack"]
@@ -64,14 +68,16 @@ export class Home extends Context.Service<Home, { readonly queries: HomeQueries;
     Effect.gen(function* () {
       const store = yield* HomeStore
       const todos = yield* Effect.serviceOption(TodosStore)
+      const issues = yield* Effect.serviceOption(IssuesStore)
+      const opened = (repoId: string) => (Option.isSome(issues) ? issues.value.opened(repoId) : undefined)
       const context = yield* Effect.context<HomeStore | HomeClient | RepoStore | RepoClient | FlowDispatch>()
       const { runSync: run, runPromise: promise } = runners(context, "home")
       return Home.of({
         queries: {
           home: store.homeState.tanstack,
           files: store.fileState.tanstack,
-          items: store.items.tanstack,
-          syncs: store.syncs.tanstack,
+          items: (repoId) => opened(repoId)?.itemRows.tanstack ?? store.noItems.tanstack,
+          syncs: (repoId) => opened(repoId)?.syncRows.tanstack ?? store.noSyncs.tanstack,
           runs: store.runs.tanstack,
           stack: (repoId) =>
             Option.isSome(todos) ? (todos.value.opened(repoId) ?? todos.value.empty).todos.tanstack : store.noTodos.tanstack,

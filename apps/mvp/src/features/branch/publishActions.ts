@@ -1,6 +1,7 @@
 import { Effect, FiberHandle, Metric, Option, type Result, Stream } from "effect"
 import { type DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract"
+import { IssuesStore } from "../issues/store"
 import { readComparison } from "../pulls/comparison"
 import { publishes, resyncs, updates } from "./metrics"
 import type { PressRefusal, PublicationRow, PublishPress } from "./publishSchema"
@@ -66,6 +67,37 @@ const mirror = (rows: ReadonlyArray<PublicationRow>) =>
     }
   })
 
+/** Keeps branch `branchId`'s pull request title equal to `title`, or none. */
+const keepTitle = (branchId: string, title: string | undefined) =>
+  Effect.gen(function* () {
+    const { titles } = yield* PublishStore
+    const kept = yield* titles.get(branchId)
+    if (title === undefined) {
+      if (Option.isSome(kept)) yield* Effect.orDie(titles.delete(branchId))
+      return
+    }
+    yield* Effect.orDie(
+      Option.isSome(kept) ? titles.update(branchId, (draft) => void (draft.title = title)) : titles.insert({ branchId, title }),
+    )
+  })
+
+/**
+ * The title of `publication`'s pull request as its repository's issues have it, each time they change, none once
+ * tombstoned: the publication's repository opens its issues (decision 0079 slice 1b), never the routed one's.
+ */
+const pullTitles = (publication: PublicationRow | undefined) =>
+  publication === undefined || publication.prNumber === null
+    ? Stream.make(undefined)
+    : Stream.unwrap(Effect.gen(function* () {
+      const { items } = yield* (yield* IssuesStore).forRepo(publication.repoId)
+      return items.changes({ initial: true }).pipe(
+        Stream.mapEffect(() => items.toArray),
+        Stream.map((rows) =>
+          rows.find((row) => row.number === publication.prNumber && row.kind === "pull" && row.deletedAt === null)?.title
+        ),
+      )
+    }))
+
 /** Reads the publication's base and head into the Compare's comparisons, once per pair. */
 const compare = (publication: PublicationRow) =>
   Effect.gen(function* () {
@@ -87,18 +119,22 @@ export const show = (branchId: string | null, compareShown = false) =>
     yield* mirror((yield* store.shown.toArray).filter((row) => row.branchId === branchId))
     if (branchId === null) return
     const shape = yield* store.publications(branchId)
-    yield* FiberHandle.run(
-      store.follower,
-      shape.changes({ initial: true }).pipe(
-        Stream.runForEach(() =>
-          Effect.gen(function* () {
-            const rows = yield* shape.toArray
-            yield* mirror(rows)
-            if (compareShown) yield* Effect.forEach(rows, compare, { discard: true })
-          })
-        ),
+    const publications = shape.changes({ initial: true }).pipe(
+      Stream.runForEach(() =>
+        Effect.gen(function* () {
+          const rows = yield* shape.toArray
+          yield* mirror(rows)
+          if (compareShown) yield* Effect.forEach(rows, compare, { discard: true })
+        })
       ),
     )
+    const titles = shape.changes({ initial: true }).pipe(
+      Stream.mapEffect(() => Effect.map(shape.toArray, (rows) => rows[0])),
+      Stream.changesWith((a, b) => a?.repoId === b?.repoId && a?.prNumber === b?.prNumber),
+      Stream.switchMap(pullTitles),
+      Stream.runForEach((title) => keepTitle(branchId, title)),
+    )
+    yield* FiberHandle.run(store.follower, Effect.all([publications, titles], { concurrency: 2, discard: true }))
   }).pipe(Effect.annotateLogs({ feature: "branch" }))
 
 /** Opens Publish's form on the shown branch. */

@@ -16,34 +16,35 @@ import { recordShapeRetry } from "./shapeSync"
 import { type Draft, VIEW } from "./schema"
 import { IssuesStore } from "./store"
 
-// What a person does on the issue pages, as Effects that finish synchronously. Opening an issue and commenting are the
+// What a person does on the issue pages, as Effects that finish synchronously, but for opening a repository's issues,
+// which waits for its collections to open (`forRepo`). Opening an issue and commenting are the
 // flows `issue/create` and `issue/comment`, dispatched with door `button` in the store's scope: the press returns at
 // once, and the draft clears once the write is queued. Sending runs in the outbox, never in an action.
 
 /**
- * What an issue route calls on a link's hover or focus (the router's intent preload): starts the issues' sync without
- * showing a page, so the page the click opens has its rows.
+ * What an issue route calls on a link's hover or focus (the router's intent preload): starts `owner/name`'s issues'
+ * sync without showing a page, so the page the click opens has its rows.
  */
-export const warm = Effect.flatMap(IssuesStore, (store) => store.activate)
+export const warm = (owner: string, name: string) =>
+  Effect.flatMap(IssuesStore, (store) => Effect.asVoid(store.forRepo(repoId(owner, name))))
 
 /** Reconnects this tab's issue shapes after one stopped or failed; the SDK owns retries and resumption. */
 export const reconnectShapes = Effect.flatMap(IssuesStore, (store) =>
-  Effect.all([
-    store.items.reconnect,
-    store.comments.reconnect,
-    store.sync.reconnect,
-    store.writes.reconnect,
-    store.triageSettings.reconnect,
-  ], { discard: true }))
+  Effect.all([store.routed().reconnect, store.writes.reconnect], { discard: true }))
 
 /** A person's Try again on an unavailable direct issue. */
 export const retry = Effect.andThen(reconnectShapes, recordShapeRetry("issue"))
 
-/** What the route calls on a navigation: shows `owner/name`'s issues, or, with `number`, that issue; and starts the sync. */
+/**
+ * What the route calls on a navigation: shows `owner/name`'s issues, or, with `number`, that issue; and opens that
+ * repository's issues, its own shapes (decision 0079 slice 1b), once.
+ */
 export const open = (owner: string, name: string, number?: number) =>
   Effect.gen(function* () {
     const store = yield* IssuesStore
     const id = repoId(owner, name)
+    yield* store.forRepo(id)
+    yield* store.route(id)
     yield* store.view.update(VIEW, (row) => {
       row.owner = owner
       row.name = name
@@ -52,7 +53,6 @@ export const open = (owner: string, name: string, number?: number) =>
       row.draftKey = number === undefined ? newDraftKey(id) : commentDraftKey(id, number)
       row.submitting = false
     })
-    yield* store.activate
   }).pipe(Effect.orDie)
 
 /** Changes draft `key`, made empty first if the device has none. */

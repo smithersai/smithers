@@ -180,9 +180,14 @@ export type IssueView = typeof IssueView.Type
  * loading forever or claims that an absent item is Not found.
  */
 export const ACCESS = "access"
-export const ACCESS_STATES = ["unknown", "allowed", "unavailable", "sign_in", "forbidden"] as const
+/** `elsewhere`: the deployment doesn't act on the repository, so its shape answered `404` (decision 0079 slice 1b). */
+export const ACCESS_STATES = ["unknown", "allowed", "unavailable", "sign_in", "forbidden", "elsewhere"] as const
 export const Access = Schema.Struct({ id: Schema.Literal(ACCESS), status: Schema.Literals(ACCESS_STATES), installed: Schema.Boolean })
 export type Access = typeof Access.Type
+
+/** A repository whose issues this tab opened (src/features/issues/store.ts `forRepo`). */
+export const OpenedRepository = Schema.Struct({ id: Schema.String })
+export type OpenedRepository = typeof OpenedRepository.Type
 
 /** What a write's step asks the tab that started its request (src/flows/askingTab.ts): queue `write`. */
 export const QueueCall = Schema.Struct({ write: QueuedWrite })

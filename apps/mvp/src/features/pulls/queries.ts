@@ -1,4 +1,3 @@
-import type { ElectricCollection } from "@smthrs/effect-electric"
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { Comment, Item, WriteRow } from "../issues/schema"
 import type { CheckRow, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow } from "./schema"
@@ -9,7 +8,8 @@ import type { CheckRow, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow }
 // which the issues' store keeps; what only a pull request has is its `pulls` row.
 
 type View = Collection.Collection<PullsView, string>
-type Synced<A extends object> = ElectricCollection.ElectricCollection<A>
+/** A repository's synced rows, or the empty local rows of a repository nobody opened. */
+type Synced<A extends object> = Collection.Collection<A, any, any>
 
 /** The routed repository's pull requests, newest first, with their head, draft and merge state. */
 export const listQuery = (view: View, items: Synced<Item>, pulls: Synced<PullRow>) =>

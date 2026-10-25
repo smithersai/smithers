@@ -36,19 +36,22 @@ export const tabTodos = (host: { readonly name: string }) =>
     Effect.gen(function* () {
       const store = yield* TodosStore
       const issues = yield* IssuesStore
-      /** The issue a draft is made from, as this device has it: kept on the device, else the network's first answer. */
+      /**
+       * The issue a draft is made from, as this device has it: kept on the device, else the network's first answer, from
+       * its repository's issues (decision 0079 slice 1b).
+       */
       const issueOf = (draft: Draft) =>
         Effect.gen(function* () {
+          const { items } = yield* issues.forRepo(draft.repoId)
           const find = Effect.map(
-            issues.items.toArray,
+            items.toArray,
             (rows) => rows.find((row) => row.repoId === draft.repoId && row.number === draft.issue && row.kind === "issue"),
           )
           // expected: restore failures are logged by Collection
-          yield* Effect.ignore(issues.items.restored)
+          yield* Effect.ignore(items.restored)
           const kept = yield* find
           if (kept !== undefined) return kept
-          yield* issues.activate
-          yield* issuesSynced(issues.items.preload)
+          yield* issuesSynced(items.preload)
           return yield* find
         })
       const keep = (draft: Draft) =>

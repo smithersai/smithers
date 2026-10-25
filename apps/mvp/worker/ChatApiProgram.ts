@@ -200,7 +200,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const runTodos = yield* Todo.enabled
     // A repository's home (docs/features/home.md): who the asker is on it, by their role there (decision 0079), and
     // Smithers' curated home for it.
-    const home = HomeApi.make({ roles, mayRead: github.mayRead })
+    const home = HomeApi.make({ roles, mayRead: github.mayRead, maySync: github.maySync })
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
     const webCache = EdgeCache.layer({ name: "web" }).pipe(Layer.orDie)
     // A repository's docs (docs/features/docs.md): the index its home names, from what GitHub says of it (RepoApi's

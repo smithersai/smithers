@@ -1,5 +1,3 @@
-import { ownRepository } from "../../features/auth/viewer"
-import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
@@ -9,6 +7,7 @@ import { useNavigate, useParams } from "@tanstack/react-router"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
 import { NOT_FOUND } from "../../features/issues/contract"
+import { syncsHere } from "../../features/issues/view"
 import { usePulls } from "../../features/pulls/components/PullsContext"
 import { listPageOf, pullAccessOf } from "../../features/pulls/view"
 import "./pulls-screen.css"
@@ -18,16 +17,17 @@ import "./pulls-screen.css"
 // route's loader opens the repository (`open`); this screen only renders what the device has.
 export function PullsScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/pulls" })
-  const answer = useRepoAnswer(owner, repo)
   const { queries } = usePulls()
   const issues = useIssues()
   const { data: rows, isReady } = useLiveQuery(queries.list)
   const { data: synced } = useLiveQuery(issues.queries.synced)
   const { data: access } = useLiveQuery(issues.queries.access)
+  const { data: unsynced } = useLiveQuery(issues.queries.unsynced)
   const { data: view } = useLiveQuery(queries.view)
   const navigate = useNavigate()
   const page = listPageOf(rows ?? [], { owner, name: repo }, synced, pullAccessOf(access, view), isReady)
-  if (!ownRepository(answer)) {
+  // Where this deployment doesn't sync the repository's pull requests, GitHub lists them (decision 0079 slice 1b).
+  if (!syncsHere(access, unsynced)) {
     const list = githubList(owner, repo, "pulls")
     return <main className="issues-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
   }

@@ -86,8 +86,8 @@ export const refusedOf = (access: { readonly status: string } | undefined): Refu
   access?.status === "sign_in" || access?.status === "forbidden" ? access.status : undefined
 
 /**
- * A repository's issues view in a conversation (decision 0004 §3): the rows of every repository's synced issues
- * (queries.ts `allIssuesQuery`) that are `repoId`'s, and its sync once a walk completed, for `listProps`.
+ * A repository's issues view in a conversation (decision 0004 §3): the repository's synced issues (queries.ts
+ * `allIssuesQuery`) that are `repoId`'s, and its sync once a walk completed, for `listProps`.
  */
 export const embeddedIssues = <R extends ListRow & { readonly repoId: string }>(
   rows: ReadonlyArray<R>,
@@ -96,9 +96,17 @@ export const embeddedIssues = <R extends ListRow & { readonly repoId: string }>(
 ) => ({ rows: rows.filter((row) => row.repoId === repoId), synced: synced.find((row) => row.repoId === repoId) })
 
 /**
+ * Whether this deployment syncs the routed repository's issues and pull requests (decision 0079 slice 1b): not when it
+ * doesn't act on the repository (the shape's `404`, `elsewhere`), nor where the App can't act there (its sync recorded
+ * `app_not_installed` or `not_allowed`, `unsynced`). Until either says so, it does, and its lists are unknown, never
+ * a promise of GitHub: their pages send people to GitHub only once one says so.
+ */
+export const syncsHere = (access: { readonly status: string } | undefined, unsynced: unknown): boolean =>
+  access?.status !== "elsewhere" && unsynced === undefined
+
+/**
  * The list page: device rows, unknown counts until a complete sync or GitHub row arrives, the shape's refusal,
- * and writes that weren't sent. Unknown lists show neither a spinner (ARCH-5) nor "No issues"; decision 0079
- * defers syncing other repositories, whose local writes remain visible without promising an active sync.
+ * and writes that weren't sent. Unknown lists show neither a spinner (ARCH-5) nor "No issues".
  */
 export const listProps = (
   rows: ReadonlyArray<ListRow>,

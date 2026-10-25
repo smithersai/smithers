@@ -23,6 +23,7 @@ import {
   TEST_REPOSITORY,
   TestChatApi,
 } from "../../test/chatApi"
+import { persistenceFailingOnce } from "../../test/faults"
 import { AuthStore } from "../auth/store"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
@@ -670,8 +671,8 @@ describe("slash commands", () => {
         now(), now())`,
     )
     // This command drafts from the issue this device holds, not an SQL write still in Electric's WAL.
-    const issues = await tab.runtime.runPromise(Effect.service(IssuesStore))
-    await tab.runtime.runPromise(issues.activate)
+    const store = await tab.runtime.runPromise(Effect.service(IssuesStore))
+    const issues = await tab.runtime.runPromise(store.forRepo(REPO_ID))
     await tab.runtime.runPromise(issues.items.preload)
     await until(() => expect(issues.items.tanstack.get(`${REPO_ID}#5`)).toMatchObject({ number: 5, title: "Slow page" }))
     const line = `/todo.issue ${TEST_REPOSITORY} 5`
@@ -819,22 +820,14 @@ describe("stack initialization regressions", () => {
     const api = await runtime.runPromise(Effect.service(TestChatApi))
     await runtime.runPromise(readRepositoryRole(OWNER, NAME))
     await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const real = yield* Persistence.Persistence
-      let fail = false
       // A device whose persistence metadata becomes temporarily unreadable, then recovers.
-      const faulty: Persistence.Service = {
-        persistence: real.persistence,
-        get registry() {
-          if (fail) { fail = false; throw new Error("persistence metadata unavailable") }
-          return real.registry
-        },
-      }
+      const faulty = persistenceFailingOnce(yield* Persistence.Persistence)
       const built = yield* Layer.build(TodosStore.layer({ origin: api.origin }).pipe(
-        Layer.provide(Layer.succeed(Persistence.Persistence, faulty)),
+        Layer.provide(Layer.succeed(Persistence.Persistence, faulty.service)),
         Layer.provide(Layer.succeed(FetchHttpClient.Fetch, api.fetch)),
       ))
       const store = Context.get(built, TodosStore)
-      fail = true
+      faulty.failNext()
       expect(Exit.isFailure(yield* Effect.exit(store.stackOf(REPO_ID)))).toBe(true)
       expect(store.opened(REPO_ID)).toBeUndefined()
       const reopened = yield* Effect.exit(store.stackOf(REPO_ID))

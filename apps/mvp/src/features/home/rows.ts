@@ -55,7 +55,7 @@ export const CURRENT = "current"
  * (`null` until it answers); the lower view the person switched to (`null`: their own, the highest they may see,
  * SCOPE-14); whether the curated home's answer is still on its way; whether the repository's own home is still being
  * read from what GitHub says, before a clone; the repository whose stack this tab opened for a
- * `stack` block (`null` before); the action blocks' flows running now; and why the last one failed, `null` when it
+ * `stack` block, and whose issues for an `issues` block (`null` before); the action blocks' flows running now; and why the last one failed, `null` when it
  * didn't.
  */
 export const CurrentRow = Schema.Struct({
@@ -74,6 +74,7 @@ export const CurrentRow = Schema.Struct({
   /** The docs index Smithers' curated home for it names, as ChatApi answered; `null` for none. */
   curatedDocs: Schema.NullOr(Schema.String),
   stack: Schema.NullOr(Schema.String),
+  issues: Schema.NullOr(Schema.String),
   running: Schema.Array(Schema.String),
   failure: Schema.NullOr(Schema.String),
 })
@@ -94,6 +95,7 @@ export const emptyCurrent: CurrentRow = {
   docs: null,
   curatedDocs: null,
   stack: null,
+  issues: null,
   running: [],
   failure: null,
 }

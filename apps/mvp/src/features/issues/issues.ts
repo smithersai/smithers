@@ -19,44 +19,55 @@ import {
   triage,
 } from "./actions"
 import type { TriageDecision } from "./contract"
-import { IssuesStore } from "./store"
+import { IssuesStore, type RepoIssues } from "./store"
 
 // Issues as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
 // the queries with `useLiveQuery`, and the issue routes' loaders call `open`.
 
 type Store = IssuesStore["Service"]
 
-/** What a frontend reads live, for the routed repository and issue. */
+/**
+ * What a frontend reads live, for the routed repository and issue: each the routed repository's (`open` opened it
+ * before the page shows), none for a repository nobody opened.
+ */
 export interface IssuesQueries {
   /** What the route shows, with its draft and whether a press is on its way. */
   readonly view: Store["viewState"]["tanstack"]
   /** The repository's issues, this device's own new ones first. */
-  readonly list: Store["list"]["tanstack"]
+  readonly list: RepoIssues["list"]["tanstack"]
   /** The routed issue, once the device has it. */
-  readonly item: Store["item"]["tanstack"]
+  readonly item: RepoIssues["item"]["tanstack"]
   /** Its comments, this device's own last. */
-  readonly conversation: Store["conversation"]["tanstack"]
+  readonly conversation: RepoIssues["conversation"]["tanstack"]
   /** The repository's sync, once a walk was complete: before that its counts are unknown. */
-  readonly synced: Store["synced"]["tanstack"]
-  /** Every repository's synced issues, newest first: what a repository's issues view in a conversation lists. */
-  readonly allIssues: Store["allIssues"]["tanstack"]
-  /** Every repository whose issues sync completed a walk. */
-  readonly syncedRepositories: Store["syncedRepositories"]["tanstack"]
+  readonly synced: RepoIssues["synced"]["tanstack"]
+  /** The repository's sync when Smithers can't sync it (the App can't act there): its lists send people to GitHub. */
+  readonly unsynced: RepoIssues["unsynced"]["tanstack"]
   /** Whether this person may read the repository's issues: refused, a page shows sign in or Not found. */
-  readonly access: Store["accessState"]["tanstack"]
+  readonly access: RepoIssues["accessState"]["tanstack"]
   /** Whether the repository's triage flow is on: none until a Maintainer enabled it. */
-  readonly triage: Store["triage"]["tanstack"]
+  readonly triage: RepoIssues["triage"]["tanstack"]
   /** This device's triage writes on the repository still on their way, or not sent. */
-  readonly triagePending: Store["triagePending"]["tanstack"]
+  readonly triagePending: RepoIssues["triagePending"]["tanstack"]
+  /** The repositories whose issues this tab opened: a repository's issues view in a conversation reads it to redraw once its own open. */
+  readonly opened: Store["openedState"]["tanstack"]
+  /** Repository `id`'s issues and pull requests, newest first, once something opened them; none before. */
+  readonly newestFirstOf: (id: string) => RepoIssues["newestFirst"]["tanstack"]
+  /** Its sync rows whose walk completed. */
+  readonly walkedOf: (id: string) => RepoIssues["walked"]["tanstack"]
+  /** Whether this person may read its issues, as its items shape answered. */
+  readonly accessOf: (id: string) => RepoIssues["accessState"]["tanstack"]
+  /** Its sync when Smithers can't sync it: its view sends people to GitHub. */
+  readonly unsyncedOf: (id: string) => RepoIssues["unsynced"]["tanstack"]
 }
 
 /** What a person does, as plain functions. Each returns at once. */
 export interface IssuesActions {
   readonly setCommitment: (owner: string, name: string, number: number, commitment: import("./lifecycle").Commitment, previousWriteId?: string) => void
-  /** What an issue route calls on a navigation. */
-  readonly open: (owner: string, name: string, number?: number) => void
-  /** What an issue route calls on a link's hover or focus: starts the issues' sync without showing a page. */
-  readonly warm: () => void
+  /** What an issue route calls on a navigation: resolves once the repository's issues are open. */
+  readonly open: (owner: string, name: string, number?: number) => Promise<void>
+  /** What an issue route calls on a link's hover or focus: starts the repository's issues' sync without showing a page. */
+  readonly warm: (owner: string, name: string) => Promise<void>
   /** Reconnect failed issue shapes now. */
   readonly retry: () => void
   readonly setNewTitle: (owner: string, name: string, title: string) => void
@@ -87,24 +98,29 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
     Issues,
     Effect.gen(function* () {
       const store = yield* IssuesStore
-      const { runSync: run } = runners(yield* Effect.context<IssuesStore | FlowDispatch>(), "issues")
+      const { runSync: run, runPromise: promise } = runners(yield* Effect.context<IssuesStore | FlowDispatch>(), "issues")
       return Issues.of({
+        // The routed repository's, read when the page renders.
         queries: {
           view: store.viewState.tanstack,
-          list: store.list.tanstack,
-          item: store.item.tanstack,
-          conversation: store.conversation.tanstack,
-          synced: store.synced.tanstack,
-          allIssues: store.allIssues.tanstack,
-          syncedRepositories: store.syncedRepositories.tanstack,
-          access: store.accessState.tanstack,
-          triage: store.triage.tanstack,
-          triagePending: store.triagePending.tanstack,
+          get list() { return store.routed().list.tanstack },
+          get item() { return store.routed().item.tanstack },
+          get conversation() { return store.routed().conversation.tanstack },
+          get synced() { return store.routed().synced.tanstack },
+          get unsynced() { return store.routed().unsynced.tanstack },
+          get access() { return store.routed().accessState.tanstack },
+          get triage() { return store.routed().triage.tanstack },
+          get triagePending() { return store.routed().triagePending.tanstack },
+          opened: store.openedState.tanstack,
+          newestFirstOf: (id) => (store.opened(id) ?? store.empty).newestFirst.tanstack,
+          walkedOf: (id) => (store.opened(id) ?? store.empty).walked.tanstack,
+          accessOf: (id) => (store.opened(id) ?? store.empty).accessState.tanstack,
+          unsyncedOf: (id) => (store.opened(id) ?? store.empty).unsynced.tanstack,
         },
         actions: {
           setCommitment: (owner, name, number, commitment, previousWriteId) => run(setCommitment(owner, name, number, commitment, previousWriteId)),
-          open: (owner, name, number) => run(open(owner, name, number)),
-          warm: () => run(warm),
+          open: (owner, name, number) => promise(open(owner, name, number)),
+          warm: (owner, name) => promise(warm(owner, name)),
           retry: () => run(retry),
           setNewTitle: (owner, name, title) => run(setNewTitle(owner, name, title)),
           setNewBody: (owner, name, body) => run(setNewBody(owner, name, body)),

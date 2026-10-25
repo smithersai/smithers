@@ -63,6 +63,8 @@ export const RepoRoleAnswer = Schema.Struct({
   own: Schema.Boolean,
   /** Repository shapes may be read; with no role this is an explicit public-read receipt. */
   readable: Schema.optional(Schema.Boolean),
+  /** `false`: the deployment doesn't sync the repository's issues and pull requests (decision 0079 slice 1b). */
+  synced: Schema.optional(Schema.Boolean),
 })
 export type RepoRoleAnswer = typeof RepoRoleAnswer.Type
 
@@ -76,5 +78,7 @@ export const RepoRole = Schema.Struct({
   own: Schema.Boolean,
   /** Repository shapes may be read; with no role this is an explicit public-read receipt. */
   readable: Schema.optional(Schema.Boolean),
+  /** `false`: the deployment doesn't sync the repository's issues and pull requests, so its pages show GitHub's. */
+  synced: Schema.optional(Schema.Boolean),
 })
 export type RepoRole = typeof RepoRole.Type

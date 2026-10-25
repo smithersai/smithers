@@ -1,4 +1,3 @@
-import { ownRepository } from "../../features/auth/viewer"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
@@ -21,7 +20,7 @@ import {
   TRIAGE_OFF,
 } from "../../features/issues/contract"
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
-import { listProps, mayManageTriageOnList, mayWrite, triageSwitchOf } from "../../features/issues/view"
+import { listProps, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
 import { BackToChat } from "../../features/views/components/BackToChat"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
@@ -37,6 +36,7 @@ export function IssuesScreen() {
   const { data: rows } = useLiveQuery(queries.list)
   const { data: synced } = useLiveQuery(queries.synced)
   const { data: access } = useLiveQuery(queries.access)
+  const { data: unsynced } = useLiveQuery(queries.unsynced)
   const { data: triage } = useLiveQuery(queries.triage)
   const { data: triagePending } = useLiveQuery(queries.triagePending)
   const { data: session } = useLiveQuery(auth.queries.session)
@@ -52,7 +52,8 @@ export function IssuesScreen() {
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
   const back = <BackToChat target={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
-  if (!ownRepository(answer)) {
+  // Where this deployment doesn't sync the repository's issues, GitHub lists them (decision 0079 slice 1b).
+  if (!syncsHere(access, unsynced)) {
     const list = githubList(owner, repo, "issues")
     return <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
   }

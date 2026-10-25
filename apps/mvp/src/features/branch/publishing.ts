@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
+import type { IssuesStore } from "../issues/store"
 import type { PullsClient } from "../pulls/api"
 import { closeForm, openForm, publish, resync, show, update } from "./publishActions"
 import { type PublishConfig, PublishStore } from "./publishStore"
@@ -47,7 +48,7 @@ export class Publishing extends Context.Service<
       Publishing,
       Effect.gen(function* () {
         const store = yield* PublishStore
-        const run = Effect.runPromiseWith(yield* Effect.context<PublishStore | BranchStore | FlowDispatch | PullsClient>())
+        const run = Effect.runPromiseWith(yield* Effect.context<PublishStore | BranchStore | FlowDispatch | PullsClient | IssuesStore>())
         return Publishing.of({
           queries: {
             publication: store.publication.tanstack,

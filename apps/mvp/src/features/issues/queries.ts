@@ -1,4 +1,4 @@
-import type { ElectricCollection } from "@smthrs/effect-electric"
+import type { Effect } from "effect"
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { ISSUES_STREAM } from "./contract"
 import type {
@@ -15,8 +15,8 @@ import type {
 } from "./schema"
 
 // What every frontend reads of issues (decision 0012 §6). Each is a live query over this device's collections, built
-// once per IssuesStore, for the repository and issue the route shows (`view`); it starts on first read. No query waits
-// for the network.
+// once per repository the store opens, for the repository and issue the route shows (`view`); it starts on first read.
+// No query waits for the network.
 //
 // A write this device made shows until GitHub's row with its write id arrives: `items ∪ (requested − items) ∪
 // (sending − requested − items)` for issues, and the same over `comments` for an issue's conversation. A synced row
@@ -24,8 +24,15 @@ import type {
 // or `not_sent` once the route refused it or the server's write (`writes`) settled refused or failed, with `reason`.
 
 type View = Collection.Collection<IssueView, string>
-type Synced<A extends object> = ElectricCollection.ElectricCollection<A>
+/** A repository's synced rows, or the empty local rows of a repository nobody opened (store.ts `empty`). */
+type Synced<A extends object> = Collection.Collection<A, any, any>
 type Local<A extends object> = Collection.Collection<A, string>
+
+/** Every row of one of a repository's collections, live: what a home's `issues` block reads (features/home). */
+export const rowsQuery = <A extends object>(rows: Synced<A>) => LiveQuery.make((q) => q.from({ row: rows.tanstack }))
+
+/** The rows `rowsQuery` reads. */
+export type LiveRows<A extends object> = Effect.Success<ReturnType<typeof rowsQuery<A>>>
 
 /** A requested write's state: Not sent when the route refused it, or the server's write settled refused or failed. */
 const pendingOf = (mine: { readonly status: unknown }, write: { readonly status: unknown } | undefined) =>
@@ -265,6 +272,24 @@ export const syncedQuery = (view: View, sync: Synced<SyncRow>) =>
       .innerJoin({ sync: sync.tanstack }, ({ view, sync }) => Query.eq(view.repoId, sync.repoId))
       .where(({ sync }) => Query.and(Query.eq(sync.stream, ISSUES_STREAM), Query.eq(sync.complete, true)))
       .select(({ sync }) => ({ syncedAt: sync.syncedAt }))
+      .findOne()
+  )
+
+/**
+ * A repository's issues sync when Smithers can't sync it: the App isn't installed there, or wasn't granted Issues, as
+ * its Reconcile recorded (decision 0079 slice 1b); none otherwise. Over that repository's own sync rows.
+ */
+export const unsyncedQuery = (sync: Synced<SyncRow>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ sync: sync.tanstack })
+      .where(({ sync }) =>
+        Query.and(
+          Query.eq(sync.stream, ISSUES_STREAM),
+          Query.or(Query.eq(sync.failure, "app_not_installed"), Query.eq(sync.failure, "not_allowed")),
+        )
+      )
+      .select(({ sync }) => ({ failure: sync.failure }))
       .findOne()
   )
 

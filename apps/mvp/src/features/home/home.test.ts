@@ -516,18 +516,23 @@ describe("Smithers' curated home", () => {
     expect(page(tab).page).toMatchObject({ source: "curated", audience: "contributor" })
   })
 
-  test("a curated home without a stack block, or a tab without TODOs, opens no stack", async () => {
+  test("a curated home without a stack block, or a tab without TODOs or issues, opens no stack and no issues", async () => {
     const withStack: CuratedFile = {
       repository: "octocat/Spoon-Knife",
       defaultBranch: "main",
-      home: { sections: [{ audience: "contributor", blocks: [{ type: "stack" }] }] },
+      home: { sections: [{ audience: "contributor", blocks: [{ type: "stack" }, { type: "issues" }] }] },
     }
     const h = await repoHarness(server, { homes: [withStack], roles: "octocat/Spoon-Knife" })
     const tab = await open(h)
     tab.home.actions.open("octocat", "Spoon-Knife")
     await waitFor(() => expect(page(tab).page.kind).toBe("home"))
-    // This tab has no TODOs store: the block's rows come from nowhere, and nothing is opened.
-    expect(page(tab).current.stack).toBeNull()
+    // This tab has no TODOs or issues store: the blocks' rows come from nowhere, and nothing is opened.
+    expect(page(tab).current).toMatchObject({ stack: null, issues: null })
+    const [items, syncs] = [tab.home.queries.items("github/octocat/Spoon-Knife"), tab.home.queries.syncs("github/octocat/Spoon-Knife")]
+    items.startSyncImmediate()
+    syncs.startSyncImmediate()
+    await waitFor(() => expect([items.isReady(), syncs.isReady()]).toEqual([true, true]))
+    expect([items.toArray, syncs.toArray]).toEqual([[], []])
   })
 })
 

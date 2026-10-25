@@ -136,7 +136,7 @@ export const PullsView = Schema.Struct({
   /** True after the first complete pull shape is installed, not just its first 2xx. */
   installed: Schema.Boolean,
   /** The pull shape's current access or failure, separate from the shared issue shape. */
-  pullStatus: Schema.Literals(["unknown", "allowed", "unavailable", "sign_in", "forbidden"]),
+  pullStatus: Schema.Literals(["unknown", "allowed", "unavailable", "sign_in", "forbidden", "elsewhere"]),
 })
 export type PullsView = typeof PullsView.Type
 

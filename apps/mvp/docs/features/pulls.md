@@ -46,7 +46,7 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 
 | Piece | What it is |
 |---|---|
-| `store.ts` | Electric collections `pull-rows`, `pull-commits`, `pull-reviews`, `pull-checks`, kept on the device (`src/device/registry.ts`); `pull-files` (the comparisons this tab read) and `pull-view` (the route, and this person's merge), in memory |
+| `store.ts` | per repository (`forRepo(id)`, with that repository's issues; decision 0079 slice 1b), Electric collections `pull-rows:<repo id>`, `pull-commits:<repo id>`, `pull-reviews:<repo id>`, `pull-checks:<repo id>`, each shape naming its repository with `?repo=`, kept on the device (`src/device/registry.ts`, families); `pull-files` (the comparisons this tab read) and `pull-view` (the route, this person's merge, and what the routed repository's shape last said of access), in memory. The facade's queries are the routed repository's |
 | `queries.ts` | the list (newest first), the pull request, its comments, reviews, commits and checks (the runs on its head), the files, the view joined to the merge's write |
 | `actions.ts`, `pulls.ts` | `open` (the routes; the Files tab reads its comparison once the head is on the device), `warm` (a link's hover), `loadFiles` (once per two SHAs; a failed read is read again), `merge` (a person's press, sent at once in their session, never queued) |
 | `api.ts` | `PullsClient`: the merge write and the compare route, one deadline each |

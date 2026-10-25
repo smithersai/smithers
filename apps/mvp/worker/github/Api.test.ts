@@ -919,6 +919,26 @@ describe("the shapes", () => {
         await sql(runtime, `TRUNCATE repo_about`)
       }
     })
+
+    test("the role route's synced says what the shapes' 404 says: own, kept by the allowed list, the App not found absent", async () => {
+      const gadgetsRepo = { owner: "acme", name: "gadgets", id: GADGETS } as const
+      const h = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null })
+      expect([await h.maySync(OWN), await h.maySync(gadgetsRepo)]).toEqual([true, true])
+      // Left out of GITHUB_ALLOWED_REPOSITORIES, or no App: only the deployment's own.
+      const leftOut = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, allowed: new Set([OWN.id]) })
+      expect([await leftOut.maySync(OWN), await leftOut.maySync(gadgetsRepo)]).toEqual([true, false])
+      const noApp = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, app: null })
+      expect(await noApp.maySync(gadgetsRepo)).toBe(false)
+      await sql(runtime, `INSERT INTO repo_about (repo_id, app_absent_until) VALUES ('${GADGETS}', now() + interval '1 hour')`)
+      try {
+        expect([await h.maySync(OWN), await h.maySync(gadgetsRepo)]).toEqual([true, false])
+        // Postgres not answering leaves it synced: the shapes answer for themselves.
+        const offline = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, database: unreachable })
+        expect(await offline.maySync(gadgetsRepo)).toBe(true)
+      } finally {
+        await sql(runtime, `TRUNCATE repo_about`)
+      }
+    })
   })
 })
 

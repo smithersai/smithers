@@ -1,6 +1,5 @@
-import { Effect, Metric, Stream } from "effect"
+import { Effect, Metric, Option, Stream } from "effect"
 import { codeOf } from "../../errorCode"
-import { IssuesStore } from "../issues/store"
 import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions"
 import { recordShapeRetry } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"
@@ -21,26 +20,25 @@ export const mergePresses = Metric.counter("smithers_web_pull_merges", {
   incremental: true,
 })
 
-/** What a pull request route calls on a link's hover or focus: starts the sync without showing a page. */
-export const warm = Effect.flatMap(IssuesStore, (store) => store.activate)
+/** What a pull request route calls on a link's hover or focus: starts `owner/name`'s sync without showing a page. */
+export const warm = (owner: string, name: string) =>
+  Effect.flatMap(PullsStore, (store) => Effect.asVoid(store.forRepo(repoId(owner, name))))
 
-/** A person's Try again on an unavailable pull; both its own and the shared issue shapes may need reconnecting. */
+/** A person's Try again on an unavailable pull; both its own and the repository's issue shapes may need reconnecting. */
 export const retry = Effect.gen(function* () {
   const store = yield* PullsStore
-  yield* Effect.all([
-    reconnectIssueShapes,
-    store.pulls.reconnect,
-    store.commits.reconnect,
-    store.reviews.reconnect,
-    store.checks.reconnect,
-  ], { discard: true })
+  yield* Effect.all([reconnectIssueShapes, store.routed().reconnect], { discard: true })
   yield* recordShapeRetry("pull")
 })
 
-/** What the route calls on a navigation: shows `owner/name`'s pull requests, or, with `number`, that one at `tab`. */
+/**
+ * What the route calls on a navigation: shows `owner/name`'s pull requests, or, with `number`, that one at `tab`; and
+ * opens that repository's pull requests and issues, their own shapes (decision 0079 slice 1b), once.
+ */
 export const open = (owner: string, name: string, number?: number, tab: PullTab = "conversation") =>
   Effect.gen(function* () {
     const store = yield* PullsStore
+    yield* store.forRepo(repoId(owner, name))
     yield* store.view.update(VIEW, (row) => {
       const same = row.number === (number ?? null) && row.owner === owner && row.name === name
       row.owner = owner
@@ -56,9 +54,10 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
     })
     // Sync status is shared with issues and must follow this route's repository too.
     yield* openIssues(owner, name)
+    yield* store.route(repoId(owner, name))
     // The Files tab reads its comparison once the device has the pull request's base and head.
     if (number !== undefined && tab === "files") {
-      yield* store.pull.rows.pipe(
+      yield* store.routed().pull.rows.pipe(
         Stream.filter((rows) => rows.some((row) => row.number === number && SHA.test(row.headSha))),
         Stream.take(1),
         Stream.runForEach((rows) => {

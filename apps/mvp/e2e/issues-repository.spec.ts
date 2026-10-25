@@ -2,8 +2,10 @@ import { expect, test } from "./fixtures"
 import { requires } from "./target"
 import { as, REPO } from "./vibelang"
 
+// A deployment syncs smithersai/vibelang through its GitHub App (decision 0079 slice 1b; vibelang-visitor.spec.ts reads its
+// own form there): only a dev server without the App leaves it unsynced.
 test("new issue on an unsynced repository: a signed-in reader gets its GitHub form", async ({ page }) => {
-  requires("member")
+  requires("member", "noGitHubApp")
   await as(page, "contributor")
   await page.goto(`${REPO}/issues/new`)
   await expect(page.locator('header[aria-label="Repository"]')).toContainText("smithersai / vibelang", { timeout: 30_000 })
