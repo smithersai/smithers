@@ -389,3 +389,8 @@ Opus and Sol wrote their designs independently on 2026-10-19, before 0006 to 000
 | Freestyle `exec` | 5 min at most, buffered | 5 min at most | 30 s default; 5 min, or 24 h on updated guest agents | Freestyle's 2026-10-14 changelog |
 | Acceptance tests | kill tests, sentinel | adds provisioning kill, guest restart, backpressure, disk full, quota, nested-container bypass, Python and Compose fixtures, latency receipts | both | broader failure coverage |
 | Questions | signed-out compute; agent placement; repo scope | persistence; budgets; job-scoped secrets | persistence; agent placement; budgets | 0008 answered signed-out use; S0 decides repo scope; job scoping is decided above |
+
+
+## Sleep diagnosis (2026-10-25, OBS-4)
+
+An idle lifecycle test timed out while its durable keep flow continued. A bare `busy` result cannot distinguish a user process, terminal activity, recent use, a probe error or an unsaved checkpoint. Record those bounded reasons on every decision, with idle age where available, generation, probe phase and attached socket count; never record process names, arguments, paths or content. Preserve the existing safeguard against stopping live work or losing an unsaved checkpoint until production records identify which condition is wrong. The diagnostic change alone is not proof that sleep works.

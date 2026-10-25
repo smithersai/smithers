@@ -85,6 +85,6 @@ describe.skipIf(!present)("the idle probe in a real container", () => {
   test("a process a person runs keeps the machine awake", () => {
     expect(docker(["exec", "-d", "--user", "585780777:2000", container, "sleep", "30"]).status).toBe(0)
     execFileSync("sleep", ["1"])
-    expect(probe()).toBe(3)
+    expect(probe()).toBe(4)
   }, 60_000)
 })

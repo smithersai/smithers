@@ -578,7 +578,9 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           logged(tool(branch, ownerId, callId, call)),
         command: (branch: SandboxBranch, ownerId: string, request: CommandRequest) =>
           logged(command(branch, ownerId, request)),
-        sleepIfIdle: (generation: number, idleMs: number) => logged(sleepIfIdle(generation, idleMs)),
+        sleepIfIdle: (generation: number, idleMs: number) => logged(sleepIfIdle(generation, idleMs)).pipe(
+          Effect.annotateLogs({ sandboxObjectId: state.id.toString(), attachedSockets: attached.size }),
+        ),
         ticket: () =>
           Effect.sync(() => {
             const ticket = crypto.randomUUID()

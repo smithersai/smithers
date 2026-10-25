@@ -2,7 +2,7 @@
 title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
-owner: unassigned (the sandboxes builder handed off on 2026-10-23)
+owner: Codex sandbox-sleep
 updated: 2026-10-25 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
@@ -20,6 +20,18 @@ Ruling ARCH-15: most repositories install and build in most sandboxes. Productio
   so `no-secrets-6` in `e2e/sandbox-lifecycle.spec.ts` holds. pip and Go read the system store; no extra variable.
 - The image adds Go 1.27.3, Python with pip and venv, and `build-essential`.
 - The browser's run tool states the deployment's `SANDBOX_COMMAND_MAX_SECONDS`, which the build captures.
+
+## Idle sleep investigation — 2026-10-25
+
+The production failure is not fixed yet. Generation 18 of the fixture branch's machine started at 22:23:49 UTC on October 25; its keep flow still retried at 23:31:47 (62 attempts). The original browser failure ran until 22:58. No sandbox tool call was admitted on that branch from 22:20 through 23:00; the next calls were at 23:06 and 23:10. Later tests therefore reused the same machine, and later snapshots cannot explain the original failure.
+
+Live tail records prove the keep flow re-arms the container. A diagnostic command's checkpoint saved successfully. Its process snapshot showed PID 1 `tini`, the idle process, the idle tmux server and shell, plus the diagnostic runner itself; tini is correctly excluded. The terminal was detached by then. Historical Workers Logs query was refused (HTTP 403), and the journal's existing failed-attempt records do not retain a busy reason.
+
+OBS-4 change: record each machine sleep decision and the attached socket count, with separate codes for terminal activity, a user process and probe errors, plus checkpoint and use-during-save reasons. Deploy these records before choosing a sleep-policy change. Repeated `setInactivityTimeout` also exists here, but this flow explicitly destroys idle machines; unlike Electric's high fan-in gateway, the measured branch rearms took 2–642 ms and its keep flow progressed. No causal claim that removing rearm fixes this failure.
+
+Validation on Latitude: typecheck and importRules pass; `worker/branch/Machine.test.ts` passes 27 tests with 100% lines, statements, functions and branches for `Machine.ts`. The three new logging regressions fail on the original implementation. The object wrapper still needs its deployed e2e proof; no Docker probe or production lifecycle success is claimed.
+
+Pending: land and deploy the diagnostic change, reproduce the lifecycle test alone, classify its decision records, fix the observed cause and prove the production lifecycle. Libraries: the catalog's sandbox tools/session entry (`@smthrs/sandbox`, `@smthrs/platform-cloudflare`) and observability entry (`@smthrs/observability`, Effect metrics).
 
 ## Handoff — 2026-10-23
 

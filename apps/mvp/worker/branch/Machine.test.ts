@@ -74,7 +74,12 @@ const observed = async <A, E>(effect: Effect.Effect<A, E>) => {
         Effect.provideService(Metric.MetricRegistry, registry),
       ),
     ).count
-  return { value, lines, counted }
+  const decisions = (outcome: string, reason: string) => Effect.runSync(
+    Metric.value(Metric.withAttributes(Machine.sleepDecisions, { outcome, reason })).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ),
+  ).count
+  return { value, lines, counted, decisions }
 }
 
 const PERSON = "person-a"
@@ -558,6 +563,20 @@ describe("restore", () => {
 describe("sleepIfIdle", () => {
   const PROBE_SECONDS = "90"
   const isProbe = (argv: ReadonlyArray<string>) => argv[3] === "probe"
+
+  test.each([
+    [3, "terminal_input"], [4, "process"], [1, "probe_failed"],
+  ])("records why probe exit %s keeps a machine awake without content", async (exitCode, reason) => {
+    const machine = boxOf({ store: memory({ generation: 3 }), root: () => Effect.succeed(exitCode) })
+    const result = await observed(Machine.sleepIfIdle(machine.box, 3, 1_000))
+    expect(result.value).toBe("busy")
+    expect(result.lines.find((line) => line.message === "sandbox.object.sleep")?.annotations).toMatchObject({
+      generation: 3, idleMs: 1_000, outcome: "busy", reason, exitCode, phase: "before_save",
+    })
+    expect(machine.state.destroyed).toBe(0)
+    expect(result.decisions("busy", reason)).toBe(1)
+    expect(JSON.stringify(result.lines)).not.toContain(machine.workdir)
+  })
 
   test("a generation that isn't running any more is gone, and nothing is asked of it", async () => {
     const other = boxOf({ store: memory({ generation: 4 }) })

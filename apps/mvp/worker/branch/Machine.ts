@@ -407,7 +407,7 @@ export const COMMAND_EXEC_MS = 2 * 60_000
 const bounded = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.timeout(effect, COMMAND_EXEC_MS)
 
 /**
- * What a person's processes are doing: exit 3 when a terminal had input within `$1` seconds, or a non-root process
+ * What a person's processes are doing: exit 3 when a terminal had input within `$1` seconds, exit 4 when a non-root process
  * other than PID 1, a shell or tmux runs; exit 0 when nothing does. Run as root, which may read every tmux server.
  *
  * A zombie (state `Z`) doesn't count: it has exited. With `sleep infinity` as the box's PID 1, nothing reaped the orphans
@@ -427,9 +427,15 @@ for p in /proc/[0-9]*; do
   u=$(stat -c %u "$p" 2>/dev/null) || continue
   [ "$u" = 0 ] && continue
   [ "$(sed -n 's/^State:[[:space:]]*\\([A-Z]\\).*/\\1/p' "$p/status" 2>/dev/null)" = Z ] && continue
-  case "$(cat "$p/comm" 2>/dev/null)" in sh|bash|dash|tmux*|smithers-idle|"") ;; *) exit 3 ;; esac
+  case "$(cat "$p/comm" 2>/dev/null)" in sh|bash|dash|tmux*|smithers-idle|"") ;; *) exit 4 ;; esac
 done
 exit 0`
+
+/** Sleep decisions, by outcome and a bounded, content-free reason. */
+export const sleepDecisions = Metric.counter("smithers_sandbox_sleep_decisions", {
+  description: "Branch machine sleep decisions by outcome and reason",
+  incremental: true,
+})
 
 /**
  * Puts generation `generation` to sleep when nothing happened in it for `idleMs`: it saves the working copy, then
@@ -439,21 +445,33 @@ exit 0`
  */
 export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number): Effect.Effect<SleepOutcome, unknown, R> =>
   Effect.gen(function* () {
-    if ((yield* box.storage.get<number>("generation")) !== generation || !(yield* box.running)) return "gone" as const
-    // A save a closed terminal left due (`saveLater`) runs now, whether or not the machine then sleeps.
+    const decision = (outcome: SleepOutcome, reason: string, fields: Record<string, number | string> = {}) =>
+      Effect.as(Effect.andThen(
+        Metric.update(Metric.withAttributes(sleepDecisions, { outcome, reason }), 1),
+        Effect.logInfo("sandbox.object.sleep").pipe(Effect.annotateLogs({ generation, idleMs, outcome, reason, ...fields })),
+      ), outcome)
+    if ((yield* box.storage.get<number>("generation")) !== generation || !(yield* box.running)) {
+      return yield* decision("gone", "generation_gone")
+    }
+    // A save a closed terminal left due runs now, whether or not the machine then sleeps.
     if ((yield* box.storage.get<boolean>("saveDue")) === true) {
       yield* box.storage.delete("saveDue")
       yield* save(box, generation)
     }
     const now = yield* Clock.currentTimeMillis
     const activeAt = yield* box.storage.get<number>("activeAt")
-    if (now - (activeAt ?? 0) < idleMs) return "busy" as const
+    const inactiveMs = now - (activeAt ?? 0)
+    if (inactiveMs < idleMs) return yield* decision("busy", "recent_use", { inactiveMs })
     const probe = ["sh", "-c", PROBE, "probe", String(Math.ceil(idleMs / 1000))]
-    if ((yield* box.run(probe, "root")) !== 0) return "busy" as const
+    const probed = (exitCode: number, phase: string) => decision("busy",
+      exitCode === 3 ? "terminal_input" : exitCode === 4 ? "process" : "probe_failed", { exitCode, phase })
+    const before = yield* box.run(probe, "root")
+    if (before !== 0) return yield* probed(before, "before_save")
     const saved = yield* save(box, generation)
-    if (saved !== "saved" && saved !== "skipped") return "busy" as const
-    if ((yield* box.storage.get<number>("activeAt")) !== activeAt) return "busy" as const
-    if ((yield* box.run(probe, "root")) !== 0) return "busy" as const
+    if (saved !== "saved" && saved !== "skipped") return yield* decision("busy", "checkpoint", { checkpoint: saved })
+    if ((yield* box.storage.get<number>("activeAt")) !== activeAt) return yield* decision("busy", "use_during_save")
+    const after = yield* box.run(probe, "root")
+    if (after !== 0) return yield* probed(after, "after_save")
     yield* box.destroy
-    return "slept" as const
+    return yield* decision("slept", "idle", { inactiveMs })
   }).pipe(Effect.withSpan("sandbox.object.sleep", { attributes: { "smithers.sandbox.generation": generation } }))
