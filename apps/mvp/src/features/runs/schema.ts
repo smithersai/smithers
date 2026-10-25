@@ -143,3 +143,10 @@ export const RepoRunRow = Schema.Struct({
   updatedAt: Schema.String,
 })
 export type RepoRunRow = typeof RepoRunRow.Type
+
+/**
+ * A repository whose runs this tab has loaded, by its id (`repoId`): the rows the device keeps restored and the first
+ * sync answered, or failed. Until then its list doesn't say it has no runs.
+ */
+export const RepoRunsLoaded = Schema.Struct({ id: Schema.String })
+export type RepoRunsLoaded = typeof RepoRunsLoaded.Type

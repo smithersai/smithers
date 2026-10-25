@@ -36,6 +36,8 @@ export interface RunsQueries {
   readonly runs: Store["list"]["tanstack"]
   /** Every repository run the device holds (docs/features/actions.md), from when a list opened. */
   readonly repoRuns: Store["repoRunList"]["tanstack"]
+  /** The repositories whose runs have loaded: a list of none says so only then. */
+  readonly repoRunsLoaded: Store["repoRunsLoaded"]["tanstack"]
   /** This device's steers the outbox holds, and those the route answered (docs/features/runs.md#steering). */
   readonly steerSending: Effect.Success<ReturnType<typeof sendingQuery>>["tanstack"]
   readonly steerSent: Effect.Success<ReturnType<typeof sentQuery>>["tanstack"]
@@ -92,6 +94,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
           view: store.viewRow.tanstack,
           runs: store.list.tanstack,
           repoRuns: store.repoRunList.tanstack,
+          repoRunsLoaded: store.repoRunsLoaded.tanstack,
           steerSending: steerSending.tanstack,
           steerSent: steerSent.tanstack,
         },

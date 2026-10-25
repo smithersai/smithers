@@ -13,16 +13,16 @@ import { read as telemetry } from "../../test/otlp"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type * as Actor from "../../../worker/Actor.ts"
-import { asPerson, nodeDevice, openTab, openTestApp, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { asPerson, nodeDevice, openFaultyTab, openTab, openTestApp, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { ACTIONS_SHAPE_ROUTE, actionRunPath } from "../actions/contract"
-import { actsOf, hostOf, missingOf, repoRunRows, steerOpen, steersOf } from "./page"
+import { actsOf, hostOf, missingOf, repoRunRows, repoRunsLoaded, steerOpen, steersOf } from "./page"
 import { Runs } from "./runs"
 import { REMOTE_RUN_SHAPE_ROUTE, stopRoute } from "./contract"
 import { RunSteers } from "./steers"
 import { RunsStore } from "./store"
 import { openRun } from "./actions"
 import { RemoteRunsClient } from "./api"
-import type { Inspection, RepoRunRow, RunPage, SteerSending, SteerSent } from "./schema"
+import type { Inspection, RepoRunRow, RepoRunsLoaded, RunPage, SteerSending, SteerSent } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -261,6 +261,44 @@ describe("a TODO's run on Cloudflare", () => {
 })
 
 describe("a repository's run on Cloudflare", () => {
+  test("the list says a repository has no runs only once they have loaded, never while its shape is slow", async () => {
+    // Production on 2026-10-25: the actions shape took longer than the page waited, and the list said "No runs yet"
+    // for a repository whose run Electric already held.
+    const app = openTestApp()
+    runtimes.push(app)
+    const api = await app.runPromise(Effect.service(TestChatApi))
+    const tab = openFaultyTab(api)
+    runtimes.push(tab)
+    const faults = await tab.runPromise(Effect.service(ShapeSource.Faults))
+    // The tab's own store, over its faulty shape source, with its log lines collected.
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const runtime = ManagedRuntime.make(RunsStore.layer({ origin: CHATAPI_ORIGIN }).pipe(Layer.provideMerge(Layer.mergeAll(
+      Layer.succeed(BrowserEngine.BrowserEngine, await tab.runPromise(Effect.service(BrowserEngine.BrowserEngine))),
+      Layer.succeed(RemoteRunsClient, await tab.runPromise(Effect.service(RemoteRunsClient))),
+      Layer.succeed(ShapeSource.ShapeSource, await tab.runPromise(Effect.service(ShapeSource.ShapeSource))),
+      Persistence.memory,
+      Layer.succeed(FetchHttpClient.Fetch, api.fetch),
+      Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))]),
+    ))))
+    runtimes.push(runtime)
+    const store = await runtime.runPromise(Effect.service(RunsStore))
+    store.repoRunsLoaded.tanstack.startSyncImmediate()
+    store.repoRunList.tanstack.startSyncImmediate()
+    const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]
+    const loaded = () => repoRunsLoaded(store.repoRunsLoaded.tanstack.toArray as ReadonlyArray<RepoRunsLoaded>, owner, name)
+    await tab.runPromise(faults.stall())
+    await runtime.runPromise(store.openRepoRuns(owner, name))
+    // Electric's answer to the repository's shape is held, as on a slow link: nothing has loaded, so nothing is said.
+    await until(async () => expect((await tab.runPromise(faults.sent)).some((url) => url.pathname === ACTIONS_SHAPE_ROUTE)).toBe(true))
+    expect(loaded()).toBe(false)
+    expect(logs.filter((log) => log.message === "run.route.stage").map((log) => log.annotations.phase)).toEqual(["start", "start", "ready"])
+    await tab.runPromise(faults.heal)
+    await until(() => expect(loaded()).toBe(true))
+    expect(repoRunRows(store.repoRunList.tanstack.toArray as ReadonlyArray<RepoRunRow>, owner, name)).toEqual([])
+    await until(() => expect(logs.filter((log) => log.message === "run.route.stage").at(-1)?.annotations)
+      .toMatchObject({ stage: "repo-runs", phase: "loaded", rows: 0 }))
+  }, 60_000)
+
   test("a second repository's run syncs live to its device list and remains watchable", async () => {
     const t = await open(undefined, true)
     const ownRun = await Effect.runPromise(t.api.remote.repoRun("own"))

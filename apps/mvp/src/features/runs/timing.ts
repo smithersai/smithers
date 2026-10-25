@@ -2,7 +2,7 @@ import { Clock, Effect, Metric } from "effect"
 
 /** Content-free stages of a run navigation. Attempts are random navigation identifiers, never run or repository identifiers. */
 type Stage = "match" | "page" | "inspection" | "changes" | "repo-runs" | "render"
-type Phase = "start" | "ready" | "rows" | "failed" | "reused"
+type Phase = "start" | "ready" | "rows" | "loaded" | "failed" | "reused"
 const elapsed = Metric.histogram("smithers_run_route_ms", {
   description: "Elapsed milliseconds from run route match, by stage and phase",
   boundaries: [0, 10, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000],

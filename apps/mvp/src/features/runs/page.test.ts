@@ -2,7 +2,7 @@
 // selected one, the journal with what More read, the acts a run offers, and the list's rows.
 import { describe, expect, test } from "vitest"
 import { ACTIONS_LIMIT } from "../actions/contract"
-import { actsOf, hostOf, journalOf, listRows, missingOf, repoRunRows, retriesOf, selectedStep, STALLED_AFTER_MS } from "./page"
+import { actsOf, hostOf, journalOf, listRows, missingOf, repoRunRows, repoRunsLoaded, retriesOf, selectedStep, STALLED_AFTER_MS } from "./page"
 import type { Inspection, RepoRunRow, RunRow } from "./schema"
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
@@ -176,6 +176,12 @@ describe("a repository's run", () => {
       repoRun({ id: `r${i}`, createdAt: new Date(Date.UTC(2026, 9, 22, 0, 0, i)).toISOString() }))
     const shown = repoRunRows(many, "octo", "hello")
     expect([shown.length, shown[0]!.id]).toEqual([ACTIONS_LIMIT, `r${ACTIONS_LIMIT + 4}`])
+  })
+
+  test("a repository's runs have loaded only once its own id is among the loaded, whatever the case of its name", () => {
+    expect(repoRunsLoaded([], "octo", "hello")).toBe(false)
+    expect(repoRunsLoaded([{ id: "github/octo/other" }], "octo", "hello")).toBe(false)
+    expect(repoRunsLoaded([{ id: "github/octo/other" }, { id: "github/octo/hello" }], "Octo", "HELLO")).toBe(true)
   })
 })
 

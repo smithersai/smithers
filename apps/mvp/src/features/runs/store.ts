@@ -5,9 +5,10 @@ import { Clock, Context, Duration, Effect, Layer, Metric, Option, Scope, Semapho
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT } from "./contract"
 import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"
-import { type Inspection, type RepoName, RepoRunRow, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
+import { type Inspection, type RepoName, RepoRunRow, RepoRunsLoaded, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
 import { routeTiming, type RouteTiming } from "./timing"
 import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
+import { repoId } from "../repo/contract"
 
 // Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
 // open run's read, and the run view, all local collections read from this device's engine through `BrowserEngine`. A
@@ -66,6 +67,10 @@ export const runsQuery = (runs: Collection.Collection<RunRow, string>) => LiveQu
 /** Every repository run the device holds: the list filters it to the repository it shows. */
 export const repoRunsQuery = (rows: Collection.Collection<RepoRunRow, string>) =>
   LiveQuery.make((q) => q.from({ run: rows.tanstack }))
+
+/** Every repository whose runs this tab has loaded. */
+export const repoRunsLoadedQuery = (loaded: Collection.Collection<RepoRunsLoaded, string>) =>
+  LiveQuery.make((q) => q.from({ repo: loaded.tanstack }))
 
 /** A list row from the engine's summary of a run. */
 const rowOf = (run: Inspection["children"][number] | Omit<Inspection["run"], "input" | "result">): RunRow => ({
@@ -126,6 +131,8 @@ export class RunsStore extends Context.Service<
      * opens (`openRepoRuns`), then synced by Electric and kept on the device.
      */
     readonly repoRunList: Effect.Success<ReturnType<typeof repoRunsQuery>>
+    /** The repositories whose runs have loaded: until then a list of none says nothing (`repoRunsLoaded`). */
+    readonly repoRunsLoaded: Effect.Success<ReturnType<typeof repoRunsLoadedQuery>>
     /** Starts syncing this repository's runs, once per repository. */
     readonly openRepoRuns: (owner: string, name: string) => Effect.Effect<void>
     readonly loadRun: (runId: string, repo: RepoName | null) => Effect.Effect<void>
@@ -448,6 +455,11 @@ export class RunsStore extends Context.Service<
         schema: RepoRunRow,
         getKey: (row) => row.id,
       })
+      const loadedRepoRuns = yield* Collection.local<RepoRunsLoaded, string>({
+        id: "repo-runs-loaded",
+        schema: RepoRunsLoaded,
+        getKey: (row) => row.id,
+      })
       const opening = yield* Semaphore.make(1)
       const opened = new Set<string>()
       const openRepoRuns = (owner: string, name: string, route?: RouteTiming) => Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
@@ -479,6 +491,14 @@ export class RunsStore extends Context.Service<
           Effect.orDie,
           Effect.forkIn(scope, { startImmediately: true }),
         )
+        // Loaded: the device's rows restored and the first sync answered, or failed. A slow shape leaves the list saying
+        // nothing rather than that the repository has no runs.
+        yield* Effect.gen(function* () {
+          yield* Effect.ignore(rows.restored)
+          yield* Effect.ignore(rows.preload)
+          yield* Effect.orDie(loadedRepoRuns.insert({ id: repoId(owner, name) }))
+          yield* attempt.record("repo-runs", "loaded", (yield* rows.toArray).length)
+        }).pipe(Effect.forkIn(scope, { startImmediately: true }))
       }))
 
       return RunsStore.of({
@@ -489,6 +509,7 @@ export class RunsStore extends Context.Service<
         viewRow: yield* viewQuery(view),
         list: yield* runsQuery(runs),
         repoRunList: yield* repoRunsQuery(shownRepoRuns),
+        repoRunsLoaded: yield* repoRunsLoadedQuery(loadedRepoRuns),
         openRepoRuns,
         // Reads and live subscriptions belong to the store's scope, never the router's pending navigation.
         loadRun: (runId, repo) => Effect.gen(function* () {

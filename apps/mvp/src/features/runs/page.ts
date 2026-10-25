@@ -22,7 +22,7 @@ import { failedTodoRun, hasDomainOutcome, todoRetryPayload } from "./todoRun"
 import { ACTIONS_LIMIT, actionRunPath } from "../actions/contract"
 import { isoOf } from "../pulls/view"
 import { repoId } from "../repo/contract"
-import type { Inspection, RepoRunRow, RunPage, RunRow, SteerSending, SteerSent } from "./schema"
+import type { Inspection, RepoRunRow, RepoRunsLoaded, RunPage, RunRow, SteerSending, SteerSent } from "./schema"
 
 // A run's page as a frontend draws it (decision 0014 §5, docs/features/runs.md#the-run-page): pure functions from the
 // engine's read of a run to `@smthrs/ui`'s run-page rows. The steps are the plan's action calls and child boundaries,
@@ -258,6 +258,12 @@ export const repoRunStateOf = (status: string) =>
  * `/$owner/$repo/actions`: the repository's runs, newest first, at most `ACTIONS_LIMIT`, each named by its flow and
  * ref and opening its run page (docs/features/actions.md).
  */
+/** Whether this tab has loaded `owner/name`'s runs, so an empty list means the repository has none. */
+export const repoRunsLoaded = (loaded: ReadonlyArray<RepoRunsLoaded>, owner: string, name: string): boolean => {
+  const id = repoId(owner, name)
+  return loaded.some((row) => row.id === id)
+}
+
 export const repoRunRows = (rows: ReadonlyArray<RepoRunRow>, owner: string, name: string): ReadonlyArray<UiRunRow> => {
   const id = repoId(owner, name)
   return rows

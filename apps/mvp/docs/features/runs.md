@@ -191,9 +191,10 @@ repository, URL, payload or credential. `stage` is `match`, `page` (the local
 collection), `inspection` (each root, child or journal request), `changes` (each
 live run subscription), `repo-runs` (the repository list subscription), or `render`
 (the committed route frame). `phase` is `start`, `ready`, `rows` (first nonempty
-collection batch), `failed`, or `reused` (an existing subscription). For shapes,
-`ready` means collection construction, not remote synchronization; `rows` is
-applied-row evidence. `elapsedMs` starts at route entry and `rows` is a count. Empty subscriptions need not ever report rows. The first committed frame
+collection batch), `loaded` (a repository list's rows restored and its first sync
+answered or failed, with its row count), `failed`, or `reused` (an existing
+subscription). For shapes, `ready` means collection construction, not remote
+synchronization; `rows` is applied-row evidence. `elapsedMs` starts at route entry and `rows` is a count. Empty subscriptions need not ever report rows. The first committed frame
 records once per navigation. The real remote-run regression can save these
 content-free records with `RUN_ROUTE_TIMINGS=/tmp/run-route.json`.
 

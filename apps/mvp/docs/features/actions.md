@@ -47,7 +47,7 @@ The person's Stop and the agent's call run the same flow on this device's engine
 
 ## The browser
 
-`src/features/runs/` holds it: `RunsStore.openRepoRuns(owner, name)` starts syncing that repository's runs (`repo-runs:<owner>/<name>`, normalized to lower case and kept on the device) the first time its list opens, `repoRunRows` (`page.ts`) draws a repository's, and `openRun(runId, repo)` marks a run read on Cloudflare (`RunsStore.cloud`) with the runs it started. Screens: `src/screens/actions/`.
+`src/features/runs/` holds it: `RunsStore.openRepoRuns(owner, name)` starts syncing that repository's runs (`repo-runs:<owner>/<name>`, normalized to lower case and kept on the device) the first time its list opens, `repoRunRows` (`page.ts`) draws a repository's, `repoRunsLoaded` says whether they have loaded (the rows the device keeps restored and the first sync answered or failed; until then a list of none shows nothing rather than "No runs yet"), and `openRun(runId, repo)` marks a run read on Cloudflare (`RunsStore.cloud`) with the runs it started. Screens: `src/screens/actions/`.
 
 ## Observability
 
