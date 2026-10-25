@@ -5,7 +5,7 @@
 // `Redacted` sentinel and its first step answers more than 16 KiB, so the read proves what leaves the engine.
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
-import { Action, Flow, FlowRuntime, Interpreter, Sleep } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Database, EngineStore, Journal } from "@smthrs/flows"
 import { Notification, NotificationQueue } from "@smthrs/notifications"
 import { Logger as StructuredLogger } from "@smthrs/observability"
@@ -82,6 +82,28 @@ const Reviewed = Flow.make("remote-runs-test/Reviewed", {
   body: Node.capture({}, ({ pauseMs }) => Implemented.call({}).pipe(Node.andThen(Sleep.action.call({ millis: pauseMs })))),
 })
 
+class ChecksFailed extends Schema.TaggedError<ChecksFailed>()("remote-runs-test/ChecksFailed", {
+  code: Schema.Literal("checks_failed"),
+}) {}
+
+/** A TODO's checks step: it logs what it runs, a credential among it, and fails on both of its attempts. */
+const Check = Action.make("remote-runs-test/Check", {
+  payload: {},
+  success: Schema.String,
+  error: ChecksFailed,
+  retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 }),
+})
+
+/** A run whose one step fails, as a TODO's failed checks do. */
+const Checked = Flow.make("remote-runs-test/Checked", {
+  description: "A run whose checks fail.",
+  modelInvocable: false,
+  payload: {},
+  success: Schema.String,
+  error: ChecksFailed,
+  body: Node.capture({}, () => Check.call({})),
+})
+
 /** While set, `Produce` waits for it: a run holds in its first step until the test releases it. */
 let producing: { readonly wait: Promise<void>; readonly entered: () => void } | undefined
 
@@ -91,6 +113,16 @@ const registration = Layer.mergeAll(
     return producing?.wait ?? Promise.resolve()
   }).pipe(Effect.as("x".repeat(size)))),
   Implemented.toLayer(() => Effect.succeed("done")),
+  // A step that logs names and codes, as app steps do, plus a credential three ways the engine must redact.
+  Check.toLayer(() =>
+    Effect.gen(function* () {
+      yield* Effect.logInfo("running checks", { suite: "unit" })
+      yield* Effect.logInfo("token", Redacted.make(SENTINEL)).pipe(Effect.annotateLogs({ apiKey: SENTINEL }))
+      yield* Effect.logInfo(`Authorization: Bearer ${SENTINEL}`)
+      yield* Effect.logWarning("checks failed").pipe(Effect.annotateLogs({ code: "checks_failed", failures: 2 }))
+      return yield* Effect.fail(new ChecksFailed({ code: "checks_failed" }))
+    })),
+  Interpreter.layer(Checked, { callbackIdentity: "stable" }),
   Interpreter.layer(Child, { callbackIdentity: "stable" }),
   Interpreter.layer(Watched, { callbackIdentity: "stable" }),
   Interpreter.layer(Reviewed, { callbackIdentity: "stable" }),
@@ -124,6 +156,8 @@ interface Engine {
   readonly cancel: (executionId: string) => Promise<void>
   /** Starts `Reviewed` as `executionId` and returns at once. */
   readonly review: (executionId: string, pauseMs: number) => Promise<void>
+  /** Runs `Checked` as `executionId` until it fails. */
+  readonly check: (executionId: string) => Promise<void>
   /** A run's status in the engine. */
   readonly status: (executionId: string) => Promise<string | undefined>
   /** The runs a run started. */
@@ -154,6 +188,8 @@ const withEngine = <A>(body: (engine: Engine) => Promise<A>): Promise<A> =>
                 Effect.ignore(flows.execute(Reviewed, { executionId, payload: { pauseMs } }).pipe(Effect.provide(context))),
                 scope,
               ))),
+            check: (executionId) =>
+              Effect.runPromise(Effect.ignore(flows.execute(Checked, { executionId, payload: {} }).pipe(Effect.provide(context)))),
             status: (executionId) => Effect.runPromise(engine.status(executionId)),
             children: (executionId) =>
               Effect.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -223,7 +259,7 @@ const routes = async (
         database: engine.database,
         writer: engine.writer,
         schema: engine.schema,
-        flows: [Watched, Reviewed],
+        flows: [Watched, Reviewed, Checked],
         stop: options.stop ?? (() => Effect.void),
       }, roles)),
     ),
@@ -346,6 +382,52 @@ describe("GET /api/remote-runs/<runId>", () => {
       expect(h.spans.filter((span) => span.name === "run.inspect")).toHaveLength(3)
       expect(recorded(h)).not.toContain(SENTINEL)
       expect(recorded(h)).not.toContain("xxxxxxxx")
+    })
+  })
+
+  test("a TODO's failed step carries its log lines, attributed to its attempts, with a credential it logged redacted", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      await engine.check(runId)
+      expect(await engine.status(runId)).toBe("failed")
+      const h = await routes(engine, { actor: member })
+      type Read = { readonly text: string; readonly read: EngineStore.RunInspection.Inspection }
+      const read = async (): Promise<Read> => {
+        const response = await h.fetch(remoteRunRoute(runId))
+        const text = await response.text()
+        return { text, read: JSON.parse(text) as EngineStore.RunInspection.Inspection }
+      }
+      const logsOf = ({ read }: Read) =>
+        read.journal.events
+          .filter((event) => event.eventType === Journal.TelemetryLog.eventType)
+          .map((event) => JSON.parse(event.payload.text) as Journal.TelemetryLog.Log)
+      // The lossy channel commits after the step settles, so the read is retried until its last record is in.
+      let last: Read = await read()
+      await eventually(async () => {
+        last = await read()
+        return logsOf(last).length === 8
+      }, 10_000)
+      expect(last.text).not.toContain(SENTINEL)
+      const step = last.read.steps.find((candidate) => candidate.action === "remote-runs-test/Check")!
+      expect([step.status, step.attempts.map((recorded) => recorded.state)]).toEqual(["failed", ["failed", "failed"]])
+      // Joined as the run page joins them: by the digests the step's node settled with.
+      const settled = last.read.journal.events
+        .filter((event) => event.eventType === "flows.engine.node-settled")
+        .map((event) => JSON.parse(event.payload.text) as { nodeId: string; stepKeyDigests?: ReadonlyArray<string> })
+        .find((node) => node.nodeId === step.nodeId)!
+      const lines = logsOf(last).filter((log) =>
+        log.annotations.runId === runId && settled.stepKeyDigests!.includes(log.annotations.stepKeyDigest as string)
+      )
+      expect(lines.map((log) => [log.annotations.attempt, log.level, log.message])).toEqual([1, 2].flatMap((tried) => [
+        [tried, "Info", ["running checks", { suite: "unit" }]],
+        [tried, "Info", ["token", "<redacted>"]],
+        [tried, "Info", ["Authorization: Bearer [REDACTED_TOKEN]"]],
+        [tried, "Warn", ["checks failed"]],
+      ]))
+      expect(lines[1]!.annotations.apiKey).toBe("[REDACTED]")
+      expect(lines[3]!.annotations).toMatchObject({ code: "checks_failed", failures: 2 })
+      expect(recorded(h)).not.toContain(SENTINEL)
     })
   })
 

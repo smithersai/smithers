@@ -7,6 +7,7 @@ import { attemptWords, stepDuration, stepElapsed, type AttemptRow, type StepRow 
 import { SpanDetail, type WaitData } from "../run-page/SpanDetail";
 import { useInjectUiCss } from "../styles";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../tabs";
+import { StepLogs } from "./StepLogs";
 export type StepInspectorProps = Omit<ComponentProps<"section">, "children"> & {
   step: StepRow;
   input: JsonValueData | null;
@@ -27,7 +28,7 @@ export function StepInspector({ step, input, output, logs, attempts, now, wait, 
       <TabsList><TabsTrigger value="output">Output</TabsTrigger><TabsTrigger value="input">Input</TabsTrigger><TabsTrigger value="logs" count={logs.length}>Logs</TabsTrigger><TabsTrigger value="attempts" count={attempts.length}>Attempts</TabsTrigger></TabsList>
       <TabsContent value="output">{output === null ? null : <JsonValue label="Output" value={output} defaultOpen />}</TabsContent>
       <TabsContent value="input">{input === null ? null : <JsonValue label="Input" value={input} defaultOpen />}</TabsContent>
-      <TabsContent value="logs">{logs.map((value, i) => <JsonValue key={i} label={`#${i+1}`} value={value} defaultOpen />)}</TabsContent>
+      <TabsContent value="logs"><StepLogs lines={logs} now={now} /></TabsContent>
       <TabsContent value="attempts"><ol aria-label="Attempts">{attempts.map((a) => <li key={a.attempt}>{attemptWords(a)} · {stepDuration(Math.max(0, (a.finishedAtMs ?? now) - a.startedAtMs))}</li>)}</ol></TabsContent>
     </Tabs>
   </section>;

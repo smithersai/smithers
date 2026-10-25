@@ -1,7 +1,6 @@
-import { Keys } from "@smthrs/flows"
+import { Journal } from "@smthrs/flows"
 import { InspectionJournal, RunTrace } from "@smthrs/gateway"
 import type { GraphEdge, GraphNode, JsonValueData, StepRow } from "@smthrs/ui"
-import { Option, Schema } from "effect"
 import { runPath } from "./contract"
 import { journalOf, type PageStep } from "./page"
 import type { Inspection, RunPage } from "./schema"
@@ -85,12 +84,14 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
   const dispatchId = (owner: unknown, generation: unknown, digest: unknown) =>
     JSON.stringify([owner, generation, digest])
   const generations = new Map(records.map((row) => [row.sequence, record(row.payload).generation]))
+  // The engine journals what an attempt's body logs to its run, annotated with
+  // the dispatch digest settled nodes carry as `stepKeyDigests` (engine-store `StepLogs`).
   for (const event of events) {
-    if (event.eventType !== "telemetry.log" || (at !== null && event.seq > at)) continue
+    if (event.eventType !== Journal.TelemetryLog.eventType || (at !== null && event.seq > at)) continue
     const annotations = record(record(parsed(event.payload)).annotations)
-    const key = Schema.decodeUnknownOption(Keys.StoredKey)(annotations.stepKey)
-    if (Option.isNone(key) || annotations.runId !== event.runId) continue
-    const id = dispatchId(event.runId, generations.get(event.seq), Keys.digest(key.value))
+    const digest = annotations.stepKeyDigest
+    if (typeof digest !== "string" || digest.length === 0 || annotations.runId !== event.runId) continue
+    const id = dispatchId(event.runId, generations.get(event.seq), digest)
     const values = logsByDispatch.get(id) ?? []
     values.push(event.payload)
     logsByDispatch.set(id, values)

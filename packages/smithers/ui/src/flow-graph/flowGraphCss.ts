@@ -29,6 +29,15 @@ export const flowGraphCss = `
 .sui-step-inspector [data-slot=tabs-list] { display:flex; overflow-x:auto; }
 .sui-step-inspector [data-slot=tabs-trigger] { padding-inline:10px; font-size:11px; }
 .sui-step-inspector [data-slot=tabs-content] { padding:12px; min-width:0; }
+.sui-step-logs { margin:0; padding:0; list-style:none; font-family:${t.fontMono}; font-size:11px; line-height:1.6; min-width:0; }
+.sui-step-logs li { display:flex; flex-wrap:wrap; column-gap:8px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.sui-step-logs time,.sui-step-log-field span { color:${t.mutedForeground}; font-variant-numeric:tabular-nums; }
+.sui-step-log-level { font-weight:650; }
+.sui-step-logs [data-level=WARN] .sui-step-log-level { color:${t.warning}; }
+.sui-step-logs [data-level=ERROR] .sui-step-log-level,.sui-step-logs [data-level=FATAL] .sui-step-log-level,.sui-step-log-error { color:${t.destructive}; }
+.sui-step-logs [data-level=DEBUG],.sui-step-logs [data-level=TRACE] { color:${t.mutedForeground}; }
+.sui-step-log-error { flex-basis:100%; padding-inline-start:2ch; }
+.sui-step-logs [data-kind=attempt] { color:${t.mutedForeground}; font-weight:650; padding-top:6px; }
 .sui-waterfall-track { position:relative; }
 .sui-waterfall-segment { position:absolute; top:25%; height:50%; background:${t.primary}; border-radius:2px; min-width:2px; }
 .sui-waterfall-segment[data-state=failed] { background:${t.destructive}; }

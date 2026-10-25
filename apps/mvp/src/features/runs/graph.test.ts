@@ -131,12 +131,13 @@ test("recorded attempt boundaries, wait metadata, clipped output and node logs h
     attempts: 1,
     stepKeyDigests: ["a".repeat(64)]
   })
+  // The engine journals an attempt body's records annotated with the dispatch digest the node settles with.
   const log = event(6, "telemetry.log", {
-    annotations: { runId: "r", stepKey: `key1_${"a".repeat(64)}` },
+    annotations: { runId: "r", stepKeyDigest: "a".repeat(64), attempt: 1 },
     message: "waiting"
   })
   const unrelated = event(7, "telemetry.log", {
-    annotations: { runId: "r", stepKey: `key1_${"b".repeat(64)}` },
+    annotations: { runId: "r", stepKeyDigest: "b".repeat(64) },
     message: "other"
   })
   const clipped = event(8, "flows.engine.node-settled", {
@@ -176,18 +177,23 @@ test("recorded attempt boundaries, wait metadata, clipped output and node logs h
   expect(live.steps[1]!.wait).toBeNull() // No current wait metadata leaks into a replayed node.
   expect(live.steps[1]!.logs).toEqual([log.payload])
   const repeated = event(9, "telemetry.log", {
-    annotations: { runId: "r", stepKey: `key1_${"a".repeat(64)}` },
+    annotations: { runId: "r", stepKeyDigest: "a".repeat(64), attempt: 2 },
     message: "still waiting"
   })
   const invalid = event(10, "telemetry.log", {
-    annotations: { runId: "r", stepKey: "invalid" },
+    annotations: { runId: "r", stepKeyDigest: "" },
     message: "unattributed"
   })
+  // A stored key is not the digest a node settles with, so it attributes nothing.
+  const keyed = event(12, "telemetry.log", {
+    annotations: { runId: "r", stepKey: `key1_${"a".repeat(64)}`, stepKeyDigest: 7 },
+    message: "keyed"
+  })
   const foreign = event(11, "telemetry.log", {
-    annotations: { runId: "foreign", stepKey: `key1_${"a".repeat(64)}` },
+    annotations: { runId: "foreign", stepKeyDigest: "a".repeat(64) },
     message: "foreign"
   })
-  expect(graphOf(page(inspection, [waits, log, repeated, invalid, foreign]), null, 3000).steps[1]!.logs).toEqual([
+  expect(graphOf(page(inspection, [waits, log, repeated, invalid, foreign, keyed]), null, 3000).steps[1]!.logs).toEqual([
     log.payload,
     repeated.payload
   ])
