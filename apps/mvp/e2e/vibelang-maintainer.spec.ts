@@ -1,14 +1,14 @@
 import { expect, step, test } from "./fixtures"
 import { broken, requires } from "./target"
-import { as, contribute, homeOf, landing, openHome, REPO, viewsOf } from "./vibelang"
+import { as, contribute, homeOf, landing, openHome, REPO, requiresMaintainer, viewsOf } from "./vibelang"
 
 // The maintainer's journey on the VibeLang repository (rulings SCOPE-13, SCOPE-14): a Maintainer opens
 // smithersai/vibelang on Today (New branch with its key, the issues, the runs), then Contribute and the landing page;
 // switches down to the contributor and user views and back; and presses B for a new branch's workspace. Locally the
-// Maintainer is local development's; against a deployment, the run's test account, a Maintainer or above on the
-// deployment's repository. Other-repository deployments are marked broken until home roles are resolved per repository.
-// New branch makes the branch on Code Storage's mirror of VibeLang,
-// cloning it first when this deployment hasn't, so it needs Code Storage.
+// Maintainer is local development's; against a deployment, the run's test account, which must be a Maintainer or Admin
+// on smithersai/vibelang itself (its GitHub permission there, decision 0079): until it is, these tests skip, blocked.
+// New branch makes the branch on Code Storage's mirror of VibeLang, cloning it first when this deployment hasn't, so it
+// needs Code Storage.
 
 broken("vibelangRoles")
 
@@ -17,7 +17,7 @@ test.describe("VibeLang on Smithers", () => {
     "maintainer: Today first, then Contribute and the landing page; View as Contributor and User, and back",
     { annotation: { type: "summary", description: "A maintainer sees Today first, then Contribute and the landing page, and switches down to each view and back." } },
     async ({ page }) => {
-      requires("maintainer")
+      await requiresMaintainer(page)
       test.setTimeout(180_000)
       await as(page, "maintainer")
       await openHome(page, "maintainer")
@@ -56,7 +56,8 @@ test.describe("VibeLang on Smithers, New branch", () => {
     "maintainer: B makes a branch at main and opens its workspace",
     { annotation: { type: "summary", description: "A maintainer presses B on VibeLang's home: a new branch at main, and its workspace opens." } },
     async ({ page }) => {
-      requires("maintainer", "codeStorage")
+      requires("codeStorage")
+      await requiresMaintainer(page)
       test.setTimeout(900_000)
       await as(page, "maintainer")
       await openHome(page, "maintainer")

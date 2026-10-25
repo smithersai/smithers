@@ -27,6 +27,8 @@ import { Runs } from "../src/features/runs/runs"
 import { Secrets } from "../src/features/secrets/secrets"
 import { Attention } from "../src/features/attention/attention"
 import { Chat } from "../src/features/chat/chat"
+import { Spend } from "../src/features/spend/spend"
+import { Views } from "../src/features/views/views"
 
 // Real feature collections and views. These are stored row fixtures, with no module mocks or intercepted requests.
 test("direct feature pages keep navigation, fence the deployment role, and name GitHub instead of an unobservable write", async () => {
@@ -48,6 +50,8 @@ test("direct feature pages keep navigation, fence the deployment role, and name 
       secrets: Effect.service(Secrets),
       attention: Effect.service(Attention),
       chat: Effect.service(Chat),
+      spend: Effect.service(Spend),
+      views: Effect.service(Views),
     }))
     const [repo, auth, todos] = await app.runPromise(Effect.all([Effect.service(RepoStore), Effect.service(AuthStore), Effect.service(TodosStore)]))
     const home = homeStore

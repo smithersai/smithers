@@ -443,7 +443,7 @@ The browser's read of a repository's homes and its actions ([home.md](features/h
 | `home.answer` | log and span; Warn `unreadable` | `outcome` (`declared`, `absent`, `unreadable`), `audience`, `sections`, `status`, `durationMs`: ChatApi's answer of who the person is and the curated home |
 | `home.action` | log and span; Warn on a failure | `flow`, `outcome` (`done` or the flow's refusal), `durationMs`; the span's `smithers.home.flow`, `smithers.home.outcome` |
 | `smithers_web_home_resolves`, `smithers_web_home_answers`, `smithers_web_home_actions` | counters | `outcome`; the last also `flow` |
-| `home.curated` (ChatApi) | log and span; Warn `unavailable`, `invalid` | `outcome` (`curated`, `absent`, `invalid`, `unavailable`, `method`), `audience`, `rolesHere` (whether the repository is the one roles are read on), `sections` sent, `hidden` held back, `status`, `durationMs`; the span's `smithers.home.outcome`, `smithers.home.audience` |
+| `home.curated` (ChatApi) | log and span; Warn `unavailable`, `invalid`, `role_unavailable` | `outcome` (`curated`, `absent`, `invalid`, `unavailable`, `role_unavailable`, `method`), `audience`, `source` (`signed_out`, `role`, `no_role_here`), `refused` (`RepoRoles`' refusal code, decision 0079), `sections` sent, `hidden` held back, `status`, `durationMs`; the span's `smithers.home.outcome`, `smithers.home.audience`; the role's own read is a `github.repo_role` span and line |
 | `smithers_home_curated_requests` (ChatApi) | counter | `outcome`, `audience` |
 
 `src/features/home/home.test.ts` asserts each outcome's record and count, and that a sentinel in the home's text, title, link and Markdown file reaches no log line; `worker/home/Api.test.ts` that no section's words reach ChatApi's records.

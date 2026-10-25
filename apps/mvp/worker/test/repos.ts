@@ -28,6 +28,8 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { repoId, REPOSITORIES_TABLE } from "../../src/features/repo/contract.ts"
 import * as Actor from "../Actor.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
+import { repositoryOf } from "../github/Config.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
 import * as DocsApi from "../docs/Api.ts"
 import * as DocsSource from "../docs/Source.ts"
 import { FlowStarter, StartConflict } from "../Flows.ts"
@@ -283,10 +285,13 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     ),
   )
   // ChatApi's home route, which worker/ChatApi.ts routes before RepoApi's: who the asker is, and the curated homes.
-  const home = HomeApi.make({
-    roles: { id: repoId(...((options.roles ?? "smithersai/smithers").split("/") as [string, string])) },
-    ...(options.homes === undefined ? {} : { files: options.homes }),
-  })
+  // Without the App, a person has a role only on the deployment's own repository (decision 0079): RepoRoles answers
+  // `not_configured` on any other, and the home shows them a visitor's sections there.
+  const roles = await runtime.runPromise(observed(RepoRoles.make(database, {
+    repository: repositoryOf(options.roles ?? "smithersai/smithers"),
+    app: Option.none(),
+  })))
+  const home = HomeApi.make({ roles, ...(options.homes === undefined ? {} : { files: options.homes }) })
   const homeHandler = HttpEffect.toWebHandler(
     observed(
       home.fetch.pipe(

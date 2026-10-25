@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
-import { expect, step } from "./fixtures"
-import { baseURL, me, target } from "./target"
+import { expect, step, test } from "./fixtures"
+import { baseURL, describeNeed, requires, target } from "./target"
 
 // The VibeLang repository on Smithers (rulings SCOPE-12, SCOPE-13): what the visitor, contributor and maintainer
 // journeys share. `smithersai/vibelang` is public and declares its own home in `.smithers/home.json`: a landing page
@@ -15,7 +15,8 @@ export type Who = "visitor" | "contributor" | "maintainer"
 /**
  * Signs this browser in as `who`. Locally, local development's people (worker/DevChatApi.ts): signed out, a Member, a
  * Maintainer. Against a deployment a visitor is this browser without the run's session cookie; a contributor or a
- * maintainer is the run's test account, whose own view is its role's (`requires("member")` or `"maintainer"`).
+ * maintainer is the run's test account, whose own view is the one its GitHub permission on smithersai/vibelang gives
+ * (decision 0079): any signed-in account is at least a contributor on a public repository the App is installed on.
  */
 export const as = async (page: Page, who: Who) => {
   if (target === "deployment") {
@@ -28,12 +29,37 @@ export const as = async (page: Page, who: Who) => {
   await page.context().addCookies([{ name, value, url: baseURL, secure }])
 }
 
-/** The view a person opens on: a deployment's test account's role decides it, locally the person `as` signed in. */
-export const ownView = (who: Who): "everyone" | "contributor" | "maintainer" => {
+export type View = "everyone" | "contributor" | "maintainer"
+
+/** The view the deployment opens VibeLang on for this browser's session (`GET /api/repos/<o>/<n>/home`). */
+const deploymentView = async (page: Page): Promise<View> => {
+  const response = await page.request.get(`${baseURL}/api/repos/smithersai/vibelang/home`)
+  expect(response.status(), "the deployment answers who the test account is on smithersai/vibelang").toBe(200)
+  return ((await response.json()) as { readonly audience: View }).audience
+}
+
+/**
+ * The view a person opens on: locally the person `as` signed in; against a deployment, the test account's, which its
+ * GitHub permission on smithersai/vibelang decides. A signed-in account is never a visitor there: GitHub gives anyone
+ * `read` on a public repository, a contributor's view (decision 0079); a role on the deployment's own repository
+ * decides nothing.
+ */
+export const ownView = async (page: Page, who: Who): Promise<View> => {
   if (who === "visitor") return "everyone"
   if (target === "local") return who
-  const role = me().role
-  return role === "admin" || role === "maintainer" ? "maintainer" : "contributor"
+  const view = await deploymentView(page)
+  expect(view, "a signed-in account opens smithersai/vibelang on a contributor's view or higher").not.toBe("everyone")
+  return view
+}
+
+/**
+ * Declares, in a test's body, that it needs a Maintainer or Admin of smithersai/vibelang: local development's
+ * Maintainer, or against a deployment the test account when the deployment opens VibeLang for it on the maintainer
+ * view; otherwise the test skips, blocked until someone with admin there grants the account maintain.
+ */
+export const requiresMaintainer = async (page: Page) => {
+  if (target === "local") return requires("vibelangMaintainer")
+  test.skip((await deploymentView(page)) !== "maintainer", describeNeed("vibelangMaintainer"))
 }
 
 export const homeOf = (page: Page) => page.getByRole("region", { name: "Home", exact: true })

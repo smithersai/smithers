@@ -1,52 +1,90 @@
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Home } from "@smthrs/views"
-import { Effect, Layer, Logger, Metric, Schema, Tracer } from "effect"
+import { Effect, Layer, Logger, Metric, Option, Redacted, Schema, Tracer } from "effect"
 import { HttpEffect } from "effect/http"
-import { describe, expect, test } from "vitest"
+import { beforeEach, describe, expect, test } from "vitest"
+import * as Database from "../../db/Database.ts"
+import * as TestDatabase from "../../db/TestDatabase.ts"
 import { HomeAnswer } from "../../src/features/home/schema.ts"
 import * as Actor from "../Actor.ts"
-import { signedIn } from "../test/harness.ts"
+import { repositoryOf } from "../github/Config.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
+import { reset, sql } from "../github/test/fixtures.ts"
+import { app } from "../github/test/harness.ts"
+import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
+import { signedIn, testFile } from "../test/harness.ts"
 import { handles, make, parseHomePath, requests } from "./Api.ts"
 import * as Curated from "./Curated.ts"
 
 // `GET /api/repos/<owner>/<name>/home`: who the asker is and the curated home, with only the sections their audience
-// may see. The handler runs as ChatApi runs it, with who is asking from a `Sessions` layer: signed out, each role, or
-// a session store that can't answer (test.faults-by-injection).
+// may see. The handler runs as ChatApi runs it, with who is asking from a `Sessions` layer (signed out, each role, or
+// a session store that can't answer) and their role on the routed repository from the real `RepoRoles` (decision
+// 0079) over this file's schema of the compose Postgres and the scripted GitHub: the session's role on the
+// deployment's own repository, GitHub's on any other. Unhappy paths give it a faulty GitHub, an unreachable Postgres
+// or a session store that can't answer (test.faults-by-injection).
 
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
 
-const person = (role: Actor.Role | null): Actor.Actor => ({ subject: { kind: "person", id: "p1" }, role })
+const runtime = testFile("home_roles")
+
+/** Maya as sign-in recorded her: her person id, login and GitHub account (the one the scripted GitHub gives her). */
+const MAYA = "4b6d2f1a-8c3e-4a5b-9d7f-0e1a2b3c4d5e"
+beforeEach(async () => {
+  await reset(runtime)
+  await sql(runtime, `INSERT INTO people (id, github_id, github_login) VALUES ('${MAYA}', ${accountIdOf("maya")}, 'maya')`)
+})
+
+/** Maya, signed in with `role` on the deployment's own repository. */
+const person = (role: Actor.Role | null): Actor.Actor => ({ subject: { kind: "person", id: MAYA }, role, login: "maya" })
 
 const unavailable = Layer.succeed(
   Actor.Sessions,
   Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }),
 )
 
-/** The repository sign-in reads roles on in these tests, unless one says otherwise: Effect's. */
-const EFFECT_ROLES = { id: "github/effect-ts/effect" }
+const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+
+let key: Redacted.Redacted<string> | undefined
+
+interface RouteOptions {
+  readonly sessions?: Layer.Layer<Actor.Sessions>
+  readonly files?: ReadonlyArray<Curated.CuratedFile>
+  /** The deployment's own repository (`GITHUB_REPOSITORY`), `owner/name`: Effect's unless set. */
+  readonly own?: string
+  /** The scripted GitHub the App reads roles on other repositories from; none, no App on this deployment. */
+  readonly github?: ScriptedGitHub
+  /** Postgres in place of the file's schema, such as one that can't be reached. */
+  readonly database?: typeof unreachable
+  /** Local development without the App: the session's role holds everywhere (worker/DevChatApi.ts). */
+  readonly local?: boolean
+}
 
 /**
- * The route over `sessions` and `files`, with roles read on `roles` (Effect unless set), recording what it logs, spans
- * and counts.
+ * The route over `sessions` and `files`, with roles from the real `RepoRoles`, recording what it logs, spans and
+ * counts.
  */
-const route = (
-  sessions: Layer.Layer<Actor.Sessions> = Actor.signedOut,
-  files?: ReadonlyArray<Curated.CuratedFile>,
-  roles: { readonly id: string } = EFFECT_ROLES,
-) => {
+const route = async (options: RouteOptions = {}) => {
   const logs: Array<StructuredLog> = []
   const spans: Array<Tracer.NativeSpan> = []
   const registry: Metric.MetricRegistry = new Map()
   const tracer = Tracer.make({
-    span(options) {
-      const span = new Tracer.NativeSpan(options)
+    span(spanOptions) {
+      const span = new Tracer.NativeSpan(spanOptions)
       spans.push(span)
       return span
     },
   })
+  const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  key ??= await appKey()
+  const roles = await runtime.runPromise(RepoRoles.make(options.database ?? scratch.database, {
+    repository: repositoryOf(options.own ?? "Effect-TS/effect"),
+    app: options.github === undefined ? Option.none() : Option.some(app({ privateKey: key })),
+    ...(options.github === undefined ? {} : { http: options.github.http }),
+    ...(options.local === undefined ? {} : { local: options.local }),
+  }))
   const handler = HttpEffect.toWebHandler(
-    make({ roles, ...(files === undefined ? {} : { files }) }).fetch.pipe(
-      Effect.provide(sessions),
+    make({ roles, ...(options.files === undefined ? {} : { files: options.files }) }).fetch.pipe(
+      Effect.provide(options.sessions ?? Actor.signedOut),
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))])),
       Effect.provideService(Metric.MetricRegistry, registry),
@@ -56,6 +94,7 @@ const route = (
     get: (path: string, init?: RequestInit) => handler(new Request(`http://chat.test${path}`, init)),
     logs,
     spans,
+    line: () => logs.find((log) => log.message === "home.curated"),
     count: (attributes: Record<string, string>) =>
       Effect.runSync(
         Metric.value(Metric.withAttributes(requests, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
@@ -65,6 +104,22 @@ const route = (
 
 const EFFECT = "/api/repos/Effect-TS/effect/home"
 
+/** The scripted GitHub's repository, where the App is installed: another repository than the deployment's own. */
+const WIDGETS = "/api/repos/acme/widgets/home"
+
+/** A curated home for acme/widgets with a section for each audience, as Effect's has. */
+const WIDGETS_HOME: ReadonlyArray<Curated.CuratedFile> = [{
+  repository: "acme/widgets",
+  defaultBranch: "main",
+  home: {
+    sections: [
+      { title: "Today", audience: "maintainer", blocks: [{ type: "runs" }] },
+      { title: "Your work", audience: "contributor", blocks: [{ type: "stack" }] },
+      { blocks: [{ type: "text", text: "Hi" }] },
+    ],
+  },
+}]
+
 const answerOf = async (response: Response) => Schema.decodeUnknownSync(HomeAnswer)(await response.json())
 
 /** Each section the answer holds, as `audience:title`. */
@@ -73,7 +128,7 @@ const shape = (answer: HomeAnswer) =>
 
 describe("GET /api/repos/<owner>/<name>/home", () => {
   test("signed out: everyone's audience, and only everyone's sections of the curated home", async () => {
-    const r = route()
+    const r = await route()
     const response = await r.get(EFFECT)
     expect(response.status).toBe(200)
     expect(response.headers.get("cache-control")).toBe("no-store")
@@ -85,35 +140,19 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
     expect(shape(answer)).toEqual(["everyone:"])
     // Nothing of the Maintainers' or Members' sections reaches the browser: not a title, not a block.
     for (const hidden of ["Today", "Your work", "\"issues\"", "\"runs\"", "\"stack\""]) expect(text).not.toContain(hidden)
+    expect(r.line()).toMatchObject({ annotations: { source: "signed_out" } })
   })
 
-  test("each role sees its own sections and the wider ones, in the file's order", async () => {
-    const seen = async (role: Actor.Role | null) => shape(await answerOf(await route(signedIn(person(role))).get(EFFECT)))
+  test("each role on the deployment's own repository sees its own sections and the wider ones, in the file's order", async () => {
+    const seen = async (role: Actor.Role | null) =>
+      shape(await answerOf(await (await route({ sessions: signedIn(person(role)) })).get(EFFECT)))
     expect(await seen(null)).toEqual(["everyone:"])
     expect(await seen("guest")).toEqual(["contributor:Your work", "everyone:"])
     expect(await seen("member")).toEqual(["contributor:Your work", "everyone:"])
     expect(await seen("maintainer")).toEqual(["maintainer:Today", "contributor:Your work", "everyone:"])
     expect(await seen("admin")).toEqual(["maintainer:Today", "contributor:Your work", "everyone:"])
-    const answer = await answerOf(await route(signedIn(person("maintainer"))).get(EFFECT))
+    const answer = await answerOf(await (await route({ sessions: signedIn(person("maintainer")) })).get(EFFECT))
     expect(answer.audience).toBe("maintainer")
-  })
-
-  test("a role on another repository counts for nothing here: its Maintainer sees everyone's sections alone", async () => {
-    // Sign-in read the role on the deployment's repository, not on Effect's (docs/features/sign-in.md#roles-and-role-checks).
-    const elsewhere = { id: "github/smithersai/smithers" }
-    for (const role of ["admin", "maintainer", "member", "guest"] as const) {
-      const r = route(signedIn(person(role)), undefined, elsewhere)
-      const response = await r.get(EFFECT)
-      const text = await response.clone().text()
-      expect([role, await answerOf(response)]).toMatchObject([role, { audience: "everyone" }])
-      for (const hidden of ["Today", "Your work"]) expect(text).not.toContain(hidden)
-      expect(r.logs.find((log) => log.message === "home.curated")).toMatchObject({
-        annotations: { outcome: "curated", audience: "everyone", rolesHere: false },
-      })
-    }
-    // On the repository the role was read on, the same session is a maintainer.
-    const here = await answerOf(await route(signedIn(person("maintainer")), undefined, elsewhere).get("/api/repos/smithersai/smithers/home"))
-    expect(here).toEqual({ audience: "maintainer", curated: null })
   })
 
   test("a curated home open to anyone shows its contributors' sections to a visitor, never its maintainers'", async () => {
@@ -129,13 +168,14 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
         ],
       },
     }]
-    const answer = await answerOf(await route(Actor.signedOut, files).get("/api/repos/maya/tinyhttp/home"))
+    const answer = await answerOf(await (await route({ files })).get("/api/repos/maya/tinyhttp/home"))
     expect([answer.audience, shape(answer)]).toEqual(["contributor", ["contributor:Contribute", "everyone:"]])
-    const roles = { id: "github/maya/tinyhttp" }
-    const maintainer = await answerOf(await route(signedIn(person("admin")), files, roles).get("/api/repos/maya/tinyhttp/home"))
+    const maintainer = await answerOf(
+      await (await route({ sessions: signedIn(person("admin")), files, own: "maya/tinyhttp" })).get("/api/repos/maya/tinyhttp/home"),
+    )
     expect(maintainer.audience).toBe("maintainer")
-    // An Admin of another repository is a visitor here, widened like one.
-    const elsewhere = await answerOf(await route(signedIn(person("admin")), files).get("/api/repos/maya/tinyhttp/home"))
+    // An Admin of another repository, with no role here, is a visitor here, widened like one.
+    const elsewhere = await answerOf(await (await route({ sessions: signedIn(person("admin")), files })).get("/api/repos/maya/tinyhttp/home"))
     expect(elsewhere.audience).toBe("contributor")
   })
 
@@ -144,39 +184,39 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
     const files: ReadonlyArray<Curated.CuratedFile> = [
       { repository: "acme/widgets", defaultBranch: "main", home: { docs, blocks: [{ type: "text", text: "Hi" }] } },
     ]
-    expect((await answerOf(await route(Actor.signedOut, files).get("/api/repos/acme/widgets/home"))).curated?.docs).toBe(docs)
-    expect((await answerOf(await route().get(EFFECT))).curated).not.toHaveProperty("docs")
+    expect((await answerOf(await (await route({ files })).get(WIDGETS))).curated?.docs).toBe(docs)
+    expect((await answerOf(await (await route()).get(EFFECT))).curated).not.toHaveProperty("docs")
   })
 
   test("names compare without case, as GitHub's do", async () => {
-    const answer = await answerOf(await route().get("/api/repos/effect-ts/EFFECT/home"))
+    const answer = await answerOf(await (await route()).get("/api/repos/effect-ts/EFFECT/home"))
     expect(answer.curated?.defaultBranch).toBe("main")
-    // The repository roles are read on compares without case too.
-    const maintainer = await answerOf(await route(signedIn(person("maintainer"))).get("/api/repos/EFFECT-TS/Effect/home"))
+    // The deployment's own repository compares without case too.
+    const maintainer = await answerOf(await (await route({ sessions: signedIn(person("maintainer")) })).get("/api/repos/EFFECT-TS/Effect/home"))
     expect(maintainer.audience).toBe("maintainer")
   })
 
   test("a repository Smithers has no home for: the audience, and no curated home", async () => {
-    const r = route(signedIn(person("member")), undefined, { id: "github/octocat/spoon-knife" })
+    const r = await route({ sessions: signedIn(person("member")), own: "octocat/spoon-knife" })
     expect(await answerOf(await r.get("/api/repos/octocat/Spoon-Knife/home"))).toEqual({ audience: "contributor", curated: null })
     expect(r.count({ outcome: "absent", audience: "contributor" })).toBe(1)
-    expect(r.logs.find((log) => log.message === "home.curated")).toMatchObject({ annotations: { rolesHere: true } })
+    expect(r.line()).toMatchObject({ annotations: { source: "role" } })
   })
 
   test("a curated file that isn't a home answers none, and says so in its records", async () => {
     const files: ReadonlyArray<Curated.CuratedFile> = [
       { repository: "maya/tinyhttp", defaultBranch: "main", home: { blocks: [{ type: "text", text: "<b>no</b>" }] } },
     ]
-    const r = route(Actor.signedOut, files)
+    const r = await route({ files })
     expect(await answerOf(await r.get("/api/repos/maya/tinyhttp/home"))).toEqual({ audience: "everyone", curated: null })
-    expect(r.logs.find((log) => log.message === "home.curated")).toMatchObject({
+    expect(r.line()).toMatchObject({
       level: "WARN",
       annotations: { outcome: "invalid", audience: "everyone", status: 200 },
     })
   })
 
   test("a session store that can't answer is 503, to be asked again", async () => {
-    const r = route(unavailable)
+    const r = await route({ sessions: unavailable })
     const response = await r.get(EFFECT)
     expect(response.status).toBe(503)
     expect(response.headers.get("retry-after")).toBe("5")
@@ -185,7 +225,7 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
   })
 
   test("only GET", async () => {
-    const r = route()
+    const r = await route()
     const response = await r.get(EFFECT, { method: "POST" })
     expect(response.status).toBe(405)
     expect(response.headers.get("allow")).toBe("GET")
@@ -193,22 +233,142 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
   })
 
   test("records an outcome, the audience and counts: one span, one line, one count, never a section's words", async () => {
-    const r = route(signedIn(person("member")))
+    const r = await route({ sessions: signedIn(person("member")) })
     await r.get(EFFECT)
     const lines = r.logs.filter((log) => log.message === "home.curated")
     expect(lines).toHaveLength(1)
     expect(lines[0]).toMatchObject({
       level: "INFO",
-      annotations: { outcome: "curated", audience: "contributor", sections: 2, hidden: 1, rolesHere: true, status: 200 },
+      annotations: { outcome: "curated", audience: "contributor", sections: 2, hidden: 1, source: "role", status: 200 },
     })
-    expect(r.spans.map((span) => span.name)).toEqual(["home.curated"])
+    // The route's span, and the role's read inside it.
+    expect(r.spans.map((span) => span.name)).toEqual(["home.curated", "github.repo_role"])
     expect(Object.fromEntries(r.spans[0]!.attributes)).toMatchObject({
       "smithers.home.outcome": "curated",
       "smithers.home.audience": "contributor",
     })
     expect(r.count({ outcome: "curated", audience: "contributor" })).toBe(1)
     const records = JSON.stringify({ logs: r.logs, spans: r.spans.map((span) => [...span.attributes]) })
-    for (const words of ["Your work", "Effect", "npm install"]) expect(records).not.toContain(words)
+    for (const words of ["Your work", "Effect", "npm install", "maya"]) expect(records).not.toContain(words)
+  })
+})
+
+describe("roles per repository (decision 0079, ruling SCOPE-14)", () => {
+  test.each([
+    ["admin", "maintainer", ["maintainer:Today", "contributor:Your work", "everyone:"]],
+    ["maintain", "maintainer", ["maintainer:Today", "contributor:Your work", "everyone:"]],
+    ["write", "contributor", ["contributor:Your work", "everyone:"]],
+    ["triage", "contributor", ["contributor:Your work", "everyone:"]],
+    // GitHub answers read for anyone signed in on a public repository: they may contribute, so they see Contribute.
+    ["read", "contributor", ["contributor:Your work", "everyone:"]],
+  ] as const)("another repository the App is installed on: GitHub's %s there is the %s view", async (permission, audience, sections) => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", permission)
+    // Maya is nobody on the deployment's own repository: only her permission on acme/widgets counts here.
+    const r = await route({ sessions: signedIn(person(null)), files: WIDGETS_HOME, github })
+    const answer = await answerOf(await r.get(WIDGETS))
+    expect([answer.audience, shape(answer)]).toEqual([audience, sections])
+    expect(github.seen("GET", /\/collaborators\/maya\/permission$/)).toHaveLength(1)
+    expect(r.line()).toMatchObject({ annotations: { outcome: "curated", audience, source: "role" } })
+  })
+
+  test("a role on one repository never counts on another: the deployment's Admin who is nobody on acme/widgets is a visitor there", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const r = await route({ sessions: signedIn(person("admin")), files: WIDGETS_HOME, github })
+    const response = await r.get(WIDGETS)
+    const text = await response.clone().text()
+    expect([(await answerOf(response)).audience]).toEqual(["everyone"])
+    for (const hidden of ["Today", "Your work"]) expect(text).not.toContain(hidden)
+    // Still the Admin on the deployment's own repository, asking GitHub nothing there.
+    const own = await answerOf(await r.get(EFFECT))
+    expect(own.audience).toBe("maintainer")
+    expect(github.seen("GET", /\/permission$/)).toHaveLength(1)
+  })
+
+  test("nor the other way: a Maintainer of acme/widgets who is a Guest on the deployment's own repository is a contributor there", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "maintain")
+    const r = await route({ sessions: signedIn(person("guest")), github })
+    expect((await answerOf(await r.get(WIDGETS))).audience).toBe("maintainer")
+    expect((await answerOf(await r.get(EFFECT))).audience).toBe("contributor")
+    // The role GitHub gave on acme/widgets is kept for that repository alone.
+    expect(await sql(runtime, `SELECT repo_id, role FROM github_repo_roles`)).toEqual([
+      { repo_id: "github/acme/widgets", role: "maintainer" },
+    ])
+  })
+
+  test("a role read a moment ago decides for 5 minutes, then GitHub is asked again", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "admin")
+    const r = await route({ sessions: signedIn(person(null)), files: WIDGETS_HOME, github })
+    expect((await answerOf(await r.get(WIDGETS))).audience).toBe("maintainer")
+    github.roles.set("maya", "read")
+    expect((await answerOf(await r.get(WIDGETS))).audience).toBe("maintainer")
+    expect(github.seen("GET", /\/permission$/)).toHaveLength(1)
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds'`)
+    expect((await answerOf(await r.get(WIDGETS))).audience).toBe("contributor")
+    expect(github.seen("GET", /\/permission$/)).toHaveLength(2)
+  })
+
+  test("signed out on another repository: everyone, and GitHub is asked nothing", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const r = await route({ files: WIDGETS_HOME, github })
+    expect((await answerOf(await r.get(WIDGETS))).audience).toBe("everyone")
+    expect(github.calls).toEqual([])
+  })
+
+  test("where the deployment can't act, nobody has a role: the App not installed, or none configured", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "admin")
+    github.installed = false
+    const notInstalled = await route({ sessions: signedIn(person("admin")), files: WIDGETS_HOME, github })
+    const response = await notInstalled.get(WIDGETS)
+    expect(response.status).toBe(200)
+    expect([(await answerOf(response)).audience]).toEqual(["everyone"])
+    expect(notInstalled.line()).toMatchObject({
+      level: "INFO",
+      annotations: { outcome: "curated", audience: "everyone", source: "no_role_here", refused: "app_not_installed" },
+    })
+    // A deployment without the App reads no role on any repository but its own.
+    const noApp = await route({ sessions: signedIn(person("admin")), files: WIDGETS_HOME })
+    expect((await answerOf(await noApp.get(WIDGETS))).audience).toBe("everyone")
+    expect(noApp.line()).toMatchObject({ annotations: { source: "no_role_here", refused: "not_configured" } })
+  })
+
+  test("local development without the App: the developer's role holds on every repository, as RepoRoles says", async () => {
+    const r = await route({ sessions: signedIn(person("maintainer")), files: WIDGETS_HOME, local: true })
+    expect((await answerOf(await r.get(WIDGETS))).audience).toBe("maintainer")
+  })
+
+  test.each([
+    [{ status: 429, headers: { "retry-after": "30" } }, 429, "rate_limited", "30"],
+    [{ status: 502 }, 503, "github_unavailable", "5"],
+    [{ lost: true }, 503, "github_unavailable", "5"],
+  ] as const)("GitHub failing (%o) is %i %s, never a guessed role", async (fault, status, code, wait) => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "admin")
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), ...fault })
+    const r = await route({ sessions: signedIn(person("admin")), files: WIDGETS_HOME, github })
+    const response = await r.get(WIDGETS)
+    expect([response.status, response.headers.get("retry-after"), response.headers.get("cache-control")]).toEqual([
+      status,
+      wait,
+      "no-store",
+    ])
+    expect(await response.json()).toEqual({ code })
+    expect(r.line()).toMatchObject({ level: "WARN", annotations: { outcome: "role_unavailable", refused: code, status } })
+    expect(r.count({ outcome: "role_unavailable", audience: "none" })).toBe(1)
+    // Asked again, GitHub answers.
+    expect((await answerOf(await r.get(WIDGETS))).audience).toBe("maintainer")
+  })
+
+  test("Postgres down is 503 unavailable on another repository; the deployment's own needs no Postgres", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "admin")
+    const r = await route({ sessions: signedIn(person("member")), files: WIDGETS_HOME, github, database: unreachable })
+    const response = await r.get(WIDGETS)
+    expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
+    expect((await answerOf(await r.get(EFFECT))).audience).toBe("contributor")
   })
 })
 

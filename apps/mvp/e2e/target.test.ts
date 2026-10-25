@@ -124,7 +124,7 @@ describe("needs", () => {
   it("are all met locally, where local development's Admin is signed in, but GitHub sign-in", () => {
     const unmet = (Object.keys(NEEDS) as Array<NeedName>).filter((name) => !NEEDS[name].met(local))
     expect(unmet).toEqual([
-      "effectRoles",
+      "outsideRoles",
       "sandboxSecrets",
       "webhookSecret",
       "alertProviders",
@@ -181,11 +181,11 @@ describe("needs", () => {
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {
     const met = (role: ReturnType<Run["role"]>) => (Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].met(deployedAs(role)))
-    expect(met("guest")).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
-    expect(met(null)).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
-    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member"])
-    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
-    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
+    expect(met("guest")).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
+    expect(met(null)).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
+    expect(met("member")).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member"])
+    expect(met("maintainer")).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
+    expect(met("admin")).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
 
     // An Admin turned the deployment's own model on; a local dev server answers with it unless told otherwise.
     expect(NEEDS.hostedModelOff.met(deployedAs("member", { E2E_HOSTED_MODEL: "on" }))).toBe(false)
@@ -201,13 +201,16 @@ describe("needs", () => {
     expect(NEEDS.noGitHubApp.met({ ...local, env: { E2E_ISSUES_REPOSITORY: "a/b" } })).toBe(false)
   })
 
-  it("for whose roles local development's people hold, follow the dev server's GITHUB_REPOSITORY, without case", () => {
-    const onEffect: Run = { ...local, env: { GITHUB_REPOSITORY: "effect-ts/EFFECT" } }
-    expect([NEEDS.effectRoles.met(onEffect), NEEDS.otherRoles.met(onEffect)]).toEqual([true, false])
-    expect([NEEDS.effectRoles.met(local), NEEDS.otherRoles.met(local)]).toEqual([false, true])
-    const elsewhere: Run = { ...local, env: { GITHUB_REPOSITORY: "acme/widgets" } }
-    expect([NEEDS.effectRoles.met(elsewhere), NEEDS.otherRoles.met(elsewhere)]).toEqual([false, true])
-    expect(NEEDS.effectRoles.met(deployedAs("admin", { GITHUB_REPOSITORY: "Effect-TS/effect" }))).toBe(false)
+  it("for roles on another repository: proved against a deployment, where roles are per repository; VibeLang's maintainer, locally or at run time", () => {
+    // Local development without the App keeps its people's roles on every repository (decision 0079).
+    expect(NEEDS.outsideRoles.met(local)).toBe(false)
+    expect(NEEDS.outsideRoles.met(deployedAs("member"))).toBe(true)
+    expect(NEEDS.outsideRoles.met(deployedAs(null))).toBe(true)
+    // Against a deployment the journey asks the deployment at run time (e2e/vibelang.ts `requiresMaintainer`); the
+    // role on the deployment's own repository decides nothing.
+    expect(NEEDS.vibelangMaintainer.met(local)).toBe(true)
+    expect(NEEDS.vibelangMaintainer.met(deployedAs("admin"))).toBe(false)
+    expect(NEEDS.vibelangMaintainer.blocked).toBe(true)
   })
 
   it("for the dev server's own settings, are met only locally with those settings; the webhook's secret, wherever it is set", () => {
@@ -380,7 +383,7 @@ describe("needs", () => {
 
   it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["syncedRepository", "member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["vibelangMaintainer", "syncedRepository", "member", "ownConversation", "maintainer"])
   })
 })
 

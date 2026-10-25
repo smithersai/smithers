@@ -1,24 +1,21 @@
 import { expect, step, test } from "./fixtures"
-import { broken, requires } from "./target"
 import { as, contribute, homeOf, landing, openHome, ownView, readCode, readDocs, REPO, viewsOf } from "./vibelang"
 
-// The contributor's journey on the VibeLang repository (rulings SCOPE-13, SCOPE-14): a Member opens
+// The contributor's journey on the VibeLang repository (rulings SCOPE-13, SCOPE-14): a contributor opens
 // smithersai/vibelang on the contributors' view, with how to set up, how a change lands and where to ask above the
-// landing page, can see it as a user sees it, and reads the docs and the code. Locally the Member is local development's
-// teammate; against a deployment it is the run's test account, which must be a Member or above on the deployment's
-// repository. Until per-repository home roles land, deployments of another repository are marked broken.
-
-broken("vibelangRoles")
+// landing page, can see it as a user sees it, and reads the docs and the code. Locally the contributor is local
+// development's teammate; against a deployment it is the run's test account, whose role on smithersai/vibelang is its
+// GitHub permission there (decision 0079): any signed-in account is at least a contributor on a public repository, and
+// its role on the deployment's own repository counts for nothing. It opens on its own view.
 
 test.describe("VibeLang on Smithers", () => {
   test(
     "contributor: Contribute above the landing page, View as User, then the docs and the code",
     { annotation: { type: "summary", description: "A contributor sees Contribute first, may view as a user, and reads the docs and code." } },
     async ({ page }) => {
-      requires("member")
       test.setTimeout(180_000)
       await as(page, "contributor")
-      const own = ownView("contributor")
+      const own = await ownView(page, "contributor")
       await openHome(page, own)
       await step("View as Contributor, when theirs is higher", async () => {
         if (own === "contributor") return

@@ -152,9 +152,6 @@ const devBuildOnly = (reason: string): Need => ({ met: (run) => run.target === "
 /** Where the deployed build device-upgrade.spec.ts upgrades from sits: `OLD_BUILD_DIR`, or the round-4 build's copy. */
 export const oldBuildDir = (env: Run["env"]) => env.OLD_BUILD_DIR ?? join(homedir(), "Desktop", "smithers-mvp", "builds", "c6940ac53e5a")
 
-/** The repository the dev server reads roles on (`GITHUB_REPOSITORY`, smithersai/smithers unless set), without case. */
-const rolesRepositoryOf = (run: Run) => (run.env.GITHUB_REPOSITORY ?? "smithersai/smithers").toLowerCase()
-
 /** Whether the local dev server signs people in through GitHub instead of as local development's people. */
 const githubAppLocally = (run: Run) => set(run, "GITHUB_APP_CLIENT_ID")
 
@@ -169,13 +166,14 @@ const needs = {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "local development's second and third people (the smithers_dev_person cookie) exist only without GitHub sign-in; a deployment needs another real test account",
   },
-  effectRoles: {
-    met: (run) => run.target === "local" && rolesRepositoryOf(run) === "effect-ts/effect",
-    reason: "local development's people hold their roles on the dev server's GITHUB_REPOSITORY alone (docs/features/home.md#who-sees-what): start it, and this run, with GITHUB_REPOSITORY=Effect-TS/effect",
+  outsideRoles: {
+    met: (run) => run.target === "deployment",
+    reason: "it proves the test account's role on the deployment's repository counts for nothing where the GitHub App isn't installed (decision 0079); local development without the App keeps its people's roles on every repository",
   },
-  otherRoles: {
-    met: (run) => run.target === "local" && rolesRepositoryOf(run) !== "effect-ts/effect",
-    reason: "it proves a role on another repository counts for nothing on Effect's home: the dev server's GITHUB_REPOSITORY must not be Effect-TS/effect",
+  vibelangMaintainer: {
+    met: (run) => run.target === "local",
+    reason: "it needs the test account to be a Maintainer or Admin on smithersai/vibelang (maintain or admin there on GitHub); the deployment says it is less",
+    blocked: true,
   },
   devSignIn: {
     met: (run) => run.target === "local" && !githubAppLocally(run),
@@ -335,7 +333,7 @@ export const KNOWN_BROKEN: Readonly<Record<string, Broken>> = {
   vibelangRoles: {
     in: ["deployment"],
     when: (run) => (run.env.GITHUB_REPOSITORY ?? run.env.E2E_SYNCED_REPOSITORY ?? "smithersai/smithers").toLowerCase() !== "smithersai/vibelang",
-    reason: "since ac88ac3757 the home counts roles only on GITHUB_REPOSITORY; VibeLang contributor and maintainer views fail on other deployments until per-repository home roles land",
+    reason: "the VibeLang maintainer journeys need a Maintainer or Admin of smithersai/vibelang, which the test account isn't, on a deployment whose GITHUB_REPOSITORY is another; the home resolves that role per repository (decision 0079)",
   },
   staleMirror: {
     in: ["deployment"],

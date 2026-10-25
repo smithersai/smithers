@@ -33,7 +33,23 @@ The device's outbox sends 429 and 5xx again and keeps a 4xx as Not sent with its
 
 - **Issue writes:** opening an issue (`issue/create`) and commenting (`issue/comment`) on any allowed repository, each at its 0007 minimum (Guest), with the role on that repository. The `github/Write` flow already takes its repository from the write's row.
 - **The stack:** committing and dropping a TODO (Member, in person) and reading a repository's TODOs and their prompts (Member) use the role on the repository the path or `?repo=` names. This closes the widening above.
-- **Deferred, fenced to the default repository:** triage, commitments and merging still answer `404 not_found` on any other repository; the issues' shapes, the webhook, Reconcile, secrets and the repository home still serve the default repository only. Each moves when its own slice resolves roles through `RepoRoles`.
+- **The repository's home** (2026-10-25, slice 1a): `GET /api/repos/<owner>/<name>/home` decides the audience from the role `RepoRoles` gives on the routed repository, so a repository's maintainers and contributors get their views on any repository the deployment may act on, `smithersai/vibelang` on smithers.sh included. Where it can't act (the App not installed or configured, or left out by `GITHUB_ALLOWED_REPOSITORIES`) nobody has a role and everyone sees the visitor's view; a role GitHub or Postgres can't say now is `429`/`503`, never a guess ([home](../features/home.md#who-sees-what)).
+- **Deferred, fenced to the default repository:** triage, commitments and merging still answer `404 not_found` on any other repository; the issues' shapes, the webhook, Reconcile and secrets still serve the default repository only. Each moves when its own slice resolves roles through `RepoRoles`.
+
+### Audience on a public repository (micro decision, 2026-10-25; Will may overrule)
+
+SCOPE-14 says "user they wouldn't even how contributor if not authed to do it". GitHub answers `read` for every signed-in account on a public repository, and §1 maps `read` to Guest. We read "authed" as signed in:
+
+| Who, on the routed repository | Role | Opens on | May switch to |
+|---|---|---|---|
+| signed out | none | User | nothing |
+| signed in, no permission GitHub reports (a private repository they can't see, or the App not installed) | none | User | nothing |
+| signed in, `read` (anyone on a public repository) or `triage` | Guest | Contributor | User |
+| `write` | Member | Contributor | User |
+| `maintain` | Maintainer | Maintainer | Contributor, User |
+| `admin` | Admin | Maintainer | Contributor, User |
+
+The audience follows the role; the role mapping of §1 is unchanged. The lead's brief read `triage` as Member; we keep it Guest, because Member is also what commits TODOs and edits a branch (0007), and raising it would widen a permission GitHub's triage role doesn't give (GH-4). It changes no audience: Guest and Member both open on Contributor. The alternative, Contributor only from `triage` up, would hide VibeLang's Contribute section from the outside contributors it is written for.
 
 ### Unsynced lists (2026-10-23 production regression)
 

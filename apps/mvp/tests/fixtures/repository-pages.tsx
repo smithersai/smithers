@@ -23,6 +23,10 @@ import type { Attention } from "../../src/features/attention/attention"
 import { AttentionProvider } from "../../src/features/attention/components/AttentionContext"
 import type { Chat } from "../../src/features/chat/chat"
 import { ChatProvider } from "../../src/AppContext"
+import type { Spend } from "../../src/features/spend/spend"
+import { SpendProvider } from "../../src/features/spend/components/SpendContext"
+import type { Views } from "../../src/features/views/views"
+import { ViewsProvider } from "../../src/features/views/components/ViewsContext"
 export type Services = {
   flows: FlowsUi["Service"]
   auth: Auth["Service"]
@@ -35,10 +39,14 @@ export type Services = {
   secrets: Secrets["Service"]
   attention: Attention["Service"]
   chat: Chat["Service"]
+  spend: Spend["Service"]
+  views: Views["Service"]
 }
 export const renderRepositoryPages = (router: Parameters<typeof RouterProvider>[0]["router"], services: Services) => {
   let tree: ReactNode = createElement(RouterProvider, { router })
   tree = createElement(ChatProvider, { value: services.chat }, tree)
+  tree = createElement(SpendProvider, { value: services.spend }, tree)
+  tree = createElement(ViewsProvider, { value: services.views }, tree)
   tree = createElement(AttentionProvider, { value: services.attention }, tree)
   tree = createElement(SecretsProvider, { value: services.secrets }, tree)
   tree = createElement(RunsProvider, { value: services.runs }, tree)
