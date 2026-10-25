@@ -10,7 +10,7 @@ import { requires } from "./target"
 // stands in for a person's key (`personalModelKey`, e2e/target.ts). The key is typed into a password field, which the
 // video masks; it is never printed.
 
-requires("member", "personalModelKey")
+requires("member", "ownConversation", "personalModelKey")
 // A trace keeps what was typed and sent, the key included.
 test.use({ trace: "off" })
 
@@ -40,17 +40,19 @@ test("your model: a refused key names the provider and status; a real key answer
   /** Fills the form and saves: the key goes in one request, and the form clears once ChatApi takes it. */
   const save = (key: string) =>
     step("Fill Base URL, Model and Key, then Save", async () => {
-      await section.getByLabel("Base URL").fill(BASE_URL)
-      await section.getByLabel("Model").fill(MODEL)
-      await section.getByLabel("Key").fill(key)
+      await section.getByLabel("Base URL", { exact: true }).fill(BASE_URL)
+      await section.getByLabel("Model", { exact: true }).fill(MODEL)
+      await section.getByLabel("Key", { exact: true }).fill(key)
       await section.getByRole("button", { name: "Save" }).click()
-      await expect(section.getByLabel("Key")).toHaveAttribute("placeholder", `····${[...key].slice(-4).join("")}`, {
+      await expect(section.getByLabel("Key", { exact: true })).toHaveAttribute("placeholder", `····${[...key].slice(-4).join("")}`, {
         timeout: SAVED_WITHIN,
       })
     })
 
-  await step("Open Settings from the header", async () => {
-    await page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Settings" }).click()
+  // The run's own conversation is a branch's page, whose header has no Settings link: Settings is a page of its own.
+  const settings = new URL("/app/settings", conversation).href
+  await step("Open Settings", async () => {
+    await page.goto(settings)
     await expect(section).toBeVisible({ timeout: 30_000 })
   })
 
@@ -73,6 +75,7 @@ test("your model: a refused key names the provider and status; a real key answer
   const toast = page.locator("[data-personal-model]")
   await step("Back in the conversation, the toast says the same", async () => {
     await page.goto(conversation)
+    await a.ready()
     await expect(toast).toContainText(`${HOST} · HTTP 401`, { timeout: SAVED_WITHIN })
   })
 
@@ -90,6 +93,7 @@ test("your model: a refused key names the provider and status; a real key answer
 
   await step("Ask in the conversation: the person's own model answers, and the toast is gone", async () => {
     await page.goto(conversation)
+    await a.ready()
     await expect(toast).toHaveCount(0)
     await a.ask(`Reply with exactly this word and nothing else: byok-${word}`)
     const [exchange] = pairs(await expectSameThread([a], word, 2, 120_000))
@@ -97,10 +101,10 @@ test("your model: a refused key names the provider and status; a real key answer
   })
 
   await step("Remove: the model is gone, and the deployment's model answers again", async () => {
-    await page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Settings" }).click()
+    await page.goto(settings)
     await remove.click()
     await expect(remove).toHaveCount(0, { timeout: SAVED_WITHIN })
     await expect(section.getByRole("button", { name: "Test" })).toHaveCount(0)
-    await expect(section.getByLabel("Key")).not.toHaveAttribute("placeholder", /····/)
+    await expect(section.getByLabel("Key", { exact: true })).not.toHaveAttribute("placeholder", /····/)
   })
 })
