@@ -244,7 +244,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         if (Option.isNone(actor)) return refused(503, "unavailable")
         if (Option.isNone(actor.value)) return refused(401, "authentication")
         if (!canClone(actor.value.value)) return refused(403, "forbidden")
-        if (Option.isNone(options.codeStorage)) return refused(503, "not_configured")
         const text = yield* readBounded(request, MAX_REQUEST_BYTES).pipe(Effect.result)
         if (text._tag === "Failure") {
           return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
@@ -255,13 +254,23 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         fields.id = id
         fields.cloneId = body.value.cloneId
         const row = yield* Repos.current(id).pipe(Effect.provide(database))
-        if (Option.isNone(row)) return refused(404, "not_found")
+        if (Option.isNone(row)) {
+          return Option.isNone(options.codeStorage) ? refused(503, "not_configured") : refused(404, "not_found")
+        }
         if (row.value.cloneId !== body.value.cloneId || row.value.status !== "cloning") {
           fields.outcome = "settled"
           fields.row = row.value.status
           return HttpServerResponse.jsonUnsafe({ launched: false, status: row.value.status }, { status: 200, headers: noStore })
         }
         fields.attempt = row.value.attempt
+        // A persisted request must settle when launch is refused permanently. The browser's launch step
+        // does not retry not_configured, so no execution will ever reach repo/Settle for this attempt.
+        if (Option.isNone(options.codeStorage)) {
+          yield* Repos.settle({ id, cloneId: row.value.cloneId }, { status: "failed", failure: "unavailable" }, budgets).pipe(
+            Effect.provide(database),
+          )
+          return refused(503, "not_configured")
+        }
         if (!(yield* start(id, row.value))) {
           fields.outcome = "conflict"
           fields.errorCode = "conflict"

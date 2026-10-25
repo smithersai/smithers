@@ -21,7 +21,7 @@ import { runFlow } from "./test/flowHost.ts"
 import { recorded, testFile } from "./test/harness.ts"
 import { APP_ID, appKey } from "./github/test/scriptedGitHub.ts"
 import { scriptedGitHub, spoonKnife } from "./test/githubRest.ts"
-import { repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.ts"
+import { notificationRow, repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.ts"
 
 const runtime = testFile("repo_api")
 
@@ -164,6 +164,28 @@ describe("POST /api/repos", () => {
     down = false
     expect((await h.launch("octocat", "Spoon-Knife", cloneId)).status).toBe(202)
     expect(starts).toEqual([cloneExecutionId("github/octocat/spoon-knife", cloneId)])
+  })
+
+  test("a permanent launch refusal settles its persisted Requested notification, fenced to the attempt", async () => {
+    const h = await repoHarness(runtime)
+    const { cloneId } = await (await h.request("octocat", "Gone")).json() as { readonly cloneId: string }
+    const id = "github/octocat/gone"
+    const subject = `clone:${id}`
+    const refused = await repoHarness(runtime, { codeStorage: "none" })
+    expect(await notificationRow(runtime, "octocat", subject)).toMatchObject({ state: "working", ref: "requested" })
+    const response = await refused.launch("octocat", "Gone", cloneId)
+    expect([response.status, await response.json()]).toEqual([503, { code: "not_configured" }])
+    expect(await repositoryRow(runtime, id)).toMatchObject({ status: "failed", failure: "unavailable" })
+    expect(await notificationRow(runtime, "octocat", subject)).toMatchObject({ state: "failed", ref: "failed:unavailable", version: 2 })
+    // Reload/replay sees the terminal row and never raises a fresh Requested notification.
+    expect((await refused.launch("octocat", "Gone", cloneId)).status).toBe(200)
+    expect(await notificationRow(runtime, "octocat", subject)).toMatchObject({ state: "failed", version: 2 })
+    // A stale launch cannot settle the replacement attempt.
+    const retry = await (await h.request("octocat", "Gone")).json() as { readonly cloneId: string }
+    expect(retry.cloneId).not.toBe(cloneId)
+    expect((await refused.launch("octocat", "Gone", cloneId)).status).toBe(200)
+    expect(await repositoryRow(runtime, id)).toMatchObject({ status: "cloning", cloneId: retry.cloneId })
+    expect(await notificationRow(runtime, "octocat", subject)).toMatchObject({ state: "working", ref: "requested", version: 3 })
   })
 
   test("a launch refuses whom a request refuses: signed out, below Member, no Code Storage, bad input", async () => {

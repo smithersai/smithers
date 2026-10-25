@@ -1,3 +1,5 @@
+import { REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract"
+import { shapeRows } from "./shape"
 import { expect, test, visibleText } from "./fixtures"
 import { requires } from "./target"
 
@@ -92,7 +94,7 @@ test.describe("cloned repositories", () => {
   test(
     "the clone in the feed: a toast says how far it came, then why it stopped, with Try again",
     { annotation: { type: "summary", description: "A clone reports in the toasts, and a failed one offers Try again." } },
-    async ({ page }) => {
+    async ({ page, request }) => {
       const name = `no-such-repo-${Date.now().toString(36)}`
       await page.goto(`/octocat/${name}`)
       const header = page.locator('header[aria-label="Repository"]')
@@ -114,12 +116,22 @@ test.describe("cloned repositories", () => {
       const entry = page.locator(`li[data-entry="${subject}"]`)
       await expect(entry).toContainText(`Clone · octocat/${name} · Not found`, { timeout: 30_000 })
       await entry.getByRole("button", { name: new RegExp(`Clone · octocat/${name}`) }).click()
+      type CloneRow = { id: string; attempt: string | number; status: string; failure: string | null }
+      const current = async () => {
+        const row = (await shapeRows<CloneRow>(request, REPOSITORIES_SHAPE_ROUTE)).find(row => row.id === `github/octocat/${name}`)
+        return row === undefined ? undefined : { ...row, attempt: Number(row.attempt) }
+      }
+      const before = await current()
+      expect(before).toMatchObject({ status: "failed", failure: "not_found" })
       await entry.getByRole("button", { name: "Retry" }).click()
+      // The first failure's text can survive the click. Require the new attempt's actual terminal receipt.
+      await expect.poll(current, { timeout: 120_000 }).toMatchObject({
+        attempt: before!.attempt + 1, status: "failed", failure: "not_found",
+      })
       // Try again's new attempt raises the entry again, and stops for the same reason.
-      await expect(entry.or(page.locator(`[data-slot="toast"][data-subject="${subject}"]`)).first()).toContainText(
-        `Clone · octocat/${name}`,
-        { timeout: 30_000 },
-      )
+      await expect(entry).toContainText(`Clone · octocat/${name} · Not found`, { timeout: 120_000 })
+      await expect(entry.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+      await expect(page.locator(`[data-slot="toast"][data-subject="${subject}"]`)).not.toContainText("Requested")
     },
   )
 

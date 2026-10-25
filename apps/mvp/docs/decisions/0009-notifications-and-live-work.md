@@ -269,3 +269,11 @@ Both designs were written independently, then Opus merged them. Sol's adopted cl
 | Auth | 0008's actor | a seam, auth deferred | 0008 | 0007 and 0008 now exist |
 
 [HOST-PLAN]: the lead's durable-answering plan, 2026-10-19. [W4 README]: `packages/smithers/flows/platform-cloudflare/README.md`.
+
+## Clone launch refusal (2026-10-25)
+
+A persisted clone request owns a feed entry before its remote execution starts. If launch is permanently refused because the deployment no longer has Code Storage, the launch route settles that matching attempt as `failed:unavailable` and folds its feed entry in the same transaction. A stale attempt cannot settle a newer one. A transient host failure remains retryable by the durable launch step. GitHub's `not_found` remains the Inspect/Settle outcome. A failed clone remains retryable and dismissible after reload.
+
+Uses the library catalog's `@smthrs/flow` durable launch and `@smthrs/notifications` feed entries; no new scheduler or retry loop.
+
+The clone-feed e2e must wait for the retry's own terminal repository row, identified by its incremented attempt. Seeing the repository name again is only an acknowledgment and can still be the first failure's text. Ending the browser context then can strand a persisted request before its browser flow launches the remote execution. Tests must leave every clone they request settled.
