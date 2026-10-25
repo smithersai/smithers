@@ -1,6 +1,7 @@
 import { Data, Effect, Fiber, FiberHandle, Metric, Option, Queue, Ref, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { share, show } from "../chat/actions"
+import { signedOut } from "../auth/store"
 import { openAt } from "../conversations/actions"
 import { ChatStore } from "../chat/store"
 import { isRepository } from "../repo/contract"
@@ -67,9 +68,10 @@ const whenAborted = (signal: AbortSignal) =>
 /**
  * Opens branch `ref` of `owner/repo` in this tab: `tracking` at once, then `ready` with its conversation shown, or why
  * not. A name that can't be a branch, such as a commit, shows nothing of the workspace. Counted by outcome. Answers
- * the branch's id once it is ready. The browser offline before `branch/track` answers, it answers none at once and
- * shows `offline`; once the browser is back online, the route opens again (`BranchRoute`), unless `signal`, the
- * navigation's, was aborted: a newer navigation took over, or the page closed.
+ * the branch's id once it is ready. Nobody signed in, as sign-in's row says, it shows sign in without running
+ * `branch/track`, which ChatApi would refuse. The browser offline before `branch/track` answers, it answers none at
+ * once and shows `offline`; once the browser is back online, the route opens again (`BranchRoute`), unless `signal`,
+ * the navigation's, was aborted: a newer navigation took over, or the page closed.
  */
 export const open = (owner: string, repo: string, ref: string, signal?: AbortSignal) =>
   Effect.gen(function* () {
@@ -84,6 +86,27 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
       yield* setCurrent({ owner, repo, name: ref, status: "missing", ...empty })
       return undefined
     }
+    /**
+     * Settles the page on why the branch can't be shown: a refusal (not found, sign in, no access) also forgets the
+     * conversation the device kept for it.
+     */
+    const refused = (status: Current["status"]) =>
+      Effect.gen(function* () {
+        if (status !== "failed") {
+          yield* Effect.ignore(conversations.restored)
+          yield* stillCurrent
+          if (Option.isSome(yield* conversations.get(route))) {
+            const removed = yield* conversations.delete(route).pipe(Effect.orDie)
+            yield* Effect.ignore(removed.persisted)
+          }
+        }
+        yield* stillCurrent
+        yield* setCurrent({ owner, repo, name: ref, status, ...empty })
+        yield* Metric.update(Metric.withAttributes(opens, { outcome: status }), 1)
+        return undefined
+      })
+    // Nobody signed in may watch a branch, and ChatApi would answer 401: the page says sign in without asking.
+    if (yield* signedOut) return yield* refused("sign_in")
     yield* setCurrent({ owner, repo, name: ref, status: "tracking", ...empty })
     yield* Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "tracking" }))
     // The run goes on in the tab's scope whether or not this page still waits: offline, it spends its retries as any
@@ -174,19 +197,7 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
     const error = dispatched._tag === "Success" && dispatched.success._tag === "Failed"
       ? dispatched.success.error
       : undefined
-    const status = statusOf(error?._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? error.reason : undefined)
-    if (status !== "failed") {
-      yield* Effect.ignore(conversations.restored)
-      yield* stillCurrent
-      if (Option.isSome(yield* conversations.get(route))) {
-        const removed = yield* conversations.delete(route).pipe(Effect.orDie)
-        yield* Effect.ignore(removed.persisted)
-      }
-    }
-    yield* stillCurrent
-    yield* setCurrent({ owner, repo, name: ref, status, ...empty })
-    yield* Metric.update(Metric.withAttributes(opens, { outcome: status }), 1)
-    return undefined
+    return yield* refused(statusOf(error?._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? error.reason : undefined))
   }).pipe(Effect.catchTag("BranchOpenSuperseded", () => signal?.aborted === true
     ? Metric.update(Metric.withAttributes(reopens, { outcome: "abandoned" }), 1).pipe(Effect.as(undefined))
     : Effect.succeed(undefined)), Effect.withSpan("branch.open"), Effect.annotateLogs({ feature: "branch" }))

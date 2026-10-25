@@ -5,7 +5,7 @@ import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } fr
 import { asker } from "./askingTab"
 import { withBearer, withoutCookie } from "./bearer"
 import { CREDENTIAL_TTL_MS, credentialRoute, doorChannel, PERSON_DOORS } from "./contract"
-import { DoorCall } from "./doors"
+import { DoorAnswer, type DoorCall } from "./doors"
 import { refusesCredential } from "./personOnly"
 import { FlowRegistry } from "./registry"
 import { requesterOf } from "./requests"
@@ -17,7 +17,8 @@ import { requesterOf } from "./requests"
 // Every other run, every nested one included, sends a credential the server minted for that very run, and its session
 // cookie never rides along (`credentials: "omit"`). A nested run's credential is minted under its parent's, so the
 // server narrows it at every hop and refuses one a person-only flow or a wider callee asks for; that refusal is the
-// request's answer. A run whose person is signed out sends its requests with no credential at all.
+// request's answer. A run whose person is signed out sends its requests with no credential at all; a root run whose
+// tab says nobody is signed in doesn't ask for one either, since the server could only refuse it.
 //
 // A root run of a flow whose route only the person may use (`refusesCredential`: `notification/ack`, `run/answer`, …)
 // whose tab doesn't answer in time goes in the session too: dispatch starts one only through a person door
@@ -48,11 +49,15 @@ export type Credential =
   | { readonly _tag: "Refused"; readonly status: number; readonly code: string }
 
 const sessionCredential: Credential = { _tag: "Session" }
+const anonymousCredential: Credential = { _tag: "Anonymous" }
 
 /** The server couldn't be asked for a run's credential, or a run's lineage couldn't be read: nothing was sent. */
 export class CredentialUnavailable extends Data.TaggedError("CredentialUnavailable")<{ readonly reason: string }> {}
 
-/** Credentials minted on this device, by `outcome` (`minted`, `anonymous`, `refused`, `unavailable`) and `act`. */
+/**
+ * Credentials minted on this device, by `outcome` (`minted`, `anonymous`, `refused`, `unavailable`, or `signed_out` for
+ * one not asked for because the run's tab said nobody is signed in) and `act`.
+ */
 export const mints = Metric.counter("smithers_run_credential_mints", {
   description: "Run credentials this device's engine asked for, by outcome and act",
   incremental: true,
@@ -99,9 +104,9 @@ export const layer = (options: {
       const ceilings = new Map(options.flows.map((flow) => [flow._tag, Flow.capabilityCeilings(flow.annotations)]))
       const base = yield* HttpClient.HttpClient
       const inspection = yield* EngineStore.RunInspection.RunInspection
-      const askDoor = yield* asker<typeof DoorCall.Type, typeof DoorCall>({
+      const askDoor = yield* asker<typeof DoorCall.Type, typeof DoorAnswer>({
         channel: doorChannel(options.name),
-        output: DoorCall,
+        output: DoorAnswer,
         within: DOOR_WITHIN,
       })
 
@@ -149,6 +154,12 @@ export const layer = (options: {
                 onNone: () => refusesCredential(flow),
                 onSome: (answer) => PERSON_DOORS.includes(answer.door),
               })
+              // Nobody is signed in on the tab that started it: the server would refuse the credential with 401.
+              if (!ownPress && Option.isSome(answered) && answered.value.output.signedOut === true) {
+                yield* Metric.update(Metric.withAttributes(mints, { outcome: "signed_out", act: "none" }), 1)
+                yield* Effect.logDebug("auth.run_credential").pipe(Effect.annotateLogs({ flow, outcome: "signed_out" }))
+                return anonymousCredential
+              }
             }
             const under = parent === null ? sessionCredential : yield* Cache.get(credentials, parent)
             return ownPress

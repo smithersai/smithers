@@ -14,6 +14,8 @@ import { afterEach, describe, expect, test } from "vitest"
 import type { Actor } from "../../worker/Actor.ts"
 import { build } from "../../worker/test/flowHost.ts"
 import { harness, testFile } from "../../worker/test/harness.ts"
+import { Persistence } from "@smthrs/effect-tanstack-db"
+import { AuthStore, SESSION, signedOut } from "../features/auth/store"
 import { credentialRoute, DOORS } from "./contract"
 import * as RunCredentials from "./credentials"
 import { tabDoors } from "./doors"
@@ -133,7 +135,12 @@ afterEach(async () => {
  */
 const device = async (
   actor: Actor | null,
-  options: { readonly fault?: (path: string) => Response | "unreachable" | undefined; readonly inspection?: boolean } = {},
+  options: {
+    readonly fault?: (path: string) => Response | "unreachable" | undefined
+    readonly inspection?: boolean
+    /** The tab's sign-in row says nobody is signed in, as a visitor's does once ChatApi said so. */
+    readonly tabSignedOut?: boolean
+  } = {},
 ) => {
   const h = await harness(runtime, () => Stream.empty, actor === null ? {} : { actor })
   const seen: Array<Seen> = []
@@ -168,7 +175,15 @@ const device = async (
     Interpreter.layerWithImplementations(Agent, Nest.toLayer(nest)),
     Interpreter.layerWithImplementations(Write, Bearer.toLayer(bearer)),
     Interpreter.layerWithImplementations(Commit, Bearer.toLayer(bearer)),
-    tabDoors({ name }),
+    options.tabSignedOut === true
+      ? tabDoors({ name, signedOut }).pipe(Layer.provide(
+        Layer.effectDiscard(Effect.flatMap(Effect.service(AuthStore), (auth) =>
+          Effect.orDie(auth.session.update(SESSION, (row) => void (row.status = "signed_out"))))).pipe(
+            Layer.provideMerge(AuthStore.layer),
+            Layer.provide(Persistence.memory),
+          ),
+      ))
+      : tabDoors({ name }),
   ).pipe(
     Layer.provideMerge(Layer.effect(Sender, HttpClient.HttpClient)),
     Layer.provideMerge(RunCredentials.layer({ origin: ORIGIN, name, flows }).pipe(Layer.provide(FlowRegistry.layer))),
@@ -332,6 +347,18 @@ describe("who a run's requests go as", () => {
     expect(d.seenFor(`/api/runs/${answerId}/answer`)).toEqual([
       { path: `/api/runs/${answerId}/answer`, bearer: false, credentials: "omit" },
     ])
+  })
+
+  test("from a tab where nobody is signed in, a run nobody pressed asks for no credential; the person's press goes as theirs", async () => {
+    const d = await device(null, { tabSignedOut: true })
+    const watch = { path: "/api/watches", body: { conversationId: null } }
+    expect(await d.run(Watch, crypto.randomUUID(), watch, "view")).toMatchObject({ status: 401 })
+    // The route's own 401 is the run's answer; no credential request came back 401 first.
+    expect(d.seenFor("/api/watches")).toEqual([{ path: "/api/watches", bearer: false, credentials: "omit" }])
+    expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
+    expect(await d.run(Watch, crypto.randomUUID(), watch, "button")).toMatchObject({ status: 401 })
+    expect(d.seenFor("/api/watches").at(-1)).toEqual({ path: "/api/watches", bearer: false, credentials: undefined })
+    expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
   })
 
   test("a credential the server can't mint, or a lineage the engine can't read, sends nothing", async () => {

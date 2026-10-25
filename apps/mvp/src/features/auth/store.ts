@@ -1,5 +1,5 @@
 import { Collection, LiveQuery, type Persistence } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, PubSub, Ref, type Scope, Semaphore, Stream } from "effect"
+import { Context, Effect, Layer, Option, PubSub, Ref, type Scope, Semaphore, Stream } from "effect"
 import { Confirmed, Session } from "./schema"
 
 // Sign-in's state on this tab: one local row saying who is signed in, the last session ChatApi confirmed, kept on the
@@ -80,3 +80,15 @@ export class AuthStore extends Context.Service<
     }),
   )
 }
+
+/**
+ * Whether sign-in's row says nobody is signed in, so a request only a signed-in person may make isn't sent to be
+ * refused: `false` while ChatApi hasn't said, when it couldn't be asked, and in an app without sign-in.
+ */
+export const signedOut: Effect.Effect<boolean> = Effect.flatMap(
+  Effect.serviceOption(AuthStore),
+  Option.match({
+    onNone: () => Effect.succeed(false),
+    onSome: (auth) => Effect.map(auth.session.get(SESSION), (row) => Option.isSome(row) && row.value.status === "signed_out"),
+  }),
+)

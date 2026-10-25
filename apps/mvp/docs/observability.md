@@ -334,7 +334,7 @@ Spans: `auth.sign_in`, `auth.callback`, `auth.sign_out`, `auth.session` and `aut
 | `smithers_person_only_refusals` | counter | ChatApi | `act`, `by` |
 | `auth.resolve`'s `smithers.actor.act` | span attribute | ChatApi, every request | `person`, an `act` kind, or `none` |
 | `auth.run_credential` | span | engine worker, each credential asked for | `smithers.execution.id` |
-| `auth.run_credential` | log | engine worker | `flow`, `outcome` (`minted` at Debug; `anonymous`, `refused`, `unavailable`, `door_timeout` when the starting tab is silent, and `stale` when a credential came back `401`, at Warn), `act`, `principal` (`session`, `credential`), `status`, `code` |
+| `auth.run_credential` | log | engine worker | `flow`, `outcome` (`minted`, and `signed_out` when the starting tab said nobody is signed in so none was asked for, at Debug; `anonymous`, `refused`, `unavailable`, `door_timeout` when the starting tab is silent, and `stale` when a credential came back `401`, at Warn), `act`, `principal` (`session`, `credential`), `status`, `code` |
 | `smithers_run_credential_mints` | counter | engine worker | `outcome`, `act` |
 
 ### Remote flow executions
@@ -421,12 +421,15 @@ The browser (`src/features/repo/`), the tab's and the engine worker's, relayed t
 | `repo.clone.unconfirmed` | log, Warn: a person's clone RepoApi took whose row Electric didn't deliver in time | |
 | `repo.copy` | log and span, `repo/copy`'s step; Info `copied`, Warn `refused`, Error otherwise | `what` (`permalink`, `path`, `contents`, `clone-url`), `door` (the dispatch's, `agent`, or `unknown` when the tab that asked is gone), `outcome` (`copied`, `failed`, `refused`, `unavailable`, `gone`), `executionId`, `durationMs`; the span's `smithers.repo.copy` |
 | `repo.tree.load`, `repo.blob.load`, `repo.refs.load`, `repo.about.load` | log | `outcome`, `durationMs`, `status` |
+| `repo.head.load` | log: RepoApi's refs naming a repository's ready head before Electric delivered its row ([a page's head](features/repo.md#a-pages-head)); Info, Warn `failed` | `outcome` (`ready`, `absent`, `failed`), `durationMs`, `status` |
+| `repo.locate` | log, Info: a page knew where its location is | `source` (`row`, `refs`), `outcome` (`located`, `missing`, `failed`), `durationMs` from the page opening |
 | `repo.clone.post`, `repo.tree.get`, `repo.blob.get`, `repo.refs.get`, `repo.about.get` | span, parents the client's `GET` or `POST` | `http.response.status_code` |
 | `execute_tool repo/tree`, `repo/read`, `repo/refs`, `repo/clone`, `repo/copy` | span: the agent's call of the flow | |
 | `smithers_web_repo_clone_clicks` | counter | `kind` (`clone`, `retry`) |
 | `smithers_web_repo_clones` | counter | `outcome`, as `repo.clone` |
 | `smithers_web_repo_opens` | counter | `kind` |
-| `smithers_web_repo_tree_load_ms`, `smithers_web_repo_blob_load_ms`, `smithers_web_repo_refs_load_ms`, `smithers_web_repo_about_load_ms` | histogram | `outcome` |
+| `smithers_web_repo_tree_load_ms`, `smithers_web_repo_blob_load_ms`, `smithers_web_repo_refs_load_ms`, `smithers_web_repo_head_load_ms`, `smithers_web_repo_about_load_ms` | histogram | `outcome` |
+| `smithers_web_repo_locate_ms` | histogram | `source`, `outcome`, as `repo.locate` |
 | `smithers_web_repo_copies` | counter | `what`, `door`, `outcome`, as `repo.copy` |
 
 ### A repository's home

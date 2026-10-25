@@ -20,6 +20,7 @@ import {
   type TabOptions,
   TestChatApi,
 } from "../../test/chatApi"
+import { Auth } from "../auth/auth"
 import { retry, wentOffline } from "../chat/actions"
 import { Chat } from "../chat/chat"
 import { BranchClient, TrackRefused } from "./api"
@@ -221,6 +222,28 @@ describe("opening a branch", () => {
     expect(tab.opened(status)).toBe(1)
     expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(false)
     expect(tab.api.branches.github.seen).toEqual([])
+    expect(await tab.rows()).toEqual([])
+  }, WITHIN)
+
+  test("signed out, as sign-in's row says, the page says sign in without running branch/track", async () => {
+    const tab = await open({}, { actor: null })
+    const auth = await tab.runtime.runPromise(Effect.service(Auth))
+    auth.queries.session.startSyncImmediate()
+    await until(() => expect(auth.queries.session.toArray[0]?.status).toBe("signed_out"))
+    await tab.runtime.runPromise(tab.cache.restored)
+    await tab.runtime.runPromise(tab.cache.insert({ id: "octo/hello/feature/one", conversationId: "previous-conversation" }))
+
+    expect(await tab.actions.open("octo", "hello", "feature/one")).toBeUndefined()
+
+    expect(tab.current()).toMatchObject({ status: "sign_in", branchId: null, conversationId: null })
+    expect(tab.opened("sign_in")).toBe(1)
+    expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(false)
+    // Nothing went to ChatApi: no branch/track ran, so no POST /api/branches came back 401.
+    for (const outcome of ["done", "failed", "error"]) {
+      expect(tab.runtime.runSync(
+        Metric.value(Metric.withAttributes(dispatches, { flow: "branch/track", door: "view", outcome })),
+      ).count).toBe(0)
+    }
     expect(await tab.rows()).toEqual([])
   }, WITHIN)
 

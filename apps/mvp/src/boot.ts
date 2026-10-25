@@ -18,7 +18,7 @@ import { Auth, bindSessionConnectivity, type AuthView } from "./features/auth/au
 import { Branch, type BranchView } from "./features/branch/branch"
 import { BranchStore } from "./features/branch/store"
 import { DeviceWipe } from "./features/auth/device"
-import { AuthStore } from "./features/auth/store"
+import { AuthStore, signedOut } from "./features/auth/store"
 import { ChatClient } from "./features/chat/api"
 import { Chat, type ChatView } from "./features/chat/chat"
 import { bindConnectivity } from "./features/chat/connectivity"
@@ -194,10 +194,14 @@ export const appLayer = <S = never>(
 ) => {
   const { origin, reload, host, fetch: _fetch, answerWithin: _answerWithin, ...chat } = options
   // Sign-in, and this tab's answers to the `auth/refresh` it starts when a session check fails: both check the session,
-  // which may wipe the device.
-  const auth = Layer.merge(Auth.layer, tabSession({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer))).pipe(
-    Layer.provideMerge(DeviceWipe.layer(host.wipe)),
-  )
+  // which may wipe the device. Beside them, which door this tab's runs came through, so only the person's own press
+  // runs with their session, and whether sign-in's row says nobody is signed in, so no run asks for a credential the
+  // server would refuse.
+  const auth = Layer.mergeAll(
+    Auth.layer,
+    tabSession({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
+    tabDoors({ name: host.engineName, signedOut }).pipe(Layer.provide(TabChannel.layer)),
+  ).pipe(Layer.provideMerge(DeviceWipe.layer(host.wipe)))
   return Layer.mergeAll(
     Chat.layer,
     auth,
@@ -323,14 +327,12 @@ export const appLayer = <S = never>(
     // branch this tab's route shows: the branch layer's, and the composer's, whose `/new` starts a conversation in its
     // repository (src/features/commands/actions.ts).
     Layer.provideMerge(Layer.merge(AuthStore.layer, BranchStore.layer)),
-    // Above dispatch, which remembers this tab's requests: `app/navigate` moves only the tab that asked, `repo/copy`
-    // writes only its clipboard, and only the tab's own press of a person's flow runs with the person's session.
+    // Above dispatch, which remembers this tab's requests: `app/navigate` moves only the tab that asked, and `repo/copy`
+    // writes only its clipboard. The door each run came through is answered with sign-in, above (`auth`).
     Layer.provideMerge(
       Layer.mergeAll(
         tabNavigation({ name: host.engineName, origin, navigate: host.navigate }),
         tabClipboard({ name: host.engineName }),
-        // Which door this tab's runs came through, so only the person's own press runs with their session.
-        tabDoors({ name: host.engineName }),
       ).pipe(Layer.provide(TabChannel.layer)),
     ),
     Layer.provideMerge(FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer))),

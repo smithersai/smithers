@@ -1,64 +1,51 @@
 ---
 title: Visitor file pages wait for repository sync
-status: blocked
+status: in-progress
 area: app
-owner: Codex builder blob
+owner: claude visitor-files
 updated: 2026-10-25
-links: [../features/repo.md, ../features/navigation.md]
+links: [../features/repo.md, ../features/home.md, ../features/sign-in.md, ../features/branch-workspace.md]
 ---
 
-A signed-out direct visit to `/smithersai/vibelang/blob/main/README.md`
-reproduces the grey pane on production revision `a0a126492c`.
-Stopped at diagnosis under the assignment's instruction to report an architectural cause.
-No fix, new e2e, or passing validation is claimed.
+Library catalog: Electric sync (`@smthrs/effect-electric`), local-first state (`@smthrs/effect-tanstack-db`), the
+repository view (`@smthrs/repo-view`) and UI components (`@smthrs/ui`).
 
-## Evidence
+## The bug
 
-The supplied factory record D2/D15 records a blank file page, successful session
-resolution as signed out, branch tracking and run-credential requests refused
-with 401, and no page exception. A fresh Chromium probe confirmed:
+A signed-out visitor opening `https://smithers.sh/smithersai/vibelang/blob/main/README.md` on production `a0a126492c`
+saw a full-pane grey skeleton for 11 to 15 s, sometimes past a 30 s probe, with both Home and Code underlined, while
+the About, Home, tree, file and refs reads all answered 200.
 
-- About and Home each return 200.
-- At 11.2–15.3 seconds after navigation, the body is
-  `.sui-skeleton.repo-page-loading`, measuring 1408 by 764.5 pixels in a
-  1440 by 900 viewport. It is an unresolved repository view, not an empty file
-  or a Markdown renderer exception.
-- Home has `aria-current="page"` and `data-status="active"`; Code also has
-  `aria-current="page"`. TanStack's prefix match supplies Home's active state,
-  while `HomeTabs` supplies Code's explicit current state.
-- A separate longer visit receives 200 for tree, README, generated manifest
-  and refs at the stored clone's head `962226c71a6e8415e02ea7b4d55ea0ab2cff6ce9`.
-  The README then renders headings and code blocks. Thus the symptom is a long
-  initial wait, not proof that the file endpoint or renderer always fails.
-- Both visits make unnecessary signed-out branch and run-credential requests.
-  Their refusals do not prevent the later successful file read.
+- The page's load waited for the repository's row from the repositories' Electric shape before it resolved a head
+  (`ready`), so no file read started until the shape answered, and a cold shape takes many seconds. The route's warm
+  gave up after `pageWait`, but the load it then opened kept waiting.
+- With no row and a shape that hadn't answered, the page's header was `unknown`, which showed the skeleton.
+- Home's link, `/$owner/$repo`, leads every repository URL, so TanStack Router marked it current beside Code.
+- Signed out, the page still ran `branch/track` (`POST /api/branches` → 401) and the engine asked for run credentials
+  (`POST /api/runs/<id>/credential` → 401).
 
-## Dependency causing the wait
+## The fix
 
-`src/features/repo/actions.ts`'s `warm` waits for `shownRepository`, which awaits
-repository collection preload. Its page deadline ends warming, but `open` then
-starts `load`, which calls `ready` and waits indefinitely for a ready repository
-row from the same Electric collection. No tree or file read begins until that
-row supplies its head. `RepoPage` also reads a live query joined to that
-collection, showing the full-pane skeleton until it can project the view.
-About's successful independent public read does not satisfy either dependency.
-The branch tracking refusal is a separate result, and does not supply the row.
+- A page's head comes from whichever answers first: the device's ready row, or RepoApi's `GET /refs`, which reads the
+  row in Postgres directly ([a page's head](../features/repo.md#a-pages-head)). The refs' answer also fills the picker.
+  A `404` or a failed read claims nothing and leaves the page to the row.
+- The view row keeps the resolved `defaultBranch`; `pageOf` and `shownOf` (`view.ts`) decide what the page shows, and
+  `RepoPage` renders them, so a file shows from the view's resolution before Electric delivers the row.
+- The tabs mark a link current only at its exact URL.
+- `branch/track` and the run credential are skipped when sign-in's row says nobody is signed in.
+- Records: `repo.head.load`, `repo.locate` with `source`, `smithers_web_repo_head_load_ms`,
+  `smithers_web_repo_locate_ms`, and `auth.run_credential` `outcome: signed_out`.
 
-This couples an immutable public file read to completion of repository-wide
-synchronization. Repair requires deciding how file-location resolution proceeds
-when sync is slow, absent or failed, including repositories without a ready
-clone. The existing refs endpoint supplies a cloned repository's default branch
-and head; About supplies a public GitHub head. They are different sources and
-must not silently substitute for one another or falsely claim a clone exists.
-No speculative fallback, timeout-based retry, or synthesized clone row was added.
+## Proof
 
-The next implementation should separate public file-location resolution from
-clone synchronization, retain truthful refused/missing outcomes, instrument the
-repository-wait and location-resolution stages without content or credentials,
-and add a fresh visitor e2e covering rendered Markdown, highlighted source,
-exactly one active Code tab, and no needless signed-out writes. The first
-regression must hold repository sync unresolved through an injected Effect
-service while public reads complete; production e2e alone cannot force that race.
+- Production before the fix (`a0a126492c`, a fresh signed-out browser): the README rendered 12.4 s after navigation and
+  `examples/react-vite/vite.config.ts` 10.7 s; Home and Code were both current; each page sent two credential
+  requests and one `POST /api/branches`, all `401`.
+- `src/features/repo/visitor.test.ts` holds the repositories' shape (the faulty shape source) and proves a file shows
+  within 5 s once RepoApi answers; it fails on main.
+- `src/screens/repo/tabs.test.ts`, the signed-out cases in `src/features/branch/branch.test.ts` and
+  `src/flows/credentials.test.ts` fail on main.
+- `e2e/vibelang-visitor.spec.ts` "a file opened by its URL" runs against the deployment.
 
-Catalog entries reviewed: `@smthrs/effect-electric`,
-`@smthrs/effect-tanstack-db`, `@smthrs/repo-view`, and `@smthrs/ui`.
+Not covered: the app's own boot before the route runs (about 9 s in the production probe before the About request was
+sent) and the cold shape `500`s are separate work.
