@@ -2,7 +2,7 @@ import { GeneratedChip } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
 import { GeneratedWarning } from "../../generated/components/GeneratedWarning"
-import { generatedLinksFor } from "../view"
+import { generatedLinksFor, shownOf } from "../view"
 import { useRepo } from "./RepoContext"
 
 // The Generated mark (src/features/generated) for a file of the repository the view shows, from its manifest and file
@@ -15,7 +15,7 @@ const useGenerated = (path: string, contents: string | undefined) => {
   const { data: manifest } = useLiveQuery(queries.manifest)
   const { data: tree } = useLiveQuery(queries.tree)
   if (current === undefined) return undefined
-  return generatedLinksFor(current.view, current.repository, path, contents, manifest?.manifest, tree?.tree)
+  return generatedLinksFor(current.view, shownOf(current.repository, current.view), path, contents, manifest?.manifest, tree?.tree)
 }
 
 /** The chip on the toolbar of the file at `path`, read as `contents`. */

@@ -21,7 +21,6 @@ import {
   CLONING,
   cloneUrl,
   CODE,
-  COULDNT_LOAD,
   COPY_CLONE_URL,
   COPY_CONTENTS,
   COPY_PATH,
@@ -34,17 +33,15 @@ import {
 import { editHrefFor, hrefFor } from "../paths"
 import {
   aboutOf,
-  aboutFailed,
   atRoot,
-  codeEmptyOf,
   type Commit,
-  commitOf,
   countLabel,
   type Counts,
   countsOf,
   fileLinksOf,
   fileProps,
-  headerOf,
+  headCommitOf,
+  pageOf,
   previewCommitOf,
   previewReadmeOf,
   previewTreeOf,
@@ -104,10 +101,12 @@ function CodeMenu({ owner, name, onCopy }: {
 // with its README or the file, the head commit, Code (the clone URL), Copy permalink, and a file's Raw, Download, Copy
 // path and Copy. The top level is laid out as GitHub's repository page: no tree, the about panel on the right, the
 // branch and tag counts. Until the clone is ready, the top level shows what GitHub says (its folder, README and about)
-// and anything deeper `Not cloned` or `Cloning` (`codeEmptyOf`), or a skeleton while the device can't tell yet, never a blank page. Every link is a real link to the app's GitHub-shaped URL; a plain click navigates through the router,
-// and a ref chosen in the picker runs `app/navigate`. Each Copy runs `repo/copy`. With `editFiles`, in a branch's workspace
-// for someone who may edit it, a file opens in the live editor of the branch's working copy instead
-// (docs/features/coedit.md#files).
+// and anything deeper `Not cloned` or `Cloning`, or a skeleton while the device can't tell yet, never a blank page
+// (`pageOf`). A clone is ready once its synced row says so, or once the view's load found it ready through RepoApi
+// before Electric delivered that row (`shownOf`). Every link is a real link to the app's GitHub-shaped URL; a plain
+// click navigates through the router, and a ref chosen in the picker runs `app/navigate`. Each Copy runs `repo/copy`.
+// With `editFiles`, in a branch's workspace for someone who may edit it, a file opens in the live editor of the
+// branch's working copy instead (docs/features/coedit.md#files).
 export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean } = {}) {
   const { queries, actions } = useRepo()
   const { data: current } = useLiveQuery(queries.view)
@@ -118,25 +117,23 @@ export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean }
   const { data: aboutRow } = useLiveQuery(queries.about)
   const codeIntel = useCodeIntelRow()
   const navigate = useNavigate()
-  // The live query's first read: a skeleton in the files' place, so the body is never blank.
-  if (current === undefined) return <Skeleton className="repo-page-loading" />
+  const page = pageOf(current)
+  // The live query's first read, or a repository the device can't tell about yet: a skeleton in the files' place.
+  if (current === undefined || page.kind === "loading") return <Skeleton className="repo-page-loading" />
   const { view, repository } = current
   const about = aboutOf(aboutRow?.about)
   const root = atRoot(view)
-  const cloned = repository?.status === "ready"
-  // GitHub has no such public repository, and no copy of one is here: there is nothing to show or clone.
-  if (view.missing || (!cloned && aboutRow?.about?.state === "missing")) return <EmptyState title={NOT_FOUND} />
-  if (view.failure !== null) return <EmptyState title={view.failure} />
-  if (aboutFailed(aboutRow?.about, headerOf(repository, current.clone, view.signedIn, view.answered, current.about), root)) return (
+  if (page.kind === "missing") return <EmptyState title={NOT_FOUND} />
+  if (page.kind === "failure") return <EmptyState title={page.text} />
+  if (page.kind === "retry") return (
     <Card className="repo-page-empty">
       <EmptyState
-        title={aboutRow?.about?.message ?? COULDNT_LOAD}
+        title={page.text}
         action={<Button variant="outline" onClick={() => actions.retryAbout(view.owner, view.name)}>{TRY_AGAIN}</Button>}
       />
     </Card>
   )
-  const aboutLoading = aboutRow?.about === null || aboutRow?.about === undefined || aboutRow.about.state === "loading"
-  if (!cloned && root && aboutLoading) {
+  if (page.kind === "preview-loading") {
     // GitHub's answer on its way: the page's own layout, with skeletons in its places, so it fills in without a jump.
     return (
       <RepoView
@@ -151,53 +148,53 @@ export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean }
       />
     )
   }
-  const preview = cloned || !root ? undefined : previewTreeOf(about)
-  if (preview !== undefined && about !== undefined) {
+  if (page.kind === "preview") {
     // Before the clone is ready, the top level as GitHub has it: the folder, the README and the about panel, with
     // the header's Clone. Every link is the app's own, as it will be once the repository is cloned.
+    const preview = page.about
     const location = { kind: "tree" as const, path: "" }
     const at = (target: RepoViewLocation) =>
-      hrefFor({ owner: view.owner, name: view.name, defaultBranch: about.defaultBranch }, about.defaultBranch, target)
+      hrefFor({ owner: view.owner, name: view.name, defaultBranch: preview.defaultBranch }, preview.defaultBranch, target)
     return (
       <RepoView
         className="repo-page"
         name={view.name}
-        tree={preview}
+        tree={previewTreeOf(preview)!}
         location={location}
-        readme={previewReadmeOf(about)}
+        readme={previewReadmeOf(preview)}
         href={at}
         onNavigate={(target) => void navigate({ href: at(target) })}
         fileTree={false}
         aside={<RepoAside about={aboutRow?.about} repository={repository} />}
         revision={
           <span className="repo-revision">
-            <Badge variant="outline">{about.defaultBranch}</Badge>
-            <RefCounts counts={countsOf(undefined, about)} />
+            <Badge variant="outline">{preview.defaultBranch}</Badge>
+            <RefCounts counts={countsOf(undefined, preview)} />
           </span>
         }
         actions={<CodeMenu owner={view.owner} name={view.name} onCopy={() => actions.copy("clone-url")} />}
-        summary={<CommitRow commit={previewCommitOf(about)} commits={about.commits ?? undefined} />}
+        summary={<CommitRow commit={previewCommitOf(preview)} commits={preview.commits ?? undefined} />}
       />
     )
   }
-  if (repository?.status !== "ready") {
+  if (page.kind === "empty") {
     // In place of the files, until they are ready: what the header's Clone or reason is about, with a calm bar while
-    // it clones; a skeleton while the device can't tell yet.
-    const empty = codeEmptyOf(headerOf(repository, current.clone, view.signedIn, view.answered, current.about))
-    return empty === undefined ? <Skeleton className="repo-page-loading" /> : (
+    // it clones.
+    return (
       <Card className="repo-page-empty">
-        {empty === CLONING ? <LoadingBar loading placement="inline" /> : null}
-        <EmptyState title={empty} />
+        {page.text === CLONING ? <LoadingBar loading placement="inline" /> : null}
+        <EmptyState title={page.text} />
       </Card>
     )
   }
-  const revision = view.revision ?? repository.defaultBranch ?? ""
+  const shown = page.repository
+  const revision = view.revision ?? shown.defaultBranch ?? ""
   const href = (location: RepoViewLocation) =>
     editFiles && location.kind === "blob"
-      ? editHrefFor(repository, revision, location.path)
-      : hrefFor(repository, revision, location)
-  const at = (ref: string) => hrefFor(repository, ref, { kind: view.kind, path: view.path })
-  const commit = commitOf(repository, view.sha)
+      ? editHrefFor(shown, revision, location.path)
+      : hrefFor(shown, revision, location)
+  const at = (ref: string) => hrefFor(shown, ref, { kind: view.kind, path: view.path })
+  const commit = headCommitOf(repository, view.sha, about)
   const links = fileLinksOf(view, file?.file)
   const counts = countsOf(refs?.refs, about)
   // A TypeScript or JavaScript file's language server: its marks, hover card and keys, the Symbols pane, its toolbar.
@@ -210,7 +207,7 @@ export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean }
   return (
     <RepoView
       className="repo-page"
-      name={repository.name}
+      name={shown.name}
       tree={treeProps(tree?.tree)}
       location={{
         kind: view.kind,
@@ -234,7 +231,7 @@ export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean }
             current={revisionLabel(revision)}
             selected={revision}
             refs={refsProps(refs?.refs)}
-            defaultBranch={repository.defaultBranch ?? undefined}
+            defaultBranch={shown.defaultBranch ?? undefined}
             href={at}
             onSelect={(ref) => actions.navigate(at(ref))}
           />

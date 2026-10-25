@@ -68,6 +68,15 @@ const branched = () =>
     tags: [{ name: "v1.0.0", sha: shaOf("test-branch") }],
   })
 
+/**
+ * Waits until `tab`'s device has `id`'s ready row, as a device that synced it on an earlier visit has: its pages read
+ * at the row's head, and keep the branches and tags under its sync.
+ */
+const rowReady = async (tab: Tab, id: string) => {
+  await tab.runtime.runPromise(Effect.flatMap(Effect.service(RepoStore), (store) => Effect.ignore(store.repositories.preload)))
+  await waitFor(() => expect(tab.repo.lookups.repository(id)?.status).toBe("ready"))
+}
+
 /** Opens `route` at `ref` and `path` in Spoon-Knife. */
 const at = (tab: Tab, kind: "tree" | "blob", ref: string, path = "") =>
   tab.repo.actions.openRoute(kind, { owner: "octocat", repo: "Spoon-Knife", ref, _splat: path }, {})
@@ -305,6 +314,7 @@ describe("branches, tags and commits", () => {
     const h = await repoHarness(server)
     const { id, headSha } = await h.seed("octocat", "Spoon-Knife", branched())
     const tab = await open(h)
+    await rowReady(tab, id)
     at(tab, "tree", "main")
     await waitFor(() => expect(tab.refs().refs?.state).toBe("ready"))
     expect(tab.refs().refs).toMatchObject({
@@ -341,6 +351,7 @@ describe("branches, tags and commits", () => {
     const h = await repoHarness(server)
     const { id } = await h.seed("octocat", "Spoon-Knife", branched())
     const tab = await open(h)
+    await rowReady(tab, id)
     at(tab, "tree", "main")
     await waitFor(() => expect(tab.refs().refs?.state).toBe("ready"))
     const before = tab.view().repository?.refsChangedAt
@@ -362,9 +373,10 @@ describe("branches, tags and commits", () => {
 
   test("refs Code Storage couldn't list: a branch's view says why, and the default branch still reads", async () => {
     const h = await repoHarness(server)
-    await h.seed("octocat", "Spoon-Knife", branched())
+    const { id } = await h.seed("octocat", "Spoon-Knife", branched())
     h.scripted.fail("listBranches", h.scripted.error("listBranches", "internal_error", 500))
     const tab = await open(h)
+    await rowReady(tab, id)
     at(tab, "tree", "test-branch")
     await waitFor(() => expect(tab.view().view.failure).toBe(BUSY))
     expect(tab.refs().refs).toMatchObject({ state: "failed", message: BUSY })

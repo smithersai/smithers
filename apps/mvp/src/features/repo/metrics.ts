@@ -46,6 +46,25 @@ export const refsLoadMs = Metric.histogram("smithers_web_repo_refs_load_ms", {
 })
 
 /**
+ * Milliseconds RepoApi's refs took to name a repository's ready head before Electric delivered its row, by `outcome`:
+ * `ready`, `absent` or `failed`.
+ */
+export const headLoadMs = Metric.histogram("smithers_web_repo_head_load_ms", {
+  description: "Milliseconds a repository's ready head took to load from RepoApi's refs, by outcome",
+  boundaries: loadBoundaries,
+})
+
+/**
+ * Milliseconds from opening a location to knowing where it is (its commit, a missing ref, or a ref that couldn't load),
+ * by `source` (`row`: the device's synced row; `refs`: RepoApi's refs before Electric delivered the row) and `outcome`
+ * (`located`, `missing` or `failed`).
+ */
+export const locateMs = Metric.histogram("smithers_web_repo_locate_ms", {
+  description: "Milliseconds from opening a repository location to resolving it, by source and outcome",
+  boundaries: loadBoundaries,
+})
+
+/**
  * Copies `repo/copy` ran, by `what` (`permalink`, `path`, `contents` or `clone-url`), `door` (`button`, `agent`, or
  * `unknown` when the tab that asked is gone) and `outcome` (`copied`, `failed`, `refused`, `unavailable` or `gone`).
  */

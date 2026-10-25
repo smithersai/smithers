@@ -1,11 +1,11 @@
-import { CAPACITY_COPY, CLONING, FAILURE_COPY, formatBytes, githubRawUrl, NOT_FOUND, NOT_CLONED, rawRoute, SIGN_IN_TO_CLONE } from "./contract"
+import { CAPACITY_COPY, CLONING, COULDNT_LOAD, FAILURE_COPY, formatBytes, githubRawUrl, NOT_FOUND, NOT_CLONED, rawRoute, SIGN_IN_TO_CLONE } from "./contract"
 import { Option } from "effect"
 import { folderOf } from "../generated/contract"
 import { generatedFiles } from "../generated/contribution"
 import { parseManifest } from "../generated/detect"
 import { type GeneratedLinks, generatedLinksOf } from "../generated/view"
 import { hrefFor } from "./paths"
-import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow } from "./rows"
+import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import type { About, Ref, Repository } from "./schema"
 
 // What the view shows, from the rows the queries read (decision 0006 §2): pure functions, so a component only renders
@@ -313,10 +313,82 @@ export const countLabel = (count: number, one: string, many: string): string =>
 export const reclaimNoteOf = (repository: Repository | undefined, about: About | undefined) =>
   repository?.status === "ready" && repository.reclaimable === true ? { installUrl: about?.installUrl ?? null } : undefined
 
+/** A repository as the page links into it: its owner, name and default branch. */
+export interface Shown {
+  readonly owner: string
+  readonly name: string
+  readonly defaultBranch: string | null
+}
+
+/** The view as its live query reads it: the view row, its repository's synced row, this tab's clone and About. */
+export interface ViewState {
+  readonly view: ViewRow
+  readonly repository?: Repository | undefined
+  readonly clone?: CloneRow | undefined
+  readonly about?: AboutRow | undefined
+}
+
+/**
+ * The repository whose files the page shows: its synced row once ready; before Electric delivers that row, the one the
+ * view's load found ready through RepoApi's refs (the view has its commit); else none, and the page says why not.
+ */
+export const shownOf = (repository: Repository | undefined, view: ViewRow): Shown | undefined =>
+  repository?.status === "ready"
+    ? repository
+    : view.sha === null
+    ? undefined
+    : { owner: view.owner, name: view.name, defaultBranch: view.defaultBranch }
+
+/**
+ * What the repository page shows (RepoPage):
+ * - `loading`: a skeleton in the files' place, while the device can't tell yet;
+ * - `missing`: Not found; `failure`: why the location couldn't resolve;
+ * - `retry`: a public root whose About read ended refused, with Try again;
+ * - `preview-loading`, `preview`: the top level before a clone, as GitHub has it, loading or with its `about`;
+ * - `empty`: Not cloned or Cloning in the files' place;
+ * - `files`: the files of `repository` (`shownOf`).
+ */
+export type Page =
+  | { readonly kind: "loading" }
+  | { readonly kind: "missing" }
+  | { readonly kind: "preview-loading" }
+  | { readonly kind: "failure"; readonly text: string }
+  | { readonly kind: "retry"; readonly text: string }
+  | { readonly kind: "empty"; readonly text: string }
+  | { readonly kind: "preview"; readonly about: About }
+  | { readonly kind: "files"; readonly repository: Shown }
+
+/** What the page shows for the view as its live query reads it; `undefined` before the query's first read. */
+export const pageOf = (current: ViewState | undefined): Page => {
+  if (current === undefined) return { kind: "loading" }
+  const { view, repository, about: aboutRow } = current
+  const shown = shownOf(repository, view)
+  const root = atRoot(view)
+  // GitHub has no such public repository, and no copy of one is here: there is nothing to show or clone.
+  if (view.missing || (shown === undefined && aboutRow?.state === "missing")) return { kind: "missing" }
+  if (view.failure !== null) return { kind: "failure", text: view.failure }
+  if (shown !== undefined) return { kind: "files", repository: shown }
+  const header = headerOf(repository, current.clone, view.signedIn, view.answered, aboutRow)
+  if (aboutFailed(aboutRow, header, root)) return { kind: "retry", text: aboutRow?.message ?? COULDNT_LOAD }
+  if (root && (aboutRow === undefined || aboutRow.state === "loading")) return { kind: "preview-loading" }
+  const about = aboutOf(aboutRow)
+  if (root && about?.root != null) return { kind: "preview", about }
+  const empty = codeEmptyOf(header)
+  return empty === undefined ? { kind: "loading" } : { kind: "empty", text: empty }
+}
+
+/**
+ * The head commit's row for the view at `sha`: the synced row's (`commitOf`), else GitHub's newest commit when it is
+ * that very commit, so a page whose repository Electric hasn't delivered yet still says who made it and when.
+ */
+export const headCommitOf = (repository: Repository | undefined, sha: string | null, about: About | undefined) =>
+  commitOf(repository, sha) ?? (sha !== null && about?.head?.sha === sha ? previewCommitOf(about) : undefined)
+
 /**
  * The Generated mark's links for the file at `path`, read as `contents` (the view's file, or the branch's working copy
  * in its editor), from the generated-files manifest nearest it at the view's commit (`manifestPath`, as `manifest`) and
- * the repository's file list there; `undefined` for a file a person writes. Links go to the view's revision.
+ * the file list there of the repository the page shows (`shownOf`); `undefined` for a file a person writes. Links go to
+ * the view's revision.
  */
 export const generatedLinksFor = (
   view: {
@@ -325,7 +397,7 @@ export const generatedLinksFor = (
     readonly revision: string | null
     readonly manifestPath: string | null
   },
-  repository: Repository | undefined,
+  repository: Shown | undefined,
   path: string,
   contents: string | undefined,
   manifest: BlobRow | undefined,

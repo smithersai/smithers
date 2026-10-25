@@ -1,5 +1,6 @@
 import { type Duration, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { testFile } from "../../../worker/test/harness"
 import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/repos"
@@ -7,6 +8,7 @@ import { openTab, type Tab } from "../../test/repoDevice"
 import { HomeClient, HomeRefused } from "../home/api"
 import { homePageOf } from "../home/view"
 import { RepoClient, RepoRefused } from "./api"
+import { RepoStore } from "./store"
 
 // Warming a repository page (docs/features/navigation.md), driven as the router drives it, with no React: a link's
 // hover or focus calls the route's warm, which loads what the page shows into the tab without opening it; a navigation
@@ -97,6 +99,23 @@ const homePage = (tab: Tab) => {
 }
 
 describe("a link's warm", () => {
+  test("a repository still cloning: no file and no home is read, and the warm ends on what GitHub says", async () => {
+    const h = await repoHarness(server)
+    h.github.publish("octocat", "Spoon-Knife")
+    await server.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO repositories (id, owner, name, status)
+      VALUES ('github/octocat/spoon-knife', 'octocat', 'Spoon-Knife', 'cloning')`))
+    const tab = await open(h)
+    // The device syncs the repositories as a page would, before anything is warmed.
+    await tab.runtime.runPromise(Effect.flatMap(Effect.service(RepoStore), (store) => Effect.ignore(store.repositories.preload)))
+    await waitFor(() => expect(tab.repo.lookups.repository("github/octocat/spoon-knife")?.status).toBe("cloning"))
+
+    await Promise.all([tab.repo.actions.warmRoute("tree", SPOON, {}), tab.home.actions.warm("octocat", "Spoon-Knife")])
+    expect(reads(h)).toEqual({ lists: 0, files: 0 })
+    expect(tab.lines("repo.head.load")).toEqual([])
+    expect(tab.repo.lookups.repository("github/octocat/spoon-knife")?.status).toBe("cloning")
+  })
+
   test("loads the root's files, README and home into the tab without opening the page; the click then opens it complete with no read of its own", async () => {
     const h = await repoHarness(server)
     const { id, headSha } = await h.seed("octocat", "Spoon-Knife")

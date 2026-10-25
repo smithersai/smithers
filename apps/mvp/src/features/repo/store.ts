@@ -4,7 +4,7 @@ import { Context, Duration, Effect, FiberHandle, Layer, Option, type Schedule, S
 import { AuthStore } from "../auth/store"
 import { REPOSITORIES_SHAPE_ROUTE } from "./contract"
 import { aboutQuery, fileQuery, manifestQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries"
-import { AboutRow, BlobRow, CloneRow, emptyView, RefsRow, TreeRow, VIEW, ViewRow } from "./rows"
+import { AboutRow, BlobRow, CloneRow, emptyView, HeadRow, RefsRow, TreeRow, VIEW, ViewRow } from "./rows"
 import { Repository } from "./schema"
 
 // The repository feature's state on this tab (docs/features/repo.md#the-browser): the repositories Postgres has, synced
@@ -50,6 +50,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
   const blobs = yield* Collection.local<BlobRow, string>({ id: "repo-blobs", schema: BlobRow, getKey: (row) => row.key })
   const refs = yield* Collection.local<RefsRow, string>({ id: "repo-refs", schema: RefsRow, getKey: (row) => row.key })
   const abouts = yield* Collection.local<AboutRow, string>({ id: "repo-abouts", schema: AboutRow, getKey: (row) => row.key })
+  const heads = yield* Collection.local<HeadRow, string>({ id: "repo-heads", schema: HeadRow, getKey: (row) => row.key })
   const view = yield* Collection.local<ViewRow, string>({
     id: "repo-view",
     schema: ViewRow,
@@ -85,6 +86,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     blobs,
     refs,
     abouts,
+    heads,
     view,
     viewState: yield* viewQuery(view, repositories, clones, abouts),
     aboutState: yield* aboutQuery(view, abouts),
@@ -110,6 +112,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
  * - `trees`, `blobs`: the file lists and files this tab loaded, by commit.
  * - `refs`: the branches and tags this tab loaded, by repository and sync.
  * - `abouts`: what GitHub says of each repository this tab opened, by id.
+ * - `heads`: the ready heads RepoApi's refs named for repositories whose rows Electric hadn't delivered ready, by id.
  * - `view`: where the routed view is, one row.
  * - the live queries frontends read (queries.ts), `loader`, `scope`, and the settings.
  */

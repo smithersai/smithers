@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
-import { CAPACITY_COPY, CLONING, FAILURE_COPY, NOT_CLONED, SIGN_IN_TO_CLONE } from "./contract"
-import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow } from "./rows"
+import { CAPACITY_COPY, CLONING, COULDNT_LOAD, FAILURE_COPY, NOT_CLONED, READING_PAUSED, SIGN_IN_TO_CLONE } from "./contract"
+import { type AboutRow, type BlobRow, type CloneRow, emptyView, type RefsRow, type TreeRow, type ViewRow } from "./rows"
 import type { About, Repository } from "./schema"
 import {
   aboutFailed,
@@ -10,6 +10,8 @@ import {
   countLabel,
   countsOf,
   generatedLinksFor,
+  headCommitOf,
+  pageOf,
   previewCommitOf,
   previewReadmeOf,
   previewTreeOf,
@@ -24,7 +26,9 @@ import {
   parseTimestamp,
   refsProps,
   revisionLabel,
+  shownOf,
   treeProps,
+  type ViewState,
 } from "./view"
 
 // What the view shows, from the rows the queries read.
@@ -481,5 +485,96 @@ describe("generated files", () => {
     // No manifest near the view: header markers alone.
     expect(generatedLinksFor({ ...view, manifestPath: null }, repository(), "out/a.md", "# A", projectManifest, files))
       .toBeUndefined()
+  })
+})
+
+describe("what the page shows", () => {
+  /** The view at Spoon-Knife's `path`, a `kind`, with `fields` resolved. */
+  const at = (kind: "tree" | "blob", path: string, fields: Partial<ViewRow> = {}): ViewRow => ({
+    ...emptyView,
+    owner: "octocat",
+    name: "Spoon-Knife",
+    repoId: "github/octocat/spoon-knife",
+    kind,
+    path,
+    splat: path,
+    missing: false,
+    ...fields,
+  })
+  const state = (view: ViewRow, fields: Partial<ViewState> = {}): ViewState => ({
+    view,
+    repository: undefined,
+    clone: undefined,
+    about: undefined,
+    ...fields,
+  })
+  /** The view's load found the clone ready through RepoApi's refs, before Electric delivered its row. */
+  const resolved = { revision: "main", sha: SHA, defaultBranch: "main" } as const
+
+  test("the repository shown: its ready row, else the view's own resolution, else none", () => {
+    expect(shownOf(repository(), at("blob", "README.md"))).toEqual(repository())
+    expect(shownOf(undefined, at("blob", "README.md", resolved)))
+      .toEqual({ owner: "octocat", name: "Spoon-Knife", defaultBranch: "main" })
+    // A row that isn't ready gives way to a resolution that found the clone ready, and says nothing without one.
+    expect(shownOf(repository({ status: "cloning" }), at("blob", "README.md", resolved))?.defaultBranch).toBe("main")
+    expect(shownOf(repository({ status: "cloning" }), at("blob", "README.md"))).toBeUndefined()
+    expect(shownOf(undefined, at("blob", "README.md"))).toBeUndefined()
+  })
+
+  test("files once the clone is ready, from its row or from the view's resolution before Electric delivers it", () => {
+    expect(pageOf(state(at("blob", "README.md", resolved)))).toEqual({
+      kind: "files",
+      repository: { owner: "octocat", name: "Spoon-Knife", defaultBranch: "main" },
+    })
+    expect(pageOf(state(at("blob", "README.md"), { repository: repository() }))).toEqual({
+      kind: "files",
+      repository: repository(),
+    })
+    // A root shows its files too, never GitHub's preview, once the clone is ready.
+    expect(pageOf(state(at("tree", "", resolved), { about: aboutRow("ready", about()) })).kind).toBe("files")
+    // A private repository a visitor can't see on GitHub still shows its clone.
+    expect(pageOf(state(at("blob", "a.md", resolved), { about: aboutRow("missing") })).kind).toBe("files")
+  })
+
+  test("a skeleton until the live query reads, and while the device can't tell", () => {
+    expect(pageOf(undefined)).toEqual({ kind: "loading" })
+    expect(pageOf(state(at("blob", "README.md")))).toEqual({ kind: "loading" })
+  })
+
+  test("Not found for a URL naming nothing, or a repository GitHub doesn't have with no clone here", () => {
+    expect(pageOf(state(at("blob", "README.md", { missing: true })))).toEqual({ kind: "missing" })
+    expect(pageOf(state(at("blob", "README.md"), { about: aboutRow("missing") }))).toEqual({ kind: "missing" })
+  })
+
+  test("a location that couldn't resolve says why", () => {
+    expect(pageOf(state(at("blob", "a.md", { failure: READING_PAUSED })))).toEqual({ kind: "failure", text: READING_PAUSED })
+  })
+
+  test("a public root whose About read ended refused offers Try again, with its message or Couldn't load", () => {
+    const answered = { answered: true, signedIn: false }
+    expect(pageOf(state(at("tree", "", answered), { about: { ...aboutRow("failed"), message: READING_PAUSED } })))
+      .toEqual({ kind: "retry", text: READING_PAUSED })
+    expect(pageOf(state(at("tree", "", answered), { about: aboutRow("failed") }))).toEqual({ kind: "retry", text: COULDNT_LOAD })
+  })
+
+  test("before a clone the top level is GitHub's: loading, then its folder; deeper, Not cloned or Cloning", () => {
+    expect(pageOf(state(at("tree", "")))).toEqual({ kind: "preview-loading" })
+    expect(pageOf(state(at("tree", ""), { about: aboutRow("loading") }))).toEqual({ kind: "preview-loading" })
+    expect(pageOf(state(at("tree", ""), { about: aboutRow("ready", about()) }))).toEqual({ kind: "preview", about: about() })
+    // GitHub's answer without a folder: the root says what the header does, as a deeper page.
+    expect(pageOf(state(at("tree", "", { answered: true }), { about: aboutRow("ready", about({ root: null })) })))
+      .toEqual({ kind: "empty", text: NOT_CLONED })
+    expect(pageOf(state(at("blob", "README.md", { answered: true })))).toEqual({ kind: "empty", text: NOT_CLONED })
+    expect(pageOf(state(at("blob", "README.md"), { repository: repository({ status: "cloning" }) })))
+      .toEqual({ kind: "empty", text: CLONING })
+  })
+
+  test("the head commit: the row's, else GitHub's newest when it is the view's commit", () => {
+    const head = "d".repeat(40)
+    expect(headCommitOf(repository(), SHA, about())).toEqual(commitOf(repository(), SHA))
+    expect(headCommitOf(undefined, head, about())).toEqual(previewCommitOf(about()))
+    expect(headCommitOf(undefined, SHA, about())).toBeUndefined()
+    expect(headCommitOf(undefined, null, about({ head: null }))).toBeUndefined()
+    expect(headCommitOf(undefined, head, undefined)).toBeUndefined()
   })
 })

@@ -46,8 +46,9 @@ const cloning = (
       launch: (owner, name, cloneId) => Effect.suspend(() => (launches.push(`${owner}/${name} ${cloneId}`), launch())),
       tree: () => Effect.die(new Error("no reads in this test")),
       blob: () => Effect.die(new Error("no reads in this test")),
-      refs: () => Effect.die(new Error("no reads in this test")),
-      // Opening a repository asks what GitHub says of it; this client has no network for it.
+      // Opening a repository asks what GitHub says of it, and its ready head from the refs when the device has no
+      // row; this client has no network for them.
+      refs: () => Effect.fail(new RepoRefused({})),
       about: () => Effect.fail(new RepoRefused({})),
     }),
   )

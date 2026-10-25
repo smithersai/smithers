@@ -65,13 +65,29 @@ export const AboutRow = Schema.Struct({
 })
 export type AboutRow = typeof AboutRow.Type
 
+/**
+ * A repository's ready head as RepoApi's refs named it for this tab, keyed by the repository's id: the default branch and
+ * head commit Postgres has, read before Electric delivered the repository's row (actions.ts `ensureHead`). Loading,
+ * ready, absent (Postgres has no ready clone: not cloned, cloning, failed or refused) or failed (RepoApi couldn't
+ * answer).
+ */
+export const HeadRow = Schema.Struct({
+  key: Schema.String,
+  state: Schema.Literals(["loading", "ready", "absent", "failed"]),
+  defaultBranch: Schema.NullOr(Schema.String),
+  headSha: Schema.NullOr(Schema.String),
+})
+export type HeadRow = typeof HeadRow.Type
+
 /** The one view row's key. */
 export const VIEW = "view"
 
 /**
  * Where the routed view is, one row. What the URL said (`owner`, `name`, `kind`, `ref`, `splat`, `line`, `lineEnd`),
  * then what it resolved to once the repository is ready: the `revision` links use (a branch, a tag or a SHA), the
- * commit `sha`, the `path`, and the keys of the branches and tags, the tree, the file and the directory's README.
+ * commit `sha`, the `path`, the repository's `defaultBranch`, and the keys of the branches and tags, the tree, the file
+ * and the directory's README. A `sha` says the load found the clone ready, from the repository's synced row or from
+ * RepoApi's refs before Electric delivered that row.
  * `missing` when the URL names no repository or a ref the repository doesn't have; `failure` when the branches and
  * tags the ref needed couldn't load, and why. `signedIn` is sign-in's answer, `null` until it gives one. `answered`:
  * the repositories' shape has answered once, with its rows or a failure.
@@ -91,6 +107,7 @@ export const ViewRow = Schema.Struct({
   revision: Schema.NullOr(Schema.String),
   sha: Schema.NullOr(Schema.String),
   path: Schema.String,
+  defaultBranch: Schema.NullOr(Schema.String),
   refsKey: Schema.NullOr(Schema.String),
   treeKey: Schema.NullOr(Schema.String),
   fileKey: Schema.NullOr(Schema.String),
@@ -123,6 +140,7 @@ export const emptyView: ViewRow = {
   revision: null,
   sha: null,
   path: "",
+  defaultBranch: null,
   refsKey: null,
   treeKey: null,
   fileKey: null,

@@ -53,8 +53,11 @@ export interface DeviceOptions {
   readonly homeClient?: Layer.Layer<HomeClient>
   /** The real home store with injected scheduling faults. */
   readonly homeStore?: typeof HomeStore.layer
-  /** `down`: every shape request fails on the network, as offline. */
-  readonly shapes?: "real" | "down"
+  /**
+   * `down`: every shape request fails on the network, as offline. `stalled`: every shape response is held until `heal`,
+   * as a cold shape that takes its time.
+   */
+  readonly shapes?: "real" | "down" | "stalled"
   /** How long a failed shape request waits: the store's default unless set. */
   readonly retry?: Schedule.Schedule<unknown, ShapeSource.RequestFailed>
   /** How long Electric gets to deliver a clone's row: the store's default unless set. */
@@ -106,6 +109,8 @@ export const openTab = async (options: DeviceOptions) => {
     cacheNamespace: name,
   }))).pipe(Layer.provideMerge(options.shapes === "down"
     ? ShapeSource.layerFaulty((switches) => switches.down())
+    : options.shapes === "stalled"
+    ? ShapeSource.layerFaulty((switches) => switches.stall())
     : Layer.empty))
   // The engine: the Node host over the compose Postgres, running what the engine worker registers for these flows.
   const registration = Layer.mergeAll(RepoSteps.registration, Navigation.registration, FileFlows.registration).pipe(
@@ -224,6 +229,9 @@ export const openTab = async (options: DeviceOptions) => {
     histogramCount,
     /** The log lines with `message`. */
     lines: (message: string) => logs.filter((log) => log.message === message),
+    /** Lets held shape responses through (`shapes: "stalled"`), and the shapes answer from then on. */
+    // The faulty source is there only when `shapes` asked for one; a test calls `heal` only then.
+    heal: () => runtime.runPromise(Effect.flatMap(Effect.service(ShapeSource.Faults), (faults) => faults.heal) as Effect.Effect<void>),
     /** The view as the header and page read it. */
     view: () => repo.queries.view.toArray[0]!,
     refs: () => repo.queries.refs.toArray[0]!,

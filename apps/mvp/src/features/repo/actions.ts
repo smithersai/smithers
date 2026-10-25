@@ -17,9 +17,9 @@ import {
   repoId,
   textOf,
 } from "./contract"
-import { aboutLoadMs, blobLoadMs, cloneClicks, opens, refsLoadMs, treeLoadMs } from "./metrics"
+import { aboutLoadMs, blobLoadMs, cloneClicks, headLoadMs, locateMs, opens, refsLoadMs, treeLoadMs } from "./metrics"
 import { blobKey, copyPayloadOf, readmeOf, refsKey, resolveRef, type Target, treeKey } from "./paths"
-import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow, ViewRow } from "./rows"
+import type { AboutRow, BlobRow, CloneRow, HeadRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import { VIEW } from "./rows"
 import type { Repository } from "./schema"
 import { RepoStore } from "./store"
@@ -120,11 +120,18 @@ const readFailure = (refused: RepoRefused): string =>
     ? BUSY
     : COULDNT_LOAD
 
+/** A repository as its reads name it. */
+interface Named {
+  readonly id: string
+  readonly owner: string
+  readonly name: string
+}
+
 /**
  * Loads `owner/name`'s file list at `sha` unless this tab has it or is loading it. A failed one loads again when
  * `again`: a navigation's warm asks again, and the page it then opens shows what that answered.
  */
-const ensureTree = (repository: Repository, sha: string, again: boolean) =>
+const ensureTree = (repository: Named, sha: string, again: boolean) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const key = treeKey(repository.id, sha)
@@ -146,7 +153,7 @@ const ensureTree = (repository: Repository, sha: string, again: boolean) =>
   })
 
 /** Loads `owner/name`'s branches and tags as of its sync unless this tab has them or is loading them. */
-const ensureRefs = (repository: Repository, key: string) =>
+const ensureRefs = (repository: Named, key: string) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const found = yield* store.refs.get(key)
@@ -246,7 +253,7 @@ export const aboutOf = (owner: string, name: string) =>
   })
 
 /** Loads a file at `sha` unless this tab has it or is loading it; a failed one loads again when `again`, as a tree. */
-const ensureBlob = (repository: Repository, sha: string, path: string, again: boolean) =>
+const ensureBlob = (repository: Named, sha: string, path: string, again: boolean) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const key = blobKey(repository.id, sha, path)
@@ -342,6 +349,121 @@ const until = <A extends object>(collection: Collection.Collection<A, string>, k
 /** Whether a load has ended: loaded or failed. */
 const loaded = (row: { readonly state: string }) => row.state !== "loading"
 
+// --- Resolving ---
+//
+// A file reads at a commit, so a page needs the repository's ready head before anything else. The device's synced row
+// has it once Electric delivers it; RepoApi's refs read the same row in Postgres directly. A page waits for whichever
+// answers first, so a visitor's first page (no rows on the device yet) or a slow shape never holds a file back, and a
+// device that has the ready row asks RepoApi nothing (docs/features/repo.md#a-pages-head).
+
+/**
+ * A repository whose clone is ready, as reading its files needs it: its default branch and head commit, where its
+ * branches and tags are kept in `refs`, and where the head came from: the device's synced `row`, or RepoApi's `refs`.
+ */
+interface Readable extends Named {
+  readonly defaultBranch: string | null
+  readonly headSha: string
+  readonly refsKey: string
+  readonly source: "row" | "refs"
+}
+
+/** A ready synced row, as its files read. */
+const fromRow = (row: Repository & { readonly headSha: string }): Readable => ({
+  id: row.id,
+  owner: row.owner,
+  name: row.name,
+  defaultBranch: row.defaultBranch,
+  headSha: row.headSha,
+  refsKey: refsKey(row.id, row.headSha, row.refsChangedAt),
+  source: "row",
+})
+
+/**
+ * Asks RepoApi's refs for `owner/name`'s ready head unless this tab has it or is asking: the default branch and head
+ * commit Postgres has, and every branch and tag, which `refs` keeps under that head. A 404 is `absent`, no ready clone.
+ * An absent or failed answer is asked again when `again`: a navigation's warm asks again, as for a file list.
+ */
+const ensureHead = (repository: Named, again: boolean) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    const { id } = repository
+    const found = yield* store.heads.get(id)
+    if (Option.isSome(found) && (found.value.state === "loading" || found.value.state === "ready" || !again)) return
+    yield* put<HeadRow>(store.heads, id, { key: id, state: "loading", defaultBranch: null, headSha: null })
+    const load = Effect.gen(function* () {
+      const startedAt = yield* Clock.currentTimeMillis
+      const result = yield* Effect.result((yield* RepoClient).refs(repository.owner, repository.name))
+      if (result._tag === "Success") {
+        const { head, branches, tags, truncated } = result.success
+        const key = refsKey(id, head)
+        yield* put<RefsRow>(store.refs, key, { key, state: "ready", branches, tags, truncated, message: null })
+      }
+      const row: HeadRow = result._tag === "Success"
+        ? { key: id, state: "ready", defaultBranch: result.success.defaultBranch, headSha: result.success.head }
+        : { key: id, state: result.failure.status === 404 ? "absent" : "failed", defaultBranch: null, headSha: null }
+      yield* put(store.heads, id, row)
+      yield* observeLoad("repo.head.load", headLoadMs, row.state, startedAt, result)
+    })
+    yield* Effect.forkIn(load, store.scope, { startImmediately: true })
+  })
+
+/** The head RepoApi's refs named for `repository`, once they answered: ready, absent or failed. */
+const answeredHead = (repository: Named) => Effect.flatMap(RepoStore, (store) => until(store.heads, repository.id, loaded))
+
+/** A ready head RepoApi's refs named, as its files read. */
+const fromHead = (repository: Named, head: HeadRow): Readable => ({
+  id: repository.id,
+  owner: repository.owner,
+  name: repository.name,
+  defaultBranch: head.defaultBranch,
+  // A ready head always names its commit (`ensureHead`).
+  headSha: head.headSha!,
+  refsKey: refsKey(repository.id, head.headSha!),
+  source: "refs",
+})
+
+/**
+ * Waits until the repository's clone is ready, for the routed view's load: its synced row when the device has it
+ * ready, else whichever is first of Electric delivering a ready row and RepoApi's refs naming its ready head. A refs
+ * answer that says it isn't ready, or can't answer, leaves the wait on the row, which a clone that settles delivers.
+ */
+const readable = (repository: Named) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    const now = yield* store.repositories.get(repository.id)
+    if (isReady(now)) return fromRow(now.value)
+    yield* ensureHead(repository, false)
+    const fromRefs = Effect.flatMap(
+      answeredHead(repository),
+      (head) => (head.state === "ready" ? Effect.succeed(fromHead(repository, head)) : Effect.never),
+    )
+    return yield* Effect.raceFirst(Effect.map(ready(repository.id), fromRow), fromRefs)
+  })
+
+/**
+ * The repository a page will show files of, for a navigation's warm, once the device can tell: its row, ready or why
+ * not (not cloned, cloning, failed or refused: none); without a row, whichever is first of the repositories' shape's
+ * first sync and RepoApi's refs, ready or absent. A refs read that couldn't answer leaves it to the shape.
+ */
+const shown = (repository: Named) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    const now = yield* store.repositories.get(repository.id)
+    if (Option.isSome(now)) return isReady(now) ? Option.some(fromRow(now.value)) : Option.none()
+    yield* ensureHead(repository, true)
+    const synced = Effect.ignore(store.repositories.preload).pipe(
+      Effect.andThen(store.repositories.get(repository.id)),
+      Effect.map((row) => (isReady(row) ? Option.some(fromRow(row.value)) : Option.none())),
+    )
+    const fromRefs = Effect.flatMap(answeredHead(repository), (head) =>
+      head.state === "ready"
+        ? Effect.succeedSome(fromHead(repository, head))
+        : head.state === "absent"
+        ? Effect.succeedNone
+        : Effect.never)
+    return yield* Effect.raceFirst(synced, fromRefs)
+  })
+
 /** Where a location is in a ready repository: its ref resolved to a commit, the ref's load failed, or no such ref. */
 type Location =
   | { readonly _tag: "Located"; readonly revision: string; readonly sha: string; readonly path: string }
@@ -350,12 +472,12 @@ type Location =
 
 /**
  * Resolves `target`'s ref in a ready repository: loads its branches and tags, and waits for them only when the ref is
- * neither the default branch nor a SHA.
+ * neither the default branch nor a SHA. A head RepoApi's refs named comes with its branches and tags already.
  */
-const locate = (repository: Repository & { readonly headSha: string }, target: Target) =>
+const locate = (repository: Readable, target: Target) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
-    const refs = refsKey(repository.id, repository.headSha, repository.refsChangedAt)
+    const refs = repository.refsKey
     yield* ensureRefs(repository, refs)
     let resolved = resolveRef(repository, target.ref, target.path)
     if (resolved === undefined) {
@@ -371,7 +493,7 @@ const locate = (repository: Repository & { readonly headSha: string }, target: T
  * Once the file list at `sha` has loaded, loads the generated-files manifest nearest `path` (a file, or a directory's
  * page for the branch's editor over it), when a folder on the way has one (docs/features/repo.md#generated-files).
  */
-const ensureManifest = (repository: Repository, sha: string, path: string, kind: "tree" | "blob") =>
+const ensureManifest = (repository: Named, sha: string, path: string, kind: "tree" | "blob") =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const tree = yield* until(store.trees, treeKey(repository.id, sha), loaded)
@@ -383,21 +505,27 @@ const ensureManifest = (repository: Repository, sha: string, path: string, kind:
   })
 
 /**
- * The routed view's load: once the repository is ready, resolves the URL's ref (`locate`), then the file list and the
- * file, or for a directory its README. It reads what `warm` loaded and asks for what isn't loading yet; a failed load
- * stays failed, since the navigation's warm just asked again.
+ * The routed view's load: once the repository is ready (`readable`), resolves the URL's ref (`locate`), then the file
+ * list and the file, or for a directory its README. It reads what `warm` loaded and asks for what isn't loading yet; a
+ * failed load stays failed, since the navigation's warm just asked again. Knowing where the location is, a log line
+ * `repo.locate` and `locateMs` say how long that took and where the head came from.
  */
 const load = (target: Target, id: string) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
-    const repository = yield* ready(id)
-    yield* changeView({ refsKey: refsKey(id, repository.headSha, repository.refsChangedAt) })
+    const startedAt = yield* Clock.currentTimeMillis
+    const repository = yield* readable({ id, owner: target.owner, name: target.name })
+    yield* changeView({ refsKey: repository.refsKey })
     const location = yield* locate(repository, target)
+    const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+    const outcome = location._tag === "Located" ? "located" : location._tag === "Missing" ? "missing" : "failed"
+    yield* Metric.update(Metric.withAttributes(locateMs, { source: repository.source, outcome }), durationMs)
+    yield* Effect.logInfo("repo.locate").pipe(Effect.annotateLogs({ source: repository.source, outcome, durationMs }))
     if (location._tag === "Failed") return yield* changeView({ failure: location.message })
     if (location._tag === "Missing") return yield* changeView({ missing: true })
     const { revision, sha, path } = location
     const fileKey = target.kind === "blob" ? blobKey(id, sha, path) : null
-    yield* changeView({ revision, sha, path, treeKey: treeKey(id, sha), fileKey })
+    yield* changeView({ revision, sha, path, defaultBranch: repository.defaultBranch, treeKey: treeKey(id, sha), fileKey })
     yield* ensureTree(repository, sha, false)
     if (target.kind === "blob") {
       yield* ensureBlob(repository, sha, path, false)
@@ -428,8 +556,9 @@ export const shownRepository = (id: string) =>
   })
 
 /**
- * Loads what `target`'s page shows into this tab without opening it: what GitHub says of the repository, then the file
- * list and the file, or the directory's README; for a repository nobody cloned, only what GitHub says. Ends once they
+ * Loads what `target`'s page shows into this tab without opening it: what GitHub says of the repository, then, once the
+ * device's row or RepoApi's refs say its clone is ready (`shown`), the file list and the file, or the directory's
+ * README; for a repository nobody cloned, only what GitHub says. Ends once they
  * have loaded or failed, or after the store's `pageWait`, whichever is first; a request still on its way finishes in
  * the store's scope. A failed load loads again. A link's hover or focus runs it (the router's intent preload), and so does every navigation before it
  * opens the page, which then shows it complete.
@@ -440,7 +569,7 @@ export const warm = (target: Target) =>
     const store = yield* RepoStore
     const id = repoId(target.owner, target.name)
     yield* ensureAbout(target.owner, target.name, id)
-    const repository = yield* shownRepository(id)
+    const repository = yield* shown({ id, owner: target.owner, name: target.name })
     // Not cloned: the page shows what GitHub says of it, so that is what to wait for.
     if (Option.isNone(repository)) return yield* Effect.asVoid(until(store.abouts, id, loaded))
     const location = yield* locate(repository.value, target)
@@ -465,7 +594,7 @@ export const warm = (target: Target) =>
 
 /**
  * Opens `target` in the routed view: the view row says where at once, and the tab loads what it needs in its scope,
- * once the repository is ready. Opening another location interrupts a load still waiting; a request already sent
+ * once the repository is ready (`readable`). Opening another location interrupts a load still waiting; a request already sent
  * finishes and keeps what it read.
  */
 export const open = (target: Target) =>
@@ -487,6 +616,7 @@ export const open = (target: Target) =>
       revision: null,
       sha: null,
       path: target.path,
+      defaultBranch: null,
       refsKey: null,
       treeKey: null,
       fileKey: null,
