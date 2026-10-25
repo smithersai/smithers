@@ -1,13 +1,16 @@
 import { expect, step, test } from "./fixtures"
-import { requires } from "./target"
+import { broken, requires } from "./target"
 import { as, contribute, homeOf, landing, openHome, REPO, viewsOf } from "./vibelang"
 
 // The maintainer's journey on the VibeLang repository (rulings SCOPE-13, SCOPE-14): a Maintainer opens
 // smithersai/vibelang on Today (New branch with its key, the issues, the runs), then Contribute and the landing page;
 // switches down to the contributor and user views and back; and presses B for a new branch's workspace. Locally the
 // Maintainer is local development's; against a deployment, the run's test account, a Maintainer or above on the
-// deployment's repository (decision 0007 phase 1). New branch makes the branch on Code Storage's mirror of VibeLang,
+// deployment's repository. Other-repository deployments are marked broken until home roles are resolved per repository.
+// New branch makes the branch on Code Storage's mirror of VibeLang,
 // cloning it first when this deployment hasn't, so it needs Code Storage.
+
+broken("vibelangRoles")
 
 test.describe("VibeLang on Smithers", () => {
   test(

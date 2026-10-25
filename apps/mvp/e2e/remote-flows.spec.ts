@@ -3,6 +3,8 @@ import { expect, test } from "./devices"
 import { field, type LogRecord, LogTail } from "./logs"
 import { me, requires } from "./target"
 
+// Local limitation: the reconciliation/webhook slices need the real GitHub App and synced data; run a credentialed local stack as E2E_TARGET=deployment. Expiry, spend and role timers intentionally require longRun: dev shortens or disables those production windows, so the mini cannot prove them.
+//
 // Remote flows on the deployment (docs/features/remote-flows.md): the git loop's `github/Reconcile` and `github/Apply`,
 // `ops/SpendAlert`, `chat/Expire` and `auth/RecheckRole`, each run by ChatApi's `FlowExecution` Durable Objects. Each
 // test does what a person does, then waits for the flow's own record in ChatApi's records (e2e/logs.ts: a Cloudflare

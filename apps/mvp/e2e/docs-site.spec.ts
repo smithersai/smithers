@@ -2,6 +2,8 @@ import type { Page } from "@playwright/test"
 import { expect, test } from "./fixtures"
 import { requires, signedOut } from "./target"
 
+// Local coverage: the service-worker routing test below runs under alchemy dev. The docs-content test needs docsSite because alchemy dev does not serve the separate Starlight Worker or custom-domain routes.
+//
 // The docs site shares the app's hostname on a deployment's custom domain (infra/DocsSite.ts): Cloudflare routes its
 // paths to it, and the app's service worker, in control of every page on the origin after one visit to the app, must
 // leave those paths to the network (src/pwa.ts DOCS_SITE). A visitor needs no session for either.

@@ -2,6 +2,8 @@ import { expect, test } from "./devices"
 import { github, pollGitHub } from "./github"
 import { requires, scratchRepository } from "./target"
 
+// Local limitation: this journey verifies a real GitHub OAuth write and App-resolved repository permission. Run a locally hosted stack with those credentials using E2E_TARGET=deployment; synthetic local-development identities have no GitHub user token.
+//
 // Opening an issue on a repository other than the deployment's own (decision 0079, docs/features/issues.md#routes): the
 // real app, ChatApi, its role read from GitHub with the App, the `github/Write` flow and GitHub itself. It writes to
 // GitHub as the test account, so it runs only against a deployment signed in as that account

@@ -98,7 +98,7 @@ test("your model: a refused key names the provider and status; a real key answer
     expect(exchange![1].text).toContain(`byok-${word}`)
   })
 
-  await step("Remove: the model is gone, and the account has no model", async () => {
+  await step("Remove: the saved model and its Test button are gone", async () => {
     await page.goto(settings)
     await remove.click()
     await expect(remove).toHaveCount(0, { timeout: SAVED_WITHIN })

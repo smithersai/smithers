@@ -1,12 +1,14 @@
 import { expect, step, test } from "./fixtures"
-import { requires } from "./target"
+import { broken, requires } from "./target"
 import { as, contribute, homeOf, landing, openHome, ownView, readCode, readDocs, REPO, viewsOf } from "./vibelang"
 
 // The contributor's journey on the VibeLang repository (rulings SCOPE-13, SCOPE-14): a Member opens
 // smithersai/vibelang on the contributors' view, with how to set up, how a change lands and where to ask above the
 // landing page, can see it as a user sees it, and reads the docs and the code. Locally the Member is local development's
 // teammate; against a deployment it is the run's test account, which must be a Member or above on the deployment's
-// repository (decision 0007 phase 1: roles are that one repository's), and opens on its own view.
+// repository. Until per-repository home roles land, deployments of another repository are marked broken.
+
+broken("vibelangRoles")
 
 test.describe("VibeLang on Smithers", () => {
   test(

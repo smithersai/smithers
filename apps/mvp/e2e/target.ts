@@ -160,7 +160,7 @@ const githubAppLocally = (run: Run) => set(run, "GITHUB_APP_CLIENT_ID")
 
 /** Whether a deployment run names a scratch repository to write issues to, never a smithersai one. */
 const scratchSet = (run: Run) =>
-  run.target === "deployment" && set(run, "E2E_ISSUES_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_ISSUES_REPOSITORY!)
+  run.target === "deployment" && /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_ISSUES_REPOSITORY ?? "") && !/^smithersai\//i.test(run.env.E2E_ISSUES_REPOSITORY!)
 
 const needs = {
   faults: devBuildOnly("the app's faulty services (`/app?faults`, e2e/faults.ts) are in dev builds only"),
@@ -252,12 +252,17 @@ const needs = {
   },
   githubScratch: {
     met: scratchSet,
-    reason: "it writes issues to GitHub as a real person: run against a deployment with E2E_ISSUES_REPOSITORY set to a scratch repository it syncs, never a smithersai one",
+    reason: "it writes issues to GitHub as a real person: run against a deployment with E2E_ISSUES_REPOSITORY set to a scratch repository; this permits writes but does not promise synced shapes, never a smithersai one",
+  },
+  syncedScratch: {
+    met: (run) => scratchSet(run) &&
+      run.env.E2E_ISSUES_REPOSITORY!.toLowerCase() === (run.env.E2E_SYNCED_REPOSITORY ?? run.env.GITHUB_REPOSITORY ?? "smithersai/smithers").toLowerCase(),
+    reason: "it needs synced issue shapes, triage and stack writes: E2E_ISSUES_REPOSITORY must name the deployment's synced scratch repository (E2E_SYNCED_REPOSITORY), never smithersai; use a dedicated scratch deployment",
   },
   secondRepository: {
     met: (run) =>
       scratchSet(run) &&
-      run.env.E2E_ISSUES_REPOSITORY!.toLowerCase() !== (run.env.E2E_SYNCED_REPOSITORY ?? "smithersai/smithers").toLowerCase(),
+      run.env.E2E_ISSUES_REPOSITORY!.toLowerCase() !== (run.env.E2E_SYNCED_REPOSITORY ?? run.env.GITHUB_REPOSITORY ?? "smithersai/smithers").toLowerCase(),
     reason: "it opens an issue on a repository other than the deployment's own (decision 0079): run against a deployment whose GITHUB_REPOSITORY, E2E_SYNCED_REPOSITORY (smithersai/smithers unless set), isn't the scratch repository E2E_ISSUES_REPOSITORY",
   },
   dogfood: {
@@ -317,14 +322,19 @@ export type NeedName = keyof typeof needs
 export const NEEDS: Readonly<Record<NeedName, Need>> = needs
 
 /** What a known-broken entry says: the targets it breaks and why (TEST-5). */
-export type Broken = { readonly in: ReadonlyArray<Target>; readonly reason: string }
+export type Broken = { readonly in: ReadonlyArray<Target>; readonly reason: string; readonly when?: (run: Run) => boolean }
 
 /**
  * Behavior known to fail on a target (TEST-5), by name: `broken(name)` marks a test that fails there for that reason.
- * Each is fixed by deleting its entry and its marks, which turns its tests back on. None is known today: production's
- * remote flows, the last entry, run since the 2026-10-21 18:48 UTC smoke on 931fed70.
+ * Remove an entry and its marks once the behavior is fixed.
  */
-export const KNOWN_BROKEN: Readonly<Record<string, Broken>> = {}
+export const KNOWN_BROKEN: Readonly<Record<string, Broken>> = {
+  vibelangRoles: {
+    in: ["deployment"],
+    when: (run) => (run.env.GITHUB_REPOSITORY ?? run.env.E2E_SYNCED_REPOSITORY ?? "smithersai/smithers").toLowerCase() !== "smithersai/vibelang",
+    reason: "since ac88ac3757 the home counts roles only on GITHUB_REPOSITORY; VibeLang contributor and maintainer views fail on other deployments until per-repository home roles land",
+  },
+}
 
 export type BrokenName = string
 
@@ -395,13 +405,17 @@ const record = (name: NeedName) => {
 /** Whether the running test declared `name`: a test that declared `ownConversation` opens the app in it. */
 export const declared = (name: NeedName) => (inTest() ? (declaredBy.get(base.info())?.has(name) ?? false) : false)
 
-/** Marks a test (in its body) or a file or describe block as failing on the targets `name` breaks (TEST-5). */
-export const broken = (name: BrokenName) => {
+/** Whether a known failure applies to this target and its repository configuration. */
+export const brokenOn = (name: BrokenName, run: Run = thisRun) => {
   const entry = KNOWN_BROKEN[name]
   if (entry === undefined) throw new Error(`No known-broken entry ${name} in KNOWN_BROKEN (e2e/target.ts)`)
-  const on = entry.in.includes(target)
-  if (inTest()) base.fail(on, describeBroken(name))
-  else base.fail(() => on, describeBroken(name))
+  return entry.in.includes(run.target) && (entry.when?.(run) ?? true)
+}
+
+/** Marks a test (in its body) or a file or describe block as failing on the targets `name` breaks (TEST-5). */
+export const broken = (name: BrokenName) => {
+  if (inTest()) base.fail(brokenOn(name), describeBroken(name))
+  else base.fail(() => brokenOn(name), describeBroken(name))
 }
 
 /**

@@ -20,7 +20,7 @@ import { requires, scratchRepository } from "./target"
 // - "two devices" is G1 and G3: device A opens an issue, device B sees it numbered by GitHub, B comments, A sees the
 //   comment. It writes to GitHub as a real person, so it runs only against a deployment, signed in as the test account
 //   (e2e/deployment/sign-in.setup.ts), on a scratch repository Will owns with the Smithers GitHub App installed, never
-//   `smithersai/*`: E2E_ISSUES_REPOSITORY, `owner/name` of that repository (`requires("githubScratch")`,
+//   `smithersai/*`: E2E_ISSUES_REPOSITORY, `owner/name` of that repository (`requires("syncedScratch")`,
 //   e2e/target.ts). A local stack with the GitHub App runs it as a deployment (`E2E_TARGET=deployment`).
 // - "who triages" runs wherever the app runs without the App, like "who reads": a Maintainer gets Enable triage beside
 //   New issue, and a signed-out device gets neither (docs/features/issues.md#triage). It presses nothing.
@@ -140,7 +140,7 @@ test("who reads: signed out, a repository GitHub hasn't said is public asks to s
 })
 
 test("two devices: A opens an issue, B sees GitHub number it and comments, A sees the comment", { annotation: { type: "summary", description: "An issue opened on one device gets its GitHub number, and comments flow between devices through GitHub." } }, async ({ devices }) => {
-  requires("githubScratch", "member")
+  requires("syncedScratch", "member")
   test.setTimeout(240_000)
   const scratch = scratchRepository()
   const a = await devices.open("A")
@@ -200,7 +200,7 @@ test("who triages: a Maintainer gets Enable triage beside New issue; signed out,
 })
 
 test("triage: a Maintainer enables it, the flow labels a new issue, another device overrides it, and runs it again", { annotation: { type: "summary", description: "With triage on, the flow labels a new issue, another device overrides it, and it runs again." } }, async ({ devices }) => {
-  requires("githubScratch", "maintainer")
+  requires("syncedScratch", "maintainer")
   test.setTimeout(300_000)
   const scratch = scratchRepository()
   const a = await devices.open("A")

@@ -1,5 +1,5 @@
 import { expect, type Tab, test } from "./devices"
-import { requires, scratchRepository, scriptedAgent } from "./target"
+import { requires, scratchRepository, scriptedAgent, stackRepository } from "./target"
 
 // TODOs and the stack, end to end (decision 0016 slice 1, Track A; docs/features/todos.md): two people in real
 // browsers against the real app, ChatApi, its one stack writer, Postgres and Electric. Ann asks Smithers for a TODO;
@@ -92,11 +92,14 @@ test("todo-commit-drop: Ann asks Smithers for a TODO, edits the draft and commit
 })
 
 test("todo-new-keyboard: New TODO on the stack page, typed and committed with the keyboard, then dropped", async ({ devices }) => {
-  requires("member")
+  requires("member", "writableStack")
+  const repo = stackRepository()
+  const keyboardRow = (tab: Tab, word: string) => tab.page.getByRole("region", { name: `${repo} stack` }).locator("[data-slot=issues-row]", { hasText: word })
   test.setTimeout(240_000)
   const word = devices.word
   const [ann] = await devices.open("Ann")
-  await openStack(ann)
+  await ann.page.goto(`/${repo}/stack`)
+  await expect(ann.page.getByRole("region", { name: `${repo} stack` })).toBeVisible({ timeout: 60_000 })
   await ann.page.getByRole("button", { name: "New TODO" }).focus()
   await ann.page.keyboard.press("Enter")
   const draft = ann.page.getByRole("form", { name: "TODO draft" }).first()
@@ -105,13 +108,13 @@ test("todo-new-keyboard: New TODO on the stack page, typed and committed with th
   await ann.page.keyboard.press("Tab")
   await ann.page.keyboard.type("Typed without a mouse.")
   await ann.page.keyboard.press("ControlOrMeta+Enter")
-  await expect(row(ann, word)).toContainText(/T\d+/, { timeout: 60_000 })
-  await expect(row(ann, word)).not.toHaveAttribute("data-pending", /.+/, { timeout: 60_000 })
-  const number = (await row(ann, word).textContent())!.match(/T(\d+)/)![1]!
+  await expect(keyboardRow(ann, word)).toContainText(/T\d+/, { timeout: 60_000 })
+  await expect(keyboardRow(ann, word)).not.toHaveAttribute("data-pending", /.+/, { timeout: 60_000 })
+  const number = (await keyboardRow(ann, word).textContent())!.match(/T(\d+)/)![1]!
 
   // Drop with the keyboard, from the row's menu: Enter opens it on Drop, Enter asks with the focus on Cancel, the safe
   // choice; Tab reaches Drop, and Enter drops it. The row leaves the Open list for the Closed one.
-  await row(ann, word).getByRole("button", { name: `T${number} actions` }).focus()
+  await keyboardRow(ann, word).getByRole("button", { name: `T${number} actions` }).focus()
   await ann.page.keyboard.press("Enter")
   await expect(ann.page.getByRole("menuitem", { name: "Drop" })).toBeFocused()
   await ann.page.keyboard.press("Enter")
@@ -120,18 +123,18 @@ test("todo-new-keyboard: New TODO on the stack page, typed and committed with th
   await ann.page.keyboard.press("Tab")
   await expect(confirm.getByRole("button", { name: "Drop", exact: true })).toBeFocused()
   await ann.page.keyboard.press("Enter")
-  await expect(row(ann, word)).toHaveCount(0, { timeout: 60_000 })
+  await expect(keyboardRow(ann, word)).toHaveCount(0, { timeout: 60_000 })
   await ann.page.getByRole("navigation", { name: "Filter" }).getByRole("link", { name: /Closed/ }).focus()
   await ann.page.keyboard.press("Enter")
-  await expect(row(ann, word)).toHaveAttribute("data-status", "dropped", { timeout: 60_000 })
+  await expect(keyboardRow(ann, word)).toHaveAttribute("data-status", "dropped", { timeout: 60_000 })
 })
 
 // Make TODO on an issue (docs/features/todos.md#from-an-issue) needs an open issue GitHub's projection holds, as
 // e2e/issues.spec.ts does: a deployment signed in as the test account, a Member or above on E2E_ISSUES_REPOSITORY, the
-// scratch repository with the Smithers GitHub App installed (`requires("githubScratch")`, e2e/target.ts).
+// scratch repository with the Smithers GitHub App installed (`requires("syncedScratch")`, e2e/target.ts).
 
 test("todo-from-issue: Make TODO from an issue's menu drafts it linked; the issue shows its TODO; t makes a second while the first is open", async ({ devices }) => {
-  requires("githubScratch", "member")
+  requires("syncedScratch", "member")
   test.setTimeout(300_000)
   const repo = scratchRepository()
   const [ann] = await devices.open("Ann")

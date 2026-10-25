@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   appURLOf,
   type Broken,
+  brokenOn,
   describeBroken,
   describeNeed,
   dotEnvSets,
@@ -136,6 +137,7 @@ describe("needs", () => {
       "hostedModelOff",
       "factoryRepository",
       "githubScratch",
+      "syncedScratch",
       "secondRepository",
       "dogfood",
       "repoFlows",
@@ -313,6 +315,32 @@ describe("needs", () => {
     expect(NEEDS.codeStorage.met({ ...local, env: { CODE_STORAGE_ORG: "o", CODE_STORAGE_KEY: "" } })).toBe(false)
   })
 
+  it("requires the synced scratch for projected issues and rejects a second repository", () => {
+    const env = { E2E_ISSUES_REPOSITORY: "owner/scratch", E2E_SYNCED_REPOSITORY: "OWNER/Scratch" }
+    const run = deployedAs("maintainer", env)
+    expect(NEEDS.syncedScratch.met(run)).toBe(true)
+    expect(NEEDS.githubScratch.met(run)).toBe(true)
+    expect(NEEDS.syncedScratch.met(deployedAs("maintainer", { E2E_ISSUES_REPOSITORY: "owner/scratch", GITHUB_REPOSITORY: "owner/scratch" }))).toBe(true)
+    expect(NEEDS.secondRepository.met(run)).toBe(false)
+    const second = deployedAs("maintainer", { ...env, E2E_SYNCED_REPOSITORY: "smithersai/smithers" })
+    expect(NEEDS.syncedScratch.met(second)).toBe(false)
+    expect(NEEDS.secondRepository.met(second)).toBe(true)
+    expect(NEEDS.syncedScratch.met(deployedAs("maintainer"))).toBe(false)
+    expect(NEEDS.syncedScratch.met(deployedAs("maintainer", { E2E_ISSUES_REPOSITORY: "SmithersAI/smithers", E2E_SYNCED_REPOSITORY: "smithersai/smithers" }))).toBe(false)
+    expect(NEEDS.syncedScratch.met({ ...local, env })).toBe(false)
+  })
+
+  it("marks VibeLang roles broken only on deployments of another repository", () => {
+    const entry = KNOWN_BROKEN.vibelangRoles!
+    expect(entry.in).toEqual(["deployment"])
+    expect(brokenOn("vibelangRoles", deployedAs("member"))).toBe(true)
+    expect(brokenOn("vibelangRoles", local)).toBe(false)
+    expect(brokenOn("vibelangRoles", deployedAs("member", { GITHUB_REPOSITORY: "smithersai/smithers", E2E_SYNCED_REPOSITORY: "smithersai/vibelang" }))).toBe(true)
+    expect(() => brokenOn("unknown", local)).toThrow("No known-broken entry unknown")
+    expect(brokenOn("vibelangRoles", deployedAs("member", { E2E_SYNCED_REPOSITORY: "SmithersAI/VibeLang" }))).toBe(false)
+    expect(brokenOn("vibelangRoles", deployedAs("maintainer", { GITHUB_REPOSITORY: "smithersai/vibelang" }))).toBe(false)
+  })
+
   it("for a second repository, are met only when the scratch repository isn't the deployment's own", () => {
     const scratch = { E2E_ISSUES_REPOSITORY: "roninjin10/smithers-github-tests" }
     expect(NEEDS.secondRepository.met(deployedAs("member", scratch))).toBe(true)
@@ -325,6 +353,9 @@ describe("needs", () => {
     expect(NEEDS.githubScratch.met(deployedAs("member", { E2E_ISSUES_REPOSITORY: "roninjin10/smithers-github-tests" }))).toBe(true)
     expect(NEEDS.githubScratch.met(deployedAs("member", { E2E_ISSUES_REPOSITORY: "SmithersAI/smithers" }))).toBe(false)
     expect(NEEDS.githubScratch.met(deployedAs("member"))).toBe(false)
+    for (const repository of ["", "owner", "owner/repo/extra", "owner/repo?query"]) {
+      expect(NEEDS.githubScratch.met(deployedAs("member", { E2E_ISSUES_REPOSITORY: repository }))).toBe(false)
+    }
     expect(NEEDS.githubScratch.met({ ...local, env: { E2E_ISSUES_REPOSITORY: "roninjin10/smithers-github-tests" } })).toBe(false)
   })
 
@@ -354,7 +385,7 @@ describe("needs", () => {
 })
 
 describe("descriptions", () => {
-  // A known-broken entry, as one is added when a target breaks (TEST-5); none is known today.
+  // A temporary registry entry exercises description parsing independently of the current known failures.
   const registry = KNOWN_BROKEN as Record<string, Broken>
   beforeAll(() => {
     registry.clones = { in: ["deployment"], reason: "the deployment's clones never finish (an example entry)" }

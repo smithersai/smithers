@@ -3,9 +3,11 @@ import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { NEEDS_REPRO_COMMENT, NEEDS_REPRO_LABEL, COMMITMENTS, COMMITMENT_COPY } from "../src/features/issues/lifecycle"
 import { requires, scratchRepository } from "./target"
 
+// Local limitation: this journey needs a real signed-in GitHub user, the App installation, webhook delivery and synced scratch repository. A local stack configured with those runs with E2E_TARGET=deployment; the model-free mini has none of them.
+//
 // Real GitHub, a deployment, Postgres, Electric and the browser; no model is needed for these slices. The test account
 // is a Maintainer on the scratch repository (E2E_ISSUES_REPOSITORY), signed in by the deployment's setup.
-requires("githubScratch", "maintainer")
+requires("syncedScratch", "maintainer")
 
 const started = new WeakMap<TestInfo, number>()
 /** The scratch repository, `owner/name`, read once each test has declared its needs. */

@@ -1,4 +1,4 @@
-import { COULDNT_ANSWER, expect, test } from "./devices"
+import { expect, test } from "./devices"
 import { step } from "./fixtures"
 import { ownPlace, requires } from "./target"
 
@@ -6,7 +6,7 @@ import { ownPlace, requires } from "./target"
 requires("personalModel", "member", "ownConversation", "liveModel")
 
 test("Branch timeline: a real question and its reply retain their object and outcome", {
-  annotation: { type: "summary", description: "The rail names this question and its linked reply, with an answered or visible failed outcome." },
+  annotation: { type: "summary", description: "The rail names this question and its linked reply, with a successful answer and a specific question label." },
 }, async ({ devices }) => {
   test.setTimeout(240_000)
   // devices.open installs recordActions and uses the signed-in account's own branch on a deployment.
@@ -46,20 +46,16 @@ test("Branch timeline: a real question and its reply retain their object and out
     await replied.click()
     const answer = a.conversation.locator(`[id="${targetId}"]`)
     await expect(answer).toHaveAttribute("data-role", "assistant")
-    await expect(answer).toHaveAttribute("data-state", /^(done|failed)$/, { timeout: 180_000 })
-    const state = await answer.getAttribute("data-state")
-    const outcome = state === "done" ? "answered" : "failed"
+    await expect(answer).toHaveAttribute("data-state", "done", { timeout: 180_000 })
+    await expect(answer.locator('[data-slot="message-response"]')).toContainText("ok")
     await expect(replied).toBeVisible()
-    // Decision 0078: the reply names its recorded question and outcome, even after a summary arrives.
-    await expect(replied).toHaveAccessibleName(new RegExp(`${question} · ${outcome}$`))
-    await expect(replied.locator("..")).toHaveAttribute("data-state", state!)
+    await expect(replied).toHaveAccessibleName(new RegExp(`${question} · answered$`))
+    // A generated summary may paraphrase the question; its visible text must still say more than a generic outcome.
+    await expect(replied).toContainText(new RegExp(`timeline|${devices.word}`, "i"))
+    await expect(replied).not.toHaveText(/^\s*(?:(?:reply|answer|response)(?: (?:sent|received|completed|done|successfully))*|answered|done|ok)[.!]?\s*$/i)
+    await expect(replied.locator("..")).toHaveAttribute("data-state", "done")
     await replied.click()
     await expect(answer).toBeInViewport()
     await expect(answer.locator('[data-slot="message-response"]')).toHaveAttribute("data-streaming", "false")
-    if (state === "failed") {
-      await expect(answer.getByText(COULDNT_ANSWER, { exact: true })).toBeVisible()
-      await replied.hover()
-      await expect(replied.locator("..").getByRole("tooltip").getByText("Failed", { exact: true })).toBeVisible()
-    }
   })
 })

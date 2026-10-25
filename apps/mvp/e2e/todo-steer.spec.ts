@@ -3,6 +3,8 @@ import { expect, test } from "./devices"
 import { step } from "./fixtures"
 import { me, requires } from "./target"
 
+// Local limitation: the working TODO needs a Cloudflare Durable Object, branch Container, real model and GitHub write token. The mini has no model or remote sandbox installation. A local stack wired to those services can run as E2E_TARGET=deployment with E2E_LONG=1.
+//
 // Steering a TODO's agent, end to end (ruling TODO-3, docs/features/runs.md#steering): a Member commits a TODO, opens its
 // run from Watch, and sends the working agent a message from the run's page. The message goes through the device's
 // outbox and ChatApi into the run's durable queue on Cloudflare; the agent reads it at its next turn, and the pull

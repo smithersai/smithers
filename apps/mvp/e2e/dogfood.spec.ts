@@ -3,6 +3,8 @@ import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { me, requires } from "./target"
 import { github } from "./github"
 
+// Local limitation: this journey deliberately writes the real smithersai/smithers stack and resumes its production TODO runs. Local development has synthetic people and no deployment sandbox/model/App installation; use the local todos.spec.ts for stack editing, not this destructive production loop.
+//
 // The dogfood loop (docs/work/dogfood-loop.md): Smithers builds Smithers on the deployment. A Member opens a real
 // low-priority issue on smithersai/smithers through the app, makes two TODOs from it, the TODOs' runs open stacked pull
 // requests, and Smithers reports each head's checks as `smithers/<check>` commit statuses. A person merges; this never

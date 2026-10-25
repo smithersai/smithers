@@ -3,6 +3,8 @@ import { step } from "./fixtures"
 import { BUDGET, paintOf, watchPaint } from "./paint"
 import { ownPlace, requires } from "./target"
 
+// Local limitation: compose Electric does not use the Cloudflare Container idle/sleep policy being regressed here. Only an otherwise quiet deployment can prove the container stays awake; a local timer would test a different lifecycle.
+//
 // A deployment's sync stays up through a quiet spell (docs/infrastructure.md#electric). On smithers.sh before
 // 2026-10-22, Electric's container stopped about 2 minutes after its last request, and a device's first visit after a
 // quiet spell waited for it to start again with an empty disk: every shape refused 503 ("Cannot connect to the
