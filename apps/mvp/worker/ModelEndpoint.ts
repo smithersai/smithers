@@ -5,6 +5,7 @@ import { HostModel, HostModelUnusable } from "@smthrs/model-host"
 import { Cause, Config, Duration, Effect, Exit, type Layer, Metric, Option, Schema, Stream } from "effect"
 import type { SqlClient } from "effect/sql"
 import { MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
+import { OWN_MODEL_ROLES } from "../src/features/personal-model/contract.ts"
 import { canAsk, Sessions } from "./Actor.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"
@@ -285,7 +286,8 @@ export const make = <E, R>(
     )
     /**
      * Who may ask (`repo:ask`, decision 0007), then the call's admission, answered by the person's own model when they
-     * saved one. Only a call the deployment pays for starts a spend alert.
+     * saved one and the role is theirs to pay for (`OWN_MODEL_ROLES`: not the timeline's summaries). Only a call the
+     * deployment pays for starts a spend alert.
      */
     const prepare = (role: ModelRole) => (request: ModelRequest.ModelRequest, admission: ModelProxy.Admission) =>
       Effect.gen(function* () {
@@ -302,7 +304,10 @@ export const make = <E, R>(
         if (!canAsk(actor.value)) {
           return yield* refuse(403, "authentication", "Asking Smithers needs the Member role.")
         }
-        const admitted = yield* admit(role, actor.value.subject.id)(request, admission)
+        const admitted = yield* admit(role, OWN_MODEL_ROLES.includes(role) ? actor.value.subject.id : undefined)(
+          request,
+          admission,
+        )
         if (admitted.own === undefined) yield* alert
         return admitted
       })
@@ -377,7 +382,7 @@ export const local = <E, R>(
             return yield* new ModelError.ModelError({ code: "invalid_request", message: "The request is too large.", httpStatus: 413 })
           }
           // The person whose run this is, when `owner` names one: their own model answers it, as it answers their chat.
-          const personId = owner === undefined || executionId === undefined
+          const personId = owner === undefined || executionId === undefined || !OWN_MODEL_ROLES.includes(role)
             ? Option.none<string>()
             : yield* owner(executionId).pipe(
               Effect.mapError(() =>

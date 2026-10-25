@@ -20,9 +20,10 @@ Will's own decision and is not part of this.
    user, query or fragment (the secrets host rules), and its trailing `/v1` is dropped since the protocol's path
    follows it. The model package's planner pins the key to that origin and its transport refuses redirects. The base
    URL changes only with a key, so nobody points a saved key at another host.
-4. **Whose calls it answers.** Every call the person makes through `POST /api/model/<role>`, every role, and every call
-   of a `todo` run they committed (the `coding` seat finds the run's committer from its execution). A server flow that
-   is nobody's, such as triage, stays on the deployment's model.
+4. **Whose calls it answers.** The person's chat, through `POST /api/model/<role>` (`agent`, and the `renderer` and
+   `judge` calls their chat makes), and every call of a `todo` run they committed (the `coding` seat finds the run's
+   committer from its execution). Timeline summaries stay on the deployment's model (the amendment below). A server
+   flow that is nobody's, such as triage, stays on the deployment's model.
 5. **Outside the deployment's budget.** A person's call reserves nothing, settles nothing in `model_usage` and starts no
    spend alert (AUTH-4 stays on deployment spend). It is kept in the person's own ledger, `personal_model_usage`, and
    counted by role. The request bounds (messages, caps, body size) are the endpoint's own.
@@ -45,8 +46,8 @@ Will's own decision and is not part of this.
 
 ## Choices the rulings didn't settle
 
-- Every role of the person's calls uses their model, not only `agent` and `coding` as the report sketched: one rule is
-  easier to explain, and a deployment whose own model is out of quota still renders views and summaries for them.
+- The person's chat uses their model for all of its calls (`agent`, `renderer`, `judge`), not only `agent` as the
+  report sketched, so a deployment whose own model is out of quota still renders their views.
 - Anyone signed in removes their own model, a person who lost their role included (Settings shows them Remove alone);
   saving and testing need Member.
 - The failure is shown by the server's record of it (a toast and the Settings line), not in the failed chat answer,
@@ -64,3 +65,12 @@ sign requests); plan logins (the report's Recommendation B, Will's decision).
 `@smthrs/model` and `@smthrs/model-host` (`toModel`) for the provider call, `@smthrs/rpc` `ConfiguredModel` for the
 plan, `@smthrs/control` `WebCryptoCipher` for sealing, `@smthrs/secrets` `Binding.valueProblem` for the key's text,
 `@smthrs/flow` for the durable writes, `@smthrs/effect-electric` for the shape. No new dependency.
+
+## Amendment, 2026-10-25: summaries stay on the deployment's model
+
+Will, 2026-10-25, answering the lead's recommendation that timeline summaries stay on the deployment's model even when a
+person has their own key: "go". A person's key pays only for their own chat and TODO runs. Summaries are the app's own
+background work (the production proof spent about 28,000 tokens of the test account's key on 163 of them during
+its runs), so the summary role never opens the person's model, at the endpoint or in a run: it resolves the deployment's
+summary model, against the deployment's budget, as it did before this decision. The roles a person's model answers are
+`OWN_MODEL_ROLES` (`agent`, `coding`, `renderer`, `judge`; `src/features/personal-model/contract.ts`).

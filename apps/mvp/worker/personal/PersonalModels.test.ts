@@ -456,19 +456,19 @@ describe("the model endpoint answers a person with their own model", () => {
   const modelUsage = () =>
     runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT invocation_id FROM model_usage`))
 
-  test("every role of the person's call goes to their provider with their key, outside the deployment's budget", async () => {
+  test("the person's own calls go to their provider with their key, outside the deployment's budget", async () => {
     await seed(runtime, "person-member", {}, PERSONAL_KEYS)
     const provider = scriptedProvider({ text: "mine", usage: { input: 7, output: 5 } })
     // A deployment budget no call fits in: the person's calls never reach it.
     const h = await harness(runtime, deployment, { actor: member, fetch: provider.fetch, config: { MODEL_DAILY_TOKEN_BUDGET: "1" } })
-    for (const role of ["agent", "coding", "renderer", "judge", "summary"]) {
+    for (const role of ["agent", "coding", "renderer", "judge"]) {
       const answered = await call(h, role)
       expect(answered.status, role).toBe(200)
       expect(answered.lines).toContainEqual(expect.objectContaining({ type: "text-delta", text: "mine" }))
       expect(answered.lines.at(-1)).toEqual({ type: "end" })
     }
     expect(h.requests).toEqual([])
-    expect(provider.seen).toHaveLength(5)
+    expect(provider.seen).toHaveLength(4)
     expect(provider.seen.every((seen) => seen.headers.get("authorization") === `Bearer ${VALUE}`)).toBe(true)
     expect(provider.seen.every((seen) => seen.body.model === "gpt-test")).toBe(true)
     expect(await modelUsage()).toEqual([])
@@ -478,13 +478,35 @@ describe("the model endpoint answers a person with their own model", () => {
       ["coding", 7, 5, "success"],
       ["renderer", 7, 5, "success"],
       ["judge", 7, 5, "success"],
-      ["summary", 7, 5, "success"],
     ])
     expect(h.starts.filter((start) => start.flow === SpendAlert.SpendAlert._tag)).toEqual([])
     expect(h.count(PersonalUsage.calls, { role: "agent", outcome: "success" })).toBe(1)
     expect(h.count(PersonalUsage.tokens, { role: "agent", type: "input" })).toBe(7)
     expect(h.count(PersonalUsage.tokens, { role: "agent", type: "output" })).toBe(5)
     expect(leaks(JSON.stringify(h.logs))).toEqual([])
+  })
+
+  test("timeline summaries stay on the deployment's model: the person's key is never called for them", async () => {
+    await seed(runtime, "person-member", {}, PERSONAL_KEYS)
+    const DEPLOYMENT = "https://deployment.example.com"
+    const provider = scriptedProvider({ text: "summed up" }, globalThis.fetch, [OPENAI_ORIGIN, DEPLOYMENT])
+    const h = await harness(runtime, deployment, {
+      actor: member,
+      fetch: provider.fetch,
+      config: {
+        SUMMARY_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: DEPLOYMENT, modelId: "summary-model", credential: "SUMMARIES" }),
+        SMITHERS_MODEL_KEY_SUMMARIES: "summary-key",
+        SMITHERS_MODEL_KEY_SUMMARIES_ORIGIN: DEPLOYMENT,
+      },
+    })
+    const answered = await call(h, "summary")
+    expect(answered.lines).toContainEqual(expect.objectContaining({ type: "text-delta", text: "summed up" }))
+    expect(provider.seen.map((seen) => [new URL(seen.url).origin, seen.headers.get("authorization"), seen.body.model])).toEqual([
+      [DEPLOYMENT, "Bearer summary-key", "summary-model"],
+    ])
+    // The deployment's ledger and budget carry it; the person's ledger has nothing.
+    expect(await modelUsage()).toHaveLength(1)
+    expect(await usage(runtime)).toEqual([])
   })
 
   test("another person, and a person who saved none, are answered by the deployment's model as before", async () => {
@@ -559,11 +581,22 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
     params: ModelRequest.GenerationParams.make({ maxTokens: 64 }),
   })
 
-  const seat = async (fetch: typeof globalThis.fetch, owner: ModelEndpoint.Owner, starter?: Flows.FlowStarter["Service"]) => {
+  const seat = async (
+    fetch: typeof globalThis.fetch,
+    owner: ModelEndpoint.Owner,
+    starter?: Flows.FlowStarter["Service"],
+    role: "coding" | "summary" = "coding",
+  ) => {
     const database = (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
     const config = ConfigProvider.layer(ConfigProvider.fromUnknown({
       SMITHERS_MODEL_KEY_DEPLOYMENT: "deployment-key",
       SMITHERS_MODEL_KEY_DEPLOYMENT_ORIGIN: "https://deployment.example.com",
+      SUMMARY_MODEL: JSON.stringify({
+        protocol: "openai-chat",
+        baseUrl: "https://deployment.example.com",
+        modelId: "summary-model",
+        credential: "DEPLOYMENT",
+      }),
     }))
     const local = await Effect.runPromise(
       ModelEndpoint.local(database, { alerts: true }).pipe(
@@ -578,7 +611,7 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
         Effect.provideService(FetchHttpClient.Fetch, fetch),
       ),
     )
-    return local("coding", starter, owner)
+    return local(role, starter, owner)
   }
   const inRun = (executionId: string) =>
     Stream.provideService(FlowRuntime.FlowInstance, { executionId } as unknown as FlowRuntime.FlowInstance["Service"])
@@ -613,6 +646,17 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
     expect(starts).toEqual([SpendAlert.SpendAlert._tag])
     await eventually(async () => (await usage(runtime)).length === 1 && (await usage(runtime))[0]!.settled)
     expect(await usage(runtime)).toEqual([expect.objectContaining({ role: "coding", outcome: "success" })])
+  })
+
+  test("a summary made inside its run is the deployment's: the owner's key is never called for it", async () => {
+    await seed(runtime, "person-member")
+    const provider = scriptedProvider({ text: "summed up" }, globalThis.fetch, [OPENAI_ORIGIN, "https://deployment.example.com"])
+    const summary = await seat(provider.fetch, () => Effect.succeed(Option.some("person-member")), undefined, "summary")
+    await Effect.runPromise(Stream.runCollect(summary.model.stream(ask).pipe(inRun("todo:mine"))))
+    expect(provider.seen.map((seen) => [new URL(seen.url).origin, seen.body.model])).toEqual([
+      ["https://deployment.example.com", "summary-model"],
+    ])
+    expect(await usage(runtime)).toEqual([])
   })
 
   test("its committer's refused key fails the run's call at once, and an owner lookup Postgres refuses fails it too", async () => {
