@@ -6,8 +6,8 @@ import { placementOf, SOURCE_PATH } from "../source"
 import { useFlowsUi } from "./FlowsUiContext"
 
 // A flow's code (decision 0014 §1, `/app/flows/code/$name`): its flow.ts to read and edit, and Save, which makes the
-// edit the flow's next revision. Code that is no longer the flow as drafted says it needs a sandbox, before and after
-// Save; a refused Save says why. Save sits in the card's header, by the file's name, so the toasts that stack at the
+// edit the flow's next revision. Code that needs a machine says it needs a sandbox, before and after Save; any other
+// code runs in the QuickJS realm. A refused Save says why. Save sits in the card's header, by the file's name, so the toasts that stack at the
 // bottom of the screen never cover it below a long file.
 export function FlowCodeCard() {
   const { queries, actions, editorAvailable } = useFlowsUi()

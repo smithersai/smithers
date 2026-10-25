@@ -7,7 +7,7 @@ import { Effect, Logger, ManagedRuntime, Redacted, References } from "effect"
 import { Migrator, SqlClient } from "effect/sql"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { digestSync } from "@smthrs/crypto"
-import { readGenerated, renderSource } from "../src/features/flows-ui/source.ts"
+import { renderSource } from "../src/features/flows-ui/source.ts"
 import * as Database from "./Database.ts"
 import * as TestDatabase from "./TestDatabase.ts"
 
@@ -645,7 +645,6 @@ describe("0025_flow_source", () => {
           // Already source: untouched.
           { revision: 3, digest: digestSync("export default 1"), source: "export default 1" },
         ])
-        expect(readGenerated(first)).toEqual(notes)
         const drafts = await sql<{ status: string; files: unknown; checks: unknown }>(
           `SELECT status, files, checks FROM flow_drafts ORDER BY id`,
         )
@@ -1137,5 +1136,39 @@ describe("0059_model_quota_failure", () => {
       }
       expect((await set("unknown"))._tag).toBe("Failure")
       expect(await on(through("0059"))).toEqual([])
+    }))
+})
+
+describe("0061_flow_placement_machine", () => {
+  test("a hand edit that was sandbox runs in the realm now; code that needs a machine stays sandbox", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0060"))
+      const drafted = renderSource({ name: "drafted", description: "Drafted.", flows: [], instructions: "Go." })
+      const relabelled = drafted.replace(`"drafted/agent"`, `"drafted/answer"`)
+      const machine = `import { readFile } from "node:fs/promises"\n${relabelled}`
+      // Each flow at revision 2; revision 1 of the edited one was machine code, which its latest revision no longer is.
+      const flows = [
+        ["00000000-0000-4000-8000-000000000001", "client", drafted, drafted],
+        ["00000000-0000-4000-8000-000000000002", "sandbox", machine, relabelled],
+        ["00000000-0000-4000-8000-000000000003", "sandbox", relabelled, machine],
+      ] as const
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        for (const [id, placement, first, latest] of flows) {
+          yield* sql`INSERT INTO flows (id, owner_id, name, revision, description, placement)
+            VALUES (${id}, 'p', ${`flow-${id.slice(-1)}`}, 2, 'D.', ${placement})`
+          for (const [revision, source] of [[1, first], [2, latest]] as const) {
+            yield* sql`INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by)
+              VALUES (${id}, ${revision}, ${digestSync(source)}, ${source}, 'p')`
+          }
+        }
+      }))
+      expect((await on(through("0061"))).map(([id, name]) => `${id}_${name}`)).toEqual(["61_flow_placement_machine"])
+      const placements = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly id: string; readonly placement: string }>`SELECT id, placement FROM flows ORDER BY id`))
+      expect(placements.map((row) => row.placement)).toEqual(["client", "client", "sandbox"])
+      expect(await on(through("0061"))).toEqual([])
     }))
 })

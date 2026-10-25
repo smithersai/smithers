@@ -1,10 +1,9 @@
 import { AgentInstructions } from "@smthrs/rpc"
 import { MAX_CALLS, MAX_QUESTIONS } from "./contract"
-import { renderPrompt } from "./source"
 
-// What the agent is told when it drafts a person's flow (`flow/new/draft`) and when it runs one (`flow/run/agent`),
-// ahead of the cell contract (decision 0014 §2). A drafted flow's instructions reach the agent as the task, never as
-// system teaching, so a flow can't rewrite the rules it runs under.
+// What the agent is told when it drafts a person's flow (`flow/new/draft`) and when an agent step of one asks it
+// (`flow/run/agent`), ahead of the cell contract (decision 0014 §2). The prompt the step's code rendered reaches the agent
+// as the task, never as system teaching, so a flow can't rewrite the rules it runs under.
 
 /** The drafting agent's system teaching. */
 export const AUTHOR_SYSTEM: ReadonlyArray<string> = [
@@ -53,10 +52,3 @@ export const FLOW_SYSTEM: ReadonlyArray<string> = [
   "You run one of the person's own flows. Follow its instructions with the input you are given.",
   "Call only the flows it lists; a call to any other is refused. Finish with ctx.done and your answer's text.",
 ]
-
-/**
- * The task of an agent running a person's drafted flow: what the flow's own step asks (`renderPrompt`, which its code
- * spells out), its instructions and then its input. What it may call reaches the agent as its catalog.
- */
-export const flowPrompt = (run: { readonly instructions: string; readonly input: string }): string =>
-  renderPrompt(run.instructions, run.input)

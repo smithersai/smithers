@@ -30,7 +30,7 @@ Fixes, by subject:
 
 Rerun on main 4de8f49ecfb9, which carries that fix (03:12 PDT): all three flows tests passed in production in 3.5 min, the code test in 58 s.
 
-**Remaining:** the QuickJS realm flow host for hand-edited code ([decision 0017](../decisions/0017-everything-is-a-plugin.md), slice 5; [sandbox work](personal-code-flow-sandbox.md)). The [FLOW-2 addendum](../rulings.md#10-flows) records Will's answer to 0017 question 2, "quickjs is a sandbox". Until that host lands, hand-edited code keeps the `FlowNeedsSandbox` refusal (`src/features/flows-ui/steps.ts`).
+**Remaining:** nothing for hand-edited code: the QuickJS realm flow host ([decision 0017](../decisions/0017-everything-is-a-plugin.md), slice 5; [sandbox work](personal-code-flow-sandbox.md)) runs it on 2026-10-25, and `FlowNeedsSandbox` remains only for code that needs a machine.
 
 ## Earlier tracker history (retained)
 

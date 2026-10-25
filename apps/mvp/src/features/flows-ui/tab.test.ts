@@ -9,6 +9,7 @@ import { nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatAp
 import { Chat } from "../chat/chat"
 import { RunsNavigation } from "../runs/actions"
 import { RUNS_PATH } from "../runs/contract"
+import { graphOf } from "../runs/graph"
 import type { Inspection } from "../runs/schema"
 import { listRows } from "../runs/page"
 import { Runs } from "../runs/runs"
@@ -747,7 +748,7 @@ describe("a flow of your own, from a tab", () => {
 })
 
 describe("a flow's code, from a tab", () => {
-  test("Code reads it, an edited step label saves as sandbox code, Run then fails before the model; drafted code runs", async () => {
+  test("Code reads it, an edited step label saves and runs in the realm; code that needs a machine fails before the model", async () => {
     const t = await open()
     await draftHello(t)
     await until(() => expect(t.draft()?.draft.status).toBe("ready"))
@@ -766,32 +767,50 @@ describe("a flow's code, from a tab", () => {
     await t.flows.actions.saveCode()
     await until(() => expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: "check:name" }))
 
-    const relabelled = drafted.replace(`"hello/agent"`, `"hello/greet"`)
-    expect(placementOf(relabelled)).toBe("sandbox")
-    t.flows.actions.editCode("hello", relabelled)
-    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(relabelled))
-    const before = host(t).navigated.length
-    await t.flows.actions.saveCode()
-    await until(() => expect(host(t).navigated.length).toBeGreaterThan(before))
-    expect(t.went(FLOWS_PATH)).toBe(FLOWS_PATH)
-    await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ revision: 2, placement: "sandbox" }]))
-    expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: null, revision: 2, source: relabelled })
+    /** Saves `source` as the open flow's next revision, back on the Flows page, where it reads `placement`. */
+    const saved = async (source: string, revision: number, placement: string) => {
+      t.flows.actions.editCode("hello", source)
+      await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(source))
+      const before = host(t).navigated.length
+      await t.flows.actions.saveCode()
+      await until(() => expect(host(t).navigated.length).toBeGreaterThan(before))
+      expect(t.went(FLOWS_PATH)).toBe(FLOWS_PATH)
+      await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ revision, placement }]))
+      expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: null, revision, source })
+    }
+    /** Runs revision `revision` and opens its run page: the run's id. */
+    const ran = async (revision: number) => {
+      const before = t.went(`${RUNS_PATH}/`)
+      t.flows.actions.run("hello", revision)
+      await until(() => expect(t.went(`${RUNS_PATH}/`)).not.toBe(before))
+      const runId = decodeURIComponent(t.went(`${RUNS_PATH}/`)!.slice(RUNS_PATH.length + 1))
+      await t.runs.actions.openRun(runId)
+      return runId
+    }
 
-    // Its run fails before any model call: the code needs a sandbox.
-    t.flows.actions.run("hello", 2)
-    await until(() => expect(t.went(`${RUNS_PATH}/`)).toBeDefined())
-    const runId = decodeURIComponent(t.went(`${RUNS_PATH}/`)!.slice(RUNS_PATH.length + 1))
-    await t.runs.actions.openRun(runId)
+    // A relabelled step is the person's code: it runs in the realm, and the agent gets the prompt its code rendered.
+    const relabelled = drafted.replace(`"hello/agent"`, `"hello/greet"`)
+    expect(placementOf(relabelled)).toBe("client")
+    await saved(relabelled, 2, "client")
+    await ran(2)
+    await t.reply(RUN_TASK, 'ctx.done("Hi.")')
+    await until(() => expect(t.inspection()?.run).toMatchObject({ status: "completed", result: { text: '"Hi."' } }))
+    // Its run page shows the realm's steps under the run: the code, its evaluations, its host call and the agent's step.
+    await until(() =>
+      expect(graphOf(t.page()!.page as never, null, Date.now()).steps.map((step) => step.row.label)).toEqual(
+        expect.arrayContaining(["hello/load", "hello/code", "hello/evaluate", "hello/call", "hello/agent"]),
+      )
+    )
+
+    // Code that needs a machine: its run fails before any model call.
+    const machine = `import { readFile } from "node:fs/promises"\n${relabelled}`
+    expect(placementOf(machine)).toBe("sandbox")
+    await t.flows.actions.openCode("hello")
+    await saved(machine, 3, "sandbox")
+    await ran(3)
     await until(() => expect(t.inspection()?.run.status).toBe("failed"))
     expect(JSON.stringify(t.inspection()!.run.result)).toContain("FlowNeedsSandbox")
-    expect(t.api.modelRequests(RUN_TASK)).toBe(0)
-
-    // The drafted code again: it runs here.
-    await t.flows.actions.openCode("hello")
-    t.flows.actions.editCode("hello", drafted)
-    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(drafted))
-    await t.flows.actions.saveCode()
-    await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ revision: 3, placement: "client" }]))
+    expect(t.api.modelRequests(RUN_TASK)).toBe(1)
   }, WITHIN)
 
   test("a flow you don't have reads not found; a read that ends after the tab moved on changes nothing", async () => {

@@ -35,9 +35,6 @@ export const childExecutionId = (identity: Cell.CallIdentity): string =>
  */
 export class NotApproved extends Schema.TaggedError<NotApproved>()("@smthrs/mvp/flows/NotApproved", {}) {}
 
-/** The child execution that asks the person to approve a call before it runs: the call's own, then `/confirm`. */
-export const confirmExecutionId = (identity: Cell.CallIdentity): string => `${childExecutionId(identity)}/confirm`
-
 /** What a cell reads of a flow's failure: its kind and any numeric `maxSeconds` limit, never its message. */
 export const publicError = (error: unknown): string => {
   if (typeof error !== "object" || error === null || !("_tag" in error)) return "failed"
@@ -98,6 +95,37 @@ export const scopeFor = (
     : Effect.succeed(scopeOf(flow, undefined))
 
 /**
+ * Runs registry flow `name` with `input` as child execution `child` of the current run, the one way the agent's catalog
+ * and a person's code in the QuickJS realm (src/features/flows-ui/steps.ts `call`) both call a flow. Once the person
+ * said no in this run, they aren't asked again: the agent's own approval ask reads their no, and so does a call of the
+ * flow they denied (src/flows/approvals.ts). A flow the person must approve (the registry's `confirm`) runs only once
+ * they Approve; the question is `<child>/confirm`, a child of the run, as `app/agent/ask` is when the agent asks it.
+ * This call's own ask and confirm are its answer, never an earlier no: a resumed call reads them as recorded.
+ */
+export const callFlow = (
+  registered: Pick<FlowRegistry["Service"], "entryOf">,
+  runtime: FlowRuntime.FlowRuntime["Service"],
+  inspection: EngineStore.RunInspection.RunInspection["Service"],
+) =>
+(name: FlowName, input: unknown, child: string): Effect.Effect<unknown, unknown> => {
+  const confirmId = `${child}/confirm`
+  const run = runtime.execute(declarationOf(name) as never, { executionId: child, payload: input as never }) as Effect.Effect<
+    unknown,
+    unknown
+  >
+  const refused = deniedHere(inspection, [child, confirmId])
+  if (asksApproval(name, input)) {
+    return Effect.flatMap(refused, (no) => (no.any ? Effect.succeed({ answered: true, approved: false }) : run))
+  }
+  const { confirm } = registered.entryOf(name)
+  return confirm === undefined ? run : Effect.flatMap(refused, (no) =>
+    no.flows.has(name) ? Effect.fail(new NotApproved()) : Effect.flatMap(
+      runtime.execute(Ask, { executionId: confirmId, payload: { kind: "approval", prompt: confirm } }),
+      (outcome): Effect.Effect<unknown, unknown> => (outcome.approved === true ? run : Effect.fail(new NotApproved())),
+    ))
+}
+
+/**
  * The agent's catalog over this engine's `FlowRuntime`, scoped to the asking run (`scopeOf`). A flow's declared
  * failure reaches the cell as a failed call naming the failure's kind, never its message.
  */
@@ -106,6 +134,7 @@ export const source = Effect.gen(function* () {
   const runtime = yield* FlowRuntime.FlowRuntime
   const inspection = yield* EngineStore.RunInspection.RunInspection
   const pinned = (executionId: string) => Effect.map(inspection.payload(executionId), ({ payload }) => payload)
+  const call = callFlow(registry, runtime, inspection)
   const bindings = registry.names.filter(modelInvocable).map((name) => {
     const flow = declarationOf(name)
     return FlowBinding.make({
@@ -118,30 +147,7 @@ export const source = Effect.gen(function* () {
         effects: undefined,
         modelInvocable: true,
       },
-      handler: (input, call) => {
-        const run = runtime.execute(flow as never, {
-          executionId: childExecutionId(call.identity),
-          payload: input as never,
-        }) as Effect.Effect<unknown, unknown>
-        // Once the person said no in this answer, they aren't asked again: the agent's own approval ask reads their
-        // no, and so does a call of the flow they denied (src/flows/approvals.ts).
-        // This call's own ask and confirm are its answer, never an earlier no: a resumed call reads them as recorded.
-        const refused = deniedHere(inspection, [childExecutionId(call.identity), confirmExecutionId(call.identity)])
-        if (asksApproval(name, input)) {
-          return Effect.flatMap(refused, (no) => (no.any ? Effect.succeed({ answered: true, approved: false }) : run))
-        }
-        // A flow the person must approve (the registry's `confirm`) runs only once they Approve; the question is a
-        // child of the answer's run, as `app/agent/ask` is when the agent asks it.
-        const { confirm } = registry.entryOf(name)
-        return confirm === undefined ? run : Effect.flatMap(refused, (no) =>
-          no.flows.has(name) ? Effect.fail(new NotApproved()) : Effect.flatMap(
-            runtime.execute(Ask, {
-              executionId: confirmExecutionId(call.identity),
-              payload: { kind: "approval", prompt: confirm },
-            }),
-            (outcome): Effect.Effect<unknown, unknown> => (outcome.approved === true ? run : Effect.fail(new NotApproved())),
-          ))
-      },
+      handler: (input, cell) => call(name, input, childExecutionId(cell.identity)),
       publicError,
     })
   })

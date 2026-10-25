@@ -1,15 +1,16 @@
 // A person's flow is flow source (decision 0014 §1, as Will ruled on 2026-10-20: "prompt flows are just a type of code
 // flow"): one `flow.ts` module whose default export is `Flow.make("<name>", { ... })` from @smthrs/flow, the shape a
 // repository's `.smithers/flows/<name>/flow.ts` has. Drafting from a prompt writes one with `renderSource`: a typed
-// module whose body is one agent step that follows the drafted instructions. Nothing here imports a library, so the
-// tab, the engine and ChatApi all can.
+// module whose body is one agent step that follows the drafted instructions. A person may edit it like any code.
+// Nothing here imports a library, so the tab, the engine and ChatApi all can.
 //
-// Where a revision runs is its placement, read from its source, never stored apart from it:
-// - `client`: the module is exactly what `renderSource` writes. Its body is the system's own agent step, and only its
-//   data (description, instructions, calls) came from the draft, so the person's own engine runs it, as the step
-//   `flow/run/prompt` declares it (src/features/flows-ui/flows.ts).
-// - `sandbox`: any other code, a hand edit included. Code a person wrote runs only on a host that runs untrusted code
-//   (decision 0005), and none exists yet, so a run is refused with that reason (`FlowNeedsSandbox`).
+// Where a revision runs is its placement, read from its source, never stored apart from it (ruling FLOW-2's addendum,
+// Will, 2026-10-20: "quickjs is a sandbox"):
+// - `client`: the person's own engine runs it, drafted or edited, in a fresh QuickJS realm (`RealmFlow`,
+//   src/features/flows-ui/flows.ts `flow/run/code`), which gives code nothing but the flow libraries.
+// - `sandbox`: code that needs a machine: it imports a module only a machine provides, or declares a capability only a
+//   machine grants. It runs only on a host that runs a person's code on a machine (decision 0005), and none does yet,
+//   so a run is refused with that reason (`FlowNeedsSandbox`).
 
 /** A flow's one file. */
 export const SOURCE_PATH = "flow.ts"
@@ -29,20 +30,13 @@ export interface Generated {
 /** The name of a drafted flow's one step: `<name>/agent`. */
 export const stepName = (name: string): string => `${name}/agent`
 
-/**
- * What the agent of a drafted flow is asked: its instructions, then the run's input when there is one. The module
- * `renderSource` writes spells the same function, and the engine's step calls this one.
- */
-export const renderPrompt = (instructions: string, input: string): string =>
-  input === "" ? instructions : `${instructions}\n\nInput: ${input}`
-
 /** A string as a TypeScript literal: JSON's, which TypeScript reads as the same string. */
 const literal = (text: string): string => JSON.stringify(text)
 
 /** The module a drafted flow is: a typed `Flow.make` whose body is one agent step. */
 export const renderSource = (flow: Generated): string =>
   [
-    "// Drafted by Smithers from a prompt. In this form it runs on your device; other code needs a sandbox.",
+    "// Drafted by Smithers from a prompt.",
     `import { AgentAction } from "@smthrs/agent"`,
     `import { Flow } from "@smthrs/flow"`,
     `import { Schema } from "effect"`,
@@ -72,38 +66,40 @@ export const renderSource = (flow: Generated): string =>
     "",
   ].join("\n")
 
-const STRING = String.raw`"(?:[^"\\\n]|\\.)*"`
-const NAME = new RegExp(String.raw`^export default Flow\.make\((${STRING}), \{$`, "m")
-const DESCRIPTION = new RegExp(String.raw`^  description: (${STRING}),$`, "m")
-const FLOWS = /^ {2}flows: (\[.*\]),$/m
-const INSTRUCTIONS = new RegExp(String.raw`^const instructions = \[\n((?: {2}${STRING},\n)+)\]\.join\("\\n"\)$`, "m")
+/**
+ * Modules only a machine provides: Node's and Bun's own, and the Smithers packages that reach a host or a sandbox.
+ * Any other module the realm doesn't provide can't run anywhere: the realm refuses it (`forbidden_import`).
+ */
+const MACHINE_MODULE = /^(?:node:|bun:|bun$|@smthrs\/(?:platform-node|platform-bun|sandbox)(?:\/|$))/
 
-/** `text` read as JSON, or `undefined`. */
-const json = (text: string): unknown => {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
-  }
-}
-
-const isString = (value: unknown): value is string => typeof value === "string"
+/** Capabilities only a machine grants: its files, processes, network and repository, or every capability. */
+const MACHINE_CAPABILITY = /^(?:\*$|fs:|proc:|net:|jj:)/
 
 /**
- * What a drafted flow was made of, when `source` is exactly the module `renderSource` writes for it; `undefined` for
- * any other code. The comparison is byte for byte, so a hand edit anywhere, even one that leaves the same behavior,
- * reads as other code.
+ * Every module a static `import` or `export … from` statement at the start of a line names. A string or comment that
+ * only looks like one never starts a line in a module `renderSource` writes, whose instructions are indented literals.
  */
-export const readGenerated = (source: string): Generated | undefined => {
-  const name = json(NAME.exec(source)?.[1] ?? "")
-  const description = json(DESCRIPTION.exec(source)?.[1] ?? "")
-  const flows = json(FLOWS.exec(source)?.[1] ?? "")
-  const lines = (INSTRUCTIONS.exec(source)?.[1] ?? "").split("\n").slice(0, -1).map((line) => json(line.slice(2, -1)))
-  if (!isString(name) || !isString(description) || !Array.isArray(flows) || !flows.every(isString)) return undefined
-  if (lines.length === 0 || !lines.every(isString)) return undefined
-  const generated: Generated = { name, description, instructions: lines.join("\n"), flows }
-  return renderSource(generated) === source ? generated : undefined
-}
+const IMPORT = /^[ \t]*(?:import[ \t]*["'`]([^"'`\n]+)["'`]|(?:import|export)\b[^"'`;]*?\bfrom[ \t]*["'`]([^"'`\n]+)["'`])/gm
 
-/** Where `source` runs: on the person's device when it is a drafted flow as drafted, else on a sandbox. */
-export const placementOf = (source: string): Placement => readGenerated(source) === undefined ? "sandbox" : "client"
+/** Every string a `capabilities: [ … ]` list that starts a line names, as `Flow.make`'s options are written. */
+const CAPABILITIES = /^[ \t]*capabilities\s*:\s*\[([^\]]*)\]/gm
+const STRING = /["'`]([^"'`]*)["'`]/g
+
+/** The modules `source` imports statically. */
+export const importsOf = (source: string): ReadonlyArray<string> =>
+  [...source.matchAll(IMPORT)].map((match) => (match[1] ?? match[2])!)
+
+/** The capabilities `source` declares in a literal list at the start of a line. */
+export const capabilitiesOf = (source: string): ReadonlyArray<string> =>
+  [...source.matchAll(CAPABILITIES)].flatMap((list) => [...list[1]!.matchAll(STRING)].map((match) => match[1]!))
+
+/**
+ * Whether `source` needs a machine: it imports a module only a machine provides, or declares a capability only a
+ * machine grants. Everything else runs in the QuickJS realm, which enforces what it gives code whatever this says.
+ */
+export const needsMachine = (source: string): boolean =>
+  importsOf(source).some((module) => MACHINE_MODULE.test(module)) ||
+  capabilitiesOf(source).some((capability) => MACHINE_CAPABILITY.test(capability))
+
+/** Where `source` runs: on the person's device, in the QuickJS realm, unless it needs a machine. */
+export const placementOf = (source: string): Placement => needsMachine(source) ? "sandbox" : "client"

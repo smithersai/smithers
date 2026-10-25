@@ -10,22 +10,35 @@ import { eventually, stop, testFile, usage } from "../../../worker/test/harness.
 import { contents } from "../../../worker/test/harness.ts"
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
-import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
 import { FlowRuntime } from "@smthrs/flow"
+import { QuickJSVariant, RealmFlow } from "@smthrs/harness"
 import { ModelError } from "@smthrs/model"
 import { EngineStore } from "@smthrs/flows"
 import { Layer } from "effect"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import * as Catalog from "../../flows/catalog"
 import { cell, member, openAgent } from "../../test/agent"
-import { FlowAnswer, FlowDelete, FlowDraftDelete, FlowDrafts, FlowList, FlowNew, FlowRead, FlowRun, FlowSave, FlowWrite } from "./flows"
-import { DRAFT_ID_NAMESPACE } from "./contract"
+import {
+  type CodeState,
+  FlowAnswer,
+  FlowDelete,
+  FlowDraftDelete,
+  FlowDrafts,
+  FlowList,
+  FlowNew,
+  FlowRead,
+  FlowRun,
+  FlowSave,
+  FlowWrite,
+} from "./flows"
+import { DRAFT_ID_NAMESPACE, MAX_REALM_CALLS } from "./contract"
 import { roundExecutionId, roundOf } from "./round"
 import { renderSource, SOURCE_PATH } from "./source"
 import { Retry } from "../runs/flows"
 import { FlowsClient } from "./api"
 import { FlowsRefused } from "./reference"
-import { removeDraft, writeOutcome } from "./steps"
+import { call, evaluate, removeDraft, writeOutcome } from "./steps"
 
 const runtime = testFile("flows_ui")
 
@@ -428,6 +441,69 @@ describe("a flow's code", () => {
   /** The saved flow's source with its step relabelled: code the system didn't write. */
   const relabelled = (source: string) => source.replace(`"dark-mode/agent"`, `"dark-mode/answer"`)
 
+  /** `dark-mode`'s code as a person might write it: an agent step asked "Mine: <input>", then `body`. */
+  const handWritten = (options: {
+    readonly body: string
+    readonly imports?: string
+    readonly declare?: string
+    readonly flows?: ReadonlyArray<string>
+    readonly capabilities?: string
+    readonly seat?: string
+    readonly success?: string
+  }) =>
+    [
+      options.imports ?? "",
+      `import { AgentAction } from "@smthrs/agent"`,
+      `import { Action, Flow } from "@smthrs/flow"`,
+      `import { Node } from "@smthrs/plan"`,
+      `import { Schema } from "effect"`,
+      "",
+      `const Agent = AgentAction.make("dark-mode/answer", {`,
+      "  payload: { input: Schema.String },",
+      "  output: Schema.String,",
+      `  seat: ${JSON.stringify(options.seat ?? "agent")},`,
+      "  prompt: ({ input }) => `Mine: ${input}`,",
+      "})",
+      options.declare ?? "",
+      "",
+      `export default Flow.make("dark-mode", {`,
+      `  description: "Switch this device to dark mode.",`,
+      `  capabilities: ${options.capabilities ?? "[]"},`,
+      `  flows: ${JSON.stringify(options.flows ?? ["app/theme/set"])},`,
+      "  payload: { input: Schema.String },",
+      `  success: ${options.success ?? "Schema.String"},`,
+      `  body: ${options.body},`,
+      "})",
+      "",
+    ].join("\n")
+
+  /** Writes `source` as dark-mode's next revision, edited from `revision`. */
+  const writeCode = (d: Awaited<ReturnType<typeof device>>, revision: number, source: string) =>
+    d.run(d.engine.flows.execute(FlowWrite, { executionId: crypto.randomUUID(), payload: { name: "dark-mode", revision, source } }))
+
+  /**
+   * The action steps of run `runId` and of every run under it, in the order they started: `flow: step, step` for each
+   * run under it, as its run page lists them.
+   */
+  const stepsOf = async (d: Awaited<ReturnType<typeof device>>, runId: string) => {
+    const lines: Array<string> = []
+    const seen = new Set<string>()
+    const visit = async (id: string, top: boolean): Promise<void> => {
+      // A later round is linked under the round before it and under the run that awaits its lineage: listed once.
+      if (seen.has(id)) return
+      seen.add(id)
+      const read = await Effect.runPromise(d.engine.inspection.inspect(id))
+      // Only the steps that ran: a child or a handoff is a node of its own, and a branch's other arm never runs.
+      const steps = read.steps.flatMap((step) =>
+        step.action === null || step.kind === "FlowCall" || step.status !== "completed" ? [] : [step.action]
+      )
+      lines.push(top ? steps.join(", ") : `${read.run.flowName}: ${steps.join(", ")}`)
+      for (const child of read.children) await visit(child.runId, false)
+    }
+    await visit(runId, true)
+    return lines
+  }
+
   test("flow/read reads a revision's code and where it runs; a name you don't have isn't found", async () => {
     const d = await device(scripted(() => drafted()).script)
     const saved = await saveFlow(d, "dark-mode")
@@ -448,7 +524,7 @@ describe("a flow's code", () => {
     expect(JSON.stringify(missing)).toContain("FlowNotFound")
   }, SLOW)
 
-  test("code written by hand saves as the next revision and needs a sandbox: its run fails before the agent runs", async () => {
+  test("code written by hand saves as the next revision and runs in the realm: the agent gets the prompt the code rendered", async () => {
     const model = scripted(() => drafted(), ['ctx.done("Ran.")'])
     const d = await device(model.script)
     await saveFlow(d, "dark-mode")
@@ -457,22 +533,151 @@ describe("a flow's code", () => {
       payload: { name: "dark-mode" },
     })) as unknown as Exit.Success<{ source: string }>).value
 
-    const written = await d.run(d.engine.flows.execute(FlowWrite, {
-      executionId: crypto.randomUUID(),
-      payload: { name: "dark-mode", revision: 1, source: relabelled(source) },
-    }))
-    expect(written).toMatchObject({ _tag: "Success", value: { name: "dark-mode", revision: 2, placement: "sandbox" } })
-    const refused = await d.run(d.engine.flows.execute(FlowRun, { executionId: crypto.randomUUID(), payload: { name: "dark-mode" } }))
-    expect(JSON.stringify(refused)).toContain("@smthrs/mvp/flows/FlowNeedsSandbox")
-    expect(model.requests.filter(running)).toEqual([])
-
-    // The drafted code again: it runs here, as revision 3.
-    expect(await d.run(d.engine.flows.execute(FlowWrite, {
-      executionId: crypto.randomUUID(),
-      payload: { name: "dark-mode", revision: 2, source },
-    }))).toMatchObject({ _tag: "Success", value: { revision: 3, placement: "client" } })
-    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: crypto.randomUUID(), payload: { name: "dark-mode" } })))
+    expect(await writeCode(d, 1, relabelled(source))).toMatchObject({
+      _tag: "Success",
+      value: { name: "dark-mode", revision: 2, placement: "client" },
+    })
+    const runId = crypto.randomUUID()
+    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: runId, payload: { name: "dark-mode", input: "please" } })))
       .toEqual(Exit.succeed("Ran."))
+    // The prompt the relabelled step's own code rendered in the realm: the instructions, then the input.
+    expect(said(model.requests.find(running)!)).toContain("Set the theme to dark, then say it is done.\n\nInput: please")
+    // Its run: the load, then the code's lineage: an evaluation, the agent's call, and the evaluation that answered.
+    expect(await stepsOf(d, runId)).toEqual([
+      "flow/run/load",
+      "flow/run/code: flow/run/evaluate, flow/run/call",
+      "flow/run/prompt: flow/run/agent",
+      "flow/run/code: flow/run/evaluate",
+    ])
+  }, SLOW)
+
+  test("code calls a flow its list names and the agent, as the person's own flow, and answers with any value as text", async () => {
+    const model = scripted(() => drafted(), ['ctx.done("Dark.")'])
+    const d = await device(model.script)
+    await saveFlow(d, "dark-mode")
+    const source = handWritten({
+      declare: `const SetTheme = Action.make("app/theme/set", { payload: { mode: Schema.String }, success: Schema.Unknown })`,
+      body: `({ input }) => SetTheme.call({ mode: "dark" }).pipe(Node.bindPlanned(() => Agent.call({ input })),
+    Node.map((answer) => ({ answer, done: true })))`,
+      success: "Schema.Struct({ answer: Schema.String, done: Schema.Boolean })",
+    })
+    expect(await writeCode(d, 1, source)).toMatchObject({ _tag: "Success", value: { placement: "client" } })
+    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: crypto.randomUUID(), payload: { name: "dark-mode", input: "please" } })))
+      .toEqual(Exit.succeed('{"answer":"Dark.","done":true}'))
+    expect(d.agent.painted).toEqual(["dark"])
+    expect(said(model.requests.find(running)!)).toContain("Mine: please")
+  }, SLOW)
+
+  test("a flow's failure is the code's receipt, by its kind, which the code may catch", async () => {
+    const d = await device(scripted(() => drafted()).script)
+    await saveFlow(d, "dark-mode")
+    const source = handWritten({
+      flows: ["app/navigate"],
+      declare: `const Go = Action.make("app/navigate", { payload: { to: Schema.String }, success: Schema.Unknown, error: Schema.String })`,
+      body: `() => Go.call({ to: "javascript:alert(1)" }).pipe(Node.map(() => "moved"),
+    Node.catch({ onFailure: (kind) => Node.succeed(kind).pipe(Node.map((k) => \`refused: \${k}\`)) }))`,
+    })
+    await writeCode(d, 1, source)
+    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: crypto.randomUUID(), payload: { name: "dark-mode" } })))
+      .toEqual(Exit.succeed("refused: NavigationRefused"))
+  }, SLOW)
+
+  test("the realm refuses a call outside the list, a loop past its limit, a module it lacks, and calls the host won't make", async () => {
+    const model = scripted(() => drafted(), ['ctx.done("Ran.")'])
+    const d = await device(model.script)
+    await saveFlow(d, "dark-mode")
+    const setTheme = `const SetTheme = Action.make("app/theme/set", { payload: { mode: Schema.String }, success: Schema.Unknown })`
+    const cases: ReadonlyArray<readonly [string, string, string]> = [
+      [handWritten({ flows: [], declare: setTheme, body: `() => SetTheme.call({ mode: "dark" }).pipe(Node.map(() => "set"))` }),
+        "FlowCallRefused", "action_not_allowed"],
+      [handWritten({ body: "() => { while (true) {} }" }), "FlowLimitExceeded", "limit_exceeded"],
+      [handWritten({ imports: `import { pipe } from "effect/Function"`, body: "({ input }) => Agent.call({ input: pipe(input, (x) => x) })" }),
+        "FlowImportRefused", "forbidden_import"],
+      [handWritten({ body: "() => { throw new Error('sensitive-user-content') }" }), "FlowCodeFailed", "execution_failed"],
+      [handWritten({ seat: "coding", body: "({ input }) => Agent.call({ input })" }), "FlowCallRefused", "seat"],
+      [handWritten({
+        declare: `const SetTheme = Action.make("app/theme/set", { payload: { color: Schema.String }, success: Schema.Unknown })`,
+        body: `() => SetTheme.call({ color: "dark" }).pipe(Node.map(() => "set"))`,
+      }), "FlowCallRefused", "payload"],
+      [handWritten({
+        declare: `const Forged = Action.make("@smthrs/agent/AgentAction", { payload: { step: Schema.Number }, success: Schema.String })`,
+        body: "() => Forged.call({ step: 1 })",
+      }), "FlowCallRefused", "payload"],
+    ]
+    let revision = 1
+    for (const [source, tag, code] of cases) {
+      expect(await writeCode(d, revision++, source)).toMatchObject({ _tag: "Success", value: { placement: "client" } })
+      const exit = await d.run(d.engine.flows.execute(FlowRun, { executionId: crypto.randomUUID(), payload: { name: "dark-mode" } }))
+      expect([tag, code, JSON.stringify(exit)]).toEqual([tag, code, expect.stringContaining(`"_tag":"@smthrs/mvp/flows/${tag}","code":"${code}"`)])
+      expect(JSON.stringify(exit)).not.toContain("sensitive-user-content")
+    }
+    expect(model.requests.filter(running)).toEqual([])
+    expect(d.agent.painted).toEqual([])
+  }, SLOW * 2)
+
+  test("code that needs a machine saves as sandbox and its run fails before anything runs", async () => {
+    const model = scripted(() => drafted(), ['ctx.done("Ran.")'])
+    const d = await device(model.script)
+    await saveFlow(d, "dark-mode")
+    let revision = 1
+    for (
+      const source of [
+        handWritten({ imports: `import { readFile } from "node:fs/promises"`, body: "({ input }) => Agent.call({ input })" }),
+        handWritten({ capabilities: `["proc:spawn"]`, body: "({ input }) => Agent.call({ input })" }),
+      ]
+    ) {
+      expect(await writeCode(d, revision++, source)).toMatchObject({ _tag: "Success", value: { placement: "sandbox" } })
+      const refused = await d.run(d.engine.flows.execute(FlowRun, { executionId: crypto.randomUUID(), payload: { name: "dark-mode" } }))
+      expect(JSON.stringify(refused)).toContain("@smthrs/mvp/flows/FlowNeedsSandbox")
+    }
+    expect(model.requests.filter(running)).toEqual([])
+  }, SLOW)
+
+  test("a killed engine resumes the code from its receipts: a sealed model call isn't asked again", async () => {
+    let hang = true
+    const answered: Array<string> = []
+    const model = scripted(() => drafted())
+    const script = (request: Request) => {
+      if (!running(request)) return model.script(request)
+      const prompt = said(request).includes("Mine: one") ? "second" : "first"
+      answered.push(prompt)
+      if (prompt === "second" && hang) return Stream.never
+      return answer(`ctx.done(${JSON.stringify(prompt === "first" ? "one" : "two")})`)
+    }
+    const d = await device(script)
+    await saveFlow(d, "dark-mode")
+    await writeCode(d, 1, handWritten({
+      body: "({ input }) => Agent.call({ input }).pipe(Node.bindPlanned((first) => Agent.call({ input: first })))",
+    }))
+    const runId = crypto.randomUUID()
+    const payload = { name: "dark-mode", input: "zero" }
+    void Effect.runPromise(Effect.exit(d.engine.flows.execute(FlowRun, { executionId: runId, payload })))
+    await eventually(() => answered.includes("second"), 60_000)
+    await d.engine.crash()
+    hang = false
+    const again = await d.agent.engine(d.engine.schema)
+    opened.push({ close: again.kill })
+    const exit = await Effect.runPromise(Effect.exit(
+      again.driver.drive(FlowRun, { executionId: runId, payload }).pipe(
+        Effect.andThen(again.flows.execute(FlowRun, { executionId: runId, payload })),
+      ),
+    ))
+    expect(exit).toEqual(Exit.succeed("two"))
+    // The first agent step's model call was sealed before the crash: only the second is asked again.
+    expect(answered.filter((prompt) => prompt === "first")).toEqual(["first"])
+  }, SLOW * 2)
+
+  test("Stop cancels the code's run between its steps", async () => {
+    const model = scripted(() => drafted())
+    const d = await device((request) => (running(request) ? (model.requests.push(request), Stream.never) : model.script(request)))
+    await saveFlow(d, "dark-mode")
+    await writeCode(d, 1, handWritten({ body: "({ input }) => Agent.call({ input })" }))
+    const runId = crypto.randomUUID()
+    const ended = Effect.runPromise(Effect.exit(d.engine.flows.execute(FlowRun, { executionId: runId, payload: { name: "dark-mode" } })))
+    await eventually(() => model.requests.some(running), 60_000)
+    await Effect.runPromise(d.engine.flows.interrupt(FlowRun, runId))
+    expect(Exit.hasInterrupts(await ended)).toBe(true)
+    expect(model.requests.filter(running)).toHaveLength(1)
   }, SLOW)
 
   test("a write that fails a check, or from a revision another followed, is refused before or by ChatApi; one again isn't", async () => {
@@ -659,4 +864,72 @@ describe("the agent's catalog", () => {
     expect(scoped[0]!.description).toContain("Side effect: updates this test's theme")
 
   }, SLOW)
+})
+
+describe("flow/run/evaluate and flow/run/call", () => {
+  const source = renderSource({ name: "dark-mode", description: "Dark.", flows: [], instructions: "Go dark." })
+  const state = (overrides: Partial<CodeState> = {}): CodeState => ({
+    flowId: "00000000-0000-4000-8000-000000000001",
+    name: "dark-mode",
+    revision: 1,
+    digest: digestSync(overrides.source ?? source),
+    source,
+    runtime: RealmFlow.version,
+    allowed: [],
+    input: "",
+    receipts: [],
+    ...overrides,
+  })
+  const evaluated = (value: CodeState, variant: Layer.Layer<QuickJSVariant.Variant> = RealmFlow.layerDefaultVariant) =>
+    Effect.runPromise(Effect.exit(evaluate(value).pipe(Effect.provide(variant))))
+  const failedWith = (exit: Exit.Exit<unknown, unknown>, tag: string, code: string) =>
+    expect(JSON.stringify(exit)).toContain(`"_tag":"@smthrs/mvp/flows/${tag}","code":"${code}"`)
+
+  test("refuses a run pinned under another realm, code whose bytes changed or won't compile, and a realm that can't start", async () => {
+    failedWith(await evaluated(state({ runtime: "another-realm" })), "FlowCodeFailed", "version")
+    failedWith(await evaluated(state({ digest: "0".repeat(64) })), "FlowCodeFailed", "invalid_source")
+    failedWith(await evaluated(state({ source: "export default {" })), "FlowCodeFailed", "invalid_source")
+    // The host's QuickJS build, injected faulty: the realm can't start, and nothing private says why.
+    const broken = QuickJSVariant.layerVariant({
+      type: "sync",
+      importFFI: async () => {
+        throw Error("private-host-path")
+      },
+      importModuleLoader: async () => {
+        throw Error("private-host-path")
+      },
+    })
+    const exit = await evaluated(state(), broken)
+    failedWith(exit, "FlowCodeFailed", "runtime_failed")
+    expect(JSON.stringify(exit)).not.toContain("private-host-path")
+  })
+
+  test("asks for the agent on the prompt the code rendered, and ends a run past its host calls", async () => {
+    const chained = source.replace(
+      "body: ({ input }) => Agent.call({ input }),",
+      "body: ({ input }) => { let node = Agent.call({ input }); for (let n = 0; n < 9; n++) node = node.pipe(Node.bindPlanned((x) => Agent.call({ input: x }))); return node },",
+    ).replace(`import { Flow } from "@smthrs/flow"`, `import { Flow } from "@smthrs/flow"\nimport { Node } from "@smthrs/plan"`)
+    let current = state({ source: chained, input: "go" })
+    for (let n = 0; n < MAX_REALM_CALLS; n++) {
+      const exit = await evaluated(current)
+      if (exit._tag !== "Success" || exit.value._tag !== "Action") throw new Error(`Expected call ${n}: ${JSON.stringify(exit)}`)
+      expect(exit.value).toMatchObject({ name: RealmFlow.agentAction, payload: { seat: "agent", prompt: n === 0 ? "Go dark.\n\nInput: go" : "Go dark.\n\nInput: a" } })
+      current = { ...current, receipts: [...current.receipts, { ...exit.value, outcome: { _tag: "Success", value: "a" } }] }
+    }
+    failedWith(await evaluated(current), "FlowLimitExceeded", "too_many_calls")
+  })
+
+  test("the host refuses a call outside the pin's list, and one a person's flow may never make", async () => {
+    // Inert services: the call is refused before the run or the engine is read.
+    const refused = (allowed: ReadonlyArray<string>, name: string) =>
+      Effect.runPromise(Effect.exit(call({
+        pin: { flowId: "f", name: "dark-mode", revision: 1, digest: "d", allowed },
+        call: { _tag: "Action", key: "k", name, payload: {} },
+      }).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, { executionId: "run" } as never),
+        Effect.provideService(FlowRuntime.FlowRuntime, {} as never),
+      ) as Effect.Effect<unknown, unknown>))
+    failedWith(await refused([], "app/theme/set"), "FlowCallRefused", "action_not_allowed")
+    failedWith(await refused(["flow/new"], "flow/new"), "FlowCallRefused", "action_not_allowed")
+  })
 })

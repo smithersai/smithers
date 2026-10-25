@@ -12,9 +12,9 @@ Status: amended by Will's ruling on Q1 (FLOW-2). Built: authoring a person's flo
    | A person ("Mine") | one `flow.ts` module per revision, in Postgres | the system from a prompt, or the person and the agent by hand | by its placement, below |
    | A repository | `.smithers/flows/<name>/` (M-49); a `flow.mdx` or `SKILL.md` there lowers to the same `@smthrs/flow` flow through the registry's `Executable` | a person or the agent, merged by a person | a job sandbox only (0005), started remotely |
 
-   **A person's flow runs where its source says, never where a flag says.** Its placement is read from its bytes. Exactly the module the system writes for a drafted flow (its description, instructions and calls are the only data in it, and its body is one agent step, `<name>/agent`) is `client`: the person's own engine runs it, pinning that data and running the step as the engine declares it (`flow/run/prompt`), so the engine only ever runs a body the system wrote. Any other code, a hand edit included, is `sandbox`.
+   **A person's flow runs where its source says, never where a flag says.** Its placement is read from its bytes. Amended 2026-10-25 (ruling FLOW-2's addendum, Will, 2026-10-20 17:05: "quickjs is a sandbox"): any code that doesn't need a machine, the drafted module as drafted or edited by hand, is `client`: the person's own engine runs it in a fresh QuickJS realm (`flow/run/code`, [flows](../features/flows.md#your-own-flows)). Code that needs a machine (a module only a machine provides, or a machine capability) is `sandbox`.
 2. **Scope never confers trust, and a person's own code runs only where repository code may.** A person's own flows ("Mine", Will's flows usable in any repository) are stored in Postgres and synced to that person's devices. A repository's flows are files in `.smithers/flows/<name>/` (M-49) and reach the default branch only through a pull request a person merges (M-04, M-39). The two differ only in where they live and who may run them, never in kind. Repository code runs only once a host runs repository code (0005), and a person's own hand-written code stays inside the same boundary: it never runs in the tab, the engine worker or the Worker.
-   - **The limit today:** the QuickJS realm flow host doesn't run a person's hand-edited code yet ([0017](0017-everything-is-a-plugin.md) slice 5). A `sandbox` revision is saved and readable, but its run fails `FlowNeedsSandbox` before anything runs, and the Flows page says `Needs a sandbox`. A drafted flow as drafted runs. Drafting it again writes a drafted module that runs here again. Will, 2026-10-20 17:05: "The question makes no sense to me quickjs is a sandbox": once that host runs personal flows, only code that needs a machine waits for a container (ruling FLOW-2).
+   - **The limit today** (2026-10-25): the QuickJS realm flow host (0017 slice 5) is built. Will, 2026-10-20 17:05: "quickjs is a sandbox". Every revision that doesn't need a machine, drafted or edited by hand, runs on the person's engine in a fresh, frozen QuickJS realm (`@smthrs/harness` `RealmFlow`), one durable round per host call: the realm gives code only the flow libraries, renders an agent step's prompt itself, and reaches the agent and the flows its list names only through journaled host calls. Only code that needs a machine waits for a container: its revision is saved and readable, its run fails `FlowNeedsSandbox` before anything runs, and the Flows page says `Needs a sandbox`. That limit lifts when a job sandbox runs `SandboxedFlow` for personal flows (L2).
    - A flow run in a repository acts with its person's grants there, never more (0007 §5).
 3. **Authoring is one durable flow, `flow/new`, on the browser engine.** A form card (where, name, what it should do) starts it, and the repository defaults to the one the person is in (Will, 2026-10-13). Each round drafts the files, asks optional questions with the default it assumed, checks the draft and writes the draft row. It parks on a `HumanTask` only for a blocking question. **Try** runs the draft once, **Save** stores a personal flow, and **Propose** opens a pull request through 0012.
 4. **A repository flow becomes runnable through an activation receipt.** When the Code Storage mirror's head moves, `flow/refresh` discovers `.smithers/flows/` at that commit without running it, checks each flow, and advances that flow's active revision in `flow_bindings` by compare-and-set. A flow that fails keeps its previous revision active and shows `Merged · not active` (mvp.md §6.12, "Pinned versions").
@@ -127,7 +127,7 @@ Each is registered in `src/flows/registry.ts` and is model-invocable unless the 
 | `flow/write` | `{ name, revision, source }` | client; checked as every revision is, admitted while `revision` is the latest | its owner | Save on the code page, the agent |
 | `flow/propose` | `{ draftId }` | client, through 0012's branch and pull-request flow (GitHub App token: remote by need) | Member | Propose, the agent |
 | `flow/refresh` | `{ repo, sha }` | remote: it runs when the mirror moves, with every device off, over the Code Storage key | the flow that moves `repositories.head_sha` | none; not invocable |
-| `flow/run` | `{ ref, input }` | a drafted module as drafted: client; other code: remote by need, `POST /api/flows/run` (L2; refused `FlowNeedsSandbox` until then) | person: its owner; repo: `repo:flow-run` (Member, or the flow's minimum) | `/flow.run <name>`, `/<name>` when no app command has it, Run, the agent |
+| `flow/run` | `{ ref, input }` | code that needs no machine: client, in the QuickJS realm; code that needs a machine: remote by need, `POST /api/flows/run` (L2; refused `FlowNeedsSandbox` until then) | person: its owner; repo: `repo:flow-run` (Member, or the flow's minimum) | `/flow.run <name>`, `/<name>` when no app command has it, Run, the agent |
 | `flow/list` | `{ repo? }` | client read | readers of the scope | `/flows`, the agent |
 | `flow/delete` | `{ flowId }` | client | its owner | Delete, the agent |
 | `run/list` | `{ scope?, status? }` | client read | run readers (below) | `/runs`, the agent |
@@ -173,13 +173,15 @@ Every revision is checked the same way, whoever wrote it: its source read by `@s
 **`flow/run` for a person's flow:**
 
 ```
-flow/run (client)
+flow/run (client; amended 2026-10-25)
   Load    sealed: the flow.ts at its revision (a flow_revisions row); digest and checks verified, then its placement:
           sandbox ─▶ FlowNeedsSandbox, before anything runs (until L2)
-          client  ─▶ its instructions and calls, pinned in the child's payload
-  Agent   flow/run/prompt: AgentAction "flow/run/agent", seat agent, system FLOW_SYSTEM, the module's own prompt
-          (its instructions, then the input); catalog = flows ∩ (the app catalog for this person's role); nesting ≤ 3
-  ─▶ the agent's answer text
+          client  ─▶ its code, RealmFlow.version and its calls, pinned in the child's payload
+  Code    flow/run/code: one round per host call, each a QuickJS evaluation over the receipts so far (flow/run/evaluate)
+          and the call it asked for (flow/run/call): an agent step ─▶ flow/run/prompt, AgentAction "flow/run/agent",
+          seat agent, system FLOW_SYSTEM, the prompt the code rendered; catalog = flows ∩ (the app catalog for this
+          person's role); a listed flow ─▶ its child execution
+  ─▶ the code's answer as text
 ```
 
 **`flow/run` for a repository's flow, or a person's `sandbox` code (L2).** The device calls `POST /api/flows/run`. FlowApi admits it: sign-in, `repo:flow-run`, repository read, the binding's active revision and the budget. It then starts `flow/Sandboxed { repo, sha, name, input, actor }` on the `FlowExecution` Durable Object. That flow wakes a job sandbox at the commit, discovers the flow there, and runs `SandboxedFlow.execute` under the person's capability ceiling, with egress through 0005's `Egress`. It never trusts a descriptor the device sent. The device shows the remote run.
@@ -310,7 +312,7 @@ Presentation code (a pure `View` and `reduce`) runs in 0004's QuickJS realm, whi
 | RepoApi can't read the home | The tree, with `Couldn't read home` |
 | A flow calls outside its list | The cell gets a refused call naming the flow; the run continues |
 | Flows nest deeper than 3 | Refused the same way |
-| A person's flow whose code isn't the drafted module, before L2 | `FlowNeedsSandbox` before anything runs; the Flows page says `Needs a sandbox` |
+| A person's flow whose code needs a machine, before L2 | `FlowNeedsSandbox` before anything runs; the Flows page says `Needs a sandbox` |
 | A code edit from a revision another followed | `409 stale`; the code page says `Changed since you opened it` |
 | A browser run is opened on another device | `On another device`, with its status from the `runs` row |
 | A remote run is forgotten or unreadable | `Expired`, or `No access` on a `403` |
@@ -353,7 +355,7 @@ No record carries a request, a draft file, a question or answer, a personal flow
   - a killed engine resumes with no second model call.
 - `flow/save`'s admission: size, name, duplicate and a signed-out actor.
 - `flow/run` for a person's flow:
-  - code that isn't the drafted module, byte for byte, is refused `FlowNeedsSandbox` before any model call;
+  - code that needs a machine is refused `FlowNeedsSandbox` before any model call; any other code, a hand edit included, runs in the QuickJS realm and resumes from its receipts;
   - it calls only its list, and anything else is a typed refusal;
   - nesting stops at 3;
   - a model role the endpoint lacks is refused.

@@ -1,14 +1,14 @@
-// A person's flow as flow source (src/features/flows-ui/source.ts): the module drafting writes, read back exactly, a
-// real typed `Flow.make` module, and where a revision runs: a drafted flow as drafted on the device, any other code on
-// a sandbox.
+// A person's flow as flow source (src/features/flows-ui/source.ts): the module drafting writes, a real typed `Flow.make`
+// module, and where a revision runs: on the device in the QuickJS realm, drafted or edited, unless it needs a machine.
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
 import { describe, expect, test } from "vitest"
 import {
+  capabilitiesOf,
   type Generated,
+  importsOf,
+  needsMachine,
   placementOf,
-  readGenerated,
-  renderPrompt,
   renderSource,
   SOURCE_PATH,
   stepName,
@@ -21,66 +21,72 @@ const notes: Generated = {
   flows: ["repo/read", "repo/tree"],
 }
 
-describe("renderSource and readGenerated", () => {
-  test("a drafted flow is a Flow.make module named for it, with one agent step, and reads back as drafted", () => {
+describe("renderSource", () => {
+  test("a drafted flow is a Flow.make module named for it, with one agent step that renders its prompt", () => {
     const source = renderSource(notes)
+    expect(source.startsWith("// Drafted by Smithers from a prompt.\n")).toBe(true)
     expect(source).toContain(`export default Flow.make("release-notes", {`)
     expect(source).toContain(`const Agent = AgentAction.make("release-notes/agent", {`)
     expect(source).toContain(`  flows: ["repo/read", "repo/tree"],`)
+    expect(source).toContain("  capabilities: [],")
     expect(source.endsWith("})\n")).toBe(true)
-    expect(readGenerated(source)).toEqual(notes)
     expect(SOURCE_PATH).toBe("flow.ts")
     expect(stepName("release-notes")).toBe("release-notes/agent")
-  })
-
-  test("no calls, empty instructions, and line separators read back too", () => {
-    for (const flow of [
-      { ...notes, flows: [] },
-      { ...notes, instructions: "" },
-      { ...notes, description: "One two", instructions: "Para graph" },
-    ]) {
-      expect(readGenerated(renderSource(flow))).toEqual(flow)
-    }
     expect(renderSource({ ...notes, flows: [] })).toContain("  flows: [],")
-  })
-
-  test("any edit at all is other code: a step label, a comment, a space, the body", () => {
-    const source = renderSource(notes)
-    for (
-      const edited of [
-        source.replace(`"release-notes/agent"`, `"release-notes/answer"`),
-        source.replace("// Drafted by Smithers", "// Mine now"),
-        `${source}\n`,
-        source.replace("Agent.call({ input })", "Agent.call({ input: input.toUpperCase() })"),
-        source.replace(`  flows: ["repo/read", "repo/tree"],`, `  flows: ["repo/read",  "repo/tree"],`),
-      ]
-    ) {
-      expect(readGenerated(edited)).toBeUndefined()
-      expect(placementOf(edited)).toBe("sandbox")
-    }
-    expect(placementOf(source)).toBe("client")
-  })
-
-  test("source missing a piece, or with a piece that isn't what drafting writes, is other code", () => {
-    const source = renderSource(notes)
-    const without = (pattern: RegExp) => source.replace(pattern, "")
-    expect(readGenerated(without(/^export default Flow\.make.*$/m))).toBeUndefined()
-    expect(readGenerated(without(/^ {2}description: .*$/m))).toBeUndefined()
-    expect(readGenerated(without(/^ {2}flows: .*$/m))).toBeUndefined()
-    expect(readGenerated(without(/^const instructions = \[$/m))).toBeUndefined()
-    // Pieces of the right shape whose values aren't strings, or aren't JSON.
-    expect(readGenerated(source.replace(`  flows: ["repo/read", "repo/tree"],`, "  flows: [1, 2],"))).toBeUndefined()
-    expect(readGenerated(source.replace(`  flows: ["repo/read", "repo/tree"],`, "  flows: {},"))).toBeUndefined()
-    expect(readGenerated(source.replace(`  flows: ["repo/read", "repo/tree"],`, "  flows: [repo],"))).toBeUndefined()
-    expect(readGenerated(source.replace(`"Read the repository."`, `"Read the \\x41 repository."`))).toBeUndefined()
-    expect(readGenerated("export default 1")).toBeUndefined()
   })
 })
 
-describe("renderPrompt", () => {
-  test("the instructions, then the input when there is one", () => {
-    expect(renderPrompt("Count.", "")).toBe("Count.")
-    expect(renderPrompt("Count.", "to three")).toBe("Count.\n\nInput: to three")
+describe("placementOf", () => {
+  const source = renderSource(notes)
+
+  test("a drafted flow, as drafted or edited anywhere, runs on the device in the realm", () => {
+    for (
+      const code of [
+        source,
+        source.replace(`"release-notes/agent"`, `"release-notes/answer"`),
+        source.replace("// Drafted by Smithers", "// Mine now"),
+        source.replace("Agent.call({ input })", "Agent.call({ input: input.toUpperCase() })"),
+        // A module the realm doesn't provide but no machine does either: the realm refuses it when it runs.
+        `import { pipe } from "effect/Function"\n${source}`,
+        source.replace("  capabilities: [],", `  capabilities: ["model:call", "memory:read"],`),
+      ]
+    ) {
+      expect([needsMachine(code), placementOf(code)]).toEqual([false, "client"])
+    }
+    expect(importsOf(source)).toEqual(["@smthrs/agent", "@smthrs/flow", "effect"])
+    expect(capabilitiesOf(source)).toEqual([])
+  })
+
+  test("code that imports a module only a machine provides, or declares a capability only a machine grants, needs a sandbox", () => {
+    for (
+      const code of [
+        `import { readFile } from "node:fs/promises"\n${source}`,
+        `import "bun:sqlite"\n${source}`,
+        `import { $ } from 'bun'\n${source}`,
+        `import {\n  Runtime,\n} from "@smthrs/platform-node"\n${source}`,
+        `export { CiJob } from "@smthrs/sandbox"\n${source}`,
+        `import { Sandbox } from "@smthrs/sandbox/Sandbox"\n${source}`,
+        source.replace("  capabilities: [],", `  capabilities: ["proc:spawn"],`),
+        source.replace("  capabilities: [],", "  capabilities: ['fs:read', 'model:call'],"),
+        source.replace("  capabilities: [],", "  capabilities: [`net:get`],"),
+        source.replace("  capabilities: [],", `  capabilities: ["jj:status"],`),
+        source.replace("  capabilities: [],", `  capabilities: ["*"],`),
+      ]
+    ) {
+      expect([code, needsMachine(code), placementOf(code)]).toEqual([code, true, "sandbox"])
+    }
+    expect(importsOf(`import "bun:sqlite"\nimport { a } from "x"`)).toEqual(["bun:sqlite", "x"])
+    expect(capabilitiesOf(`  capabilities: ["fs:read", 'net:get'],`)).toEqual(["fs:read", "net:get"])
+  })
+
+  test("text that only looks like an import or a capability, inside the drafted instructions, is no machine code", () => {
+    const quoting = renderSource({
+      ...notes,
+      instructions: `Read from 'node:fs' like code would.\nimport x from "node:fs"\nSay capabilities: ["proc:spawn"] aloud.`,
+    })
+    expect(placementOf(quoting)).toBe("client")
+    // The line `export default Flow.make("…"` names no module.
+    expect(importsOf(quoting)).toEqual(["@smthrs/agent", "@smthrs/flow", "effect"])
   })
 })
 

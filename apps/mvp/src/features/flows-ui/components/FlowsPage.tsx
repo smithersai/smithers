@@ -17,8 +17,8 @@ import {
 import { useFlowsUi } from "./FlowsUiContext"
 
 // Your own flows (decision 0014 §5, `/app/flows`): each one's name and description with Run, Edit, Code and Delete,
-// then the drafts not saved yet, each with Delete, and New flow. A flow whose code was edited by hand can't run yet: Run is off, and the
-// row says why.
+// then the drafts not saved yet, each with Delete, and New flow. A flow whose code needs a machine can't run yet: Run is
+// off, and the row says why. Any other flow, drafted or edited, runs in the QuickJS realm.
 export function FlowsPage() {
   const { queries, actions } = useFlowsUi()
   const { data: flows } = useLiveQuery(queries.flows)

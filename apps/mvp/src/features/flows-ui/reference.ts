@@ -42,14 +42,50 @@ export class FlowInvalid extends Schema.TaggedError<FlowInvalid>()("@smthrs/mvp/
 }) {}
 
 /**
- * The flow's code isn't a flow drafted from a prompt as drafted, so it runs only on a sandbox, and no host runs a
- * person's own code yet (decision 0014 §2, decision 0005). Final: it fails the run before anything runs.
+ * The flow's code needs a machine: it imports a module only a machine provides, or declares a capability only a
+ * machine grants (./source.ts `needsMachine`), and no host runs a person's code on a machine yet (decision 0005).
+ * Final: it fails the run before anything runs.
  */
 export class FlowNeedsSandbox extends Schema.TaggedError<FlowNeedsSandbox>()("@smthrs/mvp/flows/FlowNeedsSandbox", {}) {}
 
+// How a run of a person's code in the QuickJS realm fails (`flow/run/code`, ./flows.ts), one tag per thing the person
+// fixes: the run page shows a failure by its tag (docs/features/runs.md), and `code` is the closed code the logs, counts
+// and tests read. None carries the code's source, its values or the realm's message.
+
+/** The code ran past a limit: the realm's time, memory or size (`limit_exceeded`), or its host calls (`too_many_calls`). */
+export class FlowLimitExceeded extends Schema.TaggedError<FlowLimitExceeded>()("@smthrs/mvp/flows/FlowLimitExceeded", {
+  code: Schema.Literals(["limit_exceeded", "too_many_calls"]),
+}) {}
+
+/** The code loaded a module the realm doesn't provide. */
+export class FlowImportRefused extends Schema.TaggedError<FlowImportRefused>()("@smthrs/mvp/flows/FlowImportRefused", {
+  code: Schema.Literal("forbidden_import"),
+}) {}
+
 /**
- * The agent following a person's flow couldn't finish: the model failed, or the run ran out of frames. A plain tagged
- * value, because the flow's plan fails with it as a constant (`Node.fail`), which carries only its JSON.
+ * The code made a call its flow may not: one its `flows` list doesn't name (`action_not_allowed`), an agent step on a
+ * seat other than `agent` (`seat`), or a payload the called flow won't read (`payload`).
+ */
+export class FlowCallRefused extends Schema.TaggedError<FlowCallRefused>()("@smthrs/mvp/flows/FlowCallRefused", {
+  code: Schema.Literals(["action_not_allowed", "seat", "payload"]),
+}) {}
+
+/**
+ * The code didn't run: it doesn't compile or its bytes changed (`invalid_source`), it threw or failed
+ * (`execution_failed`), the realm couldn't start (`runtime_failed`), or Smithers' realm changed since the run began
+ * (`version`, which Retry fixes).
+ */
+export class FlowCodeFailed extends Schema.TaggedError<FlowCodeFailed>()("@smthrs/mvp/flows/FlowCodeFailed", {
+  code: Schema.Literals(["invalid_source", "execution_failed", "runtime_failed", "version"]),
+}) {}
+
+/** How a person's code fails in the realm. */
+export const CodeFailure = Schema.Union([FlowLimitExceeded, FlowImportRefused, FlowCallRefused, FlowCodeFailed])
+export type CodeFailure = typeof CodeFailure.Type
+
+/**
+ * The agent an agent step of a person's flow asked couldn't finish: the model failed, or the run ran out of frames. A
+ * plain tagged value, because the flow's plan fails with it as a constant (`Node.fail`), which carries only its JSON.
  */
 export const FlowAgentFailed = Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/flows/FlowAgentFailed") })
 
@@ -150,32 +186,50 @@ export const FlowRunReference = described(
       FlowInvalid,
       FlowNeedsSandbox,
       FlowAgentFailed,
+      ...CodeFailure.members,
     ]),
   },
-  "Run your flow by name with input, its text to work on. Answers with the flow's answer. A flow whose code was " +
-    "edited by hand fails FlowNeedsSandbox: it runs only on a sandbox, and none is available yet.",
+  "Run your flow by name with input, its text to work on. Answers with the flow's answer as text. Code that needs " +
+    "a machine fails FlowNeedsSandbox: none is available yet.",
 )
 
-/** A loaded flow, pinned: what `flow/run/prompt` runs. */
+/**
+ * A loaded flow, pinned: the revision, its code and the realm it runs in (`RealmFlow.version`), what it may call, and
+ * the run's input. What `flow/run/code` runs.
+ */
 export const Pinned = {
   flowId: Schema.String,
   name: Schema.String,
   revision: Schema.Number,
   digest: Schema.String,
-  instructions: Schema.String,
+  source: Schema.String,
+  runtime: Schema.String,
   allowed: Schema.Array(Schema.String),
   input: Schema.String,
 }
 
-/** `flow/run/prompt`: the agent following one pinned revision's instructions, its calls limited to its list. */
+/** The execution that runs one pinned revision's code in the QuickJS realm, one round per host call (./flows.ts). */
+export const FLOW_CODE = "flow/run/code"
+
+/**
+ * `flow/run/prompt`: the agent one agent step of a pinned revision asked, on the prompt the step's code rendered, its
+ * calls limited to the revision's list.
+ */
 export const FlowPromptReference = described(
   {
     _tag: "flow/run/prompt",
-    payloadSchema: Schema.Struct(Pinned),
+    payloadSchema: Schema.Struct({
+      flowId: Schema.String,
+      name: Schema.String,
+      revision: Schema.Number,
+      digest: Schema.String,
+      prompt: Schema.String,
+      allowed: Schema.Array(Schema.String),
+    }),
     successSchema: Schema.String,
     errorSchema: FlowAgentFailed,
   },
-  "Follow one pinned revision of a person's flow.",
+  "Follow the prompt one agent step of a person's flow rendered.",
 )
 
 /** `flow/delete { flowId }`: deletes your flow. Runs that pinned a revision keep it. */
@@ -235,7 +289,7 @@ export const FlowListReference = described(
     errorSchema: RouteFailure,
   },
   "List your own flows: each one's name, description, latest revision, and where it runs: client (here) or " +
-    "sandbox (not yet).",
+    "sandbox (needs a machine, not available yet).",
 )
 
 /** One revision of your flow's code, and where it runs. */
@@ -286,6 +340,6 @@ export const FlowWriteReference = described(
     successSchema: WrittenFlow,
     errorSchema: Schema.Union([FlowsUnavailable, FlowsRefused, FlowNotFound, FlowInvalid]),
   },
-  "Save new code for your flow as its next revision, edited from revision. Code other than a flow drafted from a " +
-    "prompt is saved, but runs only on a sandbox, which isn't available yet.",
+  "Save new code for your flow as its next revision, edited from revision. Code that needs a machine is saved, " +
+    "but runs only on a sandbox, which isn't available yet.",
 )

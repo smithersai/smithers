@@ -98,6 +98,13 @@ export const AUTHOR_TOOLS = ["repo/tree", "repo/read"] as const
 /** The most frames one draft or one run of a person's flow may take. */
 export const MAX_FLOW_FRAMES = 8
 
+/**
+ * The most host calls, agent steps included, one run of a person's code makes. Each call opens one more round of
+ * `flow/run/code`, and each round's credential is minted under the round before it, so this keeps the deepest run well
+ * inside the server's credential chain (worker/RunCredentials.ts `MAX_CHAIN`).
+ */
+export const MAX_REALM_CALLS = 8
+
 /** The route that shows a draft's card full size. */
 export const draftPath = (draftId: string): string => `/app/flows/drafts/${draftId}`
 
@@ -122,8 +129,12 @@ export const FLOWS_UI_TELEMETRY = {
     "flow.save.unconfirmed",
     "flow.write",
     "flow.run.load",
+    "flow.run.evaluate",
+    "flow.run.call",
     "smithers_flow_saves",
     "smithers_flow_writes",
+    "smithers_flow_realm_evaluations",
+    "smithers_flow_realm_calls",
     "flow.client.list",
     "flow.client.source",
     "flow.client.draft",
@@ -134,7 +145,21 @@ export const FLOWS_UI_TELEMETRY = {
     "flow.client.delete",
     "flows.editor.storage",
   ],
-  fields: ["draftId", "round", "scope", "target", "outcome", "checks", "questions", "durationMs", "code", "placement", "collection"],
+  fields: [
+    "draftId",
+    "round",
+    "scope",
+    "target",
+    "outcome",
+    "checks",
+    "questions",
+    "durationMs",
+    "code",
+    "placement",
+    "collection",
+    "kind",
+    "receipts",
+  ],
 } as const
 
 /** The flows pages' buttons, links and lines (MINIMAL TEXT). */
@@ -147,7 +172,7 @@ export const SAVE = "Save"
 export const NO_FLOWS = "No flows yet"
 export const MINE = "Mine"
 
-/** Why a flow whose code isn't drafted from a prompt doesn't run: no host runs a person's own code yet. */
+/** Why a flow whose code needs a machine doesn't run: no host runs a person's code on a machine yet. */
 export const NEEDS_SANDBOX = "Needs a sandbox"
 
 /** What a refused act on the draft card reads as, by its code: Save's, Draft again's and Delete's. */

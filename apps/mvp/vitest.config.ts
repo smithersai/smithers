@@ -119,6 +119,7 @@ export default defineConfig({
         "db/migrations/0015_flows.ts",
         // Every stored prompt flow converted to flow source (docs/features/flows.md#your-own-flows).
         "db/migrations/0025_flow_source.ts",
+        "db/migrations/0061_flow_placement_machine.ts",
         // Unknown model spend keeps its reservation; reservations expire (docs/features/model-endpoint.md#budget).
         "db/migrations/0017_model_charges.ts",
         // Model spend and its alerts to Admins (docs/features/spend-alerts.md).

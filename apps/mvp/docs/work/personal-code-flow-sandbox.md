@@ -1,15 +1,20 @@
 ---
 title: Run hand-edited personal flows in a sandbox
-status: in-progress
+status: done
 area: app
-owner: Opus hand-edited-flows builder on Mac mini assigned by lead
-updated: 2026-10-21 21:10 PDT
+owner: flows-realm builder
+updated: 2026-10-25 15:44 PDT
 links: [flow-authoring.md, prompt-flows-are-code-flows.md, sandboxes.md, everything-is-a-plugin.md, ../decisions/0017-everything-is-a-plugin.md, ../rulings.md]
 ---
 
 ## Current specification
 
-**2026-10-21:** The [FLOW-2 addendum](../rulings.md#10-flows) now records Will's answer to decision 0017 question 2, "quickjs is a sandbox". The next step is the QuickJS realm flow host ([decision 0017](../decisions/0017-everything-is-a-plugin.md), slice 5), after the [2026-10-21 flows fixes](flow-authoring.md#current-specification) land. Hand-edited source still saves but cannot run; keep the `FlowNeedsSandbox` refusal until the host passes execution, isolation, cancellation and durable recovery checks (`src/features/flows-ui/steps.ts`, `src/features/flows-ui/flows.test.ts`).
+**2026-10-25:** Built, landing-ready (flows-realm builder). Every personal flow that doesn't need a machine, drafted or hand-edited, runs on the person's engine in the QuickJS realm (decision 0017 slice 5): `flow/run/load` pins the code and `RealmFlow.version`; `flow/run/code` runs one durable round per host call (`flow/run/evaluate`, `flow/run/call`, `Flow.to` with receipts), as branch creation does. An agent step renders its prompt in the realm and asks `flow/run/prompt`; a listed flow runs as a child execution. `FlowNeedsSandbox` remains only for code that needs a machine (`needsMachine`, `src/features/flows-ui/source.ts`); migration `0061_flow_placement_machine` re-read stored placements. SDK: `@smthrs/harness` `RealmFlow` gained the `AgentAction` agent step, `forbidden_import` and `action_not_allowed`, and raw callbacks. Docs: [flows](../features/flows.md#your-own-flows), decision 0014 §2. Open: a host that runs code needing a machine (L2, decision 0005); the e2e needs a live model to pass on production.
+
+## History
+
+- 2026-10-25 14:12 PDT: flows-realm builder took this note (last owner's update 2026-10-21), built the realm host.
+- 2026-10-25 15:44 PDT: proven on Latitude (apps/mvp typecheck, importRules, 459 focused tests at 100% on changed files; harness suite at 100%); set done. The e2e needs a live model.
 
 ## Earlier tracker history (retained)
 

@@ -1,12 +1,15 @@
 import { AgentAction } from "@smthrs/agent"
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
-import { Node, Placement } from "@smthrs/plan"
+import { Node, Placement, type Planned } from "@smthrs/plan"
 import { Schema } from "effect"
 import { FLOW_MODEL_ROLE, MAX_CALLS, MAX_FLOW_FRAMES, MAX_QUESTIONS } from "./contract"
 import { PROMPT_CATALOG } from "./callable"
-import { AUTHOR_SYSTEM, authorPrompt, FLOW_SYSTEM, flowPrompt } from "./instructions"
+import { AUTHOR_SYSTEM, authorPrompt, FLOW_SYSTEM } from "./instructions"
 import {
+  CodeFailure,
   DraftNotReady,
+  FLOW_CODE,
+  FlowAgentFailed,
   FlowAnswerReference,
   FlowDeleteReference,
   FlowDraftDeleteReference,
@@ -43,17 +46,22 @@ import { Description } from "./schema"
 //   flow/read { name, revision? }       ─ a revision's code, and where it runs
 //   flow/write { name, revision, source } ─ code you wrote, checked, becomes the next revision
 //   flow/run { name, input?, revision?, flowId? }
-//     flow/run/load   ─ the revision's flow.ts, its digest and its checks; code not drafted as drafted needs a sandbox
-//     flow/run/prompt ─ a child execution, whose payload pins the revision and its list: the agent follows it
+//     flow/run/load   ─ the revision's flow.ts, its digest and its checks, pinned with the realm's version; code that
+//                       needs a machine fails FlowNeedsSandbox
+//     flow/run/code   ─ a child lineage, one round per host call (ruling FLOW-2's addendum, decision 0017 slice 5):
+//       flow/run/evaluate ─ the pinned code in a fresh QuickJS realm (`RealmFlow.step`) over the receipts so far:
+//                           its next call, or its answer
+//       flow/run/call     ─ the host makes the call: an agent step runs `flow/run/prompt` on the prompt the code
+//                           rendered; a flow its list names runs as a child execution. Its receipt starts the next round
+//       flow/run/prompt   ─ the agent follows that prompt, calling only what the revision lists (seat agent)
 //   flow/draft/delete { draftId }      ─ stops the draft's round here, then deletes the draft
 //   flow/delete { flowId }, flow/list
 //
-// A drafted flow's body is one agent step that follows its instructions; `flow/run/prompt` is that step as this engine
-// declares it, its payload pinned from the source, so the person's own engine runs only code the system wrote. Every
-// model call is a sealed step of its run through the server's model endpoint, role `agent`, and the agent reaches the
-// world only through the calls the flow lists (src/flows/catalog.ts). What a step does is injected by the host
-// (./steps.ts). This module imports @smthrs/agent, so only an engine's host imports it; the tab dispatches by
-// ./reference.ts.
+// Every evaluation and every host call is a journaled step, so a crash resumes from the receipts without asking the
+// model again; Stop cancels the lineage between steps. Every model call is a sealed step of its run through the
+// server's model endpoint, role `agent`, and the code and its agent reach the world only through the calls the flow
+// lists (src/flows/catalog.ts). What a step does is injected by the host (./steps.ts). This module imports
+// @smthrs/agent, so only an engine's host imports it; the tab dispatches by ./reference.ts.
 
 /** The steps that call ChatApi: tried for a minute while it can't answer; a refusal or a missing flow is final. */
 export const ROUTE_RETRY = RetryPolicy.make({
@@ -255,8 +263,8 @@ export const FlowSave = Flow.make(FlowSaveReference._tag, {
 }).annotate(Flow.Placement, Placement.client())
 
 /**
- * `flow/run/load`: the revision's flow.ts, checked, pinned with what it may call. Code that isn't a drafted flow as
- * drafted fails `FlowNeedsSandbox`.
+ * `flow/run/load`: the revision's flow.ts, checked, pinned with the realm's version and what it may call. Code that
+ * needs a machine fails `FlowNeedsSandbox`.
  */
 export const LoadFlow = Action.make("flow/run/load", {
   payload: FlowRunReference.payloadSchema.fields,
@@ -267,20 +275,21 @@ export const LoadFlow = Action.make("flow/run/load", {
 })
 
 /**
- * `flow/run/agent`: the agent follows the pinned instructions, calling only what they list: the one step of a drafted
- * flow, asked what that flow's own step asks (`renderPrompt`).
+ * `flow/run/agent`: the agent follows the prompt an agent step of a person's flow rendered in the realm, calling only
+ * what the revision lists. The prompt is its task, never system teaching, so a flow can't rewrite the rules it runs
+ * under.
  */
 export const PromptAgent = AgentAction.make("flow/run/agent", {
-  payload: { name: Schema.String, instructions: Schema.String, allowed: Schema.Array(Schema.String), input: Schema.String },
+  payload: { prompt: Schema.String },
   output: Schema.String,
   seat: FLOW_MODEL_ROLE,
   system: FLOW_SYSTEM,
   profile: "conversation",
-  prompt: flowPrompt,
+  prompt: ({ prompt }) => prompt,
   maxFrames: MAX_FLOW_FRAMES,
 })
 
-/** `flow/run/prompt`: one pinned revision, followed by the agent; its payload is what its calls are checked against. */
+/** `flow/run/prompt`: the agent on one agent step's prompt; its payload is what its calls are checked against. */
 export const FlowPrompt = Flow.make(FlowPromptReference._tag, {
   description: FlowPromptReference.description!,
   modelInvocable: false,
@@ -289,14 +298,94 @@ export const FlowPrompt = Flow.make(FlowPromptReference._tag, {
   error: FlowPromptReference.errorSchema,
   body: Node.capture(
     { agent: PromptAgent.name },
-    ({ name, instructions, allowed, input }) =>
-      PromptAgent.call({ name, instructions, allowed, input }).pipe(
+    ({ prompt }) =>
+      PromptAgent.call({ prompt }).pipe(
         // Why the agent failed stays on its step (the run page shows it); the run fails with a closed code.
         Node.catch({
           onFailure: Node.capture({ failed: "agent" }, () => Node.fail({ _tag: FLOW_AGENT_FAILED })),
         }),
       ),
   ),
+}).annotate(Flow.Placement, Placement.client())
+
+/** One call a person's code asks the host for, as the realm names it (`RealmFlow.Request`). */
+export const RealmCall = Schema.Struct({
+  _tag: Schema.Literal("Action"),
+  key: Schema.String,
+  name: Schema.String,
+  payload: Schema.Unknown,
+})
+export type RealmCall = typeof RealmCall.Type
+
+/** A host call's outcome, which the realm reads back on its next evaluation (`RealmFlow.Receipt`). */
+export const RealmReceipt = Schema.Struct({
+  ...RealmCall.fields,
+  outcome: Schema.Union([
+    Schema.Struct({ _tag: Schema.Literal("Success"), value: Schema.Unknown }),
+    Schema.Struct({ _tag: Schema.Literal("Failure"), error: Schema.Unknown }),
+  ]),
+})
+export type RealmReceipt = typeof RealmReceipt.Type
+
+/** One round of a pinned revision's run: the pin, and every host call's receipt so far. */
+export const CodeState = Schema.Struct({ ...Pinned, receipts: Schema.Array(RealmReceipt) })
+export type CodeState = typeof CodeState.Type
+
+/** What one evaluation says: the code's next call, or its answer as text. */
+export const Evaluated = Schema.Union([RealmCall, Schema.Struct({ _tag: Schema.Literal("Complete"), value: Schema.String })])
+
+/** What a host call needs of the pin: never the code or the receipts, which stay on the round's own payload. */
+export const CallPin = Schema.Struct({
+  flowId: Schema.String,
+  name: Schema.String,
+  revision: Schema.Number,
+  digest: Schema.String,
+  allowed: Schema.Array(Schema.String),
+})
+
+/** How a run of a person's code fails: its agent couldn't finish, or its code did (./reference.ts). */
+export const CodeRunFailure = Schema.Union([FlowAgentFailed, ...CodeFailure.members])
+
+/** `flow/run/evaluate`: the pinned code in a fresh QuickJS realm over the receipts so far. */
+export const EvaluateCode = Action.make("flow/run/evaluate", { payload: CodeState, success: Evaluated, error: CodeFailure })
+
+/** `flow/run/call`: the host makes the call the code asked for, and answers its receipt. */
+export const CallHost = Action.make("flow/run/call", {
+  payload: { pin: CallPin, call: RealmCall },
+  success: RealmReceipt,
+  error: CodeRunFailure,
+})
+
+type Code = Flow.Flow<
+  typeof FLOW_CODE,
+  typeof CodeState,
+  typeof Schema.String,
+  typeof CodeRunFailure,
+  Action.Requirement<"flow/run/evaluate"> | Action.Requirement<"flow/run/call">
+>
+
+/**
+ * `flow/run/code`: one pinned revision run in the QuickJS realm, as branch creation runs a repository's
+ * (src/features/branch/creationFlows.ts): an evaluation, then the host call it asked for, then the next round with that
+ * receipt, until the code answers. Every round reuses the pinned code and the receipts before it.
+ */
+export const FlowCode: Code = Flow.make(FLOW_CODE, {
+  payload: CodeState,
+  success: Schema.String,
+  error: CodeRunFailure,
+  body: Node.capture({ evaluate: EvaluateCode.name, call: CallHost.name }, (state) =>
+    EvaluateCode.call(state).pipe(Node.branch({
+      if: Node.capture({}, (result) => result._tag === "Complete"),
+      then: Node.capture({}, (result) =>
+        Flow.done((result as Planned.Planned<Extract<typeof Evaluated.Type, { _tag: "Complete" }>>).value)),
+      else: Node.capture({ call: CallHost.name }, (result) =>
+        CallHost.call({
+          pin: { flowId: state.flowId, name: state.name, revision: state.revision, digest: state.digest, allowed: state.allowed },
+          call: result as Planned.Planned<RealmCall>,
+        }).pipe(
+          Node.bindPlanned(Node.capture({}, (receipt) => FlowCode.to({ ...state, receipts: [...state.receipts, receipt] }))),
+        )),
+    }))),
 }).annotate(Flow.Placement, Placement.client())
 
 /** `flow/run`: runs your flow. */
@@ -307,18 +396,20 @@ export const FlowRun = Flow.make(FlowRunReference._tag, {
   success: FlowRunReference.successSchema,
   error: FlowRunReference.errorSchema,
   body: Node.capture(
-    { load: LoadFlow.name, prompt: FlowPromptReference._tag },
+    { load: LoadFlow.name, code: FLOW_CODE },
     ({ name, input, revision, flowId }) =>
       LoadFlow.call({ name, input, revision, flowId }).pipe(
-        Node.bindPlanned(Node.capture({ prompt: FlowPromptReference._tag }, (pinned) =>
-          FlowPrompt.child({
+        Node.bindPlanned(Node.capture({ code: FLOW_CODE }, (pinned) =>
+          FlowCode.child({
             flowId: pinned.flowId,
             name: pinned.name,
             revision: pinned.revision,
             digest: pinned.digest,
-            instructions: pinned.instructions,
+            source: pinned.source,
+            runtime: pinned.runtime,
             allowed: pinned.allowed,
             input: pinned.input,
+            receipts: [],
           }))),
       ),
   ),

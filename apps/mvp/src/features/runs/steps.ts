@@ -9,6 +9,7 @@ import type { Door } from "../../flows/dispatch"
 import { type FlowName, names } from "../../flows/registry"
 import { closeAnswer } from "../agent/close"
 import { AnswerReference } from "../agent/reference"
+import { FLOW_CODE } from "../flows-ui/reference"
 import { requesterOf } from "../../flows/requests"
 import {
   listed,
@@ -157,13 +158,19 @@ export const versioned = (flow: string, payload: unknown, version: "pinned" | "c
 }
 
 /**
- * What a run of your flow (`flow/run`) ran: the flow id and revision its load pinned, as its `flow/run/prompt` child's
- * payload holds them, or none when it never got that far. A pinned Retry runs exactly those, even when the run named no
- * revision or the flow's name went to another flow since.
+ * The child of a `flow/run` whose payload holds the revision its load pinned: `flow/run/code`, which runs that revision's
+ * code, or `flow/run/prompt` in a run recorded before code ran in the realm, whose history stays readable.
+ */
+const PINNED_CHILDREN: ReadonlyArray<string> = [FLOW_CODE, "flow/run/prompt"]
+
+/**
+ * What a run of your flow (`flow/run`) ran: the flow id and revision its load pinned, as its pinned child's payload holds
+ * them, or none when it never got that far. A pinned Retry runs exactly those, even when the run named no revision or the
+ * flow's name went to another flow since.
  */
 const ranRevision = (children: ReadonlyArray<{ readonly runId: string; readonly flowName: string }>) =>
   Effect.gen(function* () {
-    const child = children.find((each) => each.flowName === "flow/run/prompt")
+    const child = children.find((each) => PINNED_CHILDREN.includes(each.flowName))
     if (child === undefined) return undefined
     const read = yield* (yield* EngineStore.RunInspection.RunInspection).payload(child.runId).pipe(Effect.option)
     if (Option.isNone(read)) return undefined

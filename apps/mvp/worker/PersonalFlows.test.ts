@@ -510,26 +510,30 @@ describe("POST /api/flows/save", () => {
 })
 
 describe("POST /api/flows/write", () => {
-  test("code written by hand is the next revision, and it runs on a sandbox; drafted code again runs here", async () => {
+  test("code written by hand is the next revision and runs here; code that needs a machine runs on a sandbox", async () => {
     const h = await open()
     const first = await saved(h, "notes")
-    const edited = writing("notes", 1)
-    expect(await json(await send(h, "POST", "/api/flows/write", edited)))
+    const machine = writing("notes", 1, `import { readFile } from "node:fs/promises"\n${skill("notes")}`)
+    expect(await json(await send(h, "POST", "/api/flows/write", machine)))
       .toEqual([200, { flowId: first.flowId, name: "notes", revision: 2, txid: expect.any(Number) }])
     expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { route: "write", revision: 1, placement: "sandbox" } })
     expect(await json(await send(h, "GET", "/api/flows"))).toEqual([200, {
       flows: [{ id: first.flowId, name: "notes", revision: 2, description: "Summarize merged pull requests.", placement: "sandbox" }],
     }])
+    expect(await json(await send(h, "GET", "/api/flows/source?name=notes"))).toMatchObject([200, { revision: 2, source: machine.source }])
+
+    // A relabelled step is the person's code, which runs on their device in the QuickJS realm.
+    const edited = writing("notes", 2)
+    expect(await json(await send(h, "POST", "/api/flows/write", edited)))
+      .toEqual([200, { flowId: first.flowId, name: "notes", revision: 3, txid: expect.any(Number) }])
+    expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { route: "write", revision: 2, placement: "client" } })
     expect(await json(await send(h, "GET", "/api/flows/source?name=notes"))).toEqual([200, {
       flowId: first.flowId,
       name: "notes",
-      revision: 2,
+      revision: 3,
       digest: edited.digest,
       source: edited.source,
     }])
-
-    expect(await json(await send(h, "POST", "/api/flows/write", writing("notes", 2, skill("notes")))))
-      .toEqual([200, { flowId: first.flowId, name: "notes", revision: 3, txid: expect.any(Number) }])
     expect((await json(await send(h, "GET", "/api/flows")))[1]).toMatchObject({ flows: [{ revision: 3, placement: "client" }] })
   })
 

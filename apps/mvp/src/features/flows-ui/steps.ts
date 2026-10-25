@@ -1,20 +1,29 @@
 import { Agent, Budget, QuotaPolicy } from "@smthrs/agent"
 import { digestSync, Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import { EngineStore } from "@smthrs/flows"
+import { RealmFlow } from "@smthrs/harness"
 import { Evaluator } from "@smthrs/model"
-import { Clock, Effect, Layer, Option } from "effect"
+import { Clock, Effect, Layer, Option, Schema } from "effect"
+import { callFlow, publicError } from "../../flows/catalog"
+import { declarationOf } from "../../flows/declarations"
+import { entryOf, type FlowName } from "../../flows/registry"
 import * as AgentHost from "../agent/host"
 import { startRoot } from "../runs/start"
 import { FlowsClient } from "./api"
-import { DRAFT_ID_NAMESPACE } from "./contract"
+import { DRAFT_ID_NAMESPACE, FLOW_MODEL_ROLE, MAX_REALM_CALLS } from "./contract"
 import { PROMPT_CALLABLE } from "./callable"
 import { checkSource, passes, readSource } from "./checks"
 import {
   AdmitSave,
   AdmitWrite,
+  CallHost,
+  type CodeState,
   DraftFlow,
   type Drafted,
+  EvaluateCode,
   FlowAnswer,
+  FlowCode,
   FlowDelete,
   FlowDraftDelete,
   FlowDrafts,
@@ -39,16 +48,27 @@ import {
   WriteRound,
 } from "./flows"
 import { type DraftFailure, draftFailure } from "./failure"
-import { recordLoad, recordRound, recordSave, recordWrite } from "./metrics"
+import { recordCall, recordEvaluate, recordLoad, recordRound, recordSave, recordWrite } from "./metrics"
 import { roundExecutionId, roundOf } from "./round"
-import { DraftNotReady, FlowInvalid, FlowNeedsSandbox, NameTaken } from "./reference"
+import {
+  type CodeFailure,
+  DraftNotReady,
+  FlowCallRefused,
+  FlowCodeFailed,
+  FlowImportRefused,
+  FlowInvalid,
+  FlowLimitExceeded,
+  FlowNeedsSandbox,
+  NameTaken,
+} from "./reference"
 import type { DraftQuestion, DraftStatus } from "./schema"
-import { placementOf, readGenerated, renderSource, SOURCE_PATH } from "./source"
+import { placementOf, renderSource, SOURCE_PATH } from "./source"
 
 // What your own flows' steps do (decision 0014 §2, docs/features/flows.md#your-own-flows): ChatApi's flows and drafts
-// routes through `FlowsClient`, the static checks over the registry's `ModuleFlow` (./checks.ts), and the agent through
-// the same seat, catalog and policies `chat/Answer` runs on (src/features/agent/host.ts). Only an engine's host imports
-// this module: the engine worker and the Node host.
+// routes through `FlowsClient`, the static checks over the registry's `ModuleFlow` (./checks.ts), a person's code in the
+// QuickJS realm through `RealmFlow` (@smthrs/harness), and the agent through the same seat, catalog and policies
+// `chat/Answer` runs on (src/features/agent/host.ts). Only an engine's host imports this module: the engine worker and
+// the Node host.
 
 /** The answered questions of a round, as the drafting agent reads them. */
 const answered = (questions: ReadonlyArray<DraftQuestion>) =>
@@ -248,8 +268,8 @@ export const admit = ({ draftId }: { readonly draftId: string }) =>
   })
 
 /**
- * `flow/run/load`: one revision's flow.ts, its digest and checks verified, pinned with what it may call. Only a drafted
- * flow as drafted runs here: any other code fails `FlowNeedsSandbox` before anything runs (./source.ts).
+ * `flow/run/load`: one revision's flow.ts, its digest and checks verified, pinned with the realm's version and what it
+ * may call. Code that needs a machine fails `FlowNeedsSandbox` before anything runs (./source.ts).
  */
 export const load = (input: typeof LoadFlow.payloadSchema.Type) =>
   Effect.gen(function* () {
@@ -258,19 +278,116 @@ export const load = (input: typeof LoadFlow.payloadSchema.Type) =>
     if (digestSync(found.source) !== found.digest) return yield* invalid("digest")
     const failed = checkSource(found.source, found.name, PROMPT_CALLABLE).find((check) => !check.ok)
     if (failed !== undefined) return yield* invalid(failed.check)
-    const generated = readGenerated(found.source)
-    if (generated === undefined) return yield* Effect.andThen(recordLoad("sandbox"), Effect.fail(new FlowNeedsSandbox()))
-    yield* recordLoad("loaded")
+    if (placementOf(found.source) === "sandbox") {
+      return yield* Effect.andThen(recordLoad("sandbox"), Effect.fail(new FlowNeedsSandbox()))
+    }
+    yield* recordLoad("realm")
     return {
       flowId: found.flowId,
       name: found.name,
       revision: found.revision,
       digest: found.digest,
-      instructions: generated.instructions,
-      allowed: generated.flows,
+      source: found.source,
+      runtime: RealmFlow.version,
+      // The checks passed, so the registry read its list, and every flow on it is one a person's flow may call.
+      allowed: readSource(found.source, found.name).flows!,
       input: input.input ?? "",
     }
   })
+
+/** The failure a realm refusal fails a run with, one per thing the person fixes (./reference.ts). */
+export const refusalOf = (code: RealmFlow.RealmFlowError["code"]): CodeFailure =>
+  code === "limit_exceeded"
+    ? new FlowLimitExceeded({ code })
+    : code === "forbidden_import"
+    ? new FlowImportRefused({ code })
+    : code === "action_not_allowed"
+    ? new FlowCallRefused({ code })
+    : new FlowCodeFailed({ code })
+
+/** A person's code's answer as the run's text: a string as it is, any other value as its JSON. */
+const answerText = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value))
+
+/**
+ * `flow/run/evaluate`: the pinned code in a fresh QuickJS realm over the receipts so far, as branch creation evaluates a
+ * repository's (src/features/branch/creationSteps.ts). Refused under a realm other than the one the run pinned, or
+ * when its bytes changed. Its run's payload is `{ input }`; it may ask for the agent and the flows its list names.
+ */
+export const evaluate = (state: CodeState) =>
+  Effect.gen(function* () {
+    const fail = (failure: CodeFailure) =>
+      Effect.andThen(recordEvaluate(failure.code, state.receipts.length), Effect.fail(failure))
+    if (state.runtime !== RealmFlow.version) return yield* fail(new FlowCodeFailed({ code: "version" }))
+    if (digestSync(state.source) !== state.digest) return yield* fail(new FlowCodeFailed({ code: "invalid_source" }))
+    const result = yield* RealmFlow.step({
+      source: state.source,
+      expectedTag: state.name,
+      payload: { input: state.input },
+      allowedActions: [RealmFlow.agentAction, ...state.allowed],
+      receipts: state.receipts,
+    }).pipe(Effect.catchTag("RealmFlowError", (refused) => fail(refusalOf(refused.code))))
+    if (result._tag === "Complete") {
+      yield* recordEvaluate("complete", state.receipts.length)
+      return { _tag: "Complete" as const, value: answerText(result.value) }
+    }
+    if (state.receipts.length >= MAX_REALM_CALLS) return yield* fail(new FlowLimitExceeded({ code: "too_many_calls" }))
+    yield* recordEvaluate(result.name === RealmFlow.agentAction ? "agent" : "call", state.receipts.length)
+    return result
+  }).pipe(Effect.withSpan("flow.run.evaluate"))
+
+/**
+ * `flow/run/call`: the host makes the call the code asked for. An agent step runs `flow/run/prompt` on the prompt its
+ * code rendered, as the revision's agent; a flow the revision lists runs as the agent's catalog runs it
+ * (src/flows/catalog.ts `callFlow`). Either is a child execution named by this round and the call's key, so a call tried
+ * again, or resumed after a crash, joins the one it started instead of asking the model again. A flow's failure is its
+ * receipt, by its kind only; an agent that couldn't finish fails the run.
+ */
+export const call = ({ pin, call }: typeof CallHost.payloadSchema.Type) =>
+  Effect.gen(function* () {
+    const instance = yield* FlowRuntime.FlowInstance
+    const runtime = yield* FlowRuntime.FlowRuntime
+    const child = `${instance.executionId}/${call.name === RealmFlow.agentAction ? "agent" : "call"}/${digestSync(call.key).slice(0, 32)}`
+    const refuse = (kind: "agent" | "flow", code: FlowCallRefused["code"]) =>
+      Effect.andThen(recordCall(kind, code), Effect.fail(new FlowCallRefused({ code })))
+    if (call.name === RealmFlow.agentAction) {
+      const asked = Schema.decodeUnknownOption(RealmFlow.AgentPayload)(call.payload)
+      if (Option.isNone(asked)) return yield* refuse("agent", "payload")
+      if (asked.value.seat !== FLOW_MODEL_ROLE) return yield* refuse("agent", "seat")
+      const { flowId, name, revision, digest, allowed } = pin
+      const answer = yield* runtime.execute(FlowPrompt, {
+        executionId: child,
+        payload: { flowId, name, revision, digest, prompt: asked.value.prompt, allowed },
+      }).pipe(
+        Effect.catchTag("@smthrs/flow/FlowCycleDetected", Effect.die),
+        Effect.tapError(() => recordCall("agent", "failed")),
+      )
+      yield* recordCall("agent", "ok")
+      return { ...call, outcome: { _tag: "Success" as const, value: answer } }
+    }
+    // The realm resolved only what the pin lists; checked again where the call is made.
+    if (!pin.allowed.includes(call.name) || !PROMPT_CALLABLE.includes(call.name as FlowName)) {
+      return yield* refuse("flow", "action_not_allowed")
+    }
+    const name = call.name as FlowName
+    const flow = declarationOf(name)
+    // A registered flow's schemas need no service.
+    const codec = (schema: Schema.Top) => Schema.toCodecJson(schema) as unknown as Schema.Codec<unknown, unknown>
+    const input = Schema.decodeUnknownOption(codec(flow.payloadSchema))(call.payload)
+    if (Option.isNone(input)) return yield* refuse("flow", "payload")
+    const inspection = yield* EngineStore.RunInspection.RunInspection
+    const outcome = yield* callFlow({ entryOf }, runtime, inspection)(name, input.value, child).pipe(
+      Effect.matchEffect({
+        onFailure: (error) => Effect.succeed({ _tag: "Failure" as const, error: publicError(error) }),
+        onSuccess: (value) =>
+          Schema.encodeUnknownEffect(codec(flow.successSchema))(value).pipe(
+            Effect.orDie,
+            Effect.map((encoded) => ({ _tag: "Success" as const, value: encoded })),
+          ),
+      }),
+    )
+    yield* recordCall("flow", outcome._tag === "Success" ? "ok" : "failed")
+    return { ...call, outcome }
+  }).pipe(Effect.withSpan("flow.run.call"))
 
 /** `flow/read/source`: one revision's code, and where it runs. */
 export const read = (input: typeof ReadCode.payloadSchema.Type) =>
@@ -363,6 +480,10 @@ export const registration = Layer.mergeAll(
   ),
   Interpreter.layerWithImplementations(FlowSave, AdmitSave.toLayer(admit)),
   Interpreter.layerWithImplementations(FlowRun, LoadFlow.toLayer(load)),
+  Interpreter.layerWithImplementations(
+    FlowCode,
+    Layer.mergeAll(EvaluateCode.toLayer(evaluate).pipe(Layer.provide(RealmFlow.layerDefaultVariant)), CallHost.toLayer(call)),
+  ),
   Interpreter.layerWithImplementations(FlowPrompt, PromptAgent.layer),
   Interpreter.layerWithImplementations(FlowRead, ReadCode.toLayer(read)),
   Interpreter.layerWithImplementations(FlowWrite, AdmitWrite.toLayer(writeCode)),
