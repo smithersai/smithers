@@ -11,6 +11,7 @@ import { useIssues } from "../../features/issues/components/IssuesContext"
 import { issuesPath } from "../../features/issues/contract"
 import { draftOf, mayWrite } from "../../features/issues/view"
 import "./issues-screen.css"
+import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
 // /$owner/$repo/issues/new: the new-issue form over the repository's draft, kept on the device. Create issue runs
 // `issue/create` and goes back to the list, where the issue shows Requested until GitHub numbers it. A person who may
@@ -23,6 +24,7 @@ export function NewIssueScreen() {
   const { data: view } = useLiveQuery(queries.view)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  const answer = useRepoAnswer(owner, repo)
   const navigate = useNavigate()
   if (!isDeploymentRepository(owner, repo, repository?.about)) {
     const list = githubList(owner, repo, "issues")
@@ -32,7 +34,7 @@ export function NewIssueScreen() {
   const draft = draftOf(view)
   return (
     <main className="issues-screen" aria-label="New issue"><RepoHeader /><HomeTabs />
-      {mayWrite(session, confirmed)
+      {mayWrite(session, confirmed, answer)
         ? (
           <IssueForm
             title={draft.title}

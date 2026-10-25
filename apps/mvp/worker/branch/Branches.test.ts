@@ -13,6 +13,8 @@ import { CONVERSATION_NAMESPACE, MAX_TRACK_BODY_BYTES } from "../../src/features
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { branchHarness, type BranchHarness, gitHost, resetBranches, shaOf, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
+import { BranchRoles } from "./Access.ts"
 import * as Branches from "./Branches.ts"
 import * as Conversations from "./Conversations.ts"
 import { CreateRefused, Forge } from "./Forge.ts"
@@ -292,6 +294,37 @@ describe("POST /api/branches", () => {
       expect(h.github.seen).toEqual([])
     }
     expect(await rows()).toEqual([])
+  })
+
+  test("on a repository the App is installed on, the role there decides who tracks; the deployment's never does", async () => {
+    const body = { owner: "octocat", name: "Spoon-Knife", ref: "feature" }
+    const sql = (statement: string) =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(statement)))
+    await sql(`INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/octocat/spoon-knife', 7)`)
+    try {
+      /** GitHub, through `RepoRoles`, says `role` on Spoon-Knife (a test service: worker/branch/Access.test.ts is the real one). */
+      const rolesThere = (role: Actor["role"] | "refused") =>
+        Layer.succeed(BranchRoles, BranchRoles.of({
+          roleOn: (_, repoId) =>
+            role === "refused"
+              ? Effect.fail(new RepoRoles.RoleRefused({ code: "github_unavailable" }))
+              : Effect.succeed(repoId === "github/octocat/spoon-knife" ? role : null),
+        }))
+      // The deployment's Admin, a Guest there.
+      const outsider = await open({ actor: { ...member, role: "admin" }, branchRoles: rolesThere("guest") })
+      expect(await json(await track(outsider, body))).toEqual([403, { code: "forbidden" }])
+      expect(outsider.github.seen).toEqual([])
+      // GitHub not answering: 503, nothing recorded.
+      const down = await open({ branchRoles: rolesThere("refused") })
+      expect((await track(down, body)).status).toBe(503)
+      expect(await rows()).toEqual([])
+      // The deployment's Guest, a Member there: tracks it, and owns it.
+      const insider = await open({ actor: { ...member, role: "guest" }, branchRoles: rolesThere("member") })
+      expect((await track(insider, body)).status).toBe(201)
+      expect(await rows()).toMatchObject([{ name: "feature" }])
+    } finally {
+      await sql(`TRUNCATE github_repositories`)
+    }
   })
 
   test("sessions or Postgres that can't be read are 503 unavailable, logged by the failure's code", async () => {

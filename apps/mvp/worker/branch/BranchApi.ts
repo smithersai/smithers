@@ -51,7 +51,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       const request = yield* HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
       if (ConversationApi.handles(path)) return yield* conversations.fetch
-      if (path === CREATION_ROUTE) return yield* Creation.route(client)
+      if (path === CREATION_ROUTE) return yield* Creation.route(client, database)
       if (path === BRANCHES_ROUTE) return yield* Branches.make(database, app)
       if (SandboxCalls.handles(path)) return yield* sandboxCalls.fetch
       if (Texts.handles(path)) return yield* texts.fetch

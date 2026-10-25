@@ -18,12 +18,12 @@ import * as Actor from "../Actor.ts"
 import * as BranchApi from "../branch/BranchApi.ts"
 import * as Conversations from "../branch/Conversations.ts"
 import { Forge } from "../branch/Forge.ts"
-import type { Policy } from "../branch/Access.ts"
+import type { BranchRoles, Policy } from "../branch/Access.ts"
 import { Directory, type Person } from "../branch/People.ts"
 import { type Member, RoomUnavailable, Rooms } from "../branch/Rooms.ts"
 import { type Attachment, type Revoked, SandboxUnavailable, TerminalSockets } from "../branch/Sandboxes.ts"
 import * as Flows from "../Flows.ts"
-import { signedIn, type testFile } from "./harness.ts"
+import { branchRoles, signedIn, type testFile } from "./harness.ts"
 
 type Runtime = ReturnType<typeof testFile>
 
@@ -313,6 +313,8 @@ interface BranchOptions {
   readonly known?: ReadonlyArray<Person>
   /** The people directory, in place of the file's `people` and `known`. */
   readonly directory?: Directory["Service"]
+  /** Who has which role on a branch's repository: as a deployment without the App gives them unless set. */
+  readonly branchRoles?: Layer.Layer<BranchRoles>
 }
 
 /** The branch workspace's routes on the file's schema, recording every log line, span, metric and Electric request. */
@@ -383,6 +385,7 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
           ? Effect.provide(Directory.layer(database, options.known))
           : Effect.provideService(Directory, options.directory),
         Effect.provide(options.sessions ?? (options.actor === undefined ? Actor.signedOut : signedIn(options.actor))),
+        Effect.provide(options.branchRoles ?? branchRoles(database)),
         Effect.provideService(Forge, capturedForge),
         Effect.provide(FetchHttpClient.layer),
         Effect.provideService(FetchHttpClient.Fetch, fetch),

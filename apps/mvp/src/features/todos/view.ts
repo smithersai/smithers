@@ -1,6 +1,6 @@
 import type { IssuesViewIssue, IssuesViewLink, ItemConversationEvent, ItemStateKind, ItemStatus } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
-import { viewerOf } from "../auth/viewer"
+import { hereOf, type RepoAnswer } from "../auth/viewer"
 import { issuePath } from "../issues/contract"
 import { pullPath } from "../pulls/contract"
 import { hrefFor } from "../repo/paths"
@@ -381,15 +381,16 @@ export const accessFor = (repoId: string, access: ReadonlyArray<Access>): Access
   access.find((row) => row.id === repoId)?.status ?? "unknown"
 
 /**
- * Whether the person at the page may commit and drop TODOs: Member and above (`repo:todo-commit`, `repo:todo-drop`), as
- * sign-in last said, or the session this device last confirmed while it can't say.
+ * Whether the person at the page may commit and drop TODOs: Member and above (`repo:todo-commit`, `repo:todo-drop`) on
+ * the repository the page names, as ChatApi answered for it on this tab (decision 0079); none before it answers.
  */
 export const mayChange = (
   session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
   confirmed: { readonly role: Role | null } | undefined,
+  answer: RepoAnswer | undefined,
 ): boolean => {
-  const viewer = viewerOf(session, confirmed)
-  return viewer.signedIn && mayAsk(viewer.role)
+  const here = hereOf(session, confirmed, answer)
+  return here.signedIn && mayAsk(here.role)
 }
 
 /**
@@ -463,10 +464,17 @@ export const withTodos = (
     }
   })
 
-/** The server rechecks ownership by stable person id inside its stack transaction. */
+/**
+ * Whether Retry shows on a failed TODO: for a Maintainer or above on its repository, or the Member who made it, as
+ * ChatApi answered for the repository (decision 0079). The server rechecks ownership by stable person id inside its
+ * stack transaction.
+ */
 export const mayRetry = (
   todo: Pick<Todo, "state" | "createdLogin">,
-  session: { readonly status: string; readonly role: Role | null; readonly login: string | null },
-): boolean => todo.state === "failed" && session.status === "signed_in" &&
-  (session.role === "maintainer" || session.role === "admin" ||
-    (session.role === "member" && session.login === todo.createdLogin))
+  session: { readonly status: string; readonly login: string | null },
+  answer: RepoAnswer | undefined,
+): boolean => {
+  const role = answer?.role ?? null
+  return todo.state === "failed" && session.status === "signed_in" &&
+    (role === "maintainer" || role === "admin" || (role === "member" && session.login === todo.createdLogin))
+}

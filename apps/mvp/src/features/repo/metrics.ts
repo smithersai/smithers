@@ -87,3 +87,12 @@ export const embedLoadMs = Metric.histogram("smithers_web_repo_embed_load_ms", {
   description: "Milliseconds a repository's view in a conversation took to load, by outcome",
   boundaries: loadBoundaries,
 })
+
+/**
+ * The person's role on a repository, as ChatApi answered a repository route (decision 0079), by `outcome`
+ * (`answered` or `refused`) and `role` (the role, `none`, or `unknown` when refused).
+ */
+export const roleAnswers = Metric.counter("smithers_web_repo_role_answers", {
+  description: "Answers of who the person is on a repository, by outcome and role",
+  incremental: true,
+})

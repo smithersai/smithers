@@ -15,3 +15,33 @@ export const viewerOf = (
   if (session.status === "signed_out" || confirmed === undefined) return { signedIn: false, role: null }
   return { signedIn: true, role: confirmed.role }
 }
+
+/** ChatApi's answer of who the person is on one repository (`RepoRole` in schema.ts): their role there, and whether it is the deployment's own. */
+export interface RepoAnswer {
+  readonly role: Role | null
+  readonly own: boolean
+}
+
+/**
+ * Who the person is on the routed repository (decision 0079): signed in, as `viewerOf` says; their role there, as
+ * ChatApi answered for that repository (`answer`), none until it has, so nothing role-gated shows on a repository it
+ * never answered; and whether it is the deployment's own repository, where the features still fenced to it act.
+ */
+export interface Here {
+  readonly signedIn: boolean
+  readonly role: Role | null
+  readonly own: boolean
+}
+
+export const hereOf = (
+  session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
+  confirmed: { readonly role: Role | null } | undefined,
+  answer: RepoAnswer | undefined,
+): Here => {
+  const viewer = viewerOf(session, confirmed)
+  return {
+    signedIn: viewer.signedIn,
+    role: viewer.signedIn && answer !== undefined ? answer.role : null,
+    own: answer?.own ?? false,
+  }
+}

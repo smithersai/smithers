@@ -236,17 +236,22 @@ describe("drafts, access and who may change a stack", () => {
     expect(accessOf({ _tag: "Failed" } as never)).toBeUndefined()
   })
 
-  test("a Member and above may change a stack, as sign-in says or, while it can't, as last confirmed", () => {
-    const session = (status: "loading" | "signed_in" | "signed_out" | "unreachable", role: "member" | "guest" | null) => ({
+  test("a Member and above on the repository may change its stack, as ChatApi answered for it (decision 0079)", () => {
+    const session = (status: "loading" | "signed_in" | "signed_out" | "unreachable", role: "member" | "guest" | null = null) => ({
       status,
       role,
     })
-    expect(mayChange(session("signed_in", "member"), undefined)).toBe(true)
-    expect(mayChange(session("signed_in", "guest"), undefined)).toBe(false)
-    expect(mayChange(session("signed_in", null), undefined)).toBe(false)
-    expect(mayChange(session("signed_out", null), { role: "member" })).toBe(false)
-    expect(mayChange(session("unreachable", null), { role: "maintainer" })).toBe(true)
-    expect(mayChange(session("loading", null), undefined)).toBe(false)
+    const on = (role: "maintainer" | "member" | "guest" | null) => ({ role, own: false })
+    expect(mayChange(session("signed_in"), undefined, on("member"))).toBe(true)
+    expect(mayChange(session("signed_in"), undefined, on("guest"))).toBe(false)
+    expect(mayChange(session("signed_in"), undefined, on(null))).toBe(false)
+    // A Member of the deployment's own repository is only a Guest here; before ChatApi answers, nobody may.
+    expect(mayChange(session("signed_in", "member"), undefined, on("guest"))).toBe(false)
+    expect(mayChange(session("signed_in", "member"), undefined, undefined)).toBe(false)
+    expect(mayChange(session("signed_out"), { role: "member" }, on("member"))).toBe(false)
+    // Offline after an answer, the session this device confirmed is still signed in.
+    expect(mayChange(session("unreachable"), { role: "maintainer" }, on("maintainer"))).toBe(true)
+    expect(mayChange(session("loading"), undefined, on("member"))).toBe(false)
   })
 })
 
@@ -625,14 +630,19 @@ describe("TODO boundary regressions", () => {
   })
 })
 
-test("Retry names the least role: own Member or anyone Maintainer", () => {
+test("Retry names the least role on the TODO's repository: own Member or anyone Maintainer", () => {
   const todo = { state: "failed" as const, createdLogin: "maya" }
-  const session = { status: "signed_in", role: "member" as const, login: "maya" }
-  expect(mayRetry(todo, session)).toBe(true)
-  expect(mayRetry(todo, { ...session, role: "guest" })).toBe(false)
-  expect(mayRetry(todo, { ...session, login: "other" })).toBe(false)
-  expect(mayRetry(todo, { ...session, role: "maintainer", login: "other" })).toBe(true)
-  expect(mayRetry({ ...todo, state: "working" }, session)).toBe(false)
+  const session = { status: "signed_in", login: "maya" }
+  const on = (role: "admin" | "maintainer" | "member" | "guest" | null) => ({ role, own: false })
+  expect(mayRetry(todo, session, on("member"))).toBe(true)
+  expect(mayRetry(todo, session, on("guest"))).toBe(false)
+  expect(mayRetry(todo, { ...session, login: "other" }, on("member"))).toBe(false)
+  expect(mayRetry(todo, { ...session, login: "other" }, on("maintainer"))).toBe(true)
+  expect(mayRetry(todo, { ...session, login: "other" }, on("admin"))).toBe(true)
+  expect(mayRetry({ ...todo, state: "working" }, session, on("member"))).toBe(false)
+  // Before ChatApi answers for the repository, or signed out: no Retry.
+  expect(mayRetry(todo, session, undefined)).toBe(false)
+  expect(mayRetry(todo, { ...session, status: "signed_out" }, on("maintainer"))).toBe(false)
 })
 
 test("retry requests show Retry and leave the optimistic list only after the route took them", () => {

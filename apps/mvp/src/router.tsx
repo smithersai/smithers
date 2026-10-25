@@ -117,6 +117,22 @@ const enter = async (load: Load, warm: () => unknown, open: () => unknown): Prom
   await open()
 }
 
+/**
+ * A repository route's `enter`: warms and opens the page as `enter` does, and once it opens asks ChatApi who the person
+ * is on the repository (decision 0079), for the header's links and the page's buttons.
+ */
+const enterRepo = (
+  context: RouterContext,
+  params: { readonly owner: string; readonly repo: string },
+  load: Load,
+  warm: () => unknown,
+  open: () => unknown,
+): Promise<void> =>
+  enter(load, warm, () => {
+    context.repo.actions.role(params.owner, params.repo)
+    return open()
+  })
+
 /** Repository feature routes share the same frame, including on a direct visit. */
 const enterRepository = (
   context: RouterContext,
@@ -124,7 +140,7 @@ const enterRepository = (
   load: Load,
   warm: () => unknown,
   open: () => unknown,
-) => enter(load,
+) => enterRepo(context, params, load,
   () => Promise.all([context.repo.actions.warmRoute("tree", params, {}), context.home.actions.warm(params.owner, params.repo), warm()]),
   () => {
     context.repo.actions.openRoute("tree", params, {})
@@ -260,7 +276,9 @@ const repoRoute = createRoute({
   component: RepoHomeScreen,
   validateSearch: lineSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
-    enter(
+    enterRepo(
+      context,
+      params,
       load,
       () =>
         Promise.all([
@@ -287,7 +305,7 @@ const treeRoute = createRoute({
   pendingComponent: BranchPendingScreen,
   validateSearch: branchSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
-    enter(load, () => Promise.all([context.repo.actions.warmRoute("tree", params, { L: search.L }), context.home.actions.warm(params.owner, params.repo)]), () =>
+    enterRepo(context, params, load, () => Promise.all([context.repo.actions.warmRoute("tree", params, { L: search.L }), context.home.actions.warm(params.owner, params.repo)]), () =>
       Promise.all([
         context.repo.actions.openRoute("tree", params, { L: search.L }),
         context.home.actions.open(params.owner, params.repo),
@@ -312,7 +330,7 @@ const blobRoute = createRoute({
   pendingComponent: BranchPendingScreen,
   validateSearch: lineSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
-    enter(load, () => context.repo.actions.warmRoute("blob", params, search), () =>
+    enterRepo(context, params, load, () => context.repo.actions.warmRoute("blob", params, search), () =>
       Promise.all([
         context.repo.actions.openRoute("blob", params, search),
         context.home.actions.open(params.owner, params.repo),
@@ -349,7 +367,7 @@ const rawRoute = createRoute({
   component: RepoScreen,
   // Nothing to warm: a preload would load the raw file in place of the app.
   beforeLoad: ({ context, params, ...load }) =>
-    enter(load, local, async () => {
+    enterRepo(context, params, load, local, async () => {
       context.home.actions.open(params.owner, params.repo)
       const href = await context.repo.actions.rawRoute(params)
       if (href !== undefined) throw redirect({ href, reloadDocument: true })
@@ -368,7 +386,9 @@ const docsBeforeLoad = (
   },
 ) => {
   const path = pathOfSplat(params._splat)
-  return enter(
+  return enterRepo(
+    context,
+    params,
     load,
     () =>
       Promise.all([
@@ -440,7 +460,9 @@ const issueRoute = createRoute({
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
   beforeLoad: ({ context, params, ...load }) =>
-    enter(
+    enterRepo(
+      context,
+      params,
       load,
       () => Promise.all([context.issues.actions.warm(), context.todos.actions.warm(params.owner, params.repo)]),
       () =>
@@ -465,7 +487,7 @@ const actionRunRoute = createRoute({
   path: "/$owner/$repo/actions/runs/$runId",
   component: ActionRunScreen,
   beforeLoad: (load) =>
-    enter(load, local, () =>
+    enterRepo(load.context, load.params, load, local, () =>
       load.context.runs.actions.openRun(load.params.runId, { owner: load.params.owner, name: load.params.repo })),
   onLeave: ({ context, params }) => context.runs.actions.closeRun(params.runId),
 })
@@ -498,7 +520,7 @@ const pullRoute = createRoute({
   component: () => <PullScreen tab="conversation" />,
   params: pullParams,
   beforeLoad: ({ context, params, ...load }) =>
-    enter(load, () => context.pulls.actions.warm(), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
+    enterRepo(context, params, load, () => context.pulls.actions.warm(), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
 })
 
 /** `/$owner/$repo/pull/$number/$tab`: its commits, its checks (the Smithers runs on its head), or its files. */
@@ -523,7 +545,9 @@ const pullTabRoute = createRoute({
     }),
   },
   beforeLoad: ({ context, params, ...load }) =>
-    enter(
+    enterRepo(
+      context,
+      params,
       load,
       () => context.pulls.actions.warm(),
       () => context.pulls.actions.open(params.owner, params.repo, params.number, params.tab),
@@ -573,7 +597,9 @@ const todoRoute = createRoute({
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
   beforeLoad: ({ context, params, ...load }) =>
-    enter(
+    enterRepo(
+      context,
+      params,
       load,
       () => context.todos.actions.warm(params.owner, params.repo),
       () => context.todos.actions.open(params.owner, params.repo, params.number),

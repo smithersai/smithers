@@ -2,12 +2,14 @@
 // (worker/test/branch.ts) on this file's schema of the compose Postgres (`pnpm db:up`). The branch's room is a test
 // `Rooms` that records who joined, standing in for the Cloudflare Durable Object (worker/BranchRooms.ts).
 import { Effect, Layer, Redacted } from "effect"
+import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { roomRoute } from "../../src/features/branch/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
+import { BranchRoles } from "./Access.ts"
 import * as Presence from "./Presence.ts"
 
 const runtime = testFile("presence")
@@ -31,6 +33,24 @@ const join = (h: BranchHarness, branchId: string, headers: Record<string, string
   })
 
 describe("GET /api/branches/<id>/room", () => {
+  test("joins with the role on the branch's repository, which the room re-checks shares with (decision 0079)", async () => {
+    const branch = await tracked(runtime, REPO, "feature/elsewhere", "open")
+    await shared(runtime, branch.branchId, "person-gus", "edit")
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES (${REPO}, 7)`))
+    try {
+      // The deployment's Guest, a Maintainer on the repository: joins to edit, as its Maintainer.
+      const roles = Layer.succeed(BranchRoles, BranchRoles.of({ roleOn: () => Effect.succeed("maintainer") }))
+      const h = await open(gus, { branchRoles: roles })
+      expect(await json(await join(h, branch.branchId))).toEqual([
+        200,
+        { joined: { principal: "person-gus", name: "person-gus", role: "maintainer", access: "edit" } },
+      ])
+    } finally {
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE github_repositories`))
+    }
+  })
+
   test("joins the owner, and someone it is shared with, as the session says, with what they may do", async () => {
     const branch = await tracked(runtime, REPO, "feature/room", "open", "person-maya")
     await shared(runtime, branch.branchId, "person-gus", "edit")

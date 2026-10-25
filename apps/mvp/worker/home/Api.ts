@@ -2,9 +2,11 @@ import { Home } from "@smthrs/views"
 import { Clock, Effect, Metric, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { audienceOf, HOME_SEGMENT } from "../../src/features/home/contract.ts"
+import { REPO_ROLE_SEGMENT } from "../../src/features/auth/contract.ts"
+import type { RepoRoleAnswer } from "../../src/features/auth/schema.ts"
 import type { HomeAnswer } from "../../src/features/home/schema.ts"
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.ts"
-import { type Role, Sessions } from "../Actor.ts"
+import { type Actor, type Role, Sessions } from "../Actor.ts"
 import { repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as Curated from "./Curated.ts"
@@ -24,6 +26,10 @@ import * as Curated from "./Curated.ts"
 //
 // Each request is one span and log line `home.curated` and one count, with its outcome, the audience and how many
 // sections it sent and held back; never a section, a block or a name.
+//
+// `GET /api/repos/<owner>/<name>/role` answers the same role itself, `{ role, own }`, and whether the repository is the
+// deployment's own, for the header's links and the buttons each page gates by it (docs/features/sign-in.md). Each
+// request is one span and log line `repo.role` and one count, with its outcome and the role; never a login.
 
 /** `GET .../home` requests, by `outcome` and `audience`. */
 export const requests = Metric.counter("smithers_home_curated_requests", {
@@ -31,11 +37,20 @@ export const requests = Metric.counter("smithers_home_curated_requests", {
   incremental: true,
 })
 
-/** The repository a home route names, from `/api/repos/<owner>/<name>/home`; none for any other path. */
-export const parseHomePath = (path: string): { readonly owner: string; readonly name: string } | undefined => {
+/** `GET .../role` requests, by `outcome` and `role`. */
+export const roleRequests = Metric.counter("smithers_repo_role_requests", {
+  description: "GET /api/repos/<owner>/<name>/role requests, by outcome and role",
+  incremental: true,
+})
+
+/** The repository a route of `segment` names, from `/api/repos/<owner>/<name>/<segment>`; none for any other path. */
+const parseRepoPath = (
+  path: string,
+  segment: string,
+): { readonly owner: string; readonly name: string } | undefined => {
   if (!path.startsWith(`${REPOS_ROUTE}/`)) return undefined
   const segments = path.slice(REPOS_ROUTE.length + 1).split("/")
-  if (segments.length !== 3 || segments[2] !== HOME_SEGMENT) return undefined
+  if (segments.length !== 3 || segments[2] !== segment) return undefined
   try {
     const owner = decodeURIComponent(segments[0]!)
     const name = decodeURIComponent(segments[1]!)
@@ -45,8 +60,14 @@ export const parseHomePath = (path: string): { readonly owner: string; readonly 
   }
 }
 
-/** Whether a path is the home route. */
-export const handles = (path: string): boolean => parseHomePath(path) !== undefined
+/** The repository a home route names, from `/api/repos/<owner>/<name>/home`; none for any other path. */
+export const parseHomePath = (path: string) => parseRepoPath(path, HOME_SEGMENT)
+
+/** The repository a role route names, from `/api/repos/<owner>/<name>/role`; none for any other path. */
+export const parseRolePath = (path: string) => parseRepoPath(path, REPO_ROLE_SEGMENT)
+
+/** Whether a path is the home route or the role route. */
+export const handles = (path: string): boolean => parseHomePath(path) !== undefined || parseRolePath(path) !== undefined
 
 const headers = { "cache-control": "no-store", vary: "cookie" }
 
@@ -65,12 +86,34 @@ interface Decided {
   readonly refused?: RepoRoles.Refusal
 }
 
-/** A refusal that says nobody has a role on the repository: the deployment can't act there (0079 §4, §7). */
-const NO_ROLE_HERE: ReadonlySet<RepoRoles.Refusal> = new Set(["not_configured", "not_found", "app_not_installed"])
+/** The routes. They read who is asking from `Sessions`. */
+export const make = <R>({ roles, files = Curated.files }: Options<R>) => {
+  /**
+   * The person's role on `target`: none signed out, or where the deployment can't act; a role GitHub or Postgres can't
+   * say now is the refusal, never a guess.
+   */
+  const decide = (actor: Option.Option<Actor>, target: { readonly owner: string; readonly name: string }) =>
+    Option.match(actor, {
+      onNone: () => Effect.succeed<Decided>({ role: null, source: "signed_out" }),
+      onSome: (signed) =>
+        roles.resolve(signed, repositoryOf(`${target.owner}/${target.name}`)).pipe(
+          Effect.map((resolved): Decided => ({ role: resolved.role, source: "role" })),
+          Effect.catch((refused) =>
+            RepoRoles.CANT_ACT.has(refused.code)
+              ? Effect.succeed<Decided>({ role: null, source: "no_role_here", refused: refused.code })
+              : Effect.fail(refused)
+          ),
+        ),
+    })
 
-/** The route. It reads who is asking from `Sessions`. */
-export const make = <R>({ roles, files = Curated.files }: Options<R>) => ({
-  fetch: Effect.gen(function* () {
+  /** A refusal's answer: its status, with GitHub's wait when it said one. */
+  const refusedAnswer = (refused: RepoRoles.RoleRefused) =>
+    HttpServerResponse.jsonUnsafe({ code: refused.code }, {
+      status: RepoRoles.REFUSALS[refused.code],
+      headers: { ...headers, "retry-after": String(refused.retryAfterSeconds ?? 5) },
+    })
+
+  const home = Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const startedAt = yield* Clock.currentTimeMillis
     const target = parseHomePath(request.url.split("?")[0]!)!
@@ -105,42 +148,22 @@ export const make = <R>({ roles, files = Curated.files }: Options<R>) => ({
         { outcome: "unavailable" },
       )
     }
-    // The person's role on this repository: none signed out, or where the deployment can't act; a role GitHub or
-    // Postgres can't say now is no answer at all.
-    const decided = yield* Option.match(actor.success, {
-      onNone: () => Effect.succeed<Decided>({ role: null, source: "signed_out" }),
-      onSome: (signed) =>
-        roles.resolve(signed, repositoryOf(`${target.owner}/${target.name}`)).pipe(
-          Effect.map((resolved): Decided => ({ role: resolved.role, source: "role" })),
-          Effect.catch((refused) =>
-            NO_ROLE_HERE.has(refused.code)
-              ? Effect.succeed<Decided>({ role: null, source: "no_role_here", refused: refused.code })
-              : Effect.fail(refused)
-          ),
-        ),
-    }).pipe(Effect.result)
+    const decided = yield* decide(actor.success, target).pipe(Effect.result)
     if (decided._tag === "Failure") {
-      const { code, retryAfterSeconds } = decided.failure
-      return yield* record(
-        HttpServerResponse.jsonUnsafe({ code }, {
-          status: RepoRoles.REFUSALS[code],
-          headers: { ...headers, "retry-after": String(retryAfterSeconds ?? 5) },
-        }),
-        { outcome: "role_unavailable", refused: code },
-      )
+      return yield* record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code })
     }
     const { role, ...why } = decided.success
-    const own = audienceOf(role)
+    const ownView = audienceOf(role)
     const found = Curated.find(target.owner, target.name, files)
     if (found === undefined || found === "invalid") {
-      const answer: HomeAnswer = { audience: own, curated: null }
+      const answer: HomeAnswer = { audience: ownView, curated: null }
       return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), {
         outcome: found === undefined ? "absent" : "invalid",
-        audience: own,
+        audience: ownView,
         ...why,
       })
     }
-    const audience = Home.widen(own, found.contributors)
+    const audience = Home.widen(ownView, found.contributors)
     const sections = Home.visible(found.sections, audience)
     const answer: HomeAnswer = {
       audience,
@@ -157,5 +180,53 @@ export const make = <R>({ roles, files = Curated.files }: Options<R>) => ({
       hidden: found.sections.length - sections.length,
       ...why,
     })
-  }).pipe(Effect.withSpan("home.curated")),
-})
+  }).pipe(Effect.withSpan("home.curated"))
+
+  const role = Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const startedAt = yield* Clock.currentTimeMillis
+    const target = parseRolePath(request.url.split("?")[0]!)!
+    const record = (
+      response: HttpServerResponse.HttpServerResponse,
+      fields: {
+        readonly outcome: string
+        readonly role?: Role | null
+        readonly own?: boolean
+        readonly source?: Decided["source"]
+        readonly refused?: RepoRoles.Refusal
+      },
+    ) =>
+      Effect.gen(function* () {
+        const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+        const role = fields.role === undefined ? "none" : fields.role ?? "no_role"
+        yield* Metric.update(Metric.withAttributes(roleRequests, { outcome: fields.outcome, role }), 1)
+        yield* Effect.annotateCurrentSpan({ "smithers.role.outcome": fields.outcome, "smithers.role.role": role })
+        yield* Effect.logWithLevel(fields.outcome === "answered" || fields.outcome === "method" ? "Info" : "Warn")(
+          "repo.role",
+        ).pipe(Effect.annotateLogs({ ...fields, status: response.status, durationMs }))
+        return response
+      })
+    if (request.method !== "GET") {
+      return yield* record(HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } }), { outcome: "method" })
+    }
+    const actor = yield* Effect.result((yield* Sessions).resolve)
+    if (actor._tag === "Failure") {
+      return yield* record(
+        HttpServerResponse.jsonUnsafe({ code: "unavailable" }, { status: 503, headers: { ...headers, "retry-after": "5" } }),
+        { outcome: "unavailable" },
+      )
+    }
+    const decided = yield* decide(actor.success, target).pipe(Effect.result)
+    if (decided._tag === "Failure") {
+      return yield* record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code })
+    }
+    const own = repositoryOf(`${target.owner}/${target.name}`).id === roles.repository.id
+    const answer: RepoRoleAnswer = { role: decided.success.role, own }
+    return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), { outcome: "answered", own, ...decided.success })
+  }).pipe(Effect.withSpan("repo.role"))
+
+  return {
+    fetch: Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
+      parseRolePath(request.url.split("?")[0]!) === undefined ? home : role),
+  }
+}

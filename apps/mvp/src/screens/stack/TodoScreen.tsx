@@ -7,6 +7,7 @@ import { useTodos } from "../../features/todos/components/TodosContext"
 import { BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, RUN, STACK, stackPath } from "../../features/todos/contract"
 import { mayRetry, accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf } from "../../features/todos/view"
 import "./stack-screen.css"
+import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
 // /$owner/$repo/stack/$number (decision 0016 §4): one TODO as GitHub's issue page. Its title and T<n>, its state pill,
 // whose icon blinks while it is Working; who committed it and when; its prompt and acceptance criteria; a timeline of
@@ -28,14 +29,15 @@ export function TodoScreen() {
   const { data: access } = useLiveQuery(queries.access)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  const answer = useRepoAnswer(owner, repo)
   const navigate = useNavigate()
   const status = accessFor(repoId, access)
   if (status === "sign_in") return <main className="stack-screen" aria-label="TODO"><SignInButton /></main>
   const card = todoCardOf(number, stackRows(repoId, todos, sending, requested), todos, requests)
   const screen = status === "forbidden" ? { kind: "missing" as const } : todoScreenOf(card, number, todos, status, owner, repo)
   const todo = todos.find((todo) => todo.number === number)
-  const retryable = todo !== undefined && session !== undefined && mayRetry(todo, session)
-  const may = session !== undefined && mayChange(session, confirmed)
+  const retryable = todo !== undefined && session !== undefined && mayRetry(todo, session, answer)
+  const may = session !== undefined && mayChange(session, confirmed, answer)
   return (
     <main className="stack-screen" aria-label="TODO">
       <Breadcrumbs

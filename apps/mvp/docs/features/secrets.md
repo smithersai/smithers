@@ -38,7 +38,7 @@ Nobody reads a value back. `GET /api/shapes/secrets?repo=<repo id>` syncs the re
 
 ## The Secrets page
 
-`/<owner>/<name>/settings/secrets` lists a repository's secrets by name: each one's hosts, its methods when set, and when it last changed. The list comes from `GET /api/shapes/secrets?repo=<repo id>` into `secrets:<repo id>`, which the device keeps. The repository header's Secrets link shows to a Member or above.
+`/<owner>/<name>/settings/secrets` lists a repository's secrets by name: each one's hosts, its methods when set, and when it last changed. The list comes from `GET /api/shapes/secrets?repo=<repo id>` into `secrets:<repo id>`, which the device keeps. The repository header's Secrets link shows to a Member or above of the repository, on the deployment's own repository alone, by the role ChatApi answers for it (`GET /api/repos/<owner>/<name>/role`, decision 0079): a Member of the deployment's repository sees no Secrets on `smithersai/vibelang`.
 
 | Who | Sees | Does |
 |---|---|---|

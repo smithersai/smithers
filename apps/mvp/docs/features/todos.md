@@ -35,7 +35,7 @@ Drop ─▶ todo/drop ─▶ the same outbox and route
 | Retry own TODO | Member or above, in person or through the agent |
 | Retry anyone’s TODO | Maintainer or above, in person or through the agent |
 
-Every role here is the person's on the repository the route names ([decision 0079](../decisions/0079-roles-per-repository.md)): on the deployment's own (`GITHUB_REPOSITORY`), the session's; on any other the App is installed on, their GitHub permission there, read with the App and kept 5 minutes (`worker/github/RepoRoles.ts`). A change applies only while that role still holds, in the stack's own transaction. Local development without the App keeps the developer's role everywhere.
+Every role here is the person's on the repository the route names ([decision 0079](../decisions/0079-roles-per-repository.md)), and so are the buttons: New TODO, Make TODO, Drop and Retry show by the role ChatApi answers for the repository (`GET /api/repos/<owner>/<name>/role`), none before it answers: on the deployment's own (`GITHUB_REPOSITORY`), the session's; on any other the App is installed on, their GitHub permission there, read with the App and kept 5 minutes (`worker/github/RepoRoles.ts`). A change applies only while that role still holds, in the stack's own transaction. Local development without the App keeps the developer's role everywhere.
 
 ## Routes
 

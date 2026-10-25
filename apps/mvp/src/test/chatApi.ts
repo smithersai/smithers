@@ -134,6 +134,7 @@ import type { ThemeMode } from "../features/theme/contract"
 import type { StackClient } from "../features/todos/api"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
 import * as RepoRoles from "../../worker/github/RepoRoles.ts"
+import { BranchRoles } from "../../worker/branch/Access.ts"
 import * as RepoRuns from "../../worker/RepoRuns.ts"
 import { VIEWS_TABLE } from "../features/views/contract"
 import { clientFlows } from "../flows/declarations"
@@ -820,6 +821,8 @@ export class TestChatApi extends Context.Service<
             })
           ),
           Effect.provide(sessions),
+          // Who has which role on a branch's repository, as ChatApi provides it (decision 0079).
+          Effect.provide(BranchRoles.layer(roles)),
           Effect.provide(FetchHttpClient.layer),
           Effect.provideService(FetchHttpClient.Fetch, electric),
           Effect.provideService(Tracer.Tracer, tracer),

@@ -1,6 +1,7 @@
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
-import { Collection } from "@smthrs/effect-tanstack-db"
+import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Duration, Effect, FiberHandle, Layer, Option, type Schedule, Stream } from "effect"
+import { RepoRole } from "../auth/schema"
 import { AuthStore } from "../auth/store"
 import { REPOSITORIES_SHAPE_ROUTE } from "./contract"
 import { aboutQuery, embedsQuery, fileQuery, manifestQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries"
@@ -52,6 +53,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
   const abouts = yield* Collection.local<AboutRow, string>({ id: "repo-abouts", schema: AboutRow, getKey: (row) => row.key })
   const heads = yield* Collection.local<HeadRow, string>({ id: "repo-heads", schema: HeadRow, getKey: (row) => row.key })
   const embeds = yield* Collection.local<EmbedRow, string>({ id: "repo-embeds", schema: EmbedRow, getKey: (row) => row.key })
+  const roles = yield* Collection.local<RepoRole, string>({ id: "repo-roles", schema: RepoRole, getKey: (row) => row.id })
   const view = yield* Collection.local<ViewRow, string>({
     id: "repo-view",
     schema: ViewRow,
@@ -89,6 +91,8 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     abouts,
     heads,
     embeds,
+    roles,
+    rolesState: yield* LiveQuery.make((q) => q.from({ role: roles.tanstack })),
     view,
     viewState: yield* viewQuery(view, repositories, clones, abouts),
     embedsState: yield* embedsQuery(embeds, repositories, abouts, trees, blobs),
@@ -117,6 +121,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
  * - `abouts`: what GitHub says of each repository this tab opened, by id.
  * - `heads`: the ready heads RepoApi's refs named for repositories whose rows Electric hadn't delivered ready, by id.
  * - `embeds`: each repository's view in a conversation this tab loaded, by the view's id (src/features/repo/embed.ts).
+ * - `roles`: the person's role on each repository this tab opened, as ChatApi last answered, by id (decision 0079).
  * - `view`: where the routed view is, one row.
  * - the live queries frontends read (queries.ts), `loader`, `scope`, and the settings.
  */

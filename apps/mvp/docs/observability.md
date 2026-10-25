@@ -423,6 +423,8 @@ The browser (`src/features/repo/`), the tab's and the engine worker's, relayed t
 | `repo.tree.load`, `repo.blob.load`, `repo.refs.load`, `repo.about.load` | log | `outcome`, `durationMs`, `status` |
 | `repo.head.load` | log: RepoApi's refs naming a repository's ready head before Electric delivered its row ([a page's head](features/repo.md#a-pages-head)); Info, Warn `failed` | `outcome` (`ready`, `absent`, `failed`), `durationMs`, `status` |
 | `repo.locate` | log, Info: a page knew where its location is | `source` (`row`, `refs`), `outcome` (`located`, `missing`, `failed`), `durationMs` from the page opening |
+| `repo.role` | log and span; Warn `refused` | who the person is on a repository route's repository (decision 0079): `outcome` (`answered`, `refused`), `role`, `own`, `status`, `durationMs` |
+| `smithers_web_repo_role_answers` | counter | `outcome`, `role` (`unknown` when refused) |
 | `repo.clone.post`, `repo.tree.get`, `repo.blob.get`, `repo.refs.get`, `repo.about.get` | span, parents the client's `GET` or `POST` | `http.response.status_code` |
 | `execute_tool repo/tree`, `repo/read`, `repo/refs`, `repo/clone`, `repo/copy` | span: the agent's call of the flow | |
 | `smithers_web_repo_clone_clicks` | counter | `kind` (`clone`, `retry`) |
@@ -445,6 +447,8 @@ The browser's read of a repository's homes and its actions ([home.md](features/h
 | `smithers_web_home_resolves`, `smithers_web_home_answers`, `smithers_web_home_actions` | counters | `outcome`; the last also `flow` |
 | `home.curated` (ChatApi) | log and span; Warn `unavailable`, `invalid`, `role_unavailable` | `outcome` (`curated`, `absent`, `invalid`, `unavailable`, `role_unavailable`, `method`), `audience`, `source` (`signed_out`, `role`, `no_role_here`), `refused` (`RepoRoles`' refusal code, decision 0079), `sections` sent, `hidden` held back, `status`, `durationMs`; the span's `smithers.home.outcome`, `smithers.home.audience`; the role's own read is a `github.repo_role` span and line |
 | `smithers_home_curated_requests` (ChatApi) | counter | `outcome`, `audience` |
+| `repo.role` (ChatApi) | log and span; Warn but `answered` and `method` | `GET /api/repos/<owner>/<name>/role` (decision 0079): `outcome` (`answered`, `role_unavailable`, `unavailable`, `method`), `role`, `own`, `source`, `refused`, `status`, `durationMs`; never a login |
+| `smithers_repo_role_requests` (ChatApi) | counter | `outcome`, `role` (the role, `no_role`, or `none` when not answered) |
 
 `src/features/home/home.test.ts` asserts each outcome's record and count, and that a sentinel in the home's text, title, link and Markdown file reaches no log line; `worker/home/Api.test.ts` that no section's words reach ChatApi's records.
 

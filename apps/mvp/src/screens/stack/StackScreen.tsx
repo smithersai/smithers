@@ -27,6 +27,7 @@ import {
   withDrop,
 } from "../../features/todos/view"
 import "./stack-screen.css"
+import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
 // /$owner/$repo/stack (decision 0016 §4), drawn as GitHub's issue list: Open (the stack in merge order, then this
 // device's commits the stack hasn't numbered) and Closed (merged and dropped, latest first) tabs with counts, each row
@@ -50,6 +51,7 @@ export function StackScreen() {
   const { data: access } = useLiveQuery(queries.access)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  const answer = useRepoAnswer(owner, repo)
   const navigate = useNavigate()
   const status = accessFor(repoId, access)
   if (status === "sign_in") return <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs /><EmptyState title="Members can make TODOs." /><SignInButton /></main>
@@ -57,7 +59,7 @@ export function StackScreen() {
     return <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs /><EmptyState title="Members can make TODOs." /></main>
   }
   const rows = stackRows(repoId, todos, sending, requested)
-  const may = status === "allowed" && session !== undefined && mayChange(session, confirmed)
+  const may = status === "allowed" && session !== undefined && mayChange(session, confirmed, answer)
   const notSent = notSentRows(repoId, requested)
   return (
     <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs />

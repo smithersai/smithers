@@ -36,6 +36,17 @@ export const SESSION_ROUTE = "/api/auth/session"
 /** The search parameter the callback adds to the return path when sign-in failed: `?sign_in=failed`. */
 export const SIGN_IN_FAILED_PARAM = "sign_in"
 
+/** The last segment of {@link repoRoleRoute}. */
+export const REPO_ROLE_SEGMENT = "role"
+
+/**
+ * `GET <route>`: the person's role on repository `owner/name` (decision 0079), and whether it is the deployment's own
+ * repository (`GITHUB_REPOSITORY`), where the features still fenced to it (secrets, custom domains, triage, merging)
+ * act; answered `{ role, own }` (worker/home/Api.ts). Never cached: the answer depends on the session.
+ */
+export const repoRoleRoute = (owner: string, name: string): string =>
+  `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${REPO_ROLE_SEGMENT}`
+
 /** Where "Sign in with GitHub" goes: sign-in, returning to `returnTo`, a path on this site. */
 export const signInHref = (returnTo: string) => `${SIGN_IN_ROUTE}?return=${encodeURIComponent(returnTo)}`
 

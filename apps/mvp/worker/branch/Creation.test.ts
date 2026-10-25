@@ -1,7 +1,8 @@
 import { RealmFlow } from "@smthrs/harness"
 import { digestSync } from "@smthrs/crypto"
 import { CodeStorage } from "@smthrs/effect-code-storage"
-import { Cause, Effect, Exit, ManagedRuntime } from "effect"
+import { Cause, Effect, Exit, Layer, ManagedRuntime } from "effect"
+import { SqlClient } from "effect/sql"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
@@ -10,6 +11,8 @@ import type { Actor } from "../Actor.ts"
 import { branchHarness, gitHost } from "../test/branch.ts"
 import { fixture, scripted } from "../test/codeStorage.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
+import { BranchRoles } from "./Access.ts"
 import { selections, select } from "./Creation.ts"
 import { CreateRefused } from "./Forge.ts"
 
@@ -190,6 +193,28 @@ describe("GET /api/branches/creation on the real branch routes and Postgres", ()
       const h = await branchHarness(runtime, { actor: { ...member, role } })
       expect((await h.fetch(path)).status).toBe(403)
       expect(h.count(selections, { status: "403" })).toBe(1)
+    }
+  })
+
+  test("on a repository the App is installed on, the role there decides (decision 0079); GitHub down is 503", async () => {
+    const sql = (statement: string) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(statement)))
+    await sql(`INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/acme/widgets', 7)`)
+    try {
+      /** GitHub, through `RepoRoles`, says `role` on acme/widgets (a test service: worker/branch/Access.test.ts is the real one). */
+      const rolesThere = (role: Actor["role"] | "refused") =>
+        Layer.succeed(BranchRoles, BranchRoles.of({
+          roleOn: () => role === "refused" ? Effect.fail(new RepoRoles.RoleRefused({ code: "rate_limited" })) : Effect.succeed(role),
+        }))
+      const query = "?owner=acme&name=widgets"
+      const outsider = await branchHarness(runtime, { actor: { ...member, role: "admin" }, branchRoles: rolesThere("guest") })
+      expect((await outsider.fetch(path + query)).status).toBe(403)
+      const down = await branchHarness(runtime, { actor: member, branchRoles: rolesThere("refused") })
+      expect((await down.fetch(path + query)).status).toBe(503)
+      const insider = await branchHarness(runtime, { actor: { ...member, role: "guest" }, branchRoles: rolesThere("member") })
+      const selected = await insider.fetch(path + query)
+      expect([selected.status, await selected.json()]).toMatchObject([200, { owner: "acme", name: "widgets", tag: "branches/create" }])
+    } finally {
+      await sql(`TRUNCATE github_repositories`)
     }
   })
 

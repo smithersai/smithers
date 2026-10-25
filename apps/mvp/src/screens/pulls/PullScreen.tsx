@@ -10,6 +10,7 @@ import { usePulls } from "../../features/pulls/components/PullsContext"
 import { githubPullUrl, type PullTab, pullTabPath } from "../../features/pulls/contract"
 import { checkRows, checksSummaryOf, conversationProps, fileStatusOf, mergeBoxOf, pullAccessOf, unifiedOf } from "../../features/pulls/view"
 import "./pulls-screen.css"
+import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
 // /$owner/$repo/pull/$number and its tabs: one pull request. Conversation shows its body, comments and reviews (the
 // review check's findings among them), with Merge for a Maintainer on an open pull request; Commits its commits; Checks
@@ -28,7 +29,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const { data: files } = useLiveQuery(queries.files)
   const { data: view } = useLiveQuery(queries.view)
   const { data: session } = useLiveQuery(auth.queries.session)
-  const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  const answer = useRepoAnswer(owner, repo)
   const issues = useIssues()
   const { data: synced, isReady: syncedReady } = useLiveQuery(issues.queries.synced)
   const { data: access } = useLiveQuery(issues.queries.access)
@@ -61,7 +62,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
     { tab: "checks", label: summary.total === 0 ? "Checks" : `Checks ${summary.passed}/${summary.total}` },
     { tab: "files", label: `Files ${pull.changedFiles}` },
   ]
-  const box = mergeBoxOf(session, confirmed, pull, view)
+  const box = mergeBoxOf(session, answer, pull, view)
   const header = (
     <div className="pull-merge">
       {pull.baseRef === "" ? null : (

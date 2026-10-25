@@ -24,6 +24,7 @@ import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/i
 import { listProps, mayManageTriageOnList, mayWrite, triageSwitchOf } from "../../features/issues/view"
 import { BackToChat } from "../../features/views/components/BackToChat"
 import "./issues-screen.css"
+import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
 // /$owner/$repo/issues: the repository's issues, this device's own new ones first with their chip, each with its triage
 // chip and the TODOs made from it, Make TODO in its menu for a Member (docs/features/todos.md#from-an-issue), New issue
@@ -41,6 +42,7 @@ export function IssuesScreen() {
   const { data: triagePending } = useLiveQuery(queries.triagePending)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  const answer = useRepoAnswer(owner, repo)
   const todos = useTodos()
   const { data: todosView } = useLiveQuery(todos.queries.view)
   const todosRepoId = todosView?.repoId ?? ""
@@ -77,18 +79,18 @@ export function IssuesScreen() {
         issues={withTodos(
           list.issues,
           todosByIssue(todosRepoId, todoRows, owner, repo),
-          session !== undefined && mayChange(session, confirmed),
+          session !== undefined && mayChange(session, confirmed, answer),
           (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),
         )}
         unknown={list.unknown}
         href={(issue) => (issue.number === null ? undefined : issuePath(owner, repo, issue.number))}
         onNavigate={(_, href) => void navigate({ href })}
-        actions={session !== undefined && mayWrite(session, confirmed)
+        actions={session !== undefined && mayWrite(session, confirmed, answer)
           ? (
             <>
-              {mayManageTriageOnList(session, confirmed, synced) && session.hostedModel === false
+              {mayManageTriageOnList(session, confirmed, answer, synced) && session.hostedModel === false
                 ? <Button variant="outline" disabled data-triage-off="">{TRIAGE_OFF}</Button>
-                : mayManageTriageOnList(session, confirmed, synced)
+                : mayManageTriageOnList(session, confirmed, answer, synced)
                 ? (
                   <Button
                     variant="outline"

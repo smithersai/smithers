@@ -25,6 +25,7 @@ const client = (answers: {
       blob: () => answers.blob ?? Effect.die(new Error("unused")),
       refs: () => answers.refs ?? Effect.die(new Error("unused")),
       about: () => Effect.die(new Error("unused")),
+      role: () => Effect.die(new Error("unused")),
     }),
   )
 
@@ -114,6 +115,7 @@ test("a clone whose transport never answers remains unavailable without inventin
   const { RepoCloneUnavailable } = await import("./flows")
   const fault = RepoClient.of({ clone: () => Effect.die("unused"), launch: () => Effect.fail(new RepoRefused({})),
     tree: () => Effect.die("unused"), blob: () => Effect.die("unused"), refs: () => Effect.die("unused"), about: () => Effect.die("unused"),
+    role: () => Effect.die("unused"),
   })
   const result = await Effect.runPromise(Effect.flip(launchClone({ repo: "octo/hello", cloneId: crypto.randomUUID() }).pipe(Effect.provideService(RepoClient, fault))))
   expect(result).toBeInstanceOf(RepoCloneUnavailable)

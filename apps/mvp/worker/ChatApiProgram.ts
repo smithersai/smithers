@@ -51,6 +51,7 @@ import * as SecretsApi from "./secrets/Api.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
+import { BranchRoles } from "./branch/Access.ts"
 import * as StackApi from "./stack/Api.ts"
 import * as Stack from "./stack/Stack.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
@@ -263,7 +264,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         })(request)
         if (Option.isSome(limited)) return limited.value
         const checks = Layer.succeed(SignIn.RoleChecks, yield* roleChecks)
-        const signedIn = Layer.merge(checks, signIn.sessions.pipe(Layer.provide(checks)))
+        // Who is asking, and their role on a branch's repository for every branch check (decision 0079).
+        const signedIn = Layer.mergeAll(checks, signIn.sessions.pipe(Layer.provide(checks)), BranchRoles.layer(roles))
         const starter = yield* flowStarter
         if (request.url.startsWith(`${AUTH_ROUTE}/`)) {
           // Signing out starts `auth/RevokeGitHubToken` through `starter` and answers once the start is recorded.

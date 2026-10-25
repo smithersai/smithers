@@ -16,7 +16,7 @@ import {
   type TextScope,
 } from "../../src/features/coedit/contract.ts"
 import type { Access } from "../../src/features/branch/contract.ts"
-import { type Actor, Sessions } from "../Actor.ts"
+import { type Actor, type Role, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
@@ -91,6 +91,8 @@ export interface Scoped {
   readonly key: string
   readonly kind: "conversation" | "run"
   readonly access: Access | "none"
+  /** The role `access` was decided with: on a branch's repository for a conversation's text (decision 0079). */
+  readonly role: Role | null
 }
 
 /** `actor`'s access to a text in `scope`. */
@@ -102,13 +104,18 @@ export const scopeAccess = (actor: Option.Option<Actor>, scope: TextScope) =>
         SELECT launched_by AS "launchedBy" FROM runs WHERE id = ${scope.run.toLowerCase()}`
       if (run === undefined) return undefined
       const access = isMember(actor) && actor.value.subject.id === run.launchedBy ? "owner" : "none"
-      return { key: `run:${scope.run.toLowerCase()}`, kind: "run", access } satisfies Scoped
+      return {
+        key: `run:${scope.run.toLowerCase()}`,
+        kind: "run",
+        access,
+        role: Option.isSome(actor) ? actor.value.role : null,
+      } satisfies Scoped
     }
     const conversation = scope.conversation === HOME ? yield* Conversations.home : scope.conversation.toLowerCase()
     if (conversation === undefined) return undefined
     const branch = yield* branchAccess(actor, conversation, "conversation")
     if (branch === undefined) return undefined
-    return { key: `branch:${branch.branchId}`, kind: "conversation", access: branch.access } satisfies Scoped
+    return { key: `branch:${branch.branchId}`, kind: "conversation", access: branch.access, role: branch.role } satisfies Scoped
   })
 
 /** The scope a query string names: `conversation=<id | home>` or `run=<id>`. */
@@ -256,7 +263,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           const joined = yield* (yield* Rooms).join(roomOf(scoped.key, textId), {
             principal: actor.value.subject.id,
             name: actor.value.login ?? actor.value.subject.id,
-            role: actor.value.role,
+            role: scoped.role,
             access: scoped.access,
           })
           fields.outcome = "joined"

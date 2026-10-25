@@ -28,7 +28,10 @@ import * as Actor from "../Actor.ts"
 import * as RunCredentials from "../RunCredentials.ts"
 import * as SessionKeys from "../SessionKeys.ts"
 import * as ViewRealm from "../ViewRealm.ts"
+import { BranchRoles } from "../branch/Access.ts"
 import * as Conversations from "../branch/Conversations.ts"
+import { repositoryOf } from "../github/Config.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
 import * as ConversationApi from "../branch/ConversationApi.ts"
 import * as Chat from "../Chat.ts"
 import * as DocsApi from "../docs/Api.ts"
@@ -44,6 +47,19 @@ import type { CuratedFile } from "../home/Curated.ts"
  * The test file's one runtime, on a schema of its own: built before the first test, so a missing Postgres fails the
  * file once with `pnpm db:up` in its message, emptied before each test, and dropped after the last.
  */
+/**
+ * `BranchRoles` as a deployment without the GitHub App gives them (decision 0079): the real `RepoRoles` over
+ * `database`, with `repository` the deployment's own, so the session's role holds on every repository. A test of roles
+ * on a repository the App is installed on builds its own over the scripted GitHub.
+ */
+export const branchRoles = (database: Layer.Layer<SqlClient.SqlClient, unknown>, repository = "smithersai/smithers") =>
+  Layer.unwrap(
+    Effect.map(
+      RepoRoles.make(database, { repository: repositoryOf(repository), app: Option.none() }),
+      (roles) => BranchRoles.layer(roles),
+    ),
+  )
+
 export const testFile = (prefix: string) => {
   const runtime = ManagedRuntime.make(TestDatabase.layer(prefix))
   beforeAll(() => runtime.runPromise(Effect.void))
@@ -78,6 +94,8 @@ interface HarnessOptions {
   readonly config?: Record<string, string>
   /** The database ChatApi connects to: the file's schema unless set. */
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
+  /** Who has which role on a branch's repository: as a deployment without the App gives them unless set. */
+  readonly branchRoles?: Layer.Layer<BranchRoles>
   /** Where ChatApi starts a remote flow: one that records each start in `starts` unless set. */
   readonly starter?: Flows.FlowStarter["Service"]
   /**
@@ -215,6 +233,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
         ),
         // Sessions that bring no run credentials of their own, such as a faulty test's, get credentials for nobody.
         Effect.provide(credentialsFor([])),
+        Effect.provide(options.branchRoles ?? branchRoles(database)),
         // People's own models, their keys under PERSONAL_KEYS: the real ones, read from the file's schema, unless set.
         Effect.provide(options.personalModels ?? PersonalModels.layer(database).pipe(Layer.provide(SecretKeys.layer(PERSONAL_KEYS)))),
         Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),

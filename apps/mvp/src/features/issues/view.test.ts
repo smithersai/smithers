@@ -211,12 +211,18 @@ describe("forms", () => {
     expect(commentBodyOf({ id: "d", title: "", body: " Looks good " })).toBe(" Looks good ")
   })
 
-  test("who may write: signed in with a role, as sign-in knows it, offline included", () => {
-    expect(mayWrite({ status: "signed_in", role: "guest" }, undefined)).toBe(true)
-    expect(mayWrite({ status: "signed_in", role: null }, undefined)).toBe(false)
-    expect(mayWrite({ status: "signed_out", role: null }, { role: "member" })).toBe(false)
-    expect(mayWrite({ status: "unreachable", role: null }, { role: "member" })).toBe(true)
-    expect(mayWrite({ status: "loading", role: null }, undefined)).toBe(false)
+  test("who may write: signed in with a role on the repository the page names, once ChatApi answered for it (decision 0079)", () => {
+    const own = { role: "guest", own: true } as const
+    expect(mayWrite({ status: "signed_in", role: null }, undefined, own)).toBe(true)
+    // A role on the deployment's own repository counts for nothing on another: ChatApi's answer for it decides.
+    expect(mayWrite({ status: "signed_in", role: "admin" }, undefined, { role: null, own: false })).toBe(false)
+    expect(mayWrite({ status: "signed_in", role: "guest" }, undefined, { role: "guest", own: false })).toBe(true)
+    // Before ChatApi answers for the repository, nothing shows.
+    expect(mayWrite({ status: "signed_in", role: "admin" }, undefined, undefined)).toBe(false)
+    expect(mayWrite({ status: "signed_out", role: null }, { role: "member" }, own)).toBe(false)
+    // Offline after an answer, the session this device confirmed is still signed in.
+    expect(mayWrite({ status: "unreachable", role: null }, { role: "member" }, own)).toBe(true)
+    expect(mayWrite({ status: "loading", role: null }, undefined, own)).toBe(false)
   })
 })
 
@@ -339,22 +345,27 @@ describe("triage", () => {
     expect(triageSwitchOf(undefined, [{ id: "b", op: "issue/triage", number: 1, pending: "requested" }]).disabled).toBe(false)
   })
 
-  test("who triages: a Member and above; who enables: a Maintainer and above; signed out, neither", () => {
+  test("who triages: a Member and above; who enables: a Maintainer and above; on the deployment's own repository alone", () => {
     const roles = ["admin", "maintainer", "member", "guest", null] as const
-    const signedIn = (role: (typeof roles)[number]) => ({ status: "signed_in" as const, role })
-    expect(roles.map((role) => mayTriage(signedIn(role), undefined))).toEqual([true, true, true, false, false])
-    expect(roles.map((role) => mayManageTriage(signedIn(role), undefined))).toEqual([true, true, false, false, false])
-    expect(mayTriage({ status: "signed_out", role: null }, { role: "admin" })).toBe(false)
-    expect(mayManageTriage({ status: "signed_out", role: null }, { role: "admin" })).toBe(false)
-    // Offline, the role sign-in last confirmed stands.
-    expect(mayManageTriage({ status: "unreachable", role: null }, { role: "maintainer" })).toBe(true)
+    const signedIn = { status: "signed_in" as const, role: null }
+    const on = (role: (typeof roles)[number], own = true) => ({ role, own })
+    expect(roles.map((role) => mayTriage(signedIn, undefined, on(role)))).toEqual([true, true, true, false, false])
+    expect(roles.map((role) => mayManageTriage(signedIn, undefined, on(role)))).toEqual([true, true, false, false, false])
+    // Triage acts on the deployment's own repository until decision 0079's slice 2: nowhere else, whatever the role.
+    expect(mayTriage(signedIn, undefined, on("admin", false))).toBe(false)
+    expect(mayManageTriage(signedIn, undefined, on("admin", false))).toBe(false)
+    expect(mayTriage({ status: "signed_out", role: null }, { role: "admin" }, on("admin"))).toBe(false)
+    expect(mayManageTriage({ status: "signed_out", role: null }, { role: "admin" }, on("admin"))).toBe(false)
+    // Offline after an answer, the session this device confirmed is still signed in.
+    expect(mayManageTriage({ status: "unreachable", role: null }, { role: "maintainer" }, on("maintainer"))).toBe(true)
   })
 
   test("an unsynced repository never offers the triage switch even to a Maintainer", () => {
-    const maintainer = { status: "signed_in" as const, role: "maintainer" as const }
-    expect(mayManageTriageOnList(maintainer, undefined, undefined)).toBe(false)
-    expect(mayManageTriageOnList(maintainer, undefined, { syncedAt: "2026-10-23" })).toBe(true)
-    expect(mayManageTriageOnList({ status: "signed_in", role: "member" }, undefined, { syncedAt: "2026-10-23" })).toBe(false)
+    const signedIn = { status: "signed_in" as const, role: null }
+    const maintainer = { role: "maintainer" as const, own: true }
+    expect(mayManageTriageOnList(signedIn, undefined, maintainer, undefined)).toBe(false)
+    expect(mayManageTriageOnList(signedIn, undefined, maintainer, { syncedAt: "2026-10-23" })).toBe(true)
+    expect(mayManageTriageOnList(signedIn, undefined, { role: "member", own: true }, { syncedAt: "2026-10-23" })).toBe(false)
   })
 })
 

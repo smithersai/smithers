@@ -54,7 +54,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       const joined = yield* (yield* Rooms).join(branch.branchId, {
         principal: actor.value.subject.id,
         name: actor.value.login ?? actor.value.subject.id,
-        role: actor.value.role,
+        // The role on the branch's repository the room re-checks shares with (decision 0079).
+        role: branch.role,
         access: branch.access,
       })
       fields.outcome = "joined"

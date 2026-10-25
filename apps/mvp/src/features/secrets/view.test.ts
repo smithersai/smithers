@@ -8,17 +8,22 @@ import { accessOf, awaiting, formOf, hostsText, landed, onItsWay, showsLink } fr
 // The Secrets page's pure rules (docs/features/secrets.md#the-secrets-page): who sees which controls, what a person typed
 // as hosts, and the words for each failure.
 
-test("an Admin writes, a Maintainer or Member reads, and anyone else sees nothing; nothing shows until sign-in knows", () => {
-  const signedIn = (role: "admin" | "maintainer" | "member" | "guest" | null) => ({ status: "signed_in", role })
-  expect(accessOf(undefined)).toBe("loading")
-  expect(accessOf({ status: "loading", role: null })).toBe("loading")
-  expect(accessOf({ status: "signed_out", role: null })).toBe("none")
-  expect(accessOf({ status: "unreachable", role: "admin" })).toBe("none")
-  expect(accessOf(signedIn("admin"))).toBe("write")
-  expect(accessOf(signedIn("maintainer"))).toBe("read")
-  expect(accessOf(signedIn("member"))).toBe("read")
-  expect(accessOf(signedIn("guest"))).toBe("none")
-  expect(accessOf(signedIn(null))).toBe("none")
+test("an Admin of the repository writes, a Maintainer or Member reads, anyone else sees nothing; nothing shows until sign-in and ChatApi know", () => {
+  const signedIn = { status: "signed_in" }
+  const on = (role: "admin" | "maintainer" | "member" | "guest" | null, own = true) => ({ role, own })
+  expect(accessOf(undefined, on("admin"))).toBe("loading")
+  expect(accessOf({ status: "loading" }, on("admin"))).toBe("loading")
+  expect(accessOf({ status: "signed_out" }, on("admin"))).toBe("none")
+  expect(accessOf({ status: "unreachable" }, on("admin"))).toBe("none")
+  // Signed in, until ChatApi answers who the person is on the repository (decision 0079).
+  expect(accessOf(signedIn, undefined)).toBe("loading")
+  expect(accessOf(signedIn, on("admin"))).toBe("write")
+  expect(accessOf(signedIn, on("maintainer"))).toBe("read")
+  expect(accessOf(signedIn, on("member"))).toBe("read")
+  expect(accessOf(signedIn, on("guest"))).toBe("none")
+  expect(accessOf(signedIn, on(null))).toBe("none")
+  // Secrets serve the deployment's own repository alone: an Admin elsewhere sees nothing.
+  expect(accessOf(signedIn, on("admin", false))).toBe("none")
   expect((["loading", "none", "read", "write"] as const).map(showsLink)).toEqual([false, false, true, true])
 })
 

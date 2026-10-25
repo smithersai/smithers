@@ -16,7 +16,17 @@ test.describe("VibeLang on Smithers", () => {
       test.setTimeout(180_000)
       await as(page, "contributor")
       const own = await ownView(page, "contributor")
+      // Who the person is on VibeLang, which every repository route asks (decision 0079).
+      const answered = page.waitForResponse((response) => response.url().endsWith("/api/repos/smithersai/vibelang/role"))
       await openHome(page, own)
+      await step("The header: no Secrets or Settings, which serve the deployment's own repository alone", async () => {
+        const role = await answered
+        expect(role.status()).toBe(200)
+        expect(await role.json()).toMatchObject({ own: false })
+        const header = page.locator('header[aria-label="Repository"]')
+        await expect(header.getByRole("link", { name: "Secrets" })).toHaveCount(0)
+        await expect(header.getByRole("link", { name: "Settings" })).toHaveCount(0)
+      })
       await step("View as Contributor, when theirs is higher", async () => {
         if (own === "contributor") return
         await viewsOf(page).getByRole("radio", { name: "Contributor" }).click()

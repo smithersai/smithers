@@ -19,6 +19,7 @@ import {
   triageControlOf,
 } from "../../features/issues/view"
 import "./issues-screen.css"
+import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
 // /$owner/$repo/issues/$number: one issue and its comments, this device's own last with their chip, "Open on GitHub ↗",
 // its triage state with Accept, Not accepted and Run triage again for a Member and above, and the comment composer for a
@@ -41,6 +42,7 @@ export function IssueScreen() {
   const { data: triagePending } = useLiveQuery(queries.triagePending)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  const answer = useRepoAnswer(owner, repo)
   const todos = useTodos()
   const { data: todosView } = useLiveQuery(todos.queries.view)
   const todosRepoId = todosView?.repoId ?? ""
@@ -68,9 +70,9 @@ export function IssueScreen() {
   }
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
   const made = todosByIssue(todosRepoId, todoRows, owner, repo).get(number)
-  const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed), shown)
+  const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed, answer), shown)
   const control = triageControlOf(item, triagePending ?? [], {
-    triage: session !== undefined && mayTriage(session, confirmed),
+    triage: session !== undefined && mayTriage(session, confirmed, answer),
     flowOn: triage !== undefined && !triage.paused,
   })
   return (
@@ -95,7 +97,7 @@ export function IssueScreen() {
         )}
         headerActions={!control.shown ? undefined : (
           <>
-          {item.triage === "accepted" ? <CommitmentControl value={item.commitment} pending={triagePending?.find((row) => row.number === number && row.op === "issue/commitment")?.pending} onChange={session !== undefined && mayManageTriage(session, confirmed) ? (commitment) => actions.setCommitment(owner, repo, number, commitment, triagePending?.find((row) => row.number === number && row.op === "issue/commitment" && row.pending === "not_sent")?.id) : undefined} /> : null}
+          {item.triage === "accepted" ? <CommitmentControl value={item.commitment} pending={triagePending?.find((row) => row.number === number && row.op === "issue/commitment")?.pending} onChange={session !== undefined && mayManageTriage(session, confirmed, answer) ? (commitment) => actions.setCommitment(owner, repo, number, commitment, triagePending?.find((row) => row.number === number && row.op === "issue/commitment" && row.pending === "not_sent")?.id) : undefined} /> : null}
           <TriageControl
             state={control.state}
             pending={control.pending}
@@ -117,7 +119,7 @@ export function IssueScreen() {
             )
             : undefined,
         }))}
-        composer={session !== undefined && mayWrite(session, confirmed)
+        composer={session !== undefined && mayWrite(session, confirmed, answer)
           ? {
             draft: draftOf(view).body,
             onDraft: (body) => actions.setCommentDraft(owner, repo, number, body),

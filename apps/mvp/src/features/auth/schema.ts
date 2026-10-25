@@ -56,3 +56,21 @@ export const SessionCall = Schema.Struct({})
 /** The tab's answer: how its check ended. */
 export const SessionAnswer = Schema.Struct({ outcome: Schema.Literals(CHECK_OUTCOMES) })
 export type SessionAnswer = typeof SessionAnswer.Type
+
+/** What `GET /api/repos/<owner>/<name>/role` answers (contract.ts `repoRoleRoute`), checked as it arrives. */
+export const RepoRoleAnswer = Schema.Struct({
+  role: Schema.NullOr(Schema.Literals(ROLES)),
+  own: Schema.Boolean,
+})
+export type RepoRoleAnswer = typeof RepoRoleAnswer.Type
+
+/**
+ * The person's role on one repository, as ChatApi last answered this tab, keyed by the repository's id: their role
+ * there and whether it is the deployment's own repository. No row until ChatApi answers: nothing role-gated shows.
+ */
+export const RepoRole = Schema.Struct({
+  id: Schema.String,
+  role: Schema.NullOr(Schema.Literals(ROLES)),
+  own: Schema.Boolean,
+})
+export type RepoRole = typeof RepoRole.Type

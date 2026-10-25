@@ -1,4 +1,5 @@
 import { repository as deploymentRepository } from "./github/Config.ts"
+import type { BranchRoles } from "./branch/Access.ts"
 import * as RefReads from "./branch/RefReads.ts"
 import { ImmutableCache } from "@smthrs/artifacts"
 import type { CodeStorage } from "@smthrs/effect-code-storage"
@@ -468,6 +469,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       | Sessions
       | FlowStarter
       | ImmutableCache.ImmutableCache
+      | BranchRoles
       | R
     > = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest

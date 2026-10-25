@@ -165,11 +165,12 @@ const parameter = (
 /** The TODO attempt whose run `runId` is, if a TODO's attempt started it: `todo:<attempt id>`. */
 const attemptOf = (runId: string) =>
   Effect.gen(function* () {
-    if (!isRemoteRun(runId)) return Option.none<string>()
+    if (!isRemoteRun(runId)) return Option.none<{ readonly id: string; readonly repoId: string }>()
     const sql = yield* SqlClient.SqlClient
     const attemptId = runId.slice("todo:".length)
-    const rows = yield* sql<{ readonly id: string }>`SELECT id::text FROM todo_attempts WHERE id = ${attemptId}::uuid`
-    return Option.map(Option.fromNullishOr(rows[0]), (row) => row.id)
+    const rows = yield* sql<{ readonly id: string; readonly repoId: string }>`
+      SELECT id::text, repo_id AS "repoId" FROM todo_attempts WHERE id = ${attemptId}::uuid`
+    return Option.fromNullishOr(rows[0])
   })
 
 /** How many of an inspection's values were cut to their limit. */
@@ -208,12 +209,28 @@ export const make = <E, R, EE, ER, RS>(
       )),
     ))
 
-    /** A run's access comes from its recorded repository, never the deployment's session role on another one. */
+    /**
+     * Whether `actor` is a Member or above on `repoId`, by `RepoRoles` (decision 0079): a refusal that says the
+     * deployment can't act there is no; GitHub or Postgres not answering passes on, never a guess.
+     */
+    const memberOn = (actor: Actor, repoId: string) =>
+      roles.resolve(actor, repositoryOf(repoId.slice("github/".length))).pipe(
+        Effect.map((resolved) => mayRead(Option.some({ ...actor, role: resolved.role }))),
+        Effect.catch((error) => RepoRoles.REFUSALS[error.code] === 503 || error.code === "rate_limited"
+          ? Effect.fail(error) : Effect.succeed(false)),
+      )
+
+    /**
+     * A run's access comes from its recorded repository, never the deployment's session role on another one: a TODO's
+     * run from its attempt's repository, a repository's run from the run's (decision 0079).
+     */
     const access = (runId: string, actor: Actor) => Effect.gen(function* () {
       const ownRole = mayRead(Option.some(actor))
-      // TODO admission keeps its existing policy; repository flows may also be named `todo`.
-      if (isRemoteRun(runId) && Option.isSome(yield* attemptOf(runId))) {
-        return { allowed: ownRole, watched: true, repoRun: Option.none<RepoRuns.Admitted>() }
+      // A TODO's run; repository flows may also be named `todo`.
+      const attempt = yield* attemptOf(runId)
+      if (Option.isSome(attempt)) {
+        const permitted = yield* memberOn(actor, attempt.value.repoId)
+        return { allowed: permitted, watched: permitted, repoRun: Option.none<RepoRuns.Admitted>() }
       }
       const admitted = yield* RepoRuns.admit(runId, engine.database)
       if (Option.isNone(admitted)) {
@@ -224,12 +241,7 @@ export const make = <E, R, EE, ER, RS>(
         ).pipe(Effect.provide(inspection), Effect.provide(engine.database))).runs.length === 1
         return { allowed: ownRole || system, watched: system, repoRun: admitted }
       }
-      const resolved = yield* roles.resolve(actor, repositoryOf(admitted.value.repoId.slice("github/".length))).pipe(
-        Effect.map(Option.some),
-        Effect.catch((error) => RepoRoles.REFUSALS[error.code] === 503 || error.code === "rate_limited"
-          ? Effect.fail(error) : Effect.succeed(Option.none())),
-      )
-      const permitted = Option.isSome(resolved) && mayRead(Option.some({ ...actor, role: resolved.value.role }))
+      const permitted = yield* memberOn(actor, admitted.value.repoId)
       return { allowed: ownRole || permitted, watched: permitted, repoRun: permitted ? admitted : Option.none<RepoRuns.Admitted>() }
     }).pipe(Effect.provide(database))
 
@@ -310,9 +322,8 @@ export const make = <E, R, EE, ER, RS>(
           const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
           if (Option.isNone(actor)) return refused(503, "unavailable")
           if (Option.isNone(actor.value)) return refused(401, "authentication")
-          // A Member or above, in person or through an agent acting for them (ruling FLOW-3): steering neither commits,
-          // approves nor merges.
-          if (!mayRead(actor.value)) return refused(403, "forbidden")
+          // A Member or above on the TODO's repository (decision 0079), in person or through an agent acting for them
+          // (ruling FLOW-3): steering neither commits, approves nor merges. Checked once the run's TODO is found.
           const steerer = steererOf(actor.value.value)
           fields.via = steerer.via
           const text = yield* readBounded(request, MAX_STEER_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
@@ -330,6 +341,7 @@ export const make = <E, R, EE, ER, RS>(
           fields.steerId = id
           const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
           if (Option.isNone(attempt)) return refused(404, "not_found")
+          if (!(yield* memberOn(actor.value.value, attempt.value.repoId))) return refused(403, "forbidden")
           fields.runId = runId
           const admitted = yield* Effect.gen(function* () {
             const journal = yield* Journal.Journal.Journal

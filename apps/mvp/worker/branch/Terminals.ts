@@ -188,7 +188,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (!canEdit(branch.access)) return refuse(fields, 403, "forbidden")
           // No terminal on a locked branch, nor yet on a restricted one, whose writers come with 0007's modes.
           if (branch.mode !== "open") return refuse(fields, 409, "locked")
-          const admitted = yield* admit(terminalId, branchId, actor.value).pipe(Effect.provide(database))
+          // The terminal keeps the role on the branch's repository its host re-checks shares with (decision 0079).
+          const admitted = yield* admit(terminalId, branchId, { ...actor.value, role: branch.role }).pipe(
+            Effect.provide(database),
+          )
           if (admitted === undefined) return refuse(fields, 409, "id_taken")
           if (admitted.terminalId === terminalId) {
             const { owner, name } = partsOf(branch.repoId)
@@ -278,7 +281,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
               ownerId: row.ownerId,
               access,
               principal: actor.value.subject.id,
-              role: actor.value.role,
+              role: branch!.role,
             } as const
             const attached = yield* sockets.attach(row.branchId, attachment)
               .pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))

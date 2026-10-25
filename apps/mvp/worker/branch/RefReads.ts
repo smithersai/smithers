@@ -2,12 +2,18 @@ import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { REPOSITORY_GRANTEE } from "../../src/features/branch/contract.ts"
 import type { Actor } from "../Actor.ts"
-import { accessOf, canView, type Grants } from "./Access.ts"
+import { accessOf, canView, type Grants, installedOn, roleOn } from "./Access.ts"
 
-/** Ephemeral names this viewer can discover, under the same policy as sharing and presence. */
-export const visible = (repo: string, actor: Option.Option<Actor>) =>
+/**
+ * Ephemeral names this viewer can discover, under the same policy as sharing and presence, with their role on the
+ * repository (decision 0079).
+ */
+export const visible = (repo: string, signedIn: Option.Option<Actor>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    const actor = Option.isNone(signedIn)
+      ? signedIn
+      : Option.some({ ...signedIn.value, role: yield* roleOn(signedIn.value, repo, yield* installedOn(repo)) })
     const person = Option.isSome(actor) ? actor.value.subject.id : ""
     const rows = yield* sql<Grants & { readonly name: string }>`
       SELECT b.name, b.created_by AS "createdBy",

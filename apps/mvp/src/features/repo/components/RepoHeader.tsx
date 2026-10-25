@@ -14,11 +14,12 @@ import { CLONE, TRY_AGAIN } from "../contract"
 import { isDeploymentRepository } from "../scope"
 import { minimizedOf } from "../embedView"
 import { aboutOf, headerOf } from "../view"
-import { useRepo } from "./RepoContext"
+import { useRepo, useRepoAnswer } from "./RepoContext"
 
 // Back to chat, which minimizes the repository's page into the chat (ruling FE-9, src/features/views/minimize.ts); the
 // repository's name, which opens its home or root, its Issues, its Stack, for a Member or above its Secrets and,
-// for a Maintainer or Admin, its Settings (decision 0039), then what can be done about it: Clone; nothing while it
+// for a Maintainer or Admin, its Settings (decision 0039), each by the person's role on this repository where it
+// serves (decision 0079), then what can be done about it: Clone; nothing while it
 // clones (the files' place says Cloning, RepoPage); the sign-in link in Clone's place for a signed-out person; or why a
 // clone failed or was refused, with Try again. The person's bell is its last slot, so it never sits on
 // an action: the screens that render this header don't float it (attention/contract.ts `BELL_ROUTES`).
@@ -28,6 +29,7 @@ export function RepoHeader() {
   const auth = useAuth()
   const { data: session } = useLiveQuery(auth.queries.session)
   const location = useLocation()
+  const answer = useRepoAnswer(data?.view.owner ?? "", data?.view.name ?? "")
   if (data === undefined || data.view.repoId === null) return null
   const { view, repository, clone, about } = data
   const header = headerOf(repository, clone, view.signedIn, view.answered, about)
@@ -55,7 +57,7 @@ export function RepoHeader() {
       {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
         ? <span role="status">{header.status}</span>
         : null}
-      {managed && session?.status === "signed_in" && mayManageDomains(session.role)
+      {managed && session?.status === "signed_in" && answer?.own === true && mayManageDomains(answer.role)
         ? (
           <Button asChild variant="ghost">
             <Link to="/$owner/$repo/settings" params={{ owner: view.owner, repo: view.name }}>{SETTINGS}</Link>

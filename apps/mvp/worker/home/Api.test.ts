@@ -13,7 +13,7 @@ import { reset, sql } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { signedIn, testFile } from "../test/harness.ts"
-import { handles, make, parseHomePath, requests } from "./Api.ts"
+import { handles, make, parseHomePath, parseRolePath, requests, roleRequests } from "./Api.ts"
 import * as Curated from "./Curated.ts"
 
 // `GET /api/repos/<owner>/<name>/home`: who the asker is and the curated home, with only the sections their audience
@@ -98,6 +98,10 @@ const route = async (options: RouteOptions = {}) => {
     count: (attributes: Record<string, string>) =>
       Effect.runSync(
         Metric.value(Metric.withAttributes(requests, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+      ).count,
+    roleCount: (attributes: Record<string, string>) =>
+      Effect.runSync(
+        Metric.value(Metric.withAttributes(roleRequests, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
       ).count,
   }
 }
@@ -372,6 +376,64 @@ describe("roles per repository (decision 0079, ruling SCOPE-14)", () => {
   })
 })
 
+describe("GET /api/repos/<owner>/<name>/role (decision 0079)", () => {
+  const ROLE_EFFECT = "/api/repos/Effect-TS/effect/role"
+  const ROLE_WIDGETS = "/api/repos/acme/widgets/role"
+  const roleOf = async (response: Response) => [response.status, await response.json()]
+
+  test("the session's role on the deployment's own repository, which it says is its own; signed out, none", async () => {
+    const r = await route({ sessions: signedIn(person("maintainer")) })
+    const response = await r.get(ROLE_EFFECT)
+    expect([response.headers.get("cache-control"), response.headers.get("vary")]).toEqual(["no-store", "cookie"])
+    expect(await roleOf(response)).toEqual([200, { role: "maintainer", own: true }])
+    expect(await roleOf(await (await route()).get(ROLE_EFFECT))).toEqual([200, { role: null, own: true }])
+    expect(r.logs.find((log) => log.message === "repo.role")).toMatchObject({
+      level: "INFO",
+      annotations: { outcome: "answered", role: "maintainer", own: true, source: "role", status: 200 },
+    })
+    expect(r.roleCount({ outcome: "answered", role: "maintainer" })).toBe(1)
+    expect(r.spans.map((span) => span.name)).toEqual(["repo.role", "github.repo_role"])
+  })
+
+  test("on another repository the App is installed on, GitHub's permission there; never the deployment's role", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "read")
+    const r = await route({ sessions: signedIn(person("admin")), github })
+    expect(await roleOf(await r.get(ROLE_WIDGETS))).toEqual([200, { role: "guest", own: false }])
+    github.roles.set("maya", "maintain")
+    await sql(runtime, `TRUNCATE github_repo_roles`)
+    expect(await roleOf(await r.get(ROLE_WIDGETS))).toEqual([200, { role: "maintainer", own: false }])
+  })
+
+  test("where the deployment can't act, no role; GitHub failing is its refusal with a wait; sessions down 503", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "admin")
+    github.installed = false
+    const notInstalled = await route({ sessions: signedIn(person("admin")), github })
+    expect(await roleOf(await notInstalled.get(ROLE_WIDGETS))).toEqual([200, { role: null, own: false }])
+    expect(notInstalled.logs.find((log) => log.message === "repo.role")).toMatchObject({
+      annotations: { outcome: "answered", role: null, source: "no_role_here", refused: "app_not_installed" },
+    })
+    expect(notInstalled.roleCount({ outcome: "answered", role: "no_role" })).toBe(1)
+    github.installed = true
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "12" } })
+    const limited = await (await route({ sessions: signedIn(person("admin")), github })).get(ROLE_WIDGETS)
+    expect([limited.status, limited.headers.get("retry-after"), await limited.json()]).toEqual([429, "12", { code: "rate_limited" }])
+    const down = await route({ sessions: unavailable })
+    const response = await down.get(ROLE_EFFECT)
+    expect([response.status, response.headers.get("retry-after"), await response.json()]).toEqual([503, "5", { code: "unavailable" }])
+    expect(down.logs.find((log) => log.message === "repo.role")).toMatchObject({ level: "WARN", annotations: { outcome: "unavailable" } })
+    expect(down.roleCount({ outcome: "unavailable", role: "none" })).toBe(1)
+  })
+
+  test("only GET", async () => {
+    const r = await route()
+    const response = await r.get(ROLE_EFFECT, { method: "POST" })
+    expect([response.status, response.headers.get("allow")]).toEqual([405, "GET"])
+    expect(r.roleCount({ outcome: "method", role: "none" })).toBe(1)
+  })
+})
+
 describe("the home route's path", () => {
   test("names a repository's home, and nothing else", () => {
     expect(parseHomePath("/api/repos/Effect-TS/effect/home")).toEqual({ owner: "Effect-TS", name: "effect" })
@@ -388,6 +450,11 @@ describe("the home route's path", () => {
       expect([path, parseHomePath(path), handles(path)]).toEqual([path, undefined, false])
     }
     expect(handles("/api/repos/maya/tinyhttp/home")).toBe(true)
+    // The role route beside it.
+    expect(parseRolePath("/api/repos/Effect-TS/effect/role")).toEqual({ owner: "Effect-TS", name: "effect" })
+    expect(parseRolePath("/api/repos/Effect-TS/effect/home")).toBeUndefined()
+    expect(handles("/api/repos/Effect-TS/effect/role")).toBe(true)
+    expect(handles("/api/repos/Effect-TS/effect/role/x")).toBe(false)
   })
 })
 

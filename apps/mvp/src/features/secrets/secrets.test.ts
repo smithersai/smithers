@@ -23,6 +23,7 @@ import {
 import { Auth } from "../auth/auth"
 import { AuthStore, SESSION } from "../auth/store"
 import { repoId } from "../repo/contract"
+import { Repo } from "../repo/repo"
 import { SecretNotSaved, SecretsClient } from "./api"
 import { secretRoute } from "./contract"
 import { writes } from "./metrics"
@@ -85,7 +86,7 @@ const faultyClient = () => {
   return { layer, state }
 }
 
-type App = ManagedRuntime.ManagedRuntime<Secrets | SecretsStore | Auth | AuthStore | TestChatApi, unknown>
+type App = ManagedRuntime.ManagedRuntime<Secrets | SecretsStore | Auth | AuthStore | Repo | TestChatApi, unknown>
 
 /**
  * The app on a fresh ChatApi as `actor` (an Admin unless set), with an Admin among its `people`, on a device whose
@@ -134,6 +135,11 @@ const open = async (
       )),
   )
   await secrets.actions.open(OWNER, NAME)
+  // Who the person is on the repository, as every repository route asks ChatApi (decision 0079).
+  const repo = await runtime.runPromise(Effect.service(Repo))
+  repo.queries.roles.startSyncImmediate()
+  repo.actions.role(OWNER, NAME)
+  await until(() => expect(repo.queries.roles.toArray.find((row) => row.id === REPO_ID)).toBeDefined())
   const list = secrets.queries.list(REPO_ID)
   for (const query of [list, secrets.queries.view, secrets.queries.forms]) query.startSyncImmediate()
   return {
@@ -142,7 +148,8 @@ const open = async (
     store,
     actions: secrets.actions,
     queries: secrets.queries,
-    access: () => accessOf(auth.queries.session.toArray[0]),
+    access: () =>
+      accessOf(auth.queries.session.toArray[0], repo.queries.roles.toArray.find((row) => row.id === REPO_ID)),
     rows: () => list.toArray.map(({ name, hosts, methods }) => ({ name, hosts: [...hosts], methods: methods && [...methods] })),
     list,
     view: () => secrets.queries.view.toArray[0]!,

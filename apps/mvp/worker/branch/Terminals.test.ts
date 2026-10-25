@@ -28,6 +28,7 @@ import {
   tracked,
 } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
+import { BranchRoles } from "./Access.ts"
 import * as BranchApi from "./BranchApi.ts"
 import * as Conversations from "./Conversations.ts"
 import { TerminalSockets } from "./Sandboxes.ts"
@@ -364,6 +365,23 @@ describe("GET /api/terminals/<id>: the socket", () => {
     access,
     principal: actor.subject.id,
     role: actor.role,
+  })
+
+  test("attaches with the role on the branch's repository, which the host re-checks shares with (decision 0079)", async () => {
+    const { terminalId } = await opened()
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES (${REPO}, 7)`))
+    try {
+      const rolesThere = (role: Actor["role"]) => Layer.succeed(BranchRoles, BranchRoles.of({ roleOn: () => Effect.succeed(role) }))
+      // The deployment's Maintainer, a Guest on the repository: watches as its Guest.
+      const watcher = await open(other, { branchRoles: rolesThere("guest") })
+      expect(await json(await connect(watcher, terminalId))).toEqual([200, { attached: { ...as(terminalId, other, "read"), role: "guest" } }])
+      // The owner, demoted to no role there, may not even watch their own terminal.
+      const owner = await open(member, { branchRoles: rolesThere(null) })
+      expect((await connect(owner, terminalId)).status).toBe(403)
+    } finally {
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE github_repositories`))
+    }
   })
 
   test("attaches the owner to type and someone the branch is shared with to view to watch", async () => {

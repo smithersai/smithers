@@ -238,6 +238,30 @@ describe("resolve", () => {
   })
 })
 
+describe("workRole: the role a person works with on Smithers' own copy of a repository", () => {
+  const work = (made: RepoRoles.RepoRoles, actor: Actor = maya, repository: Repository = OTHER) =>
+    Effect.runPromise(Effect.result(RepoRoles.workRole(made, actor, repository)))
+
+  test("GitHub's role where the deployment may act; the session's where it can't; GitHub down is the refusal", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "read")
+    // The deployment's Admin is a Guest where GitHub says read.
+    const withApp = await roles(github)
+    expect(await work(withApp)).toMatchObject({ _tag: "Success", success: "guest" })
+    expect(await work(withApp, { ...maya, role: "member" }, OWN)).toMatchObject({ _tag: "Success", success: "member" })
+    // No App, or the App not installed: nothing done there reaches GitHub, so the session's role decides.
+    expect(await work(await roles(github, { app: Option.none() }))).toMatchObject({ _tag: "Success", success: "admin" })
+    await sql(runtime, `TRUNCATE github_repo_roles`)
+    github.installed = false
+    expect(await work(await roles(github))).toMatchObject({ _tag: "Success", success: "admin" })
+    github.installed = true
+    await sql(runtime, `TRUNCATE github_repo_roles, github_repositories`)
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+    const down = await work(await roles(github))
+    expect(down._tag === "Failure" && down.failure.code).toBe("github_unavailable")
+  })
+})
+
 describe("holds: the row a write's transaction locks (decision 0079 §6)", () => {
   const held: RepoRoles.Held = { repoId: OTHER.id, personId: MAYA, role: "member" }
   const holds = (value: RepoRoles.Held = held) => runtime.runPromise(RepoRoles.holds(value))

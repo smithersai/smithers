@@ -285,6 +285,7 @@ describe("GET /api/shapes/texts", () => {
       [await open(null), `text=${textId}&conversation=${branch.conversationId}`],
       [await open(ben), `text=${textId}&conversation=${branch.conversationId}`],
       [await open(ben), `text=${textId}&run=${runId}`],
+      [await open(null), `text=${textId}&run=${runId}`],
       [await open(), `text=${textId}&conversation=${crypto.randomUUID()}`],
       [await open(), `text=not-a-text&conversation=${branch.conversationId}`],
       [await open(), `text=${textId}`],

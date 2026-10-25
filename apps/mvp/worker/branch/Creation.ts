@@ -2,14 +2,15 @@ import { digestSync } from "@smthrs/crypto"
 import type { CodeStorage } from "@smthrs/effect-code-storage"
 import { RealmFlow } from "@smthrs/harness"
 import { Load, Manifest } from "@smthrs/plugin"
-import { Data, Effect, Metric, Option, Schema } from "effect"
+import { Data, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { SqlClient } from "effect/sql"
 import { CREATION_ACTIONS, type CreationSelection } from "../../src/features/branch/creation.ts"
 import { readSource } from "../../src/features/flows-ui/checks.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { CREATION } from "../../src/plugins/builtinFlows.ts"
 import { Sessions } from "../Actor.ts"
-import { isMember } from "./Access.ts"
+import { isMemberOn } from "./Access.ts"
 import { homeRepositoryNames } from "./Conversations.ts"
 import { defaultBranch } from "./Forge.ts"
 
@@ -69,8 +70,11 @@ export const select = (
 
 export const selections = Metric.counter("smithers_branch_creation_selections", { incremental: true })
 
-/** The browser's journaled selection step; only members may request an installation. */
-export const route = (client: Option.Option<CodeStorage.Client>) => Effect.gen(function* () {
+/**
+ * The browser's journaled selection step; only a Member or above on the repository may request an installation.
+ * `database` opens a Postgres client for the role check.
+ */
+export const route = <E, R>(client: Option.Option<CodeStorage.Client>, database: Layer.Layer<SqlClient.SqlClient, E, R>) => Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest
   let stage = "request"
   let failure: Record<string, string | number> = {}
@@ -84,13 +88,19 @@ export const route = (client: Option.Option<CodeStorage.Client>) => Effect.gen(f
     stage = "session"
     const actor = yield* (yield* Sessions).resolve
     if (Option.isNone(actor)) return HttpServerResponse.empty({ status: 401 })
-    if (!isMember(actor)) return HttpServerResponse.empty({ status: 403 })
     stage = "repository"
     const query = new URL(request.url, "http://app").searchParams
     const home = yield* homeRepositoryNames
     const owner = query.get("owner") ?? home.owner
     const name = query.get("name") ?? home.name
     if (!isRepository(owner, name) || query.has("owner") !== query.has("name")) return HttpServerResponse.empty({ status: 400 })
+    // A Member or above on the repository itself (decision 0079).
+    stage = "role"
+    const member = yield* isMemberOn(actor, repoId(owner, name)).pipe(
+      Effect.provide(database),
+      Effect.mapError(() => new CreationRefused({ code: "unavailable" })),
+    )
+    if (!member) return HttpServerResponse.empty({ status: 403 })
     // Without Code Storage there is no installed repository code; the ordinary default still refuses its write.
     stage = "head"
     const head = Option.isNone(client) ? undefined : yield* defaultBranch({ owner, name })

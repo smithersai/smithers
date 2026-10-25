@@ -1,7 +1,7 @@
 import { COMMITMENTS, COMMITMENT_COPY, type Commitment } from "./lifecycle"
 import type { IssuesViewIssue, IssuesViewTriage } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
-import { viewerOf } from "../auth/viewer"
+import { hereOf, type RepoAnswer } from "../auth/viewer"
 import { githubIssueUrl, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, NOT_SENT_COPY, TRIAGE_STATES, type TriageState } from "./contract"
 
 type Pending = NonNullable<IssuesViewIssue["pending"]>
@@ -186,42 +186,53 @@ export const pageOf = (
     // PullScreen's pullAccessOf preserves that invariant. No unknown access can reach here with installed === true.
     : "unknown"
 
+/** Sign-in's row, as the page's predicates read it. */
+type SessionNow = { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null }
+
 /**
- * Whether the person at the page may open issues and comment: signed in with a role on the repository (decision 0007
- * `repo:issue-open`, `repo:comment`: Guest and above), as sign-in knows it, offline included.
+ * Whether the person at the page may open issues and comment: signed in with a role on the repository the page names
+ * (decision 0007 `repo:issue-open`, `repo:comment`: Guest and above; decision 0079: ChatApi's `answer` for it), once
+ * ChatApi answered on this tab; a page that opened offline shows neither until it can.
  */
 export const mayWrite = (
-  session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
+  session: SessionNow,
   confirmed: { readonly role: Role | null } | undefined,
+  answer: RepoAnswer | undefined,
 ): boolean => {
-  const viewer = viewerOf(session, confirmed)
-  return viewer.signedIn && viewer.role !== null
+  const here = hereOf(session, confirmed, answer)
+  return here.signedIn && here.role !== null
 }
 
-/** Whether the person at the page may Accept, mark Not accepted and Run triage again: Member and above (`repo:triage`). */
+/**
+ * Whether the person at the page may Accept, mark Not accepted and Run triage again: Member and above (`repo:triage`),
+ * on the deployment's own repository, the only one triage acts on until decision 0079's slice 2.
+ */
 export const mayTriage = (
-  session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
+  session: SessionNow,
   confirmed: { readonly role: Role | null } | undefined,
+  answer: RepoAnswer | undefined,
 ): boolean => {
-  const viewer = viewerOf(session, confirmed)
-  return viewer.signedIn && mayAsk(viewer.role)
+  const here = hereOf(session, confirmed, answer)
+  return here.signedIn && here.own && mayAsk(here.role)
 }
 
-/** Whether the person at the page may enable and pause the triage flow: Maintainer and above (`repo:triage-flow`). */
+/** Whether the person at the page may enable and pause the triage flow: Maintainer and above (`repo:triage-flow`), likewise. */
 export const mayManageTriage = (
-  session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
+  session: SessionNow,
   confirmed: { readonly role: Role | null } | undefined,
+  answer: RepoAnswer | undefined,
 ): boolean => {
-  const viewer = viewerOf(session, confirmed)
-  return viewer.signedIn && (viewer.role === "admin" || viewer.role === "maintainer")
+  const here = hereOf(session, confirmed, answer)
+  return here.signedIn && here.own && (here.role === "admin" || here.role === "maintainer")
 }
 
 /** The write route fences triage to the repository whose issues shape can complete (decision 0079). */
 export const mayManageTriageOnList = (
-  session: Parameters<typeof mayManageTriage>[0],
-  confirmed: Parameters<typeof mayManageTriage>[1],
+  session: SessionNow,
+  confirmed: { readonly role: Role | null } | undefined,
+  answer: RepoAnswer | undefined,
   synced: unknown,
-): boolean => synced !== undefined && mayManageTriage(session, confirmed)
+): boolean => synced !== undefined && mayManageTriage(session, confirmed, answer)
 
 /** A row of this device's triage writes (queries.ts `triagePendingQuery`). */
 export interface TriagePendingRow {

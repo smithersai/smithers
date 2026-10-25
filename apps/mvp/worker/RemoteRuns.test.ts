@@ -336,6 +336,55 @@ const firstShape = async (
   }
 }
 
+/**
+ * A `RepoRoles` whose GitHub says `roles` on each repository they name, and the session's role on the deployment's own,
+ * octo/hello; no role anywhere else. A test service in place of GitHub (test.faults-by-injection).
+ */
+const rolesOn = (roles: Readonly<Record<string, Actor.Role | null>>): RepoRoles.RepoRoles => ({
+  repository: repositoryOf("octo/hello"),
+  resolve: (actor, repository) =>
+    Effect.succeed({
+      role: repository.id === "github/octo/hello" ? actor.role : roles[repository.id] ?? null,
+      held: Option.none(),
+    }),
+})
+
+describe("a TODO's run on another repository (decision 0079)", () => {
+  test("the role there decides watching, following and steering; the deployment's role never does", async () => {
+    const start = await attempt("github/acme/widgets")
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      await engine.run(runId)
+      // The deployment's Member, a Guest on acme/widgets: refused everywhere.
+      const outsider = await routes(engine, { actor: member, roles: rolesOn({ "github/acme/widgets": "guest" }) })
+      expect((await outsider.fetch(remoteRunRoute(runId))).status).toBe(403)
+      expect((await firstShape(outsider, runId)).status).toBe(403)
+      const steer = await outsider.fetch(steersRoute(runId), post({ id: uuid(), body: "Use tabs" }))
+      expect([steer.status, await steer.json()]).toEqual([403, { code: "forbidden" }])
+      // The deployment's Guest, a Member of acme/widgets: reads and follows it; the settled run takes no steer.
+      const insider = await routes(engine, { actor: guest, roles: rolesOn({ "github/acme/widgets": "member" }) })
+      expect((await insider.fetch(remoteRunRoute(runId))).status).toBe(200)
+      expect((await firstShape(insider, runId)).status).toBe(200)
+      const settled = await insider.fetch(steersRoute(runId), post({ id: uuid(), body: "Use tabs" }))
+      expect([settled.status, await settled.json()]).toEqual([409, { code: "not_working" }])
+    })
+  })
+
+  test("GitHub not answering is 503 for a TODO's run, never a guessed role", async () => {
+    const start = await attempt("github/acme/widgets")
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      const h = await routes(engine, { actor: member, roles: {
+        repository: repositoryOf("octo/hello"),
+        resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code: "github_unavailable" })),
+      } })
+      expect((await h.fetch(remoteRunRoute(runId))).status).toBe(503)
+      expect((await firstShape(h, runId)).status).toBe(503)
+      expect((await h.fetch(steersRoute(runId), post({ id: uuid(), body: "Use tabs" }))).status).toBe(503)
+    })
+  })
+})
+
 describe("GET /api/remote-runs/<runId>", () => {
   test("a Member reads a TODO's run as the engine reads it: steps, a page of the journal, values redacted and cut", async () => {
     const start = await attempt()
@@ -772,7 +821,9 @@ describe("POST /api/remote-runs/<runId>/steers", () => {
       const second = todoExecutionId((await attempt("github/octo/other")).attemptId)
       await engine.review(second, 60_000)
       await eventually(async () => (await engine.status(second)) === "suspended", 10_000)
-      const late = await h.fetch(steersRoute(second), post({ id: uuid(), body: "Too late" }))
+      // A Member of octo/other too, whose role there decides (decision 0079).
+      const other = await routes(engine, { actor: member, roles: rolesOn({ "github/octo/other": "member" }) })
+      const late = await other.fetch(steersRoute(second), post({ id: uuid(), body: "Too late" }))
       expect([late.status, await late.json()]).toEqual([409, { code: "not_working" }])
       expect(await pendingOf(engine, second)).toEqual([])
     })

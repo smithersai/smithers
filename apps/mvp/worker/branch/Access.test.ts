@@ -1,25 +1,51 @@
 // Who may do what on a branch's live workspace (worker/branch/Access.ts, decision 0013 §2 and §4): Google Docs-style
 // sharing on this file's schema of the compose Postgres (`pnpm db:up`). A branch is private to its creator until they
 // share it with people by name, to view or edit, or with anyone in the repository who has the link, Members only.
-import { Option } from "effect"
+// Every check decides with the person's role on the branch's own repository (decision 0079), from the real `RepoRoles`
+// over the scripted GitHub where the App is installed; elsewhere the session's role.
+import { Effect, Exit, type Layer, Option, type Redacted } from "effect"
+import type { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
+import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { Actor, Role } from "../Actor.ts"
+import { repositoryOf } from "../github/Config.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
+import { reset, sql } from "../github/test/fixtures.ts"
+import { app } from "../github/test/harness.ts"
+import { accountIdOf, appKey, INSTALLATION_ID, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { resetBranches, shared, tracked } from "../test/branch.ts"
-import { testFile } from "../test/harness.ts"
+import { branchRoles, testFile } from "../test/harness.ts"
 import {
   accessOf,
-  branchAccess,
+  branchAccess as branchAccessIn,
+  branchAccessAs,
+  BranchRoles,
   canEdit,
   canView,
   ceilingOf,
   type Grants,
+  installedOn,
   isMember,
+  isMemberOn,
   policyOf,
+  roleOn,
   underPolicy,
 } from "./Access.ts"
 
 const runtime = testFile("access")
-beforeEach(() => resetBranches(runtime))
+beforeEach(async () => {
+  await resetBranches(runtime)
+  await reset(runtime)
+})
+
+/** `BranchRoles` as a deployment without the App gives them: the session's role on every repository. */
+const withoutApp = async () => branchRoles((await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database)
+
+/** `branchAccess` with `BranchRoles` as a deployment without the App gives them. */
+const branchAccess = (actor: Option.Option<Actor>, id: string, by?: "branch" | "conversation") =>
+  Effect.gen(function* () {
+    return yield* branchAccessIn(actor, id, by).pipe(Effect.provide(yield* Effect.promise(withoutApp)))
+  })
 
 const REPO = "github/octocat/spoon-knife"
 
@@ -105,7 +131,7 @@ describe("branchAccess and policyOf", () => {
   test("read the branch, its conversation and the asker's access, by branch or by conversation", async () => {
     const branch = await tracked(runtime, REPO, "feature/share", "open", "person-1")
     const owner = await runtime.runPromise(branchAccess(person("member"), branch.branchId))
-    expect(owner).toEqual({ ...branch, createdBy: "person-1", access: "owner", shared: false })
+    expect(owner).toEqual({ ...branch, createdBy: "person-1", access: "owner", role: "member", shared: false })
     const byConversation = await runtime.runPromise(branchAccess(person("member"), branch.conversationId, "conversation"))
     expect(byConversation).toEqual(owner)
     expect(await runtime.runPromise(branchAccess(person("member", "person-2"), branch.branchId)))
@@ -158,5 +184,103 @@ describe("branchAccess and policyOf", () => {
     expect(await runtime.runPromise(branchAccess(person("member"), crypto.randomUUID(), "conversation")))
       .toBeUndefined()
     expect(await runtime.runPromise(policyOf(crypto.randomUUID()))).toEqual({ createdBy: null, grants: {} })
+  })
+})
+
+describe("roles per repository (decision 0079)", () => {
+  /** Maya as sign-in recorded her: her person id, login and GitHub account (the one the scripted GitHub gives her). */
+  const MAYA = "5c7e3a2b-9d4f-4b6c-8e1a-2f3b4c5d6e7f"
+  const WIDGETS = "github/acme/widgets"
+  const maya = (role: Role | null): Option.Option<Actor> => Option.some({ subject: { kind: "person", id: MAYA }, role, login: "maya" })
+  let key: Redacted.Redacted<string> | undefined
+
+  /** `BranchRoles` over the real `RepoRoles`, the deployment's own repository acme/home, the App over `github`. */
+  const withApp = async (github: ScriptedGitHub) => {
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    key ??= await appKey()
+    const roles = await runtime.runPromise(RepoRoles.make(scratch.database, {
+      repository: repositoryOf("acme/home"),
+      app: Option.some(app({ privateKey: key })),
+      http: github.http,
+    }))
+    return BranchRoles.layer(roles)
+  }
+  const installed = () => sql(runtime, `INSERT INTO github_repositories (repo_id, installation_id) VALUES ('${WIDGETS}', ${INSTALLATION_ID})`)
+  const run = <A, E>(effect: Effect.Effect<A, E, BranchRoles | SqlClient.SqlClient>, roles: Layer.Layer<BranchRoles>) =>
+    runtime.runPromise(effect.pipe(Effect.provide(roles)))
+
+  beforeEach(() => sql(runtime, `INSERT INTO people (id, github_id, github_login) VALUES ('${MAYA}', ${accountIdOf("maya")}, 'maya')`))
+
+  test.each([
+    ["admin", "admin", "edit"],
+    ["maintain", "maintainer", "edit"],
+    ["write", "member", "edit"],
+    ["triage", "guest", "none"],
+    ["read", "guest", "none"],
+  ] as const)("on a repository the App is installed on, GitHub's %s there (%s) decides the team branch: %s", async (permission, role, access) => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", permission)
+    await installed()
+    const branch = await tracked(runtime, WIDGETS, "main")
+    await shared(runtime, branch.branchId, "repository", "edit")
+    // A Guest of the deployment's own repository: only her permission on acme/widgets counts on its branches.
+    const found = await run(branchAccessIn(maya("guest"), branch.branchId), await withApp(github))
+    expect([found?.access, found?.role]).toEqual([access, role])
+    expect(github.seen("GET", /\/collaborators\/maya\/permission$/)).toHaveLength(1)
+  })
+
+  test("a role on the deployment's repository never opens a branch of another the App is installed on", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "read")
+    await installed()
+    const branch = await tracked(runtime, WIDGETS, "main")
+    await shared(runtime, branch.branchId, "repository", "edit")
+    const roles = await withApp(github)
+    // The deployment's Admin, a reader on acme/widgets: a Guest there, whom the link doesn't reach.
+    expect(await run(branchAccessIn(maya("admin"), branch.branchId), roles)).toMatchObject({ access: "none", role: "guest" })
+    // Shared with her by name to edit, she may only view: GitHub gives her no write there.
+    await shared(runtime, branch.branchId, MAYA, "edit", "maya")
+    expect(await run(branchAccessIn(maya("admin"), branch.branchId), roles)).toMatchObject({ access: "view", role: "guest" })
+    expect(await run(isMemberOn(maya("admin"), WIDGETS), roles)).toBe(false)
+    // No account GitHub knows there: nothing at all.
+    github.roles.delete("maya")
+    await sql(runtime, `TRUNCATE github_repo_roles`)
+    expect(await run(branchAccessIn(maya("admin"), branch.branchId), roles)).toMatchObject({ access: "none", role: null })
+  })
+
+  test("a repository Smithers hasn't recorded the App on keeps the session's role, asking GitHub nothing", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "read")
+    const branch = await tracked(runtime, WIDGETS, "main")
+    await shared(runtime, branch.branchId, "repository", "edit")
+    const roles = await withApp(github)
+    expect(await run(branchAccessIn(maya("member"), branch.branchId), roles)).toMatchObject({ access: "edit", role: "member" })
+    expect(await run(isMemberOn(maya("member"), WIDGETS), roles)).toBe(true)
+    expect(await run(installedOn(WIDGETS), roles)).toBe(false)
+    expect(github.calls).toEqual([])
+    // Signed out asks no one either.
+    expect(await run(branchAccessIn(Option.none(), branch.branchId), roles)).toMatchObject({ access: "none", role: null })
+    expect(await run(isMemberOn(Option.none(), WIDGETS), roles)).toBe(false)
+  })
+
+  test("GitHub or Postgres not answering is the refusal, never a guessed role", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "admin")
+    await installed()
+    const branch = await tracked(runtime, WIDGETS, "main")
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+    const failed = await runtime.runPromiseExit(branchAccessIn(maya("admin"), branch.branchId).pipe(Effect.provide(await withApp(github))))
+    expect(Exit.isFailure(failed) && JSON.stringify(failed.cause)).toContain("github_unavailable")
+    // Asked again, GitHub answers.
+    expect(await run(roleOn(Option.getOrThrow(maya(null)), WIDGETS, true), await withApp(github))).toBe("admin")
+  })
+
+  test("branchAccessAs decides with the role the actor carries, asking no one", async () => {
+    const branch = await tracked(runtime, WIDGETS, "main")
+    await shared(runtime, branch.branchId, "repository", "edit")
+    await installed()
+    expect(await runtime.runPromise(branchAccessAs(maya("member"), branch.branchId))).toMatchObject({ access: "edit", role: "member" })
+    expect(await runtime.runPromise(branchAccessAs(maya("guest"), branch.branchId, "branch"))).toMatchObject({ access: "none" })
+    expect(await runtime.runPromise(branchAccessAs(maya("member"), crypto.randomUUID()))).toBeUndefined()
   })
 })

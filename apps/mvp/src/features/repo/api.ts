@@ -1,5 +1,7 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
+import { repoRoleRoute } from "../auth/contract"
+import { RepoRoleAnswer } from "../auth/schema"
 import { aboutRoute, blobRoute, LAUNCH_ROUTE, refsRoute, REPOS_ROUTE, treeRoute } from "./contract"
 import { About, CloneAccepted, CloneLaunched, RefusalBody, Refs, TreeListing } from "./schema"
 
@@ -164,6 +166,23 @@ export const getAbout = Effect.fn("repo.about.get")(function* (
 })
 
 /**
+ * `GET /api/repos/<owner>/<name>/role`: the person's role on the repository and whether it is the deployment's own
+ * (decision 0079, worker/home/Api.ts).
+ */
+export const getRole = Effect.fn("repo.role.get")(function* (
+  origin: string,
+  repository: { readonly owner: string; readonly name: string },
+  within: Duration.Input,
+) {
+  return yield* exchange(
+    HttpClientRequest.get(`${origin}${repoRoleRoute(repository.owner, repository.name)}`),
+    within,
+    (status) => status === 200,
+    json(RepoRoleAnswer),
+  )
+})
+
+/**
  * RepoApi's client, as a service: the one way the browser asks for a clone and reads a repository. Tests of a RepoApi
  * that fails provide a faulty one; every other test uses the real one.
  */
@@ -176,6 +195,8 @@ export class RepoClient extends Context.Service<
     readonly blob: (owner: string, name: string, sha: string, path: string) => Effect.Effect<Blob, RepoRefused>
     readonly refs: (owner: string, name: string) => Effect.Effect<Refs, RepoRefused>
     readonly about: (owner: string, name: string) => Effect.Effect<About, RepoRefused>
+    /** Who the person is on the repository: their role there, and whether it is the deployment's own. */
+    readonly role: (owner: string, name: string) => Effect.Effect<RepoRoleAnswer, RepoRefused>
   }
 >()("@smthrs/mvp/repo/RepoClient") {
   /** The real client: RepoApi at `origin`, with `within` for each whole request. */
@@ -192,6 +213,7 @@ export class RepoClient extends Context.Service<
             withClient(getBlob(options.origin, { owner, name, sha, path }, options.within)),
           refs: (owner, name) => withClient(getRefs(options.origin, { owner, name }, options.within)),
           about: (owner, name) => withClient(getAbout(options.origin, { owner, name }, options.within)),
+          role: (owner, name) => withClient(getRole(options.origin, { owner, name }, options.within)),
         })
       }),
     )

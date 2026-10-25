@@ -1,4 +1,4 @@
-import type { Role } from "../auth/contract"
+import type { RepoAnswer } from "../auth/viewer"
 import { NOT_SENT_COPY, type NotSentReason } from "../issues/contract"
 import { refusedOf } from "../issues/view"
 import {
@@ -89,11 +89,6 @@ export const listPageOf = (
   }
 }
 
-/** Who is at the page, as sign-in says: signed in, and their role on the repository, confirmed when known. */
-const roleOf = (
-  session: { readonly status: string; readonly role: Role | null },
-  confirmed: { readonly role: Role | null } | undefined,
-): Role | null => (session.status !== "signed_in" ? null : confirmed?.role ?? session.role)
 
 /** The routed pull request as its page reads it (queries.ts `pullQuery`). */
 export interface Pull {
@@ -122,15 +117,16 @@ export interface Pull {
 }
 
 /**
- * Whether the person at the page sees Merge: a Maintainer or above (decision 0007 `repo:merge`), on an open pull request
- * that isn't a draft, whose head this device has. A person's own press only: the agent has no Merge.
+ * Whether the person at the page sees Merge: a Maintainer or above (decision 0007 `repo:merge`) on the repository, as
+ * ChatApi answered for it on this tab, which is the deployment's own until decision 0079's slice 2; on an open pull
+ * request that isn't a draft, whose head this device has. A person's own press only: the agent has no Merge.
  */
 export const mayMerge = (
-  session: { readonly status: string; readonly role: Role | null },
-  confirmed: { readonly role: Role | null } | undefined,
+  session: { readonly status: string },
+  answer: RepoAnswer | undefined,
   pull: Pull,
 ): boolean => {
-  const role = roleOf(session, confirmed)
+  const role = session.status === "signed_in" && answer?.own === true ? answer.role : null
   return (role === "admin" || role === "maintainer") && pull.state === "open" && !pull.draft && !pull.merged &&
     pull.synced > 0 && pull.headSha !== ""
 }
@@ -294,13 +290,13 @@ export const mergeNoticeOf = (view: MergeView | undefined, pull: Pull): string |
  * know the default branch.
  */
 export const mergeBoxOf = (
-  session: { readonly status: string; readonly role: Role | null } | undefined,
-  confirmed: { readonly role: Role | null } | undefined,
+  session: { readonly status: string } | undefined,
+  answer: RepoAnswer | undefined,
   pull: Pull,
   view: MergeView | undefined,
 ): { readonly notice: string | undefined; readonly merge: boolean; readonly warning: string | undefined } => {
   const notice = mergeNoticeOf(view, pull)
-  const merge = session !== undefined && mayMerge(session, confirmed, pull) && notice !== "Merging"
+  const merge = session !== undefined && mayMerge(session, answer, pull) && notice !== "Merging"
   const intoDefault = pull.defaultBranch !== "" && pull.baseRef === pull.defaultBranch
   return { notice, merge, warning: merge && intoDefault ? deployWarningOf(pull.baseRef) : undefined }
 }

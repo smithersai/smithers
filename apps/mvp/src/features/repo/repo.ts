@@ -1,6 +1,6 @@
 import { Context, Data, Effect, Layer, Option } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { clone, copy, navigate, open, rawHref, retryAbout, retryClone, warm } from "./actions"
+import { clone, copy, navigate, open, rawHref, retryAbout, retryClone, role, warm } from "./actions"
 import type { RepoClient } from "./api"
 import type { CopyKind } from "./contract"
 import { type RouteParams, type Target, targetOf } from "./paths"
@@ -30,6 +30,8 @@ export interface RepoQueries {
   readonly manifest: Store["manifestState"]["tanstack"]
   /** Every repository's view in a conversation this tab loaded, with what it shows, by its view's id (`embed.key`). */
   readonly embeds: Store["embedsState"]["tanstack"]
+  /** The person's role on each repository this tab opened, as ChatApi last answered (decision 0079). */
+  readonly roles: Store["rolesState"]["tanstack"]
 }
 
 /** A Copy button's flow didn't put its text on the clipboard. */
@@ -67,6 +69,11 @@ export interface RepoActions {
   readonly copy: (what: CopyKind) => Promise<void>
   /** A ref chosen in the picker: `app/navigate` to `to`, its location at that ref. */
   readonly navigate: (to: string) => void
+  /**
+   * What every repository route calls once it opens: asks ChatApi who the person is on `owner/name`, their role there,
+   * into `roles`. Returns at once.
+   */
+  readonly role: (owner: string, name: string) => void
 }
 
 export class Repo extends Context.Service<
@@ -96,6 +103,7 @@ export class Repo extends Context.Service<
           about: store.aboutState.tanstack,
           manifest: store.manifestState.tanstack,
           embeds: store.embedsState.tanstack,
+          roles: store.rolesState.tanstack,
         },
         lookups: {
           repository: (id) => now(device.repository(id)),
@@ -114,6 +122,7 @@ export class Repo extends Context.Service<
           copy: (what) =>
             promise(Effect.flatMap(copy(what), (copied) => (copied ? Effect.void : Effect.fail(new NotCopied())))),
           navigate: (to) => run(Effect.asVoid(Effect.forkIn(navigate(to), store.scope))),
+          role: (owner, name) => run(Effect.asVoid(Effect.forkIn(role(owner, name), store.scope))),
         },
       })
     }),

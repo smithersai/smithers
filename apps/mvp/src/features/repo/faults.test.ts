@@ -50,6 +50,7 @@ const cloning = (
       // row; this client has no network for them.
       refs: () => Effect.fail(new RepoRefused({})),
       about: () => Effect.fail(new RepoRefused({})),
+      role: () => Effect.fail(new RepoRefused({})),
     }),
   )
   return { calls, launches, layer }

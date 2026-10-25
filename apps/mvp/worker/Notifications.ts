@@ -12,7 +12,7 @@ import {
 import { AckRequest, WatchRequest } from "../src/features/attention/schema.ts"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import { type Actor, refusesPersonOnly, Sessions } from "./Actor.ts"
-import { branchAccess, canView, isMember, policyOf, underPolicy } from "./branch/Access.ts"
+import { branchAccess, branchAccessAs, type BranchRoles, canView, isMember, policyOf, underPolicy } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -129,7 +129,7 @@ const foldMissingRun = (runId: string) => Effect.gen(function* () {
     WHERE run_id = ${runId} AND state IN ('working', 'waiting', 'needs_you') FOR UPDATE`
   const allowed = yield* Effect.filter(existing, (row) => row.conversationId === null
     ? Effect.succeed(row.mine)
-    : branchAccess(Option.some({ subject: { kind: "person", id: row.recipient }, role: "member" }), row.conversationId, "conversation").pipe(
+    : branchAccessAs(Option.some({ subject: { kind: "person", id: row.recipient }, role: "member" }), row.conversationId, "conversation").pipe(
       Effect.map((branch) => branch !== undefined && canView(branch.access)),
     ))
   yield* Effect.annotateCurrentSpan({ "smithers.run.id": runId, "smithers.run.missing": true,
@@ -443,7 +443,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       handle: (body: string, actor: Option.Some<Actor>, fields: Fields) => Effect.Effect<
         HttpServerResponse.HttpServerResponse,
         unknown,
-        SqlClient.SqlClient
+        SqlClient.SqlClient | BranchRoles
       >,
     ) =>
       Effect.gen(function* () {

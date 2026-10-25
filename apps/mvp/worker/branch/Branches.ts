@@ -10,7 +10,7 @@ import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { branchAccess, canView, isMember } from "./Access.ts"
+import { branchAccess, canView, isMemberOn } from "./Access.ts"
 import * as Repos from "../Repos.ts"
 import * as Conversations from "./Conversations.ts"
 import * as ConversationPeople from "./ConversationPeople.ts"
@@ -105,7 +105,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
           fields.outcome = code
           return refusal(status, code)
         }
-        if (!isMember(actor)) return reject(403, "forbidden")
+        // A Member or above on the repository itself (decision 0079); GitHub creation checks it again on GitHub.
+        if (!(yield* isMemberOn(actor, repo).pipe(Effect.provide(database)))) return reject(403, "forbidden")
         const existing = yield* GitHubCreation.read(createRequest!, actor.value.subject.id).pipe(Effect.provide(database))
         if (existing !== undefined && (existing.repo !== repo || existing.ref !== ref)) return reject(409, "exists")
         const completed = yield* Conversations.createdFor(repo, actor.value.subject.id, createRequest!).pipe(Effect.provide(database))
@@ -154,8 +155,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
         fields.access = found.access
         return HttpServerResponse.jsonUnsafe({ ...known, access: found.access, shared: found.shared }, { headers: noStore })
       }
-      // Tracking a branch makes it the tracker's: only a Member or above may (`repo:branch-create`, decision 0007).
-      if (!isMember(actor)) return refusal(403, "forbidden")
+      // Tracking a branch makes it the tracker's: only a Member or above may (`repo:branch-create`, decision 0007), by
+      // their role on the repository itself (decision 0079).
+      if (!(yield* isMemberOn(actor, repo).pipe(Effect.provide(database)))) return refusal(403, "forbidden")
       let resolvedDefault: string | undefined
       if (decoded.value.create === true) {
         // A new branch: made on the forge at the default branch's head, then tracked as any other. A name the forge

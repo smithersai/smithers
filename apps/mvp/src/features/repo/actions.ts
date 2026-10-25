@@ -17,7 +17,7 @@ import {
   repoId,
   textOf,
 } from "./contract"
-import { aboutLoadMs, blobLoadMs, cloneClicks, headLoadMs, locateMs, opens, refsLoadMs, treeLoadMs } from "./metrics"
+import { aboutLoadMs, blobLoadMs, cloneClicks, headLoadMs, locateMs, opens, refsLoadMs, roleAnswers, treeLoadMs } from "./metrics"
 import { blobKey, copyPayloadOf, readmeOf, refsKey, resolveRef, type Target, treeKey } from "./paths"
 import type { AboutRow, BlobRow, CloneRow, HeadRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import { VIEW } from "./rows"
@@ -239,6 +239,34 @@ export const retryAbout = (owner: string, name: string) =>
   isRepository(owner, name)
     ? Effect.as(ensureAbout(owner, name, repoId(owner, name), "button"), true)
     : Effect.succeed(false)
+
+/**
+ * Asks ChatApi who the person is on `owner/name` (decision 0079): their role there and whether it is the deployment's
+ * own repository, kept in this tab's `roles` row for the repository, which the header's links and each page's buttons
+ * read. A refused answer keeps the row this tab had: nothing role-gated shows on a repository ChatApi never answered.
+ * One log line and span `repo.role` and one count, with the outcome, the role and whether it is the deployment's own.
+ */
+export const role = (owner: string, name: string) =>
+  Effect.gen(function* () {
+    if (!isRepository(owner, name)) return
+    const store = yield* RepoStore
+    const id = repoId(owner, name)
+    const startedAt = yield* Clock.currentTimeMillis
+    const result = yield* Effect.result((yield* RepoClient).role(owner, name))
+    const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+    if (result._tag === "Failure") {
+      yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "refused", role: "unknown" }), 1)
+      return yield* Effect.logWarning("repo.role").pipe(
+        Effect.annotateLogs({ outcome: "refused", status: result.failure.status ?? 0, durationMs }),
+      )
+    }
+    const { role: held, own } = result.success
+    yield* put(store.roles, id, { id, role: held, own })
+    yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "answered", role: held ?? "none" }), 1)
+    yield* Effect.logInfo("repo.role").pipe(
+      Effect.annotateLogs({ outcome: "answered", role: held ?? "none", own, durationMs }),
+    )
+  }).pipe(Effect.withSpan("repo.role"))
 
 /**
  * What GitHub says of `owner/name`, once this tab has loaded it: loads it unless this tab has it or is loading it, then

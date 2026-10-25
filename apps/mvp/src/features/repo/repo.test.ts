@@ -19,7 +19,7 @@ import { RepoClient, RepoRefused } from "./api"
 import { BUSY, COULDNT_LOAD, GITHUB_DOWN, GITHUB_LIMIT, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
 import { TabClipboard } from "./copy"
 import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTree } from "./flows"
-import { aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, treeLoadMs } from "./metrics"
+import { aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, roleAnswers, treeLoadMs } from "./metrics"
 import { NotCopied } from "./repo"
 import { aboutOf, generatedLinksFor, headerOf, previewReadmeOf, previewTreeOf } from "./view"
 import * as Repos from "../../../worker/Repos.ts"
@@ -526,6 +526,66 @@ describe("the agent's repository flows on this device", () => {
     const missing = await runFlow(RepoRead, { repo: "octocat/Spoon-Knife", revision: headSha, path: "gone.md" }, reads)
     expect(Exit.isFailure(missing.exit)).toBe(true)
     expect(missing.status).toBe("failed")
+  })
+})
+
+/** The tab's answers of who the person is on each repository, as rows. */
+const rolesOf = (tab: Tab) => tab.repo.queries.roles.toArray.map(({ id, role, own }) => ({ id, role, own }))
+
+describe("who the person is on a repository (decision 0079)", () => {
+  test("a repository route asks ChatApi: the role there and whether it is the deployment's own", async () => {
+    const h = await repoHarness(server, { roles: "octocat/Spoon-Knife" })
+    const tab = await open(h)
+    tab.repo.actions.role("octocat", "Spoon-Knife")
+    // Without the App, a role counts on the deployment's own repository alone.
+    tab.repo.actions.role("acme", "widgets")
+    await waitFor(() =>
+      expect([...tab.repo.queries.roles.toArray].map(({ id, role, own }) => ({ id, role, own })).sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+        { id: "github/acme/widgets", role: null, own: false },
+        { id: "github/octocat/spoon-knife", role: "member", own: true },
+      ])
+    )
+    expect(tab.count(roleAnswers, { outcome: "answered", role: "member" })).toBe(1)
+    expect(tab.count(roleAnswers, { outcome: "answered", role: "none" })).toBe(1)
+    expect(tab.lines("repo.role").map((line) => line.annotations)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ outcome: "answered", role: "member", own: true }),
+    ]))
+    // A name GitHub couldn't have asks nothing.
+    tab.repo.actions.role("-bad", "x")
+    expect(tab.repo.queries.roles.toArray).toHaveLength(2)
+  })
+
+  test("a refused answer keeps the row this tab had, and says so in its records", async () => {
+    const h = await repoHarness(server, { roles: "octocat/Spoon-Knife" })
+    let refusing = false
+    const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+    )
+    // ChatApi answering, then refusing (test.faults-by-injection).
+    const client = Layer.effect(
+      RepoClient,
+      Effect.map(Effect.service(RepoClient), (client) =>
+        RepoClient.of({
+          ...client,
+          // A refusal with ChatApi's status, or no answer at all (no status).
+          role: (owner, name) =>
+            refusing
+              ? Effect.fail(name === "widgets" ? new RepoRefused({}) : new RepoRefused({ status: 503 }))
+              : client.role(owner, name),
+        })),
+    ).pipe(Layer.provide(real))
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, client })
+    tabs.push(tab)
+    tab.repo.actions.role("octocat", "Spoon-Knife")
+    await waitFor(() => expect(rolesOf(tab)).toEqual([{ id: "github/octocat/spoon-knife", role: "member", own: true }]))
+    refusing = true
+    tab.repo.actions.role("octocat", "Spoon-Knife")
+    tab.repo.actions.role("acme", "widgets")
+    await waitFor(() => expect(tab.count(roleAnswers, { outcome: "refused", role: "unknown" })).toBe(2))
+    expect(rolesOf(tab)).toEqual([{ id: "github/octocat/spoon-knife", role: "member", own: true }])
+    expect(tab.lines("repo.role").filter((line) => line.annotations.outcome === "refused").map((line) => [line.level, line.annotations.status]))
+      .toEqual(expect.arrayContaining([["WARN", 503], ["WARN", 0]]))
   })
 })
 

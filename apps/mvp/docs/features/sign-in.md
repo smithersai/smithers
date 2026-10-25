@@ -115,7 +115,7 @@ Not built yet: confirmation receipts and the host's confirm dialog for protected
 
 ## Roles and role checks
 
-The session's role is the person's permission on `GITHUB_REPOSITORY`, the deployment's own repository (`GET /repos/<owner>/<name>` with their token), mapped as decision 0007 §9 says, never with more power than GitHub gives. It decides nothing on any other repository: there the role is the person's GitHub permission on that one, read with the App and kept 5 minutes ([decision 0079](../decisions/0079-roles-per-repository.md), `worker/github/RepoRoles.ts`). Issue writes, the stack and a repository's home ([home](home.md#who-sees-what)) use it today.
+The session's role is the person's permission on `GITHUB_REPOSITORY`, the deployment's own repository (`GET /repos/<owner>/<name>` with their token), mapped as decision 0007 §9 says, never with more power than GitHub gives. It decides nothing on any other repository: there the role is the person's GitHub permission on that one, read with the App and kept 5 minutes ([decision 0079](../decisions/0079-roles-per-repository.md), `worker/github/RepoRoles.ts`). Issue writes, the stack, a repository's home ([home](home.md#who-sees-what)), a branch's workspace ([branch workspace](branch-workspace.md)) and a TODO's run ([runs](runs.md)) use it today. `GET /api/repos/<owner>/<name>/role` answers it to the browser, `{ role, own }` with `own` true on the deployment's own repository, and every repository route asks (`router.tsx` `enterRepo`, kept per tab in the repository feature's `roles`): the header's Secrets and Settings links and each page's buttons show by it, none before it answers, and the features still fenced to the deployment's repository (secrets, custom domains, triage, merging) only where `own`.
 
 | GitHub | Role |
 |---|---|
@@ -276,7 +276,7 @@ engine worker: auth/refresh/check ── asks the tab that started it, on <name>
 - An unreadable wipe marker selects the unwiped host. Directory lookup failures preserve the marker; only `NotFoundError` proves the engine directory absent. Reload still happens if stopping the program throws synchronously.
 - The boot-time half of the wipe runs before the program starts, so a finished wipe isn't logged or counted. A failed one shows as the program's `persistence unavailable` and `browser.engine.unavailable` (`error.type` `WipeUnfinished`) records and the `smithers-wipe` mark staying in localStorage.
 - The `github_app_authorization` revocation webhook isn't handled; a role check ends the session within the hour instead.
-- Per-repository roles cover issue writes, the stack and a repository's home (decision 0079, `worker/github/RepoRoles.ts`). Triage, commitments, merging, the issues' shapes, the webhook, secrets and custom domains still serve the deployment's repository only. Roles Smithers sets itself (`repository_roles`, 0007 phase 2), the device flow for the TUI and CLI, grants and the visitor cookie are later phases of 0007 and 0008.
+- Per-repository roles cover issue writes, the stack, a repository's home, branches and TODO runs, and the buttons that act on them (decision 0079, `worker/github/RepoRoles.ts`). Triage, commitments, merging, the issues' shapes, the webhook, secrets and custom domains still serve the deployment's repository only. Roles Smithers sets itself (`repository_roles`, 0007 phase 2), the device flow for the TUI and CLI, grants and the visitor cookie are later phases of 0007 and 0008.
 
 ## Tests
 

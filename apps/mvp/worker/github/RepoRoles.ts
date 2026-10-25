@@ -38,6 +38,13 @@ export class RoleRefused extends Schema.TaggedError<RoleRefused>()("@smthrs/mvp/
 }) {}
 
 /**
+ * The refusals that say the deployment can't act on the repository, so nobody holds a role GitHub gives there: no App
+ * on this deployment, `GITHUB_ALLOWED_REPOSITORIES` leaving it out, or the App not installed on it (§4, §7). The rest
+ * say GitHub or Postgres couldn't answer now.
+ */
+export const CANT_ACT: ReadonlySet<Refusal> = new Set(["not_configured", "not_found", "app_not_installed"])
+
+/**
  * The row a write's transaction must still find (`holds`): the person's role on a repository other than the
  * deployment's own, as `resolve` read it. None on the deployment's own repository, whose role is the session's.
  */
@@ -267,6 +274,19 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
 
     return { repository: options.repository, resolve } satisfies RepoRoles<R>
   })
+
+/**
+ * The role `actor` works with on Smithers' own copy of `repository`: a branch's workspace, its conversation, its
+ * terminals, a new branch, a run's page. Where the deployment may act on the repository, the role `resolve` gives
+ * there. Where it can't (`CANT_ACT`), nothing done in that copy reaches GitHub, so the session's role on the
+ * deployment's own repository decides, as before decision 0079: a public repository without the App is cloned and
+ * worked on as Smithers' copy (GH-4). GitHub or Postgres not answering passes on as the refusal, never a guess.
+ */
+export const workRole = <R>(roles: RepoRoles<R>, actor: Actor, repository: Repository): Effect.Effect<Role | null, RoleRefused, R> =>
+  roles.resolve(actor, repository).pipe(
+    Effect.map((resolved) => resolved.role),
+    Effect.catch((refused) => CANT_ACT.has(refused.code) ? Effect.succeed(actor.role) : Effect.fail(refused)),
+  )
 
 /** `millis` as a `retryAfterSeconds` field, when GitHub said a wait. */
 const waitOf = (millis: number | undefined) =>

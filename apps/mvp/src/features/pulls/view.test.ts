@@ -47,7 +47,9 @@ const pull = (overrides: Partial<Pull> = {}): Pull => ({
   ...overrides,
 })
 
-const maintainer = { status: "signed_in" as const, role: "maintainer" as const }
+const signedIn = { status: "signed_in" as const }
+/** ChatApi's answer on the deployment's own repository, the one merging acts on: a Maintainer there. */
+const maintainer = { role: "maintainer" as const, own: true }
 
 describe("the list", () => {
   test("each state's word and icon: Open, Draft, Merged, Closed", () => {
@@ -123,15 +125,16 @@ describe("the list page", () => {
 })
 
 describe("merge", () => {
-  test("a Maintainer or an Admin sees Merge on an open pull request whose head the device has", () => {
-    expect(mayMerge(maintainer, undefined, pull())).toBe(true)
-    expect(mayMerge({ status: "signed_in", role: "admin" }, undefined, pull())).toBe(true)
-    expect(mayMerge({ status: "signed_in", role: "member" }, undefined, pull())).toBe(false)
-    expect(mayMerge({ status: "signed_in", role: "member" }, { role: "maintainer" }, pull())).toBe(true)
-    expect(mayMerge({ status: "signed_out", role: null }, undefined, pull())).toBe(false)
-    expect(mayMerge(maintainer, { role: "guest" }, pull())).toBe(false)
+  test("a Maintainer or an Admin of the repository sees Merge on an open pull request whose head the device has", () => {
+    expect(mayMerge(signedIn, maintainer, pull())).toBe(true)
+    expect(mayMerge(signedIn, { role: "admin", own: true }, pull())).toBe(true)
+    expect(mayMerge(signedIn, { role: "member", own: true }, pull())).toBe(false)
+    expect(mayMerge(signedIn, undefined, pull())).toBe(false)
+    expect(mayMerge({ status: "signed_out" }, maintainer, pull())).toBe(false)
+    // Merging acts on the deployment's own repository until decision 0079's slice 2.
+    expect(mayMerge(signedIn, { role: "maintainer", own: false }, pull())).toBe(false)
     for (const changed of [{ draft: true }, { merged: true }, { state: "closed" }, { synced: 0 }, { headSha: "" }]) {
-      expect(mayMerge(maintainer, undefined, pull(changed))).toBe(false)
+      expect(mayMerge(signedIn, maintainer, pull(changed))).toBe(false)
     }
   })
 
@@ -162,16 +165,16 @@ describe("the merge box and the deploy warning (ruling GH-9)", () => {
   const idle: MergeView = { mergeStatus: "", mergeFailure: "", mergeRefused: null, merging: false }
 
   test("beside Merge into the default branch, it says merging deploys it, naming the branch", () => {
-    expect(mergeBoxOf(maintainer, undefined, pull(), idle)).toEqual({
+    expect(mergeBoxOf(signedIn, maintainer, pull(), idle)).toEqual({
       notice: undefined,
       merge: true,
       warning: "Merging into main deploys it.",
     })
-    expect(mergeBoxOf(maintainer, undefined, pull({ baseRef: "trunk", defaultBranch: "trunk" }), undefined).warning)
+    expect(mergeBoxOf(signedIn, maintainer, pull({ baseRef: "trunk", defaultBranch: "trunk" }), undefined).warning)
       .toBe("Merging into trunk deploys it.")
     // After a refusal Merge shows again, and so does the warning.
     const refused = { ...idle, mergeStatus: "refused", mergeFailure: "head_moved" }
-    expect(mergeBoxOf(maintainer, undefined, pull(), refused)).toEqual({
+    expect(mergeBoxOf(signedIn, maintainer, pull(), refused)).toEqual({
       notice: "New commits",
       merge: true,
       warning: "Merging into main deploys it.",
@@ -179,26 +182,25 @@ describe("the merge box and the deploy warning (ruling GH-9)", () => {
   })
 
   test("no warning into any other branch, or while the device doesn't know the default branch", () => {
-    expect(mergeBoxOf(maintainer, undefined, pull({ baseRef: "release" }), idle)).toEqual({
+    expect(mergeBoxOf(signedIn, maintainer, pull({ baseRef: "release" }), idle)).toEqual({
       notice: undefined,
       merge: true,
       warning: undefined,
     })
-    expect(mergeBoxOf(maintainer, undefined, pull({ defaultBranch: "" }), idle).warning).toBeUndefined()
+    expect(mergeBoxOf(signedIn, maintainer, pull({ defaultBranch: "" }), idle).warning).toBeUndefined()
   })
 
   test("no warning where the person can't merge: no Merge, no warning", () => {
-    const member = { status: "signed_in", role: "member" as const }
     const cases: ReadonlyArray<Parameters<typeof mergeBoxOf>> = [
-      [member, undefined, pull(), idle],
-      [{ status: "signed_out", role: null }, undefined, pull(), idle],
-      [undefined, undefined, pull(), idle],
-      [maintainer, { role: "guest" }, pull(), idle],
-      [maintainer, undefined, pull({ draft: true }), idle],
-      [maintainer, undefined, pull({ state: "closed" }), idle],
-      [maintainer, undefined, pull({ merged: true }), idle],
-      [maintainer, undefined, pull(), { ...idle, merging: true }],
-      [maintainer, undefined, pull(), { ...idle, mergeStatus: "done" }],
+      [signedIn, { role: "member", own: true }, pull(), idle],
+      [{ status: "signed_out" }, maintainer, pull(), idle],
+      [undefined, maintainer, pull(), idle],
+      [signedIn, { role: "guest", own: true }, pull(), idle],
+      [signedIn, maintainer, pull({ draft: true }), idle],
+      [signedIn, maintainer, pull({ state: "closed" }), idle],
+      [signedIn, maintainer, pull({ merged: true }), idle],
+      [signedIn, maintainer, pull(), { ...idle, merging: true }],
+      [signedIn, maintainer, pull(), { ...idle, mergeStatus: "done" }],
     ]
     for (const args of cases) {
       const box = mergeBoxOf(...args)
