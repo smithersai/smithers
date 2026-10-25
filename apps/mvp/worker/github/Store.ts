@@ -429,6 +429,20 @@ export const installationOf = (repoId: string) =>
     return Option.map(Option.fromNullishOr(row), (found) => Number(found.installationId))
   })
 
+/**
+ * Whether the App is absent from `repoId` as far as Smithers knows: an About read found it so within its recheck
+ * window (`repo_about.app_absent_until`, worker/RepoAbout.ts), and no step since found an installation there.
+ */
+export const appAbsent = (repoId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly absent: boolean }>`
+      SELECT EXISTS (SELECT 1 FROM repo_about WHERE repo_id = ${repoId} AND app_absent_until > now())
+        AND NOT EXISTS (SELECT 1 FROM github_repositories WHERE repo_id = ${repoId} AND installation_id IS NOT NULL)
+        AS absent`
+    return row!.absent
+  })
+
 /** Remembers the App's installation on `repoId`. */
 export const rememberInstallation = (repoId: string, installationId: number) =>
   Effect.gen(function* () {

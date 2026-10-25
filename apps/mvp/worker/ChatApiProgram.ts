@@ -161,14 +161,16 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // with the App, on any other it may act on. Local development without the App keeps the developer's everywhere.
     const repository = yield* GitHubConfig.repository
     const app = yield* GitHubConfig.configured
+    const allowed = yield* RepoRoles.allowed
     const roles = yield* RepoRoles.make(database, {
       repository,
       app,
-      allowed: yield* RepoRoles.allowed,
+      allowed,
       local: options.fallback !== undefined && Option.isNone(app),
     })
-    // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes.
-    const github = yield* GitHubApi.make(database, { repository, app, roles, repoFlows })
+    // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes, for every
+    // repository the deployment acts on (decision 0079, slice 1b).
+    const github = yield* GitHubApi.make(database, { repository, app, roles, repoFlows, allowed })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
     const stack = yield* StackApi.make(database, roles)

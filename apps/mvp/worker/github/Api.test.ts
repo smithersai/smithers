@@ -24,6 +24,7 @@ import {
   writesRoute,
   WRITES_SHAPE_ROUTE,
 } from "../../src/features/issues/contract.ts"
+import { CHECKS_SHAPE_ROUTE, compareRoute, PULLS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
 import * as Actor from "../Actor.ts"
 import { FlowStarter, StartUnavailable } from "../Flows.ts"
 import { testFile } from "../test/harness.ts"
@@ -117,19 +118,35 @@ describe("POST /api/github/webhook", () => {
     expect(await comments(runtime)).toEqual([expect.objectContaining({ body: "Made on github.com", author: "maya" })])
   })
 
-  test("deliveries naming no issue of this repository are recorded and answered, starting nothing", async () => {
-    const h = await githubHarness(runtime)
+  test("deliveries naming no issue of a repository the deployment acts on are recorded and answered, starting nothing", async () => {
+    // GITHUB_ALLOWED_REPOSITORIES leaves someone/else out.
+    const h = await githubHarness(runtime, { allowed: new Set([REPOSITORY.id]) })
     for (const sent of [
       await delivery("ping", { zen: "Keep it logically awesome." }),
       await delivery("issues", issuesEvent(1, "someone/else")),
       await delivery("issues", { action: "opened" }),
+      await delivery("issues", issuesEvent(1, "not a/name")),
       await delivery("push", { ref: "refs/heads/main", repository: { full_name: "acme/widgets" } }),
     ]) {
       expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, sent)).status).toBe(200)
     }
     expect(h.starts).toEqual([])
-    expect(h.count(Metrics.webhooks, { event: "issues", outcome: "ignored" })).toBe(2)
-    expect(await sql(runtime, `SELECT count(*)::int AS n FROM github_deliveries WHERE repo_id IS NULL`)).toEqual([{ n: 4 }])
+    expect(h.count(Metrics.webhooks, { event: "issues", outcome: "ignored" })).toBe(3)
+    expect(await sql(runtime, `SELECT count(*)::int AS n FROM github_deliveries WHERE repo_id IS NULL`)).toEqual([{ n: 5 }])
+  })
+
+  test("an issue delivery of another repository the App is installed on starts github/Apply for that repository (decision 0079)", async () => {
+    // The deployment's own repository is acme/home; GitHub only sends the App events of repositories it is installed on.
+    const h = await githubHarness(runtime, { own: { owner: "acme", name: "home", id: "github/acme/home" } })
+    const sent = await delivery("issues", issuesEvent(3, "acme/widgets"))
+    expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, sent)).status).toBe(200)
+    expect(h.starts).toEqual([
+      expect.objectContaining({ flow: "github/Apply", payload: expect.objectContaining({ repo: "acme/widgets", number: 3 }) }),
+    ])
+    expect(await sql(runtime, `SELECT repo_id AS "repoId", subject FROM github_deliveries`)).toEqual([
+      { repoId: "github/acme/widgets", subject: 3 },
+    ])
+    expect(h.line("github.webhook")[0]).toMatchObject({ annotations: { outcome: "applied", repoId: "github/acme/widgets", number: 3 } })
   })
 
   test("refusals: a wrong or missing signature, no delivery id, a body too large, bad JSON, another method", async () => {
@@ -756,6 +773,97 @@ describe("the shapes", () => {
   test("any other path under the routes is 404", async () => {
     const h = await githubHarness(runtime)
     expect((await h.fetch("/api/shapes/elsewhere")).status).toBe(404)
+  })
+
+  describe("another repository the deployment acts on (decision 0079, slice 1b)", () => {
+    // The deployment's own repository is acme/home; acme/gadgets, served by its own scripted GitHub, is a second one. No
+    // other test's shapes name acme/gadgets, so Electric never answers these with another test's rows.
+    const OWN = { owner: "acme", name: "home", id: "github/acme/home" } as const
+    const GADGETS = "github/acme/gadgets"
+    const gadgets = () => scriptedGitHub("acme", "gadgets")
+    const seedGadgets = () =>
+      sql(
+        runtime,
+        `INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, created_at, updated_at,
+          source_updated_at, fetched_at)
+        VALUES ('${GADGETS}#7', '${GADGETS}', 7, 'issue', 77, 'Gadget', '', 'open', now(), now(), now(), now()),
+          ('${OWN.id}#1', '${OWN.id}', 1, 'issue', 71, 'Home', '', 'open', now(), now(), now(), now())`,
+      )
+    const named = (route: string, repo: string) => `${route}?repo=${encodeURIComponent(repo)}`
+    /** Shape `route` of `repo`, from the start. */
+    const shapeOf = (h: Awaited<ReturnType<typeof githubHarness>>, route: string, repo: string) =>
+      h.fetch(`${named(route, repo)}&offset=-1`).then(async (response) => ({
+        status: response.status,
+        rows: response.status === 200 ? (await response.json()) as Array<{ value?: Record<string, unknown> }> : [],
+      }))
+
+    test("?repo= names it: its rows alone, read by its role there, and a stale read reconciles it", async () => {
+      await seedGadgets()
+      const person = await signedIn(runtime, { login: "maya", token: Redacted.make("ghu_unused") })
+      // A Member of acme/home, whose role on acme/gadgets is GitHub's read there.
+      const h = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: { ...member(person.personId, person.sessionId), role: "member", login: "maya" } })
+      h.github.roles.set("maya", "read")
+      const listed = await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")
+      expect([listed.status, values(listed.rows).map((row) => row.title)]).toEqual([200, ["Gadget"]])
+      await expect.poll(() => h.starts.map((start) => start.payload), { timeout: 10_000 }).toEqual([
+        { repo: "acme/gadgets", requestedAtMs: reconcileBucketStart(Date.now()) },
+      ])
+      for (const route of [COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, CHECKS_SHAPE_ROUTE]) {
+        expect([route, (await shapeOf(h, route, "acme/gadgets")).status]).toEqual([route, 200])
+      }
+      // Without `?repo=`, the deployment's own.
+      expect(values((await shape(h, ITEMS_SHAPE_ROUTE)).rows).map((row) => row.title)).toEqual(["Home"])
+    })
+
+    test("a name GitHub couldn't have is 400; one the deployment doesn't act on is 404", async () => {
+      const h = await githubHarness(runtime, { own: OWN, github: gadgets(), allowed: new Set([OWN.id]) })
+      for (const repo of ["acme", "acme/gadgets/x", "-bad/x"]) {
+        expect([repo, (await h.fetch(`${named(ITEMS_SHAPE_ROUTE, repo)}&offset=-1`)).status]).toEqual([repo, 400])
+      }
+      expect((await h.fetch(`${named(ITEMS_SHAPE_ROUTE, "acme/gadgets")}&offset=-1`)).status).toBe(404)
+      expect((await h.fetch(compareRoute("acme", "gadgets", "a".repeat(40), "b".repeat(40)))).status).toBe(404)
+      expect(h.starts).toEqual([])
+      // Without the App, only the deployment's own repository syncs.
+      const noApp = await githubHarness(runtime, { own: OWN, github: gadgets(), app: null })
+      expect((await noApp.fetch(`${named(ITEMS_SHAPE_ROUTE, "acme/gadgets")}&offset=-1`)).status).toBe(404)
+    })
+
+    test("where the App isn't installed nobody has a role: a public repository's rows still reach anyone signed in", async () => {
+      await seedGadgets()
+      await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${GADGETS}', 1, false)`)
+      const person = await signedIn(runtime, { login: "maya", token: Redacted.make("ghu_unused") })
+      const h = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: { ...member(person.personId, person.sessionId), role: "admin", login: "maya" } })
+      h.github.installed = false
+      const listed = await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")
+      expect([listed.status, values(listed.rows).map((row) => row.title)]).toEqual([200, ["Gadget"]])
+      // A private one is refused, as to anyone with no role.
+      await sql(runtime, `UPDATE github_repositories SET private = true`)
+      h.github.private = true
+      expect((await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")).status).toBe(403)
+    })
+
+    test("where an About read found the App absent, the shapes say app_not_installed, to anyone, asking GitHub nothing", async () => {
+      await sql(runtime, `INSERT INTO repo_about (repo_id, app_absent_until) VALUES ('${GADGETS}', now() + interval '1 hour')`)
+      try {
+        for (const actor of [null, member()] as const) {
+          const h = await githubHarness(runtime, { own: OWN, github: gadgets(), actor })
+          const response = await h.fetch(`${named(ITEMS_SHAPE_ROUTE, "acme/gadgets")}&offset=-1`)
+          expect([response.status, await response.json()]).toEqual([404, { code: "app_not_installed" }])
+          expect(h.github.calls).toEqual([])
+          expect(h.starts).toEqual([])
+          expect(h.count(Metrics.shapes, { table: "items", status: "404", live: "false" })).toBe(1)
+        }
+        // An installation found since wins, and the deployment's own repository is never asked about.
+        await sql(runtime, `INSERT INTO github_repositories (repo_id, installation_id) VALUES ('${GADGETS}', 77)`)
+        const installed = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null })
+        expect((await installed.fetch(`${named(ITEMS_SHAPE_ROUTE, "acme/gadgets")}&offset=-1`)).status).not.toBe(404)
+        // Postgres not answering leaves it to the read, which says unavailable.
+        const offline = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, database: unreachable })
+        expect((await offline.fetch(`${named(ITEMS_SHAPE_ROUTE, "acme/gadgets")}&offset=-1`)).status).toBe(503)
+      } finally {
+        await sql(runtime, `TRUNCATE repo_about`)
+      }
+    })
   })
 })
 

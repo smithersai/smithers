@@ -194,7 +194,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     http: github.http,
   })))
   const routes = await runtime.runPromise(
-    observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true }).pipe(Effect.provideService(Scope.Scope, scope))),
+    observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true, allowed: Option.fromUndefinedOr(options.allowed) }).pipe(Effect.provideService(Scope.Scope, scope))),
   )
   // Electric, as the routes call it: each table in this file's schema.
   const tables = new Set([

@@ -51,9 +51,9 @@ items, comments ◀── Electric ◀── Postgres ◀──┘
 
 | Route | Answers |
 |---|---|
-| `POST /api/github/webhook` | `200` once the delivery is verified, its `github/Apply` started (for an `issues` or `issue_comment` event naming the synced repository), with `REPO_FLOWS` on its `triggers/Dispatch` started (for a `push` or `pull_request` of any installed repository, [ci.md](ci.md#triggers)), and the delivery recorded; a repeat is counted `duplicate` and starts the same execution, which changes nothing. `401 { code: "invalid_signature" }`, `400 invalid` (no delivery id, no event, not JSON), `413 too_large` (over 5 MiB; Reconcile covers it), `405`, `503 not_configured` (no App or no webhook secret), `503 unavailable` |
+| `POST /api/github/webhook` | `200` once the delivery is verified, its `github/Apply` started (for an `issues` or `issue_comment` event naming a repository the deployment acts on: its own, and with the App any other `GITHUB_ALLOWED_REPOSITORIES` doesn't leave out; GitHub sends the App events only of repositories it is installed on), with `REPO_FLOWS` on its `triggers/Dispatch` started (for a `push` or `pull_request` of any installed repository, [ci.md](ci.md#triggers)), and the delivery recorded; a repeat is counted `duplicate` and starts the same execution, which changes nothing. `401 { code: "invalid_signature" }`, `400 invalid` (no delivery id, no event, not JSON), `413 too_large` (over 5 MiB; Reconcile covers it), `405`, `503 not_configured` (no App or no webhook secret), `503 unavailable` |
 | `POST /api/repos/<owner>/<name>/writes` | `202 { txid, writeId }` for a new write, `200 { txid: null, writeId, status }` for one already taken (a pending one's execution is started again, which changes nothing). Refusals below |
-| `GET /api/shapes/items` | the synced repository's `items` with `ITEM_COLUMNS`; starts Reconcile when stale |
+| `GET /api/shapes/items` | `items` with `ITEM_COLUMNS` of the repository `?repo=<owner>/<name>` names, the deployment's own unless it names one; starts that repository's Reconcile when stale. The comments, sync, triage settings, pull request, commit, review and check shapes take `?repo=` too; a name GitHub couldn't have is `400 invalid`, a repository the deployment doesn't act on `404 not_found` (decision 0079, slice 1b) |
 | `GET /api/shapes/comments` | its `comments` with `COMMENT_COLUMNS` |
 | `GET /api/shapes/github-sync` | its `github_sync` rows with `SYNC_COLUMNS` (never the cursor) |
 | `GET /api/shapes/triage-settings` | its `triage_settings` row with `TRIAGE_SETTINGS_COLUMNS` (never who enabled it) |
@@ -272,7 +272,7 @@ The live run found two defects, each fixed with a regression test:
 - Triage: notifying Maintainers when triage pauses for a demoted enabler (0009) logs an Error only; a free-text reason from the flow (it gives one of five codes); Discard on a triage write that wasn't sent; the `?q=triage:proposed` filter; a repository's own triage flow (0005). The flow's spend doesn't raise the deployment's spend alerts.
 - `GITHUB_SYNC_MAX_ITEMS` and the 24-hour full listing that tombstones deleted issues GitHub stops listing; a webhook's `issues.deleted` re-read tombstones them today.
 - The `installation` and `installation_repositories` events, and a cron for Reconcile (`@smthrs/triggers` on Cloudflare, W9).
-- Per-request shape authorization (0007 phase 2): the issues' shapes, the webhook and Reconcile serve one repository, the deployment's own; an issue opened on another is its write's row and its item, not yet a synced list (decision 0079, Slice 1).
+- The browser's lists of another repository (decision 0079, slice 1b): the shapes, the webhook and Reconcile serve every repository the deployment acts on, but the Issues and Pull requests pages still read the deployment's own repository's shapes and link to GitHub for any other, until the issues and pull request stores open one set of shapes per repository.
 
 
 ## Issue lifecycle (0018, implementation in progress)

@@ -260,12 +260,14 @@ describe("GET .../compare/<base>...<head>", () => {
     expect(body.files[0]!.patch).toContain("+A line")
   })
 
-  test("refusals: no such commits 404, another repository 404, signed out 401, no App 503, another method 405", async () => {
+  test("refusals: no such commits 404, a repository the deployment doesn't act on 404, signed out 401, no App 503, another method 405", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const base = github.refs.get("main")!
     const h = await githubHarness(runtime, { github, app: app({ privateKey: await appKey() }) })
     expect((await h.fetch(compareRoute("acme", "widgets", base, SHA_A))).status).toBe(404)
-    expect((await h.fetch(compareRoute("someone", "else", base, base))).status).toBe(404)
+    // GITHUB_ALLOWED_REPOSITORIES leaves someone/else out (decision 0079).
+    const narrowed = await githubHarness(runtime, { github, app: app({ privateKey: await appKey() }), allowed: new Set([REPOSITORY.id]) })
+    expect((await narrowed.fetch(compareRoute("someone", "else", base, base))).status).toBe(404)
     expect((await h.fetch(compareRoute("acme", "widgets", base, base), { method: "POST" })).status).toBe(405)
     const signedOut = await githubHarness(runtime, { github, actor: null, app: app({ privateKey: await appKey() }) })
     expect((await signedOut.fetch(compareRoute("acme", "widgets", base, base))).status).toBe(401)

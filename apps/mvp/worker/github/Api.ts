@@ -2,7 +2,7 @@ import { COMMITMENTS } from "../../src/features/issues/lifecycle.ts"
 import { digestSync } from "@smthrs/crypto"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Core, GitHub } from "@smthrs/integrations"
-import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Schema, Scope } from "effect"
+import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Result, Schema, Scope } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
@@ -100,10 +100,28 @@ import { Write } from "./Write.ts"
 // - Triage (§5): the writes route takes a person's Accept or Not accepted, Run triage again, and Enable and Pause, each
 //   at its own minimum role; `issues.opened` starts `triage/Run` while triage is on; and `GET
 //   /api/shapes/triage-settings` serves whether it is.
-// The webhook, the shapes and Reconcile serve one repository, `GITHUB_REPOSITORY`, the deployment's own (decision
-// 0012, Consequences; decision 0079, Slice 1).
+// The webhook, the shapes and Reconcile serve every repository the deployment may act on (decision 0079, slice 1b):
+// its own (`GITHUB_REPOSITORY`) and, with the App, any other `GITHUB_ALLOWED_REPOSITORIES` doesn't leave out. A shape
+// names its repository with `?repo=<owner>/<name>`, its own unless it does; any other is `404 not_found`. Where the App
+// isn't installed, Reconcile records `app_not_installed` on the repository's sync row, which the page reads to send
+// people to GitHub instead.
 
 const noStore = { "cache-control": "no-store" }
+
+/** The shapes of one repository's rows, by route: each table, its columns, and its filter on `$1`, the repository's id. */
+const REPOSITORY_SHAPES: Readonly<Record<string, { readonly table: string; readonly columns: ReadonlyArray<string>; readonly where: string }>> = {
+  [ITEMS_SHAPE_ROUTE]: { table: ITEMS_TABLE, columns: ITEM_COLUMNS, where: "repo_id = $1" },
+  [COMMENTS_SHAPE_ROUTE]: { table: COMMENTS_TABLE, columns: COMMENT_COLUMNS, where: "repo_id = $1" },
+  [SYNC_SHAPE_ROUTE]: { table: SYNC_TABLE, columns: SYNC_COLUMNS, where: "repo_id = $1" },
+  [TRIAGE_SETTINGS_SHAPE_ROUTE]: { table: TRIAGE_SETTINGS_TABLE, columns: TRIAGE_SETTINGS_COLUMNS, where: "repo_id = $1" },
+  // Pull requests (docs/features/pulls.md): their rows, commits and reviews.
+  [PULLS_SHAPE_ROUTE]: { table: PULLS_TABLE, columns: PULL_COLUMNS, where: "repo_id = $1" },
+  [PULL_COMMITS_SHAPE_ROUTE]: { table: PULL_COMMITS_TABLE, columns: PULL_COMMIT_COLUMNS, where: "repo_id = $1" },
+  [REVIEWS_SHAPE_ROUTE]: { table: REVIEWS_TABLE, columns: REVIEW_COLUMNS, where: "repo_id = $1" },
+  // A pull request's checks are its head's `checks/Run` rows; a repository flow's runs are the repository's runs
+  // (docs/features/actions.md), whose states the Checks tab doesn't read.
+  [CHECKS_SHAPE_ROUTE]: { table: RUNS_TABLE, columns: CHECK_COLUMNS, where: "repo_id = $1 AND sha IS NOT NULL AND execution IS NULL" },
+}
 
 const refuse = (status: number, code: WriteRefusal | "not_configured" | "invalid_signature", retryAfterSeconds?: number) =>
   HttpServerResponse.jsonUnsafe({ code }, {
@@ -299,6 +317,8 @@ export interface Options<R = never> {
   readonly http?: HttpClient.HttpClient
   /** Whether pushes and pull requests start repositories' flows (`REPO_FLOWS`, docs/features/ci.md#triggers). */
   readonly repoFlows?: boolean
+  /** `GITHUB_ALLOWED_REPOSITORIES` (`RepoRoles.allowed`): none, every repository the App is installed on. */
+  readonly allowed?: Option.Option<ReadonlySet<string>>
 }
 
 /**
@@ -310,6 +330,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const { repository } = options
+    const allowed = options.allowed ?? Option.none<ReadonlySet<string>>()
+    /**
+     * Whether the deployment syncs and acts on repository `id` (decision 0079 §4): its own, or, with the App, any other
+     * the allowed list doesn't leave out. Whether the App is installed there is Reconcile's to find out.
+     */
+    const mayAct = (id: string) =>
+      id === repository.id ||
+      (Option.isSome(options.app) && Option.match(allowed, { onNone: () => true, onSome: (ids) => ids.has(id) }))
     const scope = yield* Scope.Scope
     // Check current metadata for anonymous readers, using the shared metadata token policy.
     const readToken = yield* ReadToken.fromConfig.pipe(
@@ -408,29 +436,34 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const delivered = decoded.success as Core.ExternalEvent.ExternalEvent
         const action = (delivered.payload as { readonly action?: unknown }).action
         const subject = subjectOf(event, delivered.payload)
-        const named = Option.filter(subject, (found) => {
+        // An issue or pull request event of a repository the deployment acts on (decision 0079, slice 1b).
+        const named = Option.flatMap(subject, (found) => {
           const [owner = "", name = ""] = found.repository.full_name.split("/")
-          return repoId(owner, name) === repository.id
+          return isRepository(owner, name) && mayAct(repoId(owner, name))
+            ? Option.some({ ...found, target: repositoryOf(`${owner}/${name}`) })
+            : Option.none()
         })
         const first = yield* Store.recordDelivery({
           deliveryId,
           event,
           action: typeof action === "string" ? action.slice(0, 64) : null,
-          repoId: Option.isSome(named) ? repository.id : null,
+          repoId: Option.isSome(named) ? named.value.target.id : null,
           subject: Option.isSome(named) ? named.value.issue.number : null,
         }).pipe(Effect.provide(database))
-        // Only issue and pull request events of the synced repository name a subject; the rest (ping, installation,
-        // other repositories) are recorded and answered.
+        // Only issue and pull request events of a repository the deployment acts on name a subject; the rest (ping,
+        // installation, repositories it doesn't act on) are recorded and answered.
         if (Option.isSome(named)) {
           const number = named.value.issue.number
+          const target = named.value.target
           fields.number = number
-          const repo = `${repository.owner}/${repository.name}`
+          fields.repoId = target.id
+          const repo = `${target.owner}/${target.name}`
           yield* (yield* FlowStarter).start(Apply, {
             executionId: applyExecutionId(deliveryId),
             payload: { deliveryId, repo, number, event },
           })
           // A new issue, while triage is on: the repository's triage flow decides it (decision 0012 §5).
-          if (event === "issues" && action === "opened" && (yield* TriageStore.isOn(repository.id).pipe(Effect.provide(database)))) {
+          if (event === "issues" && action === "opened" && (yield* TriageStore.isOn(target.id).pipe(Effect.provide(database)))) {
             fields.triage = "started"
             yield* (yield* FlowStarter).start(TriageRun, {
               executionId: triageRunExecutionId(deliveryId),
@@ -610,26 +643,40 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       }).pipe(Effect.withSpan("github.write.request", { kind: "server" }))
 
     /**
-     * Starts `github/Reconcile` when the synced repository's issues are older than `SYNC_STALE_MS`, one execution per
-     * 5-minute bucket, without waiting. A failure here is logged and the read goes on.
+     * Starts `github/Reconcile` of `target` when its issues are older than `SYNC_STALE_MS`, one execution per
+     * repository and 5-minute bucket, without waiting. A failure here is logged and the read goes on.
      */
-    const reconcileIfStale = Effect.gen(function* () {
+    const reconcileIfStale = (target: Repository) => Effect.gen(function* () {
       if (Option.isNone(options.app)) return
       const now = yield* Clock.currentTimeMillis
-      const state = yield* Store.syncState(repository.id, ISSUES_STREAM).pipe(Effect.provide(database))
+      const state = yield* Store.syncState(target.id, ISSUES_STREAM).pipe(Effect.provide(database))
       if (state.syncedAt !== null) yield* Metric.update(Metrics.syncAge, Math.round((now - state.syncedAt) / 1000))
       if (state.syncedAt !== null && now - state.syncedAt < SYNC_STALE_MS) return
       yield* (yield* FlowStarter).start(Reconcile, {
-        executionId: reconcileExecutionId(repository.id, now),
-        payload: { repo: `${repository.owner}/${repository.name}`, requestedAtMs: reconcileBucketStart(now) },
+        executionId: reconcileExecutionId(target.id, now),
+        payload: { repo: `${target.owner}/${target.name}`, requestedAtMs: reconcileBucketStart(now) },
       })
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("github.reconcile.start").pipe(
-          Effect.annotateLogs({ repoId: repository.id, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
+          Effect.annotateLogs({ repoId: target.id, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
         )
       ),
     )
+
+    /**
+     * The repository a shape names, `?repo=<owner>/<name>`, the deployment's own unless it names one: one the
+     * deployment acts on (`mayAct`), else the refusal: `400 invalid` for a name GitHub couldn't have, `404 not_found`
+     * for a repository it doesn't act on.
+     */
+    const shapeTarget = (url: string): Result.Result<Repository, HttpServerResponse.HttpServerResponse> => {
+      const named = new URL(url, "http://localhost").searchParams.get("repo")
+      if (named === null) return Result.succeed(repository)
+      const [owner = "", name = "", ...rest] = named.split("/")
+      if (rest.length !== 0 || !isRepository(owner, name)) return Result.fail(refuse(400, "invalid"))
+      const target = repositoryOf(`${owner}/${name}`)
+      return mayAct(target.id) ? Result.succeed(target) : Result.fail(refuse(404, "not_found"))
+    }
 
     /** An Electric shape of `table` with its `columns`, filtered by `where` and `params`. */
     const shape = (
@@ -657,11 +704,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (Option.isSome(actor.value)) {
         const resolved = yield* options.roles.resolve(actor.value.value, target).pipe(Effect.result)
         if (resolved._tag === "Failure") {
-          const status = RepoRoles.REFUSALS[resolved.failure.code]
-          const temporary = status === 503 || status === 429
-          return Option.some(refuse(temporary ? 503 : 403, temporary ? "unavailable" : "forbidden", resolved.failure.retryAfterSeconds))
-        }
-        if (resolved.success.role !== null) return Option.none()
+          // Where the App can't act, nobody has a role there: the public check below decides, as for anyone. Every
+          // other refusal is GitHub or Postgres not answering now.
+          if (!RepoRoles.CANT_ACT.has(resolved.failure.code)) {
+            return Option.some(refuse(503, "unavailable", resolved.failure.retryAfterSeconds))
+          }
+        } else if (resolved.success.role !== null) return Option.none()
       }
       const isPublic = yield* Store.isPublic(target.id).pipe(Effect.provide(database), Effect.option)
       if (Option.isNone(isPublic)) return Option.some(refuse(503, "unavailable"))
@@ -708,24 +756,33 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const request = yield* HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
       if (path === GITHUB_WEBHOOK_ROUTE) return yield* webhook
-      if (path === ITEMS_SHAPE_ROUTE) {
+      if (path === WRITES_SHAPE_ROUTE) return yield* ownWrites
+      // A repository's issues, comments, sync and triage, its pull requests and a head's checks (the runs on a
+      // commit): the repository `?repo=` names, its own unless it names one (decision 0079, slice 1b).
+      const repositoryShape = REPOSITORY_SHAPES[path]
+      if (repositoryShape !== undefined) {
+        const target = shapeTarget(request.url)
+        if (Result.isFailure(target)) return target.failure
+        // Where an About read found the App absent lately, and Smithers knows no installation, the deployment doesn't
+        // sync the repository: `404 app_not_installed`, which the page shows as GitHub's list. Postgres not answering
+        // here leaves it to the read below.
+        if (target.success.id !== repository.id) {
+          const absent = yield* Store.appAbsent(target.success.id).pipe(Effect.provide(database), Effect.orElseSucceed(() => false))
+          if (absent) {
+            yield* Metric.update(
+              Metric.withAttributes(Metrics.shapes, { table: repositoryShape.table, status: "404", live: "false" }),
+              1,
+            )
+            yield* Effect.logInfo(`github.shape.${repositoryShape.table}`).pipe(
+              Effect.annotateLogs({ status: 404, errorCode: "app_not_installed", repoId: target.success.id }),
+            )
+            return refuse(404, "app_not_installed")
+          }
+        }
         // Only admission runs in the Worker's scope; Reconcile's work stays on the durable engine.
         // A read never waits for admission, and a later stale read can request the same bucket again.
-        yield* Effect.forkIn(reconcileIfStale, scope)
-        return yield* readable(ITEMS_TABLE, ITEM_COLUMNS)
-      }
-      if (path === COMMENTS_SHAPE_ROUTE) return yield* readable(COMMENTS_TABLE, COMMENT_COLUMNS)
-      if (path === SYNC_SHAPE_ROUTE) return yield* readable(SYNC_TABLE, SYNC_COLUMNS)
-      if (path === TRIAGE_SETTINGS_SHAPE_ROUTE) return yield* readable(TRIAGE_SETTINGS_TABLE, TRIAGE_SETTINGS_COLUMNS)
-      if (path === WRITES_SHAPE_ROUTE) return yield* ownWrites
-      // Pull requests (docs/features/pulls.md): their rows, and a head's checks: the runs on a commit.
-      if (path === PULLS_SHAPE_ROUTE) return yield* readable(PULLS_TABLE, PULL_COLUMNS)
-      if (path === PULL_COMMITS_SHAPE_ROUTE) return yield* readable(PULL_COMMITS_TABLE, PULL_COMMIT_COLUMNS)
-      if (path === REVIEWS_SHAPE_ROUTE) return yield* readable(REVIEWS_TABLE, REVIEW_COLUMNS)
-      // A pull request's checks are its head's `checks/Run` rows; a repository flow's runs are the repository's runs
-      // (docs/features/actions.md), whose states the Checks tab doesn't read.
-      if (path === CHECKS_SHAPE_ROUTE) {
-        return yield* readable(RUNS_TABLE, CHECK_COLUMNS, "repo_id = $1 AND sha IS NOT NULL AND execution IS NULL")
+        if (path === ITEMS_SHAPE_ROUTE) yield* Effect.forkIn(reconcileIfStale(target.success), scope)
+        return yield* readable(repositoryShape.table, repositoryShape.columns, repositoryShape.where, target.success)
       }
       if (path === ACTIONS_SHAPE_ROUTE) {
         const named = new URL(request.url, "http://localhost").searchParams.get("repo")
@@ -736,11 +793,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const compared = Compare.parseComparePath(path)
       if (compared !== undefined) {
         if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
-        if (repoId(compared.owner, compared.name) !== repository.id) return refuse(404, "not_found")
-        const refused = yield* readRefusal()
+        const target = repositoryOf(`${compared.owner}/${compared.name}`)
+        if (!mayAct(target.id)) return refuse(404, "not_found")
+        const refused = yield* readRefusal(target)
         if (Option.isSome(refused)) return refused.value
         if (Option.isNone(compare)) return refuse(503, "not_configured")
-        return yield* compare.value(repository, compared.base, compared.head).pipe(
+        return yield* compare.value(target, compared.base, compared.head).pipe(
           Effect.provide(database),
           Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))),
         )
