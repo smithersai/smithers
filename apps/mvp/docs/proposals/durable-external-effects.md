@@ -1,6 +1,6 @@
 # Durable external effects: one identity per write, found before it is written again
 
-Status: building (2026-10-21). Will asked (10:37): "for that bug you found you should have the agent think hard about durability what is the clean way to use smithers to make issues like that not an issue". Claude Opus and Codex Sol designed independently from one brief (PROC-6); Opus merged the two below and decided each disagreement with the evidence cited. Every `file:line` is at `main@origin` e93c4812 unless it says otherwise.
+Status: built (2026-10-21 to 10-23): `Action.once` in `@smthrs/flow`, `GitHub.Once` in `@smthrs/integrations`, the TODO run's branch, commit and pull request, the app's GitHub writes, triage and merges, and the lint rule `durable.external-writes-once`. Will asked (10:40): "for that bug you found you should have the agent think hard about durability what is the clean way to use smithers to make issues like that not an issue". Claude Opus and Codex Sol designed independently from one brief (PROC-6); Opus merged the two below and decided each disagreement with the evidence cited. Every `file:line` is at `main@origin` e93c4812 unless it says otherwise.
 
 Prefixes: `F/` = `packages/smithers/flows/`, `A/` = `packages/smithers/agent/`, `N/` = `packages/smithers/notifications/`, `M/` = `apps/mvp/`.
 

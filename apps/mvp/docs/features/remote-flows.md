@@ -99,7 +99,7 @@ The response returns once `start` does; the flow runs from the object's alarm.
 2. Add it and its registration to `remote` in `worker/ExecutionHost.ts`.
 3. Test it on the Node host with `runFlow` from `worker/test/flowHost.ts`.
 
-Child flows don't run on this host yet: `@smthrs/platform-cloudflare` doesn't route a child execution to its own object. Keep remote flows to steps and durable waits until it does.
+Child flows run on this host: `@smthrs/platform-cloudflare` routes a child execution to its own object (`ExecutionObject.ts`), as CI's `repo/Jobs` and `ci/job` do ([CI](ci.md)).
 
 ## Tests
 

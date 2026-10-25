@@ -146,5 +146,5 @@ Content-free: ids, tools, outcomes, exit codes, statuses, counts and durations; 
 ## What's not built
 
 - Jobs (`job/Run`), previews, snapshots, and the Code Storage work-in-progress branch 0005 names for checkpoints; the checkpoint lives in the branch object's storage.
-- Sandbox budgets wait until we ship ([todo.md](../todo.md#sandbox-budgets-before-we-ship)).
+- Sandbox budgets wait until we ship ([sandbox budgets](../work/sandbox-budgets.md); the numbers are an open question in [rulings §18](../rulings.md#18-open-questions-no-ruling-yet)).
 - `SANDBOX_SECRETS` on by default: it waits for an e2e through a real box ([secrets](secrets.md#wiring-into-the-box)).

@@ -121,7 +121,7 @@ In Inspect, after the size, one transaction holds `repo_imports`' row, so two im
 
 ### Spend
 
-Every write to `code_storage_usage` recomputes this month's estimate in its transaction: stored GB × $3.60 + read GB × $0.15 + imported GB × $0.06. Crossing 50%, 80% or 100% of `REPO_BUDGET_USD` above `alerted_pct` raises it and logs `repo.spend.alert` at Error once a month per threshold; the gauges `repo_stored_bytes` and `repo_spend_estimate_usd` follow every write. Delivering that line to Will is the token-spend alert's job ([todo.md](../todo.md#alerts-on-token-spend)).
+Every write to `code_storage_usage` recomputes this month's estimate in its transaction: stored GB × $3.60 + read GB × $0.15 + imported GB × $0.06. Crossing 50%, 80% or 100% of `REPO_BUDGET_USD` above `alerted_pct` raises it and logs `repo.spend.alert` at Error once a month per threshold; the gauges `repo_stored_bytes` and `repo_spend_estimate_usd` follow every write. Delivering that line to Will is the token-spend alert's job ([spend alerts](spend-alerts.md)).
 
 ## About
 
@@ -274,7 +274,7 @@ Code Storage and GitHub are third-party providers, scripted like the model (`wor
 ## Not built yet
 
 - Reclaiming: a durable flow that frees a reclaimable copy when the storage budget needs room, re-checking the App first; and clearing `reclaimable` when the App is installed on a repository later (its installation webhook). Today the copy is marked, and nothing deletes it ([work note](../work/repo-clone-reclaim.md)).
-- Editing a Markdown file from the repository view: a person who may edit a branch edits it in the branch workspace's live editor ([coedit](coedit.md#files)); the view stays read-only.
+- Editing a Markdown file in place in the repository view, for a person who may write (ruling GH-13: "If they have permission to edit it should be wysiwyg otherwise readonly"). Today the view is read-only, and a person who may edit a branch edits the file in the branch workspace's live editor ([coedit](coedit.md#files)).
 - `repo/SetImports`, the operator's pause switch as a flow (`repo_imports.paused` is read; nothing writes it yet).
 - Delivering `repo.spend.alert` to Will, with the token-spend alert.
 - The chat embed (0006 §2, feature 3's `repo` template) and range highlights.

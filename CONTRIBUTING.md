@@ -2,9 +2,9 @@
 
 Read [AGENTS.md](AGENTS.md) and [the rulings](apps/mvp/docs/rulings.md) first:
 the rulings are the source of truth for what we build, and the app being built
-is [`apps/mvp`](apps/mvp/AGENTS.md). Track actionable work in a GitHub issue
-(whether the maintainer app replaces issues is an open question for Will,
-rulings §18).
+is [`apps/mvp`](apps/mvp/AGENTS.md). Track work in the maintainer app
+([`apps/mvp/docs/work/`](apps/mvp/docs/work/)); don't open GitHub issues for
+our own work (rulings §18, settled).
 
 Development and maintenance of this repository commit and push directly to
 append-only `main` with jj; open no pull requests for it, and never rewrite
@@ -24,7 +24,7 @@ later); that floor is what consumers may run, not what this workspace develops
 on. Install the pinned package manager (`pnpm@11.25.0`), then
 dependencies with `pnpm install`.
 
-Before opening a pull request, run every gate:
+Before landing on `main`, run every gate:
 
 ```sh
 pnpm run check
@@ -143,8 +143,7 @@ The CI declaration has several deliberate operational constraints:
   a four-core runner can starve.
 - `actionlint` checks every workflow named by the declaration so GitHub-only
   expression-context failures surface in review, not in a scheduled run.
-  `apps/server/scripts/canary/workflow-wiring.test.ts` ensures no workflow is
-  omitted. The script targets include the browser contract and release
+  The script targets include the browser contract and release
   pack-and-smoke chain; the agent eval suite and typecheck are offline and
   baseline-gated. CI also lint-checks its own generated workflow so the file
   describing the pipeline is not exempt from drift enforcement.

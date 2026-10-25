@@ -2,7 +2,7 @@
 
 For new conversations, [0095](0095-new-conversation-ephemeral-refs.md) supersedes the GitHub-branch interpretation below. Branch identity, conversation, sandbox, presence and sharing remain together; the branch stores its ref namespace and forge.
 
-Status: proposed (design panel B: Opus as lead and merger, and Sol; 2026-10-20). Its one question is settled: sharing follows Google Docs and Figma (decisions 8, 9 and 12; Will at 13:31:14 and the lead at 13:32:34 on 2026-10-20). It covers three of Will's 2026-10-20 asks:
+Status: S1, branch sharing, presence and co-editing are built ([branch workspace](../features/branch-workspace.md), [co-editing](../features/coedit.md)). Design panel B: Opus as lead and merger, and Sol; 2026-10-20. Its one question is settled: sharing follows Google Docs and Figma (decisions 8, 9 and 12; Will at 13:31:14 and the lead at 13:32:34 on 2026-10-20). It covers three of Will's 2026-10-20 asks:
 - "One conversation per branch is important";
 - "ability to open terminal in an iframe is important";
 - "google docs style sharing where we can create a branch share with others to read and write to that branch in multiplayer experience".

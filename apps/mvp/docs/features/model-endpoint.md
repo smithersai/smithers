@@ -98,7 +98,7 @@ Every refusal is a JSON body `{ code, message, requestId }` with a `ModelError` 
 | `400` | `invalid_request` | the body isn't a `ModelRequest`, or the request breaks a bound above, a cap included |
 | `401` | `authentication` | nobody is signed in |
 | `403` | `authentication` | the caller is a Guest, or has no role on the repository |
-| `404` | none (empty) | the role isn't `agent`, `renderer` or `judge` |
+| `404` | none (empty) | the role isn't `agent`, `coding`, `renderer`, `judge` or `summary` |
 | `405` | `invalid_request` | not a `POST` |
 | `413` | `invalid_request` | the body is over `MODEL_MAX_REQUEST_BYTES` |
 | `429` | `quota_exceeded` | today's budget is spent |
@@ -113,7 +113,7 @@ Migrations `0004_model_roles`, `0012_model_reservations` and `0017_model_charges
 
 | Table | Columns | |
 |---|---|---|
-| `model_roles` | `role` (key: `agent`, `renderer`, `judge`), `model` (jsonb record), `updated_by`, `updated_at` | the admin's setting per role |
+| `model_roles` | `role` (key: `agent`, `coding`, `renderer`, `judge`, `summary`), `model` (jsonb record), `updated_by`, `updated_at` | the admin's setting per role |
 | `model_role_changes` | `id`, `invocation_key` (unique), `role`, `model`, `changed_by`, `changed_at` | the audit of `admin/SetModel` |
 | `model_usage` | `invocation_id` (key, the server's id for the call), `request_id` (the caller's), `role`, `model_id`, `day` (the UTC day it reserved on), `reserved_tokens`, `input_tokens`, `output_tokens` (what the model reported: 0 until settled, and for a count it never reported), `charged_tokens` (what the call counts against its day: its reservation until it settles, then what it spent, or its reservation when that is unknown), `expires_at` (when an unsettled reservation becomes final), `settled_at` (null while the call runs, and for a reservation that expired), `spend_alert_id` (the spend alert that carried the call, migration `0019_spend_alerts`, [spend-alerts.md](spend-alerts.md)), `created_at` (indexed) | the ledger: what each served call reserved, reported and was charged |
 | `model_budget_days` | `day` (key, a UTC date), `committed` (settled spend plus open reservations, never negative) | the budget's counter, one row per day |

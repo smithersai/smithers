@@ -128,4 +128,5 @@ The same specs also declare `member`, `ownConversation` and `liveModel` for thei
 
 - A move waits for ChatApi and Electric before the board changes; 0004 §6's instant local render (a realm in the tab) is not built.
 - The renderer's system prompt is hand-written, not generated from `@smthrs/ui`'s docs, and saves no `@smthrs/ui` version with the view.
-- The four new eval cases have no baseline: no model key was configured where they were written.
+- The four form and view eval cases have no baseline, and the last saved run (`evals/results/agent-2026-10-23T21-24-27-007Z.json`) failed three: `board` (no `ui/render`), and the judge's checks of `form-ask` ("asks with the form") and `form-clone-no-url` ("acts").
+- The `ui/repo` and `ui/issues` templates of decision 0004 (Will, 2026-10-19 20:43: "It should have prebuilt templates too though such as our github view and our issues view") are not built; the agent shows a repository with `app/navigate` or `file/open` instead.

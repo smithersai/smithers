@@ -173,7 +173,7 @@ Run them with the compose Postgres and Electric up (`pnpm db:up`): `pnpm exec vi
 
 ## Read-only graph (flows UI slice 1)
 
-The Steps pane draws `FlowGraph` above `RunWaterfall`, with `StepInspector` beside it (below it on a phone). `JournalScrubber` selects a read-only journal prefix: graph states, output, attempts and timeline share that prefix. The Journal pane remains available. Arrow keys follow graph dependencies, `[` and `]` move by event, Shift with either moves by step boundary, `L` follows live, `i` or Enter opens the inspector and Escape closes it. Whole-run Stop, Retry, Retry latest and Resume retain their existing flows. No step retry is offered.
+The Steps pane draws `FlowGraph` above `RunWaterfall`, with `StepInspector` beside it (below it on a phone). `JournalScrubber` selects a read-only journal prefix: graph states, output, attempts and timeline share that prefix. The Journal pane remains available. Arrow keys follow graph dependencies, `[` and `]` move by event, Shift with either moves by step boundary, `L` follows live, `i` or Enter opens the inspector and Escape closes it. Whole-run Stop, Retry, Retry latest and Resume retain their existing flows. No step retry is offered: Retry from here (ruling FLOW-11) is not built yet.
 
 The app adapts redacted engine events through `@smthrs/gateway`'s `InspectionJournal`, then uses `RunTrace.monitorFromJournal`; there is no second state fold, table or engine event. Child calls are represented once as a boundary and link to their own run. A personal `flow/run` run uses its recorded input's flow name for its header and step labels; engine tags remain intact. Missing or clipped evidence never becomes invented data. Action inputs absent from the journal are left absent.
 

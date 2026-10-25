@@ -343,7 +343,7 @@ source. See the [flows README](../.smithers/flows/README.md).
 | `create-flow`, `create-skill` | Turn a plain-English request into a working flow or skill. | `--data '{"args":"<request>"}'` |
 | `lint` | Lint named files against repository conventions and fix them. | `--data '{"args":"path/a.ts path/b.ts"}'` |
 | `release/cut`, `release/rehearsal` | Write a version and changelog, or dry-run the Release workflow. | `--data '{"version":"1.0.0"}'`; `--data '{"tag":"v1.0.0-rc.0"}'` |
-| `quality`, `perf`, `bench/gate`, `security-audit` | Take a quality snapshot, check performance budgets, gate scheduler cost, or audit security boundaries. | `pnpm exec smthrs flow start <name> --wait` |
+| `quality`, `bench/gate`, `security-audit` | Take a quality snapshot, gate scheduler cost, or audit security boundaries. | `pnpm exec smthrs flow start <name> --wait` |
 
 [`@smthrs/coding`](../.smithers/flows/coding/README.md) (private,
 `.smithers/flows/coding`) holds the TODO step flows (`Request`, `TodoDelivery`,

@@ -2,7 +2,7 @@
 
 2026-10-24. Accepted.
 
-Will, 2026-10-24 about 10:05, after reading the BYOK and subscriptions research report: "impleent it and get it working
+Will, 2026-10-24 10:04, after reading the BYOK and subscriptions research report: "impleent it and get it working
 please in production". The report's Recommendation A is the design brief; its Recommendation B (plan logins) waits on
 Will's own decision and is not part of this.
 
@@ -68,8 +68,9 @@ plan, `@smthrs/control` `WebCryptoCipher` for sealing, `@smthrs/secrets` `Bindin
 
 ## Amendment, 2026-10-25: summaries stay on the deployment's model
 
-Will, 2026-10-25, answering the lead's recommendation that timeline summaries stay on the deployment's model even when a
-person has their own key: "go". A person's key pays only for their own chat and TODO runs. Summaries are the app's own
+Will, 2026-10-25 03:55, a mid-turn "go" after the lead's recommendation of 2026-10-24 23:40 that timeline summaries stay
+on the deployment's model even when a person has their own key. It came after an hour of network errors in that session,
+and the lead read it as approval; the question stays open in [rulings §18](../rulings.md#18-open-questions-no-ruling-yet). A person's key pays only for their own chat and TODO runs. Summaries are the app's own
 background work (the production proof spent about 28,000 tokens of the test account's key on 163 of them during
 its runs), so the summary role never opens the person's model, at the endpoint or in a run: it resolves the deployment's
 summary model, against the deployment's budget, as it did before this decision. The roles a person's model answers are

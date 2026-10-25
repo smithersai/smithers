@@ -1,6 +1,6 @@
 # Native Smithers by injection
 
-Status: proposed (2026-10-20). Merged by Claude Opus from two independent designs, Opus and Codex Sol (PROC-6). It answers Will's Telegram request at about 20:14 on 2026-10-20: "support downloading a native bunfig app ... just dependency injection". Nothing here is built.
+Status: approved by Will on 2026-10-20 at 23:27, with question 1 changed ([§8](#8-wills-answers-2026-10-20-2327), ruling ARCH-18): the app keeps a subset of the database plus an LRU cache on the device, so §3 is superseded and is rewritten before the native app is built. The `Api.ts` split is approved and not built. Merged by Claude Opus from two independent designs, Opus and Codex Sol (PROC-6). It answers Will's Telegram request at 20:12 on 2026-10-20: "support downloading a native bunfig app ... just dependency injection".
 
 **Summary.** The native app is an Electrobun window around a Bun process that serves the same `apps/mvp` frontend, routes and flows as Cloudflare. Its own composition swaps in local Layers: Postgres and Electric, the Bun flow host, a Microsandbox machine over the local working copy, and a jj forge. It shares branches with the hosted app through the hosted git proxy, fenced by expected SHA.
 

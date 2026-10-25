@@ -1,6 +1,6 @@
 # Plugins
 
-Like webpack, the app is a core of primitives plus plugins, and our own features are plugins on the same public interface anyone uses (ruling PLUGIN-1, [decision 0017](../decisions/0017-everything-is-a-plugin.md)). The queue uses the UI host ([decision 0022](../decisions/0022-review-queue.md)); conversation creation has its own scoped flow execution point.
+Like webpack, the app is a core of primitives plus plugins, and our own features are plugins on the same public interface anyone uses (ruling PLUGIN-1, [decision 0017](../decisions/0017-everything-is-a-plugin.md)). The queue uses the UI host ([decision 0031](../decisions/0031-review-queue.md)); conversation creation has its own scoped flow execution point.
 
 ## A plugin
 

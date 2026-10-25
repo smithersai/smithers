@@ -159,7 +159,7 @@ A token that no longer opens (`SESSION_SECRET` changed) is forgotten without rea
 3. **The next boot deletes once nothing has the data open.** Before `start` opens anything, a marked page takes the exclusive Web Lock `smithers-wipe`, then `smithers-data` exclusively, so it waits until every page that had the data open has ended, and none can write a row back; then the engine's own Web Lock, so no engine worker holds its OPFS files. Only then does it delete the engine's OPFS directory `smithers/<engine name>` (the engine's store and the app's shared database, the device store) and the outbox's IndexedDB database `smithers-outbox`, and clear the mark. Other pages loading at the same time wait for the wipe's lock and find it done. The theme's mirror stays.
 4. **A page whose delete still fails never opens the stores.** The mark stays, and the page starts on stores that aren't the device's (`unwiped`): the device store in memory, the outbox in memory, so no ask of the ended session is sent, and no engine, so none of its runs resumes. The pill says Smithers can't run in this browser, with Reload, whose boot deletes again.
 
-The page continues as a visitor. Signed-out visitors can still read the shared conversation shape, throttled per network ([throttling](chat.md#throttling)); decision 0008 decision 8, per-request shape authorization, isn't built, so a visitor's page syncs it again.
+The page continues as a visitor. A visitor's page syncs only conversations whose branch a visitor may view (`worker/Chat.ts`, `branchAccess`), throttled per network ([throttling](chat.md#throttling)).
 
 ## The device's owner
 

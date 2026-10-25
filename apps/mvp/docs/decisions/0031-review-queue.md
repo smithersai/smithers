@@ -24,7 +24,7 @@ Checked on disk on 2026-10-21. Paths are relative to `apps/mvp` unless they star
 | Piece | Where | State |
 |---|---|---|
 | The prototype | `apps/maintainer-site/client/queue.{html,js,css}`, `serve.mjs`, `queue/` | Works locally: 100 answers in `answers.jsonl`, 44 items, coverage of 5,394 slices |
-| Plugin interface | decision 0017, approved 2026-10-20 17:03 | Not built: no `src/plugins/`, no `Manifest.ts`, `Load.ts` or `Host.ts`. `@smthrs/plugin` is the Vite-style kernel only (`packages/smithers/agent/plugin/src/Plugin.ts:38-80`) |
+| Plugin interface | decision 0017, approved 2026-10-20 17:03 | Built since (checked 2026-10-25): `@smthrs/plugin`'s `Manifest`, `Load` and `Host`; the app's host in `src/plugins/`; the `queue` plugin over `core/waits` (`plugins/queue/`) |
 | Waits | `HumanTask` (`packages/smithers/flows/flow/src/HumanTask.ts`): kinds `ask`, `confirm`, `select`, `json` (:71-79); `HumanTask.answer` (:933) | `app/agent/ask` uses it (`src/features/status/flows.ts:117`); its wait closes after `ASK_WITHIN_MS`, 10 minutes (`src/features/status/contract.ts:30`) |
 | Answering | `run/answer` (`src/features/status/flows.ts:167`); `POST /api/runs/<id>/answer` (`worker/Runs.ts:158-170`) | Person-only (`src/flows/registry.ts:149`); the launcher only (`Runs.ts:213`, `:241`); an approval takes a boolean only (`Runs.ts:154-155`) |
 | The runs shape | `GET /api/shapes/runs` | `launched_by = $1` (`Runs.ts:361`): a wait addressed to anyone but its launcher can't reach them |

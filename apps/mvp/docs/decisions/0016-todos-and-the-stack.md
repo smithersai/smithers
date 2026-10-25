@@ -270,7 +270,7 @@ It is done when the four end-to-end tests pass locally and live, with their GIFs
 
 ## Addendum, 2026-10-20 19:45: the factory, simplified
 
-Will, about 19:40: "make the coding factory simpler. Bugs require a minimal reproduction. Issues need to be accepted for discussion and able to be marked with what the maintainer believes the timeline and commitment to implementing it is and also come with a generate poc automatically if an issue is accepted that can be viewed and played with". This addendum replaces §1 to §8 wherever they disagree.
+Will, 19:33 (queue, on the VibeLang home mock): "make the coding factory simpler. Bugs require a minimal reproduction. Issues need to be accepted for discussion and able to be marked with what the maintainer believes the timeline and commitment to imlementing it is and also come with a generate poc automatically if an issue is accepted that can be viewed and played with"; 19:33 (chat): "sorry meant to put that into the feedback app for vibelang home page". This addendum replaces §1 to §8 wherever they disagree. It was feedback for VibeLang's home, so it cuts nothing GH-6 asks for (ruling GH-12).
 
 ```
 issue ─▶ (a bug: minimal repro required) ─▶ triage: accepted for discussion │ not accepted
@@ -295,7 +295,7 @@ issue ─▶ (a bug: minimal repro required) ─▶ triage: accepted for discuss
 - **`plan` as a step, and `todo_attempts.plan`:** the agent plans inside `implement`; a separate plan call bought no decision.
 - **`starting` and `needs_you`:** nothing asks a person mid-run in this slice, and a run that can't finish fails with its code. The writer marks a started TODO `working` at once.
 - **`propose` as a step:** opening the PR is the end of `publish`.
-- **Opening a PR by hand from a branch, the compare page, Update branch, the branches page:** every PR in the chain comes from a TODO run.
+- **Opening a PR by hand from a branch, the compare page, Update branch, the branches page:** deferred, not cut. GH-6 asks for them (Will, 2026-10-20 06:39: "finishing the entire git e2e flow of being able to create issues open prs or update branch resync etc."), and GH-11 needs an explicit publish for a Smithers-only branch. Until then every PR in the chain comes from a TODO run.
 - **GitHub check runs** (§Decision 9): Smithers writes none (0012 decision 12). The Checks tab reads `runs`.
 - **`ExecutionObject.signal`:** `await` re-reads GitHub on the engine's retry schedule, at most a minute apart; webhooks only refresh the projection.
 - **Slice 2 and later as written:** stacked bases, GitHub draft PRs, forward updates, Move, Before, Amend, out-of-order merges, restacks, machine rebases and pre-approval. Each comes back only when a person needs it.

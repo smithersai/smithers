@@ -278,9 +278,10 @@ dogfood smithers with smithers").
   [infrastructure](apps/mvp/docs/infrastructure.md)). While there are no
   users, deploy from a pushed `main` revision without a fresh ask, and
   smoke-test after (Will, 2026-10-20 17:32: "Deploy now; no users yet").
-- Our hosted deployment's details live in the private `smithers-infra`
+- Our hosted deployment's details belong in the private `smithers-infra`
   repository (Will, 2026-10-20: "we should have the deployment info private
-  in smithers-infra repo"). This repository keeps a generic, self-hostable
+  in smithers-infra repo"), which isn't created yet; until it is, they stay in
+  our private operations notes, never here. This repository keeps a generic, self-hostable
   stack whose deployment-specific values arrive as an Effect Layer; private
   operations, credentials and marketing stay out, and public builds never
   depend on private files or services.

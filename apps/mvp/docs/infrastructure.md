@@ -243,29 +243,7 @@ After the deploy, each device's engine leader runs `device/prepare` once: Worker
 
 ### Deployed
 
-| | |
-|---|---|
-| URL | https://smithers-mvp-smithers-mvp-prod-hb7tjo4elntcmy75.willcory10.workers.dev |
-| Revision | `7b96f8783ce1` on `main` (round 3 of the app, plus the three deploy fixes below) |
-| Date | 2026-10-21 01:39 UTC (2026-10-20 18:39 Pacific), first production deploy |
-| Neon | project `smithers-mvp-ChatPostgres-prod-iq3s3sjuk6wirfkn`, Free plan, `aws-us-east-1`, Postgres 17 |
-| Deployed from | a clean `jj workspace` of the pushed revision on Will's MacBook, credentials from his shell |
-
-The first deploy found three defects on `main`, each fixed before the deploy that worked:
-- `bbe0b0e9381a`: Neon's Free plan refused Alchemy's default day of restore history ([Postgres](#postgres)).
-- `850bd45f0492`: `vite build` failed: the app's bundle and the engine worker outgrew Workbox's 2 MiB precache limit (`src/pwa.build.test.ts`).
-- `7b96f8783ce1`: every shape route answered `error code: 1042` ([Electric](#electric)).
-
-Checked live on 2026-10-21: `/` and `/app` load; `GET /api/auth/session` is `{"signedIn":false,"available":true}`; sign-in redirects to GitHub with `<url>/api/auth/callback`; signed out, `POST /api/questions` and `POST /api/model/agent` are `401`; the webhook refuses an unsigned delivery (`401 invalid_signature`), so its secret is bound; the `messages`, `repositories`, `views` and `runs` shapes answer `200` with an `electric-handle`. The first shape request after the deploy answered `503` while Electric's container started, and the next ones `200`.
-
-End to end against the URL (`BASE_URL=<url> pnpm e2e start-app.spec.ts slash-commands.spec.ts`), the landing test passes. A signed-out visitor sees Sign in with GitHub and "Sign in to ask Smithers." in place of the composer. Three tests fail and one skips, because they expect a signed-in Member's Chat button and composer, as under `alchemy dev`.
-
-Not checked: signing in, a model call and the GitHub webhook, which wait for the App's settings below. Spend alerts, TODOs, secrets and notifications aren't in this revision.
-
-**The GitHub App's settings** (`smitherspreviewrelease`, its owner's settings page on GitHub):
-- Add the callback URL `https://smithers-mvp-smithers-mvp-prod-hb7tjo4elntcmy75.willcory10.workers.dev/api/auth/callback`. Until then GitHub refuses the sign-in (`redirect_uri_mismatch`).
-- Webhook URL: `https://smithers-mvp-smithers-mvp-prod-hb7tjo4elntcmy75.willcory10.workers.dev/api/github/webhook`, content type `application/json`, and the secret that `security find-generic-password -s smithers-mvp-prod -a GITHUB_WEBHOOK_SECRET -w` prints on Will's MacBook, the value bound to the deploy. The App has one webhook URL, which now points at `https://api.jjhub.tech/webhooks/github`; changing it stops jjhub's deliveries.
-- The App already has Issues read and write, Contents and Metadata, subscribes to Issues and Issue comment, and is installed on every `smithersai` repository.
+The production app is https://smithers.sh. Our hosted deployment's settings and deploy log are private: they belong in a private `smithers-infra` repository (Will, 2026-10-20 18:08: "we should have the deployment info private in smithers-infra repo"; [rulings §18](rulings.md#18-open-questions-no-ruling-yet)), and this repository keeps only the generic stack.
 
 ### Against a deployment
 

@@ -151,7 +151,8 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 ## Not built yet
 
 - The pages' end-to-end run with its chaptered recording, against a live instance with the GitHub App ([pull requests](../work/pull-request-list-and-tabs.md)).
-- Opening a pull request by hand from a branch, Update branch and the branches page: cut by decision 0016's simplified factory.
+- Opening a pull request by hand from a branch, Update branch and the branches page: deferred; GH-6 asks for them, and GH-11 needs an explicit publish for a Smithers-only branch.
+- The configurable merge flow (BR-7): merging into the default branch runs a flow a repository can override, whose default admits Maintainers and Admins. Today the gate is fixed in the writes route and `pr/Merge`.
 
 ### Projection and merge recovery
 

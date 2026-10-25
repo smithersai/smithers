@@ -1,6 +1,6 @@
 # CI/CD parity: GitHub Actions jobs as Smithers flows
 
-Status: proposed (2026-10-20). Merged by Claude Opus from two independent designs, Opus and Codex Sol (PROC-6). It answers ruling FLOW-8 ([rulings](../rulings.md)): replicate all the CI/CD of Smithers, Tevm and Effect as `Flow.make` TypeScript running on Smithers cloud, and add or ticket every missing capability. Nothing here is built. The full drafts are in the session scratchpad: `final/ci-parity-opus.md` and `final/ci-parity-sol.md` (Sol's carries a step-by-step inventory of every job).
+Status: the spine is built (gaps 2 to 6: [CI](../features/ci.md), [actions](../features/actions.md)); gap 1 (job secrets) and gaps 7 to 18 are not. Will answered its questions as rulings GH-9 and GH-10. Proposed 2026-10-20; merged by Claude Opus from two independent designs, Opus and Codex Sol (PROC-6). It answers ruling FLOW-8 ([rulings](../rulings.md)): replicate all the CI/CD of Smithers, Tevm and Effect as `Flow.make` TypeScript running on Smithers cloud, and add or ticket every missing capability. The full drafts are in the session scratchpad: `final/ci-parity-opus.md` and `final/ci-parity-sol.md` (Sol's carries a step-by-step inventory of every job).
 
 **Summary.** The flow engine can already express every job graph in these repositories, but Smithers can't run one: it lacks a job machine with toolchains and secrets, repository flows, GitHub event and cron triggers, long commands and a way to watch a remote run, and those six gaps are the build-now spine.
 

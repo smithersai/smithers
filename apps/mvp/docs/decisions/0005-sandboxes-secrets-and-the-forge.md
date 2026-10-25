@@ -1,6 +1,6 @@
 # 0005: Sandboxes, secrets and the forge
 
-Status: proposed (design panel: Opus as lead, and Sol; 2026-10-19). Features 5, 6 and 7 of Will's 2026-10-19 list. It builds on [0002](0002-local-first.md) (Yjs over Electric), [0003](0003-flows-and-the-agent.md) (flow placement, the agent on Cloudflare), [0006](0006-repo-clone-and-view.md) (Code Storage, `@smthrs/effect-code-storage`), [0007](0007-roles-and-tags.md) (branch modes, `@smthrs/access`) and [0008](0008-auth.md) (actors and grants). The prototype starts in its own jj workspace after features 1 to 3 land. Opus and Sol designed independently; the [appendix](#appendix-opus-sol-and-final-compared) compares them point by point. Will's three questions are at the end.
+Status: Will answered its questions on 2026-10-19 (Q1 Cloudflare; Q2 the sandbox is a tool provider; Q3, budgets, deferred until we ship). Built: branch machines, keeping them awake, sleep and wake with a checkpoint in the branch object's storage, the agent's sandbox tools, long commands as jobs, and the secrets egress (off by default). Not built: `job/Run`, snapshots, the Code Storage work-in-progress branch, `branch/Follow` for main, previews and budgets ([sandbox tools](../features/sandbox-tools.md#whats-not-built)). Design panel: Opus as lead, and Sol; 2026-10-19. Features 5, 6 and 7 of Will's 2026-10-19 list. It builds on [0002](0002-local-first.md) (Yjs over Electric), [0003](0003-flows-and-the-agent.md) (flow placement, the agent on Cloudflare), [0006](0006-repo-clone-and-view.md) (Code Storage, `@smthrs/effect-code-storage`), [0007](0007-roles-and-tags.md) (branch modes, `@smthrs/access`) and [0008](0008-auth.md) (actors and grants). The prototype starts in its own jj workspace after features 1 to 3 land. Opus and Sol designed independently; the [appendix](#appendix-opus-sol-and-final-compared) compares them point by point. Will's three questions are at the end.
 
 ## Decision
 
@@ -314,7 +314,7 @@ sandbox VM: enableInternet false; the entrypoint trusts /etc/cloudflare/certs/cl
    - at most 20 awake sandboxes per deployment and 2 per person;
    - a spend alert at $100 a month for sandboxes, beside the token alert;
    - snapshots kept only for branches touched in the last 30 days.
-   - **Will, 2026-10-19: deferred until we ship.** "Add this as a TODO but we won't worry about this until we ship." Tracked in [todo.md](../todo.md#sandbox-budgets-before-we-ship).
+   - **Will, 2026-10-19: deferred until we ship.** "Add this as a TODO but we won't worry about this until we ship." Tracked in [sandbox budgets](../work/sandbox-budgets.md).
 
 ## Sources
 

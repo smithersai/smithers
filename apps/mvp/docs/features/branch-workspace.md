@@ -226,10 +226,10 @@ budget independently.
 ## What's not built
 
 - Sharing with someone who has never signed in to this deployment: the dialog finds people by the login they signed in with, not through GitHub's API, so it never reads a GitHub permission at share time; the role (GitHub's permission, re-checked hourly) caps every check instead.
-- The last screen of a terminal whose machine slept ([sandbox tools](sandbox-tools.md#sleep-and-wake) ends it `slept`), snapshots, and creating branches (0012).
+- The last screen of a terminal whose machine slept ([sandbox tools](sandbox-tools.md#sleep-and-wake) ends it `slept`), and snapshots.
 - Archive (`conversation_people`) and the branch picker.
 - Private repositories: they wait for per-repository GitHub App installation tokens.
-- The live half of the end-to-end test waits for Will's yes to deploy.
+- Two-person tests against a deployment: production has one test account until the second one Will approved exists (ruling TEST-6; [co-editing](coedit.md)).
 
 ### Reopening a saved conversation offline
 

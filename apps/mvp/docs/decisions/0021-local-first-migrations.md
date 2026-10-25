@@ -1,6 +1,6 @@
 # 0021: Local-first data migrates on every deploy
 
-Status: proposed (2026-10-20). Will, about 20:05 on Telegram: "when we deploy to prod we will have a frontend migration to do and in fact need a generalized way of handling migrations of our local first data that should be robust and make messing up hard". Builds on [0002](0002-local-first.md) (the device store and the outbox) and [0011](0011-the-agent-runs-in-the-browser.md) (the browser engine). Work note: [local-first migrations](../work/local-first-migrations.md).
+Status: being built; versioned device schemas, their migrations and fixtures are in `src/device/` (2026-10-21). Ruling ARCH-19. Will, 20:03 on Telegram: "when we deploy to prod we will have a frontend migration to do and in fact need a generalized way of handling migrations of our local first data that should be robust and make messing up hard". Builds on [0002](0002-local-first.md) (the device store and the outbox) and [0011](0011-the-agent-runs-in-the-browser.md) (the browser engine). Work note: [local-first migrations](../work/local-first-migrations.md).
 
 A device's data opens only for its owner ([decision 0023](0023-device-ownership-and-queued-authority.md)); the rules below hold for ownership too. An earlier build's device belongs to the person its confirmed session names, and data whose owner isn't the person signed in stays sealed and whole, never deleted.
 
