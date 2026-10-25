@@ -1,5 +1,6 @@
 import { expect, expectSameThread, pairs, test } from "./devices"
 import { step } from "./fixtures"
+import { personalModelConfig, restorePersonalModel } from "./personal-model"
 import { requires } from "./target"
 
 // People's own models first (decision 0099, docs/features/model-endpoint.md#hosted-inference): while the deployment's own
@@ -7,16 +8,16 @@ import { requires } from "./target"
 // and its button opens Settings. With their own model saved, the composer is back, a question is answered, and the
 // timeline's summary of it is written, each by the person's own model: the deployment's would refuse them. Locally it
 // runs against a dev server started with HOSTED_MODEL_ENABLED=false and a key in the environment; in production
-// through the vault's environment wrapper (`personalModelKey`, e2e/target.ts). The key is typed into a password field,
-// which the video masks; it is never printed.
+// through the vault's environment wrapper (`personalModelKey`, e2e/target.ts; the model's settings are e2e/README.md's).
+// The key is typed into a password field, which the video masks; it is never printed. It ends with the account's model
+// saved again, as the deployment setup left it for the specs after this one.
 
 requires("member", "ownConversation", "personalModelKey", "hostedModelOff")
 // A trace keeps what was typed and sent, the key included.
 test.use({ trace: "off" })
 
-const KEY = process.env.E2E_PERSONAL_MODEL_KEY || process.env.OPENAI_API_KEY || ""
-const BASE_URL = process.env.E2E_PERSONAL_MODEL_BASE_URL || "https://api.openai.com"
-const MODEL = process.env.E2E_PERSONAL_MODEL || "gpt-4.1-mini"
+const KEY = process.env.E2E_PERSONAL_MODEL_KEY || ""
+const { baseUrl: BASE_URL, modelId: MODEL } = personalModelConfig()
 
 /** A save lands once `model/Put` ran and Electric brought the row back. */
 const SAVED_WITHIN = 30_000
@@ -90,4 +91,6 @@ test("byok first: no model shows Add your model; with one, the person's own mode
     await page.goto(conversation)
     await expect(addModel).toBeVisible({ timeout: 60_000 })
   })
+
+  await step("Save the account's model again for the specs after this one", () => restorePersonalModel(page.request))
 })
