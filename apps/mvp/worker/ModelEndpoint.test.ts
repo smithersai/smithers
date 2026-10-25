@@ -713,6 +713,14 @@ describe("hosted inference", () => {
     expect(await runtime.runPromise(HostedModel.enabled(false))).toBe(false)
   })
 
+  test("a step with no invocation key is a defect, before touching Postgres", async () => {
+    const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://nobody:nothing@127.0.0.1:1/none")))
+
+    const exit = await Effect.runPromiseExit(HostedModel.write({ enabled: true }, admin, undefined, unreachable))
+
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(SetModel.NoInvocationKey)
+  })
+
   test("a change Postgres can't write fails the run, and the setting stays as it was", async () => {
     const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://nobody:nothing@127.0.0.1:1/none")))
     const ran = await runFlow(

@@ -2,7 +2,7 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Config, Effect, Layer, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { CurrentActor } from "./Actor.ts"
+import { type Actor, CurrentActor } from "./Actor.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { NoInvocationKey, NotAllowed } from "./SetModel.ts"
 
@@ -74,33 +74,43 @@ export const SetHostedModel = Flow.make("admin/SetHostedModel", {
 })
 
 /**
- * Registers `admin/SetHostedModel` with its step, writing through `database` as the `CurrentActor` the host provides.
- * Only an Admin acting in person may run it (decision 0007), as `admin/SetModel`.
+ * What `admin/WriteHostedModel` does for one change, as `actor`, in the step `invocationKey` names, writing through
+ * `database`. Only an Admin acting in person may run it (decision 0007), as `admin/SetModel`; it refuses before it
+ * writes anything, and a step with no invocation key is a defect, since it couldn't record its change once.
  */
+export const write = <E, R>(
+  change: { readonly enabled: boolean },
+  actor: Actor,
+  invocationKey: string | undefined,
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+) =>
+  Effect.gen(function* () {
+    if (actor.act !== undefined) return yield* new NotAllowed({ reason: "delegated" })
+    if (actor.role !== "admin") return yield* new NotAllowed({ reason: "not_admin" })
+    if (invocationKey === undefined) return yield* Effect.die(new NoInvocationKey())
+    yield* set(change.enabled, { actorId: actor.subject.id, invocationKey }).pipe(
+      Effect.provide(database),
+      Effect.tapError((error) =>
+        Effect.logError("admin.set_hosted_model").pipe(Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }))
+      ),
+      Effect.orDie,
+    )
+    yield* Effect.logInfo("admin.set_hosted_model").pipe(Effect.annotateLogs({ outcome: "set", enabled: change.enabled }))
+    return { enabled: change.enabled }
+  }).pipe(
+    Effect.tapError((error) =>
+      Effect.logWarning("admin.set_hosted_model").pipe(Effect.annotateLogs({ outcome: "refused", reason: error.reason }))
+    ),
+    Effect.withSpan("admin.set_hosted_model"),
+  )
+
+/** Registers `admin/SetHostedModel` with its step, writing through `database` as the `CurrentActor` the host provides. */
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Interpreter.layerWithImplementations(
     SetHostedModel,
     WriteHostedModel.toLayer((change) =>
       Effect.gen(function* () {
-        const actor = yield* CurrentActor
-        const invocationKey = yield* Action.CurrentInvocationKey
-        if (actor.act !== undefined) return yield* new NotAllowed({ reason: "delegated" })
-        if (actor.role !== "admin") return yield* new NotAllowed({ reason: "not_admin" })
-        if (invocationKey === undefined) return yield* Effect.die(new NoInvocationKey())
-        yield* set(change.enabled, { actorId: actor.subject.id, invocationKey }).pipe(
-          Effect.provide(database),
-          Effect.tapError((error) =>
-            Effect.logError("admin.set_hosted_model").pipe(Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }))
-          ),
-          Effect.orDie,
-        )
-        yield* Effect.logInfo("admin.set_hosted_model").pipe(Effect.annotateLogs({ outcome: "set", enabled: change.enabled }))
-        return { enabled: change.enabled }
-      }).pipe(
-        Effect.tapError((error) =>
-          Effect.logWarning("admin.set_hosted_model").pipe(Effect.annotateLogs({ outcome: "refused", reason: error.reason }))
-        ),
-        Effect.withSpan("admin.set_hosted_model"),
-      )
+        return yield* write(change, yield* CurrentActor, yield* Action.CurrentInvocationKey, database)
+      })
     ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))

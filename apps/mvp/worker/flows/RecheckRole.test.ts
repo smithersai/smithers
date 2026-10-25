@@ -82,7 +82,7 @@ describe("auth/RecheckRole", () => {
     const after = await session(s.id)
     expect(after.role).toBe("admin")
     expect(after.age).toBeLessThan(60)
-    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "admin" })
+    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "admin", hostedModel: false })
   })
 
   test("a GitHub that fails once is retried by the step's retry policy", async () => {
@@ -329,7 +329,7 @@ describe("one check of a session at a time", () => {
       await Effect.runPromise(Deferred.await(redeemed))
       // The next request comes an hour later, in the next hour, while A still holds the replacement.
       h.advance(60 * 60 * 1000)
-      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member" })
+      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false })
       h.advance(-60 * 60 * 1000)
       // B runs before A goes on: a check of its own runs to its end first; the same check is A, still paused.
       if (started[1] !== started[0]) await runs[1]
@@ -348,7 +348,7 @@ describe("one check of a session at a time", () => {
         Exit.succeed({ outcome: "checked", role: "member" }),
         Exit.succeed({ outcome: "checked", role: "member" }),
       ])
-      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member" })
+      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false })
       // The check recorded the role, so the next stale request names a new check.
       await sql(`UPDATE sessions SET role_checked_at = role_checked_at - interval '2 hours'`)
       await h.session(cookies)
@@ -421,7 +421,7 @@ describe("one check of a session at a time", () => {
       const after = await session(s.id)
       expect(after.revokedReason).toBeNull()
       expect(after.refreshDigest).toBe(SessionKeys.digest(Redacted.value(s.github.issued[1]!.refreshToken!)))
-      expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "member" })
+      expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "member", hostedModel: false })
     } finally {
       await removeFault()
     }

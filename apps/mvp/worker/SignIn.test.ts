@@ -335,6 +335,13 @@ describe("the callback", () => {
     }
   })
 
+  test("a HOSTED_MODEL_ENABLED that doesn't parse says the deployment's model is off", async () => {
+    await query((sql) => sql`DELETE FROM hosted_model`)
+    const h = await signInHarness(runtime, { config: { ...configured, HOSTED_MODEL_ENABLED: "sometimes" } })
+    const { cookies } = await h.signInAs()
+    expect(await h.session(cookies)).toMatchObject({ signedIn: true, hostedModel: false })
+  })
+
   test("tokens that never expire, from an App without expiring tokens, sign in too", async () => {
     const github = scriptedGitHub()
     github.expiring = false
