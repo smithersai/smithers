@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { RunInspection } from "@smthrs/engine-store"
-import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Action, Flow, Interpreter, RunMetrics } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -92,11 +92,21 @@ describe("BrowserEngine.inspect", () => {
     const telemetry = Telemetry.make()
     return telemetry.observed(Effect.gen(function*() {
       const { engine } = yield* setup
-      yield* engine.start(Steps, { executionId: "steps-1", payload: { prefix: "private-prefix" } })
+      yield* engine.start(Steps, { executionId: "steps-1", payload: { prefix: "private-prefix" } }).pipe(
+        RunMetrics.withOrigin({ door: "button", actor: "person" })
+      )
       expect(yield* engine.result(Steps, "steps-1")).toEqual(Exit.succeed("private-prefix:three"))
 
       const inspection = yield* engine.inspect("steps-1")
-      expect(inspection.run).toMatchObject({ runId: "steps-1", flowName: Steps._tag, status: "completed" })
+      // How it started crosses the wire with it: the door and actor kind the tab gave.
+      expect(inspection.run).toMatchObject({
+        runId: "steps-1",
+        flowName: Steps._tag,
+        status: "completed",
+        origin: { door: "button", actor: "person" }
+      })
+      expect((yield* engine.list({})).runs.find((run) => run.runId === "steps-1")?.origin)
+        .toEqual({ door: "button", actor: "person" })
       expect(JSON.parse(inspection.run.input.text)).toEqual({ prefix: "private-prefix" })
       expect(inspection.steps.filter((step) => step.action === "browser-test/Step").map((step) => step.output?.text))
         .toEqual(["\"private-prefix:one\"", "\"private-prefix:two\"", "\"private-prefix:three\""])

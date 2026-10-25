@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { todoExecutionId } from "../src/features/pulls/contract.ts"
 import {
+  CLOUD_RUNS_ROUTE,
   MAX_STEER_CHARS,
   REMOTE_RUN_SHAPE_ROUTE,
   remoteRunRoute,
@@ -24,6 +25,7 @@ import {
   stopRoute,
 } from "../src/features/runs/contract.ts"
 import * as Actor from "./Actor.ts"
+import * as CloudRuns from "./CloudRuns.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
 import * as RepoRuns from "./RepoRuns.ts"
@@ -1035,11 +1037,192 @@ describe("POST /api/remote-runs/<runId>/stop", () => {
   })
 })
 
+const admin: Actor.Actor = { subject: { kind: "person", id: "person-admin" }, role: "admin", login: "ada" }
+
+/** A run the deployment itself started, as the engine keeps its row: never begun, `pending`. */
+const keptRun = (engine: Pick<Engine, "writer">, runId: string, flowName: string, createdAtMs: number) =>
+  Effect.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+      VALUES (${runId}, 'pending', ${createdAtMs}, ${JSON.stringify({ version: 1, flowName, payload: {} })})`).pipe(
+    Effect.provide(engine.writer),
+  ))
+
+type Listed = { readonly runs: ReadonlyArray<Record<string, unknown>> }
+
+/** The list route's answer: its status and body. */
+const listed = async (h: Awaited<ReturnType<typeof routes>>, query = "") => {
+  const response = await h.fetch(`${CLOUD_RUNS_ROUTE}${query}`)
+  return [response.status, await response.json() as Listed, response] as const
+}
+
+describe("GET /api/cloud-runs", () => {
+  test("a Member lists TODO runs and the repository's runs with the engine's state; an Admin also the system flows", async () => {
+    const begun = await attempt()
+    // A second TODO on another repository's stack, so its attempt starts at once rather than waiting its turn.
+    const waiting = await attempt("github/octo/second")
+    // As a TODO's second attempt records it: a retry.
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE todo_attempts SET ordinal = 2 WHERE id = ${waiting.attemptId}::uuid`))
+    const repoRun = `ci:${uuid()}`
+    await recordRepoRun(repoRun)
+    await withEngine(async (engine) => {
+      await engine.run(todoExecutionId(begun.attemptId))
+      await engine.run(repoRun)
+      await keptRun(engine, `ops-spend-${uuid()}`, "ops/SpendAlert", Date.now() + 60_000)
+      await keptRun(engine, `chat-expire-${uuid()}`, "chat/Expire", Date.now() + 120_000)
+      const h = await routes(engine, { actor: member })
+      const [status, body, response] = await listed(h)
+      expect([status, response.headers.get("cache-control")]).toEqual([200, "no-store"])
+      const byId = new Map(body.runs.map((run) => [run.runId, run]))
+      expect(byId.get(todoExecutionId(begun.attemptId))).toMatchObject({
+        flow: "todo", kind: "todo", status: "completed", trigger: "commit", branch: null, actor: "maya", repo: "octo/hello",
+        cancelRequested: false, startedAtMs: expect.any(Number), finishedAtMs: expect.any(Number),
+      })
+      // The engine hasn't begun the second attempt's run: what its TODO recorded, pending.
+      expect(byId.get(todoExecutionId(waiting.attemptId))).toMatchObject({
+        kind: "todo", status: "pending", trigger: "retry", repo: "octo/second", startedAtMs: null, finishedAtMs: null,
+        createdAtMs: expect.any(Number),
+      })
+      expect(byId.get(repoRun)).toMatchObject({
+        flow: "ci", kind: "repo", status: "completed", trigger: "push", branch: "main", actor: "github", repo: "octo/hello",
+      })
+      // Newest first, and no system flow for a Member.
+      expect(body.runs.map((run) => run.createdAtMs)).toEqual(
+        [...body.runs.map((run) => run.createdAtMs as number)].sort((left, right) => right - left),
+      )
+      expect(body.runs.map((run) => run.kind)).not.toContain("system")
+      expect(h.line("runs.cloud.list")[0]).toMatchObject({
+        annotations: { outcome: "read", runs: 3, todo: 2, repo: 1, system: 0, status: 200 },
+      })
+      expect(h.count(CloudRuns.lists, { outcome: "read" })).toBe(1)
+
+      const a = await routes(engine, { actor: admin })
+      const [, all] = await listed(a)
+      const system = all.runs.filter((run) => run.kind === "system")
+      // A system flow is listed by its declaration; a conversation's never.
+      expect(system).toEqual([expect.objectContaining({
+        flow: "ops/SpendAlert", status: "pending", trigger: "system", branch: null, actor: null, repo: null,
+      })])
+      expect(all.runs[0]!.flow).toBe("ops/SpendAlert")
+      expect(all.runs.some((run) => run.flow === "chat/Expire")).toBe(false)
+      // At most `limit`, newest first.
+      const [, one] = await listed(a, "?limit=1")
+      expect(one.runs.map((run) => run.flow)).toEqual(["ops/SpendAlert"])
+      expect(recorded(a)).not.toContain("maya")
+    })
+  })
+
+  test("a TODO whose work failed reads failed though its engine completed", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE todo_attempts SET status = 'failed' WHERE id = ${start.attemptId}::uuid`))
+    await withEngine(async (engine) => {
+      await engine.run(runId)
+      const [, body] = await listed(await routes(engine, { actor: member }))
+      expect(body.runs.find((run) => run.runId === runId)).toMatchObject({ status: "failed" })
+    })
+  })
+
+  test("an Admin reads a system flow's run page; a Member, and any flow the list never shows, stay refused", async () => {
+    const spend = `ops-spend-${uuid()}`
+    const expire = `chat-expire-${uuid()}`
+    await withEngine(async (engine) => {
+      await keptRun(engine, spend, "ops/SpendAlert", Date.now())
+      await keptRun(engine, expire, "chat/Expire", Date.now())
+      const a = await routes(engine, { actor: admin })
+      const [status, read] = await json(await a.fetch(remoteRunRoute(spend)))
+      expect([status, read.run.flowName, read.run.status]).toEqual([200, "ops/SpendAlert", "pending"])
+      expect((await firstShape(a, spend)).status).toBe(200)
+      expect((await a.fetch(remoteRunRoute(expire))).status).toBe(404)
+      // A system run is never stopped from here: only a repository's run stops.
+      expect((await a.fetch(stopRoute(spend), { method: "POST" })).status).toBe(404)
+      const m = await routes(engine, { actor: member })
+      expect((await m.fetch(remoteRunRoute(spend))).status).toBe(404)
+      expect((await (await routes(engine, { actor: guest })).fetch(remoteRunRoute(spend))).status).toBe(403)
+      expect((await firstShape(m, spend)).status).toBe(403)
+    })
+  })
+
+  test("a repository whose role can't be read now leaves its runs out and the read partial; a Guest lists nothing", async () => {
+    const start = await attempt()
+    const repoRun = `ci:${uuid()}`
+    await recordRepoRun(repoRun)
+    await withEngine(async (engine) => {
+      const h = await routes(engine, {
+        actor: member,
+        roles: { repository: repositoryOf("octo/hello"), resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code: "unavailable" })) },
+      })
+      const [status, body] = await listed(h)
+      expect(status).toBe(200)
+      expect(body.runs.map((run) => run.runId)).toEqual([todoExecutionId(start.attemptId)])
+      expect(h.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "partial" })
+      // A refusal that isn't about now (no App on the repository) leaves the runs out without a partial read.
+      const missing_ = await routes(engine, {
+        actor: member,
+        roles: { repository: repositoryOf("octo/hello"), resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code: "app_not_installed" })) },
+      })
+      await listed(missing_)
+      expect(missing_.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "read", repo: 0 })
+      const [, nothing] = await listed(await routes(engine, { actor: guest }))
+      expect(nothing.runs).toEqual([])
+    })
+  })
+
+  test("reads at most eight repositories' roles; the runs of any older repository wait, and the read says partial", async () => {
+    const repos = Array.from({ length: CloudRuns.MAX_REPOSITORIES + 1 }, (_, index) => `github/octo/r${index}`)
+    for (const repoId of repos) {
+      await runtime.runPromise(RepoRuns.record({
+        execution: `ci:${uuid()}`, repoId, flow: "ci", sha: "c".repeat(40), ref: "main", event: "pull_request", launchedBy: "github",
+      }))
+    }
+    await withEngine(async (engine) => {
+      const asked: Array<string> = []
+      const h = await routes(engine, {
+        actor: member,
+        roles: {
+          repository: repositoryOf("octo/hello"),
+          resolve: (_, repository) => Effect.sync(() => {
+            asked.push(`${repository.owner}/${repository.name}`)
+            return { role: "member" as const, source: "github" as const }
+          }) as never,
+        },
+      })
+      const [, body] = await listed(h)
+      expect(asked).toHaveLength(CloudRuns.MAX_REPOSITORIES)
+      expect(body.runs).toHaveLength(CloudRuns.MAX_REPOSITORIES)
+      expect(body.runs.every((run) => run.trigger === "pull_request")).toBe(true)
+      expect(h.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "partial" })
+    })
+  })
+
+  test("refuses who isn't signed in, a bad limit and another method; 503 when sessions or the engine can't answer", async () => {
+    await withEngine(async (engine) => {
+      const out = await routes(engine)
+      const [status, body] = await listed(out)
+      expect([status, body]).toEqual([401, { code: "authentication" }])
+      const h = await routes(engine, { actor: member })
+      for (const query of ["?limit=0", "?limit=51", "?limit=x"]) {
+        expect([query, (await listed(h, query))[0]]).toEqual([query, 400])
+      }
+      expect((await h.fetch(CLOUD_RUNS_ROUTE, { method: "POST" })).status).toBe(405)
+      const sessionsDown = Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }))
+      const [down, , downResponse] = await listed(await routes(engine, { sessions: sessionsDown }))
+      expect([down, downResponse.headers.get("retry-after")]).toEqual([503, "5"])
+      const broken = await routes({ ...engine, database: missing(`missing_${uuid().slice(0, 8).replaceAll("-", "")}`) }, { actor: member })
+      await recordRepoRun(`ci:${uuid()}`)
+      expect((await listed(broken))[0]).toBe(503)
+      expect(broken.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "unavailable", errorCode: expect.any(String) })
+    })
+  })
+})
+
 describe("the routes", () => {
   test("handle the run route and the shape, and nothing else", () => {
     const runId = todoExecutionId(uuid())
     expect(RemoteRuns.handles(remoteRunRoute(runId))).toBe(true)
     expect(RemoteRuns.handles(REMOTE_RUN_SHAPE_ROUTE)).toBe(true)
+    expect(RemoteRuns.handles(CLOUD_RUNS_ROUTE)).toBe(true)
     expect(RemoteRuns.handles(steersRoute(runId))).toBe(true)
     expect(RemoteRuns.parseSteerPath(steersRoute(runId))).toBe(runId)
     expect(RemoteRuns.parseSteerPath(remoteRunRoute(runId))).toBeUndefined()

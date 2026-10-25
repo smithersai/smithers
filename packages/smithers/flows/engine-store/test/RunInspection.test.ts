@@ -4,7 +4,7 @@
  * `SMITHERS_TEST_PG_URL`).
  */
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { Journal, SqlJournal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
@@ -567,6 +567,66 @@ describe("RunInspection.list", () => {
       expect(everything.runs.some((run) => run.parentRunId === "list-root")).toBe(true)
 
       expect(yield* Effect.flip(reads.list({ cursor: "not a cursor" }))).toMatchObject({
+        code: "invalid_run",
+        method: "RunInspection.list"
+      })
+    })))
+
+  it("says how each run started: its door and actor kind, a child's as `flow`, none for a run kept before origins", () =>
+    run(Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* executeRoot("origin-root").pipe(RunMetrics.withOrigin({ door: "button", actor: "person" }))
+      yield* engine.execute(Child, { executionId: "origin-plain", payload: { n: 1 } })
+      const state = JSON.stringify({ version: 1, flowName: Child._tag, payload: { n: 2 } })
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json) VALUES ('origin-old', 'pending', 1, ${state})`
+      const reads = yield* RunInspection.RunInspection
+
+      const listed = new Map((yield* reads.list({ roots: false, limit: 500 })).runs.map((run) => [run.runId, run]))
+      expect(listed.get("origin-root")!.origin).toEqual({ door: "button", actor: "person" })
+      expect(listed.get("origin-plain")!.origin).toEqual({ door: "unknown", actor: "unknown" })
+      expect(listed.get("origin-old")!.origin).toBeNull()
+      const child = [...listed.values()].find((run) => run.parentRunId === "origin-root")!
+      expect(child.origin).toEqual({ door: "flow", actor: "person" })
+      // The run's own read says the same.
+      expect((yield* reads.inspect("origin-root")).run.origin).toEqual({ door: "button", actor: "person" })
+    })))
+
+  it("lists only the runs, or the flows, asked for, newest first, leaving out what the engine never held, within bounds", () =>
+    run(Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      for (const id of ["a", "b", "c"]) yield* engine.execute(Child, { executionId: `ids-${id}`, payload: { n: 1 } })
+      yield* executeRoot("ids-root")
+      const reads = yield* RunInspection.RunInspection
+      const child = (yield* reads.list({ roots: false, limit: 500 })).runs.find((run) => run.parentRunId === "ids-root")!
+
+      const asked = yield* reads.list({ runIds: ["ids-a", "ids-c", "never-held"] })
+      expect(asked.runs.map((run) => run.runId)).toEqual(["ids-c", "ids-a"])
+      expect(asked.cursor).toBeNull()
+      // A child is a run asked for only once roots are off.
+      expect((yield* reads.list({ runIds: [child.runId] })).runs).toEqual([])
+      expect((yield* reads.list({ runIds: [child.runId], roots: false })).runs.map((run) => run.runId))
+        .toEqual([child.runId])
+      // Paged like any list.
+      const first = yield* reads.list({ runIds: ["ids-a", "ids-b", "ids-c"], limit: 2 })
+      expect(first.runs.map((run) => run.runId)).toEqual(["ids-c", "ids-b"])
+      const second = yield* reads.list({ runIds: ["ids-a", "ids-b", "ids-c"], limit: 2, cursor: first.cursor! })
+      expect(second.runs.map((run) => run.runId)).toEqual(["ids-a"])
+      // By flow: only those flows' runs, with the other filters.
+      expect((yield* reads.list({ flows: [Root._tag] })).runs.map((run) => run.runId)).toEqual(["ids-root"])
+      expect((yield* reads.list({ flows: [Child._tag, "never/ran"] })).runs.map((run) => run.runId))
+        .toEqual(["ids-c", "ids-b", "ids-a"])
+      expect((yield* reads.list({ flows: [Child._tag], roots: false })).runs.map((run) => run.runId))
+        .toContain(child.runId)
+      expect((yield* reads.list({ flows: [Child._tag], runIds: ["ids-b", "ids-root"] })).runs.map((run) => run.runId))
+        .toEqual(["ids-b"])
+      expect(yield* reads.list({ flows: [] })).toEqual({ runs: [], cursor: null })
+      const tooManyFlows = Array.from({ length: RunInspection.maximumListFlows + 1 }, (_, index) => `flow/${index}`)
+      expect(yield* Effect.flip(reads.list({ flows: tooManyFlows }))).toMatchObject({ code: "invalid_run" })
+      // None asked, none listed; past the bound, refused.
+      expect(yield* reads.list({ runIds: [] })).toEqual({ runs: [], cursor: null })
+      const tooMany = Array.from({ length: RunInspection.maximumListPage + 1 }, (_, index) => `ids-${index}`)
+      expect(yield* Effect.flip(reads.list({ runIds: tooMany }))).toMatchObject({
         code: "invalid_run",
         method: "RunInspection.list"
       })

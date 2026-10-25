@@ -26,8 +26,42 @@ export const RunRow = Schema.Struct({
   seq: Schema.Number,
   /** The finite result of a completed answer or draft, when its inspection could be read. */
   outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "unknown"])),
+  /** How it started, as the engine kept it: the door (`button`, `agent`, `sync`, ...) and the actor kind. */
+  origin: Schema.optionalKey(Schema.NullOr(Schema.Struct({ door: Schema.String, actor: Schema.String }))),
 })
 export type RunRow = typeof RunRow.Type
+
+/**
+ * What started a run on Cloudflare: a TODO's commit or retry, a repository's push, pull request or manual run, or the
+ * deployment itself (`system`).
+ */
+export const CloudTrigger = Schema.Literals(["commit", "retry", "push", "pull_request", "manual", "system"])
+export type CloudTrigger = typeof CloudTrigger.Type
+
+/**
+ * One run on Cloudflare as `CLOUD_RUNS_ROUTE` answers it: the engine's state of it (`pending` until the engine begins
+ * a run its TODO or trigger recorded), and what the Runs page lists beside it: what started it, the branch it worked
+ * on, who asked (a login, `github` for a trigger, none for the deployment's own), and the repository.
+ */
+export const CloudRun = Schema.Struct({
+  runId: Schema.String,
+  flow: Schema.String,
+  kind: Schema.Literals(["todo", "repo", "system"]),
+  status: RunStatus,
+  cancelRequested: Schema.Boolean,
+  createdAtMs: Schema.Number,
+  startedAtMs: Schema.NullOr(Schema.Number),
+  finishedAtMs: Schema.NullOr(Schema.Number),
+  trigger: CloudTrigger,
+  branch: Schema.NullOr(Schema.String),
+  actor: Schema.NullOr(Schema.String),
+  /** `owner/name`, for a TODO's or a repository's run. */
+  repo: Schema.NullOr(Schema.String),
+})
+export type CloudRun = typeof CloudRun.Type
+
+/** The list route's answer. */
+export const CloudRunList = Schema.Struct({ runs: Schema.Array(CloudRun) })
 
 /**
  * One run's page as the engine last read it (`runTraces`): `read` with its inspection, or why there is none: the engine
@@ -76,6 +110,12 @@ export const RunView = Schema.Struct({
   steerDraft: Schema.optionalKey(Schema.String),
   /** The repository whose run this is, read on Cloudflare (docs/features/actions.md); none for any other run. */
   repo: Schema.optionalKey(Schema.NullOr(RepoName)),
+  /** The run the list shows opened in place, its jobs and steps (`/app/runs?open=<runId>`). */
+  expanded: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** This device's list has answered once, read or not: until it and the runs on Cloudflare have, none says nothing. */
+  listLoaded: Schema.optionalKey(Schema.Boolean),
+  /** The runs on Cloudflare have answered once, read or refused. */
+  cloudLoaded: Schema.optionalKey(Schema.Boolean),
 })
 export type RunView = typeof RunView.Type
 

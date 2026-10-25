@@ -15,14 +15,15 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type * as Actor from "../../../worker/Actor.ts"
 import { asPerson, nodeDevice, openFaultyTab, openTab, openTestApp, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { ACTIONS_SHAPE_ROUTE, actionRunPath } from "../actions/contract"
-import { actsOf, hostOf, missingOf, repoRunRows, repoRunsLoaded, steerOpen, steersOf } from "./page"
+import { detailsOf } from "./details"
+import { actsOf, hostOf, listRows, missingOf, repoRunRows, repoRunsLoaded, steerOpen, steersOf } from "./page"
 import { Runs } from "./runs"
 import { REMOTE_RUN_SHAPE_ROUTE, stopRoute } from "./contract"
 import { RunSteers } from "./steers"
 import { RunsStore } from "./store"
 import { openRun } from "./actions"
 import { RemoteRunsClient } from "./api"
-import type { Inspection, RepoRunRow, RepoRunsLoaded, RunPage, SteerSending, SteerSent } from "./schema"
+import type { CloudRun, Inspection, RepoRunRow, RepoRunsLoaded, RunPage, SteerSending, SteerSent } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -121,6 +122,28 @@ describe("a TODO's run on Cloudflare", () => {
     expect(changes.length).toBeGreaterThan(0)
     expect(changes.every((stage) => stage.phase === "reused")).toBe(true)
   })
+
+  test("it lists among the runs on Cloudflare and moves there live; opened in place, its steps follow it", async () => {
+    // The list reads this device's engine too, so the device's engine leads.
+    const t = await open(undefined, true)
+    const runId = await Effect.runPromise(t.api.remote.todoRun("Listed"))
+    await t.runs.actions.openList(runId)
+    const listed = () => (t.runs.queries.cloudRuns.toArray as ReadonlyArray<CloudRun>).find((run) => run.runId === runId)
+    await until(() => expect(listed()).toMatchObject({ kind: "todo", flow: "todo", status: "pending", trigger: "commit", actor: expect.any(String) }))
+    const opened = () => t.runs.queries.expandedPage.toArray[0]?.page as RunPage | undefined
+    await until(() => expect(opened()).toMatchObject({ id: runId, state: "not_started" }))
+
+    // The run starts and ends on the engine: its row of the change feed reads the list, and the opened run, again.
+    await Effect.runPromise(t.api.remote.start(runId, { label: "listed", pauseMs: 0 }))
+    await until(() => expect(listed()?.status).toBe("completed"))
+    await until(() => expect((opened()?.inspection as Inspection | undefined)?.run.status).toBe("completed"))
+    const { jobs } = detailsOf(opened()!, Date.now())
+    expect(jobs[0]!.steps.filter((step) => step.label.endsWith("probe/Mark")).map((step) => step.state)).toEqual(["completed", "completed"])
+    // Its row on the list says where it ran and opens its page.
+    expect(listRows([], t.runs.queries.cloudRuns.toArray as ReadonlyArray<CloudRun>, { open: runId })[0]).toMatchObject({
+      id: runId, where: "Cloud", expanded: true, href: `/app/runs/${encodeURIComponent(runId)}`,
+    })
+  }, 120_000)
 
   test("a Member watches it live: Not started, then each step as the run takes it, then done; no polling", async () => {
     const t = await open()

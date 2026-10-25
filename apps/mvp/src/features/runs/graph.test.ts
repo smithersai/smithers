@@ -13,6 +13,7 @@ const run: Inspection["run"] = {
   cancelRequestedAtMs: null,
   waiting: null,
   lastSeq: 4,
+  origin: null,
   input: value("{\"name\":\"daily\"}"),
   result: null
 }

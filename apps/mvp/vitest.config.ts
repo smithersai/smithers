@@ -161,6 +161,8 @@ export default defineConfig({
         "db/migrations/0035_todo_report_receipts.ts",
         // A TODO's run, watched from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare).
         "worker/RemoteRuns.ts",
+        // The runs on Cloudflare a person may read, for the Runs page (docs/features/runs.md#runs-on-cloudflare).
+        "worker/CloudRuns.ts",
         "db/migrations/0036_todo_run.ts",
         // A repository's runs (docs/features/actions.md).
         "worker/RepoRuns.ts",

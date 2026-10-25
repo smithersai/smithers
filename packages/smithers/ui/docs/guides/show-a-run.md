@@ -1,6 +1,6 @@
 ---
 title: "Show a run"
-description: "Compose a run's page from RunHeader, SpanTree, SpanDetail, RunWaterfall and RunJournal, list runs with RunList, show a value with JsonValue, and draft a flow with FlowDraftView."
+description: "Compose a run's page from RunHeader, SpanTree, SpanDetail, RunWaterfall and RunJournal, list runs with RunList and open one in place with RunDetails, show a value with JsonValue, and draft a flow with FlowDraftView."
 ---
 
 A run page shows what a flow did, step by step. The host reads the run from its
@@ -104,3 +104,22 @@ as its field shows it, so a person can accept its default. `Draft again`,
 - [API reference](../api.md#runs-and-flows): the props and helpers.
 - [Render a run status](./render-run-status.md): `StatusPill` and the shared
   status tones.
+
+## List runs like a CI system
+
+`RunList` lists runs as a table. Give each row a `trigger`, `branch` and `actor`
+and the table shows those columns; `where` tags a row's flow, such as `Cloud`
+when a list mixes hosts. A row with `toggleHref` gets a toggle that links there,
+so the host keeps which run is open in its address, and `expanded` with
+`renderDetails` shows that run's details under it. `RunDetails` draws them: the
+run and the runs it started as jobs, each step a native disclosure that opens
+to its log lines, a failed step open with its error code.
+
+```tsx
+<RunList
+  runs={rows}
+  now={Date.now()}
+  renderLink={(href, children) => <Link to={href}>{children}</Link>}
+  renderDetails={() => <RunDetails jobs={jobs} now={Date.now()} renderLogs={(_, step) => <pre>{lines(step)}</pre>} />}
+/>
+```

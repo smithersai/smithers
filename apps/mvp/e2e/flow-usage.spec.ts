@@ -54,3 +54,49 @@ test("flow usage: a button's run is counted by flow, door, actor and placement, 
     await expect(row.getByRole("cell").nth(3)).toHaveText(/\d/)
   })
 })
+
+test("runs list: a run reads like a CI run, with its trigger and actor, opens in place to its steps, and its flow lists its runs", {
+  annotation: { type: "summary", description: "Runs lists each run's trigger, branch and actor; a run opens in place to its steps and logs; a flow lists its own runs." },
+}, async ({ devices }) => {
+  const [a] = await devices.open("A")
+  const page = a.page
+  // The device may keep an earlier test's theme: the button switches whichever way it points.
+  const theme = page.getByRole("button", { name: /^Switch to (dark|light) mode$/ })
+  await expect(theme).toBeVisible({ timeout: 30_000 })
+  await test.step("Switch the theme", async () => {
+    const before = await theme.getAttribute("aria-label") ?? await theme.textContent()
+    await theme.click()
+    await expect(theme).not.toHaveAccessibleName(before ?? "", { timeout: 30_000 })
+  })
+
+  const runs = page.getByRole("table", { name: "Runs" })
+  const row = runs.locator("tr[data-run]").filter({ hasText: "app/theme/set" }).first()
+  await test.step("Runs lists the theme's run with what started it and who", async () => {
+    // In the app, as a person goes there: a reload would leave the run to the next leader to take over.
+    await page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Runs", exact: true }).click()
+    await expect(row).toBeVisible({ timeout: 30_000 })
+    await expect(row.locator("[data-slot='run-trigger']")).toHaveText("button")
+    await expect(row.locator("[data-slot='run-actor']")).toHaveText("you")
+    // The list follows the engine: the run reads Done once it settles.
+    await expect(row.locator("[data-slot='run-status']")).toHaveAttribute("data-word", "Done", { timeout: 30_000 })
+  })
+
+  await test.step("The run opens in place to its step", async () => {
+    await row.getByRole("link", { name: "Show app/theme/set" }).click()
+    await expect(page).toHaveURL(/\/app\/runs\?open=/)
+    const details = runs.locator("tr[data-run-details] [data-slot='run-details']")
+    await expect(details.locator("details[data-step]").filter({ hasText: "app/theme/write" })).toHaveAttribute("data-state", "completed", { timeout: 30_000 })
+    await runs.getByRole("link", { name: "Hide app/theme/set" }).first().click()
+    await expect(runs.locator("tr[data-run-details]")).toHaveCount(0)
+  })
+
+  await test.step("The flow lists only its own runs", async () => {
+    await page.getByRole("table", { name: "Flows" }).getByRole("link", { name: "app/theme/set", exact: true }).click()
+    await expect(page).toHaveURL(/flow=app%2Ftheme%2Fset/)
+    const flows = await runs.locator("tr[data-run] .sui-run-list-flow").allTextContents()
+    expect(flows.length).toBeGreaterThan(0)
+    expect(new Set(flows)).toEqual(new Set(["app/theme/set"]))
+    await page.getByRole("table", { name: "Flows" }).getByRole("link", { name: "All", exact: true }).click()
+    await expect(page).toHaveURL(/\/app\/runs$/)
+  })
+})

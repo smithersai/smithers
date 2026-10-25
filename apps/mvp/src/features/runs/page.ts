@@ -22,7 +22,7 @@ import { failedTodoRun, hasDomainOutcome, todoRetryPayload } from "./todoRun"
 import { ACTIONS_LIMIT, actionRunPath } from "../actions/contract"
 import { isoOf } from "../pulls/view"
 import { repoId } from "../repo/contract"
-import type { Inspection, RepoRunRow, RepoRunsLoaded, RunPage, RunRow, SteerSending, SteerSent } from "./schema"
+import type { CloudRun, Inspection, RepoRunRow, RepoRunsLoaded, RunPage, RunRow, RunView, SteerSending, SteerSent } from "./schema"
 
 // A run's page as a frontend draws it (decision 0014 §5, docs/features/runs.md#the-run-page): pure functions from the
 // engine's read of a run to `@smthrs/ui`'s run-page rows. The steps are the plan's action calls and child boundaries,
@@ -31,7 +31,7 @@ import type { Inspection, RepoRunRow, RepoRunsLoaded, RunPage, RunRow, SteerSend
 
 /** One step of the page: its row, and what its detail shows. */
 export interface PageStep {
-  readonly logs?: ReadonlyArray<JsonValueData>
+  readonly logs: ReadonlyArray<JsonValueData>
   readonly row: StepRow
   readonly input: JsonValueData | null
   readonly output: JsonValueData | null
@@ -101,20 +101,122 @@ export const missingOf = (page: Pick<RunPage, "id" | "state">, cloud = false): s
     ? cloud || isRemoteRun(page.id) ? NOT_FOUND : ON_ANOTHER_DEVICE
     : COULDNT_READ
 
-/** The runs a person's list shows, newest first: work, never an act on a run. */
-export const listRows = (runs: ReadonlyArray<RunRow>): ReadonlyArray<UiRunRow> =>
-  runs
-    .filter((run) => listed(run.flow))
-    .sort((left, right) => right.createdAtMs - left.createdAtMs)
-    .map((run) => ({
+/** A retry's new run: `retry:<runId>:<n>/run` (`retriedRunId`). */
+const RETRIED = /^retry:.+:\d+\/run$/
+
+/** What started a run on this device, as the list's Trigger column reads it: the door the engine kept. */
+export const deviceTrigger = (run: Pick<RunRow, "id" | "origin">): string | undefined =>
+  RETRIED.test(run.id) ? "retry" : run.origin == null || run.origin.door === "unknown" ? undefined : run.origin.door
+
+/** Who started a run on this device: the person on it, their agent, or the app. */
+export const deviceActor = (run: Pick<RunRow, "origin">): string | undefined =>
+  run.origin?.actor === "person" ? "you" : run.origin?.actor === "agent" ? "agent" : run.origin?.actor === "app" ? "app" : undefined
+
+/** What started a run on Cloudflare, in the list's words. */
+export const cloudTrigger = (trigger: CloudRun["trigger"]): string => trigger === "pull_request" ? "pull request" : trigger
+
+/** Where a run on Cloudflare opens: a repository's run under its repository, every other on the Runs page. */
+export const cloudHref = (run: Pick<CloudRun, "runId" | "kind" | "repo">): string => {
+  if (run.kind === "repo" && run.repo !== null) {
+    const [owner, name] = run.repo.split("/") as [string, string]
+    return actionRunPath(owner, name, run.runId)
+  }
+  return runPath(run.runId)
+}
+
+/** A run on Cloudflare as a row of this device's run index reads, for the flows summary. */
+export const cloudRowOf = (run: CloudRun): RunRow => ({
+  id: run.runId,
+  flow: run.flow,
+  status: run.status,
+  cancelRequested: run.cancelRequested,
+  createdAtMs: run.createdAtMs,
+  startedAtMs: run.startedAtMs,
+  finishedAtMs: run.finishedAtMs,
+  seq: -1,
+})
+
+/** What the Runs page's address says: one flow's runs (`flow`), and the run opened in place (`open`). */
+export interface ListView {
+  readonly flow?: string
+  readonly open?: string
+}
+
+/**
+ * Whether the Runs page may say it has no runs: this device's list and the runs on Cloudflare have each answered once.
+ * Until then a list of none shows nothing, as a repository's list does (`repoRunsLoaded`).
+ */
+export const listLoaded = (view: Pick<RunView, "listLoaded" | "cloudLoaded"> | undefined): boolean =>
+  view?.listLoaded === true && view.cloudLoaded === true
+
+/** Reads the Runs page's address (the route's `validateSearch`), keeping only a flow and a run that could name one. */
+export const runsSearch = (search: Record<string, unknown>): ListView => ({
+  ...(typeof search.flow === "string" && search.flow !== "" && search.flow.length <= 256 ? { flow: search.flow } : {}),
+  ...(typeof search.open === "string" && search.open !== "" && search.open.length <= 512 ? { open: search.open } : {}),
+})
+
+/** The Runs page's address for `view`. */
+export const listHref = (view: ListView): string => {
+  const query = new URLSearchParams()
+  if (view.flow !== undefined) query.set("flow", view.flow)
+  if (view.open !== undefined) query.set("open", view.open)
+  return query.size === 0 ? "/app/runs" : `/app/runs?${query}`
+}
+
+/**
+ * The runs a person's list shows, newest first, like a CI system's runs: this device's work (never an act on a run)
+ * and the runs on Cloudflare they may read, each with what started it, its branch and who started it, filtered to
+ * `view.flow`, and each with a toggle that opens it in place (`view.open`).
+ */
+export const listRows = (
+  runs: ReadonlyArray<RunRow>,
+  cloud: ReadonlyArray<CloudRun> = [],
+  view: ListView = {},
+): ReadonlyArray<UiRunRow> => {
+  const device = runs.filter((run) => listed(run.flow)).map((run) => ({
+    createdAtMs: run.createdAtMs,
+    row: {
       id: run.id,
       flow: run.flow,
-      state: run.status === "completed" && hasDomainOutcome(run.flow) && run.outcome === "failed" ? "failed" : run.status,
+      state: run.status === "completed" && hasDomainOutcome(run.flow) && run.outcome === "failed" ? "failed" as const : run.status,
       cancelRequested: run.cancelRequested,
       startedAtMs: run.startedAtMs ?? run.createdAtMs,
       finishedAtMs: run.finishedAtMs,
       href: runPath(run.id),
-    }))
+      ...(deviceTrigger(run) === undefined ? {} : { trigger: deviceTrigger(run)! }),
+      branch: null,
+      ...(deviceActor(run) === undefined ? {} : { actor: deviceActor(run)! }),
+    } satisfies UiRunRow,
+  }))
+  const remote = cloud.map((run) => ({
+    createdAtMs: run.createdAtMs,
+    row: {
+      id: run.runId,
+      flow: run.flow,
+      state: run.status,
+      cancelRequested: run.cancelRequested,
+      startedAtMs: run.startedAtMs ?? run.createdAtMs,
+      finishedAtMs: run.finishedAtMs,
+      href: cloudHref(run),
+      trigger: cloudTrigger(run.trigger),
+      branch: run.branch,
+      actor: run.actor,
+      where: CLOUD,
+    } satisfies UiRunRow,
+  }))
+  const flow = view.flow
+  return [...device, ...remote]
+    .filter(({ row }) => flow === undefined || row.flow === flow)
+    .sort((left, right) => right.createdAtMs - left.createdAtMs)
+    .map(({ row }) => {
+      const expanded = view.open === row.id
+      return {
+        ...row,
+        expanded,
+        toggleHref: listHref({ ...(flow === undefined ? {} : { flow }), ...(expanded ? {} : { open: row.id }) }),
+      }
+    })
+}
 
 /** How many times `runId` was retried from this device: each Retry is one `run/retry` act, `retry:<runId>:<n>`. */
 export const retriesOf = (runs: ReadonlyArray<RunRow>, runId: string): number =>

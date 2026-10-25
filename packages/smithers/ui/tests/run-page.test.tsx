@@ -11,6 +11,8 @@ import {
   RUN_WORD_GLYPHS,
   RUN_WORD_TONES,
   RUN_WORDS,
+  RunDetails,
+  type RunDetailsJob,
   RunHeader,
   RunJournal,
   RunList,
@@ -285,6 +287,101 @@ describe("RunList", () => {
     await render(<RunList runs={[]} now={0} empty={<p>Nothing yet</p>} />);
     expect($("[data-slot='run-list'] p")!.textContent).toBe("Nothing yet");
     expect($("[data-slot='empty-state']")).toBeNull();
+  });
+});
+
+describe("RunList like a CI system's runs", () => {
+  const runs = [
+    {
+      id: "c1", flow: "todo", state: "failed" as const, startedAtMs: 0, finishedAtMs: 30_000, href: "/app/runs/todo:1",
+      trigger: "commit", branch: "todo/fix-the-thing", actor: "maya", where: "Cloud", toggleHref: "/app/runs?open=c1",
+      expanded: true,
+    },
+    {
+      id: "d1", flow: "app/theme/set", state: "completed" as const, startedAtMs: 40_000, finishedAtMs: 40_500,
+      href: "/app/runs/d1", trigger: "button", branch: null, actor: "you", toggleHref: "/app/runs?open=d1",
+    },
+  ];
+
+  test("trigger, branch and actor columns show once any row has them, with none as a dash", async () => {
+    await render(<RunList runs={runs} now={60_000} />);
+    expect($$("thead th").map((head) => head.textContent)).toEqual(
+      ["Details", "Flow", "Status", "Trigger", "Branch", "Actor", "Started", "Duration"],
+    );
+    const [cloud, device] = $$("tbody tr[data-run]");
+    expect(cloud!.querySelector("[data-slot='run-trigger']")!.textContent).toBe("commit");
+    expect(cloud!.querySelector("[data-slot='run-branch']")!.textContent).toBe("todo/fix-the-thing");
+    expect(cloud!.querySelector("[data-slot='run-actor']")!.textContent).toBe("maya");
+    expect(cloud!.querySelector("[data-slot='run-where']")!.textContent).toBe("Cloud");
+    expect(device!.querySelector("[data-slot='run-branch']")!.textContent).toBe("–");
+    expect(device!.querySelector("[data-slot='run-where']")).toBeNull();
+  });
+
+  test("a toggle links to the row opened or closed; only an expanded row shows its details, full width", async () => {
+    await render(<RunList runs={runs} now={60_000} renderDetails={(run) => <p data-details={run.id}>details</p>} />);
+    const toggles = $$("[data-slot='run-details-toggle']");
+    expect(toggles.map((toggle) => toggle.getAttribute("aria-label"))).toEqual(["Hide todo", "Show app/theme/set"]);
+    expect(toggles.map((toggle) => toggle.closest("a")!.getAttribute("href"))).toEqual(["/app/runs?open=c1", "/app/runs?open=d1"]);
+    expect($$("[data-details]").map((details) => details.dataset.details)).toEqual(["c1"]);
+    expect($("tr[data-run-details='c1'] td")!.getAttribute("colspan")).toBe("8");
+    expect($("tr[data-run='c1']")!.dataset.expanded).toBe("true");
+    // Without a renderer, an expanded row shows nothing more.
+    await render(<RunList runs={runs} now={60_000} />);
+    expect($("tr[data-run-details]")).toBeNull();
+  });
+
+  test("a list without the CI fields keeps its four columns", async () => {
+    await render(<RunList runs={[{ id: "r", flow: "f", state: "running", startedAtMs: 0, finishedAtMs: null, href: "/r", toggleHref: "javascript:x" }]} now={1_000} />);
+    expect($$("thead th").map((head) => head.textContent)).toEqual(["Details", "Flow", "Status", "Started", "Duration"]);
+    // A toggle whose href isn't navigable shows the chevron alone.
+    expect($("[data-slot='run-details-toggle']")!.closest("a")).toBeNull();
+  });
+});
+
+describe("RunDetails", () => {
+  const jobs: ReadonlyArray<RunDetailsJob> = [
+    {
+      id: "root", label: "todo", state: "failed", href: null,
+      steps: [
+        { id: "s1", label: "todo/Plan", state: "completed", startedAtMs: 0, endedAtMs: 1_200, logs: 2 },
+        { id: "s2", label: "todo/Publish", state: "failed", startedAtMs: 1_200, endedAtMs: 4_200, error: "GitHubRefused", logs: 0 },
+        { id: "s3", label: "todo/Review", state: "pending", startedAtMs: 4_200, endedAtMs: null, logs: 0 },
+      ],
+    },
+    { id: "child", label: "ci/job", state: "running", href: "/app/runs/child", steps: [{ id: "c1", label: "ci/step", state: "running", startedAtMs: 1_000, endedAtMs: null, logs: 1 }] },
+    { id: "empty", label: "nothing", state: "pending", href: null, steps: [] },
+  ];
+
+  test("each job with its steps; a failed step opens with its error; logs render when a step has them", async () => {
+    await render(
+      <RunDetails jobs={jobs} now={6_000} renderLogs={(job, step) => <pre data-logs={`${job.id}/${step.id}`}>lines</pre>} />,
+    );
+    expect($$("[data-job]").map((job) => job.dataset.job)).toEqual(["root", "child"]);
+    const steps = $$("details[data-step]");
+    expect(steps.map((step) => [step.dataset.step, step.hasAttribute("open")])).toEqual(
+      [["s1", false], ["s2", true], ["s3", false], ["c1", false]],
+    );
+    expect(steps[0]!.querySelector("summary")!.textContent).toContain("todo/Plan");
+    expect(steps[0]!.querySelector(".sui-run-details-duration")!.textContent).toBe("1.2 s");
+    expect(steps[1]!.querySelector("[data-slot='run-step-error']")!.textContent).toBe("GitHubRefused");
+    expect(steps[1]!.textContent).toContain("No logs");
+    expect(steps[2]!.querySelector(".sui-run-details-duration")).toBeNull();
+    // A running step counts to now.
+    expect(steps[3]!.querySelector(".sui-run-details-duration")!.textContent).toBe("5.0 s");
+    expect($$("[data-logs]").map((logs) => logs.dataset.logs)).toEqual(["root/s1", "child/c1"]);
+    expect($("[data-job='child'] a")!.getAttribute("href")).toBe("/app/runs/child");
+    expect($("[data-job='root'] .sui-sr-only")!.textContent).toBe("Failed");
+  });
+
+  test("nothing to list shows the host's empty line; without a log renderer every step reads No logs", async () => {
+    await render(<RunDetails jobs={[]} now={0} empty={<p data-empty>Loading</p>} />);
+    expect($("[data-empty]")!.textContent).toBe("Loading");
+    await render(<RunDetails jobs={jobs.slice(0, 1)} now={6_000} renderLink={(href, children) => <span data-link={href}>{children}</span>} />);
+    expect($$(".sui-run-details-empty").length).toBe(3);
+    await render(<RunDetails jobs={jobs.slice(1, 2)} now={6_000} renderLink={(href, children) => <span data-link={href}>{children}</span>} />);
+    expect($("[data-link]")!.dataset.link).toBe("/app/runs/child");
+    await render(<RunDetails jobs={[{ ...jobs[1]!, href: "javascript:x" }]} now={6_000} />);
+    expect($("[data-job] a")).toBeNull();
   });
 });
 

@@ -33,10 +33,16 @@ const setView = (fields: Partial<Omit<RunView, "id">>) =>
 /** Hovering the list's link reads it without changing the page. */
 export const warmList = Effect.flatMap(RunsStore, (store) => store.warmList)
 
-/** The list's route loader: shows the list, reusing a warm unless the engine has changed. */
-export const openList = Effect.gen(function* () {
+/**
+ * The list's route loader: shows the list, reusing a warm unless the engine has changed, and reads the runs on
+ * Cloudflare in the background. `open` is the run the list shows opened in place (`?open=`), read and followed live.
+ */
+export const openList = (open: string | null = null) => Effect.gen(function* () {
+  const store = yield* RunsStore
   // The run page is left: an act still answering for it no longer moves or marks this tab.
-  yield* setView({ listOpen: true, actToken: null })
+  yield* setView({ listOpen: true, actToken: null, expanded: open })
+  yield* store.loadCloud
+  if (open !== null) yield* store.loadRun(open, null)
   yield* warmList
 })
 
@@ -59,7 +65,7 @@ export const openRun = (runId: string, repo: RepoName | null = null) =>
   Effect.gen(function* () {
     const store = yield* RunsStore
     yield* store.beginRoute(runId)
-    yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, actToken: null, refusal: null, repo })
+    yield* setView({ runId, listOpen: false, expanded: null, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, actToken: null, refusal: null, repo })
     if (repo !== null) yield* store.cloud(runId)
     yield* store.loadRun(runId, repo)
   })

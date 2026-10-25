@@ -23,6 +23,7 @@ export {
   waterfallBars,
 } from "./runPage";
 export { runPageCss } from "./runPageCss";
+export { RunDetails, type RunDetailsJob, type RunDetailsProps, type RunDetailsStep } from "./RunDetails";
 export { RunHeader, type RunHeaderProps } from "./RunHeader";
 export { RunJournal, type JournalRow, type RunJournalProps } from "./RunJournal";
 export { RunList, type RunListProps, type RunRow } from "./RunList";

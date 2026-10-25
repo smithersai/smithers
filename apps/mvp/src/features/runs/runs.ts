@@ -32,8 +32,12 @@ type Store = RunsStore["Service"]
 /** What a frontend reads live: the open run with its view, the view alone, and the list. */
 export interface RunsQueries {
   readonly page: Store["page"]["tanstack"]
+  /** The run the list shows opened in place, with its read. */
+  readonly expandedPage: Store["expandedPage"]["tanstack"]
   readonly view: Store["viewRow"]["tanstack"]
   readonly runs: Store["list"]["tanstack"]
+  /** The runs on Cloudflare this person may read, as the list last read them. */
+  readonly cloudRuns: Store["cloudList"]["tanstack"]
   /** Every repository run the device holds (docs/features/actions.md), from when a list opened. */
   readonly repoRuns: Store["repoRunList"]["tanstack"]
   /** The repositories whose runs have loaded: a list of none says so only then. */
@@ -52,7 +56,8 @@ const sentQuery = (writes: SteerWrites["Service"]) => LiveQuery.make((q) => q.fr
 /** What a person does, as plain functions. Each returns at once, or with a promise a route loader awaits. */
 export interface RunsActions {
   readonly warmList: () => Promise<void>
-  readonly openList: () => Promise<void>
+  /** The list's route loader; `open` is the run shown opened in place. */
+  readonly openList: (open?: string) => Promise<void>
   /** A repository's list's route loader: syncs the repositories' runs, once (docs/features/actions.md). */
   readonly openRepoRuns: (owner: string, name: string) => Promise<void>
   /** Opens `runId`; a repository's run with its `repo`, read on Cloudflare. */
@@ -91,8 +96,10 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
       return Runs.of({
         queries: {
           page: store.page.tanstack,
+          expandedPage: store.expandedPage.tanstack,
           view: store.viewRow.tanstack,
           runs: store.list.tanstack,
+          cloudRuns: store.cloudList.tanstack,
           repoRuns: store.repoRunList.tanstack,
           repoRunsLoaded: store.repoRunsLoaded.tanstack,
           steerSending: steerSending.tanstack,
@@ -100,7 +107,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
         },
         actions: {
           warmList: () => promise(warmList),
-          openList: () => promise(openList),
+          openList: (open) => promise(openList(open)),
           openRepoRuns: (owner, name) => promise(store.openRepoRuns(owner, name)),
           openRun: (runId, repo) => promise(openRun(runId, repo ?? null)),
           rendered: (runId) => fork(store.rendered(runId)),

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net"
 import { Effect } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import { RemoteRunsClient } from "./api"
 import type { Inspection } from "./schema"
 
@@ -26,6 +26,7 @@ const READ: Inspection = {
     cancelRequestedAtMs: null,
     waiting: null,
     lastSeq: 0,
+    origin: null,
     input: value("{}"),
     result: null,
   },
@@ -240,4 +241,50 @@ test("a stop with nothing listening, or no answer in time, fails with no status"
   await servers.splice(0).reduce((done, close) => done.then(close), Promise.resolve())
   const nothing = await stop(closed.origin)
   expect(nothing._tag === "Failure" && nothing.failure.status).toBe(undefined)
+})
+
+const cloudRuns = (origin: string) =>
+  Effect.runPromise(
+    Effect.result(Effect.flatMap(RemoteRunsClient, (client) => client.list)).pipe(
+      Effect.provide(RemoteRunsClient.layer({ origin, within: "300 millis" })),
+      Effect.provide(FetchHttpClient.layer),
+    ),
+  )
+
+describe("the runs on Cloudflare", () => {
+  const listed = {
+    runId: RUN, flow: "todo", kind: "todo", status: "running", cancelRequested: false, createdAtMs: 1, startedAtMs: 2,
+    finishedAtMs: null, trigger: "commit", branch: "todo/fix", actor: "maya", repo: "octo/hello",
+  }
+
+  test("lists them from their route, at most the list's bound, decoded", async () => {
+    const server = await serve(json(200, { runs: [listed] }))
+    const answered = await cloudRuns(server.origin)
+    expect(answered._tag === "Success" && answered.success).toEqual([listed])
+    expect(server.asked).toEqual(["GET /api/cloud-runs?limit=50"])
+  })
+
+  test("a refusal fails with its status and code; a body that isn't a list, with its status; a stall, with none", async () => {
+    const refused = await serve(json(401, { code: "authentication" }))
+    expect(await cloudRuns(refused.origin)).toMatchObject({ _tag: "Failure", failure: { status: 401, code: "authentication" } })
+    const bare = await serve((_, response) => {
+      response.writeHead(503, { "content-type": "text/plain" })
+      response.end("down")
+    })
+    const down = await cloudRuns(bare.origin)
+    expect(down).toMatchObject({ _tag: "Failure", failure: { status: 503 } })
+    expect(down._tag === "Failure" && down.failure.code).toBe(undefined)
+    const wrong = await serve(json(200, { runs: [{ runId: RUN }] }))
+    expect(await cloudRuns(wrong.origin)).toMatchObject({ _tag: "Failure", failure: { status: 200 } })
+    const stalled = await serve((_, response) => {
+      response.writeHead(200, { "content-type": "application/json" })
+      response.write('{"runs":')
+    })
+    const late = await cloudRuns(stalled.origin)
+    expect(late._tag === "Failure" && late.failure.status).toBe(undefined)
+    const gone = await serve(() => {})
+    await servers.splice(-1)[0]!()
+    const nobody = await cloudRuns(gone.origin)
+    expect(nobody._tag === "Failure" && nobody.failure.status).toBe(undefined)
+  })
 })

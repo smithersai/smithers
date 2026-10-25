@@ -67,6 +67,14 @@ export const maximumJournalPage = 500
 export const maximumListPage = 200
 
 /**
+ * The most flow tags one {@link Service.list} filters by.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumListFlows = 64
+
+/**
  * The most child runs one {@link Service.inspect} returns, oldest first.
  *
  * @category constants
@@ -122,6 +130,24 @@ export interface RunSummary {
   readonly cancelRequestedAtMs: number | null
   readonly waiting: Waiting | null
   readonly lastSeq: number
+  /**
+   * How the run started, as its caller said when the engine admitted it
+   * (`@smthrs/flow` `RunMetrics.CurrentOrigin`): the door and the actor kind,
+   * never who. `null` for a run admitted before the engine kept it.
+   */
+  readonly origin: Origin | null
+}
+
+/**
+ * How a run started: the door it came through (such as `button`, `agent` or
+ * `flow` for a run another run started) and the kind of actor behind it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Origin {
+  readonly door: string
+  readonly actor: string
 }
 
 /**
@@ -256,10 +282,20 @@ export interface Service {
   /**
    * Runs newest first, `limit` at a time (default 50, at most
    * {@link maximumListPage}), from `cursor`. `roots`, the default, keeps the
-   * runs with no parent.
+   * runs with no parent. `runIds` keeps only those runs, at most
+   * {@link maximumListPage} of them (more fail `invalid_run`); a run the
+   * engine doesn't hold is left out, so a caller that knows its runs by
+   * another index reads their state in one round trip. `flows` keeps only
+   * the runs of those flows, by tag, at most {@link maximumListFlows} of them.
    */
   readonly list: (
-    options?: { readonly limit?: number; readonly cursor?: string; readonly roots?: boolean }
+    options?: {
+      readonly limit?: number
+      readonly cursor?: string
+      readonly roots?: boolean
+      readonly runIds?: ReadonlyArray<string>
+      readonly flows?: ReadonlyArray<string>
+    }
   ) => Effect.Effect<RunList, RunStore.RunStoreError>
   /**
    * The run's flow and its payload exactly as the engine stored it: encoded
@@ -638,7 +674,10 @@ const summaryOf = (row: RunRow): RunSummary => ({
     reason: row.waiting_reason,
     wakeAtMs: row.waiting_wake_at_ms
   },
-  lastSeq: row.last_seq ?? -1
+  lastSeq: row.last_seq ?? -1,
+  origin: row.state_json.origin === undefined
+    ? null
+    : { door: row.state_json.origin.door, actor: row.state_json.origin.actor }
 })
 
 /** A run row with what it was given and what it answered, shown through its flow. */
@@ -872,11 +911,33 @@ export const make = (options: Options = {}): Effect.Effect<Service, never, SqlCl
               })
             )
           )
+          const { flows, runIds } = options
+          const tooMany = () =>
+            new RunStore.RunStoreError({
+              method: "RunInspection.list",
+              code: "invalid_run",
+              message: `at most ${maximumListPage} run ids and ${maximumListFlows} flows per list`,
+              cause: null
+            })
+          if (runIds !== undefined && runIds.length > maximumListPage) return yield* tooMany()
+          if (flows !== undefined && flows.length > maximumListFlows) return yield* tooMany()
+          if (runIds?.length === 0 || flows?.length === 0) return { runs: [], cursor: null } satisfies RunList
+          const placeholders = (values: ReadonlyArray<string>) => values.map(() => "?").join(", ")
+          // The flow's tag lives in the run's state, read the same way on either store.
+          const flowName = Dialect.isPostgres(sql)
+            ? "(r.state_json::jsonb #>> '{flowName}')"
+            : "json_extract(r.state_json, '$.flowName')"
           const conditions = [
             ...(roots ? [rootCondition] : []),
+            ...(runIds === undefined ? [] : [`r.run_id IN (${placeholders(runIds)})`]),
+            ...(flows === undefined ? [] : [`${flowName} IN (${placeholders(flows)})`]),
             ...(after === undefined ? [] : ["(r.created_at_ms < ? OR (r.created_at_ms = ? AND r.run_id < ?))"])
           ]
-          const values = after === undefined ? [] : [after.createdAtMs, after.createdAtMs, after.runId]
+          const values = [
+            ...(runIds ?? []),
+            ...(flows ?? []),
+            ...(after === undefined ? [] : [after.createdAtMs, after.createdAtMs, after.runId])
+          ]
           const where = conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`
           const rows = yield* Dialect.readTransaction(
             sql,

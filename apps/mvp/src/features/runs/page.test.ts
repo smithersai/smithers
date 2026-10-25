@@ -2,8 +2,26 @@
 // selected one, the journal with what More read, the acts a run offers, and the list's rows.
 import { describe, expect, test } from "vitest"
 import { ACTIONS_LIMIT } from "../actions/contract"
-import { actsOf, hostOf, journalOf, listRows, missingOf, repoRunRows, repoRunsLoaded, retriesOf, selectedStep, STALLED_AFTER_MS } from "./page"
-import type { Inspection, RepoRunRow, RunRow } from "./schema"
+import {
+  actsOf,
+  cloudHref,
+  cloudRowOf,
+  deviceActor,
+  deviceTrigger,
+  hostOf,
+  journalOf,
+  listHref,
+  listLoaded,
+  listRows,
+  missingOf,
+  repoRunRows,
+  repoRunsLoaded,
+  retriesOf,
+  runsSearch,
+  selectedStep,
+  STALLED_AFTER_MS,
+} from "./page"
+import type { CloudRun, Inspection, RepoRunRow, RunPage, RunRow } from "./schema"
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
 
@@ -18,6 +36,7 @@ const run = (overrides: Partial<Inspection["run"]> = {}): Inspection["run"] => (
   cancelRequestedAtMs: null,
   waiting: null,
   lastSeq: 9,
+  origin: null,
   input: value("{}"),
   result: value('"Hello."'),
   ...overrides,
@@ -56,6 +75,7 @@ const inspection = (overrides: Partial<Inspection> = {}): Inspection => ({
       cancelRequestedAtMs: null,
       waiting: { kind: "human", reason: "human", wakeAtMs: 9_000 },
       lastSeq: 3,
+      origin: null,
       input: value('{"input":""}'),
       result: null,
     },
@@ -71,7 +91,7 @@ const inspection = (overrides: Partial<Inspection> = {}): Inspection => ({
 
 describe("selectedStep", () => {
   test("explicit selection wins, otherwise follow live work, then the latest settled step", () => {
-    const step = (id: string, state: import("@smthrs/ui").StepState): import("./page").PageStep => ({ row: { id, label: id, state, kind: "step", startedAtMs: 0, endedAtMs: null, depth: 0, attempts: 0, failedAttempts: 0 }, input: null, output: null, attempts: [], wait: null, href: null })
+    const step = (id: string, state: import("@smthrs/ui").StepState): import("./page").PageStep => ({ row: { id, label: id, state, kind: "step", startedAtMs: 0, endedAtMs: null, depth: 0, attempts: 0, failedAttempts: 0 }, input: null, output: null, attempts: [], wait: null, href: null, logs: [] })
     const steps = [step("a", "completed"), step("b", "running"), step("c", "pending")]
     expect(selectedStep(steps, "a")?.row.id).toBe("a")
     expect(selectedStep(steps, null)?.row.id).toBe("b")
@@ -201,9 +221,70 @@ describe("the list", () => {
   test("work only, newest first, each linking its page", () => {
     expect(listRows([row({ id: "a", createdAtMs: 1 }), row({ id: "b", createdAtMs: 2, startedAtMs: 3 }), row({ id: "c", flow: "run/retry" })]))
       .toEqual([
-        { id: "b", flow: "flow/run", state: "completed", cancelRequested: false, startedAtMs: 3, finishedAtMs: null, href: "/app/runs/b" },
-        { id: "a", flow: "flow/run", state: "completed", cancelRequested: false, startedAtMs: 1, finishedAtMs: null, href: "/app/runs/a" },
+        { id: "b", flow: "flow/run", state: "completed", cancelRequested: false, startedAtMs: 3, finishedAtMs: null, href: "/app/runs/b", branch: null, expanded: false, toggleHref: "/app/runs?open=b" },
+        { id: "a", flow: "flow/run", state: "completed", cancelRequested: false, startedAtMs: 1, finishedAtMs: null, href: "/app/runs/a", branch: null, expanded: false, toggleHref: "/app/runs?open=a" },
       ])
+  })
+
+  const cloud = (runId: string, overrides: Partial<CloudRun> = {}): CloudRun => ({
+    runId, flow: "todo", kind: "todo", status: "running", cancelRequested: false, createdAtMs: 5, startedAtMs: 6, finishedAtMs: null,
+    trigger: "commit", branch: "todo/fix", actor: "maya", repo: "octo/hello", ...overrides,
+  })
+
+  test("like a CI system's runs: this device's beside Cloudflare's, newest first, with trigger, branch and actor", () => {
+    const rows = listRows(
+      [
+        row({ id: "theme", flow: "app/theme/set", createdAtMs: 1, origin: { door: "button", actor: "person" } }),
+        row({ id: "answer", flow: "chat/Answer", createdAtMs: 7, origin: { door: "composer", actor: "agent" } }),
+        row({ id: "old", createdAtMs: 0, origin: { door: "unknown", actor: "unknown" } }),
+      ],
+      [
+        cloud("todo:a", { createdAtMs: 9 }),
+        cloud("ci:1", { kind: "repo", flow: "ci", trigger: "pull_request", branch: "main", actor: "github", createdAtMs: 3 }),
+        cloud("spend-1", { kind: "system", flow: "ops/SpendAlert", trigger: "system", branch: null, actor: null, repo: null, createdAtMs: 2, startedAtMs: null, status: "pending" }),
+      ],
+    )
+    // A run the engine hasn't begun counts from when it was recorded.
+    expect(rows.find((run) => run.id === "spend-1")).toMatchObject({ state: "pending", startedAtMs: 2 })
+    expect(rows.map((run) => [run.id, run.trigger, run.branch, run.actor, run.where, run.href])).toEqual([
+      ["todo:a", "commit", "todo/fix", "maya", "Cloud", "/app/runs/todo%3Aa"],
+      ["answer", "composer", null, "agent", undefined, "/app/runs/answer"],
+      ["ci:1", "pull request", "main", "github", "Cloud", "/octo/hello/actions/runs/ci%3A1"],
+      ["spend-1", "system", null, null, "Cloud", "/app/runs/spend-1"],
+      ["theme", "button", null, "you", undefined, "/app/runs/theme"],
+      ["old", undefined, null, undefined, undefined, "/app/runs/old"],
+    ])
+  })
+
+  test("one flow's runs, and one run opened in place: its toggle closes it, every other opens its own", () => {
+    const rows = listRows(
+      [row({ id: "a", flow: "flow/run", createdAtMs: 1 }), row({ id: "b", flow: "app/theme/set", createdAtMs: 2 })],
+      [cloud("todo:c", { createdAtMs: 3 })],
+      { flow: "flow/run", open: "a" },
+    )
+    expect(rows.map((run) => [run.id, run.expanded, run.toggleHref])).toEqual([["a", true, "/app/runs?flow=flow%2Frun"]])
+    expect(listRows([row({ id: "a" })], [], { open: "b" })[0]).toMatchObject({ expanded: false, toggleHref: "/app/runs?open=a" })
+    expect(listRows([row({ id: "a" })], [], { open: "a" })[0]).toMatchObject({ expanded: true, toggleHref: "/app/runs" })
+  })
+
+  test("the words and addresses the list uses", () => {
+    expect(deviceTrigger({ id: "retry:x:1/run", origin: { door: "flow", actor: "person" } })).toBe("retry")
+    expect(deviceTrigger({ id: "x", origin: null })).toBeUndefined()
+    expect(deviceTrigger({ id: "x" })).toBeUndefined()
+    expect(deviceActor({ origin: { door: "sync", actor: "app" } })).toBe("app")
+    expect(deviceActor({ origin: { door: "x", actor: "other" } })).toBeUndefined()
+    expect(cloudHref({ runId: "ci:1", kind: "repo", repo: null })).toBe("/app/runs/ci%3A1")
+    // The page says it has no runs only once both lists have answered.
+    expect([listLoaded(undefined), listLoaded({ listLoaded: true }), listLoaded({ cloudLoaded: true }), listLoaded({ listLoaded: true, cloudLoaded: true })])
+      .toEqual([false, false, false, true])
+    expect(runsSearch({ flow: "todo", open: "todo:1", other: "x" })).toEqual({ flow: "todo", open: "todo:1" })
+    expect(runsSearch({ flow: "", open: 7 })).toEqual({})
+    expect(runsSearch({ flow: "x".repeat(257), open: "y".repeat(513) })).toEqual({})
+    expect(listHref({})).toBe("/app/runs")
+    expect(listHref({ flow: "todo", open: "todo:1" })).toBe("/app/runs?flow=todo&open=todo%3A1")
+    expect(cloudRowOf(cloud("todo:a", { status: "failed", finishedAtMs: 8 }))).toEqual({
+      id: "todo:a", flow: "todo", status: "failed", cancelRequested: false, createdAtMs: 5, startedAtMs: 6, finishedAtMs: 8, seq: -1,
+    })
   })
 
   test("shows an inspected answer or draft's failed work in its list row", () => {

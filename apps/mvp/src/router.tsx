@@ -42,6 +42,7 @@ import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
 import { RunScreen } from "./screens/runs/RunScreen"
 import { ConversationsScreen } from "./screens/conversations/ConversationsScreen"
+import { runsSearch } from "./features/runs/page"
 import { RunsScreen } from "./screens/runs/RunsScreen"
 import { SecretsScreen } from "./screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
@@ -182,12 +183,17 @@ const codeRoute = createRoute({
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openCode(load.params.name)),
 })
 
-/** `/app/runs`: every run on this device (decision 0014 §5). */
+/**
+ * `/app/runs`: every run on this device and the runs on Cloudflare this person may read (decision 0014 §5, ruling
+ * FLOW-13). `?flow=` lists one flow's runs; `?open=` shows one run opened in place, its jobs and steps.
+ */
 const runsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app/runs",
   component: RunsScreen,
-  beforeLoad: (load) => enter(load, () => load.context.runs.actions.warmList(), () => load.context.runs.actions.openList()),
+  validateSearch: runsSearch,
+  beforeLoad: (load) =>
+    enter(load, () => load.context.runs.actions.warmList(), () => load.context.runs.actions.openList(load.search.open)),
 })
 
 /** `/app/conversations`: your conversations, one per branch, synced to every device of yours. */

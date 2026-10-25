@@ -2,8 +2,8 @@ import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { renewed, withBearer, withoutCookie } from "../../flows/bearer"
-import { remoteRunRoute, steersRoute, stopRoute } from "./contract"
-import type { Inspection } from "./schema"
+import { CLOUD_RUNS_LIMIT, CLOUD_RUNS_ROUTE, remoteRunRoute, steersRoute, stopRoute } from "./contract"
+import { type CloudRun, CloudRunList, type Inspection } from "./schema"
 
 // ChatApi's remote runs route as the browser calls it (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): a run
 // Smithers runs on Cloudflare, as the engine's `RunInspection` reads it there, through Effect's HttpClient with one
@@ -54,6 +54,33 @@ export const getRun = (
     // Interrupting the request aborts its fetch, so a stalled body stops too.
     Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new RemoteReadFailed({})) }),
     Effect.withSpan("run.read.remote"),
+  )
+
+const decodeCloudRuns = Schema.decodeUnknownEffect(CloudRunList)
+
+/** `GET /api/cloud-runs?limit=`: the runs on Cloudflare this person may read, newest first. */
+export const getCloudRuns = (origin: string, within: Duration.Input) =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient
+    const response = yield* client
+      .execute(HttpClientRequest.get(`${origin}${CLOUD_RUNS_ROUTE}?limit=${CLOUD_RUNS_LIMIT}`))
+      .pipe(Effect.mapError(() => new RemoteReadFailed({})))
+    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    if (response.status !== 200) {
+      const refused = yield* response.json.pipe(Effect.option, Effect.map(Option.flatMap(decodeRefusal)))
+      return yield* new RemoteReadFailed({
+        status: response.status,
+        ...(Option.isSome(refused) ? { code: refused.value.code } : {}),
+      })
+    }
+    return yield* response.json.pipe(
+      Effect.flatMap(decodeCloudRuns),
+      Effect.map((list) => list.runs),
+      Effect.mapError(() => new RemoteReadFailed({ status: response.status })),
+    )
+  }).pipe(
+    Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new RemoteReadFailed({})) }),
+    Effect.withSpan("run.list.cloud"),
   )
 
 /**
@@ -162,6 +189,8 @@ export class RemoteRunsClient extends Context.Service<
     ) => Effect.Effect<SteerTaken, SteerFailed>
     /** Stops a repository's run on Cloudflare: `requested`, or `settled` when it had ended. */
     readonly stop: (runId: string) => Effect.Effect<{ readonly outcome: "requested" | "settled" }, StopFailed>
+    /** The runs on Cloudflare this person may read, newest first. */
+    readonly list: Effect.Effect<ReadonlyArray<CloudRun>, RemoteReadFailed>
   }
 >()("@smthrs/mvp/runs/RemoteRunsClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
@@ -178,6 +207,7 @@ export class RemoteRunsClient extends Context.Service<
             ),
           stop: (runId) =>
             postStop(options.origin, runId, options.within).pipe(Effect.provideService(HttpClient.HttpClient, client)),
+          list: getCloudRuns(options.origin, options.within).pipe(Effect.provideService(HttpClient.HttpClient, client)),
         })),
     )
 }

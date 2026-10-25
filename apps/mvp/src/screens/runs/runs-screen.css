@@ -30,3 +30,6 @@
 .run-steer-meta { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; font-size:0.8125rem; opacity:0.8; }
 .run-steer-composer { display:flex; gap:0.5rem; align-items:flex-end; }
 .run-steer-composer > textarea { flex:1; min-width:0; }
+
+/* A step's log lines in a run opened in place on the Runs page (ruling FLOW-13). */
+.runs-log { max-height:24rem; overflow:auto; }

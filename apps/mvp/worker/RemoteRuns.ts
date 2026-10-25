@@ -7,6 +7,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import {
+  CLOUD_RUNS_ROUTE,
   isRemoteRun,
   JOURNAL_PAGE,
   MAX_STEER_BODY_BYTES,
@@ -24,6 +25,7 @@ import {
 } from "../src/features/runs/contract.ts"
 import { type Actor, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
+import * as CloudRuns from "./CloudRuns.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 import * as RepoRuns from "./RepoRuns.ts"
@@ -123,10 +125,10 @@ export const parseSteerPath = (path: string): string | undefined =>
 export const parseStopPath = (path: string): string | undefined =>
   path.endsWith("/stop") ? parseRunPath(path.slice(0, -"/stop".length)) : undefined
 
-/** Whether a path is one of the remote runs' routes. */
+/** Whether a path is one of the remote runs' routes, the list of runs on Cloudflare included. */
 export const handles = (path: string): boolean =>
-  path === REMOTE_RUN_SHAPE_ROUTE || parseRunPath(path) !== undefined || parseSteerPath(path) !== undefined ||
-  parseStopPath(path) !== undefined
+  path === REMOTE_RUN_SHAPE_ROUTE || path === CLOUD_RUNS_ROUTE || parseRunPath(path) !== undefined ||
+  parseSteerPath(path) !== undefined || parseStopPath(path) !== undefined
 
 /** A steer's body: the outbox's id for it, and the message. */
 const SteerBody = Schema.Struct({
@@ -196,7 +198,8 @@ export const make = <E, R, EE, ER, RS>(
 ) =>
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
-    const inspection = EngineStore.RunInspection.layerWith({ flows: engine.flows })
+    // The deployment's system flows an Admin reads are rendered through their own declarations too.
+    const inspection = EngineStore.RunInspection.layerWith({ flows: [...engine.flows, ...CloudRuns.SYSTEM_FLOWS] })
     // The run's queue, over the engine's own journal in its schema. The route runs no migrations (the engine owns
     // them) and remembers one journal event at startup, not the journal's default thousands: it admits one steer.
     const queue = Layer.provideMerge(inspection, NotificationQueue.layer.pipe(
@@ -213,7 +216,14 @@ export const make = <E, R, EE, ER, RS>(
         return { allowed: ownRole, watched: true, repoRun: Option.none<RepoRuns.Admitted>() }
       }
       const admitted = yield* RepoRuns.admit(runId, engine.database)
-      if (Option.isNone(admitted)) return { allowed: ownRole, watched: false, repoRun: admitted }
+      if (Option.isNone(admitted)) {
+        // An Admin reads the deployment's own system flows (worker/CloudRuns.ts), and only those.
+        const system = actor.role === "admin" && (yield* Effect.flatMap(
+          EngineStore.RunInspection.RunInspection,
+          (reads) => reads.list({ runIds: [runId], flows: CloudRuns.SYSTEM_FLOW_TAGS, roots: false, limit: 1 }),
+        ).pipe(Effect.provide(inspection), Effect.provide(engine.database))).runs.length === 1
+        return { allowed: ownRole || system, watched: system, repoRun: admitted }
+      }
       const resolved = yield* roles.resolve(actor, repositoryOf(admitted.value.repoId.slice("github/".length))).pipe(
         Effect.map(Option.some),
         Effect.catch((error) => RepoRoles.REFUSALS[error.code] === 503 || error.code === "rate_limited"
@@ -470,10 +480,14 @@ export const make = <E, R, EE, ER, RS>(
       metric: shapeRequests,
     })
 
+    /** `GET /api/cloud-runs`: the runs on Cloudflare the asker may read (worker/CloudRuns.ts). */
+    const list = CloudRuns.route({ database, engine: engine.database, inspection, roles })
+
     const fetch = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
       if (path === REMOTE_RUN_SHAPE_ROUTE) return yield* changes
+      if (path === CLOUD_RUNS_ROUTE) return yield* list
       const steered = parseSteerPath(path)
       if (steered !== undefined) return yield* steer(steered)
       const stopped = parseStopPath(path)

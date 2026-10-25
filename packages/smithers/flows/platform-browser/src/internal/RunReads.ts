@@ -33,7 +33,8 @@ const summary = {
   parentRunId: Schema.NullOr(Schema.String),
   cancelRequestedAtMs: Schema.NullOr(Schema.Number),
   waiting: Schema.NullOr(Waiting),
-  lastSeq: Schema.Number
+  lastSeq: Schema.Number,
+  origin: Schema.NullOr(Schema.Struct({ door: Schema.String, actor: Schema.String }))
 }
 
 const RunSummary = Schema.Struct(summary)

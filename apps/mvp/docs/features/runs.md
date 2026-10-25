@@ -1,6 +1,6 @@
 # Runs
 
-Every flow this device runs is a run of its durable engine. `/app/runs` lists them, and a run's page shows what it did: its steps with each one's input and output, its timeline and its journal, with Stop, Retry and Resume. A TODO's run on Cloudflare has the same page, live ([a run on Cloudflare](#a-run-on-cloudflare)). Decision: [0014](../decisions/0014-flows-authoring-debugging-and-home-view.md) §3, §5 and §6.
+Every flow this device runs is a run of its durable engine. `/app/runs` lists them beside the runs on Cloudflare this person may read, like GitHub Actions lists a repository's runs (ruling FLOW-13): what started each, its branch, who started it, how long it took and how it ended, and each opens in place to its jobs and steps with their logs ([the list](#the-list)). A run's page shows what it did: its steps with each one's input and output, its timeline and its journal, with Stop, Retry and Resume. A TODO's run on Cloudflare has the same page, live ([a run on Cloudflare](#a-run-on-cloudflare)). Decision: [0014](../decisions/0014-flows-authoring-debugging-and-home-view.md) §3, §5 and §6.
 
 ## Where a run is read
 
@@ -14,7 +14,7 @@ BrowserEngine.events ─ debounced 200 ms ─▶ the open run, and the list whil
 - **The engine holds the journal.** No journal is copied into Postgres: the page reads this device's engine through `BrowserEngine.inspect` and `list`, which `@smthrs/platform-browser` answers from the leader's `RunInspection`. A run the engine doesn't hold reads `On another device`; an engine that can't be reached, `Couldn't read this run`.
 - **Values are content.** The leader releases every value through `@smthrs/journal`'s `Redaction`, renders it through its flow's or step's own schema so a `Schema.Redacted` value reads as `<redacted>` at any depth, withholds one its schema no longer decodes (`<withheld>`), reduces a failure to its closed code, and cuts it to 16 KiB. The page shows values as text, collapsed. The engine records no input for an action step; a child run's input is its step's input.
 - **Live.** Every event the leader commits reads the open run, and the list while it shows, again, at most once per 200 ms. Nothing polls.
-- **Not built in this slice:** runs of other devices, and of Cloudflare beyond a TODO's and a repository's ([a run on Cloudflare](#a-run-on-cloudflare), [a repository's runs](actions.md)); the read-only scrubber, and Answer in place: a run waiting on a person links to the conversation, where the agent's question is (decision 0015).
+- **Not built in this slice:** runs of other devices; Answer in place: a run waiting on a person links to the conversation, where the agent's question is (decision 0015).
 
 ## A run on Cloudflare
 
@@ -32,7 +32,8 @@ openRun ─▶ follow ─▶ Electric: GET /api/shapes/remote-runs?run=<run id> 
 - **Which runs.** A run whose id is a TODO's, `todo:<attempt id>` (`isRemoteRun`), reads from Cloudflare; every other run from this device's engine. The routes serve only a run some TODO's attempt started (`todo_attempts`), to a signed-in Member or above, as the TODO itself ([who reads](todos.md#who-reads-who-writes)).
 - **The same read.** ChatApi's read is the engine's own `RunInspection` over the engine's Postgres schema, through a read-only client (`ExecutionHost.readDatabase`): every value redacted, rendered through its flow's or step's schema (`<redacted>`, `<withheld>`), a failure reduced to its code, cut to 16 KiB. The browser decodes it with the engine's wire shape (`BrowserEngine.Inspection`), so the page, its steps, timeline and journal, is the one a device's run gets. The agent's model turns and sandbox calls inside one `todo/Implement` attempt are journal trail entries, not inner engine attempts.
 - **Live, with no polling.** The engine keeps a change feed, `flows_run_changes`: one row per run whose revision moves whenever the run's row is written. Run-store migration 1005 also touches the run from journal inserts, durable or lossy, at most once per two seconds per run; the feed therefore moves during one long action attempt. Other run state changes advance it immediately. The tab follows the run's row through Electric, as it follows every synced table, and reads the run again on each change. A settled run changes no more, so nothing reads it again. Electric sets the table's `REPLICA IDENTITY FULL` itself, as the owner of the engine's tables.
-- **What it shows.** Its header says `Cloud` where a device's says `This device`, and it offers no acts but Steer ([steering](#steering)): Stop, Retry and Resume run on this device's engine. A TODO's run stops when its TODO is dropped. Until the engine begins a run its TODO started, the page reads `Not started`; a run no TODO started, or one this person may not read, `Not found`. It is never one of this device's runs, so the list doesn't show it.
+- **What it shows.** Its header says `Cloud` where a device's says `This device`, and it offers no acts but Steer ([steering](#steering)): Stop, Retry and Resume run on this device's engine. A TODO's run stops when its TODO is dropped. Until the engine begins a run its TODO started, the page reads `Not started`; a run no TODO started, or one this person may not read, `Not found`. It is never one of this device's runs; the list shows it among the runs on Cloudflare ([the list](#the-list)).
+- **Any run on Cloudflare opens here.** A run this device's engine never held is asked of ChatApi before the page says `On another device`: an Admin's system flow ([the list](#runs-on-cloudflare)), opened from the list or a link, reads and follows there from then on.
 
 ### Routes
 
@@ -92,9 +93,48 @@ run page ─▶ the run's journal: Admitted (who, what), Promoted (when), the tu
 | 429 | `full` | the run holds 128 unread messages |
 | 503 | `unavailable` | sessions, Postgres or the engine couldn't answer; `Retry-After: 5` |
 
+## The list
+
+`/app/runs` lists this device's runs (the engine's newest 50, acts on runs left out) and the runs on Cloudflare this person may read (ChatApi's newest 50), newest first, as a CI system lists its runs:
+
+| Column | This device | Cloudflare |
+|---|---|---|
+| Flow | the flow's tag, a link to its page | the same, tagged `Cloud`; a repository's run links to its page under the repository ([actions](actions.md)) |
+| Status | the engine's state in 0009's words | the same; a TODO whose work failed reads `Failed` though its engine completed |
+| Trigger | the door the engine kept with the run (`button`, `slash`, `composer`, `agent`, `sync`, `key`, `view`, `flow`), `retry` for a retry's run | `commit` or `retry` for a TODO, `push`, `pull request` or `manual` for a repository's run, `system` for the deployment's own |
+| Branch | `–` | the TODO's branch, or the ref a repository's run ran for |
+| Actor | `you`, `agent` or `app`, the actor kind the engine kept | the login that asked for the TODO, `github` for a trigger, none for the deployment's own |
+| Started, Duration | from the engine | from the engine, or from when its TODO or trigger recorded it until the engine begins it (`Queued`) |
+
+- **Where it lives.** The address holds it: `?flow=<tag>` lists one flow's runs (the flows table's links, and `All`), `?open=<run id>` opens one run in place. The route's `beforeLoad` reads both (`runsSearch`, `src/screens/runs/RunsScreen.tsx`); nothing is kept on the device.
+- **Opened in place.** The row's toggle opens its jobs, the run and each run it started, and each job's steps in the order they began (`detailsOf`, `src/features/runs/details.ts`, from the run page's own graph). A step opens to its log lines, drawn as the run page's inspector draws them (`StepLogs`), and a failed step starts open with its last attempt's closed code (`RunDetails`, `@smthrs/ui`). The opened run is read and followed live like its page: this device's engine events, or its row of the change feed on Cloudflare.
+- **None says nothing until both answer.** Until this device's list and the runs on Cloudflare have each answered once, read or refused, a list of none shows nothing rather than `No runs yet`, as a repository's list waits for its runs to load (`listLoaded`, `src/features/runs/page.ts`).
+- **Live.** This device's runs follow the engine as before. The runs on Cloudflare are read when the list opens, and read again when one of the newest six unsettled ones moves on Cloudflare (its row of the change feed through Electric, as its page follows it). A run started elsewhere shows the next time the list opens.
+- **A finished answer or draft never reads Done for failed work.** A completed `flow/new` round or `chat/Answer` can return failed work. After each list read, the newest ten such runs whose result the list doesn't know are read once each, in the background, for their finite result (`readOutcome`, `src/features/runs/store.ts`); the list read itself never waits. A result is kept only for the journal version it was read at.
+
+### Runs on Cloudflare
+
+`GET /api/cloud-runs?limit=<n>` (`worker/CloudRuns.ts`, served with the remote runs routes) answers `{ runs }`, newest first, at most `limit` (1 to 50, 50 unless set), each `{ runId, flow, kind, status, cancelRequested, createdAtMs, startedAtMs, finishedAtMs, trigger, branch, actor, repo }` (`CloudRun`, `src/features/runs/schema.ts`). It joins the indexes the app keeps to the engine's own state of each run (`RunInspection.list` with `runIds`, and with `flows`):
+
+| Kind | From | Who reads it |
+|---|---|---|
+| `todo` | `todo_attempts` and the request revision it ran (`todo_requests.by_login`) | a Member or above of the deployment's repository, as the TODO itself |
+| `repo` | `runs` rows with an `execution` | a Member or above of that run's own repository (decision 0098); one read resolves at most eight repositories' roles |
+| `system` | the engine's runs of the deployment's own flows: `github/*` (issue sync, webhooks, writes, branch creation), `triage/Run`, `pr/Merge`, `repo/Clone`, `ops/SpendAlert`, `ops/DatabaseLoad`, `checks/Run`, `triggers/Dispatch` (`SYSTEM_FLOWS`) | an Admin of the deployment, who also reads and follows each one's page |
+
+A system flow is listed only when its declaration is in `SYSTEM_FLOWS`, so its page renders every value through its own schema (`Schema.Redacted` as `<redacted>`). Conversations' (`chat/*`), sign-in's (`auth/*`), secrets', models', terminals' and sandboxes' flows are never listed: they belong to one person, or carry what no list should. A repository whose role can't be read now leaves its runs out; the list still answers and its record says `partial`.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `invalid` | `limit` outside 1 to 50, or not a whole number |
+| 401 | `authentication` | signed out |
+| 503 | `unavailable` | sessions, Postgres or the engine couldn't answer; `Retry-After: 5` |
+
+A Guest, or anyone with no role, gets `{ runs: [] }`.
+
 ## Flows
 
-Above the list, one line per flow on this device: its runs, the share of its settled runs that succeeded (`Success`), and the 95th percentile of their durations from admission to settlement (`p95`, `–` until one settles). Acts on runs (`run/*`) are left out. It reads the same `runs` collection the list does, the engine's newest 50 runs (`flowSummary`, `src/features/runs/summary.ts`). A completed `flow/new` round or `chat/Answer` can return failed work even when the engine completed it. The list keeps Success unknown until a person opens that run and its bounded result establishes `succeeded` or `failed`; after a failed detail read, the list row says `Failed`. The list read itself never waits for those results. Across devices and hosts, the engine's usage metrics count engine settlements ([flow usage](../observability.md#flow-usage)).
+Above the list, one line per flow, this device's runs and Cloudflare's together: its runs, the share of its settled runs that succeeded (`Success`), and the 95th percentile of their durations from admission to settlement (`p95`, `–` until one settles). Acts on runs (`run/*`) are left out. Each flow's name lists its runs (`?flow=`), and `All` lists every run again. It reads the same collections the list does (`flowSummary`, `src/features/runs/summary.ts`). Success stays unknown for a flow while one of its completed answers or drafts has no known result. Across devices and hosts, the engine's usage metrics count engine settlements ([flow usage](../observability.md#flow-usage)).
 
 ## The run page
 
@@ -134,8 +174,9 @@ Each act is a registered flow on this device's engine, model-invocable, so a per
 | Record | Kind | Fields |
 |---|---|---|
 | `run.inspect` | log, span (engine worker) | `host` (`local`), `outcome` (`read`, `not_found`, `failed`), `events`, `bytes`, `clipped`, `durationMs` |
-| `run.read` | log (tab) | `act` (`run`, `list`), `outcome`, `events`, `durationMs` |
+| `run.read` | log (tab) | `act` (`run`, `list`, `cloud` for the runs on Cloudflare, `outcome` for a list row's result), `outcome`, `events`, `durationMs` |
 | `smithers_run_reads` | counter (tab) | `read`, `outcome` |
+| `runs.cloud.list`, `smithers_cloud_run_lists` | log, span; counter (ChatApi, [runs on Cloudflare](#runs-on-cloudflare)) | `outcome` (`read`, `partial`, or the refusal's code), `runs`, `todo`, `repo`, `system`, `status`, `durationMs`, `errorCode` |
 | `run.act` | log (engine worker) | `act` (`cancel`, `retry`, `resume`), `runId`, `outcome` (`requested`, `settled`, `retried`, `resumed`, or the refusal's code) |
 | `smithers_run_acts` | counter | `act`, `host`, `outcome` |
 | `run.inspect` | log, span (ChatApi, [a run on Cloudflare](#a-run-on-cloudflare)) | `host` (`remote`), `runId`, `outcome` (`read`, or the refusal's code), `events`, `bytes`, `clipped`, `status`, `durationMs`, `errorCode` |
@@ -172,6 +213,12 @@ A read of a run on Cloudflare is the tab's `run.read` with `outcome` `read`, `no
 | `src/features/runs/api.test.ts` | The remote runs client against a local server: the route and its paging, a refusal's status and code, a body that isn't a run, a stalled body and nothing listening |
 | `src/features/flows-ui/tab.test.ts` | The run page from a tab following a run to its answer, Retry opening the new run, the list, Stop, and Resume refused |
 | `e2e/flow-usage.spec.ts` | In a real browser, no model or sign-in: the theme button runs `app/theme/set`, and the Runs page's flows summary counts it at 100% |
+| `e2e/flow-usage.spec.ts` "runs list" | In a real browser: the theme's run lists with its trigger (`button`) and actor (`you`), opens in place to its step, and its flow's link lists only its runs |
+| `worker/RemoteRuns.test.ts` "GET /api/cloud-runs" | Through the real handler over a real engine: a Member lists TODO runs and the repository's runs with the engine's state (`Queued` before it begins), a TODO whose work failed as failed, an Admin also the system flows by declaration and never a conversation's; an Admin reads a system flow's page and a Member doesn't; a repository role that can't be read leaves its runs out and marks the read partial; at most eight repositories resolved; every refusal; no login in a record |
+| `packages/smithers/flows/engine-store/test/RunInspection.test.ts` "origin", "runIds" | On SQLite and Postgres: each run's door and actor kind (a child's `flow`, none for a run kept before origins); a list of only the runs or flows asked for, within bounds |
+| `src/features/runs/store.test.ts` "the runs on Cloudflare in the list" | The list of runs on Cloudflare read on open, kept when a read fails, stale ones dropped; a listed run opened in place from ChatApi; a run this engine never held found on ChatApi; the opened run follows engine events only while the list shows; the newest ten answers' and drafts' results read once per version in the background |
+| `src/features/runs/details.test.ts` | A run's jobs and steps from its graph: a TODO whose work failed reads failed, a stopped job skipped, a failure's last code, each step's logs as the graph joins them |
+| `src/features/runs/page.test.ts` "the list" | Rows from both hosts, newest first, with trigger, branch, actor and `Cloud`; one flow's runs; the toggle that opens a run and the one that closes it |
 | `e2e/flows.spec.ts` | In a real browser: create a flow, run it, watch its run page, stop a run and retry it; open a drafted flow's code, run it, relabel its step, and run the edited code to Done in the QuickJS realm |
 
 Run them with the compose Postgres and Electric up (`pnpm db:up`): `pnpm exec vitest run src/features/runs src/features/flows-ui`.

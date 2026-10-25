@@ -22,6 +22,15 @@ export const remoteRunRoute = (runId: string): string => `${REMOTE_RUNS_ROUTE}/$
  */
 export const steersRoute = (runId: string): string => `${remoteRunRoute(runId)}/steers`
 
+/**
+ * `GET <route>?limit=<n>`: the runs on Cloudflare this person may read, newest first (docs/features/runs.md#runs-on-cloudflare):
+ * TODO runs and repositories' runs for a Member, and the deployment's own system flows for an Admin.
+ */
+export const CLOUD_RUNS_ROUTE = "/api/cloud-runs"
+
+/** The most runs on Cloudflare one list read answers. */
+export const CLOUD_RUNS_LIMIT = 50
+
 /** `POST <route>/<runId>/stop`: Stop a repository's run on Cloudflare (docs/features/actions.md#acts). */
 export const stopRoute = (runId: string): string => `${remoteRunRoute(runId)}/stop`
 

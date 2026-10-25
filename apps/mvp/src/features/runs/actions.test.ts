@@ -14,7 +14,7 @@ import { VIEW } from "./schema"
 import { RunsStore } from "./store"
 
 const inspection = (runId: string): Inspection => ({
-  run: { runId, flowName: "flow/run", status: "completed", createdAtMs: 0, startedAtMs: 0, finishedAtMs: 1, parentRunId: null, cancelRequestedAtMs: null, waiting: null, lastSeq: 1, input: { text: "{}", bytes: 2, clipped: false }, result: null },
+  run: { runId, flowName: "flow/run", status: "completed", createdAtMs: 0, startedAtMs: 0, finishedAtMs: 1, parentRunId: null, cancelRequestedAtMs: null, waiting: null, lastSeq: 1, origin: null, input: { text: "{}", bytes: 2, clipped: false }, result: null },
   steps: [], children: [], journal: { events: [], afterSeq: -1, nextSeq: -1, hasMore: false },
 })
 const opened: Array<{ dispose: () => Promise<void> }> = []
@@ -35,7 +35,7 @@ const setup = async (options: { dispatch?: Effect.Effect<unknown, DispatchFailed
     return Effect.andThen(Deferred.succeed(started, undefined), options.dispatch ?? Deferred.await(pending))
   }) as never }))
   const runtime = ManagedRuntime.make(Layer.mergeAll(
-    RunsStore.layer({ origin: "http://test" }).pipe(Layer.provide(Layer.mergeAll(engine, Persistence.memory, Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({ inspect: () => Effect.die("unused"), steer: () => Effect.die("unused"), stop: () => Effect.die("unused") }))))),
+    RunsStore.layer({ origin: "http://test" }).pipe(Layer.provide(Layer.mergeAll(engine, Persistence.memory, Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({ inspect: () => Effect.die("unused"), steer: () => Effect.die("unused"), stop: () => Effect.die("unused"), list: Effect.succeed([]) }))))),
     dispatch, engine, Layer.succeed(actions.RunsNavigation, { navigate: (path) => { navigated.push(path) } }),
   ))
   opened.push(runtime)
@@ -101,7 +101,7 @@ test("a late retry stays put once the person left the run page, for the list or 
   const listed = await setup()
   const toList = listed.runtime.runPromise(actions.retry("pinned"))
   await listed.runtime.runPromise(Deferred.await(listed.started))
-  await listed.runtime.runPromise(actions.openList)
+  await listed.runtime.runPromise(actions.openList())
   await listed.runtime.runPromise(Deferred.succeed(listed.pending, { _tag: "Done", value: { runId: "retried" } }))
   await toList
   expect(listed.navigated).toEqual([])
@@ -140,7 +140,7 @@ test.each(["invalid", "refused", "interrupted", "unavailable"] as const)("dispat
 
 test("local selections, list opening, journal More and returning live use the store", async () => {
   const t = await setup()
-  await t.runtime.runPromise(actions.openList)
+  await t.runtime.runPromise(actions.openList())
   await t.runtime.runPromise(actions.select("step"))
   await t.runtime.runPromise(actions.showTab("journal"))
   await t.runtime.runPromise(actions.more)

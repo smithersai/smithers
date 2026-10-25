@@ -2,10 +2,22 @@
 title: Debugging and monitoring flows (run list, run page, retry, cancel, resume)
 status: in-progress
 area: app
-owner: Flows repair builder; live run-page builder
-updated: 2026-10-21 21:44 PDT
+owner: flows-runs builder
+updated: 2026-10-25 15:25 PDT
 links: [review-round-4.md, land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, flow-authoring.md, agent-status.md, notifications-and-live-work.md, durable-browser-engine.md, cloudflare-flow-host.md, observability.md, timeline-rail.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0009-notifications-and-live-work.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../proposals/mvp-gaps.md, dev-stack-hygiene.md, review-round-4-p3-cleanup.md, smithers-playground.md, prompt-flows-are-code-flows.md, flow-visual-ui.md]
 ---
+
+## Current specification — 2026-10-25 15:25 PDT
+
+**What:** Runs read like GitHub Actions (ruling FLOW-13): `/app/runs` lists this device's runs and the runs on Cloudflare a person may read (TODO runs, repositories' runs, an Admin's system flows), each with trigger, branch, actor, duration and outcome; a run opens in place to its jobs and steps with their logs; each flow lists its own runs.
+
+**Why:** Will, queue 2026-10-20 23:59: "flows are like github actions this should look more like github actions and I should be able to expand the flows and see more details". The 10-23 bug bash found a Cloud TODO run missing from the list, a failed `flow/new` reading as success, and "Logs 0" on a failed TODO's inspector.
+
+**Current state:** Built in the flows-runs workspace: `RunInspection` summaries carry their origin and list by run ids or flows (engine-store), `GET /api/cloud-runs` (`worker/CloudRuns.ts`), the merged list with `?flow=` and `?open=` (`RunList`, `RunDetails` in `@smthrs/ui`), and background reads of the newest answers' and drafts' results so failed work never reads Done. Verified on a0a126492c: all three bug-bash items were still wrong; the Cloud TODO run and the Done-for-failed-work rows are fixed here; "Logs 0" was every step on every host, because no host journals step logs, and step logs are a separate stream of this builder.
+
+**Next step:** Land with step logs (stream D), Retry from here (FLOW-11, stream B) and hand-edited flows in the QuickJS realm (stream C); rerun `flows.spec.ts` in production once the model answers.
+
+**Open questions for Will:** None.
 
 ## Tracker reconciliation — 2026-10-21 21:44 PDT
 

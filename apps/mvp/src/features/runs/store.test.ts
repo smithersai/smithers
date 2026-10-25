@@ -8,12 +8,16 @@ import { BrowserEngine } from "@smthrs/platform-browser"
 import { Deferred, Effect, Layer, ManagedRuntime, Logger, Metric, Option, PubSub, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
-import type { Inspection } from "./schema"
+import type { CloudRun, Inspection } from "./schema"
 import { VIEW } from "./schema"
 import { openList } from "./actions"
 import { Runs } from "./runs"
 import { flowSummary } from "./summary"
-import { followChanges, RunsStore, stateOf } from "./store"
+import { followChanges, reads, RunsStore, stateOf } from "./store"
+
+/** The tab's reads of results for the list, by outcome. */
+const outcomeReads = (outcome: string) =>
+  Effect.map(Metric.value(Metric.withAttributes(reads, { read: "outcome", outcome })), (state) => state.count)
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
 
@@ -30,6 +34,7 @@ const summary = (runId: string, overrides: Partial<Inspection["run"]> = {}) => (
   cancelRequestedAtMs: 5,
   waiting: null,
   lastSeq: 3,
+  origin: null,
   ...overrides,
 })
 
@@ -45,6 +50,8 @@ interface Answers {
   inspect: (runId: string, options?: { readonly afterSeq?: number }) => Effect.Effect<Inspection, BrowserEngine.RequestRefused | BrowserEngine.EngineUnavailable>
   list: () => Effect.Effect<{ runs: ReadonlyArray<ReturnType<typeof summary>>; cursor: null }, BrowserEngine.RequestRefused>
   remote?: (runId: string, options?: { readonly afterSeq?: number }) => Effect.Effect<Inspection, RemoteReadFailed>
+  /** ChatApi's list of runs on Cloudflare: none unless set. */
+  cloud?: () => Effect.Effect<ReadonlyArray<CloudRun>, RemoteReadFailed>
 }
 
 const runtimes: Array<ManagedRuntime.ManagedRuntime<unknown, unknown>> = []
@@ -65,10 +72,13 @@ const open = (answers: Answers) => {
     unavailable: Effect.never,
   }))
   const remote = Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({
-    inspect: (runId, options) => answers.remote === undefined ? Effect.die("unused") : answers.remote(runId, options),
+    // Unless set, ChatApi holds no run: a run this device doesn't hold stays not found.
+    inspect: (runId, options) =>
+      answers.remote === undefined ? Effect.fail(new RemoteReadFailed({ status: 404, code: "not_found" })) : answers.remote(runId, options),
     // The store never steers or stops: the outbox's mutation does (writes.ts), and run/cancel's step (steps.ts).
     steer: () => Effect.die("unused"),
     stop: () => Effect.die("unused"),
+    list: Effect.suspend(() => answers.cloud?.() ?? Effect.succeed([])),
   }))
   const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
   const runtime = ManagedRuntime.make(
@@ -276,7 +286,7 @@ describe("readList and following the engine", () => {
     completed = true
     t.publish("answer")
     await vi.waitFor(async () => expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW))).listReady).toBe(false))
-    await t.run(openList)
+    await t.run(openList())
     const rows = await t.run(t.store.runs.toArray)
     expect(rows[0]).toMatchObject({ status: "completed", outcome: "unknown" })
     expect(flowSummary(rows)).toEqual([{
@@ -300,14 +310,16 @@ describe("readList and following the engine", () => {
         flowName: "chat/Answer", status: "completed", finishedAtMs: 10, lastSeq: 3,
       })], cursor: null }),
     })
+    const before = await t.run(outcomeReads("read"))
     await t.run(t.store.readList)
-    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("unknown")
-    expect(inspections).toBe(0)
-    await t.run(t.store.readRun("answer"))
-    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed")
-    await t.run(t.store.readList)
-    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed")
+    // The list never waits for the result; a read in the background establishes it, so a failed answer never reads Done.
+    await vi.waitFor(async () => expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed"))
     expect(inspections).toBe(1)
+    await t.run(t.store.readList)
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed")
+    // The same journal version is never read twice.
+    expect(inspections).toBe(1)
+    expect(await t.run(outcomeReads("read"))).toBe(before + 1)
   })
 
   test("lists a completed draft promptly and uses only a detail read's same-version finite outcome", async () => {
@@ -328,25 +340,53 @@ describe("readList and following the engine", () => {
         flowName: "flow/new", status: "completed", finishedAtMs: 10, lastSeq: seq,
       })], cursor: null }),
     })
+    const before = [await t.run(outcomeReads("read")), await t.run(outcomeReads("unavailable"))]
     await t.run(t.store.readList)
-    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("unknown")
-    expect(inspections).toBe(0)
-    await t.run(t.store.readRun("draft"))
-    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed")
+    await vi.waitFor(async () => expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed"))
+    expect(inspections).toBe(1)
     await t.run(t.store.readList)
     expect(inspections).toBe(1)
     expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed")
+    // A new journal version is read again, once; an engine that can't answer leaves it unknown.
     seq = 4
     unavailable = true
     await t.run(t.store.readList)
+    await vi.waitFor(() => expect(inspections).toBe(2))
     expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("unknown")
+    await t.run(t.store.readList)
+    expect(inspections).toBe(2)
     await t.run(t.store.readRun("draft"))
     expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("unknown")
     unavailable = false
     outcome = "ready"
     await t.run(t.store.readRun("draft"))
     expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("succeeded")
-    expect(inspections).toBe(3)
+    expect(inspections).toBe(4)
+    expect([await t.run(outcomeReads("read")), await t.run(outcomeReads("unavailable"))]).toEqual([before[0]! + 1, before[1]! + 1])
+  })
+
+  test("reads the results of the newest ten completed answers and drafts only, and keeps a result only for its version", async () => {
+    const asked: Array<string> = []
+    let lastSeq = 3
+    const runs = Array.from({ length: 12 }, (_, index) =>
+      summary(`answer-${index}`, { flowName: index % 2 === 0 ? "chat/Answer" : "flow/new", status: "completed", createdAtMs: index, finishedAtMs: 10 }))
+    const t = open({
+      inspect: (id) => {
+        asked.push(id)
+        // The run moved on before its result came back: nothing is kept.
+        return Effect.succeed({
+          ...inspection(id, [], false),
+          run: { ...summary(id, { flowName: id === "answer-11" ? "app/theme/set" : "chat/Answer", status: "completed", lastSeq }),
+            input: value("{}"), result: value(JSON.stringify({ status: "done" })) },
+        })
+      },
+      list: () => Effect.succeed({ runs: [...runs, summary("theme", { flowName: "app/theme/set", status: "completed" })], cursor: null }),
+    })
+    lastSeq = 4
+    await t.run(t.store.readList)
+    await vi.waitFor(() => expect(asked).toHaveLength(10))
+    expect(asked).toEqual(Array.from({ length: 10 }, (_, index) => `answer-${11 - index}`))
+    expect((await t.run(t.store.runs.toArray)).filter((row) => row.outcome === "succeeded")).toEqual([])
   })
 
   test("a slow engine is warmed without opening the list, and the click reuses it until an engine event", async () => {
@@ -368,7 +408,7 @@ describe("readList and following the engine", () => {
     const again = t.run(t.store.warmList)
     await t.run(Deferred.succeed(pending, { runs: [summary("a")], cursor: null }))
     await Promise.all([warm, again])
-    await t.run(openList)
+    await t.run(openList())
     expect(lists).toBe(1)
     expect((await t.run(t.store.runs.toArray)).map((row) => row.id)).toEqual(["a"])
     expect((await t.run(t.store.view.get(VIEW))).pipe(Option.getOrThrow).listOpen).toBe(true)
@@ -382,9 +422,12 @@ describe("readList and following the engine", () => {
   test("an unavailable engine never leaves a warmed list behind", async () => {
     let lists = 0
     const t = open({ inspect: () => Effect.die("unused"), list: () => { lists++; return refused("unavailable") } })
+    expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW))).listLoaded).toBeUndefined()
     await t.run(t.store.warmList)
     await t.run(t.store.warmList)
     expect(lists).toBe(2)
+    // A list that couldn't be read has answered all the same: the page may say what it holds.
+    expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW))).listLoaded).toBe(true)
   })
 
   test("an engine event during a slow warm prevents the click from reusing that old snapshot", async () => {
@@ -403,7 +446,7 @@ describe("readList and following the engine", () => {
     await vi.waitFor(async () => expect((await t.run(t.store.view.get(VIEW))).pipe(Option.getOrThrow).listRevision).toBe(1))
     await t.run(Deferred.succeed(pending, { runs: [summary("old")], cursor: null }))
     await warm
-    await t.run(openList)
+    await t.run(openList())
     expect(lists).toBe(2)
     expect((await t.run(t.store.runs.toArray)).map((row) => row.id)).toEqual(["new"])
   })
@@ -821,5 +864,110 @@ test("an older inspection's continuation keeps its route attempt after same-run 
       attempts[0]!.annotations.routeAttempt, attempts[0]!.annotations.routeAttempt,
     ])
     expect(attempts[0]!.annotations.routeAttempt).not.toBe(attempts[1]!.annotations.routeAttempt)
+  })
+})
+
+describe("the runs on Cloudflare in the list (ruling FLOW-13)", () => {
+  const cloudRun = (runId: string, overrides: Partial<CloudRun> = {}): CloudRun => ({
+    runId,
+    flow: "ops/SpendAlert",
+    kind: "system",
+    status: "completed",
+    cancelRequested: false,
+    createdAtMs: 5,
+    startedAtMs: 6,
+    finishedAtMs: 9,
+    trigger: "system",
+    branch: null,
+    actor: null,
+    repo: null,
+    ...overrides,
+  })
+
+  test("reads on open in the background, keeps the last list when a read fails, and drops runs it no longer lists", async () => {
+    let answer: Effect.Effect<ReadonlyArray<CloudRun>, RemoteReadFailed> = Effect.succeed([
+      cloudRun("spend-1"),
+      cloudRun("spend-2"),
+      cloudRun("todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f", { kind: "todo", flow: "todo" }),
+    ])
+    const t = open({ inspect: () => refused("x"), list: () => Effect.succeed({ runs: [], cursor: null }), cloud: () => answer })
+    expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW))).cloudLoaded).toBeUndefined()
+    await t.run(openList())
+    await vi.waitFor(async () => expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW)))).toMatchObject({ listLoaded: true, cloudLoaded: true }))
+    await vi.waitFor(async () => expect((await t.run(t.store.cloudRuns.toArray)).map((row) => row.runId).sort())
+      .toEqual(["spend-1", "spend-2", "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f"]))
+    answer = Effect.fail(new RemoteReadFailed({ status: 401, code: "authentication" }))
+    await t.run(t.store.readCloud)
+    expect((await t.run(t.store.cloudRuns.toArray))).toHaveLength(3)
+    answer = Effect.succeed([cloudRun("spend-2", { status: "failed" })])
+    await t.run(t.store.readCloud)
+    const kept = await t.run(t.store.cloudRuns.toArray)
+    expect(kept).toHaveLength(1)
+    expect(kept[0]).toMatchObject(cloudRun("spend-2", { status: "failed" }))
+  })
+
+  test("a listed run on Cloudflare opens and expands from ChatApi, never this device's engine", async () => {
+    const engine: Array<string> = []
+    const remote: Array<string> = []
+    const t = open({
+      inspect: (id) => {
+        engine.push(id)
+        return Effect.succeed(inspection(id, [], false))
+      },
+      list: () => Effect.succeed({ runs: [], cursor: null }),
+      cloud: () => Effect.succeed([cloudRun("spend-1")]),
+      remote: (id) => {
+        remote.push(id)
+        return Effect.succeed(inspection(id, [event(0)], false))
+      },
+    })
+    await t.run(t.store.readCloud)
+    await t.run(openList("spend-1"))
+    await vi.waitFor(() => expect(t.page("spend-1")?.state).toBe("read"))
+    expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW)))).toMatchObject({ listOpen: true, expanded: "spend-1" })
+    expect([engine, remote]).toEqual([[], ["spend-1"]])
+  })
+
+  test("a run this device's engine never held is read from ChatApi when ChatApi holds it, and followed there", async () => {
+    const remote: Array<string> = []
+    const t = open({
+      inspect: () => refused("@smthrs/engine-store/RunNotFound"),
+      list: () => Effect.succeed({ runs: [], cursor: null }),
+      remote: (id) => {
+        remote.push(id)
+        return id === "elsewhere" ? Effect.succeed(inspection(id, [event(0)], false)) : Effect.fail(new RemoteReadFailed({ status: 404, code: "not_found" }))
+      },
+    })
+    await t.run(t.store.readRun("elsewhere"))
+    expect(t.page("elsewhere")).toMatchObject({ state: "read" })
+    // Asked once to find it, then read there; this device's list never holds it.
+    expect(remote).toEqual(["elsewhere", "elsewhere"])
+    expect(await t.run(t.store.runs.toArray)).toEqual([])
+    await t.run(t.store.readRun("nowhere"))
+    expect(t.page("nowhere")?.state).toBe("not_found")
+    expect(remote.filter((id) => id === "nowhere")).toEqual(["nowhere"])
+  })
+
+  test("an engine event reads the run the list shows opened, and nothing once the list is left", async () => {
+    const asked: Array<string> = []
+    const t = open({
+      inspect: (id) => {
+        asked.push(id)
+        return Effect.succeed(inspection(id, [], false))
+      },
+      list: () => Effect.succeed({ runs: [summary("opened")], cursor: null }),
+    })
+    await t.run(openList("opened"))
+    await vi.waitFor(() => expect(t.page("opened")?.state).toBe("read"))
+    const before = asked.length
+    t.publish("opened")
+    await vi.waitFor(() => expect(asked.length).toBeGreaterThan(before))
+    await t.run(t.store.view.update(VIEW, (row) => { row.listOpen = false }))
+    const settledCount = asked.length
+    const revision = Option.getOrThrow(await t.run(t.store.view.get(VIEW))).listRevision ?? 0
+    t.publish("opened")
+    // The event was taken (it moved the list's revision), and with the list left it read nothing.
+    await vi.waitFor(async () => expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW))).listRevision).toBeGreaterThan(revision))
+    expect(asked.length).toBe(settledCount)
   })
 })

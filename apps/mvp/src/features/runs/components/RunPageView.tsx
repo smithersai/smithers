@@ -117,7 +117,7 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
             <FlowGraph nodes={graph.nodes} edges={graph.edges} selected={view.selected} onSelect={actions.select} onInspect={actions.inspectStep} />
             {shown === undefined || view.inspectorOpen === false ? null : (
               <StepInspector key={shown.row.id} step={shown.row} attempts={shown.attempts} input={shown.input} output={shown.output}
-                logs={shown.logs ?? []} wait={shown.wait} now={graph.time}
+                logs={shown.logs} wait={shown.wait} now={graph.time}
                 actions={shown.href === null ? undefined : <Link to={shown.href as never}>{OPEN}</Link>} />
             )}
           </div>

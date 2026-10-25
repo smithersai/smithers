@@ -201,7 +201,12 @@ What a value releases:
   a secret from such a step only inside a field the rules name, such as
   `apiKey`.
 
-`list({ limit, cursor, roots })` pages runs newest first. `payload(runId)` is
+`list({ limit, cursor, roots, runIds, flows })` pages runs newest first. `runIds`
+keeps only those runs (at most 200; a run the engine never held is left out), so
+a host that knows its runs by another index reads their state in one round trip;
+`flows` keeps only the runs of those flow tags (at most 64). Each summary carries
+its `origin`: the door and actor kind its caller gave when the engine admitted
+it (`RunMetrics.CurrentOrigin`), `null` for a run kept before origins. `payload(runId)` is
 the one read that is not for display: the encoded, unredacted payload, so a
 host can run the same flow again. A run the engine never held is `RunNotFound`;
 a stored row the read cannot decode is `RunStoreError` with `decode_failed`.
