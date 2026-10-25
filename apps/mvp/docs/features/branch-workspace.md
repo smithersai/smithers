@@ -129,7 +129,7 @@ The box has no credential and no internet. It reaches the package registries thr
 | Code Storage | `CODE_STORAGE_ORG` and `CODE_STORAGE_KEY` are set; the repository must be cloned | a five-minute `git:read` token for that one repository (`CodeStorage.gitRemote`) |
 | GitHub | otherwise, and always for a TODO's machine | none: public repositories only. `GITHUB_TOKEN` is never used, because it would read every repository its owner can |
 
-A TODO's machine (`todo-<attempt id>`, [todos.md](todos.md#the-run)) checks out a branch `todo/Begin` made on GitHub, which the Code Storage mirror never has, so its branch says `forge: "github"` and it reads GitHub whatever the deployment's forge is (`forgeOf`). The checks on its pull request's head fetch that head the same way.
+A TODO's machine (`todo-<attempt id>`, [todos.md](todos.md#the-run)) checks out its base commit from GitHub, alone and detached, which the Code Storage mirror may not have yet (the TODO below's branch), so its branch says `forge: "github"` and it reads GitHub whatever the deployment's forge is (`forgeOf`). `todo/Publish` makes its branch on GitHub. The checks on its pull request's head fetch that head the same way.
 
 `branch/track` reads a branch through the same forge with git protocol v2's `ls-refs` for that one ref (`GitRemote.ref`): `octocat/Spoon-Knife`'s full ref list took 40 to 70 seconds to read from a Worker.
 

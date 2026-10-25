@@ -20,7 +20,7 @@ const ATTEMPT = "6f0e2b9c-1d4a-4c3b-9e8f-7a6b5c4d3e2f"
 const MACHINE = TodoMachine.machineOf({
   attemptId: ATTEMPT,
   repoId: "github/octo/hello",
-  branch: "smithers/t1-greet",
+  checkout: "0f".repeat(20),
   ownerId: "maya",
 })
 

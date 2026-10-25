@@ -1,5 +1,6 @@
 // Test support: the branches' machines a `todo` run's agent works on, as a test `Machines` service over an in-memory
-// working copy of each branch, cloned from the scripted GitHub's branch head on first use. The run's sandbox tools
+// working copy of each machine, checked out from the scripted GitHub on first use: the commit its checkout names, alone
+// and detached, as an attempt's machine checks out its base (worker/flows/TodoMachine.ts). The run's sandbox tools
 // reach it as they reach a branch's real machine (worker/flows/TodoAgent.ts); worker/flows/Todo.test.ts and
 // evals/todo-steer.eval.ts use it.
 import type { SandboxTools } from "@smthrs/sandbox"
@@ -9,7 +10,8 @@ import { instantCommands } from "./commands.ts"
 import type { ScriptedGitHub } from "../github/test/scriptedGitHub.ts"
 
 /**
- * The machine: one in-memory working copy per branch machine, cloned from the branch's head on GitHub on first use.
+ * The machine: one in-memory working copy per branch machine, checked out on GitHub on first use: the commit its
+ * checkout names (`SandboxBranch.branch`, a 40-hex id), none when GitHub has no such commit.
  * With `commands` set (a machine over real processes, worker/test/box.ts `machinesOn`), every command runs there instead,
  * as a tool call and as a job alike; the files stay in memory.
  */
@@ -29,7 +31,7 @@ export const machines = (
         if (call.tool === "run" && real !== undefined) return real.tool(branch, ownerId, callId, call)
         let copy = copies.get(branch.branchId)
         if (copy === undefined) {
-          const files = new Map(github.tree(branch.branch))
+          const files = new Map(github.commits.get(branch.branch)?.files)
           copy = { initial: new Map(files), files }
           copies.set(branch.branchId, copy)
         }
@@ -56,7 +58,8 @@ export const machines = (
               if (after === undefined) return [{ path, index: " ", worktree: "D" }]
               return [{ path, index: " ", worktree: "M" }]
             })
-            return done({ tool: "status", branch: branch.branch, entries })
+            // Detached at a commit, git names no branch.
+            return done({ tool: "status", branch: null, entries })
           }
           case "list": {
             const prefix = call.path === undefined ? "" : `${call.path}/`

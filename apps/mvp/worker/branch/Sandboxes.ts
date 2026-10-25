@@ -9,9 +9,9 @@ import type { Policy } from "./Access.ts"
 // (worker/BranchSandboxes.ts); a test provides its own. Nothing here names a host.
 
 /**
- * The branch a sandbox serves: its id, its repository on GitHub, the branch name its checkout follows, and where that
- * branch lives when it isn't the deployment's forge: `github` for a TODO's attempt branch, which `todo/Begin` makes on
- * GitHub (worker/flows/TodoMachine.ts, worker/branch/Forge.ts `forgeOf`). `kind: "job"` is a throwaway machine a head's
+ * The branch a sandbox serves: its id, its repository on GitHub, the branch name or commit its checkout follows, and
+ * where it lives when it isn't the deployment's forge: `github` for a TODO's attempt, whose machine checks out its base
+ * commit from GitHub (worker/flows/TodoMachine.ts, worker/branch/Forge.ts `forgeOf`). `kind: "job"` is a throwaway machine a head's
  * checks run on, whose box never holds a secret. Every box reaches the package registries (worker/branch/RegistryEgress.ts).
  */
 export const SandboxBranch = Schema.Struct({

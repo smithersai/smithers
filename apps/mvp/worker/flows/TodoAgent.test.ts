@@ -17,7 +17,10 @@ import * as TodoMachine from "./TodoMachine.ts"
 
 const ATTEMPT = "6f0e2b9c-1d4a-4c3b-9e8f-7a6b5c4d3e2f"
 
-const MACHINE = TodoMachine.machineOf({ attemptId: ATTEMPT, repoId: "github/octo/hello", branch: "smithers/t1-x", ownerId: "maya" })
+/** The attempt's base commit, which its machine checks out. */
+const BASE = "0f".repeat(20)
+
+const MACHINE = TodoMachine.machineOf({ attemptId: ATTEMPT, repoId: "github/octo/hello", checkout: BASE, ownerId: "maya" })
 
 /** A machine that answers each call with `answer`, and the calls it took. */
 const machine = (answer: (call: SandboxTools.Call) => ReturnType<Machines["Service"]["tool"]>) => {
@@ -133,7 +136,7 @@ describe("the sandbox tools on the attempt's machine", () => {
     expect(answered).toMatchObject({ outcome: "success", value: { tool: "read", path: "A.md", content: "a\n" } })
     expect(resolved).toEqual([`todo:${ATTEMPT}`])
     const callId = await Effect.runPromise(TodoAgent.callIdOf({ session: "s", frame: 2, cell: "c", ordinal: 1 }))
-    expect(box.calls).toEqual([{ branch: "smithers/t1-x", ownerId: "maya", callId, call: { path: "A.md", tool: "read" } }])
+    expect(box.calls).toEqual([{ branch: BASE, ownerId: "maya", callId, call: { path: "A.md", tool: "read" } }])
   })
 
   test("outside a run, or for a run with no machine, nothing runs; a lookup that fails is unavailable", async () => {

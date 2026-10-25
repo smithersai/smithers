@@ -79,11 +79,11 @@ describe("forgeOf: the forge a branch's machine checks out through", () => {
     Effect.flatMap(Forge, (forge) => forgeOf(forge, branch).upstream(branch))
 
   test("a TODO's machine reads its attempt branch on GitHub, with no credential, where the deployment's forge is Code Storage", async () => {
-    // `todo/Begin` makes the branch on GitHub; the mirror never has it, so a checkout through the mirror failed.
+    // It checks out its base commit from GitHub, the head of a branch the mirror may not have pulled yet.
     const machine = machineOf({
       attemptId: "6f0e2b9c-1d4a-4c3b-9e8f-7a6b5c4d3e2f",
       repoId: "github/OctoCat/Spoon-Knife",
-      branch: "smithers/t1-greet",
+      checkout: shaOf("main"),
       ownerId: "maya",
     })
     expect(machine.branch.forge).toBe("github")

@@ -10,6 +10,9 @@ import { start } from "./test/workerd/bundle.ts"
 
 const ENTRY = fileURLToPath(new URL("./test/workerd/agent.ts", import.meta.url))
 
+/** The base commit the test Worker's attempt machine checks out. */
+const BASE = "0f".repeat(20)
+
 describe("the todo agent's cell sandbox on workerd", () => {
   let worker: Miniflare | undefined
   let wasm: Array<string> = []
@@ -34,7 +37,8 @@ describe("the todo agent's cell sandbox on workerd", () => {
     expect(response.status, text).toBe(200)
     expect(JSON.parse(text)).toEqual({
       outcome: { _tag: "settled", transition: { _tag: "complete", output: "README.md", value: "README.md" } },
-      calls: ["smithers/t1-greet maya list", "smithers/t1-greet maya read", "smithers/t1-greet maya write"],
+      // The attempt's machine, checked out at its base commit, as the TODO's committer.
+      calls: [`${BASE} maya list`, `${BASE} maya read`, `${BASE} maya write`],
       files: { "README.md": "# hello\nHello from T1.\n" },
     })
   }, 60_000)

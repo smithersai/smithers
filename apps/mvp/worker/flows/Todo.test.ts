@@ -190,7 +190,14 @@ const setup = async (
 // A run on the Node host takes 15 to 30 seconds: the engine, the agent's QuickJS realm and Postgres at each step.
 describe("the todo run", { timeout: 120_000 }, () => {
   test("takes a TODO from an issue to a merged pull request: branch, change, commit, PR with Fixes #n, merge", async () => {
-    const ctx = await setup()
+    // What GitHub holds while the agent runs its check: the branch exists only once Publish makes it (ruling GH-11).
+    let refsWhileWorking: ReadonlyArray<string> = []
+    const ctx: Awaited<ReturnType<typeof setup>> = await setup({
+      run: () => {
+        refsWhileWorking = [...ctx.github.refs.keys()]
+        return 0
+      },
+    })
     const issue = ctx.github.open("README needs a line", "Please add one.")
     ctx.github.files.set(".smithers/checks/readme.sh", "test -s README.md\n")
     const start = (await commit("Add a line to README", "Add a line to the README.", issue.number))!
@@ -199,14 +206,16 @@ describe("the todo run", { timeout: 120_000 }, () => {
     // A person merges the pull request on github.com as soon as it opens.
     ctx.github.onPullOpened = (number) => void ctx.github.merge(number, "maya")
 
+    const base = ctx.github.refs.get("main")!
+
     const ran = await ctx.run(start)
 
     expect(ran.exit).toEqual(Exit.succeed({ state: "merged" }))
     expect(ran.status).toBe("completed")
-    // The branch: the TODO's number and title, then the first 12 hex of the begin step's key.
+    // The branch: the TODO's number and title, then the first 12 hex of the attempt's branch key.
     const pull = [...ctx.github.pulls.values()][0]!
     const branch = pull.head
-    expect(branch).toMatch(/^smithers\/t1-add-a-line-to-readme-[0-9a-f]{12}$/)
+    expect(branch).toBe(`smithers/t1-add-a-line-to-readme-${Todo.branchKeyOf(start.attemptId).slice(0, 12)}`)
     expect([pull.base, pull.merged]).toEqual(["main", true])
     const body = ctx.github.issues.get(pull.number)!.body!
     expect(body).toContain("Add a line to the README.")
@@ -220,6 +229,9 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect(ctx.github.tree("main").get("README.md")).toBe("# Widgets\n\nA line\n")
     expect(head.parents).toHaveLength(1)
     const branchCommit = [...ctx.github.commits.values()].find((found) => found.message.startsWith("T1: "))!
+    expect(branchCommit.parents).toEqual([base])
+    expect(refsWhileWorking).toEqual(["main"])
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(1)
     expect(branchCommit.login).toBe(BOT_LOGIN)
     expect(branchCommit.message).toMatch(/^T1: Add a line to README\n\nSmithers for @maya\n\nSmithers-Write: [0-9a-f]{64}$/)
     // The TODO settled merged, and the next one started.
@@ -235,10 +247,10 @@ describe("the todo run", { timeout: 120_000 }, () => {
     // T1's pull request opening freed the lane: T2 started then, to stack on T1's branch, and T1's checks started.
     expect(ctx.starts.map(({ flow }) => flow)).toEqual([Todo.Todo._tag, ChecksRun._tag])
     expect(ctx.starts[1]!.executionId).toBe(checkExecutionId(REPOSITORY.id, branchCommit.sha, "all"))
-    // The agent's tools ran on the attempt's own machine, on its branch, as the person who committed the TODO.
-    const tools = ctx.machine.calls.filter((call) => call.callId.length === 36)
-    expect(new Set(tools.map((call) => `${call.branchId} ${call.branch} ${call.ownerId}`))).toEqual(
-      new Set([`${TodoMachine.machineId(start.attemptId)} ${branch} ${maya.id}`]),
+    // The agent's tools and the collect step ran on the attempt's own machine, checked out at its base commit (its
+    // branch didn't exist yet), as the person who committed the TODO.
+    expect(new Set(ctx.machine.calls.map((call) => `${call.branchId} ${call.branch} ${call.ownerId}`))).toEqual(
+      new Set([`${TodoMachine.machineId(start.attemptId)} ${base} ${maya.id}`]),
     )
     expect(ctx.machine.calls.map((call) => call.tool)).toEqual(["write", "run", "status", "read"])
     // The pull request is in the projection, merged.
@@ -383,6 +395,10 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect(await todo(2)).toMatchObject({ state: "queued" })
     expect(ctx.github.pulls.size).toBe(0)
     expect(ctx.starts).toEqual([])
+    // It published nothing, so it left nothing on GitHub: its branch's name was only reserved (ruling GH-11).
+    expect((await todo(1))["branch"]).toMatch(/^smithers\/t1-nothing-[0-9a-f]{12}$/)
+    expect([...ctx.github.refs.keys()]).toEqual(["main"])
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
   })
 
   test("its committer's own model answers the run's agent, with their key, outside the deployment's budget", async () => {
@@ -411,6 +427,8 @@ describe("the todo run", { timeout: 120_000 }, () => {
     const ran = await ctx.run(start)
     expect(ran.exit).toEqual(Exit.succeed({ state: "failed" }))
     expect(await todo()).toMatchObject({ state: "failed", failure: "implement" })
+    expect([...ctx.github.refs.keys()]).toEqual(["main"])
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
   })
 
   test("retry a failed implement runs attempt two to publication without replacing the TODO", async () => {
@@ -481,18 +499,23 @@ describe("the todo run", { timeout: 120_000 }, () => {
       { match: (method, path) => method === "POST" && path.endsWith("/pulls"), lost: true },
     )
     ctx.github.onPullOpened = (number) => void ctx.github.merge(number)
+    const base = ctx.github.refs.get("main")!
     const ran = await ctx.run(start)
     expect(ran.exit).toEqual(Exit.succeed({ state: "merged" }))
     const row = await todo()
     expect(row).toMatchObject({ state: "merged" })
-    expect(row["branch"]).toMatch(/^smithers\/t1-adopt-[0-9a-f]{12}$/)
+    expect(row["branch"]).toBe(`smithers/t1-adopt-${Todo.branchKeyOf(start.attemptId).slice(0, 12)}`)
     expect(row["branch"]).not.toBe("smithers/t1-adopt-0123456789ab")
+    // The branch whose answer was lost was adopted by its key: one branch made, its one commit on the base.
+    expect([...ctx.github.refs.keys()].filter((name) => name.startsWith("smithers/t1-adopt-")).sort())
+      .toEqual([row["branch"], "smithers/t1-adopt-0123456789ab"].sort())
     expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(1)
     expect(ctx.github.seen("POST", /^\/graphql$/)).toHaveLength(1)
     expect(ctx.github.seen("POST", /\/pulls$/)).toHaveLength(1)
     expect(ctx.github.pulls.size).toBe(1)
     // The commit carries the step's key, and the pull request the same kind of marker: nothing else identifies them.
     const head = ctx.github.commits.get(row["headSha"] as string)!
+    expect(head.parents).toEqual([base])
     expect(head.message).toMatch(/^T1: Adopt\n\nSmithers for @maya\n\nSmithers-Write: [0-9a-f]{64}$/)
     expect(ctx.github.issues.get([...ctx.github.pulls.keys()][0]!)!.body).toMatch(/<!-- smithers:write=[0-9a-f]{64} -->$/)
   })
@@ -773,19 +796,23 @@ describe("the run's steps", () => {
     expect(atob(Todo.base64Of("x".repeat(70_000))).length).toBe(70_000)
   })
 
-  test("the machine of a run's execution: its attempt's branch and committer, none for any other run", async () => {
+  test("the machine of a run's execution: its attempt's base commit and committer, none for any other run", async () => {
     const start = (await commit("Machine", "Anything."))!
     const of = (executionId: string) =>
       runtime.runPromise(TodoMachine.ofExecution(executionId).pipe(Effect.map(Option.getOrUndefined)))
     expect(await of(todoExecutionId(start.attemptId))).toBeUndefined()
+    // A reserved branch name is no checkout: the branch isn't on GitHub until Publish makes it.
     await sql(runtime, `UPDATE todos SET branch = 'smithers/t1-machine'`)
+    expect(await of(todoExecutionId(start.attemptId))).toBeUndefined()
+    const base = "ab".repeat(20)
+    await sql(runtime, `UPDATE todo_attempts SET base_sha = '${base}' WHERE id = '${start.attemptId}'`)
     expect(await of(todoExecutionId(start.attemptId))).toEqual({
       branch: {
         branchId: TodoMachine.machineId(start.attemptId),
         owner: REPOSITORY.owner,
         name: REPOSITORY.name,
-        branch: "smithers/t1-machine",
-        // The branch is GitHub's: `todo/Begin` makes it there, so the machine reads it there (worker/branch/Forge.ts).
+        // The base commit, which the machine fetches alone from GitHub and checks out detached (worker/branch/Forge.ts).
+        branch: base,
         forge: "github",
       },
       ownerId: maya.id,
@@ -890,18 +917,26 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       if (kind === "empty") {
         expect(failure(collected)).toMatchObject({ failure: "empty_change" })
         expect(ctx.github.pulls.size).toBe(0)
+        // Nothing published, nothing on GitHub: Begin only reserved the branch's name.
+        expect(ctx.github.refs.has(begun.branch)).toBe(false)
+        expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
         return
       }
+      expect(ctx.github.refs.has(begun.branch)).toBe(false)
       expect(collected._tag).toBe("Success")
       if (collected._tag !== "Success") return
       const published = await dispatched(real, (steps) => steps.publish({ request: start, begun, collected: collected.value }))
       if (kind === "forbidden") {
+        // The branch Publish made at the base stays there; the commit GitHub refused never lands.
         expect(failure(published)).toMatchObject({ _tag: "@smthrs/mvp/todo/TodoUnavailable", step: "publish" })
         expect(ctx.github.refs.get(begun.branch)).toBe(base)
         expect(ctx.github.pulls.size).toBe(0)
         return
       }
       expect(published._tag).toBe("Success")
+      // Publish made exactly the reserved branch, at the base, with the one commit.
+      expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(1)
+      expect([...ctx.github.refs.keys()].sort()).toEqual(["main", begun.branch])
       const head = ctx.github.refs.get(begun.branch)!
       expect(ctx.github.commits.get(head)).toMatchObject({ parents: [base] })
       expect(ctx.github.commits.get(head)!.message).toContain("T1: Step")
@@ -912,60 +947,105 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     },
   )
 
-  test("begin: run again in its dispatch, it finds its own branch by key, even after the default branch moved; an attempt it doesn't know ends", async () => {
+  test("begin: reserves its branch's name and base and writes nothing to GitHub; run again after its base moved, it keeps the base it reported; an attempt it doesn't know ends", async () => {
     const ctx = await setup()
     const start = (await commit("Step", "Do it."))!
     const base = ctx.github.refs.get("main")!
-    const again = await dispatched(ctx, (steps) =>
-      Effect.gen(function* () {
-        const first = yield* steps.begin({ request: start })
-        ctx.github.push("main", { "MOVED.md": "moved\n" })
-        const second = yield* steps.begin({ request: start })
-        return [first, second]
-      }))
-    const [first, second] = (again as Exit.Success<ReadonlyArray<Todo.Begun>>).value
-    expect(first!.branch).toMatch(/^smithers\/t1-step-[0-9a-f]{12}$/)
-    expect(second).toEqual(first)
-    expect(first!.baseSha).toBe(base)
-    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(1)
+    // Outside any dispatch: Begin keys nothing by the engine, since it makes nothing.
+    const first = await step(ctx, (steps) => steps.begin({ request: start }))
+    ctx.github.push("main", { "MOVED.md": "moved\n" })
+    const second = await step(ctx, (steps) => steps.begin({ request: start }))
+    const made = (first as Exit.Success<Todo.Begun>).value
+    expect(made).toMatchObject({
+      branch: `smithers/t1-step-${Todo.branchKeyOf(start.attemptId).slice(0, 12)}`,
+      baseSha: base,
+      baseRef: "main",
+    })
+    expect((second as Exit.Success<Todo.Begun>).value).toEqual(made)
+    // The writer has the reserved name and its base; GitHub has neither (ruling GH-11).
+    expect(await todo(1)).toMatchObject({ branch: made.branch, baseSha: base, step: "implement" })
+    expect([...ctx.github.refs.keys()]).toEqual(["main"])
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
     const unknown = await step(ctx, (steps) => steps.begin({ request: { ...start, attemptId: crypto.randomUUID() } }))
     expect(failure(unknown)).toMatchObject({ failure: "ended" })
   })
 
-  test("begin: a branch under the TODO's name that isn't its own is never taken; no default branch is publish_refused", async () => {
+  test("branchKeyOf: one key per attempt, 64 hex, from a versioned preimage", () => {
+    const attempt = "6f0e2b9c-1d4a-4c3b-9e8f-7a6b5c4d3e2f"
+    expect(Todo.branchKeyOf(attempt)).toMatch(/^[0-9a-f]{64}$/)
+    expect(Todo.branchKeyOf(attempt)).toBe(Todo.branchKeyOf(attempt))
+    expect(Todo.branchKeyOf(attempt)).not.toBe(Todo.branchKeyOf("7f0e2b9c-1d4a-4c3b-9e8f-7a6b5c4d3e2f"))
+  })
+
+  test("begin: no default branch on GitHub is publish_refused; a token it fails to mint is tried again", async () => {
+    const ctx = await setup()
+    const start = (await commit("Gone", "Do it."))!
+    ctx.github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/access_tokens"), status: 500 })
+    expect(failure(await step(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ step: "begin" })
+    ctx.github.refs.delete("main")
+    expect(failure(await step(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ failure: "publish_refused" })
+  })
+
+  test("publish: makes the reserved branch, never one someone else holds under the TODO's name; a branch GitHub fails to make is tried again", async () => {
     const ctx = await setup()
     const start = (await commit("Taken", "Do it."))!
     // Someone else's branches: the same name, the same name at the base, and the same label with another key.
     ctx.github.push("smithers/t1-taken", { "X.md": "x\n" })
     ctx.github.refs.set("smithers/t1-taken-2", ctx.github.refs.get("main")!)
     ctx.github.refs.set("smithers/t1-taken-ffffffffffff", ctx.github.refs.get("main")!)
-    const made = await dispatched(ctx, (steps) => steps.begin({ request: start }))
-    const branch = (made as Exit.Success<Todo.Begun>).value.branch
-    expect(branch).toMatch(/^smithers\/t1-taken-[0-9a-f]{12}$/)
-    expect(["smithers/t1-taken", "smithers/t1-taken-2", "smithers/t1-taken-ffffffffffff"]).not.toContain(branch)
-    const gone = await setup()
-    await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks")
-    const second = (await commit("Gone", "Do it."))!
-    gone.github.refs.delete("main")
-    expect(failure(await dispatched(gone, (steps) => steps.begin({ request: second })))).toMatchObject({
-      failure: "publish_refused",
-    })
+    const begun = ((await step(ctx, (steps) => steps.begin({ request: start }))) as Exit.Success<Todo.Begun>).value
+    const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
+    ctx.github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/git/refs"), status: 500 })
+    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun, collected }))))
+      .toMatchObject({ step: "publish" })
+    expect(ctx.github.refs.has(begun.branch)).toBe(false)
+    expect(ctx.github.seen("POST", /^\/graphql$/)).toHaveLength(0)
+    const published = await dispatched(ctx, (steps) => steps.publish({ request: start, begun, collected }))
+    expect(published._tag).toBe("Success")
+    expect(ctx.github.refs.has(begun.branch)).toBe(true)
+    expect(ctx.github.tree(begun.branch).get("A.md")).toBe("a\n")
+    expect(ctx.github.pulls.get((published as Exit.Success<Todo.Published>).value.prNumber)!.head).toBe(begun.branch)
+    expect(ctx.github.tree("smithers/t1-taken").get("A.md")).toBeUndefined()
+    expect(ctx.github.refs.get("smithers/t1-taken-2")).toBe(begun.baseSha)
+    expect(ctx.github.refs.get("smithers/t1-taken-ffffffffffff")).toBe(begun.baseSha)
   })
 
-  test("begin: a branch GitHub fails to create, or a token it fails to mint, is tried again", async () => {
+  test("publish: a branch its key finds under a name Begin didn't reserve is publish_refused, and nothing is committed", async () => {
     const ctx = await setup()
-    const start = (await commit("Down", "Do it."))!
-    ctx.github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/git/refs"), status: 500 })
-    expect(failure(await dispatched(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ step: "begin" })
-    ctx.github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/access_tokens"), status: 500 })
-    expect(failure(await step(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ step: "begin" })
+    const start = (await commit("Renamed", "Do it."))!
+    const begun = ((await step(ctx, (steps) => steps.begin({ request: start }))) as Exit.Success<Todo.Begun>).value
+    const key = Todo.branchKeyOf(start.attemptId).slice(0, 12)
+    ctx.github.refs.set(`smithers/t1-another-label-${key}`, begun.baseSha)
+    const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
+    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun, collected }))))
+      .toMatchObject({ failure: "publish_refused" })
+    expect(ctx.github.refs.has(begun.branch)).toBe(false)
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
+    expect(ctx.github.seen("POST", /^\/graphql$/)).toHaveLength(0)
+    expect(ctx.github.pulls.size).toBe(0)
+  })
+
+  test("publish: a run begun before Publish made branches commits onto the branch its Begin made, creating none", async () => {
+    const ctx = await setup()
+    const start = (await commit("Before", "Do it."))!
+    const begun = ((await step(ctx, (steps) => steps.begin({ request: start }))) as Exit.Success<Todo.Begun>).value
+    // Begin v2 made the branch on GitHub under the key of its own dispatch, not the attempt's.
+    const earlier = { ...begun, branch: "smithers/t1-before-0123456789ab" }
+    ctx.github.refs.set(earlier.branch, begun.baseSha)
+    const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
+    const published = await dispatched(ctx, (steps) => steps.publish({ request: start, begun: earlier, collected }))
+    expect(published._tag).toBe("Success")
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
+    expect(ctx.github.tree(earlier.branch).get("A.md")).toBe("a\n")
+    expect(ctx.github.refs.has(begun.branch)).toBe(false)
+    expect(ctx.github.pulls.get((published as Exit.Success<Todo.Published>).value.prNumber)!.head).toBe(earlier.branch)
   })
 
   test("collect: deletions, too many files, a cut read or a refused tool fail implement; a machine down is retried", async () => {
     const ctx = await setup()
     const start = (await commit("Collect", "Do it."))!
-    await sql(runtime, `UPDATE todos SET branch = 'main'`)
-    const machine = TodoMachine.machineOf({ ...start, branch: "main", ownerId: maya.id })
+    const base = ctx.github.refs.get("main")!
+    const machine = TodoMachine.machineOf({ attemptId: start.attemptId, repoId: start.repoId, checkout: base, ownerId: maya.id })
     const tools = Context.get(await Effect.runPromise(Layer.build(ctx.machine.layer).pipe(Effect.scoped)), Machines)
     await Effect.runPromise(tools.tool(machine.branch, maya.id, "w", { tool: "write", path: "NEW.md", content: "n\n" }))
     ctx.machine.copies.get(machine.branch.branchId)!.files.delete("README.md")
@@ -974,6 +1054,9 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       additions: [{ path: "NEW.md", contents: btoa("n\n") }],
       deletions: ["README.md"],
     })
+    // Collect reads the attempt's machine, checked out at the base commit: the branch isn't on GitHub yet.
+    expect(new Set(ctx.machine.calls.map((call) => `${call.branchId} ${call.branch}`)))
+      .toEqual(new Set([`${TodoMachine.machineId(start.attemptId)} ${base}`]))
     const files = ctx.machine.copies.get(machine.branch.branchId)!.files
     for (let index = 0; index < Todo.MAX_FILES; index++) files.set(`f${index}.md`, "x")
     expect(failure(await step(ctx, (steps) => steps.collect({ request: start, begun: begun(ctx, "main") }))))
@@ -1033,6 +1116,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
     const stale = await step(ctx, (steps) => steps.publish({ request: { ...start, ordinal: 9 }, begun: begun(ctx, "main"), collected }))
     expect(failure(stale)).toMatchObject({ failure: "ended" })
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
     expect(ctx.github.seen("POST", /^\/graphql$/)).toHaveLength(0)
   })
 
@@ -1052,19 +1136,18 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     expect(ctx.github.issues.get(pull.number)!.state).toBe("closed")
   })
 
-  test("publish: a missing branch, or a head someone else moved, is publish_refused; GitHub refusing the PR, pr_refused", async () => {
+  test("publish: the reserved branch someone else moved is publish_refused; GitHub refusing the PR, pr_refused", async () => {
     const ctx = await setup()
     const start = (await commit("Publish", "Do it."))!
+    const begun = ((await step(ctx, (steps) => steps.begin({ request: start }))) as Exit.Success<Todo.Begun>).value
     const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
-    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun: begun(ctx, "smithers/gone"), collected }))))
+    // Someone pushed to the reserved name before Publish: its key finds it, and its head isn't the base.
+    ctx.github.push(begun.branch, { "T.md": "t\n" })
+    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun, collected }))))
       .toMatchObject({ failure: "publish_refused" })
-    ctx.github.push("smithers/theirs", { "T.md": "t\n" })
-    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun: begun(ctx, "smithers/theirs"), collected }))))
-      .toMatchObject({ failure: "publish_refused" })
-    ctx.github.push("smithers/refused", {})
-    ctx.github.refs.set("smithers/refused", ctx.github.refs.get("main")!)
+    ctx.github.refs.set(begun.branch, begun.baseSha)
     ctx.github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/pulls"), status: 422 })
-    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun: begun(ctx, "smithers/refused"), collected }))))
+    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun, collected }))))
       .toMatchObject({ failure: "pr_refused" })
   })
 
@@ -1312,6 +1395,8 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       if (retry.kind !== "applied") throw new Error("retry refused")
       const begun = await dispatched(ctx, (steps) => steps.begin({ request: retry.receipt.starts[0]! })) as Exit.Exit<Todo.Begun>
       expect(begun).toMatchObject({ _tag: "Success", value: { baseRef: "main" } })
+      // The cancelled attempt and its Retry's Begin published nothing, so neither left a branch on GitHub.
+      expect([...ctx.github.refs.keys()].sort()).toEqual(["main", branch])
     } finally {
       await Effect.runPromise(Scope.close(scope, Exit.void))
     }
@@ -1448,6 +1533,8 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     const { t1, t1Head, begun, published } = await stacked(ctx)
     expect(begun).toMatchObject({ baseRef: t1, baseSha: t1Head, defaultBranch: "main" })
     expect(begun.branch).toMatch(/^smithers\/t2-two-[0-9a-f]{12}$/)
+    // Publish made T2's branch, once, at T1's head.
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(1)
     const pull2 = ctx.github.pulls.get(published.prNumber)!
     expect([pull2.head, pull2.base, pull2.draft]).toEqual([begun.branch, t1, true])
     expect(ctx.github.commits.get(published.headSha)!.parents).toEqual([t1Head])
@@ -1665,8 +1752,14 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     const { start1, begun, published } = await stacked(ctx, { "TWO.md": "2\n" }, issue.number)
     expect(ctx.github.issues.get(published.prNumber)!.body).toContain(`Fixes #${issue.number}`)
     // T1, published below T2 from the same issue, says Part of.
-    const t1Begun = { ...begun, branch: "smithers/t1-own", baseRef: "main", baseSha: ctx.github.refs.get("main")!, issueNumber: issue.number }
-    ctx.github.refs.set("smithers/t1-own", ctx.github.refs.get("main")!)
+    const t1Begun = {
+      ...begun,
+      title: "One",
+      branch: `smithers/t1-one-${Todo.branchKeyOf(start1.attemptId).slice(0, 12)}`,
+      baseRef: "main",
+      baseSha: ctx.github.refs.get("main")!,
+      issueNumber: issue.number,
+    }
     const collected = { additions: [{ path: "OWN.md", contents: btoa("own\n") }], deletions: [] }
     const own = await dispatched(ctx, (steps) => steps.publish({ request: start1, begun: t1Begun, collected })) as Exit.Exit<
       Todo.Published
@@ -1735,7 +1828,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     else expect(failure(result)).toMatchObject({ failure: "base_closed" })
   })
 
-  test("a base dropped after branch creation fences the branch report before implementation", async () => {
+  test("a base dropped while begin reads it fences the branch report before implementation", async () => {
     const ctx = await setup()
     const first = (await commit("One", "First"))!
     await commit("Two", "Second")
@@ -1744,7 +1837,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     await runtime.runPromise(Stack.report(first, { kind: "branch", branch, baseRef: "main", baseSha: sha }, { runs: true }))
     const start2 = (await runtime.runPromise(Stack.report(first, { kind: "published", headSha: sha, prNumber: 1, draft: false }, { runs: true }))).starts[0]!
     const http = HttpClient.transform(ctx.services.http, (execute, request) => execute.pipe(
-      Effect.tap(() => request.method === "POST" && request.url.endsWith("/git/refs")
+      Effect.tap(() => request.method === "GET" && request.url.endsWith(`/git/ref/heads/${branch}`)
         ? Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person",
           op: { kind: "drop", number: 1 } }, { runs: true }).pipe(Effect.provide(ctx.services.database), Effect.orDie)
         : Effect.void),
@@ -1754,6 +1847,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     expect(failure(result)).toMatchObject({ failure: "base_closed" })
     expect(await todo(2)).toMatchObject({ branch: null })
     expect(await todo(1)).toMatchObject({ state: "dropped" })
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
   })
 
   test.each(["gone", "merged", "open"] as const)("a wait reads an unprojected %s predecessor from GitHub", async (state) => {

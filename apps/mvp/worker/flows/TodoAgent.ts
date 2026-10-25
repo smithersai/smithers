@@ -16,10 +16,11 @@ import * as SandboxCommand from "./SandboxCommand.ts"
 import * as Machine from "./TodoMachine.ts"
 
 // The `todo` run's implement step (decision 0016, the factory simplified): the agent (`AgentAction` from
-// `@smthrs/agent`, the library catalog's "Run an agent loop with tools") writes the TODO's change on its branch's machine.
+// `@smthrs/agent`, the library catalog's "Run an agent loop with tools") writes the TODO's change on its attempt's machine.
 // Its tools are the sandbox tools (`@smthrs/sandbox`'s `SandboxTools`), bound in process to the attempt's machine
-// (`Machines`), so each call runs on the branch's checkout as the person who committed the TODO, and a command runs once
-// per call even when the run resumes (the call's id is its replay-stable identity). A command runs as the call's own
+// (`Machines`), so each call runs on its checkout of the attempt's base commit (worker/flows/TodoMachine.ts) as the person
+// who committed the TODO, and a command runs once per call even when the run resumes (the call's id is its
+// replay-stable identity). A command runs as the call's own
 // `sandbox/Command` job (worker/flows/SandboxCommand.ts), so the run parks while it runs and no host's drive holds it. The model is the `coding` role
 // (the `agent` role's model until an admin sets it, decision 0033), admitted and metered in process as the model
 // endpoint's calls are (`ModelEndpoint.local`).
@@ -52,7 +53,7 @@ export const IMPLEMENT_TIMEOUT = `${40 * 60 + COMMAND_LIMIT_SECONDS} seconds`
 /** The namespace a tool call's id is a version 5 UUID of its replay-stable identity in. */
 export const TOOL_CALL_NAMESPACE = "8d2f6c41-9a3e-4b57-b1c0-7e5a2d9f3c68"
 
-/** What the step is given: the attempt and what `todo/Begin` read and made. */
+/** What the step is given: the attempt and what `todo/Begin` read and reserved. */
 export const ImplementPayload = {
   attemptId: Schema.String,
   todoId: Schema.String,
@@ -102,7 +103,7 @@ export const promptOf = (payload: Schema.Struct.Type<typeof ImplementPayload>): 
     ...(payload.acceptance.length === 0 ? [] : ["", "Done when:", ...payload.acceptance.map((line) => `- ${line}`)]),
   ].join("\n")
 
-/** `todo/Implement`: the agent writes the TODO's change on its branch's machine. */
+/** `todo/Implement`: the agent writes the TODO's change on its attempt's machine. */
 export const Implement = AgentAction.make("todo/Implement", {
   payload: ImplementPayload,
   output: Implemented,
@@ -193,7 +194,7 @@ export const callIdOf = (identity: { readonly session: string; readonly frame: n
 
 /**
  * The sandbox tools, bound to the machine of the attempt whose run calls them: the current execution's attempt
- * (`todo:<attemptId>`), whose branch and committer `TodoMachine.ofExecution` reads. A command runs for up to
+ * (`todo:<attemptId>`), whose base commit and committer `TodoMachine.ofExecution` reads. A command runs for up to
  * `commandSeconds` (`SANDBOX_COMMAND_MAX_SECONDS`).
  */
 export const machineBindings = <E, R>(

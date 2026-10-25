@@ -1,5 +1,5 @@
 import { AgentAction } from "@smthrs/agent"
-import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { Node, type Planned } from "@smthrs/plan"
@@ -26,14 +26,16 @@ import { machineOf } from "./TodoMachine.ts"
 // The `todo` run (decision 0016, the factory simplified): one durable run per attempt, on Cloudflare, started by the
 // stack's writer through `TodoRuns`. It takes one TODO to a merged pull request:
 //
-//   todo/Begin      the TODO and its prompt; its branch `smithers/t<n>-<slug>` made on GitHub, as the App, so its machine
-//                   can check it out: at the head of the TODO in review before it (stacked), else of the default branch
+//   todo/Begin      the TODO and its prompt; its base, the head of the TODO in review before it (stacked), else of the
+//                   default branch; its branch's name `smithers/t<n>-<slug>-<key>` reserved, nothing written to GitHub
 //                   ─▶ writer: branch and its base, step implement
-//   todo/Implement  the agent writes the change on the attempt's machine with the sandbox tools (worker/flows/TodoAgent.ts)
+//   todo/Implement  the agent writes the change on the attempt's machine, checked out at the base, with the sandbox tools
+//                   (worker/flows/TodoAgent.ts, worker/flows/TodoMachine.ts)
 //   todo/Collect    the files it changed, read whole from the machine; none ─▶ failed empty_change
-//   todo/Publish    one commit, `createCommitOnBranch` fenced by the base; the pull request into its base (a draft while
-//                   that is another TODO's branch), its body ending "Fixes #n" for a TODO from issue n ─▶ writer: in
-//                   review, which frees the lane for the next TODO; the head's checks start
+//   todo/Publish    the branch made on GitHub at the base, as the App, with the reserved name; one commit,
+//                   `createCommitOnBranch` fenced by the base; the pull request into its base (a draft while that is
+//                   another TODO's branch), its body ending "Fixes #n" for a TODO from issue n ─▶ writer: in review,
+//                   which frees the lane for the next TODO; the head's checks start
 //   todo/Await      parks until GitHub signals a merge or close; an hourly durable clock covers a lost delivery.
 //                   Stacked, once the TODO below merges, it merges that merge in, its new head's checks start, and the
 //                   pull request is marked ready and moves onto the default branch; once the TODO below closes unmerged,
@@ -43,11 +45,13 @@ import { machineOf } from "./TodoMachine.ts"
 //                   dropped (`ended`) closes the pull request its run opened, and changes nothing else
 //
 // Every writer call is fenced by the TODO and the attempt (`Stack.report`), so a dropped TODO's run stops at its next
-// one. Every GitHub write goes through `Action.once` with a `GitHub.Once` adapter: it carries the step's own key (the
-// branch's name suffix, the commit's `Smithers-Write` trailer, the pull request's marker), and a step that runs again
-// after a lost answer or a crash finds its write by that key, never by a name, a message or a parent that only look
-// alike (docs/proposals/durable-external-effects.md). Nothing here merges, approves or forces a ref: a person merges
-// (decision 0012 decision 6). Records carry ids, numbers and outcomes, never a title, a prompt or a file.
+// one. GitHub is written only at Publish, so an attempt that publishes nothing leaves nothing on GitHub (ruling GH-11).
+// Every GitHub write goes through `Action.once` with a `GitHub.Once` adapter: it carries its key (the branch's name
+// suffix, from the attempt, `branchKeyOf`, which Begin reserves; the commit's `Smithers-Write` trailer and the pull
+// request's marker, the step's own), and a step that runs again after a lost answer or a crash finds its write by that
+// key, never by a name, a message or a parent that only look alike (docs/proposals/durable-external-effects.md).
+// Nothing here merges, approves or forces a ref: a person merges (decision 0012 decision 6). Records carry ids, numbers
+// and outcomes, never a title, a prompt or a file.
 
 /**
  * `TODO_RUNS`: whether this deployment runs TODOs: on unless set to `false`. Off, every TODO stays Queued, as before
@@ -110,12 +114,15 @@ export const AWAIT_RETRY = RetryPolicy.make({
   nonRetryable: ["@smthrs/mvp/todo/TodoFailed"],
 })
 
-/** What `todo/Begin` read and made: the TODO's text, its branch at its base, and who committed it. */
+/**
+ * What `todo/Begin` read and reserved: the TODO's text, its branch's name and its base, and who committed it. The
+ * branch exists on GitHub only once `todo/Publish` makes it, at `baseSha`.
+ */
 export const Begun = Schema.Struct({
   branch: Schema.String,
   baseSha: Schema.String,
   /**
-   * The branch its branch was made from and its pull request is into: the default branch, or the TODO below's. Absent
+   * The branch its branch is made from and its pull request is into: the default branch, or the TODO below's. Absent
    * in a run begun before stacking, whose base is the default branch (`baseOf`).
    */
   baseRef: Schema.optional(Schema.String),
@@ -166,6 +173,12 @@ const byAttempt = ({ request }: { readonly request: TodoRequest }) => ({ attempt
 /**
  * Begin's and Publish's implementation versions. v2 (2026-10-21) writes through `Action.once` and finds its writes by
  * key; a run parked on a v1 plan stops with `plan_changed` rather than resume under different recovery.
+ *
+ * Moving the branch's creation from Begin to Publish (2026-10-25, ruling GH-11) keeps v2 on purpose: a version bump
+ * stops every run already in flight, those parked on a person's merge included, and nothing in their recovery changed.
+ * A run Begin reserved for creates its branch in Publish, found by the attempt's key (`branchKeyOf`); a run begun
+ * before the move already has its branch on GitHub, which Publish recognizes by its name not being the reserved one, and
+ * commits onto as before.
  */
 export const BEGIN_VERSION = "todo/begin/v2"
 export const PUBLISH_VERSION = "todo/publish/v2"
@@ -235,10 +248,11 @@ export const failureOf = (error: Failure): StepFailure => {
   return "implement"
 }
 
-/** `todo`: one attempt of one TODO, from its branch to a person's merge. */
+/** `todo`: one attempt of one TODO, from its base to a person's merge. */
 export const Todo = Flow.make("todo", {
-  description: "Take one TODO to a merged pull request: make its branch, have the agent write the change on the " +
-    "branch's machine, commit it and open the pull request, start its checks, then wait for a person to merge it.",
+  description: "Take one TODO to a merged pull request: reserve its branch at its base, have the agent write the " +
+    "change on the attempt's machine, make the branch with one commit and open the pull request, start its checks, " +
+    "then wait for a person to merge it.",
   capabilities: ["db:write:todos", "db:write:todo_attempts", "db:write:items", "db:write:pulls"],
   modelInvocable: false,
   payload: TodoRequest,
@@ -329,6 +343,13 @@ export const admission = (
 
 /** The part of a TODO's branch name every attempt shares: `smithers/t<n>-`. */
 export const branchPrefixOf = (number: number): string => `smithers/t${number}-`
+
+/**
+ * The key of attempt `attemptId`'s branch: 64 hex of SHA-256 over a version line and the attempt's id. `todo/Begin`
+ * reserves the name it ends (`GitHub.Once.branchName`), and `todo/Publish` makes the branch with it and finds it again
+ * by it, so both steps name one branch, and no other attempt's.
+ */
+export const branchKeyOf = (attemptId: string): string => digestSync(`smithers/todo-branch/v1\n${attemptId}`)
 
 /**
  * A TODO's title as a branch name's label, at most 40 characters: accents come off their letters (NFKD, then the
@@ -494,7 +515,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
         return yield* new TodoFailed({ failure: "ended" })
       }
       const repository = repositoryOfRequest(request)
+      // Begin writes nothing to GitHub, but takes the token Publish will: an App that can't publish fails here, before
+      // the agent spends a turn.
       const token = yield* tokenFor("begin", request, "publish")
+      // The branch's name, reserved: the TODO's number and title, then its key, from the attempt. `todo/Publish` makes
+      // the branch under this name; until then it exists nowhere (ruling GH-11).
+      const branch = GitHub.Once.branchName(branchPrefixOf(todo.number), slugOf(todo.title), branchKeyOf(request.attemptId))
       const made = yield* Effect.gen(function* () {
         const client = yield* GitHub.GitHubClient.GitHubClient
         const facts = yield* client.request(
@@ -513,23 +539,14 @@ export const steps = <E, R>(services: Services<E, R>) => {
         if (Option.isSome(below) && Option.isNone(belowHead)) return yield* new TodoFailed({ failure: "base_closed" })
         const baseRef = todo.baseRef ?? (Option.isSome(belowHead) ? belowHead.value.name : defaultBranch)
         yield* assertBase(request, baseRef)
-        if (baseRef !== defaultBranch && Option.isNone(yield* GitHub.Refs.getBranch(repository.owner, repository.name, baseRef))) {
-          return yield* new TodoFailed({ failure: "base_closed" })
+        // The base's head: a TODO's branch gone is a closed base, never a fall back to the default branch.
+        const head = yield* GitHub.Refs.getBranch(repository.owner, repository.name, baseRef)
+        if (Option.isNone(head)) {
+          return yield* new TodoFailed({ failure: baseRef === defaultBranch ? "publish_refused" : "base_closed" })
         }
-        // The branch, made once at its base's head and named with this step's key; a step that runs again finds it by
-        // the key, at the commit it was made at, even after its base moved.
-        const made = yield* Action.once(
-          "branch",
-          GitHub.Once.branch(repository.owner, repository.name, {
-            prefix: branchPrefixOf(todo.number),
-            label: slugOf(todo.title),
-            at: Effect.flatMap(
-              GitHub.Refs.getBranch(repository.owner, repository.name, baseRef),
-              (head) => Option.isNone(head) ? new TodoFailed({ failure: "publish_refused" }) : Effect.succeed(head.value.sha),
-            ),
-          }),
-        )
-        return { branch: made.name, baseSha: made.sha, baseRef, defaultBranch }
+        // A run of this step that reported its branch already keeps the base it reported, even after its base moved.
+        const baseSha = todo.branch === branch && todo.baseSha !== null ? todo.baseSha : head.value.sha
+        return { branch, baseSha, baseRef, defaultBranch }
       }).pipe(withToken(token, services.apiBaseUrl))
       yield* report(request, { kind: "branch", branch: made.branch, baseSha: made.baseSha, baseRef: made.baseRef })
       yield* report(request, { kind: "step", step: "implement" })
@@ -548,7 +565,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
     step("collect", request, Effect.gen(function* () {
       yield* assertBase(request, baseOf(begun))
       const machines = yield* Machines
-      const machine = machineOf({ ...request, branch: begun.branch, ownerId: begun.ownerId })
+      const machine = machineOf({
+        attemptId: request.attemptId,
+        repoId: request.repoId,
+        checkout: begun.baseSha,
+        ownerId: begun.ownerId,
+      })
       const tool = (name: string, call: SandboxTools.Call) =>
         Effect.gen(function* () {
           const callId = yield* Uuid.v5(STEP_CALL_NAMESPACE, `${request.attemptId}:collect:${name}`).pipe(
@@ -592,6 +614,22 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const message = commitMessageOf(request.number, begun.title, begun.ownerLogin)
       const closes = begun.issueNumber === null || (yield* Stack.openAboveFromIssue(attemptOf(request))) === 0
       const published = yield* Effect.gen(function* () {
+        // The branch, made once at the base under the name `todo/Begin` reserved, and found again only by the
+        // attempt's key, even after its base moved. One the key finds under another name isn't the reserved one.
+        // A run begun before Publish made branches has its branch from Begin already (BEGIN_VERSION).
+        const reserved = GitHub.Once.branchName(branchPrefixOf(request.number), slugOf(begun.title), branchKeyOf(request.attemptId))
+        if (begun.branch === reserved) {
+          const made = yield* Action.once(
+            "branch",
+            GitHub.Once.branch(repository.owner, repository.name, {
+              prefix: branchPrefixOf(request.number),
+              label: slugOf(begun.title),
+              at: Effect.succeed(begun.baseSha),
+            }),
+            { key: branchKeyOf(request.attemptId) },
+          )
+          if (made.name !== begun.branch) return yield* new TodoFailed({ failure: "publish_refused" })
+        }
         // The commit, appended once at the base and found again only by this step's trailer. A head someone else
         // moved is refused (409, stale), never adopted because its parent and message look like ours.
         const headSha = yield* Action.once(

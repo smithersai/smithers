@@ -127,8 +127,9 @@ export const defaultBranch = (repository: Repository) =>
     Effect.flatMap(forge.upstream(repository), (upstream) => GitRemote.head(upstream)))
 
 /**
- * The forge a branch's machine checks `branch` out through: GitHub for a branch that lives there (`forge: "github"`, a
- * TODO's attempt branch, which `todo/Begin` makes on GitHub as the App), else `deployment`, the deployment's own forge.
+ * The forge a branch's machine checks `branch` out through: GitHub for what lives there (`forge: "github"`, a TODO's
+ * attempt, which checks out its base commit, its branch made on GitHub only by `todo/Publish`), else `deployment`, the
+ * deployment's own forge.
  * With Code Storage the deployment's forge is the mirror, which never holds a branch made on GitHub after its last pull.
  */
 export const forgeOf = (deployment: Forge["Service"], branch: { readonly forge?: "github" | undefined; readonly namespace?: CodeStorage.RefNamespace | undefined }): Forge["Service"] =>
