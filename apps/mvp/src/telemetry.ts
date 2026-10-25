@@ -134,7 +134,7 @@ const features: ReadonlyArray<Telemetry> = [
   AUTH_TELEMETRY,
   FLOWS_TELEMETRY,
   AGENT_TELEMETRY,
-  { records: ["smithers_memory_operations", "memory.recall", "smithers_memory_recall_ms", "memory.remember", "smithers_memory_remembered", "memory.opening", "smithers_memory_recalled", "smithers_memory_inserted", "smithers_memory_filtered", "smithers_memory_ms"], fields: ["method", "outcome", "recalled", "inserted", "filtered", "skillsRecalled", "skillsInserted", "durationMs"] },
+  { records: ["smithers_memory_operations", "memory.recall", "smithers_memory_recall_ms", "memory.remember", "smithers_memory_remembered", "memory.opening", "smithers_memory_recalled", "smithers_memory_inserted", "smithers_memory_filtered", "smithers_memory_ms", "chat.opening.skipped", "smithers_chat_opening_skipped"], fields: ["method", "outcome", "recalled", "inserted", "filtered", "skillsRecalled", "skillsInserted", "durationMs", "reason"] },
   THEME_TELEMETRY,
   NAVIGATION_TELEMETRY,
   FILES_TELEMETRY,

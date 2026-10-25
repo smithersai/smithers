@@ -4,7 +4,7 @@ import { ModelStep } from "@smthrs/agent"
 import { Relevance } from "@smthrs/harness"
 import { Flows, MemoryError, MemoryStore, Opening, Recall, RecallKeyword } from "@smthrs/memory"
 import { Evaluator, ModelError } from "@smthrs/model"
-import { Clock, Config, Effect, Layer, Metric, Stream } from "effect"
+import { Clock, Config, Data, Effect, Layer, Metric, Stream } from "effect"
 import { FlowsClient } from "../flows-ui/api"
 import { JudgeSeat } from "../jev/steps"
 import { OpeningFailed, OpeningRefused, prompt } from "./flows"
@@ -20,6 +20,14 @@ export const remembered = Metric.counter("smithers_memory_remembered")
 export const filtered = Metric.counter("smithers_memory_filtered")
 export const recallDuration = Metric.histogram("smithers_memory_recall_ms", { boundaries: [10, 100, 1000, 5000, 30000] })
 export const duration = Metric.histogram("smithers_memory_ms", { boundaries: [10, 100, 1000, 5000, 30000] })
+/**
+ * Turns that opened with no memory because the judge couldn't answer, by `reason`: the reading's `Unjudged` reason
+ * (`unreachable` for an outage, `timeout`, `invalid_answer` and the like), never its detail.
+ */
+export const openingSkipped = Metric.counter("smithers_chat_opening_skipped")
+
+/** The opening's judge couldn't answer, for `reason`: the turn opens with no memory instead (decision 0027's amendment). */
+class JudgeUnavailable extends Data.TaggedError("JudgeUnavailable")<{ readonly reason: string }> {}
 
 export const recall = (turn: Turn) => Effect.gen(function*() {
   const started = yield* Clock.currentTimeMillis
@@ -31,7 +39,13 @@ export const recall = (turn: Turn) => Effect.gen(function*() {
   return { ...turn, candidates }
 }).pipe(Effect.withSpan("memory.recall"))
 
-/** The sealed action's result is the frame-zero snapshot on every resume. */
+/**
+ * The sealed action's result is the frame-zero snapshot on every resume. Memory is context, never a gate on answering:
+ * a judge that can't answer (an outage after its durable retries, a timeout, an answer it couldn't read) opens the turn
+ * with no memory, logged `chat.opening.skipped` with the reading's reason and counted, and the answer goes on. A quota
+ * or credit refusal is the exception: the person's agent uses the same key and would be refused the same way, so it
+ * fails the opening `OpeningFailed({ quota: true })`, which the answer reports at once (decision 0027's amendment).
+ */
 export const prepare = (turn: Turn & { readonly candidates: ReadonlyArray<Opening.Candidate> }) => Effect.gen(function*() {
   const started = yield* Clock.currentTimeMillis
   const tokenBudget = yield* Config.Int("AGENT_OPENING_TOKENS").pipe(Config.withDefault(OPENING_TOKENS), Effect.mapError(() => new OpeningFailed()))
@@ -48,12 +62,22 @@ export const prepare = (turn: Turn & { readonly candidates: ReadonlyArray<Openin
       ) }
       const reading = yield* Relevance.judge({ task: Opening.boundedQuery(prompt(turn)) }, items.map((item) => ({
         kind: item.kind, id: item.key, text: item.text,
-      }))).pipe(Effect.provide(Evaluator.layerFromSeat({ modelId: "judge", model: observed })), Effect.mapError(() => new OpeningFailed(quota ? { quota: true } : {})))
+      }))).pipe(
+        Effect.provide(Evaluator.layerFromSeat({ modelId: "judge", model: observed })),
+        Effect.mapError((error) => quota ? new OpeningFailed({ quota: true }) : new JudgeUnavailable({ reason: error.reason })),
+      )
       return reading.verdicts.map((verdict, index) => ({
         index, unnecessary: verdict.p, withheld: verdict.withheld,
       }))
     }),
-  })
+  }).pipe(Effect.catchTag("JudgeUnavailable", ({ reason }) => Effect.gen(function*() {
+    yield* Metric.update(Metric.withAttributes(openingSkipped, { reason }), 1)
+    yield* Effect.logWarning("chat.opening.skipped").pipe(Effect.annotateLogs({ reason }))
+    return {
+      rows: [], recalled: turn.candidates.length, judged: 0, inserted: 0, filtered: turn.candidates.length,
+      skillsRecalled: turn.candidates.filter((item) => item.kind === "skill").length, skillsInserted: 0, bytes: 0,
+    } satisfies Opening.Selection
+  })))
   const durationMs = (yield* Clock.currentTimeMillis) - started
   yield* Metric.update(recalled, selection.recalled)
   yield* Metric.update(inserted, selection.inserted)

@@ -42,7 +42,13 @@ elapsed milliseconds: `memory.opening`, `smithers_memory_recalled`,
 Retrieval has its own `memory.recall` span and `smithers_memory_recall_ms` timing.
 Transient source failures retry through the engine (three attempts); permission
 refusals and exhausted failures settle the answer as failed; no empty-memory
-success substitutes for an unavailable source.
+success substitutes for an unavailable source. A judge that can't answer is
+different: memory is context, never a gate on answering, so the turn opens with
+no memory, `chat.opening.skipped` logs the reading's `reason` (`unreachable`,
+`timeout`, `invalid_answer`), `smithers_chat_opening_skipped` counts it, and the
+answer goes on. A judge refused for quota or credit fails the answer at once
+instead, since the person's agent shares the key (decision 0027's 2026-10-25
+amendment).
 
 Validation: `Opening.test.ts` exercises real SQL recall and selection with 100%
 coverage of the added SDK module; the existing `Source.test.ts` has 41 passing

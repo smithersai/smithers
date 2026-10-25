@@ -11,11 +11,11 @@ import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { contents, harness, stop, testFile, usage } from "../../../worker/test/harness.ts"
-import { member, openAgent, ORIGIN } from "../../test/agent"
+import { answerRow, cell, member, openAgent, ORIGIN } from "../../test/agent"
 import { JudgeSeat } from "../jev/steps"
 import { runFlow } from "../../../worker/test/flowHost.ts"
 import { OpeningFailed, OpeningRefused, Prepare, PreparedTurn } from "./flows"
-import { catalogUnavailable, layer, prepare, recall, remembered, rememberRegistration } from "./memory"
+import { catalogUnavailable, layer, openingSkipped, prepare, recall, remembered, rememberRegistration } from "./memory"
 
 import { MEMORY_BANK, Remember } from "./memoryFlows"
 
@@ -155,12 +155,16 @@ test.each(["judged", "unavailable"] as const)("a nonempty opening is %s through 
     ...seat,
     retryPolicy: RetryPolicy.make({ ...ModelStep.defaultRetryPolicy, initialMs: 1, maxMs: 1 }),
   }))).pipe(Layer.provide(JudgeSeat.layer(ORIGIN)))
+  const skipped = Metric.withAttributes(openingSkipped, { reason: "unreachable" })
+  const before = Effect.runSync(Metric.value(skipped)).count
   const result = await runFlow(flow, {}, Interpreter.layerWithImplementations(flow, Prepare.toLayer(prepare)).pipe(
     Layer.provide(judge), Layer.provide(http(transport)),
   ))
   if (mode === "unavailable") {
-    expect(Exit.isFailure(result.exit) && Cause.squash(result.exit.cause)).toBeInstanceOf(OpeningFailed)
+    // An outage outlasted the judge's every durable attempt: the turn opens with no memory, and says so.
+    expect(result.exit).toEqual(Exit.succeed({ ...turn, memoryDebug: { recalled: 2, inserted: 0, filtered: 2, skillsInserted: 0 }, opening: [] }))
     expect(attempts).toBe(6)
+    expect(Effect.runSync(Metric.value(skipped)).count - before).toBe(1)
   } else {
     expect(result.exit).toEqual(Exit.succeed({ ...turn, memoryDebug: { recalled: 2, inserted: 1, filtered: 1, skillsInserted: 0 },
       opening: [{ bank: MEMORY_BANK, key: "launch", text: "launch mascot is cobalt", origin: "recall" }],
@@ -168,7 +172,7 @@ test.each(["judged", "unavailable"] as const)("a nonempty opening is %s through 
   }
 })
 
-test("an opening whose judge is refused for credit asks the model endpoint once, not six times", async () => {
+test("an opening whose judge is refused for credit asks once and fails as a quota refusal, which the answer reports at once", async () => {
   // smithers.sh, 2026-10-25: each question's opening judge asked a provider answering 402 six times.
   let calls = 0
   const agent = await openAgent(runtime, () => {
@@ -188,8 +192,34 @@ test("an opening whose judge is refused for credit asks the model endpoint once,
   const result = await runFlow(flow, {}, Interpreter.layerWithImplementations(flow, Prepare.toLayer(prepare)).pipe(
     Layer.provide(judge), Layer.provide(http(agent.fetch)),
   ))
-  expect(Exit.isFailure(result.exit) && Cause.squash(result.exit.cause)).toBeInstanceOf(OpeningFailed)
+  // The person's agent uses the same key and would be refused the same way: no skipping to an answer that can't come.
+  expect(Exit.isFailure(result.exit) && Cause.squash(result.exit.cause)).toMatchObject({
+    _tag: "@smthrs/mvp/memory/OpeningFailed",
+    quota: true,
+  })
   expect(calls).toBe(1)
+})
+
+test("a judge whose answer can't be read leaves the turn without memory, and the answer completes", async () => {
+  // Memory is context, never a gate on answering (decision 0027's amendment): before it, any judge failure settled the
+  // answer failed before the agent ran.
+  const asked: Array<"judge" | "agent"> = []
+  const agent = await openAgent(runtime, (request) => {
+    const judging = contents(request).at(-1)?.includes("\"questions\"") === true
+    asked.push(judging ? "judge" : "agent")
+    return judging
+      ? Stream.make({ type: "text-delta" as const, id: "j", text: "not a reading" }, usage, stop)
+      : Stream.make({ type: "text-delta" as const, id: "t", text: cell(`ctx.done("Answered without memory.")`) }, usage, stop)
+  })
+  const engine = await agent.engine(undefined, { memorySources: Layer.succeed(Opening.Sources, {
+    recall: () => Effect.succeed([{ kind: "memory" as const, bank: MEMORY_BANK, key: "launch", text: "launch mascot is cobalt" }]),
+  }) })
+  try {
+    const id = await agent.ask("What is the launch mascot?")
+    expect(await agent.answer(engine, id)).toEqual(Exit.succeed({ status: "done" }))
+    expect(await answerRow(runtime, id)).toMatchObject({ status: "done", text: "Answered without memory." })
+    expect(asked).toEqual(["judge", "agent"])
+  } finally { await engine.kill() }
 })
 
 test("a host with an injected failing memory source closes the answer before calling a model", async () => {
