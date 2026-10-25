@@ -1,4 +1,4 @@
-import { Badge, Button, DiffHunks, EmptyState, ItemConversation, LinkTabs, parseUnifiedFile, RunList } from "@smthrs/ui"
+import { Badge, Button, EmptyState, ItemConversation, LinkTabs, RunList } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -8,7 +8,9 @@ import { NOT_FOUND } from "../../features/issues/contract"
 import { pageOf } from "../../features/issues/view"
 import { usePulls } from "../../features/pulls/components/PullsContext"
 import { githubPullUrl, type PullTab, pullTabPath } from "../../features/pulls/contract"
-import { checkRows, checksSummaryOf, conversationProps, fileStatusOf, mergeBoxOf, pullAccessOf, unifiedOf } from "../../features/pulls/view"
+import { ChangedFiles } from "../../features/pulls/components/ChangedFiles"
+import { CommitList } from "../../features/pulls/components/CommitList"
+import { checkRows, checksSummaryOf, conversationProps, mergeBoxOf, pullAccessOf } from "../../features/pulls/view"
 import "./pulls-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
@@ -101,32 +103,17 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
         ? <ItemConversation {...conversationProps(pull, comments ?? [], reviews ?? [], { owner, name: repo })} headerActions={header} />
         : tab === "commits"
         ? (
-          (commits ?? []).length === 0 ? <EmptyState title="No commits" /> : (
-            <ol className="pull-commits" aria-label="Commits">
-              {(commits ?? []).map((commit) => (
-                <li key={commit.sha} className="pull-commit">
-                  <span className="pull-commit-headline">{commit.headline}</span>
-                  {commit.author === "" ? null : <span>{commit.author}</span>}
-                  <code className="pull-commit-sha">{commit.sha.slice(0, 7)}</code>
-                </li>
-              ))}
-            </ol>
-          )
+          (commits ?? []).length === 0 ? <EmptyState title="No commits" /> : <CommitList commits={commits ?? []} />
         )
         : tab === "checks"
         ? <RunList runs={checkRows(checks ?? [])} now={Date.now()} empty={<EmptyState title="No checks" />} />
         : (
-          <section className="pull-files" aria-label="Files" aria-busy={compared?.status !== "ready"}>
+          <section aria-label="Files" aria-busy={compared?.status !== "ready"}>
             {compared === undefined || compared.status === "loading"
               ? null
               : compared.status === "failed"
               ? <EmptyState title="Couldn't load files" />
-              : compared.files.map((file) => (
-                <div key={file.filename}>
-                  <h3 className="pull-file-name">{file.filename}</h3>
-                  <DiffHunks file={parseUnifiedFile(unifiedOf(file), { path: file.filename, status: fileStatusOf(file.status) })} />
-                </div>
-              ))}
+              : <ChangedFiles files={compared.files} />}
           </section>
         )}
     </main>

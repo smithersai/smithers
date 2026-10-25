@@ -13,11 +13,14 @@ import { Tracked } from "./schema"
 const invalid = () => new BranchTrackRefused({ reason: "invalid" })
 export const executions = Metric.counter("smithers_branch_creation_steps", { incremental: true })
 
-/** The authenticated route resolves the home repository, manifest and source at one commit. */
-export const select = (origin: string) => (request: CreationRequest) => Effect.gen(function* () {
+/**
+ * The authenticated route resolves the repository's manifest and source at one commit, for the operation `query` names
+ * (creation unless it names one; docs/features/branch-publish.md), and the home repository unless it names one.
+ */
+export const selection = (origin: string, query: Readonly<Record<string, string>>) => Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient
   const response = yield* client.execute(HttpClientRequest.get(`${origin}${CREATION_ROUTE}`).pipe(
-    HttpClientRequest.setUrlParams(request.owner === undefined ? {} : { owner: request.owner, name: request.name! }),
+    HttpClientRequest.setUrlParams(query),
   )).pipe(Effect.mapError(() => new BranchTrackUnavailable()))
   if (response.status === 401) return yield* new BranchTrackRefused({ reason: "sign_in" })
   if (response.status === 403) return yield* new BranchTrackRefused({ reason: "forbidden" })
@@ -26,6 +29,10 @@ export const select = (origin: string) => (request: CreationRequest) => Effect.g
   if (response.status !== 200) return yield* new BranchTrackUnavailable()
   return yield* response.json.pipe(Effect.flatMap(Schema.decodeUnknownEffect(CreationSelection)), Effect.mapError(() => new BranchTrackUnavailable()))
 }).pipe(Effect.timeoutOrElse({ duration: TRACK_WITHIN, orElse: () => Effect.fail(new BranchTrackUnavailable()) }))
+
+/** Creation's selection: the request's repository, the home one when it names none. */
+export const select = (origin: string) => (request: CreationRequest) =>
+  selection(origin, request.owner === undefined ? {} : { owner: request.owner, name: request.name! })
 
 /** No output is accepted as a created conversation without a matching host write receipt. */
 export const evaluate = (state: typeof EvaluateCreation.payloadSchema.Type) => Effect.gen(function* () {

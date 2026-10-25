@@ -179,7 +179,7 @@ const synced = [
   Migrations.synced({ id: "issue-items", version: 3, schema: Item }),
   Migrations.synced({ id: "issue-comments", version: 1, schema: Comment }),
   Migrations.synced({ id: "issue-sync", version: 1, schema: SyncRow }),
-  Migrations.synced({ id: "issue-writes", version: 1, schema: WriteRow }),
+  Migrations.synced({ id: "issue-writes", version: 2, schema: WriteRow }),
   Migrations.synced({ id: "issue-triage-settings", version: 1, schema: TriageSettings }),
   Migrations.synced({ id: "flows", version: 2, schema: FlowRow }),
   Migrations.synced({ id: "flow-drafts", version: 1, schema: FlowDraft }),

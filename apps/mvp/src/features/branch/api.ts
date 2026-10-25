@@ -1,10 +1,12 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { writesRoute } from "../issues/contract"
 import { BRANCHES_ROUTE, type Refusal } from "./contract"
 import { Refused, Tracked } from "./schema"
 
 // ChatApi's `POST /api/branches` as `branch/track`'s step calls it (docs/features/branch-workspace.md#tracking-a-branch),
-// through Effect's HttpClient, with one deadline covering the whole exchange.
+// and its writes route as Publish's and Update branch's steps call it (docs/features/branch-publish.md), through Effect's
+// HttpClient, with one deadline covering each whole exchange.
 
 /** ChatApi didn't track the branch: a refusal (`status`, with its `code`), or no whole answer in time (neither). */
 export class TrackRefused extends Data.TaggedError("TrackRefused")<{
@@ -72,3 +74,47 @@ export class BranchClient extends Context.Service<
       }),
     )
 }
+
+/** A Publish or an Update branch as the writes route takes it (docs/features/branch-publish.md#routes). */
+export type BranchWrite =
+  | { readonly writeId: string; readonly op: "branch/publish"; readonly branchId: string; readonly title: string; readonly body: string }
+  | { readonly writeId: string; readonly op: "branch/update"; readonly branchId: string; readonly method: "merge" | "rebase" }
+
+/** Sends Publish and Update branch writes to ChatApi's writes route on `origin`, in the person's session. */
+export class BranchWrites extends Context.Service<
+  BranchWrites,
+  {
+    /** `POST .../writes`: `202` took the write, `200` had it already; anything else is refused with its status and code. */
+    readonly send: (owner: string, name: string, write: BranchWrite) => Effect.Effect<void, TrackRefused>
+  }
+>()("@smthrs/mvp/branch/BranchWrites") {
+  /** The client over the host's `HttpClient`. */
+  static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      BranchWrites,
+      Effect.gen(function* () {
+        const client = yield* HttpClient.HttpClient
+        return BranchWrites.of({
+          send: Effect.fn("branch.write.post")(function* (owner, name, write) {
+            const response = yield* client.execute(
+              HttpClientRequest.post(`${options.origin}${writesRoute(owner, name)}`).pipe(HttpClientRequest.bodyJsonUnsafe(write)),
+            ).pipe(Effect.mapError(() => new TrackRefused({})))
+            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, op: write.op })
+            if (response.status === 200 || response.status === 202) return
+            const text = yield* Effect.orElseSucceed(response.text, () => "")
+            const code = Option.getOrUndefined(decodeWriteRefusal(text))?.code
+            return yield* new TrackRefused({
+              status: response.status,
+              ...(code === "not_configured" ? { code } : {}),
+            })
+          }, (effect) =>
+            Effect.timeoutOrElse(effect, {
+              duration: options.within ?? TRACK_WITHIN,
+              orElse: () => Effect.fail(new TrackRefused({})),
+            })),
+        })
+      }),
+    )
+}
+
+const decodeWriteRefusal = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({ code: Schema.String })))

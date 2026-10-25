@@ -128,6 +128,8 @@ describe("the parity law", () => {
       "run/steer",
       "branch/track",
       "branch/create",
+      "branch/publish",
+      "branch/update",
       "conversation/new",
       "conversation/archive",
       "issue/create",
@@ -235,6 +237,8 @@ describe("names and placement", () => {
       "run/steer",
       "branch/track",
       "branch/create",
+      "branch/publish",
+      "branch/update",
       "conversation/new",
       "conversation/archive",
       "branch/share",
@@ -306,9 +310,9 @@ describe("side effects (the registry's `changes`)", () => {
     for (const name of READS) expect(agentFlows).toContain(name)
   })
 
-  test("only a flow that says what it changes asks the person first: saving or deleting your flow, removing your model", () => {
+  test("only a flow that says what it changes asks the person first: saving or deleting your flow, publishing a branch, removing your model", () => {
     const asking = names.filter((name) => entryOf(name).confirm !== undefined)
-    expect(asking).toEqual(["flow/save", "flow/delete", "flow/draft/delete", "model/remove"])
+    expect(asking).toEqual(["flow/save", "flow/delete", "flow/draft/delete", "branch/publish", "model/remove"])
     for (const name of asking) expect([name, entryOf(name).changes !== undefined]).toEqual([name, true])
   })
 

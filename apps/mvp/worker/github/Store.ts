@@ -12,6 +12,7 @@ import {
   type WriteStatus,
   type WriteVia,
 } from "../../src/features/issues/contract.ts"
+import { UPDATE_METHODS } from "../../src/features/branch/contract.ts"
 import { MERGE_METHODS } from "../../src/features/pulls/contract.ts"
 import { Sealed } from "../SessionStore.ts"
 
@@ -223,6 +224,8 @@ export const WritePayload = Schema.Union([
     baseSha: Schema.String,
     method: Schema.Literals(MERGE_METHODS),
   }),
+  Schema.Struct({ op: Schema.Literal("branch/publish"), branchId: Schema.String, title: Schema.String, body: Schema.String }),
+  Schema.Struct({ op: Schema.Literal("branch/update"), branchId: Schema.String, method: Schema.Literals(UPDATE_METHODS) }),
 ])
 export type WritePayload = typeof WritePayload.Type
 const decodePayload = Schema.decodeUnknownSync(WritePayload)
@@ -237,6 +240,10 @@ export type Inserted =
   | { readonly kind: "stale" }
   /** The write id is another repository's or another person's write: a resend names the same of both. */
   | { readonly kind: "taken" }
+
+/** The branch a write acts on: Publish's and Update branch's (docs/features/branch-publish.md), else none. */
+const branchOf = (payload: WritePayload): string | null =>
+  payload.op === "branch/publish" || payload.op === "branch/update" ? payload.branchId : null
 
 /**
  * Records a write the route admitted, once per write id. A new write is recorded only while `holds` answers true in
@@ -271,9 +278,9 @@ export const insertWrite = <E = never, R = never>(write: {
       if (found !== undefined) return found
       if (!(yield* holds)) return { kind: "stale" } satisfies Inserted
       const [inserted] = yield* sql<{ readonly txid: string }>`
-        INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash)
+        INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash, branch_id)
         VALUES (${write.id}::uuid, ${write.repoId}, ${write.actorId}, ${write.sessionId}::uuid, ${write.via},
-          ${write.payload.op}, ${JSON.stringify(write.payload)}::jsonb, ${write.payloadHash})
+          ${write.payload.op}, ${JSON.stringify(write.payload)}::jsonb, ${write.payloadHash}, ${branchOf(write.payload)}::uuid)
         ON CONFLICT (id) DO NOTHING
         RETURNING pg_current_xact_id()::xid::text AS txid`
       if (inserted !== undefined) return { kind: "inserted", txid: Number(inserted.txid) } satisfies Inserted

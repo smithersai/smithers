@@ -724,6 +724,7 @@ describe("the shapes", () => {
         item_number: null,
         created_at: expect.any(String),
         settled_at: null,
+        branch_id: null,
       },
     ])
     const nobody = await githubHarness(runtime, { actor: null })

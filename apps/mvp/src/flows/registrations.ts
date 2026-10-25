@@ -10,6 +10,7 @@ import * as Attention from "../features/attention/steps"
 import * as AuthSteps from "../features/auth/steps"
 import * as ConversationSteps from "../features/conversations/steps"
 import * as BranchSteps from "../features/branch/steps"
+import * as PublishSteps from "../features/branch/publishSteps"
 import * as ChatSteps from "../features/chat/steps"
 import * as PersonalFlows from "../features/flows-ui/steps"
 import * as Issues from "../features/issues/steps"
@@ -132,6 +133,7 @@ export const registrations = (options: HostOptions) =>
       Layer.provide(RemoteRunsClient.layer({ origin: options.origin, within: REQUEST_WITHIN })),
     ),
     BranchSteps.registrationAt(options.origin),
+    PublishSteps.registrationAt(options.origin),
     ConversationSteps.registrationAt(options.origin),
     SharingSteps.registrationAt(options.origin),
     TerminalSteps.registrationAt(options.origin),

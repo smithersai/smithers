@@ -4,8 +4,10 @@ import { Card, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useSearch } from "@tanstack/react-router"
 import { ComposerGate } from "../../features/auth/components/ComposerGate"
+import { BranchCompare } from "../../features/branch/components/BranchCompare"
 import { BranchHeader } from "../../features/branch/components/BranchHeader"
 import { useBranch } from "../../features/branch/components/BranchContext"
+import { comparesOf } from "../../features/branch/publishView"
 import { accessNow, writes } from "../../features/branch/view"
 import { Composer } from "../../features/chat/components/Composer"
 import { SharedFile } from "../../features/coedit/components/SharedFile"
@@ -26,17 +28,19 @@ import "./branch-screen.css"
 // together by those who may edit it and shown read-only to those who may only view it; else the person's own draft
 // (docs/features/coedit.md#the-prompt). Under `?edit`, a file of the
 // branch's working copy is in the live editor in Code's place; for someone who may write the branch, a Markdown file's
-// own page edits it in place (docs/features/repo.md#the-browser). A branch that isn't shared
+// own page edits it in place (docs/features/repo.md#the-browser); under `?compare`, once it is published, what it adds
+// to its base (docs/features/branch-publish.md#the-branch-page). A branch that isn't shared
 // with them, or stops being, says No access where the conversation would be; the code stays as GitHub shows it. The
 // route's loader opens the location, the branch, its room and its terminal; this screen only renders what the device
 // has.
 export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean } = {}) {
-  const { queries, presence } = useBranch()
+  const { queries, presence, publishing } = useBranch()
   const { data: current } = useLiveQuery(queries.current)
+  const { data: publication } = useLiveQuery(publishing.queries.publication)
   const { data: todos } = useLiveQuery(useTodos().queries.stack(current ? repoId(current.owner, current.repo) : "").todos)
   const { data: room } = useLiveQuery(presence.queries.room)
   const { data: participants } = useLiveQuery(presence.queries.participants)
-  const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly edit?: string }
+  const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly edit?: string; readonly compare?: true }
   const access = accessNow(current, room, selfAccessOf(participants))
   const open = access !== undefined && access !== "none"
   const savedConversation = current?.status === "offline" && current.conversationId !== null
@@ -55,6 +59,8 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
           ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} />
           : open && search.edit !== undefined && current?.conversationId != null
           ? <SharedFile conversationId={current.conversationId} path={search.edit} readOnly={!writes(access)} />
+          : search.compare !== undefined && comparesOf(access, publication)
+          ? <BranchCompare />
           : (
             <>
               <FileTabsBar />

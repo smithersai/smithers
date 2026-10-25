@@ -104,7 +104,7 @@ import { appLayer, type AppOptions, type Host, realServices } from "../boot"
 import { NOTIFICATIONS_TABLE } from "../features/attention/contract"
 import { bindSessionConnectivity } from "../features/auth/auth"
 import { SESSION_ROUTE } from "../features/auth/contract"
-import { SHARES_TABLE } from "../features/branch/contract"
+import { PUBLICATIONS_TABLE, SHARES_TABLE } from "../features/branch/contract"
 import { MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
 import type { TextsClient } from "../features/coedit/api"
 import { TEXT_UPDATES_TABLE } from "../features/coedit/contract"
@@ -255,6 +255,7 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   FLOW_DRAFTS_TABLE,
   TERMINALS_TABLE,
   SHARES_TABLE,
+  PUBLICATIONS_TABLE,
   CONVERSATION_PEOPLE_TABLE,
   SPEND_ALERTS_TABLE,
   ALERT_CHANNELS_TABLE,

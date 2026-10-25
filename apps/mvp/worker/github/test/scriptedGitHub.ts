@@ -543,6 +543,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
         apply: () => void (pull.draft = false),
       }
     }
+    if ((body as { readonly query: string }).query.includes("updatePullRequestBranch")) return updateBranch(body, login)
     const input = (body as { readonly variables: { readonly input: unknown } }).variables.input as {
       readonly branch: { readonly repositoryNameWithOwner: string; readonly branchName: string }
       readonly expectedHeadOid: string
@@ -581,6 +582,41 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     }
   }
 
+  /**
+   * GraphQL `updatePullRequestBranch`, as GitHub's Update branch: the base's head taken into the pull request's branch,
+   * fenced by `expectedHeadOid`; `MERGE` (the default) makes a merge commit, `REBASE` rewrites the branch as one commit
+   * on the base's head holding the same files. A conflict, a moved head and an unknown node are GraphQL errors.
+   */
+  const updateBranch = (body: unknown, login: string): { readonly response: Response; readonly apply?: () => void } => {
+    const variables = (body as { readonly variables: Record<string, unknown> }).variables
+    const input = (variables["input"] ?? variables) as {
+      readonly pullRequestId: string
+      readonly expectedHeadOid?: string
+      readonly updateMethod?: "MERGE" | "REBASE"
+    }
+    const failed = (type: string, message: string) => ({ response: json({ data: { updatePullRequestBranch: null }, errors: [{ type, message }] }) })
+    const pull = [...github.pulls.values()].find((candidate) => `PR_${candidate.number}` === input.pullRequestId)
+    if (pull === undefined) return failed("NOT_FOUND", "Could not resolve to a node")
+    const head = github.refs.get(pull.head)!
+    if (input.expectedHeadOid !== undefined && input.expectedHeadOid !== head) {
+      return failed("UNPROCESSABLE", "expected head sha didn't match current head ref")
+    }
+    const base = github.refs.get(pull.base)!
+    const files = threeWay(head, base)
+    if (files === null) return failed("UNPROCESSABLE", "merge conflict between base and head")
+    const updated = (headRefOid: string) => json({ data: { updatePullRequestBranch: { pullRequest: { headRefOid } } } })
+    if (files === "held") return { response: updated(head) }
+    const sha = (commitIds + 1).toString(16).padStart(40, "c")
+    const rebase = input.updateMethod === "REBASE"
+    return {
+      response: updated(sha),
+      apply: () => {
+        commit(rebase ? github.commits.get(head)!.message : `Merge branch '${pull.base}' into ${pull.head}`, rebase ? [base] : [head, base], files, login)
+        github.refs.set(pull.head, sha)
+      },
+    }
+  }
+
   const pullJson = (pull: ScriptedPull) => {
     const issue = github.issues.get(pull.number)!
     const headSha = github.refs.get(pull.head) ?? ""
@@ -597,7 +633,13 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       merged_at: pull.merged ? iso(issue.closedAt ?? github.now) : null,
       merge_commit_sha: pull.mergeSha,
       merged_by: user(pull.mergedBy),
-      mergeable_state: pull.draft ? "draft" : github.unmergeable ? "blocked" : "clean",
+      mergeable_state: pull.draft
+        ? "draft"
+        : github.unmergeable
+        ? "blocked"
+        : github.refs.has(pull.head) && github.refs.has(pull.base) && threeWay(github.refs.get(pull.head)!, github.refs.get(pull.base)!) === null
+        ? "dirty"
+        : "clean",
       user: user(issue.login),
       head: { ref: pull.head, sha: headSha },
       base: { ref: pull.base, sha: pull.baseSha, repo: { default_branch: "main" } },
@@ -644,15 +686,12 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
   }
 
   /**
-   * `POST /merges`, as GitHub merges a branch or commit into a branch: 204 when the branch holds it already, 409 for a
-   * conflict, else a merge commit whose files are a three-way merge from the nearest common ancestor.
+   * Commit `theirs` merged into commit `ours`: `held` when `ours` holds it already, `null` for a conflict, else the files
+   * of a three-way merge from the nearest common ancestor.
    */
-  const mergeInto = (input: MergeInput, login: string): { readonly response: Response; readonly apply?: () => void } => {
-    const ours = github.refs.get(input.base)
-    const theirs = /^[0-9a-f]{40}$/.test(input.head) && github.commits.has(input.head) ? input.head : github.refs.get(input.head)
-    if (ours === undefined || theirs === undefined) return { response: json({ message: "Base or head does not exist" }, 404) }
+  const threeWay = (ours: string, theirs: string): "held" | Map<string, string> | null => {
     const held = ancestors(ours)
-    if (held.has(theirs)) return { response: new Response(null, { status: 204 }) }
+    if (held.has(theirs)) return "held"
     const theirsAncestors = ancestors(theirs)
     const common = [...held].filter((sha) => theirsAncestors.has(sha))
       .sort((a, b) => github.commits.get(b)!.at - github.commits.get(a)!.at)[0]
@@ -663,9 +702,23 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     for (const path of new Set([...base.keys(), ...mine.keys(), ...other.keys()])) {
       const [b, o, t] = [base.get(path), mine.get(path), other.get(path)]
       const merged = o === t ? o : o === b ? t : t === b ? o : null
-      if (merged === null) return { response: json({ message: "Merge conflict" }, 409) }
+      if (merged === null) return null
       if (merged !== undefined) files.set(path, merged)
     }
+    return files
+  }
+
+  /**
+   * `POST /merges`, as GitHub merges a branch or commit into a branch: 204 when the branch holds it already, 409 for a
+   * conflict, else a merge commit whose files are a three-way merge from the nearest common ancestor.
+   */
+  const mergeInto = (input: MergeInput, login: string): { readonly response: Response; readonly apply?: () => void } => {
+    const ours = github.refs.get(input.base)
+    const theirs = /^[0-9a-f]{40}$/.test(input.head) && github.commits.has(input.head) ? input.head : github.refs.get(input.head)
+    if (ours === undefined || theirs === undefined) return { response: json({ message: "Base or head does not exist" }, 404) }
+    const files = threeWay(ours, theirs)
+    if (files === "held") return { response: new Response(null, { status: 204 }) }
+    if (files === null) return { response: json({ message: "Merge conflict" }, 409) }
     const sha = (commitIds + 1).toString(16).padStart(40, "c")
     return {
       response: json({ sha, commit: { message: input.commit_message ?? "Merge" } }, 201),
@@ -735,8 +788,15 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       const [base, head] = [ancestors(from.sha), ancestors(to.sha)]
       const aheadBy = [...head].filter((sha) => !base.has(sha)).length
       const behindBy = [...base].filter((sha) => !head.has(sha)).length
+      const commits = [...head].filter((sha) => !base.has(sha)).map((sha) => github.commits.get(sha)!)
+        .sort((a, b) => a.at - b.at)
+        .map((each) => ({
+          sha: each.sha,
+          commit: { message: each.message, author: { name: each.login ?? "ghost", date: iso(each.at) } },
+          author: user(each.login),
+        }))
       return {
-        response: json({ ahead_by: aheadBy, behind_by: behindBy, total_commits: aheadBy, files: changedBetween(from.files, to.files) }),
+        response: json({ ahead_by: aheadBy, behind_by: behindBy, total_commits: aheadBy, commits, files: changedBetween(from.files, to.files) }),
       }
     }
     if (rest === "/pulls" && method === "GET") {

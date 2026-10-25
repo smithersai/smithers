@@ -254,8 +254,14 @@ describe("GET .../compare/<base>...<head>", () => {
     const response = await h.fetch(compareRoute("acme", "widgets", base, head))
     expect(response.status).toBe(200)
     expect(response.headers.get("cache-control")).toBe("private, max-age=31536000, immutable")
-    const body = await response.json() as { files: Array<{ filename: string; status: string; patch: string }>; truncated: boolean }
+    const body = await response.json() as {
+      files: Array<{ filename: string; status: string; patch: string }>
+      truncated: boolean
+      commits: Array<{ sha: string; headline: string }>
+      commitsTruncated: boolean
+    }
     expect(body.truncated).toBe(false)
+    expect([body.commits.map((commit) => commit.sha), body.commitsTruncated]).toEqual([[head], false])
     expect(body.files.map((file) => [file.filename, file.status])).toEqual([["README.md", "modified"]])
     expect(body.files[0]!.patch).toContain("+A line")
   })
@@ -265,6 +271,9 @@ describe("GET .../compare/<base>...<head>", () => {
     const base = github.refs.get("main")!
     const h = await githubHarness(runtime, { github, app: app({ privateKey: await appKey() }) })
     expect((await h.fetch(compareRoute("acme", "widgets", base, SHA_A))).status).toBe(404)
+    // A repository the person has no role on, and GitHub doesn't call public, is refused as the shapes refuse it.
+    expect((await h.fetch(compareRoute("someone", "else", base, base))).status).toBe(403)
+    expect((await h.fetch(`/api/repos/-bad/else/compare/${base}...${base}`)).status).toBe(404)
     // GITHUB_ALLOWED_REPOSITORIES leaves someone/else out (decision 0079).
     const narrowed = await githubHarness(runtime, { github, app: app({ privateKey: await appKey() }), allowed: new Set([REPOSITORY.id]) })
     expect((await narrowed.fetch(compareRoute("someone", "else", base, base))).status).toBe(404)

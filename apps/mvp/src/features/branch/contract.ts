@@ -115,8 +115,9 @@ export type Refusal = (typeof REFUSALS)[number]
 
 /**
  * What the branch workspace records in the browser (docs/observability.md#browser), by name, and the attributes they
- * carry: `branch/track`'s step and its request, opening a branch's page, and chat showing a branch's conversation. No
- * attribute carries a branch's name or anything asked.
+ * carry: `branch/track`'s step and its request, opening a branch's page, chat showing a branch's conversation, and a
+ * person's presses of Publish and Update branch, by outcome. No attribute carries a branch's name, a title or anything
+ * asked.
  */
 export const BRANCH_TELEMETRY = {
   records: [
@@ -127,6 +128,55 @@ export const BRANCH_TELEMETRY = {
     "smithers_web_branch_opens",
     "chat conversation opened",
     "chat conversation shown",
+    "branch.publish.press",
+    "branch.update.press",
+    "smithers_web_branch_publishes",
+    "smithers_web_branch_updates",
   ],
   fields: ["outcome", "status", "durationMs", "conversation", "conversationId"],
 } as const
+
+/**
+ * ChatApi's Electric shape proxy for one branch's publication on GitHub (docs/features/branch-publish.md): `GET
+ * ?branch=<branch id>`, to anyone who may view the branch.
+ */
+export const PUBLICATIONS_SHAPE_ROUTE = "/api/shapes/branch-publications"
+
+/** A Smithers-only branch's publication on GitHub (db/migrations/0068_branch_publish.ts): one row once published. */
+export const PUBLICATIONS_TABLE = "branch_publications"
+
+/** The `branch_publications` columns a device syncs. */
+export const PUBLICATION_COLUMNS = [
+  "branch_id",
+  "repo_id",
+  "github_ref",
+  "base_ref",
+  "base_sha",
+  "head_sha",
+  "pr_number",
+  "update_state",
+  "updated_at",
+] as const
+
+/**
+ * How Update branch brings a published branch up to date with its base: GitHub's default, a merge commit, or a rebase
+ * of the branch's commits onto the base. The repository's `branches/update` flow chooses; the built-in one merges.
+ */
+export const UPDATE_METHODS = ["merge", "rebase"] as const
+export type UpdateMethod = (typeof UPDATE_METHODS)[number]
+
+/** How the last Update branch ended: `updated` (the base taken in), `up_to_date`, or `conflict` (GitHub can't). */
+export const UPDATE_STATES = ["updated", "up_to_date", "conflict"] as const
+export type UpdateState = (typeof UPDATE_STATES)[number]
+
+/** The most files one Publish commits. */
+export const MAX_PUBLISH_FILES = 50
+
+/** The most bytes of file contents one Publish commits. */
+export const MAX_PUBLISH_BYTES = 1024 * 1024
+
+/** A Publish write's run: one per write id. */
+export const publishExecutionId = (writeId: string): string => `branch-publish:${writeId}`
+
+/** An Update branch write's run: one per write id. */
+export const updateExecutionId = (writeId: string): string => `branch-update:${writeId}`

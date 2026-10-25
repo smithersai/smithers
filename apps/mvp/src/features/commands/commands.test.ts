@@ -359,6 +359,23 @@ describe("submitting", () => {
     expect(tab.shown().filter((row) => row.startsWith("user"))).toEqual([])
   }, 60_000)
 
+  test("/publish and /branch.update run their flows through dispatch, door slash, on the branch this tab shows", async () => {
+    const tab = await open()
+    await ready(tab)
+    // Home shows no branch: nothing is pinned, so each dispatch is refused for its missing branch, never sent to the agent.
+    tab.actions.submit("/publish Add a line")
+    tab.actions.submit("/branch.update")
+    expect(tab.count(Metric.withAttributes(submits, { outcome: "run", command: "publish" }))).toBe(1)
+    expect(tab.count(Metric.withAttributes(submits, { outcome: "run", command: "branch.update" }))).toBe(1)
+    await until(() => {
+      for (const flow of ["branch/publish", "branch/update"]) {
+        expect(["done", "failed", "error"].reduce((sum, outcome) =>
+          sum + tab.count(Metric.withAttributes(dispatches, { flow, door: "slash", outcome })), 0)).toBe(1)
+      }
+    }, engineWithin)
+    expect(tab.shown().filter((row) => row.startsWith("user"))).toEqual([])
+  }, 60_000)
+
   test("Enter on a value that completes the command runs it", async () => {
     const tab = await open({ answers: true })
     await ready(tab)

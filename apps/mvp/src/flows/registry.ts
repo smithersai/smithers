@@ -4,6 +4,7 @@ import { Remember } from "../features/agent/memoryFlows"
 import { Summarize } from "../features/timeline/flow"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { BranchCreate, BranchTrack } from "../features/branch/flows"
+import { BranchPublish, BranchUpdate } from "../features/branch/publishFlows"
 import { ConversationArchive, ConversationNew } from "../features/conversations/flows"
 import { BranchShare } from "../features/sharing/flows"
 import { TerminalOpenRequest } from "../features/terminal/flows"
@@ -271,6 +272,20 @@ export const registry = {
     flow: BranchCreate,
     changes: "makes a new branch of the repository and tracks it for the person",
     slash: { command: "branch.new", minimum: "member", fields: ["repo", "branch"] },
+  },
+  // Publish and Update branch (docs/features/branch-publish.md, rulings GH-6 and GH-11): GitHub hears of a Smithers-only
+  // branch only through Publish, which the agent runs too once the person approves it; `/publish <title>` and
+  // `/branch.update` run them on the branch the tab shows.
+  "branch/publish": {
+    flow: BranchPublish,
+    changes: "publishes the branch to GitHub as a commit and a pull request",
+    confirm: "Publish this branch to GitHub as a pull request?",
+    slash: { command: "publish", minimum: "member", fields: ["title"], hints: { fields: { repo: { hidden: true }, branch: { hidden: true } } } },
+  },
+  "branch/update": {
+    flow: BranchUpdate,
+    changes: "brings the published branch up to date with its base on GitHub",
+    slash: { command: "branch.update", minimum: "member", fields: [], hints: { fields: { repo: { hidden: true }, branch: { hidden: true } } } },
   },
   // Your conversations (docs/features/conversations.md): one per branch, so `/new` makes a branch and opens it; the
   // list's Archive and Restore change only the person's own list. The agent can do both.

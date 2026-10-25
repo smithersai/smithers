@@ -6,6 +6,7 @@ import {
   TRIAGE_DECISIONS,
   TRIAGE_STATES,
   WRITE_FAILURES,
+  OUTBOX_WRITE_OPS,
   WRITE_OPS,
   WRITE_STATUSES,
 } from "./contract"
@@ -69,6 +70,8 @@ export const WriteRow = Schema.Struct({
   itemNumber: Schema.NullOr(Schema.Number),
   createdAt: Schema.String,
   settledAt: Schema.NullOr(Schema.String),
+  /** The branch a Publish or an Update branch acts on (docs/features/branch-publish.md); null for every other write. */
+  branchId: Schema.NullOr(Schema.String),
 })
 export type WriteRow = typeof WriteRow.Type
 
@@ -105,7 +108,7 @@ export type TriageSettings = typeof TriageSettings.Type
 const WriteText = {
   id: Schema.String,
   repo: Schema.String,
-  op: Schema.Literals(WRITE_OPS),
+  op: Schema.Literals(OUTBOX_WRITE_OPS),
   title: Schema.String,
   number: Schema.Number,
   body: Schema.String,

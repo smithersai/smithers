@@ -67,7 +67,12 @@ export const make = (app: GitHubApp, http: Option.Option<HttpClient.HttpClient> 
             Effect.annotateLogs({ outcome: "read", files: outcome.success.files.length }),
           )
           return HttpServerResponse.jsonUnsafe(
-            { files: outcome.success.files, truncated: outcome.success.truncated },
+            {
+              files: outcome.success.files,
+              truncated: outcome.success.truncated,
+              commits: outcome.success.commits,
+              commitsTruncated: outcome.success.commitsTruncated,
+            },
             { status: 200, headers: { "cache-control": "private, max-age=31536000, immutable" } },
           )
         }

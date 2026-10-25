@@ -6,7 +6,7 @@ import { SqlClient } from "effect/sql"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
-import { CREATION } from "../../src/plugins/builtinFlows.ts"
+import { BRANCH_FLOWS, CREATION } from "../../src/plugins/builtinFlows.ts"
 import type { Actor } from "../Actor.ts"
 import { branchHarness, gitHost } from "../test/branch.ts"
 import { fixture, scripted } from "../test/codeStorage.ts"
@@ -174,6 +174,41 @@ const hostWithHead = () => {
   return host
 }
 
+describe("Publish's and Update branch's selection", () => {
+  test.each(["publish", "update"] as const)("without a configuration, %s runs the first-party plugin's flow, allowed only its action", async (operation) => {
+    const host = await storage({})
+    expect(await Effect.runPromise(select(host.client, repository, sha, operation))).toEqual({
+      ...repository, tag: BRANCH_FLOWS[operation].tag, revision: sha, source: BRANCH_FLOWS[operation].source,
+      digest: digestSync(BRANCH_FLOWS[operation].source), runtime: RealmFlow.version,
+      allowed: [operation === "publish" ? "branches/github-publish" : "branches/github-update"], operation,
+    })
+  })
+
+  test("a configuration names a flow per operation; one it doesn't name runs the first-party flow", async () => {
+    const publishSource = BRANCH_FLOWS.publish.source.replaceAll('"branches/publish"', '"custom/ship"')
+    const host = await storage({
+      ".smithers/branch.json": JSON.stringify({ plugin: "custom", publish: "ship" }),
+      ".smithers/plugins/custom/plugin.json": JSON.stringify({ ...CREATION.manifest, id: "custom", owns: ["ship"] }),
+      ".smithers/flows/custom/ship/flow.ts": publishSource,
+    })
+    expect(await Effect.runPromise(select(host.client, repository, sha, "publish"))).toMatchObject({
+      tag: "custom/ship", source: publishSource, allowed: ["branches/github-publish"], operation: "publish",
+    })
+    expect(await Effect.runPromise(select(host.client, repository, sha, "update"))).toMatchObject({ tag: "branches/update" })
+    expect(await Effect.runPromise(select(host.client, repository, sha))).toMatchObject({ tag: "branches/create" })
+  })
+
+  test("a flow its plugin doesn't own is refused, never the first-party one", async () => {
+    const host = await storage({
+      ".smithers/branch.json": JSON.stringify({ plugin: "custom", update: "sync" }),
+      ".smithers/plugins/custom/plugin.json": JSON.stringify({ ...CREATION.manifest, id: "custom", owns: ["create"] }),
+      ".smithers/flows/custom/sync/flow.ts": BRANCH_FLOWS.update.source.replaceAll('"branches/update"', '"custom/sync"'),
+    })
+    const result = await Effect.runPromiseExit(select(host.client, repository, sha, "update"))
+    expect(Exit.isFailure(result) && Cause.squash(result.cause)).toMatchObject({ _tag: "CreationRefused", code: "invalid" })
+  })
+})
+
 describe("GET /api/branches/creation on the real branch routes and Postgres", () => {
   const runtime = ManagedRuntime.make(TestDatabase.layer("branch_creation_selection"))
   beforeAll(() => runtime.runPromise(Effect.void))
@@ -221,6 +256,14 @@ describe("GET /api/branches/creation on the real branch routes and Postgres", ()
   test.each(["?owner=octocat", "?name=spoon-knife", "?owner=../secret&name=repo", "?owner=&name=repo"])("invalid repository %s is refused", async (query) => {
     const h = await branchHarness(runtime, { actor: member })
     expect((await h.fetch(path + query)).status).toBe(400)
+  })
+
+  test("an operation selects its own flow; one that isn't an operation is refused", async () => {
+    const h = await branchHarness(runtime, { actor: member })
+    const response = await h.fetch(`${path}?operation=update`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ tag: "branches/update", operation: "update", allowed: ["branches/github-update"] })
+    expect((await h.fetch(`${path}?operation=push`)).status).toBe(400)
   })
 
   test("unconfigured home repository selects built-in bytes and records status only", async () => {

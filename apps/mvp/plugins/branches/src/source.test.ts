@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { expect, test } from "vitest"
 
-test("the Worker source asset contains the authored flow module byte for byte", async () => {
-  const source = readFileSync(new URL("./create.ts", import.meta.url), "utf8")
-  await expect(`${JSON.stringify(source)}\n`).toMatchFileSnapshot("./create.source.json")
+test.each(["create", "publish", "update"])("the Worker source asset contains the authored %s flow module byte for byte", async (name) => {
+  const source = readFileSync(new URL(`./${name}.ts`, import.meta.url), "utf8")
+  await expect(`${JSON.stringify(source)}\n`).toMatchFileSnapshot(`./${name}.source.json`)
 })

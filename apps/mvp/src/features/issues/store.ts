@@ -137,12 +137,14 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     shape: shape(SYNC_SHAPE_ROUTE),
     ...kept,
   })
+  // Version 2: a Publish's or an Update branch's write names its branch (docs/features/branch-publish.md).
   const writes = yield* ElectricCollection.make<WriteRow>({
     id: "issue-writes",
     schema: WriteRow,
     getKey: (row) => row.id,
     shape: shape(WRITES_SHAPE_ROUTE),
-    ...kept,
+    syncMode: "eager",
+    persist: { schemaVersion: 2 },
   })
   const triageSettings = yield* ElectricCollection.make<TriageSettings>({
     id: "issue-triage-settings",

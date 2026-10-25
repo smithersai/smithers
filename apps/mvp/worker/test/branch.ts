@@ -11,7 +11,7 @@ import { ConfigProvider, Effect, Layer, Logger, Metric, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { SHARES_TABLE } from "../../src/features/branch/contract.ts"
+import { PUBLICATIONS_TABLE, SHARES_TABLE } from "../../src/features/branch/contract.ts"
 import { TEXT_UPDATES_TABLE } from "../../src/features/coedit/contract.ts"
 import { TERMINALS_TABLE } from "../../src/features/terminal/contract.ts"
 import * as Actor from "../Actor.ts"
@@ -348,7 +348,7 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
     if (url.hostname.endsWith(".code.storage")) return forge.fetch(input, init)
     electric.push(new URL(url))
     const table = url.searchParams.get("table")
-    if (table === "conversation_people" || table === TERMINALS_TABLE || table === SHARES_TABLE || table === TEXT_UPDATES_TABLE) {
+    if (table === "conversation_people" || table === TERMINALS_TABLE || table === SHARES_TABLE || table === TEXT_UPDATES_TABLE || table === PUBLICATIONS_TABLE) {
       url.searchParams.set("table", `${scratch.name}.${table}`)
     }
     return globalThis.fetch(url, init)

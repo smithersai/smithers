@@ -67,7 +67,7 @@ export const COMMENT_COLUMNS = [
 ] as const
 
 /** The `github_writes` columns a device syncs: never the payload, the session or the actor, which the shape filters on. */
-export const WRITE_COLUMNS = ["id", "repo_id", "op", "status", "failure", "item_number", "created_at", "settled_at"] as const
+export const WRITE_COLUMNS = ["id", "repo_id", "op", "status", "failure", "item_number", "created_at", "settled_at", "branch_id"] as const
 
 /** The `github_sync` columns a device syncs: never the cursor. */
 export const SYNC_COLUMNS = ["repo_id", "stream", "synced_at", "complete", "failure"] as const
@@ -84,7 +84,9 @@ export const commentId = (repoId: string, githubId: number): string => `${repoId
 
 /**
  * The writes the route takes (decision 0012 §3): open an issue, comment on one, and triage's: a person's Accept or Not
- * accepted (`issue/triage`), Run triage again (`triage/run`), and Enable and Pause (`triage/enable`, `triage/pause`).
+ * accepted (`issue/triage`), Run triage again (`triage/run`), and Enable and Pause (`triage/enable`, `triage/pause`); a
+ * person's merge (`pr/merge`); and a Smithers-only branch's Publish and Update branch (`branch/publish`, `branch/update`,
+ * docs/features/branch-publish.md).
  */
 export const WRITE_OPS = [
   "issue/create",
@@ -95,8 +97,26 @@ export const WRITE_OPS = [
   "triage/enable",
   "triage/pause",
   "pr/merge",
+  "branch/publish",
+  "branch/update",
 ] as const
 export type WriteOp = (typeof WRITE_OPS)[number]
+
+/**
+ * The writes the issues outbox (`issue-sending`) may hold, as its persisted payload names them: Publish and Update
+ * branch never go through it (they are the branch's own flows, docs/features/branch-publish.md), so the outbox's schema
+ * stays the one devices already store.
+ */
+export const OUTBOX_WRITE_OPS = [
+  "issue/create",
+  "issue/comment",
+  "issue/triage",
+  "issue/commitment",
+  "triage/run",
+  "triage/enable",
+  "triage/pause",
+  "pr/merge",
+] as const satisfies ReadonlyArray<WriteOp>
 
 /** The triage writes: a person's acts only, never the agent's (decision 0012 decision 11). */
 export const TRIAGE_OPS = ["issue/triage", "triage/run", "triage/enable", "triage/pause"] as const
@@ -147,6 +167,13 @@ export const WRITE_FAILURES = [
   "not_mergeable",
   "merged",
   "closed",
+  // Publish's and Update branch's own (docs/features/branch-publish.md): nothing to publish, a change over the limits,
+  // the branch not yet published, its base commit missing on GitHub, or a change GitHub can't take.
+  "empty_change",
+  "too_large",
+  "not_published",
+  "base_missing",
+  "conflict",
 ] as const
 export type WriteFailure = (typeof WRITE_FAILURES)[number]
 

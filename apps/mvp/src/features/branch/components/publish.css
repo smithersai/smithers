@@ -1,0 +1,13 @@
+/*
+ * Publish and Update branch in the branch's chrome: the pull request's link, where the last write is, and the button,
+ * as the chrome's own items; Publish's form takes a row of its own below them.
+ */
+.branch-publish { display: contents; }
+.branch-publish-status { color: var(--sui-muted-foreground, inherit); }
+.branch-publish-form { order: 1; flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem; }
+.branch-publish-form > [data-slot="field"] { flex: 1 1 16rem; min-width: 0; }
+.branch-publish-form textarea { min-height: 2.25rem; }
+
+/* Compare: the commits, then each file's diff. */
+.branch-compare { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.branch-compare-loading { min-height: 12rem; }

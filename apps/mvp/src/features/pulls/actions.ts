@@ -1,9 +1,10 @@
-import { Effect, Metric, Option, Stream } from "effect"
+import { Effect, Metric, Stream } from "effect"
 import { IssuesStore } from "../issues/store"
 import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions"
 import { recordShapeRetry } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"
 import { PullsClient } from "./api"
+import { readComparison } from "./comparison"
 import { DEFAULT_MERGE_METHOD, type PullTab, SHA } from "./contract"
 import { VIEW } from "./schema"
 import { PullsStore } from "./store"
@@ -70,26 +71,7 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
 
 /** Reads the files `base` and `head` differ by into this tab, once: a comparison of two SHAs never changes. */
 export const loadFiles = (owner: string, name: string, base: string, head: string) =>
-  Effect.gen(function* () {
-    if (!SHA.test(base) || !SHA.test(head)) return
-    const store = yield* PullsStore
-    const id = `${base}...${head}`
-    const held = yield* store.files.get(id)
-    if (Option.isSome(held) && held.value.status !== "failed") return
-    if (Option.isSome(held)) yield* store.files.delete(id)
-    yield* store.files.insert({ id, status: "loading", files: [], truncated: false })
-    yield* (yield* PullsClient).compare(owner, name, base, head).pipe(
-      Effect.flatMap((compared) =>
-        store.files.update(id, (row) => {
-          row.status = "ready"
-          row.files = [...compared.files]
-          row.truncated = compared.truncated
-        })
-      ),
-      Effect.catch(() => store.files.update(id, (row) => void (row.status = "failed"))),
-      Effect.forkIn(store.scope),
-    )
-  }).pipe(Effect.orDie)
+  Effect.flatMap(PullsStore, (store) => readComparison(store.files, store.scope, owner, name, base, head))
 
 /**
  * Merge on the routed pull request, bound to the head and base this device shows: a new write id, sent at once in the

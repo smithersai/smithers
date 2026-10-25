@@ -13,20 +13,25 @@ export const openBranchPage = async (
   terminal: TerminalView,
   signal: AbortSignal,
   params: { readonly owner: string; readonly repo: string; readonly ref: string; readonly _splat?: string },
-  search: { readonly terminal?: string; readonly edit?: string; readonly file?: string },
+  search: { readonly terminal?: string; readonly edit?: string; readonly file?: string; readonly compare?: true },
 ): Promise<void> => {
   try {
     if (signal.aborted) return
     const branchId = await branch.actions.open(params.owner, params.repo, params.ref, signal)
     if (signal.aborted) return
-    const { presence, coedit } = branch
+    const { presence, coedit, publishing } = branch
     if (branchId === undefined) {
       await terminal.actions.show(null, undefined, signal)
+      if (signal.aborted) return
+      await publishing.actions.show(null)
       if (signal.aborted) return
       await presence.actions.leave(signal)
       return
     }
     await presence.actions.join(branchId, signal)
+    if (signal.aborted) return
+    // Its publication, and under `?compare` what it adds to its base.
+    await publishing.actions.show(branchId, search.terminal === undefined && search.compare !== undefined)
     if (signal.aborted) return
     // The file in the live editor under `?edit`, or a blob page's Markdown file for someone who may write it, or none:
     // its room is left with the editor.

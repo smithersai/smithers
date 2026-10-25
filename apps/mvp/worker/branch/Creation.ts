@@ -5,10 +5,10 @@ import { Load, Manifest } from "@smthrs/plugin"
 import { Data, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
-import { CREATION_ACTIONS, type CreationSelection } from "../../src/features/branch/creation.ts"
+import { BRANCH_OPERATIONS, type BranchOperation, CREATION_ACTIONS, type CreationSelection, OPERATION_ACTIONS } from "../../src/features/branch/creation.ts"
 import { readSource } from "../../src/features/flows-ui/checks.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
-import { CREATION } from "../../src/plugins/builtinFlows.ts"
+import { BRANCH_FLOWS } from "../../src/plugins/builtinFlows.ts"
 import { Sessions } from "../Actor.ts"
 import { isMemberOn } from "./Access.ts"
 import { homeRepositoryNames } from "./Conversations.ts"
@@ -18,7 +18,17 @@ export class CreationRefused extends Data.TaggedError("CreationRefused")<{
   readonly code: "invalid" | "unavailable"
 }> {}
 
-const Config = Schema.Struct({ plugin: Manifest.PluginId, flow: Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,39}$/)) })
+const FlowName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,39}$/))
+/**
+ * `.smithers/branch.json`: the plugin, and the flow it owns for each operation it replaces: `flow` creates, `publish`
+ * publishes, `update` updates. An operation it names no flow for runs the first-party `branches` plugin's.
+ */
+const Config = Schema.Struct({
+  plugin: Manifest.PluginId,
+  flow: Schema.optional(FlowName),
+  publish: Schema.optional(FlowName),
+  update: Schema.optional(FlowName),
+})
 const invalid = () => new CreationRefused({ code: "invalid" })
 const decodeConfig = Schema.decodeUnknownEffect(Schema.fromJsonString(Config))
 const textOf = (bytes: Uint8Array) => new TextDecoder("utf-8", { fatal: true }).decode(bytes)
@@ -32,6 +42,7 @@ export const select = (
   client: CodeStorage.Client | undefined,
   repository: { readonly owner: string; readonly name: string },
   revision: string,
+  operation: BranchOperation = "create",
 ): Effect.Effect<CreationSelection, CreationRefused> => Effect.gen(function* () {
   const read = (path: string) => client!.readFile(repoId(repository.owner, repository.name), { path, ref: revision, maxBytes: 65_536 }).pipe(
     Effect.flatMap(({ bytes }) => Effect.try({ try: () => textOf(bytes), catch: invalid })),
@@ -39,33 +50,38 @@ export const select = (
       error.code === "not_found" ? Effect.succeed(undefined) : Effect.fail(new CreationRefused({ code: "unavailable" }))),
   )
   const configText = client === undefined ? undefined : yield* read(".smithers/branch.json")
-  let manifest: unknown = CREATION.manifest
-  let source: string = CREATION.source
-  let tag: string = CREATION.tag
-  if (configText !== undefined) {
-    const config = yield* decodeConfig(configText).pipe(Effect.mapError(invalid))
-    tag = `${config.plugin}/${config.flow}`
+  const builtin = BRANCH_FLOWS[operation]
+  let manifest: unknown = builtin.manifest
+  let source: string = builtin.source
+  let tag: string = builtin.tag
+  const config = configText === undefined ? undefined : yield* decodeConfig(configText).pipe(Effect.mapError(invalid))
+  const flow = config === undefined ? undefined : operation === "create" ? config.flow : config[operation]
+  if (config !== undefined && flow !== undefined) {
+    tag = `${config.plugin}/${flow}`
     const manifestText = yield* read(`.smithers/plugins/${config.plugin}/plugin.json`)
     const flowSource = yield* read(`.smithers/flows/${tag}/flow.ts`)
     if (manifestText === undefined || flowSource === undefined) return yield* invalid()
     manifest = yield* Effect.try({ try: () => JSON.parse(manifestText) as unknown, catch: invalid })
     source = flowSource
     const checked = yield* Manifest.decode(manifest).pipe(Effect.mapError(invalid))
-    if (checked.id !== config.plugin || !checked.owns?.includes(config.flow)) return yield* invalid()
+    if (checked.id !== config.plugin || !checked.owns?.includes(flow)) return yield* invalid()
   }
   const checked = yield* Manifest.decode(manifest).pipe(Effect.mapError(invalid))
   const metadata = readSource(source, tag)
   if (metadata.tag !== tag || metadata.warnings.length > 0) return yield* invalid()
   const loaded = yield* Load.load({
     api: Manifest.PLUGIN_API, points: ["flows"], catalog: facts, queries: new Map(),
-    tierCap: { "built-in": (cap) => cap === "git:write", repository: creationCapability, personal: creationCapability },
+    tierCap: { "built-in": creationCapability, repository: creationCapability, personal: creationCapability },
   }, [{
-    tier: configText === undefined ? "built-in" : "repository", manifest,
+    tier: flow === undefined ? "built-in" : "repository", manifest,
     flows: [{ tag, capabilities: checked.capabilities, minimum: "member", personOnly: false, system: false, modelInvocable: true }],
   }])
   if (loaded.refused.length > 0) return yield* invalid()
-  const allowed = checked.uses ?? []
-  return { ...repository, tag, source, digest: digestSync(source), revision, runtime: RealmFlow.version, allowed }
+  // A flow may call only its own operation's host actions, whatever else its plugin uses.
+  const allowed = (checked.uses ?? []).filter((action) => OPERATION_ACTIONS[operation].includes(action as never))
+  // A creation's selection reads as it did before Publish existed, so a journaled one resumes unchanged.
+  return { ...repository, tag, source, digest: digestSync(source), revision, runtime: RealmFlow.version, allowed,
+    ...(operation === "create" ? {} : { operation }) }
 })
 
 export const selections = Metric.counter("smithers_branch_creation_selections", { incremental: true })
@@ -90,6 +106,8 @@ export const route = <E, R>(client: Option.Option<CodeStorage.Client>, database:
     if (Option.isNone(actor)) return HttpServerResponse.empty({ status: 401 })
     stage = "repository"
     const query = new URL(request.url, "http://app").searchParams
+    const operation = query.get("operation") ?? "create"
+    if (!BRANCH_OPERATIONS.includes(operation as never)) return HttpServerResponse.empty({ status: 400 })
     const home = yield* homeRepositoryNames
     const owner = query.get("owner") ?? home.owner
     const name = query.get("name") ?? home.name
@@ -105,7 +123,7 @@ export const route = <E, R>(client: Option.Option<CodeStorage.Client>, database:
     stage = "head"
     const head = Option.isNone(client) ? undefined : yield* defaultBranch({ owner, name })
     stage = "installation"
-    const selected = yield* select(Option.getOrUndefined(client), { owner, name }, head?.sha ?? "builtin")
+    const selected = yield* select(Option.getOrUndefined(client), { owner, name }, head?.sha ?? "builtin", operation as BranchOperation)
     return HttpServerResponse.jsonUnsafe(selected, { headers: { "cache-control": "no-store" } })
   }).pipe(
     Effect.catchTags({

@@ -1,11 +1,11 @@
 {
   "apiVersion": 1,
   "id": "branches",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Branches",
-  "description": "Create Smithers conversations without publishing to GitHub.",
+  "description": "Create Smithers conversations; publish one to GitHub only when a person asks.",
   "requires": { "api": "^1.0.0" },
-  "capabilities": ["git:write"],
-  "uses": ["branches/ephemeral"],
-  "owns": ["create"]
+  "capabilities": ["git:write", "github:write"],
+  "uses": ["branches/ephemeral", "branches/github-publish", "branches/github-update"],
+  "owns": ["create", "publish", "update"]
 }

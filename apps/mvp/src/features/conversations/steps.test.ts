@@ -24,7 +24,7 @@ import { ArchiveNotTaken, ConversationsClient } from "./api"
 import { NEW_BRANCH_PREFIX } from "./contract"
 import { ArchiveRefused, ArchiveUnsent } from "./flows"
 import { archives, news } from "./metrics"
-import { pinRepository } from "./pin"
+import { pinBranch, pinRepository } from "./pin"
 import { failureOf, requestArchive, requestNew, stamp } from "./steps"
 
 const ID = "6a3c2d0e-8a8b-5c1f-9e0a-1d2b3c4d5e6f"
@@ -333,5 +333,30 @@ describe("/new's repository", () => {
     // No branch store at all, as in a frontend without the workspace.
     expect(await pin({}, { owner: "", repo: "hello" })).toEqual({})
     expect(await pin({})).toEqual({})
+  })
+})
+
+describe("/publish's and /branch.update's branch", () => {
+  const pin = (payload: Record<string, unknown>, current?: { readonly owner: string; readonly repo: string; readonly name: string }) =>
+    Effect.runPromise(
+      current === undefined
+        ? pinBranch(payload)
+        : Effect.gen(function* () {
+          const { current: row } = yield* BranchStore
+          yield* Effect.orDie(row.update("current", (draft) => void Object.assign(draft, current)))
+          return yield* pinBranch(payload)
+        }).pipe(
+          Effect.provide(BranchStore.layer),
+          Effect.provide(persistenceOn(join(tmpdir(), `pin-${crypto.randomUUID()}.sqlite`))),
+        ),
+    )
+
+  test("the branch the tab shows names both; a payload naming both, a page with no branch, or no workspace keeps it", async () => {
+    expect(await pin({ title: "t" }, { owner: "octo", repo: "hello", name: "try-1" })).toEqual({ title: "t", repo: "octo/hello", branch: "try-1" })
+    expect(await pin({ repo: "a/b", branch: "c" }, { owner: "octo", repo: "hello", name: "try-1" })).toEqual({ repo: "a/b", branch: "c" })
+    expect(await pin({ title: "t" }, { owner: "", repo: "", name: "" })).toEqual({ title: "t" })
+    expect(await pin({ title: "t" }, { owner: "octo", repo: "", name: "x" })).toEqual({ title: "t" })
+    expect(await pin({ title: "t" }, { owner: "octo", repo: "hello", name: "" })).toEqual({ title: "t" })
+    expect(await pin({ title: "t" })).toEqual({ title: "t" })
   })
 })

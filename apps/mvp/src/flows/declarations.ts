@@ -4,6 +4,7 @@ import { Summarize } from "../features/timeline/flow"
 import { Flow } from "@smthrs/flow"
 import { Context } from "effect"
 import { BranchCreate, BranchTrack } from "../features/branch/flows"
+import { BranchPublish, BranchUpdate } from "../features/branch/publishFlows"
 import { BranchShare } from "../features/sharing/flows"
 import { TerminalOpenRequest } from "../features/terminal/flows"
 import {
@@ -110,6 +111,8 @@ export const declarations = {
   "run/steer": Steer,
   "branch/track": BranchTrack,
   "branch/create": BranchCreate,
+  "branch/publish": BranchPublish,
+  "branch/update": BranchUpdate,
   "conversation/new": ConversationNew,
   "conversation/archive": ConversationArchive,
   "branch/share": BranchShare,

@@ -23,3 +23,15 @@ export const opens = Metric.counter("smithers_web_branch_opens", {
   description: "Branch pages opened in this browser, by outcome",
   incremental: true,
 })
+
+/** Publish presses on a branch page, by `outcome`: `sent`, the refusal's reason, or `unavailable`. */
+export const publishes = Metric.counter("smithers_web_branch_publishes", {
+  description: "Publish presses on a branch page, by outcome",
+  incremental: true,
+})
+
+/** Update branch presses on a branch page, by `outcome`: `sent`, the refusal's reason, or `unavailable`. */
+export const updates = Metric.counter("smithers_web_branch_updates", {
+  description: "Update branch presses on a branch page, by outcome",
+  incremental: true,
+})

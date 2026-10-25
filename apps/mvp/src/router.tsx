@@ -83,15 +83,17 @@ export interface RouterContext {
 
 /**
  * A branch page's search: `?L=` as any repository page's; `?terminal`, which shows the branch's terminal: `me` for the
- * person's own, or a terminal's id to watch (decision 0013 §5); and `?edit`, a file of the branch's working copy in the
- * live editor (docs/features/coedit.md#files).
+ * person's own, or a terminal's id to watch (decision 0013 §5); `?edit`, a file of the branch's working copy in the
+ * live editor (docs/features/coedit.md#files); and `?compare`, what the published branch adds to its base
+ * (docs/features/branch-publish.md#the-branch-page).
  */
 const branchSearch = (
   search: Record<string, unknown>,
-): { readonly L?: unknown; readonly terminal?: string; readonly edit?: string } => ({
+): { readonly L?: unknown; readonly terminal?: string; readonly edit?: string; readonly compare?: true } => ({
   ...lineSearch(search),
   ...(typeof search.terminal === "string" && search.terminal !== "" ? { terminal: search.terminal } : {}),
   ...(typeof search.edit === "string" && search.edit !== "" ? { edit: search.edit } : {}),
+  ...(search.compare !== undefined && search.compare !== false ? { compare: true as const } : {}),
 })
 
 /** How long a link must be hovered before its page preloads, so a pointer sweeping over a list preloads nothing. */
@@ -353,6 +355,7 @@ const leaveWorkspace = (context: RouterContext) => {
   if (next === treeRoute.id || next === blobRoute.id) return
   void context.branch.presence.actions.leave()
   void context.branch.coedit.actions.hideFiles()
+  void context.branch.publishing.actions.show(null)
   void context.terminal.actions.show(null)
 }
 

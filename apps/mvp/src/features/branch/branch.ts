@@ -8,13 +8,15 @@ import { Presence, type PresenceView } from "../presence/presence"
 import { Sharing, type SharingView } from "../sharing/sharing"
 import { SharingStore } from "../sharing/store"
 import { leave, open, writable } from "./actions"
+import { Publishing, type PublishingView } from "./publishing"
 import { BranchRoute, BranchStore } from "./store"
 
 // The branch workspace as a frontend sees it (docs/features/branch-workspace.md#the-page): a live query to read and
 // plain functions to act, with no Effect in sight, and the workspace's live parts beside it: who it is shared with
 // (`sharing`, src/features/sharing), who is on it now (`presence`, src/features/presence), and the texts people edit
 // together (`coedit`, src/features/coedit), and the person's own list of conversations, one per branch
-// (`conversations`, src/features/conversations).
+// (`conversations`, src/features/conversations), and its Publish, Update branch and Compare (`publishing`,
+// src/features/branch/publishing.ts).
 
 type Store = BranchStore["Service"]
 
@@ -47,6 +49,7 @@ export class Branch extends Context.Service<
     readonly presence: PresenceView
     readonly coedit: CoeditView
     readonly conversations: ConversationsView
+    readonly publishing: PublishingView
   }
 >()("@smthrs/mvp/branch/Branch") {
   /**
@@ -72,6 +75,7 @@ export class Branch extends Context.Service<
           presence: yield* Presence,
           coedit: yield* Coedit,
           conversations: yield* Conversations,
+          publishing: yield* Publishing,
         })
       }),
     ).pipe(
@@ -80,6 +84,7 @@ export class Branch extends Context.Service<
       Layer.provideMerge(Presence.layer(config)),
       Layer.provideMerge(Coedit.layer),
       Layer.provideMerge(Conversations.layer(config)),
+      Layer.provideMerge(Publishing.layer(config)),
     )
 }
 

@@ -79,9 +79,9 @@ test("a merge refused is not taken, with its status: forbidden (403), signed out
 
 test("a comparison reads the files two commits differ by", async () => {
   const files = [{ filename: "a.md", status: "modified", additions: 1, deletions: 0, patch: "@@ -1 +1 @@" }]
-  const { origin, asked } = await serve(json(200, { files, truncated: false }))
+  const { origin, asked } = await serve(json(200, { files, truncated: false, commits: [], commitsTruncated: false }))
   const read = await compare(origin)
-  expect(read._tag === "Success" && read.success).toEqual({ files, truncated: false })
+  expect(read._tag === "Success" && read.success).toEqual({ files, truncated: false, commits: [], commitsTruncated: false })
   expect(asked).toEqual([{ method: "GET", url: `/api/repos/octo/hello/compare/${BASE}...${HEAD}`, body: "" }])
   // A comparison is answered 200 only: GitHub has no such commits (404), or the App can't read it (503).
   for (const status of [202, 404, 503]) {

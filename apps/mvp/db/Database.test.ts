@@ -1446,3 +1446,64 @@ describe("0067_bug_report_errors", () => {
       expect(await on(through("0067"))).toEqual([])
     }))
 })
+
+describe("0068_branch_publish", () => {
+  test("takes Publish and Update branch as git writes, and holds a branch's one publication to its rules", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0067"))
+      expect((await on(through("0068"))).map(([id, name]) => `${id}_${name}`)).toEqual(["68_branch_publish"])
+      const attempt = (statement: Effect.Effect<unknown, unknown, SqlClient.SqlClient>) =>
+        on(statement.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      const hash = "0".repeat(64)
+      const write = (op: string, failure: string | null = null, branch: string | null = crypto.randomUUID()) =>
+        attempt(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash, status, failure, branch_id, settled_at)
+          VALUES (${crypto.randomUUID()}, 'github/acme/widgets', 'p', ${crypto.randomUUID()}, 'person', ${op}, '{}',
+            ${hash}, ${failure === null ? "pending" : "refused"}, ${failure}, ${branch}::uuid, ${failure === null ? null : new Date().toISOString()}::timestamptz)`))
+      expect(await write("branch/publish")).toBe("taken")
+      expect(await write("branch/update")).toBe("taken")
+      expect(await write("branch/push")).toBe("refused")
+      for (const failure of ["empty_change", "too_large", "not_published", "base_missing", "conflict", "merged"]) {
+        expect(await write("branch/publish", failure), failure).toBe("taken")
+      }
+      expect(await write("branch/publish", "stale")).toBe("refused")
+      expect(await write("branch/publish", "published")).toBe("refused")
+      // A Publish or an Update names its branch; no other write does.
+      expect(await write("branch/update", null, null)).toBe("refused")
+      expect(await write("issue/create")).toBe("refused")
+      expect(await write("issue/create", null, null)).toBe("taken")
+      // One Publish of a branch on its way at a time; a settled one never blocks the next.
+      const publishOf = (branch: string, status: string) =>
+        attempt(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash, status, failure, branch_id, settled_at)
+          VALUES (${crypto.randomUUID()}, 'github/acme/widgets', 'p', ${crypto.randomUUID()}, 'person', 'branch/publish',
+            '{}', ${hash}, ${status}, ${status === "refused" ? "empty_change" : null}, ${branch}::uuid,
+            ${status === "pending" ? null : new Date().toISOString()}::timestamptz)`))
+      const once = crypto.randomUUID()
+      expect(await publishOf(once, "refused")).toBe("taken")
+      expect(await publishOf(once, "done")).toBe("taken")
+      expect(await publishOf(once, "pending")).toBe("taken")
+      expect(await publishOf(once, "pending")).toBe("refused")
+      expect(await publishOf(once, "done")).toBe("taken")
+      const branchId = crypto.randomUUID()
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO branches (id, repo_id, name, created_by) VALUES (${branchId}, 'github/acme/widgets', 'try-1', 'p')`))
+      const sha = "a".repeat(40)
+      const publish = (overrides: Record<string, unknown> = {}) => {
+        const row = { branch: branchId, ref: "try-1-0123456789ab", baseSha: sha, headSha: sha, pr: 7, state: null as string | null, pushed: "{}", pushedSha: sha, ...overrides }
+        return attempt(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO branch_publications (branch_id, repo_id, github_ref, base_ref, base_sha, head_sha, pr_number, write_id, update_state, pushed, pushed_sha)
+          VALUES (${row.branch}, 'github/acme/widgets', ${row.ref}, 'main', ${row.baseSha}, ${row.headSha}, ${row.pr},
+            ${crypto.randomUUID()}, ${row.state}, ${row.pushed}::jsonb, ${row.pushedSha})`))
+      }
+      expect(await publish({ branch: crypto.randomUUID() })).toBe("refused")
+      for (const refused of [{ ref: "" }, { baseSha: "main" }, { headSha: "A".repeat(40) }, { pr: 0 }, { state: "behind" }, { pushed: "[]" }, { pushedSha: "x" }]) {
+        expect(await publish(refused), JSON.stringify(refused)).toBe("refused")
+      }
+      expect(await publish({ state: "conflict" })).toBe("taken")
+      expect(await publish()).toBe("refused")
+      expect(await on(through("0068"))).toEqual([])
+    }))
+})

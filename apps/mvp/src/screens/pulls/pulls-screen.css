@@ -11,9 +11,3 @@
 
 .pull-merge { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .pull-refs code { font-family: var(--sui-font-mono, monospace); overflow-wrap: anywhere; }
-.pull-files { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
-.pull-file-name { font-family: var(--sui-font-mono, monospace); overflow-wrap: anywhere; margin: 0 0 0.25rem; }
-.pull-commits { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
-.pull-commit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; min-width: 0; }
-.pull-commit-headline { margin-right: auto; overflow-wrap: anywhere; }
-.pull-commit-sha { font-family: var(--sui-font-mono, monospace); }

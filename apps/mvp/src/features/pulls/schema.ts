@@ -84,18 +84,35 @@ export const ChangedFile = Schema.Struct({
 export type ChangedFile = typeof ChangedFile.Type
 
 /** What the compare route answers. */
-export const Compared = Schema.Struct({ files: Schema.Array(ChangedFile), truncated: Schema.Boolean })
+/** A commit two compared commits differ by: what a branch's Compare lists (docs/features/branch-publish.md#compare). */
+export const ComparedCommit = Schema.Struct({
+  sha: Schema.String,
+  headline: Schema.String,
+  authorLogin: Schema.NullOr(Schema.String),
+  authoredAt: Schema.NullOr(Schema.String),
+})
+export type ComparedCommit = typeof ComparedCommit.Type
+
+/** What the compare route answers: the files, and the commits, each list cut where GitHub cuts it. */
+export const Compared = Schema.Struct({
+  files: Schema.Array(ChangedFile),
+  truncated: Schema.Boolean,
+  commits: Schema.Array(ComparedCommit),
+  commitsTruncated: Schema.Boolean,
+})
 export type Compared = typeof Compared.Type
 
 /**
- * Two commits' changed files, kept on this tab by `<base>...<head>`: `loading` while the route is asked, `ready` with the
- * files, or `failed`.
+ * Two commits' comparison, kept on this tab by `<base>...<head>`: `loading` while the route is asked, `ready` with the
+ * files and commits they differ by, or `failed`. A pull request's Files tab and a branch's Compare read it alike.
  */
 export const FilesRow = Schema.Struct({
   id: Schema.String,
   status: Schema.Literals(["loading", "ready", "failed"]),
   files: Schema.Array(ChangedFile),
   truncated: Schema.Boolean,
+  commits: Schema.Array(ComparedCommit),
+  commitsTruncated: Schema.Boolean,
 })
 export type FilesRow = typeof FilesRow.Type
 

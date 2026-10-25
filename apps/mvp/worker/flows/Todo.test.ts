@@ -771,7 +771,7 @@ describe("the run's steps", () => {
     expect(Todo.failureOf(new Todo.StillOpen())).toBe("implement")
   })
 
-  test("the branch, the commit's message, the PR's body and base64", () => {
+  test("the branch, the commit's message and the PR's body", () => {
     expect(Todo.branchPrefixOf(4)).toBe("smithers/t4-")
     expect(Todo.slugOf("Retry webhook delivery!")).toBe("retry-webhook-delivery")
     expect(Todo.slugOf("!!!")).toBe("")
@@ -792,8 +792,6 @@ describe("the run's steps", () => {
     }
     expect(Todo.pullBodyOf(begun)).toBe("Do it.\n\nSmithers for @maya")
     expect(Todo.pullBodyOf({ ...begun, issueNumber: 7 })).toBe("Do it.\n\nFixes #7\n\nSmithers for @maya")
-    expect(Todo.base64Of("é\n")).toBe(btoa(String.fromCharCode(0xc3, 0xa9, 0x0a)))
-    expect(atob(Todo.base64Of("x".repeat(70_000))).length).toBe(70_000)
   })
 
   test("the machine of a run's execution: its attempt's base commit and committer, none for any other run", async () => {

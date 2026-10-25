@@ -3,14 +3,14 @@ import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { Node, type Planned } from "@smthrs/plan"
-import { SandboxTools } from "@smthrs/sandbox"
 import { Cause, Config, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { agentAttribution } from "../../src/features/issues/contract.ts"
 import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { TODO_FAILURES } from "../../src/features/todos/contract.ts"
-import { Machines } from "../branch/Machines.ts"
+import * as Change from "../branch/Change.ts"
+import type { Machines } from "../branch/Machines.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { agentFailureCodes } from "./TodoDiagnostic.ts"
 import { classify, withToken } from "../github/Calls.ts"
@@ -382,19 +382,6 @@ export const pullBodyOf = (begun: Begun, closes = true): string =>
     agentAttribution(begun.ownerLogin),
   ].join("\n\n")
 
-/** Text as base64 of its UTF-8 bytes, as `createCommitOnBranch` takes a file's contents. */
-export const base64Of = (text: string): string => {
-  const bytes = new TextEncoder().encode(text)
-  let binary = ""
-  for (let index = 0; index < bytes.length; index += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
-  }
-  return btoa(binary)
-}
-
-/** A git status entry that says the file is gone from the working copy. */
-const deleted = (entry: { readonly index: string; readonly worktree: string }) => entry.worktree === "D" || entry.index === "D"
-
 /** The namespace a step's own tool call's id is a version 5 UUID of `<attempt>:<step>:<name>` in. */
 export const STEP_CALL_NAMESPACE = "c7a41d58-2e93-4f0b-86d5-1b9e3f7a0c24"
 
@@ -564,45 +551,28 @@ export const steps = <E, R>(services: Services<E, R>) => {
   const collect = ({ request, begun }: typeof Collect.payloadSchema.Type) =>
     step("collect", request, Effect.gen(function* () {
       yield* assertBase(request, baseOf(begun))
-      const machines = yield* Machines
       const machine = machineOf({
         attemptId: request.attemptId,
         repoId: request.repoId,
         checkout: begun.baseSha,
         ownerId: begun.ownerId,
       })
-      const tool = (name: string, call: SandboxTools.Call) =>
-        Effect.gen(function* () {
-          const callId = yield* Uuid.v5(STEP_CALL_NAMESPACE, `${request.attemptId}:collect:${name}`).pipe(
-            Effect.provide(WebCrypto.layer),
-          )
-          return (yield* machines.tool(machine.branch, machine.ownerId, callId, call)).result
-        }).pipe(
-          Effect.mapError((error) =>
-            error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused" || error._tag === "@smthrs/mvp/branch/CheckoutFailed"
-              ? new TodoFailed({ failure: "implement" })
-              : new TodoUnavailable({ step: "collect" })
-          ),
-        )
-      // A tool answers its own call's result.
-      const { entries } = (yield* tool("status", { tool: "status", base: begun.baseSha })) as typeof SandboxTools.StatusResult.Type
-      if (entries.length === 0) return yield* new TodoFailed({ failure: "empty_change" })
-      if (entries.length > MAX_FILES) return yield* new TodoFailed({ failure: "implement" })
-      const additions: Array<{ readonly path: string; readonly contents: string }> = []
-      const deletions: Array<string> = []
-      let bytes = 0
-      for (const entry of entries) {
-        if (deleted(entry)) {
-          deletions.push(entry.path)
-          continue
-        }
-        const read = (yield* tool(`read:${entry.path}`, { tool: "read", path: entry.path })) as typeof SandboxTools.ReadResult.Type
-        if (read.truncated) return yield* new TodoFailed({ failure: "implement" })
-        bytes += read.bytes
-        additions.push({ path: entry.path, contents: base64Of(read.content) })
-      }
-      if (bytes > MAX_CHANGE_BYTES) return yield* new TodoFailed({ failure: "implement" })
-      return { additions, deletions } satisfies Collected
+      // The working copy's change against the base, read as Publish reads a branch's (worker/branch/Change.ts).
+      return yield* Change.collect({
+        branch: machine.branch,
+        ownerId: machine.ownerId,
+        base: begun.baseSha,
+        maxFiles: MAX_FILES,
+        maxBytes: MAX_CHANGE_BYTES,
+        callId: (name) =>
+          Uuid.v5(STEP_CALL_NAMESPACE, `${request.attemptId}:collect:${name}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie),
+      }).pipe(
+        Effect.mapError((error) =>
+          error._tag === "@smthrs/mvp/branch/ChangeRefused"
+            ? new TodoFailed({ failure: error.reason === "empty" ? "empty_change" : "implement" })
+            : new TodoUnavailable({ step: "collect" })
+        ),
+      )
     }))
 
   const publish = ({ request, begun, collected }: typeof Publish.payloadSchema.Type) =>

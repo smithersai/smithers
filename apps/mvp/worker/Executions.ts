@@ -325,7 +325,13 @@ const object = <E, R>(
               // status as the App, and plan in the QuickJS build the agent's cells run on. GitHub's pushes and pull
               // requests start them through `triggers/Dispatch`, on each run's own object.
               ExecutionHost.withTriggers(ExecutionHost.withRepoFlows(ExecutionHost.withTodos(
-                ExecutionHost.withGitHub(flows, githubServices(github.value)),
+                // Publish and Update branch (docs/features/branch-publish.md) read a branch's working copy on its
+                // machine and write GitHub as the person who pressed.
+                ExecutionHost.withBranchPublish(
+                  ExecutionHost.withGitHub(flows, githubServices(github.value)),
+                  githubServices(github.value),
+                  machines,
+                ),
                 todoServices(github.value),
                 machines,
                 // The `todo` run's agent writes with the `coding` role, admitted and metered as the endpoint's calls are.
