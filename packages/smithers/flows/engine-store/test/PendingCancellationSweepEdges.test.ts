@@ -122,6 +122,7 @@ describe("pending cancellation sweep races", () => {
         for (const id of ["a-progress", "b-outage", "c-later"]) yield* request(runs, id)
         let fail = true
         let outageObserved = false
+        const releaseOutage = yield* Latch.make(false)
         // Inject one adapter outage at its public read boundary, with real stores
         // on both sides, to deterministically qualify cursor retry ordering.
         const transient = new RunStore.RunStoreError({
@@ -136,7 +137,7 @@ describe("pending cancellation sweep races", () => {
             id === "b-outage" && fail
               ? Effect.sync(() => {
                 outageObserved = true
-              }).pipe(Effect.andThen(Effect.fail(transient)))
+              }).pipe(Effect.andThen(Latch.await(releaseOutage)), Effect.andThen(Effect.fail(transient)))
               : runs.get(id)
         }
         yield* make().pipe(
@@ -153,8 +154,16 @@ describe("pending cancellation sweep races", () => {
         expect((yield* runs.get("b-outage")).status).toBe("pending")
         expect((yield* runs.get("c-later")).status).toBe("pending")
         fail = false
+        // Advance while the failed read is still in flight. PostgreSQL can
+        // naturally produce this ordering: observing the read is not a receipt
+        // that the sweep has returned to its heartbeat sleep.
         yield* tick
-        yield* TestDatabase.until(runs.get("c-later").pipe(Effect.map((row) => row.status === "cancelled")))
+        yield* Latch.open(releaseOutage)
+        yield* TestDatabase.until(Effect.gen(function*() {
+          if ((yield* runs.get("c-later")).status === "cancelled") return true
+          yield* tick
+          return (yield* runs.get("c-later")).status === "cancelled"
+        }))
         expect(afters.slice(0, 2)).toEqual([undefined, "a-progress"])
         for (const id of ["a-progress", "b-outage", "c-later"]) {
           expect(yield* runs.get(id)).toMatchObject({ status: "cancelled", owner: null, claim: null })

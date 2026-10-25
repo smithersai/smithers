@@ -1,13 +1,16 @@
-import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
-    globalSetup: [fileURLToPath(new URL("../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
+    globalSetup: [
+      fileURLToPath(new URL("../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
+    ],
     environment: "node",
     // Only this package's own suite. `infra/` is its own workspace package
     // with its own vitest run; `docs/`, `terraform/`, and `scripts/` carry no

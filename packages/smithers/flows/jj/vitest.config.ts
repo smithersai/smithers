@@ -7,7 +7,11 @@ import { configDefaults, defineConfig } from "vitest/config"
 export default defineConfig({
   plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
-    globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url)), fileURLToPath(new URL("./test/RequireWasm.ts", import.meta.url))],
+    globalSetup: [
+      fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url)),
+      fileURLToPath(new URL("./test/RequireWasm.ts", import.meta.url))
+    ],
     // The fault tier lives under `test/faults` and runs from
     // `vitest.faults.config.ts` instead, serially and without coverage: its
     // cases kill process groups and bind ports, which no unit suite sharing

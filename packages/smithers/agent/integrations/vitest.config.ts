@@ -1,6 +1,6 @@
-import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
@@ -8,7 +8,10 @@ export default defineConfig({
   // Tests start Node on source that reaches VibeLang packages; register: true loads .vibe in those processes.
   plugins: [vibelang({ project: "tsconfig.test.json", register: true })],
   test: {
-    globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
+    globalSetup: [
+      fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
+    ],
     include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
     environment: "node",
     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
