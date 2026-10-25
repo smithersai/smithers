@@ -36,7 +36,19 @@ test("byok first: no model shows Add your model; with one, the person's own mode
   const section = page.getByRole("region", { name: "Your model" })
   const remove = section.getByRole("button", { name: "Remove" })
   const addModel = page.locator("[data-add-model]")
+  const composer = page.getByRole("textbox", { name: "Message Smithers", exact: true })
+  const chat = page.getByRole("button", { name: /^Chat\b/ })
   const settings = new URL("/app/settings", conversation).href
+
+  /**
+   * Opens Chat, which a branch page shows collapsed until ⌘K or its Chat button: once the page has mounted either the
+   * button, the composer or what stands in its place, it presses the button when that is what shows.
+   */
+  const openChat = () =>
+    step("Open Chat", async () => {
+      await addModel.or(composer).or(chat).filter({ visible: true }).first().waitFor({ state: "visible", timeout: 60_000 })
+      if (await chat.isVisible()) await chat.click()
+    })
 
   await step("Open Settings, and remove a model an earlier run left", async () => {
     await page.goto(settings)
@@ -49,9 +61,10 @@ test("byok first: no model shows Add your model; with one, the person's own mode
 
   await step("Back in the conversation: Add your model stands where the composer was", async () => {
     await page.goto(conversation)
+    await openChat()
     await expect(addModel).toBeVisible({ timeout: 60_000 })
     await expect(addModel).toContainText("Add your model")
-    await expect(page.getByRole("textbox", { name: "Message Smithers" })).toHaveCount(0)
+    await expect(composer).toHaveCount(0)
   })
 
   await step("Open settings goes to Your model", async () => {
@@ -89,6 +102,7 @@ test("byok first: no model shows Add your model; with one, the person's own mode
     await remove.click()
     await expect(remove).toHaveCount(0, { timeout: SAVED_WITHIN })
     await page.goto(conversation)
+    await openChat()
     await expect(addModel).toBeVisible({ timeout: 60_000 })
   })
 
