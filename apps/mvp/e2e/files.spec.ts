@@ -1,3 +1,4 @@
+import { messageIn, questionIn } from "./messages"
 import type { Page } from "@playwright/test"
 import { expect, step, test } from "./fixtures"
 import { ownPlace, requires, scriptedAgent } from "./target"
@@ -70,8 +71,8 @@ test(
     })
     await step("The conversation stays beside the file, with the agent's answer", async () => {
       const conversation = page.getByRole("region", { name: "Conversation", exact: true })
-      await expect(conversation.getByText("show-code index.html 3-5")).toBeVisible()
-      await expect(conversation.getByText("Opened index.html at lines 3-5.")).toBeVisible({ timeout: 60_000 })
+      await expect(questionIn(conversation, "show-code index.html 3-5")).toBeVisible()
+      await expect(messageIn(conversation, "Opened index.html at lines 3-5.")).toBeVisible({ timeout: 60_000 })
     })
   },
 )

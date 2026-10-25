@@ -308,6 +308,4 @@ export const test = base.extend<{ browserLog: Array<string>; spendGuard: void },
 
 export { expect }
 
-// The first answer after the user message that contains `question`.
-export const answerTo = (conversation: Locator, question: string) =>
-  conversation.locator('.sui-chat-message[data-role="user"]', { hasText: question }).first().locator('xpath=following-sibling::*[@data-role="assistant"][1]')
+export { answerTo, messageIn, questionIn } from "./messages"

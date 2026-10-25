@@ -1,3 +1,4 @@
+import { answerTo, questionIn } from "./messages"
 import { test as base, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { DEV_URL } from "../dev/https"
@@ -273,12 +274,12 @@ export class Tab {
   }
 
   question(text: string) {
-    return this.conversation.locator('.sui-chat-message[data-role="user"]', { hasText: text })
+    return questionIn(this.conversation, text)
   }
 
-  // The message right after the question: its answer.
+  // The first assistant bubble after the question: its answer.
   answerTo(text: string) {
-    return this.question(text).first().locator("xpath=following-sibling::*[1]")
+    return answerTo(this.conversation, text)
   }
 
   // The pill says the device is offline, with `queued` questions waiting: `Offline` or `Offline · 2`.

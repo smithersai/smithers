@@ -1,3 +1,4 @@
+import { questionIn } from "./messages"
 import type { Page } from "@playwright/test"
 import { SIGN_IN_TO_ASK, SIGN_OUT } from "../src/features/auth/contract"
 import { COMMANDS } from "../src/features/commands/contract"
@@ -62,7 +63,7 @@ test("complete and run: / lists the commands, typing filters, the keyboard compl
   await expect(modes).toBeHidden()
   await expect.poll(() => painted(page), { timeout: 30_000 }).toBe("dark")
   await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible()
-  await expect(a.conversation.locator('.sui-chat-message[data-role="user"]', { hasText: "/theme" })).toHaveCount(0)
+  await expect(questionIn(a.conversation, "/theme")).toHaveCount(0)
 
   // The whole line, typed and sent, runs the same flow.
   await a.composer.pressSequentially("/theme light", typing)
@@ -75,7 +76,7 @@ test("complete and run: / lists the commands, typing filters, the keyboard compl
   await a.composer.press("Enter")
   await expect(a.composer).toHaveValue("/nope")
   await expect(a.composerForm.getByText("/nope isn't a command")).toBeVisible()
-  await expect(a.conversation.locator('.sui-chat-message[data-role="user"]', { hasText: "/nope" })).toHaveCount(0)
+  await expect(questionIn(a.conversation, "/nope")).toHaveCount(0)
 })
 
 test("escape: Escape closes the list and keeps the draft, and a second Escape hides the composer", { annotation: { type: "summary", description: "Escape closes the command list and keeps the draft; a second Escape hides the composer." } }, async ({ devices }) => {

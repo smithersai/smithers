@@ -1,3 +1,4 @@
+import { messageIn } from "./messages"
 import type { Page } from "@playwright/test"
 import { KEEP_EVERY_SECONDS } from "../src/features/sandbox/contract"
 import { expect, step, test } from "./fixtures"
@@ -116,7 +117,7 @@ test("sandbox lifecycle: the agent and the terminal share the branch's machine, 
     if (scripted) {
       await composer.fill(`sandbox-count ${word}`)
       await composer.press("Enter")
-      await expect(conversationOf(page).getByText(`Counted 1; the log has 1 line(s) for ${word}.`)).toBeVisible({
+      await expect(messageIn(conversationOf(page), `Counted 1; the log has 1 line(s) for ${word}.`)).toBeVisible({
         timeout: MACHINE,
       })
       return

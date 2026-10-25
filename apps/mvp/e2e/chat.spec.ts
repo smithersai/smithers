@@ -1,3 +1,4 @@
+import { questionIn } from "./messages"
 import { test as deviceTest } from "./devices"
 import { answerTo, expect, test } from "./fixtures"
 import { home, requires } from "./target"
@@ -45,7 +46,7 @@ test("ask: a user asks Smithers and gets a streamed answer", { annotation: { typ
   await composer.press("Enter")
 
   const conversation = page.getByRole("region", { name: "Conversation", exact: true })
-  await expect(conversation.getByText(`Reply with exactly the word: ${word}`)).toBeVisible()
+  await expect(questionIn(conversation, `Reply with exactly the word: ${word}`)).toBeVisible()
   await expect(answerTo(conversation, `Reply with exactly the word: ${word}`)).toContainText(word, { timeout: 60_000 })
 })
 
@@ -73,7 +74,7 @@ test("reload mid-answer: the browser's agent resumes the answer after the reload
   await expect(answer).toContainText(`end-${word}`, { timeout: 60_000 })
   await expect(answer).toContainText(word)
   await expect(answer.locator('[data-slot="message-response"]')).toHaveAttribute("data-streaming", "false")
-  await expect(conversation.locator('.sui-chat-message[data-role="user"]', { hasText: question })).toHaveCount(1)
+  await expect(questionIn(conversation, question)).toHaveCount(1)
 
   // The composer works after the reload: it opens, and the next question gets its answer.
   const next = `after-${Date.now()}`
@@ -128,7 +129,7 @@ test("steady: a question and its answer keep their elements as the question sync
   await composer.press("Enter")
 
   // The question as it first shows, before Postgres has it, and the answer as it first shows, before it settles.
-  const asked = await conversation.locator(".sui-chat-message", { hasText: question }).first().elementHandle()
+  const asked = await questionIn(conversation, question).first().elementHandle()
   const answer = answerTo(conversation, question)
   await expect(answer).toHaveAttribute("data-state", "streaming", { timeout: 60_000 })
   const streaming = await answer.elementHandle()

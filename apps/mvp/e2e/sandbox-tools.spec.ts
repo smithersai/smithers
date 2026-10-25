@@ -1,3 +1,4 @@
+import { messageIn, questionIn } from "./messages"
 import type { BrowserContext, Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
 import { meets, requires, scriptedAgent } from "./target"
@@ -43,7 +44,7 @@ const ask = async (page: Page, question: string) => {
   if (!(await composer.isVisible())) await page.getByRole("button", { name: /Chat/ }).click()
   await composer.fill(question)
   await composer.press("Enter")
-  await expect(conversationOf(page).getByText(question)).toBeVisible()
+  await expect(questionIn(conversationOf(page), question)).toBeVisible()
 }
 
 test("agent tools: the agent writes a file on the branch's machine, runs a test command and shows the diff", async ({ devices }) => {
@@ -62,7 +63,7 @@ test("agent tools: the agent writes a file on the branch's machine, runs a test 
   )
   const conversation = conversationOf(a.page)
   // The diff the agent shows is the machine's: the new file with its one line.
-  await expect(conversation.getByText(`+hello ${word}`).first()).toBeVisible({ timeout: MACHINE })
+  await expect(messageIn(conversation, `+hello ${word}`).first()).toBeVisible({ timeout: MACHINE })
   // The agent's hands were the tools, each one call through ChatApi: write, run, diff.
   expect(tools.map((call) => call.tool)).toEqual(expect.arrayContaining(["write", "run", "diff"]))
 
@@ -103,7 +104,7 @@ test("closed tab: a command whose tab closed mid-run is recorded once, and the r
   // call, and reads the result the machine recorded, without running the command again.
   const b = await devices.tab(a.device, "A, reopened")
   await openBranch(b, scriptedAgent("sandbox-once", ""))
-  await expect(conversationOf(b.page).getByText(`Counted 1; the log has 1 line(s) for ${word}.`)).toBeVisible({ timeout: MACHINE })
+  await expect(messageIn(conversationOf(b.page), `Counted 1; the log has 1 line(s) for ${word}.`)).toBeVisible({ timeout: MACHINE })
   // Every request for the command named one call: the reopened tab's resend found the call the closed tab started.
   const runs = tools.filter((call) => call.tool === "run")
   expect(runs.length).toBeGreaterThanOrEqual(1)
@@ -133,7 +134,7 @@ test("long command: a ten-minute command on the branch's machine runs once, and 
   if (meets("scriptedAgent")) {
     await openBranch(a, scriptedAgent("sandbox-long", ""))
     await ask(a.page, `sandbox-long ${word} ${LONG_SECONDS}`)
-    await expect(conversation.getByText(`Ran done-5; the log has 1 line(s) for ${word}.`)).toBeVisible({
+    await expect(messageIn(conversation, `Ran done-5; the log has 1 line(s) for ${word}.`)).toBeVisible({
       timeout: (LONG_SECONDS + 600) * 1000,
     })
   } else {
@@ -144,7 +145,7 @@ test("long command: a ten-minute command on the branch's machine runs once, and 
         `sleep ${LONG_SECONDS}; echo ran >> ${log}; echo done-$((2+3)). ` +
         `Then read ${log} with the read tool and reply with its line count and what the command printed, verbatim.`,
     )
-    await expect(conversation.getByText(/done-5/).first()).toBeVisible({ timeout: (LONG_SECONDS + 600) * 1000 })
+    await expect(messageIn(conversation, /done-5/).first()).toBeVisible({ timeout: (LONG_SECONDS + 600) * 1000 })
   }
   // One call ran the command, however many times its tab's engine asked for it: one call id.
   const runs = tools.filter((call) => call.tool === "run")

@@ -1,3 +1,4 @@
+import { questionIn } from "./messages"
 import type { Page, Request } from "@playwright/test"
 import { faultyApp, faults } from "./faults"
 import { answerTo, expect, NOT_SENT, test } from "./fixtures"
@@ -101,7 +102,7 @@ test("redaction: a sentinel word in questions never appears in ChatApi's log or 
   const lost = `Never delivered ${sentinel}`
   await composer.fill(lost)
   await composer.press("Enter")
-  await expect(conversation.locator(".sui-chat-message", { hasText: lost }).getByText(NOT_SENT, { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(questionIn(conversation, lost).getByText(NOT_SENT, { exact: true })).toBeVisible({ timeout: 30_000 })
   const lostQuestion = (await faults(page).questions.asked()).find(({ text }) => text === lost)
   expect(lostQuestion, "the app asked its client the lost question").toBeDefined()
   const lostAnswerId = lostQuestion!.answerId

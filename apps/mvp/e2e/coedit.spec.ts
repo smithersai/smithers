@@ -1,3 +1,4 @@
+import { questionIn } from "./messages"
 import type { Locator, Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
 import { step } from "./fixtures"
@@ -204,7 +205,7 @@ test("co-editing: Maya and Ben type in one prompt and one file at once, see each
   await step("Ben sends it as himself, and it clears for both", async () => {
     await ben!.composer.press("Enter")
     const question = `Ship now ${word} please`
-    await expect(maya!.page.getByRole("region", { name: "Conversation", exact: true }).getByText(question).first())
+    await expect(questionIn(maya!.page.getByRole("region", { name: "Conversation", exact: true }), question))
       .toBeVisible({ timeout: SYNC })
     await expect(maya!.composer).toHaveValue("", { timeout: SYNC })
     await expect(ben!.composer).toHaveValue("")

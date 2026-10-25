@@ -1,3 +1,4 @@
+import { questionIn } from "./messages"
 import { statSync } from "node:fs"
 import { join } from "node:path"
 import { serveBuilds } from "./builds"
@@ -36,7 +37,7 @@ test(
       const conversation = page.getByRole("region", { name: "Conversation", exact: true })
       const composer = page.getByRole("textbox", { name: "Message Smithers" })
       const question = (text: string) =>
-        conversation.locator(".sui-chat-message[data-role=\"user\"]", { hasText: text })
+        questionIn(conversation, text)
       const openComposer = async () => {
         if (await composer.isHidden()) await page.keyboard.press("ControlOrMeta+k")
         await expect(composer).toBeVisible()

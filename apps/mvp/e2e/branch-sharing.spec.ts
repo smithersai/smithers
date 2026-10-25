@@ -1,3 +1,4 @@
+import { questionIn } from "./messages"
 import type { Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
 import { requires } from "./target"
@@ -179,7 +180,7 @@ test("branch sharing: shared to view, Ben watches Maya's terminal and can't type
   await ben!.chatButton.click()
   await ben!.composer.fill(question)
   await ben!.composer.press("Enter")
-  await expect(conversation(maya!.page).getByText(question), "Maya sees Ben's question").toBeVisible({ timeout: SYNC })
+  await expect(questionIn(conversation(maya!.page), question), "Maya sees Ben's question").toBeVisible({ timeout: SYNC })
 
   // Maya removes Ben: his open page is out at once, the terminal gone, and the conversation's shape serves him nothing.
   await visit(maya!)

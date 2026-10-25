@@ -1,3 +1,4 @@
+import { questionIn } from "./messages"
 import type { Page } from "@playwright/test"
 import { expect, step, test } from "./fixtures"
 import { openComposer } from "./composer"
@@ -65,7 +66,7 @@ const ask = (page: Page, question: string) =>
     const composer = await openComposer(page)
     await composer.fill(question)
     await composer.press("Enter")
-    await expect(conversationOf(page).getByText(question)).toBeVisible()
+    await expect(questionIn(conversationOf(page), question)).toBeVisible()
   })
 
 /**
@@ -102,24 +103,24 @@ test("branch conversation: a question asked on a branch is stored in that branch
   await ask(page, first)
   // Stored in Postgres in this branch's conversation: a reload shows it from the device and from Electric.
   await page.reload()
-  await expect(conversationOf(page).getByText(first)).toBeVisible({ timeout: 60_000 })
+  await expect(questionIn(conversationOf(page), first)).toBeVisible({ timeout: 60_000 })
 
   // Another branch has its own conversation, without it.
   await openBranch(page, "change-the-title")
-  await expect(conversationOf(page).getByText(first)).toHaveCount(0)
+  await expect(questionIn(conversationOf(page), first)).toHaveCount(0)
   const second = `Second branch ${word}`
   await ask(page, second)
 
   // Back on test-branch: its question, not the other branch's.
   await openBranch(page, "test-branch")
-  await expect(conversationOf(page).getByText(first)).toBeVisible({ timeout: 60_000 })
-  await expect(conversationOf(page).getByText(second)).toHaveCount(0)
+  await expect(questionIn(conversationOf(page), first)).toBeVisible({ timeout: 60_000 })
+  await expect(questionIn(conversationOf(page), second)).toHaveCount(0)
 
   // The home conversation at /app has neither.
   await page.goto("/app")
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
-  await expect(conversationOf(page).getByText(first)).toHaveCount(0)
-  await expect(conversationOf(page).getByText(second)).toHaveCount(0)
+  await expect(questionIn(conversationOf(page), first)).toHaveCount(0)
+  await expect(questionIn(conversationOf(page), second)).toHaveCount(0)
 })
 
 test("branch terminal: Open terminal runs git log on the branch's machine in a frame, and a reload keeps the shell", {

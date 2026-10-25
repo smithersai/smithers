@@ -1,3 +1,4 @@
+import { questionIn } from "./messages"
 import { allServerRows, expect, type Row, test } from "./devices"
 import { field, type LogRecord, LogTail } from "./logs"
 import { partly, requires } from "./target"
@@ -42,7 +43,7 @@ test("clone by slash: /clone octocat/Hello-World runs repo/clone, and the reposi
   await a.composer.press("Enter")
   await expect(a.composer).toHaveValue("")
   // Nothing goes to the agent: the line is the flow's.
-  await expect(a.conversation.locator('.sui-chat-message[data-role="user"]', { hasText: "/clone" })).toHaveCount(0)
+  await expect(questionIn(a.conversation, "/clone")).toHaveCount(0)
   if (logs !== undefined) {
     await expect.poll(async () => clones((await logs.records()).browser), { timeout: 60_000 }).toEqual(
       expect.arrayContaining([expect.stringMatching(/^(started|existing)$/)]),
