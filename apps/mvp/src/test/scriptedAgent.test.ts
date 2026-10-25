@@ -3,7 +3,7 @@
 import { ModelRequest } from "@smthrs/model"
 import { Cause, Effect, Exit, Stream } from "effect"
 import { describe, expect, test } from "vitest"
-import { scriptedModel } from "./scriptedAgent"
+import { repositoryNamed, scriptedModel } from "./scriptedAgent"
 
 /** A request whose task is `task`, after this run's cell printed `heard`, if it has. */
 const request = (task: string, heard?: unknown) =>
@@ -18,9 +18,9 @@ const request = (task: string, heard?: unknown) =>
   })
 
 /** The cell the script's turn streams. */
-const turnOf = (task: string, heard?: unknown) =>
+const turnOf = (task: string, heard?: unknown, script = "queue") =>
   Effect.runPromise(
-    Stream.runCollect(scriptedModel("queue")!.stream(request(task, heard))).pipe(
+    Stream.runCollect(scriptedModel(script)!.stream(request(task, heard))).pipe(
       Effect.map((events) =>
         events.flatMap((event) => (event.type === "text-delta" ? [event.text] : [])).join("")
       ),
@@ -57,4 +57,16 @@ describe("the queue script", () => {
 test("the quota script injects a terminal credit refusal", async () => {
   const exit = await Effect.runPromiseExit(Stream.runCollect(scriptedModel("quota-refused")!.stream(request("hi"))))
   expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code: "out_of_credit", httpStatus: 402 })
+})
+
+describe("the show-repo and show-issues scripts", () => {
+  test("show the repository the person's latest question names, with ui/repo or ui/issues", async () => {
+    expect(await turnOf("The person now asks: Show me smithersai/smithers, maple.", undefined, "show-repo"))
+      .toContain(`ctx.call("ui/repo", {"repo":"smithersai/smithers"})`)
+    const later = "Person: show octocat/Hello-World\n\nThe person now asks: Show me the issues of octocat/Spoon-Knife?"
+    expect(await turnOf(later, undefined, "show-issues")).toContain(`ctx.call("ui/issues", {"repo":"octocat/Spoon-Knife"})`)
+    expect(await turnOf("Show me something", undefined, "show-repo")).toContain(`{"repo":"octocat/Spoon-Knife"}`)
+    expect(repositoryNamed("open src/features/repo please")).toBeUndefined()
+    expect(repositoryNamed("nothing here")).toBeUndefined()
+  })
 })

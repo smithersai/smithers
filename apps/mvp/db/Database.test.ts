@@ -1242,3 +1242,44 @@ describe("0062_sandbox_budgets", () => {
       expect(await on(through("0062"))).toEqual([])
     }))
 })
+
+describe("0063_app_template_views", () => {
+  test("adds a repository's view and its issues view, which keep only their props, and keeps every row it had", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0062"))
+      const [home] = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly id: string }>`SELECT id FROM conversations LIMIT 1`))
+      const json = (value: unknown) => JSON.stringify(value)
+      const insert = (template: string, columns: Record<string, unknown>) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql`INSERT INTO views ${sql.insert({ id: crypto.randomUUID(), template, conversation_id: home!.id, ...columns })}`))
+          .then(() => "taken", () => "refused")
+      // Before it, neither template is a view.
+      expect(await insert("repo", { props: json({ repo: "octocat/Spoon-Knife" }) })).toBe("refused")
+      const form = { props: json({ title: "Clone" }), state: json({ submitted: false }) }
+      expect(await insert("form", form)).toBe("taken")
+      expect((await on(through("0063"))).map(([id, name]) => `${id}_${name}`)).toEqual(["63_app_template_views"])
+      expect(await insert("repo", { props: json({ repo: "octocat/Spoon-Knife", path: "README.md", kind: "blob" }) }))
+        .toBe("taken")
+      expect(await insert("issues", { props: json({ repo: "octocat/Spoon-Knife" }) })).toBe("taken")
+      // Like a page, they keep nothing beyond their props.
+      expect(await insert("repo", { props: json({ repo: "octocat/Spoon-Knife" }), state: json({}) })).toBe("refused")
+      expect(await insert("issues", { props: json({ repo: "octocat/Spoon-Knife" }), html: "<p></p>" })).toBe("refused")
+      // The other templates keep their rules.
+      expect(await insert("form", form)).toBe("taken")
+      expect(await insert("form", { props: json({ title: "Clone" }) })).toBe("refused")
+      expect(await insert("webpage", { props: json({ url: "https://example.com/" }) })).toBe("taken")
+      expect(await insert("generated", { props: json({}), state: json({}) })).toBe("refused")
+      expect(await insert("chart", { props: json({}) })).toBe("refused")
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`SELECT template, count(*)::int AS count FROM views GROUP BY template ORDER BY template`))).toEqual([
+          { template: "form", count: 2 },
+          { template: "issues", count: 1 },
+          { template: "repo", count: 1 },
+          { template: "webpage", count: 1 },
+        ])
+      expect(await on(through("0063"))).toEqual([])
+    }))
+})

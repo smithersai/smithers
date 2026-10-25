@@ -12,11 +12,13 @@ import {
 } from "./contract"
 import {
   accessQuery,
+  allIssuesQuery,
   conversationQuery,
   deliveredQuery,
   itemQuery,
   listQuery,
   syncedQuery,
+  syncedRepositoriesQuery,
   triagePendingQuery,
   triageSettingsQuery,
   viewQuery,
@@ -81,6 +83,8 @@ export class IssuesStore extends Context.Service<
     readonly view: Collection.Collection<IssueView, string>
     readonly access: Collection.Collection<Access, string>
     readonly list: Query<typeof listQuery>
+    readonly allIssues: Query<typeof allIssuesQuery>
+    readonly syncedRepositories: Query<typeof syncedRepositoriesQuery>
     readonly item: Query<typeof itemQuery>
     readonly conversation: Query<typeof conversationQuery>
     readonly synced: Query<typeof syncedQuery>
@@ -248,6 +252,8 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     view,
     access,
     list: yield* listQuery(view, items, requested, sending, writes),
+    allIssues: yield* allIssuesQuery(items),
+    syncedRepositories: yield* syncedRepositoriesQuery(sync),
     item: yield* itemQuery(view, items),
     conversation: yield* conversationQuery(view, items, comments, requested, sending, writes),
     synced: yield* syncedQuery(view, sync),

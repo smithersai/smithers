@@ -17,9 +17,18 @@ export const VIEWS_TABLE = "views"
  * - `docs`: a repository docs page whose Markdown the server reads from its index;
  * - `form`: the agent's question as a form (`ui/form`), our own React, whose submission is the person's next question;
  * - `generated`: a view the renderer wrote (`ui/render`), which only ChatApi's presentation realm runs, shown as HTML
- *   in a sandboxed frame (docs/features/views.md).
+ *   in a sandboxed frame (docs/features/views.md);
+ * - `repo`: a repository's own view (`ui/repo`), our React over the repository the row names, small in the message, and
+ *   full screen at the repository's own URL;
+ * - `issues`: a repository's issues view (`ui/issues`), likewise, full screen at its issues page.
  */
-export const VIEW_TEMPLATES = ["webpage", "link", "docs", "form", "generated"] as const
+export const VIEW_TEMPLATES = ["webpage", "link", "docs", "form", "generated", "repo", "issues"] as const
+
+/** The templates that show one of the app's own views of a repository (decision 0004 §3): no model call, no frame. */
+export const APP_TEMPLATES = ["repo", "issues"] as const
+
+/** One of {@link APP_TEMPLATES}. */
+export type AppTemplate = (typeof APP_TEMPLATES)[number]
 
 /** The templates that show an outside page. */
 export const PAGE_TEMPLATES = ["webpage", "link", "docs"] as const
@@ -76,9 +85,13 @@ export const VIEWS_TELEMETRY = {
     "views.form.show",
     "views.render.write",
     "views.move.dispatch",
+    "views.template",
+    "views.template.show",
+    "views.minimize",
     "smithers_views_shown",
     "smithers_renderer_corrections",
     "smithers_view_moves",
+    "smithers_views_minimized",
   ],
-  fields: ["template", "outcome", "reason", "corrections", "smithers.view.size"],
+  fields: ["template", "outcome", "reason", "corrections", "smithers.view.size", "returned"],
 } as const

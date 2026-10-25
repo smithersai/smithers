@@ -182,7 +182,10 @@ export const openTab = async (options: DeviceOptions) => {
         Logger.layer([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))]),
       ),
     // AuthStore is there only when `auth` gave it; a test reads it only then.
-    ) as Layer.Layer<Repo | Home | RepoStore | AuthStore | Files | FilesStore | FlowDispatch | TabRequests, Collection.LoadFailed>,
+    ) as Layer.Layer<
+      Repo | Home | RepoStore | RepoClient | AuthStore | Files | FilesStore | FlowDispatch | TabRequests,
+      Collection.LoadFailed
+    >,
   )
   const repo = await runtime.runPromise(Effect.service(Repo))
   const files = await runtime.runPromise(Effect.service(Files))

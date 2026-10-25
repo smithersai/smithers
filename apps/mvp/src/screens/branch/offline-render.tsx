@@ -19,6 +19,7 @@ import { StatusProvider } from "../../features/status/components/StatusContext"
 import { TerminalProvider } from "../../features/terminal/components/TerminalContext"
 import { ThemeProvider } from "../../features/theme/components/ThemeButton"
 import { TodosProvider } from "../../features/todos/components/TodosContext"
+import { ViewsProvider } from "../../features/views/components/ViewsContext"
 
 type Services = {
   files: ComponentProps<typeof FilesProvider>["value"]
@@ -35,8 +36,9 @@ type Services = {
   attention: NonNullable<ComponentProps<typeof AttentionProvider>["value"]>
   spend: ComponentProps<typeof SpendProvider>["value"]
   personalModel: ComponentProps<typeof PersonalModelProvider>["value"]
+  views: ComponentProps<typeof ViewsProvider>["value"]
 }
-export const wrapBranch = ({ files, chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos }: Services) => (child: ReactNode) => createElement(ChatProvider, { value: chat },
+export const wrapBranch = ({ files, chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views }: Services) => (child: ReactNode) => createElement(ChatProvider, { value: chat },
     createElement(AuthProvider, { value: auth },
       createElement(RepoProvider, { value: repo },
         createElement(BranchProvider, { value: branch },
@@ -46,7 +48,7 @@ export const wrapBranch = ({ files, chat, auth, repo, branch, intel, status, com
                 createElement(ThemeProvider, { value: theme },
                   createElement(TerminalProvider, { value: terminal },
                     createElement(AttentionProvider, { value: attention },
-                      createElement(SpendProvider, { value: spend }, createElement(PersonalModelProvider, { value: personalModel }, createElement(FilesProvider, { value: files }, createElement(TodosProvider, { value: todos }, child))))))))))))))
+                      createElement(SpendProvider, { value: spend }, createElement(PersonalModelProvider, { value: personalModel }, createElement(FilesProvider, { value: files }, createElement(TodosProvider, { value: todos }, createElement(ViewsProvider, { value: views }, child)))))))))))))))
 
 export const branchRenderer = (services: Services) => (router: ComponentProps<typeof RouterProvider>["router"]) =>
   renderToStaticMarkup(wrapBranch(services)(createElement(RouterProvider, { router })))

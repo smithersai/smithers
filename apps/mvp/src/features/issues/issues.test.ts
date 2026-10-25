@@ -324,6 +324,9 @@ describe("a new issue", () => {
     }
     // The follower dropped the requested write: GitHub's row shows in its place.
     await until(() => expect(tab.store.requested.tanstack.size).toBe(0))
+    // A conversation's issues view lists GitHub's rows of every repository the device synced, by repository.
+    expect(tab.issues.queries.allIssues.toArray.map((row) => [row.repoId, row.number, row.title, row.local]))
+      .toEqual([[REPO_ID, 12, "Fix the crash", 0]])
   }, WITHIN)
 
   test("only the tab that pressed queues its write; a tab that hears the step's call but didn't start it leaves it", async () => {
@@ -500,10 +503,13 @@ describe("loading", () => {
     tab.actions.open(OWNER, NAME, 3)
     expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0], false, false)).toBe("loading")
 
+    expect(tab.issues.queries.syncedRepositories.toArray).toEqual([])
+
     await server(tab.api).synced()
 
     tab.actions.open(OWNER, NAME)
     await until(() => expect(tab.list()).toEqual({ issues: [], unknown: false, notSent: [] }))
+    expect(tab.issues.queries.syncedRepositories.toArray.map((row) => row.repoId)).toEqual([REPO_ID])
     tab.actions.open(OWNER, NAME, 3)
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
     await until(() =>

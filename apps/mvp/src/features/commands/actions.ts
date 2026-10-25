@@ -83,6 +83,9 @@ const refuse = (outcome: "unknown" | "missing" | "invalid", copy: string, comman
     yield* Effect.logWarning("slash.refused").pipe(Effect.annotateLogs(fields))
   })
 
+/** The flows that add views to the conversation the tab shows, which a slash command pins into their payload. */
+const PINNED_FLOWS: ReadonlySet<string> = new Set(["app/docs/search", "ui/repo", "ui/issues"])
+
 /** Runs `command`'s flow with `payload` through dispatch, door `slash`, in the background; the composer clears at once. */
 const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft: string) =>
   Effect.gen(function* () {
@@ -103,9 +106,9 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope)
     else {
       // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts), and
-      // `/docs` shows its pages in that conversation. `/new` starts the conversation in the repository of the branch this
+      // `/docs`, `/repo` and `/issues` show their views in that conversation. `/new` starts the conversation in the repository of the branch this
       // tab shows (src/features/conversations).
-      const pinned = command.flow.startsWith("sandbox/") || command.flow === "app/docs/search"
+      const pinned = command.flow.startsWith("sandbox/") || PINNED_FLOWS.has(command.flow)
         ? yield* pinConversation(payload)
         : command.flow === "conversation/new"
         ? yield* pinRepository(payload)

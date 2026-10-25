@@ -6,12 +6,13 @@ import { Action, FlowRuntime } from "@smthrs/flow"
 import { Model, ModelError } from "@smthrs/model"
 import { Context, Effect, Exit, Layer, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import { build } from "../../../worker/test/flowHost.ts"
 import { harness, stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { ViewRefused, ViewsClient } from "./api"
-import { AskWithForm, RenderView, SetViewState } from "./flows"
+import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "./flows"
 import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "./renderer"
 import { registration, RendererSeat } from "./steps"
 
@@ -95,6 +96,10 @@ const openEngine = async (options: {
         executionId: crypto.randomUUID(),
         payload: { viewId, revision, event: { name: "cell", arg: "4" } },
       }))),
+    repo: (payload: Record<string, unknown>) =>
+      Effect.runPromise(Effect.exit(flows.execute(ShowRepo, { executionId: crypto.randomUUID(), payload: payload as never }))),
+    issues: (payload: Record<string, unknown>) =>
+      Effect.runPromise(Effect.exit(flows.execute(ShowIssues, { executionId: crypto.randomUUID(), payload: payload as never }))),
   }
 }
 
@@ -185,5 +190,50 @@ describe("view/set-state", () => {
     )
     const flaky = await openEngine({ views: refusing(503, "setState", 1) })
     expect(await flaky.move(viewId)).toEqual(Exit.succeed({ viewId, revision: 1 }))
+  }, WITHIN)
+})
+
+describe("ui/repo and ui/issues", () => {
+  test("add the repository's view with what it opens, and its issues view, to the conversation", async () => {
+    const engine = await openEngine()
+    const repo = await engine.repo({ repo: "octocat/Spoon-Knife", ref: "main", path: "README.md", kind: "blob" })
+    expect(repo).toEqual(Exit.succeed({ viewId: expect.any(String), shown: "repo" }))
+    expect(await engine.issues({ repo: "octocat/Spoon-Knife" })).toEqual(
+      Exit.succeed({ viewId: expect.any(String), shown: "issues" }),
+    )
+    expect(engine.h.line("chat.view.add").map((line) => [line.annotations.status, line.annotations.template])).toEqual([
+      [202, "repo"],
+      [202, "issues"],
+    ])
+    const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly props: unknown }>`SELECT props FROM views WHERE id = ${Exit.isSuccess(repo) ? repo.value.viewId : ""}`))
+    expect(row?.props).toEqual({ repo: "octocat/Spoon-Knife", ref: "main", path: "README.md", kind: "blob" })
+  }, WITHIN)
+
+  test("a view ChatApi won't keep is TemplateRefused; a person it refuses ViewForbidden; a failure is tried again", async () => {
+    // No such conversation: 404, final.
+    const engine = await openEngine()
+    expect(tagOf(await engine.repo({ repo: "octocat/Spoon-Knife", conversationId: crypto.randomUUID() }))).toBe(
+      "@smthrs/mvp/views/TemplateRefused",
+    )
+    for (const status of [400, 409]) {
+      expect(tagOf(await (await openEngine({ views: refusing(status, "add") })).issues({ repo: "octocat/Spoon-Knife" })))
+        .toBe("@smthrs/mvp/views/TemplateRefused")
+    }
+    expect(tagOf(await (await openEngine({ views: refusing(403, "add") })).repo({ repo: "octocat/Spoon-Knife" }))).toBe(
+      "@smthrs/mvp/views/ViewForbidden",
+    )
+    const flaky = await openEngine({ views: refusing(503, "add", 1) })
+    expect(await flaky.issues({ repo: "octocat/Spoon-Knife" })).toEqual(
+      Exit.succeed({ viewId: expect.any(String), shown: "issues" }),
+    )
+    expect(flaky.h.line("chat.view.add").map((line) => line.annotations.status)).toEqual([202])
+  }, WITHIN)
+
+  test("a repository GitHub couldn't have never reaches ChatApi", async () => {
+    const engine = await openEngine()
+    expect(Exit.isFailure(await engine.repo({ repo: "app/widgets" }))).toBe(true)
+    expect(Exit.isFailure(await engine.repo({ repo: "octocat/Spoon-Knife", path: "../up" }))).toBe(true)
+    expect(engine.h.line("chat.view.add")).toEqual([])
   }, WITHIN)
 })

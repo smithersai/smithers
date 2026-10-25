@@ -16,3 +16,6 @@
 @media (max-width: 60rem) {
   .issues-screen > .sui-button { align-self: flex-start; }
 }
+
+/* Back to chat, which minimizes the page into the chat (ruling FE-9), at the page's top left. */
+.issues-screen > .back-to-chat { align-self: flex-start; }

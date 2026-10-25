@@ -6,6 +6,7 @@ import hostedModel from "./migrations/0058_hosted_model.ts"
 import repoAbout from "./migrations/0060_repo_about.ts"
 import flowPlacementMachine from "./migrations/0061_flow_placement_machine.ts"
 import sandboxBudgets from "./migrations/0062_sandbox_budgets.ts"
+import appTemplateViews from "./migrations/0063_app_template_views.ts"
 import messagePins from "./migrations/0054_message_pins.ts"
 import conversationPeople from "./migrations/0047_conversation_people.ts"
 import dropMergeUnknown from "./migrations/0050_drop_merge_unknown.ts"
@@ -161,6 +162,7 @@ export const migrations = {
   "0060_repo_about": repoAbout,
   "0061_flow_placement_machine": flowPlacementMachine,
   "0062_sandbox_budgets": sandboxBudgets,
+  "0063_app_template_views": appTemplateViews,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

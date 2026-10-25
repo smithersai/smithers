@@ -1,6 +1,7 @@
 import { Interactions, WebPage } from "@smthrs/views"
 import { Schema } from "effect"
 import { MAX_PATH, MAX_VIEW_TEXT_BYTES } from "../docs/contract"
+import { isRepository } from "../repo/contract"
 import { MAX_URL_LENGTH } from "../web/contract"
 import {
   MAX_SUBMIT_LABEL,
@@ -123,8 +124,50 @@ export const GeneratedView = Schema.Struct({
   revision: Schema.Number,
 })
 
-/** Whether a row holds what its template needs: one of the three rows above. */
-const isTemplateRow = Schema.is(Schema.Union([PageView, FormView, GeneratedView]))
+/** Whether `value` is `owner/name` as GitHub could have it, never a reserved owner (src/features/repo/contract.ts). */
+const isRepositoryName = (value: string) => {
+  const [owner, name, ...rest] = value.split("/")
+  return rest.length === 0 && owner !== undefined && name !== undefined && isRepository(owner, name)
+}
+
+/** A repository a `repo` or `issues` view names: `owner/name`. */
+export const RepositoryName = Schema.String.check(Schema.isMaxLength(140), Schema.makeFilter(isRepositoryName))
+
+/** Whether `value` is a path from a repository's root: no empty, `.` or `..` segment, no leading slash. */
+const isRepositoryPath = (value: string) =>
+  value === "" || value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..")
+
+/** The longest path a `repo` view names, as RepoApi bounds a path (docs/features/repo.md#repoapi). */
+export const MAX_REPO_PATH = 1_024
+
+/** A branch, tag or commit name: no whitespace, at most 255 characters, as the branch workspace bounds one. */
+export const RepoRef = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(255), Schema.isPattern(/^\S+$/))
+
+/**
+ * A `repo` view's props (decision 0004 §3): the repository, and where in it the view opens: a branch, tag or commit
+ * (`ref`; the default branch's head when absent) and a path from the root (`path`; the root when absent), a directory
+ * (`kind` `tree`) or a file (`blob`). Without `kind`, a path the repository lists as a file is one, else a directory.
+ */
+export const RepoProps = Schema.Struct({
+  repo: RepositoryName,
+  ref: Schema.optional(RepoRef),
+  kind: Schema.optional(Schema.Literals(["tree", "blob"])),
+  path: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_REPO_PATH), Schema.makeFilter(isRepositoryPath))),
+})
+export type RepoProps = typeof RepoProps.Type
+
+/** An `issues` view's props: the repository whose issues it lists. */
+export const IssuesProps = Schema.Struct({ repo: RepositoryName })
+export type IssuesProps = typeof IssuesProps.Type
+
+/** A repository view's row: what it opens. */
+export const RepoTemplateView = Schema.Struct({ template: Schema.Literal("repo"), props: RepoProps })
+
+/** A repository's issues view's row: whose issues. */
+export const IssuesTemplateView = Schema.Struct({ template: Schema.Literal("issues"), props: IssuesProps })
+
+/** Whether a row holds what its template needs: one of the rows above. */
+const isTemplateRow = Schema.is(Schema.Union([PageView, FormView, GeneratedView, RepoTemplateView, IssuesTemplateView]))
 
 /**
  * One row of Postgres `views` as Electric delivers it: columns in camelCase, `position` (int8) parsed to a number, and
@@ -183,8 +226,16 @@ export const GeneratedWrite = Schema.Struct({
 })
 export type GeneratedWrite = typeof GeneratedWrite.Type
 
+/** `POST /api/views` for a repository's view: what it opens. */
+export const RepoWrite = Schema.Struct({ ...placeFields, template: Schema.Literal("repo"), props: RepoProps })
+export type RepoWrite = typeof RepoWrite.Type
+
+/** `POST /api/views` for a repository's issues view: whose issues. */
+export const IssuesWrite = Schema.Struct({ ...placeFields, template: Schema.Literal("issues"), props: IssuesProps })
+export type IssuesWrite = typeof IssuesWrite.Type
+
 /** `POST /api/views`: a view to add, by an id its writer chose, so a step run again adds it once. */
-export const ViewWrite = Schema.Union([PageWrite, FormWrite, GeneratedWrite])
+export const ViewWrite = Schema.Union([PageWrite, FormWrite, GeneratedWrite, RepoWrite, IssuesWrite])
 export type ViewWrite = typeof ViewWrite.Type
 
 /**
@@ -231,3 +282,20 @@ export const Showing = Schema.Struct({
   conversationId: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export type Showing = typeof Showing.Type
+
+/**
+ * Which repository or issues view in the conversation this tab opened full screen, and the page it was on: Back to chat
+ * on that repository's pages returns there, rather than adding the view again (src/features/views/minimize.ts). One row,
+ * in memory.
+ */
+export const OPENED = "opened"
+export const Opened = Schema.Struct({
+  id: Schema.Literal(OPENED),
+  viewId: Schema.NullOr(Schema.String),
+  template: Schema.NullOr(Schema.Literals(["repo", "issues"])),
+  /** The repository, `owner/name` lowercased. */
+  repo: Schema.NullOr(Schema.String),
+  /** The app path of the page that shows the view: `/app`, or a branch's page holding its conversation. */
+  returnTo: Schema.NullOr(Schema.String),
+})
+export type Opened = typeof Opened.Type

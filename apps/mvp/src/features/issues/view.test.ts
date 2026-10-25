@@ -8,6 +8,7 @@ import { commentBodyOf, newIssueOf } from "./actions"
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "./contract"
 import { Requested, type Sending } from "./schema"
 import {
+  embeddedIssues,
   commentOf,
   conversationProps,
   draftOf,
@@ -98,6 +99,36 @@ describe("the list", () => {
     expect(reasonText("forbidden")).toBe("Not allowed")
     expect(reasonText("unavailable")).toBe("GitHub unavailable")
     for (const reason of ["", null, undefined, "pending", 3]) expect(reasonText(reason)).toBeUndefined()
+  })
+})
+
+describe("a repository's issues view in a conversation", () => {
+  test("lists that repository's synced issues, with its sync once a walk completed", () => {
+    const issue = (repoId: string, number: number) => ({
+      id: `${repoId}#${number}`,
+      repoId,
+      number,
+      title: `Issue ${number}`,
+      state: "open",
+      author: "octocat",
+      comments: 0,
+      updatedAt: "2026-10-25T00:00:00Z",
+      triage: "",
+      commitment: "",
+      pending: "",
+      reason: "",
+      local: 0,
+    })
+    const rows = [issue("github/a/b", 2), issue("github/c/d", 9), issue("github/a/b", 1)]
+    const synced = [{ repoId: "github/c/d", syncedAt: "t1" }, { repoId: "github/a/b", syncedAt: "t2" }]
+    expect(embeddedIssues(rows, synced, "github/a/b")).toEqual({
+      rows: [rows[0], rows[2]],
+      synced: { repoId: "github/a/b", syncedAt: "t2" },
+    })
+    const none = embeddedIssues(rows, [], "github/e/f")
+    expect(none).toEqual({ rows: [], synced: undefined })
+    // Nothing known of it yet: neither a spinner nor "No issues".
+    expect(listProps(none.rows, none.synced).unknown).toBe(true)
   })
 })
 

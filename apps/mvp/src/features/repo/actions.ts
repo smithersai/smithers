@@ -44,7 +44,7 @@ const changeView = (fields: Partial<Omit<ViewRow, "id">>) =>
   Effect.flatMap(RepoStore, ({ view }) => Effect.orDie(view.update(VIEW, (row) => void Object.assign(row, fields))))
 
 /** Starts the repositories' shape, if nothing read it yet; a device that can't reach Electric keeps what it has. */
-const startSync = Effect.flatMap(
+export const startSync = Effect.flatMap(
   RepoStore,
   (store) => Effect.forkIn(Effect.ignore(store.repositories.preload), store.scope, { startImmediately: true }),
 )
@@ -131,7 +131,7 @@ interface Named {
  * Loads `owner/name`'s file list at `sha` unless this tab has it or is loading it. A failed one loads again when
  * `again`: a navigation's warm asks again, and the page it then opens shows what that answered.
  */
-const ensureTree = (repository: Named, sha: string, again: boolean) =>
+export const ensureTree = (repository: Named, sha: string, again: boolean) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const key = treeKey(repository.id, sha)
@@ -253,7 +253,7 @@ export const aboutOf = (owner: string, name: string) =>
   })
 
 /** Loads a file at `sha` unless this tab has it or is loading it; a failed one loads again when `again`, as a tree. */
-const ensureBlob = (repository: Named, sha: string, path: string, again: boolean) =>
+export const ensureBlob = (repository: Named, sha: string, path: string, again: boolean) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const key = blobKey(repository.id, sha, path)
@@ -332,7 +332,7 @@ export const ready = (id: string) =>
   })
 
 /** Waits until the row at `key` matches `done`: one that has, or once one does. */
-const until = <A extends object>(collection: Collection.Collection<A, string>, key: string, done: (row: A) => boolean) =>
+export const until = <A extends object>(collection: Collection.Collection<A, string>, key: string, done: (row: A) => boolean) =>
   Effect.gen(function* () {
     const matches = (row: Option.Option<A>): row is Option.Some<A> => Option.isSome(row) && done(row.value)
     const now = yield* collection.get(key)
@@ -347,7 +347,7 @@ const until = <A extends object>(collection: Collection.Collection<A, string>, k
   })
 
 /** Whether a load has ended: loaded or failed. */
-const loaded = (row: { readonly state: string }) => row.state !== "loading"
+export const loaded = (row: { readonly state: string }) => row.state !== "loading"
 
 // --- Resolving ---
 //
@@ -445,7 +445,7 @@ const readable = (repository: Named) =>
  * not (not cloned, cloning, failed or refused: none); without a row, whichever is first of the repositories' shape's
  * first sync and RepoApi's refs, ready or absent. A refs read that couldn't answer leaves it to the shape.
  */
-const shown = (repository: Named) =>
+export const shown = (repository: Named) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const now = yield* store.repositories.get(repository.id)
@@ -474,7 +474,7 @@ type Location =
  * Resolves `target`'s ref in a ready repository: loads its branches and tags, and waits for them only when the ref is
  * neither the default branch nor a SHA. A head RepoApi's refs named comes with its branches and tags already.
  */
-const locate = (repository: Readable, target: Target) =>
+export const locate = (repository: Readable, target: Target) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const refs = repository.refsKey

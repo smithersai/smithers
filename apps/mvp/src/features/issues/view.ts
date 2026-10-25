@@ -86,6 +86,16 @@ export const refusedOf = (access: { readonly status: string } | undefined): Refu
   access?.status === "sign_in" || access?.status === "forbidden" ? access.status : undefined
 
 /**
+ * A repository's issues view in a conversation (decision 0004 §3): the rows of every repository's synced issues
+ * (queries.ts `allIssuesQuery`) that are `repoId`'s, and its sync once a walk completed, for `listProps`.
+ */
+export const embeddedIssues = <R extends ListRow & { readonly repoId: string }>(
+  rows: ReadonlyArray<R>,
+  synced: ReadonlyArray<{ readonly repoId: string; readonly syncedAt: unknown }>,
+  repoId: string,
+) => ({ rows: rows.filter((row) => row.repoId === repoId), synced: synced.find((row) => row.repoId === repoId) })
+
+/**
  * The list page: device rows, unknown counts until a complete sync or GitHub row arrives, the shape's refusal,
  * and writes that weren't sent. Unknown lists show neither a spinner (ARCH-5) nor "No issues"; decision 0079
  * defers syncing other repositories, whose local writes remain visible without promising an active sync.

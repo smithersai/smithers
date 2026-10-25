@@ -37,6 +37,10 @@ export interface IssuesQueries {
   readonly conversation: Store["conversation"]["tanstack"]
   /** The repository's sync, once a walk was complete: before that its counts are unknown. */
   readonly synced: Store["synced"]["tanstack"]
+  /** Every repository's synced issues, newest first: what a repository's issues view in a conversation lists. */
+  readonly allIssues: Store["allIssues"]["tanstack"]
+  /** Every repository whose issues sync completed a walk. */
+  readonly syncedRepositories: Store["syncedRepositories"]["tanstack"]
   /** Whether this person may read the repository's issues: refused, a page shows sign in or Not found. */
   readonly access: Store["accessState"]["tanstack"]
   /** Whether the repository's triage flow is on: none until a Maintainer enabled it. */
@@ -90,6 +94,8 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           item: store.item.tanstack,
           conversation: store.conversation.tanstack,
           synced: store.synced.tanstack,
+          allIssues: store.allIssues.tanstack,
+          syncedRepositories: store.syncedRepositories.tanstack,
           access: store.accessState.tanstack,
           triage: store.triage.tanstack,
           triagePending: store.triagePending.tanstack,

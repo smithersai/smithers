@@ -16,7 +16,8 @@ interface Heard {
   readonly approved?: boolean
   readonly note?: string
 }
-// `form` asks with a form; `board` shows a board written by scriptedRenderer.
+// `form` asks with a form; `board` shows a board written by scriptedRenderer; `show-repo` and `show-issues` show the
+// repository the question names with `ui/repo` and `ui/issues`.
 
 /** A script: what its agent asks, and how it finishes once it heard the answer. */
 interface Script {
@@ -249,6 +250,28 @@ const board = Model.make({
     ),
 })
 
+/** The question this run asks: after the prompt's last "now asks: " (src/features/agent/flows.ts `prompt`). */
+const questionOf = (request: ModelRequest.ModelRequest) => {
+  const all = [...request.system.map((part) => part.text), textOf(request)].join("\n")
+  return all.lastIndexOf("now asks: ") < 0 ? all : all.slice(all.lastIndexOf("now asks: "))
+}
+
+/** The repository a question names, `owner/name`: the first such word in it. */
+export const repositoryNamed = (question: string): string | undefined =>
+  /(?:^|\s)([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+?)(?=[\s,.?!]*(?:\s|$))/.exec(question)?.[1]
+
+/**
+ * `show-repo` and `show-issues` (e2e/repo-in-chat.spec.ts): asked about a repository, the agent shows it in the chat
+ * with `ui/repo`, or its issues with `ui/issues`.
+ */
+const showTemplate = (flow: "ui/repo" | "ui/issues", done: string) =>
+  Model.make({
+    stream: (request) => {
+      const repo = repositoryNamed(questionOf(request)) ?? "octocat/Spoon-Knife"
+      return turn(`await ctx.call(${JSON.stringify(flow)}, ${JSON.stringify({ repo })})\nctx.done(${JSON.stringify(done)})`)
+    },
+  })
+
 /** The renderer the scripted agents' `ui/render` calls: it writes the tic-tac-toe module (src/features/views/renderer.ts). */
 export const scriptedRenderer = Model.make({
   stream: () =>
@@ -281,6 +304,8 @@ export const scriptedModel = (name: string): Model.Model | undefined => {
   if (name === "queue") return queue
   if (name === "form") return formAsk
   if (name === "board") return board
+  if (name === "show-repo") return showTemplate("ui/repo", "Here it is.")
+  if (name === "show-issues") return showTemplate("ui/issues", "Here are its issues.")
   const script = scripts[name]
   if (script === undefined) return undefined
   return Model.make({

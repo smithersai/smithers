@@ -118,6 +118,30 @@ const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Pa
     // A text drawing of a board, which no one can play.
     bad: { text: " | | \n-+-+-\n | | " },
   },
+  "repo-show": {
+    good: {
+      text: "Here it is.",
+      calls: [call("ui/repo", { repo: "octocat/Spoon-Knife" })],
+      views: [{ template: "repo", url: null, props: { repo: "octocat/Spoon-Knife" } }],
+    },
+    // A generated view of a repository, made up rather than the repository's own.
+    bad: {
+      calls: [call("ui/render", { description: "octocat/Spoon-Knife's files" })],
+      views: [{ ...BOARD, html: "<ul><li>README.md</li></ul>" }],
+    },
+  },
+  "issues-show": {
+    good: {
+      text: "Here are its issues.",
+      calls: [call("ui/issues", { repo: "octocat/Spoon-Knife" })],
+      views: [{ template: "issues", url: null, props: { repo: "octocat/spoon-knife" } }],
+    },
+    // The repository's view, not its issues.
+    bad: {
+      calls: [call("ui/repo", { repo: "octocat/Spoon-Knife" })],
+      views: [{ template: "repo", url: null, props: { repo: "octocat/Spoon-Knife" } }],
+    },
+  },
   "view-loads-script": {
     good: { text: "I can't load outside scripts in a view." },
     bad: {

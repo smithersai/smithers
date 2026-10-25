@@ -401,3 +401,59 @@ describe("a question from a view", () => {
     expect(stored!.data).toEqual({ level: "hard" })
   })
 })
+
+describe("a repository's view and its issues view", () => {
+  const propsOf = (id: string) =>
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly template: string; readonly props: unknown; readonly state: unknown; readonly html: unknown }>`
+        SELECT template, props, state, html FROM views WHERE id = ${id}`)).then(([row]) => row)
+
+  test("is added with its props alone, once by its id, and refused for a name GitHub couldn't have", async () => {
+    const h = await open()
+    const repo = {
+      id: crypto.randomUUID(),
+      template: "repo",
+      props: { repo: "octocat/Spoon-Knife", ref: "main", kind: "blob", path: "docs/README.md" },
+    }
+    expect((await post(h, "/api/views", repo)).status).toBe(202)
+    expect(await propsOf(repo.id)).toEqual({ template: "repo", props: repo.props, state: null, html: null })
+    // The same view again is the add that landed before; another view under its id is refused.
+    const again = await post(h, "/api/views", repo)
+    expect([again.status, await again.json()]).toEqual([200, { txid: null }])
+    const other = await post(h, "/api/views", { ...repo, props: { repo: "octocat/Hello-World" } })
+    expect([other.status, await other.json()]).toEqual([409, { code: "id_taken" }])
+
+    const issues = { id: crypto.randomUUID(), template: "issues", props: { repo: "smithersai/smithers" } }
+    expect((await post(h, "/api/views", issues)).status).toBe(202)
+    expect(await propsOf(issues.id)).toEqual({ template: "issues", props: issues.props, state: null, html: null })
+
+    for (
+      const props of [
+        { repo: "app/widgets" },
+        { repo: "octocat" },
+        { repo: "a/b/c" },
+        { repo: "octocat/Spoon-Knife", path: "../secrets" },
+        { repo: "octocat/Spoon-Knife", path: "/README.md" },
+        { repo: "octocat/Spoon-Knife", ref: "a branch" },
+        { repo: "octocat/Spoon-Knife", kind: "commit" },
+      ]
+    ) {
+      const refused = await post(h, "/api/views", { id: crypto.randomUUID(), template: "repo", props })
+      expect([JSON.stringify(props), refused.status]).toEqual([JSON.stringify(props), 400])
+    }
+    const refusedIssues = await post(h, "/api/views", { id: crypto.randomUUID(), template: "issues", props: { repo: "api/x" } })
+    expect(refusedIssues.status).toBe(400)
+    expect(h.line("chat.view.add").filter((line) => line.annotations.status === 202).map((line) => line.annotations.template))
+      .toEqual(["repo", "issues"])
+  })
+
+  test("asks nothing: a question naming one is refused, and a Guest can't add one", async () => {
+    const h = await open()
+    const repo = { id: crypto.randomUUID(), template: "repo", props: { repo: "octocat/Spoon-Knife" } }
+    await post(h, "/api/views", repo)
+    expect((await h.ask(question("Open", { source: { viewId: repo.id, event: "open" } }))).status).toBe(400)
+    const guest = await open({ subject: { kind: "person", id: "person-guest" }, role: "guest" })
+    const refused = await post(guest, "/api/views", { ...repo, id: crypto.randomUUID() })
+    expect([refused.status, await refused.json()]).toEqual([403, { code: "forbidden" }])
+  })
+})

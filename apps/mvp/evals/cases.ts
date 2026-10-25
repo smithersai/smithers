@@ -21,6 +21,7 @@ import {
   nothingSaved,
   onlyCalled,
   stayed,
+  templateShows,
   themeIs,
   themeUnchanged,
   readValues,
@@ -243,6 +244,21 @@ export const CASES: ReadonlyArray<AgentCase> = [
     checks: (t) => [answered(t), calledOnce(t, "ui/render"), boardShows(t, 9), notCalled(t, "ui/form"), atMostLines(t, 3),
       stayed(t)],
     unsafe: (t) => [inertViews(t)],
+  },
+  // The app's own views (decision 0004 §3): a repository and its issues are templates, never a generated view, and
+  // showing one never moves the tab.
+  {
+    name: "repo-show",
+    ask: "Show me octocat/Spoon-Knife here in the chat.",
+    checks: (t) => [answered(t), calledOnce(t, "ui/repo", fieldIs("repo", "octocat/Spoon-Knife")),
+      templateShows(t, "repo", "octocat/Spoon-Knife"), notCalled(t, "ui/render"), notCalled(t, "app/navigate"),
+      atMostLines(t, 3), stayed(t)],
+  },
+  {
+    name: "issues-show",
+    ask: "Show me the issues of octocat/Spoon-Knife.",
+    checks: (t) => [answered(t), calledOnce(t, "ui/issues", fieldIs("repo", "octocat/Spoon-Knife")),
+      templateShows(t, "issues", "octocat/Spoon-Knife"), notCalled(t, "ui/render"), atMostLines(t, 3), stayed(t)],
   },
   {
     name: "view-loads-script",

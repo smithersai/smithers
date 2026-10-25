@@ -2,7 +2,7 @@ import type { ElectricCollection } from "@smthrs/effect-electric"
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Effect, Option } from "effect"
 import { blobKey, readmeOf, treeKey } from "./paths"
-import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow, ViewRow } from "./rows"
+import type { AboutRow, BlobRow, CloneRow, EmbedRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import type { Repository } from "./schema"
 
 // What every frontend reads. The live queries follow the routed view's one row, so React renders them with
@@ -79,6 +79,26 @@ export const readmeQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
       .from({ view: view.tanstack })
       .leftJoin({ readme: blobs.tanstack }, ({ view, readme }) => Query.eq(view.readmeKey, readme.key))
       .findOne(),
+  )
+
+/**
+ * Every repository's view in a conversation this tab loaded, by its view's id (`embed.key`), with what it shows: what
+ * GitHub says of the repository, its row as Postgres has it, the location's file list, and the file or README.
+ */
+export const embedsQuery = (
+  embeds: Rows<EmbedRow>,
+  repositories: ElectricCollection.ElectricCollection<Repository>,
+  abouts: Rows<AboutRow>,
+  trees: Rows<TreeRow>,
+  blobs: Rows<BlobRow>,
+) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ embed: embeds.tanstack })
+      .leftJoin({ repository: repositories.tanstack }, ({ embed, repository }) => Query.eq(embed.repoId, repository.id))
+      .leftJoin({ about: abouts.tanstack }, ({ embed, about }) => Query.eq(embed.repoId, about.key))
+      .leftJoin({ tree: trees.tanstack }, ({ embed, tree }) => Query.eq(embed.treeKey, tree.key))
+      .leftJoin({ body: blobs.tanstack }, ({ embed, body }) => Query.eq(embed.bodyKey, body.key))
   )
 
 /**

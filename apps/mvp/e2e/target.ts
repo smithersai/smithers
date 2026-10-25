@@ -192,6 +192,9 @@ const needs = {
     reason: "it reads ChatApi's records: locally from .alchemy/log, in a deployment through a Cloudflare tail (e2e/logs.ts), which needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID",
   },
   localServer: localOnly("it serves fixtures or builds from this machine, which a deployment can't reach"),
+  homeConversation: localOnly(
+    "it leaves a view in the home conversation, which every Member of a deployment reads; a deployment run writes only its own branch's conversation",
+  ),
   noGitHubApp: {
     met: (run) => run.target === "local" && !set(run, "GITHUB_APP_ID") && !set(run, "E2E_ISSUES_REPOSITORY"),
     reason: "it needs a repository GitHub hasn't said is public: a dev server without the GitHub App (GITHUB_APP_ID and E2E_ISSUES_REPOSITORY unset)",

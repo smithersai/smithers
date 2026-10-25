@@ -5,6 +5,7 @@ import { Context, Effect, Layer, Metric } from "effect"
 import { requesterOf } from "../../flows/requests"
 import { MODEL_ROUTE } from "../model/contract"
 import { type ViewRefused, ViewsClient } from "./api"
+import { viewConversation } from "./conversation"
 import { formRefusal } from "./form"
 import {
   AskWithForm,
@@ -12,12 +13,21 @@ import {
   type CheckedForm,
   FormRefused,
   MoveRefused,
+  PlanIssues,
+  type PlannedIssues,
+  type PlannedRepo,
   PlannedView,
+  PlanRepo,
   PlanView,
   RenderView,
   SendState,
   SetViewState,
   ShowForm,
+  ShowIssues,
+  ShowIssuesView,
+  ShowRepo,
+  ShowRepoView,
+  TemplateRefused,
   ViewForbidden,
   ViewNotRendered,
   ViewStale,
@@ -25,6 +35,7 @@ import {
   WriteView,
 } from "./flows"
 import { readWritten, RENDERER_SYSTEM, rendererCorrection, rendererTask } from "./renderer"
+import type { IssuesWrite, RepoWrite } from "./schema"
 
 // What the views flows' steps run on (docs/features/views.md#the-flows): ChatApi's views routes (`ViewsClient`) and the
 // renderer's seat (`RendererSeat`, the model endpoint's `renderer` role). An agent's call is a child execution of its
@@ -250,7 +261,48 @@ export const sendState = (move: {
     return yield* Effect.fail(failed.error)
   }).pipe(Effect.withSpan("views.move"))
 
-/** Registers `ui/form`, `ui/render` and `view/set-state` with their steps, over `ViewsClient` and `RendererSeat`. */
+/** `ui/repo/plan` and `ui/issues/plan`: a fresh id for the view. */
+export const planTemplate = <A extends object>(input: A) => Effect.sync(() => ({ viewId: crypto.randomUUID(), ...input }))
+
+/**
+ * `ui/repo/show` and `ui/issues/show`: adds the view through ChatApi, to the conversation the running execution names
+ * (an agent's call to its answer's, a person's to the one their tab showed). A refusal of its id is final; a refused
+ * person is `ViewForbidden`; anything else ChatApi couldn't take is tried again.
+ */
+const showTemplate = (
+  write: Pick<RepoWrite, "id" | "template" | "props"> | Pick<IssuesWrite, "id" | "template" | "props">,
+  conversationId: string | undefined,
+) =>
+  Effect.gen(function* () {
+    const { id: viewId, template } = write
+    const added = yield* (yield* ViewsClient).add({ ...write, ...(yield* viewConversation(conversationId)) }).pipe(
+      Effect.result,
+    )
+    if (added._tag === "Failure") {
+      if (added.failure.status === 400 || added.failure.status === 404 || added.failure.status === 409) {
+        yield* record(shown, { template, outcome: "refused" }, "views.template")
+        return yield* new TemplateRefused()
+      }
+      const failed = failureOf(added.failure)
+      yield* record(shown, { template, outcome: failed.outcome }, "views.template")
+      return yield* Effect.fail(failed.error)
+    }
+    yield* record(shown, { template, outcome: "shown" }, "views.template")
+    return { viewId, shown: template }
+  }).pipe(Effect.withSpan("views.template.show", { attributes: { template: write.template } }))
+
+/** `ui/repo/show`: the repository's view, with what it opens. */
+export const showRepo = ({ viewId, conversationId, ...props }: PlannedRepo) =>
+  showTemplate({ id: viewId, template: "repo", props }, conversationId)
+
+/** `ui/issues/show`: the repository's issues view. */
+export const showIssues = ({ viewId, conversationId, ...props }: PlannedIssues) =>
+  showTemplate({ id: viewId, template: "issues", props }, conversationId)
+
+/**
+ * Registers `ui/form`, `ui/render`, `view/set-state`, `ui/repo` and `ui/issues` with their steps, over `ViewsClient` and
+ * `RendererSeat`.
+ */
 export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(AskWithForm, Layer.mergeAll(CheckForm.toLayer(checkForm), ShowForm.toLayer(showForm))),
   Interpreter.layerWithImplementations(
@@ -258,4 +310,12 @@ export const registration = Layer.mergeAll(
     Layer.mergeAll(PlanView.toLayer(planView), WriteView.toLayer(writeView)),
   ),
   Interpreter.layerWithImplementations(SetViewState, SendState.toLayer(sendState)),
+  Interpreter.layerWithImplementations(
+    ShowRepo,
+    Layer.mergeAll(PlanRepo.toLayer(planTemplate), ShowRepoView.toLayer(showRepo)),
+  ),
+  Interpreter.layerWithImplementations(
+    ShowIssues,
+    Layer.mergeAll(PlanIssues.toLayer(planTemplate), ShowIssuesView.toLayer(showIssues)),
+  ),
 )

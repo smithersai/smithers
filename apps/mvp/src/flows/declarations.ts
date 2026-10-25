@@ -45,7 +45,7 @@ import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
-import { AskWithForm, RenderView, SetViewState } from "../features/views/flows"
+import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
 import { type FlowName, type FlowOf, names } from "./registry"
@@ -69,6 +69,8 @@ export const declarations = {
   "ui/form": AskWithForm,
   "ui/render": RenderView,
   "view/set-state": SetViewState,
+  "ui/repo": ShowRepo,
+  "ui/issues": ShowIssues,
   "chat/Answer": Answer,
   "chat/Close": Close,
   "chat/pin": ChatPin,

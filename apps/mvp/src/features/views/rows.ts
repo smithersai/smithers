@@ -1,5 +1,5 @@
 import type { Interactions } from "@smthrs/views"
-import type { FormProps, FormState, ViewProps, View } from "./schema"
+import type { FormProps, FormState, IssuesProps, RepoProps, ViewProps, View } from "./schema"
 
 // A view as the conversation and the full-screen route read it (src/features/views/views.ts `rowsIn`, store.ts
 // `shownQuery`): one row whose fields depend on its template. The collection decoded it with its template's schema
@@ -40,3 +40,10 @@ export const generatedOf = (row: ViewRow): GeneratedShown | undefined =>
       revision: row.revision,
     }
     : undefined
+
+/** The row as a repository's view: what it opens; `undefined` for another template. */
+export const repoOf = (row: ViewRow): RepoProps | undefined => (row.template === "repo" ? (row.props as RepoProps) : undefined)
+
+/** The row as a repository's issues view: whose issues; `undefined` for another template. */
+export const issuesOf = (row: ViewRow): IssuesProps | undefined =>
+  row.template === "issues" ? (row.props as IssuesProps) : undefined

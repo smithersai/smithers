@@ -117,6 +117,43 @@ export const listQuery = (
       .orderBy(({ $selected }) => $selected.at, "desc"),
   )
 
+/**
+ * Every repository's synced issues this device has, newest first, as list rows (`repoId` beside each): what a
+ * repository's issues view in a conversation lists, filtered to its repository (view.ts `embeddedIssues`). Synced rows
+ * only: a person's own new issue shows on the repository's issues page.
+ */
+export const allIssuesQuery = (items: Synced<Item>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ item: items.tanstack })
+      .where(({ item }) => Query.and(Query.eq(item.kind, "issue"), Query.isNull(item.deletedAt)))
+      .select(({ item }) => ({
+        id: item.id,
+        repoId: item.repoId,
+        number: item.number,
+        title: item.title,
+        state: item.state,
+        author: Query.coalesce(item.authorLogin, ""),
+        comments: item.comments,
+        updatedAt: item.updatedAt,
+        triage: item.triage,
+        commitment: Query.coalesce(item.commitment, ""),
+        pending: "",
+        reason: "",
+        local: 0,
+      }))
+      .orderBy(({ $selected }) => $selected.number, "desc"),
+  )
+
+/** Every repository whose issues sync completed a walk: before that, its counts are unknown. */
+export const syncedRepositoriesQuery = (sync: Synced<SyncRow>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ sync: sync.tanstack })
+      .where(({ sync }) => Query.and(Query.eq(sync.stream, ISSUES_STREAM), Query.eq(sync.complete, true)))
+      .select(({ sync }) => ({ repoId: sync.repoId, syncedAt: sync.syncedAt }))
+  )
+
 /** The routed issue, once the device has it. */
 export const itemQuery = (view: View, items: Synced<Item>) =>
   LiveQuery.make((q) =>

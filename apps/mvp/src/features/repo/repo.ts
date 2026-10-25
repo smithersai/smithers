@@ -28,6 +28,8 @@ export interface RepoQueries {
   readonly about: Store["aboutState"]["tanstack"]
   /** The repository's generated-files manifest at the view's commit, beside a file. */
   readonly manifest: Store["manifestState"]["tanstack"]
+  /** Every repository's view in a conversation this tab loaded, with what it shows, by its view's id (`embed.key`). */
+  readonly embeds: Store["embedsState"]["tanstack"]
 }
 
 /** A Copy button's flow didn't put its text on the clipboard. */
@@ -93,6 +95,7 @@ export class Repo extends Context.Service<
           readme: store.readmeState.tanstack,
           about: store.aboutState.tanstack,
           manifest: store.manifestState.tanstack,
+          embeds: store.embedsState.tanstack,
         },
         lookups: {
           repository: (id) => now(device.repository(id)),

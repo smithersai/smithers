@@ -46,7 +46,7 @@ import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
-import { AskWithForm, RenderView, SetViewState } from "../features/views/flows"
+import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
 
@@ -157,6 +157,18 @@ export const registry = {
   "ui/form": { flow: AskWithForm, changes: "adds a form to the chat" },
   "ui/render": { flow: RenderView, changes: "adds a view to the chat" },
   "view/set-state": { flow: SetViewState, changes: "makes a move in a view in the chat" },
+  // A repository's view and its issues view (decision 0004 §3): `/repo` and `/issues` add them as the agent does; the
+  // tab pins the conversation it shows, as `/docs` does. Adding a view writes the conversation: a Member or above.
+  "ui/repo": {
+    flow: ShowRepo,
+    changes: "adds a repository's view to the chat",
+    slash: { command: "repo", minimum: "member", fields: ["repo"], hints: { fields: { conversationId: { hidden: true } } } },
+  },
+  "ui/issues": {
+    flow: ShowIssues,
+    changes: "adds a repository's issues to the chat",
+    slash: { command: "issues", minimum: "member", fields: ["repo"], hints: { fields: { conversationId: { hidden: true } } } },
+  },
   "chat/Answer": {
     flow: AnswerReference,
     acts: "agent",

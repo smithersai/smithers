@@ -141,7 +141,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       preferences: "current 1→1 migrated 0 kept 0",
       "repo-repositories": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
       runs: "resync 1→2 migrated 0 kept 0",
-      views: legacy ? "resync 1→4 migrated 0 kept 0" : "resync 2→4 migrated 0 kept 0"
+      views: legacy ? "resync 1→5 migrated 0 kept 0" : "resync 2→5 migrated 0 kept 0"
     })
     expect(report.epoch).toBe(deviceRegistry.epoch)
     expect(await keptRows(path)).toEqual([])

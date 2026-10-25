@@ -1,6 +1,6 @@
 # The agent talks through UI
 
-The agent asks with forms and shows things as views: a form or a small view inline in the chat, which a person can open full screen. Will (feature 3, rulings SCOPE-6): "The agent has the ability to talk to us in forms. Note the agent uses codemode for everything … It should have the ability to render a small view what you see in chat and a big full screen view … if I ask for a tic tac toe board it shouldn't have issues doing that. This should be safe." Decision: [0004](../decisions/0004-agent-ui-codemode-and-rendering.md), with the agent in the browser ([0011](../decisions/0011-the-agent-runs-in-the-browser.md)). The SDK half is `@smthrs/views` and `@smthrs/ui`'s `GeneratedView` and `FlowFormView` ([render a view](../../../../packages/smithers/ui/views/docs/render-a-view.md), [security](../../../../packages/smithers/ui/views/docs/security.md)).
+The agent asks with forms and shows things as views: a form, a small view inline in the chat, or a repository and its issues as the app's own views, which a person can open full screen. Will (feature 3, rulings SCOPE-6): "The agent has the ability to talk to us in forms. Note the agent uses codemode for everything … It should have the ability to render a small view what you see in chat and a big full screen view … if I ask for a tic tac toe board it shouldn't have issues doing that. This should be safe." Decision: [0004](../decisions/0004-agent-ui-codemode-and-rendering.md), with the agent in the browser ([0011](../decisions/0011-the-agent-runs-in-the-browser.md)). The SDK half is `@smthrs/views` and `@smthrs/ui`'s `GeneratedView` and `FlowFormView` ([render a view](../../../../packages/smithers/ui/views/docs/render-a-view.md), [security](../../../../packages/smithers/ui/views/docs/security.md)).
 
 ```
 agent's cell ─ ctx.call("ui/form", { title, schema, submitLabel? })
@@ -48,6 +48,28 @@ results must be included in the answer when requested.
 - **A `message` event** sends its label as the person's next question, with the frame's form values, like a form.
 - **Sizes.** `inline` in the message, 80 to 480 pixels high from the frame's reported height; **Full screen** opens `/app/views/<id>`, the same `GeneratedView` at `full`. A form opens full screen the same way.
 
+## A repository and its issues
+
+Two views are templates, our own React with no model call (decision [0004](../decisions/0004-agent-ui-codemode-and-rendering.md) §3): `ui/repo` shows a repository's own view and `ui/issues` its issues view, small in the message. Will (feature 3, rulings SCOPE-6): "It should have prebuilt templates too though such as our github view and our issues view", and "our github ui should be renderable in this". A person adds the same views with `/repo owner/name` and `/issues owner/name` (Member and up), as the agent does (FLOW-3).
+
+```
+ctx.call("ui/repo", { repo, ref?, path?, kind? }) or /repo owner/name
+  ui/repo/plan (sealed: the view's id) ─ ui/repo/show ─ POST /api/views {template: repo, props}
+ctx.call("ui/issues", { repo }) or /issues owner/name
+  ui/issues/plan (sealed: the view's id) ─ ui/issues/show ─ POST /api/views {template: issues, props}
+Postgres views ─▶ Electric ─▶ the conversation
+  repo:   the views' follower loads what it shows (embeds.ts) ─▶ RepoView size="inline" (@smthrs/repo-view)
+  issues: IssuesView size="inline" (@smthrs/ui) over the issues the device synced
+  Full screen ─▶ the repository's own page (/owner/name/…) or its issues page (/owner/name/issues)
+  Back to chat on that page ─▶ the page the view was opened from
+```
+
+- **What the row keeps.** Only its props: `{ repo, ref?, kind?, path? }` for a repository's view (the default branch's root when it names no ref or path; a path the repository lists as a file is one, unless `kind` says), `{ repo }` for an issues view. Every device reads what they show from the repository itself, under its own access rules.
+- **A repository's view** is `@smthrs/repo-view`'s `RepoView` at `size="inline"`: the directory with its README, or the file. Before anyone cloned the repository, its root shows what GitHub says (its top folder and README); a deeper location says Not cloned. No component starts a load: `src/features/views/embeds.ts` follows the conversation the tab shows and loads each `repo` view's location as it arrives (`src/features/repo/embed.ts`, into the same file lists and files the repository's page reads, keyed by commit). Every link in it is the app's URL of a location, and a plain click opens it full screen.
+- **An issues view** is `IssuesView` at `size="inline"` over the issues this device synced of that repository, newest first; a row opens its issue. A repository this deployment doesn't sync lists nothing yet, with neither a spinner nor "No issues" (decision 0079). A person who may not read the issues sees sign in, or Not found.
+- **Full screen is the repository's own page** (ruling FE-9: "being able to full screen stuff in the chat or minimize it"): a repository's view opens its location's URL, an issues view `/owner/name/issues`, so a deep link to either is the same view at full size. The tab records which view it opened from which page.
+- **Back to chat minimizes.** A repository's pages and its issues page carry Back to chat, as every full-screen page does (`BackToChat`, `src/features/views/minimize.ts`). Opened from a view, it goes back to the page that shows that view and adds nothing. Opened any other way (a link, the address bar, the agent's `app/navigate`), it goes to the chat at once and leaves the repository there: the home conversation gets a `repo` view of the location, or an `issues` view, through the same flows, unless it shows that one already.
+
 ## Where a view runs
 
 Generated code never runs in the browser's JavaScript engine, and never with the person's credentials.
@@ -69,13 +91,14 @@ In ChatApi (`worker/Views.ts`, routed by `worker/Chat.ts`). Adding and moving ta
 | Route | Answers |
 |---|---|
 | `POST /api/views` `{ id, template: "form", props: { title, schema, submitLabel } }` | `202 { txid }`; `200` the same form again; `400 refused` for `no_fields` or `secret`; `413` over 8 KiB; the rest as for a page ([web pages](web-pages.md#the-views-table)) |
+| `POST /api/views` `{ id, template: "repo", props: { repo, ref?, kind?, path? } }` or `{ id, template: "issues", props: { repo } }` | `202 { txid }`; `200` the same view again; `400 invalid` for a name GitHub couldn't have (a reserved owner, more or fewer than two parts) or a path with an empty, `.` or `..` segment; `409 id_taken`; the rest as for a page |
 | `POST /api/views` `{ id, template: "generated", title, size, code, props, state }` | `202 { txid, interactions }`; `200 { txid: null, interactions }` the same module again, not rendered twice; `422 { code: "not_rendered", detail }` a module that fails its check or render, a state over 16 KiB, or HTML over 256 KiB; `413` over 96 KiB |
 | `POST /api/views/<id>/state` `{ moveId, revision, event: { name, arg? } }` | `200 { txid, revision }`; `200 { txid: null, revision }` the same move again; `409 { code: "stale", revision }`; `400 undeclared` an event the module doesn't declare as `state`; `404` no such generated view; `422` a move the module can't make, or whose state or HTML is over its bound; `401`, `403`, `413`, `503` |
 | `POST /api/questions` `{ …, source?: { viewId, event }, data? }` | as asking ([chat](chat.md)), and: `400` a view not in the question's conversation (never `404`, which the outbox would send again forever), an event the view doesn't take, or values its form doesn't; `409` a form already sent |
 
 ## The table
 
-`db/migrations/0052_agent_views.ts` adds to `views`: `title`, `size` (`inline` or `full`), `state`, `code`, `html`, `interactions`, `revision` and `updated_at`, and the templates `form` and `generated`, each with the columns it needs (a CHECK). `messages` gains `source` and `data`, on questions only. `view_moves` keeps each move by its id with the revision it made.
+`db/migrations/0063_app_template_views.ts` adds the templates `repo` and `issues`, which keep only their props, as a page does. `db/migrations/0052_agent_views.ts` adds to `views`: `title`, `size` (`inline` or `full`), `state`, `code`, `html`, `interactions`, `revision` and `updated_at`, and the templates `form` and `generated`, each with the columns it needs (a CHECK). `messages` gains `source` and `data`, on questions only. `view_moves` keeps each move by its id with the revision it made.
 
 ## The browser
 
@@ -88,7 +111,10 @@ In ChatApi (`worker/Views.ts`, routed by `worker/Chat.ts`). Adding and moving ta
 The modules the engine worker runs import no UI library (`units.test.ts` holds them to it): a worker has no DOM, and loading `@smthrs/ui` there stopped the engine worker from starting.
 | `src/features/views/schema.ts`, `rows.ts` | the `views` row (one flat struct, checked per template) and its reading by template |
 | `src/features/views/views.ts` | `queries.rowsIn` (a conversation's views, by id), `actions.move` |
-| `src/features/views/components/ConversationView.tsx` | a view in the conversation; `AgentView`, the form or generated view at either size |
+| `src/features/views/components/ConversationView.tsx` | a view in the conversation; `AgentView`, the form or generated view at either size; a repository's view (`RepoEmbed`, `src/features/repo/components/`) and its issues view (`IssuesEmbed`, `src/features/issues/components/`), each with Full screen |
+| `src/features/views/embeds.ts` | the follower that loads what each repository's view in the shown conversation renders |
+| `src/features/views/minimize.ts`, `components/BackToChat.tsx` | Back to chat on a repository's pages: back to where its view was opened, or the repository left in the home conversation |
+| `src/features/repo/embed.ts`, `embedView.ts` | a repository's view's load (`repo-embeds`, by view id) and what it shows, its links and its Full screen URL |
 | `src/screens/view/ViewScreen.tsx` | `/app/views/<id>` at full size |
 | `src/features/chat/actions.ts` | `ask(text, from?)`: a question from a view, in the view's own conversation |
 
@@ -98,9 +124,11 @@ None of these carries a schema, values, a description, a module, props, state, H
 
 | Record | Where | Fields |
 |---|---|---|
-| `views.form`, `views.render`, `views.move` | log, engine worker | `template`, `outcome` (`shown`, `refused`, `not_rendered`, `forbidden`, `unavailable`, `moved`, `stale`), `corrections` |
+| `views.form`, `views.render`, `views.move`, `views.template` | log, engine worker | `template`, `outcome` (`shown`, `refused`, `not_rendered`, `forbidden`, `unavailable`, `moved`, `stale`), `corrections` |
+| `views.minimize`, `smithers_views_minimized` | log, counter, tab | `returned` (`origin`, `chat`), `outcome` (`returned`, `kept`, `added`, `failed`), `template` |
+| `repo.embed.load`, `smithers_web_repo_embed_load_ms` | log, histogram, tab | `outcome` (`ready`, `preview`, `not_cloned`, `missing`, `failed`), `durationMs` |
 | `smithers_views_shown`, `smithers_renderer_corrections`, `smithers_view_moves` | counters, engine worker | the same |
-| `views.form.check`, `views.form.show`, `views.render.write`, `views.move` | spans | `smithers.view.size` |
+| `views.form.check`, `views.form.show`, `views.render.write`, `views.move`, `views.template.show`, `views.minimize` | spans | `smithers.view.size`, `template` |
 | `chat.view.add`, `chat.view.state` | log, ChatApi | `viewId`, `template`, `status`, `reason` (a refusal's, or the check's reason or limit), `revision`, `existing`; never a move's event, which a module names |
 | `chat.question` | log, ChatApi | `source: view` for a question sent from a view, never its event |
 | `smithers_view_requests`, `smithers_view_state_requests`, `smithers_view_renders` | counters, ChatApi | `status`; `outcome` and `door` (`add`, `state`) |
@@ -117,6 +145,13 @@ None of these carries a schema, values, a description, a module, props, state, H
 | `db/Database.test.ts` "0052_agent_views" | each template's columns, and `source` on questions only |
 | `src/device/*.test.ts` | `asking` v2, `chat-unsent` v2 and `views` v4, migrated or synced afresh |
 | `evals/cases.test.ts`, `checks.test.ts` | the four [agent eval](agent-evals.md) cases `form-ask`, `form-clone-no-url`, `board` and `view-loads-script`, calibrated |
+| `worker/AgentViews.test.ts` "a repository's view and its issues view" | ChatApi keeps a `repo` and an `issues` view's props alone, once by id, refuses a name GitHub couldn't have, a question naming one and a Guest |
+| `src/features/views/steps.test.ts` "ui/repo and ui/issues" | both flows add their view; ChatApi refusing its id or conversation is `TemplateRefused`, refusing the person `ViewForbidden`; a failure is tried again; a bad name never reaches ChatApi |
+| `src/features/views/templates.test.ts` | the app's own layer: `/repo` and `/issues` add their views, the follower loads the repository's; Back to chat returns to where a view was opened, keeps a view the home conversation shows, adds one it doesn't, and counts a signed-out failure |
+| `src/features/repo/embed.test.ts`, `embedView.test.ts` | a cloned repository's view at its root, a file, a directory, a ref it lacks, refs Code Storage couldn't list; one nobody cloned shown from GitHub, Not cloned deeper, Not found, About paused; links, Full screen URLs and Back to chat's target |
+| `db/Database.test.ts` "0063_app_template_views" | the two templates keep only their props; the others keep their rules |
+| `evals/cases.ts` `repo-show`, `issues-show` | shown a repository or its issues, the agent calls `ui/repo` or `ui/issues`, never `ui/render`, and stays on its page |
+| `e2e/repo-in-chat.spec.ts` | `/repo` shows a repository small in the chat, Full screen opens its page, Back to chat minimizes it back, once (on a deployment, in the run's own branch); a repository's URL minimizes into the chat (local); asked for a repository's issues, the agent shows its issues view, whose Full screen opens the issues page (scripted locally; live against a deployment's model) |
 | `e2e/forms.spec.ts` | scripted, two devices: submit once, sync and reload; live model: ask to clone without a URL, fill the repository form and see the next reply finish |
 | `e2e/generated-view.spec.ts` | scripted, two devices: play to a win, sync and reload; live model: ask for a board, see nine cells inline, open that view full screen, play a move and see it again inline |
 
@@ -129,4 +164,6 @@ The same specs also declare `member`, `ownConversation` and `liveModel` for thei
 - A move waits for ChatApi and Electric before the board changes; 0004 §6's instant local render (a realm in the tab) is not built.
 - The renderer's system prompt is hand-written, not generated from `@smthrs/ui`'s docs, and saves no `@smthrs/ui` version with the view.
 - The four form and view eval cases have no baseline, and the last saved run (`evals/results/agent-2026-10-23T21-24-27-007Z.json`) failed three: `board` (no `ui/render`), and the judge's checks of `form-ask` ("asks with the form") and `form-clone-no-url` ("acts").
-- The `ui/repo` and `ui/issues` templates of decision 0004 (Will, 2026-10-19 20:43: "It should have prebuilt templates too though such as our github view and our issues view") are not built; the agent shows a repository with `app/navigate` or `file/open` instead.
+- `repo-show` and `issues-show` have no baseline either: the deployment's model refused every call when they were written (2026-10-25).
+- A repository's view or issues view in a branch conversation, opened full screen by its URL rather than from the view, minimizes into the home conversation, not the branch's.
+- 0004 §7's view-state flows (`view/repo.open`, `view/repo.highlight` and the rest) aren't built: a repository's view keeps no state of its own; the agent shows lines with `file/open` on the repository's page ([files](files.md)).

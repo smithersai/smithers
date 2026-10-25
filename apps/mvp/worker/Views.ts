@@ -22,7 +22,9 @@ import {
   type FormValues,
   type FormWrite,
   type GeneratedWrite,
+  type IssuesWrite,
   type PageWrite,
+  type RepoWrite,
   StateWrite,
   ViewWrite,
 } from "../src/features/views/schema.ts"
@@ -52,6 +54,10 @@ import * as ViewRealm from "./ViewRealm.ts"
 // A `docs` view names a repository and a page's path (docs/features/docs.md#the-docs-view): ChatApi reads that page
 // from the repository's own docs index (worker/docs/Source.ts) and keeps its URL, title and at most 64 KiB of its
 // Markdown in the row, so a row never holds Markdown a client chose and every device shows it offline.
+//
+// A repository's view and its issues view (`repo`, `issues`; docs/features/views.md#a-repository-and-its-issues) keep
+// only their props, which name the repository and where the view opens: every device reads what they show from the
+// repository itself, under its own access rules.
 //
 // The agent's forms and generated views (docs/features/views.md) are added the same way. A form's schema must render
 // at least one field and ask for no secret (src/features/views/form.ts). A generated view's module runs here and only
@@ -138,6 +144,8 @@ const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe(
 /** What the route keeps of a view: its template's columns. */
 type Stored =
   | { readonly id: string; readonly template: PageWrite["template"]; readonly props: ViewProps }
+  | { readonly id: string; readonly template: "repo"; readonly props: RepoWrite["props"] }
+  | { readonly id: string; readonly template: "issues"; readonly props: IssuesWrite["props"] }
   | { readonly id: string; readonly template: "form"; readonly props: FormWrite["props"]; readonly state: unknown }
   | {
     readonly id: string
@@ -441,6 +449,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               stored = docsStored
             } else if (write.template === "form") {
               stored = { id: write.id, template: "form", props: write.props, state: { submitted: false } }
+            } else if (write.template === "repo") {
+              stored = { id: write.id, template: "repo", props: write.props }
+            } else if (write.template === "issues") {
+              stored = { id: write.id, template: "issues", props: write.props }
             } else if (write.template === "generated") {
               // The same add again is answered from the row, without rendering the module a second time.
               const again = { id: write.id, template: "generated", props: write.props, code: write.code } as const

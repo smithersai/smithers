@@ -151,3 +151,30 @@ export const emptyView: ViewRow = {
   signedIn: null,
   answered: false,
 }
+
+/**
+ * A repository's view in a conversation, as this tab loaded it (docs/features/views.md#a-repository-and-its-issues), by
+ * the view's id. One per view, in memory:
+ * - `loading` until the tab can tell what to show;
+ * - `ready`: a cloned repository at `revision` (`sha`), with the location's file list (`treeKey`) and the file it shows,
+ *   or the directory's README (`bodyKey`, `bodyPath`);
+ * - `preview`: a repository nobody cloned, at its root: what GitHub says of it (the about row) shows instead;
+ * - `not_cloned`: below the root of a repository nobody cloned, which only its full-screen page can clone;
+ * - `missing`: GitHub has no such repository, or the repository no such ref; `failed`: why it couldn't load.
+ */
+export const EmbedRow = Schema.Struct({
+  key: Schema.String,
+  repoId: Schema.String,
+  owner: Schema.String,
+  name: Schema.String,
+  kind: Schema.Literals(["tree", "blob"]),
+  path: Schema.String,
+  state: Schema.Literals(["loading", "ready", "preview", "not_cloned", "missing", "failed"]),
+  message: Schema.NullOr(Schema.String),
+  revision: Schema.NullOr(Schema.String),
+  sha: Schema.NullOr(Schema.String),
+  treeKey: Schema.NullOr(Schema.String),
+  bodyKey: Schema.NullOr(Schema.String),
+  bodyPath: Schema.NullOr(Schema.String),
+})
+export type EmbedRow = typeof EmbedRow.Type

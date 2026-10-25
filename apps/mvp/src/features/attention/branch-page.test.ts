@@ -22,6 +22,7 @@ import { BranchScreen } from "../../screens/branch/BranchScreen"
 import { branchRenderer, renderNoticeHistory } from "../../screens/branch/offline-render"
 import { Todos } from "../todos/todos"
 import { Attention } from "./attention"
+import { Views } from "../views/views"
 
 test("a branch page renders its shared inline toast stack below the header", async () => {
   const runtime = openTestApp({ answers: false }, { actor: { subject: { kind: "person", id: "person-member" }, role: "admin" } })
@@ -51,8 +52,9 @@ test("a branch page renders its shared inline toast stack below the header", asy
     await router.load()
     expect(router.state.matches.map((match) => match.routeId)).toContain(route.id)
     const personalModel = await runtime.runPromise(Effect.service(PersonalModel))
-    const html = branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos })(router)
-    const services = { files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos }
+    const views = await runtime.runPromise(Effect.service(Views))
+    const html = branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views })(router)
+    const services = { files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views }
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.all([
       sql`INSERT INTO notifications (recipient, subject, kind, state, mine, title, href, occurred_at, updated_at)
         SELECT 'person-member', 'main:overflow:' || n, 'main', 'update', false, 'Old update', '/acme/widgets', now() - interval '1 day', now() - interval '1 day'

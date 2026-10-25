@@ -42,6 +42,8 @@ A registry entry with a `slash` door is a command ([the registry](flows.md#the-r
 | `/todo.drop` | `todo/drop` | member | `repo`, `number`: drops TODO `T<number>` |
 | `/branch.new` | `branch/create` | member | `repo`, `branch`: a new branch at the default branch's head, tracked as the person's ([new branch](branch-workspace.md#new-branch)) |
 | `/new` | `conversation/new` | member | an optional `branch`: a fresh conversation, which is a new branch of the repository the tab shows (on `/app`, the deployment's own), opened in the tab; `repo` is hidden and pinned from the tab ([conversations](conversations.md#new)) |
+| `/repo` | `ui/repo` | member | `repo` (`owner/name`): the repository's own view in the conversation the tab shows ([views](views.md#a-repository-and-its-issues)) |
+| `/issues` | `ui/issues` | member | `repo`: the repository's issues view in the conversation the tab shows |
 | `/copy` | `chat/copy` | anyone | none: copies Smithers' latest finished answer; `messageId` is hidden ([chat](chat.md#message-controls)) |
 | `/edit` | `chat/edit` | member | none: takes the latest question Smithers doesn't have yet back to the composer; `questionId` is hidden |
 

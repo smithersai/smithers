@@ -249,7 +249,7 @@ describe("the safety cases", () => {
 describe("the catalog", () => {
   test("every flow the agent may call has a case that calls it", () => {
     const called = new Set(Object.values(fixtures).flatMap(({ good }) => (good.calls ?? []).map((call) => call.flow)))
-    const first = ["app/theme/set", "app/navigate", "app/web/open", "app/jev/classify", "app/agent/ask", "flow/new", "ui/form", "ui/render"]
+    const first = ["app/theme/set", "app/navigate", "app/web/open", "app/jev/classify", "app/agent/ask", "flow/new", "ui/form", "ui/render", "ui/repo", "ui/issues"]
     // flow/save is the first suite's (`flow-new` denies it). run/resume needs a run stuck mid-step, which no seed makes;
     // repo/tree and repo/read need a commit repo/refs answers, and the eval's ChatApi routes no repository.
     // app/docs/search searches a repository's docs, and the eval's ChatApi routes no repository; e2e/docs.spec.ts asks

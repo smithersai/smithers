@@ -1,6 +1,8 @@
 import type { Interactions } from "@smthrs/views"
 import { Context, Effect, Layer } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
+import type { AppTemplate } from "./contract"
+import { type Minimized, minimize, opened } from "./minimize"
 import { SHOWING } from "./schema"
 import { ViewsStore } from "./store"
 
@@ -35,6 +37,13 @@ export interface ViewsActions {
    * board changes nothing. Resolves once the flow has answered.
    */
   readonly move: (viewId: string, revision: number, event: Interactions.Event) => Promise<void>
+  /**
+   * Back to chat on a repository's or its issues' full-screen page: the path to go to now. The page the view was opened
+   * from, or the chat, with the repository left in the home conversation in the background (src/features/views/minimize.ts).
+   */
+  readonly minimize: (target: Minimized) => string
+  /** A repository's or its issues' view opened full screen from the page at `returnTo`: Back to chat returns there. */
+  readonly opened: (viewId: string, template: AppTemplate, repo: string, returnTo: string) => void
 }
 
 /** Shows the view with `viewId` full screen in this tab: the one row of `showing`. */
@@ -68,7 +77,9 @@ export class Views extends Context.Service<Views, { readonly queries: ViewsQueri
     Views,
     Effect.gen(function* () {
       const store = yield* ViewsStore
-      const run = Effect.runPromiseWith(yield* Effect.context<ViewsStore | FlowDispatch>())
+      const context = yield* Effect.context<ViewsStore | FlowDispatch>()
+      const run = Effect.runPromiseWith(context)
+      const sync = Effect.runSyncWith(context)
       return Views.of({
         queries: {
           shown: store.shown.tanstack,
@@ -79,6 +90,8 @@ export class Views extends Context.Service<Views, { readonly queries: ViewsQueri
         actions: {
           show: (viewId, conversationId) => run(Effect.asVoid(show(viewId, conversationId))),
           move: (viewId, revision, event) => run(move(viewId, revision, event)),
+          minimize: (target) => sync(minimize(target)),
+          opened: (viewId, template, repo, returnTo) => sync(opened(viewId, template, repo, returnTo)),
         },
       })
     }),

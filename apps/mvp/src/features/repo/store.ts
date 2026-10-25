@@ -3,8 +3,8 @@ import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, Duration, Effect, FiberHandle, Layer, Option, type Schedule, Stream } from "effect"
 import { AuthStore } from "../auth/store"
 import { REPOSITORIES_SHAPE_ROUTE } from "./contract"
-import { aboutQuery, fileQuery, manifestQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries"
-import { AboutRow, BlobRow, CloneRow, emptyView, HeadRow, RefsRow, TreeRow, VIEW, ViewRow } from "./rows"
+import { aboutQuery, embedsQuery, fileQuery, manifestQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries"
+import { AboutRow, BlobRow, CloneRow, EmbedRow, emptyView, HeadRow, RefsRow, TreeRow, VIEW, ViewRow } from "./rows"
 import { Repository } from "./schema"
 
 // The repository feature's state on this tab (docs/features/repo.md#the-browser): the repositories Postgres has, synced
@@ -51,6 +51,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
   const refs = yield* Collection.local<RefsRow, string>({ id: "repo-refs", schema: RefsRow, getKey: (row) => row.key })
   const abouts = yield* Collection.local<AboutRow, string>({ id: "repo-abouts", schema: AboutRow, getKey: (row) => row.key })
   const heads = yield* Collection.local<HeadRow, string>({ id: "repo-heads", schema: HeadRow, getKey: (row) => row.key })
+  const embeds = yield* Collection.local<EmbedRow, string>({ id: "repo-embeds", schema: EmbedRow, getKey: (row) => row.key })
   const view = yield* Collection.local<ViewRow, string>({
     id: "repo-view",
     schema: ViewRow,
@@ -87,8 +88,10 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     refs,
     abouts,
     heads,
+    embeds,
     view,
     viewState: yield* viewQuery(view, repositories, clones, abouts),
+    embedsState: yield* embedsQuery(embeds, repositories, abouts, trees, blobs),
     aboutState: yield* aboutQuery(view, abouts),
     manifestState: yield* manifestQuery(view, blobs),
     refsState: yield* refsQuery(view, refs),
@@ -113,6 +116,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
  * - `refs`: the branches and tags this tab loaded, by repository and sync.
  * - `abouts`: what GitHub says of each repository this tab opened, by id.
  * - `heads`: the ready heads RepoApi's refs named for repositories whose rows Electric hadn't delivered ready, by id.
+ * - `embeds`: each repository's view in a conversation this tab loaded, by the view's id (src/features/repo/embed.ts).
  * - `view`: where the routed view is, one row.
  * - the live queries frontends read (queries.ts), `loader`, `scope`, and the settings.
  */

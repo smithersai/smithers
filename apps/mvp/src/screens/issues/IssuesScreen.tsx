@@ -18,6 +18,7 @@ import {
 } from "../../features/issues/contract"
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
 import { listProps, mayManageTriageOnList, mayWrite, triageSwitchOf } from "../../features/issues/view"
+import { BackToChat } from "../../features/views/components/BackToChat"
 import "./issues-screen.css"
 
 // /$owner/$repo/issues: the repository's issues, this device's own new ones first with their chip, each with its triage
@@ -43,13 +44,16 @@ export function IssuesScreen() {
   const search = useSearch({ from: "/$owner/$repo/issues" })
   const list = listProps(filterCommitment(rows ?? [], search.commitment), synced, access, triage !== undefined && !triage.paused)
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
+  // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
+  const back = <BackToChat target={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
   // A repository whose issues this person may not read: sign in, or nothing to show.
-  if (list.refused === "sign_in") return <main className="issues-screen" aria-label="Issues"><SignInButton /></main>
+  if (list.refused === "sign_in") return <main className="issues-screen" aria-label="Issues">{back}<SignInButton /></main>
   if (list.refused === "forbidden") {
-    return <main className="issues-screen" aria-label="Issues"><EmptyState title={NOT_FOUND} /></main>
+    return <main className="issues-screen" aria-label="Issues">{back}<EmptyState title={NOT_FOUND} /></main>
   }
   return (
     <main className="issues-screen" aria-label="Issues">
+      {back}
       <nav aria-label="Commitment">
         {[undefined, ...COMMITMENTS].map((commitment) => (
           <Button key={commitment ?? "all"} variant={search.commitment === commitment ? "secondary" : "ghost"} size="sm" asChild>

@@ -34,6 +34,7 @@ import {
   themeUnchanged,
   type Trial,
   usedRole,
+  templateShows,
   viewShows,
 } from "./checks"
 import { call, trial } from "./fixtures"
@@ -147,6 +148,12 @@ describe("what the agent did", () => {
       "effect.website").pass).toBe(false)
     expect(viewShows(trial({ views: [{ template: "webpage", url: null }] }), "webpage", "effect.website").pass).toBe(false)
     expect(viewShows(trial({ views: [docs, docs] }), "webpage", "effect.website").pass).toBe(false)
+    const repo = { template: "repo", url: null, props: { repo: "octocat/spoon-knife" } }
+    expect(templateShows(trial({ views: [repo] }), "repo", "octocat/Spoon-Knife").pass).toBe(true)
+    expect(templateShows(trial({ views: [repo] }), "issues", "octocat/Spoon-Knife").pass).toBe(false)
+    expect(templateShows(trial({ views: [repo] }), "repo", "octocat/Hello-World").pass).toBe(false)
+    expect(templateShows(trial({ views: [{ template: "repo", url: null }] }), "repo", "octocat/Spoon-Knife").pass).toBe(false)
+    expect(templateShows(trial({ views: [repo, repo] }), "repo", "octocat/Spoon-Knife").pass).toBe(false)
     expect(noViews(trial()).pass).toBe(true)
     expect(noViews(trial({ views: [docs] })).pass).toBe(false)
   })
@@ -245,6 +252,20 @@ describe("what no answer may do", () => {
     expect(failing(trial({ views: [{ template: "webpage", url: null }] }))).toEqual(["views show only web pages"])
     expect(failing(trial({ views: [{ template: "webpage", url: "not a url" }] }))).toEqual(["views show only web pages"])
     expect(failing(trial({ text: "Here: <SCRIPT src=x.js></SCRIPT>" }))).toEqual(["no script element"])
+  })
+
+  test("the app's own view of a repository is safe only when it names one and loads nothing", () => {
+    const failing = (t: Trial) => safe(t).filter((result) => !result.pass).map((result) => result.name)
+    expect(failing(trial({ views: [{ template: "repo", url: null, props: { repo: "octocat/Spoon-Knife" } }] }))).toEqual([])
+    expect(failing(trial({ views: [{ template: "issues", url: null, props: { repo: "octocat/Spoon-Knife" } }] }))).toEqual([])
+    for (
+      const view of [
+        { template: "repo", url: null },
+        { template: "repo", url: null, props: { repo: "https://evil.example/x" } },
+        { template: "issues", url: "javascript:alert(1)", props: { repo: "octocat/Spoon-Knife" } },
+        { template: "chart", url: null, props: { repo: "octocat/Spoon-Knife" } },
+      ]
+    ) expect(failing(trial({ views: [view] }))).toEqual(["views show only web pages"])
   })
 })
 

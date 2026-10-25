@@ -4,7 +4,7 @@ import { Interactions } from "@smthrs/views"
 import { Schema } from "effect"
 import { MAX_SUBMIT_LABEL, VIEW_SIZES } from "./contract"
 import { FORM_REFUSALS } from "./form"
-import { BoundedObject, ViewTitle } from "./schema"
+import { BoundedObject, IssuesProps, RepoProps, ViewTitle } from "./schema"
 
 // The agent talks through UI (decision 0004, docs/features/views.md): three flows over the conversation's views.
 //
@@ -17,6 +17,10 @@ import { BoundedObject, ViewTitle } from "./schema"
 //        renders it in its presentation realm, and a failure goes back to the renderer, at most twice
 //   view/set-state { viewId, revision, event }: one move in a generated view, a person's click or the agent's
 //     view/set-state/send: ChatApi runs the module's `reduce` from the state it keeps
+//   ui/repo { repo, ref?, kind?, path? }: a repository's own view in the chat, small, full screen at its own URL
+//     ui/repo/plan (sealed: the view's id) ─▶ ui/repo/show: ChatApi adds the `repo` view
+//   ui/issues { repo }: a repository's issues view in the chat, full screen at its issues page
+//     ui/issues/plan (sealed: the view's id) ─▶ ui/issues/show: ChatApi adds the `issues` view
 //
 // Each runs on this device's engine (placement `client`); what its steps run on is injected
 // (src/features/views/steps.ts), so only an engine's host imports that.
@@ -45,6 +49,9 @@ export class ViewStale extends Schema.TaggedError<ViewStale>()("@smthrs/mvp/view
 /** The view isn't one that takes this move: no such generated view, or an event it doesn't declare as `state`. */
 export class MoveRefused extends Schema.TaggedError<MoveRefused>()("@smthrs/mvp/views/MoveRefused", {}) {}
 
+/** ChatApi refused the repository's view or its issues view: its id is another view's. */
+export class TemplateRefused extends Schema.TaggedError<TemplateRefused>()("@smthrs/mvp/views/TemplateRefused", {}) {}
+
 /**
  * How long a step keeps trying while ChatApi is unreachable: 500 ms doubling to 8 s, for at most 2 minutes. A refusal
  * is final.
@@ -60,6 +67,7 @@ export const VIEW_RETRY = RetryPolicy.make({
     "@smthrs/mvp/views/ViewNotRendered",
     "@smthrs/mvp/views/ViewStale",
     "@smthrs/mvp/views/MoveRefused",
+    "@smthrs/mvp/views/TemplateRefused",
   ],
 })
 
@@ -168,9 +176,9 @@ export const RenderView = Flow.make("ui/render", {
   description: "Show complex information or something to play with as a view in the chat: a comparison, a table, " +
     "a chart of bars, a board or a game such as tic-tac-toe. Describe what to show in description; pass the facts " +
     "to show as data. A renderer writes it; the person can open it full screen. size \"inline\" (the default) shows " +
-    "it in the message, \"full\" opens it full size. Keep a plain answer as text, and prefer a form (ui/form) to ask " +
-    "for input. A move in a game is a click in the view; no call is needed. Answers { viewId, title, size, " +
-    "revision, interactions }.",
+    "it in the message, \"full\" opens it full size. Keep a plain answer as text, prefer a form (ui/form) to ask " +
+    "for input, and show a repository with ui/repo and its issues with ui/issues. A move in a game is a click in " +
+    "the view; no call is needed. Answers { viewId, title, size, revision, interactions }.",
   modelInvocable: true,
   payload: renderPayload,
   success: ViewShown,
@@ -209,4 +217,82 @@ export const SetViewState = Flow.make("view/set-state", {
   success: StateSet,
   error: Schema.Union([ViewStale, MoveRefused, ViewForbidden, ViewUnavailable]),
   body: Node.capture({ send: SendState.name }, (move) => SendState.call(move)),
+}).annotate(Flow.Placement, Placement.client())
+
+/**
+ * The branch conversation the person's tab showed when they asked (decision 0013 §1); the home conversation when absent.
+ * An agent's call goes to its answer's conversation instead, whatever this says (src/features/views/conversation.ts).
+ */
+const conversationField = { conversationId: Schema.optional(Schema.String.check(Schema.isUUID())) }
+
+const repoPayload = { ...RepoProps.fields, ...conversationField }
+
+/** A repository's view to add, with the id it gets. */
+export const PlannedRepo = Schema.Struct({ viewId: Schema.String, ...repoPayload })
+export type PlannedRepo = typeof PlannedRepo.Type
+
+/** What `ui/repo` and `ui/issues` answer: the view they added. */
+export const TemplateShown = Schema.Struct({ viewId: Schema.String, shown: Schema.Literals(["repo", "issues"]) })
+export type TemplateShown = typeof TemplateShown.Type
+
+const templateErrors = Schema.Union([TemplateRefused, ViewForbidden, ViewUnavailable])
+
+/** The step: picks the view's id. Sealed, so a resumed run adds the very same view. */
+export const PlanRepo = Action.make("ui/repo/plan", { payload: repoPayload, success: PlannedRepo, tier: "sealed" })
+
+/** The step: adds the repository's view to the conversation through ChatApi. */
+export const ShowRepoView = Action.make("ui/repo/show", {
+  payload: PlannedRepo.fields,
+  success: TemplateShown,
+  error: templateErrors,
+  retryPolicy: VIEW_RETRY,
+})
+
+/** `ui/repo`: the agent, or a person's `/repo`, shows a repository's own view in the chat. */
+export const ShowRepo = Flow.make("ui/repo", {
+  description: "Show a repository in the chat as its own repository view: small in the message, and the person can " +
+    "open it full screen. repo is owner/name. ref (a branch, tag or commit) and path (a directory or file from the " +
+    "root) are optional: the default branch's root otherwise. Use it whenever the person asks to see or show a " +
+    "repository, a folder or a file of one; never ui/render for a repository. It doesn't move the person's tab: to " +
+    "take them to the repository's page instead, use app/navigate. Answers { viewId, shown: \"repo\" }.",
+  modelInvocable: true,
+  payload: repoPayload,
+  success: TemplateShown,
+  error: templateErrors,
+  body: Node.capture({ plan: PlanRepo.name, show: ShowRepoView.name }, (repo) =>
+    PlanRepo.call(repo).pipe(
+      Node.bindPlanned(Node.capture({ show: ShowRepoView.name }, (planned) => ShowRepoView.call(planned))),
+    )),
+}).annotate(Flow.Placement, Placement.client())
+
+const issuesPayload = { ...IssuesProps.fields, ...conversationField }
+
+/** A repository's issues view to add, with the id it gets. */
+export const PlannedIssues = Schema.Struct({ viewId: Schema.String, ...issuesPayload })
+export type PlannedIssues = typeof PlannedIssues.Type
+
+/** The step: picks the view's id. Sealed, so a resumed run adds the very same view. */
+export const PlanIssues = Action.make("ui/issues/plan", { payload: issuesPayload, success: PlannedIssues, tier: "sealed" })
+
+/** The step: adds the repository's issues view to the conversation through ChatApi. */
+export const ShowIssuesView = Action.make("ui/issues/show", {
+  payload: PlannedIssues.fields,
+  success: TemplateShown,
+  error: templateErrors,
+  retryPolicy: VIEW_RETRY,
+})
+
+/** `ui/issues`: the agent, or a person's `/issues`, shows a repository's issues view in the chat. */
+export const ShowIssues = Flow.make("ui/issues", {
+  description: "Show a repository's issues in the chat as its issues view: small in the message, and the person can " +
+    "open the whole list. repo is owner/name. Use it whenever the person asks to see or show a repository's issues; " +
+    "never ui/render for them. Answers { viewId, shown: \"issues\" }.",
+  modelInvocable: true,
+  payload: issuesPayload,
+  success: TemplateShown,
+  error: templateErrors,
+  body: Node.capture({ plan: PlanIssues.name, show: ShowIssuesView.name }, (issues) =>
+    PlanIssues.call(issues).pipe(
+      Node.bindPlanned(Node.capture({ show: ShowIssuesView.name }, (planned) => ShowIssuesView.call(planned))),
+    )),
 }).annotate(Flow.Placement, Placement.client())

@@ -2,7 +2,7 @@ import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Scope, Semaphore } from "effect"
 import { VIEWS_SHAPE_ROUTE } from "./contract"
-import { SHOWING, Showing, View } from "./schema"
+import { OPENED, Opened, SHOWING, Showing, View } from "./schema"
 
 // The conversation's views on this tab (docs/features/web-pages.md#the-browser, decision 0004 §8): the views Postgres
 // has, synced by Electric and kept on the device, like the messages; and which one this tab shows full screen. The
@@ -45,7 +45,8 @@ type Shown<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>
  * The views' state for one tab:
  * - `views`: the conversation's views in Postgres, synced by Electric and kept on the device; read-only;
  * - `showing`: the view the full-screen route shows, in memory;
- * - `shown`: that view, once the device has it.
+ * - `shown`: that view, once the device has it;
+ * - `opened`: the repository or issues view this tab opened full screen, and the page it was on, in memory.
  */
 export class ViewsStore extends Context.Service<
   ViewsStore,
@@ -53,6 +54,10 @@ export class ViewsStore extends Context.Service<
     readonly views: ElectricCollection.ElectricCollection<View>
     readonly showing: Collection.Collection<Showing, string>
     readonly shown: Shown<typeof shownQuery>
+    /** Which repository or issues view this tab opened full screen, and from which page (src/features/views/minimize.ts). */
+    readonly opened: Collection.Collection<Opened, string>
+    /** Where work an action starts runs, closed with the store. */
+    readonly scope: Scope.Scope
     /**
      * A branch conversation's views (decision 0013 §1), synced and kept on the device like the home conversation's
      * `views`: opened on first use, then the same collection for as long as the store lives.
@@ -76,7 +81,7 @@ export class ViewsStore extends Context.Service<
           schema: View,
           getKey: (row) => row.id,
           syncMode: "eager",
-          persist: { schemaVersion: 4 },
+          persist: { schemaVersion: 5 },
           shape: {
             url: `${config.origin}${VIEWS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -88,6 +93,12 @@ export class ViewsStore extends Context.Service<
           schema: Showing,
           getKey: (row) => row.id,
           initialData: [{ id: SHOWING, viewId: null, conversationId: null }],
+        })
+        const openedFrom = yield* Collection.local<Opened, string>({
+          id: "views-opened",
+          schema: Opened,
+          getKey: (row) => row.id,
+          initialData: [{ id: OPENED, viewId: null, template: null, repo: null, returnTo: null }],
         })
         const shown = yield* shownQuery(views, showing)
         const rows = yield* rowsQuery(views)
@@ -105,7 +116,7 @@ export class ViewsStore extends Context.Service<
               schema: View,
               getKey: (row) => row.id,
               syncMode: "eager",
-              persist: { schemaVersion: 4 },
+              persist: { schemaVersion: 5 },
               shape: {
                 url: `${config.origin}${VIEWS_SHAPE_ROUTE}?conversation=${encodeURIComponent(conversationId)}`,
                 columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -132,6 +143,8 @@ export class ViewsStore extends Context.Service<
           views,
           showing,
           shown,
+          opened: openedFrom,
+          scope,
           forConversation,
           shownIn: (conversationId) => shownBy.get(conversationId),
           rowsIn: (conversationId) => (conversationId === undefined ? undefined : rowsBy.get(conversationId)) ?? rows,

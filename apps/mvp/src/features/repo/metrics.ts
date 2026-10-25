@@ -78,3 +78,12 @@ export const aboutLoadMs = Metric.histogram("smithers_web_repo_about_load_ms", {
   description: "Milliseconds what GitHub says of a repository took to load, by outcome",
   boundaries: loadBoundaries,
 })
+
+/**
+ * Milliseconds a repository's view in a conversation took to load what it shows, by `outcome`: `ready`, `preview`,
+ * `not_cloned`, `missing` or `failed` (src/features/repo/embed.ts).
+ */
+export const embedLoadMs = Metric.histogram("smithers_web_repo_embed_load_ms", {
+  description: "Milliseconds a repository's view in a conversation took to load, by outcome",
+  boundaries: loadBoundaries,
+})

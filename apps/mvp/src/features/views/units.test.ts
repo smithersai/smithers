@@ -4,7 +4,9 @@ import { readFileSync } from "node:fs"
 import { describe, expect, test } from "vitest"
 import { acceptedValues, formRefusal } from "./form"
 import { readWritten, rendererCorrection, rendererTask, TIC_TAC_TOE } from "./renderer"
-import { formOf, generatedOf, pageOf, type ViewRow } from "./rows"
+import { Schema } from "effect"
+import { formOf, generatedOf, issuesOf, pageOf, repoOf, type ViewRow } from "./rows"
+import { IssuesProps, RepoProps, View } from "./schema"
 
 const row = (overrides: Partial<ViewRow>): ViewRow => ({
   id: "v",
@@ -37,6 +39,56 @@ describe("a row by its template", () => {
     expect(generatedOf(row({ template: "generated", html: "<p></p>" }))?.interactions).toEqual({})
     expect(generatedOf(row({ template: "generated", html: "" }))).toBeUndefined()
     expect(generatedOf(row({}))).toBeUndefined()
+  })
+})
+
+describe("a repository's view and its issues view", () => {
+  test("read their props by template, and nothing as another", () => {
+    const repo = { repo: "octocat/Spoon-Knife", path: "README.md", kind: "blob" }
+    expect(repoOf(row({ template: "repo", props: repo }))).toEqual(repo)
+    expect(repoOf(row({}))).toBeUndefined()
+    expect(issuesOf(row({ template: "issues", props: { repo: "octocat/Spoon-Knife" } }))).toEqual({ repo: "octocat/Spoon-Knife" })
+    expect(issuesOf(row({ template: "repo", props: repo }))).toBeUndefined()
+    expect(pageOf(row({ template: "repo", props: repo }))).toEqual({ url: "" })
+  })
+
+  test("name a repository GitHub could have, and a path from its root", () => {
+    const repoTakes = Schema.is(RepoProps)
+    expect(repoTakes({ repo: "octocat/Spoon-Knife" })).toBe(true)
+    expect(repoTakes({ repo: "octocat/Spoon-Knife", ref: "feature/x", kind: "tree", path: "docs/guide" })).toBe(true)
+    expect(repoTakes({ repo: "octocat/Spoon-Knife", path: "" })).toBe(true)
+    for (
+      const refused of [
+        { repo: "octocat" },
+        { repo: "a/b/c" },
+        { repo: "app/widgets" },
+        { repo: "/b" },
+        { repo: "octocat/Spoon-Knife", path: "docs//guide" },
+        { repo: "octocat/Spoon-Knife", path: "./README.md" },
+        { repo: "octocat/Spoon-Knife", path: "docs/../.." },
+        { repo: "octocat/Spoon-Knife", ref: "" },
+        { repo: "octocat/Spoon-Knife", ref: "two words" },
+      ]
+    ) expect([refused, repoTakes(refused)]).toEqual([refused, false])
+    expect(Schema.is(IssuesProps)({ repo: "octocat/Spoon-Knife" })).toBe(true)
+    expect(Schema.is(IssuesProps)({ repo: "octocat/Spoon-Knife/extra" })).toBe(false)
+  })
+
+  test("a row the device keeps holds its template's props", () => {
+    const base = {
+      id: "v",
+      position: 1,
+      createdAt: "2026-10-25T00:00:00Z",
+      title: null,
+      size: "inline",
+      state: null,
+      html: null,
+      interactions: null,
+      revision: 0,
+    }
+    expect(Schema.is(View)({ ...base, template: "repo", props: { repo: "octocat/Spoon-Knife" } })).toBe(true)
+    expect(Schema.is(View)({ ...base, template: "issues", props: { repo: "octocat/Spoon-Knife" } })).toBe(true)
+    expect(Schema.is(View)({ ...base, template: "repo", props: { url: "https://example.com/" } })).toBe(false)
   })
 })
 

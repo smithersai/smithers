@@ -92,6 +92,7 @@ import { PersonalModel, type PersonalModelView } from "./features/personal-model
 import { PersonalModelStore } from "./features/personal-model/store"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
 import { Theme, type ThemeView } from "./features/theme/theme"
+import { embedsLayer } from "./features/views/embeds"
 import { ViewsStore } from "./features/views/store"
 import { Views, type ViewsView } from "./features/views/views"
 import { type WebHost, WebTab } from "./features/web/actions"
@@ -230,6 +231,8 @@ export const appLayer = <S = never>(
     Docs.layer.pipe(Layer.provide(DocsStore.layer)),
     Commands.layer,
     Views.layer,
+    // The repository and issues views in the conversation the tab shows: what each renders, loaded as it arrives.
+    embedsLayer,
     Web.layer,
     // Agent status, and the personal feed beside it (decision 0009): the one toast stack and the list behind `+N`.
     Layer.merge(Status.layer, Attention.layer),
