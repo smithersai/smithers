@@ -1,7 +1,9 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, type Scope, Stream } from "effect"
+import { Context, Effect, Layer, Metric, type Scope, Stream } from "effect"
 import { MY_CONVERSATIONS_SHAPE_ROUTE } from "./contract"
+import { observeShape } from "../issues/shapeSync"
+import { listUpdates, shapeTransitions } from "./metrics"
 import { landed, listOf } from "./list"
 import { Listed, Mine, Pending, SEARCH, Search } from "./schema"
 
@@ -56,6 +58,7 @@ export class ConversationsStore extends Context.Service<
             columnMapper: ElectricCollection.snakeCamelMapper(),
           },
         })
+        yield* observeShape(mine.sync, "conversations.shape.sync", shapeTransitions).pipe(Effect.forkIn(scope, { startImmediately: true }))
         const pending = yield* Collection.persisted<Pending, string>({
           id: "conversation-pending",
           schema: Pending,
@@ -75,11 +78,13 @@ export class ConversationsStore extends Context.Service<
         })
 
         // The list: worked out again whenever a row, an act or the search changes.
+        let projection: string | undefined
         const work = Effect.gen(function* () {
           const rows = yield* mine.toArray
           const acts = yield* pending.toArray
           // The search always holds its one row.
-          const next = listOf(rows, acts, (yield* search.toArray)[0]!)
+          const showing = (yield* search.toArray)[0]!
+          const next = listOf(rows, acts, showing)
           const keep = new Set(next.map((row) => row.conversationId))
           const before = new Map((yield* list.toArray).map((row) => [row.conversationId, row]))
           const gone = [...before.keys()].filter((id) => !keep.has(id))
@@ -90,6 +95,23 @@ export class ConversationsStore extends Context.Service<
             else if ((Object.keys(row) as ReadonlyArray<keyof Listed>).some((field) => old[field] !== row[field])) {
               yield* list.update(row.conversationId, (draft) => void Object.assign(draft, row))
             }
+          }
+          // Counts distinguish a pending shape, missing personal rows and a filtered list without recording content.
+          const fields = {
+            syncedRows: rows.length,
+            pendingRows: acts.length,
+            listedRows: next.length,
+            archived: showing.archived,
+            loaded: showing.loaded,
+          }
+          const snapshot = JSON.stringify(fields)
+          if (snapshot !== projection) {
+            projection = snapshot
+            yield* Effect.gen(function* () {
+              yield* Metric.update(Metric.withAttributes(listUpdates, { archived: String(showing.archived), loaded: String(showing.loaded) }), 1)
+              yield* Effect.annotateCurrentSpan(fields)
+              yield* Effect.logInfo("conversations.list").pipe(Effect.annotateLogs(fields))
+            }).pipe(Effect.withSpan("conversations.list"))
           }
           const done = landed(rows, acts)
           if (done.length > 0) yield* pending.delete([...done])

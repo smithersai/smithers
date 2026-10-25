@@ -11,6 +11,7 @@ import { DEFAULT_REPOSITORY } from "../../../worker/SignIn.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { dispatches } from "../../flows/dispatch"
 import { failingWorker, nodeDevice, type NodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { read } from "../../test/otlp"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
 import { Chat } from "../chat/chat"
@@ -130,6 +131,57 @@ describe("your conversations", () => {
     expect(laptop.list()).toEqual(["feature/one"])
     await until(() => expect(laptop.pending()).toEqual([]))
     await until(() => expect(phone.list()).toEqual(["feature/one"]))
+
+    // A blank screen must be diagnosable from the shape's outcome and the list's counts.
+    // Dispose the devices to flush their real OTLP exporters before inspecting the server's receipts.
+    await phone.runtime.dispose()
+    await laptop.runtime.dispose()
+    const records = read(api.telemetry)
+    expect(records.log("conversations.shape.sync")).toContainEqual(
+      expect.objectContaining({ attributes: expect.objectContaining({ phase: "sent", durationMs: expect.any(Number) }) }),
+    )
+    expect(records.log("conversations.shape.sync")).toContainEqual(
+      expect.objectContaining({ attributes: expect.objectContaining({ phase: "ready", durationMs: expect.any(Number) }) }),
+    )
+    expect(records.point("smithers_conversation_shape_transitions", { phase: "ready" })?.value).toBeGreaterThan(0)
+    expect(records.point("smithers_conversation_list_updates", { archived: "false", loaded: "true" })?.value).toBeGreaterThan(0)
+    const projected = records.log("conversations.list").map(row => row.attributes)
+    expect(projected).toContainEqual(expect.objectContaining({ syncedRows: 0, listedRows: 0, loaded: false }))
+    expect(projected).toContainEqual(expect.objectContaining({ syncedRows: 1, pendingRows: 0, listedRows: 1, archived: false }))
+    expect(projected).toContainEqual(expect.objectContaining({ syncedRows: 1, listedRows: 0, archived: false }))
+    expect(projected).toContainEqual(expect.objectContaining({ syncedRows: 1, listedRows: 1, archived: true }))
+    expect(records.span("conversations.list")).toContainEqual(
+      expect.objectContaining({ attributes: expect.objectContaining({ syncedRows: 1, listedRows: 1 }) }),
+    )
+    // No repository, branch name or search is added to these diagnostics.
+    expect(JSON.stringify([records.log("conversations.shape.sync"), projected])).not.toContain("feature/one")
+  }, WITHIN)
+
+  test("leaving a pending branch page still lists its conversation on both devices after tracking settles", async () => {
+    const api = await openApi()
+    const laptop = await openDevice(api, nodeDevice({ agent: api }), false)
+    const phone = await openDevice(api, nodeDevice({ agent: api }), false)
+    const release = api.branches.github.hold()
+    const navigation = new AbortController()
+    const opening = laptop.branch.actions.open("octo", "hello", "feature/one", navigation.signal)
+    try {
+      // Pending branch chrome can already name the branch before this real forge request answers.
+      await until(() => expect(api.branches.github.seen.length).toBeGreaterThan(0))
+      navigation.abort()
+      await laptop.branch.actions.leave()
+      for (const device of [laptop, phone]) {
+        device.branch.conversations.queries.list.startSyncImmediate()
+        device.branch.conversations.queries.search.startSyncImmediate()
+      }
+      expect(laptop.list()).toEqual([])
+      expect(phone.list()).toEqual([])
+    } finally {
+      release()
+    }
+    expect(await opening).toBeUndefined()
+    await until(() => expect(laptop.list()).toEqual(["feature/one"]))
+    await until(() => expect(phone.list()).toEqual(["feature/one"]))
+    await until(() => expect(phone.loaded()).toBe(true))
   }, WITHIN)
 
   test("opening Conversations after branch navigation and reload reads ordinary and ephemeral rows and follows other devices", async () => {

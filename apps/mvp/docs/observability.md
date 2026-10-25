@@ -809,3 +809,12 @@ Proof: `worker/ShapeProxy.test.ts`, `worker/SpendAlerts.test.ts`, `worker/AlertC
 The browser relay retains `flows_engine_replay_seeds` and the engine lifecycle records `engine-store.registration.recovered`, `flow.run.created` and `flow.run.claimed`, including `createdAtMs` and `claimedAtMs`. These records carry operational counters, identifiers and times, never user content. The relay integration test checks that these records and fields survive export.
 
 Repository trigger admission records `not_allowed` in `ci.dispatch` and `smithers_ci_dispatches` when `REPO_FLOWS_REPOSITORIES` excludes the repository. The durable `triggers/Match` receipt has that outcome and an empty flow list. `triggers/Start` checks the allowlist again and logs `ci.start` with `not_allowed` if it has changed.
+
+Conversation list loading records `conversations.shape.sync` and
+`smithers_conversation_shape_transitions{phase}` for the first shape request,
+answer, changed failure status and recovery. `conversations.list` logs and spans
+changed `syncedRows`, `pendingRows`, `listedRows`, `archived` and `loaded`;
+`smithers_conversation_list_updates{archived,loaded}` counts those transitions.
+A shape answer is a network receipt, not proof of installed or rendered rows.
+Use the list counts and page snapshot to locate a blank list. These records
+contain no ids, repository or branch names, search text or conversation content.

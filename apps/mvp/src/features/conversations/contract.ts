@@ -45,6 +45,10 @@ export const branchPath = (repo: string, branch: string): string =>
  */
 export const CONVERSATIONS_TELEMETRY = {
   records: [
+    "conversations.shape.sync",
+    "conversations.list",
+    "smithers_conversation_shape_transitions",
+    "smithers_conversation_list_updates",
     "conversation.archive",
     "conversation.archive.post",
     "conversation.new",
@@ -54,5 +58,5 @@ export const CONVERSATIONS_TELEMETRY = {
     "smithers_web_conversation_news",
     "smithers_web_conversation_archives_dropped",
   ],
-  fields: ["outcome", "status", "archived", "door", "durationMs", "conversationId", "reason"],
+  fields: ["outcome", "status", "archived", "door", "durationMs", "conversationId", "reason", "phase", "syncedRows", "pendingRows", "listedRows", "loaded"],
 } as const

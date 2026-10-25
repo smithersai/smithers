@@ -20,3 +20,15 @@ export const dropped = Metric.counter("smithers_web_conversation_archives_droppe
   description: "Archives and restores this device took back because they couldn't land, by reason",
   incremental: true,
 })
+
+/** Meaningful states of the personal conversation shape: first request, answer, failure and recovery. */
+export const shapeTransitions = Metric.counter("smithers_conversation_shape_transitions", {
+  description: "Meaningful browser conversation shape states, by phase",
+  incremental: true,
+})
+
+/** Changes in the counts the conversation list projects, by archived and loaded state. */
+export const listUpdates = Metric.counter("smithers_conversation_list_updates", {
+  description: "Conversation list projection changes, by archived and loaded state",
+  incremental: true,
+})
