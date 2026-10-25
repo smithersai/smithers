@@ -617,6 +617,9 @@ A branch machine's tools and its sleep and wake ([sandbox-tools.md](features/san
 | `smithers_sandbox_keeps` | counter | the `FlowExecution` Durable Object | `outcome` (`slept`, `busy`, `gone`, `unavailable`) |
 | `sandbox.object.tool`, `sandbox.object.sleep`, `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (spans), `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (logs) | | `SandboxObject` | `smithers.sandbox.tool`, `smithers.sandbox.generation`, `outcome`, `errorCode` |
 | `smithers_sandbox_checkpoints` | counter | `SandboxObject` | `op` (`save`, `restore`), `outcome` |
+| `sandbox.egress.trust` (span), `sandbox.egress.setup` (warning log) | | `SandboxObject` | the wake's trust of the container's CA in a box without secrets; the warning carries the script's `exitCode` (2: the CA couldn't be trusted) or `errorCode` |
+| `sandbox.registry.egress` (span), `secrets.egress` (log) | | `SandboxObject` (`@smthrs/secrets`' `Egress.forward`) | a box's request through the registry egress: `host`, `method`, `status`, `outcome`; never a path or a header |
+| `smithers_registry_egress_requests` | counter | `SandboxObject` | `outcome` (`forwarded`, or the refusal: `host_not_allowed`, `port_not_allowed`, …). Was `smithers_job_egress_requests` until every box got the registry egress (2026-10-25) |
 | `sandbox.tool` | span | `SandboxObject` (`@smthrs/sandbox`'s `SandboxTools`) | `smithers.sandbox.tool`, `smithers.sandbox.tool.outcome`, `smithers.sandbox.tool.exit_code` |
 | `sandbox.call`, `sandbox.call.start`, `sandbox.call.post`, `sandbox.call.result`, `smithers_web_sandbox_calls` | browser | the engine worker | `tool`, `outcome`, `callId`, `door` |
 

@@ -10,6 +10,7 @@
 import * as Pg from "@effect/sql-pg"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
+import { SandboxTools } from "@smthrs/sandbox"
 import { Cause, ConfigProvider, Context, type Duration, Effect, Exit, Fiber, Layer, Redacted, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs"
@@ -17,6 +18,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import { commandMaxSeconds } from "../../src/features/sandbox/config.ts"
 import { callExecutionId, COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { userOf } from "../branch/Users.ts"
@@ -351,7 +353,7 @@ describe("SandboxCommand.run", () => {
 describe("how long a command runs", () => {
   /** `SANDBOX_COMMAND_MAX_SECONDS` read from `env`, as the hosts read it: the limit, or why it was refused. */
   const limitOf = (env: Record<string, string>) =>
-    Effect.runSync(Effect.exit(SandboxCommand.maxSeconds.parse(ConfigProvider.fromUnknown(env))))
+    Effect.runSync(Effect.exit(commandMaxSeconds.parse(ConfigProvider.fromUnknown(env))))
 
   test("SANDBOX_COMMAND_MAX_SECONDS is an hour unless set, and any whole number of seconds from 60 to an hour", () => {
     expect(COMMAND_LIMIT_SECONDS).toBe(3600)
@@ -362,6 +364,7 @@ describe("how long a command runs", () => {
     // An empty setting is an unset one.
     expect(limitOf({ SANDBOX_COMMAND_MAX_SECONDS: "" })).toEqual(Exit.succeed(3600))
     // Under 60, a command that names no timeout would outrun it; past an hour, the job's own limit and deadline.
+    expect(SandboxTools.limits.defaultTimeoutSeconds).toBe(60)
     for (const invalid of ["59", "3601", "0", "-5", "1.5", "an hour"]) {
       const exit = limitOf({ SANDBOX_COMMAND_MAX_SECONDS: invalid })
       expect(Exit.isFailure(exit) && Cause.squash(exit.cause), invalid).toMatchObject({ _tag: "ConfigError" })

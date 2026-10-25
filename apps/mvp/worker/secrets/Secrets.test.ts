@@ -11,6 +11,7 @@ import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { parseSecretRoute, SECRETS_SHAPE_ROUTE, secretRoute } from "../../src/features/secrets/contract.ts"
 import * as Actor from "../Actor.ts"
+import * as RegistryEgress from "../branch/RegistryEgress.ts"
 import * as Flows from "../Flows.ts"
 import { eventually, testFile } from "../test/harness.ts"
 import * as SecretsApi from "./Api.ts"
@@ -356,10 +357,13 @@ describe("the sandbox egress", () => {
   })
 
   test("EGRESS_ALLOW_HOSTS lets a box reach a host with no secret; anything else answers off or unavailable", async () => {
-    const config: Record<string, string> = { EGRESS_ALLOW_HOSTS: "registry.npmjs.org, not a host" }
+    const config: Record<string, string> = { EGRESS_ALLOW_HOSTS: "api.example.com, not a host" }
     const allowed = await open({ upstream, config })
     delete config.EGRESS_ALLOW_HOSTS
-    expect((await allowed.egress(guest)(new Request("https://registry.npmjs.org/left-pad"))).status).toBe(200)
+    expect((await allowed.egress(guest)(new Request("https://api.example.com/left-pad"))).status).toBe(200)
+    expect(seen).toHaveLength(1)
+    const unset = await open({ upstream })
+    expect((await unset.egress(guest)(new Request("https://api.example.com/left-pad"))).status).toBe(403)
     expect(seen).toHaveLength(1)
 
     const off = await open({ upstream, keys: false })
@@ -371,6 +375,18 @@ describe("the sandbox egress", () => {
     const down = await open({ upstream, database: unreachable })
     const failed = await down.egress(guest)(new Request("https://registry.npmjs.org/"))
     expect([failed.status, await failed.text()]).toEqual([503, "unavailable"])
+  })
+
+  test("with secrets on, a box still reaches every package registry, and EGRESS_ALLOW_HOSTS adds to them", async () => {
+    const h = await open({ upstream })
+    for (const registry of RegistryEgress.HOSTS) {
+      expect((await h.egress(guest)(new Request(`https://${registry}/`))).status, registry).toBe(200)
+    }
+    expect(seen.map((request) => new URL(request.url).hostname)).toEqual([...RegistryEgress.HOSTS])
+    const allowed = (value: string) =>
+      Effect.runSync(SandboxEgress.allowHosts.parse(ConfigProvider.fromUnknown({ EGRESS_ALLOW_HOSTS: value })))
+    expect(allowed("")).toEqual([...RegistryEgress.HOSTS])
+    expect(allowed("pypi.org, api.example.com, not a host")).toEqual([...RegistryEgress.HOSTS, "api.example.com"])
   })
 
   test("a decision Postgres refuses to record is never sent", async () => {

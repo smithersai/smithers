@@ -12,7 +12,7 @@ import type { Policy } from "./Access.ts"
  * The branch a sandbox serves: its id, its repository on GitHub, the branch name its checkout follows, and where that
  * branch lives when it isn't the deployment's forge: `github` for a TODO's attempt branch, which `todo/Begin` makes on
  * GitHub (worker/flows/TodoMachine.ts, worker/branch/Forge.ts `forgeOf`). `kind: "job"` is a throwaway machine a head's
- * checks run on, whose box reaches the package registry and nothing else (worker/branch/JobEgress.ts).
+ * checks run on, whose box never holds a secret. Every box reaches the package registries (worker/branch/RegistryEgress.ts).
  */
 export const SandboxBranch = Schema.Struct({
   branchId: Schema.String,

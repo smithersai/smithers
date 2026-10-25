@@ -146,3 +146,40 @@ test("sandbox lifecycle: the agent and the terminal share the branch's machine, 
     await expect(terminalRows(page)).toContainText("clean-6", { timeout: 30_000 })
   })
 })
+
+// Most repositories install packages and build with a toolchain (ruling ARCH-15, decision 0005 §2): the branch's own
+// box reaches the package registries through its egress, never with a secret, and its image carries Go and Python.
+// Everything happens outside the checkout, in a scratch directory under the person's home.
+test("packages and toolchains: the branch's machine installs a package from the registry and runs Go and Python", {
+  annotation: {
+    type: "summary",
+    description: "A branch's machine installs packages from npm and PyPI and has Go and Python, so most repositories build there.",
+  },
+}, async ({ page }) => {
+  test.setTimeout(MACHINE + 6 * 60_000)
+  const word = `pkg-${Date.now()}`
+  await page.goto(`${BRANCH}?terminal=me`)
+  await openTerminal(page, "Open the terminal on the branch's machine")
+  const rows = terminalRows(page)
+
+  await type(page, `mkdir -p ~/${word} && cd ~/${word} && npm init -y >/dev/null && npm install --no-audit --no-fund left-pad@1.3.0 >/dev/null && node -e "console.log(require('left-pad')('npm', 7, '+'))"`)
+  await step("npm installs a package from its registry", async () => {
+    // The typed line holds 'npm', 7 and '+', never the padded word.
+    await expect(rows).toContainText("++++npm", { timeout: 4 * 60_000 })
+  })
+
+  await type(page, `python3 -m venv ~/${word}/venv && ~/${word}/venv/bin/pip install -q --disable-pip-version-check six==1.16.0 && ~/${word}/venv/bin/python -c "import six; print('six-' + six.__version__.replace('.', '_'))"`)
+  await step("pip installs a package from PyPI", async () => {
+    await expect(rows).toContainText("six-1_16_0", { timeout: 4 * 60_000 })
+  })
+
+  await type(page, "go version")
+  await step("Go runs", async () => {
+    await expect(rows).toContainText(/go version go1\.\d+/, { timeout: 30_000 })
+  })
+
+  await step("Leave the machine as it was", async () => {
+    await keys(page, `cd /workspace && rm -rf ~/${word} && echo gone-$((5+5))`)
+    await expect(rows).toContainText("gone-10", { timeout: 30_000 })
+  })
+})

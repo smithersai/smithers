@@ -6,8 +6,8 @@ import { Effect, type Layer } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { BRANCHES_ROUTE, SHARES_SHAPE_ROUTE } from "../../src/features/branch/contract.ts"
+import { commandMaxSeconds } from "../../src/features/sandbox/config.ts"
 import { TERMINALS_ROUTE, TERMINALS_SHAPE_ROUTE } from "../../src/features/terminal/contract.ts"
-import * as SandboxCommand from "../flows/SandboxCommand.ts"
 import * as Branches from "./Branches.ts"
 import * as ConversationApi from "./ConversationApi.ts"
 import * as Presence from "./Presence.ts"
@@ -45,7 +45,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     const terminals = yield* Terminals.make(database)
     const shares = yield* Shares.make(database)
     const room = Presence.make(database)
-    const sandboxCalls = SandboxCalls.make(database, yield* SandboxCommand.maxSeconds)
+    const sandboxCalls = SandboxCalls.make(database, yield* commandMaxSeconds)
     const texts = yield* Texts.make(database)
     const fetch = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest

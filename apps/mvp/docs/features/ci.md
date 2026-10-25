@@ -7,7 +7,7 @@ FlowExecution DO                                   SandboxObject DO + container 
  ci/job { target, job } ─ ci/job/Checkout ──────────▶ wake: git fetch --depth 1 origin <sha>; detached checkout
                         ─ ci/job/Step × n ──────────▶ sh -c <step> as the `ci` user, once per (run, job, step)
                         ─ ci/job/Release ───────────▶ sleep now
- settles { outcome, steps }                          egress: registry.npmjs.org, plugins.dprint.dev; nothing else
+ settles { outcome, steps }                          egress: the package registries; nothing else
 ```
 
 ## Jobs
@@ -24,7 +24,7 @@ FlowExecution DO                                   SandboxObject DO + container 
 - **One machine per job.** `worker/flows/CiJobMachine.ts` names it `job-<digest of job:<run>:<job>>`: a branch machine of `kind: "job"` (`worker/BranchSandboxes.ts`) from the branch sandbox's image, which pins Node 26.5.0, pnpm 11.25.0 and git (`infra/sandbox/Dockerfile`). Two jobs of a run, and the same job of two runs, never share one. There is no separate job container class: the image and the object are the branch sandbox's.
 - **Exactly the commit.** The machine's wake fetches the one commit by its id from GitHub and checks it out detached (`worker/branch/Checkout.ts`), finishing a checkout a stopped machine left half done, so a pull request's head from a fork, which is no branch of the repository, checks out the same way. `ci/job/Checkout` reads `HEAD` back and runs no step unless it is `target.sha`.
 - **Commands only in the box.** A step is a `sh -c` command run by the sandbox tools' `run` (`@smthrs/sandbox`'s `SandboxTools`), as the box's `ci` user, never a person's. The Worker runs none.
-- **Registry only.** A job's box reaches `registry.npmjs.org` and `plugins.dprint.dev` and nothing else, and holds no secret ([where checks run](pulls.md#where-checks-run), `worker/branch/JobEgress.ts`).
+- **Registries only.** A job's box reaches the package registries (npm, PyPI, crates.io, Go's proxy, GitHub's releases, dprint's plugins) and nothing else, and holds no secret ([where checks run](pulls.md#where-checks-run), `worker/branch/RegistryEgress.ts`).
 - **At most once.** Each step is its own durable action; its tool call id is the version 5 UUID of `<run>:<job>:step:<index>`, so a step the machine started and lost settles `failed` with exit code `-1` and never runs twice.
 - **Released when done.** `ci/job/Release` stops whatever the job's steps left running (a server or a watcher started in the background) and puts the machine to sleep at once rather than waiting for its keep-alive. A job whose machine never answered is released too.
 

@@ -116,13 +116,13 @@ typed errors; branch names, response text, URLs and credentials are never record
 
 ## The machine
 
-- **One container per branch**, under the `durable_object` scheduling policy (`infra/BranchSandbox.ts`), from `infra/sandbox/Dockerfile`: Debian trixie with git, tmux, bash and CA certificates, no credentials. `SandboxObject` (named by the branch's id) starts it with internet off and re-arms its 30-minute inactivity timeout (`@smthrs/platform-cloudflare`'s `SandboxObject.wake`); its generation goes up each time it starts the box.
+- **One container per branch**, under the `durable_object` scheduling policy (`infra/BranchSandbox.ts`), from `infra/sandbox/Dockerfile`: Debian trixie with git, tmux, bash and CA certificates, Node and pnpm, Go, Python with pip and venv, and a C toolchain, no credentials. `SandboxObject` (named by the branch's id) starts it with internet off and re-arms its 30-minute inactivity timeout (`@smthrs/platform-cloudflare`'s `SandboxObject.wake`); its generation goes up each time it starts the box.
 - **Checkout.** `sandbox/Wake` clones the one branch, 50 commits deep, into `/workspace` as `smithers` (`worker/branch/Checkout.ts`), unless a checkout is there.
 - **Each person is their own user** (`worker/branch/Users.ts`): `p` and 16 hex digits of the SHA-256 of their person id, made on first use in the `workspace` group. Their tmux server's socket is theirs alone, so one person's shell can't attach to, type into or signal another's; `/workspace` is shared through the group (setgid, umask 002, `safe.directory`).
 
 ## The forge
 
-The box has no credential and no internet. Its only way out is `http://forge.smithers.internal`, which `SandboxObject` intercepts (`interceptOutboundHttp`) and answers with `@smthrs/effect-code-storage`'s `GitProxy.uploadPack`: only `info/refs?service=git-upload-pack` and `git-upload-pack` (a push and anything else is 403), to the branch's own repository whatever the guest's path names, with the read credential added outside the box (`worker/branch/Forge.ts`):
+The box has no credential and no internet. It reaches the package registries through its egress ([the machine](sandbox-tools.md#the-machine)), and its repository only through `http://forge.smithers.internal`, which `SandboxObject` intercepts (`interceptOutboundHttp`) and answers with `@smthrs/effect-code-storage`'s `GitProxy.uploadPack`: only `info/refs?service=git-upload-pack` and `git-upload-pack` (a push and anything else is 403), to the branch's own repository whatever the guest's path names, with the read credential added outside the box (`worker/branch/Forge.ts`):
 
 | Forge | When | Credential |
 |---|---|---|

@@ -3,9 +3,23 @@ title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
 owner: unassigned (the sandboxes builder handed off on 2026-10-23)
-updated: 2026-10-23 PDT
+updated: 2026-10-25 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
+
+## Every box reaches the package registries — 2026-10-25
+
+Ruling ARCH-15: most repositories install and build in most sandboxes. Production's branch terminal failed
+`npm install` with `EAI_AGAIN registry.npmjs.org` on 2026-10-25: only check jobs had an egress.
+
+- Every box, a branch's, a TODO's or a check job's, now gets the registry egress (`worker/branch/RegistryEgress.ts`,
+  renamed from `JobEgress.ts`): npm, PyPI, crates.io, Go's proxy, GitHub's releases and dprint's plugins, no secret.
+  With `SANDBOX_SECRETS` on, a branch's or a TODO's box gets the secrets egress, whose allow list now always includes
+  those registries.
+- A box without secrets trusts the container's CA on every wake without an environment file (`SandboxEgress.TRUST`),
+  so `no-secrets-6` in `e2e/sandbox-lifecycle.spec.ts` holds. pip and Go read the system store; no extra variable.
+- The image adds Go 1.27.3, Python with pip and venv, and `build-essential`.
+- The browser's run tool states the deployment's `SANDBOX_COMMAND_MAX_SECONDS`, which the build captures.
 
 ## Handoff — 2026-10-23
 
@@ -16,8 +30,8 @@ under Cloudflare's 15-minute alarm limit, and command latency: `git status` call
 - A run woken after a job settles takes 12.0 s to answer (benchmark 7.3 s, expected ~2 s near the database). It only hits
   commands that outlive the 10-minute drive budget. Next step: read the alarm's `build_ms`, `route_ms` and `drive_ms`
   during one long command to split runtime build, routing and replay.
-- The browser's run tool advertises the build's 3600 s (`COMMAND_LIMIT_SECONDS`) even where `SANDBOX_COMMAND_MAX_SECONDS`
-  is lower; a longer call is refused `too_long` with the deployed limit, but the tool should state that limit up front.
+- Done 2026-10-25: the browser's run tool states the deployment's `SANDBOX_COMMAND_MAX_SECONDS`, which the build
+  captures (`vite.config.ts`).
 - Done, for the record: PR check scripts already run up to `SANDBOX_COMMAND_MAX_SECONDS` (worker/flows/Checks.ts).
 
 ## A command answers in the step that asks — 2026-10-22 PDT (evening)

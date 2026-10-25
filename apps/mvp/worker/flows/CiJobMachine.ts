@@ -6,8 +6,8 @@ import { Machines } from "../branch/Machines.ts"
 import type { SandboxBranch } from "../branch/Sandboxes.ts"
 
 // A CI job's machine (docs/features/ci.md#jobs): `@smthrs/sandbox`'s `ci/job` runs on one throwaway branch machine per
-// `job:<run>:<job>`, a `SandboxObject` of `kind: "job"` from the branch sandbox's image (Node, pnpm, git), whose box
-// reaches the package registry and nothing else (worker/branch/JobEgress.ts). Its checkout is the one commit, fetched
+// `job:<run>:<job>`, a `SandboxObject` of `kind: "job"` from the branch sandbox's image (Node, pnpm, Go, Python, git),
+// whose box reaches the package registries and nothing else (worker/branch/RegistryEgress.ts). Its checkout is the one commit, fetched
 // by its id from GitHub (worker/branch/Checkout.ts), so a fork's pull request head needs no branch. Its commands run as
 // the `ci` user, never a person's. Records carry ids and outcomes, never a command or its output.
 

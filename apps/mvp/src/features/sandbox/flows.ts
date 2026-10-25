@@ -15,6 +15,19 @@ import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "./contract"
 // in the conversation their tab showed when they ran it (`conversationId`, pinned by the tab). Closing the tab while a
 // command runs changes nothing on the machine: the run resumes with the same call id, and reads the one result.
 
+declare global {
+  /** The deployment's `SANDBOX_COMMAND_MAX_SECONDS`, which the build writes in (vite.config.ts); unset where none did. */
+  var __SANDBOX_COMMAND_MAX_SECONDS__: number | undefined
+}
+
+/**
+ * The longest command this deployment runs, in seconds: its `SANDBOX_COMMAND_MAX_SECONDS`, which the build captured
+ * from the environment the Worker deploys from and wrote in for `globalThis.__SANDBOX_COMMAND_MAX_SECONDS__`
+ * (vite.config.ts), so the run tool states the limit ChatApi holds its calls to rather than learning it from a
+ * `too_long` refusal. The job's own limit, `COMMAND_LIMIT_SECONDS`, where no build wrote one in (a test, an eval).
+ */
+export const COMMAND_MAX_SECONDS: number = globalThis.__SANDBOX_COMMAND_MAX_SECONDS__ ?? COMMAND_LIMIT_SECONDS
+
 /**
  * ChatApi refused the call: signed out (`sign_in`), may not edit the branch (`forbidden`), a locked branch (`locked`), no
  * such conversation (`not_found`), or a request it couldn't read (`invalid`).
@@ -73,17 +86,21 @@ export const START_RETRY = RetryPolicy.make({
 })
 
 /**
- * Waiting for the machine: 250 ms doubling to 2 s, for at most the longest command (`COMMAND_LIMIT_SECONDS`, an hour)
- * and 30 minutes more: the command job's own 20 minutes to wake and check out a cold machine, probe and collect, and 10
- * for the call to launch its job and settle.
+ * Waiting for the machine: 250 ms doubling to 2 s, for at most the longest command, `maxSeconds`, and 30 minutes more:
+ * the command job's own 20 minutes to wake and check out a cold machine, probe and collect, and 10 for the call to
+ * launch its job and settle.
  */
-export const RESULT_RETRY = RetryPolicy.make({
-  initialMs: 250,
-  factor: 2,
-  maxMs: 2_000,
-  expirationMs: (COMMAND_LIMIT_SECONDS + 30 * 60) * 1000,
-  nonRetryable: NON_RETRYABLE,
-})
+export const resultRetry = (maxSeconds: number) =>
+  RetryPolicy.make({
+    initialMs: 250,
+    factor: 2,
+    maxMs: 2_000,
+    expirationMs: (maxSeconds + 30 * 60) * 1000,
+    nonRetryable: NON_RETRYABLE,
+  })
+
+/** Waiting for the machine in this deployment: for its longest command (`COMMAND_MAX_SECONDS`) and 30 minutes more. */
+export const RESULT_RETRY = resultRetry(COMMAND_MAX_SECONDS)
 
 /** The conversation a person's tab showed when they ran the tool; the agent's call works in its answer's instead. */
 const conversationId = Schema.optional(Schema.String.check(Schema.isUUID()))
@@ -91,10 +108,11 @@ const conversationId = Schema.optional(Schema.String.check(Schema.isUUID()))
 /** What the start step answers: the call's id. */
 export const Started = Schema.Struct({ callId: Schema.String })
 
-/** One tool's flow and its two steps. */
+/** One tool's flow and its two steps, its result waited for under `retry`. */
 const tool = <const T extends SandboxTools.Tool, F extends Schema.Struct.Fields, S extends Schema.Top>(
   name: T,
   options: { readonly fields: F; readonly success: S; readonly description: string },
+  retry: RetryPolicy.RetryPolicy = RESULT_RETRY,
 ) => {
   const payload = { ...options.fields, conversationId }
   const Start = Action.make(`sandbox/${name}/start`, {
@@ -107,7 +125,7 @@ const tool = <const T extends SandboxTools.Tool, F extends Schema.Struct.Fields,
     payload: { callId: Schema.String },
     success: options.success,
     error: Failure,
-    retryPolicy: RESULT_RETRY,
+    retryPolicy: retry,
   })
   const flow = Flow.make(`sandbox/${name}`, {
     description: options.description,
@@ -124,19 +142,26 @@ const tool = <const T extends SandboxTools.Tool, F extends Schema.Struct.Fields,
 
 const path = SandboxTools.Read.fields.path
 
-/** `sandbox/run { command, cwd?, timeoutSeconds? }`. */
-export const Run = tool("run", {
-  fields: {
-    command: SandboxTools.Run.fields.command,
-    cwd: SandboxTools.Run.fields.cwd,
-    timeoutSeconds: SandboxCommand.Run(COMMAND_LIMIT_SECONDS).fields.timeoutSeconds,
-  },
-  success: SandboxTools.RunResult,
-  description: "Run a shell command on the branch's machine, in its checkout. Answers { exitCode, timedOut, stdout, " +
-    "stderr, stdoutBytes, stderrBytes, truncated }: the first 64 KiB of each stream. cwd is relative to the checkout; " +
-    `the command stops after timeoutSeconds (60 unless set, ${COMMAND_LIMIT_SECONDS} at most). It runs once, even if ` +
-    "the run resumes.",
-})
+/**
+ * `sandbox/run { command, cwd?, timeoutSeconds? }` where the longest command is `maxSeconds`: the timeout it takes, the
+ * limit its description states, and how long its result is waited for.
+ */
+export const runTool = (maxSeconds: number) =>
+  tool("run", {
+    fields: {
+      command: SandboxTools.Run.fields.command,
+      cwd: SandboxTools.Run.fields.cwd,
+      timeoutSeconds: SandboxCommand.Run(maxSeconds).fields.timeoutSeconds,
+    },
+    success: SandboxTools.RunResult,
+    description: "Run a shell command on the branch's machine, in its checkout. Answers { exitCode, timedOut, stdout, " +
+      "stderr, stdoutBytes, stderrBytes, truncated }: the first 64 KiB of each stream. cwd is relative to the checkout; " +
+      `the command stops after timeoutSeconds (60 unless set, ${maxSeconds} at most). It runs once, even if the run ` +
+      "resumes.",
+  }, resultRetry(maxSeconds))
+
+/** The run tool in this deployment: up to its longest command, `COMMAND_MAX_SECONDS`. */
+export const Run = runTool(COMMAND_MAX_SECONDS)
 
 /** `sandbox/read { path }`. */
 export const Read = tool("read", {

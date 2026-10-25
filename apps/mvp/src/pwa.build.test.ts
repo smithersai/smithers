@@ -30,4 +30,9 @@ test("the production build succeeds and precaches the app's bundle and the engin
   // The docs site's paths, which share the app's hostname, are left to the network: by the shell's fallback for a
   // navigation and by its cache (src/pwa.ts DOCS_SITE).
   expect(serviceWorker.split(DOCS_SITE.source).length - 1).toBe(2)
+  // The deployment's longest command is written in where the run tool reads it (src/features/sandbox/flows.ts): no
+  // bundle reads it at run time, where a browser has no deployment setting.
+  for (const asset of assets.filter((name) => name.endsWith(".js"))) {
+    expect(readFileSync(join(outDir, "assets", asset), "utf8"), asset).not.toContain("__SANDBOX_COMMAND_MAX_SECONDS__")
+  }
 }, 180_000)

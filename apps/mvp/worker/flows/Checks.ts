@@ -38,7 +38,7 @@ import * as SandboxCommand from "./SandboxCommand.ts"
 //                   machine, one after another: `checks/<name>`, Passed when it exits 0, else Failed. Each script is a
 //                   `sandbox/Command` job (worker/flows/SandboxCommand.ts), so a lint of the whole monorepo holds no
 //                   step: the run parks while it runs, and a host that stops mid-script loses nothing. The job machine
-//                   reaches the package registry and nothing else (worker/branch/JobEgress.ts), and sleeps once done
+//                   reaches the package registries and nothing else (worker/branch/RegistryEgress.ts), and sleeps once done
 //   checks/Review   the `review` check: the judge model reads the diff and the App posts one comment review with its
 //                   findings, never an approval; Failed when the review couldn't be made
 //   checks/Report   after the scripts, and again after the review: each check of the head that ended, as a GitHub commit
@@ -244,7 +244,7 @@ export const reviewBodyOf = (findings: string, login: string): string =>
 
 /**
  * The steps over `services` and the host's `Machines`. Each check script runs for up to `commandSeconds`, the
- * deployment's longest command (`SANDBOX_COMMAND_MAX_SECONDS`, worker/flows/SandboxCommand.ts `maxSeconds`;
+ * deployment's longest command (`SANDBOX_COMMAND_MAX_SECONDS`, src/features/sandbox/config.ts `commandMaxSeconds`;
  * `COMMAND_LIMIT_SECONDS` unless given).
  */
 export const steps = <E, R>(

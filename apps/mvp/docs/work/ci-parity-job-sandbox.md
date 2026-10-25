@@ -10,8 +10,8 @@ links: [../proposals/ci-cd-parity.md, ../features/ci.md, sandboxes.md, sandbox-b
 ## Built, 2026-10-22: `ci/job` (the CI spine's slice 2)
 
 - `@smthrs/sandbox`'s `CiJob`: the `ci/job` child flow checks out exactly the commit, runs each step as its own durable action (`ci/job/Step`) and settles `{ outcome, steps }`, `passed`, `failed`, `cancelled` or `skipped`, never a failure. The host provides `CiJob.Machine` ([API](../../../../packages/smithers/flows/sandbox/docs/api.md#cijob)).
-- The app's machine (`worker/flows/CiJobMachine.ts`): one `SandboxObject` of `kind: "job"` per `job:<run>:<job>`, from the branch sandbox's image (Node 26.5.0, pnpm 11.25.0, git), registry-only egress, commands as the `ci` user. A job's machine fetches the one commit by its id (`worker/branch/Checkout.ts`), so a fork's head needs no branch. Registered on `FlowExecution` by `ExecutionHost.withCiJobs` ([CI on Smithers](../features/ci.md#jobs)).
-- **No `JobSandbox` container class and no `infra/job/Dockerfile`:** the branch sandbox's image already pins the toolchain, and a second class would duplicate `SandboxObject`. bun, build-essential, python3 and Postgres 18 are not in the image; a job that needs them waits for a job image of its own.
+- The app's machine (`worker/flows/CiJobMachine.ts`): one `SandboxObject` of `kind: "job"` per `job:<run>:<job>`, from the branch sandbox's image (Node 26.5.0, pnpm 11.25.0, git; Go, Python and `build-essential` since 2026-10-25), registry-only egress, commands as the `ci` user. A job's machine fetches the one commit by its id (`worker/branch/Checkout.ts`), so a fork's head needs no branch. Registered on `FlowExecution` by `ExecutionHost.withCiJobs` ([CI on Smithers](../features/ci.md#jobs)).
+- **No `JobSandbox` container class and no `infra/job/Dockerfile`:** the branch sandbox's image already pins the toolchain, and a second class would duplicate `SandboxObject`. bun and Postgres 18 are not in the image; a job that needs them waits for a job image of its own.
 - Proof: `worker/flows/CiJob.docker.test.ts` on the Mac mini, real containers of the image: two jobs at once at a commit of `roninjin10/smithers-github-tests` fetched from GitHub, `node --version` v26.5.0 and `pnpm --version` 11.25.0 pass while `exit 1` settles failed.
 
 **Not built:** long commands (`ci-parity-long-commands`: a step is still one sandbox-tools `run`, 600 s at most, 64 KiB of output kept), step logs on a run page, machine sizes.
@@ -19,7 +19,7 @@ links: [../proposals/ci-cd-parity.md, ../features/ci.md, sandboxes.md, sandbox-b
 ## Built, 2026-10-21 (the dogfood loop's first slice)
 
 - A pull request head's checks run on a check job: a throwaway branch machine per head, `job-<owner>-<name>-<sha>`, `kind: "job"` on its `SandboxBranch`, put to sleep once its scripts ran ([where checks run](../features/pulls.md#where-checks-run)).
-- A job's box reaches `registry.npmjs.org` and `plugins.dprint.dev` and nothing else, through the object's existing outbound intercept and `@smthrs/secrets`' `Egress.forward` with no secret (`worker/branch/JobEgress.ts`). Branch sandboxes stay closed.
+- A job's box reaches `registry.npmjs.org` and `plugins.dprint.dev` and nothing else, through the object's existing outbound intercept and `@smthrs/secrets`' `Egress.forward` with no secret (`worker/branch/JobEgress.ts`, since 2026-10-25 `RegistryEgress.ts`, which every box uses).
 - This repository's checks: `.smithers/checks/lint.sh` and `check.sh` run the changed packages' own `lint` and `check` scripts. Simulated on nyc-01 with pnpm 11.25.0 against a T1-like change.
 - The lead decided at 12:58 that the sandboxes builder installs Node 26.5.0 (nodejs.org, SHA-256 pinned) and corepack pnpm 11.25.0 in `infra/sandbox/Dockerfile`. Debian's nodejs is v20; the repository needs Node 26.4 or later.
 

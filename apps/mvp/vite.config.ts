@@ -1,9 +1,11 @@
 import { join } from "node:path"
 import react from "@vitejs/plugin-react"
+import { ConfigProvider, Effect } from "effect"
 import vibelang from "vibelang-vite"
 import { defineConfig } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
 import { devHttps } from "./dev/https.ts"
+import { commandMaxSeconds } from "./src/features/sandbox/config.ts"
 import { DOCS_SITE, FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./src/pwa.ts"
 
 // The app's shell, for the service worker to precache: everything a reload needs before it reaches the network.
@@ -11,6 +13,11 @@ const SHELL = ["**/*.{js,css,html,woff2,svg,png}"]
 
 // Never the service worker's: ChatApi, the Electric shape proxy, the telemetry relay and the model endpoint.
 const API = /^\/api\//
+
+// The deployment's longest command, from the environment its Worker deploys from and read as the Worker reads it
+// (decision 0088): the browser's run tool states it (src/features/sandbox/flows.ts `COMMAND_MAX_SECONDS`). The app and
+// ChatApi deploy together from one environment, and a value the Worker would refuse fails the build here.
+const COMMAND_MAX_SECONDS = Effect.runSync(commandMaxSeconds.parse(ConfigProvider.fromEnv()))
 
 // Alchemy injects the Cloudflare plugin, which runs worker/index.ts beside the app in dev and build.
 export default defineConfig({
@@ -105,6 +112,7 @@ export default defineConfig({
       ],
     },
   ],
+  define: { "globalThis.__SANDBOX_COMMAND_MAX_SECONDS__": JSON.stringify(COMMAND_MAX_SECONDS) },
   worker: { format: "es" },
   // TypeScript is the language server worker's one CommonJS import: bundled up front, so the first TypeScript file the
   // dev server shows doesn't reload every page to optimize it.

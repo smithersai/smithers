@@ -44,22 +44,10 @@ export const Command = SandboxCommand.make("sandbox/Command", {
 })
 
 /**
- * `SANDBOX_COMMAND_MAX_SECONDS`: the longest command a person or an agent may run on a branch's machine, in whole
- * seconds from 60 (`SandboxTools.limits.defaultTimeoutSeconds`, what a command that names no timeout runs) to
- * `COMMAND_LIMIT_SECONDS`, the job's own limit, which it is unless set. Any other value fails with a `ConfigError`.
- * ChatApi reads it once for `POST /api/sandbox/calls`, and the `FlowExecution` object once for the TODO agent's tool.
- */
-export const maxSeconds: Config.Config<number> = Config.schema(
-  Schema.Int.check(
-    Schema.isBetween({ minimum: SandboxTools.limits.defaultTimeoutSeconds, maximum: COMMAND_LIMIT_SECONDS }),
-  ),
-  "SANDBOX_COMMAND_MAX_SECONDS",
-).pipe(Config.withDefault(COMMAND_LIMIT_SECONDS))
-
-/**
  * A sandbox tool call whose `run` runs as a `sandbox/Command` job, so its `timeoutSeconds` goes up to `seconds` where a
  * tool call's stops at `SandboxTools.limits.maxTimeoutSeconds`: what `sandbox/Call` takes (up to the job's limit), and
- * what `POST /api/sandbox/calls` admits (up to the deployment's `maxSeconds`). Every other tool is `SandboxTools`' own.
+ * what `POST /api/sandbox/calls` admits (up to the deployment's `SANDBOX_COMMAND_MAX_SECONDS`, src/features/sandbox/config.ts).
+ * Every other tool is `SandboxTools`' own.
  */
 export const ToolCall = (seconds: number) =>
   Schema.Union([

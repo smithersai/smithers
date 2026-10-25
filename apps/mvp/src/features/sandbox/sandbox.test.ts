@@ -22,8 +22,11 @@ import { pinConversation } from "./actions"
 import { CallRefused, SandboxClient } from "./api"
 import { CALL_ID_NAMESPACE, COMMAND_LIMIT_SECONDS, SANDBOX_TELEMETRY } from "./contract"
 import {
+  COMMAND_MAX_SECONDS,
   Failure,
   RESULT_RETRY,
+  Run,
+  runTool,
   START_RETRY,
   SandboxCallFailed,
   SandboxCallRefused,
@@ -206,6 +209,18 @@ describe("the flows", () => {
     expect(SandboxRun.description).toContain(`60 unless set, ${COMMAND_LIMIT_SECONDS} at most`)
     // An hour's command and its job's 20 minutes to wake, probe and collect, then 10 to launch the job and settle.
     expect(RESULT_RETRY.expirationMs).toBe(90 * 60_000)
+  })
+
+  test("a deployment's lower SANDBOX_COMMAND_MAX_SECONDS is what its run tool takes, says and waits for", () => {
+    const run = (timeoutSeconds: number) => ({ command: "pnpm install", timeoutSeconds })
+    const lowered = runTool(900)
+    expect(Schema.is(lowered.flow.payloadSchema)(run(900))).toBe(true)
+    expect(Schema.is(lowered.flow.payloadSchema)(run(901))).toBe(false)
+    expect(lowered.flow.description).toContain("60 unless set, 900 at most")
+    expect(lowered.Result.retryPolicy?.expirationMs).toBe((900 + 30 * 60) * 1000)
+    // Where no build wrote a limit in, the deployment's is the job's own.
+    expect(COMMAND_MAX_SECONDS).toBe(COMMAND_LIMIT_SECONDS)
+    expect(Run.Result.retryPolicy?.expirationMs).toBe(RESULT_RETRY.expirationMs)
   })
 
   test("records carry the tool and outcome, fields the browser relays", () => {

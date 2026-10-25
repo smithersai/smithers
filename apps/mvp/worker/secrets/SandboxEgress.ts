@@ -4,6 +4,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { repoId } from "../../src/features/repo/contract.ts"
+import * as RegistryEgress from "../branch/RegistryEgress.ts"
 import { type Keys, SecretKeys } from "./Keys.ts"
 import * as Store from "./Store.ts"
 
@@ -18,27 +19,44 @@ import * as Store from "./Store.ts"
 //
 // Wired by the branch's `SandboxObject` (worker/BranchSandboxes.ts) when SANDBOX_SECRETS is on, off by default: it routes
 // the box's outbound HTTP and HTTPS here and writes `environment` into the box when it wakes. Off, no box reaches a
-// secret.
+// secret: its requests go to the registry egress (worker/branch/RegistryEgress.ts), and a check job's always do.
 
 /** Where Cloudflare puts the container's per-instance CA, which signs the HTTPS the egress decrypts. */
 export const CONTAINER_CA = "/etc/cloudflare/certs/cloudflare-containers-ca.crt"
 
 /**
- * Run as root in a box on each wake with the egress on: the box's environment file (`environment`) from stdin, readable
- * by every user and sourced by every login shell (tmux starts one), and the container's CA trusted system-wide and by
- * Node when Cloudflare provides it; exit 1 without the environment, 2 when the CA couldn't be trusted. It prints nothing, whatever fails: workerd reports a command's exit only once its
- * output is read or closed, and nobody reads this one's.
+ * The container's CA trusted when Cloudflare provides it: system-wide (curl, git, pip, Go), and through a profile every
+ * login shell sources (tmux starts one), by Node and dprint (`RegistryEgress.trustOf`). Exit 2 when it couldn't be.
  */
-export const SETUP = `exec >/dev/null 2>&1
-umask 022
-status=0
-mkdir -p /run/smithers && cat >/run/smithers/env.tmp && mv -f /run/smithers/env.tmp /run/smithers/env || exit 1
-if [ -f ${CONTAINER_CA} ]; then
-  echo "NODE_EXTRA_CA_CERTS=${CONTAINER_CA}" >>/run/smithers/env
-  cp ${CONTAINER_CA} /usr/local/share/ca-certificates/cloudflare-containers-ca.crt && update-ca-certificates || status=2
-fi
-printf '%s\n' '[ -r /run/smithers/env ] && { set -a; . /run/smithers/env; set +a; }' >/etc/profile.d/smithers-env.sh || exit 1
-exit $status`
+const trustLines = [
+  `[ -f ${CONTAINER_CA} ] || exit 0`,
+  `printf '%s\\n' ${
+    Object.entries(RegistryEgress.trustOf(CONTAINER_CA)).map(([name, value]) => `'export ${name}=${value}'`).join(" ")
+  } >/etc/profile.d/smithers-trust.sh || exit 2`,
+  `cp ${CONTAINER_CA} /usr/local/share/ca-certificates/cloudflare-containers-ca.crt && update-ca-certificates || exit 2`,
+  "exit 0",
+]
+
+/**
+ * Run as root in a box without secrets on each wake: its tools trust the container's CA (`trustLines`), so its HTTPS
+ * through the registry egress (worker/branch/RegistryEgress.ts) is trusted. It writes no environment file: the box
+ * holds no placeholder. Exit 2 when the CA couldn't be trusted. It prints nothing, whatever fails: workerd reports a
+ * command's exit only once its output is read or closed, and nobody reads this one's.
+ */
+export const TRUST = ["exec >/dev/null 2>&1", "umask 022", ...trustLines].join("\n")
+
+/**
+ * Run as root in a box on each wake with the egress on: the box's environment file (`environment`) from stdin, readable
+ * by every user and sourced by every login shell (tmux starts one), then the container's CA trusted as `TRUST` trusts
+ * it; exit 1 without the environment, 2 when the CA couldn't be trusted. It prints nothing, as `TRUST` doesn't.
+ */
+export const SETUP = [
+  "exec >/dev/null 2>&1",
+  "umask 022",
+  "mkdir -p /run/smithers && cat >/run/smithers/env.tmp && mv -f /run/smithers/env.tmp /run/smithers/env || exit 1",
+  `printf '%s\\n' '[ -r /run/smithers/env ] && { set -a; . /run/smithers/env; set +a; }' >/etc/profile.d/smithers-env.sh || exit 1`,
+  ...trustLines,
+].join("\n")
 
 /** The guest a request comes from: a repository's branch, at one generation of its machine. */
 export interface Guest {
@@ -60,12 +78,15 @@ export const guestOf = (
 export const scopeOf = (guest: Guest): string => JSON.stringify([guest.repoId, guest.branchId, guest.generation])
 
 /**
- * `EGRESS_ALLOW_HOSTS`: hosts a box may reach with no secret, comma-separated, none by default; a host that isn't a
+ * The hosts a box may reach with no secret: the package registries every box reaches (`RegistryEgress.HOSTS`), so
+ * turning secrets on never loses them, and `EGRESS_ALLOW_HOSTS`, comma-separated, none by default; a host that isn't a
  * lowercase DNS name is dropped.
  */
 export const allowHosts = Config.String("EGRESS_ALLOW_HOSTS").pipe(
   Config.withDefault(""),
-  Config.map((hosts: string) => hosts.split(",").map((host) => host.trim()).filter(Binding.isHost)),
+  Config.map((hosts: string): ReadonlyArray<string> => [
+    ...new Set([...RegistryEgress.HOSTS, ...hosts.split(",").map((host) => host.trim()).filter(Binding.isHost)]),
+  ]),
 )
 
 /** The guest's policy: every secret of its repository with the placeholder derived for it, and `allow`. */

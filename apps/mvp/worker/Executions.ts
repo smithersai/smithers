@@ -35,6 +35,7 @@ import * as Placement from "./Placement.ts"
 import * as RepoRuns from "./RepoRuns.ts"
 import * as RepoConfig from "./RepoConfig.ts"
 import * as SignIn from "./SignIn.ts"
+import { commandMaxSeconds } from "../src/features/sandbox/config.ts"
 import { keepExecutionId } from "../src/features/sandbox/contract.ts"
 
 // The Durable Object that runs remote flows on Cloudflare (docs/features/remote-flows.md): one object per execution,
@@ -151,7 +152,7 @@ const object = <E, R>(
       // (docs/features/remote-flows.md#how-an-execution-runs).
       const driveBudgetMs = yield* ExecutionHost.driveBudget.pipe(Effect.orDie)
       // The longest command the TODO agent's run tool takes (docs/features/sandbox-tools.md#configuration).
-      const commandSeconds = yield* SandboxCommand.maxSeconds.pipe(Effect.orDie)
+      const commandSeconds = yield* commandMaxSeconds.pipe(Effect.orDie)
       // How long a step waits on its command itself before the command goes on as its job (docs/features/sandbox-tools.md).
       const stepWaitSeconds = yield* SandboxCommand.stepWaitSeconds.pipe(Effect.orDie)
       // `repo/Clone` runs here when this deployment has a Code Storage organization (docs/features/repo.md#the-clone).
