@@ -6,9 +6,13 @@ import { CODE_TAB, HOME_TAB } from "../contract"
 import { homePageOf, tabsOf } from "../view"
 import { useHome } from "./HomeContext"
 
+/** The router marks a tab current only at its own URL. */
+const EXACT = { exact: true } as const
+
 // The repository's Home and Code tabs, when a home shows: Home is `/$owner/$repo`, Code the tree at the default branch,
 // and Docs its docs when the repository names them (docs/features/docs.md). Nothing shows for a repository without a
-// home, whose page is its tree.
+// home, whose page is its tree. `active` alone marks the page's tab: the router marks a link current only at its exact
+// URL, where `active` names it too, so Home's `/$owner/$repo` isn't current on every page under it.
 export function HomeTabs({ active }: { readonly active: "home" | "code" | "docs" }) {
   const { queries } = useHome()
   const { data } = useLiveQuery(queries.home)
@@ -17,16 +21,22 @@ export function HomeTabs({ active }: { readonly active: "home" | "code" | "docs"
   const { docs, ...code } = tabs
   return (
     <LinkTabs className="home-tabs" aria-label="Repository pages">
-      <Link to="/$owner/$repo" params={{ owner: tabs.owner, repo: tabs.repo }} aria-current={active === "home" ? "page" : undefined}>
+      <Link
+        to="/$owner/$repo"
+        params={{ owner: tabs.owner, repo: tabs.repo }}
+        activeOptions={EXACT}
+        aria-current={active === "home" ? "page" : undefined}
+      >
         {HOME_TAB}
       </Link>
-      <Link to="/$owner/$repo/tree/$ref/$" params={code} aria-current={active === "code" ? "page" : undefined}>
+      <Link to="/$owner/$repo/tree/$ref/$" params={code} activeOptions={EXACT} aria-current={active === "code" ? "page" : undefined}>
         {CODE_TAB}
       </Link>
       {docs ? (
         <Link
           to="/$owner/$repo/docs"
           params={{ owner: tabs.owner, repo: tabs.repo }}
+          activeOptions={EXACT}
           aria-current={active === "docs" ? "page" : undefined}
         >
           {DOCS_TAB}
