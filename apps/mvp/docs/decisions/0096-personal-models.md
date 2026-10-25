@@ -68,6 +68,12 @@ plan, `@smthrs/control` `WebCryptoCipher` for sealing, `@smthrs/secrets` `Bindin
 
 ## Amendment, 2026-10-25: summaries stay on the deployment's model
 
+**Superseded by ruling ARCH-20** (Will, Telegram 2026-10-25 13:28: "Please get it working with byok prioritize byok over our
+hosted inference our hosted cerebras inference is now a wip feature flagged and not being released or documented until
+post initial release"). At the initial release hosted inference is flagged off, so there is no deployment model for
+summaries; where they run then is open in [rulings §18](../rulings.md#18-open-questions-no-ruling-yet). The amendment
+is kept below as history.
+
 Will, 2026-10-25 03:55, a mid-turn "go" after the lead's recommendation of 2026-10-24 23:40 that timeline summaries stay
 on the deployment's model even when a person has their own key. It came after an hour of network errors in that session,
 and the lead read it as approval; the question stays open in [rulings §18](../rulings.md#18-open-questions-no-ruling-yet). A person's key pays only for their own chat and TODO runs. Summaries are the app's own
