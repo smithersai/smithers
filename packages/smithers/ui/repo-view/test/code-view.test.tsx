@@ -663,9 +663,7 @@ test("full-contrast opt-in keeps file text and can return to syntax colours", as
   expect(shadow().textContent).not.toContain("color: var(--code-text, currentColor) !important");
 });
 
-const VIBE = `error NotFound { id: string }
-service Users { find(id: string): User!NotFound }
-function greet(id: string) { return Users.find(id).name catch (e) => "none" }`;
+const VIBE = await Bun.file(new URL("./fixtures/forms.vibe", import.meta.url)).text();
 
 describe("VibeLang", () => {
   test("file names select VibeLang and unknown extensions remain plain text", () => {
@@ -685,6 +683,13 @@ describe("VibeLang", () => {
     for (
       const [word, scope] of [
         ["error", "storage.type.class.ts"],
+        ["NotFound", "entity.name.type.class.ts"],
+        ["extends", "storage.modifier.ts"],
+        ["LookupError", "entity.other.inherited-class.ts"],
+        ["schema", "storage.type.type.ts"],
+        ["Code", "entity.name.type.alias.ts"],
+        ["module", "storage.type.namespace.ts"],
+        ["text", "entity.name.type.module.ts"],
         ["service", "storage.modifier.ts"],
         ["catch", "keyword.control.trycatch.ts"],
         ["function", "storage.type.function.ts"],
@@ -692,8 +697,10 @@ describe("VibeLang", () => {
         ["string", "support.type.primitive.ts"],
       ]
     ) {
-      const token = tokens.find((token) => token.content === word);
-      expect(token?.explanation?.flatMap((part) => part.scopes.map((scope) => scope.scopeName))).toContain(scope);
+      expect(tokens.some((token) =>
+        token.content === word &&
+        token.explanation?.some((part) => part.scopes.some((entry) => entry.scopeName === scope))
+      )).toBe(true);
     }
   }, 90_000);
 
@@ -708,7 +715,7 @@ describe("VibeLang", () => {
         expect(host().getAttribute("data-highlighter")).toBe(path);
         const model = tokenModel();
         expect(coloursOf(model).size).toBeGreaterThan(1);
-        for (const word of ["error", "service", "catch", "function"]) {
+        for (const word of ["error", "extends", "schema", "module", "service", "catch", "function"]) {
           expect(
             Array.from(shadow().querySelectorAll("span")).some((span) =>
               span.textContent?.split(/\s+/).includes(word) && span.getAttribute("style")?.includes("color")

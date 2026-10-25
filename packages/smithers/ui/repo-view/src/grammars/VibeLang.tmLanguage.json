@@ -10,6 +10,9 @@
 	"scopeName": "source.vibe",
 	"patterns": [
 		{
+			"include": "#vibelang-module-declaration"
+		},
+		{
 			"include": "#directives"
 		},
 		{
@@ -31,6 +34,15 @@
 		},
 		"statements": {
 			"patterns": [
+				{
+					"include": "#vibelang-module-import"
+				},
+				{
+					"include": "#vibelang-error-declaration"
+				},
+				{
+					"include": "#vibelang-schema-alias"
+				},
 				{
 					"include": "#vibelang-type-declaration"
 				},
@@ -2366,6 +2378,9 @@
 		},
 		"import-export-declaration": {
 			"patterns": [
+				{
+					"include": "#vibelang-module-specifier"
+				},
 				{
 					"include": "#comment"
 				},
@@ -5794,7 +5809,7 @@
 		},
 		"vibelang-type-declaration": {
 			"name": "meta.class.ts",
-			"begin": "(?<![_$[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:(\\bexport)\\s+)?\\b(error|schema)\\s+([_$[:alpha:]][_$[:alnum:]]*)",
+			"begin": "(?<![_$[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:(\\bexport)\\s+)?\\b(schema)\\s+([_$[:alpha:]][_$[:alnum:]]*)",
 			"beginCaptures": {
 				"1": {
 					"name": "keyword.control.export.ts"
@@ -5980,6 +5995,206 @@
 			"captures": {
 				"1": {
 					"name": "keyword.control.trycatch.ts"
+				}
+			}
+		},
+		"vibelang-error-declaration": {
+			"name": "meta.class.ts",
+			"begin": "(?<![_$[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:(\\bexport)\\s+)?(?:(abstract)\\s+)?(?:(schema)\\s+)?\\b(error)\\s+([_$[:alpha:]][_$[:alnum:]]*)",
+			"beginCaptures": {
+				"1": {
+					"name": "keyword.control.export.ts"
+				},
+				"2": {
+					"name": "storage.modifier.ts"
+				},
+				"3": {
+					"name": "storage.type.class.ts"
+				},
+				"4": {
+					"name": "storage.type.class.ts"
+				},
+				"5": {
+					"name": "entity.name.type.class.ts"
+				}
+			},
+			"end": "(?<=\\})|(?<=[_$[:alnum:]>])(?=\\s*(?:$|;|//))",
+			"patterns": [
+				{
+					"include": "#comment"
+				},
+				{
+					"include": "#type-parameters"
+				},
+				{
+					"include": "#vibelang-error-heritage"
+				},
+				{
+					"include": "#class-or-interface-body"
+				}
+			]
+		},
+		"vibelang-error-heritage": {
+			"begin": "(?<![_$[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:\\b(extends|implements)\\b)(?![_$[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
+			"beginCaptures": {
+				"1": {
+					"name": "storage.modifier.ts"
+				}
+			},
+			"end": "(?=\\{)|$",
+			"patterns": [
+				{
+					"include": "#comment"
+				},
+				{
+					"include": "#vibelang-error-heritage"
+				},
+				{
+					"include": "#type-parameters"
+				},
+				{
+					"include": "#expressionWithoutIdentifiers"
+				},
+				{
+					"match": "([_$[:alpha:]][_$[:alnum:]]*)\\s*(?:(\\.)|(\\?\\.(?!\\s*[[:digit:]])))(?=\\s*[_$[:alpha:]][_$[:alnum:]]*(\\s*\\??\\.\\s*[_$[:alpha:]][_$[:alnum:]]*)*\\s*)",
+					"captures": {
+						"1": {
+							"name": "entity.name.type.module.ts"
+						},
+						"2": {
+							"name": "punctuation.accessor.ts"
+						},
+						"3": {
+							"name": "punctuation.accessor.optional.ts"
+						}
+					}
+				},
+				{
+					"match": "([_$[:alpha:]][_$[:alnum:]]*)",
+					"captures": {
+						"1": {
+							"name": "entity.other.inherited-class.ts"
+						}
+					}
+				},
+				{
+					"include": "#expressionPunctuations"
+				}
+			]
+		},
+		"vibelang-schema-alias": {
+			"name": "meta.type.declaration.ts",
+			"begin": "(?<![_$[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:(\\bexport)\\s+)?\\b(schema)\\s+([_$[:alpha:]][_$[:alnum:]]*)(?=\\s*=)\\s*",
+			"beginCaptures": {
+				"1": {
+					"name": "keyword.control.export.ts"
+				},
+				"2": {
+					"name": "storage.type.type.ts"
+				},
+				"3": {
+					"name": "entity.name.type.alias.ts"
+				}
+			},
+			"end": "(?=\\}|;|^\\s*$|(?:^\\s*(?:error|service|control|schema|layer|abstract|async|(?:\\bawait\\s+(?:\\busing(?=\\s+(?!in\\b|of\\b(?!\\s*(?:of\\b|=)))[_$[:alpha:]])\\b)\\b)|break|case|catch|class|const|continue|declare|do|else|enum|export|finally|function|for|goto|if|import|interface|let|module|namespace|switch|return|throw|try|type|(?:\\busing(?=\\s+(?!in\\b|of\\b(?!\\s*(?:of\\b|=)))[_$[:alpha:]])\\b)|var|while)\\b))",
+			"patterns": [
+				{
+					"include": "#comment"
+				},
+				{
+					"include": "#type-parameters"
+				},
+				{
+					"begin": "(=)\\s*(intrinsic)(?![_$[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))",
+					"beginCaptures": {
+						"1": {
+							"name": "keyword.operator.assignment.ts"
+						},
+						"2": {
+							"name": "keyword.control.intrinsic.ts"
+						}
+					},
+					"end": "(?=\\}|;|^\\s*$|(?:^\\s*(?:error|service|control|schema|layer|abstract|async|(?:\\bawait\\s+(?:\\busing(?=\\s+(?!in\\b|of\\b(?!\\s*(?:of\\b|=)))[_$[:alpha:]])\\b)\\b)|break|case|catch|class|const|continue|declare|do|else|enum|export|finally|function|for|goto|if|import|interface|let|module|namespace|switch|return|throw|try|type|(?:\\busing(?=\\s+(?!in\\b|of\\b(?!\\s*(?:of\\b|=)))[_$[:alpha:]])\\b)|var|while)\\b))",
+					"patterns": [
+						{
+							"include": "#type"
+						}
+					]
+				},
+				{
+					"begin": "(=)\\s*",
+					"beginCaptures": {
+						"1": {
+							"name": "keyword.operator.assignment.ts"
+						}
+					},
+					"end": "(?=\\}|;|^\\s*$|(?:^\\s*(?:error|service|control|schema|layer|abstract|async|(?:\\bawait\\s+(?:\\busing(?=\\s+(?!in\\b|of\\b(?!\\s*(?:of\\b|=)))[_$[:alpha:]])\\b)\\b)|break|case|catch|class|const|continue|declare|do|else|enum|export|finally|function|for|goto|if|import|interface|let|module|namespace|switch|return|throw|try|type|(?:\\busing(?=\\s+(?!in\\b|of\\b(?!\\s*(?:of\\b|=)))[_$[:alpha:]])\\b)|var|while)\\b))",
+					"patterns": [
+						{
+							"include": "#type"
+						}
+					]
+				}
+			]
+		},
+		"vibelang-module-declaration": {
+			"name": "meta.namespace.declaration.ts",
+			"begin": "(?<![_$[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))(?:(\\bexport)\\s+)?\\b(module)\\s+([_$[:alpha:]][_$[:alnum:]]*)(?=\\s*(?:$|\\{|//|/\\*))",
+			"beginCaptures": {
+				"1": {
+					"name": "keyword.control.export.ts"
+				},
+				"2": {
+					"name": "storage.type.namespace.ts"
+				},
+				"3": {
+					"name": "entity.name.type.module.ts"
+				}
+			},
+			"end": "(?<=\\})|(?=;|^\\s*$|(?:^\\s*(?:abstract|async|(?:\\bawait\\s+(?:\\busing(?=\\s+(?!in\\b|of\\b(?!\\s*(?:of\\b|=)))[_$[:alpha:]])\\b)\\b)|break|case|catch|class|const|continue|declare|do|else|enum|export|finally|function|for|goto|if|import|interface|let|module|namespace|switch|return|throw|try|type|(?:\\busing(?=\\s+(?!in\\b|of\\b(?!\\s*(?:of\\b|=)))[_$[:alpha:]])\\b)|var|while)\\b))",
+			"patterns": [
+				{
+					"include": "#comment"
+				},
+				{
+					"name": "meta.block.ts",
+					"begin": "\\{",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.block.ts"
+						}
+					},
+					"end": "\\}",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.block.ts"
+						}
+					},
+					"patterns": [
+						{
+							"include": "source.ts"
+						}
+					]
+				}
+			]
+		},
+		"vibelang-module-specifier": {
+			"match": "(?<=\\bfrom\\s)\\s*([_$[:alpha:]][_$[:alnum:]]*)(?=\\s*(?:$|;|//|/\\*))",
+			"captures": {
+				"1": {
+					"name": "entity.name.type.module.ts"
+				}
+			}
+		},
+		"vibelang-module-import": {
+			"name": "meta.import.ts",
+			"match": "(?<![_$[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))\\b(import)\\s+([_$[:alpha:]][_$[:alnum:]]*)(?=\\s*(?:$|;|//|/\\*))",
+			"captures": {
+				"1": {
+					"name": "keyword.control.import.ts"
+				},
+				"2": {
+					"name": "entity.name.type.module.ts"
 				}
 			}
 		}

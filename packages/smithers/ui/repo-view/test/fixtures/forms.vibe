@@ -1,0 +1,10 @@
+abstract error LookupError { }
+error NotFound extends LookupError { id: string }
+schema Code = "missing" | "found"
+module text {
+  export function clean(s: string): string { return s.trim() }
+}
+import { clean } from text
+import text
+service Users { find(id: string): User!NotFound }
+function greet(id: string) { return Users.find(id).name catch (e) => "none" }
