@@ -931,7 +931,7 @@ describe("0052_agent_views", () => {
 
 
 describe("0055_branch_ref_namespace", () => {
-  test("preserves existing branches, conversations and shares, defaults their namespace and rejects unknown namespaces", () =>
+  test("preserves existing branches, conversations, personal history and shares, defaults their namespace and rejects unknown namespaces", () =>
     emptySchema(async (url) => {
       const database = Database.layer(Effect.succeed(Redacted.make(url)))
       const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
@@ -946,10 +946,14 @@ describe("0055_branch_ref_namespace", () => {
           VALUES (${conversationId}, 'github/acme/widgets', ${branchId})`
         yield* sql`INSERT INTO branch_shares (branch_id, grantee, login, access, shared_by)
           VALUES (${branchId}, 'viewer', 'viewer-login', 'view', 'owner')`
+        yield* sql`INSERT INTO conversation_people (conversation_id, person_id, owner, repo, branch, archived_at)
+          VALUES (${conversationId}, 'owner', 'acme', 'widgets', 'existing', NULL),
+            (${conversationId}, 'viewer', 'acme', 'widgets', 'existing', '2026-10-23T12:00:00Z')`
       }))
       const snapshot = (hasNamespace: boolean) => on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
         SELECT to_jsonb(b) - ${hasNamespace ? "ref_namespace" : ""} - ${hasNamespace ? "ref_forge" : ""} AS branch, to_jsonb(c) AS conversation,
-          (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.grantee) FROM branch_shares s WHERE s.branch_id = b.id) AS shares
+          (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.grantee) FROM branch_shares s WHERE s.branch_id = b.id) AS shares,
+          (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.person_id) FROM conversation_people p WHERE p.conversation_id = c.id) AS people
         FROM branches b JOIN conversations c ON c.branch_id = b.id ORDER BY b.id`))
       const before = await snapshot(false)
 

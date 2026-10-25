@@ -53,7 +53,7 @@ const openApi = async (forge?: Forge["Service"]) => {
 }
 
 /** One of the person's devices, its engine leading, signed in as a Member, with the live queries React starts. */
-const openDevice = async (api: TestChatApi["Service"], host: NodeDevice = nodeDevice({ agent: api })) => {
+const openDevice = async (api: TestChatApi["Service"], host: NodeDevice = nodeDevice({ agent: api }), listOpen = true) => {
   const runtime = openTab(api, { host })
   runtimes.push(runtime)
   const branch = await runtime.runPromise(Effect.service(Branch))
@@ -61,7 +61,7 @@ const openDevice = async (api: TestChatApi["Service"], host: NodeDevice = nodeDe
   const commands = await runtime.runPromise(Effect.service(Commands))
   const store = await runtime.runPromise(Effect.service(ConversationsStore))
   const { conversations } = branch
-  for (const query of [conversations.queries.list, conversations.queries.search, branch.queries.current, chat.queries.place]) {
+  for (const query of [...(listOpen ? [conversations.queries.list, conversations.queries.search] : []), branch.queries.current, chat.queries.place]) {
     query.startSyncImmediate()
   }
   // Signed in as sign-in's `load` sets it, so the composer offers the slash commands.
@@ -130,6 +130,37 @@ describe("your conversations", () => {
     expect(laptop.list()).toEqual(["feature/one"])
     await until(() => expect(laptop.pending()).toEqual([]))
     await until(() => expect(phone.list()).toEqual(["feature/one"]))
+  }, WITHIN)
+
+  test("opening Conversations after branch navigation and reload reads ordinary and ephemeral rows and follows other devices", async () => {
+    const api = await openApi()
+    const laptop = await openDevice(api, nodeDevice({ agent: api }), false)
+    const phoneHost = nodeDevice({ agent: api })
+    const phone = await openDevice(api, phoneHost, false)
+    await laptop.branch.actions.open("octo", "hello", "feature/one")
+    laptop.commands.actions.type("/new topic-two")
+    laptop.commands.actions.submit("/new topic-two")
+    await until(() => expect(laptop.host.navigated).toEqual(["/octo/hello/tree/topic-two"]))
+    // The route starts these queries only when Conversations mounts, after the writes.
+    for (const device of [laptop, phone]) {
+      device.branch.conversations.queries.list.startSyncImmediate()
+      device.branch.conversations.queries.search.startSyncImmediate()
+      await until(() => expect(device.list()).toEqual(["topic-two", "feature/one"]))
+    }
+    const store = await laptop.runtime.runPromise(Effect.service(ConversationsStore))
+    const conversationId = store.mine.tanstack.toArray.find(row => row.branch === "topic-two")!.conversationId
+    await laptop.actions.archive(conversationId, true)
+    await until(() => expect(phone.list()).toEqual(["feature/one"]))
+    await phone.runtime.dispose()
+    const reloaded = await openDevice(api, phoneHost, false)
+    reloaded.branch.conversations.queries.list.startSyncImmediate()
+    reloaded.branch.conversations.queries.search.startSyncImmediate()
+    await until(() => expect(reloaded.loaded()).toBe(true))
+    expect(reloaded.list()).toEqual(["feature/one"])
+    await reloaded.actions.showArchived(true)
+    await until(() => expect(reloaded.list()).toEqual(["topic-two (archived)"]))
+    await reloaded.branch.actions.open("octo", "hello", "topic-two")
+    await until(() => expect(laptop.list()).toEqual(["topic-two", "feature/one"]))
   }, WITHIN)
 
   test("a device clock behind its pending archive still restores with a later act", async () => {
