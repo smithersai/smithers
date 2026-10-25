@@ -1,0 +1,146 @@
+{
+  "openedMs": 55.195832999999766,
+  "stages": [
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "match",
+      "phase": "start",
+      "elapsedMs": 0
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "page",
+      "phase": "ready",
+      "elapsedMs": 1,
+      "rows": 0
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 1
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 23,
+      "rows": 7
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 23
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 53,
+      "rows": 22
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "changes",
+      "phase": "start",
+      "elapsedMs": 54
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "changes",
+      "phase": "ready",
+      "elapsedMs": 55
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "render",
+      "phase": "ready",
+      "elapsedMs": 55
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "changes",
+      "phase": "start",
+      "elapsedMs": 57
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "changes",
+      "phase": "ready",
+      "elapsedMs": 57
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "changes",
+      "phase": "rows",
+      "elapsedMs": 140,
+      "rows": 1
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "changes",
+      "phase": "rows",
+      "elapsedMs": 152,
+      "rows": 1
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 259
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 261
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 290,
+      "rows": 7
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 293,
+      "rows": 7
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 294
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": 1,
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 329,
+      "rows": 22
+    }
+  ]
+}

@@ -5,7 +5,7 @@
 // refusal ChatApi can answer; ChatApi's real ones, and following a run live, are proved in remote.test.ts.
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Deferred, Effect, Layer, ManagedRuntime, Metric, Option, PubSub, Stream } from "effect"
+import { Deferred, Effect, Layer, ManagedRuntime, Logger, Metric, Option, PubSub, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import type { Inspection } from "./schema"
@@ -70,16 +70,19 @@ const open = (answers: Answers) => {
     steer: () => Effect.die("unused"),
     stop: () => Effect.die("unused"),
   }))
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
   const runtime = ManagedRuntime.make(
-    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provide(Layer.mergeAll(engine, remote, Persistence.memory))),
+    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provide(Layer.mergeAll(engine, remote, Persistence.memory, Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])))),
   )
   runtimes.push(runtime as never)
   const store = runtime.runSync(Effect.service(RunsStore))
   const page = (runId: string) => Option.getOrUndefined(runtime.runSync(store.pages.get(runId)))
   return {
     store,
+    logs,
     page,
-    run: <A, E>(effect: Effect.Effect<A, E, RunsStore>) => runtime.runPromise(effect),
+    run: <A, E>(effect: Effect.Effect<A, E, RunsStore>) => runtime.runPromise(effect.pipe(
+      Effect.provide(Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])))),
     publish: (executionId: string) => Effect.runSync(PubSub.publish(events, { executionId, eventType: "x" })),
   }
 }
@@ -574,10 +577,12 @@ test("replay selected while a child is loading keeps the previously shown forest
     list: () => Effect.succeed({ runs: [], cursor: null }),
   })
   await t.run(t.store.readRun("r"))
-  const snapshot = t.page("r")
   hasChild = true
   const reading = t.run(t.store.readRun("r"))
   await t.run(Deferred.await(started))
+  // Replay freezes what is visible when selected, including the parent published before its child.
+  const snapshot = t.page("r")
+  expect((snapshot?.inspection as Inspection).children).toHaveLength(1)
   await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r"; draft.at = 0 }))
   await t.run(Deferred.succeed(pending, inspection("child", [], false)))
   await reading
@@ -674,10 +679,12 @@ test("a followed remote run is ignored while another run is open", async () => {
     const api = await app.runPromise(Effect.service(TestChatApi))
     tab = openTab(api, { host: nodeDevice() })
     const runs = await tab.runPromise(Effect.service(Runs))
+    runs.queries.page.startSyncImmediate()
     const runId = await app.runPromise(api.remote.todoRun("Follow once"))
     await runs.actions.openRun(runId)
     await runs.actions.openRun(runId)
     await runs.actions.openRun("todo:00000000-0000-4000-8000-000000000000")
+    await vi.waitFor(() => expect(runs.queries.page.toArray[0]?.page.state).toBe("not_found"), { timeout: 30_000 })
     const inspections = api.spans.filter((span) => span.name === "run.inspect").length
     const hidden = Metric.withAttributes(followChanges, { showing: "false" })
     const before = (await tab.runPromise(Metric.value(hidden))).count
@@ -690,3 +697,129 @@ test("a followed remote run is ignored while another run is open", async () => {
     await app.dispose()
   }
 }, 120_000)
+
+test("opening a run returns within five seconds while its inspection is unresolved", async () => {
+  const pending = Effect.runSync(Deferred.make<Inspection>())
+  const t = open({ inspect: () => Deferred.await(pending), list: () => Effect.succeed({ runs: [], cursor: null }) })
+  const { openRun } = await import("./actions")
+  let returned = false
+  const startedAt = performance.now()
+  const opening = t.run(openRun("slow")).then(() => { returned = true })
+  try {
+    await vi.waitFor(() => expect(returned).toBe(true), { timeout: 5_000, interval: 10 })
+    expect(performance.now() - startedAt).toBeLessThan(5_000)
+    expect(t.page("slow")).toMatchObject({ state: "loading", inspection: null })
+  } finally {
+    await Effect.runPromise(Deferred.succeed(pending, inspection("slow", [], false)))
+    await opening
+  }
+  await vi.waitFor(() => expect(t.page("slow")?.state).toBe("read"))
+})
+
+test("publishes the known parent before an unresolved child inspection and fills it in live", async () => {
+  const child = Effect.runSync(Deferred.make<Inspection>())
+  const root = { ...inspection("parent", [], false), children: [inspection("child", [], false).run] }
+  const t = open({ inspect: (id) => id === "parent" ? Effect.succeed(root) : Deferred.await(child), list: () => Effect.succeed({ runs: [], cursor: null }) })
+  const reading = t.run(t.store.readRun("parent"))
+  try {
+    await vi.waitFor(() => expect(t.page("parent")).toMatchObject({ state: "read", inspection: root }), { timeout: 5_000 })
+    expect(t.page("parent")?.descendants ?? []).toEqual([])
+  } finally {
+    await Effect.runPromise(Deferred.succeed(child, inspection("child", [], false)))
+    await reading
+  }
+  expect(t.page("parent")?.descendants).toHaveLength(1)
+})
+
+
+test("reopening a cached run keeps its rows while inspection is held, and a missing render marker is harmless", async () => {
+  const pending = Effect.runSync(Deferred.make<Inspection>())
+  let hold = false
+  const t = open({ inspect: (id) => hold ? Deferred.await(pending) : Effect.succeed(inspection(id, [event(0)], false)),
+    list: () => Effect.succeed({ runs: [], cursor: null }) })
+  const { openRun } = await import("./actions")
+  await t.run(openRun("cached"))
+  const cached = t.page("cached")
+  hold = true
+  await t.run(openRun("cached"))
+  expect(t.page("cached")).toEqual(cached)
+  await t.run(t.store.rendered("cached"))
+  await t.run(t.store.rendered("unknown"))
+  await Effect.runPromise(Deferred.succeed(pending, inspection("cached", [event(0), event(1)], false)))
+  await vi.waitFor(() => expect((t.page("cached")?.inspection as Inspection).journal.events).toHaveLength(2))
+})
+
+test("a child's first inspection shows before an unresolved later journal page", async () => {
+  const pending = Effect.runSync(Deferred.make<Inspection>())
+  const root = { ...inspection("parent", [], false), children: [inspection("child", [], false).run] }
+  const child = inspection("child", [event(0)], true)
+  const t = open({ inspect: (id, options) => id === "parent" ? Effect.succeed(root)
+    : options?.afterSeq === undefined ? Effect.succeed(child) : Deferred.await(pending),
+    list: () => Effect.succeed({ runs: [], cursor: null }) })
+  const reading = t.run(t.store.readRun("parent"))
+  try {
+    await vi.waitFor(() => expect(t.page("parent")?.descendants).toEqual([child]), { timeout: 5_000 })
+  } finally {
+    await Effect.runPromise(Deferred.succeed(pending, inspection("child", [event(1), event(2), event(3)], false)))
+    await reading
+  }
+  expect((t.page("parent")?.descendants?.[0] as Inspection).journal.events).toEqual([0, 1, 2, 3].map(event))
+})
+
+
+test("refresh keeps cached siblings and journal tails while a child page is unresolved", async () => {
+  const tail = Effect.runSync(Deferred.make<Inspection>())
+  const sibling = Effect.runSync(Deferred.make<Inspection>())
+  let refresh = false
+  const root = { ...inspection("root", [], false), children: [inspection("a", [], false).run, inspection("b", [], false).run] }
+  const t = open({ inspect: (id, options) => {
+    if (id === "root") return Effect.succeed(root)
+    if (id === "b") return refresh ? Deferred.await(sibling) : Effect.succeed(inspection(id, [], false))
+    if (!refresh) return Effect.succeed(inspection(id, [0, 1, 2, 3].map(event), false))
+    if (options?.afterSeq !== undefined) return Deferred.await(tail)
+    const first = inspection(id, [event(0)], true)
+    return Effect.succeed({ ...first, run: { ...first.run, lastSeq: 5 } })
+  }, list: () => Effect.succeed({ runs: [], cursor: null }) })
+  await t.run(t.store.readRun("root"))
+  refresh = true
+  const reading = t.run(t.store.readRun("root"))
+  try {
+    await vi.waitFor(() => expect((t.page("root")?.descendants?.[0] as Inspection)?.run.lastSeq).toBe(5))
+    expect(t.page("root")?.descendants?.map((child) => (child as Inspection).run.runId)).toEqual(["a", "b"])
+    expect((t.page("root")?.descendants?.[0] as Inspection).journal.events).toEqual([0, 1, 2, 3].map(event))
+    await Effect.runPromise(Deferred.succeed(tail, inspection("a", [event(4), event(5)], false)))
+    await vi.waitFor(() => expect((t.page("root")?.descendants?.[0] as Inspection)?.journal.events).toHaveLength(6))
+    expect(t.page("root")?.descendants?.map((child) => (child as Inspection).run.runId)).toEqual(["a", "b"])
+  } finally {
+    await Effect.runPromise(Deferred.succeed(tail, inspection("a", [event(4), event(5)], false)))
+    await Effect.runPromise(Deferred.succeed(sibling, inspection("b", [], false)))
+    await reading
+  }
+})
+
+test("an older inspection's continuation keeps its route attempt after same-run reentry", async () => {
+  const pending = Effect.runSync(Deferred.make<Inspection>())
+  const requested = Effect.runSync(Deferred.make<void>())
+  const root = { ...inspection("root", [], false), children: [inspection("child", [], false).run] }
+  let calls = 0
+  const t = open({ inspect: (id, options) => {
+    if (id === "root") return ++calls === 1 ? Effect.succeed(root) : Effect.succeed(inspection("root", [], false))
+    if (options?.afterSeq === undefined) return Effect.andThen(Deferred.succeed(requested, undefined), Deferred.await(pending))
+    return Effect.succeed(inspection("child", [event(1), event(2), event(3)], false))
+  }, list: () => Effect.succeed({ runs: [], cursor: null }) })
+  const { openRun } = await import("./actions")
+  const opening = t.run(openRun("root"))
+  await Effect.runPromise(Deferred.await(requested))
+  await t.run(openRun("root"))
+  await Effect.runPromise(Deferred.succeed(pending, inspection("child", [event(0)], true)))
+  await opening
+  await vi.waitFor(() => {
+    const stages = t.logs.filter((line) => line.message === "run.route.stage" && line.annotations.stage === "inspection")
+    expect(stages).toHaveLength(8)
+    const attempts = t.logs.filter((line) => line.message === "run.route.stage" && line.annotations.stage === "match")
+    expect(stages.slice(-2).map((line) => line.annotations.routeAttempt)).toEqual([
+      attempts[0]!.annotations.routeAttempt, attempts[0]!.annotations.routeAttempt,
+    ])
+    expect(attempts[0]!.annotations.routeAttempt).not.toBe(attempts[1]!.annotations.routeAttempt)
+  })
+})

@@ -1,0 +1,214 @@
+{
+  "openedMs": 16.314124999998967,
+  "stages": [
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "match",
+      "phase": "start",
+      "elapsedMs": 0
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "page",
+      "phase": "ready",
+      "elapsedMs": 0,
+      "rows": 0
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "repo-runs",
+      "phase": "start",
+      "elapsedMs": 3
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "repo-runs",
+      "phase": "ready",
+      "elapsedMs": 5
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 7
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "changes",
+      "phase": "start",
+      "elapsedMs": 11
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "changes",
+      "phase": "ready",
+      "elapsedMs": 12
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "render",
+      "phase": "ready",
+      "elapsedMs": 16
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 53,
+      "rows": 7
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "page",
+      "phase": "rows",
+      "elapsedMs": 55,
+      "rows": 1
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 55
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "repo-runs",
+      "phase": "rows",
+      "elapsedMs": 94,
+      "rows": 1
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 121,
+      "rows": 22
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "changes",
+      "phase": "start",
+      "elapsedMs": 123
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "changes",
+      "phase": "ready",
+      "elapsedMs": 123
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "changes",
+      "phase": "rows",
+      "elapsedMs": 144,
+      "rows": 1
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "changes",
+      "phase": "rows",
+      "elapsedMs": 201,
+      "rows": 1
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 343
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 390,
+      "rows": 7
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "page",
+      "phase": "rows",
+      "elapsedMs": 390,
+      "rows": 1
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 391
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 401
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 423,
+      "rows": 22
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 424,
+      "rows": 7
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "page",
+      "phase": "rows",
+      "elapsedMs": 424,
+      "rows": 1
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "start",
+      "elapsedMs": 424
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "inspection",
+      "phase": "ready",
+      "elapsedMs": 449,
+      "rows": 22
+    },
+    {
+      "feature": "runs",
+      "routeAttempt": "b7492725-d23a-4b5a-a04d-1132881f9cc5",
+      "stage": "changes",
+      "phase": "reused",
+      "elapsedMs": 449
+    }
+  ]
+}

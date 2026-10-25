@@ -36,7 +36,7 @@ export type RunRow = typeof RunRow.Type
  */
 export const RunPage = Schema.Struct({
   id: Schema.String,
-  state: Schema.Literals(["read", "not_found", "not_started", "unavailable"]),
+  state: Schema.Literals(["loading", "read", "not_found", "not_started", "unavailable"]),
   inspection: Schema.NullOr(Schema.Unknown),
   /** The journal events read past the first page, by More. */
   more: Schema.Array(Schema.Unknown),

@@ -1,10 +1,14 @@
 import { writeFile } from "node:fs/promises"
+import { ShapeSource } from "@smthrs/effect-electric"
+import { Persistence } from "@smthrs/effect-tanstack-db"
+import { BrowserEngine } from "@smthrs/platform-browser"
 // Watching a TODO's run on Cloudflare from a tab (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): the
 // browser's own layer (`appLayer`) on a Node device, against ChatApi's real handler with its remote runs routes
 // (worker/RemoteRuns.ts) and the compose Postgres and Electric (src/test/chatApi.ts). The run is the remote host's
 // `probe/Pause`, run under a TODO attempt's id by an engine on a schema of its own, as the Durable Object runs a TODO's
 // `todo` run: so what the tab reads, and when it reads it again, is what it does for a TODO's run.
-import { Effect } from "effect"
+import { Effect, Layer, Logger, ManagedRuntime, Option } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { read as telemetry } from "../../test/otlp"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -15,6 +19,9 @@ import { actsOf, hostOf, missingOf, repoRunRows, steerOpen, steersOf } from "./p
 import { Runs } from "./runs"
 import { REMOTE_RUN_SHAPE_ROUTE, stopRoute } from "./contract"
 import { RunSteers } from "./steers"
+import { RunsStore } from "./store"
+import { openRun } from "./actions"
+import { RemoteRunsClient } from "./api"
 import type { Inspection, RepoRunRow, RunPage, SteerSending, SteerSent } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -77,11 +84,49 @@ const open = async (person?: string, engine = false) => {
 }
 
 describe("a TODO's run on Cloudflare", () => {
+  test("a subscription warmed before navigation stays live without inventing a route timing attempt", async () => {
+    const t = await open()
+    const runId = await Effect.runPromise(t.api.remote.todoRun("Warmed feed"))
+    // Exercise the store's public follow entry before the route, using real services and memory persistence.
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const logger = Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])
+    const engine = await t.tab.runPromise(Effect.service(BrowserEngine.BrowserEngine))
+    const remote = await t.tab.runPromise(Effect.service(RemoteRunsClient))
+    const shapes = await t.tab.runPromise(Effect.service(ShapeSource.ShapeSource))
+    const runtime = ManagedRuntime.make(RunsStore.layer({ origin: CHATAPI_ORIGIN }).pipe(Layer.provideMerge(Layer.mergeAll(
+      Layer.succeed(BrowserEngine.BrowserEngine, engine), Layer.succeed(RemoteRunsClient, remote),
+      Layer.succeed(ShapeSource.ShapeSource, shapes), Persistence.memory,
+      Layer.succeed(FetchHttpClient.Fetch, t.api.fetch),
+      logger,
+    ))))
+    runtimes.push(runtime)
+    const store = await runtime.runPromise(Effect.service(RunsStore))
+    const run = <A, E>(effect: Effect.Effect<A, E, RunsStore>) => runtime.runPromise(effect.pipe(Effect.provide(logger)))
+    const page = () => Option.getOrUndefined(runtime.runSync(store.pages.get(runId)))
+    const inspected = () => page()?.inspection as Inspection | undefined
+    await run(store.follow(runId))
+    await run(store.follow(runId))
+    const stages = () => logs.filter((log) => log.message === "run.route.stage").map((log) => log.annotations)
+    expect(stages()).toEqual([])
+
+    await run(openRun(runId))
+    await until(() => expect(page()?.state).toBe("not_started"), 5_000)
+    await Effect.runPromise(t.api.remote.start(runId, { label: "warmed", pauseMs: 0 }))
+    await until(() => expect(inspected()?.run.status).toBe("completed"), 5_000)
+    expect(inspected()?.steps.filter((step) => step.action === "probe/Mark").map((step) => step.output?.text)).toEqual([
+      "\"warmed:before\"", "\"warmed:after\"",
+    ])
+    // The existing feed belongs to no navigation. Only its reuse gets the new route's clock.
+    const changes = stages().filter((stage) => stage.stage === "changes")
+    expect(changes.length).toBeGreaterThan(0)
+    expect(changes.every((stage) => stage.phase === "reused")).toBe(true)
+  })
+
   test("a Member watches it live: Not started, then each step as the run takes it, then done; no polling", async () => {
     const t = await open()
     const runId = await Effect.runPromise(t.api.remote.todoRun("Watch me"))
     await t.runs.actions.openRun(runId)
-    expect(t.page()).toMatchObject({ id: runId, state: "not_started" })
+    await until(() => expect(t.page()).toMatchObject({ id: runId, state: "not_started" }))
     expect(missingOf(t.page()!)).toBe("Not started")
 
     // The run starts on the engine: its row of the change feed reads the page again, with no request of the tab's own.
@@ -201,7 +246,7 @@ describe("a TODO's run on Cloudflare", () => {
     const runId = await Effect.runPromise(t.api.remote.todoRun("Not yours"))
     await Effect.runPromise(t.api.remote.start(runId, { label: "private", pauseMs: 0 }))
     await t.runs.actions.openRun(runId)
-    expect(t.page()).toMatchObject({ id: runId, state: "not_found", inspection: null })
+    await until(() => expect(t.page()).toMatchObject({ id: runId, state: "not_found", inspection: null }))
     expect(missingOf(t.page()!)).toBe("Not found")
   }, 60_000)
 
@@ -211,7 +256,7 @@ describe("a TODO's run on Cloudflare", () => {
     await Effect.runPromise(Effect.exit(t.api.remote.revision("none")))
     const runId = "todo:00000000-0000-4000-8000-000000000000"
     await t.runs.actions.openRun(runId)
-    expect(t.page()).toMatchObject({ id: runId, state: "not_found" })
+    await until(() => expect(t.page()).toMatchObject({ id: runId, state: "not_found" }))
   }, 60_000)
 })
 
@@ -235,7 +280,7 @@ describe("a repository's run on Cloudflare", () => {
     ]))
     await t.runs.actions.openRepoRuns("ELSEWHERE", "PROJECT")
     await t.runs.actions.openRun(runId, { owner: "elsewhere", name: "project" })
-    expect(t.page()).toMatchObject({ id: runId, state: "not_started" })
+    await until(() => expect(t.page()).toMatchObject({ id: runId, state: "not_started" }))
     await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
     await until(() => expect(t.inspection()?.run.status).toBe("suspended"))
     t.runs.actions.stop()
@@ -268,7 +313,7 @@ describe("a repository's run on Cloudflare", () => {
         VALUES ('github/elsewhere/private', 'person-member', ${role})`
     }))))
     await t.runs.actions.openRun(runId, { owner: "elsewhere", name: "private" })
-    expect(t.page()).toMatchObject({ id: runId, state: "not_found" })
+    await until(() => expect(t.page()).toMatchObject({ id: runId, state: "not_found" }))
     expect((await t.api.fetch(`${CHATAPI_ORIGIN}${REMOTE_RUN_SHAPE_ROUTE}?run=${encodeURIComponent(runId)}&offset=-1`)).status).toBe(403)
     expect((await t.api.fetch(`${CHATAPI_ORIGIN}${stopRoute(runId)}`, { method: "POST" })).status).toBe(404)
     expect((await t.api.fetch(`${CHATAPI_ORIGIN}${ACTIONS_SHAPE_ROUTE}?repo=elsewhere%2Fprivate&offset=-1`)).status).toBe(role === null ? 403 : 200)
@@ -283,7 +328,7 @@ describe("a repository's run on Cloudflare", () => {
         VALUES ('github/elsewhere/project', 'person-guest', 'member')`
     }))))
     await t.runs.actions.openRun(runId, { owner: "elsewhere", name: "project" })
-    expect(t.page()).toMatchObject({ id: runId, state: "not_started" })
+    await until(() => expect(t.page()).toMatchObject({ id: runId, state: "not_started" }))
     expect((await asPerson(t.api, "gus").fetch(`${CHATAPI_ORIGIN}${REMOTE_RUN_SHAPE_ROUTE}?run=${encodeURIComponent(runId)}&offset=-1`)).status).toBe(200)
   }, 60_000)
 
@@ -301,7 +346,7 @@ describe("a repository's run on Cloudflare", () => {
     )
 
     await t.runs.actions.openRun(runId, { owner, name })
-    expect(t.page()).toMatchObject({ id: runId, state: "not_started" })
+    await until(() => expect(t.page()).toMatchObject({ id: runId, state: "not_started" }))
     await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
     await until(() => expect(t.inspection()?.run.status).toBe("suspended"))
     expect(hostOf(runId, true)).toBe("Cloud")
@@ -334,7 +379,7 @@ describe("a repository's run on Cloudflare", () => {
       await Effect.runPromise(t.api.remote.release(runId))
       // The job's own row moves first; the run's page reads it, and of its jobs, that one.
       await until(() => expect(t.inspection()?.run.status).toBe("completed"))
-      expect(t.page()?.descendants?.map((child) => (child as Inspection).run.status)).toEqual(["completed"])
+      await until(() => expect(t.page()?.descendants?.map((child) => (child as Inspection).run.status)).toEqual(["completed"]))
       expect(t.reads()).toBeGreaterThan(reads)
     } finally {
       await Effect.runPromise(t.api.remote.release(runId))
@@ -367,7 +412,7 @@ describe("a repository's run on Cloudflare", () => {
     const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
     await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
     await t.runs.actions.openRun(runId, { owner: "octo", name: "hello" })
-    expect(t.page()).toMatchObject({ id: runId, state: "not_found" })
+    await until(() => expect(t.page()).toMatchObject({ id: runId, state: "not_found" }))
     expect(missingOf(t.page()!, true)).toBe("Not found")
   }, 60_000)
 })
@@ -392,6 +437,11 @@ test("a real repository run records the route's inspection and first subscribed 
       expect.objectContaining({ stage: "render", phase: "ready" }),
     ])))
     if (process.env.RUN_ROUTE_TIMINGS) await writeFile(process.env.RUN_ROUTE_TIMINGS, JSON.stringify({ openedMs, stages: stages() }, null, 2))
+    await t.runs.actions.openRun(runId, { owner: "octo", name: "hello" })
+    await until(() => expect(stages()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ stage: "changes", phase: "reused" }),
+      expect.objectContaining({ stage: "repo-runs", phase: "reused" }),
+    ])))
   } finally {
     await Effect.runPromise(t.api.remote.release(runId))
   }

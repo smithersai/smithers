@@ -18,7 +18,7 @@ import {
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_LATEST, STOP } from "../contract"
-import { actsOf, hostOf, journalOf, missingOf, selectedStep } from "../page"
+import { actsOf, hostOf, journalOf, missingOf, repoRunStateOf, selectedStep } from "../page"
 import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs"
@@ -34,8 +34,15 @@ import { RunSteers } from "./RunSteers"
 export function RunPageView() {
   const { queries, actions } = useRuns()
   const { data } = useLiveQuery(queries.page)
+  const { data: repoRuns } = useLiveQuery(queries.repoRuns)
   if (data === undefined) return null
   const { view, page } = data
+  if (page.state === "loading") {
+    const known = repoRuns.find((run) => run.execution === page.id)
+    return known === undefined ? null : <RunHeader title={known.flow} state={repoRunStateOf(known.status)}
+      startedAtMs={Date.parse(known.createdAt)} finishedAtMs={known.status === "running" ? null : Date.parse(known.updatedAt)}
+      now={view.now ?? Date.now()} host={hostOf(page.id, true)} />
+  }
   if (page.state !== "read") return <EmptyState title={missingOf(page, view.repo != null)} />
   return <ReadRunPage page={page} view={view} actions={actions} />
 }

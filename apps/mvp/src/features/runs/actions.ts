@@ -52,17 +52,16 @@ export const closeRun = (runId: string) =>
   })
 
 /**
- * A run's route loader: shows `runId` with nothing selected, reads it, and follows it when it runs on Cloudflare. A
+ * A run's route entry: shows the frame and cached rows immediately; the store reads and follows it live. A
  * repository's run (`repo`, docs/features/actions.md) is read and followed there, with the runs it started.
  */
 export const openRun = (runId: string, repo: RepoName | null = null) =>
   Effect.gen(function* () {
-    yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, actToken: null, refusal: null, repo })
     const store = yield* RunsStore
-    if (repo !== null) yield* store.cloud(runId)
     yield* store.beginRoute(runId)
-    yield* store.readRun(runId)
-    yield* store.follow(runId)
+    yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, actToken: null, refusal: null, repo })
+    if (repo !== null) yield* store.cloud(runId)
+    yield* store.loadRun(runId, repo)
   })
 
 /** Selects a step. */

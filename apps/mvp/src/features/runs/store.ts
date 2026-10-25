@@ -5,7 +5,7 @@ import { Clock, Context, Duration, Effect, Layer, Metric, Option, Scope, Semapho
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT } from "./contract"
 import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"
-import { type Inspection, RepoRunRow, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
+import { type Inspection, type RepoName, RepoRunRow, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
 import { routeTiming, type RouteTiming } from "./timing"
 import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
 
@@ -128,6 +128,7 @@ export class RunsStore extends Context.Service<
     readonly repoRunList: Effect.Success<ReturnType<typeof repoRunsQuery>>
     /** Starts syncing this repository's runs, once per repository. */
     readonly openRepoRuns: (owner: string, name: string) => Effect.Effect<void>
+    readonly loadRun: (runId: string, repo: RepoName | null) => Effect.Effect<void>
     readonly beginRoute: (runId: string) => Effect.Effect<void>
     readonly rendered: (runId: string) => Effect.Effect<void>
     readonly readRun: (runId: string) => Effect.Effect<void>
@@ -160,9 +161,8 @@ export class RunsStore extends Context.Service<
        * Where the page of run `rootId` reads a run, it or one it started: ChatApi when the root runs on Cloudflare,
        * else this device's engine.
        */
-      const reader = (rootId: string): Reader => (id, read) =>
+      const reader = (rootId: string, attempt = attempts.get(rootId)): Reader => (id, read) =>
         Effect.gen(function* () {
-          const attempt = attempts.get(rootId)
           yield* attempt?.record("inspection", "start") ?? Effect.void
           const request: ReturnType<Reader> = onCloud(rootId) ? remote.inspect(id, read) : engine.inspect(id, read)
           const result = yield* Effect.result(request)
@@ -191,7 +191,8 @@ export class RunsStore extends Context.Service<
           const generation = (generations.get(runId) ?? 0) + 1
           generations.set(runId, generation)
           const startedAt = yield* Clock.currentTimeMillis
-          const source = reader(runId)
+          const attempt = attempts.get(runId)
+          const source = reader(runId, attempt)
           const read = yield* Effect.result(source(runId, { limit: JOURNAL_PAGE }))
           if (generations.get(runId) !== generation) return
           const afterRead = Option.getOrThrow(yield* view.get(VIEW))
@@ -206,6 +207,30 @@ export class RunsStore extends Context.Service<
                 ? { more: page.more as Inspection["journal"]["events"], hasMore: page.hasMore }
                 : { more: [], hasMore: inspection.journal.hasMore },
             })
+            // Publish the first inspection before reading any other page or child. The known graph is useful now.
+            const cached = Option.isSome(current) ? current.value.descendants as ReadonlyArray<Inspection> ?? [] : []
+            const publish = (descendants: ReadonlyArray<Inspection>) => Effect.gen(function* () {
+              if (generations.get(runId) !== generation) return
+              const shown = Option.getOrThrow(yield* view.get(VIEW))
+              if (shown.runId === runId && shown.at != null) return
+              // Keep every reachable cached sibling until its replacement arrives, including nested runs.
+              const known = new Map([...cached, ...descendants].map((child) => [child.run.runId, child]))
+              const visible: Inspection[] = []
+              const visited = new Set([runId])
+              const pending = inspection.children.map((child) => child.runId)
+              for (let index = 0; index < pending.length; index++) {
+                const id = pending[index]!
+                if (visited.has(id)) continue
+                visited.add(id)
+                const child = known.get(id)
+                if (child === undefined) continue
+                visible.push(child)
+                pending.push(...child.children.map((nested) => nested.runId))
+              }
+              yield* put(pages, { id: runId, state: "read", inspection, ...kept, descendants: visible })
+            })
+            yield* publish([])
+            yield* attempt?.record("page", "rows", 1) ?? Effect.void
             // Read finite pages through this inspection's snapshot, never poll or retry.
             let after = kept.more.at(-1)?.seq ?? inspection.journal.nextSeq
             // An earlier fully read page can have new events beyond it now.
@@ -234,11 +259,14 @@ export class RunsStore extends Context.Service<
               }
               const child = yield* Effect.result(source(childId, { limit: JOURNAL_PAGE }))
               if (child._tag === "Failure") continue
+              const childIndex = descendants.length
               const firstEnd = child.success.journal.nextSeq
               const retained = child.success.journal.hasMore && previous !== undefined ? previous.journal.events.filter((event) => event.seq > firstEnd) : []
               const events = [...child.success.journal.events, ...retained]
               let cursor = events.at(-1)?.seq ?? firstEnd
               let hasMore = child.success.journal.hasMore && cursor < child.success.run.lastSeq
+              descendants.push({ ...child.success, journal: { ...child.success.journal, events: [...events], nextSeq: cursor, hasMore } })
+              yield* publish(descendants)
               while (hasMore && cursor < child.success.run.lastSeq) {
                 const next = yield* Effect.result(source(childId, { afterSeq: cursor, limit: JOURNAL_PAGE }))
                 if (next._tag === "Failure") break
@@ -246,7 +274,8 @@ export class RunsStore extends Context.Service<
                 if (fresh.length === 0) break
                 events.push(...fresh); cursor = fresh.at(-1)!.seq; hasMore = next.success.journal.hasMore
               }
-              descendants.push({ ...child.success, journal: { ...child.success.journal, events, nextSeq: cursor, hasMore } })
+              descendants[childIndex] = { ...child.success, journal: { ...child.success.journal, events, nextSeq: cursor, hasMore } }
+              yield* publish(descendants)
               pending.push(...child.success.children.map((child) => child.runId))
             }
             if (generations.get(runId) !== generation) return
@@ -370,9 +399,12 @@ export class RunsStore extends Context.Service<
           if (!onCloud(rootId)) return
           const pagesOf = readers.get(runId) ?? new Set<string>()
           readers.set(runId, pagesOf.add(rootId))
-          if (followed.has(runId)) return
-          followed.add(runId)
           const attempt = attempts.get(rootId)
+          if (followed.has(runId)) {
+            yield* attempt?.record("changes", "reused") ?? Effect.void
+            return
+          }
+          followed.add(runId)
           yield* attempt?.record("changes", "start") ?? Effect.void
           const changes = yield* ElectricCollection.make<RunChange>({
             id: `remote-run:${runId}`,
@@ -393,6 +425,7 @@ export class RunsStore extends Context.Service<
               firstRows = false
               yield* attempt?.record("changes", "rows", batch.length) ?? Effect.void
             })),
+            Stream.filter((batch) => batch.length > 0),
             Stream.groupedWithin(Number.MAX_SAFE_INTEGER, FOLLOW_EVERY),
             Stream.runForEach(() =>
               Effect.gen(function* () {
@@ -417,10 +450,10 @@ export class RunsStore extends Context.Service<
       })
       const opening = yield* Semaphore.make(1)
       const opened = new Set<string>()
-      const openRepoRuns = (owner: string, name: string) => Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
+      const openRepoRuns = (owner: string, name: string, route?: RouteTiming) => Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
         const repo = `${owner}/${name}`.toLowerCase()
-        if (opened.has(repo)) return
-        const attempt = yield* timing.begin
+        const attempt = route ?? (yield* timing.begin)
+        if (opened.has(repo)) return yield* attempt.record("repo-runs", "reused")
         yield* attempt.record("repo-runs", "start")
         const rows = yield* ElectricCollection.make<RepoRunRow>({
           id: `repo-runs:${repo}`,
@@ -457,6 +490,17 @@ export class RunsStore extends Context.Service<
         list: yield* runsQuery(runs),
         repoRunList: yield* repoRunsQuery(shownRepoRuns),
         openRepoRuns,
+        // Reads and live subscriptions belong to the store's scope, never the router's pending navigation.
+        loadRun: (runId, repo) => Effect.gen(function* () {
+          if (Option.isNone(yield* pages.get(runId))) {
+            yield* put(pages, { id: runId, state: "loading", inspection: null, more: [], hasMore: false })
+          }
+          if (repo !== null) {
+            yield* Effect.forkIn(openRepoRuns(repo.owner, repo.name, attempts.get(runId)), scope, { startImmediately: true })
+          }
+          yield* Effect.forkIn(readRun(runId), scope, { startImmediately: true })
+          yield* Effect.forkIn(follow(runId), scope, { startImmediately: true })
+        }).pipe(Effect.orDie),
         beginRoute: (runId) => Effect.gen(function* () {
           attempts.set(runId, yield* timing.begin)
           yield* attempts.get(runId)!.record("page", "ready", (yield* pages.toArray).length)
