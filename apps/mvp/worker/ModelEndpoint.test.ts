@@ -15,6 +15,7 @@ import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { type Actor, CurrentActor, Sessions, SessionsUnavailable } from "./Actor.ts"
 import * as Flows from "./Flows.ts"
+import * as HostedModel from "./HostedModel.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as ModelSpend from "./ModelSpend.ts"
 import * as ModelRoles from "./ModelRoles.ts"
@@ -33,7 +34,7 @@ beforeEach(() =>
   runtime.runPromise(
     Effect.flatMap(
       SqlClient.SqlClient,
-      (sql) => sql`TRUNCATE model_roles, model_role_changes, model_usage, model_budget_days`,
+      (sql) => sql`TRUNCATE model_roles, model_role_changes, model_usage, model_budget_days, hosted_model, hosted_model_changes`,
     ),
   )
 )
@@ -587,9 +588,100 @@ describe("roles", () => {
   })
 })
 
+/** Runs `admin/SetHostedModel` on the Node host as `actor`, writing to this file's schema. */
+const setHosted = async (actor: Actor, enabled: boolean) =>
+  runFlow(
+    HostedModel.SetHostedModel,
+    { enabled },
+    HostedModel.registration(await scratchDatabase()).pipe(Layer.provide(Layer.succeed(CurrentActor, actor))),
+  )
+
+describe("hosted inference", () => {
+  test("off by default: a person without a model of their own is told to add one, and the deployment's model never runs", async () => {
+    const h = await harness(runtime, answering, { actor: member, config: { HOSTED_MODEL_ENABLED: "not a boolean" } })
+    const unset = await harness(runtime, answering, { actor: member, config: { HOSTED_MODEL_ENABLED: undefined as unknown as string } })
+
+    for (const refused of [await call(h, ask("hi")), await call(unset, ask("hi"), "summary")]) {
+      expect(refused.status).toBe(409)
+      expect(refused.error).toMatchObject({ code: "no_route", message: "Add your model in Settings to ask Smithers." })
+    }
+    expect(h.line("model.endpoint").map(({ annotations }) => [annotations.role, annotations.errorCode])).toEqual([["agent", "hosted_off"]])
+    expect(h.requests).toEqual([])
+    expect(unset.requests).toEqual([])
+    expect(await usageRows()).toEqual([])
+  })
+
+  test("admin/SetHostedModel turns it on and off on the next call, with no deploy, and records who did", async () => {
+    const h = await harness(runtime, answering, { actor: member, config: { HOSTED_MODEL_ENABLED: "false" } })
+
+    const before = await call(h, ask("first"))
+    const on = await setHosted(admin, true)
+    const served = await call(h, ask("second"))
+    await setHosted(admin, false)
+    const after = await call(h, ask("third"))
+
+    expect(before.status).toBe(409)
+    expect(Exit.isSuccess(on.exit) && on.exit.value).toEqual({ enabled: true })
+    expect(served.lines[0]).toEqual({ type: "text-delta", id: "t", text: "default answer" })
+    expect(after.status).toBe(409)
+    expect(h.requests).toHaveLength(1)
+    const changes = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly enabled: boolean; readonly changedBy: string }>`
+        SELECT enabled, changed_by AS "changedBy" FROM hosted_model_changes ORDER BY changed_at`))
+    expect(changes).toEqual([{ enabled: true, changedBy: "person-admin" }, { enabled: false, changedBy: "person-admin" }])
+  })
+
+  test("a replayed change leaves the newer setting and its audit as they were", async () => {
+    const by = { actorId: "person-admin", invocationKey: crypto.randomUUID() }
+    await runtime.runPromise(HostedModel.set(true, by))
+    await runtime.runPromise(HostedModel.set(false, { ...by, invocationKey: crypto.randomUUID() }))
+    await runtime.runPromise(HostedModel.set(true, by))
+    expect(await runtime.runPromise(HostedModel.enabled(true))).toBe(false)
+    const [counted] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly changes: number }>`SELECT count(*)::int AS changes FROM hosted_model_changes`))
+    expect(counted).toEqual({ changes: 2 })
+  })
+
+  test.each([
+    ["an agent acting for an admin", agentForAdmin, "delegated"],
+    ["a member", member, "not_admin"],
+  ] as const)("%s can't run admin/SetHostedModel, and nothing is written", async (_, actor, reason) => {
+    const ran = await setHosted(actor, true)
+
+    expect(Exit.isFailure(ran.exit) && JSON.stringify(ran.exit.cause)).toContain(reason)
+    expect(await runtime.runPromise(HostedModel.enabled(false))).toBe(false)
+  })
+
+  test("a change Postgres can't write fails the run, and the setting stays as it was", async () => {
+    const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://nobody:nothing@127.0.0.1:1/none")))
+    const ran = await runFlow(
+      HostedModel.SetHostedModel,
+      { enabled: true },
+      HostedModel.registration(unreachable).pipe(Layer.provide(Layer.succeed(CurrentActor, admin))),
+    )
+
+    expect(Exit.isFailure(ran.exit)).toBe(true)
+    expect(await runtime.runPromise(HostedModel.enabled(false))).toBe(false)
+  })
+
+  test("a setting Postgres can't read is a 503 provider_internal, never the deployment's model", async () => {
+    const h = await harness(runtime, answering, { actor: member, config: { HOSTED_MODEL_ENABLED: "true" } })
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`ALTER TABLE hosted_model RENAME TO hosted_model_gone`))
+    try {
+      const refused = await call(h, ask("hi"))
+      expect(refused.status).toBe(503)
+      expect(refused.error).toMatchObject({ code: "provider_internal" })
+      expect(h.requests).toEqual([])
+    } finally {
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`ALTER TABLE hosted_model_gone RENAME TO hosted_model`))
+    }
+  })
+})
+
 describe("a role's routing and reasoning", () => {
   const routed = (origin: string, modelId = "row-model"): ModelRoles.ModelRecord => ({
     ...rowModel(origin, modelId),
+    path: "/v1/chat/completions",
     extraBody: { providerOptions: { gateway: { order: ["cerebras", "alibaba"] } } },
     reasoningEffort: "none",
   })
@@ -623,6 +715,17 @@ describe("a role's routing and reasoning", () => {
     const [counted] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql<{ readonly settings: number }>`SELECT count(*)::int AS settings FROM model_roles`))
     expect(counted).toEqual({ settings: 0 })
+  })
+
+  test("a record with no base URL reaches the planner without one, which refuses it for a chat route", async () => {
+    const h = await harness(runtime, answering, { actor: member })
+    await setModel(admin, { role: "judge", model: { protocol: "openai-chat", modelId: "own-origin", credential: "CEREBRAS_API_KEY" } })
+
+    const refused = await call(h, ask("hi"), "judge")
+
+    expect(refused.status).toBe(409)
+    expect(h.only("model.endpoint").annotations).toMatchObject({ role: "judge", errorCode: "unusable:invalid" })
+    expect(h.requests).toEqual([])
   })
 
   test("SUMMARY_MODEL's own effort answers the summary role when no admin set one", async () => {
@@ -1244,7 +1347,7 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
     })
     const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
     const local = await Effect.runPromise(
-      ModelEndpoint.local(database, { alerts: true }).pipe(
+      ModelEndpoint.local(database, { alerts: true, hosted: true }).pipe(
         Effect.provide(PersonalModels.none),
         Effect.provideService(HostModel, HostModel.of({ modelId: "default-model", model, route: { prepare: () => Effect.die("unused") } })),
         Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
@@ -1402,7 +1505,7 @@ describe("timeline summary role", () => {
   const summarize = async (config: Record<string, string> = {}) => {
     const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
     const local = await Effect.runPromise(
-      ModelEndpoint.local(database, { alerts: true }).pipe(
+      ModelEndpoint.local(database, { alerts: true, hosted: true }).pipe(
         Effect.provide(PersonalModels.none),
         // The agent's model, which the summary role must never reach.
         Effect.provideService(HostModel, HostModel.of({

@@ -102,7 +102,7 @@ const trial = async (real: HostModel["Service"]): Promise<Trial> => {
       })),
   })
   const seat = await Effect.runPromise(
-    ModelEndpoint.local(database).pipe(
+    ModelEndpoint.local(database, { hosted: true }).pipe(
       Effect.provideService(HostModel, HostModel.of({ ...real, model })),
       Effect.provide(PersonalModels.none),
       Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),

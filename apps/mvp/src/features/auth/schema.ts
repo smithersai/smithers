@@ -7,13 +7,20 @@ import { CHECK_OUTCOMES, ROLES } from "./contract"
 /** What `GET /api/auth/session` answers (contract.ts `SessionState`), checked as it arrives. */
 export const SessionState = Schema.Union([
   Schema.Struct({ signedIn: Schema.Literal(false), available: Schema.Boolean }),
-  Schema.Struct({ signedIn: Schema.Literal(true), personId: Schema.optional(Schema.String), login: Schema.String, role: Schema.NullOr(Schema.Literals(ROLES)) }),
+  Schema.Struct({
+    signedIn: Schema.Literal(true),
+    personId: Schema.optional(Schema.String),
+    login: Schema.String,
+    role: Schema.NullOr(Schema.Literals(ROLES)),
+    hostedModel: Schema.optional(Schema.Boolean),
+  }),
 ])
 
 /**
  * This tab's view of who is signed in, one row:
  * - `status`: `loading` until ChatApi answers, then `signed_in` or `signed_out`; `unreachable` when it couldn't ask;
- * - `login` and `role` when signed in; `available` whether this deployment can sign anyone in;
+ * - `login` and `role` when signed in; `available` whether this deployment can sign anyone in; `hostedModel` whether
+ *   its own model answers anyone (decision 0099), unknown until ChatApi says;
  * - `signingOut` while a sign-out is on its way;
  * - `restored` once the device's last confirmed session (`Confirmed`) has been read.
  */
@@ -23,6 +30,7 @@ export const Session = Schema.Struct({
   login: Schema.NullOr(Schema.String),
   role: Schema.NullOr(Schema.Literals(ROLES)),
   available: Schema.Boolean,
+  hostedModel: Schema.optional(Schema.Boolean),
   signingOut: Schema.Boolean,
   restored: Schema.Boolean,
 })

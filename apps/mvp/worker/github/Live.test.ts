@@ -194,7 +194,7 @@ describe.skipIf(triageMissing.length > 0 || refused)("the real GitHub, triage", 
   test.skipIf(modelMissing.length > 0)("the real judge decides a clear bug report, and GitHub carries what it decided", async () => {
     const base = await live()
     const local = await Effect.runPromise(
-      ModelEndpoint.local(base.database).pipe(
+      ModelEndpoint.local(base.database, { hosted: true }).pipe(
         Effect.provide(PersonalModels.none),
         Effect.provide(
           HostModel.layerConfig("CHAT_MODEL", {

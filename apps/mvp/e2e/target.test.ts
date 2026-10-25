@@ -126,6 +126,7 @@ describe("needs", () => {
       "syncedRepository",
       "liveModel",
       "personalModelKey",
+      "hostedModelOff",
       "factoryRepository",
       "githubScratch",
       "secondRepository",
@@ -171,11 +172,15 @@ describe("needs", () => {
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {
     const met = (role: ReturnType<Run["role"]>) => (Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].met(deployedAs(role)))
-    expect(met("guest")).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp"])
-    expect(met(null)).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp"])
-    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp", "member"])
-    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp", "member", "maintainer"])
-    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp", "member", "maintainer"])
+    expect(met("guest")).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp"])
+    expect(met(null)).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp"])
+    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp", "member"])
+    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp", "member", "maintainer"])
+    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp", "member", "maintainer"])
+
+    // An Admin turned the deployment's own model on; a local dev server answers with it unless told otherwise.
+    expect(NEEDS.hostedModelOff.met(deployedAs("member", { E2E_HOSTED_MODEL: "on" }))).toBe(false)
+    expect(NEEDS.hostedModelOff.met({ ...local, env: { HOSTED_MODEL_ENABLED: "false" } })).toBe(true)
   })
 
   it("for local development's people and sign-out, are unmet once the dev server signs in through GitHub", () => {

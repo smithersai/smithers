@@ -5,7 +5,7 @@
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
-import { ConfigProvider, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
@@ -486,7 +486,7 @@ describe("the model endpoint answers a person with their own model", () => {
     expect(leaks(JSON.stringify(h.logs))).toEqual([])
   })
 
-  test("timeline summaries stay on the deployment's model: the person's key is never called for them", async () => {
+  test("timeline summaries are the person's too: their model answers them, never the deployment's", async () => {
     await seed(runtime, "person-member", {}, PERSONAL_KEYS)
     const DEPLOYMENT = "https://deployment.example.com"
     const provider = scriptedProvider({ text: "summed up" }, globalThis.fetch, [OPENAI_ORIGIN, DEPLOYMENT])
@@ -502,11 +502,31 @@ describe("the model endpoint answers a person with their own model", () => {
     const answered = await call(h, "summary")
     expect(answered.lines).toContainEqual(expect.objectContaining({ type: "text-delta", text: "summed up" }))
     expect(provider.seen.map((seen) => [new URL(seen.url).origin, seen.headers.get("authorization"), seen.body.model])).toEqual([
-      [DEPLOYMENT, "Bearer summary-key", "summary-model"],
+      [OPENAI_ORIGIN, `Bearer ${VALUE}`, "gpt-test"],
     ])
-    // The deployment's ledger and budget carry it; the person's ledger has nothing.
-    expect(await modelUsage()).toHaveLength(1)
-    expect(await usage(runtime)).toEqual([])
+    // The person's ledger carries it; the deployment's ledger and budget have nothing.
+    expect(await modelUsage()).toEqual([])
+    await eventually(async () => (await usage(runtime)).length === 1)
+    expect(await usage(runtime)).toEqual([expect.objectContaining({ role: "summary" })])
+  })
+
+  test("with hosted inference off, a person's own model answers, and a person who saved none is told to add one", async () => {
+    await seed(runtime, "person-member", {}, PERSONAL_KEYS)
+    const provider = scriptedProvider({ text: "theirs" })
+    const off = { HOSTED_MODEL_ENABLED: "false" }
+    const theirs = await harness(runtime, deployment, { actor: member, fetch: provider.fetch, config: off })
+    const nobodys = await harness(runtime, deployment, { actor: admin, fetch: provider.fetch, config: off })
+
+    const answered = await call(theirs, "judge")
+    const refused = await call(nobodys)
+
+    expect(answered.lines).toContainEqual(expect.objectContaining({ type: "text-delta", text: "theirs" }))
+    expect(refused.status).toBe(409)
+    expect(refused.error).toMatchObject({ code: "no_route", message: "Add your model in Settings to ask Smithers." })
+    expect(nobodys.line("model.endpoint").map(({ annotations }) => annotations.errorCode)).toEqual(["hosted_off"])
+    expect(theirs.requests).toEqual([])
+    expect(nobodys.requests).toEqual([])
+    expect(await modelUsage()).toEqual([])
   })
 
   test("another person, and a person who saved none, are answered by the deployment's model as before", async () => {
@@ -586,9 +606,11 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
     owner: ModelEndpoint.Owner,
     starter?: Flows.FlowStarter["Service"],
     role: "coding" | "summary" = "coding",
+    hosted = true,
   ) => {
     const database = (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
     const config = ConfigProvider.layer(ConfigProvider.fromUnknown({
+      HOSTED_MODEL_ENABLED: hosted ? "true" : "false",
       SMITHERS_MODEL_KEY_DEPLOYMENT: "deployment-key",
       SMITHERS_MODEL_KEY_DEPLOYMENT_ORIGIN: "https://deployment.example.com",
       SUMMARY_MODEL: JSON.stringify({
@@ -648,15 +670,26 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
     expect(await usage(runtime)).toEqual([expect.objectContaining({ role: "coding", outcome: "success" })])
   })
 
-  test("a summary made inside its run is the deployment's: the owner's key is never called for it", async () => {
+  test("a summary made inside its run is its owner's: their model answers it", async () => {
     await seed(runtime, "person-member")
     const provider = scriptedProvider({ text: "summed up" }, globalThis.fetch, [OPENAI_ORIGIN, "https://deployment.example.com"])
     const summary = await seat(provider.fetch, () => Effect.succeed(Option.some("person-member")), undefined, "summary")
     await Effect.runPromise(Stream.runCollect(summary.model.stream(ask).pipe(inRun("todo:mine"))))
-    expect(provider.seen.map((seen) => [new URL(seen.url).origin, seen.body.model])).toEqual([
-      ["https://deployment.example.com", "summary-model"],
-    ])
-    expect(await usage(runtime)).toEqual([])
+    expect(provider.seen.map((seen) => [new URL(seen.url).origin, seen.body.model])).toEqual([[OPENAI_ORIGIN, "gpt-test"]])
+    await eventually(async () => (await usage(runtime)).length === 1)
+    expect(await usage(runtime)).toEqual([expect.objectContaining({ role: "summary" })])
+  })
+
+  test("with hosted inference off, a run nobody owns is refused no_route and its owner's run still answers", async () => {
+    await seed(runtime, "person-member")
+    const provider = scriptedProvider({ text: "theirs" }, globalThis.fetch, [OPENAI_ORIGIN, "https://deployment.example.com"])
+    const coding = await seat(provider.fetch, (executionId) =>
+      Effect.succeed(executionId === "todo:mine" ? Option.some("person-member") : Option.none()), undefined, "coding", false)
+    const exit = await Effect.runPromiseExit(Stream.runCollect(coding.model.stream(ask).pipe(inRun("triage:1"))))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code: "no_route", httpStatus: 409 })
+    const theirs = await Effect.runPromise(Stream.runCollect(coding.model.stream(ask).pipe(inRun("todo:mine"))))
+    expect(theirs.flatMap((event) => event.type === "text-delta" ? [event.text] : [])).toEqual(["theirs"])
+    expect(provider.seen.map((seen) => new URL(seen.url).origin)).toEqual([OPENAI_ORIGIN])
   })
 
   test("its committer's refused key fails the run's call at once, and an owner lookup Postgres refuses fails it too", async () => {

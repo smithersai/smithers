@@ -14,6 +14,7 @@ import {
   NEW_ISSUE,
   NOT_FOUND,
   PAUSE_TRIAGE,
+  TRIAGE_OFF,
 } from "../../features/issues/contract"
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
 import { listProps, mayManageTriageOnList, mayWrite, triageSwitchOf } from "../../features/issues/view"
@@ -73,7 +74,9 @@ export function IssuesScreen() {
         actions={session !== undefined && mayWrite(session, confirmed)
           ? (
             <>
-              {mayManageTriageOnList(session, confirmed, synced)
+              {mayManageTriageOnList(session, confirmed, synced) && session.hostedModel === false
+                ? <Button variant="outline" disabled data-triage-off="">{TRIAGE_OFF}</Button>
+                : mayManageTriageOnList(session, confirmed, synced)
                 ? (
                   <Button
                     variant="outline"

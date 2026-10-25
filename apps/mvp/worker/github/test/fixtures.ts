@@ -189,7 +189,7 @@ export const judgeSeat = async (
     },
   })
   const local = await Effect.runPromise(
-    ModelEndpoint.local(options.database ?? (await database(runtime))).pipe(
+    ModelEndpoint.local(options.database ?? (await database(runtime)), { hosted: true }).pipe(
       Effect.provide(PersonalModels.none),
       Effect.provideService(
         HostModel,

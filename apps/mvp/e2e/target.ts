@@ -234,6 +234,10 @@ const needs = {
     met: (run) => set(run, "E2E_PERSONAL_MODEL_KEY") || set(run, "OPENAI_API_KEY"),
     reason: "it saves a real provider's key as the person's own model: set E2E_PERSONAL_MODEL_KEY, or OPENAI_API_KEY through the vault's environment wrapper (with E2E_PERSONAL_MODEL_BASE_URL and E2E_PERSONAL_MODEL for a provider other than OpenAI)",
   },
+  hostedModelOff: {
+    met: (run) => run.target === "deployment" ? run.env.E2E_HOSTED_MODEL !== "on" : run.env.HOSTED_MODEL_ENABLED === "false",
+    reason: "it needs the deployment's own model off (decision 0099): a deployment, as a deploy leaves it unless E2E_HOSTED_MODEL=on says an Admin turned it on, or a local dev server started with HOSTED_MODEL_ENABLED=false",
+  },
   factoryRepository: {
     met: (run) => run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!),
     reason: "it runs TODOs to pull requests: run against a live instance whose GITHUB_REPOSITORY is a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",

@@ -1,6 +1,14 @@
 # The metered model endpoint
 
-Every model call the browser's agent makes goes through one server endpoint, `POST /api/model/<role>` on ChatApi. The endpoint holds the provider key, refuses callers who may not ask Smithers, picks the role's model, reserves each call's worst case against the deployment's budget and settles it to what the call spent. A person who saved a model of their own is answered by it instead for their chat and TODO runs, with their key, outside the budget; the timeline's summaries stay on the deployment's model ([Your model](personal-model.md#answering)). Decisions: [0011](../decisions/0011-the-agent-runs-in-the-browser.md) §3, [0004](../decisions/0004-agent-ui-codemode-and-rendering.md) question 2, [0008](../decisions/0008-auth.md) §11, [0096](../decisions/0096-personal-models.md).
+Every model call the browser's agent makes goes through one server endpoint, `POST /api/model/<role>` on ChatApi. The endpoint refuses callers who may not ask Smithers and answers with the person's own model when they saved one ([Your model](personal-model.md#answering)): for every role, their timeline summaries and TODO runs included, with their key, outside the deployment's budget. That is how Smithers answers. The deployment's own model ("hosted inference", below) answers anyone else only while an Admin or the Worker's environment turns it on; then the endpoint holds the provider key, picks the role's model, reserves each call's worst case against the deployment's budget and settles it to what the call spent. Decisions: [0011](../decisions/0011-the-agent-runs-in-the-browser.md) §3, [0004](../decisions/0004-agent-ui-codemode-and-rendering.md) question 2, [0008](../decisions/0008-auth.md) §11, [0096](../decisions/0096-personal-models.md).
+
+## Hosted inference
+
+**A work in progress, off for a deploy, not released or documented for users until after the initial release** (Will, 2026-10-25 13:28 PDT; [decision 0099](../decisions/0099-hosted-inference-flag.md)). Everything below about roles, the budget and the deployment's models applies only while it is on.
+
+- **The flag:** the Admin's `hosted_model` row, read on every call, set with `admin/SetHostedModel { enabled }` (an Admin acting in person; an agent acting for one is refused `delegated`, anyone else `not_admin`; each change recorded in `hosted_model_changes`, once per step). Without a row, `HOSTED_MODEL_ENABLED` decides: off unless set, on under `alchemy dev` so a laptop and the scripted end-to-end tests answer.
+- **Off:** a call the person's own model doesn't answer is refused `409 no_route`, "Add your model in Settings to ask Smithers.", logged `model.endpoint` with `errorCode: hosted_off`, before any model, reservation or spend alert. A server flow's call nobody owns is refused the same way. `GET /api/auth/session` says `hostedModel: false` to a signed-in person, so the composer of a person who saved no model shows "Add your model" and a button to Settings instead ([chat](chat.md)); the triage switch reads "Triage off: needs hosted model".
+- **A setting Postgres can't read** refuses the call `503 provider_internal`; the session says `hostedModel: true`, so the composer shows and the answer fails visibly.
 
 ## How it works
 
@@ -11,8 +19,9 @@ browser agent (a durable ModelStep) ── ModelProxy.layerClient ── POST /a
                                 └ Guest, no role ──▶ 403 authentication
               bound the request ─ bad ──▶ 400 invalid_request      (over MODEL_MAX_REQUEST_BYTES: 413, before prepare)
                 (caps: maxTokens a whole number above 0, thinkingBudget one of at least 0)
-              personal_models[person] ─ row ──▶ their model, their ledger, no budget   (personal-model.md; not summary)
+              personal_models[person] ─ row ──▶ their model, their ledger, no budget   (personal-model.md; every role)
                                       └ can't be used ──▶ 409 no_route   (never the deployment's model)
+              hosted inference off ──▶ 409 no_route "Add your model…"   (hosted_model row, else HOSTED_MODEL_ENABLED)
               model_roles[role] ─ row ──▶ HostModel.make(row) ─ unusable ──▶ 409 no_route
                                 └ none ─▶ HostModel (CHAT_MODEL); summary: SUMMARY_MODEL, else 409 no_route
                 the record's reasoningEffort ──▶ set on the call
@@ -114,7 +123,7 @@ Every refusal is a JSON body `{ code, message, requestId }` with a `ModelError` 
 
 A model-setting invocation claims its audit key and updates the setting in one transaction. Replaying an older invocation leaves a newer setting and its audit history unchanged.
 
-Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges` and `0057_model_usage_outcome`. None of these tables is synced to browsers.
+Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges`, `0057_model_usage_outcome` and `0058_hosted_model`. None of these tables is synced to browsers.
 
 | Table | Columns | |
 |---|---|---|
@@ -122,6 +131,8 @@ Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges` a
 | `model_role_changes` | `id`, `invocation_key` (unique), `role`, `model`, `changed_by`, `changed_at` | the audit of `admin/SetModel` |
 | `model_usage` | `invocation_id` (key, the server's id for the call), `request_id` (the caller's), `role`, `model_id`, `day` (the UTC day it reserved on), `reserved_tokens`, `input_tokens`, `output_tokens` (what the model reported: 0 until settled, and for a count it never reported), `charged_tokens` (what the call counts against its day: its reservation until it settles, then what it spent, or its reservation when that is unknown), `expires_at` (when an unsettled reservation becomes final), `settled_at` (null while the call runs, and for a reservation that expired), `spend_alert_id` (the spend alert that carried the call, migration `0019_spend_alerts`, [spend-alerts.md](spend-alerts.md)), `outcome`, `error_code`, `http_status` (how it ended, migration `0057_model_usage_outcome`, above), `created_at` (indexed) | the ledger: what each served call reserved, reported and was charged, and how it ended |
 | `model_budget_days` | `day` (key, a UTC date), `committed` (settled spend plus open reservations, never negative) | the budget's counter, one row per day |
+| `hosted_model` | `id` (always `true`: at most one row), `enabled`, `updated_by`, `updated_at` | the Admin's hosted-inference setting |
+| `hosted_model_changes` | `invocation_key` (key), `enabled`, `changed_by`, `changed_at` | the audit of `admin/SetHostedModel` |
 
 ## Configuration
 
@@ -134,6 +145,7 @@ Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges` a
 | `MODEL_SPEND_ALERTS` | on; off under `alchemy dev` | whether any model spend alerts the Admins ([spend-alerts.md](spend-alerts.md#settings)) |
 | `MODEL_SPEND_ALERT_WINDOW` | `15 minutes` | a duration of at least a second: one spend alert per window at most |
 | `MODEL_RESERVATION_EXPIRY` | `1 hour` | a duration: how long a call's reservation lasts before it is final. The longest call the caps allow writes 16,000 tokens, about 27 minutes at 10 tokens a second |
+| `HOSTED_MODEL_ENABLED` | off; on under `alchemy dev` | whether the deployment's own model answers when no Admin set the `hosted_model` row ([hosted inference](#hosted-inference)); a value that doesn't parse is off |
 | `CHAT_MODEL` | Cerebras `qwen-3.8-27b` | the default model for every role without a setting but `summary`; see [chat.md](chat.md#configuration) |
 | `SUMMARY_MODEL` | none | the `summary` role's model when no admin set one: a model record as JSON, with its own `extraBody` and `reasoningEffort` when it names them, captured when the endpoint builds so Alchemy binds it. Unset, the role has no model (`unusable:unconfigured`); a malformed value is refused per call as `unusable:config`, without failing the build |
 | `ANSWER_TURN_LIVE_SECONDS` | `30` | the `agent` role's liveness bound: how long a live run of the role may go without writing its answer, read beside the roles (`src/features/model/contract.ts`); the evidence for the default is in [agent.md](agent.md#turn-by-turn) |

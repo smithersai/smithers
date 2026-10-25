@@ -5,10 +5,10 @@ import { HostModel, HostModelUnusable } from "@smthrs/model-host"
 import { Cause, Config, Duration, Effect, Exit, type Layer, Metric, Option, Schema, Stream } from "effect"
 import type { SqlClient } from "effect/sql"
 import { MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
-import { OWN_MODEL_ROLES } from "../src/features/personal-model/contract.ts"
 import { canAsk, Sessions } from "./Actor.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"
+import * as HostedModel from "./HostedModel.ts"
 import * as ModelRoles from "./ModelRoles.ts"
 import * as ModelSpend from "./ModelSpend.ts"
 import * as ModelUsage from "./ModelUsage.ts"
@@ -17,11 +17,12 @@ import * as PersonalUsage from "./personal/Usage.ts"
 
 // The metered model endpoint (docs/features/model-endpoint.md): every model call the browser's agent makes is one
 // `POST /api/model/<role>`, served by `ModelProxy.serve` from @smthrs/model. Before the model runs it refuses a
-// signed-out request and one from a person who may not ask (a Guest, or no role), bounds the request, picks the role's
-// model and reserves the call's worst case against the deployment's daily budget; after, it settles the reservation to
-// what the call spent. A person who saved a model of their own (docs/features/personal-model.md) is answered by it
-// instead, with their key, outside the budget, and their call is kept in their own ledger. The key never leaves the
-// Worker, and refusals carry codes, never provider text.
+// signed-out request and one from a person who may not ask (a Guest, or no role) and bounds the request. A person who
+// saved a model of their own (docs/features/personal-model.md) is answered by it, for every role, with their key,
+// outside the budget, and their call is kept in their own ledger. Anyone else is answered by the role's deployment
+// model only while hosted inference is on (`HostedModel`, decision 0099): it reserves the call's worst case against
+// the deployment's daily budget and settles the reservation to what the call spent. Off, the call is refused, never
+// answered on the deployment's model. The key never leaves the Worker, and refusals carry codes, never provider text.
 
 /** The deployment's token budget per UTC day, input and output together, when `MODEL_DAILY_TOKEN_BUDGET` is unset. */
 export const DAILY_TOKEN_BUDGET = 1_000_000
@@ -73,6 +74,9 @@ const noRoute = refuse(409, "no_route", "This model isn't available.")
 // A person's own model that can't answer here is theirs to save again; it never falls back to the deployment's model.
 const ownUnusable = refuse(409, "no_route", "Your model can't be used. Save it again in Settings.")
 
+// Hosted inference is off (decision 0099): a person without a model of their own adds one; nobody's call is refused.
+const hostedOff = refuse(409, "no_route", "Add your model in Settings to ask Smithers.")
+
 const INVALID_CAPS = "Send maxTokens as a whole number above 0 and thinkingBudget as a whole number of at least 0."
 
 /**
@@ -84,7 +88,7 @@ const INVALID_CAPS = "Send maxTokens as a whole number above 0 and thinkingBudge
  * them, so every call the deployment pays for spends one budget.
  * `database` opens a Postgres client for each read and write.
  */
-const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hostedFallback = false) =>
   Effect.gen(function* () {
     const budget = yield* Config.schema(positive, "MODEL_DAILY_TOKEN_BUDGET").pipe(
       Config.withDefault(DAILY_TOKEN_BUDGET),
@@ -97,6 +101,8 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       Config.withDefault(MAX_REQUEST_BYTES),
     )
     const expiry = yield* Config.Duration("MODEL_RESERVATION_EXPIRY").pipe(Config.withDefault(RESERVATION_EXPIRY))
+    // Whether the deployment's model answers when no Admin set it; a value that doesn't parse is off.
+    const hostedDefault = yield* HostedModel.hostedModelDefault(hostedFallback).pipe(Effect.orElseSucceed(() => false))
     // Alchemy binds settings read while the program builds; keep a bad value as a per-call refusal.
     const summary = yield* ModelRoles.summaryModel.pipe(
       Effect.mapError(() => new HostModelUnusable({ reason: "config" })),
@@ -176,6 +182,16 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
               request: ModelRequest.ModelRequest.make({ ...request, modelId: opened.value.modelId, params }),
             },
           } satisfies Admitted
+        }
+        // No model of the person's own: the deployment's answers only while hosted inference is on.
+        const hosted = yield* HostedModel.enabled(hostedDefault).pipe(
+          Effect.provide(database),
+          Effect.tapError((error) => logFailure(role, codeOf(error))),
+          Effect.mapError(() => unavailable),
+        )
+        if (!hosted) {
+          yield* logFailure(role, "hosted_off")
+          return yield* hostedOff
         }
         const resolved = yield* ModelRoles.resolve(role, summary).pipe(
           Effect.provide(database),
@@ -299,18 +315,18 @@ interface Admitted {
  */
 export const make = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
-  options: { readonly alerts?: boolean } = {},
+  options: { readonly alerts?: boolean; readonly hosted?: boolean } = {},
 ) =>
   Effect.gen(function* () {
-    const { admit, meter, meterOwn, maxBodyBytes, logFailure, budget } = yield* metering(database)
+    const { admit, meter, meterOwn, maxBodyBytes, logFailure, budget } = yield* metering(database, options.hosted)
     const alert = yield* ModelSpend.alerter(
       yield* ModelSpend.settings(options.alerts === undefined ? {} : { on: options.alerts }),
       budget,
     )
     /**
      * Who may ask (`repo:ask`, decision 0007), then the call's admission, answered by the person's own model when they
-     * saved one and the role is theirs to pay for (`OWN_MODEL_ROLES`: not the timeline's summaries). Only a call the
-     * deployment pays for starts a spend alert.
+     * saved one, whatever the role, the timeline's summaries included (decision 0099). Only a call the deployment pays
+     * for starts a spend alert.
      */
     const prepare = (role: ModelRole) => (request: ModelRequest.ModelRequest, admission: ModelProxy.Admission) =>
       Effect.gen(function* () {
@@ -327,10 +343,7 @@ export const make = <E, R>(
         if (!canAsk(actor.value)) {
           return yield* refuse(403, "authentication", "Asking Smithers needs the Member role.")
         }
-        const admitted = yield* admit(role, OWN_MODEL_ROLES.includes(role) ? actor.value.subject.id : undefined)(
-          request,
-          admission,
-        )
+        const admitted = yield* admit(role, actor.value.subject.id)(request, admission)
         if (admitted.own === undefined) yield* alert
         return admitted
       })
@@ -371,7 +384,9 @@ const refusedCall = (refusal: ModelProxy.Refusal) =>
  * issue, decision 0012 §5) spends what a person's call would. It skips the endpoint's who-may-ask check: the flow that
  * calls it was admitted under a person's role, which it re-checks itself. Its step keys on the endpoint's request
  * (`ModelProxy.prepare`), so a resumed run replays the sealed call instead of paying for it again. A refusal fails the
- * stream as a `ModelError` with the endpoint's code: `quota_exceeded` once the day's budget is spent.
+ * stream as a `ModelError` with the endpoint's code: `quota_exceeded` once the day's budget is spent, `no_route` for a
+ * call nobody's own model answers while hosted inference is off (decision 0099), which such a flow checks first
+ * (`HostedModel.enabled`) to skip with a truthful state instead.
  *
  * Given `starter`, where the host starts a flow, each admitted call also starts its window's spend alert, as the
  * endpoint's calls do (`ModelSpend.alerter`, docs/features/spend-alerts.md): a window whose only spend is a `todo` run's
@@ -383,10 +398,10 @@ const refusedCall = (refusal: ModelProxy.Refusal) =>
  */
 export const local = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
-  options: { readonly alerts?: boolean } = {},
+  options: { readonly alerts?: boolean; readonly hosted?: boolean } = {},
 ) =>
   Effect.gen(function* () {
-    const { admit, meter, meterOwn, maxBodyBytes, budget } = yield* metering(database)
+    const { admit, meter, meterOwn, maxBodyBytes, budget } = yield* metering(database, options.hosted)
     const alert = yield* ModelSpend.alerter(
       yield* ModelSpend.settings(options.alerts === undefined ? {} : { on: options.alerts }),
       budget,
@@ -405,7 +420,7 @@ export const local = <E, R>(
             return yield* new ModelError.ModelError({ code: "invalid_request", message: "The request is too large.", httpStatus: 413 })
           }
           // The person whose run this is, when `owner` names one: their own model answers it, as it answers their chat.
-          const personId = owner === undefined || executionId === undefined || !OWN_MODEL_ROLES.includes(role)
+          const personId = owner === undefined || executionId === undefined
             ? Option.none<string>()
             : yield* owner(executionId).pipe(
               Effect.mapError(() =>

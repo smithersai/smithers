@@ -1095,3 +1095,22 @@ describe("0057_model_usage_outcome", () => {
       expect(await on(through("0057"))).toEqual([])
     }))
 })
+
+describe("0058_hosted_model", () => {
+  test("adds the Admin's one hosted-inference setting and its audit, and holds a row to its rules", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0057"))
+      expect((await on(through("0058"))).map(([id, name]) => `${id}_${name}`)).toEqual(["58_hosted_model"])
+      const write = (statement: (sql: SqlClient.SqlClient) => Effect.Effect<unknown, unknown>) =>
+        on(Effect.flatMap(SqlClient.SqlClient, statement).pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      expect(await write((sql) => sql`INSERT INTO hosted_model (enabled, updated_by) VALUES (true, 'person-admin')`)).toBe("taken")
+      // At most one row.
+      expect(await write((sql) => sql`INSERT INTO hosted_model (enabled, updated_by) VALUES (false, 'person-admin')`)).toBe("refused")
+      expect(await write((sql) => sql`INSERT INTO hosted_model (id, enabled, updated_by) VALUES (false, false, 'x')`)).toBe("refused")
+      expect(await write((sql) => sql`INSERT INTO hosted_model_changes (invocation_key, enabled, changed_by) VALUES ('k', true, 'a')`)).toBe("taken")
+      expect(await write((sql) => sql`INSERT INTO hosted_model_changes (invocation_key, enabled, changed_by) VALUES ('k', false, 'a')`)).toBe("refused")
+      expect(await on(through("0058"))).toEqual([])
+    }))
+})

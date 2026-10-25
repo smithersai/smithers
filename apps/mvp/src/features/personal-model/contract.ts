@@ -39,13 +39,6 @@ export type Protocol = (typeof PROTOCOLS)[number]
 /** Whether `value` is one of {@link PROTOCOLS}. */
 export const isProtocol = (value: unknown): value is Protocol => (PROTOCOLS as ReadonlyArray<unknown>).includes(value)
 
-/**
- * The model roles a person's own model answers: their chat (the agent, the views it renders, its judgments) and their
- * TODO runs (`coding`). Timeline summaries, which the app asks for on its own, stay on the deployment's model (decision
- * 0096, amended 2026-10-25).
- */
-export const OWN_MODEL_ROLES: ReadonlyArray<string> = ["agent", "coding", "renderer", "judge"]
-
 /** `PUT` body: `{ protocol, baseUrl, modelId, key }`. A key is at most 16 KiB, so 32 KiB holds any valid body. */
 export const MAX_PUT_BODY_BYTES = 32 * 1024
 

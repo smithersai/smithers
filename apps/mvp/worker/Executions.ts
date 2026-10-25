@@ -102,6 +102,8 @@ export const starter = (objects: Objects) =>
 interface ProgramOptions {
   readonly dev?: boolean
   readonly spendAlerts?: boolean
+  /** `HOSTED_MODEL_ENABLED`'s default: on only under `alchemy dev` (decision 0099). */
+  readonly hostedModel?: boolean
   readonly repositories: ReadonlySet<string>
   readonly homeRepository: { readonly owner: string; readonly name: string }
 }
@@ -163,10 +165,10 @@ const object = <E, R>(
       // which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default (docs/features/spend-alerts.md).
       // A person's own model answers their `todo` runs, its key opened under SECRETS_KEY for each call
       // (docs/features/personal-model.md#todo-runs).
-      const seats = yield* ModelEndpoint.local(
-        appDatabase,
-        options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts },
-      ).pipe(
+      const seats = yield* ModelEndpoint.local(appDatabase, {
+        ...(options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts }),
+        ...(options.hostedModel === undefined ? {} : { hosted: options.hostedModel }),
+      }).pipe(
         Effect.provide(PersonalModels.layer(appDatabase).pipe(Layer.provide(SecretKeys.layerConfig))),
         Effect.orDie,
       )
@@ -256,7 +258,8 @@ const object = <E, R>(
         const githubServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
           Effect.gen(function* () {
             const runtime = yield* RuntimeContext
-            const judge = seats("judge", yield* flowStarter)
+            const started = yield* flowStarter
+            const judge = seats("judge", started)
             const services = GitHubHost.services(ready, {
               keys: Option.map(signIn, (configured) => configured.keys),
               refresh: (sessionId, generation) => {
@@ -274,6 +277,8 @@ const object = <E, R>(
             }, judge)
             return {
               ...services,
+              // A head's review is its TODO owner's: their own model judges it when they saved one (decision 0099).
+              judgeFor: (ownerId: string) => seats("judge", started, () => Effect.succeed(Option.some(ownerId))),
               invalidateTodo: (stop: typeof TodoBaseClosed.Request.Type) => ExecutionHost.intent(TodoBaseClosed.Invalidate, {
                 executionId: `todo-closed:${stop.attemptId}`, payload: stop,
               }).pipe(Effect.flatMap((intent) => executions.getByName(intent.executionId).start(intent)),

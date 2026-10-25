@@ -1,9 +1,11 @@
 # Your model (bring your own key)
 
-A person may save one model of their own: a protocol, a base URL, a model id and a key. From then on the model endpoint
-answers that person's chat with it instead of the deployment's model, outside the deployment's daily budget, and their
-`todo` runs too. Timeline summaries stay on the deployment's model. Decision: [0096](../decisions/0096-personal-models.md),
-amended 2026-10-25.
+A person may save one model of their own: a protocol, a base URL, a model id and a key. It is how a person uses
+Smithers: from then on the model endpoint answers everything that person causes with it, outside the deployment's daily
+budget: their chat, the views and judgments it makes, their timeline summaries, their `todo` runs and their TODOs'
+reviews. A person who saved none sees "Add your model" where the composer would be while the deployment's own model is
+off, as it is for a deploy ([hosted inference](model-endpoint.md#hosted-inference)). Decisions:
+[0096](../decisions/0096-personal-models.md), [0099](../decisions/0099-hosted-inference-flag.md).
 
 ```
 Settings ▸ Your model (the person, in person)
@@ -12,13 +14,14 @@ Settings ▸ Your model (the person, in person)
   Remove ── model/remove (browser flow; the agent may, after Approve) ── DELETE /api/me/model ── model/Delete
   Test   ── model/test   (browser flow; the agent may)                 ── POST /api/me/model/test ── 200 TestResult
 
-POST /api/model/<role>  (agent, coding, renderer, judge; and a todo run's coding seat, for its committer)
+POST /api/model/<role>  (every role; and a todo run's coding seat and its review, for its committer)
   signed in, may ask ─ personal_models[person]?
     yes ─▶ open the key in memory ─▶ the person's provider, key pinned to its origin
            personal_model_usage row · no budget · no spend alert
            401 / 402 / 403 / 429 ─▶ the call fails · failure_status marked · toast   (never the deployment's model)
            the key doesn't open ─▶ 409 no_route
-    no  ─▶ the deployment's model, as before (model-endpoint.md)
+    no  ─▶ hosted inference on ─▶ the deployment's model (model-endpoint.md)
+           off ─▶ 409 no_route "Add your model in Settings to ask Smithers."  (the composer shows "Add your model")
 ```
 
 ## Saving
@@ -65,10 +68,11 @@ The model endpoint opens the asker's model before every call (`worker/personal/M
 the key opened under SECRETS_KEY, planned by `@smthrs/rpc`'s `ConfiguredModel.planModelBinding` with the key pinned to
 the base URL's origin, and built by `@smthrs/model-host`'s `toModel`, whose transport refuses redirects.
 
-- **Their chat and TODO runs.** A person's `agent`, `coding`, `renderer` and `judge` calls go to their model
-  (`OWN_MODEL_ROLES`). The model id is theirs; the request bounds (messages, caps, body size) are the endpoint's.
-  Their `summary` calls, the timeline's summaries, which the app asks for on its own, stay on the deployment's summary
-  model and budget, at the endpoint and inside a run (decision 0096's amendment).
+- **Everything they cause.** Every role a person's calls name goes to their model: `agent`, `renderer`, `judge` (Jev
+  and the memory opening's judge), `summary` (the timeline's summaries, which their tab asks for as they view a
+  conversation, a shared branch's included) and `coding` (their `todo` runs); their TODO's review judges with it too.
+  The model id is theirs; the request bounds (messages, caps, body size) are the endpoint's. Decision 0099 replaced
+  0096's amendment, under which summaries stayed on the deployment's model.
 - **Outside the budget.** The call reserves nothing against `MODEL_DAILY_TOKEN_BUDGET`, writes no `model_usage` row and
   starts no spend alert. It writes a `personal_model_usage` row before the model runs, settled when it ends with the
   tokens the model reported, its outcome, its failure's code and the provider's status. A settle Postgres refuses is
@@ -143,7 +147,7 @@ carry ops, outcomes, codes, statuses, roles and counts: never a key, a base URL,
 - `worker/personal/PersonalModels.test.ts` on the compose Postgres and Electric, with `model/Put` and `model/Delete` on
   the Node host's engine and the person's provider scripted at the network (`worker/personal/test/provider.ts`): saving,
   replacing and removing, every refusal, the person-only refusal of an agent, the shape's rows and columns, the test's
-  ok, refused, out-of-quota, timed-out and unusable answers, the endpoint answering the person's chat roles with their model and summaries with the deployment's
+  ok, refused, out-of-quota, timed-out and unusable answers, the endpoint answering every role with the person's model, summaries included, and hosted inference off refusing a person who saved none
   outside the budget and without a spend alert, another person still on the deployment's, a refused key failing at
   once with no fallback and no retry, `409` for a key that doesn't open, `503` for Postgres, a `todo` run's coding seat
   on its committer's model, and a sentinel search for the key in every table, the flow journal and everything

@@ -9,8 +9,9 @@ import type { Signed } from "./SignIn.ts"
 // `/web … tab` links to the dev machine's own `http://localhost` pages (docs/features/web-pages.md), and turns spend
 // alerts off, since a laptop's runs and the end-to-end tests spend all day (`MODEL_SPEND_ALERTS=true` turns them back
 // on; docs/features/spend-alerts.md), and lets an alert provider pointed at a local fake (`ALERT_EMAIL_API_URL`,
-// `ALERT_TELEGRAM_API_URL`) send without its key (docs/features/spend-alerts.md#channels). Production
-// bundles worker/ChatApi.ts, which never imports this file.
+// `ALERT_TELEGRAM_API_URL`) send without its key (docs/features/spend-alerts.md#channels). The deployment's own model
+// answers here unless `HOSTED_MODEL_ENABLED=false` (decision 0099), so a laptop and the scripted end-to-end tests
+// answer without a key of their own. Production bundles worker/ChatApi.ts, which never imports this file.
 
 /** The local developer: a person with the Admin role. */
 export const localDeveloper: Actor.Actor = {
@@ -61,5 +62,5 @@ const teammates: Readonly<Record<string, Signed>> = {
 export default class DevChatApi extends Cloudflare.Worker<DevChatApi>()(
   "ChatApi",
   { ...props, main: "worker/DevChatApi.ts" },
-  program({ fallback, teammates, localHttp: true, spendAlerts: false, dev: true }),
+  program({ fallback, teammates, localHttp: true, spendAlerts: false, dev: true, hostedModel: true }),
 ) {}

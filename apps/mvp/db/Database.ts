@@ -1,6 +1,7 @@
 import branchRefNamespace from "./migrations/0055_branch_ref_namespace.ts"
 import personalModels from "./migrations/0056_personal_models.ts"
 import modelUsageOutcome from "./migrations/0057_model_usage_outcome.ts"
+import hostedModel from "./migrations/0058_hosted_model.ts"
 import messagePins from "./migrations/0054_message_pins.ts"
 import conversationPeople from "./migrations/0047_conversation_people.ts"
 import dropMergeUnknown from "./migrations/0050_drop_merge_unknown.ts"
@@ -151,6 +152,7 @@ export const migrations = {
   "0055_branch_ref_namespace": branchRefNamespace,
   "0056_personal_models": personalModels,
   "0057_model_usage_outcome": modelUsageOutcome,
+  "0058_hosted_model": hostedModel,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

@@ -148,6 +148,8 @@ export const make = <E, R>(
   options: {
     readonly localHttp?: boolean
     readonly spendAlerts?: boolean
+    /** `HOSTED_MODEL_ENABLED`'s default: on only under `alchemy dev` (decision 0099). */
+    readonly hostedModel?: boolean
     /** The realm generated views render in (worker/ViewRealm.ts): `load` on Cloudflare, `loadNode` in the tests. */
     readonly realm: Effect.Effect<PresentationRealm.Realm, PresentationRealm.RealmError>
   },
@@ -155,10 +157,10 @@ export const make = <E, R>(
   Effect.gen(function* () {
     // POST /api/model/<role>: the metered model endpoint (docs/features/model-endpoint.md), which starts the spend
     // alerts (docs/features/spend-alerts.md).
-    const model = yield* ModelEndpoint.make(
-      database,
-      options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts },
-    )
+    const model = yield* ModelEndpoint.make(database, {
+      ...(options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts }),
+      ...(options.hostedModel === undefined ? {} : { hosted: options.hostedModel }),
+    })
     // GET and POST /api/answers/<id>: the write path for the browser's agent (docs/features/agent.md).
     const answers = yield* Answers.make(database)
     const pins = yield* Pins.make(database)

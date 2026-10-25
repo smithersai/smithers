@@ -77,7 +77,9 @@ const ChatDatabase = Effect.gen(function* () {
  * keeps links to `http:` pages on `localhost` (`WEB_PAGES_LOCAL_HTTP`'s default, worker/Views.ts). `spendAlerts`,
  * which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default: a deploy alerts on any model spend
  * unless its environment says otherwise (docs/features/spend-alerts.md). `dev`, which only `alchemy dev` sets, lets an
- * alert provider pointed at a local fake send without its key (docs/features/spend-alerts.md#channels).
+ * alert provider pointed at a local fake send without its key (docs/features/spend-alerts.md#channels). `hostedModel`,
+ * which only `alchemy dev` sets, to `true`, is `HOSTED_MODEL_ENABLED`'s default: a deploy answers only with people's
+ * own models unless its environment or an Admin turns the deployment's model on (decision 0099).
  */
 export interface ProgramOptions {
   readonly fallback?: SignIn.Signed
@@ -85,6 +87,7 @@ export interface ProgramOptions {
   readonly localHttp?: boolean
   readonly spendAlerts?: boolean
   readonly dev?: boolean
+  readonly hostedModel?: boolean
 }
 
 export const program = (options: ProgramOptions = {}) =>
@@ -116,6 +119,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       realm: ViewRealm.load,
       ...(options.localHttp === undefined ? {} : { localHttp: options.localHttp }),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
+      ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
     })
     // A person's own model (docs/features/personal-model.md): saving, removing and testing it, and its shape.
     const personalApi = yield* PersonalApi.make(database)
@@ -340,6 +344,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       homeRepository,
       ...(options.dev === true ? { dev: true } : {}),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
+      ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
     })),
     Effect.provide(BranchSandboxes.live(ChatDatabase)),
     Effect.provide(BranchRooms.live),

@@ -22,8 +22,9 @@ Will's own decision and is not part of this.
    URL changes only with a key, so nobody points a saved key at another host.
 4. **Whose calls it answers.** The person's chat, through `POST /api/model/<role>` (`agent`, and the `renderer` and
    `judge` calls their chat makes), and every call of a `todo` run they committed (the `coding` seat finds the run's
-   committer from its execution). Timeline summaries stay on the deployment's model (the amendment below). A server
-   flow that is nobody's, such as triage, stays on the deployment's model.
+   committer from its execution), the timeline's summaries included (decision 0099, which supersedes the amendment
+   below). A server flow that is nobody's, such as triage, runs on the deployment's model only while hosted inference
+   is on.
 5. **Outside the deployment's budget.** A person's call reserves nothing, settles nothing in `model_usage` and starts no
    spend alert (AUTH-4 stays on deployment spend). It is kept in the person's own ledger, `personal_model_usage`, and
    counted by role. The request bounds (messages, caps, body size) are the endpoint's own.
@@ -66,7 +67,14 @@ sign requests); plan logins (the report's Recommendation B, Will's decision).
 plan, `@smthrs/control` `WebCryptoCipher` for sealing, `@smthrs/secrets` `Binding.valueProblem` for the key's text,
 `@smthrs/flow` for the durable writes, `@smthrs/effect-electric` for the shape. No new dependency.
 
-## Amendment, 2026-10-25: summaries stay on the deployment's model
+## Amendment, 2026-10-25 13:28: superseded by decision 0099
+
+Will, 2026-10-25 13:28 PDT: "Please get it working with byok prioritize byok over our hosted inference our hosted
+cerebras inference is now a wip feature flagged and not being released or documented until post initial release". A
+person's own model now answers every role they cause, the timeline's summaries included, and the deployment's model
+answers only while hosted inference is on ([0099](0099-hosted-inference-flag.md)). The amendment below no longer holds.
+
+## Amendment, 2026-10-25: summaries stay on the deployment's model (superseded)
 
 **Superseded by ruling ARCH-20** (Will, Telegram 2026-10-25 13:28: "Please get it working with byok prioritize byok over our
 hosted inference our hosted cerebras inference is now a wip feature flagged and not being released or documented until

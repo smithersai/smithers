@@ -144,9 +144,9 @@ describe("checks/Run", { timeout: 60_000 }, () => {
       return box.timeouts
     }
     // SANDBOX_COMMAND_MAX_SECONDS at 1,800, and unset: the job's own limit, an hour.
-    expect(await timeouts(Checks.registration({ ...services, judge: seat }, 1_800), request.sha)).toEqual([1_800])
+    expect(await timeouts(Checks.registration({ ...services, judgeFor: () => seat }, 1_800), request.sha)).toEqual([1_800])
     const other = github.push("smithers/t1-readme", { "README.md": "# Widgets\n\nA line.\n" })
-    expect(await timeouts(Checks.registration({ ...services, judge: seat }), other)).toEqual([COMMAND_LIMIT_SECONDS])
+    expect(await timeouts(Checks.registration({ ...services, judgeFor: () => seat }), other)).toEqual([COMMAND_LIMIT_SECONDS])
   })
 
   test("runs each .smithers/checks script on the head, then the review, each a run on the head's SHA", async () => {
@@ -158,9 +158,16 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const box = machine({ ".smithers/checks/readme.sh": "", ".smithers/checks/lint.sh": "", ".smithers/checks/x.txt": "" }, {
       ".smithers/checks/lint.sh": 1,
     })
-    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    // The review is its TODO owner's: the judge is asked for as theirs (decision 0099).
+    const owners: Array<string> = []
+    const judgeFor = (ownerId: string) => {
+      owners.push(ownerId)
+      return seat
+    }
+    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor })).pipe(
       Layer.provide(box.layer),
     ), { executionId: checkExecutionId(request.repoId, request.sha, "all") })
+    expect(owners).toEqual([request.ownerId])
 
     expect(ran.exit).toEqual(Exit.succeed({
       statuses: [
@@ -230,7 +237,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const { seat } = await judgeSeat(runtime, judge("No findings."))
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
-    const registration = withJobs(Checks.registration({ ...services, judge: seat })).pipe(Layer.provide(machine({}).layer))
+    const registration = withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(Layer.provide(machine({}).layer))
     await runFlow(Checks.ChecksRun, request, registration)
     await runFlow(Checks.ChecksRun, request, registration)
     expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/review", "done"]])
@@ -243,7 +250,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const { seat } = await judgeSeat(runtime, judge("   "))
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
-    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(machine({}).layer),
     ))
     expect(ran.exit).toEqual(Exit.succeed({ statuses: [{ name: "review", state: "failure", outcome: "sent" }] }))
@@ -259,7 +266,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
     github.installed = false
-    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(machine({ ".smithers/checks/a.sh": "" }).layer),
     ))
     expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/a", "done"], ["checks/review", "failed"]])
@@ -274,7 +281,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
       Stream.fail(new ModelError.ModelError({ code: "content_policy", message: "refused" })))
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
-    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(machine({}).layer),
     ))
     expect(ran.exit).toEqual(Exit.succeed({ statuses: [{ name: "review", state: "failure", outcome: "sent" }] }))
@@ -288,7 +295,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
     const invalid = machine({ ".smithers/checks/a.sh": "" })
-    await runFlow(Checks.ChecksRun, { ...request, branch: "not a branch" }, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    await runFlow(Checks.ChecksRun, { ...request, branch: "not a branch" }, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(invalid.layer),
     ))
     expect(invalid.commands).toEqual([])
@@ -297,7 +304,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     // The head moved past what the forge serves: the reset fails, so no script runs on some other commit.
     await sql(runtime, "TRUNCATE runs")
     const unsynced = machine({ ".smithers/checks/a.sh": "" }, {}, 128)
-    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(Layer.provide(unsynced.layer)))
+    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(Layer.provide(unsynced.layer)))
     expect(unsynced.commands).toHaveLength(1)
     expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/checkout", "failed"], ["checks/review", "done"]])
     // A clone the forge refused fails the checkout the same way.
@@ -307,7 +314,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
       tool: () => Effect.fail(new CheckoutFailed()),
       sleepIfIdle: () => Effect.die("a job that never checked out never sleeps"),
     })
-    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(Layer.succeed(Machines, refused)),
     ))
     expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/checkout", "failed"], ["checks/review", "done"]])
@@ -337,7 +344,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
       // A machine that can't sleep stays awake: the checks' results stand.
       sleepIfIdle: () => Effect.fail(new SandboxUnavailable({ reason: "exec" })),
     })
-    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(Layer.succeed(Machines, box)),
     ))
     expect(commands).toHaveLength(1)
@@ -358,7 +365,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
       sleepIfIdle: (branchId) => Effect.sync(() => (sleeps.push(branchId), "slept" as const)),
     })
     const exit = await Effect.runPromise(
-      Effect.exit(Checks.steps({ ...services, judge: seat }).scripts({ request })).pipe(
+      Effect.exit(Checks.steps({ ...services, judgeFor: () => seat }).scripts({ request })).pipe(
         Effect.provide(Layer.succeed(Machines, down)),
       ),
     )
@@ -382,7 +389,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const request = await opened(github, { personId: "p" })
     const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
     const exit = await Effect.runPromise(
-      Effect.exit(Checks.steps({ ...services, judge: seat, database: unreachable }).scripts({ request })).pipe(
+      Effect.exit(Checks.steps({ ...services, judgeFor: () => seat, database: unreachable }).scripts({ request })).pipe(
         Effect.provide(machine({ ".smithers/checks/a.sh": "" }).layer),
       ),
     )
@@ -396,7 +403,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
     github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/reviews"), lost: true })
-    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(machine({}).layer),
     ))
     expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(1)
@@ -433,7 +440,7 @@ describe("checks/Run on a host that dies mid-check", { timeout: 120_000 }, () =>
       commands: real.commands,
       sleepIfIdle: fake.sleepIfIdle,
     }))
-    const registration = withJobs(Checks.registration({ ...services, judge: seat })).pipe(Layer.provide(machines))
+    const registration = withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(Layer.provide(machines))
     const executionId = checkExecutionId(request.repoId, request.sha, "all")
     const engine = async (schema?: string) => {
       const scope = Effect.runSync(Scope.make())
@@ -493,7 +500,7 @@ describe("checks/Run's commit statuses (GH-10)", { timeout: 60_000 }, () => {
     const { seat } = await judgeSeat(runtime, judge("No findings."))
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
-    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(machine({ ".smithers/checks/lint.sh": "" }).layer),
     ))
     expect(ran.exit).toEqual(Exit.succeed({
@@ -514,14 +521,14 @@ describe("checks/Run's commit statuses (GH-10)", { timeout: 60_000 }, () => {
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
     const report = await Effect.runPromise(
-      Checks.steps({ ...services, judge: seat }).report({ request: { ...request, sha: "f".repeat(40) }, after: "scripts" }),
+      Checks.steps({ ...services, judgeFor: () => seat }).report({ request: { ...request, sha: "f".repeat(40) }, after: "scripts" }),
     )
     expect(report).toEqual({ statuses: [] })
     await sql(runtime, `INSERT INTO runs (id, flow, status, launched_by, repo_id, sha)
       VALUES (gen_random_uuid(), 'checks/lint', 'done', '${maya.personId}', '${request.repoId}', '${"f".repeat(40)}')`)
     expect(
       await Effect.runPromise(
-        Checks.steps({ ...services, judge: seat }).report({ request: { ...request, sha: "f".repeat(40) }, after: "scripts" }),
+        Checks.steps({ ...services, judgeFor: () => seat }).report({ request: { ...request, sha: "f".repeat(40) }, after: "scripts" }),
       ),
     ).toEqual({ statuses: [{ name: "lint", state: "success", outcome: "refused" }] })
     expect(github.statuses.size).toBe(0)
@@ -535,7 +542,7 @@ describe("checks/Run's commit statuses (GH-10)", { timeout: 60_000 }, () => {
     const request = await opened(github, maya)
     // The first status write is lint's pending, dropped; the second is the scripts' report, which the engine retries.
     github.faults.push({ match: statusWrite, status: 502 }, { match: statusWrite, status: 502 })
-    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(machine({ ".smithers/checks/lint.sh": "" }, { ".smithers/checks/lint.sh": 2 }).layer),
     ))
     expect(Exit.isSuccess(ran.exit)).toBe(true)
@@ -557,7 +564,7 @@ describe("checks/Run's commit statuses (GH-10)", { timeout: 60_000 }, () => {
     await sql(runtime, `INSERT INTO runs (id, flow, status, launched_by, repo_id, sha)
       VALUES (gen_random_uuid(), 'checks/lint', 'failed', '${maya.personId}', '${request.repoId}', '${request.sha}')`)
     github.faults.push({ match: statusWrite, lost: true })
-    const steps = Checks.steps({ ...services, judge: seat })
+    const steps = Checks.steps({ ...services, judgeFor: () => seat })
     const first = await Effect.runPromise(Effect.exit(steps.report({ request, after: "scripts" })))
     expect(first._tag === "Failure" && String(first.cause)).toContain("ChecksUnavailable")
     expect(await Effect.runPromise(steps.report({ request, after: "scripts" }))).toEqual({
@@ -578,12 +585,12 @@ describe("checks/Run's commit statuses (GH-10)", { timeout: 60_000 }, () => {
     const { seat } = await judgeSeat(runtime, judge("No findings."))
     const { services } = await githubServices(runtime, github, { judge: seat })
     const older = await opened(github, maya)
-    await runFlow(Checks.ChecksRun, older, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    await runFlow(Checks.ChecksRun, older, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(machine({ ".smithers/checks/lint.sh": "" }, { ".smithers/checks/lint.sh": 1 }).layer),
     ), { executionId: checkExecutionId(older.repoId, older.sha, "all") })
     const newer = { ...older, sha: github.push("smithers/t1-readme", { "README.md": "# Widgets\n\nA line.\n" }) }
     expect(github.shownStatuses(newer.sha)).toEqual({})
-    await runFlow(Checks.ChecksRun, newer, withJobs(Checks.registration({ ...services, judge: seat })).pipe(
+    await runFlow(Checks.ChecksRun, newer, withJobs(Checks.registration({ ...services, judgeFor: () => seat })).pipe(
       Layer.provide(machine({ ".smithers/checks/lint.sh": "" }).layer),
     ), { executionId: checkExecutionId(newer.repoId, newer.sha, "all") })
     expect(github.shownStatuses(older.sha)).toEqual({ "smithers/lint": "failure", "smithers/review": "success" })
@@ -598,7 +605,7 @@ describe("checks/Run's commit statuses (GH-10)", { timeout: 60_000 }, () => {
     const request = await opened(github, maya)
     await sql(runtime, `INSERT INTO runs (id, flow, status, launched_by, repo_id, sha)
       VALUES (gen_random_uuid(), 'checks/review', 'working', '${maya.personId}', '${request.repoId}', '${request.sha}')`)
-    expect(await Effect.runPromise(Checks.steps({ ...services, judge: seat }).report({ request, after: "review" }))).toEqual({
+    expect(await Effect.runPromise(Checks.steps({ ...services, judgeFor: () => seat }).report({ request, after: "review" }))).toEqual({
       statuses: [{ name: "review", state: "failure", outcome: "sent" }],
     })
     expect((await runs()).map(({ status }) => status)).toEqual(["failed"])
@@ -644,7 +651,7 @@ test.each(["token", "github", "database"] as const)("a review %s outage remains 
   const { TokenUnavailable } = await import("../github/Tokens")
   const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
   if (fault === "github") github.faults.push({ match: (method, path) => method === "GET" && path.includes("/compare/"), status: 503 })
-  const steps = Checks.steps({ ...services, judge: seat,
+  const steps = Checks.steps({ ...services, judgeFor: () => seat,
     ...(fault === "database" ? { database: unreachable } : {}),
     tokens: { ...services.tokens, forInstallation: (repo, purpose) => purpose === "review" && fault === "token"
       ? Effect.fail(new TokenUnavailable({ reason: "unavailable" })) : services.tokens.forInstallation(repo, purpose) },

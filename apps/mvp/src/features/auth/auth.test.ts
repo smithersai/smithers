@@ -361,6 +361,19 @@ describe("the composer", () => {
     expect(composerAccess(at("unreachable", null), undefined)).toBe("sign_in")
   })
 
+  test("while the deployment's model is off, a member without a model of their own sees the way to add one", () => {
+    const member = (hostedModel: boolean | undefined) =>
+      ({ status: "signed_in", role: "member", restored: true, hostedModel }) as Parameters<typeof composerAccess>[0]
+    expect(composerAccess(member(false), undefined, "none")).toBe("add_model")
+    expect(composerAccess(member(false), undefined, "saved")).toBe("ask")
+    // Their row hasn't synced yet: nothing, so neither the composer nor the prompt flashes.
+    expect(composerAccess(member(false), undefined, "loading")).toBe("wait")
+    // The deployment's model answers, or ChatApi didn't say: the composer, whatever they saved.
+    for (const hosted of [true, undefined]) expect(composerAccess(member(hosted), undefined, "none")).toBe("ask")
+    // A Guest still sees who may ask, before anything about models.
+    expect(composerAccess({ ...member(false), role: "guest" }, undefined, "none")).toBe("members_only")
+  })
+
   test("a member who reloads offline, or before ChatApi answers, can still ask", async () => {
     const h = await signInHarness(server)
     const b = browser(h)

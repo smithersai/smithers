@@ -132,7 +132,7 @@ const WRITES_README = [
 const agentSeat = async (model: Model.Model, personal?: typeof globalThis.fetch) => {
   const db = await database()
   const local = await Effect.runPromise(
-    ModelEndpoint.local(db).pipe(
+    ModelEndpoint.local(db, { hosted: true }).pipe(
       Effect.provide(personal === undefined ? PersonalModels.none : PersonalModels.layer(db).pipe(Layer.provide(SecretKeys.layer(KEY)))),
       Effect.provideService(
         HostModel,

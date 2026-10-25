@@ -17,6 +17,7 @@ import { codeOf } from "./ErrorCode.ts"
 import * as Flows from "./Flows.ts"
 import { RevokeGitHubToken, revokeExecutionId } from "./flows/RevokeGitHubToken.ts"
 import { GitHubAuth, type GitHubRefused, roleOf } from "./GitHubAuth.ts"
+import * as HostedModel from "./HostedModel.ts"
 import * as RunCredentials from "./RunCredentials.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as SessionStore from "./SessionStore.ts"
@@ -215,10 +216,14 @@ export const make = <E, R>(
     readonly github?: GitHubAuth["Service"]
     readonly fallback?: Signed
     readonly teammates?: Readonly<Record<string, Signed>>
+    /** `HOSTED_MODEL_ENABLED`'s default: on only under `alchemy dev` (decision 0099). */
+    readonly hostedModel?: boolean
   } = {},
 ) =>
   Effect.gen(function* () {
     const setup = yield* configured(options.github)
+    // Whether the deployment's own model answers when no Admin set it (decision 0099); a value that doesn't parse is off.
+    const hostedDefault = yield* HostedModel.hostedModelDefault(options.hostedModel).pipe(Effect.orElseSucceed(() => false))
 
     /** Logs and counts one request's outcome. */
     const record = (route: string, fields: Record<string, string | number>) =>
@@ -518,13 +523,29 @@ export const make = <E, R>(
       Effect.withSpan("auth.sign_out"),
     )
 
-    /** `GET /api/auth/session`: who this browser is signed in as. */
+    /**
+     * `GET /api/auth/session`: who this browser is signed in as, and, signed in, whether the deployment's own model
+     * answers anyone (`hostedModel`). A setting Postgres can't read says it does: the endpoint refuses each call
+     * itself, so the composer shows and the answer fails visibly rather than hiding chat.
+     */
     const session = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
       const signed = yield* current
+      const hostedModel = Option.isNone(signed) ? true : yield* HostedModel.enabled(hostedDefault).pipe(
+        Effect.provide(database),
+        Effect.catchCause((cause) =>
+          Effect.as(record("session", { outcome: "failed", reason: "hosted_model", errorCode: codeOf(Cause.squash(cause)) }), true)
+        ),
+      )
       const state: SessionState = Option.isSome(signed)
-        ? { signedIn: true, personId: signed.value.actor.subject.id, login: signed.value.login, role: signed.value.actor.role }
+        ? {
+          signedIn: true,
+          personId: signed.value.actor.subject.id,
+          login: signed.value.login,
+          role: signed.value.actor.role,
+          hostedModel,
+        }
         : { signedIn: false, available: Option.isSome(setup) || options.fallback !== undefined }
       return HttpServerResponse.jsonUnsafe(state, { status: 200, headers: noStore })
     }).pipe(

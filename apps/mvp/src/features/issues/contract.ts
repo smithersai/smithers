@@ -417,6 +417,8 @@ export const NOT_ACCEPTED = "Not accepted"
 export const RUN_TRIAGE_AGAIN = "Run triage again"
 export const ENABLE_TRIAGE = "Enable triage"
 export const PAUSE_TRIAGE = "Pause triage"
+/** Triage judges with the deployment's own model, which is off (decision 0099): the switch says so instead. */
+export const TRIAGE_OFF = "Triage off: needs hosted model"
 
 /** What triage records (docs/observability.md#github), by name, and the attributes they carry: never text or logins. */
 export const TRIAGE_TELEMETRY = {

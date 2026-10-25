@@ -8,7 +8,7 @@ The React view holds no focus state. See [decision 0081](../decisions/0081-keybo
 ## What the user does
 
 1. Opens the app (`/app`) and presses ⌘K (Ctrl+K), or clicks Chat ⌘K. The app opens at once, from the device, online or not. It installs as a PWA.
-2. Types a message and presses Enter or Send, whenever: offline, or while an answer streams. Asking needs sign-in as a Member or above: a signed-out person sees Sign in with GitHub where the composer would be ([sign-in.md](sign-in.md#the-browser)).
+2. Types a message and presses Enter or Send, whenever: offline, or while an answer streams. Asking needs sign-in as a Member or above: a signed-out person sees Sign in with GitHub where the composer would be ([sign-in.md](sign-in.md#the-browser)). Smithers answers with the person's own model ([Your model](personal-model.md)): a person who saved none sees "Add your model" and Open settings where the composer would be, unless the deployment's own model is on ([hosted inference](model-endpoint.md#hosted-inference), off for a deploy).
 3. Hides the chat with ⌘K again, Esc, or the Hide button.
 4. Sees their message at once, then Smithers' answer growing as it streams. Questions asked in a row are sent in that order.
 5. Sees the same conversation, live, on every other device that has the app open. Reloading a tab mid-answer doesn't stop the answer; closing every tab of the asking browser pauses it until the app opens there again.
@@ -176,7 +176,7 @@ Not built: binding a request to a session or a visitor cookie and limiting by it
 
 | Variable | Default | |
 |---|---|---|
-| `CHAT_MODEL` | Cerebras `qwen-3.8-27b` (`DEFAULT_CHAT_MODEL`, `worker/ModelRoles.ts`) | a Smithers configured-model record, as JSON: the model endpoint's default model for every role ([model-endpoint.md](model-endpoint.md#configuration)) |
+| `CHAT_MODEL` | Cerebras `qwen-3.8-27b` (`DEFAULT_CHAT_MODEL`, `worker/ModelRoles.ts`) | a Smithers configured-model record, as JSON: the model endpoint's default model for every role, used only while hosted inference is on, a work in progress off for a deploy ([model-endpoint.md](model-endpoint.md#hosted-inference)) |
 | the record's credential | none | for example `CEREBRAS_API_KEY` |
 | `DATABASE_URL` | the compose Postgres, `postgresql://smithers:smithers@localhost:54321/smithers` | `pnpm db:migrate` and the tests connect to it; ChatApi reaches it through Hyperdrive, which `alchemy dev` passes straight through |
 | `ELECTRIC_URL` | `http://localhost:30001` | |

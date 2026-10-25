@@ -459,6 +459,8 @@ export class TestChatApi extends Context.Service<
         })
         const config = ConfigProvider.fromUnknown({
           ...(yield* TestDatabase.fixtureConfig),
+          // The deployment's own model answers here, as under `alchemy dev` (decision 0099), so the scripted model does.
+          HOSTED_MODEL_ENABLED: "true",
           ALERT_APP_URL: "http://chat.test/app",
           ...(options.forge === "code-storage"
             ? { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: yield* Effect.promise(codeStorageKey) }

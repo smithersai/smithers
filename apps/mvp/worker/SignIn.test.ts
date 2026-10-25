@@ -170,7 +170,7 @@ describe("the callback", () => {
     const rows = await stored()
     expect(rows).not.toContain(Redacted.value(tokens.accessToken))
     expect(rows).not.toContain(Redacted.value(tokens.refreshToken!))
-    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member" } satisfies SessionState)
+    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member", hostedModel: false } satisfies SessionState)
     expect(h.github.repositories).toEqual(["smithersai/smithers"])
     const [line] = h.line("auth.callback")
     expect(line!.annotations).toMatchObject({ outcome: "signed_in", role: "member", personId: session!.personId })
@@ -312,12 +312,35 @@ describe("the callback", () => {
     expect(h.line("auth.callback")[0]!.annotations).toMatchObject({ reason: "error", errorCode: "unknown" })
   })
 
+  test("a signed-in session says whether the deployment's model answers: an Admin's setting, else HOSTED_MODEL_ENABLED", async () => {
+    await query((sql) => sql`DELETE FROM hosted_model`)
+    const on = await signInHarness(runtime, { config: { ...configured, HOSTED_MODEL_ENABLED: "true" } })
+    const { cookies } = await on.signInAs()
+    expect(await on.session(cookies)).toMatchObject({ signedIn: true, hostedModel: true })
+    await query((sql) => sql`INSERT INTO hosted_model (enabled, updated_by) VALUES (false, 'person-admin')`)
+    try {
+      expect(await on.session(cookies)).toMatchObject({ signedIn: true, hostedModel: false })
+      // A setting Postgres can't read: the composer shows, and the model endpoint refuses each call itself.
+      await query((sql) => sql`ALTER TABLE hosted_model RENAME TO hosted_model_away`)
+      try {
+        expect(await on.session(cookies)).toMatchObject({ signedIn: true, hostedModel: true })
+        expect(on.line("auth.session")).toEqual([
+          expect.objectContaining({ annotations: expect.objectContaining({ outcome: "failed", reason: "hosted_model" }) }),
+        ])
+      } finally {
+        await query((sql) => sql`ALTER TABLE hosted_model_away RENAME TO hosted_model`)
+      }
+    } finally {
+      await query((sql) => sql`DELETE FROM hosted_model`)
+    }
+  })
+
   test("tokens that never expire, from an App without expiring tokens, sign in too", async () => {
     const github = scriptedGitHub()
     github.expiring = false
     const h = await signInHarness(runtime, { github })
     const { cookies } = await h.signInAs()
-    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member" })
+    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member", hostedModel: false })
     const [session] = await sessionRows()
     expect(session!.refresh).toBeNull()
   })
@@ -370,7 +393,7 @@ describe("roles", () => {
       github.permission = permission
       const h = await signInHarness(runtime, { github })
       const { cookies } = await h.signInAs()
-      expect(await h.session(cookies), permission).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role })
+      expect(await h.session(cookies), permission).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role, hostedModel: false })
     }
   })
 
@@ -624,7 +647,7 @@ describe("sessions", () => {
       config: {},
       fallback: { actor: localDeveloper, login: "local-developer" },
     })
-    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin" })
+    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false })
   })
 
   test("local development's developer signs out and back in with a cookie, never reaching GitHub", async () => {
@@ -655,7 +678,7 @@ describe("sessions", () => {
     expect(back.status).toBe(303)
     expect(back.headers.get("location")).toBe("/app?tab=1")
     expect(setCookies(back)["smithers_dev_signed_out"]!.line).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/)
-    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin" })
+    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false })
     expect(dev.github.calls).toEqual([])
     expect(dev.revocations).toEqual([])
     expect(dev.count({ route: "sign_out", outcome: "signed_out", reason: "local_developer" })).toBe(1)
@@ -685,6 +708,7 @@ describe("sessions", () => {
       personId: expect.any(String),
       login: "local-teammate",
       role: "member",
+      hostedModel: false,
     })
     for (const person of ["nobody", "toString"]) {
       expect(await dev.session({ smithers_dev_person: person })).toEqual({
@@ -692,6 +716,7 @@ describe("sessions", () => {
         personId: expect.any(String),
         login: "local-developer",
         role: "admin",
+        hostedModel: false,
       })
     }
     // Signed out, the cookie names nobody; without a developer, no teammate either.

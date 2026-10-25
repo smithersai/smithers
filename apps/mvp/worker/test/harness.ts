@@ -129,7 +129,12 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
   const registry: Metric.MetricRegistry = new Map()
   const requests: Array<ModelRequest.ModelRequest> = []
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
-  const config = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl), ...options.config })
+  // Hosted inference is on in tests, as under `alchemy dev`, so the scripted model answers; a test turns it off.
+  const config = ConfigProvider.fromUnknown({
+    ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl),
+    HOSTED_MODEL_ENABLED: "true",
+    ...options.config,
+  })
   const homeRepository = await runtime.runPromise(Conversations.configuredHomeRepositoryNames.pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
   const model = Model.make({
     stream: (request) => {

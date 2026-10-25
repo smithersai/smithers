@@ -62,7 +62,7 @@ export const load = Effect.gen(function* () {
   // another person's data under this session, and nothing here deletes it. Expiry keeps the confirmed session.
   yield* change(
     state.signedIn
-      ? { status: "signed_in", login: state.login, role: state.role, available: true }
+      ? { status: "signed_in", login: state.login, role: state.role, available: true, hostedModel: state.hostedModel ?? true }
       : { status: "signed_out", login: null, role: null, available: state.available },
   )
   yield* (yield* AuthStore).sessionConfirmed
