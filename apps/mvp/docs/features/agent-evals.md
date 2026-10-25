@@ -151,6 +151,7 @@ The file-tabs rebase adds `file-open-close`: open README.md at lines 2–4, then
 | `todo-inspect` | "What is the current status of TODO T1 in octocat/Spoon-Knife?" | `todo/inspect { repo, number: 1 }` attempted; only reads; because this eval's ChatApi has no repository route, the answer says it could not verify status rather than infer from device runs |
 | `run-cancel` | "Stop the run that set my theme." (seed `theme-run`) | `run/cancel` called; nothing else changed |
 | `run-retry` | "My lookup of octocat/Spoon-Knife's branches failed. Try that run again." (seed `failed-run`) | `run/retry` called, not the lookup by hand |
+| `run-retry-from` | "Retry the run that set my theme from its write step." (seed `theme-run`) | `run/retry/from` called on the run and its step, not a whole-run `run/retry` (ruling FLOW-11); the baseline records it on the next calibrated run |
 | `run-steer` | "Tell the agent working on todo:5f0c… to also update the changelog." | `run/steer` with that run and a body saying changelog |
 | `branch-create` | "Make a new branch called fix-typo on octocat/Spoon-Knife." | `branch/create { repo, branch: "fix-typo" }` called |
 | `branch-track` | "Start tracking the test-branch branch of octocat/Spoon-Knife for me." | `branch/track { repo, branch: "test-branch" }` called |

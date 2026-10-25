@@ -1,3 +1,4 @@
+import { FlowRuntime } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import * as RunSteps from "./steps"
 import { InspectionJournal } from "@smthrs/gateway"
@@ -14,7 +15,7 @@ import { FlowNew, FlowRun, FlowSave } from "../flows-ui/flows"
 import { roundExecutionId } from "../flows-ui/round"
 import { listed, retriedRunId, retryActId, runPath, settled } from "./contract"
 import { retryable } from "./retry"
-import { Cancel, Inspect, List, Resume, Retry } from "./flows"
+import { Cancel, Inspect, List, Resume, Retry, RetryFrom } from "./flows"
 import { versioned } from "./steps"
 
 const runtime = testFile("runs_acts")
@@ -306,6 +307,75 @@ describe("run/retry", () => {
         WHERE run_id = ${live}`)
     expect(refusal(await retry(live))).toBe("not_retryable")
     expect(done).toBeTruthy()
+  }, SLOW)
+})
+
+describe("run/retry/from", () => {
+  /** The node records `runId`'s steps settled with, by action. */
+  const settledNodes = async (d: Device, runId: string) =>
+    (await inEngine(d, (sql) =>
+      sql<{ readonly payload: string }>`SELECT payload_json AS payload FROM flows_journal_events
+        WHERE run_id = ${runId} AND event_type = 'flows.engine.node-settled' ORDER BY seq`))
+      .map((row) => JSON.parse(row.payload) as { readonly action?: string; readonly outcome: string })
+
+  test("Retry from here replays a person's flow's load and runs its code again, once per act", async () => {
+    const d = await device()
+    const runId = crypto.randomUUID()
+    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: runId, payload: { name: "hello" } })))
+      .toEqual(Exit.succeed("Hello."))
+    expect(d.model.running).toHaveLength(1)
+    const code = (await inspect(d, runId)).steps.find((step) => step.action === "flow/run/code")!.nodeId
+    const act = retryActId(runId, 1)
+    const retried = await d.run(d.engine.flows.execute(RetryFrom, { executionId: act, payload: { runId, step: code } }))
+    expect(retried).toEqual(Exit.succeed({ runId: retriedRunId(act) }))
+    // The same act again starts nothing new.
+    expect(await d.run(d.engine.flows.execute(RetryFrom, { executionId: act, payload: { runId, step: code } })))
+      .toEqual(retried)
+    const done = await until(d, retriedRunId(act), (run) => run.status === "completed")
+    expect(done).toMatchObject({ flow: "flow/run", result: JSON.stringify("Hello.") })
+    // The code ran again, one more model call; the load replayed what it recorded.
+    expect(d.model.running).toHaveLength(2)
+    const nodes = await settledNodes(d, retriedRunId(act))
+    expect(nodes.find((node) => node.action === "flow/run/load")?.outcome).toBe("clean")
+    expect(nodes.find((node) => node.action === "flow/run/code")?.outcome).toBe("built")
+    const [decision] = await inEngine(d, (sql) =>
+      sql<{ readonly payload: string }>`SELECT payload_json AS payload FROM flows_journal_events
+        WHERE run_id = ${retriedRunId(act)} AND event_type = 'flows.engine.run-decision'
+          AND payload_json LIKE '%retry-from%'`)
+    expect(JSON.parse(decision!.payload)).toMatchObject({ decision: "retry-from", source: runId, step: code, replayed: 1 })
+    // The run's own input, and a run of its own among the person's runs.
+    const [stored] = await inEngine(d, (sql) =>
+      sql<{ readonly state: string }>`SELECT state_json AS state FROM flows_runs WHERE run_id = ${retriedRunId(act)}`)
+    expect(JSON.parse(stored!.state)).toMatchObject({ payload: { name: "hello" }, retryFrom: { source: runId, step: code } })
+    const list = await d.run(d.engine.flows.execute(List, { executionId: crypto.randomUUID(), payload: {} }))
+    expect(JSON.stringify(list)).toContain(retriedRunId(act))
+  }, SLOW)
+
+  test("refuses a run still going, a step it never ran, an act, an unknown run, and an engine that can't", async () => {
+    const d = await device(1)
+    const retryFrom = (runId: string, step: string) =>
+      d.run(d.engine.flows.execute(RetryFrom, { executionId: crypto.randomUUID(), payload: { runId, step } }))
+    const live = await startHello(d)
+    await until(d, live, () => d.model.running.length === 1)
+    expect(refusal(await retryFrom(live, "root"))).toBe("not_settled")
+
+    const done = crypto.randomUUID()
+    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: done, payload: { name: "hello" } })))
+      .toEqual(Exit.succeed("Hello."))
+    expect(refusal(await retryFrom(done, "no/such/step"))).toBe("step_not_run")
+    const act = crypto.randomUUID()
+    await d.run(d.engine.flows.execute(List, { executionId: act, payload: {} }))
+    expect(refusal(await retryFrom(act, "root"))).toBe("not_retryable")
+    expect(refusal(await retryFrom("nothing", "root"))).toBe("not_found")
+
+    // An engine that keeps no history to replay can't retry from a step.
+    const code = (await inspect(d, done)).steps.find((step) => step.action === "flow/run/code")!.nodeId
+    const { retryFrom: _, ...historyless } = d.engine.flows
+    const exit = await Effect.runPromiseExit(RunSteps.retryFrom({ runId: done, step: code }).pipe(
+      Effect.provideService(EngineStore.RunInspection.RunInspection, d.engine.inspection),
+      Effect.provideService(FlowRuntime.FlowRuntime, FlowRuntime.FlowRuntime.of(historyless)),
+    ) as Effect.Effect<unknown, unknown>)
+    expect(refusal(exit)).toBe("not_here")
   }, SLOW)
 })
 

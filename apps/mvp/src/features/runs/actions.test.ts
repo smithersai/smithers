@@ -178,6 +178,26 @@ test.each(["engine", "refusal", "exhausted"])("retry fails closed when probing f
   expect((await t.view()).refusal).toBe(mode === "exhausted" ? "refused" : "unavailable")
 })
 
+test("Retry from here dispatches run/retry/from with the step as the next retry act, and opens its new run", async () => {
+  const t = await setup({ dispatch: Effect.succeed({ _tag: "Done", value: { runId: "retry:a:1/run" } }) })
+  await t.runtime.runPromise(actions.retryFrom("root.flow.prompt"))
+  expect(t.calls).toEqual([{ name: "run/retry/from", payload: { runId: "a", step: "root.flow.prompt" }, executionId: "retry:a:1" }])
+  expect(t.navigated).toEqual(["/app/runs/retry%3Aa%3A1%2Frun"])
+  expect(await t.view()).toMatchObject({ acting: null, refusal: null })
+})
+
+test("a refused Retry from here keeps its refusal without navigating, and a probe that fails starts nothing", async () => {
+  const refused = await setup({ dispatch: Effect.succeed({ _tag: "Failed", error: { code: "step_not_run" } }) })
+  await refused.runtime.runPromise(actions.retryFrom("root.flow.load"))
+  expect(await refused.view()).toMatchObject({ acting: null, refusal: "step_not_run" })
+  expect(refused.navigated).toEqual([])
+  expect(REFUSAL_WORDS["step_not_run"]).toBe("This step didn't run.")
+  const unreadable = await setup({ exists: (id) => id === "a" ? Effect.succeed(inspection(id)) : Effect.fail(new BrowserEngine.EngineUnavailable({ reason: "worker-failed", error: "fault" })) })
+  await unreadable.runtime.runPromise(actions.retryFrom("root.flow.prompt"))
+  expect(unreadable.calls).toEqual([])
+  expect((await unreadable.view()).refusal).toBe("unavailable")
+})
+
 test("a dispatch defect keeps its failure code", async () => {
   const t = await setup({ dispatch: Effect.fail(new DispatchFailed({ flow: "run/cancel", reason: "defect" })) })
   await t.runtime.runPromise(actions.stop)

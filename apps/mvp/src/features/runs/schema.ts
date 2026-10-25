@@ -84,7 +84,7 @@ export const RUN_TABS = ["steps", "timeline", "journal"] as const
 export type RunTab = (typeof RUN_TABS)[number]
 
 /** An act a person pressed, until its flow answers. */
-export const Acting = Schema.NullOr(Schema.Literals(["stop", "retry", "resume"]))
+export const Acting = Schema.NullOr(Schema.Literals(["stop", "retry", "retry_from", "resume"]))
 
 /** This tab's run view (`runPage`): the run it shows, the step selected, the tab, an act in flight and a refusal. */
 /** A repository, by owner and name. */

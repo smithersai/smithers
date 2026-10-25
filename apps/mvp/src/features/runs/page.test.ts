@@ -16,6 +16,7 @@ import {
   missingOf,
   repoRunRows,
   repoRunsLoaded,
+  retriesFrom,
   retriesOf,
   runsSearch,
   selectedStep,
@@ -123,6 +124,48 @@ describe("actsOf", () => {
     expect(actsOf(inspection({ run: run({ status: "suspended" }) }), 0).resume).toBe(true)
     const silent = inspection({ run: run({ status: "running" }), journal: { ...inspection().journal, events: [] } })
     expect(actsOf(silent, 1_000 + STALLED_AFTER_MS).resume).toBe(true)
+  })
+})
+
+describe("retriesFrom", () => {
+  const steps = inspection().steps
+  const [rootStep, sequence, load, prompt] = steps
+
+  test("a person's flow offers Retry from here on its prompt, after its load; never on the load, with nothing before", () => {
+    expect([...retriesFrom(inspection())]).toEqual(["root.flow.prompt"])
+  })
+
+  test("a step that failed after another completed offers it; a skipped or running one, or one before nothing, doesn't", () => {
+    const failed = { ...prompt!, status: "failed" as const }
+    expect([...retriesFrom(inspection({ steps: [rootStep!, sequence!, load!, failed] }))]).toEqual(["root.flow.prompt"])
+    for (const status of ["skipped", "running", "waiting"] as const) {
+      expect(retriesFrom(inspection({ steps: [rootStep!, sequence!, load!, { ...prompt!, status }] })).size).toBe(0)
+    }
+    // A boundary began when its child run was created, not when the engine scheduled it, which is before the load it
+    // waits on: scheduled at 1,003, its child created at 1,102, after the load settled.
+    const early = { ...prompt!, scheduledAtMs: 1_003 }
+    expect([...retriesFrom(inspection({ steps: [rootStep!, sequence!, load!, early] }))]).toEqual(["root.flow.prompt"])
+    // A step that began before anything completed replays nothing: Retry covers it.
+    const overlapping = inspection({
+      steps: [rootStep!, sequence!, load!, early],
+      children: inspection().children.map((child) => ({ ...child, createdAtMs: 1_050 })),
+    })
+    expect(retriesFrom(overlapping).size).toBe(0)
+    // An action step began at its first attempt, not when it was scheduled.
+    const finish = { ...load!, nodeId: "root.flow.finish", action: "x/finish", scheduledAtMs: 1_001, settledAtMs: 1_950,
+      attempts: [{ attempt: 1, state: "succeeded", startedAtMs: 1_901, finishedAtMs: 1_950, outcome: null, error: null }] }
+    expect([...retriesFrom(inspection({ steps: [...steps, finish] }))]).toEqual(["root.flow.prompt", "root.flow.finish"])
+  })
+
+  test("a boundary whose child isn't among the run's children is structure, not a step: no offer", () => {
+    expect(retriesFrom(inspection({ children: [] })).size).toBe(0)
+  })
+
+  test("only a settled run of a retried flow on this device offers it", () => {
+    expect(retriesFrom(inspection({ run: run({ status: "running", finishedAtMs: null }) })).size).toBe(0)
+    expect(retriesFrom(inspection({ run: run({ flowName: "chat/Answer" }) })).size).toBe(0)
+    expect(retriesFrom(inspection({ run: run({ runId: "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f" }) })).size).toBe(0)
+    expect(retriesFrom(inspection(), true).size).toBe(0)
   })
 })
 
@@ -302,6 +345,8 @@ describe("the list", () => {
   test("counts a run's retries from this device", () => {
     expect(retriesOf([row({ id: "retry:a:1", flow: "run/retry" }), row({ id: "retry:a:2", flow: "run/retry" }), row({ id: "retry:b:1", flow: "run/retry" })], "a"))
       .toBe(2)
+    // Retry from here numbers with Retry.
+    expect(retriesOf([row({ id: "retry:a:1", flow: "run/retry" }), row({ id: "retry:a:2", flow: "run/retry/from" })], "a")).toBe(2)
   })
 })
 

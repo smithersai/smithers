@@ -39,6 +39,8 @@ export interface PageStep {
   readonly wait: WaitData | null
   /** A child run's own page. */
   readonly href: string | null
+  /** The engine's address of a plan step: the run that holds it and its node id. */
+  readonly node?: { readonly runId: string; readonly nodeId: string }
 }
 
 /** The step a page shows the detail of: the selected one, else the latest. */
@@ -88,6 +90,37 @@ export const actsOf = (
     retry: settled(run.status) && retryable(run.flowName),
     resume: run.status === "suspended" || (run.status === "running" && now - last >= STALLED_AFTER_MS),
   }
+}
+
+/**
+ * The steps of a run that offer Retry from here (ruling FLOW-11), by node id: on a settled run of this device whose flow
+ * is retried, an action or a child boundary of the run itself that completed or failed, once another of its steps
+ * completed before it began. A step with nothing before it would replay nothing: that is Retry, in the header. A run on
+ * Cloudflare offers none.
+ *
+ * An action began with its first attempt; a boundary when its child run was created. The engine schedules a node before
+ * the nodes it waits on, so its scheduling says nothing about when its own work began.
+ */
+export const retriesFrom = (inspection: Inspection, cloud = false): ReadonlySet<string> => {
+  const { run } = inspection
+  if (cloud || isRemoteRun(run.runId) || !settled(run.status) || !retryable(run.flowName)) return new Set()
+  const children = new Set(inspection.children.map((child) => child.flowName))
+  const steps = inspection.steps.filter((step) =>
+    step.kind === "ActionCall" || (step.kind === "FlowCall" && step.action !== null && children.has(step.action))
+  )
+  const began = (step: Inspection["steps"][number]) =>
+    step.attempts[0]?.startedAtMs ??
+      Math.min(
+        ...inspection.children
+          .filter((child) => child.flowName === step.action && child.createdAtMs >= step.scheduledAtMs)
+          .map((child) => child.createdAtMs),
+      )
+  return new Set(
+    steps.filter((step) =>
+      (step.status === "completed" || step.status === "failed") &&
+      steps.some((other) => other !== step && other.status === "completed" && other.settledAtMs !== null && other.settledAtMs <= began(step))
+    ).map((step) => step.nodeId),
+  )
 }
 
 /** Where a run runs, as its header says: this device, or Cloudflare (a TODO's run, or a repository's: `cloud`). */
@@ -218,9 +251,12 @@ export const listRows = (
     })
 }
 
-/** How many times `runId` was retried from this device: each Retry is one `run/retry` act, `retry:<runId>:<n>`. */
+/**
+ * How many times `runId` was retried from this device: each Retry and Retry from here is one act, `retry:<runId>:<n>`,
+ * numbered together.
+ */
 export const retriesOf = (runs: ReadonlyArray<RunRow>, runId: string): number =>
-  runs.filter((run) => run.flow === "run/retry" && run.id.startsWith(`retry:${runId}:`)).length
+  runs.filter((run) => (run.flow === "run/retry" || run.flow === "run/retry/from") && run.id.startsWith(`retry:${runId}:`)).length
 
 /**
  * A steer's state on the run page (docs/features/runs.md#steering): in the outbox (`sending`), taken by the route or in

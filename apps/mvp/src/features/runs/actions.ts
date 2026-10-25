@@ -92,7 +92,7 @@ const openInspection = Effect.gen(function* () {
   return Option.flatMap(page, (page) => Option.fromNullishOr(page.inspection as Inspection | null))
 })
 
-type Act = "stop" | "retry" | "resume"
+type Act = "stop" | "retry" | "retry_from" | "resume"
 
 /**
  * Runs `act` on the open run with `dispatch`, marking it in flight until its flow answers; a refusal's code stays on the
@@ -153,45 +153,82 @@ export const resume = acting("resume", (inspection) =>
     ))
 
 /**
- * Retry: `run/retry` as the next unused `retry:<runId>:<n>`, checked against durable history beyond the bounded list.
- * Its new run opens only while this view still owns the originating act.
+ * The next unused `retry:<runId>:<n>`, checked against durable history beyond the bounded list: Retry and Retry from
+ * here number one run's retries together. Answers the act's id, or why none could be chosen.
+ */
+const nextRetryAct = (
+  runId: string,
+): Effect.Effect<{ readonly actId: string } | { readonly refusal: string }, never, RunsStore | BrowserEngine.BrowserEngine> =>
+  Effect.gen(function* () {
+    const store = yield* RunsStore
+    // The list holds this device's earlier retries of the run: read it now, so the act is the next one.
+    yield* store.readList
+    const engine = yield* BrowserEngine.BrowserEngine
+    let n = retriesOf(yield* store.runs.toArray, runId) + 1
+    // The list is bounded; existence in the durable engine decides which identity is unused.
+    for (let checked = 0; ; checked++, n++) {
+      if (checked === RETRY_ID_SEARCH_LIMIT) return { refusal: "refused" } as const
+      const actId = retryActId(runId, n)
+      let reserved = false
+      // A refused or interrupted act may exist without ever having created its child.
+      for (const id of [retriedRunId(actId), actId]) {
+        const existing = yield* Effect.result(engine.inspect(id, { limit: 1 }))
+        if (existing._tag === "Success") { reserved = true; break }
+        if (!(existing.failure instanceof BrowserEngine.RequestRefused) || existing.failure.error !== "@smthrs/engine-store/RunNotFound") {
+          return { refusal: "unavailable" } as const
+        }
+      }
+      if (!reserved) return { actId } as const
+    }
+  })
+
+/** Opens a retry's new run, while this view still owns the act that started it. */
+const openRetried = (runId: string, current: Effect.Effect<boolean, never, RunsStore>) =>
+  Effect.gen(function* () {
+    yield* (yield* RunsStore).readList
+    if (yield* current) (yield* RunsNavigation).navigate(runPath(runId))
+  })
+
+/**
+ * Retry: `run/retry` as the next unused `retry:<runId>:<n>`. Its new run opens only while this view still owns the
+ * originating act.
  */
 export const retry = (version: "pinned" | "current") =>
   acting("retry", (inspection, current) =>
     Effect.gen(function* () {
-      const store = yield* RunsStore
       const runId = inspection.run.runId
       if (inspection.run.flowName === "todo") {
         const payload = todoRetryPayload(inspection.run.input)
         if (payload === undefined) return Option.some("not_retryable")
         return refusalOf(yield* (yield* FlowDispatch).dispatch("todo/Retry", payload, { door: "button" }))
       }
-      // The list holds this device's earlier retries of the run: read it now, so the act is the next one.
-      yield* store.readList
-      const engine = yield* BrowserEngine.BrowserEngine
-      let n = retriesOf(yield* store.runs.toArray, runId) + 1
-      // The list is bounded; existence in the durable engine decides which identity is unused.
-      for (let checked = 0; ; checked++, n++) {
-        if (checked === RETRY_ID_SEARCH_LIMIT) return Option.some("refused")
-        const actId = retryActId(runId, n)
-        let reserved = false
-        // A refused or interrupted act may exist without ever having created its child.
-        for (const id of [retriedRunId(actId), actId]) {
-          const existing = yield* Effect.result(engine.inspect(id, { limit: 1 }))
-          if (existing._tag === "Success") { reserved = true; break }
-          if (!(existing.failure instanceof BrowserEngine.RequestRefused) || existing.failure.error !== "@smthrs/engine-store/RunNotFound") {
-            return Option.some("unavailable")
-          }
-        }
-        if (!reserved) break
-      }
+      const act = yield* nextRetryAct(runId)
+      if ("refusal" in act) return Option.some(act.refusal)
       const dispatched = yield* (yield* FlowDispatch).dispatch("run/retry", { runId, version }, {
         door: "button",
-        executionId: retryActId(runId, n),
+        executionId: act.actId,
       })
       if (dispatched._tag === "Failed") return Option.some(dispatched.error.code)
-      yield* store.readList
-      if (yield* current) (yield* RunsNavigation).navigate(runPath(dispatched.value.runId))
+      yield* openRetried(dispatched.value.runId, current)
+      return Option.none()
+    }))
+
+/**
+ * Retry from here (ruling FLOW-11): `run/retry/from` on the open run from its step `step` (the engine's node id), as the
+ * next unused `retry:<runId>:<n>`. Its new run opens only while this view still owns the act.
+ */
+export const retryFrom = (step: string) =>
+  acting("retry_from", (inspection, current) =>
+    Effect.gen(function* () {
+      const runId = inspection.run.runId
+      const act = yield* nextRetryAct(runId)
+      if ("refusal" in act) return Option.some(act.refusal)
+      const dispatched = yield* (yield* FlowDispatch).dispatch("run/retry/from", { runId, step }, {
+        door: "button",
+        executionId: act.actId,
+      })
+      if (dispatched._tag === "Failed") return Option.some(dispatched.error.code)
+      yield* openRetried(dispatched.value.runId, current)
       return Option.none()
     }))
 

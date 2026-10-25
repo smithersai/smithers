@@ -116,6 +116,37 @@ test("flows: draft a flow, save it, run it, watch its run page, then stop a run 
   await expect(page.getByRole("table", { name: "Runs" })).toContainText("flow/run")
 })
 
+test("flows: Retry from here on a run's code replays its load and runs the code again to Done", async ({ devices }) => {
+  test.setTimeout(300_000)
+  const [a] = await devices.open("A")
+  const page = a.page
+  const name = `again-${Date.now().toString(36)}`
+  await draftAndSave(page, name, "Answer with the single word again.")
+  await run(page, name)
+  await expect(runState(page)).toContainText("Done", { timeout: 120_000 })
+  // The run's own journal: the load ran an attempt of its own.
+  await page.getByRole("tab", { name: "Journal" }).click()
+  await expect(page.getByRole("table", { name: "Journal" })).toContainText("flows.engine.attempt-started")
+  await page.getByRole("tab", { name: /^Steps/ }).click()
+
+  // The load has nothing before it, so the inspector offers no Retry from here on it; the code does.
+  await doneStep(page, name, "load").click()
+  await expect(page.getByRole("button", { name: "Retry from here" })).toHaveCount(0)
+  await doneStep(page, name, "code").click()
+  await page.getByRole("button", { name: "Retry from here" }).click()
+
+  // A new run of its own opens and follows the code to its answer.
+  await expect(page).toHaveURL(/\/app\/runs\/retry%3A.+%2Frun$/, { timeout: 30_000 })
+  await expect(runState(page)).toContainText("Done", { timeout: 120_000 })
+  await expect(doneStep(page, name, "load")).toBeVisible()
+  await expect(doneStep(page, name, "code")).toBeVisible()
+  // The load replayed: the new run records the retry and the load's finished attempt, and starts no attempt of its own.
+  await page.getByRole("tab", { name: "Journal" }).click()
+  const journal = page.getByRole("table", { name: "Journal" })
+  await expect(journal).toContainText("flows.engine.attempt-finished")
+  await expect(journal).not.toContainText("flows.engine.attempt-started")
+})
+
 test("flows: draft a flow from a prompt, open its code, run it, relabel its step, and the edited code runs to its answer", {
   annotation: { type: "summary", description: "A hand-edited flow runs in the QuickJS realm" },
 }, async ({ devices }) => {

@@ -33,7 +33,7 @@ import {
 } from "../features/flows-ui/flows"
 import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
 import { Classify, Evaluate } from "../features/jev/flows"
-import { Cancel, Inspect, List, Resume, Retry, Steer } from "../features/runs/flows"
+import { Cancel, Inspect, List, Resume, Retry, RetryFrom, Steer } from "../features/runs/flows"
 import { CloseFile, OpenFile } from "../features/files/flows"
 import { Navigate } from "../features/navigation/flows"
 import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
@@ -102,6 +102,7 @@ export const declarations = {
   "flow/list": FlowList,
   "run/cancel": Cancel,
   "run/retry": Retry,
+  "run/retry/from": RetryFrom,
   "run/resume": Resume,
   "run/list": List,
   "run/inspect": Inspect,

@@ -176,6 +176,7 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
       attempts,
       wait: null,
       href: ownerId === run.runId ? null : pathOf(ownerId),
+      node: { runId: ownerId, nodeId: nativeId },
       logs
     }
   })

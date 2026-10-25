@@ -12,6 +12,7 @@ import { ACT_REFUSALS, MAX_STEER_CHARS } from "./contract"
 //   run/cancel { runId, seq }     Stop: the engine records the cancellation and interrupts the run; with
 //                                 host "cloud", a repository's run, which its Durable Object stops
 //   run/retry { runId, version }  Retry: a new run of the same flow with the same payload, pinned or current
+//   run/retry/from { runId, step } Retry from here: a new run that replays the steps before `step` and runs from it
 //   run/resume { runId, seq }     Resume: the engine drives a run again that hasn't settled; a durable timer stays
 //   run/list {}                   the newest runs
 //   run/inspect { runId }         one run: its status, steps and result
@@ -93,6 +94,30 @@ export const Retry = Flow.make("run/retry", {
   body: Node.capture({ retry: RetryRun.name }, ({ runId, version }) => RetryRun.call({ runId, version })),
 }).annotate(Flow.Placement, Placement.client())
 
+/** The step: start the new run, seeded from the run it retries. */
+export const RetryFromRun = Action.make("run/retry/from/start", {
+  payload: { runId: Fenced.runId, step: Schema.String.check(Schema.isBetweenLength(1, 1024)) },
+  success: Schema.Struct({ runId: Schema.String }),
+  error: RunActRefused,
+  tier: "sealed",
+})
+
+/**
+ * `run/retry/from`: Retry from here (ruling FLOW-11). A new run of the same flow with the same input, in which every
+ * step that finished before `step` began replays its recorded result and `step` and every step after it run again. The
+ * settled run is not changed: it is a retry, not a history fork.
+ */
+export const RetryFrom = Flow.make("run/retry/from", {
+  description: "Run a settled run again as a new run from one of its steps: the steps before it replay what they " +
+    "recorded, and it and every step after it run again. step is the step's nodeId as run/inspect lists it. Answers " +
+    "with the new run's id.",
+  modelInvocable: true,
+  payload: { runId: Fenced.runId, step: Schema.String.check(Schema.isBetweenLength(1, 1024)) },
+  success: Schema.Struct({ runId: Schema.String }),
+  error: RunActRefused,
+  body: Node.capture({ retry: RetryFromRun.name }, ({ runId, step }) => RetryFromRun.call({ runId, step })),
+}).annotate(Flow.Placement, Placement.client())
+
 /** The step: drive the run again. */
 export const ResumeRun = Action.make("run/resume/drive", {
   payload: Fenced,
@@ -143,7 +168,7 @@ export const Inspected = Schema.Struct({
   flow: Schema.String,
   status: RunStatus,
   seq: Schema.Number,
-  steps: Schema.Array(Schema.Struct({ action: Schema.NullOr(Schema.String), status: Schema.String })),
+  steps: Schema.Array(Schema.Struct({ nodeId: Schema.String, action: Schema.NullOr(Schema.String), status: Schema.String })),
   result: Schema.NullOr(Schema.String),
 })
 

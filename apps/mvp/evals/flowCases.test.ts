@@ -117,6 +117,11 @@ const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Pa
     good: { calls: [call("run/list"), call("run/retry", { runId: "r", version: "pinned" })] },
     bad: { calls: [call("repo/refs", { repo: REPO }, "failed")] },
   },
+  "run-retry-from": {
+    good: { calls: [call("run/list"), call("run/inspect", { runId: "r" }), call("run/retry/from", { runId: "r", step: "s" })] },
+    // Running the whole run again is not retrying it from a step.
+    bad: { calls: [call("run/list"), call("run/retry", { runId: "r", version: "pinned" })] },
+  },
   "run-steer": {
     good: failed("run/steer", { runId: "todo:5f0c2a64-8a3e-4d1b-9a77-2f1e6c3b9d10", body: "Also update the CHANGELOG." }),
     bad: { text: "Open the run's page and send it a message." },

@@ -10,6 +10,7 @@ import {
   openRun,
   resume,
   retry,
+  retryFrom,
   RunsNavigation,
   scrub,
   select,
@@ -73,6 +74,8 @@ export interface RunsActions {
   readonly more: () => void
   readonly stop: () => void
   readonly retry: (version: "pinned" | "current") => void
+  /** Retry from here on the open run's step `step`, the engine's node id. */
+  readonly retryFrom: (step: string) => void
   readonly resume: () => void
   readonly setSteerDraft: (text: string) => void
   readonly steer: () => void
@@ -120,6 +123,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
           more: () => fork(more),
           stop: () => fork(stop),
           retry: (version) => fork(retry(version)),
+          retryFrom: (step) => fork(retryFrom(step)),
           resume: () => fork(resume),
           setSteerDraft: (text) => fork(setSteerDraft(text)),
           steer: () => fork(steer),

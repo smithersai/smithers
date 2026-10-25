@@ -80,7 +80,7 @@ Status: **exists**; **small** (small addition, built now); **build** (missing, b
 | 38 | Watching a run live, logs, a repository's runs list | all | device engine only ([runs](../features/runs.md) lines 14-17) | build | `ci-parity-run-view` |
 | 39 | Cancelling and re-running a whole run | all | `run/cancel` and `run/retry` on device runs ([runs](../features/runs.md) lines 43-44) | small | `ci-parity-run-view` |
 | 40 | Re-running failed jobs | all | "No step retry is offered" ([runs](../features/runs.md) line 83) | small | `ci-parity-rerun-failed` |
-| 41 | Retry from a chosen step | all | `TimeTravel.fork` and `rewind`, which need jj on the host | ticket | `ci-parity-retry-from-here` |
+| 41 | Retry from a chosen step | all | Retry from here on device runs: `run/retry/from` over `FlowRuntime.retryFrom` (ruling FLOW-11); not yet on Cloudflare runs | exists | `ci-parity-retry-from-here` |
 | 42 | Required checks on pull requests | E main (6 checks), `v4/next-*` (7), V3 (6) | the Checks tab reads `runs` on the head; `pr/Merge` ignores them (`Merge.ts:21`); `merge/rules` hook designed | small | `ci-parity-required-checks` |
 | 43 | Status badges | no README in the three repositories uses a CI badge | none | ticket | `ci-parity-status-badges` |
 | 44 | Docker daemon, testcontainers, service containers | S ci (35-47), release; E check Test (145-154), cluster | Docker with host networking only | ticket | `ci-parity-docker` |
@@ -129,7 +129,7 @@ The first six are the spine: nothing runs or shows without them, so they come fi
 | `ci-parity-privileged-linux` | No KVM; no user-namespace sysctl | S release and reliability fault suites; bubblewrap tests |
 | `ci-parity-oidc-provenance` | npm, JSR and Sigstore accept only named CI issuers | S release provenance and cosign; E release and npm-promote; T jsr-publish |
 | `ci-parity-preview-packages` | pkg.pr.new checks the GitHub Actions run | E and V3 snapshot |
-| `ci-parity-retry-from-here` | Needs `TimeTravel` on the Cloudflare host and dependency invalidation rules | none; Retry failed covers the common case |
+| `ci-parity-retry-from-here` | Built for runs on this device (ruling FLOW-11, `FlowRuntime.retryFrom`); a run on Cloudflare doesn't offer it yet | none; Retry failed covers the common case |
 | `ci-parity-status-badges` | No README uses one | none |
 | `ci-parity-flow-renderer` | A migration convenience, not parity | S and T generated workflows |
 

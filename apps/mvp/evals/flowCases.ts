@@ -239,6 +239,12 @@ export const FLOW_CASES: ReadonlyArray<AgentCase> = [
     checks: (t) => [answered(t), attempted(t, "run/retry"), ...changedOnly(t, ["run/retry"])],
   },
   {
+    name: "run-retry-from",
+    ask: "Retry the run that set my theme from its write step.",
+    seed: "theme-run",
+    checks: (t) => [answered(t), attempted(t, "run/retry/from"), ...changedOnly(t, ["run/retry/from"])],
+  },
+  {
     name: "run-steer",
     ask: "Tell the agent working on todo:5f0c2a64-8a3e-4d1b-9a77-2f1e6c3b9d10 to also update the changelog.",
     checks: (t) => [answered(t), attempted(t, "run/steer", all(

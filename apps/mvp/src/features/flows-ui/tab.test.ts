@@ -11,7 +11,7 @@ import { RunsNavigation } from "../runs/actions"
 import { RUNS_PATH } from "../runs/contract"
 import { graphOf } from "../runs/graph"
 import type { Inspection } from "../runs/schema"
-import { listRows } from "../runs/page"
+import { listRows, retriesFrom } from "../runs/page"
 import { Runs } from "../runs/runs"
 import { codeSaveable, formReady, savedRefusal, writtenRefusal } from "./actions"
 import { codePath, draftFailureWords, draftPath, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
@@ -568,6 +568,16 @@ describe("a flow of your own, from a tab", () => {
     t.runs.actions.retry("current")
     await until(() => expect(t.went(`${RUNS_PATH}/retry%3A${encodeURIComponent(runId)}%3A2`)).toBeDefined())
     await t.reply(RUN_TASK, 'ctx.done("Hello a third time.")', 2)
+    // Retry from here on the first run's code: its load replays, its code runs again, as the third retry.
+    await t.runs.actions.openRun(runId)
+    await until(() => expect(t.inspection()?.run.runId).toBe(runId))
+    const code = t.inspection()!.steps.find((each) => each.action === "flow/run/code")!
+    expect([...retriesFrom(t.inspection()!)]).toEqual([code.nodeId])
+    t.runs.actions.retryFrom(code.nodeId)
+    await until(() => expect(t.went(`${RUNS_PATH}/retry%3A${encodeURIComponent(runId)}%3A3`)).toBeDefined())
+    await t.reply(RUN_TASK, 'ctx.done("Hello from here.")', 3)
+    await t.runs.actions.openRun(`retry:${runId}:3/run`)
+    await until(() => expect(t.inspection()?.run).toMatchObject({ status: "completed", result: { text: '"Hello from here."' } }))
 
     // The list: both runs of hello, newest first, and no act on a run.
     await t.runs.actions.openList()

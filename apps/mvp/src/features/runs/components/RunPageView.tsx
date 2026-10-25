@@ -17,8 +17,8 @@ import {
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
-import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_LATEST, STOP } from "../contract"
-import { actsOf, hostOf, journalOf, missingOf, repoRunStateOf, selectedStep } from "../page"
+import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_FROM, RETRY_LATEST, STOP } from "../contract"
+import { actsOf, hostOf, journalOf, missingOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
 import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs"
@@ -64,6 +64,11 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
   const shown = selectedStep(steps, view.selected)
   const acts = actsOf(inspection, now, journalOf(page), repo !== null)
   const busy = view.acting !== null
+  // Retry from here: the selected step, when it is this run's own and offers it.
+  const from = shown?.node !== undefined && shown.node.runId === run.runId &&
+      retriesFrom(inspection, repo !== null).has(shown.node.nodeId)
+    ? shown.node.nodeId
+    : null
   return (
     <div className="run-page" tabIndex={-1} onKeyDown={(event) => {
       const target = event.target as HTMLElement
@@ -118,7 +123,14 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
             {shown === undefined || view.inspectorOpen === false ? null : (
               <StepInspector key={shown.row.id} step={shown.row} attempts={shown.attempts} input={shown.input} output={shown.output}
                 logs={shown.logs} wait={shown.wait} now={graph.time}
-                actions={shown.href === null ? undefined : <Link to={shown.href as never}>{OPEN}</Link>} />
+                actions={shown.href === null && from === null ? undefined : (
+                  <>
+                    {shown.href === null ? null : <Link to={shown.href as never}>{OPEN}</Link>}
+                    {from === null
+                      ? null
+                      : <Button variant="outline" disabled={busy} onClick={() => actions.retryFrom(from)}>{RETRY_FROM}</Button>}
+                  </>
+                )} />
             )}
           </div>
           <RunWaterfall steps={graph.timeline.map((step) => step.row)} now={graph.time}

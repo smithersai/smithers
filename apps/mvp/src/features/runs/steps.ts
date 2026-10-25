@@ -32,6 +32,8 @@ import {
   Resume,
   ResumeRun,
   Retry,
+  RetryFrom,
+  RetryFromRun,
   RetryRun,
   RunActRefused,
   Steer,
@@ -47,13 +49,13 @@ import { startRoot } from "./start"
 // through the engine's own `RunInspection` (`@smthrs/engine-store`, which the browser engine provides to every flow it
 // registers) and acts through its `FlowRuntime`. Only an engine's host imports this module.
 
-/** Acts on runs, by `act` (`cancel`, `retry`, `resume`), `host` and `outcome`. */
+/** Acts on runs, by `act` (`cancel`, `retry`, `retry_from`, `resume`), `host` and `outcome`. */
 export const acts = Metric.counter("smithers_run_acts", {
   description: "Acts on runs, by act, host and outcome",
   incremental: true,
 })
 
-type Act = "cancel" | "retry" | "resume"
+type Act = "cancel" | "retry" | "retry_from" | "resume"
 
 /** Records an act: `run.act` with its outcome, and its count. Ids and codes only. */
 const recordAct = (act: Act, runId: string, outcome: string, host: "local" | "remote" = "local") =>
@@ -202,6 +204,39 @@ export const retry = ({ runId, version }: { readonly runId: string; readonly ver
     return { runId: retried }
   })
 
+/** What Retry from here answers for each of the engine's refusals (`FlowRuntime.RetryFromRefused`). */
+const retryFromRefusals: Readonly<Record<FlowRuntime.RetryFromRefusalCode, RunActRefused["code"]>> = {
+  unsupported: "not_here",
+  not_found: "not_found",
+  other_flow: "not_here",
+  not_settled: "not_settled",
+  step_not_found: "step_not_run",
+  step_not_run: "step_not_run",
+}
+
+/**
+ * `run/retry/from/start`: Retry from here (ruling FLOW-11). A settled run of a retryable flow, again as a new run of its
+ * own, from its step `step`: the engine replays every step that finished before `step` began, with the run's own
+ * input, and runs `step` and everything after it (`FlowRuntime.retryFrom`). A person's flow replays its load, so the
+ * new run follows the revision the run pinned. The new run is `<act>/run`, so the act run again starts nothing new.
+ */
+export const retryFrom = ({ runId, step }: { readonly runId: string; readonly step: string }) =>
+  Effect.gen(function* () {
+    const { run } = yield* summaryOf("retry_from", runId)
+    if (!settled(run.status)) return yield* refuse("retry_from", runId, "not_settled")
+    if (!retryable(run.flowName)) return yield* refuse("retry_from", runId, "not_retryable")
+    const runtime = yield* FlowRuntime.FlowRuntime
+    if (runtime.retryFrom === undefined) return yield* refuse("retry_from", runId, "not_here")
+    const retried = retriedRunId((yield* FlowRuntime.FlowInstance).executionId)
+    // A retryable flow is a registered one, so this engine runs it.
+    yield* runtime.retryFrom(declared(run.flowName as FlowName), { source: runId, step, executionId: retried }).pipe(
+      Effect.catchTag("@smthrs/flow/FlowRuntime/RetryFromRefused", (refused) =>
+        refuse("retry_from", runId, retryFromRefusals[refused.code])),
+    )
+    yield* recordAct("retry_from", runId, "retried")
+    return { runId: retried }
+  })
+
 /** `run/list/read`: the newest runs a person lists, acts on runs left out. */
 export const list = () =>
   Effect.gen(function* () {
@@ -235,7 +270,7 @@ export const inspect = ({ runId }: { readonly runId: string }) =>
       flow: run.flowName,
       status: run.status,
       seq: run.lastSeq,
-      steps: steps.map((step) => ({ action: step.action, status: step.status })),
+      steps: steps.map((step) => ({ nodeId: step.nodeId, action: step.action, status: step.status })),
       result: run.result?.text ?? null,
     }
   })
@@ -332,6 +367,7 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(Steer, QueueSteer.toLayer(queueSteer)),
   Interpreter.layerWithImplementations(Cancel, CancelRun.toLayer(cancel)),
   Interpreter.layerWithImplementations(Retry, RetryRun.toLayer(retry)),
+  Interpreter.layerWithImplementations(RetryFrom, RetryFromRun.toLayer(retryFrom)),
   Interpreter.layerWithImplementations(Resume, ResumeRun.toLayer(resume)),
   Interpreter.layerWithImplementations(List, ListRuns.toLayer(list)),
   Interpreter.layerWithImplementations(Inspect, InspectRun.toLayer(inspect)),

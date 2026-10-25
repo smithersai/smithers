@@ -162,13 +162,23 @@ export const settled = (status: string): boolean => (SETTLED as ReadonlyArray<st
  * - `settled`: it has settled, so there is nothing to stop or resume;
  * - `not_settled`: it hasn't settled, so there is nothing to retry yet;
  * - `not_retryable`: its flow is never retried with its own payload;
- * - `not_here`: this engine doesn't run its flow;
+ * - `not_here`: this engine doesn't run its flow, or can't retry it from a step;
+ * - `step_not_run`: Retry from here named a step the run never ran, or one it never settled;
  * - `forbidden`: Cloudflare refused it: only a Member stops a repository's run.
  *
  * A store that can't be read or can't record the act fails the act's step instead; the page says the engine couldn't
  * be reached (`unavailable` in `REFUSAL_WORDS`).
  */
-export const ACT_REFUSALS = ["not_found", "stale", "settled", "not_settled", "not_retryable", "not_here", "forbidden"] as const
+export const ACT_REFUSALS = [
+  "not_found",
+  "stale",
+  "settled",
+  "not_settled",
+  "not_retryable",
+  "not_here",
+  "step_not_run",
+  "forbidden",
+] as const
 
 /** The new run a retry starts for the act `actId`: one per act, so a repeated Retry starts one run. */
 export const retriedRunId = (actId: string): string => `${actId}/run`
@@ -219,6 +229,8 @@ export const RUNS_TELEMETRY = {
 export const STOP = "Stop"
 export const RETRY = "Retry"
 export const RETRY_LATEST = "Retry latest"
+/** The inspector's act on a step: a new run that replays the steps before it and runs from it (ruling FLOW-11). */
+export const RETRY_FROM = "Retry from here"
 export const RESUME = "Resume"
 export const ANSWER = "Answer"
 export const OPEN = "Open"
@@ -262,6 +274,7 @@ export const REFUSAL_WORDS: Readonly<Record<string, string>> = {
   not_settled: "It hasn't ended.",
   not_retryable: "This run can't be retried.",
   not_here: "This device can't run it.",
+  step_not_run: "This step didn't run.",
   not_found: "Not on this device.",
   forbidden: "Members only.",
   invalid: "Invalid action.",

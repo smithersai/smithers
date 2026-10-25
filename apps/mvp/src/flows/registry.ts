@@ -38,7 +38,7 @@ import {
 } from "../features/flows-ui/reference"
 import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
 import { Classify, Evaluate } from "../features/jev/flows"
-import { Cancel, Inspect, List, Resume, Retry, Steer } from "../features/runs/flows"
+import { Cancel, Inspect, List, Resume, Retry, RetryFrom, Steer } from "../features/runs/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet, SandboxLimitsSet } from "../features/spend/flows"
@@ -255,6 +255,7 @@ export const registry = {
   // Runs (decision 0014 §2): the acts on a run this device holds, and the reads. Their results show on the run page.
   "run/cancel": { flow: Cancel, changes: "cancels a run" },
   "run/retry": { flow: Retry, changes: "runs a failed run again" },
+  "run/retry/from": { flow: RetryFrom, changes: "runs a run again from one of its steps" },
   "run/resume": { flow: Resume, changes: "resumes a run" },
   "run/list": { flow: List },
   "run/inspect": { flow: Inspect },
