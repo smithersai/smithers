@@ -164,7 +164,8 @@ export const SAVE_REFUSALS: Readonly<Record<string, string>> = {
 /** Why a draft's round failed, as its card reads it, by its code (./failure.ts); an unknown code reads as itself. */
 export const DRAFT_FAILURE_WORDS: Readonly<Record<string, string>> = {
   no_model: "No model available",
-  quota: "Model budget spent",
+  // The person's provider refusing for credit or quota reads the same as a spent budget: neither is "our budget".
+  quota: "Model credit or quota used up",
   rate_limited: "Model busy. Try again.",
   undecodable: "The draft didn't come out right",
   frames: "Ran out of steps",

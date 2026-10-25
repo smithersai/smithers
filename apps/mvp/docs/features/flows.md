@@ -236,7 +236,7 @@ On the device, `flows` and `flow_drafts` are Electric collections kept on the de
 | Code | Card words | Comes from |
 |---|---|---|
 | `no_model` | No model available | The agent: no model route or authentication, or an unresolved or unrouted seat |
-| `quota` | Model budget spent | The agent: quota exceeded, out of credit, a budget exceeded or a call skipped for budget |
+| `quota` | Model credit or quota used up | The agent: quota exceeded, out of credit (the person's provider, or, with hosted inference on, the deployment's daily budget), a budget exceeded or a call skipped for budget |
 | `rate_limited` | Model busy. Try again. | The agent: the model's `rate_limited` code |
 | `undecodable` | The draft didn't come out right | The agent: structured output never decoded |
 | `frames` | Ran out of steps | The agent: exhausted its frames |

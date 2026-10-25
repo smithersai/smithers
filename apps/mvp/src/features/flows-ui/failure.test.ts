@@ -4,6 +4,7 @@ import { HarnessError, StructuredOutput } from "@smthrs/harness"
 import { ModelError } from "@smthrs/model"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
+import { DRAFT_FAILURE_WORDS } from "./contract"
 import { DRAFT_FAILURES, draftFailure } from "./failure"
 
 const SENTINEL = "SENTINEL-the-model-said-this"
@@ -87,6 +88,13 @@ describe("draftFailure", () => {
     // A field whose read throws counts as absent.
     const hostile = Object.defineProperty({}, "_tag", { enumerable: true, get: () => { throw new Error(SENTINEL) } })
     expect(draftFailure(hostile)).toBe("model_error")
+  })
+
+  test("a provider refusing for credit or quota never reads as Smithers' own budget", () => {
+    // 2026-10-25: a person's provider answered 402 for billing, and the draft said "Model budget spent" while the day's
+    // budget stood at 1,554 of 5,000,000 tokens.
+    expect(DRAFT_FAILURE_WORDS[draftFailure(modelFailed("out_of_credit", 402))]).toBe("Model credit or quota used up")
+    expect(DRAFT_FAILURE_WORDS.quota).not.toMatch(/budget/i)
   })
 
   test("the codes are closed, and none carries what the failure said", () => {
