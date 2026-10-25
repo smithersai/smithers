@@ -8874,10 +8874,6 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/ui/docs/api.md.orig"
-      },
-      {
-        "kind": "file",
         "path": "packages/smithers/ui/docs/chat-timeline.md"
       },
       {
