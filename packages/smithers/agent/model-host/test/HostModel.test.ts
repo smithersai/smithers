@@ -91,6 +91,51 @@ describe("HostModel.make", () => {
     expect(unusable(exit)).toEqual(new HostModelUnusable({ reason: "invalid" }))
   })
 
+  test("sends a record's extra body fields, such as a gateway's routing order, in every request", async () => {
+    const sent: Array<string> = []
+    const fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(new TextDecoder().decode(init?.body as Uint8Array))
+      return new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } })
+    }, { preconnect() {} })
+    const routed = { ...record, extraBody: { providerOptions: { gateway: { order: ["cerebras", "alibaba"] } } } }
+    const built = await Effect.runPromise(
+      HostModel.make(routed, { fetch }).pipe(
+        Effect.provideService(
+          ConfigProvider.ConfigProvider,
+          ConfigProvider.fromUnknown({
+            SMITHERS_MODEL_KEY_FIXTURE: "fixture-key",
+            SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: "https://models.example"
+          })
+        )
+      )
+    )
+    const request = ModelRequest.ModelRequest.make({
+      modelId: "row-1",
+      system: [],
+      messages: [ModelRequest.Message.user("hi")],
+      tools: [],
+      params: ModelRequest.GenerationParams.make({})
+    })
+    await Effect.runPromise(Stream.runDrain(built.model.stream(request)))
+    const prepared = await Effect.runPromise(built.route.prepare(request))
+    expect(sent).toEqual([prepared.bodyText])
+    expect(JSON.parse(sent[0]!)).toMatchObject({
+      model: "row-1",
+      providerOptions: { gateway: { order: ["cerebras", "alibaba"] } }
+    })
+  })
+
+  test.each([
+    ["names a credential", { providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "sk-ant" }] } } } }],
+    ["is too large", { note: "x".repeat(ConfiguredModel.MODEL_EXTRA_BODY_MAX_BYTES) }]
+  ])("refuses a record whose extra body %s", async (_why, extraBody) => {
+    const exit = await build(
+      { SMITHERS_MODEL_KEY_FIXTURE: "fixture-key", SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: "https://models.example" },
+      { ...record, extraBody }
+    )
+    expect(unusable(exit)).toEqual(new HostModelUnusable({ reason: "invalid" }))
+  })
+
   test("fails with config when the configuration source cannot be read", async () => {
     const broken = ConfigProvider.make(() => Effect.fail(new ConfigProvider.SourceError({ message: "vault down" })))
     const exit = await Effect.runPromiseExit(

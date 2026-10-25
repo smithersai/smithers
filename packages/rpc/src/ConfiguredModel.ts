@@ -432,6 +432,37 @@ export const ModelCredentialPendingSchema = z.strictObject({
   fault: z.enum(PLUE_FAULTS).optional()
 })
 
+/**
+ * The most bytes a record's {@link ModelExtraBodySchema} may hold, as JSON: room for a gateway's routing preferences,
+ * not a prompt.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_EXTRA_BODY_MAX_BYTES = 2048
+
+// A field whose name says it holds a credential: a key never rides a record, whose credential is a name.
+const credentialField = /api[-_]?key|secret|password|authorization|bearer|byok|credential|access[-_]?token/i
+
+const namesCredential = (value: unknown): boolean =>
+  Array.isArray(value)
+    ? value.some(namesCredential)
+    : typeof value === "object" && value !== null &&
+      Object.entries(value).some(([name, field]) => credentialField.test(name) || namesCredential(field))
+
+/**
+ * Validates fields a host adds to every request body it sends this model, beside the protocol's own: a provider's or
+ * gateway's extension, such as routing preferences (`{ "providerOptions": { "gateway": { "order": ["cerebras"] } } }`
+ * on the Vercel AI Gateway). A JSON object of at most {@link MODEL_EXTRA_BODY_MAX_BYTES} bytes, with no field named
+ * for a credential; the protocol's own fields always win.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelExtraBodySchema = z.record(z.string().min(1).max(64), z.json())
+  .refine((value) => new TextEncoder().encode(JSON.stringify(value)).length <= MODEL_EXTRA_BODY_MAX_BYTES)
+  .refine((value) => !namesCredential(value))
+
 const modelShape = {
   protocol: ModelProtocolSchema,
   /** Absent means the protocol's default. Its origin must be one the credential is pinned to. */
@@ -440,7 +471,9 @@ const modelShape = {
   path: z.string().min(1).max(256).regex(/^\S+$/).optional(),
   /** The provider's model id, verbatim. */
   modelId: ModelIdSchema,
-  credential: ModelCredentialNameSchema
+  credential: ModelCredentialNameSchema,
+  /** Fields added to every request body; see {@link ModelExtraBodySchema}. */
+  extraBody: ModelExtraBodySchema.optional()
 }
 
 /**
@@ -490,7 +523,8 @@ export const bindingOf = (model: ConfiguredModel): ModelBinding => ({
   ...(model.baseUrl === undefined ? {} : { baseUrl: model.baseUrl }),
   ...(model.path === undefined ? {} : { path: model.path }),
   modelId: model.modelId,
-  credential: model.credential
+  credential: model.credential,
+  ...(model.extraBody === undefined ? {} : { extraBody: model.extraBody })
 })
 
 /**
@@ -1317,7 +1351,7 @@ export type ModelTestRequest = z.infer<typeof ModelTestRequestSchema>
  * @since 1.0.0
  * @category constants
  */
-export const MODEL_INVALID_FIELDS = ["model", "protocol", "baseUrl", "path", "modelId", "credential"] as const
+export const MODEL_INVALID_FIELDS = ["model", "protocol", "baseUrl", "path", "modelId", "credential", "extraBody"] as const
 /**
  * A record field an `invalid` failure names.
  *
@@ -1656,6 +1690,8 @@ export interface ModelPlan extends ResolvedModelEndpoint {
   readonly protocol: ModelProtocol
   readonly modelId: string
   readonly credential: string
+  /** Fields added to every request body ({@link ModelExtraBodySchema}); absent, none. */
+  readonly extraBody?: z.infer<typeof ModelExtraBodySchema> | undefined
 }
 
 /**
@@ -1723,6 +1759,7 @@ export const planModelBinding = (
       protocol: binding.protocol,
       modelId: binding.modelId,
       credential: binding.credential,
+      ...(binding.extraBody === undefined ? {} : { extraBody: binding.extraBody }),
       ...resolved.endpoint
     }
   }

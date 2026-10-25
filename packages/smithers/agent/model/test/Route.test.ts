@@ -537,6 +537,39 @@ describe("Route.prepare", () => {
       .toMatchObject({ _tag: "Failure" })
   })
 
+  it("adds a route's extra body fields, such as a gateway's routing order, beneath the protocol's own", async () => {
+    const options = {
+      providerName: "openai",
+      id: "gateway-chat",
+      baseUrl: "https://ai-gateway.test",
+      apiKey: Redacted.make("compatible-secret")
+    }
+    const capped = ModelRequest.ModelRequest.make({
+      ...request,
+      params: ModelRequest.GenerationParams.make({ maxTokens: 40 })
+    })
+    const routed = Result.getOrThrow(Route.openaiChatCompatible({
+      ...options,
+      extraBody: {
+        providerOptions: { gateway: { order: ["cerebras", "alibaba"] } },
+        model: "other-model",
+        max_tokens: 99_999,
+        stream: false
+      }
+    }))
+    const body = JSON.parse((await Effect.runPromise(Route.prepare(routed, capped))).bodyText)
+    expect(body.providerOptions).toEqual({ gateway: { order: ["cerebras", "alibaba"] } })
+    // The protocol's fields win: the model, the output cap and streaming are never replaced.
+    expect(body).toMatchObject({ model: "test-model", max_tokens: 40, stream: true })
+    // Absent, the body is byte-for-byte what the route always sent, so sealed step keys are unchanged.
+    const plain = await Effect.runPromise(Route.prepare(Result.getOrThrow(Route.openaiChatCompatible(options)), capped))
+    const empty = await Effect.runPromise(
+      Route.prepare(Result.getOrThrow(Route.openaiChatCompatible({ ...options, extraBody: {} })), capped)
+    )
+    expect(empty.bodyText).toBe(plain.bodyText)
+    expect(JSON.parse(plain.bodyText)).not.toHaveProperty("providerOptions")
+  })
+
   it("mounts the live Chat Completions route on compatible provider base paths", async () => {
     const groq = Result.getOrThrow(Route.openaiChatCompatible({
       providerName: "openai",

@@ -21,7 +21,7 @@ import * as WireTrace from "./internal/WireTrace.ts"
 import * as Model from "./Model.ts"
 import { ModelError } from "./ModelError.ts"
 import { type ModelEvent, type Settle, settledMessage, type Timing, type Usage } from "./ModelEvent.ts"
-import { type ModelRequest, ModelRequest as ModelRequestSchema } from "./ModelRequest.ts"
+import { type JsonObject, type ModelRequest, ModelRequest as ModelRequestSchema } from "./ModelRequest.ts"
 import * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
 import * as OpenAIResponses from "./OpenAIResponses.ts"
 import type * as Protocol from "./Protocol.ts"
@@ -65,6 +65,16 @@ export interface Config<Body, Frame, Event, State> {
   readonly auth: Auth.Auth
   readonly framing: Framing.Framing<Frame>
   readonly headers?: Readonly<Record<string, string>>
+  /**
+   * Fields added to every request body this route sends, beside the
+   * protocol's own: a provider's or gateway's extension the protocol doesn't
+   * model, such as routing preferences (`{ providerOptions: { gateway: {
+   * order: ["cerebras"] } } }` on the Vercel AI Gateway, `{ provider: { order:
+   * ["cerebras"] } }` on OpenRouter). A field the protocol writes wins, so they
+   * never replace the model, the messages or the output cap. Part of the body
+   * a sealed step's key digests. Never a credential: those go through `auth`.
+   */
+  readonly extraBody?: JsonObject | undefined
 }
 
 /**
@@ -204,8 +214,10 @@ const compile = <Body, Frame, Event, State>(
       const headers = yield* Effect.fromResult(
         publicHeaders({ ...route.headers, ...route.protocol.headers?.(validatedRequest) })
       )
+      // The protocol's fields win; absent, the body is byte-for-byte what it was, so sealed keys are unchanged.
+      const sent = route.extraBody === undefined ? body : { ...route.extraBody, ...(body as object) }
       const bytes = yield* Effect.try({
-        try: () => CanonicalJson.bytes(body),
+        try: () => CanonicalJson.bytes(sent),
         catch: preparationError
       })
       return {
@@ -676,6 +688,8 @@ export const openaiChatCompatible = (
     readonly path?: string | undefined
     readonly apiKey: Auth.Redacted<string>
     readonly structuredOutput?: OpenAIChatCompletions.StructuredOutput | undefined
+    /** Fields added to every request body, such as a gateway's routing preferences: {@link Config.extraBody}. */
+    readonly extraBody?: JsonObject | undefined
   }
 ): Result.Result<
   Route<
@@ -697,6 +711,7 @@ export const openaiChatCompatible = (
         ),
         endpoint,
         auth: Auth.bearer(input.apiKey),
-        framing: Framing.sse
+        framing: Framing.sse,
+        ...(input.extraBody === undefined ? {} : { extraBody: input.extraBody })
       })
   )

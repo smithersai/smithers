@@ -200,7 +200,14 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         return {
           prepared: {
             model: resolved.model,
-            request: ModelRequest.ModelRequest.make({ ...request, modelId: resolved.modelId, params }),
+            request: ModelRequest.ModelRequest.make({
+              ...request,
+              modelId: resolved.modelId,
+              // The role's effort, when its record sets one: a summary or a judge needn't reason.
+              params: resolved.reasoningEffort === undefined
+                ? params
+                : ModelRequest.GenerationParams.make({ ...params, reasoningEffort: resolved.reasoningEffort }),
+            }),
           },
         } satisfies Admitted
       })
@@ -241,7 +248,23 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       }
       return Effect.andThen(
         ModelSpend.record(role, end),
-        ModelUsage.settle({ invocationId: end.invocationId, inputTokens, outputTokens, complete }),
+        ModelUsage.settle({
+          invocationId: end.invocationId,
+          inputTokens,
+          outputTokens,
+          complete,
+          ended: {
+            outcome: end.outcome === "success"
+              ? "answered"
+              : end.outcome === "interrupted"
+              ? "aborted"
+              : refused
+              ? "refused"
+              : "failed",
+            ...(end.errorCode === undefined ? {} : { errorCode: end.errorCode }),
+            ...(end.httpStatus === undefined ? {} : { httpStatus: end.httpStatus }),
+          },
+        }),
       ).pipe(
         Effect.provide(database),
         Effect.flatMap(record),

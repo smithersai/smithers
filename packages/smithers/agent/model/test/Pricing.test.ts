@@ -15,6 +15,17 @@ describe("Pricing.lookup", () => {
     expect(Pricing.lookup("anthropic/claude-haiku-4-5-20251001", { at: 0 })).toBe(Pricing.table["claude-haiku-4-5"])
   })
 
+  it("prices the AI Gateway's Qwen 3.8 27B at Cerebras's card, so its spend never reads $0", () => {
+    // Routed to Cerebras first (providerOptions.gateway.order), the gateway bills Cerebras's rate; its listed
+    // $0.06/$0.32 is its cheapest provider's, and an alert that overstates is the safe side.
+    const gateway = Pricing.lookup("alibaba/qwen3.8-27b", { at: 0 })
+    expect(gateway).toMatchObject({ input: 0.99, output: 1.49 })
+    expect(gateway).toMatchObject({ input: Pricing.table["qwen-3.8-27b"]!.input, output: Pricing.table["qwen-3.8-27b"]!.output })
+    const cost = Pricing.cost({ inputTokens: million, outputTokens: million }, "alibaba/qwen3.8-27b", { at: 0 })
+    expect(cost?.costSource).toBe("estimated")
+    expect(cost?.costUsd).toBeCloseTo(2.48, 9)
+  })
+
   it("answers undefined for a model the table does not price", () => {
     expect(Pricing.lookup("unknown-model")).toBeUndefined()
     expect(Pricing.lookup("")).toBeUndefined()

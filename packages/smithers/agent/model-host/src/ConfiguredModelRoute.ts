@@ -48,8 +48,11 @@ export interface RouteVisitor<A> {
 export const withRoute = <A>(
   plan: ConfiguredModel.ModelPlan,
   apiKey: Redacted.Redacted<string>,
-  visit: RouteVisitor<A>
+  given: RouteVisitor<A>
 ): Result.Result<A, ModelError.ModelError> => {
+  // The record's extra body fields ride every request the route sends; the planner checked they are JSON.
+  const extraBody = plan.extraBody as ModelRequest.JsonObject | undefined
+  const visit: RouteVisitor<A> = (route) => given(extraBody === undefined ? route : { ...route, extraBody })
   switch (plan.protocol) {
     case "anthropic-messages":
       return Result.flatMap(

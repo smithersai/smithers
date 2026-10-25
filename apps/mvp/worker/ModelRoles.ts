@@ -1,5 +1,6 @@
-import type { Model } from "@smthrs/model"
+import { type Model, ModelRequest } from "@smthrs/model"
 import { HostModel, HostModelUnusable } from "@smthrs/model-host"
+import { ConfiguredModel } from "@smthrs/rpc"
 import { Config, Effect, Option, Result, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { MODEL_ROLES, type ModelRole } from "../src/features/model/contract.ts"
@@ -16,8 +17,17 @@ export const Role = Schema.Literals(MODEL_ROLES)
 const nonEmpty = Schema.String.check(Schema.isMinLength(1))
 
 /**
- * The model a role uses: a configured-model record (`@smthrs/rpc` ConfiguredModel) without its name. `credential`
- * names the key the Worker holds, never the key itself.
+ * Fields the role's model adds to every request body it sends, beside the protocol's own: a gateway's routing
+ * preferences, such as `{ "providerOptions": { "gateway": { "order": ["cerebras"] } } }` on the Vercel AI Gateway.
+ * `@smthrs/rpc`'s `ModelExtraBodySchema`: a JSON object of at most 2 KiB, no field named for a credential.
+ */
+export const ExtraBody = Schema.Record(Schema.String, Schema.Json).check(
+  Schema.makeFilter((value) => ConfiguredModel.ModelExtraBodySchema.safeParse(value).success),
+)
+
+/**
+ * The model a role uses: a configured-model record (`@smthrs/rpc` ConfiguredModel) without its name, and how the role
+ * calls it. `credential` names the key the Worker holds, never the key itself.
  */
 export const ModelRecord = Schema.Struct({
   protocol: nonEmpty,
@@ -25,10 +35,27 @@ export const ModelRecord = Schema.Struct({
   path: Schema.optional(nonEmpty),
   modelId: nonEmpty,
   credential: nonEmpty,
+  extraBody: Schema.optional(ExtraBody),
+  /**
+   * How hard the role's model thinks before it answers, set on every call it serves: `none` or `minimal` for a role
+   * that only labels or judges, such as `summary` and `judge`, whose default reasoning spent up to 1,300 output tokens
+   * on a 170-token entry on 2026-10-25. Absent, the caller's request decides.
+   */
+  reasoningEffort: Schema.optional(ModelRequest.ReasoningEffort),
 })
 
 /** The decoded form of {@link ModelRecord}. */
 export type ModelRecord = typeof ModelRecord.Type
+
+/** The record the host's planner reads: the model, without how the role calls it. */
+const hostRecord = ({ protocol, baseUrl, path, modelId, credential, extraBody }: ModelRecord) => ({
+  protocol,
+  modelId,
+  credential,
+  ...(baseUrl === undefined ? {} : { baseUrl }),
+  ...(path === undefined ? {} : { path }),
+  ...(extraBody === undefined ? {} : { extraBody }),
+})
 
 /**
  * The deployment's default model when `CHAT_MODEL` is unset: ChatApi's, and the agent evals' (evals/agent.eval.ts).
@@ -40,11 +67,13 @@ export const DEFAULT_CHAT_MODEL: ModelRecord = {
   credential: "CEREBRAS_API_KEY",
 }
 
-/** The model that answers a role now, and where the choice came from. */
+/** The model that answers a role now, where the choice came from, and the effort its record sets on each call. */
 export interface Resolved {
   readonly source: "setting" | "default"
   readonly modelId: string
   readonly model: Model.Model
+  /** The role record's reasoning effort, which the endpoint sets on the call; absent, the request's stands. */
+  readonly reasoningEffort?: ModelRequest.ReasoningEffort | undefined
 }
 
 const decodeRecord = Schema.decodeUnknownEffect(ModelRecord)
@@ -54,6 +83,15 @@ const decodeRecord = Schema.decodeUnknownEffect(ModelRecord)
  * the timeline's summaries. Read once when the endpoint builds; unset, the role has no model.
  */
 export const summaryModel = Config.option(Config.schema(Schema.fromJsonString(ModelRecord), "SUMMARY_MODEL"))
+
+/** A role's record as the role resolves it: built with the key the Worker holds, and the effort it sets. */
+const fromRecord = (source: Resolved["source"], record: ModelRecord) =>
+  Effect.map(HostModel.make(hostRecord(record)), (built): Resolved => ({
+    source,
+    modelId: built.modelId,
+    model: built.model,
+    ...(record.reasoningEffort === undefined ? {} : { reasoningEffort: record.reasoningEffort }),
+  }))
 
 /**
  * The model `role` uses: its `model_roles` row, built with the key the Worker holds, or the deployment default when
@@ -76,8 +114,7 @@ export const resolve = (role: ModelRole, summary: Result.Result<Option.Option<Mo
         if (Result.isFailure(summary)) return yield* summary.failure
         const configured = summary.success
         if (Option.isNone(configured)) return yield* new HostModelUnusable({ reason: "unconfigured" })
-        const built = yield* HostModel.make(configured.value)
-        return { source: "default", modelId: built.modelId, model: built.model } satisfies Resolved
+        return yield* fromRecord("default", configured.value)
       }
       const fallback = yield* HostModel
       return { source: "default", modelId: fallback.modelId, model: fallback.model } satisfies Resolved
@@ -85,8 +122,7 @@ export const resolve = (role: ModelRole, summary: Result.Result<Option.Option<Mo
     const record = yield* decodeRecord(row.model).pipe(
       Effect.mapError(() => new HostModelUnusable({ reason: "invalid" })),
     )
-    const built = yield* HostModel.make(record)
-    return { source: "setting", modelId: built.modelId, model: built.model } satisfies Resolved
+    return yield* fromRecord("setting", record)
   })
 
 /**

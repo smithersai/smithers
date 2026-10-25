@@ -133,6 +133,20 @@ const charges = () =>
     ),
   )
 
+/** How each call's ledger row says it ended. */
+const endings = () =>
+  runtime.runPromise(
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) =>
+        sql<{
+          readonly outcome: string | null
+          readonly errorCode: string | null
+          readonly httpStatus: number | null
+        }>`SELECT outcome, error_code AS "errorCode", http_status AS "httpStatus" FROM model_usage ORDER BY created_at`,
+    ),
+  )
+
 /** Whether today's committed tokens are what today's calls are charged. */
 const reconciled = async () => {
   const [row] = await runtime.runPromise(
@@ -153,6 +167,9 @@ const expire = (invocationId: string) =>
 
 /** The expiry the direct `ModelUsage` tests reserve with. */
 const expiry = Duration.minutes(10)
+
+/** How the direct `ModelUsage` tests' calls ended. */
+const ended: ModelUsage.Ended = { outcome: "answered" }
 
 /** A model that waits for `gate` before it answers, reports 46 tokens (12 in, 34 out) and stops. */
 const gated = (gate: Promise<void>) => () =>
@@ -570,6 +587,56 @@ describe("roles", () => {
   })
 })
 
+describe("a role's routing and reasoning", () => {
+  const routed = (origin: string, modelId = "row-model"): ModelRoles.ModelRecord => ({
+    ...rowModel(origin, modelId),
+    extraBody: { providerOptions: { gateway: { order: ["cerebras", "alibaba"] } } },
+    reasoningEffort: "none",
+  })
+  const texts = (lines: ReadonlyArray<{ readonly type: string; readonly text?: string }>) =>
+    lines.filter((line) => line.type === "text-delta").map((line) => line.text)
+
+  test("a role's extra body and reasoning effort reach its provider beneath the request's own fields", async () => {
+    const upstream = await provider({ text: "routed answer" })
+    const h = await harness(runtime, answering, { actor: member, config: keyConfig(upstream.origin) })
+
+    const ran = await setModel(admin, { role: "summary", model: routed(upstream.origin) })
+    const answered = await call(h, ask("label this"), "summary")
+
+    expect(ran.status).toBe("completed")
+    expect(texts(answered.lines)).toEqual(["routed answer"])
+    expect(upstream.seen[0]!.body).toMatchObject({
+      model: "row-model",
+      max_tokens: 8_000,
+      reasoning_effort: "none",
+      providerOptions: { gateway: { order: ["cerebras", "alibaba"] } },
+    })
+  })
+
+  test("admin/SetModel refuses an extra body that names a credential, and writes nothing", async () => {
+    const ran = await setModel(admin, {
+      role: "agent",
+      model: { ...rowModel("https://models.example"), extraBody: { providerOptions: { gateway: { byok: { x: [{ apiKey: "k" }] } } } } },
+    })
+
+    expect(Exit.isFailure(ran.exit)).toBe(true)
+    const [counted] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly settings: number }>`SELECT count(*)::int AS settings FROM model_roles`))
+    expect(counted).toEqual({ settings: 0 })
+  })
+
+  test("SUMMARY_MODEL's own effort answers the summary role when no admin set one", async () => {
+    const upstream = await provider({ text: "Summary label" })
+    const h = await harness(runtime, answering, {
+      actor: member,
+      config: { SUMMARY_MODEL: JSON.stringify({ ...rowModel(upstream.origin, "cheap"), reasoningEffort: "minimal" }), ...keyConfig(upstream.origin) },
+    })
+
+    expect(texts((await call(h, ask("hi"), "summary")).lines)).toEqual(["Summary label"])
+    expect(upstream.seen[0]!.body).toMatchObject({ model: "cheap", reasoning_effort: "minimal" })
+  })
+})
+
 describe("database failures", () => {
   test("a role lookup Postgres refuses is a 503 provider_internal, logged by its SQL reason", async () => {
     const sql = (statement: string) =>
@@ -741,6 +808,25 @@ describe("budget and metering", () => {
       level: "INFO",
       annotations: { role: "agent", outcome: "kept", ended: "interrupted", reported: "none" },
     })
+    expect(await endings()).toEqual([{ outcome: "aborted", errorCode: null, httpStatus: null }])
+  })
+
+  test("each call's ledger row says how it ended: answered, refused with its code and status, or failed", async () => {
+    const script: Array<() => Stream.Stream<ModelEvent.ModelEvent, ModelError.ModelError>> = [
+      answering,
+      () => Stream.fail(new ModelError.ModelError({ code: "quota_exceeded", httpStatus: 402, message: "private detail" })),
+      () => transportFailure,
+    ]
+    const h = await harness(runtime, () => script.shift()!(), { actor: member })
+
+    for (let n = 0; n < 3; n++) await call(h, ask("hi"))
+
+    expect(await endings()).toEqual([
+      { outcome: "answered", errorCode: null, httpStatus: null },
+      { outcome: "refused", errorCode: "quota_exceeded", httpStatus: 402 },
+      { outcome: "failed", errorCode: "transport", httpStatus: null },
+    ])
+    expect(JSON.stringify(await endings())).not.toContain("private detail")
   })
 
   test("a call that fails after its text, before usage, keeps its whole reservation", async () => {
@@ -913,7 +999,7 @@ describe("budget and metering", () => {
     const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(effect)
     const call = { invocationId: "call-1", requestId: "r", role: "agent" as const, modelId: "m" }
     const reserved = await run(ModelUsage.reserve({ ...call, tokens: 100 }, { budget: 1_000, expiry }))
-    const spent = { invocationId: "call-1", inputTokens: 10, outputTokens: 5, complete: true }
+    const spent = { invocationId: "call-1", inputTokens: 10, outputTokens: 5, complete: true, ended }
 
     const settled = [
       await run(ModelUsage.settle(spent)),
@@ -938,7 +1024,7 @@ describe("budget and metering", () => {
     expect(await reserve("a", 60)).toBe(true)
     expect(await reserve("b", 100)).toBe(true)
     expect(await reserve("c", 1)).toBe(false)
-    await run(ModelUsage.settle({ invocationId: "b", inputTokens: 20, outputTokens: 19, complete: true }))
+    await run(ModelUsage.settle({ invocationId: "b", inputTokens: 20, outputTokens: 19, complete: true, ended }))
     expect(await reserve("d", 100)).toBe(true)
     expect(await reserve("e", 1)).toBe(false)
 
@@ -973,7 +1059,7 @@ describe("budget and metering", () => {
     ])
     await expire("abandoned")
 
-    expect(await run(ModelUsage.settle({ invocationId: "abandoned", inputTokens: 1, outputTokens: 1, complete: true })))
+    expect(await run(ModelUsage.settle({ invocationId: "abandoned", inputTokens: 1, outputTokens: 1, complete: true, ended })))
       .toBe(false)
     expect(await committedToday()).toBe(100)
     expect((await ledger())[0]).toMatchObject({ inputTokens: 0, outputTokens: 0, settled: false })

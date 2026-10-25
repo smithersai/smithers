@@ -321,6 +321,15 @@ export const modelPrices: Readonly<Record<string, ModelPrice>> = {
     "provider": "cerebras",
     "context": "flat"
   },
+  "qwen3.8-27b": {
+    "input": 0.99,
+    "output": 1.49,
+    "cacheRead": 0.99,
+    "cacheWrite": 0.99,
+    "cacheWrite1h": 0.99,
+    "provider": "vercel",
+    "context": "flat"
+  },
   "typesafe-ai/jev": {
     "input": 0.042,
     "output": 0,

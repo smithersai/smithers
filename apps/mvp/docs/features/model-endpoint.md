@@ -15,14 +15,16 @@ browser agent (a durable ModelStep) ── ModelProxy.layerClient ── POST /a
                                       └ can't be used ──▶ 409 no_route   (never the deployment's model)
               model_roles[role] ─ row ──▶ HostModel.make(row) ─ unusable ──▶ 409 no_route
                                 └ none ─▶ HostModel (CHAT_MODEL); summary: SUMMARY_MODEL, else 409 no_route
+                the record's reasoningEffort ──▶ set on the call
               reserve bytes + caps, one statement:
                 today's committed ≥ budget ──▶ 429 quota_exceeded
                 else committed += reservation; model_usage row by the invocation id, expiring in an hour
-    model.stream ──▶ provider            (the key stays in the Worker)
+    model.stream ──▶ provider            (the key stays in the Worker; the record's extraBody rides the body)
     onEnd:    settle, one statement, runs to its end   (before the terminal line)
                 ended normally, both counts reported ──▶ committed += spent − reservation
                 anything else (failed, cancelled, a count missing) ──▶ the reservation stays, or what was reported if more
                 after the reservation expired ──▶ nothing changes: it stays charged in full
+              the row keeps how it ended: outcome, error code, HTTP status
   ◀── NDJSON model events, then {"type":"end"} or {"type":"error",code,...}
 ```
 
@@ -73,6 +75,8 @@ An admin changes a role with the flow `admin/SetModel { role, model }`. `model` 
 - **Who may run it:** only a person with the Admin role acting in person. An agent, flow or sandbox acting for an Admin is refused (`NotAllowed`, reason `delegated`), and so is anyone else (`not_admin`). The step decides before it writes.
 - **What it writes:** the `model_roles` row and a `model_role_changes` row naming who changed it, in one transaction. A replayed step finds its change by its invocation key and leaves both the current setting and audit history unchanged, including after a newer setting.
 - **Where it runs:** on any host; the host that starts it provides `CurrentActor`, never the payload. Its tests run it on the Node host. Starting it from the CLI or an admin view comes with sign-in.
+- **Routing preferences: `extraBody`.** A record may carry fields the model adds to every request body it sends, beside the protocol's own: a gateway's routing preferences, which no protocol models. On the Vercel AI Gateway, `"extraBody": { "providerOptions": { "gateway": { "order": ["cerebras"] } } }` sends a model the gateway serves through several providers to Cerebras first, at Cerebras's speed, and to the others only when Cerebras can't answer; OpenRouter reads `{ "provider": { "order": ["cerebras"] } }`. The protocol's own fields win, so `extraBody` never replaces the model, the messages, the output cap or streaming. It is a JSON object of at most 2 KiB with no field named for a credential (`ModelExtraBodySchema` in `@smthrs/rpc`), refused when `admin/SetModel` decodes it; keys go in `credential`, by name. It is part of the provider's request, so it is the same on every call of the role and the provider's prompt cache holds.
+- **Reasoning: `reasoningEffort`.** A record may set how hard its model thinks on every call of the role: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`, sent as the protocol's own field (Chat Completions' `reasoning_effort`). A role that only labels or judges needs none: on 2026-10-25 the gateway's Qwen spent up to 1,300 output tokens on a 170-token timeline entry at its default reasoning. Absent, the caller's request decides. A provider that doesn't take the value refuses the call `invalid_request`.
 - **A row the Worker can't use,** such as one naming a credential the Worker doesn't hold or one that isn't a record, makes that role's calls fail with `409` and code `no_route`. The `model.endpoint` log line names the reason (`unusable:<reason>`). It is a `409`, not a `503`, because waiting doesn't change a setting: a model step seals it as the call's answer, where a `503` was a capacity refusal the engine retried six times.
 
 ## Budget
@@ -85,6 +89,7 @@ The deployment has one budget, `MODEL_DAILY_TOKEN_BUDGET` tokens per UTC day, in
 - **Expiry.** A reservation that never settles (its Worker died, or its settle never ran) is unknown spend too, so it stays charged in full until the day ends. Its expiry, `MODEL_RESERVATION_EXPIRY` after it reserved, makes that final: the settle statement changes only a row that hasn't expired, so a settle that comes later changes nothing (`expired`, a `model.usage` warning). No sweep runs; the statements read the expiry themselves.
 - **Fail-closed.** A settle Postgres refuses is logged (`model.usage`) and counted, the answer still ends, and the call stays counted at its reservation. So does a call whose response body is never read, because `onEnd` never runs for it.
 - **The ledger adds up.** Each row's `charged_tokens` is what the call counts against its day, so a day's `committed` is the sum of its rows' charges.
+- **The ledger says how each call ended.** Settling writes the call's `outcome` (`answered`; `aborted`, its client went away; `refused`, its provider refused before any output; `failed`, any other failure), its model error's `error_code` and the provider's `http_status` when it answered one. On 2026-10-25, 11 of the first 40 calls to a new provider settled at 0 tokens and the ledger couldn't tell aborts from refusals. A call that never settles keeps none.
 - The caller's `x-smithers-request-id` is kept beside the invocation id to correlate, never as the key, because a caller may send one id on any number of calls and each one runs the model.
 
 Tokens are also counted in the `smithers_model_tokens` metric, by `role`, `model` and `type` ([observability.md](../observability.md#model-endpoint)). Each metered call also records what it spent, in tokens and estimated dollars by role and model, and each admitted call starts its window's spend alert to the Admins ([spend-alerts.md](spend-alerts.md)).
@@ -109,13 +114,13 @@ Every refusal is a JSON body `{ code, message, requestId }` with a `ModelError` 
 
 A model-setting invocation claims its audit key and updates the setting in one transaction. Replaying an older invocation leaves a newer setting and its audit history unchanged.
 
-Migrations `0004_model_roles`, `0012_model_reservations` and `0017_model_charges`. None of these tables is synced to browsers.
+Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges` and `0057_model_usage_outcome`. None of these tables is synced to browsers.
 
 | Table | Columns | |
 |---|---|---|
 | `model_roles` | `role` (key: `agent`, `coding`, `renderer`, `judge`, `summary`), `model` (jsonb record), `updated_by`, `updated_at` | the admin's setting per role |
 | `model_role_changes` | `id`, `invocation_key` (unique), `role`, `model`, `changed_by`, `changed_at` | the audit of `admin/SetModel` |
-| `model_usage` | `invocation_id` (key, the server's id for the call), `request_id` (the caller's), `role`, `model_id`, `day` (the UTC day it reserved on), `reserved_tokens`, `input_tokens`, `output_tokens` (what the model reported: 0 until settled, and for a count it never reported), `charged_tokens` (what the call counts against its day: its reservation until it settles, then what it spent, or its reservation when that is unknown), `expires_at` (when an unsettled reservation becomes final), `settled_at` (null while the call runs, and for a reservation that expired), `spend_alert_id` (the spend alert that carried the call, migration `0019_spend_alerts`, [spend-alerts.md](spend-alerts.md)), `created_at` (indexed) | the ledger: what each served call reserved, reported and was charged |
+| `model_usage` | `invocation_id` (key, the server's id for the call), `request_id` (the caller's), `role`, `model_id`, `day` (the UTC day it reserved on), `reserved_tokens`, `input_tokens`, `output_tokens` (what the model reported: 0 until settled, and for a count it never reported), `charged_tokens` (what the call counts against its day: its reservation until it settles, then what it spent, or its reservation when that is unknown), `expires_at` (when an unsettled reservation becomes final), `settled_at` (null while the call runs, and for a reservation that expired), `spend_alert_id` (the spend alert that carried the call, migration `0019_spend_alerts`, [spend-alerts.md](spend-alerts.md)), `outcome`, `error_code`, `http_status` (how it ended, migration `0057_model_usage_outcome`, above), `created_at` (indexed) | the ledger: what each served call reserved, reported and was charged, and how it ended |
 | `model_budget_days` | `day` (key, a UTC date), `committed` (settled spend plus open reservations, never negative) | the budget's counter, one row per day |
 
 ## Configuration
@@ -130,7 +135,7 @@ Migrations `0004_model_roles`, `0012_model_reservations` and `0017_model_charges
 | `MODEL_SPEND_ALERT_WINDOW` | `15 minutes` | a duration of at least a second: one spend alert per window at most |
 | `MODEL_RESERVATION_EXPIRY` | `1 hour` | a duration: how long a call's reservation lasts before it is final. The longest call the caps allow writes 16,000 tokens, about 27 minutes at 10 tokens a second |
 | `CHAT_MODEL` | Cerebras `qwen-3.8-27b` | the default model for every role without a setting but `summary`; see [chat.md](chat.md#configuration) |
-| `SUMMARY_MODEL` | none | the `summary` role's model when no admin set one: a model record as JSON, captured when the endpoint builds so Alchemy binds it. Unset, the role has no model (`unusable:unconfigured`); a malformed value is refused per call as `unusable:config`, without failing the build |
+| `SUMMARY_MODEL` | none | the `summary` role's model when no admin set one: a model record as JSON, with its own `extraBody` and `reasoningEffort` when it names them, captured when the endpoint builds so Alchemy binds it. Unset, the role has no model (`unusable:unconfigured`); a malformed value is refused per call as `unusable:config`, without failing the build |
 | `ANSWER_TURN_LIVE_SECONDS` | `30` | the `agent` role's liveness bound: how long a live run of the role may go without writing its answer, read beside the roles (`src/features/model/contract.ts`); the evidence for the default is in [agent.md](agent.md#turn-by-turn) |
 | a setting's credential | none | the key a `model_roles` record names, for example `CEREBRAS_API_KEY`; a custom credential `NAME` reads `SMITHERS_MODEL_KEY_NAME` and `SMITHERS_MODEL_KEY_NAME_ORIGIN` |
 

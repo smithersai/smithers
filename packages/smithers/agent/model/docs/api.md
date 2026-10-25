@@ -52,6 +52,20 @@ trailing slash on `baseUrl` is accepted. `Route.openaiChatCompatible` also
 accepts a `path` override for providers whose compatible endpoint lives
 elsewhere, such as Gemini's `/v1beta/openai/chat/completions`.
 
+A route's `extraBody` (on `Route.make`'s config, and an option of
+`Route.openaiChatCompatible`) adds fields to every request body it sends,
+beside the protocol's own: a provider's or gateway's extension the protocol
+doesn't model. Routing preferences are the usual one: on the Vercel AI Gateway,
+`extraBody: { providerOptions: { gateway: { order: ["cerebras"] } } }` sends a
+model it serves through several providers to Cerebras first; OpenRouter reads
+`{ provider: { order: ["cerebras"] } }`. A field the protocol writes wins, so
+`extraBody` never replaces the model, the messages, the output cap or
+streaming. It is part of the prepared body a durable step keys on, and absent
+the body is byte-for-byte what it was. Credentials never go in it: they go
+through `auth`. A configured-model record carries it as `extraBody`
+(`ModelExtraBodySchema` in `@smthrs/rpc`: a JSON object of at most 2 KiB with
+no field named for a credential).
+
 Responses and Chat Completions are different wire shapes, not two names for
 one. `api.openai.com` serves Responses. Ollama, Gemini's compatibility layer,
 Cerebras, OpenRouter's chat route, and most other self-hosted or third-party
@@ -363,7 +377,7 @@ credentials to authorize with.
 | `anthropic({ apiKey, baseUrl? })`                                         | constructor | `Result<Route, ModelError>`. Sends `x-api-key` and `anthropic-version: 2023-06-01`. `baseUrl` defaults to `Endpoint.providerOrigins.anthropic`.                                                                                                                                                |
 | `openai({ apiKey, baseUrl? })`                                            | constructor | `Result<Route, ModelError>`. Bearer auth against `api.openai.com`, or `baseUrl` when given.                                                                                                                                                                                                    |
 | `openaiResponsesCompatible({ id, baseUrl, apiKey, headers? })`            | constructor | A route for a provider that serves the Responses API without OpenAI's native deferred-tool extensions; `supportsDeferred` is forced off. `baseUrl` is the origin and the constructor appends `/v1/responses`, so `https://openrouter.ai/api` becomes `https://openrouter.ai/api/v1/responses`. |
-| `openaiChatCompatible({ id, baseUrl, path?, apiKey, structuredOutput? })` | constructor | A route for a Chat Completions provider. `path` defaults to `/v1/chat/completions`. `apiKey` may be a non-empty placeholder for a server that does not check it; `Auth.bearer` only rejects an empty credential.                                                                               |
+| `openaiChatCompatible({ id, baseUrl, path?, apiKey, structuredOutput?, extraBody? })` | constructor | A route for a Chat Completions provider. `path` defaults to `/v1/chat/completions`. `extraBody` adds fields beneath the protocol's own (see Routes above). `apiKey` may be a non-empty placeholder for a server that does not check it; `Auth.bearer` only rejects an empty credential.                                                                               |
 
 Behavior the composition guarantees:
 

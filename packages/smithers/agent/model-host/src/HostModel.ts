@@ -27,6 +27,11 @@ export interface HostModelRecord {
   readonly path?: string | undefined
   readonly modelId: string
   readonly credential: string
+  /**
+   * Fields added to every request body the model sends, beside the protocol's own, such as a gateway's routing
+   * preferences (`ModelExtraBodySchema` in `@smthrs/rpc`). Never a credential.
+   */
+  readonly extraBody?: Readonly<Record<string, unknown>> | undefined
 }
 
 /**
@@ -60,7 +65,8 @@ const RecordJson = Schema.fromJsonString(
     baseUrl: Schema.optional(Schema.String),
     path: Schema.optional(Schema.String),
     modelId: Schema.String,
-    credential: Schema.String
+    credential: Schema.String,
+    extraBody: Schema.optional(Schema.Record(Schema.String, Schema.Json))
   })
 )
 

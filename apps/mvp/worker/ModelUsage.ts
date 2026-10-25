@@ -61,11 +61,23 @@ export const reserve = (call: Reservation, limits: Limits) =>
  * `complete` when what it reported is all it spent: the call ended normally and the model reported both counts, or the
  * provider refused it before any output (`ModelProxy.refusedCleanly`), when a count it never reported is 0.
  */
+/**
+ * How a served call ended, as its ledger row keeps it (no content, no provider text): `answered`; `aborted`, its
+ * client went away; `refused`, its provider refused before any output; or `failed`, any other failure. Its model
+ * error's code and the provider's HTTP status when it failed.
+ */
+export interface Ended {
+  readonly outcome: "answered" | "aborted" | "refused" | "failed"
+  readonly errorCode?: string | undefined
+  readonly httpStatus?: number | undefined
+}
+
 export interface Spent {
   readonly invocationId: string
   readonly inputTokens: number | undefined
   readonly outputTokens: number | undefined
   readonly complete: boolean
+  readonly ended: Ended
 }
 
 /**
@@ -83,7 +95,8 @@ export const settle = (spent: Spent) =>
     const rows = yield* sql<{ readonly day: string }>`
       WITH settled AS (
         UPDATE model_usage SET input_tokens = ${spent.inputTokens ?? 0}, output_tokens = ${spent.outputTokens ?? 0},
-          charged_tokens = ${charge}, settled_at = now()
+          charged_tokens = ${charge}, settled_at = now(), outcome = ${spent.ended.outcome},
+          error_code = ${spent.ended.errorCode ?? null}, http_status = ${spent.ended.httpStatus ?? null}
         WHERE invocation_id = ${spent.invocationId} AND settled_at IS NULL AND expires_at > now()
         RETURNING day, reserved_tokens, charged_tokens
       )

@@ -1058,3 +1058,40 @@ describe("0056_personal_models", () => {
       expect(await on(through("0056"))).toEqual([])
     }))
 })
+
+describe("0057_model_usage_outcome", () => {
+  test("adds how each call ended to the ledger, empty on rows settled before it, and holds a row to its rules", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0056"))
+      const insert = (id: string) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO model_usage (invocation_id, request_id, role, model_id, input_tokens, output_tokens, day,
+            reserved_tokens, charged_tokens, expires_at)
+          VALUES (${id}, 'r', 'agent', 'm', 0, 0, (now() AT TIME ZONE 'UTC')::date, 10, 10, now() + interval '1 hour')`))
+      await insert("before")
+      expect((await on(through("0057"))).map(([id, name]) => `${id}_${name}`)).toEqual(["57_model_usage_outcome"])
+      const [before] = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ readonly outcome: string | null }>`
+        SELECT outcome FROM model_usage WHERE invocation_id = 'before'`))
+      expect(before).toEqual({ outcome: null })
+      const end = (fields: { outcome?: string; errorCode?: string; httpStatus?: number }) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          UPDATE model_usage SET outcome = ${fields.outcome ?? null}, error_code = ${fields.errorCode ?? null},
+            http_status = ${fields.httpStatus ?? null}
+          WHERE invocation_id = 'before'`).pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      expect(await end({ outcome: "refused", errorCode: "quota_exceeded", httpStatus: 402 })).toBe("taken")
+      for (const outcome of ["answered", "aborted", "failed"]) expect(await end({ outcome })).toBe("taken")
+      for (
+        const refused of [
+          { outcome: "success" },
+          { httpStatus: 99 },
+          { httpStatus: 600 },
+          { errorCode: "x".repeat(65) },
+        ]
+      ) {
+        expect(await end(refused), JSON.stringify(refused)).toBe("refused")
+      }
+      expect(await on(through("0057"))).toEqual([])
+    }))
+})

@@ -514,6 +514,19 @@ describe("the planner", () => {
     expect(JSON.stringify(planned)).not.toContain("sk-loopback")
   })
 
+  test("carries a record's extra body fields into its binding and its plan, and refuses one naming a credential", () => {
+    const extraBody = { providerOptions: { gateway: { order: ["cerebras", "alibaba"] } } }
+    const binding = bindingOf(chat({ extraBody }))
+    expect(binding.extraBody).toEqual(extraBody)
+    const planned = planModelBinding(binding, table)
+    expect(planned.ok && planned.plan.extraBody).toEqual(extraBody)
+    expect(planModelBinding(bindingOf(chat()), table)).not.toHaveProperty("plan.extraBody")
+    expect(planModelBinding({ ...binding, extraBody: { headers: { Authorization: "Bearer sk" } } }, table))
+      .toEqual({ ok: false, failure: { code: "invalid", field: "extraBody" } })
+    expect(planModelBinding({ ...binding, extraBody: ["not", "an", "object"] }, table))
+      .toEqual({ ok: false, failure: { code: "invalid", field: "extraBody" } })
+  })
+
   test("plans the allowlisted decision model at the gateway", () => {
     const planned = planModelBinding(jev, table, { kind: "decision" })
     expect(planned.ok && planned.plan.url).toBe("https://ai-gateway.vercel.sh/v4/ai/evaluation-model")
