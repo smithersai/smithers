@@ -29,7 +29,8 @@ Will's own decision and is not part of this.
 6. **A refusal is final and visible.** The person's model never falls back to the deployment's. A saved model that
    can't be used here (a key that no longer opens, no SECRETS_KEY) is `409 no_route`. A provider's 401, 402, 403 or 429
    fails the call and marks the person's row (`failure_status`, `failed_at`), which their device shows as a toast and on
-   the Settings page with the provider's host and status, until a later success or a new save clears it. Quota and
+   the Settings page with the provider's host and status, until a later success or a new save clears it (a 429 counts
+   only when it says the key ran out; a plain rate limit is a wait). Quota and
    credit refusals lose their retry hints, so no step waits out a key that ran out (`isTerminalRefusal`), and the
    server's request executor never retries them; a plain rate limit stays a transient wait.
 7. **Flows.** `model/Put` and `model/Delete` are durable flows on the Cloudflare host, each one step writing the row and
@@ -46,7 +47,8 @@ Will's own decision and is not part of this.
 
 - Every role of the person's calls uses their model, not only `agent` and `coding` as the report sketched: one rule is
   easier to explain, and a deployment whose own model is out of quota still renders views and summaries for them.
-- Anyone signed in removes their own model, a person who lost their role included; saving and testing need Member.
+- Anyone signed in removes their own model, a person who lost their role included (Settings shows them Remove alone);
+  saving and testing need Member.
 - The failure is shown by the server's record of it (a toast and the Settings line), not in the failed chat answer,
   whose stored failure kinds are unchanged.
 - The test is its own route, not a call to `/api/model/agent`, so it always tests the saved model and reports the

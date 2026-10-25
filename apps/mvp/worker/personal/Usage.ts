@@ -40,9 +40,16 @@ export interface End {
   readonly httpStatus?: number | undefined
 }
 
-/** Whether a call's failure was the provider refusing the person's key, or saying it ran out. */
+/** The model error codes that say a 429 meant the key ran out, not that its calls came too fast. */
+const RAN_OUT: ReadonlyArray<string> = ["quota_exceeded", "out_of_credit"]
+
+/**
+ * Whether a call's failure was the provider refusing the person's key (401, 402, 403), or saying it ran out (a 429 whose
+ * code says so). A plain rate limit is a wait, which the caller sits out: it marks nothing.
+ */
 export const refusedKey = (end: End): boolean =>
-  end.outcome === "failed" && end.httpStatus !== undefined && KEY_REFUSALS.includes(end.httpStatus)
+  end.outcome === "failed" && end.httpStatus !== undefined && KEY_REFUSALS.includes(end.httpStatus) &&
+  (end.httpStatus !== 429 || RAN_OUT.includes(end.errorCode ?? ""))
 
 /** Writes the call's ledger row before the model runs. */
 export const begin = (call: Call) => Store.begin(call)
@@ -73,8 +80,8 @@ export const end = <E, R>(
     })
     // Settled already: whatever ended it first recorded it.
     if (Option.isNone(settled)) return
-    if (refusedKey(ended)) yield* Store.mark(call.personId, ended.httpStatus)
-    else if (ended.outcome === "success") yield* Store.mark(call.personId, undefined)
+    if (refusedKey(ended)) yield* Store.mark(call.invocationId, ended.httpStatus)
+    else if (ended.outcome === "success") yield* Store.mark(call.invocationId, undefined)
     yield* Metric.update(Metric.withAttributes(calls, { role: call.role, outcome: ended.outcome }), 1)
     if (inputTokens !== undefined) {
       yield* Metric.update(Metric.withAttributes(tokens, { role: call.role, type: "input" }), inputTokens)

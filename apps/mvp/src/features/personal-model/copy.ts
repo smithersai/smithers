@@ -29,6 +29,9 @@ export const TEST = "Test"
 /** A save on its way. */
 export const SAVING = "Saving"
 
+/** A remove on its way. */
+export const REMOVING = "Removing"
+
 /** A test that went through. */
 export const OK = "OK"
 

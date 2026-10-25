@@ -323,7 +323,9 @@ describe("the agent's catalog", () => {
     // Saving takes the key, which never enters a model's context, a journal or the device: it is no flow at all.
     expect(names.filter((name) => name.startsWith("model/"))).toEqual(["model/test", "model/remove"])
     expect(agentFlows.filter((name) => name.startsWith("model/"))).toEqual(["model/test", "model/remove"])
-    for (const name of ["model/test", "model/remove"] as const) expect(entryOf(name).minimum).toBe("member")
+    // Testing spends a call, a Member's; anyone signed in removes their own model, a person who lost their role included.
+    expect(entryOf("model/test").minimum).toBe("member")
+    expect(entryOf("model/remove").minimum).toBeUndefined()
     expect(catalogDescription("model/test")).toContain("Side effect: makes one tiny call with the person's own model")
     expect(catalogDescription("model/remove")).toContain('Approval: this call asks the person "Remove your model?"')
   })

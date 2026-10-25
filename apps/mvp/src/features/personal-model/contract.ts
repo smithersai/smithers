@@ -126,7 +126,10 @@ export const REFUSALS = [
 ] as const
 export type Refusal = (typeof REFUSALS)[number]
 
-/** The provider statuses that mean the person's key itself was refused or ran out: recorded on their row. */
+/**
+ * The provider statuses that mean the person's key itself was refused or ran out, recorded on their row: a 429 only when
+ * its error says the key ran out (worker/personal/Usage.ts `refusedKey`).
+ */
 export const KEY_REFUSALS: ReadonlyArray<number> = [401, 402, 403, 429]
 
 /**

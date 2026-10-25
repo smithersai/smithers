@@ -352,9 +352,9 @@ export const registry = {
     minimum: "member",
     changes: "makes one tiny call with the person's own model, which spends a few of their tokens",
   },
+  // Anyone signed in removes their own model, a person who lost their role included (decision 0096).
   "model/remove": {
     flow: ModelRemove,
-    minimum: "member",
     changes: "removes the person's own model, so the deployment's model answers them",
     confirm: "Remove your model?",
   },

@@ -132,17 +132,22 @@ export const settle = (ended: Ended): Effect.Effect<Option.Option<string>, unkno
     ))
 
 /**
- * Records that the person's key was refused or ran out with the provider's `status` (401, 402, 403 or 429), or, with
- * none, that it answered again, clearing the last refusal. Only a row that changes is written, so a run of successful
- * calls writes nothing.
+ * Records, from the call `invocationId` settled, that the person's key was refused or ran out with the provider's
+ * `status` (401, 402, 403, or a 429 that said so), or, with none, that it answered again, clearing the last refusal. Only
+ * a call made with the row's current key marks it: a slow call on a key the person has since replaced says nothing of
+ * the new one. A run of successful calls writes nothing.
  */
-export const mark = (personId: string, status: number | undefined): Effect.Effect<void, unknown, SqlClient.SqlClient> =>
+export const mark = (invocationId: string, status: number | undefined): Effect.Effect<void, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     Effect.asVoid(
       status === undefined
         ? sql`
-          UPDATE personal_models SET failure_status = NULL, failed_at = NULL
-          WHERE person_id = ${personId} AND failure_status IS NOT NULL`
+          UPDATE personal_models m SET failure_status = NULL, failed_at = NULL
+          FROM personal_model_usage u
+          WHERE u.invocation_id = ${invocationId} AND m.person_id = u.person_id AND m.updated_at <= u.created_at
+            AND m.failure_status IS NOT NULL`
         : sql`
-          UPDATE personal_models SET failure_status = ${status}, failed_at = now() WHERE person_id = ${personId}`,
+          UPDATE personal_models m SET failure_status = ${status}, failed_at = now()
+          FROM personal_model_usage u
+          WHERE u.invocation_id = ${invocationId} AND m.person_id = u.person_id AND m.updated_at <= u.created_at`,
     ))

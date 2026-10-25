@@ -93,7 +93,8 @@ describe("PUT /api/me/model", () => {
     })
 
     // A replacement clears the last refusal its earlier key had.
-    await runtime.runPromise(Store.mark("person-member", 401))
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE personal_models SET failure_status = 401, failed_at = now() WHERE person_id = 'person-member'`))
     expect(
       (await h.fetch(PERSONAL_MODEL_ROUTE, put({ ...SAVE, protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, modelId: "claude-test" })))
         .status,
@@ -558,14 +559,14 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
     params: ModelRequest.GenerationParams.make({ maxTokens: 64 }),
   })
 
-  const seat = async (fetch: typeof globalThis.fetch, owner: ModelEndpoint.Owner) => {
+  const seat = async (fetch: typeof globalThis.fetch, owner: ModelEndpoint.Owner, starter?: Flows.FlowStarter["Service"]) => {
     const database = (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
     const config = ConfigProvider.layer(ConfigProvider.fromUnknown({
       SMITHERS_MODEL_KEY_DEPLOYMENT: "deployment-key",
       SMITHERS_MODEL_KEY_DEPLOYMENT_ORIGIN: "https://deployment.example.com",
     }))
     const local = await Effect.runPromise(
-      ModelEndpoint.local(database).pipe(
+      ModelEndpoint.local(database, { alerts: true }).pipe(
         Effect.provide(PersonalModels.layer(database).pipe(Layer.provide(SecretKeys.layer(KEY)))),
         Effect.provide(HostModel.layerConfig("CHAT_MODEL", {
           protocol: "openai-chat",
@@ -577,7 +578,7 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
         Effect.provideService(FetchHttpClient.Fetch, fetch),
       ),
     )
-    return local("coding", undefined, owner)
+    return local("coding", starter, owner)
   }
   const inRun = (executionId: string) =>
     Stream.provideService(FlowRuntime.FlowInstance, { executionId } as unknown as FlowRuntime.FlowInstance["Service"])
@@ -589,12 +590,16 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
       globalThis.fetch,
       [OPENAI_ORIGIN, "https://deployment.example.com"],
     )
+    const starts: Array<string> = []
+    const starter = Flows.FlowStarter.of({ start: (flow) => Effect.sync(() => void starts.push(flow._tag)) })
     const coding = await seat(provider.fetch, (executionId) =>
-      Effect.succeed(executionId === "todo:mine" ? Option.some("person-member") : Option.none()))
+      Effect.succeed(executionId === "todo:mine" ? Option.some("person-member") : Option.none()), starter)
     const text = async (effect: Stream.Stream<ModelEvent.ModelEvent, unknown>) =>
       (await Effect.runPromise(Stream.runCollect(effect))).flatMap((event) => event.type === "text-delta" ? [event.text] : [])
     expect(await text(coding.model.stream(ask).pipe(inRun("todo:mine")))).toEqual(["theirs"])
     expect(provider.seen.map((seen) => seen.url)).toEqual([`${OPENAI_ORIGIN}/v1/chat/completions`])
+    // The person's key paid: no spend alert started.
+    expect(starts).toEqual([])
     // Outside a run, or in a run that is nobody's, the deployment answers.
     expect(await text(coding.model.stream(ask))).toEqual(["the deployment's"])
     expect(await text(coding.model.stream(ask).pipe(inRun("triage:1")))).toEqual(["the deployment's"])
@@ -604,16 +609,21 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
       "https://deployment.example.com/v1/chat/completions",
     ])
     expect(provider.seen[1]!.headers.get("authorization")).toBe("Bearer deployment-key")
+    // The deployment's own call alerts, once a window.
+    expect(starts).toEqual([SpendAlert.SpendAlert._tag])
     await eventually(async () => (await usage(runtime)).length === 1 && (await usage(runtime))[0]!.settled)
     expect(await usage(runtime)).toEqual([expect.objectContaining({ role: "coding", outcome: "success" })])
   })
 
   test("its committer's refused key fails the run's call at once, and an owner lookup Postgres refuses fails it too", async () => {
     await seed(runtime, "person-member")
-    const provider = scriptedProvider({ status: 401, error: { message: "bad key" } })
+    const provider = scriptedProvider({ status: 401, error: { message: `bad key ${VALUE}` } })
     const coding = await seat(provider.fetch, () => Effect.succeed(Option.some("person-member")))
     const refused = await Effect.runPromiseExit(Stream.runCollect(coding.model.stream(ask).pipe(inRun("todo:x"))))
     expect(refused).toMatchObject({ _tag: "Failure" })
+    expect(JSON.stringify(refused)).toContain('"code":"authentication"')
+    // The journaled failure carries no echo of the key.
+    expect(leaks(JSON.stringify(refused))).toEqual([])
     expect(provider.seen).toHaveLength(1)
     const lost = await seat(provider.fetch, () => Effect.fail("down"))
     const failed = await Effect.runPromiseExit(Stream.runCollect(lost.model.stream(ask).pipe(inRun("todo:x"))))
@@ -682,6 +692,24 @@ describe("a refusal of a person's key is final", () => {
     expect(Exit.isSuccess(exit)).toBe(true)
   })
 
+  test("a slow call on a key since replaced says nothing of the new key", async () => {
+    const database = (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
+    await seed(runtime, "person-member")
+    const call = { invocationId: crypto.randomUUID(), requestId: "r", personId: "person-member", role: "agent", modelId: "m", host: "h" }
+    await runtime.runPromise(Effect.provide(PersonalUsage.begin(call), database))
+    // The call began a minute before the person replaced their key.
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE personal_model_usage SET created_at = now() - interval '1 minute' WHERE invocation_id = ${call.invocationId}`))
+    await seed(runtime, "person-member", { key: `${VALUE}-new` })
+    await runtime.runPromise(PersonalUsage.end(call, { outcome: "failed", usage: {}, errorCode: "authentication", httpStatus: 401 }, database))
+    expect(await rows(runtime)).toEqual([expect.objectContaining({ failureStatus: null, failedAt: null })])
+    // A call made with the current key marks it.
+    const current = { ...call, invocationId: crypto.randomUUID() }
+    await runtime.runPromise(Effect.provide(PersonalUsage.begin(current), database))
+    await runtime.runPromise(PersonalUsage.end(current, { outcome: "failed", usage: {}, errorCode: "authentication", httpStatus: 401 }, database))
+    expect(await rows(runtime)).toEqual([expect.objectContaining({ failureStatus: 401 })])
+  })
+
   test("a call settled already isn't counted again", async () => {
     const database = (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
     const call = { invocationId: crypto.randomUUID(), requestId: "r", personId: "person-member", role: "agent", modelId: "m", host: "h" }
@@ -693,5 +721,9 @@ describe("a refusal of a person's key is final", () => {
     expect(PersonalUsage.refusedKey({ outcome: "failed", usage: {}, httpStatus: 500 })).toBe(false)
     expect(PersonalUsage.refusedKey({ outcome: "failed", usage: {} })).toBe(false)
     expect(PersonalUsage.refusedKey({ outcome: "failed", usage: {}, httpStatus: 403 })).toBe(true)
+    // A 429 marks the key only when it ran out; a plain rate limit is waited out.
+    expect(PersonalUsage.refusedKey({ outcome: "failed", usage: {}, httpStatus: 429, errorCode: "rate_limited" })).toBe(false)
+    expect(PersonalUsage.refusedKey({ outcome: "failed", usage: {}, httpStatus: 429 })).toBe(false)
+    expect(PersonalUsage.refusedKey({ outcome: "failed", usage: {}, httpStatus: 429, errorCode: "out_of_credit" })).toBe(true)
   })
 })

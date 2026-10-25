@@ -3,9 +3,9 @@
 // when the failure toast shows. Every word is checked here too.
 import { describe, expect, test } from "vitest"
 import { PROTOCOLS, REFUSALS } from "./contract"
-import { codeText, keyPlaceholder, LATE, OK, PROTOCOL_LABEL, REFUSAL_COPY, SAVING, UNKNOWN, YOUR_MODEL } from "./copy"
+import { codeText, keyPlaceholder, LATE, OK, PROTOCOL_LABEL, REFUSAL_COPY, REMOVING, SAVING, UNKNOWN, YOUR_MODEL } from "./copy"
 import { type Form, type FormState, type PersonalModelRow, type TestRow, testResultMatchesContract } from "./schema"
-import { awaiting, busy, landed, onItsWay, refusalText, showsSection, statusOf, testText, toastOf } from "./view"
+import { awaiting, busy, canSave, landed, onItsWay, refusalText, statusOf, testText, toastOf } from "./view"
 
 const row = (fields: Partial<PersonalModelRow> = {}): PersonalModelRow => ({
   personId: "person-member",
@@ -45,9 +45,9 @@ const tested = (fields: Partial<TestRow> = {}): TestRow => ({
 
 const STATES: ReadonlyArray<FormState> = ["sending", "confirming", "late", "done", "failed", "unknown"]
 
-describe("who sees the section", () => {
+describe("who saves a model", () => {
   test("a person signed in as a Member or above; nobody else, nor anyone while sign-in doesn't know", () => {
-    const seen = (status: string, role: "admin" | "maintainer" | "member" | "guest" | null) => showsSection({ status, role })
+    const seen = (status: string, role: "admin" | "maintainer" | "member" | "guest" | null) => canSave({ status, role })
     expect([seen("signed_in", "admin"), seen("signed_in", "maintainer"), seen("signed_in", "member")]).toEqual([true, true, true])
     expect([seen("signed_in", "guest"), seen("signed_in", null), seen("signed_out", null), seen("loading", null)]).toEqual([
       false,
@@ -55,7 +55,7 @@ describe("who sees the section", () => {
       false,
       false,
     ])
-    expect(showsSection(undefined)).toBe(false)
+    expect(canSave(undefined)).toBe(false)
   })
 })
 
@@ -98,12 +98,13 @@ describe("the status line", () => {
     expect(statusOf(row(), form({ state: "done" }), undefined)).toEqual({ _tag: "None" })
   })
 
-  test("Saving while a save is on its way, over everything else", () => {
+  test("Saving or Removing while a write is on its way, over everything else", () => {
     for (const state of ["sending", "confirming"] as const) {
       expect(statusOf(failed(), form({ state }), tested())).toEqual({ _tag: "Text", text: SAVING })
     }
-    // A remove on its way says nothing: the row goes once it lands.
-    expect(statusOf(row(), form({ op: "remove", state: "confirming" }), undefined)).toEqual({ _tag: "None" })
+    // A remove that waits, such as one pressed offline, says so while its flow tries again.
+    expect(statusOf(row(), form({ op: "remove", state: "confirming" }), undefined)).toEqual({ _tag: "Text", text: REMOVING })
+    expect(statusOf(row(), form({ op: "remove", state: "sending" }), undefined)).toEqual({ _tag: "Text", text: REMOVING })
   })
 
   test("a write's refusal, unknown outcome or lateness", () => {

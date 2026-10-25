@@ -2,11 +2,12 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { PersonalModelSettings } from "../../features/personal-model/components/PersonalModelSettings"
-import { showsSection } from "../../features/personal-model/view"
+import { canSave } from "../../features/personal-model/view"
 import { AlertSettings } from "../../features/spend/components/AlertSettings"
 import "./settings-screen.css"
 
-// /app/settings: a signed-in Member's or above's own model (docs/features/personal-model.md#the-settings-section), and
+// /app/settings: a signed-in Member's or above's own model, or Remove alone for anyone else who still has one saved
+// (docs/features/personal-model.md#the-settings-section), and
 // for an Admin, where spend alerts go outside the app (docs/features/spend-alerts.md#channels). Anyone else sees the
 // page's header alone.
 export function SettingsScreen() {
@@ -19,7 +20,7 @@ export function SettingsScreen() {
         <Link to="/app">Back to chat</Link>
         <h1>Settings</h1>
       </header>
-      {showsSection(session) ? <PersonalModelSettings /> : null}
+      {session?.status === "signed_in" ? <PersonalModelSettings canSave={canSave(session)} /> : null}
       {admin ? <AlertSettings /> : null}
     </main>
   )

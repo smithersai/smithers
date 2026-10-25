@@ -35,7 +35,8 @@ import "./personal-model-settings.css"
 // the saved values until edited; the key is typed into a password field, read from the form once on Save and handed to
 // the action, and the form clears once ChatApi takes it (`saved` keys the form). Save always needs the key, so a saved
 // key never goes to another host unless the person types it again. Test and Remove show while a model is saved. One
-// status line says what the last act did, or why the saved key last failed.
+// status line says what the last act did, or why the saved key last failed. Someone signed in who may no longer save
+// one (`canSave` false) sees only Remove, while they have a model saved.
 
 /** An input that shows `synced` until the person edits it, and keeps an edit, and its focus, when `synced` changes. */
 const follow = (synced: string) => (input: HTMLInputElement | null) => {
@@ -44,13 +45,26 @@ const follow = (synced: string) => (input: HTMLInputElement | null) => {
   input.defaultValue = synced
 }
 
-export function PersonalModelSettings() {
+export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }) {
   const { queries, actions } = usePersonalModel()
   const { data: row } = useLiveQuery(queries.row)
   const { data: form } = useLiveQuery(queries.form)
   const { data: test } = useLiveQuery(queries.test)
   const status = statusOf(row, form, test)
   const waiting = busy(form, test)
+  // Someone who may no longer save one, a person who lost their role, can still remove the model they saved.
+  if (!canSave) {
+    if (row === undefined) return null
+    return (
+      <section className="personal-model" aria-label={YOUR_MODEL}>
+        <h2>{YOUR_MODEL}</h2>
+        <div className="personal-model-actions">
+          <Button type="button" variant="outline" disabled={waiting} onClick={actions.remove}>{REMOVE}</Button>
+        </div>
+        <p role="status" className="personal-model-status">{status._tag === "Text" ? status.text : null}</p>
+      </section>
+    )
+  }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const data = new FormData(event.currentTarget)

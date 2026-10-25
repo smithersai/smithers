@@ -13,7 +13,7 @@ import { HostModel } from "@smthrs/model-host"
 import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Schedule, Schema, Scope, Stream } from "effect"
-import { HttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { execFileSync } from "node:child_process"
@@ -32,6 +32,9 @@ import * as Apply from "../github/Apply.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
 import { PersonalModels } from "../personal/Models.ts"
+import { KEY, resetModels, seed, VALUE } from "../personal/test/harness.ts"
+import { scriptedProvider } from "../personal/test/provider.ts"
+import { SecretKeys } from "../secrets/Keys.ts"
 import * as Stack from "../stack/Stack.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import * as Box from "../test/box.ts"
@@ -50,6 +53,8 @@ afterAll(() => rmSync(boxes, { recursive: true, force: true }))
 beforeEach(async () => {
   await reset(runtime)
   await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs")
+  await sql(runtime, "TRUNCATE model_usage, model_budget_days")
+  await resetModels(runtime)
 })
 
 const maya = { id: "person-maya", login: "maya" }
@@ -120,19 +125,26 @@ const WRITES_README = [
   `ctx.done({ summary: "Added a line; the check exited " + r.exitCode + "." })`,
 ].join("\n")
 
-/** The `agent` seat over `model`, admitted and metered as the endpoint's calls are. */
-const agentSeat = async (model: Model.Model) => {
+/**
+ * The `agent` seat over `model`, admitted and metered as the endpoint's calls are; given `personal`, the people's own
+ * models' provider, the deployed `coding` seat, whose run's committer's own model answers (worker/Executions.ts).
+ */
+const agentSeat = async (model: Model.Model, personal?: typeof globalThis.fetch) => {
+  const db = await database()
   const local = await Effect.runPromise(
-    ModelEndpoint.local(await database()).pipe(
-      Effect.provide(PersonalModels.none),
+    ModelEndpoint.local(db).pipe(
+      Effect.provide(personal === undefined ? PersonalModels.none : PersonalModels.layer(db).pipe(Layer.provide(SecretKeys.layer(KEY)))),
       Effect.provideService(
         HostModel,
         HostModel.of({ modelId: "agent-model", model, route: { prepare: () => Effect.die(new Error("unused")) } }),
       ),
       Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+      Effect.provideService(FetchHttpClient.Fetch, personal ?? globalThis.fetch),
     ),
   )
-  return local("agent")
+  return personal === undefined
+    ? local("agent")
+    : local("coding", undefined, (executionId) => TodoMachine.ownerOf(executionId).pipe(Effect.provide(db)))
 }
 
 /** Everything one run needs: the scripted GitHub, the machine, the agent, and the starts it asked its host for. */
@@ -143,6 +155,8 @@ const setup = async (
     readonly model?: Model.Model
     readonly run?: (command: string) => number
     readonly schema?: string
+    /** The people's own models' provider: the run's committer's model answers its agent. */
+    readonly personal?: typeof globalThis.fetch
   } = {},
 ) => {
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
@@ -158,7 +172,7 @@ const setup = async (
     start: (flow, start) => Effect.sync(() => void starts.push({ flow: flow._tag, ...start })),
   }
   const agent = cells(...(options.agent ?? [WRITES_README]))
-  const seat = await agentSeat(options.model ?? agent.model)
+  const seat = await agentSeat(options.model ?? agent.model, options.personal)
   // The agent's commands run as `sandbox/Command` jobs, which the deployed host registers beside the sandbox tools.
   const registration = Layer.mergeAll(
     Todo.registration(todoServices, TodoAgent.registration(seat, await database(), Agent.layerSandbox)),
@@ -369,6 +383,26 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect(await todo(2)).toMatchObject({ state: "queued" })
     expect(ctx.github.pulls.size).toBe(0)
     expect(ctx.starts).toEqual([])
+  })
+
+  test("its committer's own model answers the run's agent, with their key, outside the deployment's budget", async () => {
+    await seed(runtime, maya.id)
+    const provider = scriptedProvider({ text: "```cell\nctx.done({ summary: \"Nothing to do.\" })\n```" })
+    const ctx = await setup({ personal: provider.fetch })
+    const start = (await commit("Mine", "Change nothing."))!
+    const ran = await ctx.run(start)
+    expect(ran.exit).toEqual(Exit.succeed({ state: "failed" }))
+    expect(await todo()).toMatchObject({ state: "failed", failure: "empty_change" })
+    // The agent's turn went to maya's provider with maya's key; the deployment's model was never asked.
+    expect(provider.seen.length).toBeGreaterThan(0)
+    expect(provider.seen.every((seen) => seen.headers.get("authorization") === `Bearer ${VALUE}`)).toBe(true)
+    expect(ctx.agent.requests).toEqual([])
+    const ledgers = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.all([
+      sql<{ readonly n: number }>`SELECT count(*)::int AS n FROM model_usage`,
+      sql<{ readonly personId: string; readonly role: string }>`
+        SELECT DISTINCT person_id AS "personId", role FROM personal_model_usage`,
+    ])))
+    expect(ledgers).toEqual([[{ n: 0 }], [{ personId: maya.id, role: "coding" }]])
   })
 
   test("an agent that never answers in the schema fails the TODO implement", async () => {

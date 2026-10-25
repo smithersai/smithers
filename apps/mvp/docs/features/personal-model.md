@@ -74,8 +74,10 @@ the base URL's origin, and built by `@smthrs/model-host`'s `toModel`, whose tran
 - **No fallback.** A saved model that can't be used here (its key doesn't open, SECRETS_KEY is unset) is `409 no_route`,
   "Your model can't be used. Save it again in Settings.", logged `own_unusable:<reason>`. Postgres that can't say is
   `503 provider_internal`.
-- **A refused key.** A provider's 401, 402, 403 or 429 fails the call and sets the person's `failure_status` and
-  `failed_at`; a later successful call, a passing test or a new save clears them. Quota and credit refusals
+- **A refused key.** A provider's 401, 402 or 403, or a 429 that says the key ran out (`quota_exceeded`,
+  `out_of_credit`), fails the call and sets the person's `failure_status` and `failed_at`; a later successful call, a
+  passing test or a new save clears them. Only a call made with the row's current key marks it, so a slow call on a key
+  the person has since replaced says nothing of the new one. A plain rate limit marks nothing. Quota and credit refusals
   (`quota_exceeded`, `out_of_credit`) lose their retry hints (`final` in `worker/personal/Models.ts`), so the browser's
   model step and a `todo` run fail at once instead of parking; the model package's request executor never retries
   them. A plain rate limit (429 without a quota code) keeps its hints and is waited out as before.
@@ -96,9 +98,11 @@ the provider's host. Nothing saved is `404 none`; a Guest or someone with no rol
 
 ## The Settings section
 
-`/app/settings`, the header's Settings link, shows **Your model** to a signed-in Member or above: Protocol, Base URL, Model and Key (a password
-field; once saved, its placeholder is the key's last four characters), Save, and Remove and Test once a model is saved.
-One status line says Saving, a refusal, the test's result, or the provider's last refusal with when it happened. While
+`/app/settings`, the header's Settings link, shows **Your model** to a signed-in Member or above: Protocol, Base URL,
+Model and Key (a password field; once saved, its placeholder is the key's last four characters), Save, and Remove and
+Test once a model is saved. Someone signed in who may no longer save one, such as a person who lost their role, sees
+only Remove while their model is saved. One status line says Saving or Removing, a refusal, the test's result, or the
+provider's last refusal with when it happened. While
 the person's row has a refusal their device hasn't hidden, the shell's toast stack shows it (`<host> · HTTP <status>`),
 opening Settings. The key is read from the form once, held `Redacted`, sent in one `PUT`, and never kept on the device:
 not in a collection, the outbox, a browser flow's journal or a record.

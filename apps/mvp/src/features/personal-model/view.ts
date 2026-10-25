@@ -1,6 +1,6 @@
 import { mayAsk, type Role } from "../auth/contract"
 import { hostOf, type Refusal } from "./contract"
-import { codeText, LATE, OK, REFUSAL_COPY, SAVING, UNKNOWN } from "./copy"
+import { codeText, LATE, OK, REFUSAL_COPY, REMOVING, SAVING, UNKNOWN } from "./copy"
 import type { Form, Hidden, PersonalModelRow, TestResult, TestRow } from "./schema"
 
 // What the Your model section and its toast show, as pure rules their views read
@@ -13,9 +13,10 @@ export interface Reader {
   readonly role: Role | null
 }
 
-/** Whether the section shows: to a person signed in as a Member or above, who may ask Smithers. */
-export const showsSection = (session: Reader | undefined): boolean =>
+/** Whether a person may save and test a model of their own: signed in as a Member or above, who may ask Smithers. */
+export const canSave = (session: Reader | undefined): boolean =>
   session !== undefined && session.status === "signed_in" && mayAsk(session.role)
+
 
 /** Whether a write is on its way: sent, or taken and not yet in the row. A second one waits. */
 export const onItsWay = (form: Pick<Form, "state">): boolean => form.state === "sending" || form.state === "confirming"
@@ -63,7 +64,7 @@ const failureOf = (row: PersonalModelRow | undefined): Status =>
     : { _tag: "Failure", text: `${hostOf(row.baseUrl)} refused · HTTP ${row.failureStatus}`, at: Date.parse(row.failedAt) }
 
 /**
- * The status line, the latest first: a save on its way says `Saving`; the last write's refusal, unknown outcome or
+ * The status line, the latest first: a save on its way says `Saving`, a remove `Removing`; the last write's refusal, unknown outcome or
  * lateness says so, unless a test came since (`quiet`); then the last test's result or refusal, unless the row records
  * a failure newer than it (a real call that failed since); then the row's failure.
  */
@@ -73,7 +74,7 @@ export const statusOf = (
   test: TestRow | undefined,
 ): Status => {
   if (form !== undefined && !form.quiet) {
-    if (form.op === "save" && onItsWay(form)) return text(SAVING)
+    if (onItsWay(form)) return text(form.op === "save" ? SAVING : REMOVING)
     if (form.state === "failed" && form.failure !== null) return text(refusalText(form.failure))
     if (form.state === "unknown") return text(UNKNOWN)
     if (form.state === "late") return text(LATE)

@@ -31,7 +31,7 @@ const SAVED: PersonalModelRow = {
   updatedAt: "2026-10-24T10:00:00.000Z",
 }
 
-const section = async (initial: ReadonlyArray<PersonalModelRow>) => {
+const section = async (initial: ReadonlyArray<PersonalModelRow>, canSave = true) => {
   const scope = Effect.runSync(Scope.make())
   disposals.push(() => Effect.runPromise(Scope.close(scope, Exit.void)))
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
@@ -77,7 +77,7 @@ const section = async (initial: ReadonlyArray<PersonalModelRow>) => {
   let root: Root
   await act(async () => {
     root = createRoot(container)
-    root.render(createElement(PersonalModelProvider, { value: view }, createElement(PersonalModelSettings)))
+    root.render(createElement(PersonalModelProvider, { value: view }, createElement(PersonalModelSettings, { canSave })))
   })
   disposals.push(async () => {
     await act(async () => root.unmount())
@@ -157,4 +157,17 @@ test("a refused key shows the provider's host and status, and when", async () =>
   const tab = await section([{ ...SAVED, failureStatus: 429, failedAt: new Date(Date.now() - 120_000).toISOString() }])
   expect(tab.status().textContent).toMatch(/^api\.anthropic\.com refused · HTTP 429 · .+/)
   expect(tab.status().querySelector("time")).not.toBeNull()
+})
+
+test("someone who may no longer save one sees Remove alone while a model is saved, and nothing once it is gone", async () => {
+  const saved = await section([SAVED], false)
+  const region = saved.container.querySelector('section[aria-label="Your model"]')!
+  expect(region).not.toBeNull()
+  expect(region.querySelector("form")).toBeNull()
+  expect(region.querySelector("input")).toBeNull()
+  expect([...region.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["Remove"])
+  await act(async () => void region.querySelector("button")!.click())
+  expect(saved.pressed).toEqual(["remove"])
+  const none = await section([], false)
+  expect(none.container.innerHTML).toBe("")
 })
