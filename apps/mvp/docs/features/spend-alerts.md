@@ -1,6 +1,6 @@
 # Spend alerts
 
-Any model spend alerts the deployment's Admins, at most once a window: in the app, and by email and Telegram where an Admin set them. Will, 2026-10-19: "anybody using the app at all shoujld alert me because we have 0 users we will configure it as we grow" ([decision 0008](../decisions/0008-auth.md) §11, question 3); 2026-10-20, on where alerts go: "configurable but atm i think alerts to email make sense but telegram too would be useful". The alert carries the window's tokens and estimated cost by role, and today's tokens against the daily budget.
+Any model spend alerts the deployment's Admins, at most once a window: by email and Telegram where an Admin set them, and as an entry in the notifications panel (the bell), never a toast that takes page space. Will, 2026-10-19: "anybody using the app at all shoujld alert me because we have 0 users we will configure it as we grow" ([decision 0008](../decisions/0008-auth.md) §11, question 3); 2026-10-20, on where alerts go: "configurable but atm i think alerts to email make sense but telegram too would be useful". The alert carries the window's tokens and estimated cost by role, and today's tokens against the daily budget.
 
 ## How it works
 
@@ -11,7 +11,7 @@ POST /api/model/<role> ── admitted ──▶ start `ops/SpendAlert` for this
 FlowExecution (Durable Object) ── sleep until the window ends ── claim the ledger's uncarried calls, record one alert
                                                                              │ spend_alerts row, audience admin
 GET /api/shapes/spend-alerts ◀── Electric ◀──────────────────────────────────┤
-  └─▶ an Admin's devices ──▶ a toast in the shell's stack: "Model spend · agent · 12,340 tokens · $0.02"
+  └─▶ an Admin's devices ──▶ an entry in the notifications panel: "Model spend · agent · 12,340 tokens · $0.02"
                                                                              ▼
                                     ops/DeliverSpendAlert × { email, telegram } (one step per channel)
                                        │ alert_channels row? ── none ─▶ off
@@ -24,12 +24,12 @@ GET /api/shapes/alert-deliveries ◀── Electric ◀─┘ ──▶ Settings
 1. **Start.** When the model endpoint admits a call (its budget reservation succeeded), it starts its window's `ops/SpendAlert` through `FlowStarter` (`worker/ModelSpend.ts`). Windows are `MODEL_SPEND_ALERT_WINDOW` long, laid end to end from the epoch, so every call in a window starts the same execution, and starting it again is a no-op. Each isolate remembers the window it last started, so a burst costs one start per isolate. A start the host refuses is logged and counted (`not_started`), and the next call starts it again; the call itself goes on. A refused call (`401`, `403`, `429`) spends nothing and starts nothing. A server flow's own call (`ModelEndpoint.local`: a `todo` run's agent, triage's and a head's review's judge) starts it the same way, through the `FlowStarter` its `FlowExecution` object builds from the alarm it runs in (`Executions.starter`), so a window whose only spend is a TODO run still alerts.
 2. **Wait.** The flow sleeps on a durable timer until the window ends (`ops/SpendAlertIn`, sealed, on the host's clock).
 3. **Record.** `ops/RecordSpendAlert`, in one transaction, claims every `model_usage` row made before the window's end that no alert has carried (`spend_alert_id`), and records one `spend_alerts` row with their calls, tokens charged, and estimated cost, in total and by role, plus today's committed tokens and the budget. A call still running counts at its reservation. A window whose calls an earlier alert carried records nothing (`none`). Run again, the step returns the alert it recorded and claims nothing more. Postgres failing fails the step, which retries without giving up.
-4. **Deliver.** `GET /api/shapes/spend-alerts` syncs every alert to a person with the Admin role and to nobody else: a Member, a Guest, an agent acting for an Admin and a signed-out request receive 403 without contacting Electric. An Admin's tab shows each alert it hasn't hidden as a toast, newest first, after the feed's toasts in the shell's one stack (`src/screens/app/Toasts.tsx`). Hide marks that alert and every earlier one seen on that device, kept through a reload; a later alert still shows.
+4. **Deliver.** `GET /api/shapes/spend-alerts` syncs every alert to a person with the Admin role and to nobody else: a Member, a Guest, an agent acting for an Admin and a signed-out request receive 403 without contacting Electric. An Admin's bell counts each alert it hasn't hidden, and the notifications panel shows it newest first. Spend alerts never appear as in-app toasts or reserve page space. Hide marks that alert and every earlier one seen on that device, kept through a reload; a later alert still shows.
 5. **Send.** Once the alert is recorded, `ops/DeliverSpendAlert` runs once per channel, email and Telegram, as its own step. Each sends to the destinations an Admin set ([Channels](#channels)) and records a receipt.
 
 Cost is `Pricing.cost` from `@smthrs/model`: the rate card of the call's model, or the provider's own charge when it reported one. A call's charge beyond what the model reported (a reservation it kept because its usage is unknown) is priced as output, the dearer kind. A model the rate card doesn't price has no cost, and neither has its role or the alert; its tokens still count.
 
-The alert is a durable record. Decision 0009's feed can route each row to Admins' notifications once it carries a spend kind ([notifications](notifications.md)); until then the row, its toast and the channels below are the delivery.
+The alert is a durable record delivered through the bell and the configured channels below.
 
 ## Channels
 
@@ -44,7 +44,7 @@ Settings ── Save ──▶ alert/channel { channel, destinations }      (the
 - **Who:** an Admin acting in person. An agent, flow or sandbox acting for them is refused `403 person_only` (`alert/channel` is person-only in the registry); any other role `403 forbidden`; signed out `401`.
 - **Email:** 1 to 10 addresses, one `@` and a dotted domain each, separated by commas or spaces. **Telegram:** one chat id: a person's or a group's number, a supergroup's `-100…`, or a public channel's `@username`. The fields check the same rules before Save (`type="email" multiple`, and a `pattern`); the route checks them again with `@smthrs/notifications`' `isEmailAddress` and `isTelegramChatId` (`400 invalid_destination`). Blanks and repeats are dropped.
 - **The link:** each message links to the deployment’s configured `ALERT_APP_URL`, independently of the origin the Admin saved from.
-- **The message:** short. The subject is the toast's words, `Model spend · 12,340 tokens · $0.02`; the text is the window (`15:00–15:15 UTC, 2026-10-20`), the three roles that spent most (`agent 12,000 · judge 340`) and the link. Telegram gets both as one plain-text message, link previews off.
+- **The message:** short. The subject is the notification's words, `Model spend · 12,340 tokens · $0.02`; the text is the window (`15:00–15:15 UTC, 2026-10-20`), the three roles that spent most (`agent 12,000 · judge 340`) and the link. Telegram gets both as one plain-text message, link previews off.
 - **Saving:** HTTP 408 and 429, network failures and server failures retry durably for up to an hour; other 4xx responses are final. The Save button's flow runs at once on the tab's engine; `Saving` shows beside the button until it lands, and `Not saved` if ChatApi refused it, until the next Save.
 - **Editing:** a synced channel update preserves the field's unsaved destinations and focus; untouched fields follow the synced setting.
 
@@ -108,7 +108,7 @@ Blocking a network and pausing asking without a deploy are not built ([todo.md](
 | `worker/SpendAlerts.ts` | `GET /api/shapes/spend-alerts`, Admins only |
 | `worker/ModelEndpoint.ts` | calls `ModelSpend.record` when a call ends and the alert start when one is admitted |
 | `db/migrations/0019_spend_alerts.ts` | `spend_alerts`, and `model_usage.spend_alert_id` |
-| `src/features/spend/` | the browser: the synced alerts, the device's mark, the toasts and Hide; the channels, their receipts and `alert/channel` (`flows.ts`, `steps.ts`, `api.ts`) |
+| `src/features/spend/` | the browser: the synced alerts, the device's mark, the panel entries and Hide; the channels, their receipts and `alert/channel` (`flows.ts`, `steps.ts`, `api.ts`) |
 | `worker/AlertChannels.ts` | `POST /api/alert-channels`, the channels' and receipts' shapes, and the providers from the environment (`channelsConfig`) |
 | `src/features/spend/components/AlertSettings.tsx`, `src/screens/settings/` | Settings: the two fields, Save, and the receipts |
 | `db/migrations/0029_alert_channels.ts` | `alert_channels` and `alert_deliveries` |
@@ -132,7 +132,7 @@ Blocking a network and pausing asking without a deploy are not built ([todo.md](
 | `worker/flows/SpendAlert.test.ts` | on the Node host: waits for the window to end, then one alert with each role's calls, tokens and cost, carrying only uncarried calls from before the window's end; an unpriced model; a step run again; a window with nothing to carry; its records; Postgres failing |
 | `worker/ExecutionHost.test.ts` "the deployed flows run ops/SpendAlert" | the deployed host's flows include it: a model call starts it, its alarms wait out the window, and it records the alert |
 | `worker/SpendAlerts.test.ts` | a model call starts the alert, the flow records it, and the compose Electric syncs it to an Admin; a Member, an agent for an Admin and a signed-out request receive 403 without contacting Electric; sessions unreadable is 503 |
-| `src/features/spend/spend.test.ts` | an Admin's tab shows alerts newest first, Hide marks earlier ones seen, kept through a reload, another device unaffected; a Member's tab syncs none; server-side demotion hides retained alerts, settings and receipts through reload; independent deployments at one origin; the toast's words |
+| `src/features/spend/spend.test.ts` | an Admin's tab shows alerts newest first, Hide marks earlier ones seen, kept through a reload, another device unaffected; a Member's tab syncs none; server-side demotion hides retained alerts, settings and receipts through reload; independent deployments at one origin; the notification's words |
 | `src/features/spend/source.test.ts` | permission checks preserve the source's replay-cache namespace, including its absence |
 | `db/Database.test.ts` "0019_spend_alerts" | earlier calls are marked carried; the table's bounds |
 | `packages/smithers/notifications/test/Channels.test.ts` | Resend's and the Bot API's requests against a server on loopback; every status classified once; `Retry-After` and `retry_after`; no redirect followed; the key and the token in no failure or span; unreachable and timeout by an injected `fetch`; destinations and messages checked before any request (100% coverage) |

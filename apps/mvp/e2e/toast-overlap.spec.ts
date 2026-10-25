@@ -38,7 +38,7 @@ for (const width of [1280, 390]) {
       await page.goto(`/app/flows/code/${name}`)
       const stack = page.getByRole("region", { name: "Smithers", exact: true })
       await expect(stack.locator('[data-slot="toast"]')).toHaveCount(3, { timeout: 30_000 })
-      await expect(stack.getByRole("button", { name: /^\+\d+$/ })).toBeVisible()
+      await expect(stack.getByRole("button", { name: /^\+\d+$/ })).toHaveCount(0)
       const code = page.getByRole("textbox", { name: "Code", exact: true })
       await expect(code).toHaveValue(source)
       await code.fill(`${source}\n`)

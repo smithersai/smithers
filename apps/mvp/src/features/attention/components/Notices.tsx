@@ -6,34 +6,23 @@ import { TRY_AGAIN } from "../../repo/contract"
 import type { Entry } from "../schema"
 import { useAttention } from "./AttentionContext"
 
-// The feed's toasts (decision 0009 §4), most urgent first: needs you, failed, live, done, updates. Clicking a toast
-// opens what it is about; `+N` counts the rest of the person's list and opens the notifications panel. Over a
-// conversation (`surface="conversation"`), that conversation's own runs show in it instead, unless they need the
-// person. A toast's × hides it and keeps the entry. Every toast fades in after 300 ms, so one gone at once never
-// flashes. A focused toast takes the notice keys (`@smthrs/ui` `NOTICE_KEYS`).
-
-/** The feed's toasts, how many more entries the person has, and `+N`'s open, for the stack a screen renders. */
+// Current notices reserve space; older and overflow entries stay in the bell.
 export function useNotices(surface: Surface): {
   readonly toasts: ReadonlyArray<ReactElement>
-  readonly moreCount: number
-  readonly onMore: () => void
 } {
-  const { queries, actions } = useAttention()
+  const { queries } = useAttention()
   const { data: stack } = useLiveQuery(surface === "conversation" ? queries.stackHere : queries.stack)
-  const { data: list } = useLiveQuery(surface === "conversation" ? queries.listHere : queries.list)
   return {
     toasts: stack.map((entry) => <Notice key={`${entry.id}:${entry.version}`} entry={entry} surface={surface} />),
-    moreCount: list.length,
-    onMore: () => actions.openPanel("more"),
   }
 }
 
 /** The stack on a page with nothing else to show: the feed alone. */
 export function Notices({ surface, placement }: { readonly surface: Surface; readonly placement: "fixed" | "inline" }) {
-  const { toasts, moreCount, onMore } = useNotices(surface)
+  const { toasts } = useNotices(surface)
   return (
-    <ToastStack label="Smithers" placement={placement} moreCount={moreCount} onMore={onMore}>
-      {toasts}
+    <ToastStack label="Smithers" placement={placement}>
+      {toasts.slice(0, 3)}
     </ToastStack>
   )
 }

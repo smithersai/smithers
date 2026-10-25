@@ -1,6 +1,6 @@
 import type { AlertDelivery, SpendAlert } from "./schema"
 
-// What a spend alert's toast says (docs/features/spend-alerts.md): its word, then the window's tokens and estimated
+// What a spend alert's notification says (docs/features/spend-alerts.md): its word, then the window's tokens and estimated
 // cost, with the role when one role spent, or each role's tokens when several did.
 
 /** The toast's word, in place of its state's. */

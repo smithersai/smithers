@@ -8,7 +8,7 @@ import { AlertChannel, AlertDelivery, ChannelSave, Seen, SpendAlert } from "./sc
 import { adminShapeSource } from "./source"
 
 // Spend alerts on this tab (docs/features/spend-alerts.md): the deployment's model spend alerts, which only an Admin's
-// devices sync, kept on the device; this device's mark of what it has seen; and the live query the toasts read. While
+// devices sync, kept on the device; this device's mark of what it has seen; and the live query the bell and panel read. While
 // the store lives, each alert the tab shows is a log line and a count, once.
 
 /** Alerts a tab showed, one count per alert per tab. */

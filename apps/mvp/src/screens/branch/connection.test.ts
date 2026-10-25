@@ -1,3 +1,4 @@
+import { Spend } from "../../features/spend/spend"
 import { renderConnection } from "./connection-render"
 // The repository header on the branch page, rendered with the real app layers over the compose Postgres/Electric.
 // The host reports offline, as navigator.onLine does; the collections, queries and components remain real.
@@ -22,8 +23,8 @@ afterEach(async () => {
 test("a branch page announces Offline and the queued count, then clears on reconnection", async () => {
   const runtime = openTestApp({ host: nodeDevice({ isOnline: () => false }) })
   disposables.push(() => runtime.dispose())
-  const [chat, store, repo, attention, api, auth] = await runtime.runPromise(
-    Effect.all([Effect.service(Chat), Effect.service(ChatStore), Effect.service(Repo), Effect.service(Attention), Effect.service(TestChatApi), Effect.service(Auth)]),
+  const [chat, store, repo, attention, api, auth, spend] = await runtime.runPromise(
+    Effect.all([Effect.service(Chat), Effect.service(ChatStore), Effect.service(Repo), Effect.service(Attention), Effect.service(TestChatApi), Effect.service(Auth), Effect.service(Spend)]),
   )
   repo.actions.openRoute("tree", { owner: "octo", repo: "hello", ref: "main" }, {})
   for (const query of [repo.queries.view, chat.queries.connection, chat.queries.queued, chat.queries.place,
@@ -33,7 +34,7 @@ test("a branch page announces Offline and the queued count, then clears on recon
   const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/tree/$ref", component: RepoHeader })
   const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: ["/octo/hello/tree/main"] }) })
   await router.load()
-  const render = () => renderConnection(router, { chat, repo, attention, auth })
+  const render = () => renderConnection(router, { chat, repo, attention, auth, spend })
   const connection = () => render().match(/<div[^>]*aria-label="Connection"[^>]*>(.*?)<\/div>/s)?.[1]
 
   expect(connection()).toContain("Offline")

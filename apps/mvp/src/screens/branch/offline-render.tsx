@@ -1,3 +1,6 @@
+import { SpendAlertEntries } from "../../features/spend/components/SpendAlertEntries"
+import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
+import { Notices } from "../../features/attention/components/Notices"
 import { FilesProvider } from "../../features/files/components/FilesContext"
 import { createElement, type ComponentProps, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -29,7 +32,7 @@ type Services = {
   commands: ComponentProps<typeof CommandsProvider>["value"]
   theme: ComponentProps<typeof ThemeProvider>["value"]
   terminal: ComponentProps<typeof TerminalProvider>["value"]
-  attention: ComponentProps<typeof AttentionProvider>["value"]
+  attention: NonNullable<ComponentProps<typeof AttentionProvider>["value"]>
   spend: ComponentProps<typeof SpendProvider>["value"]
   personalModel: ComponentProps<typeof PersonalModelProvider>["value"]
 }
@@ -48,3 +51,12 @@ export const wrapBranch = ({ files, chat, auth, repo, branch, intel, status, com
 export const branchRenderer = (services: Services) => (router: ComponentProps<typeof RouterProvider>["router"]) =>
   renderToStaticMarkup(wrapBranch(services)(createElement(RouterProvider, { router })))
 export const DeniedBranchHeader = () => createElement(BranchHeader, { access: "none" })
+
+export const renderNoticeHistory = (services: Services) => {
+  const wrap = wrapBranch(services)
+  return {
+    notices: renderToStaticMarkup(wrap(<Notices surface="conversation" placement="inline" />)),
+    spendEntries: renderToStaticMarkup(wrap(<SpendAlertEntries expanded={null} onExpand={services.attention.actions.expand} />)),
+    bell: renderToStaticMarkup(wrap(<NotificationsBell />)),
+  }
+}

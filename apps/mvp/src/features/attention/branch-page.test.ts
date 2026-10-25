@@ -19,12 +19,12 @@ import { Status } from "../status/status"
 import { Terminal } from "../terminal/terminal"
 import { Theme } from "../theme/theme"
 import { BranchScreen } from "../../screens/branch/BranchScreen"
-import { branchRenderer } from "../../screens/branch/offline-render"
+import { branchRenderer, renderNoticeHistory } from "../../screens/branch/offline-render"
 import { Todos } from "../todos/todos"
 import { Attention } from "./attention"
 
 test("a branch page renders its shared inline toast stack below the header", async () => {
-  const runtime = openTestApp({ answers: false })
+  const runtime = openTestApp({ answers: false }, { actor: { subject: { kind: "person", id: "person-member" }, role: "admin" } })
   try {
     const [api, attention, branch, repo, intel, spend, chat, auth, status, commands, theme, terminal, todos] =
       await runtime.runPromise(Effect.all([
@@ -52,6 +52,28 @@ test("a branch page renders its shared inline toast stack below the header", asy
     expect(router.state.matches.map((match) => match.routeId)).toContain(route.id)
     const personalModel = await runtime.runPromise(Effect.service(PersonalModel))
     const html = branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos })(router)
+    const services = { files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos }
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.all([
+      sql`INSERT INTO notifications (recipient, subject, kind, state, mine, title, href, occurred_at, updated_at)
+        SELECT 'person-member', 'main:overflow:' || n, 'main', 'update', false, 'Old update', '/acme/widgets', now() - interval '1 day', now() - interval '1 day'
+        FROM generate_series(1, 283) AS n`,
+      sql`INSERT INTO spend_alerts (id, window_start, window_end, calls, tokens, roles, day_tokens, budget)
+        VALUES ('panel-spend', now() - interval '1 minute', now(), 1, 100, '[]', 100, 1000)`,
+    ]))))
+    spend.queries.open.startSyncImmediate()
+    attention.queries.unread.startSyncImmediate()
+    await vi.waitFor(() => {
+      expect(attention.queries.listHere.toArray.length).toBeGreaterThanOrEqual(283)
+      expect(spend.queries.open.toArray).toHaveLength(1)
+    }, { timeout: 60_000 })
+    // Old unread entries remain reachable from the bell without an overflow row above content.
+    const history = renderNoticeHistory(services)
+    expect.soft(history.notices).not.toMatch(/>\+\d+</)
+    const current = branchRenderer(services)(router)
+    expect.soft(current).not.toContain('data-alert="panel-spend"')
+    expect(history.spendEntries).toContain('data-alert="panel-spend"')
+    expect(history.spendEntries).not.toContain('data-slot="toast"')
+    expect(history.bell).toContain('285 unread')
     expect(html).toContain('class="branch-screen"')
     expect(html).toContain('data-placement="inline"')
     expect(html).toContain(`data-subject="${subject}"`)

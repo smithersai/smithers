@@ -1,3 +1,4 @@
+import { SpendAlertEntries } from "../../spend/components/SpendAlertEntries"
 import { Button, NeedsYouCard, NotificationEntry, NotificationPanel, RelativeTime } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useRouterState } from "@tanstack/react-router"
@@ -24,6 +25,7 @@ export function NotificationsPanel() {
       onOpenChange={(open) => (open ? actions.openPanel("key") : actions.closePanel())}
       focus={panel?.focus}
     >
+      <SpendAlertEntries expanded={panel?.expanded ?? null} onExpand={actions.expand} />
       {feed.map((entry) => (
         <Notification
           key={entry.id}

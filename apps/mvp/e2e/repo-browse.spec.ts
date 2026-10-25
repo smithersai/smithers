@@ -110,7 +110,7 @@ test.describe("cloned repositories", () => {
       if (shown !== null) expect(shown).toContain(`Clone · octocat/${name}`)
       // It stopped: the header says why, with Try again, and the entry stays in the person's list.
       await expect(stopped).toBeVisible({ timeout: 60_000 })
-      await page.getByRole("region", { name: "Smithers" }).getByRole("button", { name: /^\+\d+$/ }).click()
+      await page.getByRole("button", { name: /^Notifications/ }).click()
       const entry = page.locator(`li[data-entry="${subject}"]`)
       await expect(entry).toContainText(`Clone · octocat/${name} · Not found`, { timeout: 30_000 })
       await entry.getByRole("button", { name: new RegExp(`Clone · octocat/${name}`) }).click()

@@ -1,6 +1,6 @@
 # Notifications
 
-Your feed: what needs you, what finished, what failed, live work on the branches you're on, and your repositories' `main` moving and new releases. It reads the one run index (`runs`), keeps one row per person per subject in Postgres, and shows on every device you have open: the toast stack, and the notifications panel, which the header's bell, `+N` and Alt+N open. Read, Hide and Dismiss on one device reach the others. Decision: [0009](../decisions/0009-notifications-and-live-work.md), slice 1; Will's rulings in its §8: toasts follow the scope you're in, so you see other people's runs on your branch, and `main` changing and a new release belong to the repository.
+Your feed: what needs you, what finished, what failed, live work on the branches you're on, and your repositories' `main` moving and new releases. It reads the one run index (`runs`), keeps one row per person per subject in Postgres, and shows on every device you have open: the toast stack, and the notifications panel, which the header's bell and Alt+N open. Read, Hide and Dismiss on one device reach the others. Decision: [0009](../decisions/0009-notifications-and-live-work.md), slice 1; Will's rulings in its §8: toasts follow the scope you're in, so you see other people's runs on your branch, and `main` changing and a new release belong to the repository.
 
 ```
 run report (worker/Runs.ts) ── one transaction ──▶ runs ─▶ foldRun ─▶ notifications (launcher + branch watchers)
@@ -34,8 +34,8 @@ notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ ever
 | someone else's run | `◌ Working · <who> · <question>`, then 4 s after it settles | none |
 | `main`, a release | 4 s | 7 days; expanded, who pushed or published |
 
-- **Over a conversation**, its own runs show in it instead of as toasts, unless they need you. `/app` and branch pages place the same stack under their headers beside the spend alerts (`src/screens/app/Toasts.tsx`), above their composers. Every other page reserves space for the stack above its screen (`src/screens/root/Root.tsx`, `PageNotices`; [0036](../decisions/0036-toasts-reserve-page-space.md)).
-- **Order:** needs you, failed, live, done, updates; the newest first within each. Three toasts show; `+N` counts the rest and your list, and opens the panel.
+- **Over a conversation**, its own runs show in it instead of as toasts, unless they need you. `/app` and branch pages place the same stack under their headers (`src/screens/app/Toasts.tsx`), above their composers. Every other page reserves space for the stack above its screen (`src/screens/root/Root.tsx`, `PageNotices`; [0036](../decisions/0036-toasts-reserve-page-space.md)).
+- **Order:** needs you, failed, live, done, updates; the newest first within each. At most three current toasts show. Older entries and overflow stay in the bell; no overflow counter reserves page space. Spend alerts appear only in the panel and configured email/Telegram channels.
 - **Clicking a toast** opens what it is about: a run's conversation at its answer (`<href>#<run id>`, which the router scrolls into view), or your question's card, which takes focus; `main`, the repository; a release, its tag.
 - **×** hides a toast (the entry stays in your list); in the panel, × dismisses a settled entry and hides a live one.
 - **Unread** entries carry a dot, and the bell counts them. Opening, expanding and Answer record Read.
@@ -57,7 +57,7 @@ The top bar's bell (`NotificationsBell`, `@smthrs/ui` `NotificationBell`) is the
 | your failed run | why (`Rate limited`, `Model error`, `No answer`, `Stopped`, `Unfinished`); Retry in the conversation the tab shows, which asks the question again there and dismisses the entry |
 | `main`, a release | who pushed or published |
 
-The top bar's bell, `+N`, a toast's E and Alt+N open it; Escape, × and a click outside close it, giving focus back. The panel is the tab's own (`attention-panel`); what it shows is the synced rows.
+The top bar's bell, a toast's E and Alt+N open it; Escape, × and a click outside close it, giving focus back. The panel is the tab's own (`attention-panel`); what it shows is the synced rows.
 
 ## Keys
 
@@ -116,7 +116,7 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 | `notifications` | your rows, an Electric collection kept on the device (`persist: { schemaVersion: 1 }`) |
 | `attention-pending` | Read, Dismiss and Hide held until the synced rows show them; an act that cannot land is removed |
 | `attention-entries` | what the views read, worked out by `feedOf` (`entries.ts`, pure) from the rows, the pending acts, the clock and the conversation the tab shows; again when a toast is due to hide |
-| `stack`, `stackHere`, `list`, `listHere` | the toasts and the rest of your list, which `+N` counts, on a page and over a conversation |
+| `stack`, `stackHere`, `list`, `listHere` | the current toasts and the rest of your list, on a page and over a conversation |
 | `attention-panel` | the panel on this tab: open, the entry expanded, the entry to focus, A's focus requests |
 | `attention-details` | the expanded entry's detail (`detailOf`), worked out again when the entry, its answer, its run row or the tab's draft changes, including changes to the expanded entry's branch conversation |
 | `feed`, `unread`, `needs`, `panel`, `detail` | the panel's entries newest first, the bell's counts, the panel, the detail |
@@ -126,7 +126,7 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 
 A Read, Dismiss or Hide that cannot land leaves the device, so its entry shows the synced state and the person can act again. The device records `notifications.pending` and increments `smithers_notification_acts_dropped`, by `act` and `reason` (the failure tag). A press after one that failed runs again rather than joining the failed run; ChatApi merges acts with `greatest()`, so an act sent twice changes nothing. An act whose tab closed before the engine took it stays on the device until the notification's next version or its synced row replaces it.
 
-The views are `@smthrs/ui`'s `ToastStack` (`onMore`, `moreCount`), `Toast` (`tone="update"`, `word`, `unread`, `hideLabel`, `onOpen`, `onExpand`, `onAnswer`, `onRead`), `NotificationPanel`, `NotificationEntry`, `NotificationBell` and `NeedsYouCard`, with `noticeDismissDelay`, `workNoticeVisible` and `NOTICE_KEYS`. Agent status keeps the header's pill, the card and the tab's title; its toast is the feed's.
+The views are `@smthrs/ui`'s `ToastStack` (at most three children), `Toast` (`tone="update"`, `word`, `unread`, `hideLabel`, `onOpen`, `onExpand`, `onAnswer`, `onRead`), `NotificationPanel`, `NotificationEntry`, `NotificationBell` and `NeedsYouCard`, with `noticeDismissDelay`, `workNoticeVisible` and `NOTICE_KEYS`. Agent status keeps the header's pill, the card and the tab's title; its toast is the feed's.
 
 ## Observability
 
@@ -159,11 +159,13 @@ No record carries a title, a question, a commit message or who pushed (the tests
 | `src/features/attention/entries.test.ts` | `feedOf`: every toast and list rule, pending acts, words, order, the panel's time; `timeOf`, `landed`, `follows` |
 | `src/features/attention/detail.test.ts` | `detailOf`: steps, notes, questions and Retry for every state; `surfaceOf` |
 | `src/features/attention/attention.test.ts` | Two people on Node devices: Ann's run on both her devices and Ben's; Read, Hide and Dismiss across her devices; done hiding after 4 s; an act a device can't send; watching per conversation and per sign-in. The panel: newest first, unread count, reads, answers, Open and Retry; an isolated branch-message update refreshes its expanded detail; close watch emissions launch once, failed launches and flows release the watch; clone Retry returns before admission and records its real outcome |
-| `src/features/attention/branch-page.test.ts` | The real branch screen and shared inline stack, rendered over real app queries and a synced clone failure |
+| `src/features/attention/branch-page.test.ts` | The real branch screen and shared inline stack, rendered over real app queries and a synced clone failure; 283 older unread notices and a spend alert stay in the bell, without an overflow row or spend toast |
 | `src/features/attention/api.test.ts` | `AttentionClient`'s answers and the steps' outcomes |
 | `worker/flows/Expire.test.ts` | An abandoned answer's run fails, and its launcher's row says so |
 | `@smthrs/notifications` `test/Inbox.test.ts`, `@smthrs/ui` `tests/agent-status-notices.test.tsx`, `tests/notification-panel.test.tsx` | `Inbox`; the notices, `Toast`, `ToastStack`, the panel, its entries, the bell and every key |
-| `e2e/notifications.spec.ts` | In real browsers: Ann on two devices, Ben on one; Ben sees Ann's run on `main` from the Runs page and clicks its toast to her run; Alt+T and H hide her toast on both her devices; she expands it in the panel and answers there with A; Alt+N, R, E and O on her second device; `+1` and Dismiss; `main` and a release reach both people, expanded with who pushed (needs `E2E_GITHUB_WEBHOOK_SECRET`) |
+| `tests/NotificationBacklog.test.ts`, `tests/AlertSettings.test.ts` | Backlog renders no inline overflow, current notices cap at three, and spend entries expand and hide in the panel |
+| `e2e/notification-overflow.spec.ts` | Desktop and phone repository headers stay at the top with unread history: real API-created entries locally, existing account history on a deployment (`E2E_SYNCED_REPOSITORY`) |
+| `e2e/notifications.spec.ts` | In real browsers: Ann on two devices, Ben on one; Ben sees Ann's run on `main` from the Runs page and clicks its toast to her run; Alt+T and H hide her toast on both her devices; she expands it in the panel and answers there with A; Alt+N, R, E and O on her second device; the bell and Dismiss; `main` and a release reach both people, expanded with who pushed (needs `E2E_GITHUB_WEBHOOK_SECRET`) |
 
 Two people locally: `worker/DevChatApi.ts` signs in a browser with the cookie `smithers_dev_person=teammate` as `local-teammate`, a Member (`devices.openTeammate`).
 

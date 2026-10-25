@@ -5,7 +5,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { SpendStore } from "./store"
 
 // Spend alerts as a frontend sees them (docs/features/spend-alerts.md): a live query to read and a plain function to
-// act, with no Effect in sight. The toast stack reads `open`.
+// act, with no Effect in sight. The bell and notifications panel read `open`.
 
 type Store = SpendStore["Service"]
 

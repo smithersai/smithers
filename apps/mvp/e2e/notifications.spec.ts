@@ -146,10 +146,10 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
   await expect(panel(a2)).toHaveCount(0)
   await expect(a2.page).toHaveURL(new RegExp(`/app#${answerId}$`))
 
-  // Ann: `+1` opens her notifications too; Dismiss closes the entry on both devices.
+  // Ann: the bell opens her notifications; Dismiss closes the entry on both devices.
   await expect(async () => {
     if (await panel(a1).isVisible()) await a1.page.keyboard.press("Escape")
-    await stack(a1).getByRole("button", { name: /^\+\d+$/ }).click({ timeout: 2_000 })
+    await bell(a1).click({ timeout: 2_000 })
     await notification(a1, subject).getByRole("button", { name: "Dismiss" }).click({ timeout: 2_000 })
   }).toPass({ timeout: SYNCED_WITHIN, intervals: [250, 500, 1_000] })
   for (const tab of [a1, a2]) {

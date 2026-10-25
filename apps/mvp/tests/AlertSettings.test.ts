@@ -4,6 +4,7 @@ import { Effect, Exit, Scope } from "effect"
 import { act, createElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { afterEach, expect, test } from "vitest"
+import { SpendAlertEntries } from "../src/features/spend/components/SpendAlertEntries"
 import { AlertSettings } from "../src/features/spend/components/AlertSettings"
 import { SpendProvider } from "../src/features/spend/components/SpendContext"
 import { channelsQuery, deliveriesQuery, openQuery, savesQuery } from "../src/features/spend/queries"
@@ -18,7 +19,7 @@ afterEach(async () => {
   for (const dispose of disposals.splice(0).reverse()) await dispose()
 })
 
-const settings = async (initial: ReadonlyArray<AlertChannel>) => {
+const settings = async (initial: ReadonlyArray<AlertChannel>, showAlerts = false) => {
   const scope = Effect.runSync(Scope.make())
   disposals.push(() => Effect.runPromise(Scope.close(scope, Exit.void)))
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
@@ -40,14 +41,16 @@ const settings = async (initial: ReadonlyArray<AlertChannel>) => {
       saves: (yield* savesQuery(saves)).tanstack,
       open: (yield* openQuery(alerts, seen)).tanstack,
     }
-    return { channels, queries }
+    return { channels, alerts, queries }
   })))
   // The view's output boundary: keep the submitted command, so assertions check what Save actually receives.
   const submitted: Array<{ channel: string; destinations: ReadonlyArray<string> }> = []
+  const hidden: Array<string> = []
+  const expanded: Array<string> = []
   const view: SpendView = {
     queries: rows.queries,
     actions: {
-      hide: () => { throw new Error("Settings has no Hide action") },
+      hide: (id) => { hidden.push(id) },
       setChannel: (channel, destinations) => { submitted.push({ channel, destinations }) },
     },
   }
@@ -56,13 +59,13 @@ const settings = async (initial: ReadonlyArray<AlertChannel>) => {
   let root: Root
   await act(async () => {
     root = createRoot(container)
-    root.render(createElement(SpendProvider, { value: view }, createElement(AlertSettings)))
+    root.render(createElement(SpendProvider, { value: view }, showAlerts ? createElement(SpendAlertEntries, { expanded: null, onExpand: (id: string) => { expanded.push(id) } }) : createElement(AlertSettings)))
   })
   disposals.push(async () => {
     await act(async () => root.unmount())
     container.remove()
   })
-  return { ...rows, run, container, submitted }
+  return { ...rows, run, container, submitted, hidden, expanded }
 }
 
 test.each([
@@ -107,4 +110,26 @@ test.each([
     }))
   })
   expect(input().value).toBe(after.join(","))
+})
+
+
+test("spend backlog renders panel entries, never page-space toasts", async () => {
+  const tab = await settings([], true)
+  await act(async () => {
+    for (let i = 0; i < 283; i++) await tab.run(tab.alerts.insert({
+      id: `alert-${i}`, kind: "model", windowStart: "2026-10-25T00:00:00Z",
+      windowEnd: "2026-10-25T00:15:00Z", createdAt: "2026-10-25T00:15:00Z",
+      calls: 1, tokens: 12340, costUsd: 0.02, roles: [], dayTokens: 12340, budget: 100000,
+    }))
+  })
+  expect(tab.container.querySelectorAll('[data-slot="notification"]')).toHaveLength(283)
+  expect(tab.container.querySelectorAll('[data-slot="toast"]')).toHaveLength(0)
+  expect(tab.container.textContent).toContain("Model spend")
+  const first = tab.container.querySelector('[data-slot="notification"]')!
+  await act(async () => {
+    first.querySelector<HTMLButtonElement>('[data-slot="notification-row"]')!.click()
+  })
+  expect(tab.expanded).toEqual([first.getAttribute("data-entry")])
+  await act(async () => { first.querySelector<HTMLButtonElement>('button[aria-label="Hide"]')!.click() })
+  expect(tab.hidden).toEqual([first.getAttribute("data-entry")])
 })
