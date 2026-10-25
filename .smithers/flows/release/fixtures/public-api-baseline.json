@@ -11473,6 +11473,8 @@
         "WorkspaceDeclaration.d.ts": "54797d539a26bda13d6d9c7ceba29c91dbee2cddac049aaebb563c853a260bce",
         "index.d.ts": "a08c7b18d4568771446e3f4e56702a9033fef1091877627ffab16c443436b1eb",
         "internal/PrivateStore.d.ts": "12a4c46e9edc0011641ba80a9bb239bbe43f322aa704a6da8c709ac50a77a896",
+        "internal/Process.d.ts": "ac93d16ba08606ac0a54c2b16de1a69535adc8eeb7fad0d746ceb2053484e947",
+        "internal/PublicationFileSystem.d.ts": "e540c9aab254a3506d2215ee26283be8f7b93d706f975184bbb2e2a193f1104c",
         "internal/ReviewBatches.d.ts": "b4b0c18ecc23997e9d7e019404e1ad29898af52b98bfa04c53f30b021e2fa662",
         "internal/ReviewModel.d.ts": "ad0af7b0602627a437d6ddcf13c5db1ba56d37281f104df3c1fcad8d98196c16"
       }
