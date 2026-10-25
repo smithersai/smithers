@@ -4,8 +4,9 @@
 // ElectricGateway without vibelang-unplugin and failed on @smthrs/errors' .vibe source, while every hand-made bundle
 // in the tests passed. patches/alchemy@2.0.0-beta.83.patch hands hasChanged the Worker's own build options.
 import { NodeServices } from "@effect/platform-node"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Stream } from "effect"
 import { readFileSync, realpathSync } from "node:fs"
+import { spawnSync } from "node:child_process"
 import { join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, expect, test } from "vitest"
@@ -26,6 +27,7 @@ interface WorkerProps {
 /** What this test reads of Alchemy's internals; Alchemy's export map doesn't publish them. */
 interface Bundler {
   readonly build: (options: Record<string, unknown>) => Effect.Effect<unknown, unknown>
+  readonly watch: (options: Record<string, unknown>) => Stream.Stream<{ readonly _tag: string }, unknown>
 }
 const internals = async () => ({
   WorkerBundle: (await import(pathToFileURL(join(ALCHEMY, "lib", "Cloudflare", "Workers", "Sources", "Rolldown.js")).href))
@@ -65,6 +67,41 @@ describe("the Workers alchemy plan bundles", () => {
     const exit = await bundle(id, props, props.build)
     expect(Exit.isSuccess(exit), Exit.isFailure(exit) ? String(exit.cause) : "").toBe(true)
   }, 120_000)
+
+  test("local diff and reconcile preserve build plugins before the developer Worker watcher compiles .vibe", async () => {
+    const localProvider = readFileSync(join(ALCHEMY, "lib", "Local", "LocalProvider.js"), "utf8")
+    expect(localProvider).toContain("news: { ...news, build: rawNews.build }")
+    expect(localProvider).toContain("news: { ...stripEffects(news), build: news.build }")
+    const { WorkerBundle } = await internals()
+    const rpc = await import(pathToFileURL(join(ALCHEMY, "lib", "Local", "RpcSerialization.js")).href)
+    const echo = rpc.unwrapRpcHandlers(rpc.wrapRpcHandlers({ echo: (value: unknown) => Effect.succeed(value) }))
+    const build = await Effect.runPromise(echo.echo(ChatApi.props.build))
+    const props = { ...ChatApi.props, main: "worker/DevChatApi.ts", build }
+    const program = Effect.gen(function* () {
+      const bundler = yield* WorkerBundle
+      return yield* bundler.watch({
+        id: "ChatApi",
+        main: props.main,
+        compatibility: props.compatibility,
+        entry: { kind: "effect", exports: {} },
+        stack: { name: "smithers-mvp", stage: "test" },
+        extraOptions: props.build,
+      }).pipe(Stream.filter((event) => event._tag !== "Start"), Stream.take(1), Stream.runCollect)
+    })
+    const events = await Effect.runPromise(program.pipe(Effect.provide(NodeServices.layer)))
+    expect(events).toHaveLength(1)
+    expect(events[0]._tag).toBe("Success")
+  }, 120_000)
+
+  test("Playwright lists browser tests with VibeLang's loader and source maps", () => {
+    const result = spawnSync(process.execPath, [
+      join(MVP, "node_modules", "@playwright", "test", "cli.js"),
+      "test", "slash-commands.spec.ts", "--list",
+    ], { cwd: MVP, encoding: "utf8", env: { ...process.env, BASE_URL: "https://localhost:1443", E2E_TARGET: "local" } })
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout).toContain("slash-commands.spec.ts")
+    expect(result.stdout).not.toContain("Total: 0 tests")
+  }, 30_000)
 
   // Alchemy's own stripped props: fails while the upstream bug stands. When this starts passing, Alchemy keeps build
   // plugins through stripEffects, and the patch can go.

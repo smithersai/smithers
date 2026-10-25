@@ -66,11 +66,14 @@ overrides:
 # Remove when an upstream Vitest release fixes coverage of natively loaded copies.
 patchedDependencies:
   "@vitest/coverage-v8@5.0.0": patches/@vitest__coverage-v8@5.0.0.patch
+  # Keep the loader template from being mistaken for its own inline map by Playwright.
+  vibelang@0.0.3: patches/vibelang@0.0.3.patch
   vibelang-unplugin@0.0.3: patches/vibelang-unplugin@0.0.3.patch
   # alchemy 2.0.0-beta.83: WorkerProvider.diff bundles a Worker from the props Diff.stripEffects returns, which turns
   # its build.input.plugins into undefined, so `alchemy plan` bundled every Worker without its build plugins and
   # failed on .vibe sources. The patch hands hasChanged the Worker's own build options. Delete it with the Alchemy
   # release that fixes this upstream; apps/mvp/infra/WorkerBundles.test.ts's expected failure says when.
+  # Local dev also preserves build through stripEffects and rehydrates deferred plugin module references after RPC.
   alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
 
 minimumReleaseAgeExclude:

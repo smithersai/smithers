@@ -19,6 +19,8 @@ browser ── site Worker ── service binding ── ChatApi Worker ── H
 
 ## Local
 
+The Vite plugin compiles browser `.vibe` imports. ChatApi's local Worker is bundled separately by Alchemy's sidecar: `infra/WorkerBuild.ts` carries a deferred plugin module reference across RPC. The pinned Alchemy patch rehydrates that reference and preserves `build` through local diff and reconcile. `infra/WorkerBundles.test.ts` checks the installed patch and compiles the developer Worker through the RPC codec and real bundle watcher. Keep the patch until upstream preserves these plugins in both local and deployed builds. The pinned VibeLang loader patch splits its source-map template directive so Playwright’s source-map reader does not mistake that template for the loader’s own inline map; the same suite checks real Playwright test discovery.
+
 You need Docker with Compose v2, Node 26 (it runs the TypeScript scripts directly) and pnpm.
 
 1. `pnpm install` in the repository root.

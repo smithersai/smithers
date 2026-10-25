@@ -1,0 +1,14 @@
+diff --git a/register.mjs b/register.mjs
+--- a/register.mjs
++++ b/register.mjs
+@@ -107,7 +107,9 @@
+     const inline = Buffer.from(JSON.stringify(map)).toString("base64")
+     return {
+       format: "module",
+-      source: `${code}\n//# sourceMappingURL=data:application/json;base64,${inline}\n`,
++      // Keep the directive split in this loader's own source: source-map-support
++      // otherwise mistakes the template for this file's inline source map.
++      source: `${code}\n//# sourceMapping${"URL"}=data:application/json;base64,${inline}\n`,
+       shortCircuit: true
+     }
+   }

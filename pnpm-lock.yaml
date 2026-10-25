@@ -21,8 +21,9 @@ pnpmfileChecksum: sha256-WT4I+tYhRao6cP63D8ZRgAv3w9Cn2XcR/8xhNAyhVro=
 
 patchedDependencies:
   '@vitest/coverage-v8@5.0.0': 5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb
-  alchemy@2.0.0-beta.83: 96ea16950c60ebcb2c93d8d723044bf8d04f03cce318dded04bf032e4fb9ea62
+  alchemy@2.0.0-beta.83: 2933f9537c73d8f23829dba9e46d5d52180522c6eaec39bbc392d278a4e330c7
   vibelang-unplugin@0.0.3: 9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16
+  vibelang@0.0.3: 08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a
 
 importers:
 
@@ -150,10 +151,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-unplugin:
         specifier: 0.0.3
-        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vite:
         specifier: ^8.2.2
         version: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
@@ -307,7 +308,7 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
 
   .smithers/flows/coding: {}
 
@@ -364,7 +365,7 @@ importers:
         version: 5.9.3
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
 
   apps/bug-worker:
     dependencies:
@@ -392,7 +393,7 @@ importers:
         version: 5.9.3
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
 
   apps/maintainer-site: {}
 
@@ -584,7 +585,7 @@ importers:
         version: 6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       alchemy:
         specifier: 2.0.0-beta.83
-        version: 2.0.0-beta.83(patch_hash=96ea16950c60ebcb2c93d8d723044bf8d04f03cce318dded04bf032e4fb9ea62)(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.0))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.5)(hono@4.11.4)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.22.0)
+        version: 2.0.0-beta.83(patch_hash=2933f9537c73d8f23829dba9e46d5d52180522c6eaec39bbc392d278a4e330c7)(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.0))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.5)(hono@4.11.4)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.22.0)
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -599,13 +600,13 @@ importers:
         version: 5.9.3
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-unplugin:
         specifier: 0.0.3
-        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.5)(rollup@4.64.10)(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.5)(rollup@4.64.10)(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vite:
         specifier: 8.3.4
         version: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
@@ -747,10 +748,10 @@ importers:
         version: 5.9.3
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       wrangler:
         specifier: 4.151.2
         version: 4.151.2(@cloudflare/workers-types@5.20261019.1)(@types/node@26.4.1)
@@ -868,7 +869,7 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
 
   evals/authoring:
     devDependencies:
@@ -883,7 +884,7 @@ importers:
         version: 5.9.3
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
 
   packages/effect-code-storage:
     devDependencies:
@@ -937,10 +938,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1019,10 +1020,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1091,10 +1092,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1155,10 +1156,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1186,16 +1187,16 @@ importers:
         version: 5.9.3
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-runtime:
         specifier: 0.0.3
         version: 0.0.3(effect@4.0.5)
       vibelang-unplugin:
         specifier: 0.0.3
-        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1232,10 +1233,10 @@ importers:
         version: 8.65.0(eslint@9.39.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1470,13 +1471,13 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-unplugin:
         specifier: 0.0.3
-        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1609,10 +1610,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1691,10 +1692,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1758,10 +1759,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1843,10 +1844,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1958,10 +1959,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2013,10 +2014,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2153,16 +2154,16 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-runtime:
         specifier: 0.0.3
         version: 0.0.3(effect@4.0.5)
       vibelang-unplugin:
         specifier: 0.0.3
-        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2235,10 +2236,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2317,10 +2318,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2396,10 +2397,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2466,10 +2467,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2566,10 +2567,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2709,10 +2710,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2797,10 +2798,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2864,10 +2865,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2934,10 +2935,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3067,13 +3068,13 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-runtime:
         specifier: 0.0.3
         version: 0.0.3(effect@4.0.5)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3122,10 +3123,10 @@ importers:
         version: 8.65.0(eslint@9.39.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3207,10 +3208,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3316,10 +3317,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3470,10 +3471,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3537,10 +3538,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3597,10 +3598,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3664,10 +3665,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3746,10 +3747,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3812,10 +3813,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3884,10 +3885,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3975,10 +3976,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4093,10 +4094,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4175,10 +4176,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4242,10 +4243,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4315,10 +4316,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4397,10 +4398,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4470,10 +4471,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4564,10 +4565,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4634,10 +4635,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4710,10 +4711,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4783,10 +4784,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4913,10 +4914,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5022,10 +5023,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5128,10 +5129,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5258,10 +5259,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5331,10 +5332,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5422,10 +5423,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5479,10 +5480,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5546,10 +5547,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5628,10 +5629,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5728,10 +5729,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5849,10 +5850,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5949,10 +5950,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -6031,10 +6032,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -6144,10 +6145,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -6274,10 +6275,10 @@ importers:
         version: 5.9.3
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-unplugin:
         specifier: 0.0.3
-        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
   packages/smithers/ui/repo-view:
     dependencies:
@@ -6472,10 +6473,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -6527,10 +6528,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -6624,10 +6625,10 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       vibelang:
         specifier: 0.0.3
-        version: 0.0.3
+        version: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vibelang-vite:
         specifier: 0.0.3
-        version: 0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -21425,7 +21426,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  alchemy@2.0.0-beta.83(patch_hash=96ea16950c60ebcb2c93d8d723044bf8d04f03cce318dded04bf032e4fb9ea62)(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.0))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.5)(hono@4.11.4)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.22.0):
+  alchemy@2.0.0-beta.83(patch_hash=2933f9537c73d8f23829dba9e46d5d52180522c6eaec39bbc392d278a4e330c7)(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.0))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.5)(hono@4.11.4)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.22.0):
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.83(@distilled.cloud/cloudflare@1.0.0-rc.15(effect@4.0.5))(@effect/platform-bun@4.0.5(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.0.5)(rolldown@1.2.5)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@alchemy.run/floci': 2.0.0-beta.83(effect@4.0.5)
@@ -26504,10 +26505,10 @@ snapshots:
     dependencies:
       effect: 4.0.5
 
-  vibelang-unplugin@0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):
+  vibelang-unplugin@0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):
     dependencies:
       unplugin: 3.4.0(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      vibelang: 0.0.3
+      vibelang: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rsbuild/core'
@@ -26520,10 +26521,10 @@ snapshots:
       - vite
       - webpack
 
-  vibelang-unplugin@0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.5)(rollup@4.64.10)(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):
+  vibelang-unplugin@0.0.3(patch_hash=9d6076800aa12160a71db004b0e9823c1dd084d97257cd400724fde572628a16)(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.5)(rollup@4.64.10)(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):
     dependencies:
       unplugin: 3.4.0(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.5)(rollup@4.64.10)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      vibelang: 0.0.3
+      vibelang: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rsbuild/core'
@@ -26536,12 +26537,12 @@ snapshots:
       - vite
       - webpack
 
-  vibelang-vite@0.0.3(vibelang@0.0.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):
+  vibelang-vite@0.0.3(vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):
     dependencies:
-      vibelang: 0.0.3
+      vibelang: 0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a)
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
-  vibelang@0.0.3:
+  vibelang@0.0.3(patch_hash=08a1b8872498c032c190e311bbbd7f366c0c8d85a1c75f9dc683115a6fe2f18a):
     optionalDependencies:
       vibelang-darwin-arm64: 0.0.3
       vibelang-darwin-x64: 0.0.3

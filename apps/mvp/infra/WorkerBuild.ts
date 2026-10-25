@@ -8,4 +8,13 @@
  */
 import { deferred } from "vibelang-unplugin/deferred"
 
-export const workerBuild = { input: { plugins: [deferred("rolldown")] } }
+// Alchemy's dev sidecar receives props over RPC. Functions are dropped there, so
+// the patched codec rehydrates this module reference before the local provider
+// hands the options to Rolldown. Production still awaits the original deferred plugin.
+export const workerBuild = {
+  input: {
+    plugins: [Object.assign(deferred("rolldown"), {
+      "~alchemy/DeferredPlugin": "vibelang-unplugin/rolldown",
+    })],
+  },
+}

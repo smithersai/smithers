@@ -12,3 +12,40 @@ diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/W
                      ? newBindings
                      : undefined, accountId))) {
                  // The immutable script ID is always stable across an update —
+diff --git a/lib/Local/LocalProvider.js b/lib/Local/LocalProvider.js
+--- a/lib/Local/LocalProvider.js
++++ b/lib/Local/LocalProvider.js
+@@ -151,7 +151,7 @@
+                 id,
+                 fqn,
+                 instanceId,
+-                news: news,
++                news: { ...news, build: rawNews.build },
+                 bindings: newBindings,
+             };
+             const { config, configHash } = yield* resolveDesired(input);
+@@ -170,7 +170,7 @@
+                     id,
+                     fqn,
+                     instanceId,
+-                    news: stripEffects(news),
++                    news: { ...stripEffects(news), build: news.build },
+                     bindings,
+                 };
+                 const { config, configHash } = yield* resolveDesired(input);
+diff --git a/lib/Local/RpcSerialization.js b/lib/Local/RpcSerialization.js
+--- a/lib/Local/RpcSerialization.js
++++ b/lib/Local/RpcSerialization.js
+@@ -145,5 +145,12 @@
+     }
+     else if (typeof value === "object" && value !== null) {
++        // Build plugins cannot cross RPC as functions. A module descriptor is
++        // resolved in the stack's install and loaded lazily by the bundler.
++        if (typeof value["~alchemy/DeferredPlugin"] === "string") {
++            return { "~alchemy/DeferredPlugin": value["~alchemy/DeferredPlugin"],
++                then: (accept, reject) => import(value["~alchemy/DeferredPlugin"])
++                .then((module) => module.default()).then(accept, reject) };
++        }
+         // These values are serialized as `{_tag: "Redacted", value: ...}` and `{_tag: "Output", description: ...}`,
+         // so we need to detect them manually - Redacted.isRedacted and Output.isOutput do not work.
+         if (isRedactedMarker(value)) {
