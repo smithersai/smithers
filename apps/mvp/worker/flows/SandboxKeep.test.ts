@@ -169,6 +169,57 @@ describe("the steps", () => {
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(SandboxKeep.SleptUnrecorded)
   })
 
+  test("a busy machine renews its generation's ledger slot; a renewal Postgres refuses is logged and the keep asks on", async () => {
+    const branchId = `ledger-${crypto.randomUUID()}`
+    const sql = (statement: string) =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(client.unsafe<{ fresh: boolean }>(statement))))
+    await sql(`
+      INSERT INTO sandbox_generations (branch_id, generation, kind, instance, started_at, seen_at)
+      VALUES ('${branchId}', 3, 'branch', 'standard-1', now() - interval '10 minutes', now() - interval '4 minutes'),
+        ('${branchId}-other', 3, 'branch', 'standard-1', now() - interval '10 minutes', now() - interval '4 minutes')`)
+    const fresh = () =>
+      sql(`SELECT seen_at > now() - interval '5 seconds' AS fresh FROM sandbox_generations WHERE branch_id = '${branchId}'`)
+
+    const busy = await observed(
+      SandboxKeep.steps(await database(), 1_000).sleepIfIdle({ branchId, generation: 3 }).pipe(
+        Effect.provide(machine([Effect.succeed("busy")]).layer),
+      ),
+    )
+    expect(Exit.isFailure(busy.exit) && Cause.squash(busy.exit.cause)).toBeInstanceOf(SandboxKeep.MachineBusy)
+    expect(await fresh()).toEqual([{ fresh: true }])
+    // Only that branch's slot.
+    expect(await sql(`SELECT seen_at > now() - interval '5 seconds' AS fresh FROM sandbox_generations WHERE branch_id = '${branchId}-other'`))
+      .toEqual([{ fresh: false }])
+
+    const down = SandboxKeep.steps(Layer.effect(SqlClient.SqlClient, Effect.fail(new Error("connection refused"))), 1_000)
+    const refused = await observed(
+      down.sleepIfIdle({ branchId, generation: 3 }).pipe(Effect.provide(machine([Effect.succeed("busy")]).layer)),
+    )
+    expect(Exit.isFailure(refused.exit) && Cause.squash(refused.exit.cause)).toBeInstanceOf(SandboxKeep.MachineBusy)
+    expect(refused.lines).toMatchObject([
+      { message: "sandbox.keep.seen", level: "WARN", annotations: { branchId, generation: 3, errorCode: expect.any(String) } },
+    ])
+  })
+
+  test("slept closes the generation's ledger slot, and only that generation's", async () => {
+    const branch = await withTerminals()
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`
+        INSERT INTO sandbox_generations (branch_id, generation, kind, instance, started_at, seen_at, ended_at)
+        VALUES (${branch.branchId}, 1, 'branch', 'standard-1', now() - interval '1 hour', now() - interval '30 minutes',
+          now() - interval '30 minutes'),
+          (${branch.branchId}, 2, 'branch', 'standard-1', now() - interval '20 minutes', now(), NULL)`))
+    const steps = SandboxKeep.steps(await database(), 1_000)
+    expect((await observed(steps.slept({ branchId: branch.branchId, generation: 2, ended: "slept" }))).exit).toEqual(
+      Exit.succeed({ ended: "slept", terminals: 1 }),
+    )
+    const rows = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly generation: number; readonly ended: boolean; readonly recent: boolean }>`
+        SELECT generation, ended_at IS NOT NULL AS ended, ended_at > now() - interval '5 seconds' AS recent
+        FROM sandbox_generations WHERE branch_id = ${branch.branchId} ORDER BY generation`))
+    expect(rows).toEqual([{ generation: 1, ended: true, recent: false }, { generation: 2, ended: true, recent: true }])
+  })
+
   test("each generation of a branch's machine has its own sandbox/Keep execution", () => {
     const branchId = crypto.randomUUID()
     expect(keepExecutionId(branchId, 3)).toBe(keepExecutionId(branchId, 3))

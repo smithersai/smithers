@@ -125,7 +125,7 @@ import type { PersonalModelClient } from "../features/personal-model/api"
 import { PERSONAL_MODELS_TABLE } from "../features/personal-model/contract"
 import { SECRETS_TABLE } from "../features/secrets/contract"
 import { REPOS_ROUTE, repoId, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
-import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
+import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SANDBOX_LIMITS_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
 import { RUNS_TABLE } from "../features/status/contract"
 import { TERMINALS_TABLE } from "../features/terminal/contract"
 import type { ThemeMode } from "../features/theme/contract"
@@ -256,6 +256,7 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   SPEND_ALERTS_TABLE,
   ALERT_CHANNELS_TABLE,
   ALERT_DELIVERIES_TABLE,
+  SANDBOX_LIMITS_TABLE,
   TODOS_TABLE,
   TODO_REQUESTS_TABLE,
   PULLS_TABLE,

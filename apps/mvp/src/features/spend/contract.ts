@@ -58,6 +58,44 @@ export const MAX_DESTINATIONS = 10
 /** The largest `POST /api/alert-channels` body, in bytes. */
 export const MAX_ALERT_CHANNEL_BODY_BYTES = 4_096
 
+/**
+ * `POST`: an Admin sets the sandbox limits, `{ awake, perPerson, monthlyAlertUsd }` (ruling AUTH-5,
+ * docs/features/sandbox-budgets.md). They apply to the next machine that wakes, with no deploy.
+ */
+export const SANDBOX_LIMITS_ROUTE = "/api/sandbox-limits"
+
+/** `GET`: Electric's `sandbox_limits`, only for an Admin. */
+export const SANDBOX_LIMITS_SHAPE_ROUTE = "/api/shapes/sandbox-limits"
+
+/** The Postgres table of the limits: one row once an Admin set them. */
+export const SANDBOX_LIMITS_TABLE = "sandbox_limits"
+
+/** The limits' columns a device syncs. */
+export const SANDBOX_LIMIT_COLUMNS = ["audience", "awake", "awake_per_person", "monthly_alert_usd", "updated_at"] as const
+
+/**
+ * The sandbox limits: at most `awake` machines awake in the deployment, `perPerson` of them a person's branch machines,
+ * and an alert to the Admins once a month's sandbox spend reaches `monthlyAlertUsd` dollars (0: no alert).
+ */
+export interface SandboxLimits {
+  readonly awake: number
+  readonly perPerson: number
+  readonly monthlyAlertUsd: number
+}
+
+/** The limits until an Admin sets them (Will's numbers, 2026-10-19 22:43; decision 0103). */
+export const DEFAULT_SANDBOX_LIMITS: SandboxLimits = { awake: 20, perPerson: 2, monthlyAlertUsd: 100 }
+
+/** Each limit's bounds, inclusive, as Postgres checks them. */
+export const SANDBOX_LIMIT_BOUNDS: { readonly [K in keyof SandboxLimits]: readonly [number, number] } = {
+  awake: [1, 1000],
+  perPerson: [1, 100],
+  monthlyAlertUsd: [0, 1_000_000],
+}
+
+/** The largest `POST /api/sandbox-limits` body, in bytes. */
+export const MAX_SANDBOX_LIMITS_BODY_BYTES = 1_024
+
 /** Where an alert's message links: the app's own page on the origin the Admin set the channel from. */
 export const APP_PATH = "/app"
 

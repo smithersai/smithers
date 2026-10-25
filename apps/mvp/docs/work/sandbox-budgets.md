@@ -1,10 +1,10 @@
 ---
 title: Sandbox budgets, before we ship
-status: todo
+status: done
 area: infra
-owner: unassigned
-updated: 2026-10-19
-links: [../todo.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, sandboxes.md, token-spend-alerts.md, model-endpoint.md, code-storage-spend-caps.md, design-questions.md]
+owner: sandbox-ship
+updated: 2026-10-25
+links: [../features/sandbox-budgets.md, ../decisions/0103-sandbox-budgets.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, sandboxes.md, token-spend-alerts.md, model-endpoint.md, code-storage-spend-caps.md, design-questions.md]
 ---
 
 ## What
@@ -26,9 +26,10 @@ Will, 22:45 on 2026-10-19, answering design question 8 of 14 (0005 Q3): "Add thi
 
 ## State
 
+- 2026-10-25: built at ship with the numbers above ([sandbox budgets](../features/sandbox-budgets.md), decision 0103): the ledger and admission (a hard cap, since the `durable_object` policy has no `max_instances`), Waiting for a sandbox on the terminal, the hourly spend alert to the bell, email and Telegram, and the limits in Settings. Snapshot retention waits for snapshots.
+
 - 22:43: asked as design question 8 of 14 ([design questions](design-questions.md)).
 - 22:45: deferred until we ship. Decision 0005 records the deferral under Q3, and `todo.md` has the section "Sandbox budgets, before we ship" with three open boxes. Not started.
-- [Sandboxes](sandboxes.md) themselves aren't built, so there is nothing to cap yet.
 
 ## Next
 

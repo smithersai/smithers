@@ -1,7 +1,7 @@
 // What the Terminal view shows (src/features/terminal/view.ts, docs/features/branch-workspace.md#the-page).
 import { describe, expect, test } from "vitest"
 import type { Panel, Tab } from "./schema"
-import { NO_TERMINALS, panelViewOf } from "./view"
+import { NO_TERMINALS, panelViewOf, WAITING_FOR_SANDBOX } from "./view"
 
 const panel = (fields: Partial<Panel> = {}): Panel => ({
   id: "panel",
@@ -18,6 +18,7 @@ const tab = (fields: Partial<Tab> = {}): Tab => ({
   ownerLogin: "maya",
   mine: false,
   status: "open",
+  waiting: false,
   createdAt: "2026-10-20T12:00:00Z",
   ...fields,
 })
@@ -54,6 +55,18 @@ describe("panelViewOf", () => {
       open: "button",
       screen: { kind: "open" },
     })
+  })
+
+  test("a terminal waiting for a free machine keeps the button disabled and says Waiting for a sandbox", () => {
+    const waiting = tab({ id: "t-9", mine: true, status: "opening", waiting: true })
+    expect(panelViewOf(panel({ phase: "opening", terminalId: "t-9" }), [waiting], true)).toEqual({
+      badge: undefined,
+      open: "waiting",
+      screen: { kind: "open" },
+    })
+    expect(WAITING_FOR_SANDBOX).toBe("Waiting for a sandbox")
+    // Another person's waiting terminal says nothing about this person's.
+    expect(panelViewOf(panel({ phase: "opening", terminalId: "t-1" }), [{ ...waiting, mine: false }], true)!.open).toBe("opening")
   })
 
   // A run that died left the person's row `opening` for good: the panel gave up on it (`failed` after the deadline),

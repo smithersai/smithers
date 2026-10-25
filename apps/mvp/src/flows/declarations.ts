@@ -40,7 +40,7 @@ import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } f
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { ConversationArchive, ConversationNew } from "../features/conversations/flows"
-import { AlertChannelSet } from "../features/spend/flows"
+import { AlertChannelSet, SandboxLimitsSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
@@ -126,6 +126,7 @@ export const declarations = {
   "watch/set": WatchSet,
   "notification/ack": Ack,
   "alert/channel": AlertChannelSet,
+  "sandbox/limits": SandboxLimitsSet,
   "domain/add": DomainAdd,
   "domain/remove": DomainRemove,
   "model/test": ModelTest,

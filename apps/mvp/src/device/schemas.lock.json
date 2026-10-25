@@ -1,5 +1,5 @@
 {
-  "epoch": 83,
+  "epoch": 84,
   "stores": {
     "message-pin-pending": {
       "kind": "local",
@@ -226,7 +226,8 @@
     "notifications": {
       "kind": "synced",
       "versions": {
-        "1": "7e884d326cb0e6c8"
+        "1": "7e884d326cb0e6c8",
+        "2": "bf52b3a9980a5fc0"
       }
     },
     "my-conversations": {
@@ -251,6 +252,12 @@
       "kind": "synced",
       "versions": {
         "1": "f14ef22ddcde5173"
+      }
+    },
+    "sandbox-limits": {
+      "kind": "synced",
+      "versions": {
+        "1": "6f7fc6c6bdcb9c31"
       }
     },
     "todos": {

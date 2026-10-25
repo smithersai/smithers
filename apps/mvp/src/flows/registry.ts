@@ -41,7 +41,7 @@ import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, Resume, Retry, Steer } from "../features/runs/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
-import { AlertChannelSet } from "../features/spend/flows"
+import { AlertChannelSet, SandboxLimitsSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
@@ -334,6 +334,12 @@ export const registry = {
   "alert/channel": {
     flow: AlertChannelSet,
     userOnlyReason: "Where spend alerts go is an Admin's own choice; the agent never redirects them.",
+  },
+  // The sandbox limits (docs/features/sandbox-budgets.md#the-limits): how many machines may be awake, and the monthly
+  // sandbox spend that alerts the Admins.
+  "sandbox/limits": {
+    flow: SandboxLimitsSet,
+    userOnlyReason: "What sandboxes may cost is an Admin's own choice; the agent never changes the limits.",
   },
   // Custom domains (decision 0039, docs/features/domains.md): what a repository's app answers on a Maintainer's own
   // domain. Only a person points a domain at the app.

@@ -1172,3 +1172,73 @@ describe("0061_flow_placement_machine", () => {
       expect(await on(through("0061"))).toEqual([])
     }))
 })
+
+describe("0062_sandbox_budgets", () => {
+  test("adds the sandbox limits and ledger, a terminal's wait, and the bell's spend kind, each held to its rules", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      const taken = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      await on(through("0061"))
+      expect((await on(through("0062"))).map(([id, name]) => `${id}_${name}`)).toEqual(["62_sandbox_budgets"])
+
+      const limits = (awake: number, perPerson: number, alert: number, audience = "admin") =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO sandbox_limits (audience, awake, awake_per_person, monthly_alert_usd, updated_by)
+          VALUES (${audience}, ${awake}, ${perPerson}, ${alert}, 'p')
+          ON CONFLICT (audience) DO UPDATE SET awake = EXCLUDED.awake`))
+      expect(await limits(20, 2, 100)).toBe("taken")
+      expect(await limits(1000, 100, 0)).toBe("taken")
+      for (const [awake, perPerson, alert, audience] of [
+        [0, 2, 100, "admin"],
+        [1001, 2, 100, "admin"],
+        [20, 0, 100, "admin"],
+        [20, 101, 100, "admin"],
+        [20, 2, -1, "admin"],
+        [20, 2, 1_000_001, "admin"],
+        [20, 2, 100, "member"],
+      ] as const) {
+        expect(await limits(awake, perPerson, alert, audience), JSON.stringify([awake, perPerson, alert, audience])).toBe("refused")
+      }
+
+      const slot = (branch: string, generation: number | null, instance: string | null, kind = "branch") =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO sandbox_generations (branch_id, generation, kind, instance)
+          VALUES (${branch}, ${generation}, ${kind}, ${instance})`))
+      expect(await slot("a", null, null)).toBe("taken")
+      // One open slot per branch.
+      expect(await slot("a", 1, "standard-1")).toBe("refused")
+      expect(await slot("b", 1, "standard-1", "todo")).toBe("taken")
+      expect(await slot("c", 1, null)).toBe("refused")
+      expect(await slot("d", null, "basic")).toBe("refused")
+      expect(await slot("e", 0, "basic")).toBe("refused")
+      expect(await slot("f", 1, "basic", "terminal")).toBe("refused")
+      expect(await taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        UPDATE sandbox_generations SET ended_at = started_at - interval '1 second' WHERE branch_id = 'b'`))).toBe("refused")
+      expect(await taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        UPDATE sandbox_generations SET ended_at = now() WHERE branch_id = 'a'`))).toBe("taken")
+      // A branch whose slot closed opens another.
+      expect(await slot("a", 2, "standard-1")).toBe("taken")
+
+      const columns = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ name: string; type: string; nullable: string; fallback: string | null }>`
+        SELECT column_name AS name, data_type AS type, is_nullable AS nullable, column_default AS fallback
+        FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'terminal_sessions' AND column_name IN ('waiting', 'admitted_at')
+        ORDER BY column_name`))
+      expect(columns).toEqual([
+        { name: "admitted_at", type: "timestamp with time zone", nullable: "YES", fallback: null },
+        { name: "waiting", type: "boolean", nullable: "NO", fallback: "false" },
+      ])
+
+      const notice = (kind: string, state: string) =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO notifications (recipient, subject, kind, state, href)
+          VALUES (${crypto.randomUUID()}, ${`s-${kind}-${state}`}, ${kind}, ${state}, '/app/settings')`))
+      expect(await notice("spend", "update")).toBe("taken")
+      expect(await notice("spend", "working")).toBe("refused")
+      expect(await notice("budget", "update")).toBe("refused")
+      expect(await notice("release", "update")).toBe("taken")
+      expect(await on(through("0062"))).toEqual([])
+    }))
+})

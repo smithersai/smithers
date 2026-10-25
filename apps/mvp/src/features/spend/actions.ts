@@ -1,6 +1,6 @@
 import { Effect, Exit, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
-import type { AlertChannelName } from "./schema"
+import type { AlertChannelName, SandboxLimitsRequest } from "./schema"
 import { hidden, SpendStore } from "./store"
 
 // What an Admin does about a spend alert (docs/features/spend-alerts.md): Hide, which marks it and every earlier alert
@@ -48,6 +48,33 @@ export const setChannel = (channel: AlertChannelName, destinations: ReadonlyArra
         Exit.isSuccess(exit) && exit.value._tag === "Done"
           ? saves.delete(channel)
           : saves.update(channel, (draft) => void (draft.state = "failed"))
+      ),
+      Effect.ignore,
+      Effect.forkIn(scope),
+    )
+  }).pipe(
+    // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
+    Effect.orDie,
+  )
+
+/**
+ * Sets the sandbox limits (docs/features/sandbox-budgets.md#the-limits). It returns at once; the tab shows the save
+ * until `sandbox/limits` (door `button`) ends, then the synced row, or the save failed, to be saved again.
+ */
+export const setLimits = (limits: SandboxLimitsRequest) =>
+  Effect.gen(function* () {
+    const { limitSaves, scope } = yield* SpendStore
+    const flows = yield* FlowDispatch
+    const held = yield* limitSaves.get("sandbox")
+    if (Option.isSome(held)) yield* limitSaves.update("sandbox", (draft) => void (draft.state = "saving"))
+    else yield* limitSaves.insert({ id: "sandbox", state: "saving" })
+    yield* flows.dispatch("sandbox/limits", { ...limits }, { door: "button" }).pipe(
+      Effect.exit,
+      // Done removes the save; ChatApi's refusal, or a flow that couldn't run, leaves it failed.
+      Effect.flatMap((exit) =>
+        Exit.isSuccess(exit) && exit.value._tag === "Done"
+          ? limitSaves.delete("sandbox")
+          : limitSaves.update("sandbox", (draft) => void (draft.state = "failed"))
       ),
       Effect.ignore,
       Effect.forkIn(scope),

@@ -15,6 +15,8 @@ export const TerminalRow = Schema.Struct({
   status: Schema.Literals(STATUSES),
   endedReason: Schema.NullOr(Schema.Literals(ENDED_REASONS)),
   failure: Schema.NullOr(Schema.Literals(FAILURES)),
+  /** While `opening`: no machine is free under the sandbox limits, and it waits for one (worker/branch/Budget.ts). */
+  waiting: Schema.optional(Schema.Boolean),
   lastScreen: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -46,8 +48,8 @@ export const Panel = Schema.Struct({
 export type Panel = typeof Panel.Type
 
 /**
- * One live terminal on the branch the panel shows, as its tabs list it: whose it is, whether it is this person's, and
- * whether it is open yet.
+ * One live terminal on the branch the panel shows, as its tabs list it: whose it is, whether it is this person's,
+ * whether it is open yet, and whether it waits for a free machine.
  */
 export const Tab = Schema.Struct({
   id: Schema.String,
@@ -55,6 +57,7 @@ export const Tab = Schema.Struct({
   ownerLogin: Schema.String,
   mine: Schema.Boolean,
   status: Schema.Literals(["opening", "open"]),
+  waiting: Schema.Boolean,
   createdAt: Schema.String,
 })
 export type Tab = typeof Tab.Type

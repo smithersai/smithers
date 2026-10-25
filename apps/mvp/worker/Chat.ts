@@ -24,6 +24,8 @@ import { ACK_ROUTE, NOTIFICATIONS_SHAPE_ROUTE, WATCHES_ROUTE } from "../src/feat
 import {
   ALERT_CHANNELS_ROUTE,
   ALERT_CHANNELS_SHAPE_ROUTE,
+  SANDBOX_LIMITS_ROUTE,
+  SANDBOX_LIMITS_SHAPE_ROUTE,
   ALERT_DELIVERIES_SHAPE_ROUTE,
   SPEND_ALERTS_SHAPE_ROUTE,
 } from "../src/features/spend/contract.ts"
@@ -51,6 +53,7 @@ import * as PersonalFlows from "./PersonalFlows.ts"
 import * as Runs from "./Runs.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 import * as AlertChannels from "./AlertChannels.ts"
+import * as BudgetApi from "./branch/BudgetApi.ts"
 import * as SpendAlerts from "./SpendAlerts.ts"
 import * as Views from "./Views.ts"
 import * as WebPreview from "./WebPreview.ts"
@@ -178,6 +181,8 @@ export const make = <E, R>(
     // POST /api/alert-channels and the channels' and receipts' shapes: where Admins send spend alerts outside the app
     // (docs/features/spend-alerts.md#channels).
     const alertChannels = yield* AlertChannels.make(database)
+    // POST /api/sandbox-limits and its shape: the sandbox limits Admins set (docs/features/sandbox-budgets.md#the-limits).
+    const sandboxLimits = yield* BudgetApi.make(database)
     // /api/flows, /api/flow-drafts and their shapes: a person's own flows (docs/features/flows.md#your-own-flows).
     const personalFlows = yield* PersonalFlows.make(database)
     // GET /api/shapes/messages?conversation=<id>: one conversation's `messages` (decision 0013 §1), which the browser
@@ -378,6 +383,8 @@ export const make = <E, R>(
       if (path === ALERT_CHANNELS_ROUTE) return yield* alertChannels.set
       if (path === ALERT_CHANNELS_SHAPE_ROUTE) return yield* alertChannels.channels
       if (path === ALERT_DELIVERIES_SHAPE_ROUTE) return yield* alertChannels.deliveries
+      if (path === SANDBOX_LIMITS_ROUTE) return yield* sandboxLimits.set
+      if (path === SANDBOX_LIMITS_SHAPE_ROUTE) return yield* sandboxLimits.limits
       if (path === FLOWS_SHAPE_ROUTE) return yield* personalFlows.flowsShape
       if (path === FLOW_DRAFTS_SHAPE_ROUTE) return yield* personalFlows.draftsShape
       if (path === FLOWS_ROUTE) return yield* personalFlows.flows("")

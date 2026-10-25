@@ -21,7 +21,7 @@ import { dispatches } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
 import { OpenRefused, TerminalClient } from "./api"
-import { DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, openExecutionId } from "./contract"
+import { ADMIT_WAIT_SECONDS, DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, openExecutionId } from "./contract"
 import { TerminalOpenRefused, TerminalOpenUnavailable } from "./flows"
 import { bytes, ended, openMs, opens, reconnects } from "./metrics"
 import { requestOpen } from "./steps"
@@ -149,15 +149,24 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
       ),
     /** Puts terminal `id` of `ownerId` on `branchId` in Postgres as `status`, as an open and `terminal/Open` leave it. */
     insert: async (
-      row: { readonly id: string; readonly branchId: string; readonly ownerId: string; readonly status: string; readonly createdAt?: string },
+      row: {
+        readonly id: string
+        readonly branchId: string
+        readonly ownerId: string
+        readonly status: string
+        readonly createdAt?: string
+        readonly waiting?: boolean
+      },
       options: { readonly receive?: boolean } = {},
     ) => {
       await sql((sql) =>
         sql`
-          INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, status, generation, ended_reason, failure, created_at)
+          INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, status, generation, ended_reason, failure, created_at,
+            waiting)
           VALUES (${row.id}, ${row.branchId}, ${row.ownerId}, ${row.ownerId}, ${row.status},
             ${row.status === "open" ? 1 : null}, ${row.status === "ended" ? "closed" : null},
-            ${row.status === "failed" ? "unavailable" : null}, COALESCE(${row.createdAt ?? null}::timestamptz, now()))`
+            ${row.status === "failed" ? "unavailable" : null}, COALESCE(${row.createdAt ?? null}::timestamptz, now()),
+            ${row.waiting === true})`
       )
       if (options.receive === false) return
       // Socket tests start from a delivered row; the real open flow's delivery timing is tested separately.
@@ -166,6 +175,8 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
       ).pipe(Effect.provideService(FetchHttpClient.Fetch, api.fetch), Effect.timeout("40 seconds")))
       await runtime.runPromise(Effect.yieldNow)
     },
+    /** Marks terminal `id` waiting for a free machine, as `terminal/Open`'s admission does. */
+    wait: (id: string) => sql((sql) => sql`UPDATE terminal_sessions SET waiting = true, updated_at = now() WHERE id = ${id}`),
     /** Settles terminal `id` as `terminal/Open` or its machine does: open, failed to open, or ended. */
     settle: (id: string, status: "open" | "failed" | "ended") =>
       sql((sql) =>
@@ -511,6 +522,47 @@ describe("the panel", () => {
       expect(await tab.synced(branchId, mine)).toBe("opening")
     }, WITHIN,
   )
+
+  test("a row waiting for a free machine stays opening past the open's deadline, says so, and fails only past the wait", async () => {
+    const tab = await open()
+    const branchId = await tab.track("feature/one")
+    const mine = crypto.randomUUID()
+    const createdAt = "2026-10-21T12:00:00.000Z"
+    await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt, waiting: true })
+    await tab.runtime.runPromise(Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(createdAt))
+      expect(yield* show(branchId)).toBe(mine)
+      yield* TestClock.adjust(OPEN_DEADLINE_SECONDS * 1000 + 60_000)
+      const panel = yield* tab.store.panel.get(PANEL)
+      expect(panel).toMatchObject({ _tag: "Some", value: { terminalId: mine, phase: "opening" } })
+      const tabs = yield* tab.store.tabs.toArray
+      expect(tabs).toMatchObject([{ id: mine, mine: true, status: "opening", waiting: true }])
+      expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
+        badge: undefined, open: "waiting", screen: { kind: "open" },
+      })
+      yield* TestClock.adjust(ADMIT_WAIT_SECONDS * 1000)
+      expect(yield* tab.store.panel.get(PANEL)).toMatchObject({ _tag: "Some", value: { phase: "failed" } })
+    }).pipe(Effect.provide(TestClock.layer())))
+  }, WITHIN)
+
+  test("a row that starts waiting while the panel waits on it gets the wait's time too", async () => {
+    const tab = await open()
+    const branchId = await tab.track("feature/one")
+    const mine = crypto.randomUUID()
+    const createdAt = "2026-10-21T12:00:00.000Z"
+    await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt })
+    await tab.runtime.runPromise(Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(createdAt))
+      expect(yield* show(branchId)).toBe(mine)
+      yield* Effect.promise(() => tab.wait(mine))
+      yield* Effect.promise(() =>
+        until(async () => expect(await tab.runtime.runPromise(tab.store.tabs.toArray)).toMatchObject([{ id: mine, waiting: true }]))
+      )
+      // Past the open's own deadline from its creation: still opening, waiting.
+      yield* TestClock.adjust(OPEN_DEADLINE_SECONDS * 1000 + 1_000)
+      expect(yield* tab.store.panel.get(PANEL)).toMatchObject({ _tag: "Some", value: { phase: "opening" } })
+    }).pipe(Effect.provide(TestClock.layer())))
+  }, WITHIN)
 
   test.each([0, 90_000])("page load keeps an opening row aged %i ms opening until its original deadline", async (age) => {
     const tab = await open()

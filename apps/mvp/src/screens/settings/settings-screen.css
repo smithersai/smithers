@@ -19,3 +19,6 @@
 .alert-settings-receipts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .alert-settings-receipts li { display: grid; grid-template-columns: 8rem 1fr auto; gap: 0.75rem; }
 @media (max-width: 480px) { .alert-settings-receipts li { grid-template-columns: 1fr; gap: 0; } }
+.sandbox-limits { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+.sandbox-limits h2 { flex: 1 0 100%; margin: 0; }
+.sandbox-limits [data-slot="field"] { flex: 1 1 10rem; min-width: 0; }

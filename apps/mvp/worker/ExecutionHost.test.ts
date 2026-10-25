@@ -14,6 +14,7 @@ import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
+import * as SandboxSpend from "./flows/SandboxSpend.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
 import { awaitPullClosed } from "./flows/TodoWait.ts"
@@ -350,7 +351,13 @@ describe("ExecutionHost over the compose Postgres", () => {
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const flows = ExecutionHost.remote(services)
-        expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad])
+        expect(flows.flows).toEqual([
+          Pause.Pause,
+          Expire.Expire,
+          SpendAlert.SpendAlert,
+          DatabaseLoad.DatabaseLoad,
+          SandboxSpend.SandboxSpend,
+        ])
         const object = memory()
         const executionId = crypto.randomUUID()
         const host = ExecutionHost.make(object.storage, {
@@ -685,6 +692,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       Expire.Expire,
       SpendAlert.SpendAlert,
       DatabaseLoad.DatabaseLoad,
+      SandboxSpend.SandboxSpend,
       RecheckRole.RecheckRole,
       RevokeGitHubToken.RevokeGitHubToken,
     ])
@@ -755,7 +763,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       index: () => Effect.succeed(3),
       installed: () => Effect.succeed(false),
     })
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, RepoClone.Clone])
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, SandboxSpend.SandboxSpend, RepoClone.Clone])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()
@@ -803,6 +811,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       Expire.Expire,
       SpendAlert.SpendAlert,
       DatabaseLoad.DatabaseLoad,
+      SandboxSpend.SandboxSpend,
       SandboxCall.SandboxCall,
       SandboxKeep.Keep,
       ...SandboxCommand.Command.flows,
@@ -828,7 +837,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       session: (_, id, ownerId) => Effect.sync(() => void machines.push(`session ${id} ${ownerId}`)),
     }))
     const flows = ExecutionHost.withTerminals(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, sandboxes)
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, TerminalOpen.TerminalOpen])
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, SandboxSpend.SandboxSpend, TerminalOpen.TerminalOpen])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()

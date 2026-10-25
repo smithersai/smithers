@@ -95,7 +95,7 @@ const open = async (reopenRoute?: () => void) => {
       yield* terminalStore.panel.update("panel", (row) => void Object.assign(row,
         { branchId: "previous-branch", terminalId: "previous-terminal", phase: "open", access: "write" }))
       yield* terminalStore.tabs.insert({ id: "previous-terminal", ownerId: "previous-owner", ownerLogin: "previous-owner",
-        mine: false, status: "open", createdAt: "2026-10-21T00:00:00Z" })
+        mine: false, status: "open", waiting: false, createdAt: "2026-10-21T00:00:00Z" })
     })),
     exported: async () => { await runtime.dispose(); return read(api.telemetry) },
     /** The browser's `offline` and `online` events, as chat's connectivity binding runs them. */

@@ -433,6 +433,9 @@ export const resetBranches = (runtime: Runtime) =>
     yield* sql`DELETE FROM conversation_people`
     yield* sql`DELETE FROM terminal_sessions`
     yield* sql`DELETE FROM sandbox_calls`
+    // The sandbox ledger and limits (worker/branch/Budget.ts): every test's machines start under the defaults.
+    yield* sql`DELETE FROM sandbox_generations`
+    yield* sql`DELETE FROM sandbox_limits`
     yield* sql`DELETE FROM text_updates`
     yield* sql`DELETE FROM branch_shares WHERE branch_id NOT IN (SELECT branch_id FROM conversations WHERE id = ${home!})`
     yield* sql`DELETE FROM conversations WHERE id <> ${home!}`

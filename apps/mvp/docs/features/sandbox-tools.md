@@ -49,7 +49,7 @@ sandbox/<tool>/start: POST /api/sandbox/calls { callId, call, conversationId | a
 **Who may call a tool.** Every call checks the person who asked, now, with `worker/branch/Access.ts`'s `branchAccess`, the same check the terminals use:
 
 - they must be able to **edit** the branch (`canEdit`: its owner, or shared with them to edit, never above their role). A person who can only **view** it can't run tools;
-- the branch must not be `locked`: the default branch has no machine for people, and agents never touch `main`;
+- the branch must not be `locked`: `main` is locked by default, so its sandbox follows main's head (0005 §2, not built) and takes no person's or agent's tool calls;
 - the agent acts for the person who asked: ChatApi takes an agent's call only from the person whose question its answer is for, and runs it under their role and as their own user in the machine. No tool pushes, approves or merges: the machine's forge is read-only (`GitProxy.uploadPack`).
 
 ## The remote flow
@@ -102,6 +102,10 @@ sandbox/Command { target: { branch, ownerId, callId }, call }
 
 The host-independent `worker/branch/Session.ts` owns terminal session startup; `BranchSandboxes.ts` injects the container and the catalog's `@smthrs/platform-cloudflare` terminal service. Startup has one Effect Clock deadline, `SANDBOX_SESSION_TIMEOUT_SECONDS` (positive integer, default 60), covering `start` (including the activity record), `provision` and `session` (tmux). Success logs `sandbox.session` at info with `outcome: started`, `startMs`, `provisionMs` and `sessionMs`. Failure logs it at warning with `stage`, `outcome: failed` or `timeout`, completed stage durations, `errorCode` and `errorName`; no branch or terminal ids, command arguments, error messages or user content. Failure and expiry answer `false`: the caller raises `SandboxUnavailable` with reason `exec`, and the durable `terminal/Open` flow owns retry and the final failed record.
 
+## Budgets
+
+Before a stopped machine starts, its object admits it under the [sandbox limits](sandbox-budgets.md): at most 20 machines awake in the deployment and 2 of a person's own branch machines, an Admin setting. A machine at a limit waits: the wake answers `Waiting`, which the tools' and commands' steps retry as `SandboxUnavailable` (`waiting`), and a terminal shows as Waiting for a sandbox. `sandbox/Keep` renews the machine's slot each minute it is busy and closes it when the machine sleeps; the month's awake time, priced, alerts the Admins at $100.
+
 ## Sleep and wake
 
 - **Create on demand:** the first call or terminal wakes the machine: it starts the container, clones the branch and puts back the last checkpoint.
@@ -131,7 +135,7 @@ Content-free: ids, tools, outcomes, exit codes, statuses, counts and durations; 
 | ChatApi | `sandbox.call`, `sandbox.result` (logs, spans), `smithers_sandbox_call_requests{route,outcome}` |
 | `sandbox/Call` | `sandbox.tool`, `sandbox.call` (logs), `sandbox.call.tool`, `sandbox.call.settle` (spans), `smithers_sandbox_calls{tool,outcome}` |
 | `sandbox/Keep` | `sandbox.keep`, `sandbox.slept` (logs, spans), `smithers_sandbox_keeps{outcome}` |
-| `SandboxObject` | `sandbox.object.tool`, `sandbox.object.sleep`, `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (spans), `smithers_sandbox_checkpoints{op,outcome}`; `sandbox.wake` warnings name the failed `stage` (`start`, `checkout`, `restore`, `placeholders`); `sandbox.session` logs `startMs`, `provisionMs`, `sessionMs` on success, or the failed/timed-out `stage` (`start`, `provision`, `session`) and safe failure fields; `@smthrs/platform-cloudflare`'s `cloudflare.sandbox.wake`, `cloudflare.sandbox.rearm` and `@smthrs/sandbox`'s `sandbox.tool` span |
+| `SandboxObject` | `sandbox.object.tool`, `sandbox.object.sleep`, `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (spans), `smithers_sandbox_checkpoints{op,outcome}`; `sandbox.wake` warnings name the failed `stage` (`admit`, `start`, `checkout`, `restore`, `placeholders`); `sandbox.budget` logs each admission ([sandbox budgets](sandbox-budgets.md)); `sandbox.session` logs `startMs`, `provisionMs`, `sessionMs` on success, or the failed/timed-out `stage` (`start`, `provision`, `session`) and safe failure fields; `@smthrs/platform-cloudflare`'s `cloudflare.sandbox.wake`, `cloudflare.sandbox.rearm` and `@smthrs/sandbox`'s `sandbox.tool` span |
 | Browser (`SANDBOX_TELEMETRY`) | `sandbox.call`, `sandbox.call.start`, `sandbox.call.post`, `sandbox.call.result`, `smithers_web_sandbox_calls{tool,outcome}` |
 
 ## Tests
@@ -146,5 +150,4 @@ Content-free: ids, tools, outcomes, exit codes, statuses, counts and durations; 
 ## What's not built
 
 - Jobs (`job/Run`), previews, snapshots, and the Code Storage work-in-progress branch 0005 names for checkpoints; the checkpoint lives in the branch object's storage.
-- Sandbox budgets wait until we ship ([sandbox budgets](../work/sandbox-budgets.md); the numbers are an open question in [rulings §18](../rulings.md#18-open-questions-no-ruling-yet)).
 - `SANDBOX_SECRETS` on by default: it waits for an e2e through a real box ([secrets](secrets.md#wiring-into-the-box)).

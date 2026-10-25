@@ -2,12 +2,15 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
 import { MAX_DESTINATIONS } from "./contract"
-import { AlertChannelName } from "./schema"
+import { AlertChannelName, SandboxLimitsRequest } from "./schema"
 
-// Where spend alerts go outside the app, as a flow (docs/features/spend-alerts.md#channels):
+// Where spend alerts go outside the app, and the sandbox limits, as flows (docs/features/spend-alerts.md#channels,
+// docs/features/sandbox-budgets.md#the-limits):
 //
 //   alert/channel { channel, destinations }   an Admin sets email addresses or a Telegram chat; none turns it off
 //     alert/channel/request ─ POST /api/alert-channels
+//   sandbox/limits { awake, perPerson, monthlyAlertUsd }   an Admin sets the sandbox limits
+//     sandbox/limits/request ─ POST /api/sandbox-limits
 //
 // The step tries again while ChatApi can't be reached, for an hour; a refusal is final. Setting the same destinations
 // twice changes nothing. What the step does is steps.ts, which only an engine's host imports.
@@ -56,4 +59,23 @@ export const AlertChannelSet = Flow.make("alert/channel", {
   success: Schema.Struct({ saved: Schema.Boolean }),
   error: ChannelFailure,
   body: Node.capture({ action: ChannelRequestStep.name }, (request) => ChannelRequestStep.call(request)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** The step: ask ChatApi to set the sandbox limits. It fails as setting a channel does, and retries the same way. */
+export const LimitsRequestStep = Action.make("sandbox/limits/request", {
+  payload: SandboxLimitsRequest.fields,
+  success: Schema.Struct({ saved: Schema.Boolean }),
+  error: ChannelFailure,
+  retryPolicy: CHANNEL_RETRY,
+})
+
+/** `sandbox/limits`: set how many sandboxes may be awake, and the monthly sandbox spend that alerts the Admins. */
+export const SandboxLimitsSet = Flow.make("sandbox/limits", {
+  description: "Set the sandbox limits: how many sandboxes may be awake in the deployment and per person, and the " +
+    "monthly sandbox spend in dollars that alerts the Admins (0 turns the alert off). Admins only.",
+  modelInvocable: false,
+  payload: SandboxLimitsRequest.fields,
+  success: Schema.Struct({ saved: Schema.Boolean }),
+  error: ChannelFailure,
+  body: Node.capture({ action: LimitsRequestStep.name }, (request) => LimitsRequestStep.call(request)),
 }).annotate(Flow.Placement, Placement.client())

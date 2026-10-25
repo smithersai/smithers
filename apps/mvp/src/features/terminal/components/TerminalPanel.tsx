@@ -3,7 +3,7 @@ import { TerminalFrame } from "@smthrs/terminal-frame"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useParams } from "@tanstack/react-router"
 import { useShownMode } from "../../theme/components/ThemeButton"
-import { OPEN_TERMINAL, panelViewOf } from "../view"
+import { OPEN_TERMINAL, panelViewOf, WAITING_FOR_SANDBOX } from "../view"
 import { useTerminal } from "./TerminalContext"
 
 // The branch's terminal (decision 0013 §3, §5): our xterm in an opaque-origin frame, attached to a shell on the
@@ -22,10 +22,11 @@ export function TerminalPanel({ canOpen }: { readonly canOpen: boolean }) {
   const routeParams = { owner: params.owner ?? "", repo: params.repo ?? "", ref: params.ref ?? "", _splat: params._splat ?? "" }
   const openButton = view.open === undefined ? null : (
     <span className="terminal-panel-open">
-      <Button onClick={actions.open} disabled={view.open === "opening"}>
+      <Button onClick={actions.open} disabled={view.open !== "button"}>
         {OPEN_TERMINAL}
       </Button>
-      {view.open === "opening" ? <LoadingBar loading placement="inline" /> : null}
+      {view.open === "button" ? null : <LoadingBar loading placement="inline" />}
+      {view.open === "waiting" ? <span role="status">{WAITING_FOR_SANDBOX}</span> : null}
     </span>
   )
   const { screen } = view

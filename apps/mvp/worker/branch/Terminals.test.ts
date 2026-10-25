@@ -3,12 +3,14 @@
 // through the compose Electric (`pnpm db:up`). The branch's machine is a test `TerminalSockets`, standing in for the
 // Cloudflare binding; `terminal/Open` itself runs in worker/flows/TerminalOpen.test.ts.
 import { Effect, Layer, Redacted } from "effect"
+import { SqlClient } from "effect/sql"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { BRANCHES_ROUTE, SHARES_SHAPE_ROUTE } from "../../src/features/branch/contract.ts"
 import {
   MAX_OPEN_BODY_BYTES,
+  ADMIT_WAIT_SECONDS,
   OPEN_DEADLINE_SECONDS,
   openExecutionId,
   TERMINALS_ROUTE,
@@ -190,6 +192,48 @@ describe("POST /api/terminals", () => {
     expect(await json(await post(h, request(branch.branchId)))).toEqual([200, { terminalId: slow }])
     expect(h.starts).toEqual([])
     expect((await terminalRows(runtime, branch.branchId)).map((row) => [row.id, row.status])).toEqual([[slow, "opening"]])
+  })
+
+  test("an open waiting for a free machine keeps the person's place for the wait, then past it is settled failed", async () => {
+    const branch = await tracked(runtime, REPO, "feature/x")
+    const waiting = crypto.randomUUID()
+    await terminal(runtime, {
+      id: waiting,
+      branchId: branch.branchId,
+      ownerId: "person-member",
+      status: "opening",
+      ageSeconds: OPEN_DEADLINE_SECONDS + 600,
+    })
+    const markWaiting = (seconds: number) =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`
+          UPDATE terminal_sessions SET waiting = true, created_at = now() - make_interval(secs => ${seconds})
+          WHERE id = ${waiting}`))
+    await markWaiting(OPEN_DEADLINE_SECONDS + 600)
+    const h = await open()
+    expect(await json(await post(h, request(branch.branchId)))).toEqual([200, { terminalId: waiting }])
+    expect(h.starts).toEqual([])
+
+    // Past the wait and the open's own deadline, it can't hold the person out any longer.
+    await markWaiting(ADMIT_WAIT_SECONDS + OPEN_DEADLINE_SECONDS + 1)
+    const next = request(branch.branchId)
+    expect(await json(await post(h, next))).toEqual([202, { terminalId: next.terminalId }])
+  })
+
+  test("an open admitted after a wait has its deadline from the admission", async () => {
+    const branch = await tracked(runtime, REPO, "feature/x")
+    const admitted = crypto.randomUUID()
+    await terminal(runtime, {
+      id: admitted,
+      branchId: branch.branchId,
+      ownerId: "person-member",
+      status: "opening",
+      ageSeconds: OPEN_DEADLINE_SECONDS + 600,
+    })
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE terminal_sessions SET admitted_at = now() - interval '10 seconds' WHERE id = ${admitted}`))
+    const h = await open()
+    expect(await json(await post(h, request(branch.branchId)))).toEqual([200, { terminalId: admitted }])
   })
 
   test("an id another person's terminal holds is 409 id_taken, unless the person has a live terminal to answer", async () => {

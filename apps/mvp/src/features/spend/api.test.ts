@@ -7,7 +7,7 @@ import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { AlertsClient, ChannelNotTaken } from "./api"
 import { CHANNEL_RETRY, ChannelRefused, ChannelUnsent } from "./flows"
-import { failureOf, requestChannel, sets } from "./steps"
+import { failureOf, limitSets, requestChannel, requestLimits, sets } from "./steps"
 
 /** The client over a `fetch` that answers with `respond`, recording each request it was handed. */
 const client = (respond: (request: Request) => Promise<Response>, within?: `${number} millis`) => {
@@ -54,6 +54,20 @@ describe("AlertsClient", () => {
       .toEqual({ _tag: "ChannelNotTaken", status: 503 })
   })
 
+  test("sets the sandbox limits at /api/sandbox-limits; a refusal carries its status and code", async () => {
+    const { run, seen } = client(() => json({ txid: 3 }))
+    const limits = { awake: 5, perPerson: 1, monthlyAlertUsd: 40 }
+    expect(await run((c) => c.setLimits(limits))).toEqual(Exit.void)
+    expect(seen).toEqual([
+      { url: "http://chat.test/api/sandbox-limits", body: `{"awake":5,"perPerson":1,"monthlyAlertUsd":40}` },
+    ])
+    expect(refusalOf(await client(() => json({ code: "forbidden" }, 403)).run((c) => c.setLimits(limits)))).toEqual({
+      _tag: "ChannelNotTaken",
+      status: 403,
+      code: "forbidden",
+    })
+  })
+
   test("no network, a body that isn't the route's, and no answer within the deadline are refusals", async () => {
     expect(refusalOf(await client(() => Promise.reject(new TypeError("offline"))).run((c) => c.set(email)))).toEqual({
       _tag: "ChannelNotTaken",
@@ -73,7 +87,7 @@ describe("alert/channel/request", () => {
     const registry: Metric.MetricRegistry = new Map()
     return Effect.runPromise(
       Effect.exit(requestChannel(email)).pipe(
-        Effect.provide(Layer.succeed(AlertsClient, AlertsClient.of({ set: () => answer }))),
+        Effect.provide(Layer.succeed(AlertsClient, AlertsClient.of({ set: () => answer, setLimits: () => answer }))),
         Effect.provideService(Metric.MetricRegistry, registry),
         Effect.flatMap((exit) =>
           Effect.map(
@@ -114,5 +128,37 @@ describe("alert/channel/request", () => {
   test("a 4xx without a code is refused without one", () => {
     expect(failureOf(new ChannelNotTaken({ status: 400 }))).toEqual(new ChannelRefused({ status: 400 }))
     expect(failureOf(new ChannelNotTaken({ status: 500 }))).toEqual(new ChannelUnsent())
+  })
+})
+
+describe("sandbox/limits/request", () => {
+  const limits = { awake: 5, perPerson: 1, monthlyAlertUsd: 40 }
+  /** The step over a client answering `answer`, keeping its count. */
+  const step = (answer: Effect.Effect<void, ChannelNotTaken>) => {
+    const registry: Metric.MetricRegistry = new Map()
+    return Effect.runPromise(
+      Effect.exit(requestLimits(limits)).pipe(
+        Effect.provide(Layer.succeed(AlertsClient, AlertsClient.of({ set: () => answer, setLimits: () => answer }))),
+        Effect.provideService(Metric.MetricRegistry, registry),
+        Effect.flatMap((exit) =>
+          Effect.map(
+            Effect.all(
+              ["sent", "refused", "unsent"].map((outcome) => Metric.value(Metric.withAttributes(limitSets, { outcome }))),
+            ),
+            (counts) => ({ exit, counts: counts.map((count) => count.count) }),
+          ).pipe(Effect.provideService(Metric.MetricRegistry, registry))
+        ),
+      ),
+    )
+  }
+
+  test("taken is saved; a permanent 4xx is refused with its code; server and network failures retry", async () => {
+    expect(await step(Effect.void)).toEqual({ exit: Exit.succeed({ saved: true }), counts: [1, 0, 0] })
+    const refused = await step(Effect.fail(new ChannelNotTaken({ status: 400, code: "invalid" })))
+    expect(refused.exit).toEqual(Exit.fail(new ChannelRefused({ status: 400, code: "invalid" })))
+    expect(refused.counts).toEqual([0, 1, 0])
+    const unsent = await step(Effect.fail(new ChannelNotTaken({})))
+    expect(unsent.exit).toEqual(Exit.fail(new ChannelUnsent()))
+    expect(unsent.counts).toEqual([0, 0, 1])
   })
 })

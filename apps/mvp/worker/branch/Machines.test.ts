@@ -29,6 +29,8 @@ describe("ranOf", () => {
     expect(await failure({ _tag: "CheckoutFailed" })).toEqual(new CheckoutFailed())
     expect(await failure({ _tag: "Unavailable", reason: "start_timeout" })).toEqual(new SandboxStartTimedOut())
     expect(await failure({ _tag: "Unavailable" })).toEqual(new SandboxUnavailable({ reason: "exec" }))
+    // No machine free under the sandbox limits (worker/branch/Budget.ts): the step tries again.
+    expect(await failure({ _tag: "Waiting" })).toEqual(new SandboxUnavailable({ reason: "waiting" }))
   })
 })
 
@@ -81,6 +83,7 @@ describe("commandsOver", () => {
     expect(await failure({ _tag: "CheckoutFailed" })).toEqual(new CheckoutFailed())
     expect(await failure({ _tag: "Unavailable", reason: "start_timeout" })).toEqual(new SandboxStartTimedOut())
     expect(await failure({ _tag: "Unavailable" })).toEqual(new SandboxUnavailable({ reason: "exec" }))
+    expect(await failure({ _tag: "Waiting" })).toEqual(new SandboxUnavailable({ reason: "waiting" }))
     expect(await failure({ _tag: "ToolUnavailable", code: "unavailable" })).toEqual(
       new SandboxTools.ToolUnavailable({ code: "unavailable" }),
     )

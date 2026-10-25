@@ -56,6 +56,12 @@ export const openExecutionId = (terminalId: string): string => `terminal-open:${
 export const OPEN_DEADLINE_SECONDS = 180
 
 /**
+ * How long a terminal waits for a free machine under the sandbox limits (worker/branch/Budget.ts, decision 0103) before
+ * it fails: its row says `waiting` meanwhile, and its open's deadline counts from when a machine was free.
+ */
+export const ADMIT_WAIT_SECONDS = 30 * 60
+
+/**
  * What the branch terminal records in the browser (decision 0013 §7, docs/observability.md#browser): `terminal/open`'s
  * step and request, the button, the socket's span and the counts. Never a byte of the terminal: only ids, outcomes,
  * statuses, close codes, byte counts by direction and durations.

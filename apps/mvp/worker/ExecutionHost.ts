@@ -11,6 +11,7 @@ import * as Dispatch from "./ci/Dispatch.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
 import * as Checks from "./flows/Checks.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
+import * as SandboxSpend from "./flows/SandboxSpend.ts"
 import * as CiJobMachine from "./flows/CiJobMachine.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
@@ -55,16 +56,18 @@ export interface Flows<ROut, E, R> {
 /**
  * The deployed remote flows: `probe/Pause`, whose steps log, `chat/Expire` over `app`: the app's own tables (not
  * the engine's schema) and how old a streaming answer gets before it settles (docs/features/agent.md#settling), and
- * `ops/SpendAlert` and `ops/DatabaseLoad` over the app's tables, sending through `channels`, the deployment's email and
- * Telegram providers (none by default; docs/features/spend-alerts.md#channels, docs/features/database-alerts.md).
+ * `ops/SpendAlert`, `ops/DatabaseLoad` and `ops/SandboxSpend` over the app's tables, sending through `channels`, the
+ * deployment's email and Telegram providers (none by default; docs/features/spend-alerts.md#channels,
+ * docs/features/database-alerts.md, docs/features/sandbox-budgets.md#the-spend-alert).
  */
 export const remote = <E, R>(app: Expire.Services<E, R>, channels?: Layer.Layer<Channels.Channels>) => ({
-  flows: [Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad],
+  flows: [Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, SandboxSpend.SandboxSpend],
   registration: Layer.mergeAll(
     Pause.registration(Pause.logged),
     Expire.registration(app),
     SpendAlert.registration(app.database, channels),
     DatabaseLoad.registration(app.database, channels),
+    SandboxSpend.registration(app.database, channels),
   ),
 })
 

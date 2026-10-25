@@ -79,7 +79,8 @@ export class AttentionStore extends Context.Service<
           schema: Notice,
           getKey: (row) => row.subject,
           syncMode: "eager",
-          persist: { schemaVersion: 1 },
+          // Version 2: the kind `spend` (src/device/registry.ts).
+          persist: { schemaVersion: 2 },
           shape: {
             url: `${config.origin}${NOTIFICATIONS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),

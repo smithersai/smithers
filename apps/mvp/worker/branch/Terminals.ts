@@ -6,6 +6,7 @@ import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
   MAX_OPEN_BODY_BYTES,
+  ADMIT_WAIT_SECONDS,
   OPEN_DEADLINE_SECONDS,
   openExecutionId,
   TERMINALS_TABLE,
@@ -92,10 +93,13 @@ const admit = (terminalId: string, branchId: string, actor: Actor) =>
     return yield* sql.withTransaction(Effect.gen(function* () {
       // An open that never finished in time (its run stopped, or never started) settles failed here, so it can't lock
       // the person out of the branch; `terminal/Open` no longer records it open either (worker/flows/TerminalOpen.ts).
+      // One waiting for a free machine has the wait's time first (`ADMIT_WAIT_SECONDS`).
       yield* sql`
         UPDATE terminal_sessions SET status = 'failed', failure = 'unavailable', ended_at = now(), updated_at = now()
         WHERE branch_id = ${branchId} AND owner_id = ${actor.subject.id} AND status = 'opening'
-          AND created_at <= now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS})`
+          AND CASE WHEN waiting
+            THEN created_at <= now() - make_interval(secs => ${ADMIT_WAIT_SECONDS + OPEN_DEADLINE_SECONDS})
+            ELSE coalesce(admitted_at, created_at) <= now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS}) END`
       const [inserted] = yield* sql<{ readonly id: string }>`
         INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, owner_role, status)
         VALUES (${terminalId}, ${branchId}, ${actor.subject.id}, ${actor.login ?? actor.subject.id}, ${actor.role},

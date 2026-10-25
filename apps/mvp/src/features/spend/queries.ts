@@ -1,7 +1,7 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { Session } from "../auth/schema"
 import type { Effect } from "effect"
-import type { AlertChannel, AlertDelivery, ChannelSave, Seen, SpendAlert } from "./schema"
+import type { AlertChannel, AlertDelivery, ChannelSave, LimitsSave, SandboxLimitsRow, Seen, SpendAlert } from "./schema"
 
 // What frontends read about spend alerts (docs/features/spend-alerts.md): a live query over the synced alerts and this
 // device's mark of what it has seen.
@@ -51,4 +51,12 @@ export const deliveriesQuery = (deliveries: AdminRows<AlertDelivery>) =>
 
 /** This tab's saves that haven't landed. */
 export const savesQuery = (saves: Collection.Collection<ChannelSave, string>) =>
+  LiveQuery.make((q) => q.from({ save: saves.tanstack }).select(({ save }) => save))
+
+/** The sandbox limits an Admin set: one row, or none while the defaults hold. */
+export const limitsQuery = (limits: AdminRows<SandboxLimitsRow>) =>
+  LiveQuery.make((q) => q.from({ limit: limits.tanstack }).select(({ limit }) => limit))
+
+/** This tab's save of the sandbox limits that hasn't landed. */
+export const limitSavesQuery = (saves: Collection.Collection<LimitsSave, string>) =>
   LiveQuery.make((q) => q.from({ save: saves.tanstack }).select(({ save }) => save))

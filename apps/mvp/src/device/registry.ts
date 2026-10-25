@@ -23,7 +23,7 @@ import { CheckRow, PullCommitRow, PullRow, ReviewRow } from "../features/pulls/s
 import { Hidden as PersonalModelHidden, PersonalModelRow } from "../features/personal-model/schema"
 import { Repository } from "../features/repo/schema"
 import { SecretRow } from "../features/secrets/schema"
-import { AlertChannel, AlertDelivery, Seen, SpendAlert } from "../features/spend/schema"
+import { AlertChannel, AlertDelivery, SandboxLimitsRow, Seen, SpendAlert } from "../features/spend/schema"
 import { RepoRunRow, SteerSending, SteerSent } from "../features/runs/schema"
 import { Run } from "../features/status/schema"
 import { Preference } from "../features/theme/schema"
@@ -185,11 +185,13 @@ const synced = [
   Migrations.synced({ id: "issue-triage-settings", version: 1, schema: TriageSettings }),
   Migrations.synced({ id: "flows", version: 2, schema: FlowRow }),
   Migrations.synced({ id: "flow-drafts", version: 1, schema: FlowDraft }),
-  Migrations.synced({ id: "notifications", version: 1, schema: Notice }),
+  // Version 2: the kind `spend`, a sandbox spend alert in an Admin's bell (docs/features/sandbox-budgets.md).
+  Migrations.synced({ id: "notifications", version: 2, schema: Notice }),
   Migrations.synced({ id: "my-conversations", version: 1, schema: Mine }),
   Migrations.synced({ id: "spend-alerts", version: 1, schema: SpendAlert }),
   Migrations.synced({ id: "alert-channels", version: 1, schema: AlertChannel }),
   Migrations.synced({ id: "alert-deliveries", version: 1, schema: AlertDelivery }),
+  Migrations.synced({ id: "sandbox-limits", version: 1, schema: SandboxLimitsRow }),
   Migrations.synced({ id: "todos", version: 4, schema: Todo, family: true }),
   Migrations.synced({ id: "todo-requests", version: 1, schema: TodoRequest, family: true }),
   Migrations.synced({ id: "text-updates", version: 1, schema: TextUpdate, family: true }),

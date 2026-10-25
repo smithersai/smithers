@@ -430,3 +430,49 @@ describe("what a receipt and a field say", () => {
     expect(splitDestinations("")).toEqual([])
   })
 })
+
+// The sandbox limits (docs/features/sandbox-budgets.md#the-limits): an Admin's Save runs `sandbox/limits` on the tab's
+// engine against ChatApi's real route, and the limits sync back through the compose Electric.
+describe("an Admin's sandbox limits", { timeout: 90_000 }, () => {
+  const limitsOf = (tab: Awaited<ReturnType<typeof openSettingsTab>>) => {
+    for (const query of [tab.store.limitRows, tab.store.limitPending]) query.tanstack.startSyncImmediate()
+    return {
+      rows: () => tab.store.limitRows.tanstack.toArray.map(({ awake, awakePerPerson, monthlyAlertUsd }) => ({
+        awake,
+        awakePerPerson,
+        monthlyAlertUsd,
+      })),
+      saves: () => tab.store.limitPending.tanstack.toArray.map((save) => `${save.id}:${save.state}`),
+    }
+  }
+
+  test("Save sets the limits, which sync back; a save that can't land stays Not saved, and a later one saves", async () => {
+    const tab = await openSettingsTab(await openApi(admin))
+    const limits = limitsOf(tab)
+
+    tab.spend.actions.setLimits({ awake: 6, perPerson: 1, monthlyAlertUsd: 25 })
+    expect(limits.saves()).toEqual(["sandbox:saving"])
+    await until(() => expect(limits.rows()).toEqual([{ awake: 6, awakePerPerson: 1, monthlyAlertUsd: 25 }]))
+    await until(() => expect(limits.saves()).toEqual([]))
+
+    // No machine may be awake at all: the limits refuse it.
+    tab.spend.actions.setLimits({ awake: 0, perPerson: 1, monthlyAlertUsd: 25 })
+    await until(() => expect(limits.saves()).toEqual(["sandbox:failed"]))
+    tab.spend.actions.setLimits({ awake: 7, perPerson: 2, monthlyAlertUsd: 0 })
+    await until(() => expect(limits.rows()).toEqual([{ awake: 7, awakePerPerson: 2, monthlyAlertUsd: 0 }]))
+    await until(() => expect(limits.saves()).toEqual([]))
+  })
+
+  test("a Member's save is refused, and their tab syncs no limits", async () => {
+    const admins = await openSettingsTab(await openApi(admin))
+    admins.spend.actions.setLimits({ awake: 9, perPerson: 2, monthlyAlertUsd: 100 })
+    await until(() => expect(limitsOf(admins).rows()).toHaveLength(1))
+
+    const tab = await openSettingsTab(await openApi(member), "member")
+    const limits = limitsOf(tab)
+    tab.spend.actions.setLimits({ awake: 1, perPerson: 1, monthlyAlertUsd: 1 })
+    await until(() => expect(limits.saves()).toEqual(["sandbox:failed"]))
+    await tab.runtime.runPromise(Effect.sleep("100 millis"))
+    expect(limits.rows()).toEqual([])
+  })
+})

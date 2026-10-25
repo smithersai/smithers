@@ -50,7 +50,7 @@ Settings ── Save ──▶ alert/channel { channel, destinations }      (the
 
 ### Delivery
 
-`ops/DeliverSpendAlert { alertId, channel, outcome }` sends through `@smthrs/notifications`' `Channels` (library catalog: "Send a person a short message by email or Telegram from a durable step"). What it does on one channel is every alert's delivery (`worker/flows/AlertDelivery.ts`): [database alerts](database-alerts.md) deliver the same way, to the same channels, with receipts in the same table.
+`ops/DeliverSpendAlert { alertId, channel, outcome }` sends through `@smthrs/notifications`' `Channels` (library catalog: "Send a person a short message by email or Telegram from a durable step"). What it does on one channel is every alert's delivery (`worker/flows/AlertDelivery.ts`): [database alerts](database-alerts.md) and [sandbox spend alerts](sandbox-budgets.md#the-spend-alert) deliver the same way, to the same channels, with receipts in the same table.
 
 - **Email: Resend.** One `POST /emails` per alert with the alert's id as its `Idempotency-Key`, so a retried step sends one email. Resend was picked because a Worker reaches it with one `fetch` (no SMTP, no binding, so the same code runs on any host and a test points it at a local server), and its idempotency key makes the engine's retries safe. Postmark and MailChannels have no idempotency key; Cloudflare Email Routing's `send_email` is a Worker binding that reaches only verified addresses and can't be pointed at a local fake.
 - **Telegram: the Bot API's `sendMessage`.** It has no idempotency key, so a host that dies after Telegram took the message and before the step recorded it sends it again.

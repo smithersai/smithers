@@ -73,3 +73,9 @@ export const receiptText = (receipt: Pick<AlertDelivery, "status" | "code" | "re
   const word = receipt.status === "sent" ? "Sent" : receipt.status === "refused" ? "Refused" : "Retrying"
   return receipt.status === "sent" || why === null ? word : `${word} · ${why}`
 }
+
+/** The settings' heading for the sandbox limits (docs/features/sandbox-budgets.md#the-limits). */
+export const LIMITS_HEADING = "Sandboxes"
+
+/** Each limit's field. */
+export const LIMIT_LABEL = { awake: "Awake", perPerson: "Awake per person", monthlyAlertUsd: "Monthly alert ($)" } as const

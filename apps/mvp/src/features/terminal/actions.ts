@@ -2,7 +2,7 @@ import { TerminalSocket } from "@smthrs/platform-browser"
 import { Cause, Clock, Effect, FiberHandle, Metric, Option, Ref, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
-import { DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, terminalSocketRoute } from "./contract"
+import { ADMIT_WAIT_SECONDS, DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, terminalSocketRoute } from "./contract"
 import { bytes, ended, openMs, reconnects } from "./metrics"
 import { PANEL, type Panel, type Tab, type TerminalRow } from "./schema"
 import { TerminalStore } from "./store"
@@ -51,6 +51,7 @@ const mirrorTabs = (rows: ReadonlyArray<TerminalRow>) =>
           ownerLogin: row.ownerLogin,
           mine: row.ownerLogin === login,
           status: row.status,
+          waiting: row.status === "opening" && row.waiting === true,
           createdAt: row.createdAt,
         }]
         : []
@@ -136,19 +137,36 @@ export const show = (branchId: string | null, watching?: string) =>
 const phaseOf = (row: TerminalRow): Panel["phase"] =>
   row.status === "opening" ? "opening" : row.status === "failed" ? "failed" : "ended"
 
-/** Waits for terminal `terminalId`'s row to settle, then shows it open, or why not. */
+/**
+ * Waits for terminal `terminalId`'s row to settle, then shows it open, or why not. A row waiting for a free machine
+ * gets the wait's time too (`ADMIT_WAIT_SECONDS`).
+ */
 const awaitOpen = (branchId: string, terminalId: string, startedAt: number | undefined) =>
   Effect.gen(function* () {
     const terminals = yield* (yield* TerminalStore).terminals(branchId)
     const settled = (row: TerminalRow | undefined) => row !== undefined && row.status !== "opening"
     const now = Option.getOrUndefined(yield* terminals.get(terminalId))
-    const remaining = now === undefined ? OPEN_WITHIN : Math.max(0, Date.parse(now.createdAt) + OPEN_WITHIN - (yield* Clock.currentTimeMillis))
-    const row = settled(now)
-      ? now!
-      : (yield* terminals.awaitMatch(
-        (change) => change.value.id === terminalId && change.value.status !== "opening",
-        remaining,
-      ).pipe(Effect.timeoutOption(remaining), Effect.ignore, Effect.andThen(terminals.get(terminalId)), Effect.map(Option.getOrUndefined)))
+    const from = now === undefined ? yield* Clock.currentTimeMillis : Date.parse(now.createdAt)
+    /** The row once `match` holds for it, or as it is at `until`. */
+    const awaitRow = (match: (row: Partial<TerminalRow>) => boolean, until: number) =>
+      Effect.gen(function* () {
+        const remaining = Math.max(0, until - (yield* Clock.currentTimeMillis))
+        return yield* terminals.awaitMatch((change) => change.value.id === terminalId && match(change.value), remaining).pipe(
+          Effect.timeoutOption(remaining),
+          Effect.ignore,
+          Effect.andThen(terminals.get(terminalId)),
+          Effect.map(Option.getOrUndefined),
+        )
+      })
+    // An update carries only the columns it changed: a change settles the row only when it says its status.
+    const settles = (value: Partial<TerminalRow>) => value.status !== undefined && value.status !== "opening"
+    let row = now
+    if (!settled(row) && row?.waiting !== true) {
+      row = yield* awaitRow((value) => settles(value) || value.waiting === true, from + OPEN_WITHIN)
+    }
+    if (!settled(row) && row?.waiting === true) {
+      row = yield* awaitRow(settles, from + ADMIT_WAIT_SECONDS * 1000 + OPEN_WITHIN)
+    }
     const panel = yield* panelNow
     if (panel.terminalId !== terminalId) return
     if (row === undefined || row.status === "opening") return yield* setPanel({ phase: "failed" })

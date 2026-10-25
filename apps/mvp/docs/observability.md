@@ -617,6 +617,28 @@ A branch machine's tools and its sleep and wake ([sandbox-tools.md](features/san
 | `sandbox.tool` | span | `SandboxObject` (`@smthrs/sandbox`'s `SandboxTools`) | `smithers.sandbox.tool`, `smithers.sandbox.tool.outcome`, `smithers.sandbox.tool.exit_code` |
 | `sandbox.call`, `sandbox.call.start`, `sandbox.call.post`, `sandbox.call.result`, `smithers_web_sandbox_calls` | browser | the engine worker | `tool`, `outcome`, `callId`, `door` |
 
+### Sandbox budgets
+
+How many machines are awake, who waits for one, and what a month of them costs ([sandbox-budgets.md](features/sandbox-budgets.md)). Ids, counts, dollars and hours only: never a person's id, a command or an address.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `sandbox.budget` | log (Info admitted, Warn waiting or failed), span `sandbox.budget.admit` | `SandboxObject` before a stopped machine starts; `terminal/Open`'s `sandbox/Admit` | `branchId`, `kind` (`branch`, `todo`, `job`), `outcome` (`admitted`, `waiting`, `failed`), `awake`, `scope` and `limit` when waiting, `errorCode` when failed |
+| `smithers_sandbox_admissions` | counter | the same | `outcome`, `scope` (`deployment`, `person`, `none`), `kind` |
+| `smithers_sandbox_awake` | gauge | the same, and `ops/SampleSandboxSpend` | machines awake in the deployment |
+| `sandbox.keep.seen` | log, Warn | `sandbox/Keep` | a ledger renewal Postgres refused: `branchId`, `generation`, `errorCode` |
+| `terminal.admit` | span | `terminal/Open` | `smithers.terminal.id` |
+| `sandbox.wake` | log | `SandboxObject` | gains the stage `admit` and its `admitMs` |
+| `sandbox.limits` | log, span `sandbox.limits.request` | ChatApi, `POST /api/sandbox-limits` | `awake`, `perPerson`, `monthlyAlertUsd`, `status`, `durationMs`, `bytes`, `errorCode` |
+| `smithers_sandbox_limit_requests`, `smithers_sandbox_limit_shape_requests` | counter | ChatApi | `status`; the shape's `live` too |
+| `sandbox.spend` | log (Info under, Warn over, Warn failed, Error not started), span with `smithers.sandbox_spend.id` | `ops/SampleSandboxSpend`, and a `FlowExecution` alarm that couldn't start it | `outcome`, `month`, `usd`, `hours`, `awake`, `limitUsd`, `errorCode` |
+| `smithers_sandbox_spend_usd` | gauge | `ops/SampleSandboxSpend` | the month's estimated spend |
+| `smithers_sandbox_spend_samples` | counter | the same | `outcome` (`under`, `over`, `failed`, `not_started`) |
+| `sandbox.spend.bell` | log, span | `ops/BellSandboxSpend` | `alertId`, `admins` (how many bells it reached), `errorCode` |
+| `sandbox.spend.delivery` | log, span | `ops/DeliverSandboxSpend` | as `database.alert.delivery` |
+| `smithers_sandbox_spend_alert_deliveries` | counter | the same | `channel`, `outcome` |
+| `sandbox.limits.set`, `smithers_web_sandbox_limit_sets` | browser | the tab's engine, `sandbox/limits/request` | the limits, `outcome` (`sent`, `refused`, `unsent`), `status` |
+
 ### Secrets
 
 An Admin's writes of repository secrets, their shape, and a box's requests through the egress ([secrets.md](features/secrets.md#observability)). No record carries a value, a ciphertext, a header, a path or a body; records name secrets by name only, and no metric label carries a name or an id.

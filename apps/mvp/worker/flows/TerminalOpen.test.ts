@@ -7,7 +7,8 @@ import { Cause, Effect, Exit, Layer, Logger, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { OPEN_DEADLINE_SECONDS } from "../../src/features/terminal/contract.ts"
+import { ADMIT_WAIT_SECONDS, OPEN_DEADLINE_SECONDS } from "../../src/features/terminal/contract.ts"
+import * as Budget from "../branch/Budget.ts"
 import { CheckoutFailed, type SandboxBranch, Sandboxes, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { resetBranches, terminal, terminalRows, tracked } from "../test/branch.ts"
 import { runFlow } from "../test/flowHost.ts"
@@ -66,6 +67,21 @@ const run = async (
 
 const row = async (branchId: string) => (await terminalRows(runtime, branchId))[0]!
 
+const sql = <A extends object = Record<string, unknown>>(statement: string) =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(client.unsafe<A>(statement))))
+
+/** The branch's ledger slots (worker/branch/Budget.ts). */
+const slots = (branchId: string) =>
+  sql(`
+    SELECT person_id AS "personId", kind, generation, ended_at IS NULL AS open
+    FROM sandbox_generations WHERE branch_id = '${branchId}' ORDER BY id`)
+
+/** The terminal's wait: whether it waits, and whether it was admitted after one. */
+const waitOf = (terminalId: string) =>
+  sql<{ waiting: boolean; admitted: boolean }>(
+    `SELECT waiting, admitted_at IS NOT NULL AS admitted FROM terminal_sessions WHERE id = '${terminalId}'`,
+  ).then(([found]) => found)
+
 describe("terminal/Open on the Node host", () => {
   test("wakes the branch's machine, starts the owner's session and records the terminal open on that generation", async () => {
     const started = await opening()
@@ -78,6 +94,8 @@ describe("terminal/Open on the Node host", () => {
       `session ${started.branchId} ${started.terminalId} ${OWNER}`,
     ])
     expect(await row(started.branchId)).toMatchObject({ status: "open", generation: "3", failure: null, ended: false })
+    // The machine was admitted under the sandbox limits for the terminal's owner before it woke.
+    expect(await slots(started.branchId)).toEqual([{ personId: OWNER, kind: "branch", generation: null, open: true }])
   })
 
   test("a machine that can't start yet is woken again, and the terminal opens", async () => {
@@ -168,6 +186,48 @@ describe("the steps", () => {
     expect(refused.lines[0]!.annotations).toHaveProperty("errorCode")
   })
 
+  test("admit holds the branch a machine; with none free the row says waiting until one is, and its deadline counts from then", async () => {
+    const steps = TerminalOpen.steps(await database())
+    await runtime.runPromise(Budget.setLimits({ awake: 1, perPerson: 2, monthlyAlertUsd: 100 }, "person-admin"))
+    // Another branch's machine is awake: the only one the limits allow.
+    await runtime.runPromise(Budget.admit({ branchId: "busy-branch", personId: "person-other", kind: "branch" }))
+    const started = await opening(OPEN_DEADLINE_SECONDS + 60)
+    const payload = { terminalId: started.terminalId, ownerId: OWNER, branch: started.branch }
+
+    const waiting = await observed(steps.admit(payload))
+    expect(Exit.isFailure(waiting.exit) && Cause.squash(waiting.exit.cause)).toEqual(new TerminalOpen.NoSandboxFree())
+    expect(await waitOf(started.terminalId)).toEqual({ waiting: true, admitted: false })
+    expect(waiting.lines).toMatchObject([{ message: "sandbox.budget", level: "WARN", annotations: { outcome: "waiting" } }])
+    // Asked again while still none is free: still waiting, nothing else changes.
+    expect(Exit.isFailure(await Effect.runPromiseExit(steps.admit(payload)))).toBe(true)
+
+    // The other machine sleeps: this terminal gets one, and opens although it was asked for long ago.
+    await sql(`UPDATE sandbox_generations SET ended_at = now() WHERE branch_id = 'busy-branch'`)
+    expect(await Effect.runPromise(steps.admit(payload))).toEqual({ awake: 1 })
+    expect(await waitOf(started.terminalId)).toEqual({ waiting: false, admitted: true })
+    expect(await Effect.runPromise(steps.settle({ terminalId: started.terminalId, outcome: { status: "open", generation: 1 } })))
+      .toEqual({ recorded: true })
+    expect(await row(started.branchId)).toMatchObject({ status: "open", failure: null })
+  })
+
+  test("admit fails AdmitUnavailable while Postgres can't be asked, for the engine to retry", async () => {
+    const steps = TerminalOpen.steps(Layer.effect(SqlClient.SqlClient, Effect.fail(new Error("connection refused"))))
+    const branch: SandboxBranch = { branchId: "b-1", owner: "octocat", name: "Spoon-Knife", branch: "main" }
+    const exit = await Effect.runPromiseExit(steps.admit({ terminalId: crypto.randomUUID(), ownerId: OWNER, branch }))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(new TerminalOpen.AdmitUnavailable())
+  })
+
+  test("admit for a terminal whose row is gone still holds the machine, and changes no row", async () => {
+    const steps = TerminalOpen.steps(await database())
+    const branch: SandboxBranch = { branchId: `b-${crypto.randomUUID().slice(0, 8)}`, owner: "octocat", name: "Spoon-Knife", branch: "main" }
+    expect(await Effect.runPromise(steps.admit({ terminalId: crypto.randomUUID(), ownerId: OWNER, branch }))).toEqual({ awake: 1 })
+  })
+
+  test("a terminal waits for a free machine for half an hour, asked again from 5 s doubling to 30 s", () => {
+    expect(ADMIT_WAIT_SECONDS).toBe(1800)
+    expect(TerminalOpen.ADMIT_RETRY).toMatchObject({ initialMs: 5_000, factor: 2, maxMs: 30_000, expirationMs: 1_800_000 })
+  })
+
   test("a session the machine can't start fails the step for the engine to retry", async () => {
     const steps = TerminalOpen.steps(await database())
     const sandboxes = machine([], [Effect.fail(new SandboxUnavailable({ reason: "exec" }))])
@@ -185,11 +245,15 @@ describe("the steps", () => {
       status: "failed",
       failure: "checkout",
     })
-    for (const reason of ["start", "exec"] as const) {
+    for (const reason of ["start", "exec", "waiting"] as const) {
       expect(await Effect.runPromise(steps.failed({ error: new SandboxUnavailable({ reason }) }))).toEqual({
         status: "failed",
         failure: "unavailable",
       })
+    }
+    // No machine came free within the wait, or Postgres couldn't be asked: `unavailable` too.
+    for (const error of [new TerminalOpen.NoSandboxFree(), new TerminalOpen.AdmitUnavailable()]) {
+      expect(await Effect.runPromise(steps.failed({ error }))).toEqual({ status: "failed", failure: "unavailable" })
     }
   })
 

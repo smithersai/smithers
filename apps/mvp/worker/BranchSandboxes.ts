@@ -12,6 +12,7 @@ import { FORGE_HOST, SANDBOX_USER, WORKSPACE } from "../src/features/terminal/co
 import type { Role } from "./Actor.ts"
 import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
+import * as Budget from "./branch/Budget.ts"
 import * as Machine from "./branch/Machine.ts"
 import {
   type CommandOutcome,
@@ -94,7 +95,7 @@ export const sandboxStartTimeoutSeconds = Config.schema(
 const startTimedOut = (cause: Cause.Cause<unknown>) => Cause.squash(cause) instanceof SandboxHost.StartTimedOut
 
 /** The step of a wake a failure happened in, as its `sandbox.wake` log line names it. */
-type WakeStage = "start" | "checkout" | "restore" | "placeholders"
+type WakeStage = "admit" | "start" | "checkout" | "restore" | "placeholders"
 
 /** `NAME=value` lines as variables. */
 const variablesOf = (environment: string): Record<string, string> =>
@@ -126,15 +127,19 @@ interface Loopback {
   readonly exports: { readonly default: (options: { readonly props: Record<string, string> }) => Fetcher }
 }
 
-/** What `wake` answers: the machine's generation, or why it couldn't wake. */
+/**
+ * What `wake` answers: the machine's generation, or why it couldn't wake: `Waiting` while the sandbox limits leave no
+ * machine free (worker/branch/Budget.ts).
+ */
 export type Woken =
   | { readonly _tag: "Woken"; readonly generation: number }
   | { readonly _tag: "Unavailable"; readonly reason?: "start_timeout" }
   | { readonly _tag: "CheckoutFailed" }
+  | { readonly _tag: "Waiting" }
 
 /** The object's methods, as ChatApi and the flow host call them. */
 export interface SandboxObjectShape {
-  readonly wake: (branch: SandboxBranch) => Effect.Effect<Woken, never, RuntimeContext>
+  readonly wake: (branch: SandboxBranch, ownerId?: string) => Effect.Effect<Woken, never, RuntimeContext>
   readonly session: (terminalId: string, ownerId: string) => Effect.Effect<boolean, never, RuntimeContext>
   readonly alive: (terminalId: string, ownerId: string) => Effect.Effect<boolean, never, RuntimeContext>
   readonly enforce: (policy: Policy, revoked: ReadonlyArray<Revoked>) => Effect.Effect<void, never, RuntimeContext>
@@ -235,6 +240,40 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         return generation + 1
       })
 
+      /**
+       * `start`, for `ownerId`: a generation it started takes the branch's slot in the sandbox ledger, with the instance
+       * type it runs on (worker/branch/Budget.ts), so its awake time counts and is priced.
+       */
+      const startFor = (ownerId: string | undefined) =>
+        Effect.gen(function* () {
+          const before = (yield* state.storage.get<number>("generation")) ?? 0
+          const generation = yield* start
+          const branch = yield* branchOf
+          if (generation !== before && branch !== undefined) {
+            yield* Budget.started({
+              branchId: branch.branchId,
+              personId: Budget.personOf(ownerId),
+              kind: Budget.kindOf(branch),
+              generation,
+              instance,
+            }).pipe(Effect.provide(database))
+          }
+          return generation
+        })
+
+      /**
+       * Whether the sandbox limits let the branch's machine start for `ownerId` (worker/branch/Budget.ts): a running
+       * machine needs nothing; a stopped one is admitted, or waits. A failure to ask fails the wake, which is tried again:
+       * the limits are the deployment's hard cap, since Cloudflare's `durable_object` policy has no `max_instances`.
+       */
+      const admitted = (branch: SandboxBranch, ownerId: string | undefined) =>
+        Effect.gen(function* () {
+          const generation = (yield* state.storage.get<number>("generation")) ?? 0
+          if (generation > 0 && (yield* box.running)) return true
+          const slot = { branchId: branch.branchId, personId: Budget.personOf(ownerId), kind: Budget.kindOf(branch) }
+          return (yield* Budget.observedAdmit(slot, database))._tag === "Admitted"
+        })
+
       /** Runs `argv` as the machine's user `name`, answering its exit code. */
       const run = (argv: Array<string>, name: string) =>
         runOn(runBox, argv, name)
@@ -242,9 +281,9 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       // A wake's failure is logged with the step it failed in: the container's start, the checkout, the restore or
       // the placeholders, so a failure only production shows says where it happened. A wake that works logs how long
       // each step took, so a slow one says which step was slow.
-      const wake = (branch: SandboxBranch) =>
+      const wake = (branch: SandboxBranch, ownerId?: string) =>
         Effect.suspend(() => {
-          let stage: WakeStage = "start"
+          let stage: WakeStage = "admit"
           const took: Partial<Record<`${WakeStage}Ms`, number>> = {}
           const timed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
             Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
@@ -252,7 +291,9 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
                 Effect.map(Clock.currentTimeMillis, (now) => void (took[`${stage}Ms`] = now - startedAt))))
           return Effect.gen(function* () {
             yield* state.storage.put("branch", branch)
-            const generation = yield* timed(start)
+            if (!(yield* timed(admitted(branch, ownerId)))) return { _tag: "Waiting" } as const
+            stage = "start"
+            const generation = yield* timed(startFor(ownerId))
             stage = "checkout"
             const exit = yield* timed(run(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name), branch.namespace), SANDBOX_USER))
             if (exit !== 0) {
@@ -275,8 +316,12 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           }).pipe(
             Effect.catchCause((cause) =>
               Effect.as(
-                Effect.logWarning("sandbox.wake").pipe(
-                  Effect.annotateLogs({ branchId: branch.branchId, stage, ...failureFields(cause) }),
+                Effect.andThen(
+                  Effect.logWarning("sandbox.wake").pipe(
+                    Effect.annotateLogs({ branchId: branch.branchId, stage, ...failureFields(cause) }),
+                  ),
+                  // A machine that never started gives its slot back; one that did keeps it until it sleeps.
+                  stage === "start" ? Budget.release(branch.branchId).pipe(Effect.provide(database), Effect.ignore) : Effect.void,
                 ),
                 startTimedOut(cause) ? { _tag: "Unavailable", reason: "start_timeout" } as const : { _tag: "Unavailable" } as const,
               )
@@ -367,7 +412,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       /** Runs one sandbox tool on the branch's machine, waking it first (worker/branch/Machine.ts). */
       const tool = (branch: SandboxBranch, ownerId: string, callId: string, call: SandboxTools.Call) =>
         Effect.gen(function* () {
-          const woken = yield* wake(branch)
+          const woken = yield* wake(branch, ownerId)
           if (woken._tag !== "Woken") return woken
           return yield* Machine.tool(machine, { ownerId, callId, call, generation: woken.generation })
         })
@@ -380,7 +425,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       const command = (branch: SandboxBranch, ownerId: string, request: CommandRequest) =>
         Effect.gen(function* () {
           if (request.op === "start") {
-            const woken = yield* wake(branch)
+            const woken = yield* wake(branch, ownerId)
             if (woken._tag !== "Woken") return woken
             return yield* Machine.command(machine, { ownerId, request, generation: woken.generation })
           }
@@ -411,7 +456,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       // Each person's shell runs as their own user, made on first use (worker/branch/Users.ts). Opening one is use.
       const session = (terminalId: string, ownerId: string) =>
         sessionOn({
-          box: runBox, start, touch: Machine.touch(machine),
+          box: runBox, start: startFor(ownerId), touch: Machine.touch(machine),
           ensureSession: (options) => ContainerTerminal.ensureSession(box, options),
         })(terminalId, ownerId)
 
@@ -523,7 +568,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
 
       // Every method logs as JSON (`logs`).
       return {
-        wake: (branch: SandboxBranch) => logged(wake(branch)),
+        wake: (branch: SandboxBranch, ownerId?: string) => logged(wake(branch, ownerId)),
         session: (terminalId: string, ownerId: string) => logged(session(terminalId, ownerId)),
         alive: (terminalId: string, ownerId: string) => logged(alive(terminalId, ownerId)),
         enforce: (policy: Policy, revoked: ReadonlyArray<Revoked>) => logged(enforce(policy, revoked)),
@@ -570,13 +615,14 @@ const noKeep: Keep = () => Effect.void
 export const sandboxesOver = (objects: Objects, keep: Keep = noKeep) => Effect.gen(function* () {
   const runtime = yield* RuntimeContext
   return Sandboxes.of({
-    wake: (branch) =>
+    wake: (branch, ownerId) =>
       Effect.gen(function* () {
-        const woken: Woken = yield* objects.getByName(branch.branchId).wake(branch).pipe(
+        const woken: Woken = yield* objects.getByName(branch.branchId).wake(branch, ownerId).pipe(
           Effect.provideService(RuntimeContext, runtime),
           Effect.orElseSucceed((): Woken => ({ _tag: "Unavailable" })),
         )
         if (woken._tag === "CheckoutFailed") return yield* new CheckoutFailed()
+        if (woken._tag === "Waiting") return yield* new SandboxUnavailable({ reason: "waiting" })
         if (woken._tag === "Unavailable") return yield* new SandboxUnavailable({ reason: "start" })
         yield* keep(branch.branchId, woken.generation).pipe(Effect.provideService(RuntimeContext, runtime))
         return { generation: woken.generation }

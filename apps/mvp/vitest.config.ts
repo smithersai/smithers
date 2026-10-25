@@ -176,6 +176,8 @@ export default defineConfig({
         "db/migrations/0047_conversation_people.ts",
         // The sandbox tools: their calls on a branch's machine (docs/features/sandbox-tools.md).
         "db/migrations/0024_sandbox_calls.ts",
+        // Sandbox budgets: the limits, the ledger and a terminal's wait (docs/features/sandbox-budgets.md).
+        "db/migrations/0062_sandbox_budgets.ts",
         // Co-editing: the texts people edit together (docs/features/coedit.md).
         "db/migrations/0026_text_updates.ts",
         // What the Electric gateway lets through (docs/infrastructure.md).

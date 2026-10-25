@@ -1,8 +1,9 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
-import { Config, Effect, Layer, Metric, Schema } from "effect"
+import { Cause, Config, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { DEFAULT_IDLE_SECONDS, KEEP_EVERY_SECONDS } from "../../src/features/sandbox/contract.ts"
+import * as Budget from "../branch/Budget.ts"
 import { Machines } from "../branch/Machines.ts"
 import { SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
@@ -21,6 +22,10 @@ import { codeOf } from "../ErrorCode.ts"
 // (`sandbox-keep:<branch>:<generation>`). Asking the machine re-arms its inactivity timeout, so while this flow keeps
 // asking, only this flow puts it to sleep. The machine saves the working copy before it sleeps, and the next wake puts
 // it back (worker/BranchSandboxes.ts).
+//
+// It also keeps the sandbox ledger (worker/branch/Budget.ts): each ask that finds the machine busy renews its slot, and
+// `sandbox/Slept` closes it, so the machine counts as awake against the limits, and its time as spend, exactly while
+// it is awake.
 
 /** The machine is in use: something happened in it within the idle time. The step asks again later. */
 export class MachineBusy extends Schema.TaggedError<MachineBusy>()("@smthrs/mvp/sandbox/MachineBusy", {}) {}
@@ -55,23 +60,23 @@ export const SleepIfIdle = Action.make("sandbox/SleepIfIdle", {
   payload,
   success: Ended,
   error: MachineBusy,
-  capabilities: ["sandbox:sleep"],
+  capabilities: ["sandbox:sleep", "db:write:sandbox_generations"],
   retryPolicy: KEEP_RETRY,
 })
 
-/** Ends the generation's open terminals `slept`: their shells ended with the machine. */
+/** Ends the generation's open terminals `slept` (their shells ended with the machine) and closes its ledger slot. */
 export const Slept = Action.make("sandbox/Slept", {
   payload: { branchId: Schema.String, generation: Schema.Number, ended: Ended },
   success: Schema.Struct({ ended: Ended, terminals: Schema.Number }),
   error: SleptUnrecorded,
-  capabilities: ["db:write:terminal_sessions"],
+  capabilities: ["db:write:terminal_sessions", "db:write:sandbox_generations"],
   retryPolicy: RECORD_RETRY,
 })
 
 /** `sandbox/Keep`: keeps a generation of a branch's machine awake while it is used, then puts it to sleep. */
 export const Keep = Flow.make("sandbox/Keep", {
   description: "Keep a branch's machine awake while anything happens in it, and put it to sleep once nothing has.",
-  capabilities: ["sandbox:sleep", "db:write:terminal_sessions"],
+  capabilities: ["sandbox:sleep", "db:write:terminal_sessions", "db:write:sandbox_generations"],
   modelInvocable: false,
   payload,
   success: Slept.successSchema,
@@ -96,6 +101,19 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, id
           "unavailable" as const,
         )),
       Effect.tap((outcome) => Metric.update(Metric.withAttributes(keeps, { outcome }), 1)),
+      // A busy machine is awake: its ledger slot is renewed. A renewal Postgres refused is logged; the next ask renews it.
+      Effect.tap((outcome) =>
+        outcome === "busy"
+          ? Budget.seen(branchId, generation).pipe(
+            Effect.provide(database),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("sandbox.keep.seen").pipe(
+                Effect.annotateLogs({ branchId, generation, errorCode: codeOf(Cause.squash(cause)) }),
+              )
+            ),
+          )
+          : Effect.void
+      ),
       Effect.flatMap((outcome) =>
         outcome === "slept" || outcome === "gone" ? Effect.succeed(outcome) : Effect.fail(new MachineBusy())
       ),
@@ -109,6 +127,7 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, id
         UPDATE terminal_sessions SET status = 'ended', ended_reason = 'slept', ended_at = now(), updated_at = now()
         WHERE branch_id = ${branchId} AND generation = ${generation} AND status = 'open'
         RETURNING id`
+      yield* Budget.ended(branchId, generation)
       yield* Effect.logInfo("sandbox.slept").pipe(
         Effect.annotateLogs({ branchId, generation, ended, terminals: rows.length }),
       )

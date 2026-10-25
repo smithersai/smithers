@@ -247,6 +247,7 @@ describe("names and placement", () => {
       "watch/set",
       "notification/ack",
       "alert/channel",
+      "sandbox/limits",
       "domain/add",
       "domain/remove",
       "model/test",

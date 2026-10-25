@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
-import { hide, setChannel } from "./actions"
-import type { AlertChannelName } from "./schema"
+import { hide, setChannel, setLimits } from "./actions"
+import type { AlertChannelName, SandboxLimitsRequest } from "./schema"
 import { FlowDispatch } from "../../flows/dispatch"
 import { SpendStore } from "./store"
 
@@ -18,6 +18,10 @@ export interface SpendQueries {
   readonly receipts: Store["receipts"]["tanstack"]
   /** This tab's saves that haven't landed. */
   readonly saves: Store["pending"]["tanstack"]
+  /** The sandbox limits an Admin set: none while the defaults hold. */
+  readonly limits: Store["limitRows"]["tanstack"]
+  /** This tab's save of the sandbox limits that hasn't landed. */
+  readonly limitSaves: Store["limitPending"]["tanstack"]
 }
 
 /** What an Admin does, as plain functions. Each returns at once. */
@@ -26,6 +30,8 @@ export interface SpendActions {
   readonly hide: (id: string) => void
   /** Sets where spend alerts go on `channel`; none turns it off. */
   readonly setChannel: (channel: AlertChannelName, destinations: ReadonlyArray<string>) => void
+  /** Sets the sandbox limits. */
+  readonly setLimits: (limits: SandboxLimitsRequest) => void
 }
 
 export class Spend extends Context.Service<Spend, { readonly queries: SpendQueries; readonly actions: SpendActions }>()(
@@ -43,10 +49,13 @@ export class Spend extends Context.Service<Spend, { readonly queries: SpendQueri
           channels: store.channelList.tanstack,
           receipts: store.receipts.tanstack,
           saves: store.pending.tanstack,
+          limits: store.limitRows.tanstack,
+          limitSaves: store.limitPending.tanstack,
         },
         actions: {
           hide: (id) => run(hide(id)),
           setChannel: (channel, destinations) => run(setChannel(channel, destinations)),
+          setLimits: (limits) => run(setLimits(limits)),
         },
       })
     }),

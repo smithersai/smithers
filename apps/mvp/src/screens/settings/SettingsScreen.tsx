@@ -4,12 +4,13 @@ import { useAuth } from "../../features/auth/components/AuthContext"
 import { PersonalModelSettings } from "../../features/personal-model/components/PersonalModelSettings"
 import { canSave } from "../../features/personal-model/view"
 import { AlertSettings } from "../../features/spend/components/AlertSettings"
+import { SandboxLimitsSettings } from "../../features/spend/components/SandboxLimitsSettings"
 import "./settings-screen.css"
 
 // /app/settings: a signed-in Member's or above's own model, or Remove alone for anyone else who still has one saved
 // (docs/features/personal-model.md#the-settings-section), and
-// for an Admin, where spend alerts go outside the app (docs/features/spend-alerts.md#channels). Anyone else sees the
-// page's header alone.
+// for an Admin, where spend alerts go outside the app (docs/features/spend-alerts.md#channels) and the sandbox limits
+// (docs/features/sandbox-budgets.md#the-limits). Anyone else sees the page's header alone.
 export function SettingsScreen() {
   const { queries } = useAuth()
   const { data: session } = useLiveQuery(queries.session)
@@ -22,6 +23,7 @@ export function SettingsScreen() {
       </header>
       {session?.status === "signed_in" ? <PersonalModelSettings canSave={canSave(session)} /> : null}
       {admin ? <AlertSettings /> : null}
+      {admin ? <SandboxLimitsSettings /> : null}
     </main>
   )
 }

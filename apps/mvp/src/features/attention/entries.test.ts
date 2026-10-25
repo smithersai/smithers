@@ -262,3 +262,36 @@ describe("a clone's entry", () => {
     expect(one(clone({ state: "done", ref: "ready" }))).toMatchObject({ action: "open" })
   })
 })
+
+describe("a spend alert", () => {
+  // An Admin's sandbox spend alert (docs/features/sandbox-budgets.md#the-spend-alert): in the bell only.
+  const spend = notice({
+    subject: "sandbox-spend:2026-10:100",
+    kind: "spend",
+    state: "update",
+    mine: false,
+    runId: null,
+    repoId: null,
+    conversationId: null,
+    actor: null,
+    title: "$104.20 this month · alert at $100",
+    href: "/app/settings",
+  })
+
+  test("says what the month's sandboxes cost and the alert it reached", () => {
+    expect(wordsOf(spend)).toEqual({ word: "Sandbox spend", detail: "$104.20 this month · alert at $100" })
+  })
+
+  test("is listed and unread in the bell, opening Settings, and never shows as a toast", () => {
+    expect(one(spend)).toMatchObject({
+      kind: "spend",
+      word: "Sandbox spend",
+      action: "open",
+      href: "/app/settings",
+      listed: true,
+      unread: true,
+      stack: false,
+      stackHere: false,
+    })
+  })
+})

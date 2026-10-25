@@ -15,6 +15,8 @@ export const ToolOutcome = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("CheckoutFailed") }),
   // `start_timeout` when the machine didn't finish starting within SANDBOX_START_TIMEOUT_SECONDS.
   Schema.Struct({ _tag: Schema.Literal("Unavailable"), reason: Schema.optional(Schema.Literal("start_timeout")) }),
+  // The sandbox limits leave no machine free (worker/branch/Budget.ts).
+  Schema.Struct({ _tag: Schema.Literal("Waiting") }),
 ])
 export type ToolOutcome = typeof ToolOutcome.Type
 
@@ -50,6 +52,7 @@ export const CommandOutcome = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Lost") }),
   Schema.Struct({ _tag: Schema.Literal("CheckoutFailed") }),
   Schema.Struct({ _tag: Schema.Literal("Unavailable"), reason: Schema.optional(Schema.Literal("start_timeout")) }),
+  Schema.Struct({ _tag: Schema.Literal("Waiting") }),
   // The box's own session or script failed: the provider's code, and a script step's exit code.
   Schema.Struct({
     _tag: Schema.Literal("ToolUnavailable"),
@@ -132,6 +135,8 @@ export const ranOf = (
     ? Effect.fail(new SandboxTools.ToolLost())
     : outcome._tag === "CheckoutFailed"
     ? Effect.fail(new CheckoutFailed())
+    : outcome._tag === "Waiting"
+    ? Effect.fail(new SandboxUnavailable({ reason: "waiting" }))
     : Effect.fail(outcome.reason === "start_timeout" ? new SandboxStartTimedOut() : new SandboxUnavailable({ reason: "exec" }))
 
 /**
@@ -152,7 +157,7 @@ const commandFailure = (outcome: CommandOutcome) =>
     })
     : outcome._tag === "Unavailable" && outcome.reason === "start_timeout"
     ? new SandboxStartTimedOut()
-    : new SandboxUnavailable({ reason: "exec" })
+    : new SandboxUnavailable({ reason: outcome._tag === "Waiting" ? "waiting" : "exec" })
 
 /**
  * The commands (`SandboxCommand.Commands`) over `ask`, which runs one operation on a branch's machine and answers its

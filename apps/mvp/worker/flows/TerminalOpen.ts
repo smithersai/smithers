@@ -2,7 +2,8 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
 import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { FAILURES, OPEN_DEADLINE_SECONDS } from "../../src/features/terminal/contract.ts"
+import { ADMIT_WAIT_SECONDS, FAILURES, OPEN_DEADLINE_SECONDS } from "../../src/features/terminal/contract.ts"
+import * as Budget from "../branch/Budget.ts"
 import { CheckoutFailed, SandboxBranch, Sandboxes, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
 
@@ -11,8 +12,12 @@ import { codeOf } from "../ErrorCode.ts"
 // that isn't locked) and records its `opening` row, then starts this flow, one execution per terminal
 // (`terminal-open:<id>`).
 //
-//   sandbox/Wake ─▶ terminal/Session ─▶ terminal/Record (open, with the generation)
-//        └ failed: no machine, or no checkout ──────▶ terminal/Record (failed)
+//   sandbox/Admit ─▶ sandbox/Wake ─▶ terminal/Session ─▶ terminal/Record (open, with the generation)
+//        └ no machine free: the row says `waiting` ("Waiting for a sandbox"); asked again for up to 30 minutes
+//        └ failed: no machine free in time, no machine, or no checkout ──▶ terminal/Record (failed)
+//
+// `sandbox/Admit` holds the branch a machine under the sandbox limits (worker/branch/Budget.ts, decision 0103) before it
+// wakes, so a terminal waits for a free machine instead of failing; its open's deadline counts from then.
 //
 // It runs remotely because it needs a machine (decision 0011 §2). The host injects the machine (`Sandboxes`: on
 // Cloudflare, the branch's `SandboxObject` and its container) and Postgres. Opening is durable; the shell's bytes are
@@ -39,6 +44,23 @@ export const MACHINE_RETRY = RetryPolicy.make({
   nonRetryable: ["@smthrs/mvp/branch/CheckoutFailed"],
 })
 
+/**
+ * Waiting for a free machine: 5 s doubling to 30 s, for `ADMIT_WAIT_SECONDS`, while the sandbox limits leave none
+ * free or Postgres can't be asked.
+ */
+export const ADMIT_RETRY = RetryPolicy.make({
+  initialMs: 5_000,
+  factor: 2,
+  maxMs: 30_000,
+  expirationMs: ADMIT_WAIT_SECONDS * 1000,
+})
+
+/** No machine is free under the sandbox limits: the terminal waits. Retried. */
+export class NoSandboxFree extends Schema.TaggedError<NoSandboxFree>()("@smthrs/mvp/terminal/NoSandboxFree", {}) {}
+
+/** Postgres couldn't be asked for a machine, or couldn't record the wait. Retried. */
+export class AdmitUnavailable extends Schema.TaggedError<AdmitUnavailable>()("@smthrs/mvp/terminal/AdmitUnavailable", {}) {}
+
 /** Recording: 1 s doubling to a minute, for at most 30 minutes, while Postgres is unreachable. */
 export const RECORD_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 })
 
@@ -54,9 +76,21 @@ export const Outcome = Schema.Union([
 ])
 export type Outcome = typeof Outcome.Type
 
+/**
+ * Holds the branch a machine under the sandbox limits for the terminal's owner, and records on the terminal's row
+ * whether it waits for one: `NoSandboxFree` while none is free.
+ */
+export const Admit = Action.make("sandbox/Admit", {
+  payload: { terminalId: TerminalId, ownerId: Schema.String, branch: SandboxBranch },
+  success: Schema.Struct({ awake: Schema.Number }),
+  error: Schema.Union([NoSandboxFree, AdmitUnavailable]),
+  capabilities: ["db:write:sandbox_generations", "db:write:terminal_sessions"],
+  retryPolicy: ADMIT_RETRY,
+})
+
 /** Wakes the branch's machine, checked out at the branch, and answers its generation. */
 export const Wake = Action.make("sandbox/Wake", {
-  payload: { branch: SandboxBranch },
+  payload: { branch: SandboxBranch, ownerId: Schema.optional(Schema.String) },
   success: Schema.Struct({ generation: Schema.Number }),
   error: Schema.Union([SandboxUnavailable, CheckoutFailed]),
   capabilities: ["sandbox:wake"],
@@ -77,7 +111,7 @@ export const Session = Action.make("terminal/Session", {
 
 /** What a machine's failure means to the terminal: `checkout` when the forge refused the clone, else `unavailable`. */
 export const Failed = Action.make("terminal/Failed", {
-  payload: { error: Schema.Union([SandboxUnavailable, CheckoutFailed]) },
+  payload: { error: Schema.Union([SandboxUnavailable, CheckoutFailed, NoSandboxFree, AdmitUnavailable]) },
   success: Outcome,
   tier: "sealed",
 })
@@ -94,21 +128,25 @@ export const Record = Action.make("terminal/Record", {
 /** `terminal/Open`: opens a person's terminal on a branch's machine. */
 export const TerminalOpen = Flow.make("terminal/Open", {
   description: "Open a person's terminal on a branch's machine: wake the machine, start the shell session, record it.",
-  capabilities: ["sandbox:wake", "sandbox:exec", "db:write:terminal_sessions"],
+  capabilities: ["sandbox:wake", "sandbox:exec", "db:write:sandbox_generations", "db:write:terminal_sessions"],
   modelInvocable: false,
   payload,
   success: Record.successSchema,
   // The machine's failures are recorded on the row and never escape; the union says what the steps may fail with.
-  error: Schema.Union([RecordUnavailable, SandboxUnavailable, CheckoutFailed]),
+  error: Schema.Union([RecordUnavailable, SandboxUnavailable, CheckoutFailed, NoSandboxFree, AdmitUnavailable]),
   body: Node.capture(
-    { wake: Wake.name, session: Session.name, failed: Failed.name, record: Record.name },
+    { admit: Admit.name, wake: Wake.name, session: Session.name, failed: Failed.name, record: Record.name },
     ({ terminalId, ownerId, branch }) =>
-      Wake.call({ branch }).pipe(
+      Admit.call({ terminalId, ownerId, branch }).pipe(
+        Node.bindPlanned(Node.capture({ wake: Wake.name }, () => Wake.call({ branch, ownerId }))),
         Node.bindPlanned(Node.capture({ session: Session.name }, (woken: Planned.Planned<{ readonly generation: number }>) =>
           Session.call({ branchId: branch.branchId, terminalId, ownerId, generation: woken.generation }))),
         Node.catch({
-          onFailure: Node.capture({ failed: Failed.name }, (error: Planned.Planned<SandboxUnavailable | CheckoutFailed>) =>
-            Failed.call({ error })),
+          onFailure: Node.capture(
+            { failed: Failed.name },
+            (error: Planned.Planned<SandboxUnavailable | CheckoutFailed | NoSandboxFree | AdmitUnavailable>) =>
+              Failed.call({ error }),
+          ),
         }),
         Node.bindPlanned(Node.capture({ record: Record.name }, (outcome: Planned.Planned<Outcome>) =>
           Record.call({ terminalId, outcome }))),
@@ -118,7 +156,8 @@ export const TerminalOpen = Flow.make("terminal/Open", {
 
 /**
  * Writes `outcome` to terminal `terminalId`'s row while it is `opening`: whether it did. An open that comes past the
- * deadline (`OPEN_DEADLINE_SECONDS` after the row was made) settles `failed` instead, as the person's next open would.
+ * deadline (`OPEN_DEADLINE_SECONDS` after its machine was admitted, else after the row was made) settles `failed`
+ * instead, as the person's next open would.
  */
 export const record = (terminalId: string, outcome: Outcome) =>
   Effect.gen(function* () {
@@ -126,24 +165,52 @@ export const record = (terminalId: string, outcome: Outcome) =>
     const rows = outcome.status === "open"
       ? yield* sql`
         UPDATE terminal_sessions SET
-          status = CASE WHEN created_at > now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS}) THEN 'open' ELSE 'failed' END,
+          status = CASE WHEN coalesce(admitted_at, created_at) > now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS}) THEN 'open' ELSE 'failed' END,
           generation = ${outcome.generation},
-          failure = CASE WHEN created_at > now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS}) THEN NULL ELSE 'unavailable' END,
-          ended_at = CASE WHEN created_at > now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS}) THEN NULL ELSE now() END,
+          failure = CASE WHEN coalesce(admitted_at, created_at) > now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS}) THEN NULL ELSE 'unavailable' END,
+          ended_at = CASE WHEN coalesce(admitted_at, created_at) > now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS}) THEN NULL ELSE now() END,
+          waiting = false,
           updated_at = now()
         WHERE id = ${terminalId} AND status = 'opening'
         RETURNING id`
       : yield* sql`
-        UPDATE terminal_sessions SET status = 'failed', failure = ${outcome.failure}, updated_at = now(),
+        UPDATE terminal_sessions SET status = 'failed', failure = ${outcome.failure}, waiting = false, updated_at = now(),
           ended_at = now()
         WHERE id = ${terminalId} AND status = 'opening' RETURNING id`
     return { recorded: rows.length > 0 }
   })
 
+/**
+ * Records on terminal `terminalId`'s row, while it is `opening`, whether it waits for a machine: `waiting`, or, once one
+ * that waited is admitted, when (`admitted_at`), from which its open's deadline counts. One that never waited keeps
+ * its deadline from when it was asked for.
+ */
+export const markAdmission = (terminalId: string, waiting: boolean) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    waiting
+      ? sql`UPDATE terminal_sessions SET waiting = true, updated_at = now() WHERE id = ${terminalId} AND status = 'opening' AND NOT waiting`
+      : sql`
+        UPDATE terminal_sessions SET waiting = false, admitted_at = now(), updated_at = now()
+        WHERE id = ${terminalId} AND status = 'opening' AND waiting`)
+
 /** The steps over the host's `Sandboxes` and `database`, each recording what it did; none records a byte of the shell. */
 export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
-  const wake = ({ branch }: typeof Wake.payloadSchema.Type) =>
-    Effect.flatMap(Sandboxes, (sandboxes) => sandboxes.wake(branch)).pipe(
+  const admit = ({ terminalId, ownerId, branch }: typeof Admit.payloadSchema.Type) =>
+    Effect.gen(function* () {
+      const slot = { branchId: branch.branchId, personId: Budget.personOf(ownerId), kind: Budget.kindOf(branch) }
+      const admission = yield* Budget.observedAdmit(slot, database)
+      yield* markAdmission(terminalId, admission._tag === "Waiting").pipe(Effect.provide(database))
+      return admission
+    }).pipe(
+      Effect.mapError(() => new AdmitUnavailable()),
+      Effect.flatMap((admission) =>
+        admission._tag === "Waiting" ? Effect.fail(new NoSandboxFree()) : Effect.succeed({ awake: admission.awake })
+      ),
+      Effect.withSpan("terminal.admit", { attributes: { "smithers.terminal.id": terminalId } }),
+    )
+
+  const wake = ({ branch, ownerId }: typeof Wake.payloadSchema.Type) =>
+    Effect.flatMap(Sandboxes, (sandboxes) => sandboxes.wake(branch, ownerId)).pipe(
       Effect.tap(({ generation }) =>
         Effect.logInfo("terminal.open.wake").pipe(Effect.annotateLogs({ branchId: branch.branchId, generation }))
       ),
@@ -191,7 +258,7 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       Effect.withSpan("terminal.open", { attributes: { "smithers.terminal.id": terminalId } }),
     )
 
-  return { wake, session, failed, settle }
+  return { admit, wake, session, failed, settle }
 }
 
 /** Registers `terminal/Open` with its steps over `database` and the host's `Sandboxes`. */
@@ -200,6 +267,7 @@ export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E,
   return Interpreter.layerWithImplementations(
     TerminalOpen,
     Layer.mergeAll(
+      Admit.toLayer(implementation.admit),
       Wake.toLayer(implementation.wake),
       Session.toLayer(implementation.session),
       Failed.toLayer(implementation.failed),

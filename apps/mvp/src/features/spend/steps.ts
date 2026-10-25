@@ -1,8 +1,16 @@
 import { Interpreter } from "@smthrs/flow"
 import { Effect, Layer, Metric } from "effect"
 import { AlertsClient, type ChannelNotTaken } from "./api"
-import { AlertChannelSet, type ChannelFailure, ChannelRefused, ChannelRequestStep, ChannelUnsent } from "./flows"
-import type { SetChannelRequest } from "./schema"
+import {
+  AlertChannelSet,
+  type ChannelFailure,
+  ChannelRefused,
+  ChannelRequestStep,
+  ChannelUnsent,
+  LimitsRequestStep,
+  SandboxLimitsSet,
+} from "./flows"
+import type { SandboxLimitsRequest, SetChannelRequest } from "./schema"
 
 // Setting where spend alerts go (docs/features/spend-alerts.md#channels): one ChatApi request, through `AlertsClient`.
 // An Admin's Save runs this step on this device's engine.
@@ -43,10 +51,37 @@ export const requestChannel = (request: SetChannelRequest) =>
     return { saved: true }
   })
 
-/** Registers `alert/channel` with its step, asking through the host's `AlertsClient`. */
-export const registration = Interpreter.layerWithImplementations(
-  AlertChannelSet,
-  ChannelRequestStep.toLayer(requestChannel),
+/** Limit settings sent, by `outcome`: `sent`, `refused` or `unsent`. */
+export const limitSets = Metric.counter("smithers_web_sandbox_limit_sets", {
+  description: "Sandbox limit settings an Admin sent, by outcome",
+  incremental: true,
+})
+
+/**
+ * `sandbox/limits/request`: one `POST /api/sandbox-limits`. A log line `sandbox.limits.set` with the limits and the
+ * outcome, and a count by outcome.
+ */
+export const requestLimits = (request: SandboxLimitsRequest) =>
+  Effect.gen(function* () {
+    const answer = yield* Effect.result((yield* AlertsClient).setLimits(request))
+    const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined
+    const outcome = failure === undefined ? "sent" : failure._tag === "@smthrs/mvp/spend/ChannelRefused" ? "refused" : "unsent"
+    yield* Metric.update(Metric.withAttributes(limitSets, { outcome }), 1)
+    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("sandbox.limits.set").pipe(
+      Effect.annotateLogs({
+        ...request,
+        outcome,
+        ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
+      }),
+    )
+    if (failure !== undefined) return yield* Effect.fail(failure)
+    return { saved: true }
+  })
+
+/** Registers `alert/channel` and `sandbox/limits` with their steps, asking through the host's `AlertsClient`. */
+export const registration = Layer.mergeAll(
+  Interpreter.layerWithImplementations(AlertChannelSet, ChannelRequestStep.toLayer(requestChannel)),
+  Interpreter.layerWithImplementations(SandboxLimitsSet, LimitsRequestStep.toLayer(requestLimits)),
 )
 
 /** The flow, asking ChatApi on `origin`. Needs the host's `HttpClient`. */

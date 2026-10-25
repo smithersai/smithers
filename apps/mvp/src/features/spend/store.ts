@@ -2,9 +2,22 @@ import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Metric, Option, type Scope, Stream } from "effect"
 import { AuthStore, SESSION } from "../auth/store"
-import { ALERT_CHANNELS_SHAPE_ROUTE, ALERT_DELIVERIES_SHAPE_ROUTE, SPEND_ALERTS_SHAPE_ROUTE } from "./contract"
-import { adminQuery, channelsQuery, deliveriesQuery, openQuery, savesQuery } from "./queries"
-import { AlertChannel, AlertDelivery, ChannelSave, Seen, SpendAlert } from "./schema"
+import {
+  ALERT_CHANNELS_SHAPE_ROUTE,
+  ALERT_DELIVERIES_SHAPE_ROUTE,
+  SANDBOX_LIMITS_SHAPE_ROUTE,
+  SPEND_ALERTS_SHAPE_ROUTE,
+} from "./contract"
+import {
+  adminQuery,
+  channelsQuery,
+  deliveriesQuery,
+  limitSavesQuery,
+  limitsQuery,
+  openQuery,
+  savesQuery,
+} from "./queries"
+import { AlertChannel, AlertDelivery, ChannelSave, LimitsSave, SandboxLimitsRow, Seen, SpendAlert } from "./schema"
 import { adminShapeSource } from "./source"
 
 // Spend alerts on this tab (docs/features/spend-alerts.md): the deployment's model spend alerts, which only an Admin's
@@ -44,6 +57,11 @@ export class SpendStore extends Context.Service<
     readonly channelList: Success<typeof channelsQuery>
     readonly receipts: Success<typeof deliveriesQuery>
     readonly pending: Success<typeof savesQuery>
+    /** The sandbox limits an Admin set, which only an Admin's devices sync, and this tab's save of them. */
+    readonly limits: ElectricCollection.ElectricCollection<SandboxLimitsRow>
+    readonly limitSaves: Collection.Collection<LimitsSave, string>
+    readonly limitRows: Success<typeof limitsQuery>
+    readonly limitPending: Success<typeof limitSavesQuery>
     /** Where the work an action starts runs. */
     readonly scope: Scope.Scope
   }
@@ -104,6 +122,21 @@ export class SpendStore extends Context.Service<
           schema: ChannelSave,
           getKey: (row) => row.channel,
         })
+        const limits = yield* ElectricCollection.make<SandboxLimitsRow>({
+          id: "sandbox-limits",
+          schema: SandboxLimitsRow,
+          getKey: (row) => row.audience,
+          syncMode: "eager",
+          persist: { schemaVersion: 1 },
+          shape: { url: `${config.origin}${SANDBOX_LIMITS_SHAPE_ROUTE}`, ...shape },
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, adminSource))
+        const limitSaves = yield* Collection.local<LimitsSave, string>({
+          id: "sandbox-limit-saves",
+          schema: LimitsSave,
+          getKey: (row) => row.id,
+        })
+        const limitRows = yield* limitsQuery(yield* adminQuery(limits, auth.session, SandboxLimitsRow.fields))
+        const limitPending = yield* limitSavesQuery(limitSaves)
         const channelList = yield* channelsQuery(yield* adminQuery(channels, auth.session, AlertChannel.fields))
         const receipts = yield* deliveriesQuery(yield* adminQuery(deliveries, auth.session, AlertDelivery.fields))
         const pending = yield* savesQuery(saves)
@@ -128,6 +161,7 @@ export class SpendStore extends Context.Service<
         yield* resume(alerts, SPEND_ALERTS_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
         yield* resume(channels, ALERT_CHANNELS_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
         yield* resume(deliveries, ALERT_DELIVERIES_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
+        yield* resume(limits, SANDBOX_LIMITS_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
 
         // A record of each alert the tab shows, once.
         const recorded = new Set<string>()
@@ -147,7 +181,22 @@ export class SpendStore extends Context.Service<
           Effect.forkIn(scope, { startImmediately: true }),
         )
 
-        return SpendStore.of({ alerts, seen, open, channels, deliveries, saves, channelList, receipts, pending, scope })
+        return SpendStore.of({
+          alerts,
+          seen,
+          open,
+          channels,
+          deliveries,
+          saves,
+          channelList,
+          receipts,
+          pending,
+          limits,
+          limitSaves,
+          limitRows,
+          limitPending,
+          scope,
+        })
       }),
     )
 }

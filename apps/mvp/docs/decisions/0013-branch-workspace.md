@@ -11,7 +11,7 @@ It builds on [0002](0002-local-first.md) (the device store and the outbox), [000
 
 ## Decision
 
-1. **A branch is the workspace.** Each branch has a `branches` row with an immutable id. Renaming keeps the id; deleting and re-creating a ref makes a new one. The conversation, terminals, presence, live files and shares all hang off that id. `main` is a branch whose conversation is the team's home, and it has no machine for people (mvp.md §3).
+1. **A branch is the workspace.** Each branch has a `branches` row with an immutable id. Renaming keeps the id; deleting and re-creating a ref makes a new one. The conversation, terminals, presence, live files and shares all hang off that id. `main` is a branch whose conversation is the team's home. Its sandbox is tied to main: `branch/Follow` keeps it at main's head and it is the base every new branch starts from (0005 §2, not built). `main` is `locked` by default, so nobody writes in it; jobs on main run in job sandboxes started from its snapshot.
 2. **One conversation per branch, for as long as the branch lives.** Its id is `uuidv5(branch id)`, so a device knows it offline.
    - **Starting fresh** means a new branch, never clearing a conversation other people share.
    - **Archive is personal:** it hides the conversation from your list on all your devices, and opening the branch brings it back.

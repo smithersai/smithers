@@ -16,6 +16,7 @@ import { DomainProvider } from "./domains/Provider.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
+import * as SandboxSpend from "./flows/SandboxSpend.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as Todo from "./flows/Todo.ts"
@@ -95,7 +96,8 @@ export const starter = (objects: Objects) =>
  * The object's implementation over `connection`, the Hyperdrive config the engine reaches Postgres through. Its id is
  * the engine's host id, the same for every incarnation of the object, so a new incarnation takes over its run at once.
  * `dev` (`alchemy dev` only) lets an alert provider pointed at a local fake send without its key
- * (worker/AlertChannels.ts `channelsConfig`). Each alarm, once done, starts its window's `ops/DatabaseLoad`
+ * (worker/AlertChannels.ts `channelsConfig`). Each alarm, once done, starts its window's `ops/DatabaseLoad` and
+ * `ops/SandboxSpend` (docs/features/sandbox-budgets.md)
  * (docs/features/database-alerts.md): the window this isolate last started is built with the layer, once per isolate,
  * not with each object.
  */
@@ -111,7 +113,11 @@ interface ProgramOptions {
 export const live = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   options: ProgramOptions,
-) => Layer.unwrap(Effect.map(DatabaseLoad.sampler, (sampleLoad) => object(connection, options, sampleLoad)))
+) => Layer.unwrap(Effect.map(
+  Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler]),
+  // Each alarm starts its window's database sample, then its window's sandbox spend (docs/features/sandbox-budgets.md).
+  ([sampleLoad, sampleSpend]) => object(connection, options, Effect.andThen(sampleLoad, sampleSpend)),
+))
 
 /** One object, whose alarms start the window's `ops/DatabaseLoad` through `sampleLoad`. */
 const object = <E, R>(

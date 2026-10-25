@@ -25,10 +25,13 @@ export const SandboxBranch = Schema.Struct({
 })
 export type SandboxBranch = typeof SandboxBranch.Type
 
-/** The machine couldn't start or answer: no capacity, or the platform failed. A step tries again. */
+/**
+ * The machine couldn't start or answer: the platform failed (`start`, `exec`), or the sandbox limits leave no machine
+ * free (`waiting`, worker/branch/Budget.ts). A step tries again.
+ */
 export class SandboxUnavailable extends Schema.TaggedError<SandboxUnavailable>()(
   "@smthrs/mvp/branch/SandboxUnavailable",
-  { reason: Schema.Literals(["start", "exec"]) },
+  { reason: Schema.Literals(["start", "exec", "waiting"]) },
 ) {}
 
 /**
@@ -76,9 +79,13 @@ export class Sandboxes extends Context.Service<
     /**
      * Wakes the branch's machine: starts it unless it runs, routes its forge requests to the read-only proxy, and
      * checks the branch out in /workspace unless it is there. Answers the machine's generation, which a restart
-     * advances. Doing it again on a running machine changes nothing.
+     * advances. Doing it again on a running machine changes nothing. A stopped machine starts only once the sandbox
+     * limits admit it for `ownerId` (worker/branch/Budget.ts); else it fails `SandboxUnavailable` `waiting`.
      */
-    readonly wake: (branch: SandboxBranch) => Effect.Effect<{ readonly generation: number }, SandboxUnavailable | CheckoutFailed>
+    readonly wake: (
+      branch: SandboxBranch,
+      ownerId?: string,
+    ) => Effect.Effect<{ readonly generation: number }, SandboxUnavailable | CheckoutFailed>
     /**
      * Starts terminal `terminalId`'s shell session in the branch's machine unless it is there, as its owner's own user,
      * made on first use, so one person's shell can't reach another's.

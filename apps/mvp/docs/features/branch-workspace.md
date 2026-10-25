@@ -99,12 +99,14 @@ typed errors; branch names, response text, URLs and credentials are never record
 - **Opening** is `terminal/open` (client flow, the person's only: the agent runs commands as jobs instead), whose step posts `POST /api/terminals { terminalId, branchId, cols, rows }` (`worker/branch/Terminals.ts`). ChatApi admits it (signed in, a Member, a branch that isn't `locked`), records the `opening` row, and starts the remote flow `terminal/Open` (`worker/flows/TerminalOpen.ts`), one execution per terminal:
 
   ```
-  sandbox/Wake ─▶ terminal/Session ─▶ terminal/Record (open, generation)
-       └ failed ─▶ terminal/Failed ─────▶ terminal/Record (failed: unavailable | checkout)
+  sandbox/Admit ─▶ sandbox/Wake ─▶ terminal/Session ─▶ terminal/Record (open, generation)
+       └ no machine free: the row says `waiting`, asked again for up to 30 minutes
+       └ failed ─▶ terminal/Failed ──────────────────▶ terminal/Record (failed: unavailable | checkout)
   ```
 
-- **One terminal per person per branch.** While theirs opens or is open, `POST /api/terminals` answers its id. An open that hasn't finished within `OPEN_DEADLINE_SECONDS` (180) settles `failed` (in `terminal/Record`, or at the person's next open), so it never locks them out.
-- **An unfinished open.** The panel waits until the row's `createdAt` plus that deadline, including after reload. Once failed, it offers Open terminal even while the row still says `opening`; the next press lets the server replace the stale row.
+- **Waiting for a sandbox.** `sandbox/Admit` holds the branch a machine under the [sandbox limits](sandbox-budgets.md) before it wakes it. With none free, the row says `waiting`, Open terminal stays disabled and the panel says **Waiting for a sandbox**, for up to 30 minutes (`ADMIT_WAIT_SECONDS`); once one is free the row records `admitted_at`.
+- **One terminal per person per branch.** While theirs opens or is open, `POST /api/terminals` answers its id. An open that hasn't finished within `OPEN_DEADLINE_SECONDS` (180) of its admission (after a wait) or of its row settles `failed` (in `terminal/Record`, or at the person's next open), so it never locks them out. A waiting one has the wait's time first.
+- **An unfinished open.** The panel waits until the row's `createdAt` plus that deadline, plus the wait when the row says `waiting`, including after reload. Once failed, it offers Open terminal even while the row still says `opening`; the next press lets the server replace the stale row.
 - **The socket.** `GET /api/terminals/<id>` with `Upgrade: websocket` checks the `Origin` is the app's own, then the session: the terminal's owner attaches `write`, any other Member `read`. A terminal whose machine lost its session answers `410` and is ended `lost`. ChatApi strips any `x-smithers-*` header the browser sent and forwards its decision to the branch's `SandboxObject` (`worker/BranchSandboxes.ts`), which accepts the socket (no hibernation, which would drop the tmux client) and runs `@smthrs/platform-cloudflare`'s `ContainerTerminal.attach` in its own scope.
 - **The wire protocol** is `@smthrs/sandbox`'s `TerminalProtocol`: binary frames are bytes; JSON text frames are control (`resize` from the owner, `ready` and `ended` from the host); frames over 64 KiB close with 1009; final close codes don't reconnect; `@smthrs/platform-browser`'s `TerminalSocket` reconnects after 1 s, doubling to 30 s, 10 times, and drops keystrokes typed while disconnected.
 - **The frame** is `@smthrs/terminal-frame`'s `TerminalFrame`: our xterm in an opaque-origin `srcdoc` frame whose script is pinned by hash and whose CSP allows no network. ⌘K comes back to the page; links open only from a click.

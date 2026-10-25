@@ -1,7 +1,7 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { ALERT_CHANNELS_ROUTE } from "./contract"
-import type { SetChannelRequest } from "./schema"
+import { ALERT_CHANNELS_ROUTE, SANDBOX_LIMITS_ROUTE } from "./contract"
+import type { SandboxLimitsRequest, SetChannelRequest } from "./schema"
 
 // ChatApi's alert channel route as a flow step calls it (docs/features/spend-alerts.md#channels), through Effect's
 // HttpClient, with one deadline covering the whole exchange.
@@ -29,6 +29,8 @@ export class AlertsClient extends Context.Service<
   {
     /** `POST /api/alert-channels`: set one channel's destinations; none turns it off. */
     readonly set: (request: SetChannelRequest) => Effect.Effect<void, ChannelNotTaken>
+    /** `POST /api/sandbox-limits`: set the sandbox limits. */
+    readonly setLimits: (request: SandboxLimitsRequest) => Effect.Effect<void, ChannelNotTaken>
   }
 >()("@smthrs/mvp/spend/AlertsClient") {
   /** The client over the host's `HttpClient`: a `200` took the setting; anything else is refused. */
@@ -37,12 +39,11 @@ export class AlertsClient extends Context.Service<
       AlertsClient,
       Effect.gen(function* () {
         const client = yield* HttpClient.HttpClient
-        const set = (request: SetChannelRequest) =>
+        /** One `POST` of `body` to `route`: a `200` with a transaction took it; anything else is refused. */
+        const post = (route: string, body: unknown) =>
           Effect.gen(function* () {
             const response = yield* client.execute(
-              HttpClientRequest.post(`${options.origin}${ALERT_CHANNELS_ROUTE}`).pipe(
-                HttpClientRequest.bodyJsonUnsafe(request),
-              ),
+              HttpClientRequest.post(`${options.origin}${route}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
             ).pipe(Effect.mapError(() => new ChannelNotTaken({})))
             yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
             if (response.status !== 200) {
@@ -56,16 +57,20 @@ export class AlertsClient extends Context.Service<
               Effect.flatMap(decodeTaken),
               Effect.mapError(() => new ChannelNotTaken({ status: response.status })),
             )
-          }).pipe(
-            (effect) =>
-              // Interrupting the request aborts its fetch, so a stalled body stops too.
-              Effect.timeoutOrElse(effect, {
-                duration: options.within ?? CHANNEL_WITHIN,
-                orElse: () => Effect.fail(new ChannelNotTaken({})),
-              }),
+          }).pipe((effect) =>
+            // Interrupting the request aborts its fetch, so a stalled body stops too.
+            Effect.timeoutOrElse(effect, {
+              duration: options.within ?? CHANNEL_WITHIN,
+              orElse: () => Effect.fail(new ChannelNotTaken({})),
+            })
+          )
+        const set = (request: SetChannelRequest) =>
+          post(ALERT_CHANNELS_ROUTE, request).pipe(
             Effect.withSpan("alerts.channel.set", { kind: "client", attributes: { "smithers.channel": request.channel } }),
           )
-        return AlertsClient.of({ set })
+        const setLimits = (request: SandboxLimitsRequest) =>
+          post(SANDBOX_LIMITS_ROUTE, request).pipe(Effect.withSpan("sandbox.limits.set", { kind: "client" }))
+        return AlertsClient.of({ set, setLimits })
       }),
     )
 }

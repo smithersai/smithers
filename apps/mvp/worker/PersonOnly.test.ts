@@ -116,6 +116,7 @@ const flows: Routed = {
   "todo/commit": stackChange({ op: "commit", title: "Fix the crash", prompt: "Fix it" }),
   "todo/drop": stackChange({ op: "drop", number: 1 }),
   "alert/channel": chat((h) => h.fetch("/api/alert-channels", json({ channel: "email", destinations: [] }))),
+  "sandbox/limits": chat((h) => h.fetch("/api/sandbox-limits", json({ awake: 20, perPerson: 2, monthlyAlertUsd: 100 }))),
   "domain/add": domain(domainsRoute(REPO.owner, REPO.name), json({ hostname: "docs.example.com" })),
   "domain/remove": domain(domainRoute(REPO.owner, REPO.name, "docs.example.com"), { method: "DELETE" }),
 }

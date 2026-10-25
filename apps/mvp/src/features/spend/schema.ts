@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { SANDBOX_LIMIT_BOUNDS } from "./contract"
 
 // Spend alerts' rows (docs/features/spend-alerts.md): the `spend_alerts` row Electric delivers, and this device's mark
 // of what an Admin has seen. A row stored on the device is read by the next version of the app too: change its shape
@@ -85,3 +86,30 @@ export const SetChannelRequest = Schema.Struct({
   destinations: Schema.Array(Schema.String),
 })
 export type SetChannelRequest = typeof SetChannelRequest.Type
+
+const bounded = ([minimum, maximum]: readonly [number, number]) => Schema.Int.check(Schema.isBetween({ minimum, maximum }))
+
+/** The sandbox limits an Admin sets (`POST /api/sandbox-limits`'s body), each a whole number within its bounds. */
+export const SandboxLimitsRequest = Schema.Struct({
+  awake: bounded(SANDBOX_LIMIT_BOUNDS.awake),
+  perPerson: bounded(SANDBOX_LIMIT_BOUNDS.perPerson),
+  monthlyAlertUsd: bounded(SANDBOX_LIMIT_BOUNDS.monthlyAlertUsd),
+})
+export type SandboxLimitsRequest = typeof SandboxLimitsRequest.Type
+
+/** One row of Postgres `sandbox_limits` as Electric delivers it: the limits an Admin set, and when. */
+export const SandboxLimitsRow = Schema.Struct({
+  audience: Schema.Literal("admin"),
+  awake: Schema.Number,
+  awakePerPerson: Schema.Number,
+  monthlyAlertUsd: Schema.Number,
+  updatedAt: Schema.String,
+})
+export type SandboxLimitsRow = typeof SandboxLimitsRow.Type
+
+/** This tab's last save of the sandbox limits: still `saving`, or `failed` and to be saved again. */
+export const LimitsSave = Schema.Struct({
+  id: Schema.Literal("sandbox"),
+  state: Schema.Literals(["saving", "failed"]),
+})
+export type LimitsSave = typeof LimitsSave.Type
