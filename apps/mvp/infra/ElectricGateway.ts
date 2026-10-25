@@ -10,7 +10,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ELECTRIC_POOL_SIZE } from "./Connections.ts"
 import { ElectricSecret } from "./Electric.ts"
 import { admit } from "./ElectricAccess.ts"
-import { awake, type Host } from "./ElectricAwake.ts"
+import { forward, type Host, isLive, makeAwake } from "./ElectricAwake.ts"
 import { workerBuild } from "./WorkerBuild.ts"
 
 /** The Electric release the app is built against; docker-compose.yml runs the same one. */
@@ -55,25 +55,27 @@ class Electric extends Cloudflare.Container<Electric>()("Electric", {
 
 /**
  * Starts Electric's container when a request needs it, with Postgres' direct URL from the Worker's secret binding as
- * its `DATABASE_URL`, holds it running for 6 hours after the request (infra/ElectricAwake.ts), and forwards the
- * request to its port.
+ * its `DATABASE_URL`, holds it running for 6 hours after its last request (infra/ElectricAwake.ts), and forwards each
+ * request to its port, recording how long waking and Electric's headers took.
  */
 class ElectricObject extends Cloudflare.DurableObject<ElectricObject>()(
   "ElectricObject",
   Effect.gen(function* () {
     const electric = yield* Electric
+    // Once per object instance: its waker remembers whether this instance has held the container.
     return Effect.gen(function* () {
       const port = yield* electric.getTcpPort(PORT)
       const databaseUrl = yield* Config.Redacted(DATABASE_URL_BINDING).pipe(Effect.orDie)
-      const host = {
+      const wake = makeAwake({
+        running: electric.running,
         // Electric reaches Postgres over the internet.
         start: electric.start({ enableInternet: true, env: { DATABASE_URL: Redacted.value(databaseUrl) } }),
         setInactivityTimeout: (ms) => electric.setInactivityTimeout(ms),
-      } satisfies Host<unknown, RuntimeContext>
+      } satisfies Host<unknown, RuntimeContext>)
       return {
         fetch: Effect.gen(function* () {
-          yield* awake(host)
-          return yield* port.fetch(yield* HttpServerRequest.HttpServerRequest)
+          const request = yield* HttpServerRequest.HttpServerRequest
+          return yield* forward(wake, port.fetch(request), isLive(request.url))
         }),
       }
     })
