@@ -1,22 +1,17 @@
+import { personalModelConfig, restorePersonalModel } from "./personal-model"
 import { expect, expectSameThread, pairs, test } from "./devices"
 import { step } from "./fixtures"
 import { requires } from "./target"
 
-// Your model, end to end (docs/features/personal-model.md, decision 0096): a Member saves a model of their own on the
-// Settings page, against a real provider. A key the provider refuses is saved first: Test names the provider's host and
-// status, and the shell's toast says the same. Then the real key: Test says OK, and a question in the person's own
-// conversation is answered through it. Remove takes the model off again. Locally it runs under `alchemy dev` with a key
-// in the environment; in production through the vault's environment wrapper, where the deployment's own OPENAI_API_KEY
-// stands in for a person's key (`personalModelKey`, e2e/target.ts). The key is typed into a password field, which the
-// video masks; it is never printed.
-
-requires("member", "ownConversation", "personalModelKey")
+// Exercise Settings against a real provider; restore the shared account even when an assertion fails.
+requires("personalModel", "member", "ownConversation", "personalModelKey")
 // A trace keeps what was typed and sent, the key included.
 test.use({ trace: "off" })
+test.afterEach(async ({ request }) => {
+  await restorePersonalModel(request)
+})
 
-const KEY = process.env.E2E_PERSONAL_MODEL_KEY || process.env.OPENAI_API_KEY || ""
-const BASE_URL = process.env.E2E_PERSONAL_MODEL_BASE_URL || "https://api.openai.com"
-const MODEL = process.env.E2E_PERSONAL_MODEL || "gpt-4.1-mini"
+const { baseUrl: BASE_URL, modelId: MODEL, protocol: PROTOCOL } = personalModelConfig()
 const HOST = new URL(BASE_URL).hostname
 
 /** A save lands once `model/Put` ran and Electric brought the row back. */
@@ -27,7 +22,7 @@ test("your model: a refused key names the provider and status; a real key answer
     type: "summary",
     description: "A Member saves their own model's key; a refused key shows the provider's 401, a real one tests OK and answers.",
   },
-}, async ({ devices }) => {
+}, async ({ devices, request }) => {
   test.setTimeout(300_000)
   const word = devices.word
   const [a] = await devices.open("A")
@@ -40,6 +35,8 @@ test("your model: a refused key names the provider and status; a real key answer
   /** Fills the form and saves: the key goes in one request, and the form clears once ChatApi takes it. */
   const save = (key: string) =>
     step("Fill Base URL, Model and Key, then Save", async () => {
+      await section.getByRole("combobox").click()
+      await page.getByRole("option", { name: PROTOCOL === "openai-chat" ? "OpenAI-compatible" : "Anthropic-compatible", exact: true }).click()
       await section.getByLabel("Base URL", { exact: true }).fill(BASE_URL)
       await section.getByLabel("Model", { exact: true }).fill(MODEL)
       await section.getByLabel("Key", { exact: true }).fill(key)
@@ -84,7 +81,8 @@ test("your model: a refused key names the provider and status; a real key answer
     await expect(section).toBeVisible({ timeout: 30_000 })
   })
 
-  await save(KEY)
+  await restorePersonalModel(request)
+  await page.reload()
 
   await step("Test: the real key answers OK", async () => {
     await section.getByRole("button", { name: "Test" }).click()
@@ -100,7 +98,7 @@ test("your model: a refused key names the provider and status; a real key answer
     expect(exchange![1].text).toContain(`byok-${word}`)
   })
 
-  await step("Remove: the model is gone, and the deployment's model answers again", async () => {
+  await step("Remove: the model is gone, and the account has no model", async () => {
     await page.goto(settings)
     await remove.click()
     await expect(remove).toHaveCount(0, { timeout: SAVED_WITHIN })

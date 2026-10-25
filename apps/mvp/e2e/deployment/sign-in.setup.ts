@@ -1,3 +1,4 @@
+import { restorePersonalModel } from "../personal-model"
 import { chromium, expect, request as requests, test as setup } from "@playwright/test"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -125,6 +126,19 @@ setup("sign in as the test account", async () => {
   const record: IdentityRecord = { origin, ...person, signedInAt: kept.signedInAt, checkedAt: Date.now() }
   await writePrivate(files.identity, JSON.stringify(record, null, 2))
   setup.info().annotations.push({ type: "identity", description: `${person.login} (${person.role ?? "no role"})` })
+})
+
+setup("personal model: save and Test when E2E_PERSONAL_MODEL_KEY is supplied", async () => {
+  if (!process.env.E2E_PERSONAL_MODEL_KEY) {
+    setup.info().annotations.push({ type: "personal model", description: "not configured: E2E_PERSONAL_MODEL_KEY is unset; model-dependent specs will skip" })
+    return
+  }
+  const request = await api(files.session)
+  try {
+    await restorePersonalModel(request)
+  } finally {
+    await request.dispose()
+  }
 })
 
 setup("fixture repositories are requested", async () => {

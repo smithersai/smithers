@@ -108,7 +108,7 @@ test("co-editing: one person's two devices edit a file at once, and a Save says 
     description: "Two devices type the same file at once, see each other's caret; one saves and both say Saved; the other edits, saves, and both say Saved again.",
   },
 }, async ({ devices }) => {
-  requires("ownConversation")
+  requires("personalModel", "ownConversation")
   test.setTimeout(10 * 60_000)
   const word = devices.word
   const file = `coedit-${word}.txt`

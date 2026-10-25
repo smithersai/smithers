@@ -84,7 +84,7 @@ test.describe("smithersai/vibelang's docs", () => {
     "member: /docs shows a page of VibeLang's docs in the chat, rendered, and at full size",
     { annotation: { type: "summary", description: "/docs smithersai/vibelang retry adds the Retrying page to the chat, its Markdown kept for every device." } },
     async ({ devices }) => {
-      requires("ownConversation")
+      requires("personalModel", "ownConversation")
       const [a] = await devices.open("A")
       const added = viewsAdded(a.device.context)
       await step("A sends /docs smithersai/vibelang retry", async () => {
@@ -111,7 +111,7 @@ test.describe("smithersai/vibelang's docs", () => {
     "the agent: asked about VibeLang's docs, it searches them and shows the page",
     { annotation: { type: "summary", description: "Asked how to retry in VibeLang, the agent calls app/docs/search and a docs page shows in the chat." } },
     async ({ devices }) => {
-      requires("liveModel", "ownConversation")
+      requires("personalModel", "liveModel", "ownConversation")
       const word = devices.word
       const [a] = await devices.open("A")
       const added = viewsAdded(a.device.context)

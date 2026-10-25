@@ -3,7 +3,7 @@ import { step } from "./fixtures"
 import { ownPlace, requires } from "./target"
 
 // Separate from timeline.spec.ts: its two scripted journeys require a dev build.
-requires("member", "ownConversation", "liveModel")
+requires("personalModel", "member", "ownConversation", "liveModel")
 
 test("Branch timeline: a real question and its reply retain their object and outcome", {
   annotation: { type: "summary", description: "The rail names this question and its linked reply, with an answered or visible failed outcome." },

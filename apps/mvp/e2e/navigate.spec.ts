@@ -50,7 +50,7 @@ const relayed = (records: Array<LogRecord>) =>
     .map((record) => [field(record, "door"), field(record, "outcome"), field(record, "reason")])
 
 test("navigate by the agent: asking to open octocat/Spoon-Knife takes the tab that asked there, and the other tab stays", async ({ devices, request }) => {
-  requires("member", "ownConversation")
+  requires("personalModel", "member", "ownConversation")
   const logs = partly("localLogs") ? await LogTail.start() : undefined
   const word = devices.word
   const [a] = await devices.open("A")
@@ -94,7 +94,7 @@ const shown = (page: import("@playwright/test").Page) =>
   })
 
 test("navigate by a person: /navigate /octocat/Spoon-Knife in the composer takes the tab there", async ({ devices }) => {
-  requires("member", "ownConversation")
+  requires("personalModel", "member", "ownConversation")
   const [a] = await devices.open("A")
   const b = await devices.tab(a.device, "B")
 
@@ -134,7 +134,7 @@ test("navigate by hover: Runs, hovered first, opens at the click with no loading
 })
 
 test("navigate refused: asking the agent to open an outside site is refused, and the page stays put", async ({ devices, request }) => {
-  requires("member", "ownConversation")
+  requires("personalModel", "member", "ownConversation")
   const logs = partly("localLogs") ? await LogTail.start() : undefined
   const word = devices.word
   const [a] = await devices.open("A")

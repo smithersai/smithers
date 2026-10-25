@@ -365,7 +365,7 @@ test("a signed-out follower cannot read the live owner's engine", { annotation: 
 })
 
 test("an ownerless offline activation takes the verified person in place when the network returns", { annotation: { type: "summary", description: "After device storage is evicted offline, reconnecting verifies the account in place, with no reload, and asking succeeds." } }, async ({ devices }) => {
-  requires("member", "ownConversation")
+  requires("personalModel", "member", "ownConversation")
   test.setTimeout(180_000)
   const [tab] = await devices.open("Recovered device")
   await tab.page.addInitScript(() => {

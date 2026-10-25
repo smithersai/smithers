@@ -250,7 +250,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             if (files) requires("codeStorage", "member")
             await test.step(`Open ${screen.name}`, async () => {
               if (screen.name === "conversations" && signedIn) {
-                requires("member", "ownConversation")
+                requires("personalModel", "member", "ownConversation")
                 await page.goto(ownPlace()?.path ?? "/octocat/Spoon-Knife/tree/test-branch")
                 await expect(page.getByRole("navigation", { name: "Branch" })).toBeVisible({ timeout: 30_000 })
                 await expect.poll(async () => {

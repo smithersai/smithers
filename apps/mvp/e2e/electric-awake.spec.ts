@@ -14,7 +14,7 @@ import { ownPlace, requires } from "./target"
 // another tab or test following shapes meanwhile keeps the old build's Electric up too, so this test fails on that
 // build only when the deployment is otherwise quiet, as smithers.sh was then.
 
-requires("longRun", "ownConversation")
+requires("personalModel", "longRun", "ownConversation")
 
 /** Longer than the quiet spells that always stopped Electric's container before the fix (11 minutes, 12 of 12). */
 const QUIET = 12 * 60_000

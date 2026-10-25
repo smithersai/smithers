@@ -9,7 +9,7 @@ import { requires, scriptedAgent } from "./target"
 // the flow the same way every time; the eval case `files-show-lines` holds the real model to it. The fixture is the
 // public `octocat/Spoon-Knife`, cloned once. Opening a branch's page tracks it and asking needs a Member or above.
 
-requires("member", "ownConversation")
+requires("personalModel", "member", "ownConversation")
 
 const REPO = "/octocat/Spoon-Knife"
 

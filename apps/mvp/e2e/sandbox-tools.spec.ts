@@ -11,7 +11,7 @@ import { meets, requires, scriptedAgent } from "./target"
 // (worker/branch/Branches.ts, worker/Chat.ts `canAsk`), and every tool call runs as the remote flow `sandbox/Call`
 // (worker/flows/SandboxCall.ts).
 
-requires("member", "ownConversation")
+requires("personalModel", "member", "ownConversation")
 
 const BRANCH = "/octocat/Spoon-Knife/tree/test-branch"
 

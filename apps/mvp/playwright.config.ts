@@ -26,7 +26,7 @@ const viewport = { width: 1280, height: 800 }
 /**
  * Against a deployment: the setup signs the test account in once (e2e/deployment/sign-in.setup.ts), every test starts
  * from that session, and the run's results, summary and recordings go to their own folder, apart from a local run's.
- * Two workers and no retries: production's model and Electric are shared, and a durable retry is the app's job.
+ * One worker (the personal-model specs change the shared account) and no retries: production's model and Electric are shared, and a durable retry is the app's job.
  */
 const deployment = (): PlaywrightTestConfig => {
   // When the run began, for the spend guard (e2e/spend.ts): set once here, inherited by every worker.
@@ -34,7 +34,7 @@ const deployment = (): PlaywrightTestConfig => {
   const outputDir = "test-results-deployment"
   return {
     outputDir,
-    workers: 2,
+    workers: 1,
     retries: 0,
     timeout: 180_000,
     reporter: [["list"], ["json", { outputFile: `${outputDir}/results.json` }], ["./e2e/reporter.ts"]],

@@ -3,7 +3,7 @@ import { step } from "./fixtures"
 import { requires, scriptedAgent } from "./target"
 
 // Both tests ask, which needs a Member or above.
-requires("member", "ownConversation")
+requires("personalModel", "member", "ownConversation")
 
 // Two separate browsers hold the conversation Electric syncs from Postgres; the asking browser's agent answers.
 test("sync: a message and Smithers' answer sent in one browser appear in another", { annotation: { type: "summary", description: "A question and its answer from one browser show in another." } }, async ({ devices }) => {

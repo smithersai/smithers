@@ -8,7 +8,7 @@ import { requires, scriptedAgent } from "./target"
 // model is scripted in the asking browser's engine worker (`/app?agent=queue`, src/test/scriptedAgent.ts); everything
 // else is real: the plugin loader, the engine, ChatApi's runs routes, Postgres and Electric. It runs as local
 // development's Maintainer, whom no other spec asks, so the queue holds only this test's waits.
-requires("member", "ownConversation", "scriptedAgent", "devPeople")
+requires("personalModel", "member", "ownConversation", "scriptedAgent", "devPeople")
 
 const queue = (page: Page) => ({
   item: page.getByRole("article", { name: "Item" }),

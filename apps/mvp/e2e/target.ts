@@ -231,12 +231,16 @@ const needs = {
   },
   liveModel: {
     met: (run) =>
-      run.target === "deployment" || set(run, MODEL_KEY) || dotEnvSets(run.env.E2E_DOT_ENV ?? DOT_ENV, MODEL_KEY),
-    reason: "it waits for the real model's answers: a deployment, or a local dev server with CEREBRAS_API_KEY set in its environment or apps/mvp/.env (the Mac mini's dev server has no model)",
+      (run.target === "deployment" ? set(run, "E2E_PERSONAL_MODEL_KEY") : set(run, MODEL_KEY)) || (run.target === "local" && dotEnvSets(run.env.E2E_DOT_ENV ?? DOT_ENV, MODEL_KEY)),
+    reason: "it waits for the real model's answers: a deployment with E2E_PERSONAL_MODEL_KEY saved and tested by setup, or a local dev server with CEREBRAS_API_KEY set in its environment or apps/mvp/.env (the Mac mini's dev server has no model)",
+  },
+  personalModel: {
+    met: (run) => run.target === "local" || set(run, "E2E_PERSONAL_MODEL_KEY"),
+    reason: "deployment answers require the test account's saved model: set E2E_PERSONAL_MODEL_KEY; setup saves it and verifies Test before specs run",
   },
   personalModelKey: {
-    met: (run) => set(run, "E2E_PERSONAL_MODEL_KEY") || set(run, "OPENAI_API_KEY"),
-    reason: "it saves a real provider's key as the person's own model: set E2E_PERSONAL_MODEL_KEY, or OPENAI_API_KEY through the vault's environment wrapper (with E2E_PERSONAL_MODEL_BASE_URL and E2E_PERSONAL_MODEL for a provider other than OpenAI)",
+    met: (run) => set(run, "E2E_PERSONAL_MODEL_KEY"),
+    reason: "it saves a real provider's key as the person's own model: set E2E_PERSONAL_MODEL_KEY, with optional E2E_PERSONAL_MODEL_BASE_URL, E2E_PERSONAL_MODEL_ID and E2E_PERSONAL_MODEL_PROTOCOL",
   },
   hostedModelOff: {
     met: (run) => run.target === "deployment" ? run.env.E2E_HOSTED_MODEL !== "on" : run.env.HOSTED_MODEL_ENABLED === "false",
@@ -437,7 +441,7 @@ export const scriptedAgent = (script: string, path = "/app", run: Run = thisRun)
  * test's body, it declares `ownConversation`, so a deployment run without one skips the test as blocked.
  */
 export const home = () => {
-  requires("ownConversation")
+  requires("personalModel", "ownConversation")
   return appHome()
 }
 
@@ -461,6 +465,7 @@ export const atAppHome = () => new RegExp(`${appHome().replace(/[.*+?^${}()|[\]\
  * run's own conversation and bound to the run's person (decision 0023), never in the team's home.
  */
 export const questionPost = (body: { readonly id: string; readonly answerId: string; readonly text: string }) => {
+  requires("personalModel")
   const place = ownPlace()
   return {
     data: place === undefined ? body : { ...body, conversationId: place.conversationId },

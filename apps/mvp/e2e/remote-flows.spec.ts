@@ -103,7 +103,7 @@ test("webhook: a signed issues delivery starts github/Apply, which reads the iss
 test("spend alert: a Member's question spends, and the window's ops/SpendAlert records the alert when it ends", {
   annotation: { type: "summary", description: "Model spend records one alert per window, for Admins." },
 }, async ({ devices }) => {
-  requires("member", "localLogs", "longRun")
+  requires("personalModel", "member", "localLogs", "longRun")
   test.setTimeout(25 * 60_000)
   const logs = await LogTail.start()
   try {
@@ -123,7 +123,7 @@ test("spend alert: a Member's question spends, and the window's ops/SpendAlert r
 test("answer expiry: an answer whose device left settles Couldn't answer once chat/Expire's wait ends", {
   annotation: { type: "summary", description: "An answer abandoned by its device settles as failed on every device." },
 }, async ({ devices }) => {
-  requires("member", "localLogs", "longRun")
+  requires("personalModel", "member", "localLogs", "longRun")
   test.setTimeout(35 * 60_000)
   const logs = await LogTail.start()
   try {
@@ -169,7 +169,7 @@ const TODO_REPOSITORY = process.env.E2E_TODO_REPOSITORY ?? "roninjin10/smithers-
 test("todo run: a TODO committed on the stack runs on Cloudflare to an open pull request, and Drop closes it", {
   annotation: { type: "summary", description: "A TODO runs to a pull request on GitHub; dropping it closes the pull request." },
 }, async ({ devices }) => {
-  requires("githubApp", "member", "longRun")
+  requires("personalModel", "githubApp", "member", "longRun")
   expect(TODO_REPOSITORY, "a TODO run writes to GitHub: never a smithersai repository").not.toMatch(/^smithersai\//i)
   test.setTimeout(45 * 60_000)
   const word = devices.word

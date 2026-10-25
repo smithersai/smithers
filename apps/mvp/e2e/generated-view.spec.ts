@@ -26,7 +26,7 @@ test("show me a board: the agent shows a tic-tac-toe board, inline and full scre
     description: "The agent shows a tic-tac-toe board in the chat; a move shows on both devices; full screen, the person plays to a win.",
   },
 }, async ({ devices }) => {
-  requires("scriptedAgent", "member", "ownConversation")
+  requires("personalModel", "scriptedAgent", "member", "ownConversation")
   test.setTimeout(240_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
@@ -75,7 +75,7 @@ test("show me a board: the agent shows a tic-tac-toe board, inline and full scre
 })
 
 test.describe("Live generated views", () => {
-  requires("member", "ownConversation", "liveModel")
+  requires("personalModel", "member", "ownConversation", "liveModel")
 
   test("Show a board: a real tic-tac-toe view renders inline, opens full screen and accepts a move", {
     annotation: { type: "summary", description: "Ask for a board, open that generated view full screen, and play a move that returns to the chat." },

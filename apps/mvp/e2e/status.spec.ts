@@ -8,7 +8,7 @@ import { requires, scriptedAgent } from "./target"
 // scripts the agent's model in the asking browser's engine worker (`/app?agent=needs-you`, src/test/scriptedAgent.ts),
 // so it runs the same every time; the second asks the real model. Everything else is real: the engine, ChatApi, the runs
 // routes, Postgres and Electric. Both ask, which needs a Member or above.
-requires("member", "ownConversation")
+requires("personalModel", "member", "ownConversation")
 
 const PROMPT = "Which branch should I deploy?"
 
@@ -89,7 +89,7 @@ test("needs you: the agent asks, every surface on every device shows it, and an 
 })
 
 test("needs you, live: two devices show the question, Hide reaches both, and an answer resumes the real model", { annotation: { type: "summary", description: "The real model asks on both devices; Hide reaches both, and teal from B resumes A's run." } }, async ({ devices }) => {
-  requires("member", "ownConversation")
+  requires("personalModel", "member", "ownConversation")
   test.setTimeout(540_000)
   const word = devices.word
   const [a, b] = await test.step("Open both devices", () => devices.open("A", "B"))

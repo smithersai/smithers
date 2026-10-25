@@ -9,7 +9,7 @@ import { ownPlace, requires, target, writeHeaders } from "./target"
 // deployment on the test account's own branch, whose conversation the suite has already filled. The fixture is the
 // public `octocat/Spoon-Knife`'s default branch, which no other suite opens; nothing is written to GitHub.
 
-requires("member", "ownConversation")
+requires("personalModel", "member", "ownConversation")
 
 const REPO = { owner: "octocat", name: "Spoon-Knife", ref: "main" }
 

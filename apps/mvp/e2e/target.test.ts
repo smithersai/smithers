@@ -179,11 +179,11 @@ describe("needs", () => {
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {
     const met = (role: ReturnType<Run["role"]>) => (Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].met(deployedAs(role)))
-    expect(met("guest")).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp"])
-    expect(met(null)).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp"])
-    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp", "member"])
-    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp", "member", "maintainer"])
-    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "liveModel", "hostedModelOff", "githubApp", "member", "maintainer"])
+    expect(met("guest")).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
+    expect(met(null)).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
+    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member"])
+    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
+    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
 
     // An Admin turned the deployment's own model on; a local dev server answers with it unless told otherwise.
     expect(NEEDS.hostedModelOff.met(deployedAs("member", { E2E_HOSTED_MODEL: "on" }))).toBe(false)
@@ -218,17 +218,28 @@ describe("needs", () => {
     expect(NEEDS.alertProviders.met({ ...local, env: { ...providers, MODEL_SPEND_ALERTS: "false" } })).toBe(false)
   })
 
+  it("deployment answers need an explicit personal key, never a hosted credential", () => {
+    expect(NEEDS.personalModel.met(local)).toBe(true)
+    for (const env of [{}, { E2E_PERSONAL_MODEL_KEY: "" }, { OPENAI_API_KEY: "test-only", CEREBRAS_API_KEY: "test-only" }]) {
+      expect(NEEDS.personalModel.met(deployedAs("member", env))).toBe(false)
+      expect(NEEDS.liveModel.met(deployedAs("member", env))).toBe(false)
+    }
+    expect(NEEDS.personalModel.met(deployedAs("member", { E2E_PERSONAL_MODEL_KEY: "test-only" }))).toBe(true)
+    expect(describeNeed("personalModel")).toContain("E2E_PERSONAL_MODEL_KEY")
+  })
+
   it("for a person's own model, are met by a key for it in the environment, wherever the run is", () => {
     for (const run of [local, deployedAs("member")]) {
       expect(NEEDS.personalModelKey.met(run)).toBe(false)
       expect(NEEDS.personalModelKey.met({ ...run, env: { E2E_PERSONAL_MODEL_KEY: "k" } })).toBe(true)
-      expect(NEEDS.personalModelKey.met({ ...run, env: { OPENAI_API_KEY: "k" } })).toBe(true)
+      expect(NEEDS.personalModelKey.met({ ...run, env: { OPENAI_API_KEY: "k" } })).toBe(false)
       expect(NEEDS.personalModelKey.met({ ...run, env: { OPENAI_API_KEY: "" } })).toBe(false)
     }
   })
 
   it("for the live model, are met by a deployment, or locally by the model key in the environment or the dev server's .env", () => {
-    expect(NEEDS.liveModel.met(deployedAs("member"))).toBe(true)
+    expect(NEEDS.liveModel.met(deployedAs("member"))).toBe(false)
+    expect(NEEDS.liveModel.met(deployedAs("member", { E2E_PERSONAL_MODEL_KEY: "test-only" }))).toBe(true)
     expect(NEEDS.liveModel.met(local)).toBe(false)
     expect(NEEDS.liveModel.met({ ...local, env: { ...local.env, CEREBRAS_API_KEY: "k" } })).toBe(true)
     expect(NEEDS.liveModel.met({ ...local, env: { ...local.env, CEREBRAS_API_KEY: "" } })).toBe(false)

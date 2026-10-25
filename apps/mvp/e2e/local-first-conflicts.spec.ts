@@ -48,7 +48,7 @@ test.describe("Local-first conflicts", () => {
   test.describe.configure({ timeout: 180_000 })
   // Every test asks, which needs a Member or above, and in a deployment the test account's own conversation. A test on
   // the app's faulty services or with local development's second person also declares that (e2e/target.ts).
-  requires("member", "ownConversation")
+  requires("personalModel", "member", "ownConversation")
 
   test("same question id: another writer stores a different question under the id a device queued offline; the device keeps its own, Not sent, and Edit asks it again", {
     annotation: {

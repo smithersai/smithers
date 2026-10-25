@@ -337,7 +337,7 @@ export class Tab {
   send(text: string) {
     // A slash command runs on the device and asks nothing; anything else is a question.
     if (!text.startsWith("/")) {
-      requires("ownConversation")
+      requires("personalModel", "ownConversation")
       // In a deployment the tab must be in the run's own conversation, or the question would reach the team's home.
       if (target === "deployment" && !atOwnPlace(this.page.url())) throw new UndeclaredNeed("ownConversation")
     }

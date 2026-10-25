@@ -9,7 +9,7 @@ import { requires } from "./target"
 // is a few model calls: Cerebras rate-limits concurrent calls, so the steps go one after another. Drafting asks the
 // agent, a Member's (worker/PersonalFlows.ts `canAsk`), and waits for the real model (`liveModel`).
 
-requires("member", "liveModel")
+requires("personalModel", "member", "liveModel")
 
 /** The run page's state word, in the header's live region. */
 const runState = (page: Page) => page.locator('[data-slot="run-header"] [role="status"]')

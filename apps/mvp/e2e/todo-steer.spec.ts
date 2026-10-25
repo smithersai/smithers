@@ -26,7 +26,7 @@ const readme = async (request: import("@playwright/test").APIRequestContext, ref
 test("todo-steer: message a TODO's working agent from its run, and its pull request does what the message asked", {
   annotation: { type: "summary", description: "Commit a TODO, open its run, and steer the agent while it works." },
 }, async ({ devices }) => {
-  requires("githubApp", "member", "longRun")
+  requires("personalModel", "githubApp", "member", "longRun")
   expect(TODO_REPOSITORY, "a TODO run writes to GitHub: never a smithersai repository").not.toMatch(/^smithersai\//i)
   test.setTimeout(45 * 60_000)
   const word = devices.word

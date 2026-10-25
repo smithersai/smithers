@@ -14,7 +14,7 @@ import { questionPost, requires, target, writeHeaders } from "./target"
 // "mid-answer" possible. Every test asks, which needs a Member or above and, in a deployment, the test account's own
 // conversation (e2e/target.ts); a test that throws a switch of the app's faulty services runs only on a dev build
 // (`requires("faults")`).
-requires("member", "ownConversation")
+requires("personalModel", "member", "ownConversation")
 
 // A long answer that ends in a word of its own, so "complete" means its last line arrived.
 const longQuestion = (start: string, end: string) =>

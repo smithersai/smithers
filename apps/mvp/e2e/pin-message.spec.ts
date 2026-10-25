@@ -79,7 +79,7 @@ for (const width of [390, 768, 1280]) {
 
 test.describe("Live message pin", () => {
   // Scope these needs to the live journey; the multi-person journeys above stay local-only.
-  requires("member", "ownConversation", "liveModel")
+  requires("personalModel", "member", "ownConversation", "liveModel")
 
   test("Pin message: a real reply stays on top while scrolling and stays unpinned after reload", {
     annotation: { type: "summary", description: "Pin a settled reply, scroll beneath it, then persist Unpin across a reload." },

@@ -19,7 +19,7 @@ test("ask with a form: the agent asks with a form, the person submits it, and th
     description: "The agent asks which repository with a form; the person fills and sends it; the agent answers with what they sent.",
   },
 }, async ({ devices }) => {
-  requires("scriptedAgent", "member", "ownConversation")
+  requires("personalModel", "scriptedAgent", "member", "ownConversation")
   test.setTimeout(240_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
@@ -64,7 +64,7 @@ test("ask with a form: the agent asks with a form, the person submits it, and th
 })
 
 test.describe("Live forms", () => {
-  requires("member", "ownConversation", "liveModel")
+  requires("personalModel", "member", "ownConversation", "liveModel")
 
   test("Ask with a form: a missing repository URL is requested and its submission continues the real conversation", {
     annotation: { type: "summary", description: "Ask to clone without a URL, fill the agent's form, and see the next reply finish." },

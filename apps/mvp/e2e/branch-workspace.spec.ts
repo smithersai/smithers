@@ -11,7 +11,7 @@ import { me, requires } from "./target"
 // `test-branch` and `change-the-title` branches GitHub already has; nothing is written to GitHub. Opening a branch's
 // page tracks it, which only a Member or above may (worker/branch/Branches.ts), and asking needs one too.
 
-requires("member", "ownConversation")
+requires("personalModel", "member", "ownConversation")
 
 const REPO = "/octocat/Spoon-Knife"
 

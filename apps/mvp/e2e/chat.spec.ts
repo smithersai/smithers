@@ -87,7 +87,7 @@ test("reload mid-answer: the browser's agent resumes the answer after the reload
 // What a person sees, not just what is in the page: `toBeInViewport`, where `toBeVisible` passes for an element
 // scrolled out of sight. The conversation keeps its newest message in view, as the transcript's bottom anchor intends.
 deviceTest("in view: opening chat shows the newest message and the Chat button, and a new question and its answer stay in view", { annotation: { type: "summary", description: "The newest message and its answer stay in view." } }, async ({ devices }) => {
-  requires("ownConversation")
+  requires("personalModel", "ownConversation")
   const [a] = await devices.open("A")
   const page = a.page
   // A fresh branch can have no messages. Establish this test's own history, then open it again: opening must show
