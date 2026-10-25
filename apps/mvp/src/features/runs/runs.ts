@@ -56,6 +56,7 @@ export interface RunsActions {
   /** Opens `runId`; a repository's run with its `repo`, read on Cloudflare. */
   readonly openRun: (runId: string, repo?: RepoName) => Promise<void>
   /** The run route's `onLeave` for `runId`. */
+  readonly rendered: (runId: string) => void
   readonly closeRun: (runId: string) => void
   readonly scrub: (at: number | null) => void
   readonly inspectStep: (stepId: string) => void
@@ -99,6 +100,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
           openList: () => promise(openList),
           openRepoRuns: (owner, name) => promise(store.openRepoRuns(owner, name)),
           openRun: (runId, repo) => promise(openRun(runId, repo ?? null)),
+          rendered: (runId) => fork(store.rendered(runId)),
           closeRun: (runId) => fork(closeRun(runId)),
           scrub: (at) => fork(scrub(at)),
           inspectStep: (stepId) => fork(inspectStep(stepId)),

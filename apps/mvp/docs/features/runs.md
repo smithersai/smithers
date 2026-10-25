@@ -182,3 +182,16 @@ The public `@smthrs/ui` components accept data and callbacks and have no app reg
 The page loads descendant journals by execution identity and merges their recorded evidence through `inspectionForest`. No child is joined by its display name. Each child's steps link to its own run; agent cells become nested timeline rows and canonical waits become hatched rows. Replay freezes that read snapshot until Live, including when new children appear. Attempt settlement during replay requires prefix journal evidence, so events sharing a millisecond cannot disclose a later completion. Replay selection logs and counts mode and sequence only (`smithers_run_replay_selections`, `run.replay.select`); values never enter diagnostics.
 
 Step logs join the engine's real `runId` and validated `stepKey` annotations to recorded dispatch digests, alongside the canonical agent-cell output. The evidence projection is memoized independently of the presentation clock. Live event batches refresh during a continuous stream; unchanged descendants and previously loaded journal tails are reused.
+
+### Route timings
+
+The browser relays `run.route.stage` logs and spans and the `smithers_run_route_ms`
+histogram. A tab-local `routeAttempt` groups a navigation's records without a run,
+repository, URL, payload or credential. `stage` is `match`, `page` (the local
+collection), `inspection` (each root, child or journal request), `changes` (each
+live run subscription), `repo-runs` (the repository list subscription), or `render`
+(the committed route frame). `phase` is `start`, `ready`, `rows` (first nonempty
+collection batch), or `failed`; `elapsedMs` starts at route entry and `rows` is a
+count. Empty subscriptions need not ever report rows. The first committed frame
+records once per navigation. The real remote-run regression can save these
+content-free records with `RUN_ROUTE_TIMINGS=/tmp/run-route.json`.

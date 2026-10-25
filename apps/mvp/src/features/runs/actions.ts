@@ -60,6 +60,7 @@ export const openRun = (runId: string, repo: RepoName | null = null) =>
     yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, actToken: null, refusal: null, repo })
     const store = yield* RunsStore
     if (repo !== null) yield* store.cloud(runId)
+    yield* store.beginRoute(runId)
     yield* store.readRun(runId)
     yield* store.follow(runId)
   })

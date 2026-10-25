@@ -1,9 +1,11 @@
+import { writeFile } from "node:fs/promises"
 // Watching a TODO's run on Cloudflare from a tab (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): the
 // browser's own layer (`appLayer`) on a Node device, against ChatApi's real handler with its remote runs routes
 // (worker/RemoteRuns.ts) and the compose Postgres and Electric (src/test/chatApi.ts). The run is the remote host's
 // `probe/Pause`, run under a TODO attempt's id by an engine on a schema of its own, as the Durable Object runs a TODO's
 // `todo` run: so what the tab reads, and when it reads it again, is what it does for a TODO's run.
 import { Effect } from "effect"
+import { read as telemetry } from "../../test/otlp"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type * as Actor from "../../../worker/Actor.ts"
@@ -369,3 +371,28 @@ describe("a repository's run on Cloudflare", () => {
     expect(missingOf(t.page()!, true)).toBe("Not found")
   }, 60_000)
 })
+
+
+test("a real repository run records the route's inspection and first subscribed rows", async () => {
+  const t = await open()
+  const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+  await Effect.runPromise(t.api.remote.start(runId, { label: "timed", pauseMs: 0, hold: true, nested: true }))
+  try {
+    await Effect.runPromise(t.api.remote.ready(runId))
+    const started = performance.now()
+    await t.runs.actions.openRun(runId, { owner: "octo", name: "hello" })
+    const openedMs = performance.now() - started
+    t.runs.actions.rendered(runId)
+    await until(() => expect(t.page()?.descendants).toHaveLength(1))
+    const stages = () => telemetry(t.api.telemetry).logs.filter((log) => log.message === "run.route.stage").map((log) => log.attributes)
+    await until(() => expect(stages()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ stage: "match", phase: "start" }),
+      expect.objectContaining({ stage: "inspection", phase: "ready" }),
+      expect.objectContaining({ stage: "changes", phase: "rows" }),
+      expect.objectContaining({ stage: "render", phase: "ready" }),
+    ])))
+    if (process.env.RUN_ROUTE_TIMINGS) await writeFile(process.env.RUN_ROUTE_TIMINGS, JSON.stringify({ openedMs, stages: stages() }, null, 2))
+  } finally {
+    await Effect.runPromise(t.api.remote.release(runId))
+  }
+}, 120_000)

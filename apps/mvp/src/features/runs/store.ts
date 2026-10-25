@@ -6,6 +6,7 @@ import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT } from "./contract"
 import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"
 import { type Inspection, RepoRunRow, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
+import { routeTiming, type RouteTiming } from "./timing"
 import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
 
 // Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
@@ -127,6 +128,8 @@ export class RunsStore extends Context.Service<
     readonly repoRunList: Effect.Success<ReturnType<typeof repoRunsQuery>>
     /** Starts syncing this repository's runs, once per repository. */
     readonly openRepoRuns: (owner: string, name: string) => Effect.Effect<void>
+    readonly beginRoute: (runId: string) => Effect.Effect<void>
+    readonly rendered: (runId: string) => Effect.Effect<void>
     readonly readRun: (runId: string) => Effect.Effect<void>
     readonly readList: Effect.Effect<void>
     readonly warmList: Effect.Effect<void>
@@ -148,6 +151,8 @@ export class RunsStore extends Context.Service<
   static readonly layer = (config: RunsConfig) => Layer.effect(
     RunsStore,
     Effect.gen(function* () {
+      const timing = yield* routeTiming
+      const attempts = new Map<string, RouteTiming>()
       const scope = yield* Effect.scope
       const engine = yield* BrowserEngine.BrowserEngine
       const remote = yield* RemoteRunsClient
@@ -156,7 +161,15 @@ export class RunsStore extends Context.Service<
        * else this device's engine.
        */
       const reader = (rootId: string): Reader => (id, read) =>
-        onCloud(rootId) ? remote.inspect(id, read) : engine.inspect(id, read)
+        Effect.gen(function* () {
+          const attempt = attempts.get(rootId)
+          yield* attempt?.record("inspection", "start") ?? Effect.void
+          const request: ReturnType<Reader> = onCloud(rootId) ? remote.inspect(id, read) : engine.inspect(id, read)
+          const result = yield* Effect.result(request)
+          yield* attempt?.record("inspection", result._tag === "Success" ? "ready" : "failed",
+            result._tag === "Success" ? result.success.journal.events.length : 0) ?? Effect.void
+          return yield* result._tag === "Success" ? Effect.succeed(result.success) : Effect.fail(result.failure)
+        })
       /** Repository runs this tab opened: each, and the runs it started, read and followed on Cloudflare. */
       const cloudRoots = new Set<string>()
       /** Whether the page of `rootId` reads Cloudflare: a TODO's run, or a repository's. */
@@ -359,6 +372,8 @@ export class RunsStore extends Context.Service<
           readers.set(runId, pagesOf.add(rootId))
           if (followed.has(runId)) return
           followed.add(runId)
+          const attempt = attempts.get(rootId)
+          yield* attempt?.record("changes", "start") ?? Effect.void
           const changes = yield* ElectricCollection.make<RunChange>({
             id: `remote-run:${runId}`,
             schema: RunChange,
@@ -369,8 +384,15 @@ export class RunsStore extends Context.Service<
               columnMapper: ElectricCollection.snakeCamelMapper(),
             },
           }).pipe(Scope.provide(scope))
+          yield* attempt?.record("changes", "ready") ?? Effect.void
+          let firstRows = true
           // The run moved on Cloudflare: read it again while the page shows it.
-          yield* changes.changes().pipe(
+          yield* changes.changes({ initial: true }).pipe(
+            Stream.tap((batch) => Effect.gen(function* () {
+              if (!firstRows || batch.length === 0) return
+              firstRows = false
+              yield* attempt?.record("changes", "rows", batch.length) ?? Effect.void
+            })),
             Stream.groupedWithin(Number.MAX_SAFE_INTEGER, FOLLOW_EVERY),
             Stream.runForEach(() =>
               Effect.gen(function* () {
@@ -398,6 +420,8 @@ export class RunsStore extends Context.Service<
       const openRepoRuns = (owner: string, name: string) => Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
         const repo = `${owner}/${name}`.toLowerCase()
         if (opened.has(repo)) return
+        const attempt = yield* timing.begin
+        yield* attempt.record("repo-runs", "start")
         const rows = yield* ElectricCollection.make<RepoRunRow>({
           id: `repo-runs:${repo}`,
           schema: RepoRunRow,
@@ -406,8 +430,15 @@ export class RunsStore extends Context.Service<
           persist: { schemaVersion: 1 },
           shape: { url: `${config.origin}${ACTIONS_SHAPE_ROUTE}?repo=${encodeURIComponent(repo)}`, columnMapper: ElectricCollection.snakeCamelMapper() },
         }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie)
+        yield* attempt.record("repo-runs", "ready")
+        let firstRows = true
         opened.add(repo)
         yield* rows.changes({ initial: true }).pipe(
+          Stream.tap((batch) => Effect.gen(function* () {
+            if (!firstRows || batch.length === 0) return
+            firstRows = false
+            yield* attempt.record("repo-runs", "rows", batch.length)
+          })),
           Stream.runForEach((batch) =>
             Effect.forEach(batch, (change) =>
               change.type === "delete" ? Effect.asVoid(shownRepoRuns.delete(String(change.key))) : put(shownRepoRuns, change.value))
@@ -426,6 +457,11 @@ export class RunsStore extends Context.Service<
         list: yield* runsQuery(runs),
         repoRunList: yield* repoRunsQuery(shownRepoRuns),
         openRepoRuns,
+        beginRoute: (runId) => Effect.gen(function* () {
+          attempts.set(runId, yield* timing.begin)
+          yield* attempts.get(runId)!.record("page", "ready", (yield* pages.toArray).length)
+        }),
+        rendered: (runId) => attempts.get(runId)?.rendered ?? Effect.void,
         readRun,
         readList,
         warmList,

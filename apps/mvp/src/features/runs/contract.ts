@@ -173,6 +173,8 @@ export const retryActId = (runId: string, n: number): string => `retry:${runId}:
  */
 export const RUNS_TELEMETRY = {
   records: [
+    "run.route.stage",
+    "smithers_run_route_ms",
     "run.inspect",
     "run.act",
     "run.read",
@@ -183,6 +185,11 @@ export const RUNS_TELEMETRY = {
     "smithers_run_follow_changes",
   ],
   fields: [
+    "routeAttempt",
+    "stage",
+    "phase",
+    "elapsedMs",
+    "rows",
     "runId",
     "act",
     "host",
