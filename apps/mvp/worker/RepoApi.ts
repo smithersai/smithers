@@ -25,6 +25,7 @@ import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"
 import { Clone } from "./flows/RepoClone.ts"
+import * as AboutStore from "./about/Store.ts"
 import * as RepoAbout from "./RepoAbout.ts"
 import * as RepoMetrics from "./RepoMetrics.ts"
 import * as RepoReads from "./RepoReads.ts"
@@ -107,7 +108,7 @@ export interface Options {
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options) =>
   Effect.gen(function* () {
     const budgets = yield* Repos.budgets
-    const aboutSettings = yield* RepoAbout.settings
+    const aboutSource = yield* RepoAbout.make(yield* RepoAbout.settings, AboutStore.postgres(database), database)
     const maxTreePaths = yield* RepoReads.maxTreePaths
     const maxRefs = yield* RepoReads.maxRefs
     const reads = Option.map(
@@ -392,12 +393,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       }).pipe(Effect.withSpan(`repo.${parseRead(path)?.kind ?? "tree"}`, { kind: "server" }))
 
     /**
-     * `GET /api/repos/<owner>/<name>/about`: what GitHub says of a repository, cloned or not, from the immutable cache
-     * under the window it was read in (`REPO_ABOUT_FRESH_MINUTES`), so GitHub is asked once a window; the browser keeps
-     * it until the window ends. Open to everyone, like the other reads. A read the cache misses goes out with the
-     * deployment's read token (worker/github/ReadToken.ts) only for a Member or above, the people a clone's spend is
-     * trusted to: the App's quota is the git loop's too, so a visitor naming arbitrary repositories reads anonymously
-     * and can't exhaust it.
+     * `GET /api/repos/<owner>/<name>/about`: what GitHub says of a repository, cloned or not, through the about read
+     * (worker/RepoAbout.ts): kept in Postgres for every data center, read from GitHub with the App's token where it is
+     * installed, and answered stale while GitHub can't answer. Open to everyone, like the other reads; the browser keeps
+     * a fresh answer until it goes stale. GitHub's refusals say what is true (GH-4): `404 not_found`, `503 rate_limited`
+     * or `503 github_unavailable`, with `Retry-After` when there is a wait; `503 unavailable` with `Retry-After: 1` while
+     * another data center reads it for the first time.
      */
     const about = (target: { readonly owner: string; readonly name: string }) =>
       Effect.gen(function* () {
@@ -407,44 +408,29 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const response = yield* Effect.gen(function* () {
           if (!isRepository(target.owner, target.name)) return refuse(404, "not_found")
           if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
-          const id = repoId(target.owner, target.name)
-          fields.repoId = id
-          const { maxAgeSeconds } = RepoAbout.window(startedAt, aboutSettings.freshFor)
-          // Only a Member's read that the cache misses spends the deployment's token; anyone else's reads anonymously.
-          const authenticated = Effect.gen(function* () {
+          fields.repoId = repoId(target.owner, target.name)
+          // Whether the asker is a Member or above: asked only when a read must choose the deployment's token.
+          const sessions = yield* Effect.context<Sessions | HttpServerRequest.HttpServerRequest>()
+          const member = Effect.gen(function* () {
             const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
-            const member = Option.isSome(actor) && Option.isSome(actor.value) && canClone(actor.value.value)
-            fields.token = member ? "deployment" : "anonymous"
-            return member
-          })
-          return yield* RepoAbout.cached(aboutSettings, target.owner, target.name, startedAt, authenticated).pipe(
-            Effect.map(({ bytes, fresh }) => {
-              fields.bytes = bytes.length
-              fields.cached = fresh ? "miss" : "hit"
-              return HttpServerResponse.uint8Array(bytes, {
-                headers: { "cache-control": `public, max-age=${maxAgeSeconds}` },
-                contentType: "application/json",
-              })
-            }),
-            Effect.catchTag("AboutRefused", (refused) => {
-              fields.errorCode = refused.rateLimited ? "rate_limited" : refused.code
-              fields.stage = refused.stage
-              if (refused.upstreamStatus !== undefined) fields.upstreamStatus = refused.upstreamStatus
-              if (refused.rateLimited !== undefined) fields.rateLimited = refused.rateLimited ? 1 : 0
-              return Effect.succeed(
-                refused.code === "not_found"
-                  ? refuse(404, "not_found")
-                  : refuse(
-                    503,
-                    refused.rateLimited ? "rate_limited" : "unavailable",
-                    {},
-                    refused.retryAfterMillis === undefined
-                      ? {}
-                      : { "retry-after": String(Math.max(1, Math.ceil(refused.retryAfterMillis / 1000))) },
-                  ),
-              )
-            }),
-          )
+            return Option.isSome(actor) && Option.isSome(actor.value) && canClone(actor.value.value)
+          }).pipe(Effect.provideContext(sessions))
+          const outcome = yield* aboutSource.answer(target.owner, target.name, member)
+          Object.assign(fields, RepoAbout.fieldsOf(outcome))
+          yield* Metric.update(Metric.withAttributes(RepoMetrics.aboutAnswers, { cache: outcome.cache }), 1)
+          if (outcome._tag === "Answered") {
+            const bytes = encoder.encode(outcome.text)
+            fields.bytes = bytes.length
+            return HttpServerResponse.uint8Array(bytes, {
+              headers: { "cache-control": `public, max-age=${outcome.maxAgeSeconds}` },
+              contentType: "application/json",
+            })
+          }
+          fields.errorCode = outcome.code
+          const wait: Record<string, string> = outcome.retryAfterMillis === undefined
+            ? {}
+            : { "retry-after": String(Math.max(1, Math.ceil(outcome.retryAfterMillis / 1000))) }
+          return outcome.code === "not_found" ? refuse(404, "not_found") : refuse(503, outcome.code, {}, wait)
         }).pipe(
           Effect.catchDefect((defect) =>
             Effect.sync(() => {
@@ -484,5 +470,5 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       return HttpServerResponse.empty({ status: 404 })
     })
 
-    return { fetch, reads }
+    return { fetch, reads, about: aboutSource }
   })

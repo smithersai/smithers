@@ -124,8 +124,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // A person's own model (docs/features/personal-model.md): saving, removing and testing it, and its shape.
     const personalApi = yield* PersonalApi.make(database)
     const signIn = yield* SignIn.make(database, options).pipe(Effect.provide(FetchHttpClient.layer))
-    // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, and reads at a commit,
-    // cached in this Worker's Cache API.
+    // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, reads at a commit,
+    // cached in this Worker's Cache API, and what GitHub says of a repository, kept in Postgres for every data center.
     const codeStorage = yield* RepoConfig.codeStorage.pipe(Effect.provide(FetchHttpClient.layer))
     const repos = yield* RepoApi.make(database, { codeStorage })
     // The branch workspace (docs/features/branch-workspace.md): tracking a branch, its terminals, and the branches'
@@ -196,12 +196,12 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const home = HomeApi.make({ roles: yield* GitHubConfig.repository })
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
     const webCache = EdgeCache.layer({ name: "web" }).pipe(Layer.orDie)
-    // A repository's docs (docs/features/docs.md): the index its home names and its pages, read through the Worker's
-    // fetch and kept in the repositories' cache beside what GitHub says of it, which names them. The docs routes and
-    // the views route (a `docs` view) read them.
+    // A repository's docs (docs/features/docs.md): the index its home names, from what GitHub says of it (RepoApi's
+    // about read), and its pages, read through the Worker's fetch and kept in the repositories' cache. The docs routes
+    // and the views route (a `docs` view) read them.
     const docs = DocsApi.make()
     const docsSettings = yield* DocsSource.settings.pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
-    const docsSource = DocsSource.layer(docsSettings).pipe(
+    const docsSource = DocsSource.layer(docsSettings, { about: repos.about }).pipe(
       Layer.provide(Layer.merge(FetchHttpClient.layer, repoCache)),
     )
     const logs = Logger.layerStructuredJson()

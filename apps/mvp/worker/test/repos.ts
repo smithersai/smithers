@@ -151,6 +151,11 @@ export interface RepoHarnessOptions {
   readonly github?: ScriptedGitHub
   /** The outside web the docs routes read docs sites from, by URL (worker/test/pages.ts): none unless set. */
   readonly pages?: Readonly<Record<string, Page>>
+  /**
+   * Keeps what the file's `repo_about` holds: this harness is another isolate or data center over the same store. Each
+   * harness starts with none kept unless set, as each Worker's cache did.
+   */
+  readonly keepAbout?: boolean
 }
 
 /**
@@ -160,6 +165,7 @@ export interface RepoHarnessOptions {
 export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions = {}) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
   const database = options.database ?? scratch.database
+  if (options.keepAbout !== true) await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DELETE FROM repo_about`))
   const scripted = options.scripted ?? makeScripted()
   const codeStorage = options.codeStorage ?? scripted.client
   const spans: Array<Tracer.NativeSpan> = []
@@ -300,7 +306,10 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     observed(
       docs.fetch.pipe(
         Effect.provide(
-          DocsSource.layer(docsSettings, options.homes === undefined ? {} : { homes: options.homes }).pipe(
+          DocsSource.layer(docsSettings, {
+            about: repo.about,
+            ...(options.homes === undefined ? {} : { homes: options.homes }),
+          }).pipe(
             Layer.provide(Layer.merge(FetchHttpClient.layer, Layer.succeedContext(cache))),
           ),
         ),

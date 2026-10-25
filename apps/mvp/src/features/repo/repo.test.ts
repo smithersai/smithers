@@ -16,7 +16,7 @@ import { SqlClient } from "effect/sql"
 import { RepoStore } from "./store"
 import { VIEW } from "./rows"
 import { RepoClient, RepoRefused } from "./api"
-import { BUSY, COULDNT_LOAD, GITHUB_LIMIT, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
+import { BUSY, COULDNT_LOAD, GITHUB_DOWN, GITHUB_LIMIT, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
 import { TabClipboard } from "./copy"
 import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTree } from "./flows"
 import { aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, treeLoadMs } from "./metrics"
@@ -520,6 +520,9 @@ describe("the agent's repository flows on this device", () => {
 describe("what GitHub says, cloned or not", () => {
   test.each([
     ["rate_limited", GITHUB_LIMIT],
+    // Will, 2026-10-19 12:41: "show some UI that mentions github is down and smithers will continue to work for repos
+    // that are already imported". Before, GitHub down showed "Couldn't load".
+    ["github_unavailable", GITHUB_DOWN],
     ["unavailable", COULDNT_LOAD],
   ])("an exhausted %s About read shows its refusal and retries successfully", async (code, message) => {
     const h = await repoHarness(server)

@@ -96,6 +96,8 @@ export default defineConfig({
         "db/migrations/0009_clone_ids.ts",
         // What GitHub says of a repository, the clone in its asker's feed, and the reclaim mark (docs/features/repo.md).
         "worker/RepoAbout.ts",
+        "worker/about/*.ts",
+        "db/migrations/0060_repo_about.ts",
         "worker/CloneFeed.ts",
         "db/migrations/0028_clone_progress.ts",
         // Who asked each question, which the answer routes require (docs/features/agent.md#the-answer-routes).

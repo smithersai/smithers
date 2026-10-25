@@ -9,7 +9,8 @@ import { AboutReader, type FileRead, RepoNotFound, RepoReader, RepoReadsPaused, 
 
 /**
  * What a refused read means to a step: gone (404, or a request RepoApi refused as invalid), the read budget spent
- * (503 `capacity`), or worth trying again (anything else, after the server's `Retry-After` when it sent one).
+ * (503 `capacity`), or worth trying again (anything else, after the server's `Retry-After` when it sent one), with
+ * GitHub's reason when it rate limited or didn't answer About's read.
  */
 export const readFailure = (refused: RepoRefused): RepoNotFound | RepoReadsPaused | RepoReadUnavailable =>
   refused.status === 404 || refused.status === 400
@@ -18,7 +19,9 @@ export const readFailure = (refused: RepoRefused): RepoNotFound | RepoReadsPause
     ? new RepoReadsPaused()
     : new RepoReadUnavailable({
       ...(refused.retryAfterMillis === undefined ? {} : { retryAfterMillis: refused.retryAfterMillis }),
-      ...(refused.status === 503 && refused.code === "rate_limited" ? { reason: "rate_limited" as const } : {}),
+      ...(refused.status === 503 && (refused.code === "rate_limited" || refused.code === "github_unavailable")
+        ? { reason: refused.code }
+        : {}),
     })
 
 /** `AboutReader` over the browser's `RepoClient`: RepoApi's about route. */

@@ -484,6 +484,8 @@ export class TestChatApi extends Context.Service<
 
         // Repositories, as ChatApi routes them to RepoApi (worker/ChatApi.ts): this deployment has no Code Storage
         // organization, so a clone answers 503 `not_configured`; the `repositories` shape syncs from this schema.
+        // What GitHub says of a repository is kept in this schema's `repo_about`: none kept, as a new Worker's cache.
+        yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DELETE FROM repo_about`).pipe(Effect.provide(database))
         const repos = yield* RepoApi.make(database, { codeStorage: Option.none() }).pipe(
           // Its read token comes from `config`; with no `GITHUB_TOKEN` and no App it is none, and nothing is fetched.
           Effect.provide(FetchHttpClient.layer),
@@ -516,13 +518,16 @@ export class TestChatApi extends Context.Service<
         // A repository's home, as ChatApi routes it (worker/ChatApi.ts): the curated homes a test gives, else the real ones.
         const home = HomeApi.make({ roles: repository, ...(options.homes === undefined ? {} : { files: options.homes }) })
         // A repository's docs, as ChatApi routes them (worker/ChatApi.ts): the index its home names, or the curated home
-        // a test gives, read from the scripted outside web and kept beside what GitHub says of it. A `docs` view reads
-        // its page through the same source.
+        // a test gives, read from the scripted outside web, the home from what GitHub says of it (RepoApi's about read).
+        // A `docs` view reads its page through the same source.
         const docsSettings = yield* DocsSource.settings.pipe(
           Effect.provide(FetchHttpClient.layer), Effect.provideService(ConfigProvider.ConfigProvider, config),
         )
         const docs = DocsApi.make()
-        const docsSource = DocsSource.layer(docsSettings, options.homes === undefined ? {} : { homes: options.homes }).pipe(
+        const docsSource = DocsSource.layer(docsSettings, {
+          about: repos.about,
+          ...(options.homes === undefined ? {} : { homes: options.homes }),
+        }).pipe(
           Layer.provide(Layer.merge(FetchHttpClient.layer, Layer.succeedContext(repoCache))),
         )
         const starts: Array<Started> = []

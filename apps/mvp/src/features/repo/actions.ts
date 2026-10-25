@@ -3,9 +3,11 @@ import { Clock, Effect, FiberHandle, Metric, Option, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { nearestManifest } from "../generated/detect"
 import { RepoClient, type RepoRefused } from "./api"
+import type { ReadFailure } from "./flows"
 import {
   BUSY,
   COULDNT_LOAD,
+  GITHUB_DOWN,
   GITHUB_LIMIT,
   type CopyKind,
   isRepository,
@@ -169,6 +171,16 @@ const ensureRefs = (repository: Repository, key: string) =>
     yield* Effect.forkIn(load, store.scope, { startImmediately: true })
   })
 
+/** What a failed About read shows: the read budget spent, GitHub's limit, GitHub not answering, or couldn't load. */
+const aboutFailure = (failure: ReadFailure | undefined): string =>
+  failure?._tag === "@smthrs/mvp/repo/RepoReadsPaused"
+    ? READING_PAUSED
+    : failure?._tag === "@smthrs/mvp/repo/RepoReadUnavailable" && failure.reason === "rate_limited"
+    ? GITHUB_LIMIT
+    : failure?._tag === "@smthrs/mvp/repo/RepoReadUnavailable" && failure.reason === "github_unavailable"
+    ? GITHUB_DOWN
+    : COULDNT_LOAD
+
 /**
  * Loads what GitHub says of `owner/name` unless this tab has it or is loading it. A failed read waits for Try again, so
  * navigation through the repository cannot spend another rate-limit window. It needs no
@@ -195,11 +207,7 @@ const ensureAbout = (owner: string, name: string, id: string, door: "view" | "bu
         ? { key: id, state: "ready", about: dispatched.success.value, message: null }
         : failure?._tag === "@smthrs/mvp/repo/RepoNotFound"
         ? { key: id, state: "missing", about: null, message: NOT_FOUND }
-        : { key: id, state: "failed", about: null, message:
-          failure?._tag === "@smthrs/mvp/repo/RepoReadsPaused" ? READING_PAUSED :
-          failure?._tag === "@smthrs/mvp/repo/RepoReadUnavailable" && failure.reason === "rate_limited"
-            ? GITHUB_LIMIT : COULDNT_LOAD,
-        }
+        : { key: id, state: "failed", about: null, message: aboutFailure(failure) }
       yield* put(store.abouts, id, row)
       const durationMs = (yield* Clock.currentTimeMillis) - startedAt
       yield* Metric.update(Metric.withAttributes(aboutLoadMs, { outcome: row.state }), durationMs)

@@ -371,7 +371,8 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 | `repo.clone.request` | every `POST /api/repos`, which persists the request and starts nothing | Info 2xx, Warn 4xx, Error 5xx | `outcome` (`requested`, `existing`, `method`, or the refusal's code), `status`, `durationMs`; `id`, `attempt` and `cloneId` once valid; `row` (the existing row's status); `errorCode` for 503 |
 | `repo.clone.launch` | every `POST /api/repos/launch` | Info 2xx, Warn 4xx, Error 5xx and `conflict` | `outcome` (`launched`, `settled`, `conflict`, `method`, or the refusal's code), `status`, `durationMs`; `id` and `cloneId` once valid, `attempt` for a launch; `row` (a settled or superseded row's status); `errorCode` for 503 and for `conflict` (the start found another payload under the attempt's execution id, and the attempt settled `failed`) |
 | `repo.tree`, `repo.blob`, `repo.raw`, `repo.refs` | every read | Info 200, Warn 4xx, Error 5xx | `repoId`, `status`, `bytes` (returned), `durationMs`; `sha` for a tree or a file; `errorCode` (`not_found`, `too_large`, `capacity`, `unavailable`, or a defect's name) |
-| `repo.about` | every `GET /api/repos/<owner>/<name>/about` | Info 200, Warn 4xx, Error 5xx | `repoId`, `status`, `bytes`, `cached` (`hit`, or `miss` when GitHub was read), `durationMs`; `errorCode` (`not_found`, `rate_limited`, `unavailable`, or a defect's name), and on a GitHub refusal finite `stage`, numeric `upstreamStatus`, and `rateLimited` |
+| `repo.about` | every `GET /api/repos/<owner>/<name>/about` | Info 200, Warn 4xx, Error 5xx | `repoId`, `status`, `bytes`, `durationMs`; `cache` (`hit`, `miss` when GitHub was read now, `stale`, `refusal` for a kept refusal, `wait` while another data center reads it first), `via` (`app`, `deployment` or `anonymous`), `joined` (1 when it shared another request's read in this isolate), `store` (the store operations that failed, comma-separated); when GitHub was read, `read` (its outcome), `rateRemaining`, and on a GitHub refusal finite `stage` and numeric `upstreamStatus`; `errorCode` (`not_found`, `rate_limited`, `github_unavailable`, `unavailable`, or a defect's name) |
+| `repo.about.read` | each read of GitHub for a repository's About, at most one per repository at a time across data centers | Info answered, Warn otherwise | `repoId`, `via`, `outcome` (`answered`, `partial`, `not_found`, `rate_limited`, `github_unavailable`), `durationMs`; `stage` and `upstreamStatus` on a refusal; `rateRemaining` (the least `x-ratelimit-remaining` GitHub answered with); `missing` (the parts GitHub couldn't give now); `tokenError` (why the App's token couldn't be had) |
 | `repo.meter` | a read's bytes Postgres didn't record; the read still answered | Warn | `bytes`, `errorCode` |
 | `repo.clone.step` | each of Inspect, Import, Pull, AwaitSync and Index that answered | Info | `step`, `id`; Inspect's `cloneId`, `outcome` and `reason`; Import's `created`; AwaitSync's `outcome` (`ready`, `timed_out`); Index's `files` (-1 when the list couldn't be read) and `installed`; the engine's `runId`, `stepKey`, `attempt` |
 | `repo.clone.settle` | Settle | Warn `failed`, Info otherwise | `id`, `cloneId`, `status`, `reason` (the failure or budget, or `none`), `settled` (false for a stale attempt); `errorCode` when Postgres refused |
@@ -385,7 +386,7 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 | `repo.clone.request` | server | `smithers.repo.id`, `http.response.status_code` |
 | `repo.clone.launch` | server | `http.response.status_code` |
 | `repo.tree`, `repo.blob`, `repo.raw`, `repo.refs` | server | `http.response.status_code`, `smithers.repo.bytes` |
-| `repo.about` | server; GitHub's ten-odd reads under `repo.about.github`, each a `GitHubClient.request` or `GitHubClient.count` span | `http.response.status_code` |
+| `repo.about` | server; `repo.about.answer` inside, then the store's `repo.about.store.<op>` and the GitHub read, `repo.about.graphql` or `repo.about.rest`, each call a `GitHubClient.request` span | `http.response.status_code` |
 | `repo.clone.inspect`, `repo.clone.import`, `repo.clone.pull`, `repo.clone.await_sync`, `repo.clone.index`, `repo.clone.settle` | internal, inside the engine's step spans | `smithers.repo.id` |
 | `repo.clone.feed` | internal, inside each write to a clone's row: the person's feed row (worker/CloneFeed.ts) | `smithers.repo.id` |
 | `CodeStorage.<operation>`, `GitRemote.head` | internal (`@smthrs/effect-code-storage`) | `code_storage.repo`, `git.remote` |
@@ -396,7 +397,10 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 |---|---|---|
 | `repo_clone_requests` | counter | `outcome` |
 | `repo_clone_launches` | counter | `outcome` |
-| `repo_reads` | counter | `kind` (`tree`, `blob`, `raw`, `refs`), `status` |
+| `repo_reads` | counter | `kind` (`tree`, `blob`, `raw`, `refs`, `about`), `status` |
+| `repo_about_answers` | counter | `cache` (`hit`, `miss`, `stale`, `refusal`, `wait`) |
+| `repo_about_reads` | counter | `via` (`app`, `deployment`, `anonymous`), `outcome` |
+| `repo_about_rate_remaining` | gauge | `via`: GitHub's rate limit left after the latest About read |
 | `repo_read_bytes_total` | counter | bytes returned |
 | `repo_shape_requests` | counter | `status`, `live` |
 | `repo_clones` | counter | `outcome` (`ready`, `failed`, `capacity`), `reason` |

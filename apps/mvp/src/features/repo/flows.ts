@@ -41,11 +41,15 @@ export class RepoReadsPaused extends Schema.TaggedError<RepoReadsPaused>()("@smt
 
 /**
  * Code Storage or RepoApi couldn't answer: busy, thawing a cold repository, or unreachable. `retryAfterMillis` is how
- * long the server asked to wait, which the step's retry policy honors.
+ * long the server asked to wait, which the step's retry policy honors. `reason` is GitHub's, for About's read: it rate
+ * limited it, or didn't answer.
  */
 export class RepoReadUnavailable extends Schema.TaggedError<RepoReadUnavailable>()(
   "@smthrs/mvp/repo/RepoReadUnavailable",
-  { retryAfterMillis: Schema.optional(Schema.Number), reason: Schema.optional(Schema.Literal("rate_limited")) },
+  {
+    retryAfterMillis: Schema.optional(Schema.Number),
+    reason: Schema.optional(Schema.Literals(["rate_limited", "github_unavailable"])),
+  },
 ) {}
 
 /** What a read can fail with. */

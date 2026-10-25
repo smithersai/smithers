@@ -67,8 +67,9 @@ export type CapacityReason = (typeof CAPACITY_REASONS)[number]
  * The refusal codes RepoApi answers with, as `{ code }`: `invalid` (400), `authentication` (401, cloning needs sign-in),
  * `forbidden` (403, cloning needs the Member role or above), `not_found` (404), `too_large` (413, with `size` for a
  * file), `repository_limit` (429), `capacity` (503, the read budget is spent), `rate_limited` (503, GitHub's
- * public About limit), `unavailable` (503, with `Retry-After` when the upstream said when) and
- * `not_configured` (503, no Code Storage organization).
+ * public About limit), `github_unavailable` (503, GitHub didn't answer About's read and no earlier answer is kept),
+ * `unavailable` (503, with `Retry-After` when the upstream said when) and `not_configured` (503, no Code Storage
+ * organization).
  */
 export const REFUSALS = [
   "invalid",
@@ -79,6 +80,7 @@ export const REFUSALS = [
   "repository_limit",
   "capacity",
   "rate_limited",
+  "github_unavailable",
   "unavailable",
   "not_configured",
 ] as const
@@ -320,6 +322,9 @@ export const COULDNT_LOAD = "Couldn't load"
 
 /** GitHub refused a public About read at its rate limit. */
 export const GITHUB_LIMIT = "GitHub limit reached"
+
+/** GitHub didn't answer a public About read, and no earlier answer is kept (Will, 2026-10-19 12:41). */
+export const GITHUB_DOWN = "GitHub isn't answering. Repositories already cloned keep working."
 
 /** A view read refused by this month's read budget. */
 export const READING_PAUSED = "Reading paused"

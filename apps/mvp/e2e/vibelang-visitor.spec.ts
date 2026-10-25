@@ -34,4 +34,23 @@ test.describe("VibeLang on Smithers", () => {
       await readCode(page)
     },
   )
+
+  // Will's bug bash, 2026-10-23: a visitor got 503 where a Member got 200, because a visitor's About read was anonymous
+  // and kept per data center. VibeLang has the Smithers App, so its About is read with the App's token, once, and kept
+  // for every data center (docs/features/repo.md#about).
+  test(
+    "visitor: a crowd of visitors opens VibeLang at once and every one is answered",
+    { annotation: { type: "summary", description: "Thirty signed-out visitors ask for VibeLang at once; all get its About, then its page." } },
+    async ({ page }) => {
+      test.setTimeout(120_000)
+      await as(page, "visitor")
+      await step("Thirty visitors ask what GitHub says of VibeLang at once: every one is answered", async () => {
+        const answers = await Promise.all(Array.from({ length: 30 }, () => page.request.get(`/api/repos${REPO}/about`)))
+        expect(answers.map((answer) => answer.status())).toEqual(Array.from({ length: 30 }, () => 200))
+        expect(await answers[0]!.json()).toMatchObject({ name: "smithersai/vibelang" })
+      })
+      await openHome(page, "everyone")
+      await step("Its landing page draws from that answer", () => landing(page))
+    },
+  )
 })

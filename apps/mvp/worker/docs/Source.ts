@@ -5,13 +5,13 @@ import type { HttpClient } from "effect/http"
 import { type DocsRefusal, MAX_PAGE_BYTES } from "../../src/features/docs/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Curated from "../home/Curated.ts"
-import * as RepoAbout from "../RepoAbout.ts"
+import type * as RepoAbout from "../RepoAbout.ts"
 
 // A repository's docs as ChatApi reads them (ruling AGENT-6, docs/features/docs.md#where-docs-come-from): the docs index
-// a repository names in its own home (`"docs"` in `.smithers/home.json`, read from what GitHub says of it, the about
-// read RepoApi keeps), else the one Smithers' curated home names; then the index and its pages from the docs site,
-// through `@smthrs/views`' `Docs.fetchText` and its guard. Nothing here knows a docs site: any repository that names an
-// `llms.txt` index gets the same.
+// a repository names in its own home (`"docs"` in `.smithers/home.json`, read from what GitHub says of it through the
+// about read RepoApi answers with, worker/RepoAbout.ts), else the one Smithers' curated home names; then the index and
+// its pages from the docs site, through `@smthrs/views`' `Docs.fetchText` and its guard. Nothing here knows a docs
+// site: any repository that names an `llms.txt` index gets the same.
 //
 // A page is read only when the repository's own index lists its path (`Docs.find`), and the index keeps only links on
 // its own origin, so a request never names a URL: ChatApi fetches only from the host the repository named (SSRF).
@@ -50,8 +50,12 @@ export class DocsSource extends Context.Service<
   }
 >()("@smthrs/mvp/docs/DocsSource") {}
 
-/** How the source reads: the curated homes (worker/home/curated/ unless a test gives its own) and hosts the guard lets through. */
-export interface Options {
+/**
+ * How the source reads: what GitHub says of a repository (RepoApi's about read), the curated homes
+ * (worker/home/curated/ unless a test gives its own) and hosts the guard lets through.
+ */
+export interface Options<R = never> {
+  readonly about: RepoAbout.Source<R>
   readonly homes?: ReadonlyArray<Curated.CuratedFile>
   /** Hosts `Docs.fetchText` may request though they are private, such as a test's `127.0.0.1`: none unless set. */
   readonly privateHosts?: ReadonlyArray<string>
@@ -63,7 +67,7 @@ const refused = (code: DocsRefusal, reason?: string): Refused =>
   reason === undefined ? { _tag: "Refused", code } : { _tag: "Refused", code, reason }
 
 const AboutHome = Schema.Struct({ home: Schema.NullOr(Schema.String) })
-// RepoAbout.cached answers an `About`, which always has `home`: anything else is a defect, answered `unavailable`.
+// The about read answers an `About`, which always has `home`: anything else is a defect, answered `unavailable`.
 const decodeAbout = Schema.decodeUnknownSync(Schema.fromJsonString(AboutHome))
 
 const encoder = new TextEncoder()
@@ -75,23 +79,16 @@ const docsOfHome = (text: string): string | undefined => {
   return read._tag === "Declared" ? read.docs : undefined
 }
 
-/**
- * Captures `REPO_ABOUT_*`, `GITHUB_*` and `DOCS_KEPT` at program build, without acquiring a runtime cache.
- */
+/** Captures `DOCS_KEPT` at program build, without acquiring a runtime cache. */
 export const settings = Effect.gen(function* () {
-  const about = yield* RepoAbout.settings
-  const kept = Duration.toMillis(yield* Config.Duration("DOCS_KEPT").pipe(Config.withDefault(KEPT)))
-  return { about, kept }
+  return { kept: Duration.toMillis(yield* Config.Duration("DOCS_KEPT").pipe(Config.withDefault(KEPT))) }
 })
 
 /** Captured deployment settings over the runtime's HTTP client and cache; never reads Config. */
-export const make = (
-  { about, kept }: { readonly about: RepoAbout.Settings; readonly kept: number },
-  options: Options = {},
-) =>
+export const make = <R = never>({ kept }: { readonly kept: number }, options: Options<R>) =>
   Effect.gen(function* () {
     const privateHosts = options.privateHosts ?? []
-    const context = yield* Effect.context<HttpClient.HttpClient | ImmutableCache.ImmutableCache>()
+    const context = yield* Effect.context<HttpClient.HttpClient | ImmutableCache.ImmutableCache | R>()
 
     /**
      * The index `owner/name` names: its own home's `docs` at the newest commit, else its curated home's. When GitHub
@@ -102,19 +99,14 @@ export const make = (
       Effect.gen(function* () {
         const curated = Curated.find(owner, name, options.homes)
         const fallback = typeof curated === "object" ? curated.docs : undefined
-        const read = yield* RepoAbout.cached(
-          about,
-          owner,
-          name,
-          yield* Clock.currentTimeMillis,
-          // A docs read spends no deployment token: anyone may name any repository.
-          Effect.succeed(false),
-        ).pipe(Effect.result)
-        if (read._tag === "Failure") {
+        // A docs read spends no deployment token: anyone may name any repository. The App's still reads a repository
+        // it is installed on.
+        const read = yield* options.about.answer(owner, name, Effect.succeed(false))
+        if (read._tag === "Refused") {
           if (fallback !== undefined) return { url: fallback, source: "curated" as const }
-          return refused(read.failure.code === "not_found" ? "not_found" : "unavailable")
+          return refused(read.code === "not_found" ? "not_found" : "unavailable")
         }
-        const { home } = decodeAbout(decoder.decode(read.success.bytes))
+        const { home } = decodeAbout(read.text)
         const own = home === null ? undefined : docsOfHome(home)
         if (own !== undefined) return { url: own, source: "declared" as const }
         if (fallback !== undefined) return { url: fallback, source: "curated" as const }
@@ -190,8 +182,6 @@ export const make = (
     return DocsSource.of({ index, page })
   })
 
-/** The source as a layer, over the `HttpClient` and `ImmutableCache` it is built with. */
-export const layer = (
-  captured: { readonly about: RepoAbout.Settings; readonly kept: number },
-  options: Options = {},
-) => Layer.effect(DocsSource, make(captured, options))
+/** The source as a layer, over the `HttpClient` and `ImmutableCache` it is built with, and what its about read needs. */
+export const layer = <R = never>(captured: { readonly kept: number }, options: Options<R>) =>
+  Layer.effect(DocsSource, make(captured, options))

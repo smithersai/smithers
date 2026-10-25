@@ -49,6 +49,9 @@ describe("readFailure", () => {
     expect(readFailure(new RepoRefused({ status: 503, code: "rate_limited", retryAfterMillis: 60_000 }))).toEqual(
       new RepoReadUnavailable({ reason: "rate_limited", retryAfterMillis: 60_000 }),
     )
+    expect(readFailure(new RepoRefused({ status: 503, code: "github_unavailable" }))).toEqual(
+      new RepoReadUnavailable({ reason: "github_unavailable" }),
+    )
     expect(readFailure(new RepoRefused({ status: 500 }))).toEqual(new RepoReadUnavailable({}))
     expect(readFailure(new RepoRefused({}))).toEqual(new RepoReadUnavailable({}))
   })

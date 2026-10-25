@@ -32,9 +32,11 @@ import * as Conversations from "../branch/Conversations.ts"
 import * as ConversationApi from "../branch/ConversationApi.ts"
 import * as Chat from "../Chat.ts"
 import * as DocsApi from "../docs/Api.ts"
+import * as AboutStore from "../about/Store.ts"
 import * as DocsSource from "../docs/Source.ts"
 import * as Flows from "../Flows.ts"
 import { PersonalModels } from "../personal/Models.ts"
+import * as RepoAbout from "../RepoAbout.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import type { CuratedFile } from "../home/Curated.ts"
 
@@ -184,10 +186,16 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     ImmutableCache.ImmutableCache,
     ImmutableCache.make(ImmutableCache.makeMemoryWebCache(), { backend: "memory" }),
   )
-  const docsSettings = await runtime.runPromise(observed(DocsSource.settings.pipe(
-    Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch),
-  )))
-  const docsSource = DocsSource.layer(docsSettings, options.homes === undefined ? {} : { homes: options.homes }).pipe(
+  const docsSettings = await runtime.runPromise(observed(DocsSource.settings))
+  // What GitHub says of a repository, which names its docs: RepoApi's about read over this file's schema, none kept.
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DELETE FROM repo_about`))
+  const about = await runtime.runPromise(observed(
+    Effect.flatMap(RepoAbout.settings, (settings) => RepoAbout.make(settings, AboutStore.postgres(database), database)).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provideService(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch),
+    ),
+  ))
+  const docsSource = DocsSource.layer(docsSettings, { about, ...(options.homes === undefined ? {} : { homes: options.homes }) }).pipe(
     Layer.provide(Layer.merge(FetchHttpClient.layer, docsCache)),
   )
   // ChatApi routes a repository's docs before the chat routes (worker/ChatApiProgram.ts): open to everyone.

@@ -7,7 +7,7 @@ import * as Conversations from "./branch/Conversations.ts"
 import { Action } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
-import { beforeAll, beforeEach, describe, expect, test } from "vitest"
+import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { aboutRoute, blobRoute, cloneExecutionId, rawRoute, refsRoute, treeRoute } from "../src/features/repo/contract.ts"
@@ -19,7 +19,8 @@ import * as Repos from "./Repos.ts"
 import { fixture, scripted, shaOf } from "./test/codeStorage.ts"
 import { runFlow } from "./test/flowHost.ts"
 import { recorded, testFile } from "./test/harness.ts"
-import { spoonKnife } from "./test/githubRest.ts"
+import { APP_ID, appKey } from "./github/test/scriptedGitHub.ts"
+import { scriptedGitHub, spoonKnife } from "./test/githubRest.ts"
 import { repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.ts"
 
 const runtime = testFile("repo_api")
@@ -752,26 +753,45 @@ describe("spend", () => {
 })
 
 describe("GET /api/repos/<owner>/<name>/about", () => {
-  test("a read the cache misses spends the deployment's token only for a Member; a visitor or a Guest reads anonymously", async () => {
+  test("a visitor gets 200 for a repository the App is installed on while GitHub's anonymous quota is spent", async () => {
+    // Will's bug bash, 2026-10-23: a visitor got 503 where a Member got 200 for the same repository, because a visitor's
+    // read was anonymous: 60 calls an hour per address, shared by every Worker on Cloudflare's egress.
+    const key = await appKey()
+    const h = await repoHarness(runtime, {
+      actor: null,
+      config: { GITHUB_APP_ID: APP_ID, GITHUB_APP_PRIVATE_KEY: Redacted.value(key), GITHUB_REPOSITORY: "smithersai/smithers" },
+    })
+    h.github.publish("smithersai", "vibelang", spoonKnife({ fullName: "smithersai/vibelang" }))
+    h.github.install("smithersai", "vibelang")
+    h.github.fail("", "rate_limited")
+    const response = await h.fetch(aboutRoute("smithersai", "vibelang"))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ name: "smithersai/vibelang" })
+    expect(h.only("repo.about").annotations).toMatchObject({ status: 200, cache: "miss", via: "app", read: "answered", joined: 0 })
+    expect(h.count(RepoMetrics.aboutAnswers, { cache: "miss" })).toBe(1)
+    expect(recorded(h)).not.toMatch(/ghs_about|PRIVATE KEY/)
+  })
+
+  test("a read of a repository without the App spends the deployment's token only for a Member; a visitor or a Guest reads anonymously", async () => {
     // Before, every read went out with the deployment's token: anyone naming arbitrary repositories spent the GitHub
     // App's quota, which the git loop needs too.
     const read = async (actor: Actor.Actor | null, name: string) => {
       const h = await repoHarness(runtime, { actor, config: { GITHUB_TOKEN: "ghp_deployment" } })
       h.github.publish("octocat", name)
       expect((await h.fetch(aboutRoute("octocat", name))).status).toBe(200)
-      return { authorizations: new Set(h.github.authorizations), token: h.only("repo.about").annotations.token }
+      return { authorizations: new Set(h.github.authorizations), via: h.only("repo.about").annotations.via }
     }
-    expect(await read(null, "Visitor")).toEqual({ authorizations: new Set([null]), token: "anonymous" })
-    expect(await read({ subject: { kind: "person", id: "person-guest" }, role: "guest" }, "Guest")).toEqual({ authorizations: new Set([null]), token: "anonymous" })
-    expect(await read({ subject: { kind: "person", id: "person-member" }, role: "member" }, "Member")).toEqual({ authorizations: new Set(["Bearer ghp_deployment"]), token: "deployment" })
+    expect(await read(null, "Visitor")).toEqual({ authorizations: new Set([null]), via: "anonymous" })
+    expect(await read({ subject: { kind: "person", id: "person-guest" }, role: "guest" }, "Guest")).toEqual({ authorizations: new Set([null]), via: "anonymous" })
+    expect(await read({ subject: { kind: "person", id: "person-member" }, role: "member" }, "Member")).toEqual({ authorizations: new Set(["Bearer ghp_deployment"]), via: "deployment" })
   })
 
-  test("what GitHub says, before any clone, cached for the window it was read in", async () => {
+  test("what GitHub says, before any clone, kept for every data center: ten anonymous calls once, then the store", async () => {
     const h = await repoHarness(runtime, { actor: null })
     h.github.publish("octocat", "Spoon-Knife")
     const response = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
     expect(response.status).toBe(200)
-    expect(response.headers.get("cache-control")).toMatch(/^public, max-age=\d+$/)
+    expect(response.headers.get("cache-control")).toBe("public, max-age=3600")
     expect(await response.json()).toEqual({
       name: "octocat/Spoon-Knife",
       description: "This repo is for demonstration purposes only.",
@@ -786,9 +806,9 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
       languages: [{ name: "HTML", bytes: 355 }, { name: "CSS", bytes: 256 }],
       release: { tag: "v1.0.0", name: "First", publishedAt: "2026-10-01T12:00:00Z" },
       releases: 2,
-      // A contributor GitHub names without a login (an anonymous email) isn't shown.
+      // A contributor GitHub names without a login (an anonymous email) isn't shown, but is counted.
       contributors: [{ login: "octocat", avatarUrl: "https://avatars.githubusercontent.com/u/583231?v=4" }],
-      contributorCount: 1,
+      contributorCount: 2,
       commits: 1,
       branches: 3,
       tags: 0,
@@ -803,16 +823,19 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
       home: null,
       installUrl: "https://github.com/apps/smithers/installations/new",
     })
-    // Twelve reads of GitHub, once: the second request is the cache's. The home is read last, at the newest commit.
-    expect(h.github.calls).toHaveLength(12)
-    expect(h.github.calls.at(-1)).toBe("/contents/.smithers/home.json")
-    expect((await h.fetch(aboutRoute("octocat", "spoon-knife"))).status).toBe(200)
-    expect(h.github.calls).toHaveLength(12)
+    // Ten reads of GitHub, once (twelve before): no home without .smithers, no count of one page of contributors.
+    expect(h.github.calls).toHaveLength(10)
+    expect(h.github.calls).not.toContain("/contents/.smithers/home.json")
+    const again = await h.fetch(aboutRoute("octocat", "spoon-knife"))
+    expect(again.status).toBe(200)
+    expect(Number(again.headers.get("cache-control")?.match(/max-age=(\d+)/)?.[1])).toBeLessThanOrEqual(3600)
+    expect(h.github.calls).toHaveLength(10)
     expect(h.line("repo.about").map((line) => line.annotations)).toEqual([
-      expect.objectContaining({ repoId: "github/octocat/spoon-knife", status: 200, cached: "miss" }),
-      expect.objectContaining({ repoId: "github/octocat/spoon-knife", status: 200, cached: "hit" }),
+      expect.objectContaining({ repoId: "github/octocat/spoon-knife", status: 200, cache: "miss", via: "anonymous", read: "answered", rateRemaining: 59 }),
+      expect.objectContaining({ repoId: "github/octocat/spoon-knife", status: 200, cache: "hit", via: "anonymous" }),
     ])
     expect(h.count(RepoMetrics.reads, { kind: "about", status: "200" })).toBe(2)
+    expect(h.count(RepoMetrics.aboutAnswers, { cache: "hit" })).toBe(1)
   })
 
   test("a repository's own home, at its newest commit: its text, or none when GitHub refuses it or it is too large", async () => {
@@ -831,6 +854,7 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     h.github.publish("octocat", "Refused", spoonKnife({ fullName: "octocat/Refused", home: { text } }))
     h.github.fail("/contents/.smithers/home.json", 500)
     expect(await (await h.fetch(aboutRoute("octocat", "Refused"))).json()).toMatchObject({ home: null })
+    expect(h.line("repo.about").at(-1)?.annotations).toMatchObject({ read: "partial" })
   })
 
   test("only the repository must answer: parts GitHub refuses are left out; its license and homepage as it has them", async () => {
@@ -880,30 +904,39 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     })
   })
 
-  test("GitHub rate limiting fails the whole read with its wait, and caches nothing; the next read answers", async () => {
+  test("a part GitHub rate limits is left out; the repository rate limited is 503 with its wait, kept until GitHub's reset", async () => {
+    // Before, a rate limit on any part failed the whole read with 503 and nothing was kept, so every visitor asked again.
     const h = await repoHarness(runtime)
     h.github.publish("octocat", "Spoon-Knife")
     h.github.fail("/tags", "rate_limited")
-    const limited = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    const partial = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    expect(partial.status).toBe(200)
+    expect(await partial.json()).toMatchObject({ tags: null, branches: 3 })
+    expect(Number(partial.headers.get("cache-control")?.match(/max-age=(\d+)/)?.[1])).toBeLessThanOrEqual(300)
+    h.github.clear()
+    h.github.publish("octocat", "Limited")
+    h.github.fail("", "rate_limited")
+    const limited = await h.fetch(aboutRoute("octocat", "Limited"))
     expect(limited.status).toBe(503)
     expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0)
+    expect(limited.headers.get("cache-control")).toBe("no-store")
     expect(await limited.json()).toEqual({ code: "rate_limited" })
     expect(h.line("repo.about").at(-1)?.annotations).toMatchObject({
-      status: 503, errorCode: "rate_limited", stage: "tags", upstreamStatus: 403, rateLimited: 1,
+      status: 503, errorCode: "rate_limited", cache: "miss", read: "rate_limited", stage: "repository", upstreamStatus: 403,
     })
+    // Every request until GitHub's reset gets the kept refusal, with the wait to it, and GitHub isn't asked.
     h.github.clear()
-    h.github.fail("", "rate_limited")
-    const repositoryLimited = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
-    expect(repositoryLimited.status).toBe(503)
-    expect(await repositoryLimited.json()).toEqual({ code: "rate_limited" })
-    expect(h.line("repo.about").at(-1)?.annotations).toMatchObject({
-      status: 503, errorCode: "rate_limited", stage: "repository", upstreamStatus: 403, rateLimited: 1,
-    })
-    h.github.clear()
-    expect((await h.fetch(aboutRoute("octocat", "Spoon-Knife"))).status).toBe(200)
+    const calls = h.github.calls.length
+    const kept = await h.fetch(aboutRoute("octocat", "Limited"))
+    expect([kept.status, await kept.json()]).toEqual([503, { code: "rate_limited" }])
+    expect(Number(kept.headers.get("retry-after"))).toBeGreaterThan(500)
+    expect(h.line("repo.about").at(-1)?.annotations).toMatchObject({ cache: "refusal", errorCode: "rate_limited" })
+    expect(h.github.calls).toHaveLength(calls)
+    await sql(`UPDATE repo_about SET next_read_at = now() WHERE repo_id = 'github/octocat/limited'`)
+    expect((await h.fetch(aboutRoute("octocat", "Limited"))).status).toBe(200)
   })
 
-  test("a repository GitHub doesn't have, or keeps private, is 404; GitHub down is 503; bad input is refused", async () => {
+  test("a repository GitHub doesn't have, or keeps private, is 404; GitHub down is 503 github_unavailable; bad input is refused", async () => {
     const h = await repoHarness(runtime)
     expect((await h.fetch(aboutRoute("octocat", "Gone"))).status).toBe(404)
     h.github.publish("octocat", "Secret", spoonKnife({ fullName: "octocat/Secret", private: true }))
@@ -912,13 +945,13 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     h.github.fail("", 502)
     const down = await h.fetch(aboutRoute("octocat", "Down"))
     expect(down.status).toBe(503)
-    expect(await down.json()).toEqual({ code: "unavailable" })
+    expect(await down.json()).toEqual({ code: "github_unavailable" })
     expect(down.headers.get("retry-after")).toBeNull()
     expect(down.headers.get("cache-control")).toBe("no-store")
     expect(h.line("repo.about").map((line) => line.annotations)).toEqual([
       expect.objectContaining({ status: 404, errorCode: "not_found", stage: "repository", upstreamStatus: 404 }),
       expect.objectContaining({ status: 404, errorCode: "not_found", stage: "repository" }),
-      expect.objectContaining({ status: 503, errorCode: "unavailable", stage: "repository", upstreamStatus: 502, rateLimited: 0 }),
+      expect.objectContaining({ status: 503, errorCode: "github_unavailable", stage: "repository", upstreamStatus: 502, cache: "miss" }),
     ])
     expect((await h.fetch("/api/repos/app/x/about")).status).toBe(404)
     expect((await h.fetch("/api/repos/%E0%A4%A/x/about")).status).toBe(404)
@@ -926,8 +959,25 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     expect(h.line("repo.about").map((line) => line.annotations.errorCode).filter(Boolean)).toEqual([
       "not_found",
       "not_found",
-      "unavailable",
+      "github_unavailable",
     ])
+  })
+
+  test("while another data center reads a repository for the first time, a visitor is asked to wait a second", async () => {
+    const github = scriptedGitHub()
+    github.publish("octocat", "Spoon-Knife")
+    const first = await repoHarness(runtime, { actor: null, github })
+    const second = await repoHarness(runtime, { actor: null, github, keepAbout: true })
+    const release = github.hold()
+    const reading = first.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    // The first data center has claimed the read and is waiting on GitHub.
+    await vi.waitFor(() => expect(github.holding()).toBeGreaterThan(0), { timeout: 10_000, interval: 10 })
+    const waiting = await second.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    expect([waiting.status, waiting.headers.get("retry-after"), await waiting.json()]).toEqual([503, "1", { code: "unavailable" }])
+    expect(second.only("repo.about").annotations).toMatchObject({ cache: "wait", errorCode: "unavailable" })
+    release()
+    expect((await reading).status).toBe(200)
+    expect((await second.fetch(aboutRoute("octocat", "Spoon-Knife"))).status).toBe(200)
   })
 
   test("a deployment whose GitHub URL isn't one answers 503, logged by the defect's name", async () => {

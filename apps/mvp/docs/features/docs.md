@@ -18,7 +18,7 @@ app/docs/search { repository, query, pages?, conversationId? }  (the agent's ctx
 
 ## Where docs come from
 
-A repository names its docs index in `.smithers/home.json` (`"docs"`, an `https` URL with no user or password, `Home.DocsUrl`). ChatApi reads the home from what GitHub says of the repository at its newest commit (`GET …/about`'s `home`, kept for `REPO_ABOUT_FRESH_MINUTES` and shared with the about route), so docs work before anyone clones it. When the repository's own home names none, Smithers' curated home for it (`worker/home/curated/`) may (`"docs"` beside `sections`). When GitHub can't answer, a curated home's docs still serve.
+A repository names its docs index in `.smithers/home.json` (`"docs"`, an `https` URL with no user or password, `Home.DocsUrl`). ChatApi reads the home from what GitHub says of the repository at its newest commit (`GET …/about`'s `home`, through the about route's own read and the answer it keeps for every data center, [About](repo.md#about)), so docs work before anyone clones it. When the repository's own home names none, Smithers' curated home for it (`worker/home/curated/`) may (`"docs"` beside `sections`). When GitHub can't answer, a curated home's docs still serve.
 
 The index is the docs site's [`llms.txt`](https://llmstxt.org): a `#` title, a `>` summary and `##` sections listing `- [Title](url): description`. `Docs.parse` reads it against the URL the repository named, keeping only links on that origin.
 

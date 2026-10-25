@@ -31,6 +31,29 @@ export const reads = Metric.counter("repo_reads", {
   incremental: true,
 })
 
+/**
+ * About answers, by `cache`: `hit` (fresh from the store), `miss` (read from GitHub now), `stale` (the last good answer),
+ * `refusal` (GitHub's kept refusal) or `wait` (another data center's first read in flight).
+ */
+export const aboutAnswers = Metric.counter("repo_about_answers", {
+  description: "About answers, by where they came from",
+  incremental: true,
+})
+
+/**
+ * Reads of GitHub for a repository's About, by `via` (`app`, `deployment` or `anonymous`) and `outcome` (`answered`,
+ * `partial`, `not_found`, `rate_limited` or `github_unavailable`).
+ */
+export const aboutReads = Metric.counter("repo_about_reads", {
+  description: "Reads of GitHub for a repository's About, by token and outcome",
+  incremental: true,
+})
+
+/** The least `x-ratelimit-remaining` GitHub answered the latest About read with, by `via`. */
+export const aboutRateRemaining = Metric.gauge("repo_about_rate_remaining", {
+  description: "GitHub's rate limit left after the latest About read, by token",
+})
+
 /** Bytes RepoApi returned for tree and file reads, from the cache or Code Storage. */
 export const readBytes = Metric.counter("repo_read_bytes_total", {
   description: "Bytes of repository trees and files returned",

@@ -1,316 +1,412 @@
-import { ImmutableCache } from "@smthrs/artifacts"
-import { type Core, GitHub } from "@smthrs/integrations"
-import { Home } from "@smthrs/views"
-import { Config, Data, Duration, Effect, Option, Redacted, Schema } from "effect"
-import type { HttpClient } from "effect/http"
-import {
-  ABOUT_CONTRIBUTORS,
-  ABOUT_ROOT_ENTRIES,
-  installUrl,
-  MAX_BLOB_BYTES,
-  repoId,
-  textOf,
-} from "../src/features/repo/contract.ts"
-import type { About, AboutCommit, AboutEntry } from "../src/features/repo/schema.ts"
-import { DEFAULT_API_URL } from "./github/Config.ts"
+import { GitHub } from "@smthrs/integrations"
+import { Cache, Clock, Config, Context, Duration, Effect, Function, type Layer, Metric, Option, Redacted, Ref, Schema } from "effect"
+import { HttpClient } from "effect/http"
+import type { SqlClient } from "effect/sql"
+import { repoId } from "../src/features/repo/contract.ts"
+import { type AboutRefused, type AboutStage, graphql, rest } from "./about/GitHubRead.ts"
+import type { AboutStore, KeptAnswer, KeptRefusal, Via } from "./about/Store.ts"
+import { codeOf } from "./ErrorCode.ts"
+import * as GitHubConfig from "./github/Config.ts"
 import * as ReadToken from "./github/ReadToken.ts"
+import { allowed as allowedRepositories } from "./github/RepoRoles.ts"
+import * as Tokens from "./github/Tokens.ts"
+import * as RepoMetrics from "./RepoMetrics.ts"
 
-// What GitHub says of a repository (docs/features/repo.md#about): its description, topics, languages, latest release,
-// contributors, counts, last commit, top folder, README and own home. The repository page shows it from the first visit,
-// before anyone clones the repository, so the page is never empty. One read is eleven GitHub calls made at once, then
-// the home at the newest commit they named; RepoApi keeps
-// the answer in the immutable cache under the hour it was read in, so a repository costs GitHub's quota once an hour.
-// Only the repository itself must answer: a part GitHub refuses is left out, unless GitHub is rate limiting, when the
-// whole read fails and nothing is cached.
+// What GitHub says of a repository (docs/features/repo.md#about): the answer the repository page, its home before a
+// clone, the Docs tab and the code root all start from. Visitors open it most, so it must not hang on GitHub's
+// anonymous quota (60 calls an hour per address, shared by every Worker on Cloudflare's egress).
+//
+// - **Kept for every data center** in Postgres (worker/about/Store.ts): a fresh answer serves everyone. When it goes
+//   stale, one request claims the next read and the rest keep serving the stale answer; when GitHub can't answer, the
+//   last good answer serves for up to `STALE_FOR`. In this isolate, concurrent requests for a repository share one
+//   lookup (Effect's `Cache`, kept for no time once it settles).
+// - **Read with the App's quota where its owner let Smithers act**: on a repository the Smithers App is installed on
+//   and `GITHUB_ALLOWED_REPOSITORIES` doesn't leave out, with an installation token minted for that repository, for
+//   everyone, visitors included. Elsewhere a Member's read uses the deployment's read token, and anyone else's is
+//   anonymous, so naming arbitrary repositories can't spend the App's quota.
+// - **Few calls**: with a token, one GraphQL query and the contributors; anonymously, a slimmer REST read
+//   (worker/about/GitHubRead.ts).
+//
+// Every read of GitHub logs `repo.about.read` and counts `repo_about_reads`: the token it used, its outcome, the
+// stage and status GitHub refused at, the rate limit left, and the parts GitHub left out. Never a token or the answer.
 
-/** Why the about read couldn't answer: GitHub has no such public repository, or it couldn't answer now. */
-export type AboutStage = "repository" | "languages" | "release" | "releases" | "contributors" |
-  "contributor_count" | "readme" | "root" | "commits" | "branches" | "tags" | "home"
+export { AboutRefused, type AboutStage } from "./about/GitHubRead.ts"
+export type { Via } from "./about/Store.ts"
 
-export class AboutRefused extends Data.TaggedError("AboutRefused")<{
-  readonly code: "not_found" | "unavailable"
-  readonly retryAfterMillis?: number
-  readonly stage: AboutStage
-  readonly upstreamStatus?: number
-  readonly rateLimited?: boolean
-}> {}
+/**
+ * How long a claimed read holds every other request off: longer than a read's three rounds of calls at
+ * `REQUEST_TIMEOUT`. A claim is no lease on work: a read that never finishes is simply read by the next request after.
+ */
+export const CLAIM = Duration.seconds(30)
+/**
+ * How long nobody asks GitHub again after it didn't answer: long enough to make a burst of visitors one read, short
+ * enough that a page waiting through a moment's outage shows as soon as GitHub answers.
+ */
+export const HOLD = Duration.seconds(5)
+/** How long nobody asks GitHub again after a rate limit, at least, when it names an earlier reset or none. */
+export const RATE_HOLD = Duration.minutes(1)
+/** How long nobody asks GitHub again after it said the repository isn't there. */
+export const NOT_FOUND_HOLD = Duration.minutes(1)
+/** The longest a rate limit holds every read off, whatever GitHub says of its reset. */
+export const MAX_HOLD = Duration.minutes(15)
+/** How long an answer GitHub left parts out of is fresh, at most. */
+export const PARTIAL_FRESH = Duration.minutes(5)
+/** How old a kept answer may be and still serve while GitHub can't answer. */
+export const STALE_FOR = Duration.days(7)
+/** How long the App's absence from a repository is remembered before GitHub is asked again. */
+export const APP_RECHECK = Duration.hours(1)
+/** How long a request is asked to wait while another data center reads a repository for the first time. */
+export const WAIT = Duration.seconds(1)
+/** Each GitHub call's deadline. */
+export const REQUEST_TIMEOUT = Duration.seconds(8)
+/** How long a browser keeps a stale answer. */
+export const STALE_MAX_AGE_SECONDS = 30
 
-/** How the about read reaches GitHub, and where the Smithers App is installed. */
+/** How the about read reaches GitHub, and how long its answers are fresh. */
 export interface Settings {
   /**
-   * The token each read goes out with (worker/github/ReadToken.ts): `GITHUB_TOKEN`, else the GitHub App's, 5,000 calls
-   * an hour; neither, 60 an hour per IP address.
+   * The deployment's read token (worker/github/ReadToken.ts) a Member's read of a repository without the App uses:
+   * `GITHUB_TOKEN`, else the App's for the deployment's own repository; neither, anonymous.
    */
   readonly token: ReadToken.ReadToken
   /** `GITHUB_API_URL`: GitHub's REST API, `https://api.github.com` unless set. */
   readonly apiBaseUrl: string
   /** `GITHUB_APP_SLUG`: the Smithers GitHub App's name in its URL, `smithers` unless set. */
   readonly appSlug: string
-  /** `REPO_ABOUT_FRESH_MINUTES`: how long one read serves, 60 unless set. */
+  /** `REPO_ABOUT_FRESH_MINUTES`: how long an answer read with a token is fresh, 10 unless set. */
   readonly freshFor: Duration.Duration
+  /** `REPO_ABOUT_ANONYMOUS_FRESH_MINUTES`: how long an anonymous read is fresh, 60 unless set. */
+  readonly anonymousFreshFor: Duration.Duration
+  /** The GitHub App, when this deployment has one: it mints the installation tokens. */
+  readonly app: Option.Option<GitHubConfig.GitHubApp>
+  /** `GITHUB_ALLOWED_REPOSITORIES`: the repositories besides the deployment's own it may act on; none, every one. */
+  readonly allowed: Option.Option<ReadonlySet<string>>
 }
 
-/** Reads {@link Settings}. */
+const minutes = (name: string, fallback: number) =>
+  Config.schema(Schema.Int.check(Schema.isGreaterThan(0)), name).pipe(Config.withDefault(fallback), Config.map(Duration.minutes))
+
+/** Reads {@link Settings} at program build. An App configuration that doesn't read leaves the App out. */
 export const settings = Effect.gen(function* () {
-  const token = yield* ReadToken.fromConfig
-  const apiBaseUrl = yield* Config.String("GITHUB_API_URL").pipe(Config.withDefault(DEFAULT_API_URL))
-  const appSlug = yield* Config.schema(Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,99}$/)), "GITHUB_APP_SLUG")
-    .pipe(Config.withDefault("smithers"))
-  const minutes = yield* Config.schema(Schema.Int.check(Schema.isGreaterThan(0)), "REPO_ABOUT_FRESH_MINUTES").pipe(
-    Config.withDefault(60),
-  )
   return {
-    token,
-    apiBaseUrl,
-    appSlug,
-    freshFor: Duration.minutes(minutes),
+    token: yield* ReadToken.fromConfig,
+    apiBaseUrl: yield* Config.String("GITHUB_API_URL").pipe(Config.withDefault(GitHubConfig.DEFAULT_API_URL)),
+    appSlug: yield* Config.schema(Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,99}$/)), "GITHUB_APP_SLUG")
+      .pipe(Config.withDefault("smithers")),
+    freshFor: yield* minutes("REPO_ABOUT_FRESH_MINUTES", 10),
+    anonymousFreshFor: yield* minutes("REPO_ABOUT_ANONYMOUS_FRESH_MINUTES", 60),
+    app: yield* GitHubConfig.configured.pipe(Effect.orElseSucceed(() => Option.none<GitHubConfig.GitHubApp>())),
+    allowed: yield* allowedRepositories,
   } satisfies Settings
 })
 
-const nullable = <S extends Schema.Top>(schema: S) => Schema.optional(Schema.NullOr(schema))
-
-const RepositoryJson = Schema.Struct({
-  full_name: Schema.String,
-  description: nullable(Schema.String),
-  homepage: nullable(Schema.String),
-  topics: Schema.optional(Schema.Array(Schema.String)),
-  stargazers_count: Schema.Number,
-  forks_count: Schema.Number,
-  subscribers_count: Schema.optional(Schema.Number),
-  watchers_count: Schema.Number,
-  license: nullable(Schema.Struct({ spdx_id: nullable(Schema.String), name: nullable(Schema.String) })),
-  default_branch: Schema.String,
-  archived: Schema.optional(Schema.Boolean),
-  private: Schema.optional(Schema.Boolean),
-})
-
-const LanguagesJson = Schema.Record(Schema.String, Schema.Number)
-
-const ReleaseJson = Schema.Struct({
-  tag_name: Schema.String,
-  name: nullable(Schema.String),
-  published_at: nullable(Schema.String),
-})
-
-// GitHub answers 202 with no body while it computes a large repository's contributors.
-const ContributorsJson = Schema.NullOr(
-  Schema.Array(Schema.Struct({ login: Schema.optional(Schema.String), avatar_url: Schema.optional(Schema.String) })),
-)
-
-const ReadmeJson = Schema.Struct({
-  path: Schema.String,
-  size: Schema.Number,
-  content: Schema.optional(Schema.String),
-  encoding: Schema.optional(Schema.String),
-})
-
-const ContentsJson = Schema.Array(Schema.Struct({ name: Schema.String, type: Schema.String }))
-
-const CommitJson = Schema.Struct({
-  sha: Schema.String,
-  commit: Schema.Struct({
-    message: Schema.String,
-    author: nullable(Schema.Struct({ name: nullable(Schema.String), date: nullable(Schema.String) })),
-  }),
-  author: nullable(Schema.Struct({ login: Schema.String })),
-})
-const decodeCommit = Schema.decodeUnknownOption(CommitJson)
-
-/** GitHub's finite rate-limit signal, whether explicit or its 429 status. */
-const isRateLimited = (error: Core.IntegrationError.IntegrationError): boolean =>
-  error.details?.["rateLimited"] === true || error.details?.["status"] === 429
-
-/** A refusal the whole read fails with: a rate limit, with GitHub's wait, or anything else as `unavailable`. */
-const refusedBy = (error: Core.IntegrationError.IntegrationError, stage: AboutStage): AboutRefused => {
-  const wait = error.details?.["retryAfterMillis"]
-  const status = error.details?.["status"]
-  return new AboutRefused({
-    code: "unavailable",
-    stage,
-    ...(typeof wait === "number" ? { retryAfterMillis: wait } : {}),
-    ...(typeof status === "number" ? { upstreamStatus: status } : {}),
-    rateLimited: isRateLimited(error),
-  })
+/** What one read of GitHub did, for the records: never a token or the answer. */
+export interface GitHubRead {
+  readonly via: Via
+  readonly outcome: "answered" | "partial" | KeptRefusal
+  readonly stage?: AboutStage
+  readonly upstreamStatus?: number
+  /** The least `x-ratelimit-remaining` GitHub answered the read's calls with. */
+  readonly rateRemaining?: number
+  /** The parts GitHub couldn't give now. */
+  readonly missing: ReadonlyArray<AboutStage>
+  /** Why the App's token couldn't be had, when the read fell back without it. */
+  readonly tokenError?: string
+  readonly durationMs: number
 }
 
 /**
- * An optional part: its answer, or `null` when GitHub refused it for any reason but a rate limit, which fails the
- * read so nothing partial is cached for the hour.
+ * What GitHub's answer is for a repository: an answer (`hit`: fresh from the store; `miss`: read from GitHub now;
+ * `stale`: the last good answer while another request reads or GitHub can't answer) or a refusal (`miss`: GitHub
+ * refused now; `refusal`: GitHub's refusal the store keeps; `wait`: another data center is reading it for the first
+ * time). `read` is what this lookup's read of GitHub did, and `store` names the store operations that failed.
  */
-const optional = <A>(stage: AboutStage, part: Effect.Effect<A, Core.IntegrationError.IntegrationError>): Effect.Effect<A | null, AboutRefused> =>
-  part.pipe(
-    Effect.catch((error) => isRateLimited(error) ? Effect.fail(refusedBy(error, stage)) : Effect.succeed(null)),
+export type Answer =
+  & (
+    | {
+      readonly _tag: "Answered"
+      readonly text: string
+      readonly cache: "hit" | "miss" | "stale"
+      readonly via: Via
+      readonly maxAgeSeconds: number
+    }
+    | {
+      readonly _tag: "Refused"
+      readonly code: KeptRefusal | "unavailable"
+      readonly cache: "miss" | "refusal" | "wait"
+      readonly retryAfterMillis?: number
+    }
   )
+  & { readonly read?: GitHubRead; readonly store?: ReadonlyArray<string> }
 
-/** An `http(s)` homepage, trimmed; anything else is none. */
-const homepageOf = (value: string | null | undefined): string | null => {
-  const trimmed = (value ?? "").trim()
-  return /^https?:\/\/\S+$/i.test(trimmed) && URL.canParse(trimmed) ? trimmed : null
-}
-
-/** A README's, or a home's, text from GitHub's base64 body: none when it is over the view's limit or isn't text. */
-const readmeText = (readme: typeof ReadmeJson.Type): string | null => {
-  if (readme.size > MAX_BLOB_BYTES || readme.encoding !== "base64" || readme.content === undefined) return null
-  try {
-    const binary = atob(readme.content.replace(/\s/g, ""))
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
-    return textOf(bytes) ?? null
-  } catch {
-    return null
-  }
-}
-
-/** The newest commit, from a `count` of the commits' first item. */
-const headOf = (first: unknown): AboutCommit | null =>
-  Option.match(decodeCommit(first), {
-    onNone: () => null,
-    onSome: (commit) => ({
-      sha: commit.sha,
-      message: commit.commit.message,
-      author: commit.author?.login ?? commit.commit.author?.name ?? "",
-      at: commit.commit.author?.date ?? "",
-    }),
-  })
+/** One request's answer; `joined` says another request in this isolate was already reading the repository. */
+export type Outcome = Answer & { readonly joined: boolean }
 
 /**
- * What GitHub says of `owner/name`, through `client`. Only the repository itself must answer: a 404 is `not_found`
- * (GitHub keeps private repositories as 404), and any other refusal of it is `unavailable`. `appSlug` names the App
- * whose installation path the answer carries.
+ * What an answer's `repo.about` line records: where it came from (`cache`), the token (`via`: this request's read of
+ * GitHub's, else the kept answer's), whether it joined a read in flight, the store operations that failed, and the
+ * read's outcome, stage, status and rate limit left. Never a token or the answer.
  */
-export const read = (client: GitHub.GitHubClient.GitHubClient, owner: string, name: string, appSlug: string) =>
+export const fieldsOf = (outcome: Outcome): Record<string, string | number> => ({
+  cache: outcome.cache,
+  joined: outcome.joined ? 1 : 0,
+  ...(outcome._tag === "Answered" ? { via: outcome.via } : {}),
+  ...(outcome.store === undefined ? {} : { store: outcome.store.join(",") }),
+  ...(outcome.read === undefined ? {} : {
+    via: outcome.read.via,
+    read: outcome.read.outcome,
+    ...(outcome.read.stage === undefined ? {} : { stage: outcome.read.stage }),
+    ...(outcome.read.upstreamStatus === undefined ? {} : { upstreamStatus: outcome.read.upstreamStatus }),
+    ...(outcome.read.rateRemaining === undefined ? {} : { rateRemaining: outcome.read.rateRemaining }),
+  }),
+})
+
+/** The about read; `R` is what its store and database need. */
+export interface Source<R = never> {
+  /**
+   * What GitHub says of `owner/name` for one request. `member` says whether the asker is a Member or above; it is
+   * asked only when a read of a repository without the App must choose between the deployment's token and none.
+   */
+  readonly answer: (
+    owner: string,
+    name: string,
+    member: Effect.Effect<boolean>,
+  ) => Effect.Effect<Outcome, never, HttpClient.HttpClient | R>
+}
+
+/** The token a read goes out with, and why the App's couldn't be had when the read fell back without it. */
+interface Chosen {
+  readonly via: Via
+  readonly token: Option.Option<Redacted.Redacted<string>>
+  readonly tokenError?: string
+}
+
+/** The first of concurrent requests in this isolate: the repository as it named it, and whether it is a Member. */
+class Asker extends Context.Service<
+  Asker,
+  { readonly owner: string; readonly name: string; readonly member: Effect.Effect<boolean> }
+>()("@smthrs/mvp/RepoAbout/Asker") {}
+
+const ms = Duration.toMillis
+
+/** The least of the `x-ratelimit-remaining` values seen so far and `header`. */
+const least = (current: number | undefined, header: string | undefined) => {
+  const value = header === undefined || header === "" ? Number.NaN : Number(header)
+  return !Number.isFinite(value) ? current : current === undefined ? value : Math.min(current, value)
+}
+
+/** The about read over `settings`, keeping its answers in `store`; the App's installations live in `database`. */
+export const make = <E, R>(options: Settings, store: AboutStore<R>, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Effect.gen(function* () {
-    const path = yield* GitHub.Repository.requireRepositoryPath(owner, name).pipe(
-      Effect.mapError(() => new AboutRefused({ code: "not_found", stage: "repository" })),
-    )
-    const base = `/repos/${path}`
-    const repository = yield* client.request("GET", base, undefined, { schema: RepositoryJson }).pipe(
-      Effect.mapError((error) => error.details?.["status"] === 404
-        ? new AboutRefused({ code: "not_found", stage: "repository", upstreamStatus: 404 })
-        : refusedBy(error, "repository")),
-    )
-    if (repository.private === true) return yield* new AboutRefused({ code: "not_found", stage: "repository" })
-    const [languages, release, releases, contributors, contributorCount, readme, root, commits, branches, tags] =
-      yield* Effect.all(
-        [
-          optional("languages", client.request("GET", `${base}/languages`, undefined, { schema: LanguagesJson })),
-          optional("release", client.request("GET", `${base}/releases/latest`, undefined, { schema: ReleaseJson })),
-          optional("releases", client.count(`${base}/releases`)),
-          optional("contributors", client.request("GET", `${base}/contributors`, undefined, {
-            schema: ContributorsJson,
-            query: { per_page: ABOUT_CONTRIBUTORS },
-          })),
-          optional("contributor_count", client.count(`${base}/contributors`)),
-          optional("readme", client.request("GET", `${base}/readme`, undefined, { schema: ReadmeJson })),
-          optional("root", client.request("GET", `${base}/contents/`, undefined, { schema: ContentsJson })),
-          optional("commits", client.count(`${base}/commits`)),
-          optional("branches", client.count(`${base}/branches`)),
-          optional("tags", client.count(`${base}/tags`)),
-        ] as const,
-        { concurrency: "unbounded" },
-      )
-    const rootEntries = root?.flatMap((entry): ReadonlyArray<AboutEntry> =>
-      entry.type === "dir" ? [{ name: entry.name, kind: "dir" }] : entry.type === "file" || entry.type === "symlink"
-        ? [{ name: entry.name, kind: "file" }]
-        : entry.type === "submodule"
-        ? [{ name: entry.name, kind: "dir" }]
-        : []
-    )
-    const readmeBody = readme === null ? null : readmeText(readme)
-    const head = commits === null ? null : headOf(commits.first)
-    // The repository's own home at that very commit, so a page before the clone draws the home the clone will have.
-    const home = head === null ? null : yield* optional("home",
-      client.request("GET", `${base}/contents/${Home.path}`, undefined, { schema: ReadmeJson, query: { ref: head.sha } }),
-    )
-    return {
-      name: repository.full_name,
-      description: repository.description?.trim() || null,
-      homepage: homepageOf(repository.homepage),
-      topics: repository.topics ?? [],
-      stars: repository.stargazers_count,
-      forks: repository.forks_count,
-      watchers: repository.subscribers_count ?? repository.watchers_count,
-      license: repository.license?.spdx_id && repository.license.spdx_id !== "NOASSERTION"
-        ? repository.license.spdx_id
-        : repository.license?.name ?? null,
-      defaultBranch: repository.default_branch,
-      archived: repository.archived ?? false,
-      languages: Object.entries(languages ?? {})
-        .filter(([, bytes]) => bytes > 0)
-        .sort(([leftName, left], [rightName, right]) => right - left || leftName.localeCompare(rightName))
-        .map(([language, bytes]) => ({ name: language, bytes })),
-      release: release === null
-        ? null
-        : { tag: release.tag_name, name: release.name?.trim() || null, publishedAt: release.published_at ?? null },
-      releases: releases?.total ?? null,
-      contributors: (contributors ?? []).flatMap((person) =>
-        person.login === undefined || person.avatar_url === undefined
-          ? []
-          : [{ login: person.login, avatarUrl: person.avatar_url }]
-      ),
-      contributorCount: contributorCount?.total ?? null,
-      commits: commits?.total ?? null,
-      branches: branches?.total ?? null,
-      tags: tags?.total ?? null,
-      head,
-      root: rootEntries === undefined ? null : rootEntries.slice(0, ABOUT_ROOT_ENTRIES),
-      readme: readme === null || readmeBody === null ? null : { path: readme.path, text: readmeBody },
-      home: home === null ? null : readmeText(home),
-      installUrl: installUrl(appSlug),
-    } satisfies About
-  }).pipe(Effect.withSpan("repo.about.github"))
+    // The App's JWT signer, built once on first use.
+    const app = Option.isNone(options.app) ? Option.none() : Option.some({
+      repository: options.app.value.repository,
+      auth: yield* Effect.cached(GitHub.AppAuth.make({
+        appId: options.app.value.appId,
+        privateKey: options.app.value.privateKey,
+        apiBaseUrl: options.app.value.apiBaseUrl,
+      })),
+    })
 
-/**
- * A GitHub client for the about read over the `HttpClient` in context, with `settings`' API URL, and its token when
- * the read is `authenticated`; anonymous otherwise.
- */
-export const client = (
-  options: Settings,
-  read: { readonly authenticated: boolean } = { authenticated: true },
-): Effect.Effect<GitHub.GitHubClient.GitHubClient, never, HttpClient.HttpClient> =>
-  Effect.flatMap(read.authenticated ? options.token : Effect.succeed(Option.none<Redacted.Redacted<string>>()), (token) =>
-    GitHub.GitHubClient.make(
-      {
-        apiBaseUrl: options.apiBaseUrl,
-        ...(Option.isSome(token) ? { token: Redacted.value(token.value) } : {}),
-      },
-      // An explicit, empty environment: no ambient GITHUB_TOKEN chooses the account.
-      {},
-    ).pipe(Effect.orDie))
+    /** Whether the deployment may act on `id` with the App: its own repository, or one the allowed list doesn't leave out. */
+    const mayAct = (own: GitHubConfig.Repository, id: string) =>
+      id === own.id || Option.match(options.allowed, { onNone: () => true, onSome: (ids) => ids.has(id) })
 
-/** Which hour-long window `nowMs` falls in, and the seconds left in it: the cache's key and the browser's max-age. */
-export const window = (nowMs: number, freshFor: Duration.Duration) => {
-  const span = Duration.toMillis(freshFor)
-  const bucket = Math.floor(nowMs / span)
-  return { bucket: String(bucket), maxAgeSeconds: Math.max(1, Math.ceil(((bucket + 1) * span - nowMs) / 1000)) }
-}
+    /**
+     * The token a read of `owner/name` goes out with: the App's for that repository where it is installed and the
+     * deployment may act; else the deployment's for a Member; else none.
+     */
+    const tokenFor = (
+      owner: string,
+      name: string,
+      id: string,
+      appAbsentUntilMs: number | null,
+      nowMs: number,
+      failed: Array<string>,
+    ): Effect.Effect<Chosen, never, Asker | HttpClient.HttpClient | R> =>
+      Effect.gen(function* () {
+        let tokenError: string | undefined
+        if (Option.isSome(app) && mayAct(app.value.repository, id) && !(appAbsentUntilMs !== null && appAbsentUntilMs > nowMs)) {
+          const minted = yield* Effect.gen(function* () {
+            const tokens = Tokens.make({ app: yield* app.value.auth, keys: Option.none(), refresh: Function.constant(Effect.void) })
+            return yield* tokens.forInstallation({ owner, name, id }, "contents")
+          }).pipe(Effect.provide(database), Effect.result)
+          if (minted._tag === "Success") return { via: "app", token: Option.some(minted.success) }
+          if (minted.failure instanceof Tokens.TokenUnavailable && minted.failure.reason === "app_not_installed") {
+            yield* store.appAbsent(id, nowMs + ms(APP_RECHECK)).pipe(Effect.catch(() => Effect.sync(() => void failed.push("app_absent"))))
+          } else {
+            tokenError = minted.failure instanceof Tokens.TokenUnavailable ? `token:${minted.failure.reason}` : codeOf(minted.failure)
+          }
+        }
+        const member = yield* (yield* Asker).member
+        const deployment = member ? yield* options.token : Option.none<Redacted.Redacted<string>>()
+        return {
+          via: Option.isSome(deployment) ? "deployment" : "anonymous",
+          token: deployment,
+          ...(tokenError === undefined ? {} : { tokenError }),
+        }
+      })
 
-const encoder = new TextEncoder()
+    /** One read of GitHub with `token`: GraphQL with one, REST without; and the least rate limit its calls left. */
+    const fromGitHub = (owner: string, name: string, token: Option.Option<Redacted.Redacted<string>>) =>
+      Effect.gen(function* () {
+        const remaining = yield* Ref.make<number | undefined>(undefined)
+        const http = HttpClient.tap(
+          yield* HttpClient.HttpClient,
+          (response) => Ref.update(remaining, (current) => least(current, response.headers["x-ratelimit-remaining"])),
+        )
+        const client = yield* GitHub.GitHubClient.make(
+          {
+            apiBaseUrl: options.apiBaseUrl,
+            requestTimeout: REQUEST_TIMEOUT,
+            ...(Option.isSome(token) ? { token: Redacted.value(token.value) } : {}),
+          },
+          // An explicit, empty environment: no ambient GITHUB_TOKEN chooses the account.
+          {},
+        ).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.orDie)
+        const read = yield* (Option.isSome(token) ? graphql : rest)(client, owner, name, options.appSlug).pipe(Effect.result)
+        return { read, rateRemaining: yield* Ref.get(remaining) }
+      })
 
-/**
- * What GitHub says of `owner/name` (`About` as JSON bytes) from the immutable cache under the window `nowMs` falls in,
- * read from GitHub on a miss, with the deployment's token only when `authenticated` answers true, and kept; `fresh`
- * says this call read GitHub. RepoApi's about route and the docs routes
- * (worker/docs/Source.ts) share it, so GitHub is asked once a window for both.
- */
-export const cached = <R>(
-  options: Settings,
-  owner: string,
-  name: string,
-  nowMs: number,
-  authenticated: Effect.Effect<boolean, never, R>,
-) =>
-  Effect.gen(function* () {
-    const { bucket } = window(nowMs, options.freshFor)
-    let fresh = false
-    const fromGitHub = Effect.gen(function* () {
-      const github = yield* client(options, { authenticated: yield* authenticated })
-      return yield* read(github, owner, name, options.appSlug)
-    }).pipe(
-      Effect.map((answer) => {
-        fresh = true
-        return { bytes: encoder.encode(JSON.stringify(answer)), metadata: {} }
-      }),
-    )
-    const entry = yield* ImmutableCache.readThrough(ImmutableCache.key("repo.about", repoId(owner, name), bucket), fromGitHub)
-    return { bytes: entry.bytes, fresh }
+    /** A kept answer as a request's: the browser keeps a fresh one until it goes stale, a stale one briefly. */
+    const answered = (kept: KeptAnswer, cache: "hit" | "miss" | "stale", nowMs: number) => ({
+      _tag: "Answered" as const,
+      text: kept.text,
+      cache,
+      via: kept.via,
+      maxAgeSeconds: cache === "stale" ? STALE_MAX_AGE_SECONDS : Math.max(1, Math.ceil((kept.freshUntilMs - nowMs) / 1000)),
+    })
+
+    /** How long nobody asks GitHub again after `refusal`. */
+    const holdFor = (refusal: AboutRefused, nowMs: number) =>
+      refusal.code === "not_found"
+        ? ms(NOT_FOUND_HOLD)
+        : refusal.code === "rate_limited"
+        ? Math.min(ms(MAX_HOLD), Math.max(ms(RATE_HOLD), refusal.retryAfterMillis ?? 0, (refusal.resetAtMillis ?? 0) - nowMs))
+        : ms(HOLD)
+
+    /** Records one read of GitHub: `repo.about.read` and `repo_about_reads`, and the rate limit it left. */
+    const recorded = (id: string, read: GitHubRead) =>
+      Effect.gen(function* () {
+        yield* Metric.update(Metric.withAttributes(RepoMetrics.aboutReads, { via: read.via, outcome: read.outcome }), 1)
+        if (read.rateRemaining !== undefined) {
+          yield* Metric.update(Metric.withAttributes(RepoMetrics.aboutRateRemaining, { via: read.via }), read.rateRemaining)
+        }
+        yield* Effect.logWithLevel(read.outcome === "answered" ? "Info" : "Warn")("repo.about.read").pipe(
+          Effect.annotateLogs({
+            repoId: id,
+            via: read.via,
+            outcome: read.outcome,
+            durationMs: read.durationMs,
+            ...(read.stage === undefined ? {} : { stage: read.stage }),
+            ...(read.upstreamStatus === undefined ? {} : { upstreamStatus: read.upstreamStatus }),
+            ...(read.rateRemaining === undefined ? {} : { rateRemaining: read.rateRemaining }),
+            ...(read.missing.length === 0 ? {} : { missing: read.missing.join(",") }),
+            ...(read.tokenError === undefined ? {} : { tokenError: read.tokenError }),
+          }),
+        )
+      })
+
+    /** The answer for `id`, for the first of this isolate's concurrent requests for it. */
+    const resolve = (id: string): Effect.Effect<Answer, never, Asker | HttpClient.HttpClient | R> =>
+      Effect.gen(function* () {
+        const { owner, name } = yield* Asker
+        const nowMs = yield* Clock.currentTimeMillis
+        const failed: Array<string> = []
+        const storeDown = <A>(op: string, fallback: A) => () => Effect.sync(() => (failed.push(op), fallback))
+        const kept = yield* store.get(id).pipe(Effect.option)
+        if (Option.isNone(kept)) failed.push("get")
+        const row = Option.flatten(kept)
+        const answer = Option.flatMap(row, (found) => found.answer)
+        const extra = () => (failed.length === 0 ? {} : { store: [...failed] })
+        if (Option.isSome(answer) && answer.value.freshUntilMs > nowMs) {
+          return { ...answered(answer.value, "hit", nowMs), ...extra() }
+        }
+        const usable = Option.filter(answer, (found) => nowMs - found.readAtMs <= ms(STALE_FOR))
+        // A read is due without a row or once its `next_read_at` passed; with no store to ask, every request reads.
+        const due = Option.match(row, {
+          onNone: () => true,
+          onSome: (found) => found.nextReadAtMs === null || found.nextReadAtMs <= nowMs,
+        })
+        const claimed = Option.isNone(kept) ||
+          (due && (yield* store.claim(id, nowMs, nowMs + ms(CLAIM)).pipe(Effect.catch(storeDown("claim", true)))))
+        if (!claimed) {
+          if (Option.isSome(usable)) return { ...answered(usable.value, "stale", nowMs), ...extra() }
+          const found = Option.getOrUndefined(row)
+          const refusal = found?.refusal ?? null
+          // A kept refusal always has its wait: `refuse` writes both.
+          return refusal === null
+            ? { _tag: "Refused" as const, code: "unavailable" as const, cache: "wait" as const, retryAfterMillis: ms(WAIT), ...extra() }
+            : {
+              _tag: "Refused" as const,
+              code: refusal,
+              cache: "refusal" as const,
+              retryAfterMillis: Math.max(1000, found!.nextReadAtMs! - nowMs),
+              ...extra(),
+            }
+        }
+        const chosen = yield* tokenFor(owner, name, id, Option.getOrUndefined(row)?.appAbsentUntilMs ?? null, nowMs, failed)
+        const { read, rateRemaining } = yield* fromGitHub(owner, name, chosen.token)
+        const durationMs = (yield* Clock.currentTimeMillis) - nowMs
+        const facts = {
+          via: chosen.via,
+          ...(rateRemaining === undefined ? {} : { rateRemaining }),
+          ...(chosen.tokenError === undefined ? {} : { tokenError: chosen.tokenError }),
+          durationMs,
+        }
+        if (read._tag === "Success") {
+          const { about, missing } = read.success
+          const window = ms(chosen.via === "anonymous" ? options.anonymousFreshFor : options.freshFor)
+          const fresh: KeptAnswer = {
+            text: JSON.stringify(about),
+            via: chosen.via,
+            readAtMs: nowMs,
+            freshUntilMs: nowMs + (missing.length === 0 ? window : Math.min(window, ms(PARTIAL_FRESH))),
+          }
+          const record: GitHubRead = { ...facts, outcome: missing.length === 0 ? "answered" : "partial", missing }
+          yield* recorded(id, record)
+          yield* store.keep(id, fresh).pipe(Effect.catch(storeDown("keep", undefined)))
+          return { ...answered(fresh, "miss", nowMs), read: record, ...extra() }
+        }
+        const refusal = read.failure
+        const record: GitHubRead = {
+          ...facts,
+          outcome: refusal.code,
+          stage: refusal.stage,
+          ...(refusal.upstreamStatus === undefined ? {} : { upstreamStatus: refusal.upstreamStatus }),
+          missing: [],
+        }
+        yield* recorded(id, record)
+        yield* store.refuse(id, refusal.code, nowMs + holdFor(refusal, nowMs)).pipe(Effect.catch(storeDown("refuse", undefined)))
+        // GitHub can't answer now: the last good answer serves. A repository GitHub says isn't there has none.
+        if (refusal.code !== "not_found" && Option.isSome(usable)) {
+          return { ...answered(usable.value, "stale", nowMs), read: record, ...extra() }
+        }
+        return {
+          _tag: "Refused" as const,
+          code: refusal.code,
+          cache: "miss" as const,
+          ...(refusal.retryAfterMillis === undefined ? {} : { retryAfterMillis: refusal.retryAfterMillis }),
+          read: record,
+          ...extra(),
+        }
+      })
+
+    // Concurrent requests for one repository in this isolate share one lookup, dropped as soon as it settles: the store
+    // is the cache.
+    const lookups = yield* Cache.makeWith((id: string) => resolve(id), {
+      capacity: 1024,
+      timeToLive: () => Duration.zero,
+      requireServicesAt: "lookup",
+    })
+
+    const answer: Source<R>["answer"] = (owner, name, member) =>
+      Effect.gen(function* () {
+        const id = repoId(owner, name)
+        const joined = yield* Cache.has(lookups, id)
+        const answer = yield* Cache.get(lookups, id).pipe(Effect.provideService(Asker, { owner, name, member }))
+        return { ...answer, joined }
+      }).pipe(Effect.withSpan("repo.about.answer"))
+
+    return { answer } satisfies Source<R>
   })
