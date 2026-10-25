@@ -1,4 +1,4 @@
-import { test as base, expect, type Page, type TestInfo, type Locator } from "@playwright/test"
+import { test as base, expect, request as apiRequests, type Page, type TestInfo, type Locator } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { digestSync } from "@smthrs/crypto"
 import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
@@ -6,7 +6,8 @@ import { recordActions, writeManifest } from "./fixtures"
 import { desktopBaseline } from "./mobile-baseline"
 import { openComposer } from "./composer"
 import { shapeRows } from "./shape"
-import { baseURL, requires, scriptedAgent, target, writeHeaders, me, stackRepository, syncedRepository, ownPlace } from "./target"
+import { redactRequestErrors } from "./redact"
+import { baseURL, requires, scriptedAgent, target, writeHeaders, me, stackRepository, syncedRepository, ownPlace, signedOut, sessionFiles } from "./target"
 
 // Real pages and services. Persist a structured audit even when several checks fail,
 // so the first run is the red receipt for each subsequent layout change.
@@ -205,13 +206,26 @@ const screens = [
   { name: "landing", path: "/", ready: "main" },
   { name: "home", path: "/app", ready: 'main[aria-label="App"]' },
   { name: "repository", path: "/octocat/Spoon-Knife", ready: 'header[aria-label="Repository"]' },
+  { name: "curated-home", path: "/smithersai/vibelang", ready: '[data-slot="repository-home"]' },
   { name: "branch", path: "/octocat/Spoon-Knife/tree/test-branch", ready: 'nav[aria-label="Branch"]' },
   { name: "files", path: "/octocat/Spoon-Knife/blob/main/README.md", ready: 'article[aria-label="README.md"]' },
+  { name: "raw-unavailable", path: "/octocat/Spoon-Knife/raw/mobile-missing-ref/missing.txt", ready: 'main[aria-label="Repository"]' },
   { name: "file-tabs", path: "/octocat/Spoon-Knife/blob/main/index.html", ready: 'article[aria-label="index.html"]' },
   { name: "issues", path: "/smithersai/smithers/issues", ready: "main" },
   { name: "new-issue", path: "/smithersai/smithers/issues/new", ready: "main" },
+  { name: "issue-unavailable", path: "/smithersai/smithers/issues/2147483647", ready: "main" },
+  { name: "pull-unavailable", path: "/smithersai/smithers/pull/2147483647", ready: "main" },
+  ...["commits", "checks", "files"].map((tab) => ({ name: `pull-${tab}-unavailable`, path: `/smithersai/smithers/pull/2147483647/${tab}`, ready: "main" })),
   { name: "pulls", path: "/smithersai/smithers/pulls", ready: "main" },
   { name: "stack", path: "/octocat/Spoon-Knife/stack", ready: 'main[aria-label="Stack"]' },
+  { name: "actions", path: "/smithersai/smithers/actions", ready: 'main[aria-label="Runs"]' },
+  { name: "action-run", path: "/smithersai/smithers/actions/runs/mobile-missing-run", ready: 'main[aria-label="Run"]' },
+  { name: "run-unavailable", path: "/app/runs/mobile-missing-run", ready: 'main[aria-label="Run"]' },
+  { name: "view-unavailable", path: "/app/views/00000000-0000-4000-8000-000000000000", ready: 'main[aria-label="View"]' },
+  { name: "draft-unavailable", path: "/app/flows/drafts/00000000-0000-4000-8000-000000000000", ready: 'main[aria-label="Draft"]' },
+  { name: "code-unavailable", path: "/app/flows/code/mobile-missing-flow", ready: 'main[aria-label="Code"]' },
+  { name: "todo-unavailable", path: "/smithersai/smithers/stack/2147483647", ready: 'main[aria-label="TODO"]' },
+  { name: "plugin-path-unavailable", path: "/app/queue/mobile-missing-item", ready: "body" },
   { name: "runs", path: "/app/runs", ready: 'main[aria-label="Runs"]' },
   { name: "flows", path: "/app/flows", ready: 'main[aria-label="Flows"]' },
   { name: "new-flow", path: "/app/flows/new", ready: "main" },
@@ -230,6 +244,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     test.use({ mobileViewport: viewport })
     for (const signedIn of [false, true]) {
       test.describe(signedIn ? "signed in" : "signed out", () => {
+        if (!signedIn) test.use(signedOut)
         test.beforeEach(async ({ context }) => {
           if (!signedIn && target === "deployment") await context.clearCookies()
           if (!signedIn && target === "local") {
@@ -263,40 +278,87 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               }
               if (files) {
                 test.setTimeout(180_000)
-                const repository = { owner: "octocat", name: "Spoon-Knife" }
-                // A launch receipt isn't a finished clone. Prepare through the
-                // signed-in API before opening a signed-out page, which cannot
-                // subscribe to the members-only repositories shape.
-                const clone = await request.post("/api/repos", { headers: writeHeaders(), data: repository })
-                expect(clone.ok(), `the file fixture's real clone is admitted (HTTP ${clone.status()})`).toBe(true)
-                const { cloneId } = await clone.json() as { cloneId: string }
-                const launch = await request.post("/api/repos/launch", { headers: writeHeaders(), data: { ...repository, cloneId } })
-                expect(launch.ok(), "the file fixture's real clone is launched").toBe(true)
-                await expect.poll(async () => {
-                  const refs = await request.get("/api/repos/octocat/Spoon-Knife/refs")
-                  const body = await refs.json()
-                  return { status: refs.status(), ...body }
-                }, { timeout: 120_000, message: "the Code Storage mirror must have main before file layout coverage" }).toMatchObject({
-                  status: 200, branches: expect.arrayContaining([expect.objectContaining({ name: "main" })]),
-                })
-                await expect.poll(async () => (await shapeRows<{ id: string; status: string }>(request, "/api/shapes/repositories"))
-                  .find((row) => row.id === "github/octocat/spoon-knife")?.status,
-                { timeout: 30_000, message: "the finished clone must reach the repositories shape before file layout coverage" }).toBe("ready")
+                // Fixture writes use the stored test session; the visitor's page
+                // and its requests remain signed out throughout the audit.
+                const fixtureRequest = target === "deployment" && !signedIn
+                  ? await apiRequests.newContext({ baseURL, storageState: sessionFiles(baseURL).session })
+                  : request
+                if (fixtureRequest !== request) redactRequestErrors(fixtureRequest)
+                try {
+                  const repository = { owner: "octocat", name: "Spoon-Knife" }
+                  // A launch receipt isn't a finished clone. Prepare through the
+                  // signed-in API before opening a signed-out page, which cannot
+                  // subscribe to the members-only repositories shape.
+                  const clone = await fixtureRequest.post("/api/repos", { headers: writeHeaders(), data: repository })
+                  expect(clone.ok(), `the file fixture's real clone is admitted (HTTP ${clone.status()})`).toBe(true)
+                  const { cloneId } = await clone.json() as { cloneId: string }
+                  const launch = await fixtureRequest.post("/api/repos/launch", { headers: writeHeaders(), data: { ...repository, cloneId } })
+                  expect(launch.ok(), "the file fixture's real clone is launched").toBe(true)
+                  await expect.poll(async () => {
+                    const refs = await fixtureRequest.get("/api/repos/octocat/Spoon-Knife/refs")
+                    const body = await refs.json()
+                    return { status: refs.status(), ...body }
+                  }, { timeout: 120_000, message: "the Code Storage mirror must have main before file layout coverage" }).toMatchObject({
+                    status: 200, branches: expect.arrayContaining([expect.objectContaining({ name: "main" })]),
+                  })
+                  await expect.poll(async () => (await shapeRows<{ id: string; status: string }>(fixtureRequest, "/api/shapes/repositories"))
+                    .find((row) => row.id === "github/octocat/spoon-knife")?.status,
+                  { timeout: 30_000, message: "the finished clone must reach the repositories shape before file layout coverage" }).toBe("ready")
+                } finally {
+                  if (fixtureRequest !== request) await fixtureRequest.dispose()
+                }
               }
               await page.goto(screen.path)
-              const ready = screen.name === "terminal" && !signedIn ? ".branch-screen-view" : screen.ready
+              // Tracking needs sign-in; a visitor reads the public repository view,
+              // without the private workspace's Branch navigation or terminal.
+              const ready = (screen.name === "terminal" || screen.name === "branch") && !signedIn ? ".branch-screen-view" : screen.ready
               await expect(page.locator(ready).first()).toBeVisible({ timeout: 30_000 })
               if (screen.name === "conversations" && signedIn) await expect(page.getByRole("list", { name: "Conversations" })
                 .locator(`a[href="${ownPlace()?.path ?? "/octocat/Spoon-Knife/tree/test-branch"}"]`)).toBeVisible({ timeout: 30_000 })
               if (screen.name === "secrets" && signedIn && me().role === "admin") await expect(page.getByRole("form", { name: "Add secret" })).toBeVisible({ timeout: 30_000 })
               if (screen.name === "repo-settings" && signedIn && ["admin", "maintainer"].includes(me().role ?? "")) await expect(page.getByRole("region", { name: "Domains" })).toBeVisible({ timeout: 30_000 })
+              if (screen.name === "issue-unavailable" || (screen.name.startsWith("pull-") && screen.name.endsWith("-unavailable"))) {
+                const main = page.getByRole("main")
+                const unavailable = main.locator('[data-slot="empty-state"]').filter({ hasText: /Not found|unavailable here/ })
+                await expect(unavailable.or(main.getByRole("link", { name: "Sign in with GitHub", exact: true })).first()).toBeVisible({ timeout: 60_000 })
+              }
+              if (screen.name === "action-run" || screen.name === "run-unavailable" || screen.name === "code-unavailable") {
+                await expect(page.locator('main [data-slot="empty-state"]')).toBeVisible({ timeout: 30_000 })
+              }
+              if (screen.name === "raw-unavailable" || screen.name === "todo-unavailable") {
+                await expect(page.locator('main [data-slot="empty-state"]').or(page.getByRole("link", { name: "Sign in with GitHub", exact: true })).first()).toBeVisible({ timeout: 60_000 })
+              }
+              if (screen.name === "plugin-path-unavailable") await expect(page.getByText("Not Found", { exact: true })).toBeVisible()
               if (screen.name === "doc-page") await expect(page.getByRole("heading", { name: "Retrying", exact: true }).first()).toBeVisible({ timeout: 60_000 })
               if (screen.name === "branch") await expect(page.locator(".branch-screen-view")).toBeVisible({ timeout: 30_000 })
               if (screen.name === "terminal" && !signedIn) await expect(page.locator(".terminal-panel")).toHaveCount(0)
             })
+            if (screen.name === "home") {
+              const conversations = page.getByRole("link", { name: "Conversations", exact: true })
+              await expect(conversations).toBeVisible()
+              await conversations.scrollIntoViewIfNeeded()
+              const bounds = (await conversations.boundingBox())!
+              expect(bounds.x).toBeGreaterThanOrEqual(0)
+              expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width)
+            }
             await audit(page, info)
           })
         }
+        if (signedIn) test("view: a persisted page and its back link fit", async ({ page }, info) => {
+          requires("member", "ownConversation")
+          const id = crypto.randomUUID()
+          const place = ownPlace()
+          const response = await page.request.post("/api/views", { headers: writeHeaders(), data: {
+            id, template: "webpage", ...(place === undefined ? {} : { conversationId: place.conversationId }),
+            props: { url: "https://example.com/", title: "A repository page with a long title on a narrow screen", description: "A persisted page opened at full size." },
+          } })
+          expect(response.status()).toBe(202)
+          await page.goto(`/app/views/${id}${place === undefined ? "" : `?conversation=${place.conversationId}`}`)
+          await expect(page.locator('[data-slot="web-page-view"]')).toBeVisible({ timeout: 30_000 })
+          await audit(page, info, "view")
+          await page.getByRole("link", { name: "Back to chat", exact: true }).click()
+          await expect(page).toHaveURL(/\/app$/)
+        })
         if (signedIn) test("composer: controls and text fit", async ({ page }, info) => {
           requires("scriptedAgent")
           await page.goto(scriptedAgent("echo"))
@@ -357,6 +419,22 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             await expect(page.locator("main article").first()).toBeVisible()
             await audit(page, info, tab)
           }
+        })
+        if (signedIn) test("repository run: a real graph and journal fit", async ({ page }, info) => {
+          requires("githubApp", "syncedRepository")
+          const repository = syncedRepository()
+          let execution: string | undefined
+          await expect.poll(async () => {
+            const rows = await shapeRows<{ execution: string | null }>(page.request, `/api/shapes/actions?repo=${encodeURIComponent(repository)}`)
+            execution = rows.find((row) => typeof row.execution === "string" && row.execution !== "")?.execution ?? undefined
+            return execution
+          }, { timeout: 30_000, message: "a recorded repository run is required for populated deployment coverage" }).toBeTruthy()
+          await page.goto(`/${repository}/actions/runs/${encodeURIComponent(execution!)}`)
+          await expect(page.getByRole("group", { name: "Run graph" })).toBeVisible({ timeout: 30_000 })
+          await audit(page, info, "repository-run")
+          await page.getByRole("tab", { name: "Journal", exact: true }).click()
+          await expect(page.locator('[data-slot="run-journal"]')).toBeVisible()
+          await audit(page, info, "repository-journal")
         })
         if (signedIn) test("TODO: draft, stack and detail fit", async ({ page, todos }, info) => {
           requires("member", "writableStack")

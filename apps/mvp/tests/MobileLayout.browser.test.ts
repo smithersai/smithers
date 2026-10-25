@@ -14,7 +14,8 @@ beforeAll(async () => {
     bundle: true, write: false, format: "esm", platform: "browser", target: "es2022",
     jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
   })
-  const css = await readFile(new URL("../src/screens/conversations/conversations-screen.css", import.meta.url), "utf8")
+  const css = (await Promise.all(["conversations/conversations-screen", "repo/repo-screen"].map((name) =>
+    readFile(new URL(`../src/screens/${name}.css`, import.meta.url), "utf8")))).join("\n")
   server = createServer((request, response) => {
     response.setHeader("Content-Type", request.url === "/fixture.js" ? "text/javascript" : "text/html")
     response.end(request.url === "/fixture.js" ? bundle.outputFiles[0]!.text
@@ -63,6 +64,24 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           return toolbar.top >= element.getBoundingClientRect().top
         })).toBe(true)
       }
+    } finally { await page.close() }
+  })
+  test(`${viewport.width}: repository hero and install command do not widen the page`, async () => {
+    const page = await browser.newPage({ viewport })
+    try {
+      await page.goto(origin)
+      await page.locator(".sui-rh-install").waitFor()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
+      const install = page.locator(".sui-rh-install code")
+      expect(await install.evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(await install.evaluate((element) => element.clientWidth))
+      const source = page.locator(".sui-rh-code-body")
+      expect(await source.evaluate((element) => element.scrollWidth)).toBeGreaterThan(await source.evaluate((element) => element.clientWidth))
+      await source.evaluate((element) => { element.scrollLeft = element.scrollWidth })
+      expect(await source.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+      const copy = page.locator(".sui-rh-install button")
+      const box = (await copy.boundingBox())!
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
+      if (viewport.width <= 960) expect(box.height).toBeGreaterThanOrEqual(32)
     } finally { await page.close() }
   })
   test(`${viewport.width}: issue TODO links and TODO Watch links are reachable`, async () => {

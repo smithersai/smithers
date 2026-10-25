@@ -1,4 +1,4 @@
-import { Button, FileTabs, ItemAsideSection, ItemConversation, IssuesView, SmithersUiStyles } from "@smthrs/ui"
+import { Button, FileTabs, ItemAsideSection, ItemConversation, IssuesView, RepositoryHome, SmithersUiStyles } from "@smthrs/ui"
 import { RepoView, RepoViewStyles } from "@smthrs/repo-view"
 import { listPageOf } from "../../src/features/pulls/view"
 import { createRoot } from "react-dom/client"
@@ -13,6 +13,12 @@ createRoot(document.getElementById("app")!).render(<>
   {list === null ? null : <section id="pulls"><IssuesView repo="smithersai/smithers" issues={pullPage.pulls} loading={pullPage.loading} emptyTitle="No pull requests" /></section>}
   <SmithersUiStyles withTheme />
   <RepoViewStyles />
+  <main className="repo-screen" id="repository-home">
+    <RepositoryHome sections={[{ blocks: [
+      { type: "hero", title: "Smithers", install: "pnpm add @smthrs/flow @smthrs/platform-browser" },
+      { type: "code", code: "const workflow = Flow.make(\"a-long-named-durable-workflow\", { body: () => Effect.void })".repeat(4) },
+    ] }]} />
+  </main>
   <section id="files">
     <FileTabs tabs={[{ key: path, label: path, href: `#${path}`, active: true }]} onOpen={() => {}} onClose={() => {}} />
     <RepoView name="Spoon-Knife" location={{ kind: "blob", path }} htmlMode="split" codeMode="plain"

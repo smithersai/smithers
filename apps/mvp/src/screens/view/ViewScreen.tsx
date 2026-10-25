@@ -1,4 +1,4 @@
-import { DocsPageView, WebPageView } from "@smthrs/ui"
+import { Button, DocsPageView, WebPageView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useSearch } from "@tanstack/react-router"
 import { AgentView, previewOf } from "../../features/views/components/ConversationView"
@@ -18,7 +18,7 @@ export function ViewScreen() {
   return (
     <main className="view-screen" aria-label="View">
       <header className="view-screen-header">
-        <Link to="/app">{BACK_TO_CHAT}</Link>
+        <Button asChild variant="ghost"><Link to="/app">{BACK_TO_CHAT}</Link></Button>
       </header>
       {view === undefined ? null : view.template === "webpage" ? (
         <WebPageView url={pageOf(view).url} size="full" preview={previewOf(view)} />

@@ -45,7 +45,7 @@ export const repositoryHomeCss = `
 .sui-repository-home a:focus-visible, .sui-repository-home button:focus-visible, .sui-rh-code-body:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; }
 
 .sui-rh-hero { position:relative; display:flex; flex-direction:column; align-items:flex-start; padding:32px 0 4px; }
-.sui-rh-hero::before { content:""; position:absolute; inset:-24px -24px auto; height:320px; z-index:-1; pointer-events:none; background:radial-gradient(60% 80% at 10% 0%, ${t.primarySoft}, transparent 70%); }
+.sui-rh-hero::before { content:""; position:absolute; inset:-24px 0 auto; height:320px; z-index:-1; pointer-events:none; background:radial-gradient(60% 80% at 10% 0%, ${t.primarySoft}, transparent 70%); }
 .sui-rh-announce { display:inline-flex; align-items:center; gap:8px; height:28px; padding:0 12px; margin-bottom:18px; border-radius:${t.radiusFull}; border:1px solid ${t.primaryBorder}; background:${t.card}; color:${t.primary}; font-size:13px; font-weight:650; text-decoration:none; }
 .sui-rh-announce:hover { background:${t.primarySoft}; }
 .sui-rh-hero-title { margin:0; font-size:56px; line-height:1; letter-spacing:-0.035em; font-weight:650; overflow-wrap:anywhere; }
@@ -56,10 +56,10 @@ export const repositoryHomeCss = `
 .sui-rh-action:hover { border-color:${t.textFaint}; }
 .sui-rh-action-primary { background:${t.inverseBg}; color:${t.inverseText}; border-color:transparent; }
 .sui-rh-action-primary:hover { border-color:transparent; opacity:0.9; }
-.sui-rh-install { display:flex; align-items:center; gap:10px; width:100%; max-width:380px; height:44px; margin-top:16px; padding:0 6px 0 14px; border-radius:10px; border:1px solid ${t.borderStrong}; background:${t.card}; font:13px ${t.fontMono}; }
-.sui-rh-install code { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sui-rh-install { display:flex; align-items:center; gap:10px; width:100%; max-width:380px; min-height:44px; margin-top:16px; padding:6px 6px 6px 14px; border-radius:10px; border:1px solid ${t.borderStrong}; background:${t.card}; font:13px ${t.fontMono}; }
+.sui-rh-install code { flex:1; min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; }
 .sui-rh-install-prompt { color:${t.textFaint}; user-select:none; }
-.sui-rh-copy { flex:none; height:30px; padding:0 10px; border-radius:6px; border:0; background:${t.surface2}; color:${t.foreground}; font:650 12px ${t.fontSans}; cursor:pointer; }
+.sui-rh-copy { flex:none; min-height:${t.controlHeight}; padding:0 10px; border-radius:6px; border:0; background:${t.surface2}; color:${t.foreground}; font:650 12px ${t.fontSans}; cursor:pointer; }
 .sui-rh-copy:hover { background:${t.borderStrong}; }
 .sui-rh-copy[data-copied="true"] { color:${t.primary}; }
 .sui-rh-copy[data-copy-failed="true"] { color:${t.destructive}; }

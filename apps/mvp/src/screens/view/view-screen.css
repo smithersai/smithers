@@ -9,7 +9,7 @@
 
 .view-screen-header { display: flex; align-items: center; }
 
-.view-screen > :last-child { flex: 1; min-height: 0; }
+.view-screen > :not(.view-screen-header):last-child { flex: 1; min-height: 0; }
 
 .view-screen-body { display: flex; flex-direction: column; }
 .view-screen-body > * { flex: 1; min-height: 0; }

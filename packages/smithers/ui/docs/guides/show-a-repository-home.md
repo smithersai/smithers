@@ -118,6 +118,12 @@ the home's commit and pass what you have in `files`:
 - `text` renders with `Markdown variant="document"`.
 - `failed` shows one status line, `Couldn't read <path>`.
 
+## Narrow layouts
+
+The hero's decoration stays within its column. Install commands wrap in full
+beside Copy, whose target is at least 32 pixels high; example source retains
+its own horizontal scroll area. Neither widens the document at phone widths.
+
 ## Keyboard
 
 Every prompt, app and flow button and every link is a real link, so Tab
