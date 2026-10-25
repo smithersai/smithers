@@ -27,10 +27,12 @@ import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 import * as RepoRuns from "./RepoRuns.ts"
+import * as RepoRoles from "./github/RepoRoles.ts"
+import { repositoryOf } from "./github/Config.ts"
 import { mayRead } from "./stack/Access.ts"
 
 // Runs Smithers runs on Cloudflare, read from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and
-// a repository's runs (docs/features/actions.md): the synced repository's own, which a role on it reads and stops.
+// a repository's runs (docs/features/actions.md), read and stopped with a role on their recorded repository.
 // A TODO's `todo` run lives in the engine's Postgres schema, not on any device, so a person watches it through two
 // routes, both for a signed-in Member or above, as the TODO itself, and only for a run some TODO's attempt started:
 //
@@ -189,8 +191,8 @@ const noStore = { "cache-control": "no-store" }
 export const make = <E, R, EE, ER, RS>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   engine: Engine<EE, ER, RS>,
-  /** The repository sign-in reads roles on (`GITHUB_REPOSITORY`): only its runs are a Member's to watch and stop. */
-  repository: { readonly id: string },
+  /** Resolves the asker's role on the recorded run's repository. */
+  roles: RepoRoles.RepoRoles<R>,
 ) =>
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
@@ -203,26 +205,23 @@ export const make = <E, R, EE, ER, RS>(
       )),
     ))
 
-    /**
-     * Whether a Member may watch `runId`: a TODO's run, or a repository's run (worker/RepoRuns.ts) or a run it started,
-     * such as one of its jobs.
-     */
-    const watched = (runId: string) =>
-      Effect.gen(function* () {
-        // A TODO's attempt's run, or a repository's (whose flow may be named `todo` too).
-        if (isRemoteRun(runId) && Option.isSome(yield* attemptOf(runId))) return true
-        return Option.isSome(yield* repoRunOf(runId))
-      }).pipe(Effect.provide(database))
-
-    /**
-     * The repository run `runId` is or descends from, when it is the repository a role was read on: a role says nothing
-     * about any other repository's runs.
-     */
-    const repoRunOf = (runId: string) =>
-      Effect.map(
-        RepoRuns.admit(runId, engine.database),
-        Option.filter((admitted) => admitted.repoId === repository.id),
+    /** A run's access comes from its recorded repository, never the deployment's session role on another one. */
+    const access = (runId: string, actor: Actor) => Effect.gen(function* () {
+      const ownRole = mayRead(Option.some(actor))
+      // TODO admission keeps its existing policy; repository flows may also be named `todo`.
+      if (isRemoteRun(runId) && Option.isSome(yield* attemptOf(runId))) {
+        return { allowed: ownRole, watched: true, repoRun: Option.none<RepoRuns.Admitted>() }
+      }
+      const admitted = yield* RepoRuns.admit(runId, engine.database)
+      if (Option.isNone(admitted)) return { allowed: ownRole, watched: false, repoRun: admitted }
+      const resolved = yield* roles.resolve(actor, repositoryOf(admitted.value.repoId.slice("github/".length))).pipe(
+        Effect.map(Option.some),
+        Effect.catch((error) => RepoRoles.REFUSALS[error.code] === 503 || error.code === "rate_limited"
+          ? Effect.fail(error) : Effect.succeed(Option.none())),
       )
+      const permitted = Option.isSome(resolved) && mayRead(Option.some({ ...actor, role: resolved.value.role }))
+      return { allowed: ownRole || permitted, watched: permitted, repoRun: permitted ? admitted : Option.none<RepoRuns.Admitted>() }
+    }).pipe(Effect.provide(database))
 
     /** `POST /api/remote-runs/<runId>/stop`: a repository's run, stopped on its Durable Object. */
     const stop = (runId: string) =>
@@ -247,11 +246,11 @@ export const make = <E, R, EE, ER, RS>(
           if (Option.isNone(actor.value)) return refused(401, "authentication")
           // A Member or above, in person or through an agent acting for them (ruling FLOW-3): stopping neither
           // approves nor merges.
-          if (!mayRead(actor.value)) return refused(403, "forbidden")
+          const admitted = yield* access(runId, actor.value.value)
+          if (!admitted.allowed) return refused(403, "forbidden")
           fields.via = actor.value.value.act === undefined ? "person" : "agent"
           // Only a repository's run itself: a job stops with its run.
-          const admitted = yield* repoRunOf(runId).pipe(Effect.provide(database))
-          if (Option.isNone(admitted) || admitted.value.execution !== runId) return refused(404, "not_found")
+          if (Option.isNone(admitted.repoRun) || admitted.repoRun.value.execution !== runId) return refused(404, "not_found")
           // A run that ended has nothing to stop. One its object hasn't begun is stopped before it starts.
           const status = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
             sql<{ readonly status: string }>`SELECT status FROM flows_runs WHERE run_id = ${runId}`).pipe(
@@ -407,12 +406,13 @@ export const make = <E, R, EE, ER, RS>(
           const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
           if (Option.isNone(actor)) return refused(503, "unavailable")
           if (Option.isNone(actor.value)) return refused(401, "authentication")
-          if (!mayRead(actor.value)) return refused(403, "forbidden")
+          const admitted = yield* access(runId, actor.value.value)
+          if (!admitted.allowed) return refused(403, "forbidden")
           const query = new URL(request.url, "http://localhost").searchParams
           const afterSeq = parameter(query, "afterSeq", decodeAfterSeq, -1)
           const limit = parameter(query, "limit", decodeLimit, JOURNAL_PAGE)
           if (Option.isNone(afterSeq) || Option.isNone(limit)) return refused(400, "invalid")
-          if (!(yield* watched(runId))) return refused(404, "not_found")
+          if (!admitted.watched) return refused(404, "not_found")
           fields.runId = runId
           const read = yield* Effect.flatMap(
             EngineStore.RunInspection.RunInspection,
@@ -455,11 +455,10 @@ export const make = <E, R, EE, ER, RS>(
         const request = yield* HttpServerRequest.HttpServerRequest
         const actor = yield* ShapeAccess.actor
         if (Option.isNone(actor)) return yield* new ShapeProxy.Refused({ status: 401 })
-        if (!mayRead(actor)) return yield* new ShapeProxy.Refused({ status: 403 })
         const runId = new URL(request.url, "http://localhost").searchParams.get("run") ?? ""
-        const followed = yield* watched(runId).pipe(Effect.mapError(() => ShapeAccess.unavailable))
+        const admitted = yield* access(runId, actor.value).pipe(Effect.mapError(() => ShapeAccess.unavailable))
         // A run no TODO and no repository started is no Member's to follow.
-        if (!followed) return yield* new ShapeProxy.Refused({ status: 403 })
+        if (!admitted.allowed || !admitted.watched) return yield* new ShapeProxy.Refused({ status: 403 })
         return {
           table: `${engine.schema}.${RUN_CHANGES_TABLE}`,
           where: "run_id = $1",

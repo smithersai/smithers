@@ -629,7 +629,7 @@ export class TestChatApi extends Context.Service<
               const { context } = yield* remoteEngine
               yield* Context.get(context, FlowRuntime.FlowRuntime).interrupt(Pause.Pause, runId).pipe(Effect.provide(context))
             }),
-        }, { id: `github/${TEST_REPOSITORY}` }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        }, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
 
         // Custom domains, as ChatApi routes them (worker/domains/Api.ts), with `domain/Verify` and `domain/Remove` run
         // for real on an engine of their own, started and not awaited as the Cloudflare host does, and the real `dns`

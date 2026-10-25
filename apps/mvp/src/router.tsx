@@ -433,7 +433,7 @@ const actionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/actions",
   component: ActionsScreen,
-  beforeLoad: ({ context, ...load }) => enter(load, () => context.runs.actions.openRepoRuns(), local),
+  beforeLoad: ({ context, params, ...load }) => enter(load, () => context.runs.actions.openRepoRuns(params.owner, params.repo), local),
 })
 
 /** `/$owner/$repo/actions/runs/$runId`: one of them, its jobs and their logs, read and followed on Cloudflare. */

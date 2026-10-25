@@ -185,7 +185,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       flows: [Todo.Todo, RepoFlow.Run, RepoFlow.Jobs, CiJob.CiJob],
       // A repository's run stops on the Durable Object that holds it (docs/features/actions.md#acts).
       stop: (runId) => executions.getByName(runId).cancel(),
-    }, yield* GitHubConfig.repository)
+    }, roles)
     const githubApp = yield* GitHubConfig.configured
     const runTodos = yield* Todo.enabled
     // A repository's home (docs/features/home.md): who the asker is on it, and Smithers' curated home for it.

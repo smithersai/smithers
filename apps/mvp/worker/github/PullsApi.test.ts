@@ -21,6 +21,7 @@ import * as RepoRuns from "../RepoRuns.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"
 import * as Compare from "./Compare.ts"
+import * as RepoRoles from "./RepoRoles.ts"
 import { upsertPull } from "./Pulls.ts"
 import { REPOSITORY, reset, signedIn, sql } from "./test/fixtures.ts"
 import { app, delivery, githubHarness, member } from "./test/harness.ts"
@@ -305,6 +306,36 @@ describe("GET .../compare/<base>...<head>", () => {
 })
 
 describe("the repository's runs", () => {
+  test("the actions shape selects the requested repository and its role, never the deployment's rows", async () => {
+    const actor = member("second-repo-reader")
+    const h = await githubHarness(runtime, { actor })
+    await runtime.runPromise(RepoRuns.record({
+      execution: "ci:second-delivery", repoId: "github/elsewhere/project", flow: "ci",
+      sha: "d".repeat(40), ref: "main", event: "push", launchedBy: "github",
+    }))
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role)
+      VALUES ('github/elsewhere/project', 'second-repo-reader', 'member')`)
+    const response = await h.fetch(`${ACTIONS_SHAPE_ROUTE}?repo=elsewhere%2Fproject&offset=-1`)
+    expect(response.status).toBe(200)
+    const messages = await response.json() as Array<{ value?: { execution: string; repo_id: string } }>
+    expect(messages.flatMap(({ value }) => value === undefined ? [] : [[value.execution, value.repo_id]]))
+      .toEqual([["ci:second-delivery", "github/elsewhere/project"]])
+    await sql(runtime, `UPDATE github_repo_roles SET role = NULL WHERE repo_id = 'github/elsewhere/project'`)
+    expect((await h.fetch(`${ACTIONS_SHAPE_ROUTE}?repo=elsewhere%2Fproject&offset=-1`)).status).toBe(403)
+    for (const repo of ["", "owner", "owner/name/extra", "owner/..", "api/repo"]) {
+      expect((await h.fetch(`${ACTIONS_SHAPE_ROUTE}?repo=${encodeURIComponent(repo)}&offset=-1`)).status).toBe(400)
+    }
+  })
+
+  test.each(["unavailable", "rate_limited", "not_found"] as const)("the actions shape refuses a repository role failure %s before contacting Electric", async (code) => {
+    const h = await githubHarness(runtime, { roles: {
+      repository: REPOSITORY,
+      resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code })),
+    } })
+    const response = await h.fetch(`${ACTIONS_SHAPE_ROUTE}?repo=elsewhere%2Fproject&offset=-1`)
+    expect(response.status).toBe(code === "not_found" ? 403 : 503)
+  })
+
   test("the actions shape carries its flows' runs and the Checks shape its checks, never who launched one", async () => {
     await sql(runtime, `DELETE FROM runs WHERE repo_id = '${REPOSITORY.id}'`)
     await runtime.runPromise(RepoRuns.record({

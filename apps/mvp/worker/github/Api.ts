@@ -324,22 +324,21 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       options.http === undefined ? Effect.provide(FetchHttpClient.layer) : Effect.provideService(HttpClient.HttpClient, options.http),
       Effect.orDie,
     )
-    const visibility = Effect.gen(function* () {
+    const visibility = (target: Repository) => Effect.gen(function* () {
       const client = yield* metadataClient
-      const result = yield* client.request("GET", `/repos/${GitHub.Repository.repositoryPath(repository.owner, repository.name)}`,
+      const result = yield* client.request("GET", `/repos/${GitHub.Repository.repositoryPath(target.owner, target.name)}`,
         undefined, { schema: Schema.Struct({ private: Schema.Boolean }) }).pipe(Effect.result)
       const visible = result._tag === "Success" ? Option.some(!result.success.private)
         : statusOf(result.failure) === 404 || statusOf(result.failure) === 410 ? Option.some(false) : Option.none<boolean>()
       const outcome = Option.isNone(visible) ? "unavailable" : visible.value ? "public" : "private"
       yield* Metric.update(Metric.withAttributes(Metrics.visibilityReads, { outcome }), 1)
-      yield* Effect.logInfo("github.visibility").pipe(Effect.annotateLogs({ repoId: repository.id, outcome }))
+      yield* Effect.logInfo("github.visibility").pipe(Effect.annotateLogs({ repoId: target.id, outcome }))
       return visible
     }).pipe(Effect.withSpan("github.visibility"))
     // A pull request's files (worker/github/Compare.ts), read with the App's token: none without the App.
     const compare = Option.isSome(options.app)
       ? Option.some(yield* Compare.make(options.app.value, Option.fromUndefinedOr(options.http)))
       : Option.none()
-    const repoParams = { "1": repository.id }
 
     // The webhook's channel (`Core.Channel`): GitHub's HMAC over the exact bytes, then strict JSON into an
     // `ExternalEvent`. Built once, when the secret is configured.
@@ -652,14 +651,22 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * they can see it; anyone else only when a current GitHub metadata read says the repository is public. `None` when they may read,
      * else the refusal: signed out `401`, no role `403`, unavailable checks `503`.
      */
-    const readRefusal = Effect.gen(function* () {
+    const readRefusal = (target = repository) => Effect.gen(function* () {
       const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
       if (Option.isNone(actor)) return Option.some(refuse(503, "unavailable"))
-      if (Option.isSome(actor.value) && actor.value.value.role !== null) return Option.none()
-      const isPublic = yield* Store.isPublic(repository.id).pipe(Effect.provide(database), Effect.option)
+      if (Option.isSome(actor.value)) {
+        const resolved = yield* options.roles.resolve(actor.value.value, target).pipe(Effect.result)
+        if (resolved._tag === "Failure") {
+          const status = RepoRoles.REFUSALS[resolved.failure.code]
+          const temporary = status === 503 || status === 429
+          return Option.some(refuse(temporary ? 503 : 403, temporary ? "unavailable" : "forbidden", resolved.failure.retryAfterSeconds))
+        }
+        if (resolved.success.role !== null) return Option.none()
+      }
+      const isPublic = yield* Store.isPublic(target.id).pipe(Effect.provide(database), Effect.option)
       if (Option.isNone(isPublic)) return Option.some(refuse(503, "unavailable"))
       if (Option.getOrElse(isPublic.value, () => false)) {
-        const current = yield* visibility
+        const current = yield* visibility(target)
         if (Option.isNone(current)) return Option.some(refuse(503, "unavailable"))
         if (current.value) return Option.none()
       }
@@ -667,9 +674,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     })
 
     /** A repository shape, served only to whom `readRefusal` lets read it; the refusal is counted under its table. */
-    const readable = (table: string, columns: ReadonlyArray<string>, where = "repo_id = $1") =>
+    const readable = (table: string, columns: ReadonlyArray<string>, where = "repo_id = $1", target = repository) =>
       Effect.gen(function* () {
-        const refused = yield* readRefusal
+        const refused = yield* readRefusal(target)
         if (Option.isSome(refused)) {
           yield* Metric.update(
             Metric.withAttributes(Metrics.shapes, { table, status: String(refused.value.status), live: "false" }),
@@ -678,7 +685,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           yield* Effect.logWarning(`github.shape.${table}`).pipe(Effect.annotateLogs({ status: refused.value.status }))
           return refused.value
         }
-        return yield* shape(table, columns, where, repoParams)
+        return yield* shape(table, columns, where, { "1": target.id })
       })
 
     /**
@@ -720,12 +727,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (path === CHECKS_SHAPE_ROUTE) {
         return yield* readable(RUNS_TABLE, CHECK_COLUMNS, "repo_id = $1 AND sha IS NOT NULL AND execution IS NULL")
       }
-      if (path === ACTIONS_SHAPE_ROUTE) return yield* readable(RUNS_TABLE, ACTION_COLUMNS, "repo_id = $1 AND execution IS NOT NULL")
+      if (path === ACTIONS_SHAPE_ROUTE) {
+        const named = new URL(request.url, "http://localhost").searchParams.get("repo")
+        const [owner = "", name = "", ...rest] = (named ?? `${repository.owner}/${repository.name}`).split("/")
+        if (rest.length !== 0 || !isRepository(owner, name)) return refuse(400, "invalid")
+        return yield* readable(RUNS_TABLE, ACTION_COLUMNS, "repo_id = $1 AND execution IS NOT NULL", repositoryOf(`${owner}/${name}`))
+      }
       const compared = Compare.parseComparePath(path)
       if (compared !== undefined) {
         if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
         if (repoId(compared.owner, compared.name) !== repository.id) return refuse(404, "not_found")
-        const refused = yield* readRefusal
+        const refused = yield* readRefusal()
         if (Option.isSome(refused)) return refused.value
         if (Option.isNone(compare)) return refuse(503, "not_configured")
         return yield* compare.value(repository, compared.base, compared.head).pipe(

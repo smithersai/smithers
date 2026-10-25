@@ -52,7 +52,7 @@ export interface RunsActions {
   readonly warmList: () => Promise<void>
   readonly openList: () => Promise<void>
   /** A repository's list's route loader: syncs the repositories' runs, once (docs/features/actions.md). */
-  readonly openRepoRuns: () => Promise<void>
+  readonly openRepoRuns: (owner: string, name: string) => Promise<void>
   /** Opens `runId`; a repository's run with its `repo`, read on Cloudflare. */
   readonly openRun: (runId: string, repo?: RepoName) => Promise<void>
   /** The run route's `onLeave` for `runId`. */
@@ -97,7 +97,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
         actions: {
           warmList: () => promise(warmList),
           openList: () => promise(openList),
-          openRepoRuns: () => promise(store.openRepoRuns),
+          openRepoRuns: (owner, name) => promise(store.openRepoRuns(owner, name)),
           openRun: (runId, repo) => promise(openRun(runId, repo ?? null)),
           closeRun: (runId) => fork(closeRun(runId)),
           scrub: (at) => fork(scrub(at)),

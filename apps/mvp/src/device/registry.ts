@@ -201,7 +201,7 @@ const synced = [
   Migrations.synced({ id: "secrets", version: 1, schema: SecretRow, family: true }),
   // The person's own model: where it answers and its key's last characters; never the key.
   Migrations.synced({ id: "personal-model", version: 1, schema: PersonalModelRow }),
-  Migrations.synced({ id: "repo-runs", version: 1, schema: RepoRunRow }),
+  Migrations.synced({ id: "repo-runs", version: 1, schema: RepoRunRow, family: true }),
 ]
 
 // --- The outbox's payloads, by the collection key each write names ---

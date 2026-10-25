@@ -125,8 +125,8 @@ export class RunsStore extends Context.Service<
      * opens (`openRepoRuns`), then synced by Electric and kept on the device.
      */
     readonly repoRunList: Effect.Success<ReturnType<typeof repoRunsQuery>>
-    /** Starts syncing the repositories' runs, once. */
-    readonly openRepoRuns: Effect.Effect<void>
+    /** Starts syncing this repository's runs, once per repository. */
+    readonly openRepoRuns: (owner: string, name: string) => Effect.Effect<void>
     readonly readRun: (runId: string) => Effect.Effect<void>
     readonly readList: Effect.Effect<void>
     readonly warmList: Effect.Effect<void>
@@ -394,18 +394,19 @@ export class RunsStore extends Context.Service<
         getKey: (row) => row.id,
       })
       const opening = yield* Semaphore.make(1)
-      let opened = false
-      const openRepoRuns = Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
-        if (opened) return
-        opened = true
+      const opened = new Set<string>()
+      const openRepoRuns = (owner: string, name: string) => Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
+        const repo = `${owner}/${name}`.toLowerCase()
+        if (opened.has(repo)) return
         const rows = yield* ElectricCollection.make<RepoRunRow>({
-          id: "repo-runs",
+          id: `repo-runs:${repo}`,
           schema: RepoRunRow,
           getKey: (row) => row.id,
           syncMode: "eager",
           persist: { schemaVersion: 1 },
-          shape: { url: `${config.origin}${ACTIONS_SHAPE_ROUTE}`, columnMapper: ElectricCollection.snakeCamelMapper() },
+          shape: { url: `${config.origin}${ACTIONS_SHAPE_ROUTE}?repo=${encodeURIComponent(repo)}`, columnMapper: ElectricCollection.snakeCamelMapper() },
         }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie)
+        opened.add(repo)
         yield* rows.changes({ initial: true }).pipe(
           Stream.runForEach((batch) =>
             Effect.forEach(batch, (change) =>

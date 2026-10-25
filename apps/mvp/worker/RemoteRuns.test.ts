@@ -10,7 +10,7 @@ import { Database, EngineStore, Journal } from "@smthrs/flows"
 import { Notification, NotificationQueue } from "@smthrs/notifications"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Node } from "@smthrs/plan"
-import { ConfigProvider, Context, Effect, Layer, Logger, Metric, Redacted, Schema, Tracer } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Logger, Metric, Option, Redacted, Schema, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
@@ -27,6 +27,8 @@ import * as Actor from "./Actor.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
 import * as RepoRuns from "./RepoRuns.ts"
+import * as RepoRoles from "./github/RepoRoles.ts"
+import { repositoryOf } from "./github/Config.ts"
 import * as Stack from "./stack/Stack.ts"
 import { build } from "./test/flowHost.ts"
 import { eventually, recorded, signedIn, testFile, uuid } from "./test/harness.ts"
@@ -182,6 +184,7 @@ const routes = async (
     /** The app's tables: the file's schema unless set. */
     readonly database?: Layer.Layer<SqlClient.SqlClient>
     /** What the run's Durable Object does with a stop; nothing unless set. */
+    readonly roles?: RepoRoles.RepoRoles
     readonly stop?: (runId: string) => Effect.Effect<void, unknown>
   } = {},
 ) => {
@@ -213,14 +216,16 @@ const routes = async (
       Effect.provideService(ConfigProvider.ConfigProvider, provider),
     )
   const api = await runtime.runPromise(
-    observed(
+    observed(Effect.flatMap(options.roles === undefined
+      ? RepoRoles.make(scratch.database, { repository: repositoryOf("octo/hello"), app: Option.none() })
+      : Effect.succeed(options.roles), (roles) =>
       RemoteRuns.make(options.database ?? scratch.database, {
         database: engine.database,
         writer: engine.writer,
         schema: engine.schema,
         flows: [Watched, Reviewed],
         stop: options.stop ?? (() => Effect.void),
-      }, { id: "github/octo/hello" }),
+      }, roles)),
     ),
   )
   const handler = HttpEffect.toWebHandler(
@@ -797,7 +802,7 @@ describe("a repository's run", () => {
     })
   })
 
-  test("another repository's run is no Member's here: a role is read on the synced repository only", async () => {
+  test("another repository's run is unavailable when repository roles are not configured", async () => {
     const runId = `ci:${uuid()}`
     await runtime.runPromise(RepoRuns.record({
       execution: runId,
@@ -811,9 +816,25 @@ describe("a repository's run", () => {
     await withEngine(async (engine) => {
       await engine.run(runId)
       const h = await routes(engine, { actor: member, stop: () => Effect.die("never asked") })
-      expect([(await h.fetch(remoteRunRoute(runId))).status, (await firstShape(h, runId)).status]).toEqual([404, 403])
+      expect([(await h.fetch(remoteRunRoute(runId))).status, (await firstShape(h, runId)).status]).toEqual([503, 503])
       const stopped = await h.fetch(stopRoute(runId), { method: "POST" })
-      expect([stopped.status, await stopped.json()]).toEqual([404, { code: "not_found" }])
+      expect([stopped.status, await stopped.json()]).toEqual([503, { code: "unavailable" }])
+    })
+  })
+
+  test.each(["unavailable", "rate_limited", "app_not_installed"] as const)("a repository role refusal %s fails closed for inspection, following and Stop", async (code) => {
+    const runId = `ci:${uuid()}`
+    await recordRepoRun(runId)
+    await withEngine(async (engine) => {
+      await engine.run(runId)
+      const h = await routes(engine, { actor: member, roles: {
+        repository: repositoryOf("octo/hello"),
+        resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code })),
+      }, stop: () => Effect.die("never asked") })
+      const status = code === "app_not_installed" ? 404 : 503
+      expect((await h.fetch(remoteRunRoute(runId))).status).toBe(status)
+      expect((await firstShape(h, runId)).status).toBe(code === "app_not_installed" ? 403 : 503)
+      expect((await h.fetch(stopRoute(runId), { method: "POST" })).status).toBe(status)
     })
   })
 

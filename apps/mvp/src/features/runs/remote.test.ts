@@ -7,11 +7,11 @@ import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type * as Actor from "../../../worker/Actor.ts"
-import { asPerson, nodeDevice, openTab, openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
-import { actionRunPath } from "../actions/contract"
+import { asPerson, nodeDevice, openTab, openTestApp, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { ACTIONS_SHAPE_ROUTE, actionRunPath } from "../actions/contract"
 import { actsOf, hostOf, missingOf, repoRunRows, steerOpen, steersOf } from "./page"
 import { Runs } from "./runs"
-import { REMOTE_RUN_SHAPE_ROUTE } from "./contract"
+import { REMOTE_RUN_SHAPE_ROUTE, stopRoute } from "./contract"
 import { RunSteers } from "./steers"
 import type { Inspection, RepoRunRow, RunPage, SteerSending, SteerSent } from "./schema"
 
@@ -47,13 +47,15 @@ const open = async (person?: string, engine = false) => {
     }
     return response
   } }
-  const tab = openTab(observed, { host: engine ? nodeDevice({ agent: as }) : nodeDevice() })
+  const host = engine ? nodeDevice({ agent: as }) : nodeDevice()
+  const tab = openTab(observed, { host })
   runtimes.push(tab)
   const runs = await tab.runPromise(Effect.service(Runs))
   for (const query of Object.values(runs.queries)) query.startSyncImmediate()
   return {
     api,
     tab,
+    host,
     revision: (runId: string) => revisions.get(runId),
     quiet: () => quiet,
     runs,
@@ -212,13 +214,84 @@ describe("a TODO's run on Cloudflare", () => {
 })
 
 describe("a repository's run on Cloudflare", () => {
+  test("a second repository's run syncs live to its device list and remains watchable", async () => {
+    const t = await open(undefined, true)
+    const ownRun = await Effect.runPromise(t.api.remote.repoRun("own"))
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.gen(function* () {
+      yield* sql`UPDATE runs SET repo_id = 'github/elsewhere/project' WHERE execution = ${runId}`
+      yield* sql`INSERT INTO github_repo_roles (repo_id, person_id, role)
+        VALUES ('github/elsewhere/project', 'person-member', 'member')`
+    }))))
+    await t.runs.actions.openRepoRuns("octo", "hello")
+    await until(() => expect(repoRunRows(t.runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, "octo", "hello"))
+      .toEqual([expect.objectContaining({ href: actionRunPath("octo", "hello", ownRun) })]))
+    await t.runs.actions.openRepoRuns("elsewhere", "project")
+    const listed = () => repoRunRows(t.runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, "elsewhere", "project")
+    await until(() => expect(listed()).toEqual([
+      expect.objectContaining({ flow: "ci · main", state: "running", href: actionRunPath("elsewhere", "project", runId) }),
+    ]))
+    await t.runs.actions.openRepoRuns("ELSEWHERE", "PROJECT")
+    await t.runs.actions.openRun(runId, { owner: "elsewhere", name: "project" })
+    expect(t.page()).toMatchObject({ id: runId, state: "not_started" })
+    await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
+    await until(() => expect(t.inspection()?.run.status).toBe("suspended"))
+    t.runs.actions.stop()
+    await until(() => expect(t.inspection()?.run.status).toBe("cancelled"))
+    await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE runs SET status = 'stopped' WHERE execution = ${runId}`)))
+    await until(() => expect(listed()).toEqual([expect.objectContaining({ state: "cancelled" })]))
+    // Reload the device from the same SQLite store, with fresh collections and subscriptions.
+    await t.tab.dispose()
+    const reloaded = openTab(t.api, { host: t.host })
+    runtimes.push(reloaded)
+    const runs = await reloaded.runPromise(Effect.service(Runs))
+    for (const query of Object.values(runs.queries)) query.startSyncImmediate()
+    await runs.actions.openRepoRuns("elsewhere", "project")
+    await until(() => expect(repoRunRows(runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, "elsewhere", "project"))
+      .toEqual([expect.objectContaining({ state: "cancelled", href: actionRunPath("elsewhere", "project", runId) })]))
+    await runs.actions.openRun(runId, { owner: "elsewhere", name: "project" })
+    await until(() => expect(runs.queries.page.toArray[0]?.page.inspection).toMatchObject({ run: { status: "cancelled" } }))
+    await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`DELETE FROM runs WHERE execution = ${runId}`)))
+    await until(() => expect(repoRunRows(runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, "elsewhere", "project")).toEqual([]))
+  }, 120_000)
+
+  test.each([null, "guest"])("the deployment's Member role grants no access to a second repository's run with role %s", async (role) => {
+    const t = await open()
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.gen(function* () {
+      yield* sql`UPDATE runs SET repo_id = 'github/elsewhere/private' WHERE execution = ${runId}`
+      yield* sql`INSERT INTO github_repo_roles (repo_id, person_id, role)
+        VALUES ('github/elsewhere/private', 'person-member', ${role})`
+    }))))
+    await t.runs.actions.openRun(runId, { owner: "elsewhere", name: "private" })
+    expect(t.page()).toMatchObject({ id: runId, state: "not_found" })
+    expect((await t.api.fetch(`${CHATAPI_ORIGIN}${REMOTE_RUN_SHAPE_ROUTE}?run=${encodeURIComponent(runId)}&offset=-1`)).status).toBe(403)
+    expect((await t.api.fetch(`${CHATAPI_ORIGIN}${stopRoute(runId)}`, { method: "POST" })).status).toBe(404)
+    expect((await t.api.fetch(`${CHATAPI_ORIGIN}${ACTIONS_SHAPE_ROUTE}?repo=elsewhere%2Fprivate&offset=-1`)).status).toBe(role === null ? 403 : 200)
+  }, 60_000)
+
+  test("a Member on the run's repository can watch even with a Guest session role on the deployment", async () => {
+    const t = await open("gus")
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.gen(function* () {
+      yield* sql`UPDATE runs SET repo_id = 'github/elsewhere/project' WHERE execution = ${runId}`
+      yield* sql`INSERT INTO github_repo_roles (repo_id, person_id, role)
+        VALUES ('github/elsewhere/project', 'person-guest', 'member')`
+    }))))
+    await t.runs.actions.openRun(runId, { owner: "elsewhere", name: "project" })
+    expect(t.page()).toMatchObject({ id: runId, state: "not_started" })
+    expect((await asPerson(t.api, "gus").fetch(`${CHATAPI_ORIGIN}${REMOTE_RUN_SHAPE_ROUTE}?run=${encodeURIComponent(runId)}&offset=-1`)).status).toBe(200)
+  }, 60_000)
+
   test("a Member finds it in the repository's runs, watches it on its page, and stops it there", async () => {
     const t = await open(undefined, true)
     const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
     const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]
 
     // The list: Electric's rows of the repository's runs, each opening its page.
-    await t.runs.actions.openRepoRuns()
+    await t.runs.actions.openRepoRuns(owner, name)
     await until(() =>
       expect(repoRunRows(t.runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, owner, name)).toEqual([
         expect.objectContaining({ flow: "ci · main", state: "running", href: actionRunPath(owner, name, runId) }),
@@ -240,7 +313,7 @@ describe("a repository's run on Cloudflare", () => {
     expect(t.api.spans.filter((span) => span.name === "run.stop")).toHaveLength(1)
 
     // A row gone from the repository's runs leaves the list; opening it again syncs nothing twice.
-    await t.runs.actions.openRepoRuns()
+    await t.runs.actions.openRepoRuns(owner, name)
     await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`DELETE FROM runs WHERE execution = ${runId}`)))
     await until(() => expect(repoRunRows(t.runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, owner, name)).toEqual([]))
