@@ -22,7 +22,7 @@ import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import { toJsonExit } from "../internal/JsonExit.ts"
 import { makeActionExecute, resetActionContext } from "./Dispatch.ts"
 import type { Encoded } from "./Encoded.ts"
-import { placeExecute, placeInterrupt, placeResume } from "./Placed.ts"
+import { placeExecute, placeInterrupt, placeResume, placeRetryFrom } from "./Placed.ts"
 import { type Declarations, makeExecute } from "./Trampoline.ts"
 
 /** The typed port this module adapts the driver into. */
@@ -231,6 +231,19 @@ const makeDeferredDoneIfWaiting = (options: Encoded): Port["deferredDoneIfWaitin
     )
   )
 
+/** The store's `retryFrom`, traced. */
+const makeRetryFrom = (
+  retryFrom: NonNullable<Encoded["retryFrom"]>
+): NonNullable<Port["retryFrom"]> =>
+(flow, options) =>
+  retryFrom(flow, options).pipe(
+    Effect.withSpan(
+      "FlowEngine.retryFrom",
+      { attributes: { executionId: options.executionId, source: options.source, flow: flow._tag } },
+      { captureStackTrace: false }
+    )
+  )
+
 /**
  * Builds a typed `FlowRuntime` service from a low-level encoded
  * implementation.
@@ -272,7 +285,9 @@ export const makeUnsafe = (options: Encoded): FlowRuntime.FlowRuntime["Service"]
         )
       ),
     // Forwarded only when the store keeps history: the interpreter builds no
-    // node records for a store that has nowhere to keep them.
+    // node records for a store that has nowhere to keep them, and a retry
+    // from a step has nothing to replay.
+    ...(options.retryFrom === undefined ? {} : { retryFrom: placeRetryFrom(makeRetryFrom(options.retryFrom)) }),
     ...(options.recordNode === undefined ? {} : { recordNode: options.recordNode }),
     ...(options.nodeRecordBytes === undefined ? {} : { nodeRecordBytes: options.nodeRecordBytes })
   })

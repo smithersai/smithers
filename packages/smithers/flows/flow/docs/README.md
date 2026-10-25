@@ -140,6 +140,8 @@ program.
   sequencing, parallelism, branches, and recovering from a typed failure.
 - [Retry a failing action](./guides/retry-a-failing-action.md): policy values,
   non-retryable tags, and where the decision is made.
+- [Retry a run from a step](./guides/retry-from-a-step.md): a new run that
+  replays the steps before one step and runs from it, leaving the run as it was.
 - [Ask a person for a decision](./guides/ask-a-person.md): a human answer as a
   typed, durable step with a deadline.
 - [Run an external job](./guides/run-an-external-job.md): retained workers, durable probes,

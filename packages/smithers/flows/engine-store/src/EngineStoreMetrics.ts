@@ -297,6 +297,32 @@ export const replaySeeds = Metric.counter("flows_engine_replay_seeds", {
 })
 
 /**
+ * Counter over retries from a step (`FlowRuntime.retryFrom`), dimensioned by
+ * `outcome`: `admitted` for a new run, `joined` for a repeated request,
+ * `carried` for a child a retry carried from its source instead of running it
+ * again, or the refusal's code.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const retriesFrom = Metric.counter("flows_engine_retries_from", {
+  description: "Retries from a step by outcome",
+  incremental: true
+})
+
+/**
+ * Counter over the source attempts retries from a step copied into their new
+ * runs, which replay instead of executing.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const retrySeededAttempts = Metric.counter("flows_engine_retry_seeded_attempts", {
+  description: "Source step attempts copied into retries from a step, to replay",
+  incremental: true
+})
+
+/**
  * Counter over step-boundary settlements at the dispatch seam, dimensioned by
  * `outcome`: `clean` evidence, an `expected`-mode `deviation`, or a hard
  * `violation` (undeclared write, missing declared output, surviving declared

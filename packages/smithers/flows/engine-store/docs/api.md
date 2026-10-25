@@ -361,6 +361,7 @@ permit deadlocks against a fiber doing the opposite.
 | `pendingCancellationTail` | `() => Effect<Option<PendingRunCursor>>`                                                                                                                         |
 | `staleRunningRuns`        | `(staleBeforeMs: number, limit?: number) => Effect<ReadonlyArray<StaleRunningRow>>`                                                                              |
 | `attemptSurvivors`        | `((runId: string, stepKeyDigest: string) => Effect<Option<AttemptSurvivors>>)` (optional)                                                                        |
+| `copyAttempts`            | `((options: { from: string; to: string; attempts: ReadonlyArray<AttemptRef> }) => Effect<number>)` (optional)                                                    |
 | `recordRunParent`         | `(childId: string, parentId: string) => Effect<RecordRunParentOutcome, RunParentCycleError>`                                                                     |
 | `removeRunParentsForRun`  | `(runId: string) => Effect<void>`                                                                                                                                |
 | `runParents`              | `(childId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                      |
@@ -389,6 +390,13 @@ the upgraded engine first serves them.
 `attemptSurvivors` is optional because
 only storage that can range-scan `flows_attempts` implements it; when absent the
 engine falls back to per-attempt point reads against `AttemptStore`.
+
+`copyAttempts` copies the named attempt rows (`AttemptRef`: a step key digest
+and an attempt number) of one run into another as recorded, in one statement,
+and answers how many it wrote; a ref with no row, or one the target already
+holds, writes nothing. A retry from a step seeds its new run with it. It is
+optional for the same reason, and an engine over storage without it refuses a
+retry from a step `unsupported`.
 
 Every list read (`dueClocks`, `pendingClocks`, `completedDeferreds`,
 `waitingRuns`, `runParents`, and `runChildren`) skips a row that will not decode
@@ -1574,6 +1582,8 @@ remain host-owned.
 | `driveYields`                                                           | counter                                                                                                                       |
 | `heldDrives`                                                            | counter                                                                                                                       |
 | `replaySeeds`                                                           | counter                                                                                                                       |
+| `retriesFrom`                                                           | counter keyed by `outcome`: `admitted`, `joined`, `carried`, or a refusal's code                                              |
+| `retrySeededAttempts`                                                   | counter of source attempts copied into retries from a step                                                                    |
 | `boundarySettlements`, `boundarySettlement`                             | counter and views keyed by `Clean`, `Deviation`, `Violation`, `Refused`                                                       |
 | `stepCacheDecisions`, `stepCacheDecision`                               | counter and views keyed by `VerifiedHit`, `Miss`, `UnverifiableEvidence`, `Unmeasurable`, `StaleReadSet`, `ReplayFailed`      |
 | `claims`, `claim`                                                       | counter and views keyed by `Activated`, `Terminal`, `HeartbeatFresh`, `StealRefusedOwnerAlive`, `ClaimLost`, `ActivationLost` |
@@ -1612,10 +1622,10 @@ colliding.
 
 The versioned state envelope stored in each run row.
 
-| Export         | Shape                                                                                                      |
-| -------------- | ---------------------------------------------------------------------------------------------------------- |
-| `RunState`     | `{ version: 1, flowName, payload, parentExecutionId?, onParentExit?, maxRounds?, result?, cancellation? }` |
-| `OnParentExit` | `"cancel"` or `"detach"`                                                                                   |
+| Export         | Shape                                                                                                                                  |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `RunState`     | `{ version: 1, flowName, payload, forkKeyRunIds?, retryFrom?, parentExecutionId?, onParentExit?, maxRounds?, result?, cancellation? }` |
+| `OnParentExit` | `"cancel"` or `"detach"`                                                                                                               |
 
 `ReleaseCause` is why a driver released a run it still owned, recorded as the
 optional `cause` of its `interrupt-released` run decision:

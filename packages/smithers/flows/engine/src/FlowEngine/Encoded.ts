@@ -320,6 +320,28 @@ export interface Encoded {
     }
   ) => Effect.Effect<void>
   /**
+   * Admits a new execution of `flow`, `executionId`, that retries the settled
+   * execution `source` from its node `step`, and schedules it without awaiting
+   * it. It carries no flow-declared payload: the new execution takes the
+   * payload `source` was admitted with, as stored.
+   *
+   * A store that implements it admits the new execution as a root run, seeded
+   * with `source`'s step attempts that finished before `step`'s first
+   * attempt, so they replay; it refuses with `FlowRuntime.RetryFromRefused`
+   * before writing anything, and joins a repeated request with the same
+   * `executionId`, `source` and `step`.
+   *
+   * Optional, and `makeUnsafe` forwards it only when a store supplies one: a
+   * store that keeps no history has nothing to replay, and the port's
+   * `retryFrom` is then absent.
+   */
+  readonly retryFrom?:
+    | ((
+      flow: Flow.Any,
+      options: { readonly source: string; readonly step: string; readonly executionId: string }
+    ) => Effect.Effect<void, FlowRuntime.RetryFromRefused>)
+    | undefined
+  /**
    * Records what a driven graph is and how its nodes settled.
    *
    * Optional, and `makeUnsafe` forwards it only when a store supplies one, so

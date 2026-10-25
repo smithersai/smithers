@@ -67,6 +67,16 @@ export const RunState = Schema.Struct({
   // Key origins are immutable fork metadata, independent of the chosen frame.
   // Copied attempts, not ancestry alone, authorize reuse of an origin's key.
   forkKeyRunIds: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+  // A retry from a step (`FlowRuntime.retryFrom`): the settled run it
+  // replays, the node it runs from (absent on a carried child, which replays
+  // whole), and the source's `.child()` boundary nodes that settled before
+  // that node. Opening one of those boundaries again carries the child the
+  // source opened there. Immutable from admission, like `forkKeyRunIds`.
+  retryFrom: Schema.optionalKey(Schema.Struct({
+    source: Schema.NonEmptyString,
+    step: Schema.optionalKey(Schema.NonEmptyString),
+    boundaries: Schema.Array(Schema.NonEmptyString)
+  })),
   parentExecutionId: Schema.optionalKey(Schema.NonEmptyString),
   onParentExit: Schema.optionalKey(OnParentExit),
   maxRounds: Schema.optionalKey(PositiveSafeInt),

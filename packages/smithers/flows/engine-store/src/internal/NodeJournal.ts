@@ -312,6 +312,7 @@ export const entry = (scope: Scope, record: FlowRuntime.NodeRecord): JournalEven
         attempts: record.attempts,
         stepKeyDigests: record.stepKeyDigests,
         ...(record.action === undefined ? {} : { action: record.action }),
+        ...(record.childExecutionId === undefined ? {} : { childExecutionId: record.childExecutionId }),
         ...(result === undefined ? {} : { result })
       })
     }

@@ -12,6 +12,7 @@ import { Journal } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import type * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -31,6 +32,7 @@ import * as ActionPersistence from "./ActionPersistence.ts"
 import * as EffectRecords from "./EffectRecords.ts"
 import * as ExitEncoding from "./ExitEncoding.ts"
 import * as JournalRecords from "./JournalRecords.ts"
+import * as RetrySource from "./RetrySource.ts"
 import * as RunCoordinator from "./RunCoordinator.ts"
 import * as RunLifecycle from "./RunLifecycle.ts"
 import * as StateTransaction from "./StateTransaction.ts"
@@ -241,6 +243,12 @@ export interface Service {
     }
   ) => Effect.Effect<Discard extends true ? void : Flow.Result<unknown, unknown>, FlowCycleDetected>
   readonly poll: FlowEngine.Encoded["poll"]
+  /**
+   * The encoded `retryFrom`: admits a root run that retries a settled run
+   * from one of its steps, seeded with the source's attempts that finished
+   * before that step, and schedules it. See `internal/RetrySource`.
+   */
+  readonly retryFrom: NonNullable<FlowEngine.Encoded["retryFrom"]>
   readonly interrupt: FlowEngine.Encoded["interrupt"]
   readonly interruptUnsafe: FlowEngine.Encoded["interruptUnsafe"]
   readonly resume: FlowEngine.Encoded["resume"]
@@ -536,6 +544,14 @@ interface Driver {
   pendingCancellationCycle: CancellationCycle | undefined
   /** Which registered flow the pending-admission sweep starts from next tick. */
   pendingFlowOffset: number
+  /** The driver's own `Crypto`, which a child's admission derives boundary ids with. */
+  readonly crypto: Context.Context<Crypto.Crypto>
+  /**
+   * Each running round's retry seed, read once when the round first admits
+   * a child: `null` for a round of a run that is no retry. A child opened at a
+   * boundary the source settled is carried (`carriedChild`).
+   */
+  readonly retries: WeakMap<FlowRuntime.FlowInstance["Service"], RunState["retryFrom"] | null>
 }
 
 /**
@@ -1977,6 +1993,8 @@ interface RunCreation {
   readonly parentRunId?: string | undefined
   /** The authority the new row would persist, which a join must cover. */
   readonly capabilityCeilings: NonNullable<RunState["capabilityCeilings"]>
+  /** The retry the new row would be, which a join must be too. */
+  readonly retryFrom?: RunState["retryFrom"] | undefined
   readonly onCreated: Effect.Effect<void, never, never>
 }
 
@@ -2031,6 +2049,10 @@ const ensureCreatedRun = (driver: Driver, options: RunCreation): Effect.Effect<v
     )
   })
 
+/** How an identity conflict names a run's retry: its source and step, or none. */
+const retryName = (retry: RunState["retryFrom"]): string =>
+  retry === undefined ? "no retry" : `a retry of ${retry.source} from ${retry.step ?? "its end"}`
+
 /** The first way an existing row's identity differs from the one requested, if any. */
 const identityConflict = (
   options: RunCreation,
@@ -2039,6 +2061,11 @@ const identityConflict = (
 ): IdentityConflict | undefined => {
   if (persisted.flowName !== options.flowName) {
     return { field: "flow", expected: persisted.flowName, actual: options.flowName }
+  }
+  // A retry joins only the retry of the same source from the same step. A
+  // plain admission names no retry and joins whatever run holds the id.
+  if (options.retryFrom !== undefined && retryName(persisted.retryFrom) !== retryName(options.retryFrom)) {
+    return { field: "retry", expected: retryName(persisted.retryFrom), actual: retryName(options.retryFrom) }
   }
   if (!samePayload(persisted.payload, options.payload)) {
     return {
@@ -3530,7 +3557,8 @@ const admit = (
       const parentRecorded = yield* recordParentEdge(driver, options)
       const round = options.round ?? FlowEngine.Round.initial(options.executionId)
       const previousExecutionId = options.round?.previousExecutionId
-      const state = yield* admittedState(flow, options, payload, origin)
+      const carried = yield* carriedChild(driver, flow, options)
+      const state = yield* admittedState(flow, options, payload, origin, carried)
       const createdStateJson = yield* encodeState(state)
       yield* ensureCreatedRun(driver, {
         flowName: flow._tag,
@@ -3545,7 +3573,9 @@ const admit = (
           : { parentRunId: previousExecutionId }),
         onCreated: Effect.suspend(() => {
           opened = round.ordinal === 0
-          return recordCreated(driver, flow, options, createdStateJson)
+          return recordCreated(driver, flow, options, createdStateJson).pipe(
+            Effect.andThen(carried === undefined ? Effect.void : seedCarried(driver, options.executionId, carried))
+          )
         })
       })
       // The row already exists; the durable edge recorded above is the
@@ -3598,7 +3628,8 @@ const admittedState = (
   flow: Flow.Any,
   options: Admission,
   payload: unknown,
-  origin: Origin
+  origin: Origin,
+  carried?: Carried | undefined
 ): Effect.Effect<RunState> =>
   Effect.gen(function*() {
     // Decided once, at spawn, from what the caller did with the result:
@@ -3616,7 +3647,13 @@ const admittedState = (
         ? {}
         : { parentExecutionId: options.parent.executionId }),
       ...(flow.maxRounds === undefined ? {} : { maxRounds: flow.maxRounds }),
-      origin
+      origin,
+      // A carried child replays the child its source opened at this
+      // boundary, whole: its keys resolve to the copied attempts.
+      ...(carried === undefined ? {} : {
+        forkKeyRunIds: [carried.source, ...(carried.state.forkKeyRunIds ?? [])],
+        retryFrom: { source: carried.source, boundaries: carried.seed.boundaries }
+      })
     }
   })
 
@@ -3691,6 +3728,213 @@ const recordSpawn = (
       { childRunId: executionId, flowName: flow._tag, attached: false }
     )
   ).pipe(Effect.orDie, Effect.asVoid)
+
+/** A child carried from a retry's source: the child the source opened at the same boundary, and its seed. */
+interface Carried {
+  readonly source: string
+  readonly state: RunState
+  readonly seed: RetrySource.Seed
+}
+
+/** The retry a running round's run is, read once per round. */
+const retryOf = (driver: Driver, parent: FlowRuntime.FlowInstance["Service"]) =>
+  Effect.gen(function*() {
+    const cached = driver.retries.get(parent)
+    if (cached !== undefined) return cached ?? undefined
+    // A parent the store holds no row for, as a direct driver caller's can be, retries nothing.
+    const row = yield* findRun(driver, parent.executionId)
+    const retry = row === undefined ? undefined : (yield* decodeState(row.stateJson)).retryFrom
+    driver.retries.set(parent, retry ?? null)
+    return retry
+  })
+
+/**
+ * The child a retry's new execution carries instead of running again: when a
+ * round of a retry opens a `.child()` boundary its source settled before the
+ * retried step, under the same input, the child is the one the source opened
+ * there, replayed whole. The boundary is recognized by deriving the child id
+ * `Interpreter.childExecutionId` would give each such node in this run; the
+ * source's child is the same derivation under the source's id, so a boundary
+ * whose input changed derives an id the source never opened and runs afresh.
+ *
+ * A child that already exists is joined as it is. Storage that cannot copy
+ * attempts carries nothing.
+ */
+const carriedChild = (driver: Driver, flow: Flow.Any, options: Admission) =>
+  Effect.gen(function*() {
+    if (options.parent === undefined || driver.engineState.copyAttempts === undefined) return undefined
+    const retry = yield* retryOf(driver, options.parent)
+    if (retry === undefined || (yield* findRun(driver, options.executionId)) !== undefined) return undefined
+    for (const node of retry.boundaries) {
+      const opened = yield* Interpreter.childExecutionId(options.parent.executionId, node, flow._tag, options.payload)
+      if (opened !== options.executionId) continue
+      // Derived from the source's id, the node and the callee, the id names the
+      // source's own child of this flow, or nothing when retention removed it.
+      const source = yield* Interpreter.childExecutionId(retry.source, node, flow._tag, options.payload)
+      const row = yield* findRun(driver, source)
+      if (row === undefined) return undefined
+      const state = yield* decodeState(row.stateJson)
+      const seed = yield* RetrySource.resolveWhole(driver.journal, source).pipe(Effect.orDie)
+      return { source, state, seed } satisfies Carried
+    }
+    return undefined
+  }).pipe(Effect.provide(driver.crypto))
+
+/** Copies a carried child's attempts into the new child and records the retry it is. */
+const seedCarried = (driver: Driver, executionId: string, carried: Carried) =>
+  Effect.gen(function*() {
+    const replayed = yield* driver.engineState.copyAttempts!({
+      from: carried.source,
+      to: executionId,
+      attempts: carried.seed.attempts
+    })
+    yield* emitDecision(driver, executionId, {
+      decision: "retry-from",
+      source: carried.source,
+      replayed,
+      boundaries: carried.seed.boundaries.length
+    })
+    yield* recordRetry("carried", replayed)
+  })
+
+/** What a retry from a step was asked for. */
+interface RetryRequest {
+  readonly source: string
+  readonly step: string
+  readonly executionId: string
+}
+
+/** Counts a retry's outcome, and the attempts it seeded. Ids, codes and counts only. */
+const recordRetry = (outcome: string, replayed = 0) =>
+  Effect.andThen(
+    Metric.update(Metric.withAttributes(EngineStoreMetrics.retriesFrom, { outcome }), 1),
+    Metric.update(EngineStoreMetrics.retrySeededAttempts, replayed)
+  )
+
+/** Refuses a retry before anything is written, counted and logged. */
+const refuseRetry = (options: RetryRequest, code: FlowRuntime.RetryFromRefusalCode) =>
+  recordRetry(code).pipe(
+    Effect.andThen(
+      Effect.logInfo("flow.run.retry-from").pipe(Effect.annotateLogs({
+        "smithers.execution.id": options.executionId,
+        source: options.source,
+        outcome: code
+      }))
+    ),
+    Effect.andThen(
+      Effect.fail(new FlowRuntime.RetryFromRefused({ code, executionId: options.source, step: options.step }))
+    )
+  )
+
+/**
+ * Retries the settled run `source` from its node `step` as the new root run
+ * `executionId`: refuses what it cannot retry, admits the new run seeded with
+ * the source's attempts that finished before the step, and schedules it.
+ */
+const retryFrom = Effect.fn("FlowEngine.retryFrom")(
+  function*(driver: Driver, flow: Flow.Any, options: RetryRequest) {
+    yield* Effect.annotateCurrentSpan({ executionId: options.executionId, source: options.source, flow: flow._tag })
+    yield* requireRegistration(driver, flow)
+    const copyAttempts = driver.engineState.copyAttempts
+    if (copyAttempts === undefined) return yield* refuseRetry(options, "unsupported")
+    const row = yield* findRun(driver, options.source)
+    if (row === undefined) return yield* refuseRetry(options, "not_found")
+    const source = yield* decodeState(row.stateJson)
+    if (source.flowName !== flow._tag) return yield* refuseRetry(options, "other_flow")
+    if (!isSettled(row.status)) return yield* refuseRetry(options, "not_settled")
+    // A settled run's journal no longer moves, so it is read before the
+    // admission's write transaction rather than inside it.
+    const resolved = yield* RetrySource.resolve(driver.journal, options.source, options.step).pipe(Effect.orDie)
+    if (resolved._tag === "Refused") return yield* refuseRetry(options, resolved.code)
+    yield* Effect.uninterruptible(
+      admitRetry(driver, flow, options, source, resolved.seed, copyAttempts).pipe(
+        Effect.andThen(driver.coordinator.schedule(options.executionId))
+      )
+    )
+  }
+)
+
+/**
+ * Admits a retry's new run in one transaction: its row, with the source's
+ * stored payload, the source as its first key origin and the retry it is;
+ * its opening frame; the source's attempts that finished before the step; and
+ * the `retry-from` decision that counts them. A repeated request joins the
+ * run the first one admitted.
+ */
+const admitRetry = (
+  driver: Driver,
+  flow: Flow.Any,
+  options: RetryRequest,
+  source: RunState,
+  seed: RetrySource.Seed,
+  copyAttempts: NonNullable<DurableEngineState.Service["copyAttempts"]>
+) =>
+  Effect.gen(function*() {
+    const requestedOrigin = yield* RunMetrics.CurrentOrigin
+    const origin: Origin = {
+      door: RunMetrics.door(requestedOrigin.door),
+      actor: RunMetrics.actor(requestedOrigin.actor),
+      admittedAtMs: yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+    }
+    const retry = { source: options.source, step: options.step, boundaries: seed.boundaries }
+    let replayed: number | undefined
+    yield* driver.transactState(
+      Effect.gen(function*() {
+        const state: RunState = {
+          version: 1,
+          flowName: flow._tag,
+          payload: source.payload,
+          capabilityCeilings: yield* FlowEngine.requestedAuthority(flow),
+          onParentExit: "detach",
+          ...(flow.maxRounds === undefined ? {} : { maxRounds: flow.maxRounds }),
+          origin,
+          forkKeyRunIds: [options.source, ...(source.forkKeyRunIds ?? [])],
+          retryFrom: retry
+        }
+        const createdStateJson = yield* encodeState(state)
+        yield* ensureCreatedRun(driver, {
+          flowName: flow._tag,
+          capabilityCeilings: state.capabilityCeilings!,
+          executionId: options.executionId,
+          stateJson: createdStateJson,
+          payload: source.payload,
+          lineageId: options.executionId,
+          roundOrdinal: 0,
+          retryFrom: retry,
+          onCreated: Effect.gen(function*() {
+            yield* recordCreated(driver, flow, { executionId: options.executionId, payload: {} }, createdStateJson)
+            replayed = yield* copyAttempts({ from: options.source, to: options.executionId, attempts: seed.attempts })
+            yield* emitDecision(driver, options.executionId, {
+              decision: "retry-from",
+              source: options.source,
+              step: options.step,
+              replayed,
+              boundaries: seed.boundaries.length
+            })
+          })
+        })
+      }),
+      { partition: options.executionId }
+      // The admission fails only as storage does, which the caller can't mend.
+    ).pipe(Effect.orDie)
+    yield* recordRetry(replayed === undefined ? "joined" : "admitted", replayed)
+    yield* Effect.logInfo("flow.run.retry-from").pipe(Effect.annotateLogs({
+      "smithers.execution.id": options.executionId,
+      "smithers.flow": flow._tag,
+      source: options.source,
+      outcome: replayed === undefined ? "joined" : "admitted",
+      replayed: replayed ?? 0,
+      boundaries: seed.boundaries.length
+    }))
+    if (replayed === undefined) return
+    yield* RunMetrics.recordStarted({
+      flow: flow._tag,
+      door: origin.door,
+      actor: origin.actor,
+      placement: driver.placement,
+      executionId: options.executionId
+    }).pipe(Effect.provideService(RunMetrics.LineLevel, driver.lineLevel))
+  })
 
 /**
  * Reads an execution's settlement and its row's status from one snapshot:
@@ -4170,6 +4414,7 @@ const service = (driver: Driver): Service => ({
   register: (flow, handler) => register(driver, flow, handler),
   execute: (flow, options) => execute(driver, flow, options),
   poll: (flow, executionId) => poll(driver, flow, executionId),
+  retryFrom: (flow, options) => retryFrom(driver, flow, options),
   interrupt: (flow, executionId) => interrupt(driver, flow, executionId),
   interruptUnsafe,
   resume: (flow, executionId, options) => resume(driver, flow, executionId, options),
@@ -4248,6 +4493,7 @@ export const make = (
     const store = yield* RunStore.RunStore
     const engineState = yield* DurableEngineState.DurableEngineState
     const lineLevel = yield* RunMetrics.LineLevel
+    const crypto = yield* Effect.context<Crypto.Crypto>()
     const retainedScopes = new Map<string, Scope.Closeable>()
     yield* Effect.addFinalizer(() => releaseRetainedScopes(retainedScopes))
     const coordinator = yield* RunCoordinator.make<string, never, Crypto.Crypto>({
@@ -4284,7 +4530,9 @@ export const make = (
       retainedScopes,
       pendingCycles: new Map(),
       pendingCancellationCycle: undefined,
-      pendingFlowOffset: 0
+      pendingFlowOffset: 0,
+      crypto,
+      retries: new WeakMap()
     }
     // A hosted store is woken by its host, so it runs no sweep of its own.
     if (!driver.hosted) yield* Effect.forkScoped(sweepForever(driver))

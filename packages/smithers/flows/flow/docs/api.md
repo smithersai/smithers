@@ -480,7 +480,13 @@ or parent round finishes. `execute(payload, { discard: true })` has the same
 return timing. Keep the engine scope open while it runs; the memory engine
 retains work only for that scope, and the durable engine records work for
 recovery after a host restart. Use `poll(id)` to observe it, or
-`execute(payload, { executionId: id })` to await it. The default unkeyed `execute` now starts fresh work. To reattach after a crash,
+`execute(payload, { executionId: id })` to await it.
+`flow.retryFrom(source, { step, executionId? })` starts a new execution that
+retries the settled execution `source` from its node `step` and returns its id
+with the same timing: the steps that finished before `step` replay from
+`source`'s record, and `step` and everything after it run. A runtime that keeps
+no history refuses with `FlowRuntime.RetryFromRefused` code `unsupported`. See
+[Retry a run from a step](./guides/retry-from-a-step.md). The default unkeyed `execute` now starts fresh work. To reattach after a crash,
 retain and pass the execution id, declare an idempotency key, or deliberately
 install `Flow.layerExecutionIds(Flow.derived)`. Existing stored key encodings are
 unchanged; the library does not rewrite historical runs.

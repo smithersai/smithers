@@ -1411,26 +1411,26 @@ Every registered tag. The sweep tests read it.
 
 `Flow` models and schemas are listed in one table, and constructors, refinements, results, resource management, annotations, and errors get their own entries:
 
-| Name                  | Kind                 | Summary                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Effects`             | Schema and type      | The declared filesystem effects of a flow: `reads`, `writes`, optional `removes` (workspace-relative patterns, as on an action boundary), and `boundaryMode`. It IS `@smthrs/plan`'s `Plan.NodeEffects`, not a copy of it.                                                                                                                                   |
-| `PlacementDirective`  | Type                 | Where a node runs. It IS `@smthrs/plan`'s `Placement.Placement`, the one typed model, carried unchanged until planning reads it.                                                                                                                                                                                                                             |
-| `ExecutionIdSource`   | Interface            | Mints the execution id of an invocation that named none, through `mint(flow, payload)`.                                                                                                                                                                                                                                                                      |
-| `BodySuccess`         | Type                 | The values a flow body may settle one round with: a decoded success, a planned reference, or an `Outcome`.                                                                                                                                                                                                                                                   |
-| `Flow`                | Interface            | A durable flow definition. It carries `_tag`, `payloadSchema`, `successSchema`, `errorSchema`, `annotations`, `body`, `idempotencyKey`, `suspendedRetryPolicy`, `maxRounds`, and `deadline`, and exposes `call`, `child`, `to`, `annotate`, `annotateMerge`, `execute`, `start`, `ensure`, `poll`, `interrupt`, `resume`, `executionId`, and `withRollback`. |
-| `AnyStructSchema`     | Interface            | The constraint a flow payload schema satisfies: a `Schema.Top` that exposes `fields`.                                                                                                                                                                                                                                                                        |
-| `Execution`           | Interface            | A type-level marker tying a service to one flow tag. It carries no runtime value.                                                                                                                                                                                                                                                                            |
-| `Any`                 | Interface            | The type-erased flow shape for APIs that do not preserve payload, success, or error types.                                                                                                                                                                                                                                                                   |
-| `AnyWithProps`        | Interface            | The type-erased flow shape that also exposes `execute` and `resume`.                                                                                                                                                                                                                                                                                         |
-| `PayloadSchema`       | Type                 | Extracts the payload schema from a `Flow`.                                                                                                                                                                                                                                                                                                                   |
-| `Requirements`        | Type                 | Extracts a flow's requirement channel: the action implementations its body names and does not carry.                                                                                                                                                                                                                                                         |
-| `RequirementsClient`  | Type                 | The schema services a client that executes or polls flows requires.                                                                                                                                                                                                                                                                                          |
-| `RequirementsHandler` | Type                 | The schema services a handler that decodes payloads and encodes results requires.                                                                                                                                                                                                                                                                            |
-| `Done`                | Interface and schema | A completed trampoline lineage value, carrying `value`.                                                                                                                                                                                                                                                                                                      |
-| `To`                  | Interface and schema | A serializable invocation of the next flow round, carrying `flow` and `payload`.                                                                                                                                                                                                                                                                             |
-| `Park`                | Interface and schema | A request to durably park the current round, carrying `reason`.                                                                                                                                                                                                                                                                                              |
-| `Outcome`             | Type and schema      | The union of `Done`, `To`, and `Park`.                                                                                                                                                                                                                                                                                                                       |
-| `CompleteSchema`      | Interface            | The schema constructor for `Complete` results under supplied success and error schemas.                                                                                                                                                                                                                                                                      |
+| Name                  | Kind                 | Summary                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Effects`             | Schema and type      | The declared filesystem effects of a flow: `reads`, `writes`, optional `removes` (workspace-relative patterns, as on an action boundary), and `boundaryMode`. It IS `@smthrs/plan`'s `Plan.NodeEffects`, not a copy of it.                                                                                                                                                |
+| `PlacementDirective`  | Type                 | Where a node runs. It IS `@smthrs/plan`'s `Placement.Placement`, the one typed model, carried unchanged until planning reads it.                                                                                                                                                                                                                                          |
+| `ExecutionIdSource`   | Interface            | Mints the execution id of an invocation that named none, through `mint(flow, payload)`.                                                                                                                                                                                                                                                                                   |
+| `BodySuccess`         | Type                 | The values a flow body may settle one round with: a decoded success, a planned reference, or an `Outcome`.                                                                                                                                                                                                                                                                |
+| `Flow`                | Interface            | A durable flow definition. It carries `_tag`, `payloadSchema`, `successSchema`, `errorSchema`, `annotations`, `body`, `idempotencyKey`, `suspendedRetryPolicy`, `maxRounds`, and `deadline`, and exposes `call`, `child`, `to`, `annotate`, `annotateMerge`, `execute`, `start`, `ensure`, `retryFrom`, `poll`, `interrupt`, `resume`, `executionId`, and `withRollback`. |
+| `AnyStructSchema`     | Interface            | The constraint a flow payload schema satisfies: a `Schema.Top` that exposes `fields`.                                                                                                                                                                                                                                                                                     |
+| `Execution`           | Interface            | A type-level marker tying a service to one flow tag. It carries no runtime value.                                                                                                                                                                                                                                                                                         |
+| `Any`                 | Interface            | The type-erased flow shape for APIs that do not preserve payload, success, or error types.                                                                                                                                                                                                                                                                                |
+| `AnyWithProps`        | Interface            | The type-erased flow shape that also exposes `execute` and `resume`.                                                                                                                                                                                                                                                                                                      |
+| `PayloadSchema`       | Type                 | Extracts the payload schema from a `Flow`.                                                                                                                                                                                                                                                                                                                                |
+| `Requirements`        | Type                 | Extracts a flow's requirement channel: the action implementations its body names and does not carry.                                                                                                                                                                                                                                                                      |
+| `RequirementsClient`  | Type                 | The schema services a client that executes or polls flows requires.                                                                                                                                                                                                                                                                                                       |
+| `RequirementsHandler` | Type                 | The schema services a handler that decodes payloads and encodes results requires.                                                                                                                                                                                                                                                                                         |
+| `Done`                | Interface and schema | A completed trampoline lineage value, carrying `value`.                                                                                                                                                                                                                                                                                                                   |
+| `To`                  | Interface and schema | A serializable invocation of the next flow round, carrying `flow` and `payload`.                                                                                                                                                                                                                                                                                          |
+| `Park`                | Interface and schema | A request to durably park the current round, carrying `reason`.                                                                                                                                                                                                                                                                                                           |
+| `Outcome`             | Type and schema      | The union of `Done`, `To`, and `Park`.                                                                                                                                                                                                                                                                                                                                    |
+| `CompleteSchema`      | Interface            | The schema constructor for `Complete` results under supplied success and error schemas.                                                                                                                                                                                                                                                                                   |
 
 ### `Flow.PromptFlow`
 
@@ -1587,6 +1587,15 @@ the engine's cancellation policy for linked children.
 Use `flow.poll(id)` to observe the result, or
 `flow.execute(payload, { executionId: id })` to await completion. The returned
 id acknowledges admission, not a successful result or a reached wait point.
+
+`flow.retryFrom(source, { step, executionId? })` returns with the same timing.
+It starts a new root execution with the payload the settled execution `source`
+was admitted with, in which every step attempt that finished before node `step`
+began, in `source`'s journal order, is served from `source`'s record, and `step`
+and every step after it run. The id is `executionId`, else a fresh UUID. It fails
+with `FlowRuntime.RetryFromRefused` before anything is written, and with
+`ExecutionIdentityConflict` when `executionId` names another run. See
+[Retry a run from a step](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/guides/retry-from-a-step.md).
 
 ### `Flow.MaxRoundsExceeded`
 
@@ -1780,16 +1789,25 @@ How a caller asks `resume` to re-drive a suspended execution. Without options, `
 - **Type:** `Context.Service` keyed `"@smthrs/flow/FlowRuntime"`
 - **Since:** `0.1.0`
 
-The port the authoring APIs are written against. It exposes `register`, `execute`, `poll`, `interrupt`, `interruptUnsafe`, `resume`, `actionExecute`, `deferredResult`, `deferredDone`, `deferredDoneIfWaiting`, `scheduleClock`, and the optional `recordNode` and `nodeRecordBytes`. This package declares the port and depends on nothing that implements it, so the dependency direction runs from `@smthrs/flow` to `@smthrs/engine` to the durable stores.
+The port the authoring APIs are written against. It exposes `register`, `execute`, `poll`, `interrupt`, `interruptUnsafe`, `resume`, `actionExecute`, `deferredResult`, `deferredDone`, `deferredDoneIfWaiting`, `scheduleClock`, and the optional `recordNode`, `nodeRecordBytes` and `retryFrom`. This package declares the port and depends on nothing that implements it, so the dependency direction runs from `@smthrs/flow` to `@smthrs/engine` to the durable stores.
 
 `recordNode(record: NodeRecord): Effect.Effect<void, never, FlowInstance>` is optional in the strong sense: a runtime that keeps no history leaves it absent and skips journal preflight. A recording runtime can refuse oversized node topology before the walk starts. An implementation must write the record under the record's own `sourceId` rather than minting an identity per observation, because that is what makes a resumed walk collapse onto the rows the first walk wrote instead of doubling every node.
+
+`retryFrom(flow, { source, step, executionId }): Effect.Effect<void, RetryFromRefused>` is optional too: a runtime that keeps no history has nothing to replay and leaves it absent, and `Flow.retryFrom` then refuses `unsupported`. A runtime that implements it admits `executionId` as a root run of `flow` with `source`'s stored payload, serves every attempt `source` finished before `step`'s first attempt record from `source`'s record, and returns once the run is admitted. A repeated call with the same `executionId`, `source` and `step` joins it.
+
+### `FlowRuntime.RetryFromRefused`
+
+- **Type:** `Schema.TaggedError` keyed `"@smthrs/flow/FlowRuntime/RetryFromRefused"` with fields `code: RetryFromRefusalCode`, `executionId: string` (the source) and `step: string`
+- **Since:** `1.0.0`
+
+A retry from a step that cannot start, refused before anything is written. `RetryFromRefusalCode` is `unsupported` (the runtime keeps no history, or the flow is placed on another engine), `not_found`, `other_flow`, `not_settled`, `step_not_found` or `step_not_run` (the node was skipped, interrupted before it settled, or dispatched nothing of its own).
 
 ### `FlowRuntime.NodeRecord`
 
 - **Type:** `PlanRecorded | SubgraphAppended | NodeScheduled | NodeSettled`
 - **Since:** `1.0.0`
 
-What a driven graph tells its runtime about itself, and the only thing this package says about where the records go. Every record carries its own replay-stable `sourceId`, which is its producer identity. `PlanRecorded` carries `flow`, `generation`, `page`, `pages`, the whole graph's `nodeCount`, and this page's `nodes` and `edges`. `SubgraphAppended` is one further page of the same graph and carries everything but `nodeCount`. `NodeScheduled` carries `nodeId`, `kind`, `attempt`, and the optional `action`; no step key digest rides there, because the engine allocates a dispatch's ordinal when the dispatch happens, which is after the record is written. `NodeSettled` carries `nodeId`, `outcome`, `attempts`, `stepKeyDigests`, the optional `action`, and the `value` the node settled with. `attempts` is the highest durable attempt any of the node's dispatches ran as, so a node whose action was retried says two; `stepKeyDigests` names the distinct dispatches it drove, which is what joins `flows.engine.attempt-started` back to a plan node; `value` is handed over whole and unbounded, and bounding and redacting it belongs to the writer that knows where it is going. A large graph is paged rather than truncated, because a journal entry has a byte bound and a projection that clipped one would lose nodes silently.
+What a driven graph tells its runtime about itself, and the only thing this package says about where the records go. Every record carries its own replay-stable `sourceId`, which is its producer identity. `PlanRecorded` carries `flow`, `generation`, `page`, `pages`, the whole graph's `nodeCount`, and this page's `nodes` and `edges`. `SubgraphAppended` is one further page of the same graph and carries everything but `nodeCount`. `NodeScheduled` carries `nodeId`, `kind`, `attempt`, and the optional `action`; no step key digest rides there, because the engine allocates a dispatch's ordinal when the dispatch happens, which is after the record is written. `NodeSettled` carries `nodeId`, `outcome`, `attempts`, `stepKeyDigests`, the optional `action`, the optional `childExecutionId` of the child a `.child()` boundary opened, and the `value` the node settled with. `attempts` is the highest durable attempt any of the node's dispatches ran as, so a node whose action was retried says two; `stepKeyDigests` names the distinct dispatches it drove, which is what joins `flows.engine.attempt-started` back to a plan node; `value` is handed over whole and unbounded, and bounding and redacting it belongs to the writer that knows where it is going. A large graph is paged rather than truncated, because a journal entry has a byte bound and a projection that clipped one would lose nodes silently.
 
 ### `FlowRuntime.NodeSummary`
 
@@ -2791,10 +2809,21 @@ The members and the value each one carries across the seam:
 | `scheduleClock`         | no       | None.                                                                                                                                      |
 | `nodeRecordBytes`       | yes      | None.                                                                                                                                      |
 | `recordNode`            | yes      | None.                                                                                                                                      |
+| `retryFrom`             | yes      | None.                                                                                                                                      |
 
 `executionId` on `execute` is caller-supplied identity. A repeated id joins the run that already owns it, which is what makes a retried submission idempotent. `round` on `execute` is required: `makeUnsafe` supplies round zero for a fresh execution and the advanced round after a handoff, with `previousExecutionId` naming the round it continues. `poll` answers `Option.none` for a known unsettled execution, and for an execution that belongs to a different flow declaration. Only an execution id no engine knows fails, with `FlowRuntime.FlowExecutionNotFound`. `interrupt`, `interruptUnsafe`, and `resume` treat an unknown execution id as a silent no-op.
 
 `recordNode` takes the records a driven graph makes about itself: the plan it was built from, and every node it scheduled and settled. It is optional because a store that keeps no history has nothing to record and skips journal preflight; a recording store can refuse oversized topology before the walk starts. A store that implements it MUST address the entry by the `sourceId` the record carries, never a minted one: a resumed walk re-derives the same ids, and that is what makes a journal keyed by `(run, source, sequence)` hold one row per node across a resume instead of one per observation.
+
+`retryFrom` admits a new execution that retries a settled one from one of its
+steps, and schedules it without awaiting it. It carries no flow-declared value:
+the new execution takes the payload the source was admitted with, as stored. A
+store that implements it seeds the new execution with the source's step
+attempts that finished before the step, so they replay, and refuses with
+`FlowRuntime.RetryFromRefused` before writing anything. It is optional because a
+store that keeps no history has nothing to replay; `makeUnsafe` then leaves the
+port's `retryFrom` absent, and refuses `unsupported` for a flow the `Hosts`
+table binds to another engine.
 
 `nodeRecordBytes` measures the complete encoded UTF-8 journal envelope before the
 interpreter pages the graph. It must reserve allocated sequence/time fields
@@ -15720,6 +15749,7 @@ permit deadlocks against a fiber doing the opposite.
 | `pendingCancellationTail` | `() => Effect<Option<PendingRunCursor>>`                                                                                                                         |
 | `staleRunningRuns`        | `(staleBeforeMs: number, limit?: number) => Effect<ReadonlyArray<StaleRunningRow>>`                                                                              |
 | `attemptSurvivors`        | `((runId: string, stepKeyDigest: string) => Effect<Option<AttemptSurvivors>>)` (optional)                                                                        |
+| `copyAttempts`            | `((options: { from: string; to: string; attempts: ReadonlyArray<AttemptRef> }) => Effect<number>)` (optional)                                                    |
 | `recordRunParent`         | `(childId: string, parentId: string) => Effect<RecordRunParentOutcome, RunParentCycleError>`                                                                     |
 | `removeRunParentsForRun`  | `(runId: string) => Effect<void>`                                                                                                                                |
 | `runParents`              | `(childId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                      |
@@ -15748,6 +15778,13 @@ the upgraded engine first serves them.
 `attemptSurvivors` is optional because
 only storage that can range-scan `flows_attempts` implements it; when absent the
 engine falls back to per-attempt point reads against `AttemptStore`.
+
+`copyAttempts` copies the named attempt rows (`AttemptRef`: a step key digest
+and an attempt number) of one run into another as recorded, in one statement,
+and answers how many it wrote; a ref with no row, or one the target already
+holds, writes nothing. A retry from a step seeds its new run with it. It is
+optional for the same reason, and an engine over storage without it refuses a
+retry from a step `unsupported`.
 
 Every list read (`dueClocks`, `pendingClocks`, `completedDeferreds`,
 `waitingRuns`, `runParents`, and `runChildren`) skips a row that will not decode
@@ -16933,6 +16970,8 @@ remain host-owned.
 | `driveYields`                                                           | counter                                                                                                                       |
 | `heldDrives`                                                            | counter                                                                                                                       |
 | `replaySeeds`                                                           | counter                                                                                                                       |
+| `retriesFrom`                                                           | counter keyed by `outcome`: `admitted`, `joined`, `carried`, or a refusal's code                                              |
+| `retrySeededAttempts`                                                   | counter of source attempts copied into retries from a step                                                                    |
 | `boundarySettlements`, `boundarySettlement`                             | counter and views keyed by `Clean`, `Deviation`, `Violation`, `Refused`                                                       |
 | `stepCacheDecisions`, `stepCacheDecision`                               | counter and views keyed by `VerifiedHit`, `Miss`, `UnverifiableEvidence`, `Unmeasurable`, `StaleReadSet`, `ReplayFailed`      |
 | `claims`, `claim`                                                       | counter and views keyed by `Activated`, `Terminal`, `HeartbeatFresh`, `StealRefusedOwnerAlive`, `ClaimLost`, `ActivationLost` |
@@ -16971,10 +17010,10 @@ colliding.
 
 The versioned state envelope stored in each run row.
 
-| Export         | Shape                                                                                                      |
-| -------------- | ---------------------------------------------------------------------------------------------------------- |
-| `RunState`     | `{ version: 1, flowName, payload, parentExecutionId?, onParentExit?, maxRounds?, result?, cancellation? }` |
-| `OnParentExit` | `"cancel"` or `"detach"`                                                                                   |
+| Export         | Shape                                                                                                                                  |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `RunState`     | `{ version: 1, flowName, payload, forkKeyRunIds?, retryFrom?, parentExecutionId?, onParentExit?, maxRounds?, result?, cancellation? }` |
+| `OnParentExit` | `"cancel"` or `"detach"`                                                                                                               |
 
 `ReleaseCause` is why a driver released a run it still owned, recorded as the
 optional `cause` of its `interrupt-released` run decision:

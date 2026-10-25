@@ -33,6 +33,7 @@ import type { ExecutionIdentityConflict } from "../FlowRuntime/ExecutionIdentity
 import type { FlowCycleDetected } from "../FlowRuntime/FlowCycleDetected.ts"
 import type { FlowExecutionNotFound } from "../FlowRuntime/FlowExecutionNotFound.ts"
 import type { FlowInstance, FlowRuntime } from "../FlowRuntime/index.ts"
+import type { RetryFromRefused } from "../FlowRuntime/RetryFromRefused.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import type { Outcome, To } from "./Outcome.ts"
 import type { Result } from "./Result.ts"
@@ -310,6 +311,31 @@ export interface Flow<
     payload: Payload["~type.make.in"],
     options: { readonly key: string }
   ) => ReturnType<Flow<Tag, Payload, Success, Error, Requires>["start"]>
+
+  /**
+   * Starts a new execution that retries the settled execution `source` from
+   * its node `step`, and returns the new execution's id without awaiting it.
+   *
+   * The new execution runs this flow with the payload `source` was admitted
+   * with. Every step attempt that finished before `step`'s first attempt, in
+   * `source`'s journal order, is served from `source`'s record without
+   * executing its body again; `step` and every step after it execute. `source`
+   * is not changed: this is a retry, not a history fork. `step` is a node id
+   * as the run's node records name it.
+   *
+   * The id is `executionId` when given, else a fresh UUID. Reusing an id with
+   * the same source and step joins the execution it admitted; reusing it for
+   * anything else fails with `ExecutionIdentityConflict`. A runtime that keeps
+   * no history refuses with `RetryFromRefused` code `unsupported`.
+   */
+  readonly retryFrom: (
+    source: string,
+    options: { readonly step: string; readonly executionId?: string | undefined }
+  ) => Effect.Effect<
+    string,
+    RetryFromRefused | ExecutionIdentityConflict,
+    FlowRuntime | Crypto.Crypto | Requires
+  >
 
   /**
    * Poll the current status of a flow execution.

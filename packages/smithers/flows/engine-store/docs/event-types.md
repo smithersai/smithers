@@ -12,3 +12,10 @@ writers and time-travel readers: `runDecision`, `attemptStarted`,
 and `clockScheduled`. `childSpawnKind` identifies the effect inside a child-spawn
 boundary. It is an effect kind, not a journal event type. Changing these values
 requires migrating stored history.
+
+A retry from a step (`FlowRuntime.retryFrom`) records one `runDecision` on its
+new run, right after `created`: `{ decision: "retry-from", source, step?,
+replayed, boundaries }`, with the run it retries, the node it runs from (absent
+on a carried child, which replays whole), how many of the source's attempts it
+copied to replay, and how many settled boundaries' children it may carry. Ids
+and counts only, never a value.

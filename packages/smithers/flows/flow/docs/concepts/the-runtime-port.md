@@ -36,6 +36,7 @@ without touching a declaration.
 | `deferredResult`, `deferredDone`, `deferredDoneIfWaiting` | Reads and writes durable deferred completions.                                                  |
 | `scheduleClock`                                           | Arms a durable timer.                                                                           |
 | `recordNode`                                              | Optional. Records the graph a run was driven from, and how each node settled.                   |
+| `retryFrom`                                               | Optional. Starts a new run that retries a settled one from one of its steps.                    |
 
 Every method takes a flow whatever its requirement channel says and demands none
 of it. The channel is a compile-time statement about which action implementations
@@ -84,6 +85,7 @@ reason and token rather than a derived default. A `WaitingAnnotation` is
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FlowCycleDetected`     | Executing a flow would close a cycle in the persisted parent-execution chain. `path` holds the ordered execution ids from the cycle's target back to itself.                                                   |
 | `FlowExecutionNotFound` | `poll` or `resume` names an execution id the runtime never recorded.                                                                                                                                           |
+| `RetryFromRefused`      | `retryFrom` cannot start: no history to replay, an unknown or unsettled source, another flow's run, or a step that never ran. Nothing is written.                                                              |
 | `CancelRequestFailed`   | A durable runtime could not record a cancellation. `cancel_request_failed` is a storage failure; `unsafe_interrupt_unsupported` is the durable engine refusing `interruptUnsafe`, which it does not implement. |
 
 `CancelRequestFailed` is the reason `interrupt` is not fire and forget: the

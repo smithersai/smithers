@@ -179,6 +179,13 @@ export interface NodeSettled {
   readonly attempts: number
   readonly action?: string | undefined
   readonly stepKeyDigests: ReadonlyArray<string>
+  /**
+   * The child execution a `.child()` boundary node opened, absent on every
+   * other node and on a boundary that never opened its child. It joins the
+   * node to the child's run, as `stepKeyDigests` joins an action node to its
+   * attempts.
+   */
+  readonly childExecutionId?: string | undefined
   readonly value?: unknown
 }
 

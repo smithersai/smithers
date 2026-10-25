@@ -549,7 +549,7 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     actionJj,
     engineJj,
     runStore,
-    forkOrigins: new WeakMap<Instance, ReadonlyArray<string>>(),
+    forkFacts: new WeakMap<Instance, ForkFacts>(),
     recordedPlans: new WeakMap<Instance, Map<string, Effect.Effect<RecordedPlan | undefined>>>(),
     /*
      * Plans a resume found recorded by an earlier build: the same plan, read
@@ -591,16 +591,68 @@ const sourceRevision = (store: Store): string | undefined => {
   return typeof answer === "string" && answer.length > 0 ? answer : undefined
 }
 
-/** The runs a forked run's action keys may have been recorded under, read once per instance. */
-const keyOrigins = Effect.fnUntraced(function*(store: Store, instance: Instance) {
-  const cached = store.forkOrigins.get(instance)
+/**
+ * What a forked or retried run's replay reads off its row: the runs its
+ * action keys may have been recorded under, and the run it retries from a
+ * step, if any.
+ */
+interface ForkFacts {
+  readonly origins: ReadonlyArray<string>
+  readonly retrySource: string | undefined
+}
+
+/** An instance's fork facts, read once per instance. */
+const forkFacts = Effect.fnUntraced(function*(store: Store, instance: Instance) {
+  const cached = store.forkFacts.get(instance)
   if (cached !== undefined) return cached
   const row = yield* store.runStore.get(instance.executionId).pipe(Effect.orDie)
   const state = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(RunState))(row.stateJson).pipe(Effect.orDie)
-  const origins = state.forkKeyRunIds ?? []
-  store.forkOrigins.set(instance, origins)
-  return origins
+  const facts = { origins: state.forkKeyRunIds ?? [], retrySource: state.retryFrom?.source }
+  store.forkFacts.set(instance, facts)
+  return facts
 })
+
+/** The runs a forked run's action keys may have been recorded under. */
+const keyOrigins = (store: Store, instance: Instance) =>
+  Effect.map(forkFacts(store, instance), (facts) => facts.origins)
+
+/**
+ * The plan record `runId` holds in the slot `slot` names, whichever source wrote it. A run records one plan per
+ * round, its first page in one slot, so its plan records fit one read.
+ */
+const sourcePlan = Effect.fnUntraced(function*(store: Store, runId: string, slot: string) {
+  const page = yield* store.journal.entries({
+    runId: runId as JournalEvent.RunId,
+    eventTypes: ["flows.engine.plan-recorded"],
+    limit: 256
+  }).pipe(Effect.orDie)
+  const recorded = page.entries.find((entry) => entry.sourceId.endsWith(`/${slot}`) && entry.sourceSeq === 0)
+  return recorded?.payload as Readonly<Record<string, unknown>> | undefined
+})
+
+/**
+ * A retry runs the plan its source ran, or nothing. Before a retry records
+ * its plan, the plan is compared with the one the source recorded in the same
+ * slot, by the identity a resume compares (`NodeJournal.samePlan`). A
+ * different plan, or a source that recorded none, fails the round with
+ * `plan_changed` before any step runs: a changed declaration derives other
+ * step keys, and executing them would run steps the retry promised to replay.
+ */
+const guardRetryPlan = (store: Store, instance: Instance, record: FlowRuntime.PlanRecorded, plan: unknown) =>
+  Effect.gen(function*() {
+    const { retrySource } = yield* forkFacts(store, instance)
+    if (retrySource === undefined) return
+    const recorded = yield* sourcePlan(store, retrySource, record.sourceId)
+    if (recorded !== undefined && NodeJournal.samePlan(recorded, plan as Readonly<Record<string, unknown>>)) return
+    return yield* Effect.fail(
+      new Interpreter.InterpreterError({
+        code: "plan_changed",
+        flow: record.flow,
+        node: "root",
+        message: "The plan differs from the plan the retried run recorded; retry the whole run instead"
+      })
+    )
+  })
 
 /** Every page of one plan shares the source id before its page index. */
 const planOf = (sourceId: string) => sourceId.slice(0, sourceId.lastIndexOf("/"))
@@ -929,19 +981,28 @@ const recordNode = (store: Store, input: FlowRuntime.NodeRecord) => {
     // the run's entries before the records a resumed walk re-emits arrive.
     return seedOf(store, parent).pipe(
       Effect.andThen(planProvenance(store, parent, record)),
+      Effect.tap((provenance) =>
+        record._tag === "PlanRecorded"
+          ? guardRetryPlan(store, parent, record, nodeEntry(store, parent, record, provenance).payload)
+          : Effect.void
+      ),
       Effect.flatMap((provenance) => emitNode(store, parent, record, provenance))
     )
   })
 }
 
-/** Writes one node record, remembering a plan it records and resolving a plan its slot refuses. */
-const emitNode = (store: Store, parent: Instance, record: FlowRuntime.NodeRecord, provenance: PlanProvenance) => {
-  const entry = NodeJournal.entry({
+/** The journal entry a node record is written as. */
+const nodeEntry = (store: Store, parent: Instance, record: FlowRuntime.NodeRecord, provenance: PlanProvenance) =>
+  NodeJournal.entry({
     runId: parent.executionId,
     sourceId: store.options.journalSource,
     ...provenance,
     root: store.declarationRoot
   }, record)
+
+/** Writes one node record, remembering a plan it records and resolving a plan its slot refuses. */
+const emitNode = (store: Store, parent: Instance, record: FlowRuntime.NodeRecord, provenance: PlanProvenance) => {
+  const entry = nodeEntry(store, parent, record, provenance)
   // Every node record is built as an object, so its payload is one.
   const payload = entry.payload as Readonly<Record<string, unknown>>
   // A node's scheduling and settlement commit with the run's next write
@@ -1122,6 +1183,7 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
       )
     ),
   execute: store.driver.execute,
+  retryFrom: store.driver.retryFrom,
   poll: store.driver.poll,
   interrupt: store.driver.interrupt,
   // The driver's refusal, forwarded rather than re-implemented: the

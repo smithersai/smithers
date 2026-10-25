@@ -241,3 +241,24 @@ export const placeInterrupt = (
     bindingOf(flow),
     (binding) => binding._tag === "Here" ? inner(flow, executionId) : interruptRemote(binding, flow, executionId)
   )
+
+/**
+ * `retryFrom` for a placed flow: `inner` when it runs here. A flow bound to
+ * another engine is refused `unsupported`: a retry seeds the engine that holds
+ * the source's history, and no remote operation carries that request.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const placeRetryFrom = (
+  inner: NonNullable<FlowRuntime.FlowRuntime["Service"]["retryFrom"]>
+): NonNullable<FlowRuntime.FlowRuntime["Service"]["retryFrom"]> =>
+(flow, options) =>
+  Effect.flatMap(
+    bindingOf(flow),
+    (binding) =>
+      binding._tag === "Here"
+        ? inner(flow, options)
+        : Effect.fail(
+          new FlowRuntime.RetryFromRefused({ code: "unsupported", executionId: options.source, step: options.step })
+        )
+  )

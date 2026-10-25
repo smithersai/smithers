@@ -18,7 +18,7 @@ export class ExecutionIdentityConflict extends Schema.TaggedError<ExecutionIdent
       Schema.withConstructorDefault(Effect.succeed("execution_identity_conflict"))
     ),
     executionId: Schema.String,
-    field: Schema.Literals(["flow", "payload", "capabilities", "lineage", "round", "parent"]),
+    field: Schema.Literals(["flow", "payload", "capabilities", "lineage", "round", "parent", "retry"]),
     expected: Schema.String,
     actual: Schema.String,
     status: Schema.Literals(["pending", "running", "suspended", "completed", "failed", "cancelled", "unknown"]).pipe(

@@ -1,9 +1,17 @@
 import { describe, expect, it } from "@effect/vitest"
-import type { Flow } from "@smthrs/flow"
-import { Effect } from "effect"
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import * as Placement from "@smthrs/plan/Placement"
+import { Effect, Schema } from "effect"
 import { readFileSync } from "node:fs"
-import type { FlowEngine } from "../src/index.ts"
+import { type FlowEngine, Hosts } from "../src/index.ts"
 import { scriptedEngine } from "./ScriptedEngine.ts"
+
+const Noop = Action.make("seam/noop", { payload: {}, success: Schema.Void })
+const Local = Flow.make("seam/local", { payload: {}, body: () => Noop.call({}) })
+const Remote = Flow.make("seam/remote", { payload: {}, body: () => Noop.call({}) }).annotate(
+  Flow.Placement,
+  Placement.remote({ target: "elsewhere" })
+)
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
 const source = read("../src/FlowEngine/Encoded.ts")
@@ -63,6 +71,28 @@ describe("FlowEngine.Encoded seam", () => {
       edges: []
     }) as Effect.Effect<number>)).toBe(4096)
   })
+
+  it.effect("forwards a store's retryFrom for a flow placed here, and leaves the port without one otherwise", () =>
+    Effect.gen(function*() {
+      // A store that keeps no history has nothing to replay: the port's
+      // `retryFrom` is absent, and `Flow.retryFrom` refuses `unsupported`.
+      expect("retryFrom" in scriptedEngine({})).toBe(false)
+      const asked: Array<unknown> = []
+      const engine = scriptedEngine({ retryFrom: (_flow, options) => Effect.sync(() => void asked.push(options)) })
+      yield* engine.retryFrom!(Local, { source: "run-1", step: "root.flow", executionId: "retry-1" })
+      expect(asked).toEqual([{ source: "run-1", step: "root.flow", executionId: "retry-1" }])
+      // A flow bound to another engine is refused: no remote operation
+      // carries a retry, and this store does not hold that run's history.
+      const refused = yield* Effect.flip(
+        engine.retryFrom!(Remote, { source: "run-1", step: "root.flow", executionId: "retry-2" }).pipe(
+          Effect.provide(Hosts.layer({ elsewhere: { _tag: "Proxy", connect: () => Effect.die("unused") } }))
+        )
+      )
+      expect(refused).toEqual(
+        new FlowRuntime.RetryFromRefused({ code: "unsupported", executionId: "run-1", step: "root.flow" })
+      )
+      expect(asked).toHaveLength(1)
+    }))
 
   it("forwards a store's node recorder, and leaves the port without one when the store has none", () => {
     // The typed port's `recordNode` is what the interpreter reads to decide

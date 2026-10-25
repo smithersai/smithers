@@ -181,6 +181,28 @@ results or executable engine state. Keep the authoritative attempt and run
 stores; a writer cutover requires complete lineage and encoded results in the
 same state transaction, with an explicit migration for retained history.
 
+## A retry from a step replays copied attempts
+
+`FlowRuntime.retryFrom` retries a settled run from one of its steps as a new
+root run, in one admission transaction: the new run's row, with the source's
+stored payload and the source first among its `forkKeyRunIds`; its opening
+frame; a copy of every source attempt whose `attempt-finished` precedes the
+step's first attempt record in the source's journal (`copyAttempts`); and a
+`retry-from` decision that counts them. The copied rows keep the source's step
+key digests, and `actionReplayKey` resolves a dispatch of the new run to them,
+as it resolves a fork's copied attempts, so they replay. Everything else runs
+with keys of the new run's own. Replay re-emits each copied attempt's
+`attempt-finished` into the new run's journal, which is what makes the new run
+answer a retry from one of the steps it replayed.
+
+A `.child()` boundary that settled before the step is named on the new run's
+`retryFrom`. When the new run opens that boundary under the same input, the
+engine derives the child id the source opened there and seeds the new child with
+all of that child's finished attempts, so it replays whole. Before the new run
+records its plan, the plan is compared with the plan the source recorded, and a
+different one fails the run with `plan_changed` before any step runs. See the
+guide "Retry a run from a step" in [`@smthrs/flow`](/api/flow).
+
 ## Related
 
 - [Ownership and fencing](./ownership-and-fencing.md): who is allowed to write

@@ -37,6 +37,7 @@ full API; the name in each table links to the best starting page.
 | Give an agent an MCP server's tools | `@smthrs/mcp` | `McpFlows.connected(...)`, then `.bindings()` |
 | Make a durable workflow | `@smthrs/flow` | `Flow.make("<tag>", {...})` and `Action.make` at `.smithers/flows/<name>/flow.ts` |
 | Retry, sleep durably, wait for a person or a webhook | `@smthrs/flow` | `RetryPolicy.make`, `DurableClock.sleep`, `HumanTask`, `WaitFor`, `Poll.make` |
+| Run a settled run again from one of its steps, replaying the steps before it | `@smthrs/flow`, on the durable engine | `flow.retryFrom(runId, { step })`; the browser, Node and Cloudflare engines implement it, no jj needed |
 | Narrow a capability ceiling a credential or message carries, hop by hop | `@smthrs/flow` | `Flow.intersectCeilings(caller, callee)`, and `Flow.ceilingWithin(callee, caller)` to refuse a wider callee |
 | Run a review loop, bounded fan-out, saga or escalation | `@smthrs/patterns` | `ReviewLoop.run`, `Bounded.all`, `Saga.run` |
 | Run flows in a Node or Bun program | `@smthrs/platform-node`, `@smthrs/platform-bun` | `NodeRuntime.layerHost` from `@smthrs/platform-node` or `BunRuntime.layerHost` from `@smthrs/platform-bun`; tests use `TestNodeRuntime.durableEngine` or `FlowEngine.layerMemory` from `@smthrs/engine` |

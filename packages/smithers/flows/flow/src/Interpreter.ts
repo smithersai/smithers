@@ -1087,22 +1087,27 @@ const file = (
 
 /** The record a node settles with. @private */
 const settledRecord = (
+  walk: Walk,
   id: string,
   action: string | undefined,
   dispatches: Dispatches,
   outcome: NodeRecord.NodeOutcome,
   value: unknown
 ) =>
-(): NodeRecord.NodeRecord => ({
-  _tag: "NodeSettled",
-  sourceId: `node/${id}/1/settled`,
-  nodeId: id,
-  outcome,
-  attempts: dispatches.attempts,
-  stepKeyDigests: [...dispatches.digests],
-  value,
-  ...(action === undefined ? {} : { action })
-})
+(): NodeRecord.NodeRecord => {
+  const childExecutionId = walk.childExecutions.get(id)
+  return {
+    _tag: "NodeSettled",
+    sourceId: `node/${id}/1/settled`,
+    nodeId: id,
+    outcome,
+    attempts: dispatches.attempts,
+    stepKeyDigests: [...dispatches.digests],
+    value,
+    ...(action === undefined ? {} : { action }),
+    ...(childExecutionId === undefined ? {} : { childExecutionId })
+  }
+}
 
 /**
  * Runs one node's computation, recording it scheduled and then settled, and
@@ -1130,10 +1135,10 @@ const execute = (walk: Walk, node: Graph.GraphNode, deferred: Deferred.Deferred<
   })).pipe(
     Effect.andThen(compute(walk, node).pipe(Effect.provideService(DispatchReport, report))),
     Effect.tap((value) =>
-      file(walk, walk.settled, id, value, settledRecord(id, action, dispatches, rebuilt(dispatches), value))
+      file(walk, walk.settled, id, value, settledRecord(walk, id, action, dispatches, rebuilt(dispatches), value))
     ),
     Effect.tapError((error) =>
-      file(walk, walk.failed, id, error, settledRecord(id, action, dispatches, "failed", error))
+      file(walk, walk.failed, id, error, settledRecord(walk, id, action, dispatches, "failed", error))
     ),
     Effect.onExit((exit) => {
       if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) walk.inFlight.delete(id)

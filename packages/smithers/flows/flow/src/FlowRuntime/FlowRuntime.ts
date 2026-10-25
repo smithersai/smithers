@@ -40,6 +40,7 @@ import type { FlowCycleDetected } from "./FlowCycleDetected.ts"
 import type { FlowExecutionNotFound } from "./FlowExecutionNotFound.ts"
 import type { FlowInstance } from "./FlowInstance.ts"
 import type * as NodeRecord from "./NodeRecord.ts"
+import type { RetryFromRefused } from "./RetryFromRefused.ts"
 
 /**
  * Result of atomically completing a deferred only while its run is parked.
@@ -215,6 +216,35 @@ export class FlowRuntime extends Context.Service<
       executionId: string,
       options?: ResumeOptions | undefined
     ) => Effect.Effect<void>
+
+    /**
+     * Starts a new execution of `flow`, `executionId`, that retries the
+     * settled execution `source` from its node `step`, and returns once the
+     * new execution is admitted, without awaiting it.
+     *
+     * The new execution runs the same flow with the payload `source` was
+     * admitted with. Every step attempt that finished before `step`'s first
+     * attempt, in `source`'s own journal order, is served from `source`'s
+     * record and its body is not executed again; `step` and everything after
+     * it execute. `source` is not changed. The new execution is a root run of
+     * its own, never a child of the caller.
+     *
+     * OPTIONAL: a runtime that keeps no history has nothing to replay and
+     * leaves it absent, and `Flow.retryFrom` then refuses with
+     * `RetryFromRefused` code `unsupported`. A repeated call with the same
+     * `executionId`, `source` and `step` joins the execution the first one
+     * admitted.
+     */
+    readonly retryFrom?:
+      | ((
+        flow: Flow.Any,
+        options: {
+          readonly source: string
+          readonly step: string
+          readonly executionId: string
+        }
+      ) => Effect.Effect<void, RetryFromRefused>)
+      | undefined
 
     /**
      * Execute an action from a flow.

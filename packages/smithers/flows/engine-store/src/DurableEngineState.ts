@@ -634,6 +634,23 @@ export interface Service {
     limit?: number | undefined
   ) => Effect.Effect<ReadonlyArray<StaleRunningRow>>
   /**
+   * Copies the step attempts `attempts` of execution `from` into execution
+   * `to` as recorded, and answers how many rows it wrote. A retry from a step
+   * seeds its new execution with them, so their recorded outcomes replay
+   * instead of their bodies running again. A ref with no row in `from`, or
+   * one `to` already holds, writes nothing.
+   *
+   * Optional because only storage that holds `flows_attempts` implements it;
+   * an engine over storage without it refuses a retry from a step.
+   */
+  readonly copyAttempts?:
+    | ((options: {
+      readonly from: string
+      readonly to: string
+      readonly attempts: ReadonlyArray<AttemptRef>
+    }) => Effect.Effect<number>)
+    | undefined
+  /**
    * The surviving attempt rows for an action key, in one range read: the
    * earliest surviving row's start time (the durable retry origin when
    * attempt 1 itself was pruned, issue #69) and the highest attempt number
@@ -753,6 +770,18 @@ export interface Service {
    * @since 1.0.0
    */
   readonly readTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+}
+
+/**
+ * One step attempt of a run: its step key digest and attempt number, the key
+ * of a `flows_attempts` row within the run.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface AttemptRef {
+  readonly stepKeyDigest: string
+  readonly attempt: number
 }
 
 /**
@@ -1870,6 +1899,38 @@ const attemptSurvivors = (db: Database): NonNullable<Service["attemptSurvivors"]
     )
   )
 
+/**
+ * One statement copies every ref: the refs travel as one JSON parameter that
+ * each dialect expands into rows, so no statement grows a parameter per ref.
+ */
+const copyAttempts = (db: Database): NonNullable<Service["copyAttempts"]> =>
+  Effect.fn(
+    "DurableEngineState.copyAttempts"
+  )(({ attempts, from, to }) => {
+    if (attempts.length === 0) return Effect.succeed(0)
+    const refs = JSON.stringify(attempts.map(({ attempt, stepKeyDigest }) => [stepKeyDigest, attempt]))
+    const selected = Dialect.isPostgres(db.sql)
+      ? db.sql`SELECT value ->> 0, (value ->> 1)::integer FROM jsonb_array_elements(${refs}::jsonb)`
+      : db.sql`SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(${refs})`
+    return writeRun(
+      db,
+      to,
+      db.sql<{ readonly attempt: number }>`
+        INSERT INTO flows_attempts (
+          run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
+          heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
+        )
+        SELECT
+          ${to}, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
+          heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
+        FROM flows_attempts
+        WHERE run_id = ${from} AND (step_key_digest, attempt) IN (${selected})
+        ON CONFLICT (run_id, step_key_digest, attempt) DO NOTHING
+        RETURNING attempt
+      `
+    ).pipe(Effect.orDie, Effect.map((rows) => rows.length))
+  })
+
 const selectRunParent = (db: Database, childId: string, parentId: string) =>
   db.sql<RunParentDatabaseRow>`
       SELECT
@@ -2124,6 +2185,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     pendingCancellationTail: pendingCancellationTail(db),
     staleRunningRuns: staleRunningRuns(db),
     attemptSurvivors: attemptSurvivors(db),
+    copyAttempts: copyAttempts(db),
     recordRunParent: recordRunParent(db),
     removeRunParentsForRun: removeRunParentsForRun(db),
     runParents: runParents(db),

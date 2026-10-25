@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { ExecutionIdentityConflict } from "../FlowRuntime/ExecutionIdentityConflict.ts"
 import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
+import { RetryFromRefused } from "../FlowRuntime/RetryFromRefused.ts"
 import * as DeclarationSite from "../internal/DeclarationSite.ts"
 import * as SpanFailure from "../internal/SpanFailure.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
@@ -56,6 +57,20 @@ const resolveExecutionId = (
   executionId === undefined
     ? makeExecutionIdFromPayload(self, payload)
     : Effect.succeed(executionId)
+
+/**
+ * An engine refuses an id another run holds with an `ExecutionIdentityConflict`
+ * defect; the caller chose the id, so it reaches the caller as a typed failure.
+ */
+const identityConflictAsFailure = <A, E, R>(
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E | ExecutionIdentityConflict, R> =>
+  effect.pipe(Effect.catchCause((cause): Effect.Effect<never, E | ExecutionIdentityConflict> => {
+    const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
+    return reason?.defect instanceof ExecutionIdentityConflict
+      ? Effect.fail(reason.defect)
+      : Effect.failCause(cause)
+  }))
 
 const Proto = {
   [TypeId]: TypeId,
@@ -139,16 +154,11 @@ const Proto = {
             Effect.flatMap(FlowRuntime, (engine) =>
               Effect.andThen(
                 Effect.annotateCurrentSpan({ executionId }),
-                engine.execute(this as any, {
+                identityConflictAsFailure(engine.execute(this as any, {
                   executionId,
                   payload,
                   discard: opts?.discard,
                   suspendedRetryPolicy: this.suspendedRetryPolicy
-                }).pipe(Effect.catchCause((cause) => {
-                  const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
-                  return reason?.defect instanceof ExecutionIdentityConflict
-                    ? Effect.fail(reason.defect)
-                    : Effect.failCause(cause)
                 }))
               ))
         )
@@ -174,6 +184,23 @@ const Proto = {
       Effect.flatMap((key) => Effect.orDie(Schema.decodeUnknownEffect(Sha256)(JSON.stringify([this._tag, key])))),
       Effect.flatMap((executionId) => this.execute(payload, { executionId, discard: true }))
     )
+  },
+  retryFrom(
+    this: AnyWithProps,
+    source: string,
+    options: { readonly step: string; readonly executionId?: string | undefined }
+  ) {
+    const self = this
+    return Effect.gen(function*() {
+      const engine = yield* FlowRuntime
+      if (engine.retryFrom === undefined) {
+        return yield* new RetryFromRefused({ code: "unsupported", executionId: source, step: options.step })
+      }
+      const executionId = options.executionId ?? (yield* Effect.orDie((yield* Crypto.Crypto).randomUUIDv4()))
+      yield* Effect.annotateCurrentSpan({ executionId, source })
+      yield* identityConflictAsFailure(engine.retryFrom(self, { source, step: options.step, executionId }))
+      return executionId
+    }).pipe(SpanFailure.withSpan(`${this._tag}.retryFrom`, { captureStackTrace: false }))
   },
   poll(this: Flow<string, AnyStructSchema, Schema.Top, Schema.Top, any>, executionId: string) {
     return Effect.flatMap(FlowRuntime, (engine) => engine.poll(this, executionId)).pipe(
