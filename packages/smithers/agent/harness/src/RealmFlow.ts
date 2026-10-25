@@ -1,6 +1,6 @@
 /**
- * Fresh, bounded execution of pinned repository Flow.make modules. Action
- * requests cross the realm as data; the caller journals their outcomes.
+ * Fresh, bounded execution of pinned Flow.make modules. Action requests, agent
+ * steps included, cross the realm as data; the caller journals their outcomes.
  * @since 1.0.0-rc.16
  */
 
@@ -58,20 +58,56 @@ export interface Input {
  */
 export type Result = Request | { readonly _tag: "Complete"; readonly value: unknown }
 /**
+ * The host action every agent step is requested as. A host lists it in
+ * `allowedActions` to offer agent steps; the request's payload is
+ * {@link AgentPayload}, and its receipt's success value is the agent's answer,
+ * which the step's declared `output` schema decodes.
+ *
+ * @category constants
+ * @since 1.0.0-rc.17
+ */
+export const agentAction = "@smthrs/agent/AgentAction"
+
+/**
+ * What an agent step asks the host: the step's tag, its declared seat, and the
+ * prompt its own `prompt` function rendered inside the realm from the step's
+ * decoded payload. The host owns everything else: the model, system teaching,
+ * catalog and limits.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export const AgentPayload = Schema.Struct({ step: Schema.String, seat: Schema.String, prompt: Schema.String })
+
+/**
  * Sanitized refusal; repository source and values never enter diagnostics.
+ * `forbidden_import` is a module the realm doesn't provide; `action_not_allowed`
+ * is an action, or an agent step, the host didn't list in `allowedActions`. The
+ * realm refuses with either even when the module catches what it threw.
  *
  * @category models
  * @since 1.0.0-rc.16
  */
 export class RealmFlowError extends Schema.TaggedError<RealmFlowError>()("RealmFlowError", {
-  code: Schema.Literals(["invalid_source", "execution_failed", "limit_exceeded", "runtime_failed"])
+  code: Schema.Literals([
+    "invalid_source",
+    "execution_failed",
+    "limit_exceeded",
+    "runtime_failed",
+    "forbidden_import",
+    "action_not_allowed"
+  ])
 }) {}
+
+/** The closed codes the realm's trusted code records with `__refuse`. */
+type Refusal = "forbidden_import" | "action_not_allowed"
 
 const prelude = `
 class TextEncoder { encode(text) { return Uint8Array.from(unescape(encodeURIComponent(text)), c => c.charCodeAt(0)); } }
 class TextDecoder { decode(bytes = []) { return decodeURIComponent(escape(Array.from(bytes, n => String.fromCharCode(n)).join(""))); } }
-let __modules, __run;
+let __modules, __run, __refusal;
 function __publish(modules, run) { __modules = modules; __run = run; }
+function __refuse(code) { if (__refusal === undefined) __refusal = code; }
 `
 const harden = `
 ${QuickJSLifecycle.prelude(["WeakRef", "FinalizationRegistry", "setTimeout", "setInterval"])}
@@ -100,7 +136,7 @@ for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors
     Object.defineProperty(globalThis, name, { ...descriptor, writable: false, configurable: false });
   }
 }
-function require(name) { if (!Object.prototype.hasOwnProperty.call(__modules, name)) throw Error('forbidden_import'); return __modules[name]; }
+function require(name) { if (!Object.prototype.hasOwnProperty.call(__modules, name)) { __refuse('forbidden_import'); throw Error('forbidden_import'); } return __modules[name]; }
 `
 
 /**
@@ -168,14 +204,20 @@ export const step = (input: Input): Effect.Effect<Result, RealmFlowError, QuickJ
             return result
           }
           const lastResult = evaluate(
-            `(function() { ${prelude}\n${bundle}\n${harden}\nconst exports = {}; (0, eval)(${
+            `(function() { ${prelude}\n${bundle}\n${harden}\nlet result;
+try { const exports = {}; (0, eval)(${
               JSON.stringify("(function(exports, require) {" + compiled + "\n})")
             })(exports, require);
-const result = __run(exports.default, ${JSON.stringify({ ...input, receipts: input.receipts ?? [] })});
+result = __run(exports.default, ${JSON.stringify({ ...input, receipts: input.receipts ?? [] })}); }
+catch (error) { if (__refusal === undefined) throw error; }
+if (__refusal !== undefined) return JSON.stringify({ _tag: 'Refused', code: __refusal });
 const output = JSON.stringify(result); if (new TextEncoder().encode(output).byteLength > 262144) throw Error('output_limit'); return output; })()`
           )
           // Evaluate once: getString above crosses only the bounded JSON output.
-          return JSON.parse(lastResult) as Result
+          // Only the realm's trusted code records a refusal, and only with its closed codes.
+          const parsed = JSON.parse(lastResult) as Result | { readonly _tag: "Refused"; readonly code: Refusal }
+          if (parsed._tag === "Refused") throw new RealmFlowError({ code: parsed.code })
+          return parsed
         } finally {
           context.dispose()
           runtime.dispose()
