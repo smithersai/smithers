@@ -29,7 +29,63 @@ export const recordOf = (message: unknown): LogRecord | undefined => {
   return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as LogRecord : undefined
 }
 
+/** A capture retains a gap permanently, including after Cloudflare resumes streaming. No request metadata is kept. */
+type TailEvent = {
+  event?: { type?: string; request?: { url?: string; headers?: Record<string, string> } }
+  eventTimestamp?: number
+  outcome?: string
+  logs?: Array<{ message?: Array<unknown> }>
+}
+
+export class TailCapture {
+  readonly receipts: Array<{ signal: string; bytes: number; outcome: string; target: number; at?: number }> = []
+  private readonly received: Array<Line> = []
+  private lost: string | undefined
+
+  get failure() { return this.lost }
+
+  get lines(): Array<Line> {
+    if (this.lost !== undefined) throw new Error(this.lost)
+    return this.received
+  }
+
+  fail(reason: "sampling" | "disconnected" | "failed" | "malformed") {
+    this.lost ??= reason === "sampling"
+      ? "Cloudflare log tail entered sampling mode; capture is incomplete"
+      : `Cloudflare log tail ${reason}; capture is incomplete`
+  }
+
+  add(event: TailEvent) {
+    if (event.event?.type === "overload") this.fail("sampling")
+    const signal = event.event?.request?.url?.match(/\/api\/telemetry\/v1\/(logs|metrics|traces)(?:\?|$)/)?.[1]
+    const before = this.received.length
+    for (const log of event.logs ?? []) for (const message of log.message ?? []) {
+      const record = recordOf(message)
+      this.received.push({ worker: "ChatApi", file: "tail", text: typeof message === "string" ? message : JSON.stringify(message),
+        ...(record === undefined ? {} : { record }) })
+    }
+    if (signal !== undefined) {
+      const size = Number(event.event?.request?.headers?.["content-length"])
+      this.receipts.push({ signal, bytes: Number.isFinite(size) ? size : 0,
+        outcome: ["ok", "canceled", "exception"].includes(event.outcome ?? "") ? event.outcome! : "other",
+        target: this.received.slice(before).filter(({ record }) =>
+          record?.annotations?.flow === "app/theme/set" || record?.annotations?.["smithers.flow"] === "app/theme/set"
+        ).length,
+        ...(typeof event.eventTimestamp === "number" ? { at: event.eventTimestamp } : {}),
+      })
+    }
+  }
+}
+
+/** Standard WebSocket frame representations; decoding keeps the message's complete byte range. */
+export const frameText = async (data: unknown): Promise<string> => {
+  if (typeof data === "string") return data
+  if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) return new TextDecoder().decode(data)
+  return (data as Blob).text()
+}
+
 /** The ChatApi script a deployment's tail opens on: `E2E_CHATAPI_SCRIPT`, else the one named for `E2E_STAGE` (prod). */
+const CAPTURE_HEADER = "x-smithers-e2e-capture"
 const SCRIPT_PREFIX = (stage: string) => `smithers-mvp-chatapi-${stage}-`
 
 /**
@@ -39,22 +95,35 @@ const SCRIPT_PREFIX = (stage: string) => `smithers-mvp-chatapi-${stage}-`
  */
 export class CloudflareTail {
   private static opened: Promise<CloudflareTail> | undefined
-  readonly lines: Array<Line> = []
+  private static current: CloudflareTail | undefined
+  private closed = false
+  private readonly capture = new TailCapture()
+  readonly readinessTraceId = crypto.randomUUID().replaceAll("-", "")
+  get lines(): Array<Line> { return this.capture.lines }
+  get receipts() { return this.capture.receipts }
+  get captureHeaders(): Record<string, string> { return this.captureId === undefined ? {} : { [CAPTURE_HEADER]: this.captureId } }
 
   private constructor(
     private readonly api: string,
-    private readonly headers: Record<string, string>,
+    private readonly apiHeaders: Record<string, string>,
     private readonly id: string,
     private readonly socket: WebSocket,
+    private readonly postOnly: boolean,
+    private readonly captureId?: string,
   ) {}
 
   /** The process's tail, opened now if it isn't. */
-  static shared(env: NodeJS.ProcessEnv = process.env): Promise<CloudflareTail> {
-    CloudflareTail.opened ??= CloudflareTail.open(env)
+  static async shared(env: NodeJS.ProcessEnv = process.env, postOnly = false, captureId?: string): Promise<CloudflareTail> {
+    const current = CloudflareTail.current
+    if (current !== undefined && (current.capture.failure !== undefined || current.postOnly !== postOnly || current.captureId !== captureId)) await current.close()
+    CloudflareTail.opened ??= CloudflareTail.open(env, postOnly, captureId).catch((cause: unknown) => {
+      CloudflareTail.opened = undefined
+      throw cause
+    })
     return CloudflareTail.opened
   }
 
-  private static async open(env: NodeJS.ProcessEnv): Promise<CloudflareTail> {
+  private static async open(env: NodeJS.ProcessEnv, postOnly: boolean, captureId?: string): Promise<CloudflareTail> {
     const token = env.CLOUDFLARE_API_TOKEN ?? ""
     const account = env.CLOUDFLARE_ACCOUNT_ID ?? ""
     if (token === "" || account === "") throw new Error("A deployment's logs need CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID")
@@ -62,7 +131,12 @@ export class CloudflareTail {
     const scripts = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts`
     const script = env.E2E_CHATAPI_SCRIPT ?? await CloudflareTail.script(scripts, headers, env.E2E_STAGE ?? "prod")
     const api = `${scripts}/${script}/tails`
-    const created = await (await fetch(api, { method: "POST", headers, body: "{}" })).json() as {
+    // Filters are a create-tail HTTP parameter. The WebSocket accepts the debug control message, not filters.
+    const filters = [
+      ...(postOnly ? [{ method: ["POST"] }] : []),
+      ...(captureId === undefined ? [] : [{ header: { key: CAPTURE_HEADER, query: captureId } }]),
+    ]
+    const created = await (await fetch(api, { method: "POST", headers, body: JSON.stringify({ filters }) })).json() as {
       success: boolean
       errors?: Array<{ code: number }>
       result?: { id: string; url: string }
@@ -71,32 +145,55 @@ export class CloudflareTail {
       throw new Error(`Cloudflare refused a tail on ${script}: ${JSON.stringify(created.errors?.map((error) => error.code))}`)
     }
     const socket = new WebSocket(created.result.url, "trace-v1")
-    const tail = new CloudflareTail(api, headers, created.result.id, socket)
-    socket.addEventListener("message", (event) => void tail.receive(event.data))
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true })
-      socket.addEventListener("error", () => reject(new Error(`The tail on ${script} didn't connect`)), { once: true })
+    socket.binaryType = "arraybuffer"
+    const tail = new CloudflareTail(api, headers, created.result.id, socket, postOnly, captureId)
+    CloudflareTail.current = tail
+    socket.addEventListener("message", (event) => {
+      void tail.receive(event.data).catch(() => tail.capture.fail("malformed"))
     })
-    socket.send(JSON.stringify({ filters: [], debug: false }))
-    process.once("beforeExit", () => void tail.close())
-    await tail.streaming(new URL("/api/repos/app/x/about", baseURL))
-    return tail
+    socket.addEventListener("close", () => { tail.capture.fail("disconnected") })
+    socket.addEventListener("error", () => { tail.capture.fail("failed") })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.addEventListener("open", () => resolve(), { once: true })
+        socket.addEventListener("error", () => reject(new Error(`The tail on ${script} didn't connect`)), { once: true })
+      })
+      socket.send(JSON.stringify({ debug: false }))
+      process.once("beforeExit", () => void tail.close())
+      await tail.streaming(new URL("/api/questions", env.E2E_PROD_URL ?? baseURL))
+      return tail
+    } catch (cause) {
+      await tail.close()
+      throw cause
+    }
   }
 
   /**
-   * Waits until the tail streams: a new tail starts sending a moment after it connects, and a record written before
-   * then is lost. Reads `probe` (a refused read that writes nothing and logs its `repo.about` line) every 2 seconds
-   * until a line arrives, for at most 30 seconds.
+   * A fresh, content-free refused ask proves this connection sees this request's trace. Unrelated traffic cannot
+   * release the barrier, and no receipt is a capture failure rather than an empty production log. No question is stored.
    */
   private async streaming(probe: URL) {
-    for (let tries = 0; tries < 15 && this.lines.length === 0; tries++) {
-      // The next line, or two seconds without one.
+    const traceId = this.readinessTraceId
+    const spanId = crypto.randomUUID().replaceAll("-", "").slice(0, 16)
+    const observed = () => this.lines.some(({ record }) => record?.message === "chat.question" && traceIdOf(record) === traceId)
+    for (let tries = 0; tries < 15 && !observed(); tries++) {
       const arrived = new Promise<void>((resolve) => {
-        this.arrivals.push(resolve)
+        this.arrivals.push(() => {
+          if (this.capture.failure !== undefined || observed()) resolve()
+        })
         AbortSignal.timeout(2_000).addEventListener("abort", () => resolve(), { once: true })
       })
-      await fetch(probe).then((response) => response.body?.cancel(), () => undefined)
+      await fetch(probe, {
+        method: "POST",
+        headers: { ...this.captureHeaders, traceparent: `00-${traceId}-${spanId}-01`, "content-type": "application/json" },
+        body: "{}",
+        signal: AbortSignal.timeout(2_000),
+      }).then((response) => response.body?.cancel(), () => undefined)
       await arrived
+    }
+    if (!observed()) {
+      await this.close()
+      throw new Error("Cloudflare log tail did not receive its readiness trace; capture is incomplete")
     }
   }
 
@@ -113,29 +210,29 @@ export class CloudflareTail {
 
   /** One tail event: each of its log lines, its JSON parsed when it is JSON. */
   private async receive(data: unknown) {
-    const text = typeof data === "string" ? data : Buffer.from(await (data as Blob).arrayBuffer()).toString("utf8")
-    let event: { logs?: Array<{ message?: Array<unknown> }> }
+    const text = await frameText(data)
+    let event: TailEvent
     try {
       event = JSON.parse(text)
     } catch {
+      this.capture.fail("malformed")
+      for (const resolve of this.arrivals.splice(0)) resolve()
       return
     }
-    for (const log of event.logs ?? []) {
-      for (const message of log.message ?? []) {
-        const record = recordOf(message)
-        const text = typeof message === "string" ? message : JSON.stringify(message)
-        this.lines.push({ worker: "ChatApi", file: "tail", text, ...(record === undefined ? {} : { record }) })
-        for (const resolve of this.arrivals.splice(0)) resolve()
-      }
-    }
+    this.capture.add(event)
+    for (const resolve of this.arrivals.splice(0)) resolve()
   }
 
   /** Deletes the tail; the process's next `shared` opens another. */
   async close() {
-    if (CloudflareTail.opened === undefined) return
-    CloudflareTail.opened = undefined
+    if (this.closed) return
+    this.closed = true
+    if (CloudflareTail.current === this) {
+      CloudflareTail.opened = undefined
+      CloudflareTail.current = undefined
+    }
     this.socket.close()
-    await fetch(`${this.api}/${this.id}`, { method: "DELETE", headers: this.headers }).catch(() => undefined)
+    await fetch(`${this.api}/${this.id}`, { method: "DELETE", headers: this.apiHeaders }).catch(() => undefined)
   }
 }
 
@@ -160,10 +257,10 @@ export class LogTail {
     return files
   }
 
-  static async start() {
+  static async start(options: { readonly postOnly?: boolean; readonly isolated?: boolean } = {}) {
     guard("localLogs")
     if (target === "deployment") {
-      const source = await CloudflareTail.shared()
+      const source = await CloudflareTail.shared(process.env, options.postOnly, options.isolated ? crypto.randomUUID() : undefined)
       return new LogTail(new Map(), { source, from: source.lines.length })
     }
     const offsets = new Map<string, number>()
@@ -171,6 +268,9 @@ export class LogTail {
     expect([...offsets.keys()].some((path) => path.includes("/ChatApi/")), `alchemy dev writes ChatApi's log under ${LOG_ROOT}`).toBe(true)
     return new LogTail(offsets)
   }
+
+  get receipts() { return this.tail?.source.receipts ?? [] }
+  get captureHeaders(): Record<string, string> { return this.tail?.source.captureHeaders ?? {} }
 
   async lines(): Promise<Array<Line>> {
     if (this.tail !== undefined) return this.tail.source.lines.slice(this.tail.from)

@@ -339,6 +339,10 @@ export const KNOWN_BROKEN: Readonly<Record<string, Broken>> = {
     in: ["deployment"],
     reason: "production's Code Storage mirror of smithersai/vibelang lags GitHub, so the pinned grammar commit 3ad97368 answers 404 until mirrors follow GitHub's new commits",
   },
+  telemetryTail: {
+    in: ["deployment"],
+    reason: "the live tail omits browser collector invocations despite fully consumed successful acknowledgments; stored-log comparison is pending",
+  },
 }
 
 export type BrokenName = string

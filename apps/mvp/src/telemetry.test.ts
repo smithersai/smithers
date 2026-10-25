@@ -102,6 +102,20 @@ describe("the relay keeps everything the browser exports", () => {
         expect.objectContaining({ fields: expect.objectContaining({ "smithers.execution.id": expect.any(String), [at]: expect.any(Number) }) }),
       )
     }
+    for (const name of ["flow.run.started", "flow.run.settled"]) {
+      expect(kept(fromEngine.kept, name)).toContainEqual(expect.objectContaining({
+        fields: expect.objectContaining({ flow: "app/theme/set", door: "button", actor: "person", placement: "browser",
+          ...(name === "flow.run.settled" ? { outcome: "succeeded", code: "none", durationMs: expect.any(Number) } : {}),
+        }),
+      }))
+    }
+    for (const name of ["flows_runs_started", "flows_runs_settled"]) {
+      expect(kept(fromEngine.kept, name).some(({ fields }) =>
+        fields.flow === "app/theme/set" && fields.door === "button" && fields.actor === "person" &&
+        fields.placement === "browser" && Number(fields["otlp.value"]) > 0 &&
+        (name === "flows_runs_started" || fields.outcome === "succeeded")
+      ), name).toBe(true)
+    }
     expect(kept(fromEngine.kept, "agent_model_step_calls")).toContainEqual(
       expect.objectContaining({
         fields: expect.objectContaining({ step: "harness/sealStep", outcome: "sealed", "otlp.value": expect.any(Number) }),

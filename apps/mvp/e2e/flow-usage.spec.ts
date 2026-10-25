@@ -23,36 +23,80 @@ const usage = (records: Array<LogRecord>, message: string, flow: string) =>
 test("flow usage: a button's run is counted by flow, door, actor and placement, and the Runs page sums it", {
   annotation: { type: "summary", description: "Each run records how it started and ended; Runs shows runs, success and p95 per flow." },
 }, async ({ devices }) => {
-  const logs = partly("localLogs") ? await LogTail.start() : undefined
-  const [a] = await devices.open("A")
-  const page = a.page
-  await expect(page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible({ timeout: 30_000 })
-
-  await test.step("Switch to dark mode", async () => {
-    await page.getByRole("button", { name: "Switch to dark mode" }).click()
-    await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible({ timeout: 30_000 })
-  })
-
-  if (logs !== undefined) {
-    await test.step("The engine recorded the run's start and end", async () => {
-      await expect
-        .poll(async () => usage((await logs.records()).browser, "flow.run.settled", "app/theme/set"), { timeout: 30_000 })
-        .toContainEqual({ door: "button", actor: "person", placement: "browser", outcome: "succeeded", code: "none", timed: true })
-      expect(usage((await logs.records()).browser, "flow.run.started", "app/theme/set")).toContainEqual(
-        { door: "button", actor: "person", placement: "browser", outcome: undefined, code: undefined, timed: false },
-      )
+  const logs = partly("localLogs") ? await LogTail.start({ postOnly: true, isolated: true }) : undefined
+  try {
+    devices.withRequestHeaders(logs?.captureHeaders ?? {})
+    const [a] = await devices.open("A")
+    const page = a.page
+    const exports = new Map<number, number>()
+    type Exported = { signal: string; bytes: number; target: number; service: string; at: number; captured: boolean; status?: number }
+    const sent: Array<Exported> = []
+    const requests = new WeakMap<object, Exported>()
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname
+      if (!path.startsWith("/api/telemetry/")) return
+      const body = request.postData() ?? ""
+      // Count the closed, predefined flow tag only. Never retain or attach an OTLP body or arbitrary attributes.
+      const exported = { captured: Object.entries(logs?.captureHeaders ?? {}).every(([key, value]) => request.headers()[key] === value),
+        signal: path.split("/").at(-1)!, bytes: new TextEncoder().encode(body).byteLength, at: Date.now(),
+        target: body.split('"app/theme/set"').length - 1,
+        service: body.includes('"smithers-mvp-engine"') ? "engine" : body.includes('"smithers-mvp-web"') ? "web" : "other" }
+      sent.push(exported)
+      requests.set(request, exported)
     })
-  }
+    page.on("response", (response) => {
+      if (new URL(response.url()).pathname.startsWith("/api/telemetry/")) {
+        const exported = requests.get(response.request())
+        if (exported !== undefined) exported.status = response.status()
+        exports.set(response.status(), (exports.get(response.status()) ?? 0) + 1)
+      }
+    })
+    await expect(page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible({ timeout: 30_000 })
 
-  await test.step("Runs sums the flow's runs", async () => {
-    await page.goto("/app/runs")
-    const flows = page.getByRole("table", { name: "Flows" })
-    await expect(flows).toBeVisible({ timeout: 30_000 })
-    const row = flows.getByRole("row").filter({ hasText: "app/theme/set" })
-    await expect(row).toContainText("100%")
-    await expect(row.getByRole("cell").nth(1)).toHaveText(/^[1-9]\d*$/)
-    await expect(row.getByRole("cell").nth(3)).toHaveText(/\d/)
-  })
+    await test.step("Switch to dark mode", async () => {
+      await page.getByRole("button", { name: "Switch to dark mode" }).click()
+      await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible({ timeout: 30_000 })
+    })
+
+    if (logs !== undefined) {
+      await test.step("The engine recorded the run's start and end", async () => {
+        await expect
+          .poll(async () => usage((await logs.records()).browser, "flow.run.settled", "app/theme/set"), { timeout: 30_000 })
+          .toContainEqual({ door: "button", actor: "person", placement: "browser", outcome: "succeeded", code: "none", timed: true })
+          .finally(async () => {
+            const records = await logs.records()
+            const names = ["flow.run.started", "flow.run.settled", "flow.dispatch", "flows_runs_started", "flows_runs_settled"]
+            const counts = (from: Array<LogRecord>) => Object.fromEntries(names.map((name) => [name,
+              from.filter((record) => record.message === name).length,
+            ]))
+            await test.info().attach("usage-capture", { contentType: "application/json", body: JSON.stringify({
+              exports: [...exports], sent, receipts: logs.receipts, own: counts(records.own), browser: counts(records.browser),
+              services: [...new Set(records.browser.map((record) => {
+                const service = field(record, "service.name")
+                return service === "smithers-mvp-web" ? "web" : service === "smithers-mvp-engine" ? "engine" : "other"
+              }))],
+              started: usage(records.browser, "flow.run.started", "app/theme/set"),
+              settled: usage(records.browser, "flow.run.settled", "app/theme/set"),
+            }) })
+          })
+        expect(usage((await logs.records()).browser, "flow.run.started", "app/theme/set")).toContainEqual(
+          { door: "button", actor: "person", placement: "browser", outcome: undefined, code: undefined, timed: false },
+        )
+      })
+    }
+
+    await test.step("Runs sums the flow's runs", async () => {
+      await page.goto("/app/runs")
+      const flows = page.getByRole("table", { name: "Flows" })
+      await expect(flows).toBeVisible({ timeout: 30_000 })
+      const row = flows.getByRole("row").filter({ hasText: "app/theme/set" })
+      await expect(row).toContainText("100%")
+      await expect(row.getByRole("cell").nth(1)).toHaveText(/^[1-9]\d*$/)
+      await expect(row.getByRole("cell").nth(3)).toHaveText(/\d/)
+    })
+  } finally {
+    await logs?.dispose()
+  }
 })
 
 test("runs list: a run reads like a CI run, with its trigger and actor, opens in place to its steps, and its flow lists its runs", {

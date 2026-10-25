@@ -419,6 +419,11 @@ export const serverRows = async (request: APIRequestContext, word: string): Prom
 }
 
 class Devices {
+  private extraHTTPHeaders: Record<string, string> = {}
+
+  /** Content-free capture headers, applied before any device starts its worker. */
+  withRequestHeaders(headers: Record<string, string>) { this.extraHTTPHeaders = { ...headers } }
+
   // A word unique to this test run: the conversation is shared and keeps every earlier run's messages.
   readonly word = `lf${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
   private readonly startedAt = Date.now()
@@ -487,6 +492,7 @@ class Devices {
       names.map(async (name) => {
         const context = await this.browser.newContext({
           viewport: this.viewport,
+          extraHTTPHeaders: this.extraHTTPHeaders,
           // The test's mode, from the first frame (e2e/fixtures.ts `themeOf`).
           colorScheme: themeOf(this.testInfo),
           recordVideo: { dir: this.testInfo.outputPath("videos"), size: this.viewport },

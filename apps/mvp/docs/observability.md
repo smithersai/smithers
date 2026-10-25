@@ -826,7 +826,7 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | `packages/smithers/flows/flow/test/RunMetrics.test.ts` | `RunMetrics`' closed sets and caps, `settlement` by code and never message, and each recorder's metric and log line with the same fields |
 | `packages/smithers/flows/engine-store/test/RunUsageMetrics.test.ts` | through the durable engine, into an injected registry and logger: runs started and settled by flow, door, actor and placement (a child's door `flow`), a declared failure's code, a cancellation, the first step, a step's retry, a signal wait parked and ended; a sentinel payload in no attribute or line |
 | `ops/grafana/dashboard.test.ts` | the flow usage dashboard filters only on lines the relay keeps or ChatApi writes, and parses only fields they carry |
-| `e2e/flow-usage.spec.ts` | locally, the theme button's `flow.run.started` and `flow.run.settled` lines (door `button`, actor `person`, placement `browser`, `succeeded`) relayed to ChatApi, and the Runs page's flows summary counting the run |
+| `e2e/flow-usage.spec.ts` | locally or on a deployment with log access, the theme button's `flow.run.started` and `flow.run.settled` lines (door `button`, actor `person`, placement `browser`, `succeeded`) relayed to ChatApi, and the Runs page's flows summary counting the run |
 | `e2e/navigate.spec.ts` | locally, the engine worker's `web.navigate` lines for the agent's navigation and refusal, read from ChatApi's relayed records |
 
 Answer exchange deadlines emit `chat.answer.exchange`, `chat.answer.exchange.timeout` and `smithers_answer_exchange_timeouts`, by `operation`. Independent progress writers emit `chat.answer.progress`, `chat.answer.progress.failed` (`answerId`, `status`) and `smithers_answer_progress_writes` for accepted writes. These records contain no answer content.
@@ -851,3 +851,13 @@ changed `syncedRows`, `pendingRows`, `listedRows`, `archived` and `loaded`;
 A shape answer is a network receipt, not proof of installed or rendered rows.
 Use the list counts and page snapshot to locate a blank list. These records
 contain no ids, repository or branch names, search text or conversation content.
+
+### Production test capture integrity
+
+`e2e/logs.ts` reads the deployment's ChatApi through a Cloudflare tail. Usage and correlation captures filter invocations to POST carrying their opaque per-capture header: asks, answer writes and all three OTLP signals remain included, while unrelated Electric GET traffic is excluded before Cloudflare streams it. Opening waits for the exact trace of a content-free, signed-out `POST /api/questions` (`{}`, refused without storing anything). An unrelated log cannot satisfy readiness, and a missing receipt fails capture after a bounded wait. A failed opening can be tried again; a disconnected or sampled capture stays failed for its readers, and the next capture opens a fresh connection. Cloudflare's `overload-stop` notification cannot restore dropped records.
+
+A tail's empty result does not prove absent instrumentation. The production sweep's browser log already contains `app/theme/set` usage lines. ChatApi emits `chat.question` before the response that produces `question stored`; missing that server line while the browser has its response is evidence of an incomplete capture, rather than proof that the handler never ran. The flow usage integration test checks the real engine's started and settled lines, all usage labels, duration, exporter and relay. The correlation E2E still requires every record and trace id.
+
+Cloudflare documents that [real-time logs can sample under load](https://developers.cloudflare.com/workers/observability/logs/real-time-logs/). Sampling, socket failure and receipt timeout are reported as incomplete capture, never converted into successful assertions or empty production logs. Only the protocol warning's type is retained; its text and request metadata are not logged.
+
+The 2026-10-25 browser transport reproduction received ten successful, fully consumed collector acknowledgments but captured five records. No sampling warning arrived and the configured head sampling rate was 1. A Node reproduction retained all 20 records. The remaining production gap is unresolved; passing the capture integrity regressions does not prove the original production usage or correlation assertions pass. Stored-log comparison requires access to Cloudflare’s telemetry query API, which the available tail token lacks.
